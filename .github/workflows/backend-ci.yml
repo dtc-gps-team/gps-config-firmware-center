@@ -65,7 +65,12 @@ jobs:
         run: npm run lint
 
       - name: Run Prisma migrations
-        run: npx prisma migrate deploy --if-present
+        run: |
+          if [ -f prisma/schema.prisma ]; then
+            npx prisma migrate deploy
+          else
+            echo "No prisma/schema.prisma yet — skipping (Prisma not added to backend yet)"
+          fi
 
       - name: Test
         run: npm test --if-present
