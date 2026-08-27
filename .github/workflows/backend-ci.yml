@@ -10,10 +10,11 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - ".github/workflows/backend-ci.yml"
 
 jobs:
   lint-and-test:
-    name: lint-and-test
+    name: Backend / lint-and-test
     runs-on: ubuntu-latest
     defaults:
       run:
