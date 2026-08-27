@@ -9,18 +9,29 @@ servers:
   - url: http://localhost:3001/api/v1
     description: Local dev
 
+# บังคับ Bearer JWT ทุก endpoint โดย default — override เป็น security: [] เฉพาะ endpoint ที่เป็น public
+security:
+  - bearerAuth: []
+
 tags:
   - name: auth
+    description: Login และการยืนยันตัวตน (JWT)
   - name: config
+    description: จัดการ Device Config — สร้าง/นำเข้า/ทดสอบ/อนุมัติ
   - name: firmware
+    description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
+    description: สถานะ Config และ Firmware รายกล่อง
   - name: task
+    description: งาน background (sync, simulate) — จะเพิ่ม endpoint ทีหลัง
 
 paths:
   /auth/login:
     post:
       tags: [auth]
+      operationId: login
       summary: Login ด้วย Username/Password
+      security: []   # public — ยังไม่มี token ตอนเรียก login
       requestBody:
         required: true
         content:
@@ -40,6 +51,7 @@ paths:
   /config:
     get:
       tags: [config]
+      operationId: listConfigs
       summary: ดึงรายการ Config ทั้งหมด (แบ่งตาม status)
       parameters:
         - in: query
@@ -58,6 +70,7 @@ paths:
                   $ref: "#/components/schemas/DeviceConfigDraft"
     post:
       tags: [config]
+      operationId: createConfig
       summary: สร้าง Config ใหม่ผ่านฟอร์ม (Draft)
       requestBody:
         required: true
@@ -72,6 +85,7 @@ paths:
   /config/import:
     post:
       tags: [config]
+      operationId: importConfig
       summary: Import Config จากไฟล์ (v3.2 — รองรับ JSON เป็นจุดเริ่มต้น)
       requestBody:
         required: true
@@ -93,6 +107,7 @@ paths:
   /config/{configId}/simulate:
     post:
       tags: [config]
+      operationId: simulateConfig
       summary: ทดสอบ Config กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5)
       parameters:
         - in: path
@@ -120,6 +135,7 @@ paths:
   /config/{configId}/approve:
     post:
       tags: [config]
+      operationId: approveConfig
       summary: Operation อนุมัติ Config
       parameters:
         - in: path
@@ -134,6 +150,7 @@ paths:
   /config/{configId}/reject:
     post:
       tags: [config]
+      operationId: rejectConfig
       summary: Operation ปฏิเสธ Config (สถานะย้อนกลับไป Draft ทั้งหมด)
       parameters:
         - in: path
@@ -148,6 +165,7 @@ paths:
   /firmware:
     get:
       tags: [firmware]
+      operationId: listFirmware
       summary: รายการ Firmware ที่อัปโหลดเข้าระบบ
       responses:
         "200":
@@ -160,6 +178,7 @@ paths:
                   $ref: "#/components/schemas/Firmware"
     post:
       tags: [firmware]
+      operationId: uploadFirmware
       summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว)
       requestBody:
         required: true
@@ -180,6 +199,7 @@ paths:
   /firmware/{firmwareId}/simulate:
     post:
       tags: [firmware]
+      operationId: simulateFirmware
       summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5)
       parameters:
         - in: path
@@ -207,6 +227,7 @@ paths:
   /devices/{deviceId}/status:
     get:
       tags: [device-status]
+      operationId: getDeviceStatus
       summary: >
         ดูสถานะกล่อง (Config + Firmware) — ครอบคลุมทั้งสถานะ Config
         และสถานะอัปเดตเวอร์ชัน Firmware ของตัวกล่อง (v3.7)
@@ -225,6 +246,12 @@ paths:
                 $ref: "#/components/schemas/DeviceStatus"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     LoginRequest:
       type: object
