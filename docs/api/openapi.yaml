@@ -228,6 +228,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Task"
+        "400":
+          description: taskId ไม่ใช่ uuid ที่ถูกต้อง
         "404":
           description: ไม่พบงานนี้
     patch:
