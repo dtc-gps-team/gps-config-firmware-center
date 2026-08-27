@@ -1,11 +1,10 @@
 name: Backend CI
 
 on:
+  # ไม่กรอง paths ที่ pull_request — ต้องให้ check "Backend / lint-and-test" รายงานผลทุก PR
+  # เพราะถูกตั้งเป็น required status check บน main (ไม่งั้น PR ที่ไม่แตะ backend/ จะ merge ไม่ได้)
   pull_request:
     branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
   push:
     branches: [main]
     paths:
