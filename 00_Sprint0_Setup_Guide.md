@@ -1,9 +1,10 @@
-# Sprint 0 — คู่มือ Setup แบบละเอียด (Branch Protection + API Spec)
+# Sprint 0 — คู่มือ Setup แบบละเอียด (Branch Protection + API Spec) test
 
 **อ้างอิงจาก:** GPS_Project_Structure_Formal.md v3.7, 01_GPS_Build_Reference.md, 03_GPS_Detailed_Build_Steps.md (Phase 0)
 **Checkpoint:** 30/08/2026 — เอกสารนี้ลงรายละเอียดทีละขั้นตอนสำหรับ 5 งานของ Sprint 0
 
 **ไฟล์ที่แนบมาพร้อมคู่มือนี้ (ใช้ก๊อปวางได้ทันที):**
+
 - `docker-compose.yml` — PostgreSQL, Redis, MinIO
 - `.env.example` — ตัวแปรที่ต้องมีครบตาม Build Reference Section 7
 - `.github/workflows/web-ci.yml`, `backend-ci.yml`, `mobile-ci.yml` — GitHub Actions เบื้องต้น
