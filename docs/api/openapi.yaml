@@ -368,7 +368,7 @@ components:
           type: string
         role:
           type: string
-          enum: [SW, Operation, ST, OT, Auditor, Admin, FieldTechnician]
+          enum: [SW, Operation, ST, OT, Auditor, Admin]
 
     DeviceConfigDraft:
       type: object
@@ -383,7 +383,7 @@ components:
           example: TCP
         status:
           type: string
-          enum: [draft, testing, sw_approved, operation_approved, rejected, synced]
+          enum: [draft, testing, approved, rejected, synced]
         fields:
           type: object
           additionalProperties: true
