@@ -23,7 +23,7 @@ tags:
   - name: device-status
     description: สถานะ Config และ Firmware รายกล่อง
   - name: task
-    description: งาน background (sync, simulate) — จะเพิ่ม endpoint ทีหลัง
+    description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
 
 paths:
   /auth/login:
@@ -162,6 +162,105 @@ paths:
         "200":
           description: ปฏิเสธสำเร็จ
 
+  /tasks:
+    get:
+      tags: [task]
+      operationId: listTasks
+      summary: ดึงรายการงานทั้งหมด (กรองด้วย status / assignedTo ได้)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, in_progress, completed, cancelled]
+        - in: query
+          name: assignedTo
+          description: กรองเฉพาะงานของผู้รับผิดชอบคนใดคนหนึ่ง (user id)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: รายการงาน
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+        "400":
+          description: ค่า query parameter ไม่ถูกต้อง
+    post:
+      tags: [task]
+      operationId: createTask
+      summary: สร้างงานใหม่ (status เริ่มต้นเป็น pending)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreateRequest"
+      responses:
+        "201":
+          description: สร้างงานสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: ข้อมูลไม่ถูกต้อง
+
+  /tasks/{taskId}:
+    get:
+      tags: [task]
+      operationId: getTask
+      summary: ดึงรายละเอียดงาน 1 รายการ
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายละเอียดงาน
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: taskId ไม่ใช่ uuid ที่ถูกต้อง
+        "404":
+          description: ไม่พบงานนี้
+    patch:
+      tags: [task]
+      operationId: updateTask
+      summary: แก้ไขงาน (เช่น เปลี่ยน status, ผู้รับผิดชอบ, กำหนดส่ง)
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdateRequest"
+      responses:
+        "200":
+          description: แก้ไขสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: ข้อมูลไม่ถูกต้อง
+        "404":
+          description: ไม่พบงานนี้
+
   /firmware:
     get:
       tags: [firmware]
@@ -289,6 +388,81 @@ components:
           type: object
           additionalProperties: true
           description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+
+    Task:
+      type: object
+      description: งานที่มอบหมายให้ทีมช่างหน้างาน (ตรงกับ Prisma model Task)
+      required: [id, title, assignedTo, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        assignedTo:
+          type: string
+          description: user id ของผู้รับผิดชอบงาน
+        deviceId:
+          type: string
+          nullable: true
+          description: กล่อง GPS ที่เกี่ยวข้องกับงานนี้ (ถ้ามี)
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskCreateRequest:
+      type: object
+      required: [title, assignedTo]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        assignedTo:
+          type: string
+        deviceId:
+          type: string
+        dueDate:
+          type: string
+          format: date-time
+
+    TaskUpdateRequest:
+      type: object
+      description: ส่งเฉพาะ field ที่ต้องการแก้ (partial update)
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        assignedTo:
+          type: string
+        deviceId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
 
     Firmware:
       type: object
