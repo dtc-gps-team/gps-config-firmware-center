@@ -1,19 +1,19 @@
 name: Web CI
 
 on:
+  # ไม่กรอง paths ที่ pull_request — ต้องให้ check "Web / lint-and-test" รายงานผลทุก PR
+  # เพราะถูกตั้งเป็น required status check บน main (ไม่งั้น PR ที่ไม่แตะ web/ จะ merge ไม่ได้)
   pull_request:
     branches: [main]
-    paths:
-      - "web/**"
-      - ".github/workflows/web-ci.yml"
   push:
     branches: [main]
     paths:
       - "web/**"
+      - ".github/workflows/web-ci.yml"
 
 jobs:
   lint-and-test:
-    name: lint-and-test
+    name: Web / lint-and-test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,11 +33,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Type check
-        run: npx tsc --noEmit
-
       - name: Build
         run: npm run build
+
+      - name: Type check
+        run: npx tsc --noEmit
 
       - name: Test
         run: npm test --if-present

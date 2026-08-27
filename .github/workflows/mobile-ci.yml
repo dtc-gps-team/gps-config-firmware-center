@@ -1,19 +1,19 @@
 name: Mobile CI
 
 on:
+  # ไม่กรอง paths ที่ pull_request — ต้องให้ check "Mobile / lint-and-test" รายงานผลทุก PR
+  # เพราะถูกตั้งเป็น required status check บน main (ไม่งั้น PR ที่ไม่แตะ mobile/ จะ merge ไม่ได้)
   pull_request:
     branches: [main]
-    paths:
-      - "mobile/**"
-      - ".github/workflows/mobile-ci.yml"
   push:
     branches: [main]
     paths:
       - "mobile/**"
+      - ".github/workflows/mobile-ci.yml"
 
 jobs:
   lint-and-test:
-    name: lint-and-test
+    name: Mobile / lint-and-test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,7 +23,6 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
           channel: "stable"
           cache: true
 
