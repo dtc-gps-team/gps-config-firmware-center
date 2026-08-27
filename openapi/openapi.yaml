@@ -1,0 +1,307 @@
+openapi: 3.0.3
+info:
+  title: GPS Config & Firmware Center API
+  description: >
+    โครง API เริ่มต้นสำหรับ Sprint 0 — ยังไม่ครบทุก Endpoint
+    เพิ่มเติมทีละ Phase ตามที่ Build จริง (ดู 01_GPS_Build_Reference.md Section 3)
+  version: "0.1.0"
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Local dev
+
+tags:
+  - name: auth
+  - name: config
+  - name: firmware
+  - name: device-status
+  - name: task
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login ด้วย Username/Password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login สำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Username/Password ไม่ถูกต้อง
+
+  /config:
+    get:
+      tags: [config]
+      summary: ดึงรายการ Config ทั้งหมด (แบ่งตาม status)
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, testing, sw_approved, operation_approved, rejected, synced]
+      responses:
+        "200":
+          description: รายการ Config
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceConfigDraft"
+    post:
+      tags: [config]
+      summary: สร้าง Config ใหม่ผ่านฟอร์ม (Draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceConfigDraft"
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+
+  /config/import:
+    post:
+      tags: [config]
+      summary: Import Config จากไฟล์ (v3.2 — รองรับ JSON เป็นจุดเริ่มต้น)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                format:
+                  type: string
+                  enum: [json]
+      responses:
+        "201":
+          description: Import สำเร็จ แปลงเป็น DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม
+
+  /config/{configId}/simulate:
+    post:
+      tags: [config]
+      summary: ทดสอบ Config กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5)
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceModel:
+                  type: string
+      responses:
+        "200":
+          description: ผลทดสอบ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationResult"
+
+  /config/{configId}/approve:
+    post:
+      tags: [config]
+      summary: Operation อนุมัติ Config
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — เข้า flow config-sync-writer ต่อ
+
+  /config/{configId}/reject:
+    post:
+      tags: [config]
+      summary: Operation ปฏิเสธ Config (สถานะย้อนกลับไป Draft ทั้งหมด)
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ
+
+  /firmware:
+    get:
+      tags: [firmware]
+      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ
+      responses:
+        "200":
+          description: รายการ Firmware
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Firmware"
+    post:
+      tags: [firmware]
+      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                deviceModel:
+                  type: string
+      responses:
+        "201":
+          description: อัปโหลดสำเร็จ — แสดง upload_status บนหน้าเว็บ
+
+  /firmware/{firmwareId}/simulate:
+    post:
+      tags: [firmware]
+      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5)
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceModel:
+                  type: string
+      responses:
+        "200":
+          description: ผลทดสอบ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationResult"
+
+  /devices/{deviceId}/status:
+    get:
+      tags: [device-status]
+      summary: >
+        ดูสถานะกล่อง (Config + Firmware) — ครอบคลุมทั้งสถานะ Config
+        และสถานะอัปเดตเวอร์ชัน Firmware ของตัวกล่อง (v3.7)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: สถานะล่าสุด
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceStatus"
+
+components:
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        role:
+          type: string
+          enum: [SW, Operation, ST, OT, Auditor, Admin, FieldTechnician]
+
+    DeviceConfigDraft:
+      type: object
+      description: โครงสร้างกลางที่ทั้งฟอร์มและ Import JSON แปลงเข้ามาเป็นแบบเดียวกัน
+      properties:
+        id:
+          type: string
+        deviceModel:
+          type: string
+        protocol:
+          type: string
+          example: TCP
+        status:
+          type: string
+          enum: [draft, testing, sw_approved, operation_approved, rejected, synced]
+        fields:
+          type: object
+          additionalProperties: true
+          description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+
+    Firmware:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        deviceModelCompatibility:
+          type: array
+          items:
+            type: string
+        uploadStatus:
+          type: string
+          description: สถานะอัปโหลด/จัดเก็บฝั่งเรา (v3.7)
+          enum: [pending, stored, failed]
+        deviceUpdateStatus:
+          type: string
+          description: สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก device-status (v3.7)
+          enum: [unknown, up_to_date, pending_update]
+
+    SimulationResult:
+      type: object
+      properties:
+        passed:
+          type: boolean
+        details:
+          type: array
+          items:
+            type: string
+
+    DeviceStatus:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        configStatus:
+          type: string
+        firmwareStatus:
+          type: string
+        lastCheckInMessage:
+          type: string
+          example: "จะได้รับการอัปเดตในการเปิดเครื่องครั้งถัดไปของกล่อง"
