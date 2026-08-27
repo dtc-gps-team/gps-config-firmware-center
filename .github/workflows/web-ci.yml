@@ -10,10 +10,11 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - ".github/workflows/web-ci.yml"
 
 jobs:
   lint-and-test:
-    name: lint-and-test
+    name: Web / lint-and-test
     runs-on: ubuntu-latest
     defaults:
       run:
