@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Module: task  (มอบหมาย/ติดตามงาน — ดู 01_GPS_Build_Reference.md Section 3)
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  pending
+  in_progress
+  completed
+  cancelled
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  assignedTo  String
+  deviceId    String?
+  status      TaskStatus @default(pending)
+  dueDate     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Module: notification  (FCM Mobile + WebSocket Web)
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  task_assigned
+  config_approved
+  config_rejected
+  firmware_ready
+  incident_alert
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  payload   Json
+  read      Boolean          @default(false)
+  sentAt    DateTime?
+  createdAt DateTime         @default(now())
+}
