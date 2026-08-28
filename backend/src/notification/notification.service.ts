@@ -68,4 +68,23 @@ export class NotificationService {
       data: { sentAt: new Date() },
     });
   }
+
+  /** ดึงรายการ notification ของ user คนเดียว กรองเฉพาะ unread ได้ */
+  findByUser(userId: string, unread?: boolean): Promise<Notification[]> {
+    return this.prisma.notification.findMany({
+      where: {
+        userId,
+        ...(unread === true ? { read: false } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** ทำเครื่องหมายว่า user อ่านแล้ว (read = true) */
+  markRead(id: string): Promise<Notification> {
+    return this.prisma.notification.update({
+      where: { id },
+      data: { read: true },
+    });
+  }
 }
