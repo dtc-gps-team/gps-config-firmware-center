@@ -51,7 +51,7 @@
 | **Firmware Override รายเครื่อง** | R | R | **C, R, U, O** | **C, R, U, O** | R | R |
 | **Campaign Wizard** (สร้างแคมเปญ) | R | C, R, U | R | R | R | R |
 | **Campaign Monitor** (ติดตาม Failure Rate) | R | R, U | R | R | R | R |
-| **Task Management** (มอบหมาย/ติดตามงานช่าง) | R | C, R, U | R | C, R, U | R | R |
+| **Task Management** (สร้าง/มอบหมาย/ติดตามงานช่าง — ดูรายละเอียดสิทธิ์ที่ 4.3) | R | C, R, U | R | R | R | R |
 | **Change Request Inbox** (จากมือถือ) | R | R, U | R | R, U | R | R |
 | **Incident & Rollback** | R (สร้าง Incident อัตโนมัติจากระบบ) | C, R, **U** (สั่ง Rollback) | R, U (แก้ไขเชิงเทคนิค) | R | R | R |
 | **Audit Log** | - | R | R | R | **R** | R |
@@ -98,9 +98,9 @@
 | `/notifications` | GET | `listNotifications` | ทุก Role ที่ login แล้ว — ดึงเฉพาะของ user ตัวเอง (ผูกกับ JWT ไม่ใช่ query param) |
 | `/notifications/{notificationId}/read` | PATCH | `markNotificationRead` | ทุก Role ที่ login แล้ว — เฉพาะ notification ของตัวเอง |
 | `/tasks` | GET | `listTasks` | ทุก Role ที่ login แล้ว (Operation/ST/OT ที่ใช้ Mobile ต้องถูกกรองที่ Backend ให้เห็นเฉพาะ `assignedTo` = ตนเอง) |
-| `/tasks` | POST | `createTask` | Operation, OT |
-| `/tasks/{taskId}` | GET | `getTask` | ทุก Role ที่ login แล้ว (ผู้ใช้ Mobile เฉพาะงานของตัวเอง) |
-| `/tasks/{taskId}` | PATCH | `updateTask` | Operation, OT, ผู้ใช้ Mobile (เฉพาะงานของตัวเอง — จำกัดเฉพาะ field `status`) |
+| `/tasks` | POST | `createTask` | Operation เท่านั้น (ปิด open question — ดู 4.3) |
+| `/tasks/{taskId}` | GET | `getTask` | ทุก Role ที่ login แล้ว (ST/OT เฉพาะงานที่ตัวเองถูก assign) |
+| `/tasks/{taskId}` | PATCH | `updateTask` | Operation (ทุก field) · ST/OT (เฉพาะ field `status` ของ Task ที่ตัวเองถูก assign) |
 | `/firmware` | GET | `listFirmware` | ทุก Role ที่ login แล้ว |
 | `/firmware` | POST | `uploadFirmware` | SW |
 | `/firmware/{firmwareId}/simulate` | POST | `simulateFirmware` | SW, Operation/ST/OT |
@@ -124,6 +124,20 @@
 
 > ตามหมายเหตุท้าย `openapi.yaml`: "ทุกครั้งที่เพิ่ม Endpoint ใหม่ในแต่ละ Phase ถัดไป ให้กลับมาอัปเดตไฟล์นี้ด้วย" — ตาราง 4.2 นี้คือ backlog ของสิ่งที่ต้องอัปเดตเข้า spec ก่อน ไม่ใช่สิ่งที่ Guard เขียนได้ตอนนี้
 
+### 4.3 Task module — รายละเอียดสิทธิ์ (ปิด open question: Task creator = Operation)
+
+ยืนยันโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์นเดิมของ Matrix นี้ — **Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน**
+
+| Action | Role ที่ทำได้ |
+|---|---|
+| สร้าง Task / มอบหมาย Task | Operation |
+| แก้ไข / ลบ Task ทั้งหมด (ทุก field) | Operation |
+| ดู Task ที่ตัวเองถูกมอบหมาย | ST, OT |
+| แก้ `status` ของ Task ตัวเอง (เช่น รับงาน / ปิดงาน) | ST, OT (เฉพาะ Task ที่ตัวเองถูก assign เท่านั้น) |
+| ดู Task ทั้งหมด (read-only) | Auditor, Admin |
+
+> **ST/OT ห้ามสร้าง Task เอง** และ **ห้ามแก้ field อื่นนอกจาก `status`** ของ Task ที่ตัวเองถูก assign — ป้องกันการมอบหมายงานให้ตัวเอง / แก้ไขข้อมูล Task ของคนอื่น Guard ฝั่ง Backend ต้องบังคับทั้ง role check และ ownership check (`assignedTo` = user id ที่ login — ดู Section 5 ข้อ 8)
+
 ---
 
 ## 5. กติกา Separation of Duty (สำคัญ — ต้องคุยกับ B ให้ตรงกันก่อนปิด)
@@ -143,7 +157,6 @@
 
 - **enum สถานะ Config ไม่มีจุดแยกระหว่างขั้น SW กับขั้น Operation** — ทั้งสองขั้นจบที่ `approved` เหมือนกันหมด ต้องตกลงว่าจะ (ก) เพิ่ม status ใหม่ (เช่น `sw_approved`) หรือ (ข) ใช้ field อื่นเก็บว่าใครกดผ่านขั้นไหนแทนการเพิ่ม enum
 - **ขอบเขต ST vs OT**: ในเอกสารต้นทางระบุแค่ "Override เฉพาะ ST/OT" โดยไม่แยกรายละเอียด ในร่างนี้แบ่งให้ ST เน้นงานเทคนิค/Incident ระดับอาวุโส และ OT เน้นงานปฏิบัติการ (Task/Change Request) แต่ทั้งคู่ Override ได้เท่ากัน — ถ้าทีมต้องการแบ่งสิทธิ์ Override ให้ต่างกัน ต้องแก้ตารางส่วนที่ 2 และ 4
-- **Task Management ฝั่งใครเป็นคนสร้าง**: ร่างนี้ให้ทั้ง Operation และ OT สร้าง/แก้ไข Task ได้ — ถ้าทีมต้องการให้มีแค่ Role เดียวเป็นคนมอบหมายงานหลัก ต้องระบุเพิ่ม
 - **User/Role Management**: ยังไม่มีจอนี้ระบุไว้ใน Checkpoint Features ของแผน Sprint ใดเลย — เพิ่มเข้ามาในร่างนี้เพราะ Admin role ต้องมีอย่างน้อย 1 หน้าที่ใช้งานจริง ต้องตกลงว่าจะทำ Sprint ไหน
 - **GPS_Data_Dictionary.xlsx (`CAMPAIGN_ASSIGNMENT.assigned_by`)**: ยืนยันเจ้าของแล้ว — **paveekornk (A) รับไปแก้เอง แยกเป็น PR ต่างหาก ไม่รวมกับ RBAC Matrix นี้** — สถานะปัจจุบันคือ**ยังไม่ได้ลงมือแก้จริง** (แค่ยืนยันความรับผิดชอบ) ต้องติดตามต่อว่าทำเสร็จเมื่อไหร่ เพื่อไม่ให้ตกหล่นไปอีก
 
@@ -159,3 +172,4 @@
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 4 — ตอบ Comment รีวิวของ kittiphong 5 ข้อ: (1) ย้ายสิทธิ์ Device Registration จาก FieldTechnician → Operation/ST/OT ทั้งใน Section 1 (platform ST/OT เพิ่ม Mobile), Section 3, และตาราง 4.2, (2) ย้าย Decommission Device จาก Assumption (ข้อ 6) มาเป็นกติกายืนยันแล้วใน Section 5 ข้อ 7, (3) เพิ่ม footnote อธิบายว่าทำไม Auditor mark-as-read บน Notification ไม่ขัดกับกฎ Read-only (ไม่ใช่ข้อยกเว้น แต่ไม่เข้าข่ายกฎตั้งแต่ต้น), (4) merge/rebase `origin/main` เข้า branch ก่อน push เวอร์ชันนี้ตามที่ขอ, (5) บันทึกยืนยันว่า paveekornk รับไปแก้ `GPS_Data_Dictionary.xlsx` (`CAMPAIGN_ASSIGNMENT.assigned_by`) เอง แยก PR ต่างหาก |
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 5 — ตาม [PR #13](https://github.com/dtc-gps-team/gps-config-firmware-center/pull/13) (merged): **ตัด Role `FieldTechnician` ออกทั้งเอกสาร** เปลี่ยนเป็น Operation/ST/OT ให้ครบทุกจุดที่เหลือ (Section 1 role table + note, Section 3 ทั้งตาราง, ตาราง 4.1 ทุกแถวที่เคยอ้างถึง, ตาราง 4.2 แถว `/change-requests`, Section 5 กติกาข้อ 8) — ปิด Gap เรื่อง FieldTechnician ที่เคยเปิดไว้ใน Section 6 ไปด้วย เพราะไม่มี Role นี้แล้ว คงเหลือ Open question อื่นตามที่ทีมแจ้ง: ขอบเขต ST vs OT override scope, ใครเป็นคนสร้าง Task หลัก, Sprint ของ User Management, และสถานะ `GPS_Data_Dictionary.xlsx` (`CAMPAIGN_ASSIGNMENT.assigned_by`) ที่ paveekornk รับผิดชอบแต่ยังไม่ได้ลงมือแก้ |
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 6 — ตอบ comment รีวิว PR #15 ของ kittiphong: ลบเครื่องหมาย `*` ที่ลอยค้างอยู่ท้าย "Web + Mobile" ในช่อง platform ของ ST/OT (Section 1) ออก เพราะ footnote ที่เคยผูกกับ `*` ถูกลบไปแล้วตอนแก้ FieldTechnician ในรอบ 5 คำอธิบายเรื่อง ST/OT ใช้ Mobile ด้วยยังคงอยู่ในย่อหน้าใต้ตารางตามเดิม (อ้างอิง PR #13) ไม่ต้องเพิ่ม footnote ใหม่ |
+| 2026-08-28 | kittiphong | แก้ครั้งที่ 7 — **ปิด open question: Task creator = Operation** ตัดสินใจโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์น Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน: (1) เพิ่มตาราง 4.3 รายละเอียดสิทธิ์ module `task`, (2) Section 2 แถว Task Management — OT จาก `C, R, U` เหลือ `R` (ST/OT ไม่สร้าง/จัดการ Task บน Web แก้ `status` งานตัวเองผ่าน Mobile), (3) ตาราง 4.1 — `/tasks` POST `createTask` เหลือ `Operation` เท่านั้น, `/tasks/{taskId}` PATCH `updateTask` = Operation ทุก field / ST-OT เฉพาะ field `status` ของงานตัวเอง, (4) ลบรายการ "Task Management ฝั่งใครเป็นคนสร้าง" ออกจาก open question list (Section 6) |
