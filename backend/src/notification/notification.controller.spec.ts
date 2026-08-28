@@ -1,4 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
+import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Notification } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -51,7 +52,10 @@ describe('NotificationController', () => {
       providers: [
         { provide: NotificationService, useValue: service },
         // provide JwtService ตรงๆ เพื่อให้ JwtAuthGuard inject ได้ใน test module
-        { provide: JwtService, useValue: new JwtService({ secret: JWT_SECRET }) },
+        {
+          provide: JwtService,
+          useValue: new JwtService({ secret: JWT_SECRET }),
+        },
         JwtAuthGuard,
       ],
     }).compile();
@@ -84,14 +88,41 @@ describe('NotificationController', () => {
     expect(service.findByUser).toHaveBeenCalledWith('user-abc', true);
   });
 
-  it('PATCH /notifications/:id/read — เรียก service.markRead', async () => {
+  it('PATCH /notifications/:notificationId/read — เรียก service.markRead พร้อม userId', async () => {
     const updated = { ...sampleNotification, read: true };
     service.markRead.mockResolvedValue(updated);
 
-    const result = await controller.markRead(sampleNotification.id);
+    const fakeReq = {
+      user: { sub: 'user-abc', role: 'OT' },
+    } as Parameters<typeof controller.markRead>[1];
+
+    const result = await controller.markRead(sampleNotification.id, fakeReq);
 
     expect(result).toEqual(updated);
-    expect(service.markRead).toHaveBeenCalledWith(sampleNotification.id);
+    expect(service.markRead).toHaveBeenCalledWith(
+      sampleNotification.id,
+      'user-abc',
+    );
+  });
+
+  it('PATCH /notifications/:notificationId/read ของ user อื่น — service throw 404 (ป้องกัน IDOR)', async () => {
+    service.markRead.mockRejectedValue(
+      new NotFoundException('Notification not found'),
+    );
+
+    const fakeReq = {
+      user: { sub: 'user-other', role: 'OT' },
+    } as Parameters<typeof controller.markRead>[1];
+
+    await expect(
+      controller.markRead(sampleNotification.id, fakeReq),
+    ).rejects.toThrow('Notification not found');
+
+    // ยืนยันว่า controller ส่ง userId ของ attacker ไป ไม่ใช่ userId ของเจ้าของ
+    expect(service.markRead).toHaveBeenCalledWith(
+      sampleNotification.id,
+      'user-other',
+    );
   });
 });
 
@@ -127,7 +158,9 @@ describe('JwtAuthGuard', () => {
       switchToHttp: () => ({ getRequest: () => mockReq }),
     } as Parameters<JwtAuthGuard['canActivate']>[0];
 
-    expect(() => guard.canActivate(ctx)).toThrow('Authorization token is required');
+    expect(() => guard.canActivate(ctx)).toThrow(
+      'Authorization token is required',
+    );
   });
 
   it('token ไม่ถูกต้อง — throw UnauthorizedException', () => {

@@ -36,11 +36,15 @@ export class NotificationController {
   }
 
   /**
-   * PATCH /api/v1/notifications/:id/read
+   * PATCH /api/v1/notifications/:notificationId/read
    * ทำเครื่องหมายว่าอ่านแล้ว (read = true)
+   * ส่ง req.user.sub เข้าไปด้วยเพื่อป้องกัน IDOR — service จะส่ง 404 ถ้า notification ไม่ใช่ของ user นี้
    */
-  @Patch(':id/read')
-  markRead(@Param('id', ParseUUIDPipe) id: string): Promise<Notification> {
-    return this.notificationService.markRead(id);
+  @Patch(':notificationId/read')
+  markRead(
+    @Param('notificationId', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Notification> {
+    return this.notificationService.markRead(id, req.user.sub);
   }
 }

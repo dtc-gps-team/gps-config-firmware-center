@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Notification, NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -80,11 +80,22 @@ export class NotificationService {
     });
   }
 
-  /** ทำเครื่องหมายว่า user อ่านแล้ว (read = true) */
-  markRead(id: string): Promise<Notification> {
-    return this.prisma.notification.update({
-      where: { id },
+  /** ทำเครื่องหมายว่า user อ่านแล้ว (read = true)
+   * กรอง where: { id, userId } ป้องกัน IDOR — throw NotFoundException ถ้าไม่พบ
+   */
+  async markRead(id: string, userId: string): Promise<Notification> {
+    const result = await this.prisma.notification.updateMany({
+      where: { id, userId },
       data: { read: true },
     });
+
+    if (result.count === 0) {
+      throw new NotFoundException(`Notification not found`);
+    }
+
+    // updateMany ไม่คืน record — ดึงใหม่แยก
+    return this.prisma.notification.findUnique({
+      where: { id },
+    }) as Promise<Notification>;
   }
 }
