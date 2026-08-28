@@ -67,11 +67,29 @@ jobs:
 
       - name: Run Prisma migrations
         run: |
-          if [ -f prisma/schema.prisma ]; then
-            npx prisma migrate deploy
-          else
+          if [ ! -f prisma/schema.prisma ]; then
             echo "No prisma/schema.prisma yet — skipping (Prisma not added to backend yet)"
+            exit 0
           fi
+
+          MIGRATION_COUNT=$(ls -1 prisma/migrations | grep -v migration_lock.toml | wc -l)
+
+          if [ "$MIGRATION_COUNT" -le 1 ]; then
+            npx prisma migrate deploy
+            exit 0
+          fi
+
+          LATEST_MIGRATION=$(ls -1 prisma/migrations | grep -v migration_lock.toml | sort | tail -n 1)
+          echo "Testing latest migration against seeded data: $LATEST_MIGRATION"
+
+          mkdir -p /tmp/held-migration
+          mv "prisma/migrations/$LATEST_MIGRATION" /tmp/held-migration/
+
+          npx prisma migrate deploy
+          npx prisma db seed
+
+          mv "/tmp/held-migration/$LATEST_MIGRATION" prisma/migrations/
+          npx prisma migrate deploy
 
       - name: Test (unit)
         run: npm test --if-present
