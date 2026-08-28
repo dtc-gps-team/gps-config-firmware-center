@@ -45,6 +45,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://gps_user:gps_password@localhost:5432/gps_config_firmware_test
+      DATABASE_URL_TEST: postgresql://gps_user:gps_password@localhost:5432/gps_config_firmware_test
       REDIS_URL: redis://localhost:6379
       LEGACY_SYNC_MODE: mock
       JWT_SECRET: ci-test-secret
@@ -72,8 +73,11 @@ jobs:
             echo "No prisma/schema.prisma yet — skipping (Prisma not added to backend yet)"
           fi
 
-      - name: Test
+      - name: Test (unit)
         run: npm test --if-present
+
+      - name: Test (integration — real postgres)
+        run: npm run test:integration
 
       - name: Build
         run: npm run build
