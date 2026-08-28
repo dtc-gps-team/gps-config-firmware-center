@@ -3,6 +3,17 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+type Permission = { role: Role; resource: string; action: ActionType };
+
+// helper ที่มี parameter type ชัดเจนทุกตัว — กัน TS widen ตัว action เป็น
+// string เฉยๆ ตอนอยู่ในอาร์เรย์ใหญ่ที่มีทั้ง literal ปนกับ spread จาก
+// flatMap/map (ปัญหาที่ทำให้ ts-node compile ไม่ผ่านตอนรัน seed จริง)
+function perm(role: Role, resource: string, action: ActionType): Permission {
+  return { role, resource, action };
+}
+
+const ALL_ROLES: Role[] = ['SW', 'Operation', 'ST', 'OT', 'Auditor', 'Admin'];
+
 async function main() {
   // ---------------------------------------------------------------------
   // 1) User ทดสอบ 6 role — ต้อง seed ก่อน Task/Notification เสมอ เพราะทั้งคู่
@@ -12,7 +23,11 @@ async function main() {
   // ---------------------------------------------------------------------
   const testUsers: { username: string; fullName: string; role: Role }[] = [
     { username: 'sw.test', fullName: 'SW Tester', role: 'SW' },
-    { username: 'operation.test', fullName: 'Operation Tester', role: 'Operation' },
+    {
+      username: 'operation.test',
+      fullName: 'Operation Tester',
+      role: 'Operation',
+    },
     { username: 'st.test', fullName: 'ST Tester', role: 'ST' },
     { username: 'ot.test', fullName: 'OT Tester', role: 'OT' },
     { username: 'auditor.test', fullName: 'Auditor Tester', role: 'Auditor' },
@@ -35,50 +50,52 @@ async function main() {
   //    ของ docs/architecture/RBAC_Matrix.md ห้ามเดา resource ของตาราง 4.2
   //    (endpoint ที่ยังไม่มีจริง เช่น campaign, override, decommission)
   // ---------------------------------------------------------------------
-  const permissions: { role: Role; resource: string; action: ActionType }[] = [
+  const permissions: Permission[] = [
     // ---- config ----
-    { role: 'SW', resource: 'config', action: 'Create' }, // createConfig, importConfig
-    { role: 'SW', resource: 'config', action: 'Update' }, // simulateConfig (dry-run ก่อนส่ง Operation)
-    { role: 'Operation', resource: 'config', action: 'Read' },
-    { role: 'Operation', resource: 'config', action: 'Approve' }, // approveConfig, rejectConfig
-    { role: 'ST', resource: 'config', action: 'Read' },
-    { role: 'OT', resource: 'config', action: 'Read' },
-    { role: 'Auditor', resource: 'config', action: 'Read' },
-    { role: 'Admin', resource: 'config', action: 'Read' },
+    // createConfig, importConfig
+    perm('SW', 'config', 'Create'),
+    // simulateConfig (dry-run ก่อนส่ง Operation)
+    perm('SW', 'config', 'Update'),
+    perm('Operation', 'config', 'Read'),
+    // approveConfig, rejectConfig
+    perm('Operation', 'config', 'Approve'),
+    perm('ST', 'config', 'Read'),
+    perm('OT', 'config', 'Read'),
+    perm('Auditor', 'config', 'Read'),
+    perm('Admin', 'config', 'Read'),
 
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
-    ...(['SW', 'Operation', 'ST', 'OT', 'Auditor', 'Admin'] as Role[]).flatMap((role) => [
-      { role, resource: 'notifications', action: 'Read' as ActionType },
-      { role, resource: 'notifications', action: 'Update' as ActionType }, // markNotificationRead
+    ...ALL_ROLES.flatMap((role) => [
+      perm(role, 'notifications', 'Read'),
+      perm(role, 'notifications', 'Update'), // markNotificationRead
     ]),
 
-    // ---- tasks ----
-    { role: 'SW', resource: 'tasks', action: 'Read' },
-    { role: 'Operation', resource: 'tasks', action: 'Create' },
-    { role: 'Operation', resource: 'tasks', action: 'Read' },
-    { role: 'Operation', resource: 'tasks', action: 'Update' },
-    { role: 'ST', resource: 'tasks', action: 'Read' },
-    { role: 'OT', resource: 'tasks', action: 'Create' },
-    { role: 'OT', resource: 'tasks', action: 'Read' },
-    { role: 'OT', resource: 'tasks', action: 'Update' },
-    { role: 'Auditor', resource: 'tasks', action: 'Read' },
-    { role: 'Admin', resource: 'tasks', action: 'Read' },
+    // ---- tasks (ตาม RBAC_Matrix.md §4.3 — ปิดโดย kittiphong:
+    //      Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน) ----
+    perm('Operation', 'tasks', 'Create'),
+    perm('Operation', 'tasks', 'Read'),
+    perm('Operation', 'tasks', 'Update'),
+    // ST/OT แก้ status ของงานตัวเองเท่านั้น — ownership check (assignedTo =
+    // user id ที่ login) อยู่ที่ Guard/service ไม่ใช่ที่ตารางนี้
+    perm('ST', 'tasks', 'Read'),
+    perm('ST', 'tasks', 'Update'),
+    perm('OT', 'tasks', 'Read'),
+    perm('OT', 'tasks', 'Update'),
+    perm('SW', 'tasks', 'Read'),
+    perm('Auditor', 'tasks', 'Read'),
+    perm('Admin', 'tasks', 'Read'),
 
     // ---- firmware ----
-    { role: 'SW', resource: 'firmware', action: 'Create' },
-    { role: 'SW', resource: 'firmware', action: 'Update' }, // simulateFirmware
-    { role: 'Operation', resource: 'firmware', action: 'Read' },
-    { role: 'ST', resource: 'firmware', action: 'Read' },
-    { role: 'OT', resource: 'firmware', action: 'Read' },
-    { role: 'Auditor', resource: 'firmware', action: 'Read' },
-    { role: 'Admin', resource: 'firmware', action: 'Read' },
+    perm('SW', 'firmware', 'Create'),
+    perm('SW', 'firmware', 'Update'), // simulateFirmware
+    perm('Operation', 'firmware', 'Read'),
+    perm('ST', 'firmware', 'Read'),
+    perm('OT', 'firmware', 'Read'),
+    perm('Auditor', 'firmware', 'Read'),
+    perm('Admin', 'firmware', 'Read'),
 
     // ---- devices (getDeviceStatus — ทุก role อ่านได้) ----
-    ...(['SW', 'Operation', 'ST', 'OT', 'Auditor', 'Admin'] as Role[]).map((role) => ({
-      role,
-      resource: 'devices',
-      action: 'Read' as ActionType,
-    })),
+    ...ALL_ROLES.map((role) => perm(role, 'devices', 'Read')),
   ];
 
   for (const p of permissions) {
@@ -89,7 +106,9 @@ async function main() {
     });
   }
 
-  console.log(`Seeded ${testUsers.length} users, ${permissions.length} permissions.`);
+  console.log(
+    `Seeded ${testUsers.length} users, ${permissions.length} permissions.`,
+  );
 }
 
 main()
