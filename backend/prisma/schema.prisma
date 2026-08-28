@@ -41,6 +41,9 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  tasks         Task[]
+  notifications Notification[]
 }
 
 // resource = ชื่อ path หลักใน docs/api/openapi.yaml (main) เช่น "auth", "config",
@@ -76,6 +79,9 @@ model Task {
   dueDate     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+
+  // user id ของผู้รับผิดชอบงาน (ดู docs/api/openapi.yaml Task.assignedTo)
+  assignedUser User @relation(fields: [assignedTo], references: [id])
 }
 
 // ---------------------------------------------------------------------------
@@ -98,4 +104,7 @@ model Notification {
   read      Boolean          @default(false)
   sentAt    DateTime?
   createdAt DateTime         @default(now())
+
+  // user id ของเจ้าของ notification (ดู docs/api/openapi.yaml Notification.userId)
+  user User @relation(fields: [userId], references: [id])
 }
