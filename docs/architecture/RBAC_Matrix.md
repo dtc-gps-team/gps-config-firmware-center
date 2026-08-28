@@ -51,13 +51,15 @@
 | **Firmware Override รายเครื่อง** | R | R | **C, R, U, O** | **C, R, U, O** | R | R |
 | **Campaign Wizard** (สร้างแคมเปญ) | R | C, R, U | R | R | R | R |
 | **Campaign Monitor** (ติดตาม Failure Rate) | R | R, U | R | R | R | R |
-| **Task Management** (สร้าง/มอบหมาย/ติดตามงานช่าง — ดูรายละเอียดสิทธิ์ที่ 4.3) | R | C, R, U | R | R | R | R |
+| **Task Management** (สร้าง/มอบหมาย/ติดตามงานช่าง — ดูรายละเอียดสิทธิ์ที่ 4.3) | R | C, R, U | R¹ | R¹ | R | R |
 | **Change Request Inbox** (จากมือถือ) | R | R, U | R | R, U | R | R |
 | **Incident & Rollback** | R (สร้าง Incident อัตโนมัติจากระบบ) | C, R, **U** (สั่ง Rollback) | R, U (แก้ไขเชิงเทคนิค) | R | R | R |
 | **Audit Log** | - | R | R | R | **R** | R |
 | **Decommission Device** | - | C, U | R | R | R | C, U |
 | **User / Role Management** | - | - | - | - | - | **C, R, U** |
 | **Notification Center** (ของตนเอง) | R, U (mark read) | R, U | R, U | R, U | R, U | R, U |
+
+¹ ST/OT บน Web ดู Task ที่ตัวเองถูก assign ได้อย่างเดียว — การแก้ `status` ของงานตัวเอง (รับงาน/ปิดงาน) ทำผ่าน **Mobile** (ดู Section 3 และ 4.3)
 
 ---
 
@@ -97,7 +99,7 @@
 | `/config/{configId}/reject` | POST | `rejectConfig` | Operation เท่านั้น |
 | `/notifications` | GET | `listNotifications` | ทุก Role ที่ login แล้ว — ดึงเฉพาะของ user ตัวเอง (ผูกกับ JWT ไม่ใช่ query param) |
 | `/notifications/{notificationId}/read` | PATCH | `markNotificationRead` | ทุก Role ที่ login แล้ว — เฉพาะ notification ของตัวเอง |
-| `/tasks` | GET | `listTasks` | ทุก Role ที่ login แล้ว (Operation/ST/OT ที่ใช้ Mobile ต้องถูกกรองที่ Backend ให้เห็นเฉพาะ `assignedTo` = ตนเอง) |
+| `/tasks` | GET | `listTasks` | ทุก Role ที่ login แล้ว — ST/OT ที่ใช้ Mobile ต้องถูกกรองที่ Backend ให้เห็นเฉพาะ `assignedTo` = ตนเอง (Operation เห็นทุก Task) |
 | `/tasks` | POST | `createTask` | Operation เท่านั้น (ปิด open question — ดู 4.3) |
 | `/tasks/{taskId}` | GET | `getTask` | ทุก Role ที่ login แล้ว (ST/OT เฉพาะงานที่ตัวเองถูก assign) |
 | `/tasks/{taskId}` | PATCH | `updateTask` | Operation (ทุก field) · ST/OT (เฉพาะ field `status` ของ Task ที่ตัวเองถูก assign) |
@@ -134,7 +136,7 @@
 | แก้ไข / ลบ Task ทั้งหมด (ทุก field) | Operation |
 | ดู Task ที่ตัวเองถูกมอบหมาย | ST, OT |
 | แก้ `status` ของ Task ตัวเอง (เช่น รับงาน / ปิดงาน) | ST, OT (เฉพาะ Task ที่ตัวเองถูก assign เท่านั้น) |
-| ดู Task ทั้งหมด (read-only) | Auditor, Admin |
+| ดู Task ทั้งหมด (ทุก Task ในระบบ) | SW (read-only), Operation (จัดการได้ — ดูแถวบน), Auditor, Admin (read-only) |
 
 > **ST/OT ห้ามสร้าง Task เอง** และ **ห้ามแก้ field อื่นนอกจาก `status`** ของ Task ที่ตัวเองถูก assign — ป้องกันการมอบหมายงานให้ตัวเอง / แก้ไขข้อมูล Task ของคนอื่น Guard ฝั่ง Backend ต้องบังคับทั้ง role check และ ownership check (`assignedTo` = user id ที่ login — ดู Section 5 ข้อ 8)
 
@@ -173,3 +175,4 @@
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 5 — ตาม [PR #13](https://github.com/dtc-gps-team/gps-config-firmware-center/pull/13) (merged): **ตัด Role `FieldTechnician` ออกทั้งเอกสาร** เปลี่ยนเป็น Operation/ST/OT ให้ครบทุกจุดที่เหลือ (Section 1 role table + note, Section 3 ทั้งตาราง, ตาราง 4.1 ทุกแถวที่เคยอ้างถึง, ตาราง 4.2 แถว `/change-requests`, Section 5 กติกาข้อ 8) — ปิด Gap เรื่อง FieldTechnician ที่เคยเปิดไว้ใน Section 6 ไปด้วย เพราะไม่มี Role นี้แล้ว คงเหลือ Open question อื่นตามที่ทีมแจ้ง: ขอบเขต ST vs OT override scope, ใครเป็นคนสร้าง Task หลัก, Sprint ของ User Management, และสถานะ `GPS_Data_Dictionary.xlsx` (`CAMPAIGN_ASSIGNMENT.assigned_by`) ที่ paveekornk รับผิดชอบแต่ยังไม่ได้ลงมือแก้ |
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 6 — ตอบ comment รีวิว PR #15 ของ kittiphong: ลบเครื่องหมาย `*` ที่ลอยค้างอยู่ท้าย "Web + Mobile" ในช่อง platform ของ ST/OT (Section 1) ออก เพราะ footnote ที่เคยผูกกับ `*` ถูกลบไปแล้วตอนแก้ FieldTechnician ในรอบ 5 คำอธิบายเรื่อง ST/OT ใช้ Mobile ด้วยยังคงอยู่ในย่อหน้าใต้ตารางตามเดิม (อ้างอิง PR #13) ไม่ต้องเพิ่ม footnote ใหม่ |
 | 2026-08-28 | kittiphong | แก้ครั้งที่ 7 — **ปิด open question: Task creator = Operation** ตัดสินใจโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์น Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน: (1) เพิ่มตาราง 4.3 รายละเอียดสิทธิ์ module `task`, (2) Section 2 แถว Task Management — OT จาก `C, R, U` เหลือ `R` (ST/OT ไม่สร้าง/จัดการ Task บน Web แก้ `status` งานตัวเองผ่าน Mobile), (3) ตาราง 4.1 — `/tasks` POST `createTask` เหลือ `Operation` เท่านั้น, `/tasks/{taskId}` PATCH `updateTask` = Operation ทุก field / ST-OT เฉพาะ field `status` ของงานตัวเอง, (4) ลบรายการ "Task Management ฝั่งใครเป็นคนสร้าง" ออกจาก open question list (Section 6) |
+| 2026-08-28 | kittiphong | แก้ครั้งที่ 8 — เก็บ inconsistency ภายในเอกสารเองที่เกิดจากรอบ 7: (1) ตาราง 4.1 `GET /tasks` (`listTasks`) — เดิมยังบอกว่า "Operation/ST/OT ถูกกรองเฉพาะ `assignedTo` = ตนเอง" ซึ่งขัดกับ 4.3 ที่ให้ Operation จัดการ Task ทั้งหมด → แก้เป็น "ST/OT ที่ใช้ Mobile ถูกกรอง, Operation เห็นทุก Task" ให้ตรงกับ `getTask`/`updateTask` ในตารางเดียวกัน, (2) ตาราง 4.3 แถว "ดู Task ทั้งหมด" ระบุครบว่ารวม SW (read-only) + Operation (จัดการได้) ไม่ใช่แค่ Auditor/Admin, (3) Section 2 แถว Task Management เพิ่ม footnote ¹ ให้ ST/OT ว่าแก้ `status` งานตัวเองผ่าน Mobile — ไม่มีการเปลี่ยนสิทธิ์ใดๆ เป็นการทำให้ข้อความในเอกสารสอดคล้องกันเท่านั้น |
