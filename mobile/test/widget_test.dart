@@ -1,30 +1,45 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/auth/auth_repository.dart';
+import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/auth/login_page.dart';
 
-import 'package:mobile/main.dart';
+class _NoopAuthRepository implements AuthRepository {
+  @override
+  Future<LoginResponse> login(String username, String password) =>
+      throw UnimplementedError();
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('app boots to the login route when unauthenticated', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+      ],
+    );
+    addTearDown(container.dispose);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    final router = container.read(routerProvider);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      AppRoutes.login,
+    );
   });
 }
