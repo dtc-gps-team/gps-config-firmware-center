@@ -36,7 +36,12 @@ export function createTestPrisma(): PrismaClient {
   return new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
 }
 
-/** Wipe every table these tests write to, honouring FK order (children first). */
+/**
+ * Wipe every table these tests write to, honouring FK order (children first).
+ * `Role` is reference data (not test-specific), not something tests create
+ * fresh each run, so it is intentionally left alone here — see
+ * `getOrCreateRoleId` below, which finds-or-creates a Role row on demand.
+ */
 export async function resetDb(prisma: PrismaClient): Promise<void> {
   await prisma.task.deleteMany();
   await prisma.notification.deleteMany();
@@ -45,21 +50,41 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
 
 let seq = 0;
 
+type RoleCode = 'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin';
+
+/**
+ * Find-or-create a Role row by code. Role is a real table now (not a Postgres
+ * enum — see backend/prisma/schema.prisma), so `User.roleId` needs an actual
+ * row to point at instead of a literal string.
+ */
+async function getOrCreateRoleId(
+  prisma: PrismaClient,
+  code: RoleCode,
+): Promise<string> {
+  const role = await prisma.role.upsert({
+    where: { code },
+    update: {},
+    create: { code, name: code },
+  });
+  return role.id;
+}
+
 /** Create a User row to hang Tasks / Notifications off of. */
-export function makeUser(
+export async function makeUser(
   prisma: PrismaClient,
   overrides: Partial<{
     username: string;
-    role: 'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin';
+    role: RoleCode;
   }> = {},
 ) {
   seq += 1;
+  const roleId = await getOrCreateRoleId(prisma, overrides.role ?? 'OT');
   return prisma.user.create({
     data: {
       username: overrides.username ?? `itest-user-${Date.now()}-${seq}`,
       passwordHash: 'x',
       fullName: 'Integration Test User',
-      role: overrides.role ?? 'OT',
+      roleId,
     },
   });
 }

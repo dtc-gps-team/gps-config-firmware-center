@@ -11,18 +11,13 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Module: auth  (User / Role / Permission — ดู docs/architecture/RBAC_Matrix.md
-// และ docs/api/openapi.yaml สำหรับ role enum ที่ยึดเป็นหลัก)
+// Module: auth  (User / Role / RolePermission — ดู docs/architecture/RBAC_Matrix.md
+// และ docs/database/GPS_Data_Dictionary.xlsx)
+//
+// Role เป็นตารางจริง (ไม่ใช่ enum) เพื่อให้ Admin สร้าง/แก้ Role ใหม่ได้ผ่านหน้า
+// "User / Role Management" (RBAC_Matrix.md Section 2 — ยืนยันกับทีมแล้วว่า Admin
+// ต้องสร้าง Role ใหม่ได้จริง ไม่ใช่แค่ assign Role ที่มีอยู่ 6 ตัว)
 // ---------------------------------------------------------------------------
-
-enum Role {
-  SW
-  Operation
-  ST
-  OT
-  Auditor
-  Admin
-}
 
 enum ActionType {
   Create
@@ -32,30 +27,52 @@ enum ActionType {
   Override
 }
 
+model Role {
+  id          String   @id @default(uuid())
+  // code = ค่าคงที่ที่โค้ด/seed อ้างอิง (แทน enum เดิม): SW, Operation, ST, OT,
+  // Auditor, Admin — Role ใหม่ที่ Admin สร้างเพิ่มทีหลังตั้ง code เองได้อิสระ
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+}
+
 model User {
   id           String   @id @default(uuid())
   username     String   @unique
   passwordHash String
   fullName     String
-  role         Role
+  roleId       String
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  role          Role            @relation(fields: [roleId], references: [id])
   tasks         Task[]
   notifications Notification[]
 }
 
-// resource = ชื่อ path หลักใน docs/api/openapi.yaml (main) เช่น "auth", "config",
-// "notifications", "tasks", "firmware", "devices" — ห้ามตั้งชื่อเดาล่วงหน้าก่อนมี
-// endpoint จริง ดู RBAC_Matrix.md Section 4.1/4.2 สำหรับรายการที่ยังไม่มี endpoint
-model Permission {
+// ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
+// ROLE, PERMISSION (catalog สิทธิ์ตั้งชื่อไว้ล่วงหน้า เช่น "config.create"),
+// ROLE_PERMISSION (join table ระหว่างสองตารางนั้น) — ตารางนี้ตัด PERMISSION
+// (catalog) ออก เหลือ RolePermission ตัวเดียวที่เก็บ resource+action ตรงกับ role
+// ไปเลย เหตุผล: ยังไม่มี use case ที่ต้อง reuse สิทธิ์ชุดเดียวกันข้าม Role ผ่าน
+// ชื่อสิทธิ์กลาง (ยืนยันกับ kittiphong แล้ว 2026-08-28 — ทำแบบง่ายไปก่อนได้)
+// TODO: sync การตัดสินใจนี้เข้า GPS_Data_Dictionary.xlsx ตัวจริงเมื่อหาไฟล์ต้นฉบับเจอ
+// (ตอนนี้มีแค่สำเนาที่ปรับแก้ไว้ชั่วคราว ยังไม่ได้เซฟกลับเข้า repo)
+model RolePermission {
   id       String     @id @default(uuid())
-  role     Role
+  roleId   String
   resource String
   action   ActionType
 
-  @@unique([role, resource, action])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, resource, action])
 }
 
 // ---------------------------------------------------------------------------
