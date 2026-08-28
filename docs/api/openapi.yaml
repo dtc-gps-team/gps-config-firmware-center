@@ -24,6 +24,8 @@ tags:
     description: สถานะ Config และ Firmware รายกล่อง
   - name: task
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
+  - name: notification
+    description: Notification ของ user ปัจจุบัน — list และ mark อ่านแล้ว
 
 paths:
   /auth/login:
@@ -58,7 +60,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [draft, testing, sw_approved, operation_approved, rejected, synced]
+            enum: [draft, testing, approved, rejected, synced]
       responses:
         "200":
           description: รายการ Config
@@ -161,6 +163,55 @@ paths:
       responses:
         "200":
           description: ปฏิเสธสำเร็จ
+
+  /notifications:
+    get:
+      tags: [notification]
+      operationId: listNotifications
+      summary: ดึงรายการ Notification ของ user ปัจจุบัน (จาก JWT)
+      parameters:
+        - in: query
+          name: unread
+          description: กรองเฉพาะ notification ที่ยังไม่ได้อ่าน (read=false)
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: รายการ Notification
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+        "400":
+          description: ค่า query parameter ไม่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /notifications/{notificationId}/read:
+    patch:
+      tags: [notification]
+      operationId: markNotificationRead
+      summary: ทำเครื่องหมาย Notification ว่าอ่านแล้ว (read = true)
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อัปเดตสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Notification นี้
 
   /tasks:
     get:
@@ -368,7 +419,7 @@ components:
           type: string
         role:
           type: string
-          enum: [SW, Operation, ST, OT, Auditor, Admin, FieldTechnician]
+          enum: [SW, Operation, ST, OT, Auditor, Admin]
 
     DeviceConfigDraft:
       type: object
@@ -383,7 +434,7 @@ components:
           example: TCP
         status:
           type: string
-          enum: [draft, testing, sw_approved, operation_approved, rejected, synced]
+          enum: [draft, testing, approved, rejected, synced]
         fields:
           type: object
           additionalProperties: true
@@ -506,3 +557,38 @@ components:
         lastCheckInMessage:
           type: string
           example: "จะได้รับการอัปเดตในการเปิดเครื่องครั้งถัดไปของกล่อง"
+
+    Notification:
+      type: object
+      description: Notification record ของ user (ตรงกับ Prisma model Notification)
+      required: [id, userId, type, payload, read, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: user id ของเจ้าของ notification
+        type:
+          type: string
+          enum:
+            - task_assigned
+            - config_approved
+            - config_rejected
+            - firmware_ready
+            - incident_alert
+        payload:
+          type: object
+          additionalProperties: true
+          description: ข้อมูลเพิ่มเติมของ notification (JSON)
+        read:
+          type: boolean
+          description: true = อ่านแล้ว
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: เวลาที่ส่งออกจริง (null = ยังไม่ได้ส่ง)
+        createdAt:
+          type: string
+          format: date-time

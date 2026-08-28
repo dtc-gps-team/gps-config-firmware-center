@@ -27,6 +27,7 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/jwt": "^12.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@prisma/client": "^6.19.3",
     "class-transformer": "^0.5.1",
@@ -76,6 +77,9 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "node_modules/(?!(@nestjs/jwt|jsonwebtoken)/)"
+    ]
   }
 }
