@@ -3,8 +3,9 @@
 /// Keep field names, nullability and enum values in sync with the spec.
 library;
 
-/// `LoginResponse.role` enum — **6 values only**, matching the API contract on
-/// `main`. There is no `FieldTechnician` role (see RBAC Matrix / PR #13).
+/// `LoginResponse.role` enum — the 6 values in the API contract on `main`
+/// (see the RBAC Matrix). No mobile-only role exists; field staff log in as
+/// ST or OT.
 enum UserRole {
   sw('SW'),
   operation('Operation'),
