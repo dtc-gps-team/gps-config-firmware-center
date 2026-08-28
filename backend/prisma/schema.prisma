@@ -11,6 +11,51 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// Module: auth  (User / Role / Permission — ดู docs/architecture/RBAC_Matrix.md
+// และ docs/api/openapi.yaml สำหรับ role enum ที่ยึดเป็นหลัก)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SW
+  Operation
+  ST
+  OT
+  Auditor
+  Admin
+}
+
+enum ActionType {
+  Create
+  Read
+  Update
+  Approve
+  Override
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// resource = ชื่อ path หลักใน docs/api/openapi.yaml (main) เช่น "auth", "config",
+// "notifications", "tasks", "firmware", "devices" — ห้ามตั้งชื่อเดาล่วงหน้าก่อนมี
+// endpoint จริง ดู RBAC_Matrix.md Section 4.1/4.2 สำหรับรายการที่ยังไม่มี endpoint
+model Permission {
+  id       String     @id @default(uuid())
+  role     Role
+  resource String
+  action   ActionType
+
+  @@unique([role, resource, action])
+}
+
+// ---------------------------------------------------------------------------
 // Module: task  (มอบหมาย/ติดตามงาน — ดู 01_GPS_Build_Reference.md Section 3)
 // ---------------------------------------------------------------------------
 
