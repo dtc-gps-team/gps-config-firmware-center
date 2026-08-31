@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 
 // Integration tests read the repo-root .env (same convention as prisma.config.ts).
 loadEnv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
@@ -40,7 +40,11 @@ export function createTestPrisma(): PrismaClient {
  * Wipe every table these tests write to, honouring FK order (children first).
  * `Role` is reference data (not test-specific), not something tests create
  * fresh each run, so it is intentionally left alone here — see
- * `getOrCreateRoleId` below, which finds-or-creates a Role row on demand.
+ * `getOrCreateRole` below, which finds-or-creates a Role row on demand.
+ * `RolePermission` rows ARE test-specific (permission-guard tests grant/revoke
+ * them per test) — tests that touch them clean up their own rows explicitly
+ * (see permission-guard-http.integration-spec.ts) since not every suite uses
+ * RolePermission at all.
  */
 export async function resetDb(prisma: PrismaClient): Promise<void> {
   await prisma.task.deleteMany();
@@ -52,23 +56,24 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
 
 let seq = 0;
 
-type RoleCode = 'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin';
+export type RoleCode = 'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin';
 
 /**
  * Find-or-create a Role row by code. Role is a real table now (not a Postgres
  * enum — see backend/prisma/schema.prisma), so `User.roleId` needs an actual
- * row to point at instead of a literal string.
+ * row to point at instead of a literal string. Exported (not just used
+ * internally by `makeUser`) so permission-guard tests can grab the same Role
+ * row to attach `RolePermission` grants to.
  */
-async function getOrCreateRoleId(
+export async function getOrCreateRole(
   prisma: PrismaClient,
   code: RoleCode,
-): Promise<string> {
-  const role = await prisma.role.upsert({
+): Promise<Role> {
+  return prisma.role.upsert({
     where: { code },
     update: {},
     create: { code, name: code },
   });
-  return role.id;
 }
 
 /** Create a User row to hang Tasks / Notifications off of. */
@@ -83,13 +88,13 @@ export async function makeUser(
   }> = {},
 ) {
   seq += 1;
-  const roleId = await getOrCreateRoleId(prisma, overrides.role ?? 'OT');
+  const role = await getOrCreateRole(prisma, overrides.role ?? 'OT');
   return prisma.user.create({
     data: {
       username: overrides.username ?? `itest-user-${Date.now()}-${seq}`,
       passwordHash: overrides.passwordHash ?? 'x',
       fullName: 'Integration Test User',
-      roleId,
+      roleId: role.id,
     },
   });
 }
