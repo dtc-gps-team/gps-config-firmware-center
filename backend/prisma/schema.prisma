@@ -54,6 +54,7 @@ model User {
   role          Role            @relation(fields: [roleId], references: [id])
   tasks         Task[]
   notifications Notification[]
+  auditLogs     AuditLog[]
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -123,5 +124,100 @@ model Notification {
   createdAt DateTime         @default(now())
 
   // user id ของเจ้าของ notification (ดู docs/api/openapi.yaml Notification.userId)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Module: device  (Device Registration — ร่วมกัน A/B ตาม
+// 03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8: B ใช้ทำ Device Registration Flow
+// ฝั่ง Mobile ใน Phase 5, A ใช้ทำ Device Search/Override ฝั่ง Web ใน Phase 4)
+//
+// เบี่ยงจาก GPS_Data_Dictionary.xlsx (ตาราง DEVICE ใน "Product Hierarchy /
+// Customer / Fleet"): Dictionary กำหนด FK บังคับไปที่ VEHICLE / CUSTOMER /
+// HARDWARE_REVISION ซึ่งเป็นส่วนหนึ่งของ Product Hierarchy 9 ตารางที่ยังไม่มี
+// model จริงในระบบตอนนี้ (ยังไม่ได้ build) — ใช้ spec MVP ของ Build Steps
+// Phase 0 ข้อ 8 แทนไปก่อน (device_id/sim_number/device_model/protocol/status/
+// registered_at/installed_at เท่านั้น) เพราะสร้าง FK ไปยัง model ที่ยังไม่มีไม่ได้
+// และ RBAC_Matrix.md ก็ไม่มีกฎ Customer Scope รองรับ ST/OT ในตอนนี้ (เช็คแล้วไม่มี
+// คำว่า "customer" ปรากฏในเอกสารเลย) — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่า
+// จะเพิ่ม FK ไปยัง Vehicle/Customer/HardwareRevision ทีหลังเมื่อ model เหล่านั้น
+// ถูกสร้างจริง
+//
+// ตั้งชื่อ enum ว่า DeviceLifecycleStatus (ไม่ใช่ DeviceStatus) เพื่อไม่ให้ปนกับ
+// schema DeviceStatus ใน docs/api/openapi.yaml ซึ่งเป็นคนละแนวคิด (response
+// object รวมสถานะ config+firmware ของกล่อง ไม่ใช่สถานะวงจรชีวิตของกล่องเอง)
+//
+// แก้ตาม review comment ของ paveekornkwork-dev (A) บน PR #38 (2026-08-31,
+// GitHub PR review, ยังไม่ approve — แค่ COMMENTED ถามว่าเป็นการตัดออกโดยตั้งใจ
+// หรือเปล่า): เพิ่ม deviceId String @unique แยกจาก id — id เป็น internal
+// surrogate key ของ Prisma ใช้ทำ FK/index เท่านั้น ส่วน deviceId เป็นเลขที่ติดมา
+// กับตัวเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (ดู 03_GPS_Detailed_Build_Steps.md
+// ข้อ 8, ข้อ 130) มี lifecycle ต่างจาก id (เปลี่ยนรูปแบบได้ตามผู้ผลิต หรือกรอกผิด
+// แล้วต้องแก้ทีหลัง) แยกออกจากกันเพื่อไม่ให้กระทบ relation อื่นที่ผูกกับ Device.id
+// ถ้าค่านี้ต้องแก้ในอนาคต
+//
+// simNumber: ไม่ใส่ @unique เต็มคอลัมน์ — ใช้ partial unique index แทน (สร้างเป็น
+// raw SQL ตรงใน migration.sql เท่านั้น ดูรายละเอียดที่นั่น) unique เฉพาะ record ที่
+// status != decommissioned เพื่อให้ SIM ย้ายไปเครื่องใหม่ได้หลัง decommission
+// เครื่องเก่าโดยไม่ชน constraint ตัดสินใจใน PR #38 comment thread
+// (https://github.com/dtc-gps-team/gps-config-firmware-center/pull/38#issuecomment-5474171067
+// ถามทาง A, ตอบใน #issuecomment-5474255608 — paveekornkwork-dev, 2026-08-31)
+// A เลือกทางนี้เพราะทางเลือกอื่น (simNumber nullable + เคลียร์เป็น null ตอน
+// decommission) ต้องขยาย scope ไปแก้ AuditLog schema ด้วย (ยังไม่มี field เก็บ
+// payload/metadata สำหรับบันทึกประวัติ SIM เก่า) ในขณะที่ partial index ไม่ต้อง
+// แตะอะไรนอกตาราง Device เลย และตารางยังว่างอยู่ตอนนี้ เป็นจังหวะที่ทำ constraint
+// นี้ได้ต้นทุนต่ำที่สุด ก่อนเจอปัญหาแบบ migration ของ role_as_table ถ้าปล่อยไว้
+// ทำทีหลังตอนมีข้อมูลจริงแล้ว
+//
+// คำเตือน — Prisma migrate diff risk: Prisma schema DSL **ไม่รองรับ** partial/
+// filtered unique index โดยตรง (เขียนเป็น raw SQL ใน migration.sql เท่านั้น
+// เพราะ field simNumber ด้านล่างเป็น String เฉยๆ ไม่มี @unique ใดๆ) ผลคือ Prisma
+// "ไม่รู้จัก" index นี้จาก schema — ครั้งต่อไปที่รัน `prisma migrate dev` หรือ
+// `prisma migrate diff` แล้วแตะตาราง Device (แก้ field อื่น เพิ่ม field ใหม่ ฯลฯ)
+// Prisma อาจ generate migration ที่มี `DROP INDEX "Device_simNumber_active_key"`
+// โดยไม่ตั้งใจ (คิดว่า schema ไม่มี index นี้จริงๆ) **ต้องเช็ค diff ด้วยตาทุกครั้ง
+// ก่อน apply migration ใหม่ที่แตะตาราง Device** ถ้าเจอ DROP INDEX นี้หลุดมาให้ลบ
+// บรรทัดนั้นออกจาก migration ก่อน apply
+// ---------------------------------------------------------------------------
+
+enum DeviceLifecycleStatus {
+  registered
+  installed
+  decommissioned
+}
+
+model Device {
+  id           String                @id @default(uuid())
+  deviceId     String                @unique
+  simNumber    String
+  deviceModel  String
+  protocol     String
+  status       DeviceLifecycleStatus @default(registered)
+  registeredAt DateTime              @default(now())
+  installedAt  DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Module: audit  (AuditLog — ดู docs/architecture/RBAC_Matrix.md Section 2
+// แถว "Audit Log" และหลัก Auditor เป็น read-only role อิสระ)
+//
+// Append-only โดยธรรมชาติ — ไม่มี update/delete บน record ที่บันทึกไปแล้ว จึงไม่มี
+// updatedAt เหมือน model อื่น
+//
+// field ตรงตาม GPS_Data_Dictionary.xlsx (ตาราง AUDIT_LOG) ตัวต่อตัว: ไม่มี
+// resource/payload แยกต่างหาก ใช้ auditModule + action + ipAddress ตามที่
+// Dictionary ระบุจริง — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่ายังไม่มี use case
+// ที่ต้องเก็บ payload โครงสร้างเพิ่มเติมตอนนี้
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  auditModule String
+  action      String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  // user id ของผู้ทำรายการ (ดู GPS_Data_Dictionary.xlsx AUDIT_LOG.user_id)
   user User @relation(fields: [userId], references: [id])
 }
