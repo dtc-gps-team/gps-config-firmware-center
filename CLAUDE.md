@@ -103,3 +103,33 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 | `API_MOCK_MODE` | `true` \| `false` | Mobile (ผ่าน `--dart-define=API_MOCK_MODE=true`) |
 
 default ต้องเป็น mock เสมอ — โหมดที่ยิงระบบจริงต้องตั้ง env var ชัดเจนถึงจะทำงาน
+
+## Branch Sync (out-of-date branch)
+
+- ถ้า PR ขึ้นแจ้งว่า branch out-of-date กับ `main` **ห้ามกดปุ่ม "Update branch"**
+  บนหน้าเว็บ GitHub โดยตรง
+- ให้ sync ผ่าน CLI แทนเสมอ: `git fetch origin && git merge origin/main`
+  แล้ว push ขึ้น branch เดิม — เพื่อให้ resolve conflict ได้ง่ายและ **รัน test ซ้ำ
+  ก่อน push** ได้
+
+## Deviation จาก Data Dictionary
+
+- `GPS_Data_Dictionary.xlsx` คือ **source of truth** ของ data model
+- ถ้า schema หรือ design ใดต่างจาก Data Dictionary **โดยตั้งใจ** (เช่น ปรับให้เรียบง่ายขึ้น)
+  ต้องมี comment อธิบายเหตุผลไว้เหนือ model/field ที่เกี่ยวข้องในโค้ดเสมอ และ note
+  การเปลี่ยนแปลงไว้ในเอกสารที่อ้างอิงถึงจุดนั้นด้วย
+- **ห้ามเบี่ยงจาก Data Dictionary แบบเงียบๆ** โดยไม่มีร่องรอยว่าทำไมถึงต่าง
+
+## Startup Checklist (ก่อนเริ่มงานแต่ละวัน)
+
+- เช็ค Docker ทำงานอยู่ก่อนเสมอ (`docker ps` หรือ `docker-compose ps`)
+- ถ้า Docker ไม่รัน: เปิด Docker ก่อน แล้ว `docker-compose up -d`
+- `git pull origin main` ก่อนเริ่มงานทุกครั้ง
+- `git status` เช็คว่าไม่มีการเปลี่ยนแปลงค้างจากรอบก่อนที่ลืม commit
+
+## Migration Safety (Shared Schema)
+
+- ก่อนรัน migration ที่เพิ่ม **FK constraint ใหม่** บนตารางที่อาจมีข้อมูลอยู่แล้ว
+  ต้องเช็ค orphan data ก่อนเสมอ (เช่น field ที่เคยเป็น scalar string แล้วเปลี่ยนเป็น relation)
+- ถ้าเจอ environment ที่มีข้อมูลจริงและ FK constraint จะ fail **ให้หยุดและรายงาน —
+  ห้าม force reset database**
