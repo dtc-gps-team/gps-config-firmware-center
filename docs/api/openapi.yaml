@@ -289,6 +289,8 @@ paths:
                 $ref: "#/components/schemas/Task"
         "400":
           description: ข้อมูลไม่ถูกต้อง
+        "403":
+          description: ไม่มีสิทธิ์สร้างงาน — เฉพาะ Role Operation เท่านั้น
 
   /tasks/{taskId}:
     get:
@@ -312,7 +314,9 @@ paths:
         "400":
           description: taskId ไม่ใช่ uuid ที่ถูกต้อง
         "404":
-          description: ไม่พบงานนี้
+          description: >-
+            ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามดูงานที่ไม่ใช่ของตัวเอง — ตอบ 404
+            แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่)
     patch:
       tags: [task]
       operationId: updateTask
@@ -339,8 +343,14 @@ paths:
                 $ref: "#/components/schemas/Task"
         "400":
           description: ข้อมูลไม่ถูกต้อง
+        "403":
+          description: >-
+            ไม่มีสิทธิ์แก้ไขงานนี้ — Operation แก้ได้ทุก field, ST/OT แก้ได้เฉพาะ
+            field status ของงานที่ตัวเองถูก assign เท่านั้น (role อื่นแก้ไม่ได้เลย)
         "404":
-          description: ไม่พบงานนี้
+          description: >-
+            ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามแก้งานที่ไม่ใช่ของตัวเอง — ตอบ 404
+            แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่)
 
   /firmware:
     get:
