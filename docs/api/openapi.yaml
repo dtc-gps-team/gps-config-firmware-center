@@ -70,6 +70,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DeviceConfigDraft"
+        "400":
+          description: ค่า query parameter status ไม่ถูกต้อง
     post:
       tags: [config]
       operationId: createConfig
@@ -83,6 +85,10 @@ paths:
       responses:
         "201":
           description: สร้างสำเร็จ
+        "400":
+          description: ข้อมูล Config ไม่ถูกต้อง (validation ตาม Config Definition Lookup)
+        "403":
+          description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role SW เท่านั้น
 
   /config/import:
     post:
@@ -105,6 +111,10 @@ paths:
       responses:
         "201":
           description: Import สำเร็จ แปลงเป็น DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม
+        "400":
+          description: ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น DeviceConfigDraft ไม่สำเร็จ
+        "403":
+          description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role SW เท่านั้น
 
   /config/{configId}/simulate:
     post:
@@ -133,6 +143,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SimulationResult"
+        "400":
+          description: deviceModel ไม่ถูกต้องหรือไม่รองรับ
+        "403":
+          description: ไม่มีสิทธิ์ทดสอบ Config นี้ — เฉพาะ Role SW, Operation, ST, OT
+        "404":
+          description: ไม่พบ Config นี้
+        "409":
+          description: สถานะ Config ปัจจุบันไม่รองรับการทดสอบ (เช่น approved/synced ไปแล้ว)
 
   /config/{configId}/approve:
     post:
@@ -148,6 +166,12 @@ paths:
       responses:
         "200":
           description: อนุมัติสำเร็จ — เข้า flow config-sync-writer ต่อ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติ Config — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Config นี้
+        "409":
+          description: สถานะ Config ปัจจุบันไม่ใช่ testing จึงอนุมัติไม่ได้
 
   /config/{configId}/reject:
     post:
@@ -163,6 +187,12 @@ paths:
       responses:
         "200":
           description: ปฏิเสธสำเร็จ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธ Config — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Config นี้
+        "409":
+          description: สถานะ Config ปัจจุบันไม่ใช่ testing จึงปฏิเสธไม่ได้
 
   /notifications:
     get:
@@ -326,6 +356,8 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
     post:
       tags: [firmware]
       operationId: uploadFirmware
@@ -345,6 +377,10 @@ paths:
       responses:
         "201":
           description: อัปโหลดสำเร็จ — แสดง upload_status บนหน้าเว็บ
+        "400":
+          description: ไฟล์หรือ deviceModel ไม่ถูกต้อง
+        "403":
+          description: ไม่มีสิทธิ์อัปโหลด Firmware — เฉพาะ Role SW เท่านั้น
 
   /firmware/{firmwareId}/simulate:
     post:
@@ -373,6 +409,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SimulationResult"
+        "400":
+          description: deviceModel ไม่ถูกต้องหรือไม่รองรับ
+        "403":
+          description: ไม่มีสิทธิ์ทดสอบ Firmware นี้ — เฉพาะ Role SW, Operation, ST, OT
+        "404":
+          description: ไม่พบ Firmware นี้
+        "409":
+          description: uploadStatus ของ Firmware ยังไม่พร้อมทดสอบ (เช่น pending/failed)
 
   /devices/{deviceId}/status:
     get:
@@ -394,6 +438,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceStatus"
+        "404":
+          description: ไม่พบ Device นี้
 
 components:
   securitySchemes:
