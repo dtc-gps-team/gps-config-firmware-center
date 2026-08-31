@@ -77,6 +77,9 @@ export async function makeUser(
   overrides: Partial<{
     username: string;
     role: RoleCode;
+    // ปกติไม่ต้องใช้จริง ('x' พอสำหรับ Task/Notification ที่ไม่ต้อง login จริง) —
+    // ใส่ hash จริง (bcrypt.hash(...)) เฉพาะตอนเทส auth.service ที่ต้อง bcrypt.compare ผ่านจริง
+    passwordHash: string;
   }> = {},
 ) {
   seq += 1;
@@ -84,7 +87,7 @@ export async function makeUser(
   return prisma.user.create({
     data: {
       username: overrides.username ?? `itest-user-${Date.now()}-${seq}`,
-      passwordHash: 'x',
+      passwordHash: overrides.passwordHash ?? 'x',
       fullName: 'Integration Test User',
       roleId,
     },
