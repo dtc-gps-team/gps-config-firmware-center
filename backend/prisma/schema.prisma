@@ -54,6 +54,7 @@ model User {
   role          Role            @relation(fields: [roleId], references: [id])
   tasks         Task[]
   notifications Notification[]
+  auditLogs     AuditLog[]
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -123,5 +124,67 @@ model Notification {
   createdAt DateTime         @default(now())
 
   // user id ของเจ้าของ notification (ดู docs/api/openapi.yaml Notification.userId)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Module: device  (Device Registration — ร่วมกัน A/B ตาม
+// 03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8: B ใช้ทำ Device Registration Flow
+// ฝั่ง Mobile ใน Phase 5, A ใช้ทำ Device Search/Override ฝั่ง Web ใน Phase 4)
+//
+// เบี่ยงจาก GPS_Data_Dictionary.xlsx (ตาราง DEVICE ใน "Product Hierarchy /
+// Customer / Fleet"): Dictionary กำหนด FK บังคับไปที่ VEHICLE / CUSTOMER /
+// HARDWARE_REVISION ซึ่งเป็นส่วนหนึ่งของ Product Hierarchy 9 ตารางที่ยังไม่มี
+// model จริงในระบบตอนนี้ (ยังไม่ได้ build) — ใช้ spec MVP ของ Build Steps
+// Phase 0 ข้อ 8 แทนไปก่อน (device_id/sim_number/device_model/protocol/status/
+// registered_at/installed_at เท่านั้น) เพราะสร้าง FK ไปยัง model ที่ยังไม่มีไม่ได้
+// และ RBAC_Matrix.md ก็ไม่มีกฎ Customer Scope รองรับ ST/OT ในตอนนี้ (เช็คแล้วไม่มี
+// คำว่า "customer" ปรากฏในเอกสารเลย) — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่า
+// จะเพิ่ม FK ไปยัง Vehicle/Customer/HardwareRevision ทีหลังเมื่อ model เหล่านั้น
+// ถูกสร้างจริง
+//
+// ตั้งชื่อ enum ว่า DeviceLifecycleStatus (ไม่ใช่ DeviceStatus) เพื่อไม่ให้ปนกับ
+// schema DeviceStatus ใน docs/api/openapi.yaml ซึ่งเป็นคนละแนวคิด (response
+// object รวมสถานะ config+firmware ของกล่อง ไม่ใช่สถานะวงจรชีวิตของกล่องเอง)
+// ---------------------------------------------------------------------------
+
+enum DeviceLifecycleStatus {
+  registered
+  installed
+  decommissioned
+}
+
+model Device {
+  id           String                @id @default(uuid())
+  simNumber    String
+  deviceModel  String
+  protocol     String
+  status       DeviceLifecycleStatus @default(registered)
+  registeredAt DateTime              @default(now())
+  installedAt  DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Module: audit  (AuditLog — ดู docs/architecture/RBAC_Matrix.md Section 2
+// แถว "Audit Log" และหลัก Auditor เป็น read-only role อิสระ)
+//
+// Append-only โดยธรรมชาติ — ไม่มี update/delete บน record ที่บันทึกไปแล้ว จึงไม่มี
+// updatedAt เหมือน model อื่น
+//
+// field ตรงตาม GPS_Data_Dictionary.xlsx (ตาราง AUDIT_LOG) ตัวต่อตัว: ไม่มี
+// resource/payload แยกต่างหาก ใช้ auditModule + action + ipAddress ตามที่
+// Dictionary ระบุจริง — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่ายังไม่มี use case
+// ที่ต้องเก็บ payload โครงสร้างเพิ่มเติมตอนนี้
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  auditModule String
+  action      String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  // user id ของผู้ทำรายการ (ดู GPS_Data_Dictionary.xlsx AUDIT_LOG.user_id)
   user User @relation(fields: [userId], references: [id])
 }
