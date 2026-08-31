@@ -4,6 +4,7 @@ CREATE TYPE "DeviceLifecycleStatus" AS ENUM ('registered', 'installed', 'decommi
 -- CreateTable
 CREATE TABLE "Device" (
     "id" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
     "simNumber" TEXT NOT NULL,
     "deviceModel" TEXT NOT NULL,
     "protocol" TEXT NOT NULL,
@@ -25,6 +26,12 @@ CREATE TABLE "AuditLog" (
 
     CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Device_deviceId_key" ON "Device"("deviceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Device_simNumber_key" ON "Device"("simNumber");
 
 -- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

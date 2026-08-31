@@ -146,6 +146,21 @@ model Notification {
 // ตั้งชื่อ enum ว่า DeviceLifecycleStatus (ไม่ใช่ DeviceStatus) เพื่อไม่ให้ปนกับ
 // schema DeviceStatus ใน docs/api/openapi.yaml ซึ่งเป็นคนละแนวคิด (response
 // object รวมสถานะ config+firmware ของกล่อง ไม่ใช่สถานะวงจรชีวิตของกล่องเอง)
+//
+// แก้ตาม review comment ของ paveekornkwork-dev (A) บน PR #38 (2026-08-31,
+// GitHub PR review, ยังไม่ approve — แค่ COMMENTED ถามว่าเป็นการตัดออกโดยตั้งใจ
+// หรือเปล่า): เพิ่ม deviceId String @unique แยกจาก id — id เป็น internal
+// surrogate key ของ Prisma ใช้ทำ FK/index เท่านั้น ส่วน deviceId เป็นเลขที่ติดมา
+// กับตัวเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (ดู 03_GPS_Detailed_Build_Steps.md
+// ข้อ 8, ข้อ 130) มี lifecycle ต่างจาก id (เปลี่ยนรูปแบบได้ตามผู้ผลิต หรือกรอกผิด
+// แล้วต้องแก้ทีหลัง) แยกออกจากกันเพื่อไม่ให้กระทบ relation อื่นที่ผูกกับ Device.id
+// ถ้าค่านี้ต้องแก้ในอนาคต
+//
+// ส่วน simNumber เพิ่ม @unique ตามที่ A ถามด้วยว่าตั้งใจเว้นไว้หรือเปล่า —
+// ยืนยันแล้วว่าไม่ได้ตั้งใจเว้น ใส่ @unique ตามนี้ หมายเหตุ: ถ้าในอนาคตพบว่า SIM
+// ย้ายเครื่องได้จริง (เช่น decommission เครื่องเก่าแล้วย้าย SIM ไปเครื่องใหม่)
+// constraint นี้จะบล็อกการ re-register ทันที ต้องพิจารณาผ่อนตอนนั้น (เช่น partial
+// unique index เฉพาะ status != decommissioned) — ยังไม่มี use case แบบนั้นตอนนี้
 // ---------------------------------------------------------------------------
 
 enum DeviceLifecycleStatus {
@@ -156,7 +171,8 @@ enum DeviceLifecycleStatus {
 
 model Device {
   id           String                @id @default(uuid())
-  simNumber    String
+  deviceId     String                @unique
+  simNumber    String                @unique
   deviceModel  String
   protocol     String
   status       DeviceLifecycleStatus @default(registered)
