@@ -1,6 +1,3 @@
--- AlterEnum
-ALTER TYPE "ConfigStatus" ADD VALUE 'sw_approved';
-
 -- CreateTable
 CREATE TABLE "ConfigVersion" (
     "id" TEXT NOT NULL,

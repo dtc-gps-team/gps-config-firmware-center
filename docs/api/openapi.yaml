@@ -60,7 +60,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [draft, testing, sw_approved, approved, rejected, synced]
+            enum: [draft, testing, approved, rejected, synced]
       responses:
         "200":
           description: รายการ Config
@@ -566,7 +566,7 @@ components:
           example: TCP
         status:
           type: string
-          enum: [draft, testing, sw_approved, approved, rejected, synced]
+          enum: [draft, testing, approved, rejected, synced]
         fields:
           type: object
           additionalProperties: true

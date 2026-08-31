@@ -233,14 +233,14 @@ model AuditLog {
 // DEVICE_CONFIG, CONFIG_HISTORY, CONFIG_CHANGE_REQUEST ฯลฯ) ใช้แค่ field
 // ตาม openapi.yaml DeviceConfigDraft แทน — issue #25
 //
-// UPDATE (schema follow-up ก่อน #26): เพิ่มสถานะ sw_approved คั่นระหว่าง
-// testing กับ approved, เพิ่ม versions -> ConfigVersion (ดูด้านล่าง)
+// UPDATE (schema follow-up ก่อน #26): เพิ่ม versions -> ConfigVersion
+// (ดูด้านล่าง) — สถานะยังเป็นขั้นเดียวเหมือนเดิม มีแค่ Operation อนุมัติได้
+// จริง (ยืนยันกับ kittiphong บน issue #26: ไม่เพิ่ม sw_approved)
 // ---------------------------------------------------------------------------
 
 enum ConfigStatus {
   draft
   testing
-  sw_approved
   approved
   rejected
   synced
