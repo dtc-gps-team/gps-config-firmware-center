@@ -156,11 +156,28 @@ model Notification {
 // แล้วต้องแก้ทีหลัง) แยกออกจากกันเพื่อไม่ให้กระทบ relation อื่นที่ผูกกับ Device.id
 // ถ้าค่านี้ต้องแก้ในอนาคต
 //
-// ส่วน simNumber เพิ่ม @unique ตามที่ A ถามด้วยว่าตั้งใจเว้นไว้หรือเปล่า —
-// ยืนยันแล้วว่าไม่ได้ตั้งใจเว้น ใส่ @unique ตามนี้ หมายเหตุ: ถ้าในอนาคตพบว่า SIM
-// ย้ายเครื่องได้จริง (เช่น decommission เครื่องเก่าแล้วย้าย SIM ไปเครื่องใหม่)
-// constraint นี้จะบล็อกการ re-register ทันที ต้องพิจารณาผ่อนตอนนั้น (เช่น partial
-// unique index เฉพาะ status != decommissioned) — ยังไม่มี use case แบบนั้นตอนนี้
+// simNumber: ไม่ใส่ @unique เต็มคอลัมน์ — ใช้ partial unique index แทน (สร้างเป็น
+// raw SQL ตรงใน migration.sql เท่านั้น ดูรายละเอียดที่นั่น) unique เฉพาะ record ที่
+// status != decommissioned เพื่อให้ SIM ย้ายไปเครื่องใหม่ได้หลัง decommission
+// เครื่องเก่าโดยไม่ชน constraint ตัดสินใจใน PR #38 comment thread
+// (https://github.com/dtc-gps-team/gps-config-firmware-center/pull/38#issuecomment-5474171067
+// ถามทาง A, ตอบใน #issuecomment-5474255608 — paveekornkwork-dev, 2026-08-31)
+// A เลือกทางนี้เพราะทางเลือกอื่น (simNumber nullable + เคลียร์เป็น null ตอน
+// decommission) ต้องขยาย scope ไปแก้ AuditLog schema ด้วย (ยังไม่มี field เก็บ
+// payload/metadata สำหรับบันทึกประวัติ SIM เก่า) ในขณะที่ partial index ไม่ต้อง
+// แตะอะไรนอกตาราง Device เลย และตารางยังว่างอยู่ตอนนี้ เป็นจังหวะที่ทำ constraint
+// นี้ได้ต้นทุนต่ำที่สุด ก่อนเจอปัญหาแบบ migration ของ role_as_table ถ้าปล่อยไว้
+// ทำทีหลังตอนมีข้อมูลจริงแล้ว
+//
+// คำเตือน — Prisma migrate diff risk: Prisma schema DSL **ไม่รองรับ** partial/
+// filtered unique index โดยตรง (เขียนเป็น raw SQL ใน migration.sql เท่านั้น
+// เพราะ field simNumber ด้านล่างเป็น String เฉยๆ ไม่มี @unique ใดๆ) ผลคือ Prisma
+// "ไม่รู้จัก" index นี้จาก schema — ครั้งต่อไปที่รัน `prisma migrate dev` หรือ
+// `prisma migrate diff` แล้วแตะตาราง Device (แก้ field อื่น เพิ่ม field ใหม่ ฯลฯ)
+// Prisma อาจ generate migration ที่มี `DROP INDEX "Device_simNumber_active_key"`
+// โดยไม่ตั้งใจ (คิดว่า schema ไม่มี index นี้จริงๆ) **ต้องเช็ค diff ด้วยตาทุกครั้ง
+// ก่อน apply migration ใหม่ที่แตะตาราง Device** ถ้าเจอ DROP INDEX นี้หลุดมาให้ลบ
+// บรรทัดนั้นออกจาก migration ก่อน apply
 // ---------------------------------------------------------------------------
 
 enum DeviceLifecycleStatus {
@@ -172,7 +189,7 @@ enum DeviceLifecycleStatus {
 model Device {
   id           String                @id @default(uuid())
   deviceId     String                @unique
-  simNumber    String                @unique
+  simNumber    String
   deviceModel  String
   protocol     String
   status       DeviceLifecycleStatus @default(registered)
