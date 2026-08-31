@@ -55,6 +55,10 @@ model User {
   tasks         Task[]
   notifications Notification[]
   auditLogs     AuditLog[]
+  configsCreated  Config[]   @relation("ConfigCreatedBy")
+  configsApproved Config[]   @relation("ConfigApprovedBy")
+  firmwareUploads Firmware[]
+  campaignsCreated Campaign[]
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -220,4 +224,161 @@ model AuditLog {
 
   // user id ของผู้ทำรายการ (ดู GPS_Data_Dictionary.xlsx AUDIT_LOG.user_id)
   user User @relation(fields: [userId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Module: config — MVP เดียวกับแนวทาง Device (PR #38): เบี่ยงจาก
+// GPS_Data_Dictionary.xlsx ที่ออกแบบไว้ 11 ตาราง (CONFIG_TEMPLATE,
+// DEVICE_CONFIG, CONFIG_HISTORY, CONFIG_CHANGE_REQUEST ฯลฯ) ใช้แค่ field
+// ตาม openapi.yaml DeviceConfigDraft แทน — ยังไม่มี versioning/history
+// table แยก (Build Steps ข้อ 9 ระบุว่าต้องเก็บประวัติทุกเวอร์ชันสำหรับ
+// Rollback ใน Phase 4 — ยังไม่ทำตอนนี้ ทำตอน Phase 4 จริง) — issue #25
+// ---------------------------------------------------------------------------
+
+enum ConfigStatus {
+  draft
+  testing
+  approved
+  rejected
+  synced
+}
+
+model Config {
+  id          String       @id @default(uuid())
+  deviceModel String
+  protocol    String
+  status      ConfigStatus @default(draft)
+  fields      Json
+  createdBy   String
+  approvedBy  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  creator   User       @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
+  approver  User?      @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
+  campaigns Campaign[]
+  incidents Incident[]
+}
+
+// ---------------------------------------------------------------------------
+// Module: firmware — เบี่ยงจาก Data Dictionary (7 ตาราง: FIRMWARE_FILES,
+// FIRMWARE_COMPATIBILITY, FIRMWARE_DELTAS ฯลฯ) ใช้ field ตาม openapi.yaml
+// Firmware schema ตรงๆ — issue #25
+// ---------------------------------------------------------------------------
+
+enum FirmwareUploadStatus {
+  pending
+  stored
+  failed
+}
+
+enum FirmwareDeviceUpdateStatus {
+  unknown
+  up_to_date
+  pending_update
+}
+
+model Firmware {
+  id                       String                     @id @default(uuid())
+  version                  String
+  deviceModelCompatibility String[]
+  uploadStatus             FirmwareUploadStatus       @default(pending)
+  deviceUpdateStatus       FirmwareDeviceUpdateStatus @default(unknown)
+  uploadedBy               String
+  uploadedAt               DateTime                   @default(now())
+
+  uploader  User       @relation(fields: [uploadedBy], references: [id])
+  campaigns Campaign[]
+  incidents Incident[]
+}
+
+// ---------------------------------------------------------------------------
+// Module: campaign — ไม่มี schema ใน openapi.yaml (RBAC_Matrix.md ยืนยัน
+// เป็น Gap) ออกแบบจาก flow ที่ระบุใน RBAC Matrix: Campaign Wizard (สร้าง —
+// Operation), Campaign Monitor (ติดตาม Failure Rate — Operation) เบี่ยงจาก
+// Data Dictionary (DEPLOYMENT_CAMPAIGN + CAMPAIGN_BATCHES + CAMPAIGN_TARGET
+// + CAMPAIGN_ASSIGNMENT แยก 4 ตาราง มี rollout strategy/batch/canary/
+// auto-pause ที่ยังไม่ใช่ MVP) เหลือ counter รวมแทน per-target tracking
+// ละเอียด
+//
+// เพิ่ม payloadType + configId/firmwareId (nullable ตามชนิด) จาก Data
+// Dictionary จริง (DEPLOYMENT_CAMPAIGN.payload_type / firmware_id /
+// config_template_version_id) — ตัดออกไม่ได้เพราะ Campaign ต้องรู้ว่ากำลัง
+// deploy อะไร ไม่งั้นไม่มีทางเชื่อมกับ Config/Firmware ที่สร้างไปแล้วได้เลย
+// issue #25
+// ---------------------------------------------------------------------------
+
+enum CampaignPayloadType {
+  Config
+  Firmware
+}
+
+enum CampaignStatus {
+  draft
+  active
+  completed
+  cancelled
+}
+
+model Campaign {
+  id           String              @id @default(uuid())
+  name         String
+  description  String?
+  payloadType  CampaignPayloadType
+  configId     String?
+  firmwareId   String?
+  status       CampaignStatus      @default(draft)
+  targetCount  Int                 @default(0)
+  successCount Int                 @default(0)
+  failureCount Int                 @default(0)
+  createdBy    String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  creator  User      @relation(fields: [createdBy], references: [id])
+  config   Config?   @relation(fields: [configId], references: [id])
+  firmware Firmware? @relation(fields: [firmwareId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Module: incident — ไม่มี schema ใน openapi.yaml เช่นกัน ออกแบบจาก RBAC
+// Matrix: "Incident & Rollback" — ระบบสร้างอัตโนมัติ, Operation สั่ง
+// Rollback (U), ST แก้ไขเชิงเทคนิค (U) เบี่ยงจาก Data Dictionary (INCIDENTS
+// + DETECTION_RULES + INCIDENT_CORRELATIONS แยก 3 ตาราง มี state machine
+// เต็มรูปแบบ DETECTED/TRIAGED/AWAITING_APPROVAL/MITIGATING/VERIFYING/
+// RESOLVED/CLOSED/REOPENED, auto-rollback rule, correlation ที่ยังไม่ใช่
+// MVP)
+//
+// เพิ่ม severity จาก Data Dictionary จริง (INCIDENTS.severity) — ตัดออก
+// ไม่ได้เพราะ ST ต้องใช้จัดลำดับความสำคัญงานที่รับผิดชอบ ไม่งั้น incident
+// ทุกอันจะดูสำคัญเท่ากันหมด — issue #25
+// ---------------------------------------------------------------------------
+
+enum IncidentSeverity {
+  critical
+  high
+  medium
+  low
+}
+
+enum IncidentStatus {
+  open
+  investigating
+  rolled_back
+  resolved
+}
+
+model Incident {
+  id                String           @id @default(uuid())
+  title             String
+  description       String?
+  severity          IncidentSeverity
+  status            IncidentStatus   @default(open)
+  relatedConfigId   String?
+  relatedFirmwareId String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  relatedConfig   Config?   @relation(fields: [relatedConfigId], references: [id])
+  relatedFirmware Firmware? @relation(fields: [relatedFirmwareId], references: [id])
 }
