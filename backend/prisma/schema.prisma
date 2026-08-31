@@ -306,6 +306,17 @@ model Firmware {
 // config_template_version_id) — ตัดออกไม่ได้เพราะ Campaign ต้องรู้ว่ากำลัง
 // deploy อะไร ไม่งั้นไม่มีทางเชื่อมกับ Config/Firmware ที่สร้างไปแล้วได้เลย
 // issue #25
+//
+// TODO(#Campaign module): payloadType กับ configId/firmwareId ไม่มี DB/Prisma
+// constraint บังคับ mutual exclusivity (เช่น payloadType=Config ต้องมี
+// configId และ firmwareId ต้องเป็น null) — ยืนยันกับ kittiphong แล้วใน PR #25
+// review ว่าตั้งใจปล่อยให้ Campaign service layer เป็นคนบังคับตอนสร้าง module
+// จริง ไม่ใช่ oversight เหตุผลที่ไม่ทำเป็น DB-level CHECK constraint ตอนนี้:
+// (1) ยังไม่มี business logic รองรับเลยสักบรรทัด เพิ่ม constraint ไปก่อนอาจ
+// ต้องแก้อีกรอบถ้า requirement เปลี่ยน (2) แบบเดียวกับ Device.simNumber
+// partial index — raw SQL constraint ที่ Prisma schema DSL มองไม่เห็นมีความ
+// เสี่ยงโดน `prisma migrate dev`/`diff` generate DROP CONSTRAINT ทิ้งโดยไม่
+// ตั้งใจถ้าไม่ระวัง ไม่คุ้มที่จะแบกความเสี่ยงนี้ก่อนมี module จริงมารองรับ
 // ---------------------------------------------------------------------------
 
 enum CampaignPayloadType {

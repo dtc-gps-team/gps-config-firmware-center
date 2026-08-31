@@ -47,6 +47,13 @@ export function createTestPrisma(): PrismaClient {
  * RolePermission at all.
  */
 export async function resetDb(prisma: PrismaClient): Promise<void> {
+  // Incident/Campaign ก่อน เพราะมี FK (nullable, ON DELETE SET NULL) ไปยัง
+  // Config/Firmware — ลบลูกก่อนพ่อแม่เสมอแม้จะเป็น SET NULL ก็ตาม เพื่อความ
+  // ชัดเจนและกันปัญหาถ้าใครเปลี่ยน onDelete behavior ทีหลัง
+  await prisma.incident.deleteMany();
+  await prisma.campaign.deleteMany();
+  await prisma.config.deleteMany();
+  await prisma.firmware.deleteMany();
   await prisma.task.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.device.deleteMany();
