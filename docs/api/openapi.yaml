@@ -60,7 +60,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [draft, testing, approved, rejected, synced]
+            enum: [draft, testing, sw_approved, approved, rejected, synced]
       responses:
         "200":
           description: รายการ Config
@@ -89,6 +89,75 @@ paths:
           description: ข้อมูล Config ไม่ถูกต้อง (validation ตาม Config Definition Lookup)
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role SW เท่านั้น
+
+  # เพิ่มใหม่: GET/PUT/DELETE Config รายตัว (เดิมมีแค่ list/create/import/
+  # simulate/approve/reject)
+  /config/{configId}:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: ดึงรายละเอียด Config รายตัว
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: รายละเอียด Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
+        "404":
+          description: ไม่พบ Config นี้
+    put:
+      tags: [config]
+      operationId: updateConfig
+      summary: แก้ไข Config ที่ยังเป็นสถานะ draft
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceConfigDraft"
+      responses:
+        "200":
+          description: แก้ไขสำเร็จ
+        "400":
+          description: ข้อมูล Config ไม่ถูกต้อง (validation ตาม Config Definition Lookup)
+        "403":
+          description: ไม่มีสิทธิ์แก้ไข Config — เฉพาะ Role SW เท่านั้น
+        "404":
+          description: ไม่พบ Config นี้
+        "409":
+          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงแก้ไขไม่ได้
+    delete:
+      tags: [config]
+      operationId: deleteConfig
+      summary: ลบ Config ที่ยังเป็นสถานะ draft
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "403":
+          description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role SW เท่านั้น
+        "404":
+          description: ไม่พบ Config นี้
+        "409":
+          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงลบไม่ได้
 
   /config/import:
     post:
@@ -497,7 +566,7 @@ components:
           example: TCP
         status:
           type: string
-          enum: [draft, testing, approved, rejected, synced]
+          enum: [draft, testing, sw_approved, approved, rejected, synced]
         fields:
           type: object
           additionalProperties: true
