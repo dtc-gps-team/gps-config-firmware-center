@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -10,18 +11,22 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useAuth } from "@/components/auth/auth-provider";
 import { NavLinks } from "./nav-links";
 
 /**
  * โครง layout หลักของทุกหน้าที่ต้อง login (ทุกหน้ายกเว้น /login) — sidebar
  * คงที่บนจอ desktop (md ขึ้นไป), เปิดผ่าน Sheet บนจอเล็ก
- *
- * ยังไม่มี role-based nav filtering และยังไม่ต่อ user info จริงจาก JWT — รอ
- * Web auth context (backend #23 เสร็จแล้ว แต่ฝั่ง Web ยังไม่ต่อ fetch
- * client/เก็บ token) ซึ่งไม่ใช่ scope ของ #27 (ดู TODO ใน header ด้านล่าง)
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { session, logout } = useAuth();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  function handleLogout() {
+    logout();
+    router.replace("/login");
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -49,9 +54,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-semibold md:hidden">
             GPS Config Center
           </span>
-          <div className="ml-auto text-sm text-muted-foreground">
-            {/* TODO: แสดง username/role จริงตอนต่อ Web auth context */}
-            ยังไม่ได้ login
+          <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
+            <span>{session?.role ?? "—"}</span>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              ออกจากระบบ
+            </Button>
           </div>
         </header>
 
