@@ -41,7 +41,7 @@
 | **Login** | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) |
 | **Dashboard / Main** | R | R | R | R | R | R |
 | **Device Search / Device Detail** | R | R | R | R | R | R |
-| **Config Editor** (สร้าง/แก้ Draft ผ่านฟอร์ม — สถานะ `draft`) | C, R, U | R | R | R | R | R |
+| **Config Editor** (สร้าง/แก้ Draft ผ่านฟอร์ม — สถานะ `draft`) | C, R, U ² | R | R | R | R | R |
 | **Config Import จากไฟล์ (JSON)** (เข้า flow เดียวกับฟอร์ม) | C | R | R | R | R | R |
 | **Config Simulation (dry-run)** — รันทดสอบ (สถานะ `testing`) แล้ว SW ตัดสินผ่าน/ไม่ผ่านเอง (ผ่าน → ส่งต่อ Operation, ไม่ผ่าน → กลับ `draft`) | C, R, U | R | R | R | R | R |
 | **Approval Center** — Operation อนุมัติ/ปฏิเสธ Config (อนุมัติ → `approved`, ปฏิเสธ → กลับ `draft` ทั้งหมด) | R | R, **A** | R | R | R | R |
@@ -60,6 +60,8 @@
 | **Notification Center** (ของตนเอง) | R, U (mark read) | R, U | R, U | R, U | R, U | R, U |
 
 ¹ ST/OT บน Web ดู Task ที่ตัวเองถูก assign ได้อย่างเดียว — การแก้ `status` ของงานตัวเอง (รับงาน/ปิดงาน) ทำผ่าน **Mobile** (ดู Section 3 และ 4.3)
+
+² **ปิด open question: Config ไม่ scope ตาม creator** — ยืนยันโดย paveekornk (A) เจ้าของ module `config`: SW ทุกคนแก้ไข/ลบ Config ที่ยังเป็น `draft` ร่วมกันได้ ไม่ใช่แยกเป็นของใครของมัน (ต่างจาก Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — ดู footnote ¹) `ConfigService.update`/`remove` จึงไม่ filter ด้วย `createdBy` โดยตั้งใจ — ถ้าทีมต้องการเปลี่ยนเป็นแยกตามเจ้าของทีหลัง ต้องแก้ทั้งแถวนี้และ service layer ใหม่
 
 ---
 
@@ -176,3 +178,4 @@
 | 2026-08-28 | paveekornk | แก้ครั้งที่ 6 — ตอบ comment รีวิว PR #15 ของ kittiphong: ลบเครื่องหมาย `*` ที่ลอยค้างอยู่ท้าย "Web + Mobile" ในช่อง platform ของ ST/OT (Section 1) ออก เพราะ footnote ที่เคยผูกกับ `*` ถูกลบไปแล้วตอนแก้ FieldTechnician ในรอบ 5 คำอธิบายเรื่อง ST/OT ใช้ Mobile ด้วยยังคงอยู่ในย่อหน้าใต้ตารางตามเดิม (อ้างอิง PR #13) ไม่ต้องเพิ่ม footnote ใหม่ |
 | 2026-08-28 | kittiphong | แก้ครั้งที่ 7 — **ปิด open question: Task creator = Operation** ตัดสินใจโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์น Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน: (1) เพิ่มตาราง 4.3 รายละเอียดสิทธิ์ module `task`, (2) Section 2 แถว Task Management — OT จาก `C, R, U` เหลือ `R` (ST/OT ไม่สร้าง/จัดการ Task บน Web แก้ `status` งานตัวเองผ่าน Mobile), (3) ตาราง 4.1 — `/tasks` POST `createTask` เหลือ `Operation` เท่านั้น, `/tasks/{taskId}` PATCH `updateTask` = Operation ทุก field / ST-OT เฉพาะ field `status` ของงานตัวเอง, (4) ลบรายการ "Task Management ฝั่งใครเป็นคนสร้าง" ออกจาก open question list (Section 6) |
 | 2026-08-28 | kittiphong | แก้ครั้งที่ 8 — เก็บ inconsistency ภายในเอกสารเองที่เกิดจากรอบ 7: (1) ตาราง 4.1 `GET /tasks` (`listTasks`) — เดิมยังบอกว่า "Operation/ST/OT ถูกกรองเฉพาะ `assignedTo` = ตนเอง" ซึ่งขัดกับ 4.3 ที่ให้ Operation จัดการ Task ทั้งหมด → แก้เป็น "ST/OT ที่ใช้ Mobile ถูกกรอง, Operation เห็นทุก Task" ให้ตรงกับ `getTask`/`updateTask` ในตารางเดียวกัน, (2) ตาราง 4.3 แถว "ดู Task ทั้งหมด" ระบุครบว่ารวม SW (read-only) + Operation (จัดการได้) ไม่ใช่แค่ Auditor/Admin, (3) Section 2 แถว Task Management เพิ่ม footnote ¹ ให้ ST/OT ว่าแก้ `status` งานตัวเองผ่าน Mobile — ไม่มีการเปลี่ยนสิทธิ์ใดๆ เป็นการทำให้ข้อความในเอกสารสอดคล้องกันเท่านั้น |
+| 2026-09-01 | paveekornk | แก้ครั้งที่ 9 — ตอบ comment รีวิว PR #45 (Stage 1 CRUD, #26) ของ kittiphong ข้อ 2: **ปิด open question ที่ไม่เคยถูกถามมาก่อน — Config ไม่ scope ตาม creator** ยืนยันโดย paveekornk (A) เจ้าของ module `config`: SW ทุกคนแก้/ลบ Config ที่ยังเป็น `draft` ร่วมกันได้ ไม่แยกเป็นของใครของมัน (1) Section 2 แถว Config Editor เพิ่ม footnote ² อธิบายการตัดสินใจนี้ (2) โค้ดจริง (`ConfigService.update`/`remove`) ทำแบบนี้อยู่แล้วตั้งแต่ Stage 1 โดยไม่ได้ filter `createdBy` — เอกสารรอบนี้แค่ตามให้ทันโค้ด ไม่ได้เปลี่ยนพฤติกรรม |

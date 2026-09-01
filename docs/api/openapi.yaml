@@ -81,7 +81,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DeviceConfigDraft"
+              $ref: "#/components/schemas/ConfigWriteInput"
       responses:
         "201":
           description: สร้างสำเร็จ
@@ -127,7 +127,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/DeviceConfigDraft"
+              $ref: "#/components/schemas/ConfigWriteInput"
       responses:
         "200":
           description: แก้ไขสำเร็จ
@@ -555,7 +555,7 @@ components:
 
     DeviceConfigDraft:
       type: object
-      description: โครงสร้างกลางที่ทั้งฟอร์มและ Import JSON แปลงเข้ามาเป็นแบบเดียวกัน
+      description: โครงสร้างกลางที่ทั้งฟอร์มและ Import JSON แปลงเข้ามาเป็นแบบเดียวกัน (response shape — มี id/status ที่ server เป็นคนกำหนด)
       properties:
         id:
           type: string
@@ -567,6 +567,24 @@ components:
         status:
           type: string
           enum: [draft, testing, approved, rejected, synced]
+        fields:
+          type: object
+          additionalProperties: true
+          description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+
+    # เพิ่มใหม่: แยกจาก DeviceConfigDraft เพราะ request body ของ createConfig/
+    # updateConfig ไม่ควรรับ id/status จาก client (server เป็นคนกำหนดเท่านั้น —
+    # DTO ฝั่ง backend ใช้ forbidNonWhitelisted ปฏิเสธ field แปลกปลอมอยู่แล้ว
+    # ถ้า client ยิงตาม DeviceConfigDraft เป๊ะๆ พร้อม id/status จะโดน 400)
+    ConfigWriteInput:
+      type: object
+      description: Request body สำหรับ createConfig/updateConfig — ไม่มี id/status (server กำหนดเอง)
+      properties:
+        deviceModel:
+          type: string
+        protocol:
+          type: string
+          example: TCP
         fields:
           type: object
           additionalProperties: true
