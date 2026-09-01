@@ -99,7 +99,11 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
     const res = await request(app.getHttpServer())
       .post('/api/v1/config')
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'internet' } })
+      .send({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
       .expect(201);
 
     const body = res.body as { createdBy: string; status: string };
@@ -117,7 +121,9 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
       .field('format', 'json')
       .attach(
         'file',
-        Buffer.from(JSON.stringify({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} })),
+        Buffer.from(
+          JSON.stringify({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }),
+        ),
         'config.json',
       )
       .expect(403);
@@ -145,7 +151,11 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
       )
       .expect(201);
 
-    const body = res.body as { createdBy: string; status: string; deviceModel: string };
+    const body = res.body as {
+      createdBy: string;
+      status: string;
+      deviceModel: string;
+    };
     expect(body.createdBy).toBe(swUser.id);
     expect(body.status).toBe('draft');
     expect(body.deviceModel).toBe('GT06N');
@@ -190,7 +200,11 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
       .post('/api/v1/config/import')
       .set('Authorization', `Bearer ${token}`)
       .field('format', 'csv')
-      .attach('file', Buffer.from('deviceModel,protocol\nGT06N,TCP'), 'config.csv')
+      .attach(
+        'file',
+        Buffer.from('deviceModel,protocol\nGT06N,TCP'),
+        'config.csv',
+      )
       .expect(400);
   });
 
@@ -349,7 +363,9 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
-    expect(await prisma.config.findUnique({ where: { id: configRow.id } })).toBeNull();
+    expect(
+      await prisma.config.findUnique({ where: { id: configRow.id } }),
+    ).toBeNull();
   });
 
   it('DELETE /config/:id สถานะไม่ใช่ draft -> 409 และไม่ถูกลบ', async () => {

@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -38,7 +42,10 @@ function makeP2025(): PrismaClientKnownRequestError {
   });
 }
 
-function makeMulterFile(content: string, filename = 'config.json'): Express.Multer.File {
+function makeMulterFile(
+  content: string,
+  filename = 'config.json',
+): Express.Multer.File {
   return {
     fieldname: 'file',
     originalname: filename,
@@ -102,28 +109,28 @@ describe('ConfigService', () => {
 
     it('format ไม่ใช่ json (หรือไม่ส่งมา) -> BadRequestException', async () => {
       const file = makeMulterFile('{}');
-      await expect(
-        service.importFromJson(file, 'csv', sw),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.importFromJson(file, undefined, sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'csv', sw)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.importFromJson(file, undefined, sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('ไฟล์ parse เป็น JSON ไม่ได้ -> BadRequestException', async () => {
       const file = makeMulterFile('{ not valid json');
-      await expect(
-        service.importFromJson(file, 'json', sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('JSON เป็น null (valid JSON แต่ไม่ใช่ object) -> BadRequestException ไม่ใช่ TypeError', async () => {
       const file = makeMulterFile('null');
-      await expect(
-        service.importFromJson(file, 'json', sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -131,9 +138,9 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify([{ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }]),
       );
-      await expect(
-        service.importFromJson(file, 'json', sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -151,9 +158,9 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({ protocol: 'TCP', fields: {} }),
       );
-      await expect(
-        service.importFromJson(file, 'json', sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -166,9 +173,9 @@ describe('ConfigService', () => {
           fields: {},
         }),
       );
-      await expect(
-        service.importFromJson(file, 'json', sw),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
       expect(config.create).not.toHaveBeenCalled();
     });
 

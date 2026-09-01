@@ -53,6 +53,12 @@ export class ConfigService {
    * CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน ไม่มี
    * business rule พิเศษแยกสำหรับ import (ตาม openapi.yaml: "แปลงเป็น
    * DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม")
+   *
+   * จงใจไม่แยก interface `ConfigImporter`/`parseConfigFile` ตาม Build
+   * Reference §3.1 — ตอนนี้รองรับ format เดียว (JSON) เขียนตรงๆ ในเมธอดนี้
+   * พอ ยังไม่มีเหตุผลจะ abstract ล่วงหน้า (YAGNI) เมื่อไหร่ที่มี format ที่ 2
+   * จริง (เช่น CSV) ค่อย refactor แยก interface ตอนนั้น — ยืนยันแล้วตอบ
+   * review PR #46 ของ kittiphong
    */
   async importFromJson(
     file: Express.Multer.File | undefined,
@@ -75,14 +81,20 @@ export class ConfigService {
     try {
       parsed = JSON.parse(file.buffer.toString('utf-8'));
     } catch {
-      throw new BadRequestException('ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)');
+      throw new BadRequestException(
+        'ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)',
+      );
     }
 
     // JSON ที่ valid แต่ไม่ใช่ object เดียว (null / array / ค่าเดี่ยว) ต้องดัก
     // ก่อน plainToInstance/validate — class-validator โยน TypeError ตอนเจอ
     // null ตรงๆ (validate(null) อ่าน .constructor ไม่ได้) หลุดเป็น 500 แทน
     // 400 ถ้าไม่มี guard นี้ (พบจาก code review ของ kittiphong บน PR ของ Stage 2 นี้)
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
       throw new BadRequestException(
         'เนื้อหา JSON ต้องเป็น object เดียว (ไม่ใช่ null / array / ค่าเดี่ยว)',
       );
@@ -91,6 +103,12 @@ export class ConfigService {
     // validate ด้วย DTO ตัวเดียวกับ createConfig (whitelist + forbidNonWhitelisted
     // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
     // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
+    //
+    // TODO(Stage 3): ตอนนี้ validate แค่ shape ของ `fields` ว่าเป็น object
+    // (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ ConfigFieldDefinition
+    // ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่จำเป็นครบ, type/ค่าที่
+    // ยอมรับได้ถูกต้อง) ต้องรอ schema ต่อ device model ก่อนถึงจะทำได้ลึกกว่านี้
+    // — วางแผนทำพร้อม Simulate ใน Stage 3
     const dto = plainToInstance(CreateConfigDto, parsed, {
       excludeExtraneousValues: false,
     });
@@ -100,7 +118,8 @@ export class ConfigService {
     });
     if (errors.length > 0) {
       throw new BadRequestException({
-        message: 'ข้อมูลใน JSON ไม่ตรงตามโครงสร้าง Config (แปลงเป็น DeviceConfigDraft ไม่สำเร็จ)',
+        message:
+          'ข้อมูลใน JSON ไม่ตรงตามโครงสร้าง Config (แปลงเป็น DeviceConfigDraft ไม่สำเร็จ)',
         errors: errors.map((e) => ({
           property: e.property,
           constraints: e.constraints,
