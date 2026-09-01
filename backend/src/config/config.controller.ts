@@ -35,7 +35,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 // Section 2.4 — ทำเป็น Stage แยกทีหลัง)
 //
 // DELETE ใช้ action Update เดิม (ไม่มี ActionType.Delete ใน enum) — ตัดสินใจ
-// ไว้แล้วตอนแก้ schema follow-up ก่อน #26 (ดู PR schema follow-up)
+// ไว้ตอนแก้ schema follow-up ก่อน #26 ดูเหตุผลเต็มๆ ใน PR #44 description
+// (หัวข้อ "openapi.yaml เพิ่ม GET/PUT/DELETE /config/{configId}"):
+// https://github.com/dtc-gps-team/gps-config-firmware-center/pull/44
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('config')
 export class ConfigController {

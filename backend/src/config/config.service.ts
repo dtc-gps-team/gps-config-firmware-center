@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Config, Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
@@ -39,9 +40,11 @@ export class ConfigService {
   }
 
   findAll(query: QueryConfigDto): Promise<Config[]> {
-    // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด
-    // ตาม RBAC_Matrix.md แถว "Config Editor" (SW=C,R,U ; role อื่น=R ล้วน
-    // ไม่ใช่ R เฉพาะของตัวเอง ต่างจาก Task ที่ ST/OT เห็นเฉพาะงานตัวเอง)
+    // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
+    // SW ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
+    // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #45 —
+    // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
+    // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
     return this.prisma.config.findMany({
       where: { status: query.status },
       orderBy: { createdAt: 'desc' },
@@ -68,14 +71,27 @@ export class ConfigService {
       );
     }
 
-    return this.prisma.config.update({
-      where: { id },
-      data: {
-        deviceModel: dto.deviceModel,
-        protocol: dto.protocol,
-        fields: dto.fields as Prisma.InputJsonValue | undefined,
-      },
-    });
+    // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
+    // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
+    // update not found") ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500
+    try {
+      return await this.prisma.config.update({
+        where: { id },
+        data: {
+          deviceModel: dto.deviceModel,
+          protocol: dto.protocol,
+          fields: dto.fields as Prisma.InputJsonValue | undefined,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
   }
 
   async remove(id: string): Promise<void> {
@@ -86,6 +102,17 @@ export class ConfigService {
       );
     }
 
-    await this.prisma.config.delete({ where: { id } });
+    // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
+    try {
+      await this.prisma.config.delete({ where: { id } });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
   }
 }
