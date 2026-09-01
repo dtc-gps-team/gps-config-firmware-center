@@ -184,6 +184,8 @@ paths:
           description: ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น DeviceConfigDraft ไม่สำเร็จ
         "403":
           description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role SW เท่านั้น
+        "413":
+          description: ไฟล์มีขนาดเกิน limit ที่กำหนดไว้ (1MB)
 
   /config/{configId}/simulate:
     post:
