@@ -31,13 +31,17 @@ const swReq = reqAs({ sub: 'sw-1', role: 'SW' });
 describe('ConfigController', () => {
   let controller: ConfigController;
   let service: jest.Mocked<
-    Pick<ConfigService, 'findAll' | 'create' | 'findOne' | 'update' | 'remove'>
+    Pick<
+      ConfigService,
+      'findAll' | 'create' | 'importFromJson' | 'findOne' | 'update' | 'remove'
+    >
   >;
 
   beforeEach(async () => {
     service = {
       findAll: jest.fn(),
       create: jest.fn(),
+      importFromJson: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
@@ -77,6 +81,16 @@ describe('ConfigController', () => {
     const dto = { deviceModel: 'GT06N', protocol: 'TCP', fields: {} };
     await controller.create(dto, swReq);
     expect(service.create).toHaveBeenCalledWith(dto, {
+      id: 'sw-1',
+      role: 'SW',
+    });
+  });
+
+  it('POST /config/import -> service.importFromJson พร้อม file/format/actor จาก JWT', async () => {
+    service.importFromJson.mockResolvedValue(sampleConfig);
+    const file = { originalname: 'config.json' } as Express.Multer.File;
+    await controller.importConfig(file, 'json', swReq);
+    expect(service.importFromJson).toHaveBeenCalledWith(file, 'json', {
       id: 'sw-1',
       role: 'SW',
     });

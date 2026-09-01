@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Config, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
@@ -16,6 +19,9 @@ export interface ActingUser {
   id: string;
   role: string;
 }
+
+/** เฉพาะ format ที่รองรับตอนนี้ (v3.2 — ดู openapi.yaml importConfig summary) */
+const SUPPORTED_IMPORT_FORMATS = ['json'];
 
 @Injectable()
 export class ConfigService {
@@ -37,6 +43,62 @@ export class ConfigService {
         createdBy: actor.id,
       },
     });
+  }
+
+  /**
+   * Stage 2 (#26) — Import Config จากไฟล์ JSON (v3.2 รองรับ JSON เป็นจุดเริ่มต้น
+   * ตาม openapi.yaml importConfig summary — CSV/อื่นๆ เป็น scope อนาคต)
+   *
+   * เข้า flow เดียวกับฟอร์ม (createConfig) เป๊ะๆ: parse ไฟล์ -> validate ด้วย
+   * CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน ไม่มี
+   * business rule พิเศษแยกสำหรับ import (ตาม openapi.yaml: "แปลงเป็น
+   * DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม")
+   */
+  async importFromJson(
+    file: Express.Multer.File | undefined,
+    format: string | undefined,
+    actor: ActingUser,
+  ): Promise<Config> {
+    if (!file) {
+      throw new BadRequestException(
+        'ไม่มีไฟล์แนบมา (multipart field name ต้องเป็น "file")',
+      );
+    }
+
+    if (!format || !SUPPORTED_IMPORT_FORMATS.includes(format)) {
+      throw new BadRequestException(
+        `รองรับเฉพาะ format: ${SUPPORTED_IMPORT_FORMATS.join(', ')} เท่านั้น`,
+      );
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(file.buffer.toString('utf-8'));
+    } catch {
+      throw new BadRequestException('ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)');
+    }
+
+    // validate ด้วย DTO ตัวเดียวกับ createConfig (whitelist + forbidNonWhitelisted
+    // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
+    // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
+    const dto = plainToInstance(CreateConfigDto, parsed, {
+      excludeExtraneousValues: false,
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message: 'ข้อมูลใน JSON ไม่ตรงตามโครงสร้าง Config (แปลงเป็น DeviceConfigDraft ไม่สำเร็จ)',
+        errors: errors.map((e) => ({
+          property: e.property,
+          constraints: e.constraints,
+        })),
+      });
+    }
+
+    return this.create(dto, actor);
   }
 
   findAll(query: QueryConfigDto): Promise<Config[]> {
