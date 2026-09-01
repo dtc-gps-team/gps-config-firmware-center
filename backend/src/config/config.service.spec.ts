@@ -119,6 +119,34 @@ describe('ConfigService', () => {
       expect(config.create).not.toHaveBeenCalled();
     });
 
+    it('JSON เป็น null (valid JSON แต่ไม่ใช่ object) -> BadRequestException ไม่ใช่ TypeError', async () => {
+      const file = makeMulterFile('null');
+      await expect(
+        service.importFromJson(file, 'json', sw),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('JSON เป็น array -> BadRequestException', async () => {
+      const file = makeMulterFile(
+        JSON.stringify([{ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }]),
+      );
+      await expect(
+        service.importFromJson(file, 'json', sw),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('JSON เป็นค่าเดี่ยว (number/string) -> BadRequestException', async () => {
+      await expect(
+        service.importFromJson(makeMulterFile('42'), 'json', sw),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.importFromJson(makeMulterFile('"hello"'), 'json', sw),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
     it('JSON validate ไม่ผ่าน (ขาด deviceModel) -> BadRequestException', async () => {
       const file = makeMulterFile(
         JSON.stringify({ protocol: 'TCP', fields: {} }),

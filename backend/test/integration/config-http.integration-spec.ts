@@ -151,6 +151,36 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
     expect(body.deviceModel).toBe('GT06N');
   });
 
+  it('POST /config/import เนื้อไฟล์เป็น JSON null -> 400 ไม่ใช่ 500', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach('file', Buffer.from('null'), 'config.json')
+      .expect(400);
+  });
+
+  it('POST /config/import เนื้อไฟล์เป็น JSON array -> 400', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(JSON.stringify([{ deviceModel: 'GT06N' }])),
+        'config.json',
+      )
+      .expect(400);
+  });
+
   it('POST /config/import format ไม่ใช่ json -> 400', async () => {
     const swUser = await makeUser(prisma, { role: 'SW' });
     await grant('SW', ActionType.Create);

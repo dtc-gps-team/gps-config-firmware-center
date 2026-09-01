@@ -78,6 +78,16 @@ export class ConfigService {
       throw new BadRequestException('ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)');
     }
 
+    // JSON ที่ valid แต่ไม่ใช่ object เดียว (null / array / ค่าเดี่ยว) ต้องดัก
+    // ก่อน plainToInstance/validate — class-validator โยน TypeError ตอนเจอ
+    // null ตรงๆ (validate(null) อ่าน .constructor ไม่ได้) หลุดเป็น 500 แทน
+    // 400 ถ้าไม่มี guard นี้ (พบจาก code review ของ kittiphong บน PR ของ Stage 2 นี้)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new BadRequestException(
+        'เนื้อหา JSON ต้องเป็น object เดียว (ไม่ใช่ null / array / ค่าเดี่ยว)',
+      );
+    }
+
     // validate ด้วย DTO ตัวเดียวกับ createConfig (whitelist + forbidNonWhitelisted
     // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
     // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
@@ -104,7 +114,7 @@ export class ConfigService {
   findAll(query: QueryConfigDto): Promise<Config[]> {
     // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
     // SW ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
-    // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #45 —
+    // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #46 —
     // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
     // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
     return this.prisma.config.findMany({
