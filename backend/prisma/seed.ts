@@ -113,8 +113,14 @@ async function main() {
     // ---- config ----
     // createConfig, importConfig
     grant('SW', 'config', 'Create'),
-    // simulateConfig (dry-run ก่อนส่ง Operation)
+    // simulateConfig (dry-run ก่อนส่ง Operation), updateConfig, deleteConfig
+    // (DELETE reuse action Update — ไม่มี ActionType.Delete แยก ตัดสินใจไว้
+    // ตอน schema follow-up ก่อน #26)
     grant('SW', 'config', 'Update'),
+    // แก้เพิ่มตอนทำ #26 (Stage 1 CRUD): RBAC_Matrix.md แถว "Config Editor"
+    // ระบุ SW = C,R,U แต่ seed เดิมไม่มี Read ให้ SW เลย ทำให้ SW เรียก
+    // getConfig/listConfigs (GET) ของตัวเองไม่ได้เลยหลุดมาโดยไม่ตั้งใจ
+    grant('SW', 'config', 'Read'),
     grant('Operation', 'config', 'Read'),
     // approveConfig, rejectConfig
     grant('Operation', 'config', 'Approve'),
