@@ -11,8 +11,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ActionType, Config } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -23,6 +26,13 @@ import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
 
+/** เพดานขนาดไฟล์ import — ไฟล์ Config JSON เล็กมาก (ไม่กี่ field) 1MB เหลือเฟือ
+ * และกันไม่ให้มีคนอัปโหลดไฟล์ใหญ่ผิดปกติเข้ามา — ไฟล์เกิน limit นี้ Nest แปลง
+ * MulterError('LIMIT_FILE_SIZE') เป็น PayloadTooLargeException (413) ให้เอง
+ * อัตโนมัติอยู่แล้ว (ดู @nestjs/platform-express multer.utils.ts) ไม่ต้องดัก
+ * เพิ่ม — ยืนยันพฤติกรรมนี้ด้วย integration test แล้ว */
+const IMPORT_FILE_SIZE_LIMIT_BYTES = 1 * 1024 * 1024;
+
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -30,9 +40,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
   return { id: req.user.sub, role: req.user.role };
 }
 
-// Stage 1 (issue #26) — เฉพาะ CRUD พื้นฐาน (list/create/get/update/delete)
-// ยังไม่มี import/simulate/approve/reject (ดู 04_Phase1_A_ConfigWorkflow.md
-// Section 2.4 — ทำเป็น Stage แยกทีหลัง)
+// Stage 1+2 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +
+// Import จากไฟล์ JSON ยังไม่มี simulate/approve/reject (ดู
+// 04_Phase1_A_ConfigWorkflow.md Section 2.4 — ทำเป็น Stage แยกทีหลัง)
 //
 // DELETE ใช้ action Update เดิม (ไม่มี ActionType.Delete ใน enum) — ตัดสินใจ
 // ไว้ตอนแก้ schema follow-up ก่อน #26 ดูเหตุผลเต็มๆ ใน PR #44 description
@@ -56,6 +66,25 @@ export class ConfigController {
     @Req() req: AuthenticatedRequest,
   ): Promise<Config> {
     return this.configService.create(dto, toActor(req));
+  }
+
+  // Stage 2 (#26) — Import Config จากไฟล์ JSON เข้า flow เดียวกับ createConfig
+  // เป๊ะๆ (ดู ConfigService.importFromJson) สิทธิ์ใช้ resource "config" action
+  // Create ตัวเดียวกับสร้างผ่านฟอร์ม (RBAC_Matrix.md แถว "Config Import จาก
+  // ไฟล์ (JSON)" ก็ระบุแค่ C เหมือนกัน — ไม่ต้อง grant เพิ่ม)
+  @Post('import')
+  @RequirePermission('config', ActionType.Create)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: IMPORT_FILE_SIZE_LIMIT_BYTES },
+    }),
+  )
+  importConfig(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body('format') format: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Config> {
+    return this.configService.importFromJson(file, format, toActor(req));
   }
 
   @Get(':id')

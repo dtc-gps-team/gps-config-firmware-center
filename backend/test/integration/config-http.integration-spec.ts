@@ -20,11 +20,11 @@ import {
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 
 /**
- * Stage 1 (issue #26) — CRUD พื้นฐานของ ConfigController ผ่าน HTTP จริง
- * (JwtAuthGuard -> PermissionGuard เต็มเส้นทาง) ยังไม่มี import/simulate/
+ * Stage 1+2 (issue #26) — CRUD พื้นฐาน + Import JSON ของ ConfigController ผ่าน
+ * HTTP จริง (JwtAuthGuard -> PermissionGuard เต็มเส้นทาง) ยังไม่มี simulate/
  * approve/reject ในเทสชุดนี้ (เป็น Stage ถัดไป)
  */
-describe('ConfigController Stage 1 CRUD (integration — real postgres + guard chain)', () => {
+describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaClient;
   let jwtService: JwtService;
@@ -99,12 +99,154 @@ describe('ConfigController Stage 1 CRUD (integration — real postgres + guard c
     const res = await request(app.getHttpServer())
       .post('/api/v1/config')
       .set('Authorization', `Bearer ${token}`)
-      .send({ deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'internet' } })
+      .send({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
       .expect(201);
 
     const body = res.body as { createdBy: string; status: string };
     expect(body.createdBy).toBe(swUser.id);
     expect(body.status).toBe('draft');
+  });
+
+  it('POST /config/import role ไม่มีสิทธิ์ config.Create -> 403', async () => {
+    const opUser = await makeUser(prisma, { role: 'Operation' });
+    const token = tokenFor(opUser.id, 'Operation');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(
+          JSON.stringify({ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }),
+        ),
+        'config.json',
+      )
+      .expect(403);
+  });
+
+  it('POST /config/import ไฟล์ JSON ถูกต้อง -> 201 พร้อม createdBy จาก JWT (flow เดียวกับฟอร์ม)', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(
+          JSON.stringify({
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+          }),
+        ),
+        'config.json',
+      )
+      .expect(201);
+
+    const body = res.body as {
+      createdBy: string;
+      status: string;
+      deviceModel: string;
+    };
+    expect(body.createdBy).toBe(swUser.id);
+    expect(body.status).toBe('draft');
+    expect(body.deviceModel).toBe('GT06N');
+  });
+
+  it('POST /config/import เนื้อไฟล์เป็น JSON null -> 400 ไม่ใช่ 500', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach('file', Buffer.from('null'), 'config.json')
+      .expect(400);
+  });
+
+  it('POST /config/import เนื้อไฟล์เป็น JSON array -> 400', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(JSON.stringify([{ deviceModel: 'GT06N' }])),
+        'config.json',
+      )
+      .expect(400);
+  });
+
+  it('POST /config/import format ไม่ใช่ json -> 400', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'csv')
+      .attach(
+        'file',
+        Buffer.from('deviceModel,protocol\nGT06N,TCP'),
+        'config.csv',
+      )
+      .expect(400);
+  });
+
+  it('POST /config/import ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน) -> 400', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach('file', Buffer.from('{ not valid json'), 'config.json')
+      .expect(400);
+  });
+
+  it('POST /config/import ไม่แนบไฟล์มา -> 400', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .expect(400);
+  });
+
+  it('POST /config/import ไฟล์เกินขนาด limit (1MB) -> 413 ไม่ใช่ 500 (Nest แปลง MulterError ให้เองอัตโนมัติ)', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    const token = tokenFor(swUser.id, 'SW');
+
+    // เกิน 1MB นิดหน่อยพอ ไม่ต้องสร้างไฟล์ใหญ่มาก
+    const oversized = Buffer.alloc(1 * 1024 * 1024 + 1, 'a');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach('file', oversized, 'config.json')
+      .expect(413);
   });
 
   it('GET /config role มีสิทธิ์ config.Read -> 200 เห็นรายการทั้งหมด ไม่ scope ตาม creator', async () => {
@@ -221,7 +363,9 @@ describe('ConfigController Stage 1 CRUD (integration — real postgres + guard c
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
-    expect(await prisma.config.findUnique({ where: { id: configRow.id } })).toBeNull();
+    expect(
+      await prisma.config.findUnique({ where: { id: configRow.id } }),
+    ).toBeNull();
   });
 
   it('DELETE /config/:id สถานะไม่ใช่ draft -> 409 และไม่ถูกลบ', async () => {
