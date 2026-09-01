@@ -115,6 +115,8 @@ async function main() {
     grant('SW', 'config', 'Create'),
     // simulateConfig (dry-run ก่อนส่ง Operation)
     grant('SW', 'config', 'Update'),
+    // เพิ่มใหม่: RBAC_Matrix.md ระบุ Config Editor = SW: C,R,U แต่ seed เดิมมีแค่ C,U ขาด R
+    grant('SW', 'config', 'Read'),
     grant('Operation', 'config', 'Read'),
     // approveConfig, rejectConfig
     grant('Operation', 'config', 'Approve'),
