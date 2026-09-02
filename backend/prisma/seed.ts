@@ -150,6 +150,13 @@ async function main() {
     grant('ST', 'config-definition', 'Read'),
     grant('OT', 'config-definition', 'Read'),
 
+    // ---- device-connection-test (POST /devices/{deviceId}/test-connection) ----
+    // ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง — grant ให้ ST/OT เท่านั้น (คนหน้างานที่
+    // ใช้ Mobile) paveekornkwork-dev (A) ยืนยันบนคอมเมนต์ PR #52 ว่ายังไม่เปิด
+    // ให้ SW/Operation เพราะยังไม่เห็น use case ชัดเจน — เปิดกว้างทีหลังได้
+    grant('ST', 'device-connection-test', 'Read'),
+    grant('OT', 'device-connection-test', 'Read'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),
