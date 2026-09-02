@@ -199,7 +199,14 @@ paths:
           schema:
             type: string
       requestBody:
-        required: true
+        # required: false (v3.9 — แก้ตาม code review ของ kittiphong บน PR
+        # Stage 3: ConfigController.simulate ไม่รับ @Body() เลยจริงๆ — เดิม
+        # required: true ทำให้ client ที่ gen จาก spec ตรงๆ ถูกบังคับส่ง body
+        # ที่ backend ไม่สนใจอยู่ดี ส่วน `deviceModel` ใน schema ก็ไม่ถูกใช้
+        # เลย (ConfigService.simulate ใช้ deviceModel/protocol/fields จาก DB
+        # ของ Config นั้นเสมอ ไม่รับจาก client) เก็บ property นี้ไว้เป็นข้อมูล
+        # อ้างอิงเฉยๆ
+        required: false
         content:
           application/json:
             schema:

@@ -1,8 +1,8 @@
-# 04 — Phase 1-A: Config Workflow (Stage 1-2)
+# 04 — Phase 1-A: Config Workflow (Stage 1-3)
 
 > เอกสารสรุป workflow ของโมดูล Config (issue #26) เฉพาะ Stage ที่ทำเสร็จแล้ว
-> (Stage 1: CRUD, Stage 2: Import จากไฟล์ JSON) — Stage 3 (Simulate) และ
-> Stage 4 (Approve/Reject) จะเพิ่มเข้ามาต่อในเอกสารนี้เมื่อเริ่มทำจริง
+> (Stage 1: CRUD, Stage 2: Import จากไฟล์ JSON, Stage 3: Simulate) — Stage 4
+> (SW ปักผลตัดสินใจ/Approve/Reject) จะเพิ่มเข้ามาต่อในเอกสารนี้เมื่อเริ่มทำจริง
 
 ## ภาพรวม
 
@@ -48,9 +48,9 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 - **ไม่ validate `ConfigFieldDefinition`** — ตอนนี้ validate แค่ shape ของ
   `fields` (ต้องเป็น object) ยังไม่เช็คว่า field ตรงกับ schema ของ
   `deviceModel`/`protocol` นั้นๆ จริงไหม (field ครบ, type/ค่าถูกต้อง) —
-  วางแผนทำใน **Stage 3** พร้อม Simulate เพราะต้องมี schema ต่อ device model
-  ก่อนถึงจะ validate ได้ลึกกว่านี้ (ดู `// TODO(Stage 3)` ใน
-  `config.service.ts`)
+  ต้องรอตาราง Config Definition Lookup (`ConfigFieldDefinition`) ทั้งตารางก่อน
+  ถึงจะ validate ได้ลึกกว่านี้ — Stage 3 (Simulate) ก็จงใจไม่ทำส่วนนี้เช่นกัน
+  (ดู `TODO(รอตาราง ConfigFieldDefinition)` ใน `config.service.ts`)
 - **ไม่ dedup ตอน import** — import ไฟล์ที่มี `deviceModel`/`protocol` ซ้ำกับ
   Config ที่มีอยู่แล้ว จะสร้างแถวใหม่แยกกัน ไม่ merge/replace ของเดิม
   สอดคล้องกับ [footnote ² ใน RBAC_Matrix.md](./architecture/RBAC_Matrix.md)
@@ -60,6 +60,55 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 
 `POST /config/import` ใช้ permission เดียวกับ `POST /config`: resource
 `config`, action `Create` — เฉพาะ Role `SW` (ตาม `RolePermission` seed)
+
+## Stage 3: Simulate — ทดสอบกับ Device Simulator
+
+### ขั้นตอน (`ConfigService.simulate`)
+
+1. `findOne(id)` — ไม่เจอ Config → 404
+2. เช็คว่า status ปัจจุบันอยู่ใน `SIMULATABLE_CONFIG_STATUSES`
+   (`['draft', 'testing']`) ไหม — ไม่อยู่ (เช่น `approved`/`synced`) → 409
+3. เรียก `DeviceSimulator.simulateConfig()` ด้วย `deviceModel`/`protocol`/
+   `fields` **ที่ persist ไว้ใน DB ของ Config นี้เท่านั้น** (ไม่ใช้ค่าจาก
+   request body แม้ `docs/api/openapi.yaml` จะรับ `deviceModel` มาได้ก็ตาม
+   — ป้องกัน client ส่ง deviceModel ปลอมมาแล้วได้ผลทดสอบของอุปกรณ์คนละรุ่น)
+4. คืนผล `SimulationResult { passed, details }` ตรงๆ — **ไม่แตะ status ของ
+   Config เลย** กดซ้ำได้เรื่อยๆ ระหว่างที่ SW ยังปรับแก้ค่าอยู่
+
+### Device Simulator — ยังเป็น Mock
+
+ยังไม่มี Device Simulator จริงให้เชื่อมต่อ (สถานะเดียวกับ `config-sync-writer`
+ใน Phase 2 ที่ยัง mock/docker) — `MockDeviceSimulator`
+(`backend/src/config/device-simulator.ts`) ตรวจกฎเท่าที่รู้แน่นอนแทน:
+
+1. Config ต้องมีอย่างน้อย 1 field
+2. ฟิลด์ที่ชื่อเข้าเงื่อนไข Timeout/Interval (จับคู่แบบ case-insensitive
+   substring กับ `TIMEOUT`/`INTERVAL`) ต้องไม่เป็นค่าติดลบ — ตรงกับตัวอย่างใน
+   `03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3
+
+นอกเหนือจากนี้ถือว่าผ่าน แยก Interface (`DeviceSimulator`) จาก Implementation
+ตาม Build Reference §4.3 (Extensibility) ไว้แล้ว — วันไหนมี Simulator จริง
+ค่อยเพิ่ม Implementation ใหม่แล้วสลับ provider ใน `config.module.ts` ที่เดียว
+
+### สิทธิ์ (RBAC)
+
+`POST /config/{id}/simulate` ใช้ resource ใหม่ `config-simulation` (action
+`Read`) **แยกจาก resource `config` ธรรมดาโดยตั้งใจ** — กัน Auditor/Admin ที่มี
+`config`+`Read` อยู่แล้ว (ไว้ดูรายการ/รายละเอียดเฉยๆ) ไม่ให้เผลอเรียก simulate
+ได้ไปด้วย ตรงกับ RBAC_Matrix.md ตาราง 4.1 ที่จำกัดไว้แค่ SW/Operation/ST/OT —
+ดูเหตุผลเต็มใน `docs/architecture/RBAC_Matrix.md` (changelog แก้ครั้งที่ 10)
+
+### จงใจไม่ทำใน Stage นี้
+
+- **ไม่เปลี่ยน status** — การที่ SW ปักผลตัดสินใจผ่าน/ไม่ผ่านแล้วเปลี่ยน
+  status จริงๆ แยกไปเป็น `POST /config/{id}/decide` ต่างหาก (Stage 4)
+- **ไม่ตรวจกับ `ConfigFieldDefinition` จริง** — เพราะยังไม่มีตาราง Config
+  Definition Lookup (ตาม `TODO(รอตาราง ConfigFieldDefinition)` ใน `importFromJson`
+  — จริงๆ แล้วงานนี้ต้องรอ Config Definition Lookup ทั้งตารางก่อน ไม่ใช่แค่
+  Stage 3 นี้ จึงยังเป็น Mock ตรวจกฎทั่วไปแทน)
+- **ไม่เก็บผลทดสอบลง DB** — `SimulationResult` เป็น response ชั่วคราว โชว์ให้
+  SW ดูตอนนั้นเท่านั้น ตาม docs/api/openapi.yaml ที่ไม่ได้นิยาม field เก็บผล
+  ทดสอบไว้ใน `DeviceConfigDraft` schema
 
 ## อ้างอิง
 

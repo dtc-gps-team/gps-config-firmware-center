@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,7 +13,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
-import { EDITABLE_CONFIG_STATUS } from './config-status';
+import {
+  EDITABLE_CONFIG_STATUS,
+  SIMULATABLE_CONFIG_STATUSES,
+} from './config-status';
+import {
+  DEVICE_SIMULATOR,
+  type DeviceSimulator,
+  type SimulationResult,
+} from './device-simulator';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
 export interface ActingUser {
@@ -25,7 +34,11 @@ const SUPPORTED_IMPORT_FORMATS = ['json'];
 
 @Injectable()
 export class ConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(DEVICE_SIMULATOR)
+    private readonly deviceSimulator: DeviceSimulator,
+  ) {}
 
   create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
@@ -104,11 +117,13 @@ export class ConfigService {
     // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
     // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
     //
-    // TODO(Stage 3): ตอนนี้ validate แค่ shape ของ `fields` ว่าเป็น object
-    // (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ ConfigFieldDefinition
-    // ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่จำเป็นครบ, type/ค่าที่
-    // ยอมรับได้ถูกต้อง) ต้องรอ schema ต่อ device model ก่อนถึงจะทำได้ลึกกว่านี้
-    // — วางแผนทำพร้อม Simulate ใน Stage 3
+    // TODO(รอตาราง ConfigFieldDefinition): ตอนนี้ validate แค่ shape ของ
+    // `fields` ว่าเป็น object (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ
+    // ConfigFieldDefinition ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่
+    // จำเป็นครบ, type/ค่าที่ยอมรับได้ถูกต้อง) — ยืนยันแล้วว่า Stage 3
+    // (Simulate) จงใจไม่ทำส่วนนี้เช่นกัน (ดู docs/04_Phase1_A_ConfigWorkflow.md
+    // หัวข้อ "จงใจไม่ทำใน Stage นี้") ต้องรอตาราง Config Definition Lookup
+    // จริงก่อนถึงจะทำได้ลึกกว่านี้ — ยังไม่มี Stage ไหนรับผิดชอบตอนนี้
     const dto = plainToInstance(CreateConfigDto, parsed, {
       excludeExtraneousValues: false,
     });
@@ -128,6 +143,38 @@ export class ConfigService {
     }
 
     return this.create(dto, actor);
+  }
+
+  /**
+   * Stage 3 (#26) — ทดสอบ Config กับ Device Simulator (dry-run)
+   *
+   * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
+   * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
+   * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
+   * Operation หรือไม่ (เปลี่ยน status) ยังเป็น open question ที่ยังไม่ปิด
+   * (ดู docs/architecture/RBAC_Matrix.md Section 6) ไม่ implement ในนี้
+   *
+   * รับ `deviceModel` ใน request body ได้ตาม docs/api/openapi.yaml แต่ตั้งใจ
+   * ไม่ใช้ค่านั้นเลย — ใช้ `deviceModel`/`protocol`/`fields` ที่ persist ไว้ใน
+   * DB ของ Config นี้เสมอ เพื่อไม่ให้ client ส่ง deviceModel ปลอมมาแล้วได้ผล
+   * ทดสอบของอุปกรณ์คนละรุ่นกับที่ Config จริงๆ ผูกไว้ (ฟิลด์นี้มีประโยชน์กับ
+   * `simulateFirmware` มากกว่า เพราะ Firmware ตัวเดียวอาจใช้ได้กับหลาย
+   * deviceModel แต่ Config ผูกกับ deviceModel เดียวตายตัวอยู่แล้วตั้งแต่สร้าง)
+   */
+  async simulate(id: string): Promise<SimulationResult> {
+    const config = await this.findOne(id);
+
+    if (!SIMULATABLE_CONFIG_STATUSES.includes(config.status)) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่รองรับการทดสอบ (เช่น approved/synced ไปแล้ว)`,
+      );
+    }
+
+    return this.deviceSimulator.simulateConfig({
+      deviceModel: config.deviceModel,
+      protocol: config.protocol,
+      fields: config.fields as Record<string, unknown>,
+    });
   }
 
   findAll(query: QueryConfigDto): Promise<Config[]> {
