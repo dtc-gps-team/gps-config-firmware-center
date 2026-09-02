@@ -48,9 +48,9 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 - **ไม่ validate `ConfigFieldDefinition`** — ตอนนี้ validate แค่ shape ของ
   `fields` (ต้องเป็น object) ยังไม่เช็คว่า field ตรงกับ schema ของ
   `deviceModel`/`protocol` นั้นๆ จริงไหม (field ครบ, type/ค่าถูกต้อง) —
-  วางแผนทำใน **Stage 3** พร้อม Simulate เพราะต้องมี schema ต่อ device model
-  ก่อนถึงจะ validate ได้ลึกกว่านี้ (ดู `// TODO(Stage 3)` ใน
-  `config.service.ts`)
+  ต้องรอตาราง Config Definition Lookup (`ConfigFieldDefinition`) ทั้งตารางก่อน
+  ถึงจะ validate ได้ลึกกว่านี้ — Stage 3 (Simulate) ก็จงใจไม่ทำส่วนนี้เช่นกัน
+  (ดู `TODO(รอตาราง ConfigFieldDefinition)` ใน `config.service.ts`)
 - **ไม่ dedup ตอน import** — import ไฟล์ที่มี `deviceModel`/`protocol` ซ้ำกับ
   Config ที่มีอยู่แล้ว จะสร้างแถวใหม่แยกกัน ไม่ merge/replace ของเดิม
   สอดคล้องกับ [footnote ² ใน RBAC_Matrix.md](./architecture/RBAC_Matrix.md)
@@ -96,17 +96,16 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 `Read`) **แยกจาก resource `config` ธรรมดาโดยตั้งใจ** — กัน Auditor/Admin ที่มี
 `config`+`Read` อยู่แล้ว (ไว้ดูรายการ/รายละเอียดเฉยๆ) ไม่ให้เผลอเรียก simulate
 ได้ไปด้วย ตรงกับ RBAC_Matrix.md ตาราง 4.1 ที่จำกัดไว้แค่ SW/Operation/ST/OT —
-ดูเหตุผลเต็มใน `docs/architecture/RBAC_Matrix.md` (Section 2 footnote ³ และ
-changelog แก้ครั้งที่ 10)
+ดูเหตุผลเต็มใน `docs/architecture/RBAC_Matrix.md` (changelog แก้ครั้งที่ 10)
 
 ### จงใจไม่ทำใน Stage นี้
 
 - **ไม่เปลี่ยน status** — การที่ SW ปักผลตัดสินใจผ่าน/ไม่ผ่านแล้วเปลี่ยน
   status จริงๆ แยกไปเป็น `POST /config/{id}/decide` ต่างหาก (Stage 4)
 - **ไม่ตรวจกับ `ConfigFieldDefinition` จริง** — เพราะยังไม่มีตาราง Config
-  Definition Lookup (ตาม TODO(Stage 3) เดิมใน `importFromJson` — จริงๆ แล้ว
-  งานนี้ต้องรอ Config Definition Lookup ทั้งตารางก่อน ไม่ใช่แค่ Stage 3 นี้
-  จึงยังเป็น Mock ตรวจกฎทั่วไปแทน)
+  Definition Lookup (ตาม `TODO(รอตาราง ConfigFieldDefinition)` ใน `importFromJson`
+  — จริงๆ แล้วงานนี้ต้องรอ Config Definition Lookup ทั้งตารางก่อน ไม่ใช่แค่
+  Stage 3 นี้ จึงยังเป็น Mock ตรวจกฎทั่วไปแทน)
 - **ไม่เก็บผลทดสอบลง DB** — `SimulationResult` เป็น response ชั่วคราว โชว์ให้
   SW ดูตอนนั้นเท่านั้น ตาม docs/api/openapi.yaml ที่ไม่ได้นิยาม field เก็บผล
   ทดสอบไว้ใน `DeviceConfigDraft` schema
