@@ -24,3 +24,6 @@ logs/
 Thumbs.db
 .idea/
 .vscode/
+
+# Scratch
+commit-msg.txt

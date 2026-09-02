@@ -12,7 +12,8 @@ async function bootstrap() {
   // .trim() กันเคส WEB_ORIGIN มีช่องว่างหลัง comma (เช่น "a.com, b.com") ที่จะ
   // ทำให้ตัวถัดไปเหลือ " b.com" แล้วโดนบล็อกแบบเงียบๆ (พบจาก review PR #48)
   app.enableCors({
-    origin: process.env.WEB_ORIGIN?.split(',').map((o) => o.trim()) ??
+    origin:
+      process.env.WEB_ORIGIN?.split(',').map((o) => o.trim()) ??
       'http://localhost:3000',
     // ไม่เปิด credentials: web ใช้ Bearer token ผ่าน Authorization header
     // (เก็บใน localStorage) ไม่ได้ใช้ cookie เลย — ดู web/src/lib/api.ts

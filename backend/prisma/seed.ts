@@ -113,7 +113,11 @@ async function main() {
     // ---- config ----
     // createConfig, importConfig
     grant('SW', 'config', 'Create'),
-    // simulateConfig (dry-run ก่อนส่ง Operation)
+    // updateConfig (PUT), removeConfig (DELETE ใช้ action Update เดิม — ดู
+    // config.controller.ts comment) — เดิมคอมเมนต์แถวนี้เขียนว่าเป็นของ
+    // simulateConfig ผิด (ตอนนั้น Stage 3 ยังไม่ได้เริ่มทำจริง) แก้ให้ตรงตอนเริ่ม
+    // Stage 3 จริง: simulateConfig ใช้ resource 'config-simulation' แยกต่างหาก
+    // ด้านล่าง ไม่ได้ใช้ตัวนี้
     grant('SW', 'config', 'Update'),
     // เพิ่มใหม่: RBAC_Matrix.md ระบุ Config Editor = SW: C,R,U แต่ seed เดิมมีแค่ C,U ขาด R
     grant('SW', 'config', 'Read'),
@@ -124,6 +128,17 @@ async function main() {
     grant('OT', 'config', 'Read'),
     grant('Auditor', 'config', 'Read'),
     grant('Admin', 'config', 'Read'),
+
+    // ---- config-simulation (Stage 3, #26) ----
+    // simulateConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ: SW/Operation/
+    // ST/OT ต้องเรียกได้ทั้งคู่ แต่ 'config'+Read ถูก grant ให้ Auditor/Admin
+    // ไว้แล้ว (สำหรับดูรายการ/รายละเอียดเฉยๆ) ซึ่งตาม RBAC_Matrix.md ตาราง 4.1
+    // Auditor/Admin ไม่ควรเรียก simulate ได้ — ถ้าใช้ 'config'+Read ร่วมกันจะ
+    // เผลอเปิดสิทธิ์ให้ 2 role นี้ไปด้วยโดยไม่ตั้งใจ จึงต้องแยก resource ใหม่
+    grant('SW', 'config-simulation', 'Read'),
+    grant('Operation', 'config-simulation', 'Read'),
+    grant('ST', 'config-simulation', 'Read'),
+    grant('OT', 'config-simulation', 'Read'),
 
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
