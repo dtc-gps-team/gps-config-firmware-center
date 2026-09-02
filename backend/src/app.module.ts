@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
+import { DeviceModule } from './device/device.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TaskModule } from './task/task.module';
@@ -21,6 +22,7 @@ import { TaskModule } from './task/task.module';
     AuthModule,
     ConfigModule,
     ConfigDefinitionModule,
+    DeviceModule,
     TaskModule,
     NotificationModule,
   ],
