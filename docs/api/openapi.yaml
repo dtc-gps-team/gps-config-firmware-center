@@ -272,6 +272,29 @@ paths:
         "409":
           description: สถานะ Config ปัจจุบันไม่ใช่ testing จึงปฏิเสธไม่ได้
 
+  /config-definitions:
+    get:
+      tags: [config]
+      operationId: listConfigDefinitions
+      summary: ดึง catalog ของ Config Field Definition ทั้งหมด (Config Definition Lookup — v3.10)
+      description: >-
+        รายการ field ที่ระบบรู้จัก (ชื่อ field, ชนิดข้อมูล, ค่าที่ยอมรับ,
+        บังคับกรอกไหม) ใช้อ้างอิงตอนกรอก/ตรวจ Config — อ่านอย่างเดียว
+        ยังไม่มี Create/Update/Delete
+      responses:
+        "200":
+          description: รายการ Config Field Definition ทั้งหมด (เรียงตาม fieldName)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfigFieldDefinition"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อ่าน Config Definition — เฉพาะ Role SW, Operation, ST, OT
+
   /notifications:
     get:
       tags: [notification]
@@ -580,6 +603,41 @@ components:
           type: object
           additionalProperties: true
           description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+
+    ConfigFieldDefinition:
+      type: object
+      description: นิยาม field หนึ่งตัวใน Config Definition Lookup (ตรงกับ Prisma model ConfigFieldDefinition)
+      required:
+        [id, fieldName, dataType, allowedValues, required, unknownSpec, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fieldName:
+          type: string
+          example: APN
+        dataType:
+          type: string
+          example: string
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: ค่าที่ยอมรับได้ (ว่าง = ไม่จำกัดค่า)
+        required:
+          type: boolean
+        unknownSpec:
+          type: boolean
+          description: field ที่รู้ว่ามีอยู่ในระบบเดิม แต่ยังไม่มี spec ยืนยันชัดเจน
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     # เพิ่มใหม่: แยกจาก DeviceConfigDraft เพราะ request body ของ createConfig/
     # updateConfig ไม่ควรรับ id/status จาก client (server เป็นคนกำหนดเท่านั้น —
