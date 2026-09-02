@@ -140,6 +140,16 @@ async function main() {
     grant('ST', 'config-simulation', 'Read'),
     grant('OT', 'config-simulation', 'Read'),
 
+    // ---- config-definition (Config Definition Lookup, task #12) ----
+    // listConfigDefinitions — catalog อ่านอย่างเดียวของ field ที่ระบบรู้จัก
+    // ไม่ใช่ข้อมูลอ่อนไหว เปิดให้ทุก role ที่ทำงานกับ Config (SW/Operation/ST/OT)
+    // อ่านได้ แพทเทิร์นเดียวกับ 'config-simulation' ด้านบน — Auditor/Admin ยังไม่
+    // ให้เพราะยังไม่มี use case (เพิ่มทีหลังได้ถ้าต้องการ ไม่มี side effect)
+    grant('SW', 'config-definition', 'Read'),
+    grant('Operation', 'config-definition', 'Read'),
+    grant('ST', 'config-definition', 'Read'),
+    grant('OT', 'config-definition', 'Read'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),
@@ -190,8 +200,41 @@ async function main() {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // 4) ConfigFieldDefinition (Config Definition Lookup, task #12) — catalog
+  //    ของ field ที่ระบบรู้จัก ใช้อ้างอิงตอนกรอก/ตรวจ Config
+  //    seed เฉพาะ field ที่ยืนยันได้จริงจาก GPS_Data_Dictionary.xlsx เท่านั้น
+  //    เริ่มจาก APN ก่อน (field แรกที่นิยามไว้ชัดสุด) — field อื่นทยอยเพิ่มเมื่อ
+  //    verify กับ Data Dictionary แล้ว ห้ามเดา
+  // ---------------------------------------------------------------------
+  const configFieldDefinitions: {
+    fieldName: string;
+    dataType: string;
+    allowedValues: string[];
+    required: boolean;
+    unknownSpec: boolean;
+    description: string;
+  }[] = [
+    {
+      fieldName: 'APN',
+      dataType: 'string',
+      allowedValues: [],
+      required: true,
+      unknownSpec: false,
+      description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
+    },
+  ];
+
+  for (const def of configFieldDefinitions) {
+    await prisma.configFieldDefinition.upsert({
+      where: { fieldName: def.fieldName },
+      update: {},
+      create: def,
+    });
+  }
+
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions.`,
   );
 }
 
