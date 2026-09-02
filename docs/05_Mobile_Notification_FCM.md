@@ -3,7 +3,7 @@
 > ตัดสินใจโดย: kittiphong (B) — 2026-09-02
 > สถานะ: **เอกสารเสนอ ยังไม่ได้เขียนโค้ดจริง** — รอ A รีวิวก่อนเริ่ม implement
 
-## สรุปการตัดสินใจ
+## สรุปข้อเสนอ
 
 เดิมวางแผนไว้ว่า Notification จะเป็น in-app inbox ธรรมดา (poll จาก backend ตอนแอปเปิดอยู่) ไม่ต้องใช้ Firebase — ตอนนี้ **B ตัดสินใจเปลี่ยนเป็น push notification จริงผ่าน Firebase Cloud Messaging (FCM) ซึ่งฟรี** ครอบคลุมทั้ง 3 แพลตฟอร์ม:
 
@@ -18,7 +18,7 @@
 1. **Schema ใหม่ — เก็บ FCM registration token ต่ออุปกรณ์/ผู้ใช้**
    ยังไม่มีตารางนี้ใน `schema.prisma` เลย (ไม่มี `DeviceToken`/`FcmToken` หรือ field ใน `User`) ข้อเสนอเบื้องต้น (ยัง**ไม่ fix** รอ A ออกแบบจริง):
 
-```prisma
+   ```prisma
    model DeviceToken {
      id        String   @id @default(uuid())
      userId    String
@@ -30,7 +30,8 @@
 
      @@index([userId])
    }
-```
+   ```
+
    เหตุผลที่ต้องแยกตาราง ไม่ใช่ field เดียวใน `User`: **1 user อาจ login พร้อมกันหลายอุปกรณ์** (เช่น มือถือ + เปิดเว็บพร้อมกัน) ต้องส่ง push ไปทุก token ที่ยัง valid อยู่ ไม่ใช่แค่ตัวล่าสุด
 
 2. **Backend — endpoint ลงทะเบียน/ลบ token**
