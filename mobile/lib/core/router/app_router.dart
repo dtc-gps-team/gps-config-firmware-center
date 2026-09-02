@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/login_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
+import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/home/home_page.dart';
 import '../auth/auth_controller.dart';
 
@@ -13,6 +14,7 @@ class AppRoutes {
   static const login = '/login';
   static const home = '/home';
   static const simulator = '/simulator';
+  static const deviceConnectionTest = '/device-connection-test';
 }
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
@@ -48,6 +50,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.simulator,
         builder: (context, state) => const SimulatorPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceConnectionTest,
+        builder: (context, state) => const DeviceConnectionTestPage(),
       ),
     ],
   );
