@@ -20,11 +20,11 @@ import {
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 
 /**
- * Stage 1+2 (issue #26) — CRUD พื้นฐาน + Import JSON ของ ConfigController ผ่าน
- * HTTP จริง (JwtAuthGuard -> PermissionGuard เต็มเส้นทาง) ยังไม่มี simulate/
- * approve/reject ในเทสชุดนี้ (เป็น Stage ถัดไป)
+ * Stage 1-3 (issue #26) — CRUD พื้นฐาน + Import JSON + Simulate ของ
+ * ConfigController ผ่าน HTTP จริง (JwtAuthGuard -> PermissionGuard เต็ม
+ * เส้นทาง) ยังไม่มี decide/approve/reject ในเทสชุดนี้ (เป็น Stage 4)
  */
-describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgres + guard chain)', () => {
+describe('ConfigController Stage 1-3 CRUD + Import + Simulate (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaClient;
   let jwtService: JwtService;
@@ -66,10 +66,14 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
     return jwtService.sign({ sub, role });
   }
 
-  async function grant(roleCode: RoleCode, action: ActionType): Promise<void> {
+  async function grant(
+    roleCode: RoleCode,
+    action: ActionType,
+    resource = 'config',
+  ): Promise<void> {
     const role = await getOrCreateRole(prisma, roleCode);
     await prisma.rolePermission.create({
-      data: { roleId: role.id, resource: 'config', action },
+      data: { roleId: role.id, resource, action },
     });
   }
 
@@ -390,5 +394,122 @@ describe('ConfigController Stage 1+2 CRUD + Import (integration — real postgre
     expect(
       await prisma.config.findUnique({ where: { id: configRow.id } }),
     ).not.toBeNull();
+  });
+
+  describe('POST /config/:id/simulate (Stage 3)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: swUser.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/simulate`)
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ config-simulation.Read (เช่น Auditor) -> 403', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const auditorUser = await makeUser(prisma, { role: 'Auditor' });
+      // Auditor มี config.Read ปกติ (ดู view รายการ) แต่ไม่ควรเรียก simulate ได้
+      await grant('Auditor', ActionType.Read, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(auditorUser.id, 'Auditor');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/simulate`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('SW มีสิทธิ์ config-simulation.Read, Config มี field ครบ -> 200 passed: true', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config-simulation');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet', CONN_TIMEOUT: 30 },
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/simulate`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { passed: boolean; details: string[] };
+      expect(body.passed).toBe(true);
+    });
+
+    it('Operation มีสิทธิ์ config-simulation.Read, fields ว่างเปล่า -> 200 passed: false', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Read, 'config-simulation');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/simulate`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { passed: boolean; details: string[] };
+      expect(body.passed).toBe(false);
+      expect(body.details.length).toBeGreaterThan(0);
+    });
+
+    it('สถานะ Config เป็น approved แล้ว -> 409', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config-simulation');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: swUser.id,
+          status: 'approved',
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/simulate`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('ไม่เจอ id -> 404', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config-simulation');
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config/22222222-2222-2222-2222-222222222222/simulate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
   });
 });

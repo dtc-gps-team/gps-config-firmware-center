@@ -33,7 +33,13 @@ describe('ConfigController', () => {
   let service: jest.Mocked<
     Pick<
       ConfigService,
-      'findAll' | 'create' | 'importFromJson' | 'findOne' | 'update' | 'remove'
+      | 'findAll'
+      | 'create'
+      | 'importFromJson'
+      | 'findOne'
+      | 'update'
+      | 'remove'
+      | 'simulate'
     >
   >;
 
@@ -45,6 +51,7 @@ describe('ConfigController', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       remove: jest.fn(),
+      simulate: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -116,5 +123,12 @@ describe('ConfigController', () => {
     service.remove.mockResolvedValue(undefined);
     await controller.remove(sampleConfig.id);
     expect(service.remove).toHaveBeenCalledWith(sampleConfig.id);
+  });
+
+  it('POST /config/:id/simulate -> service.simulate', async () => {
+    service.simulate.mockResolvedValue({ passed: true, details: ['ผ่านหมด'] });
+    const result = await controller.simulate(sampleConfig.id);
+    expect(result).toEqual({ passed: true, details: ['ผ่านหมด'] });
+    expect(service.simulate).toHaveBeenCalledWith(sampleConfig.id);
   });
 });

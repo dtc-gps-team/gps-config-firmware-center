@@ -22,6 +22,7 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser, ConfigService } from './config.service';
+import { SimulationResult } from './device-simulator';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
@@ -40,9 +41,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
   return { id: req.user.sub, role: req.user.role };
 }
 
-// Stage 1+2 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +
-// Import จากไฟล์ JSON ยังไม่มี simulate/approve/reject (ดู
-// 04_Phase1_A_ConfigWorkflow.md Section 2.4 — ทำเป็น Stage แยกทีหลัง)
+// Stage 1-3 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +
+// Import จากไฟล์ JSON + Simulate ยังไม่มี decide/approve/reject (ดู
+// 04_Phase1_A_ConfigWorkflow.md — ทำเป็น Stage 4 แยกทีหลัง)
 //
 // DELETE ใช้ action Update เดิม (ไม่มี ActionType.Delete ใน enum) — ตัดสินใจ
 // ไว้ตอนแก้ schema follow-up ก่อน #26 ดูเหตุผลเต็มๆ ใน PR #44 description
@@ -91,6 +92,19 @@ export class ConfigController {
   @RequirePermission('config', ActionType.Read)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
     return this.configService.findOne(id);
+  }
+
+  // Stage 3 (#26) — ทดสอบกับ Device Simulator (dry-run, ไม่แตะ status)
+  // resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดู prisma/seed.ts): SW/Operation/
+  // ST/OT ต้องเรียก endpoint นี้ได้ทั้งคู่ แต่ Auditor/Admin ที่มี config.Read
+  // อยู่แล้ว (ไว้แค่ดูรายการ/รายละเอียด) ไม่ควรเรียก simulate ได้ตาม
+  // RBAC_Matrix.md ตาราง 4.1 — ถ้าใช้ 'config'+Read ร่วมกับ endpoint อื่นจะ
+  // เผลอเปิดให้ Auditor/Admin เรียกได้ไปด้วยโดยไม่ตั้งใจ
+  @Post(':id/simulate')
+  @RequirePermission('config-simulation', ActionType.Read)
+  @HttpCode(HttpStatus.OK)
+  simulate(@Param('id', ParseUUIDPipe) id: string): Promise<SimulationResult> {
+    return this.configService.simulate(id);
   }
 
   @Put(':id')

@@ -8,6 +8,7 @@ import { Config } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, ConfigService } from './config.service';
+import { DEVICE_SIMULATOR, DeviceSimulator } from './device-simulator';
 
 type ConfigDelegateMock = {
   create: jest.Mock;
@@ -30,6 +31,8 @@ const draftConfig: Config = {
 };
 
 const testingConfig: Config = { ...draftConfig, status: 'testing' };
+const approvedConfig: Config = { ...draftConfig, status: 'approved' };
+const syncedConfig: Config = { ...draftConfig, status: 'synced' };
 
 const sw: ActingUser = { id: 'sw-1', role: 'SW' };
 
@@ -59,6 +62,7 @@ function makeMulterFile(
 describe('ConfigService', () => {
   let service: ConfigService;
   let config: ConfigDelegateMock;
+  let deviceSimulator: jest.Mocked<DeviceSimulator>;
 
   beforeEach(async () => {
     config = {
@@ -68,11 +72,13 @@ describe('ConfigService', () => {
       update: jest.fn(),
       delete: jest.fn(),
     };
+    deviceSimulator = { simulateConfig: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConfigService,
         { provide: PrismaService, useValue: { config } },
+        { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
       ],
     }).compile();
 
@@ -200,6 +206,65 @@ describe('ConfigService', () => {
           createdBy: 'sw-1',
         },
       });
+    });
+  });
+
+  describe('simulate', () => {
+    it('status draft -> เรียก deviceSimulator.simulateConfig ด้วย deviceModel/protocol/fields จาก DB (ไม่ใช่จาก client)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      deviceSimulator.simulateConfig.mockResolvedValue({
+        passed: true,
+        details: ['ผ่านหมด'],
+      });
+
+      const result = await service.simulate(draftConfig.id);
+
+      expect(result).toEqual({ passed: true, details: ['ผ่านหมด'] });
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: draftConfig.deviceModel,
+        protocol: draftConfig.protocol,
+        fields: draftConfig.fields,
+      });
+    });
+
+    it('status testing -> ยังทดสอบซ้ำได้ (ไม่ถูกบล็อก)', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      deviceSimulator.simulateConfig.mockResolvedValue({
+        passed: false,
+        details: ['APN1 ไม่ถูกต้อง'],
+      });
+
+      await expect(service.simulate(testingConfig.id)).resolves.toEqual({
+        passed: false,
+        details: ['APN1 ไม่ถูกต้อง'],
+      });
+    });
+
+    it('status approved -> ConflictException ไม่เรียก simulator เลย', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await expect(service.simulate(approvedConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('status synced -> ConflictException ไม่เรียก simulator เลย', async () => {
+      config.findUnique.mockResolvedValue(syncedConfig);
+
+      await expect(service.simulate(syncedConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('ไม่เจอ config เลย -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.simulate('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
     });
   });
 
