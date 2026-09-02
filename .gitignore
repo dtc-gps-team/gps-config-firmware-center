@@ -2,25 +2,22 @@
 .env
 .env.local
 .env.*.local
-
 # Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
 # Build output
 dist/
 build/
 .next/
 out/
-
 # Logs
 logs/
 *.log
-
 # OS / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+commit-msg.txt
