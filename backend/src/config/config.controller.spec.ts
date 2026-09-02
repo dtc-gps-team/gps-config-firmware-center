@@ -40,6 +40,9 @@ describe('ConfigController', () => {
       | 'update'
       | 'remove'
       | 'simulate'
+      | 'decide'
+      | 'approve'
+      | 'reject'
     >
   >;
 
@@ -52,6 +55,9 @@ describe('ConfigController', () => {
       update: jest.fn(),
       remove: jest.fn(),
       simulate: jest.fn(),
+      decide: jest.fn(),
+      approve: jest.fn(),
+      reject: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -130,5 +136,28 @@ describe('ConfigController', () => {
     const result = await controller.simulate(sampleConfig.id);
     expect(result).toEqual({ passed: true, details: ['ผ่านหมด'] });
     expect(service.simulate).toHaveBeenCalledWith(sampleConfig.id);
+  });
+
+  it('POST /config/:id/decide -> service.decide พร้อม passed จาก body', async () => {
+    const decided = { ...sampleConfig, status: 'testing' as const };
+    service.decide.mockResolvedValue(decided);
+    const result = await controller.decide(sampleConfig.id, { passed: true });
+    expect(result).toEqual(decided);
+    expect(service.decide).toHaveBeenCalledWith(sampleConfig.id, true);
+  });
+
+  it('POST /config/:id/approve -> service.approve', async () => {
+    const approved = { ...sampleConfig, status: 'approved' as const };
+    service.approve.mockResolvedValue(approved);
+    const result = await controller.approve(sampleConfig.id);
+    expect(result).toEqual(approved);
+    expect(service.approve).toHaveBeenCalledWith(sampleConfig.id);
+  });
+
+  it('POST /config/:id/reject -> service.reject', async () => {
+    service.reject.mockResolvedValue(sampleConfig);
+    const result = await controller.reject(sampleConfig.id);
+    expect(result).toEqual(sampleConfig);
+    expect(service.reject).toHaveBeenCalledWith(sampleConfig.id);
   });
 });

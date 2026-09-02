@@ -140,6 +140,12 @@ async function main() {
     grant('ST', 'config-simulation', 'Read'),
     grant('OT', 'config-simulation', 'Read'),
 
+    // ---- config-decision (Stage 4, #26) ----
+    // decideConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดูคอมเมนต์เต็ม
+    // ใน config.controller.ts): แม้ตอนนี้มีแค่ SW ที่มีสิทธิ์ ก็ไม่อยากใช้
+    // 'config'+Update ร่วมกับสิทธิ์แก้ไข field ปกติ เพราะเป็นคนละ action กัน
+    grant('SW', 'config-decision', 'Approve'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),

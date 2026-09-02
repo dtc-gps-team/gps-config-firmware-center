@@ -21,11 +21,11 @@ import {
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 
 /**
- * Stage 1-3 (issue #26) — CRUD พื้นฐาน + Import JSON + Simulate ของ
- * ConfigController ผ่าน HTTP จริง (JwtAuthGuard -> PermissionGuard เต็ม
- * เส้นทาง) ยังไม่มี decide/approve/reject ในเทสชุดนี้ (เป็น Stage 4)
+ * Stage 1-4 (issue #26) — CRUD พื้นฐาน + Import JSON + Simulate +
+ * decide/approve/reject ของ ConfigController ผ่าน HTTP จริง (JwtAuthGuard ->
+ * PermissionGuard เต็มเส้นทาง)
  */
-describe('ConfigController Stage 1-3 CRUD + Import + Simulate (integration — real postgres + guard chain)', () => {
+describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/Reject (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaClient;
   let jwtService: JwtService;
@@ -521,6 +521,326 @@ describe('ConfigController Stage 1-3 CRUD + Import + Simulate (integration — r
 
       await request(app.getHttpServer())
         .post('/api/v1/config/22222222-2222-2222-2222-222222222222/simulate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  describe('POST /config/:id/decide (Stage 4)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .send({ passed: true })
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ config-decision.Approve (เช่น Operation) -> 403', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ passed: true })
+        .expect(403);
+    });
+
+    it('SW มีสิทธิ์, ไม่ส่ง passed มา -> 400', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(400);
+    });
+
+    it('SW มีสิทธิ์, status draft, passed:true -> 200 สถานะเปลี่ยนเป็น testing', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ passed: true })
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('testing');
+    });
+
+    it('SW มีสิทธิ์, status draft, passed:false -> 200 สถานะยังเป็น draft', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ passed: false })
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('draft');
+    });
+
+    it('status ไม่ใช่ draft แล้ว (เช่น testing) -> 409', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ passed: true })
+        .expect(409);
+    });
+
+    it('ไม่เจอ id -> 404', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config/22222222-2222-2222-2222-222222222222/decide')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ passed: true })
+        .expect(404);
+    });
+  });
+
+  describe('POST /config/:id/approve (Stage 4)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ config.Approve (เช่น SW) -> 403', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('Operation มีสิทธิ์, status testing -> 200 สถานะเปลี่ยนเป็น approved', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('approved');
+    });
+
+    it('status ยังเป็น draft (ยังไม่ผ่าน decide) -> 409', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('ไม่เจอ id -> 404', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config/22222222-2222-2222-2222-222222222222/approve')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  describe('POST /config/:id/reject (Stage 4)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/reject`)
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ config.Approve (เช่น SW) -> 403', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('Operation มีสิทธิ์, status testing -> 200 สถานะย้อนกลับเป็น draft', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('draft');
+    });
+
+    it('status ยังเป็น draft (ยังไม่เคยส่งต่อ Operation) -> 409', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('ไม่เจอ id -> 404', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config/22222222-2222-2222-2222-222222222222/reject')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
     });
