@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.example.mobile"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 11.x ต้องการ compileSdk 37 แต่ Flutter 3.44 default = 36
+    // override ตรงนี้ไปก่อน (platform android-37 ติดตั้งแล้วในเครื่อง)
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
