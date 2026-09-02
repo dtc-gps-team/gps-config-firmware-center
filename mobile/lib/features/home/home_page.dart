@@ -43,8 +43,7 @@ class HomePage extends ConsumerWidget {
             if (role == UserRole.st || role == UserRole.ot) ...[
               const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: () =>
-                    context.push(AppRoutes.deviceConnectionTest),
+                onPressed: () => context.push(AppRoutes.deviceConnectionTest),
                 icon: const Icon(Icons.wifi_tethering),
                 label: const Text('ทดสอบสัญญาณ'),
               ),

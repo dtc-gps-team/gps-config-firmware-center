@@ -21,10 +21,7 @@ class _FakeRepo implements DeviceConnectionTestRepository {
   }
 }
 
-Future<void> _pump(
-  WidgetTester tester,
-  DeviceConnectionTestRepository repo,
-) {
+Future<void> _pump(WidgetTester tester, DeviceConnectionTestRepository repo) {
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -97,9 +94,7 @@ void main() {
   });
 
   testWidgets('404 -> ข้อความ error เฉพาะ ไม่มี result card', (tester) async {
-    final repo = _FakeRepo(
-      error: ApiException('not found', statusCode: 404),
-    );
+    final repo = _FakeRepo(error: ApiException('not found', statusCode: 404));
     await _pump(tester, repo);
 
     await tester.enterText(find.byKey(const Key('device_id_input')), 'NOPE');
@@ -116,9 +111,7 @@ void main() {
   });
 
   testWidgets('409 -> ข้อความ error เฉพาะ', (tester) async {
-    final repo = _FakeRepo(
-      error: ApiException('conflict', statusCode: 409),
-    );
+    final repo = _FakeRepo(error: ApiException('conflict', statusCode: 409));
     await _pump(tester, repo);
 
     await tester.enterText(find.byKey(const Key('device_id_input')), 'DEV-2');

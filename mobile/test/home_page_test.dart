@@ -11,8 +11,7 @@ class _FakeAuthController extends AuthController {
   final UserRole? _role;
 
   @override
-  AuthState build() =>
-      AuthState(status: AuthStatus.authenticated, role: _role);
+  AuthState build() => AuthState(status: AuthStatus.authenticated, role: _role);
 }
 
 Future<void> _pumpHome(WidgetTester tester, UserRole? role) {
@@ -27,10 +26,7 @@ Future<void> _pumpHome(WidgetTester tester, UserRole? role) {
 }
 
 void main() {
-  final testConnectionButton = find.widgetWithText(
-    FilledButton,
-    'ทดสอบสัญญาณ',
-  );
+  final testConnectionButton = find.widgetWithText(FilledButton, 'ทดสอบสัญญาณ');
 
   testWidgets('ST เห็นปุ่ม "ทดสอบสัญญาณ"', (tester) async {
     await _pumpHome(tester, UserRole.st);

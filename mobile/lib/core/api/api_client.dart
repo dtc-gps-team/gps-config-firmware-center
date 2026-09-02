@@ -81,9 +81,8 @@ class ApiClient {
     String deviceId,
   ) async {
     return _wrap(
-      () => _dio.post<Map<String, dynamic>>(
-        '/devices/$deviceId/test-connection',
-      ),
+      () =>
+          _dio.post<Map<String, dynamic>>('/devices/$deviceId/test-connection'),
       DeviceConnectionTestResult.fromJson,
     );
   }
