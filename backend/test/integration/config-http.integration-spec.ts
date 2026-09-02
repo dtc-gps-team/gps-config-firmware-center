@@ -1,4 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActionType, PrismaClient } from '@prisma/client';
@@ -31,7 +32,19 @@ describe('ConfigController Stage 1-3 CRUD + Import + Simulate (integration — r
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [PrismaModule, ConfigModule],
+      // ConfigModule (business) ต้องมี NestConfigModule ในกราฟด้วย — ปกติได้
+      // มาฟรีตอนรันแอปจริงผ่าน AppModule (ที่เรียก
+      // NestConfigModule.forRoot({ isGlobal: true }) ไว้แล้ว) แต่เทสนี้ import
+      // แค่ ConfigModule เดี่ยวๆ ไม่ผ่าน AppModule เลย เลยต้อง forRoot() เองที่นี่
+      // ไม่งั้น DEVICE_SIMULATOR provider (useFactory ที่ inject
+      // @nestjs/config ConfigService) จะ resolve dependency ไม่ได้ — ไม่ต้องตั้ง
+      // envFilePath เพราะเทสนี้ไม่ได้พึ่งค่าจริงจาก .env (DEVICE_SIMULATOR_MODE
+      // ใช้ default 'mock' อยู่แล้ว)
+      imports: [
+        NestConfigModule.forRoot({ isGlobal: true }),
+        PrismaModule,
+        ConfigModule,
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();

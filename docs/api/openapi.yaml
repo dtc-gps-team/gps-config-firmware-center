@@ -199,7 +199,14 @@ paths:
           schema:
             type: string
       requestBody:
-        required: true
+        # required: false (v3.9 — แก้ตาม code review ของ kittiphong บน PR
+        # Stage 3: ConfigController.simulate ไม่รับ @Body() เลยจริงๆ — เดิม
+        # required: true ทำให้ client ที่ gen จาก spec ตรงๆ ถูกบังคับส่ง body
+        # ที่ backend ไม่สนใจอยู่ดี ส่วน `deviceModel` ใน schema ก็ไม่ถูกใช้
+        # เลย (ConfigService.simulate ใช้ deviceModel/protocol/fields จาก DB
+        # ของ Config นั้นเสมอ ไม่รับจาก client) เก็บ property นี้ไว้เป็นข้อมูล
+        # อ้างอิงเฉยๆ
+        required: false
         content:
           application/json:
             schema:
@@ -222,49 +229,6 @@ paths:
           description: ไม่พบ Config นี้
         "409":
           description: สถานะ Config ปัจจุบันไม่รองรับการทดสอบ (เช่น approved/synced ไปแล้ว)
-
-  /config/{configId}/decide:
-    post:
-      tags: [config]
-      operationId: decideConfig
-      summary: SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate (v3.8 — เพิ่มปิด open question RBAC_Matrix.md ข้อ 6)
-      description: >-
-        แยกจาก `simulateConfig` โดยตั้งใจ — `simulate` แค่คืนผลทดสอบ ไม่แตะสถานะ
-        ส่วน endpoint นี้คือ SW กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ:
-        ผ่าน (`passed: true`) เปลี่ยนสถานะ `draft` → `testing` (ส่งต่อให้ Operation
-        เห็นใน Approval Center) ไม่ผ่าน (`passed: false`) สถานะคงเป็น `draft`
-        เหมือนเดิมให้ SW แก้ไขต่อ (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ย้อนกลับ)
-      parameters:
-        - in: path
-          name: configId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [passed]
-              properties:
-                passed:
-                  type: boolean
-      responses:
-        "200":
-          description: บันทึกผลตัดสินใจสำเร็จ — คืน Config ล่าสุด (status เปลี่ยนเป็น `testing` ถ้า passed=true)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeviceConfigDraft"
-        "400":
-          description: ไม่ได้ส่ง `passed` มา หรือส่งมาไม่ใช่ boolean
-        "403":
-          description: ไม่มีสิทธิ์ปักผลตัดสินใจ Config นี้ — เฉพาะ Role SW เท่านั้น
-        "404":
-          description: ไม่พบ Config นี้
-        "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ `draft` จึงปักผลตัดสินใจไม่ได้ (เช่น ยังไม่เคย simulate เลย หรือส่งต่อ Operation ไปแล้ว)
 
   /config/{configId}/approve:
     post:

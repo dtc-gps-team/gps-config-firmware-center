@@ -20,7 +20,8 @@ export const EDITABLE_CONFIG_STATUS: ConfigStatus = 'draft';
  * `synced`/`rejected` ไปแล้ว ตาม 409 ที่ระบุใน docs/api/openapi.yaml
  * (`simulateConfig`): "สถานะ Config ปัจจุบันไม่รองรับการทดสอบ (เช่น
  * approved/synced ไปแล้ว)" — รวม `testing` ไว้ด้วยเพราะ SW ต้องทดสอบซ้ำได้
- * ระหว่างที่ยังไม่ตัดสินใจปักผล (ดู `decide` ใน Stage 4) */
+ * ระหว่างที่ยังไม่ตัดสินใจปักผล (ขั้นตัดสินใจเองยังเป็น open question ที่ยัง
+ * ไม่ปิด — ดู docs/architecture/RBAC_Matrix.md Section 6) */
 export const SIMULATABLE_CONFIG_STATUSES: readonly ConfigStatus[] = [
   'draft',
   'testing',

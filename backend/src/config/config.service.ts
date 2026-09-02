@@ -117,11 +117,13 @@ export class ConfigService {
     // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
     // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
     //
-    // TODO(Stage 3): ตอนนี้ validate แค่ shape ของ `fields` ว่าเป็น object
-    // (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ ConfigFieldDefinition
-    // ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่จำเป็นครบ, type/ค่าที่
-    // ยอมรับได้ถูกต้อง) ต้องรอ schema ต่อ device model ก่อนถึงจะทำได้ลึกกว่านี้
-    // — วางแผนทำพร้อม Simulate ใน Stage 3
+    // TODO(รอตาราง ConfigFieldDefinition): ตอนนี้ validate แค่ shape ของ
+    // `fields` ว่าเป็น object (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ
+    // ConfigFieldDefinition ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่
+    // จำเป็นครบ, type/ค่าที่ยอมรับได้ถูกต้อง) — ยืนยันแล้วว่า Stage 3
+    // (Simulate) จงใจไม่ทำส่วนนี้เช่นกัน (ดู docs/04_Phase1_A_ConfigWorkflow.md
+    // หัวข้อ "จงใจไม่ทำใน Stage นี้") ต้องรอตาราง Config Definition Lookup
+    // จริงก่อนถึงจะทำได้ลึกกว่านี้ — ยังไม่มี Stage ไหนรับผิดชอบตอนนี้
     const dto = plainToInstance(CreateConfigDto, parsed, {
       excludeExtraneousValues: false,
     });
@@ -148,9 +150,9 @@ export class ConfigService {
    *
    * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
    * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
-   * (`simulateConfig` summary) และ RBAC_Matrix.md footnote ³ — ขั้นที่ SW
-   * "ปักผลตัดสินใจ" จริงๆ (เปลี่ยน status) แยกไปเป็น `decide()` ต่างหาก
-   * (Stage 4)
+   * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
+   * Operation หรือไม่ (เปลี่ยน status) ยังเป็น open question ที่ยังไม่ปิด
+   * (ดู docs/architecture/RBAC_Matrix.md Section 6) ไม่ implement ในนี้
    *
    * รับ `deviceModel` ใน request body ได้ตาม docs/api/openapi.yaml แต่ตั้งใจ
    * ไม่ใช้ค่านั้นเลย — ใช้ `deviceModel`/`protocol`/`fields` ที่ persist ไว้ใน

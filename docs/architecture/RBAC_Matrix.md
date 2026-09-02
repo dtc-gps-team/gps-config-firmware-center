@@ -43,7 +43,7 @@
 | **Device Search / Device Detail** | R | R | R | R | R | R |
 | **Config Editor** (สร้าง/แก้ Draft ผ่านฟอร์ม — สถานะ `draft`) | C, R, U ² | R | R | R | R | R |
 | **Config Import จากไฟล์ (JSON)** (เข้า flow เดียวกับฟอร์ม) | C | R | R | R | R | R |
-| **Config Simulation (dry-run)** — รันทดสอบผ่าน `POST /config/{id}/simulate` (**ไม่เปลี่ยนสถานะ** — คืนแค่ผลทดสอบ กดซ้ำได้ระหว่างที่ยังเป็น `draft`) แล้ว SW ปักผลตัดสินใจเองผ่าน `POST /config/{id}/decide` ³ (ผ่าน → `draft` → `testing` ส่งต่อ Operation, ไม่ผ่าน → คงเป็น `draft` ให้แก้ไขต่อ) | C, R, U | R | R | R | R | R |
+| **Config Simulation (dry-run)** — รันทดสอบผ่าน `POST /config/{id}/simulate` (**ไม่เปลี่ยนสถานะ** — คืนแค่ผลทดสอบ กดซ้ำได้ระหว่างที่ยังเป็น `draft`) | C, R, U | R | R | R | R | R |
 | **Approval Center** — Operation อนุมัติ/ปฏิเสธ Config (อนุมัติ → `approved`, ปฏิเสธ → กลับ `draft` ทั้งหมด) | R | R, **A** | R | R | R | R |
 | **Config Simulation Gate** (บล็อก/แก้ไข/ผ่าน ก่อนเข้า Approval) | R | R | R | R | R | R |
 | **Device Config Override** | R | R | **C, R, U, O** | **C, R, U, O** | R | R |
@@ -62,8 +62,6 @@
 ¹ ST/OT บน Web ดู Task ที่ตัวเองถูก assign ได้อย่างเดียว — การแก้ `status` ของงานตัวเอง (รับงาน/ปิดงาน) ทำผ่าน **Mobile** (ดู Section 3 และ 4.3)
 
 ² **ปิด open question: Config ไม่ scope ตาม creator** — ยืนยันโดย paveekornk (A) เจ้าของ module `config`: SW ทุกคนแก้ไข/ลบ Config ที่ยังเป็น `draft` ร่วมกันได้ ไม่ใช่แยกเป็นของใครของมัน (ต่างจาก Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — ดู footnote ¹) `ConfigService.update`/`remove` จึงไม่ filter ด้วย `createdBy` โดยตั้งใจ — ถ้าทีมต้องการเปลี่ยนเป็นแยกตามเจ้าของทีหลัง ต้องแก้ทั้งแถวนี้และ service layer ใหม่
-
-³ **ปิด open question: endpoint สำหรับ SW ปักผลตัดสินใจผ่าน/ไม่ผ่าน (Section 6 เดิม)** — ยืนยันโดย paveekornk (A): เลือก**ทางเลือก (ก) แยก endpoint ใหม่** `POST /config/{configId}/decide` (SW เท่านั้น, body `{ passed: boolean }`) แทนการยัดเข้า `approveConfig` เพราะ Build Steps Phase 1 ข้อ 7-8 แยกบทบาท SW-ตัดสินใจ กับ Operation-อนุมัติ ไว้เป็นคนละคน คนละหน้าจอ ชัดเจนอยู่แล้ว รวม endpoint เป็นอันเดียวจะทำให้ Guard แยกสิทธิ์ 2 บทบาทนี้ไม่ได้ตรงไปตรงมา — **ไม่ต้องเพิ่ม enum สถานะใหม่** (ไม่มี `sw_approved` แยก): `decide(passed: true)` พา `draft` → `testing` ตรงกับเงื่อนไข precondition ที่ `approveConfig`/`rejectConfig` ใช้อยู่แล้ว (409 ถ้าไม่ใช่ `testing`) พอดี ส่วน `decide(passed: false)` ปล่อยสถานะเป็น `draft` เหมือนเดิม (ยังไม่เคยขยับสถานะ จึงไม่มี state ให้ต้องย้อนกลับ) — `simulate` เองยังคง**ไม่แตะสถานะ**เหมือนเดิม ตาม `docs/api/openapi.yaml`/RBAC Matrix เดิมที่ระบุไว้ก่อนแล้ว ดู endpoint ที่เพิ่มใน 4.1 และ decision log ใน Section 6
 
 ---
 
@@ -99,7 +97,6 @@
 | `/config` | POST | `createConfig` | SW |
 | `/config/import` | POST | `importConfig` | SW |
 | `/config/{configId}/simulate` | POST | `simulateConfig` | SW, Operation/ST/OT (endpoint เดียวกันทั้ง Web/Mobile ตาม summary ใน spec) |
-| `/config/{configId}/decide` | POST | `decideConfig` | SW เท่านั้น (ปิด open question ดู footnote ³ — เพิ่มเข้า `docs/api/openapi.yaml` แล้วในรอบเดียวกัน) |
 | `/config/{configId}/approve` | POST | `approveConfig` | Operation เท่านั้น |
 | `/config/{configId}/reject` | POST | `rejectConfig` | Operation เท่านั้น |
 | `/notifications` | GET | `listNotifications` | ทุก Role ที่ login แล้ว — ดึงเฉพาะของ user ตัวเอง (ผูกกับ JWT ไม่ใช่ query param) |
@@ -117,6 +114,7 @@
 
 | Endpoint ที่ต้องเพิ่ม (ชื่อ/path เป็นข้อเสนอ ยังไม่ fix) | Method | Role ที่อนุญาต (ตามข้อ 2) | เหตุผลที่ยังไม่มี |
 |---|---|---|---|
+| Config: ให้ SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเอง (แยกจาก `simulate` ที่แค่คืนผลทดสอบ ไม่เปลี่ยน status) | POST | SW | `simulateConfig` คืนแค่ `SimulationResult` ไม่แตะ status — enum status ก็ไม่มีค่าแยกสำหรับขั้นนี้ด้วย (มีแค่ `draft/testing/approved/rejected/synced`) ต้องตกลงกับทีมว่าจะเพิ่ม endpoint ใหม่ หรือให้ `approveConfig` ทำหน้าที่ครอบคลุมทั้ง SW+Operation ในครั้งเดียว |
 | `/config/{configId}/override` | POST | ST, OT | ยังไม่มีโมดูล Override เลยใน spec |
 | `/firmware/{firmwareId}/override` | POST | ST, OT | เช่นเดียวกับข้างบน |
 | `/devices` (registration) | POST | Operation/ST/OT | ยังไม่มี endpoint สร้าง Device |
@@ -149,7 +147,7 @@
 ## 5. กติกา Separation of Duty (สำคัญ — ต้องคุยกับ B ให้ตรงกันก่อนปิด)
 
 1. **SW ห้ามอนุมัติ Config ของตัวเอง** — คนที่กด Create/Import Config (SW) ต้องไม่ใช่คนเดียวกับที่กด Approve (Operation) แม้ในทางเทคนิคจะ login คนละ account อยู่แล้วก็ตาม แต่ Guard ต้องบล็อกที่ระดับ Role ไม่ใช่แค่ระดับ user id
-2. **สถานะ Config ต้องไล่ตาม enum จริงบน `main`**: `draft` → (SW `decide(passed:true)`) → `testing` → (Operation `approve`) → `approved` → `synced` (หรือ Operation `reject` แล้วย้อนกลับ `draft` ทั้งหมด) — ห้าม Guard/Service ข้าม state ใดๆ — **ปิด Gap แล้ว (ดู footnote ³ ใน Section 2):** ไม่ต้องเพิ่ม enum ใหม่ — ขั้น "SW ตัดสินใจผ่าน" กับ "Operation อนุมัติ" แยกกันชัดเจนอยู่แล้วด้วย endpoint คนละตัว (`decideConfig` พา `draft`→`testing`, `approveConfig` พา `testing`→`approved`) ไม่ได้ปนกันที่ `approved` เหมือนที่เคยกังวลไว้
+2. **สถานะ Config ต้องไล่ตาม enum จริงบน `main`**: `draft` → `testing` → `approved` → `synced` (หรือ `rejected` แล้วย้อนกลับ `draft`) — ห้าม Guard/Service ข้าม state ใดๆ — **หมายเหตุสำคัญ:** enum ปัจจุบันยังไม่มีสถานะแยกระหว่างที่ SW ตัดสินใจผ่านแล้วกับที่ Operation อนุมัติแล้ว (ทั้งคู่ใช้ path ไปสู่ `approved` เดียวกัน) เป็น Gap ที่ต้องปิดก่อนเขียนโค้ดจริง (ดู 4.2)
 3. **Override (ST/OT) ต้องบันทึกลง Audit Log ทุกครั้งแบบบังคับ** ไม่มีข้อยกเว้น เพราะเป็นการข้าม flow อนุมัติปกติ (ต่างจาก Config ปกติที่ผ่าน Approval Center อยู่แล้ว)
 4. **Operation ปฏิเสธ Config → สถานะย้อนกลับไป `draft` เสมอ** (ตามที่ยืนยันไว้ใน Formal.md Section 3.1) ไม่มี Role ไหนสามารถ Override ขั้นตอนนี้ได้ นอกจาก ST/OT ที่ใช้ path "Override" แยกต่างหาก ซึ่งไม่ผ่าน Approval Center เลย
 5. **Admin ไม่ใช่ Approver และไม่ใช่ Override** — สิทธิ์ Admin จำกัดเฉพาะ User/Role Management และ Decommission Device เพื่อคงหลัก Separation of Duty ไม่ให้ Admin กลายเป็น "ซูเปอร์ยูสเซอร์" ที่ผ่านทุกขั้นตอนได้คนเดียว (ถ้าทีมต้องการให้ Admin override ได้ในกรณีฉุกเฉินจริง ต้องระบุเพิ่มและใส่เหตุผลใน Audit Log)
@@ -161,10 +159,11 @@
 
 ## 6. Assumption / Gap ที่ยังไม่ยืนยัน — ต้องคุยกับ kittiphong (B) ก่อนปิด Matrix
 
-- ~~enum สถานะ Config ไม่มีจุดแยกระหว่างขั้น SW กับขั้น Operation~~ — **ปิดแล้ว โดย paveekornk (A)** ตอนเริ่ม Stage 3 (Simulate) ของ issue #26: เพิ่ม endpoint ใหม่ `POST /config/{configId}/decide` แยกจาก `approveConfig` ไม่ต้องเพิ่ม enum ใหม่ — รายละเอียดเหตุผลเต็มดู footnote ³ ใน Section 2 และแถวใหม่ในตาราง 4.1 — **ยังไม่ได้ให้ kittiphong (B) รีวิว** เพราะ endpoint นี้ B ต้องใช้ทำปุ่ม "ทดสอบกับ Device Simulator" ฝั่ง Mobile ใน Phase 5 ด้วย ถ้า B เห็นต่างต้องกลับมาแก้ตรงนี้อีกรอบ
+- **enum สถานะ Config ไม่มีจุดแยกระหว่างขั้น SW กับขั้น Operation** — ทั้งสองขั้นจบที่ `approved` เหมือนกันหมด ต้องตกลงว่าจะ (ก) เพิ่ม status ใหม่ (เช่น `sw_approved`) หรือ (ข) ใช้ field อื่นเก็บว่าใครกดผ่านขั้นไหนแทนการเพิ่ม enum
 - **ขอบเขต ST vs OT**: ในเอกสารต้นทางระบุแค่ "Override เฉพาะ ST/OT" โดยไม่แยกรายละเอียด ในร่างนี้แบ่งให้ ST เน้นงานเทคนิค/Incident ระดับอาวุโส และ OT เน้นงานปฏิบัติการ (Task/Change Request) แต่ทั้งคู่ Override ได้เท่ากัน — ถ้าทีมต้องการแบ่งสิทธิ์ Override ให้ต่างกัน ต้องแก้ตารางส่วนที่ 2 และ 4
 - **User/Role Management**: ยังไม่มีจอนี้ระบุไว้ใน Checkpoint Features ของแผน Sprint ใดเลย — เพิ่มเข้ามาในร่างนี้เพราะ Admin role ต้องมีอย่างน้อย 1 หน้าที่ใช้งานจริง ต้องตกลงว่าจะทำ Sprint ไหน
 - **GPS_Data_Dictionary.xlsx (`CAMPAIGN_ASSIGNMENT.assigned_by`)**: ยืนยันเจ้าของแล้ว — **paveekornk (A) รับไปแก้เอง แยกเป็น PR ต่างหาก ไม่รวมกับ RBAC Matrix นี้** — สถานะปัจจุบันคือ**ยังไม่ได้ลงมือแก้จริง** (แค่ยืนยันความรับผิดชอบ) ต้องติดตามต่อว่าทำเสร็จเมื่อไหร่ เพื่อไม่ให้ตกหล่นไปอีก
+- **`POST /config/{configId}/simulate` ยังไม่รองรับ "ช่างทดสอบอุปกรณ์ที่ติดตั้งจริง"** (พบระหว่างรีวิว Stage 3 โดย kittiphong): `SIMULATABLE_CONFIG_STATUSES` (ดู `config-status.ts`) อนุญาตแค่สถานะ `draft`/`testing` เพราะ endpoint นี้ออกแบบไว้สำหรับ SW dry-run Config **ระหว่างร่างอยู่** เท่านั้น — แต่ Config ที่ติดตั้งบนอุปกรณ์จริงหน้างานจะเป็น `approved`/`synced` เสมอ (ผ่านการอนุมัติมาแล้ว) ทำให้ช่าง (ST/OT ผ่าน Mobile) เรียก endpoint นี้เพื่อทดสอบสัญญาณจากอุปกรณ์ที่ติดตั้งจริงไม่ได้เลย (โดน 409 ทุกครั้ง) — เป็นคนละความหมายกับ dry-run: อันหนึ่งตรวจ field value ของ Config template อันหนึ่งควรตรวจการเชื่อมต่อจริงของอุปกรณ์เครื่องนั้น ต้องออกแบบ endpoint แยกต่างหากสำหรับเคสช่างหน้างาน (อาจต้องคุย mock/real mode ของมันเองแยกจาก `DEVICE_SIMULATOR_MODE`) — **ยังไม่แก้ใน Stage 3 นี้** เพราะผูกกับหน้า "ทดสอบสัญญาณ" ที่ B ออกแบบฝั่ง Mobile อยู่ จะเปิด issue แยกต่างหากชวน B ออกแบบร่วมกัน
 
 ---
 
@@ -181,4 +180,5 @@
 | 2026-08-28 | kittiphong | แก้ครั้งที่ 7 — **ปิด open question: Task creator = Operation** ตัดสินใจโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์น Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน: (1) เพิ่มตาราง 4.3 รายละเอียดสิทธิ์ module `task`, (2) Section 2 แถว Task Management — OT จาก `C, R, U` เหลือ `R` (ST/OT ไม่สร้าง/จัดการ Task บน Web แก้ `status` งานตัวเองผ่าน Mobile), (3) ตาราง 4.1 — `/tasks` POST `createTask` เหลือ `Operation` เท่านั้น, `/tasks/{taskId}` PATCH `updateTask` = Operation ทุก field / ST-OT เฉพาะ field `status` ของงานตัวเอง, (4) ลบรายการ "Task Management ฝั่งใครเป็นคนสร้าง" ออกจาก open question list (Section 6) |
 | 2026-08-28 | kittiphong | แก้ครั้งที่ 8 — เก็บ inconsistency ภายในเอกสารเองที่เกิดจากรอบ 7: (1) ตาราง 4.1 `GET /tasks` (`listTasks`) — เดิมยังบอกว่า "Operation/ST/OT ถูกกรองเฉพาะ `assignedTo` = ตนเอง" ซึ่งขัดกับ 4.3 ที่ให้ Operation จัดการ Task ทั้งหมด → แก้เป็น "ST/OT ที่ใช้ Mobile ถูกกรอง, Operation เห็นทุก Task" ให้ตรงกับ `getTask`/`updateTask` ในตารางเดียวกัน, (2) ตาราง 4.3 แถว "ดู Task ทั้งหมด" ระบุครบว่ารวม SW (read-only) + Operation (จัดการได้) ไม่ใช่แค่ Auditor/Admin, (3) Section 2 แถว Task Management เพิ่ม footnote ¹ ให้ ST/OT ว่าแก้ `status` งานตัวเองผ่าน Mobile — ไม่มีการเปลี่ยนสิทธิ์ใดๆ เป็นการทำให้ข้อความในเอกสารสอดคล้องกันเท่านั้น |
 | 2026-09-01 | paveekornk | แก้ครั้งที่ 9 — ตอบ comment รีวิว PR #46 (Stage 1 CRUD, #26) ของ kittiphong ข้อ 2: **ปิด open question ที่ไม่เคยถูกถามมาก่อน — Config ไม่ scope ตาม creator** ยืนยันโดย paveekornk (A) เจ้าของ module `config`: SW ทุกคนแก้/ลบ Config ที่ยังเป็น `draft` ร่วมกันได้ ไม่แยกเป็นของใครของมัน (1) Section 2 แถว Config Editor เพิ่ม footnote ² อธิบายการตัดสินใจนี้ (2) โค้ดจริง (`ConfigService.update`/`remove`) ทำแบบนี้อยู่แล้วตั้งแต่ Stage 1 โดยไม่ได้ filter `createdBy` — เอกสารรอบนี้แค่ตามให้ทันโค้ด ไม่ได้เปลี่ยนพฤติกรรม |
-| 2026-09-02 | paveekornk | แก้ครั้งที่ 10 — เริ่ม Stage 3 (Simulate) ของ issue #26 **ปิด open question ที่ค้างมาตั้งแต่ร่างแรก — endpoint สำหรับ SW ปักผลตัดสินใจผ่าน/ไม่ผ่าน** (Section 6 เดิม): ตัดสินใจโดย paveekornk (A) เลือกทางเลือก (ก) แยก endpoint ใหม่ `POST /config/{configId}/decide` (SW เท่านั้น) แทนการยัดเข้า `approveConfig` เพราะ Build Steps Phase 1 ข้อ 7-8 แยกบทบาท SW/Operation เป็นคนละคนคนละหน้าจออยู่แล้ว — **ไม่ต้องเพิ่ม enum สถานะใหม่**: `decide(passed:true)` พา `draft`→`testing` ตรงกับ precondition ที่ `approveConfig`/`rejectConfig` ใช้อยู่แล้วพอดี (1) Section 2 แถว Config Simulation เพิ่ม footnote ³ อธิบายเหตุผลเต็ม (2) ตาราง 4.1 เพิ่มแถว `decideConfig` (ย้ายออกจากตาราง 4.2 เดิม) (3) Section 5 กติกาข้อ 2 อัปเดต state diagram ให้ตรง (4) Section 6 ปิดรายการ open question นี้ — **ยังไม่ได้ให้ kittiphong (B) รีวิว** เพราะกระทบปุ่มทดสอบฝั่ง Mobile ที่ B ทำใน Phase 5 ด้วย รอ B คอมเมนต์ก่อนถือว่าปิดสนิท |
+| 2026-09-02 | paveekornk | แก้ครั้งที่ 10 — เริ่ม Stage 3 (Simulate) ของ issue #26: Section 2 แถว Config Simulation ระบุชัดว่า `simulate` ไม่เปลี่ยนสถานะ Config เลย (คืนแค่ผลทดสอบ) ตรงกับโค้ดจริง — เรื่อง open question "endpoint สำหรับ SW ปักผลตัดสินใจผ่าน/ไม่ผ่าน" (Section 6 ข้อ 1) ยังไม่แตะในรอบนี้ (เดิมเคยลองเสนอทางเลือกไว้ในดราฟต์นี้ แต่ถอนออกตาม comment รีวิวของ kittiphong บน PR Stage 3 — endpoint ที่ยังไม่ได้ให้ B รีวิว design ไม่ควรมากับ PR ของ feature อื่น จะไปเสนอแยกเป็น PR ต่างหากแทน) |
+| 2026-09-02 | paveekornk | แก้ครั้งที่ 11 — ตอบ comment รีวิวรอบ 2 ของ kittiphong บน PR Stage 3 ข้อ 7: เพิ่ม Gap ใหม่ใน Section 6 — `simulate` (`SIMULATABLE_CONFIG_STATUSES`) รองรับแค่สถานะ `draft`/`testing` (บริบท SW dry-run ตอนร่าง) ไม่รองรับ `approved`/`synced` (บริบทช่างทดสอบอุปกรณ์ที่ติดตั้งจริงหน้างานผ่าน Mobile) ต้องออกแบบ endpoint แยกต่างหาก — ยังไม่แก้ใน Stage 3 นี้ จะเปิด issue แยกชวน kittiphong (B) ออกแบบร่วมกัน เพราะผูกกับหน้า "ทดสอบสัญญาณ" ฝั่ง Mobile ที่ B ดูแลอยู่ |
