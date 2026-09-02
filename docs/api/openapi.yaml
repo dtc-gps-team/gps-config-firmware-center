@@ -22,6 +22,8 @@ tags:
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
     description: สถานะ Config และ Firmware รายกล่อง
+  - name: device
+    description: การทำงานกับตัวกล่อง — ทดสอบการเชื่อมต่อ/สัญญาณ
   - name: task
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
   - name: notification
@@ -589,6 +591,38 @@ paths:
         "404":
           description: ไม่พบ Device นี้
 
+  /devices/{deviceId}/test-connection:
+    post:
+      tags: [device]
+      operationId: testDeviceConnection
+      summary: ทดสอบการเชื่อมต่อ/สัญญาณของอุปกรณ์ที่ติดตั้งจริง (v3.11)
+      description: >-
+        สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) ทดสอบสัญญาณอุปกรณ์เครื่องที่
+        ติดตั้งจริงแล้ว — ต่างจาก `simulateConfig` ที่เป็น dry-run ตรวจค่า field
+        ของ Config template (สถานะ `draft`/`testing`). อ้างด้วยเลขเครื่องจริง
+        (`Device.deviceId`) ไม่มี request body — server ดึงข้อมูล Device จาก DB เอง
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ผลทดสอบการเชื่อมต่อ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConnectionTestResult"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ทดสอบการเชื่อมต่ออุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: Device ยังไม่ถึงสถานะ installed (ยังเป็น registered หรือ decommissioned ไปแล้ว) จึงทดสอบสัญญาณไม่ได้
+
 components:
   securitySchemes:
     bearerAuth:
@@ -798,6 +832,25 @@ components:
           type: array
           items:
             type: string
+
+    DeviceConnectionTestResult:
+      type: object
+      description: ผลทดสอบการเชื่อมต่อของอุปกรณ์ที่ติดตั้งจริง (`testDeviceConnection`)
+      required: [passed, signalStrength, details, testedAt]
+      properties:
+        passed:
+          type: boolean
+        signalStrength:
+          type: integer
+          description: ความแรงสัญญาณ (dBm) — mock mode คืนค่าคงที่ให้ Mobile ทำ/ทดสอบ UI ได้
+          example: -65
+        details:
+          type: array
+          items:
+            type: string
+        testedAt:
+          type: string
+          format: date-time
 
     DeviceStatus:
       type: object

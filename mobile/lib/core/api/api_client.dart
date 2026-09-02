@@ -76,6 +76,17 @@ class ApiClient {
     );
   }
 
+  /// `POST /devices/{deviceId}/test-connection` — no request body.
+  Future<DeviceConnectionTestResult> testDeviceConnection(
+    String deviceId,
+  ) async {
+    return _wrap(
+      () =>
+          _dio.post<Map<String, dynamic>>('/devices/$deviceId/test-connection'),
+      DeviceConnectionTestResult.fromJson,
+    );
+  }
+
   Future<T> _wrap<T>(
     Future<Response<Map<String, dynamic>>> Function() send,
     T Function(Map<String, dynamic> json) parse,

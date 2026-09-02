@@ -119,6 +119,39 @@ class SimulationResult {
   }
 }
 
+/// Result of `POST /devices/{deviceId}/test-connection`
+/// (`DeviceConnectionTestResult`).
+class DeviceConnectionTestResult {
+  const DeviceConnectionTestResult({
+    required this.passed,
+    required this.signalStrength,
+    required this.details,
+    required this.testedAt,
+  });
+
+  final bool passed;
+
+  /// dBm — mock mode returns a fixed value.
+  final int signalStrength;
+  final List<String> details;
+  final DateTime testedAt;
+
+  factory DeviceConnectionTestResult.fromJson(Map<String, dynamic> json) {
+    final rawDetails = json['details'] as List<dynamic>?;
+    return DeviceConnectionTestResult(
+      passed: json['passed'] as bool? ?? false,
+      // spec says `integer`, but JSON numbers decode loosely — accept any num
+      signalStrength: (json['signalStrength'] as num?)?.toInt() ?? 0,
+      details: rawDetails == null
+          ? const []
+          : rawDetails.map((e) => e.toString()).toList(growable: false),
+      testedAt:
+          DateTime.tryParse(json['testedAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+}
+
 /// `GET /devices/{deviceId}/status` response (`DeviceStatus`).
 class DeviceStatus {
   const DeviceStatus({

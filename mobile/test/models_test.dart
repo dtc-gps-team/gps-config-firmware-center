@@ -58,6 +58,39 @@ void main() {
     });
   });
 
+  group('DeviceConnectionTestResult.fromJson', () {
+    test('parses all fields', () {
+      final result = DeviceConnectionTestResult.fromJson({
+        'passed': true,
+        'signalStrength': -65,
+        'details': ['เชื่อมต่อสำเร็จ', 'RSSI -65 dBm'],
+        'testedAt': '2026-09-02T10:00:00.000Z',
+      });
+      expect(result.passed, isTrue);
+      expect(result.signalStrength, -65);
+      expect(result.details, ['เชื่อมต่อสำเร็จ', 'RSSI -65 dBm']);
+      expect(result.testedAt, DateTime.utc(2026, 9, 2, 10));
+    });
+
+    test('tolerates signalStrength arriving as a double', () {
+      final result = DeviceConnectionTestResult.fromJson({
+        'passed': false,
+        'signalStrength': -70.0,
+        'details': <dynamic>[],
+        'testedAt': '2026-09-02T10:00:00Z',
+      });
+      expect(result.signalStrength, -70);
+    });
+
+    test('defaults on missing fields', () {
+      final result = DeviceConnectionTestResult.fromJson(const {});
+      expect(result.passed, isFalse);
+      expect(result.signalStrength, 0);
+      expect(result.details, isEmpty);
+      expect(result.testedAt, isA<DateTime>());
+    });
+  });
+
   group('DeviceConfigDraft.fromJson', () {
     test('parses status enum and fields map', () {
       final draft = DeviceConfigDraft.fromJson({
