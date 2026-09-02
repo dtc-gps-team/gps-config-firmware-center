@@ -19,8 +19,8 @@ import {
 } from './config-status';
 import {
   DEVICE_SIMULATOR,
-  DeviceSimulator,
-  SimulationResult,
+  type DeviceSimulator,
+  type SimulationResult,
 } from './device-simulator';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */

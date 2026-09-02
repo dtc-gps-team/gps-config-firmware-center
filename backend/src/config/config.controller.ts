@@ -22,7 +22,7 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser, ConfigService } from './config.service';
-import { SimulationResult } from './device-simulator';
+import type { SimulationResult } from './device-simulator';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
