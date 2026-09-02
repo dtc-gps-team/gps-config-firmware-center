@@ -163,6 +163,7 @@
 - **ขอบเขต ST vs OT**: ในเอกสารต้นทางระบุแค่ "Override เฉพาะ ST/OT" โดยไม่แยกรายละเอียด ในร่างนี้แบ่งให้ ST เน้นงานเทคนิค/Incident ระดับอาวุโส และ OT เน้นงานปฏิบัติการ (Task/Change Request) แต่ทั้งคู่ Override ได้เท่ากัน — ถ้าทีมต้องการแบ่งสิทธิ์ Override ให้ต่างกัน ต้องแก้ตารางส่วนที่ 2 และ 4
 - **User/Role Management**: ยังไม่มีจอนี้ระบุไว้ใน Checkpoint Features ของแผน Sprint ใดเลย — เพิ่มเข้ามาในร่างนี้เพราะ Admin role ต้องมีอย่างน้อย 1 หน้าที่ใช้งานจริง ต้องตกลงว่าจะทำ Sprint ไหน
 - **GPS_Data_Dictionary.xlsx (`CAMPAIGN_ASSIGNMENT.assigned_by`)**: ยืนยันเจ้าของแล้ว — **paveekornk (A) รับไปแก้เอง แยกเป็น PR ต่างหาก ไม่รวมกับ RBAC Matrix นี้** — สถานะปัจจุบันคือ**ยังไม่ได้ลงมือแก้จริง** (แค่ยืนยันความรับผิดชอบ) ต้องติดตามต่อว่าทำเสร็จเมื่อไหร่ เพื่อไม่ให้ตกหล่นไปอีก
+- **Notification เปลี่ยนเป็น FCM จริง — รอ A รีวิว**: kittiphong (B) เสนอเปลี่ยน Notification จาก in-app inbox เป็น push notification จริงผ่าน Firebase Cloud Messaging (Android/iOS/Web) — รายละเอียดเต็มดู `docs/05_Mobile_Notification_FCM.md` — ต้องการ schema ใหม่ (`DeviceToken`) ที่ยังไม่มีในระบบ **A ยังไม่ได้รีวิว**
 
 ---
 
