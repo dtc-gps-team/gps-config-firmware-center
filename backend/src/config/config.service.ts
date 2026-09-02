@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Config, Prisma } from '@prisma/client';
+import { Config, type ConfigStatus, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -14,6 +14,8 @@ import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
 import {
+  APPROVABLE_CONFIG_STATUS,
+  DECIDABLE_CONFIG_STATUS,
   EDITABLE_CONFIG_STATUS,
   SIMULATABLE_CONFIG_STATUSES,
 } from './config-status';
@@ -151,8 +153,9 @@ export class ConfigService {
    * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
    * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
    * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
-   * Operation หรือไม่ (เปลี่ยน status) ยังเป็น open question ที่ยังไม่ปิด
-   * (ดู docs/architecture/RBAC_Matrix.md Section 6) ไม่ implement ในนี้
+   * Operation หรือไม่ (เปลี่ยน status) อยู่ที่ `decide()` ด้านล่าง (Stage 4 —
+   * ยังเป็นข้อเสนอที่ kittiphong (B) ยังไม่ได้รีวิว design ไม่ merge เข้า main
+   * จนกว่าจะเสนอแยกเป็น PR ต่างหากและได้รับการยืนยันก่อน)
    *
    * รับ `deviceModel` ใน request body ได้ตาม docs/api/openapi.yaml แต่ตั้งใจ
    * ไม่ใช้ค่านั้นเลย — ใช้ `deviceModel`/`protocol`/`fields` ที่ persist ไว้ใน
@@ -175,6 +178,95 @@ export class ConfigService {
       protocol: config.protocol,
       fields: config.fields as Record<string, unknown>,
     });
+  }
+
+  /**
+   * Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล `simulate` แล้ว
+   * (ข้อเสนอปิด open question ที่ยังค้างอยู่ใน docs/architecture/RBAC_Matrix.md
+   * ตาราง 4.2 — **ยังไม่ได้ให้ kittiphong (B) รีวิว design นี้** ต้องเสนอแยก
+   * เป็น PR ต่างหากก่อน ห้าม merge เข้า main จนกว่าจะได้รับการยืนยันจาก B —
+   * ดูที่มาของการแยกออกจาก PR Stage 3 ใน commit history ของ #49)
+   *
+   * แยกจาก `simulate` โดยตั้งใจ: `simulate` แค่คืนผลทดสอบ กดซ้ำได้ไม่จำกัด
+   * ไม่แตะสถานะเลย ส่วนเมธอดนี้คือ SW กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ
+   * ครั้งเดียวจบ — `passed:true` พา `draft`→`testing` ส่งต่อ Operation
+   * (ตรงกับ precondition ที่ `approve`/`reject` ใช้อยู่แล้วพอดี ไม่ต้องเพิ่ม
+   * enum สถานะใหม่) ส่วน `passed:false` ปล่อยสถานะเป็น `draft` เหมือนเดิม
+   * (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ต้องย้อนกลับ — คืน config
+   * เดิมโดยไม่ยิง UPDATE ลง DB เลย)
+   */
+  async decide(id: string, passed: boolean): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== DECIDABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${DECIDABLE_CONFIG_STATUS} จึงปักผลตัดสินใจไม่ได้ (เช่น ยังไม่เคย simulate เลย หรือส่งต่อ Operation ไปแล้ว)`,
+      );
+    }
+
+    if (!passed) {
+      return config;
+    }
+
+    return this.updateStatus(id, 'testing');
+  }
+
+  /**
+   * Stage 4 (#26) — Operation อนุมัติ Config ที่ SW ปักผลผ่านแล้ว
+   * (ต้องอยู่สถานะ `testing` เท่านั้น) เข้า flow `config-sync-writer` ต่อใน
+   * Phase 2 (ยังไม่ implement ในนี้ — แค่เปลี่ยนสถานะเป็น `approved`)
+   */
+  async approve(id: string): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== APPROVABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงอนุมัติไม่ได้`,
+      );
+    }
+
+    return this.updateStatus(id, 'approved');
+  }
+
+  /**
+   * Stage 4 (#26) — Operation ปฏิเสธ Config ที่อยู่สถานะ `testing`
+   * สถานะย้อนกลับไป `draft` ทั้งหมดเสมอ (ยืนยันไว้ใน RBAC_Matrix.md Section 5
+   * ข้อ 4 — ไม่มี Role ไหน Override ขั้นตอนนี้ได้ นอกจาก ST/OT ที่ใช้ path
+   * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ SW แก้ไขต่อได้
+   * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
+   */
+  async reject(id: string): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== APPROVABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงปฏิเสธไม่ได้`,
+      );
+    }
+
+    return this.updateStatus(id, 'draft');
+  }
+
+  /** race condition เดียวกับ update()/remove() — row อาจถูกลบไปพอดีระหว่าง
+   * findOne กับ update นี้ (rare) แปลง P2025 เป็น 404 แทนที่จะปล่อยเป็น 500 */
+  private async updateStatus(
+    id: string,
+    status: ConfigStatus,
+  ): Promise<Config> {
+    try {
+      return await this.prisma.config.update({
+        where: { id },
+        data: { status },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
   }
 
   findAll(query: QueryConfigDto): Promise<Config[]> {

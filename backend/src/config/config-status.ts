@@ -26,3 +26,16 @@ export const SIMULATABLE_CONFIG_STATUSES: readonly ConfigStatus[] = [
   'draft',
   'testing',
 ];
+
+/** สถานะที่ SW ปักผลตัดสินใจได้ (Stage 4, `decideConfig`) — ต้องเป็น `draft`
+ * เท่านั้น ตรงกับ 409 ที่ระบุใน docs/api/openapi.yaml: "สถานะ Config ปัจจุบัน
+ * ไม่ใช่ draft จึงปักผลตัดสินใจไม่ได้ (เช่น ยังไม่เคย simulate เลย หรือส่งต่อ
+ * Operation ไปแล้ว)" — กันไม่ให้กด decide ซ้ำหลังส่งต่อ Operation แล้ว
+ * (`testing`) หรือกดหลัง Operation ตัดสินใจไปแล้ว (`approved`/`rejected`) */
+export const DECIDABLE_CONFIG_STATUS: ConfigStatus = 'draft';
+
+/** สถานะที่ Operation อนุมัติ/ปฏิเสธได้ (Stage 4, `approveConfig`/
+ * `rejectConfig`) — ต้องเป็น `testing` เท่านั้น (SW ต้อง `decide(passed:true)`
+ * ส่งต่อมาก่อน) ตรงกับ 409 ของทั้งสอง endpoint ใน docs/api/openapi.yaml ที่
+ * ระบุเงื่อนไขเดียวกันเป๊ะๆ */
+export const APPROVABLE_CONFIG_STATUS: ConfigStatus = 'testing';

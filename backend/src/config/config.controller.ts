@@ -24,6 +24,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser, ConfigService } from './config.service';
 import type { SimulationResult } from './device-simulator';
 import { CreateConfigDto } from './dto/create-config.dto';
+import { DecideConfigDto } from './dto/decide-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
 
@@ -41,9 +42,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
   return { id: req.user.sub, role: req.user.role };
 }
 
-// Stage 1-3 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +
-// Import จากไฟล์ JSON + Simulate ยังไม่มี decide/approve/reject (ดู
-// 04_Phase1_A_ConfigWorkflow.md — ทำเป็น Stage 4 แยกทีหลัง)
+// Stage 1-4 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +
+// Import จากไฟล์ JSON + Simulate + decide/approve/reject (ดู
+// 04_Phase1_A_ConfigWorkflow.md)
 //
 // DELETE ใช้ action Update เดิม (ไม่มี ActionType.Delete ใน enum) — ตัดสินใจ
 // ไว้ตอนแก้ schema follow-up ก่อน #26 ดูเหตุผลเต็มๆ ใน PR #44 description
@@ -105,6 +106,43 @@ export class ConfigController {
   @HttpCode(HttpStatus.OK)
   simulate(@Param('id', ParseUUIDPipe) id: string): Promise<SimulationResult> {
     return this.configService.simulate(id);
+  }
+
+  // Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate (ดู
+  // ConfigService.decide สำหรับ business logic เต็มๆ) resource แยกเป็น
+  // 'config-decision' (ไม่ใช้ 'config'+Update ที่ SW มีอยู่แล้วสำหรับแก้ไข
+  // field) เพราะเป็นคนละ action กัน (แก้ไข vs ตัดสินใจ) แม้ตอนนี้ Role ที่มี
+  // สิทธิ์จะเป็น SW เหมือนกันก็ตาม — กันเผื่อวันหน้ามีคนแยก Role/สิทธิ์สอง
+  // อย่างนี้ออกจากกัน จะได้ไม่ต้องมาแก้ resource ทีหลัง (pattern เดียวกับที่
+  // แยก 'config-simulation' ออกจาก 'config' ธรรมดาใน Stage 3)
+  @Post(':id/decide')
+  @RequirePermission('config-decision', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  decide(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DecideConfigDto,
+  ): Promise<Config> {
+    return this.configService.decide(id, dto.passed);
+  }
+
+  // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ SW ปักผลผ่านแล้ว
+  // (ต้องอยู่สถานะ testing) ใช้ resource 'config' action Approve ตัวเดียวกับ
+  // ที่ seed ไว้แล้วใน prisma/seed.ts (grant('Operation', 'config', 'Approve'))
+  // — ครอบคลุมทั้ง approveConfig และ rejectConfig เพราะเป็นสิทธิ์ระดับ
+  // เดียวกัน (ขั้นตอน "ตัดสินใจปิดท้าย" ของ Operation) ตาม RBAC_Matrix.md
+  // ตาราง 4.1 ที่ระบุทั้งคู่ว่า "Operation เท่านั้น" เหมือนกันเป๊ะ
+  @Post(':id/approve')
+  @RequirePermission('config', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  approve(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
+    return this.configService.approve(id);
+  }
+
+  @Post(':id/reject')
+  @RequirePermission('config', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  reject(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
+    return this.configService.reject(id);
   }
 
   @Put(':id')

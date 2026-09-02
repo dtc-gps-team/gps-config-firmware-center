@@ -140,6 +140,12 @@ async function main() {
     grant('ST', 'config-simulation', 'Read'),
     grant('OT', 'config-simulation', 'Read'),
 
+    // ---- config-decision (Stage 4, #26) ----
+    // decideConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดูคอมเมนต์เต็ม
+    // ใน config.controller.ts): แม้ตอนนี้มีแค่ SW ที่มีสิทธิ์ ก็ไม่อยากใช้
+    // 'config'+Update ร่วมกับสิทธิ์แก้ไข field ปกติ เพราะเป็นคนละ action กัน
+    grant('SW', 'config-decision', 'Approve'),
+
     // ---- config-definition (Config Definition Lookup, task #12) ----
     // listConfigDefinitions — catalog อ่านอย่างเดียวของ field ที่ระบบรู้จัก
     // ไม่ใช่ข้อมูลอ่อนไหว เปิดให้ทุก role ที่ทำงานกับ Config (SW/Operation/ST/OT)

@@ -268,6 +268,165 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('decide', () => {
+    it('status draft, passed:true -> update สถานะเป็น testing', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue(testingConfig);
+
+      const result = await service.decide(draftConfig.id, true);
+
+      expect(result).toEqual(testingConfig);
+      expect(config.update).toHaveBeenCalledWith({
+        where: { id: draftConfig.id },
+        data: { status: 'testing' },
+      });
+    });
+
+    it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+
+      const result = await service.decide(draftConfig.id, false);
+
+      expect(result).toEqual(draftConfig);
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('status testing (ส่งต่อ Operation ไปแล้ว) -> ConflictException ไม่ว่า passed จะเป็นอะไร', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+
+      await expect(service.decide(testingConfig.id, true)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('status approved -> ConflictException', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await expect(service.decide(approvedConfig.id, true)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่เจอ config เลย -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.decide('missing-id', true)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ update (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockRejectedValue(makeP2025());
+
+      await expect(service.decide(draftConfig.id, true)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('approve', () => {
+    it('status testing -> update สถานะเป็น approved', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+
+      const result = await service.approve(testingConfig.id);
+
+      expect(result).toEqual(approvedConfig);
+      expect(config.update).toHaveBeenCalledWith({
+        where: { id: testingConfig.id },
+        data: { status: 'approved' },
+      });
+    });
+
+    it('status draft (ยังไม่ผ่าน decide ของ SW) -> ConflictException', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+
+      await expect(service.approve(draftConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('status approved อยู่แล้ว -> ConflictException (กันกดซ้ำ)', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await expect(service.approve(approvedConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่เจอ config เลย -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.approve('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('race condition (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockRejectedValue(makeP2025());
+
+      await expect(service.approve(testingConfig.id)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('reject', () => {
+    it('status testing -> update สถานะย้อนกลับเป็น draft', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(draftConfig);
+
+      const result = await service.reject(testingConfig.id);
+
+      expect(result).toEqual(draftConfig);
+      expect(config.update).toHaveBeenCalledWith({
+        where: { id: testingConfig.id },
+        data: { status: 'draft' },
+      });
+    });
+
+    it('status draft (ยังไม่เคยส่งต่อ Operation) -> ConflictException', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+
+      await expect(service.reject(draftConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('status approved ไปแล้ว -> ConflictException', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await expect(service.reject(approvedConfig.id)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่เจอ config เลย -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.reject('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('race condition (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockRejectedValue(makeP2025());
+
+      await expect(service.reject(testingConfig.id)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('findAll', () => {
     it('ส่ง status filter ต่อให้ Prisma ตรงๆ ไม่ scope ตาม creator', async () => {
       config.findMany.mockResolvedValue([draftConfig]);
