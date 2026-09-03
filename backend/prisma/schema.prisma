@@ -279,7 +279,9 @@ model ConfigVersion {
 }
 
 // เพิ่มใหม่: "Config Definition Lookup" เก็บนิยามฟิลด์ Config (~262 ฟิลด์
-// ตามเอกสารต้นฉบับ ยังไม่ครบตอนนี้) — endpoint ยังไม่มี รอ #26
+// ตามเอกสารต้นฉบับ ยังไม่ครบตอนนี้) — SW สร้างเองผ่าน `POST /config-definitions`
+// ทีละตัวตามที่ใช้จริง (self-service ไม่ต้องรออนุมัติ — ตัดสินใจร่วมกับ B และ
+// พี่เลี้ยง 2569-09) ไม่ต้องกรอกให้ครบทุก field ล่วงหน้า
 model ConfigFieldDefinition {
   id            String   @id @default(uuid())
   fieldName     String   @unique
@@ -290,6 +292,24 @@ model ConfigFieldDefinition {
   description   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  supportedModels ConfigFieldDefinitionModelSupport[]
+}
+
+// ตาราง join ที่ B เปิด gap ไว้ใน PR #51 (Section 6, RBAC_Matrix.md) — ผูก field
+// definition หนึ่งตัวเข้ากับ deviceModel/protocol ที่ใช้ได้ (หลายคู่ต่อ field
+// เดียวได้) ระบุตอนสร้าง field เลย (ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09:
+// ไม่ให้ระบบกรองอัตโนมัติที่หน้า Template ด้วยการเดา ต้องมีข้อมูลนี้ชัดเจน
+// ตั้งแต่ตอนสร้าง parameter)
+model ConfigFieldDefinitionModelSupport {
+  id                String @id @default(uuid())
+  fieldDefinitionId String
+  deviceModel       String
+  protocol          String
+
+  fieldDefinition ConfigFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldDefinitionId, deviceModel, protocol])
 }
 
 // ---------------------------------------------------------------------------

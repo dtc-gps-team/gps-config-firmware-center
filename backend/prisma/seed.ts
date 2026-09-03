@@ -155,6 +155,11 @@ async function main() {
     grant('Operation', 'config-definition', 'Read'),
     grant('ST', 'config-definition', 'Read'),
     grant('OT', 'config-definition', 'Read'),
+    // createConfigDefinition (Semantic Validation, #26 — ตัดสินใจร่วมกับ B
+    // และพี่เลี้ยง 2569-09): เฉพาะ SW คนเดียวที่สร้าง field definition ใหม่ได้
+    // ไม่ต้องผ่านอนุมัติ — ดูเหตุผลเต็มใน config-definition.service.ts และ
+    // RBAC_Matrix.md changelog
+    grant('SW', 'config-definition', 'Create'),
 
     // ---- device-connection-test (POST /devices/{deviceId}/test-connection) ----
     // ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง — grant ให้ ST/OT เท่านั้น (คนหน้างานที่

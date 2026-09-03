@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, ConfigService } from './config.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from './device-simulator';
@@ -63,6 +64,7 @@ describe('ConfigService', () => {
   let service: ConfigService;
   let config: ConfigDelegateMock;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
+  let configDefinitionService: { validateFields: jest.Mock };
 
   beforeEach(async () => {
     config = {
@@ -73,12 +75,22 @@ describe('ConfigService', () => {
       delete: jest.fn(),
     };
     deviceSimulator = { simulateConfig: jest.fn() };
+    // default: ผ่าน validate เสมอ (test เดิมทั้งหมดไม่เกี่ยวกับ Semantic
+    // Validation) — describe('create'/'update') ด้านล่างจะ override เฉพาะ
+    // test ที่ต้องเช็ค wiring/behavior ตอน validateFields โยน exception
+    configDefinitionService = {
+      validateFields: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConfigService,
         { provide: PrismaService, useValue: { config } },
         { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
+        {
+          provide: ConfigDefinitionService,
+          useValue: configDefinitionService,
+        },
       ],
     }).compile();
 
@@ -102,6 +114,35 @@ describe('ConfigService', () => {
           createdBy: 'sw-1',
         },
       });
+    });
+
+    it('เรียก validateFields ด้วย deviceModel/protocol/fields จาก dto ก่อนเขียนลง DB', async () => {
+      config.create.mockResolvedValue(draftConfig);
+
+      await service.create(
+        { deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'internet' } },
+        sw,
+      );
+
+      expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
+        'GT06N',
+        'TCP',
+        { APN1: 'internet' },
+      );
+    });
+
+    it('validateFields โยน exception -> ไม่เรียก prisma.config.create เลย (ไม่บันทึกค่าที่ไม่ผ่าน)', async () => {
+      configDefinitionService.validateFields.mockRejectedValue(
+        new BadRequestException('ค่าที่กรอกไม่ตรงกับ Config Definition'),
+      );
+
+      await expect(
+        service.create(
+          { deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'xxx' } },
+          sw,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
     });
   });
 
@@ -499,6 +540,50 @@ describe('ConfigService', () => {
       await expect(
         service.update(draftConfig.id, { deviceModel: 'GT06L' }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('ส่งแค่ fields ใหม่มา -> validateFields ใช้ deviceModel/protocol เดิมจาก DB มา merge ให้ (ไม่ใช่ undefined)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue({
+        ...draftConfig,
+        fields: { APN1: 'new-apn' },
+      });
+
+      await service.update(draftConfig.id, { fields: { APN1: 'new-apn' } });
+
+      expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
+        draftConfig.deviceModel,
+        draftConfig.protocol,
+        { APN1: 'new-apn' },
+      );
+    });
+
+    it('ส่งแค่ deviceModel ใหม่มา -> validateFields ใช้ fields เดิมจาก DB มา merge ให้ (เช็คว่า fields เดิมยังตรงกับรุ่นใหม่ไหม)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue({
+        ...draftConfig,
+        deviceModel: 'GT06L',
+      });
+
+      await service.update(draftConfig.id, { deviceModel: 'GT06L' });
+
+      expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
+        'GT06L',
+        draftConfig.protocol,
+        draftConfig.fields,
+      );
+    });
+
+    it('validateFields โยน exception -> ไม่เรียก prisma.config.update เลย (ไม่บันทึกค่าที่ไม่ผ่าน)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      configDefinitionService.validateFields.mockRejectedValue(
+        new BadRequestException('ค่าที่กรอกไม่ตรงกับ Config Definition'),
+      );
+
+      await expect(
+        service.update(draftConfig.id, { fields: { APN1: 'xxx' } }),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.update).not.toHaveBeenCalled();
     });
   });
 

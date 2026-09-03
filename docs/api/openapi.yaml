@@ -318,8 +318,8 @@ paths:
       summary: ดึง catalog ของ Config Field Definition ทั้งหมด (Config Definition Lookup — v3.10)
       description: >-
         รายการ field ที่ระบบรู้จัก (ชื่อ field, ชนิดข้อมูล, ค่าที่ยอมรับ,
-        บังคับกรอกไหม) ใช้อ้างอิงตอนกรอก/ตรวจ Config — อ่านอย่างเดียว
-        ยังไม่มี Create/Update/Delete
+        บังคับกรอกไหม, รุ่นอุปกรณ์/โปรโตคอลที่ใช้ได้) ใช้อ้างอิงตอนกรอก/ตรวจ
+        Config
       responses:
         "200":
           description: รายการ Config Field Definition ทั้งหมด (เรียงตาม fieldName)
@@ -333,6 +333,37 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์อ่าน Config Definition — เฉพาะ Role SW, Operation, ST, OT
+    post:
+      tags: [config]
+      operationId: createConfigDefinition
+      summary: สร้าง Config Field Definition ใหม่ (Semantic Validation — v3.11)
+      description: >-
+        SW สร้าง field definition ใหม่ในคลังเอง ไม่ต้องผ่านขั้นตอนอนุมัติ
+        เพราะ field ที่มีปัญหาจริงจะโดนจับตอนเอาไปสร้าง Config Template แล้ว
+        เข้า simulate/decide/approve อยู่ดี (ตัดสินใจร่วมกับทีมและพี่เลี้ยง
+        2569-09 — ดู RBAC_Matrix.md changelog) `supportedModels` ต้องระบุ
+        อย่างน้อย 1 คู่ (deviceModel, protocol) เสมอ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConfigDefinitionInput"
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigFieldDefinition"
+        "400":
+          description: ข้อมูลไม่ผ่าน validation (เช่น supportedModels ว่างเปล่า)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์สร้าง Config Definition — เฉพาะ Role SW
+        "409":
+          description: มี field ชื่อนี้อยู่แล้วในคลัง (fieldName ซ้ำ)
 
   /notifications:
     get:
@@ -679,7 +710,7 @@ components:
       type: object
       description: นิยาม field หนึ่งตัวใน Config Definition Lookup (ตรงกับ Prisma model ConfigFieldDefinition)
       required:
-        [id, fieldName, dataType, allowedValues, required, unknownSpec, createdAt, updatedAt]
+        [id, fieldName, dataType, allowedValues, required, unknownSpec, createdAt, updatedAt, supportedModels]
       properties:
         id:
           type: string
@@ -703,12 +734,57 @@ components:
         description:
           type: string
           nullable: true
+        supportedModels:
+          type: array
+          description: >-
+            รุ่นอุปกรณ์/โปรโตคอลที่ field นี้ใช้ได้ (Semantic Validation
+            v3.11) — Config ที่ deviceModel/protocol ไม่อยู่ในรายการนี้
+            จะถูก block ตอน create/update Config
+          items:
+            $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+
+    ConfigFieldDefinitionModelSupport:
+      type: object
+      description: คู่ (deviceModel, protocol) หนึ่งคู่ที่ field definition ใช้ได้
+      required: [deviceModel, protocol]
+      properties:
+        deviceModel:
+          type: string
+          example: GT06N
+        protocol:
+          type: string
+          example: TCP
+
+    CreateConfigDefinitionInput:
+      type: object
+      description: Request body สำหรับ createConfigDefinition
+      required: [fieldName, dataType, required, supportedModels]
+      properties:
+        fieldName:
+          type: string
+          example: APN1
+        dataType:
+          type: string
+          example: string
+        allowedValues:
+          type: array
+          items:
+            type: string
+        required:
+          type: boolean
+        description:
+          type: string
+        supportedModels:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
 
     # เพิ่มใหม่: แยกจาก DeviceConfigDraft เพราะ request body ของ createConfig/
     # updateConfig ไม่ควรรับ id/status จาก client (server เป็นคนกำหนดเท่านั้น —
