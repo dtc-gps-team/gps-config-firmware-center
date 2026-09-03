@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import { ConfigController } from './config.controller';
 import { ConfigService } from './config.service';
 import {
@@ -15,7 +16,10 @@ import {
 // และ path `/config` ที่มีอยู่แล้วทุกที่) แต่ alias import ของ @nestjs/config
 // เป็น NestConfigModule แทนที่ app.module.ts — ดู comment ที่นั่น
 @Module({
-  imports: [AuthModule],
+  // ConfigDefinitionModule: ConfigService ต้องเรียก
+  // ConfigDefinitionService.validateFields() (ดู config.service.ts) — ต้อง
+  // export ConfigDefinitionService ไว้แล้วที่ config-definition.module.ts
+  imports: [AuthModule, ConfigDefinitionModule],
   controllers: [ConfigController],
   providers: [
     ConfigService,

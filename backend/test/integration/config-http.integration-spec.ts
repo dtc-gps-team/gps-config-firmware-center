@@ -70,10 +70,31 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
 
   beforeEach(async () => {
     await resetDb(prisma);
-    // RolePermission ต้อง clean ทุกเทส (pattern เดียวกับ
-    // permission-guard-http.integration-spec.ts) เพราะ seed.ts ไม่ได้รันก่อนเทส
+    // RolePermission + ConfigFieldDefinition ต้อง clean เองทุกเทส —
+    // `resetDb` ไม่ได้แตะ 2 ตารางนี้ (ดู comment ใน setup.ts, pattern
+    // เดียวกับ config-definition-http.integration-spec.ts)
     await prisma.rolePermission.deleteMany();
+    await prisma.configFieldDefinition.deleteMany();
   });
+
+  // Semantic Validation (#26): createConfig/updateConfig เรียก
+  // ConfigDefinitionService.validateFields() ก่อนเขียนลง DB เสมอ — field ที่
+  // ไม่มีนิยามในคลังเลยจะโดน block (400) เทสที่ส่ง fields: { APN1: ... } ผ่าน
+  // HTTP จริง (ต่างจาก config ที่สร้างตรงๆ ผ่าน prisma.config.create ซึ่งไม่
+  // ผ่าน validateFields เลย) ต้อง seed นิยามนี้ไว้ก่อนเสมอ
+  async function seedApn1(): Promise<void> {
+    await prisma.configFieldDefinition.create({
+      data: {
+        fieldName: 'APN1',
+        dataType: 'string',
+        allowedValues: [],
+        required: false,
+        supportedModels: {
+          create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+        },
+      },
+    });
+  }
 
   function tokenFor(sub: string, role: string): string {
     return jwtService.sign({ sub, role });
@@ -111,6 +132,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   it('POST /config role SW มีสิทธิ์ config.Create -> 201 พร้อม createdBy จาก JWT', async () => {
     const swUser = await makeUser(prisma, { role: 'SW' });
     await grant('SW', ActionType.Create);
+    await seedApn1();
     const token = tokenFor(swUser.id, 'SW');
 
     const res = await request(app.getHttpServer())
@@ -149,6 +171,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   it('POST /config/import ไฟล์ JSON ถูกต้อง -> 201 พร้อม createdBy จาก JWT (flow เดียวกับฟอร์ม)', async () => {
     const swUser = await makeUser(prisma, { role: 'SW' });
     await grant('SW', ActionType.Create);
+    await seedApn1();
     const token = tokenFor(swUser.id, 'SW');
 
     const res = await request(app.getHttpServer())
