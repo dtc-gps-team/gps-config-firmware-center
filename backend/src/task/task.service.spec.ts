@@ -1,8 +1,20 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Task } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from './task.service';
+
+/** จำลอง Prisma error ให้ตรงกับ shape จริงของ PrismaClientKnownRequestError
+ * (ต้องมี code + clientVersion) — default เป็น P2025 ("Record to update not
+ * found") ส่ง code อื่นเข้ามาได้เพื่อเทสว่า guard เช็ค code จริง ไม่ได้จับทุก
+ * PrismaClientKnownRequestError */
+function makePrismaError(code = 'P2025'): PrismaClientKnownRequestError {
+  return new PrismaClientKnownRequestError('Record to update not found.', {
+    code,
+    clientVersion: 'test',
+  });
+}
 
 type TaskDelegateMock = {
   create: jest.Mock;
@@ -153,6 +165,25 @@ describe('TaskService', () => {
           service.update('missing', { status: 'completed' }, operation),
         ).rejects.toBeInstanceOf(NotFoundException);
         expect(task.update).not.toHaveBeenCalled();
+      });
+
+      it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ update (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        task.update.mockRejectedValue(makePrismaError('P2025'));
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, operation),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('PrismaClientKnownRequestError ที่ code อื่น (P2002): โยนต่อตามเดิม ไม่กลายเป็น 404', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        const other = makePrismaError('P2002');
+        task.update.mockRejectedValue(other);
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, operation),
+        ).rejects.toBe(other);
       });
 
       it('แก้ทุก field ได้ ไม่ว่างานนั้นเป็นของใคร', async () => {

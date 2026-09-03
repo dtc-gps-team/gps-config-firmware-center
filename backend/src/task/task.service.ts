@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Task } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
@@ -80,17 +81,31 @@ export class TaskService {
   ): Promise<Task> {
     if (actor.role === OPERATION_ROLE) {
       await this.findOne(id, actor);
-      return this.prisma.task.update({
-        where: { id },
-        data: {
-          title: dto.title,
-          description: dto.description,
-          assignedTo: dto.assignedTo,
-          deviceId: dto.deviceId,
-          status: dto.status,
-          dueDate: toDbDate(dto.dueDate),
-        },
-      });
+      // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบไปพอดีจาก
+      // request อื่น (rare) — Prisma โยน P2025 ("Record to update not found")
+      // ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500 (pattern เดียวกับ
+      // ConfigService.update/updateStatus)
+      try {
+        return await this.prisma.task.update({
+          where: { id },
+          data: {
+            title: dto.title,
+            description: dto.description,
+            assignedTo: dto.assignedTo,
+            deviceId: dto.deviceId,
+            status: dto.status,
+            dueDate: toDbDate(dto.dueDate),
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof PrismaClientKnownRequestError &&
+          err.code === 'P2025'
+        ) {
+          throw new NotFoundException(`ไม่พบงาน id ${id}`);
+        }
+        throw err;
+      }
     }
 
     if (!SELF_SCOPED_ROLES.includes(actor.role)) {
