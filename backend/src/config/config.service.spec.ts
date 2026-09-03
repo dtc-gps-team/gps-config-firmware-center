@@ -35,6 +35,7 @@ const approvedConfig: Config = { ...draftConfig, status: 'approved' };
 const syncedConfig: Config = { ...draftConfig, status: 'synced' };
 
 const sw: ActingUser = { id: 'sw-1', role: 'SW' };
+const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 
 /** จำลอง Prisma error P2025 ("Record to update/delete not found") ให้ตรงกับ
  * shape จริงของ PrismaClientKnownRequestError (ต้องมี code + clientVersion) */
@@ -328,23 +329,26 @@ describe('ConfigService', () => {
   });
 
   describe('approve', () => {
-    it('status testing -> update สถานะเป็น approved', async () => {
+    it('status testing -> update สถานะเป็น approved พร้อมบันทึก approvedBy = actor', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
-      config.update.mockResolvedValue(approvedConfig);
+      config.update.mockResolvedValue({
+        ...approvedConfig,
+        approvedBy: operation.id,
+      });
 
-      const result = await service.approve(testingConfig.id);
+      const result = await service.approve(testingConfig.id, operation);
 
-      expect(result).toEqual(approvedConfig);
+      expect(result).toEqual({ ...approvedConfig, approvedBy: operation.id });
       expect(config.update).toHaveBeenCalledWith({
         where: { id: testingConfig.id },
-        data: { status: 'approved' },
+        data: { status: 'approved', approvedBy: operation.id },
       });
     });
 
     it('status draft (ยังไม่ผ่าน decide ของ SW) -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
-      await expect(service.approve(draftConfig.id)).rejects.toThrow(
+      await expect(service.approve(draftConfig.id, operation)).rejects.toThrow(
         ConflictException,
       );
       expect(config.update).not.toHaveBeenCalled();
@@ -353,16 +357,16 @@ describe('ConfigService', () => {
     it('status approved อยู่แล้ว -> ConflictException (กันกดซ้ำ)', async () => {
       config.findUnique.mockResolvedValue(approvedConfig);
 
-      await expect(service.approve(approvedConfig.id)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.approve(approvedConfig.id, operation),
+      ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
 
     it('ไม่เจอ config เลย -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
 
-      await expect(service.approve('missing-id')).rejects.toThrow(
+      await expect(service.approve('missing-id', operation)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -371,9 +375,9 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(testingConfig);
       config.update.mockRejectedValue(makeP2025());
 
-      await expect(service.approve(testingConfig.id)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.approve(testingConfig.id, operation),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

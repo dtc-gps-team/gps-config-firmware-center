@@ -27,6 +27,7 @@ function reqAs(payload: JwtPayload): Request & { user: JwtPayload } {
 }
 
 const swReq = reqAs({ sub: 'sw-1', role: 'SW' });
+const opReq = reqAs({ sub: 'op-1', role: 'Operation' });
 
 describe('ConfigController', () => {
   let controller: ConfigController;
@@ -146,12 +147,19 @@ describe('ConfigController', () => {
     expect(service.decide).toHaveBeenCalledWith(sampleConfig.id, true);
   });
 
-  it('POST /config/:id/approve -> service.approve', async () => {
-    const approved = { ...sampleConfig, status: 'approved' as const };
+  it('POST /config/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {
+    const approved = {
+      ...sampleConfig,
+      status: 'approved' as const,
+      approvedBy: 'op-1',
+    };
     service.approve.mockResolvedValue(approved);
-    const result = await controller.approve(sampleConfig.id);
+    const result = await controller.approve(sampleConfig.id, opReq);
     expect(result).toEqual(approved);
-    expect(service.approve).toHaveBeenCalledWith(sampleConfig.id);
+    expect(service.approve).toHaveBeenCalledWith(sampleConfig.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
   });
 
   it('POST /config/:id/reject -> service.reject', async () => {

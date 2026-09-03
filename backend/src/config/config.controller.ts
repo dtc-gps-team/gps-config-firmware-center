@@ -134,8 +134,11 @@ export class ConfigController {
   @Post(':id/approve')
   @RequirePermission('config', ActionType.Approve)
   @HttpCode(HttpStatus.OK)
-  approve(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
-    return this.configService.approve(id);
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Config> {
+    return this.configService.approve(id, toActor(req));
   }
 
   @Post(':id/reject')
