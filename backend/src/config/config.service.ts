@@ -9,6 +9,7 @@ import { Config, type ConfigStatus, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
@@ -40,11 +41,34 @@ export class ConfigService {
     private readonly prisma: PrismaService,
     @Inject(DEVICE_SIMULATOR)
     private readonly deviceSimulator: DeviceSimulator,
+    private readonly configDefinitionService: ConfigDefinitionService,
   ) {}
 
-  create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
+  /**
+   * ปิด Gap `// TODO(รอตาราง ConfigFieldDefinition)` เดิม — เรียกจาก
+   * `create()`/`update()` ก่อนเขียนลง DB เสมอ ตรวจ `fields` เทียบกับ
+   * `ConfigFieldDefinition` (data type/allowedValues/required/รุ่นอุปกรณ์ที่
+   * รองรับ) ไม่ตรง -> block (400) ไม่ให้บันทึกเลย ไม่มีทางลัดให้ field ไหน
+   * ข้ามได้ (รวมถึง field "พิเศษเฉพาะลูกค้า") — ตัดสินใจร่วมกับ B และ
+   * พี่เลี้ยง 2569-09
+   */
+  private async validateFields(
+    deviceModel: string,
+    protocol: string,
+    fields: Record<string, unknown>,
+  ): Promise<void> {
+    await this.configDefinitionService.validateFields(
+      deviceModel,
+      protocol,
+      fields,
+    );
+  }
+
+  async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
     // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
+    await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
+
     return this.prisma.config.create({
       data: {
         deviceModel: dto.deviceModel,
@@ -119,13 +143,10 @@ export class ConfigService {
     // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
     // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
     //
-    // TODO(รอตาราง ConfigFieldDefinition): ตอนนี้ validate แค่ shape ของ
-    // `fields` ว่าเป็น object (ผ่าน CreateConfigDto) ยังไม่เช็คว่าค่าจริงตรงกับ
-    // ConfigFieldDefinition ของ deviceModel/protocol นั้นๆ ไหม (เช่น field ที่
-    // จำเป็นครบ, type/ค่าที่ยอมรับได้ถูกต้อง) — ยืนยันแล้วว่า Stage 3
-    // (Simulate) จงใจไม่ทำส่วนนี้เช่นกัน (ดู docs/04_Phase1_A_ConfigWorkflow.md
-    // หัวข้อ "จงใจไม่ทำใน Stage นี้") ต้องรอตาราง Config Definition Lookup
-    // จริงก่อนถึงจะทำได้ลึกกว่านี้ — ยังไม่มี Stage ไหนรับผิดชอบตอนนี้
+    // แค่เช็ค shape ตรงนี้ (เป็น object ไหม) — เช็คค่าจริงเทียบกับ
+    // ConfigFieldDefinition (Semantic Validation) เกิดที่ create() ด้านล่าง
+    // ผ่าน validateFields() ทีเดียว (ปิด Gap TODO เดิมแล้ว — ตัดสินใจร่วมกับ
+    // B และพี่เลี้ยง 2569-09)
     const dto = plainToInstance(CreateConfigDto, parsed, {
       excludeExtraneousValues: false,
     });
@@ -307,6 +328,19 @@ export class ConfigService {
         `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงแก้ไขไม่ได้`,
       );
     }
+
+    // update() แก้ได้ทีละส่วน (deviceModel/protocol/fields ทุกตัว optional)
+    // — validate เทียบกับค่าที่จะเป็นจริงหลัง merge เสมอ (ค่าใหม่จาก dto ถ้ามี
+    // ไม่งั้นใช้ค่าเดิมของ Config) ไม่ใช่แค่ค่าที่ dto ส่งมาเฉยๆ เพราะ fields
+    // เดิมต้องยังตรงกับ deviceModel/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
+    await this.validateFields(
+      dto.deviceModel ?? existing.deviceModel,
+      dto.protocol ?? existing.protocol,
+      (dto.fields ?? (existing.fields as Record<string, unknown>)) as Record<
+        string,
+        unknown
+      >,
+    );
 
     // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
     // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
