@@ -35,99 +35,128 @@ Future<void> _login(ApiClient client) =>
 
 void main() {
   group('ApiClient._wrap error message', () {
-    test('อ่าน response.data["message"] (ข้อความไทย) แทน statusMessage', () async {
-      final client = _clientFailingWith(
-        (o) => DioException(
-          requestOptions: o,
-          response: _response(o, 401, {
-            'message': 'Username/Password ไม่ถูกต้อง',
-            'error': 'Unauthorized',
-            'statusCode': 401,
-          }),
-        ),
-      );
+    test(
+      'อ่าน response.data["message"] (ข้อความไทย) แทน statusMessage',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 401, {
+              'message': 'Username/Password ไม่ถูกต้อง',
+              'error': 'Unauthorized',
+              'statusCode': 401,
+            }),
+          ),
+        );
 
-      await expectLater(
-        _login(client),
-        throwsA(
-          isA<ApiException>()
-              .having((e) => e.message, 'message', 'Username/Password ไม่ถูกต้อง')
-              .having((e) => e.statusCode, 'statusCode', 401),
-        ),
-      );
-    });
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Username/Password ไม่ถูกต้อง',
+                )
+                .having((e) => e.statusCode, 'statusCode', 401),
+          ),
+        );
+      },
+    );
 
-    test('response.data ไม่มี key "message" -> fallback statusMessage เหมือนเดิม',
-        () async {
-      final client = _clientFailingWith(
-        (o) => DioException(
-          requestOptions: o,
-          response:
-              _response(o, 401, {'error': 'Unauthorized', 'statusCode': 401}),
-        ),
-      );
+    test(
+      'response.data ไม่มี key "message" -> fallback statusMessage เหมือนเดิม',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 401, {
+              'error': 'Unauthorized',
+              'statusCode': 401,
+            }),
+          ),
+        );
 
-      await expectLater(
-        _login(client),
-        throwsA(
-          isA<ApiException>().having((e) => e.message, 'message', 'Unauthorized'),
-        ),
-      );
-    });
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              'Unauthorized',
+            ),
+          ),
+        );
+      },
+    );
 
-    test('response.data ไม่ใช่ Map (เช่น HTML string) -> fallback statusMessage',
-        () async {
-      final client = _clientFailingWith(
-        (o) => DioException(
-          requestOptions: o,
-          response: _response(o, 502, '<html>Bad Gateway</html>'),
-        ),
-      );
+    test(
+      'response.data ไม่ใช่ Map (เช่น HTML string) -> fallback statusMessage',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 502, '<html>Bad Gateway</html>'),
+          ),
+        );
 
-      await expectLater(
-        _login(client),
-        throwsA(
-          isA<ApiException>().having((e) => e.message, 'message', 'Unauthorized'),
-        ),
-      );
-    });
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              'Unauthorized',
+            ),
+          ),
+        );
+      },
+    );
 
-    test('response.data["message"] เป็น string ว่าง -> fallback statusMessage',
-        () async {
-      final client = _clientFailingWith(
-        (o) => DioException(
-          requestOptions: o,
-          response: _response(o, 401, {'message': ''}),
-        ),
-      );
+    test(
+      'response.data["message"] เป็น string ว่าง -> fallback statusMessage',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 401, {'message': ''}),
+          ),
+        );
 
-      await expectLater(
-        _login(client),
-        throwsA(
-          isA<ApiException>().having((e) => e.message, 'message', 'Unauthorized'),
-        ),
-      );
-    });
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              'Unauthorized',
+            ),
+          ),
+        );
+      },
+    );
 
-    test('ไม่มี response เลย (connection error) -> ใช้ e.message เหมือนเดิม',
-        () async {
-      final client = _clientFailingWith(
-        (o) => DioException(
-          requestOptions: o,
-          type: DioExceptionType.connectionError,
-          error: 'boom',
-          message: 'Connection refused',
-        ),
-      );
+    test(
+      'ไม่มี response เลย (connection error) -> ใช้ e.message เหมือนเดิม',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            type: DioExceptionType.connectionError,
+            error: 'boom',
+            message: 'Connection refused',
+          ),
+        );
 
-      await expectLater(
-        _login(client),
-        throwsA(
-          isA<ApiException>()
-              .having((e) => e.message, 'message', 'Connection refused')
-              .having((e) => e.statusCode, 'statusCode', null),
-        ),
-      );
-    });
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.message, 'message', 'Connection refused')
+                .having((e) => e.statusCode, 'statusCode', null),
+          ),
+        );
+      },
+    );
   });
 }
