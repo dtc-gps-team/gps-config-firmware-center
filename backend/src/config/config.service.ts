@@ -1,389 +1,389 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { Config, type ConfigStatus, Prisma } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
-import { ConfigDefinitionService } from '../config-definition/config-definition.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateConfigDto } from './dto/create-config.dto';
-import { QueryConfigDto } from './dto/query-config.dto';
-import { UpdateConfigDto } from './dto/update-config.dto';
-import {
-  APPROVABLE_CONFIG_STATUS,
-  DECIDABLE_CONFIG_STATUS,
-  EDITABLE_CONFIG_STATUS,
-  SIMULATABLE_CONFIG_STATUSES,
-} from './config-status';
-import {
-  DEVICE_SIMULATOR,
-  type DeviceSimulator,
-  type SimulationResult,
-} from './device-simulator';
-
-/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
-export interface ActingUser {
-  id: string;
-  role: string;
-}
-
-/** เฉพาะ format ที่รองรับตอนนี้ (v3.2 — ดู openapi.yaml importConfig summary) */
-const SUPPORTED_IMPORT_FORMATS = ['json'];
-
-@Injectable()
-export class ConfigService {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject(DEVICE_SIMULATOR)
-    private readonly deviceSimulator: DeviceSimulator,
-    private readonly configDefinitionService: ConfigDefinitionService,
-  ) {}
-
-  /**
-   * ปิด Gap `// TODO(รอตาราง ConfigFieldDefinition)` เดิม — เรียกจาก
-   * `create()`/`update()` ก่อนเขียนลง DB เสมอ ตรวจ `fields` เทียบกับ
-   * `ConfigFieldDefinition` (data type/allowedValues/required/รุ่นอุปกรณ์ที่
-   * รองรับ) ไม่ตรง -> block (400) ไม่ให้บันทึกเลย ไม่มีทางลัดให้ field ไหน
-   * ข้ามได้ (รวมถึง field "พิเศษเฉพาะลูกค้า") — ตัดสินใจร่วมกับ B และ
-   * พี่เลี้ยง 2569-09
-   */
-  private async validateFields(
-    deviceModel: string,
-    protocol: string,
-    fields: Record<string, unknown>,
-  ): Promise<void> {
-    await this.configDefinitionService.validateFields(
-      deviceModel,
-      protocol,
-      fields,
-    );
-  }
-
-  async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
-    // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
-    // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
-    await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
-
-    return this.prisma.config.create({
-      data: {
-        deviceModel: dto.deviceModel,
-        protocol: dto.protocol,
-        // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
-        // ตรงๆ (class-validator @IsObject() ไม่รู้จัก type ของ Prisma) แต่
-        // Prisma.JsonValue ปฏิเสธ Record ธรรมดาเพราะ type ของมันรวม array
-        // แบบ readonly ที่ไม่ตรงกับ Record shape เป๊ะๆ — cast ตรงจุดที่ส่งเข้า
-        // Prisma พอ ไม่ต้องเปลี่ยน type ของ DTO
-        fields: dto.fields as Prisma.InputJsonValue,
-        createdBy: actor.id,
-      },
-    });
-  }
-
-  /**
-   * Stage 2 (#26) — Import Config จากไฟล์ JSON (v3.2 รองรับ JSON เป็นจุดเริ่มต้น
-   * ตาม openapi.yaml importConfig summary — CSV/อื่นๆ เป็น scope อนาคต)
-   *
-   * เข้า flow เดียวกับฟอร์ม (createConfig) เป๊ะๆ: parse ไฟล์ -> validate ด้วย
-   * CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน ไม่มี
-   * business rule พิเศษแยกสำหรับ import (ตาม openapi.yaml: "แปลงเป็น
-   * DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม")
-   *
-   * จงใจไม่แยก interface `ConfigImporter`/`parseConfigFile` ตาม Build
-   * Reference §3.1 — ตอนนี้รองรับ format เดียว (JSON) เขียนตรงๆ ในเมธอดนี้
-   * พอ ยังไม่มีเหตุผลจะ abstract ล่วงหน้า (YAGNI) เมื่อไหร่ที่มี format ที่ 2
-   * จริง (เช่น CSV) ค่อย refactor แยก interface ตอนนั้น — ยืนยันแล้วตอบ
-   * review PR #46 ของ kittiphong
-   */
-  async importFromJson(
-    file: Express.Multer.File | undefined,
-    format: string | undefined,
-    actor: ActingUser,
-  ): Promise<Config> {
-    if (!file) {
-      throw new BadRequestException(
-        'ไม่มีไฟล์แนบมา (multipart field name ต้องเป็น "file")',
-      );
-    }
-
-    if (!format || !SUPPORTED_IMPORT_FORMATS.includes(format)) {
-      throw new BadRequestException(
-        `รองรับเฉพาะ format: ${SUPPORTED_IMPORT_FORMATS.join(', ')} เท่านั้น`,
-      );
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(file.buffer.toString('utf-8'));
-    } catch {
-      throw new BadRequestException(
-        'ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)',
-      );
-    }
-
-    // JSON ที่ valid แต่ไม่ใช่ object เดียว (null / array / ค่าเดี่ยว) ต้องดัก
-    // ก่อน plainToInstance/validate — class-validator โยน TypeError ตอนเจอ
-    // null ตรงๆ (validate(null) อ่าน .constructor ไม่ได้) หลุดเป็น 500 แทน
-    // 400 ถ้าไม่มี guard นี้ (พบจาก code review ของ kittiphong บน PR ของ Stage 2 นี้)
-    if (
-      parsed === null ||
-      typeof parsed !== 'object' ||
-      Array.isArray(parsed)
-    ) {
-      throw new BadRequestException(
-        'เนื้อหา JSON ต้องเป็น object เดียว (ไม่ใช่ null / array / ค่าเดี่ยว)',
-      );
-    }
-
-    // validate ด้วย DTO ตัวเดียวกับ createConfig (whitelist + forbidNonWhitelisted
-    // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
-    // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
-    //
-    // แค่เช็ค shape ตรงนี้ (เป็น object ไหม) — เช็คค่าจริงเทียบกับ
-    // ConfigFieldDefinition (Semantic Validation) เกิดที่ create() ด้านล่าง
-    // ผ่าน validateFields() ทีเดียว (ปิด Gap TODO เดิมแล้ว — ตัดสินใจร่วมกับ
-    // B และพี่เลี้ยง 2569-09)
-    const dto = plainToInstance(CreateConfigDto, parsed, {
-      excludeExtraneousValues: false,
-    });
-    const errors = await validate(dto, {
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    });
-    if (errors.length > 0) {
-      throw new BadRequestException({
-        message:
-          'ข้อมูลใน JSON ไม่ตรงตามโครงสร้าง Config (แปลงเป็น DeviceConfigDraft ไม่สำเร็จ)',
-        errors: errors.map((e) => ({
-          property: e.property,
-          constraints: e.constraints,
-        })),
-      });
-    }
-
-    return this.create(dto, actor);
-  }
-
-  /**
-   * Stage 3 (#26) — ทดสอบ Config กับ Device Simulator (dry-run)
-   *
-   * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
-   * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
-   * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
-   * Operation หรือไม่ (เปลี่ยน status) อยู่ที่ `decide()` ด้านล่าง (Stage 4 —
-   * ยังเป็นข้อเสนอที่ kittiphong (B) ยังไม่ได้รีวิว design ไม่ merge เข้า main
-   * จนกว่าจะเสนอแยกเป็น PR ต่างหากและได้รับการยืนยันก่อน)
-   *
-   * รับ `deviceModel` ใน request body ได้ตาม docs/api/openapi.yaml แต่ตั้งใจ
-   * ไม่ใช้ค่านั้นเลย — ใช้ `deviceModel`/`protocol`/`fields` ที่ persist ไว้ใน
-   * DB ของ Config นี้เสมอ เพื่อไม่ให้ client ส่ง deviceModel ปลอมมาแล้วได้ผล
-   * ทดสอบของอุปกรณ์คนละรุ่นกับที่ Config จริงๆ ผูกไว้ (ฟิลด์นี้มีประโยชน์กับ
-   * `simulateFirmware` มากกว่า เพราะ Firmware ตัวเดียวอาจใช้ได้กับหลาย
-   * deviceModel แต่ Config ผูกกับ deviceModel เดียวตายตัวอยู่แล้วตั้งแต่สร้าง)
-   */
-  async simulate(id: string): Promise<SimulationResult> {
-    const config = await this.findOne(id);
-
-    if (!SIMULATABLE_CONFIG_STATUSES.includes(config.status)) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบัน (${config.status}) ไม่รองรับการทดสอบ (เช่น approved/synced ไปแล้ว)`,
-      );
-    }
-
-    return this.deviceSimulator.simulateConfig({
-      deviceModel: config.deviceModel,
-      protocol: config.protocol,
-      fields: config.fields as Record<string, unknown>,
-    });
-  }
-
-  /**
-   * Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล `simulate` แล้ว
-   * (ข้อเสนอปิด open question ที่ยังค้างอยู่ใน docs/architecture/RBAC_Matrix.md
-   * ตาราง 4.2 — **ยังไม่ได้ให้ kittiphong (B) รีวิว design นี้** ต้องเสนอแยก
-   * เป็น PR ต่างหากก่อน ห้าม merge เข้า main จนกว่าจะได้รับการยืนยันจาก B —
-   * ดูที่มาของการแยกออกจาก PR Stage 3 ใน commit history ของ #49)
-   *
-   * แยกจาก `simulate` โดยตั้งใจ: `simulate` แค่คืนผลทดสอบ กดซ้ำได้ไม่จำกัด
-   * ไม่แตะสถานะเลย ส่วนเมธอดนี้คือ SW กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ
-   * ครั้งเดียวจบ — `passed:true` พา `draft`→`testing` ส่งต่อ Operation
-   * (ตรงกับ precondition ที่ `approve`/`reject` ใช้อยู่แล้วพอดี ไม่ต้องเพิ่ม
-   * enum สถานะใหม่) ส่วน `passed:false` ปล่อยสถานะเป็น `draft` เหมือนเดิม
-   * (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ต้องย้อนกลับ — คืน config
-   * เดิมโดยไม่ยิง UPDATE ลง DB เลย)
-   */
-  async decide(id: string, passed: boolean): Promise<Config> {
-    const config = await this.findOne(id);
-
-    if (config.status !== DECIDABLE_CONFIG_STATUS) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${DECIDABLE_CONFIG_STATUS} จึงปักผลตัดสินใจไม่ได้ (เช่น ยังไม่เคย simulate เลย หรือส่งต่อ Operation ไปแล้ว)`,
-      );
-    }
-
-    if (!passed) {
-      return config;
-    }
-
-    return this.updateStatus(id, 'testing');
-  }
-
-  /**
-   * Stage 4 (#26) — Operation อนุมัติ Config ที่ SW ปักผลผ่านแล้ว
-   * (ต้องอยู่สถานะ `testing` เท่านั้น) เข้า flow `config-sync-writer` ต่อใน
-   * Phase 2 (ยังไม่ implement ในนี้ — แค่เปลี่ยนสถานะเป็น `approved`)
-   *
-   * บันทึก `approvedBy` = user id ของ Operation ที่กดอนุมัติ (จาก JWT `sub`
-   * ตาม Auth Pattern ใน CLAUDE.md) — เป็นร่องรอย Separation of Duty ว่าใคร
-   * เป็นผู้อนุมัติจริง (`Config.approver` relation) `reject` ไม่แตะ field นี้
-   * เพราะ Config ที่ถูกปฏิเสธถือว่ายังไม่เคยอนุมัติ
-   */
-  async approve(id: string, actor: ActingUser): Promise<Config> {
-    const config = await this.findOne(id);
-
-    if (config.status !== APPROVABLE_CONFIG_STATUS) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงอนุมัติไม่ได้`,
-      );
-    }
-
-    return this.updateStatus(id, 'approved', { approvedBy: actor.id });
-  }
-
-  /**
-   * Stage 4 (#26) — Operation ปฏิเสธ Config ที่อยู่สถานะ `testing`
-   * สถานะย้อนกลับไป `draft` ทั้งหมดเสมอ (ยืนยันไว้ใน RBAC_Matrix.md Section 5
-   * ข้อ 4 — ไม่มี Role ไหน Override ขั้นตอนนี้ได้ นอกจาก ST/OT ที่ใช้ path
-   * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ SW แก้ไขต่อได้
-   * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
-   */
-  async reject(id: string): Promise<Config> {
-    const config = await this.findOne(id);
-
-    if (config.status !== APPROVABLE_CONFIG_STATUS) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงปฏิเสธไม่ได้`,
-      );
-    }
-
-    return this.updateStatus(id, 'draft');
-  }
-
-  /** race condition เดียวกับ update()/remove() — row อาจถูกลบไปพอดีระหว่าง
-   * findOne กับ update นี้ (rare) แปลง P2025 เป็น 404 แทนที่จะปล่อยเป็น 500 */
-  private async updateStatus(
-    id: string,
-    status: ConfigStatus,
-    // approvedBy เป็น scalar FK — ใช้รูป unchecked เหมือน createdBy ใน create()
-    extra?: { approvedBy?: string },
-  ): Promise<Config> {
-    try {
-      return await this.prisma.config.update({
-        where: { id },
-        data: { status, ...extra },
-      });
-    } catch (err) {
-      if (
-        err instanceof PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`ไม่พบ Config id ${id}`);
-      }
-      throw err;
-    }
-  }
-
-  findAll(query: QueryConfigDto): Promise<Config[]> {
-    // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
-    // SW ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
-    // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #46 —
-    // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
-    // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
-    return this.prisma.config.findMany({
-      where: { status: query.status },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async findOne(id: string): Promise<Config> {
-    const config = await this.prisma.config.findUnique({ where: { id } });
-    if (!config) {
-      throw new NotFoundException(`ไม่พบ Config id ${id}`);
-    }
-    return config;
-  }
-
-  async update(id: string, dto: UpdateConfigDto): Promise<Config> {
-    // IDOR/state-guard pattern เดียวกับ Task (CLAUDE.md): filter ด้วย status
-    // ตอน update แล้วเช็ค count === 0 -> ต้องแยกให้ออกว่าเป็น "ไม่เจอ id เลย"
-    // (404) หรือ "เจอแต่สถานะไม่ใช่ draft" (409) เลย findOne ก่อนเพื่อแยก 2
-    // case นี้ให้ตรงกับ error response ที่ openapi.yaml ระบุไว้
-    const existing = await this.findOne(id);
-    if (existing.status !== EDITABLE_CONFIG_STATUS) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงแก้ไขไม่ได้`,
-      );
-    }
-
-    // update() แก้ได้ทีละส่วน (deviceModel/protocol/fields ทุกตัว optional)
-    // — validate เทียบกับค่าที่จะเป็นจริงหลัง merge เสมอ (ค่าใหม่จาก dto ถ้ามี
-    // ไม่งั้นใช้ค่าเดิมของ Config) ไม่ใช่แค่ค่าที่ dto ส่งมาเฉยๆ เพราะ fields
-    // เดิมต้องยังตรงกับ deviceModel/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
-    await this.validateFields(
-      dto.deviceModel ?? existing.deviceModel,
-      dto.protocol ?? existing.protocol,
-      (dto.fields ?? (existing.fields as Record<string, unknown>)) as Record<
-        string,
-        unknown
-      >,
-    );
-
-    // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
-    // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
-    // update not found") ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500
-    try {
-      return await this.prisma.config.update({
-        where: { id },
-        data: {
-          deviceModel: dto.deviceModel,
-          protocol: dto.protocol,
-          fields: dto.fields as Prisma.InputJsonValue | undefined,
-        },
-      });
-    } catch (err) {
-      if (
-        err instanceof PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`ไม่พบ Config id ${id}`);
-      }
-      throw err;
-    }
-  }
-
-  async remove(id: string): Promise<void> {
-    const existing = await this.findOne(id);
-    if (existing.status !== EDITABLE_CONFIG_STATUS) {
-      throw new ConflictException(
-        `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงลบไม่ได้`,
-      );
-    }
-
-    // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
-    try {
-      await this.prisma.config.delete({ where: { id } });
-    } catch (err) {
-      if (
-        err instanceof PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`ไม่พบ Config id ${id}`);
-      }
-      throw err;
-    }
-  }
-}
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Config, type ConfigStatus, Prisma } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateConfigDto } from './dto/create-config.dto';
+import { QueryConfigDto } from './dto/query-config.dto';
+import { UpdateConfigDto } from './dto/update-config.dto';
+import {
+  APPROVABLE_CONFIG_STATUS,
+  DECIDABLE_CONFIG_STATUS,
+  EDITABLE_CONFIG_STATUS,
+  SIMULATABLE_CONFIG_STATUSES,
+} from './config-status';
+import {
+  DEVICE_SIMULATOR,
+  type DeviceSimulator,
+  type SimulationResult,
+} from './device-simulator';
+
+/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
+export interface ActingUser {
+  id: string;
+  role: string;
+}
+
+/** เฉพาะ format ที่รองรับตอนนี้ (v3.2 — ดู openapi.yaml importConfig summary) */
+const SUPPORTED_IMPORT_FORMATS = ['json'];
+
+@Injectable()
+export class ConfigService {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(DEVICE_SIMULATOR)
+    private readonly deviceSimulator: DeviceSimulator,
+    private readonly configDefinitionService: ConfigDefinitionService,
+  ) {}
+
+  /**
+   * ปิด Gap `// TODO(รอตาราง ConfigFieldDefinition)` เดิม — เรียกจาก
+   * `create()`/`update()` ก่อนเขียนลง DB เสมอ ตรวจ `fields` เทียบกับ
+   * `ConfigFieldDefinition` (data type/allowedValues/required/รุ่นอุปกรณ์ที่
+   * รองรับ) ไม่ตรง -> block (400) ไม่ให้บันทึกเลย ไม่มีทางลัดให้ field ไหน
+   * ข้ามได้ (รวมถึง field "พิเศษเฉพาะลูกค้า") — ตัดสินใจร่วมกับ B และ
+   * พี่เลี้ยง 2569-09
+   */
+  private async validateFields(
+    deviceModel: string,
+    protocol: string,
+    fields: Record<string, unknown>,
+  ): Promise<void> {
+    await this.configDefinitionService.validateFields(
+      deviceModel,
+      protocol,
+      fields,
+    );
+  }
+
+  async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
+    // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
+    // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
+    await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
+
+    return this.prisma.config.create({
+      data: {
+        deviceModel: dto.deviceModel,
+        protocol: dto.protocol,
+        // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
+        // ตรงๆ (class-validator @IsObject() ไม่รู้จัก type ของ Prisma) แต่
+        // Prisma.JsonValue ปฏิเสธ Record ธรรมดาเพราะ type ของมันรวม array
+        // แบบ readonly ที่ไม่ตรงกับ Record shape เป๊ะๆ — cast ตรงจุดที่ส่งเข้า
+        // Prisma พอ ไม่ต้องเปลี่ยน type ของ DTO
+        fields: dto.fields as Prisma.InputJsonValue,
+        createdBy: actor.id,
+      },
+    });
+  }
+
+  /**
+   * Stage 2 (#26) — Import Config จากไฟล์ JSON (v3.2 รองรับ JSON เป็นจุดเริ่มต้น
+   * ตาม openapi.yaml importConfig summary — CSV/อื่นๆ เป็น scope อนาคต)
+   *
+   * เข้า flow เดียวกับฟอร์ม (createConfig) เป๊ะๆ: parse ไฟล์ -> validate ด้วย
+   * CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน ไม่มี
+   * business rule พิเศษแยกสำหรับ import (ตาม openapi.yaml: "แปลงเป็น
+   * DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม")
+   *
+   * จงใจไม่แยก interface `ConfigImporter`/`parseConfigFile` ตาม Build
+   * Reference §3.1 — ตอนนี้รองรับ format เดียว (JSON) เขียนตรงๆ ในเมธอดนี้
+   * พอ ยังไม่มีเหตุผลจะ abstract ล่วงหน้า (YAGNI) เมื่อไหร่ที่มี format ที่ 2
+   * จริง (เช่น CSV) ค่อย refactor แยก interface ตอนนั้น — ยืนยันแล้วตอบ
+   * review PR #46 ของ kittiphong
+   */
+  async importFromJson(
+    file: Express.Multer.File | undefined,
+    format: string | undefined,
+    actor: ActingUser,
+  ): Promise<Config> {
+    if (!file) {
+      throw new BadRequestException(
+        'ไม่มีไฟล์แนบมา (multipart field name ต้องเป็น "file")',
+      );
+    }
+
+    if (!format || !SUPPORTED_IMPORT_FORMATS.includes(format)) {
+      throw new BadRequestException(
+        `รองรับเฉพาะ format: ${SUPPORTED_IMPORT_FORMATS.join(', ')} เท่านั้น`,
+      );
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(file.buffer.toString('utf-8'));
+    } catch {
+      throw new BadRequestException(
+        'ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน)',
+      );
+    }
+
+    // JSON ที่ valid แต่ไม่ใช่ object เดียว (null / array / ค่าเดี่ยว) ต้องดัก
+    // ก่อน plainToInstance/validate — class-validator โยน TypeError ตอนเจอ
+    // null ตรงๆ (validate(null) อ่าน .constructor ไม่ได้) หลุดเป็น 500 แทน
+    // 400 ถ้าไม่มี guard นี้ (พบจาก code review ของ kittiphong บน PR ของ Stage 2 นี้)
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
+      throw new BadRequestException(
+        'เนื้อหา JSON ต้องเป็น object เดียว (ไม่ใช่ null / array / ค่าเดี่ยว)',
+      );
+    }
+
+    // validate ด้วย DTO ตัวเดียวกับ createConfig (whitelist + forbidNonWhitelisted
+    // เหมือนกับ global ValidationPipe ใน main.ts) เพื่อให้กฎเดียวกันเป๊ะๆ ไม่ว่า
+    // จะสร้างผ่านฟอร์มหรือ import — กันไม่ให้ JSON มี field แปลกปลอมหลุดเข้า DB
+    //
+    // แค่เช็ค shape ตรงนี้ (เป็น object ไหม) — เช็คค่าจริงเทียบกับ
+    // ConfigFieldDefinition (Semantic Validation) เกิดที่ create() ด้านล่าง
+    // ผ่าน validateFields() ทีเดียว (ปิด Gap TODO เดิมแล้ว — ตัดสินใจร่วมกับ
+    // B และพี่เลี้ยง 2569-09)
+    const dto = plainToInstance(CreateConfigDto, parsed, {
+      excludeExtraneousValues: false,
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message:
+          'ข้อมูลใน JSON ไม่ตรงตามโครงสร้าง Config (แปลงเป็น DeviceConfigDraft ไม่สำเร็จ)',
+        errors: errors.map((e) => ({
+          property: e.property,
+          constraints: e.constraints,
+        })),
+      });
+    }
+
+    return this.create(dto, actor);
+  }
+
+  /**
+   * Stage 3 (#26) — ทดสอบ Config กับ Device Simulator (dry-run)
+   *
+   * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
+   * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
+   * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
+   * Operation หรือไม่ (เปลี่ยน status) อยู่ที่ `decide()` ด้านล่าง (Stage 4 —
+   * ยังเป็นข้อเสนอที่ kittiphong (B) ยังไม่ได้รีวิว design ไม่ merge เข้า main
+   * จนกว่าจะเสนอแยกเป็น PR ต่างหากและได้รับการยืนยันก่อน)
+   *
+   * รับ `deviceModel` ใน request body ได้ตาม docs/api/openapi.yaml แต่ตั้งใจ
+   * ไม่ใช้ค่านั้นเลย — ใช้ `deviceModel`/`protocol`/`fields` ที่ persist ไว้ใน
+   * DB ของ Config นี้เสมอ เพื่อไม่ให้ client ส่ง deviceModel ปลอมมาแล้วได้ผล
+   * ทดสอบของอุปกรณ์คนละรุ่นกับที่ Config จริงๆ ผูกไว้ (ฟิลด์นี้มีประโยชน์กับ
+   * `simulateFirmware` มากกว่า เพราะ Firmware ตัวเดียวอาจใช้ได้กับหลาย
+   * deviceModel แต่ Config ผูกกับ deviceModel เดียวตายตัวอยู่แล้วตั้งแต่สร้าง)
+   */
+  async simulate(id: string): Promise<SimulationResult> {
+    const config = await this.findOne(id);
+
+    if (!SIMULATABLE_CONFIG_STATUSES.includes(config.status)) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่รองรับการทดสอบ (เช่น approved/synced ไปแล้ว)`,
+      );
+    }
+
+    return this.deviceSimulator.simulateConfig({
+      deviceModel: config.deviceModel,
+      protocol: config.protocol,
+      fields: config.fields as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล `simulate` แล้ว
+   * (ข้อเสนอปิด open question ที่ยังค้างอยู่ใน docs/architecture/RBAC_Matrix.md
+   * ตาราง 4.2 — **ยังไม่ได้ให้ kittiphong (B) รีวิว design นี้** ต้องเสนอแยก
+   * เป็น PR ต่างหากก่อน ห้าม merge เข้า main จนกว่าจะได้รับการยืนยันจาก B —
+   * ดูที่มาของการแยกออกจาก PR Stage 3 ใน commit history ของ #49)
+   *
+   * แยกจาก `simulate` โดยตั้งใจ: `simulate` แค่คืนผลทดสอบ กดซ้ำได้ไม่จำกัด
+   * ไม่แตะสถานะเลย ส่วนเมธอดนี้คือ SW กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ
+   * ครั้งเดียวจบ — `passed:true` พา `draft`→`testing` ส่งต่อ Operation
+   * (ตรงกับ precondition ที่ `approve`/`reject` ใช้อยู่แล้วพอดี ไม่ต้องเพิ่ม
+   * enum สถานะใหม่) ส่วน `passed:false` ปล่อยสถานะเป็น `draft` เหมือนเดิม
+   * (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ต้องย้อนกลับ — คืน config
+   * เดิมโดยไม่ยิง UPDATE ลง DB เลย)
+   */
+  async decide(id: string, passed: boolean): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== DECIDABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${DECIDABLE_CONFIG_STATUS} จึงปักผลตัดสินใจไม่ได้ (เช่น ยังไม่เคย simulate เลย หรือส่งต่อ Operation ไปแล้ว)`,
+      );
+    }
+
+    if (!passed) {
+      return config;
+    }
+
+    return this.updateStatus(id, 'testing');
+  }
+
+  /**
+   * Stage 4 (#26) — Operation อนุมัติ Config ที่ SW ปักผลผ่านแล้ว
+   * (ต้องอยู่สถานะ `testing` เท่านั้น) เข้า flow `config-sync-writer` ต่อใน
+   * Phase 2 (ยังไม่ implement ในนี้ — แค่เปลี่ยนสถานะเป็น `approved`)
+   *
+   * บันทึก `approvedBy` = user id ของ Operation ที่กดอนุมัติ (จาก JWT `sub`
+   * ตาม Auth Pattern ใน CLAUDE.md) — เป็นร่องรอย Separation of Duty ว่าใคร
+   * เป็นผู้อนุมัติจริง (`Config.approver` relation) `reject` ไม่แตะ field นี้
+   * เพราะ Config ที่ถูกปฏิเสธถือว่ายังไม่เคยอนุมัติ
+   */
+  async approve(id: string, actor: ActingUser): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== APPROVABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงอนุมัติไม่ได้`,
+      );
+    }
+
+    return this.updateStatus(id, 'approved', { approvedBy: actor.id });
+  }
+
+  /**
+   * Stage 4 (#26) — Operation ปฏิเสธ Config ที่อยู่สถานะ `testing`
+   * สถานะย้อนกลับไป `draft` ทั้งหมดเสมอ (ยืนยันไว้ใน RBAC_Matrix.md Section 5
+   * ข้อ 4 — ไม่มี Role ไหน Override ขั้นตอนนี้ได้ นอกจาก ST/OT ที่ใช้ path
+   * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ SW แก้ไขต่อได้
+   * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
+   */
+  async reject(id: string): Promise<Config> {
+    const config = await this.findOne(id);
+
+    if (config.status !== APPROVABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบัน (${config.status}) ไม่ใช่ ${APPROVABLE_CONFIG_STATUS} จึงปฏิเสธไม่ได้`,
+      );
+    }
+
+    return this.updateStatus(id, 'draft');
+  }
+
+  /** race condition เดียวกับ update()/remove() — row อาจถูกลบไปพอดีระหว่าง
+   * findOne กับ update นี้ (rare) แปลง P2025 เป็น 404 แทนที่จะปล่อยเป็น 500 */
+  private async updateStatus(
+    id: string,
+    status: ConfigStatus,
+    // approvedBy เป็น scalar FK — ใช้รูป unchecked เหมือน createdBy ใน create()
+    extra?: { approvedBy?: string },
+  ): Promise<Config> {
+    try {
+      return await this.prisma.config.update({
+        where: { id },
+        data: { status, ...extra },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
+  }
+
+  findAll(query: QueryConfigDto): Promise<Config[]> {
+    // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
+    // SW ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
+    // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #46 —
+    // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
+    // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
+    return this.prisma.config.findMany({
+      where: { status: query.status },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findOne(id: string): Promise<Config> {
+    const config = await this.prisma.config.findUnique({ where: { id } });
+    if (!config) {
+      throw new NotFoundException(`ไม่พบ Config id ${id}`);
+    }
+    return config;
+  }
+
+  async update(id: string, dto: UpdateConfigDto): Promise<Config> {
+    // IDOR/state-guard pattern เดียวกับ Task (CLAUDE.md): filter ด้วย status
+    // ตอน update แล้วเช็ค count === 0 -> ต้องแยกให้ออกว่าเป็น "ไม่เจอ id เลย"
+    // (404) หรือ "เจอแต่สถานะไม่ใช่ draft" (409) เลย findOne ก่อนเพื่อแยก 2
+    // case นี้ให้ตรงกับ error response ที่ openapi.yaml ระบุไว้
+    const existing = await this.findOne(id);
+    if (existing.status !== EDITABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงแก้ไขไม่ได้`,
+      );
+    }
+
+    // update() แก้ได้ทีละส่วน (deviceModel/protocol/fields ทุกตัว optional)
+    // — validate เทียบกับค่าที่จะเป็นจริงหลัง merge เสมอ (ค่าใหม่จาก dto ถ้ามี
+    // ไม่งั้นใช้ค่าเดิมของ Config) ไม่ใช่แค่ค่าที่ dto ส่งมาเฉยๆ เพราะ fields
+    // เดิมต้องยังตรงกับ deviceModel/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
+    await this.validateFields(
+      dto.deviceModel ?? existing.deviceModel,
+      dto.protocol ?? existing.protocol,
+      (dto.fields ?? (existing.fields as Record<string, unknown>)) as Record<
+        string,
+        unknown
+      >,
+    );
+
+    // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
+    // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
+    // update not found") ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500
+    try {
+      return await this.prisma.config.update({
+        where: { id },
+        data: {
+          deviceModel: dto.deviceModel,
+          protocol: dto.protocol,
+          fields: dto.fields as Prisma.InputJsonValue | undefined,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
+  }
+
+  async remove(id: string): Promise<void> {
+    const existing = await this.findOne(id);
+    if (existing.status !== EDITABLE_CONFIG_STATUS) {
+      throw new ConflictException(
+        `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงลบไม่ได้`,
+      );
+    }
+
+    // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
+    try {
+      await this.prisma.config.delete({ where: { id } });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
+  }
+}
