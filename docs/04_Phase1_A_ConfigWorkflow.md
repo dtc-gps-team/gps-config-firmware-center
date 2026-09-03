@@ -110,6 +110,28 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
   SW ดูตอนนั้นเท่านั้น ตาม docs/api/openapi.yaml ที่ไม่ได้นิยาม field เก็บผล
   ทดสอบไว้ใน `DeviceConfigDraft` schema
 
+## Config Definition Lookup — catalog เริ่มต้นใน seed
+
+หลัง Semantic Validation (#26) merge แล้ว `ConfigDefinitionService.validateFields()`
+บล็อก (400) ทุก field ที่ไม่มีนิยามในคลัง — `backend/prisma/seed.ts` จึง seed
+ชุดพื้นฐานไว้ให้ dev/test ใช้งานได้:
+
+| fieldName | dataType | required | unknownSpec | ที่มา |
+|---|---|---|---|---|
+| `APN` | string | ✅ | `false` (รู้กฎ) | นิยามชัดเจน — Access Point Name |
+| `APN1` `MTYP` `SIM1` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` (รู้แค่ชื่อ) | `01_GPS_Build_Reference.md` §5 (โปรโตคอลที่ยืนยันแล้วกับระบบเดิม) |
+
+- **ยืนยันแค่ "ชื่อ" field** — เอกสารสเปกฟิลด์เต็ม (~262 ค่า) จากพี่ในทีมยังไม่
+  เข้า repo และ `GPS_Data_Dictionary.xlsx` เก็บแค่ schema ตาราง `CONFIG_DEFINITION`
+  ไม่ได้เก็บนิยามราย parameter
+- `dataType: string` มาจากข้อเท็จจริงว่าระบบเดิมเป็น Text-based Key-Value ผ่าน TCP
+  (Build Reference §5) — ทุกค่าเป็น string บนสาย **ไม่ใช่การเดา type จากชื่อ field**
+- กฎ semantic ที่ลึกกว่านั้น (`allowedValues` / `required` / ช่วงค่า) ยังไม่รู้ →
+  `unknownSpec: true` ตาม Phase 1 ข้อ 2 — flag นี้คือ Metadata "รู้กฎ vs รู้แค่
+  Data Type" ที่ Checkpoint Phase 1 ข้อ 6 ต้องการ
+- supportedModels ทั้งหมดผูกกับ `GT06N/TCP` (device model มาตรฐานเดียวกับทุก test
+  file) — field ทยอยเพิ่ม deviceModel/protocol อื่นเมื่อมีข้อมูลจริง
+
 ## อ้างอิง
 
 - `docs/api/openapi.yaml` — สัญญา request/response เต็มของ
