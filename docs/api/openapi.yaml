@@ -718,6 +718,21 @@ components:
           type: object
           additionalProperties: true
           description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+        createdBy:
+          type: string
+          description: user id ของ SW ที่สร้าง Config นี้ (server กำหนดจาก JWT)
+        approvedBy:
+          type: string
+          nullable: true
+          description: >-
+            user id ของ Operation ที่กดอนุมัติ (null = ยังไม่อนุมัติ) — ตั้งค่าโดย
+            approveConfig เพื่อเป็นร่องรอย Separation of Duty
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     ConfigFieldDefinition:
       type: object

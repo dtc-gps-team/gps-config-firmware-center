@@ -215,8 +215,13 @@ export class ConfigService {
    * Stage 4 (#26) — Operation อนุมัติ Config ที่ SW ปักผลผ่านแล้ว
    * (ต้องอยู่สถานะ `testing` เท่านั้น) เข้า flow `config-sync-writer` ต่อใน
    * Phase 2 (ยังไม่ implement ในนี้ — แค่เปลี่ยนสถานะเป็น `approved`)
+   *
+   * บันทึก `approvedBy` = user id ของ Operation ที่กดอนุมัติ (จาก JWT `sub`
+   * ตาม Auth Pattern ใน CLAUDE.md) — เป็นร่องรอย Separation of Duty ว่าใคร
+   * เป็นผู้อนุมัติจริง (`Config.approver` relation) `reject` ไม่แตะ field นี้
+   * เพราะ Config ที่ถูกปฏิเสธถือว่ายังไม่เคยอนุมัติ
    */
-  async approve(id: string): Promise<Config> {
+  async approve(id: string, actor: ActingUser): Promise<Config> {
     const config = await this.findOne(id);
 
     if (config.status !== APPROVABLE_CONFIG_STATUS) {
@@ -225,7 +230,7 @@ export class ConfigService {
       );
     }
 
-    return this.updateStatus(id, 'approved');
+    return this.updateStatus(id, 'approved', { approvedBy: actor.id });
   }
 
   /**
@@ -252,11 +257,13 @@ export class ConfigService {
   private async updateStatus(
     id: string,
     status: ConfigStatus,
+    // approvedBy เป็น scalar FK — ใช้รูป unchecked เหมือน createdBy ใน create()
+    extra?: { approvedBy?: string },
   ): Promise<Config> {
     try {
       return await this.prisma.config.update({
         where: { id },
-        data: { status },
+        data: { status, ...extra },
       });
     } catch (err) {
       if (

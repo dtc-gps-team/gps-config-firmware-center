@@ -720,6 +720,12 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(200);
 
       expect((res.body as { status: string }).status).toBe('approved');
+      // approvedBy ต้องถูกบันทึกเป็น user id ของ Operation ที่กดอนุมัติ (ไม่ใช่ null)
+      expect((res.body as { approvedBy: string }).approvedBy).toBe(opUser.id);
+      const persisted = await prisma.config.findUnique({
+        where: { id: configRow.id },
+      });
+      expect(persisted?.approvedBy).toBe(opUser.id);
     });
 
     it('status ยังเป็น draft (ยังไม่ผ่าน decide) -> 409', async () => {
