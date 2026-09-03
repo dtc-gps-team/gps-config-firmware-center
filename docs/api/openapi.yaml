@@ -74,6 +74,8 @@ paths:
                   $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
           description: ค่า query parameter status ไม่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
     post:
       tags: [config]
       operationId: createConfig
@@ -87,8 +89,14 @@ paths:
       responses:
         "201":
           description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
           description: ข้อมูล Config ไม่ถูกต้อง (validation ตาม Config Definition Lookup)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role SW เท่านั้น
 
@@ -112,6 +120,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceConfigDraft"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบ Config นี้
     put:
@@ -133,8 +143,14 @@ paths:
       responses:
         "200":
           description: แก้ไขสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
           description: ข้อมูล Config ไม่ถูกต้อง (validation ตาม Config Definition Lookup)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์แก้ไข Config — เฉพาะ Role SW เท่านั้น
         "404":
@@ -154,6 +170,8 @@ paths:
       responses:
         "204":
           description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role SW เท่านั้น
         "404":
@@ -182,8 +200,14 @@ paths:
       responses:
         "201":
           description: Import สำเร็จ แปลงเป็น DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
           description: ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น DeviceConfigDraft ไม่สำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role SW เท่านั้น
         "413":
@@ -225,6 +249,8 @@ paths:
                 $ref: "#/components/schemas/SimulationResult"
         "400":
           description: deviceModel ไม่ถูกต้องหรือไม่รองรับ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ทดสอบ Config นี้ — เฉพาะ Role SW, Operation, ST, OT
         "404":
@@ -260,8 +286,14 @@ paths:
       responses:
         "200":
           description: ปักผลสำเร็จ (ไม่ว่า passed จะเป็น true หรือ false)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
           description: ไม่ส่ง passed มา หรือ passed ไม่ใช่ boolean
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ปักผลตัดสินใจ Config — เฉพาะ Role SW เท่านั้น
         "404":
@@ -283,6 +315,12 @@ paths:
       responses:
         "200":
           description: อนุมัติสำเร็จ — เข้า flow config-sync-writer ต่อ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์อนุมัติ Config — เฉพาะ Role Operation เท่านั้น
         "404":
@@ -304,6 +342,12 @@ paths:
       responses:
         "200":
           description: ปฏิเสธสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ปฏิเสธ Config — เฉพาะ Role Operation เท่านั้น
         "404":
