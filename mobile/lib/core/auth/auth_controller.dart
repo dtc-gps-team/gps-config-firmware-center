@@ -9,10 +9,21 @@ import 'token_store.dart';
 enum AuthStatus { unknown, unauthenticated, authenticating, authenticated }
 
 class AuthState {
-  const AuthState({this.status = AuthStatus.unknown, this.role, this.error});
+  const AuthState({
+    this.status = AuthStatus.unknown,
+    this.role,
+    this.username,
+    this.error,
+  });
 
   final AuthStatus status;
   final UserRole? role;
+
+  /// Username entered at login. The backend `LoginResponse` carries only
+  /// `accessToken` + `role` (no display name, and there is no `/auth/me`
+  /// endpoint yet), so this is the only identity string we can show. It is not
+  /// persisted, so it is `null` after a session is restored from a saved token.
+  final String? username;
   final String? error;
 
   bool get isAuthenticated => status == AuthStatus.authenticated;
@@ -21,6 +32,7 @@ class AuthState {
   AuthState copyWith({
     AuthStatus? status,
     UserRole? role,
+    String? username,
     String? error,
     bool clearError = false,
     bool clearRole = false,
@@ -28,6 +40,7 @@ class AuthState {
     return AuthState(
       status: status ?? this.status,
       role: clearRole ? null : (role ?? this.role),
+      username: username ?? this.username,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -70,16 +83,21 @@ class AuthController extends Notifier<AuthState> {
   }
 
   Future<void> login(String username, String password) async {
+    final trimmedUsername = username.trim();
     state = state.copyWith(status: AuthStatus.authenticating, clearError: true);
     try {
-      final response = await _repository.login(username.trim(), password);
+      final response = await _repository.login(trimmedUsername, password);
       final token = response.accessToken;
       if (token == null) {
         throw ApiException('เข้าสู่ระบบไม่สำเร็จ: ไม่ได้รับ token');
       }
       await _tokenStore.save(token);
       ref.read(apiClientProvider).setAuthToken(token);
-      state = AuthState(status: AuthStatus.authenticated, role: response.role);
+      state = AuthState(
+        status: AuthStatus.authenticated,
+        role: response.role,
+        username: trimmedUsername,
+      );
     } on ApiException catch (e) {
       state = AuthState(status: AuthStatus.unauthenticated, error: e.message);
     } catch (e) {
