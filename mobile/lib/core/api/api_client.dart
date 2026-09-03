@@ -103,9 +103,26 @@ class ApiClient {
       return parse(body);
     } on DioException catch (e) {
       throw ApiException(
-        e.response?.statusMessage ?? e.message ?? 'Network error',
+        _messageFromResponse(e.response) ??
+            e.response?.statusMessage ??
+            e.message ??
+            'Network error',
         statusCode: e.response?.statusCode,
       );
     }
+  }
+
+  /// Prefer the backend's JSON `message` field (localized, user-facing text)
+  /// over the raw HTTP reason phrase. Defensive: `response.data` is not always
+  /// a `Map` — it can be a plain string, `null`, or HTML when the body isn't
+  /// the expected JSON error shape, so anything unexpected falls through to the
+  /// existing `statusMessage`/`message` fallbacks.
+  static String? _messageFromResponse(Response<dynamic>? response) {
+    final data = response?.data;
+    if (data is Map) {
+      final message = data['message'];
+      if (message is String && message.isNotEmpty) return message;
+    }
+    return null;
   }
 }
