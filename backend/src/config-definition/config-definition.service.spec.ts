@@ -215,21 +215,29 @@ describe('ConfigDefinitionService', () => {
     it('มีหลาย error พร้อมกัน -> รวบรวมทุก error ไว้ใน exception เดียว ไม่หยุดที่จุดแรก', async () => {
       findMany.mockResolvedValue([apnDef, modeDef]);
 
-      await expect(
-        service.validateFields('GT06N', 'TCP', {
+      // ไม่ใช้ .rejects.toMatchObject({ response: { errors: expect.arrayContaining([...]) } })
+      // ตรงๆ เพราะ expect.arrayContaining คืน type `any` เสมอ (ตาม @types/jest)
+      // ทำให้ assign เข้า property ของ object literal โดน
+      // @typescript-eslint/no-unsafe-assignment — จับ error เองแล้ว cast type
+      // ของ response ให้ชัดเจนแทน
+      let thrown: unknown;
+      try {
+        await service.validateFields('GT06N', 'TCP', {
           APN1: 999,
           MODE: 'INVALID',
           UNKNOWN: 'x',
-        }),
-      ).rejects.toMatchObject({
-        response: {
-          errors: expect.arrayContaining([
-            expect.stringContaining('APN1'),
-            expect.stringContaining('MODE'),
-            expect.stringContaining('UNKNOWN'),
-          ]),
-        },
-      });
+        });
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(BadRequestException);
+      const response = (thrown as BadRequestException).getResponse() as {
+        errors: string[];
+      };
+      expect(response.errors.some((e) => e.includes('APN1'))).toBe(true);
+      expect(response.errors.some((e) => e.includes('MODE'))).toBe(true);
+      expect(response.errors.some((e) => e.includes('UNKNOWN'))).toBe(true);
     });
   });
 });
