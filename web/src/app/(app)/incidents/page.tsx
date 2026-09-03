@@ -13,37 +13,38 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApprovalActions } from "./approval-actions";
+import { IncidentActions } from "./incident-actions";
 
 export const metadata = {
-  title: "Approval Center | GPS Config Center",
+  title: "Incident & Rollback | GPS Config Center",
 };
 
-/** Scaffold — รอต่อ POST /config/{configId}/approve และ /reject (Operation เท่านั้น) */
-export default function ApprovalsPage() {
+/**
+ * Scaffold — รอต่อโมดูล `incident` (ยังไม่มี endpoint ใน spec — ดู
+ * RBAC_Matrix.md ตาราง 4.2) SW เห็นเฉพาะ Incident ที่ระบบสร้างอัตโนมัติ
+ */
+export default function IncidentsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold">Approval Center</h1>
+        <h1 className="text-2xl font-semibold">Incident & Rollback</h1>
         <p className="text-sm text-muted-foreground">
-          อนุมัติ/ปฏิเสธ Config — Operation เท่านั้น
+          Operation สั่ง Rollback — ST แก้ไขเชิงเทคนิค
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>รออนุมัติ</CardTitle>
-          <CardDescription>
-            สถานะ Config = testing (ผ่าน simulation แล้ว)
-          </CardDescription>
+          <CardTitle>รายการ Incident</CardTitle>
+          <CardDescription>สร้างอัตโนมัติจากระบบ</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ชื่อ Config</TableHead>
-                <TableHead>ผู้สร้าง</TableHead>
-                <TableHead>ผลทดสอบ</TableHead>
+                <TableHead>อุปกรณ์</TableHead>
+                <TableHead>รายละเอียด</TableHead>
+                <TableHead>เกิดเมื่อ</TableHead>
                 <TableHead className="text-right">การดำเนินการ</TableHead>
               </TableRow>
             </TableHeader>
@@ -53,7 +54,7 @@ export default function ApprovalsPage() {
                   ยังไม่มีข้อมูล — รอต่อ API
                 </TableCell>
                 <TableCell className="text-right">
-                  <ApprovalActions />
+                  <IncidentActions />
                 </TableCell>
               </TableRow>
             </TableBody>

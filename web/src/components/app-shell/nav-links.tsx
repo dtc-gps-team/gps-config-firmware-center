@@ -2,15 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/auth/auth-provider";
 import { NAV_ITEMS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { session } = useAuth();
+
+  // เมนูที่ไม่ใส่ allowedRoles ไว้ = ทุก Role เห็นได้ (ส่วนใหญ่ของหน้าปัจจุบัน
+  // ทุก Role มีอย่างน้อย R ตาม RBAC_Matrix.md Section 2) กรองเฉพาะหน้าที่ระบุ
+  // allowedRoles ไว้ชัดเจน (Audit Log, User Management)
+  const visibleItems = NAV_ITEMS.filter(
+    (item) =>
+      !item.allowedRoles ||
+      item.allowedRoles.some((role) => role === session?.role),
+  );
 
   return (
     <nav className="flex flex-col gap-1">
-      {NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const active =
           item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         return (
