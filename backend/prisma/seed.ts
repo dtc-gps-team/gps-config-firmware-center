@@ -224,18 +224,20 @@ async function main() {
   //
   //    หลัง Semantic Validation (#26) merge เข้า main แล้ว `validateFields()`
   //    บล็อก (400) ทุก field ที่ไม่มีนิยามในคลัง — catalog ที่มีแค่ `APN` ตัว
-  //    เดียวทำให้สร้าง/แก้ Config เกือบทุกอันไม่ได้ (kittiphong ฝากไว้ใน review
-  //    PR #62) จึง seed ชุดพื้นฐานเพิ่มตรงนี้
+  //    เดียวทำให้สร้าง/แก้ Config เกือบทุกอันไม่ได้ (kittiphong เปิด issue #68
+  //    [Blocker] + ฝากไว้ใน review PR #62) จึง seed ชุดพื้นฐานเพิ่มตรงนี้
   //
   //    **ที่มาของชื่อ field:** `01_GPS_Build_Reference.md` §5 ("โปรโตคอลที่
   //    ยืนยันแล้วกับระบบเดิม `config.dtc.co.th:909`") ระบุตัวอย่าง field ที่
   //    ยืนยันแล้วว่ามีจริงในระบบเดิม: APN1, MTYP, SIM1, SEV1, RS232, PROD, COMP
-  //    — **ยืนยันแค่ "ชื่อ" เท่านั้น** เอกสารสเปกฟิลด์เต็ม (~262 ค่า) จากพี่ใน
-  //    ทีมยังไม่เข้า repo และ GPS_Data_Dictionary.xlsx เก็บแค่ schema ของ
-  //    ตาราง CONFIG_DEFINITION ไม่ได้เก็บนิยามราย parameter
+  //    (+ APN2/SIM2 คู่ dual-SIM ตามที่ kittiphong ระบุใน #68) — **ยืนยันแค่
+  //    "ชื่อ" เท่านั้น** เอกสารสเปกฟิลด์เต็ม (~262 ค่า) จากพี่ในทีมยังไม่เข้า
+  //    repo และ GPS_Data_Dictionary.xlsx เก็บแค่ schema ของตาราง
+  //    CONFIG_DEFINITION ไม่ได้เก็บนิยามราย parameter → catalog นี้ยังไม่ครบ
+  //    ตาม #68 ทั้งหมด (ส่วนที่เหลือรอเอกสารต้นฉบับ)
   //
   //    **ที่มาของ dataType:** ระบบเดิมเป็น Text-based Key-Value ผ่าน TCP
-  //    (Build Reference §5) — ทุกค่าเป็น string บนสาย ทั้ง 7 field นี้เป็น
+  //    (Build Reference §5) — ทุกค่าเป็น string บนสาย field เหล่านี้เป็น
   //    identifier/endpoint/โหมด ไม่มีตัวไหนที่ต้องเป็นตัวเลข จึงใส่ `string`
   //    (ไม่ใช่การเดา type จากชื่อ) ส่วนกฎ semantic ที่ลึกกว่านั้น (allowedValues
   //    / required / ช่วงค่า) ยัง **ไม่รู้** → mark `unknownSpec: true` ตาม
@@ -248,10 +250,16 @@ async function main() {
 
   // field ที่ยืนยันแค่ชื่อจาก Build Reference §5 — dataType=string (โปรโตคอล
   // text KV), unknownSpec=true (ยังไม่รู้กฎ semantic), ไม่บังคับกรอก
+  //
+  // APN2/SIM2 ไม่ได้อยู่ในรายการตัวอย่าง §5 ตรงๆ แต่ kittiphong ระบุใน issue
+  // #68 ("APN1/2") + อุปกรณ์ tracker เป็น dual-SIM มาตรฐาน (ช่อง 2 คู่กับช่อง
+  // 1) — เพิ่มเป็นคู่ให้ครบ ยัง unknownSpec เหมือนกัน
   const UNKNOWN_SPEC_LEGACY_FIELDS: { fieldName: string; note: string }[] = [
     { fieldName: 'APN1', note: 'APN สำหรับ SIM ช่อง 1' },
+    { fieldName: 'APN2', note: 'APN สำหรับ SIM ช่อง 2 (dual-SIM)' },
     { fieldName: 'MTYP', note: 'ประเภท/โหมดการทำงานของอุปกรณ์ (module type)' },
     { fieldName: 'SIM1', note: 'ค่าที่เกี่ยวกับ SIM ช่อง 1' },
+    { fieldName: 'SIM2', note: 'ค่าที่เกี่ยวกับ SIM ช่อง 2 (dual-SIM)' },
     { fieldName: 'SEV1', note: 'ปลายทาง server หลัก (host:port) ช่อง 1' },
     { fieldName: 'RS232', note: 'การตั้งค่าพอร์ต RS232' },
     { fieldName: 'PROD', note: 'รหัส/ชื่อรุ่นผลิตภัณฑ์' },

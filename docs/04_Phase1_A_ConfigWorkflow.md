@@ -119,11 +119,12 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 | fieldName | dataType | required | unknownSpec | ที่มา |
 |---|---|---|---|---|
 | `APN` | string | ✅ | `false` (รู้กฎ) | นิยามชัดเจน — Access Point Name |
-| `APN1` `MTYP` `SIM1` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` (รู้แค่ชื่อ) | `01_GPS_Build_Reference.md` §5 (โปรโตคอลที่ยืนยันแล้วกับระบบเดิม) |
+| `APN1` `APN2` `MTYP` `SIM1` `SIM2` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` (รู้แค่ชื่อ) | `01_GPS_Build_Reference.md` §5 + `APN2`/`SIM2` ตาม issue #68 |
 
 - **ยืนยันแค่ "ชื่อ" field** — เอกสารสเปกฟิลด์เต็ม (~262 ค่า) จากพี่ในทีมยังไม่
   เข้า repo และ `GPS_Data_Dictionary.xlsx` เก็บแค่ schema ตาราง `CONFIG_DEFINITION`
-  ไม่ได้เก็บนิยามราย parameter
+  ไม่ได้เก็บนิยามราย parameter → catalog นี้ยังไม่ครบตาม [#68](https://github.com/dtc-gps-team/gps-config-firmware-center/issues/68)
+  ทั้งหมด (ส่วนที่เหลือรอเอกสารต้นฉบับ)
 - `dataType: string` มาจากข้อเท็จจริงว่าระบบเดิมเป็น Text-based Key-Value ผ่าน TCP
   (Build Reference §5) — ทุกค่าเป็น string บนสาย **ไม่ใช่การเดา type จากชื่อ field**
 - กฎ semantic ที่ลึกกว่านั้น (`allowedValues` / `required` / ช่วงค่า) ยังไม่รู้ →
