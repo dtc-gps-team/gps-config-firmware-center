@@ -85,6 +85,27 @@ void main() {
     expect(state.role, UserRole.operation);
   });
 
+  testWidgets('password show/hide toggle flips obscureText', (tester) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    TextField passwordField() => tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(const Key('login_password')),
+        matching: find.byType(TextField),
+      ),
+    );
+
+    expect(passwordField().obscureText, isTrue);
+
+    await tester.tap(find.byKey(const Key('login_password_toggle')));
+    await tester.pump();
+    expect(passwordField().obscureText, isFalse);
+
+    await tester.tap(find.byKey(const Key('login_password_toggle')));
+    await tester.pump();
+    expect(passwordField().obscureText, isTrue);
+  });
+
   testWidgets('surfaces the API error message on failure', (tester) async {
     final container = _container(
       _FakeAuthRepository(
