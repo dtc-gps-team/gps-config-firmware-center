@@ -4,7 +4,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -13,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { UploadFirmwareButton } from "./upload-firmware-button";
 
 export const metadata = {
   title: "Firmware Repository | GPS Config Center",
@@ -29,7 +29,7 @@ export default function FirmwarePage() {
             อัปโหลด + Compatibility Tag — สร้างได้เฉพาะ Role SW
           </p>
         </div>
-        <Button disabled>+ อัปโหลด Firmware</Button>
+        <UploadFirmwareButton />
       </div>
 
       <Card>

@@ -5,9 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ImportConfigForm } from "./import-config-form";
 
 export const metadata = {
   title: "Config Import | GPS Config Center",
@@ -29,12 +27,8 @@ export default function ConfigImportPage() {
           <CardTitle>อัปโหลดไฟล์</CardTitle>
           <CardDescription>รองรับไฟล์ .json เท่านั้น</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="config-file">ไฟล์ Config</Label>
-            <Input id="config-file" type="file" accept=".json" disabled />
-          </div>
-          <Button disabled>นำเข้า</Button>
+        <CardContent>
+          <ImportConfigForm />
         </CardContent>
       </Card>
     </div>

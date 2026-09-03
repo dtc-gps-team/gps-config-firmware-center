@@ -13,39 +13,43 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CreateConfigButton } from "./create-config-button";
+import { CreateCampaignButton } from "./create-campaign-button";
 
 export const metadata = {
-  title: "Config Editor | GPS Config Center",
+  title: "Campaign | GPS Config Center",
 };
 
-/** Scaffold — รอต่อ GET/POST /config (โมดูล Config CRUD คือ #26) */
-export default function ConfigPage() {
+/**
+ * Scaffold — รอต่อโมดูล `campaign` (ยังไม่มี endpoint ใน spec — ดู
+ * RBAC_Matrix.md ตาราง 4.2) รวม Campaign Wizard (สร้าง) + Campaign Monitor
+ * (ติดตาม Failure Rate) ไว้หน้าเดียวก่อน
+ */
+export default function CampaignsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Config Editor</h1>
+          <h1 className="text-2xl font-semibold">Campaign</h1>
           <p className="text-sm text-muted-foreground">
-            สร้าง/แก้ Draft — สร้างได้เฉพาะ Role SW
+            สร้าง/ติดตามแคมเปญ — สร้างได้เฉพาะ Role Operation
           </p>
         </div>
-        <CreateConfigButton />
+        <CreateCampaignButton />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>รายการ Config</CardTitle>
+          <CardTitle>รายการแคมเปญ</CardTitle>
           <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ชื่อ Config</TableHead>
-                <TableHead>อุปกรณ์เป้าหมาย</TableHead>
+                <TableHead>ชื่อแคมเปญ</TableHead>
+                <TableHead>Config/Firmware เป้าหมาย</TableHead>
+                <TableHead>Failure Rate</TableHead>
                 <TableHead>สถานะ</TableHead>
-                <TableHead>แก้ไขล่าสุด</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -54,7 +58,7 @@ export default function ConfigPage() {
                   colSpan={4}
                   className="text-center text-sm text-muted-foreground"
                 >
-                  ยังไม่มีข้อมูล — รอต่อ API (#26)
+                  ยังไม่มีข้อมูล — รอต่อ API
                 </TableCell>
               </TableRow>
             </TableBody>
