@@ -232,6 +232,12 @@ async function main() {
     required: boolean;
     unknownSpec: boolean;
     description: string;
+    // (deviceModel, protocol) ที่ field นี้รองรับ — ตั้งแต่ Semantic
+    // Validation (#26) field ที่ supportedModels ว่างเปล่าใช้งานไม่ได้เลย
+    // (validateFields บล็อกทุก deviceModel/protocol ถ้าไม่มีคู่ไหนตรงกัน
+    // เลย) ใช้ GT06N/TCP เป็น device model มาตรฐานเดียวกับที่ทุก test file
+    // ในโปรเจกต์ใช้ตรงกัน (ไม่ใช่ค่าที่เดาขึ้นใหม่)
+    supportedModels: { deviceModel: string; protocol: string }[];
   }[] = [
     {
       fieldName: 'APN',
@@ -240,15 +246,30 @@ async function main() {
       required: true,
       unknownSpec: false,
       description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
+      supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
     },
   ];
 
   for (const def of configFieldDefinitions) {
-    await prisma.configFieldDefinition.upsert({
+    const { supportedModels, ...fieldData } = def;
+    const existing = await prisma.configFieldDefinition.upsert({
       where: { fieldName: def.fieldName },
       update: {},
-      create: def,
+      create: fieldData,
     });
+    for (const support of supportedModels) {
+      await prisma.configFieldDefinitionModelSupport.upsert({
+        where: {
+          fieldDefinitionId_deviceModel_protocol: {
+            fieldDefinitionId: existing.id,
+            deviceModel: support.deviceModel,
+            protocol: support.protocol,
+          },
+        },
+        update: {},
+        create: { fieldDefinitionId: existing.id, ...support },
+      });
+    }
   }
 
   console.log(

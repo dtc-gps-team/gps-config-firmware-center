@@ -150,4 +150,79 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
 
     expect(res.body).toEqual([]);
   });
+
+  /**
+   * `POST /config-definitions` (#26) — SW สร้าง field definition เองได้เลย
+   * ไม่ต้องผ่านอนุมัติ (ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09 — ดู
+   * RBAC_Matrix.md changelog แก้ครั้งที่ 14) ยืนยันผ่าน comment รีวิว PR ของ
+   * kittiphong: เดิม RBAC ของ endpoint นี้ถูกทดสอบแค่ทางอ้อมผ่าน unit test
+   * เพิ่ม HTTP integration test ให้ครบเส้นทางจริง (guard chain + ValidationPipe)
+   */
+  describe('POST /config-definitions', () => {
+    const validBody = {
+      fieldName: 'MTYP',
+      dataType: 'string',
+      required: false,
+      supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+    };
+
+    it('role ไม่มีสิทธิ์ config-definition.Create (เช่น Operation) -> 403', async () => {
+      const operationUser = await makeUser(prisma, { role: 'Operation' });
+      const token = tokenFor(operationUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validBody)
+        .expect(403);
+    });
+
+    it('SW มีสิทธิ์ config-definition.Create -> 201 สร้างสำเร็จพร้อม supportedModels', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Create, 'config-definition');
+      const token = tokenFor(swUser.id, 'SW');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validBody)
+        .expect(201);
+
+      const body = res.body as {
+        fieldName: string;
+        supportedModels: { deviceModel: string; protocol: string }[];
+      };
+      expect(body.fieldName).toBe('MTYP');
+      expect(body.supportedModels).toHaveLength(1);
+      expect(body.supportedModels[0]).toMatchObject({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+      });
+    });
+
+    it('fieldName ซ้ำ -> 409', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Create, 'config-definition');
+      await seedApn();
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, fieldName: 'APN' })
+        .expect(409);
+    });
+
+    it('supportedModels ว่างเปล่า -> 400 (ArrayMinSize(1) ที่ DTO)', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Create, 'config-definition');
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, supportedModels: [] })
+        .expect(400);
+    });
+  });
 });
