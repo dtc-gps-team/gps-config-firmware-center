@@ -15,7 +15,17 @@ import 'package:mobile/main.dart' as app;
 /// ```
 /// Needs seeded `st.test` / `sw.test` (`password123`) users; `st.test` with a
 /// few assigned tasks.
+Future<void> _ensureLoggedOut(WidgetTester tester) async {
+  // A previous run can leave a persisted session (reinstalling the APK keeps
+  // secure storage). If we land on Home, log out first.
+  if (find.byKey(const Key('home_logout')).evaluate().isNotEmpty) {
+    await tester.tap(find.byKey(const Key('home_logout')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  }
+}
+
 Future<void> _login(WidgetTester tester, String username) async {
+  await _ensureLoggedOut(tester);
   await tester.enterText(find.byKey(const Key('login_username')), username);
   await tester.enterText(
     find.byKey(const Key('login_password')),
@@ -45,6 +55,11 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 3));
     expect(find.text('รายละเอียดงาน'), findsOneWidget);
     expect(find.byKey(const Key('task_status_save')), findsOneWidget);
+    // ST/OT may only set in_progress / completed — not pending, not cancelled.
+    expect(find.byKey(const Key('status_choice_in_progress')), findsOneWidget);
+    expect(find.byKey(const Key('status_choice_completed')), findsOneWidget);
+    expect(find.byKey(const Key('status_choice_pending')), findsNothing);
+    expect(find.byKey(const Key('status_choice_cancelled')), findsNothing);
     await binding.takeScreenshot('02-task-detail-st');
 
     await tester.tap(find.byKey(const Key('status_choice_in_progress')));
