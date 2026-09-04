@@ -15,6 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_DEVICES, DEVICE_STATUS_TONE, pillClass } from "@/lib/demo-data";
 
 export const metadata = {
   title: "Device Search | GPS Config Center",
@@ -46,7 +48,8 @@ export default function DevicesPage() {
       </Card>
 
       <Card>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /devices (ยังไม่มีใน spec)" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -57,26 +60,33 @@ export default function DevicesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-              </TableRow>
+              {DEMO_DEVICES.map((device) => (
+                <TableRow key={device.deviceId}>
+                  <TableCell className="font-mono text-sm">
+                    <Link
+                      href={`/devices/${device.deviceId}`}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      {device.deviceId}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {device.sim}
+                  </TableCell>
+                  <TableCell>{device.model}</TableCell>
+                  <TableCell>
+                    <span
+                      className={pillClass(DEVICE_STATUS_TONE[device.status])}
+                    >
+                      {device.status}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
-
-      {/* ตัวอย่าง entry point ไปหน้า Device Detail — ใช้ id ปลอมไว้ก่อน */}
-      <Link
-        href="/devices/example-device-id"
-        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-      >
-        ดูตัวอย่างหน้า Device Detail (dev only)
-      </Link>
     </div>
   );
 }

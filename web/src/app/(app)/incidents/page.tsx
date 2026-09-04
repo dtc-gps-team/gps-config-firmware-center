@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { IncidentActions } from "./incident-actions";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_INCIDENTS } from "@/lib/demo-data";
 
 export const metadata = {
   title: "Incident & Rollback | GPS Config Center",
@@ -38,7 +40,8 @@ export default function IncidentsPage() {
           <CardTitle>รายการ Incident</CardTitle>
           <CardDescription>สร้างอัตโนมัติจากระบบ</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /incidents (ยังไม่มีใน spec)" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -49,14 +52,20 @@ export default function IncidentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell colSpan={3} className="text-sm text-muted-foreground">
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-                <TableCell className="text-right">
-                  <IncidentActions />
-                </TableCell>
-              </TableRow>
+              {DEMO_INCIDENTS.map((incident) => (
+                <TableRow key={incident.device + incident.occurredAt}>
+                  <TableCell className="font-mono text-sm">
+                    {incident.device}
+                  </TableCell>
+                  <TableCell>{incident.detail}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {incident.occurredAt}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <IncidentActions />
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

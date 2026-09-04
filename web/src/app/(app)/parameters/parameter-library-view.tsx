@@ -22,6 +22,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_PARAMETERS, DEMO_PARAMETERS_TOTAL } from "@/lib/demo-data";
 
 /**
  * คลัง Parameter (Config Definition Lookup, #12/#26) — Sprint 1 นับเป็นฝั่ง
@@ -52,9 +54,13 @@ function ParameterLibraryContent() {
       <Card>
         <CardHeader>
           <CardTitle>รายการ Parameter ทั้งหมด</CardTitle>
-          <CardDescription>เรียงตามชื่อ field</CardDescription>
+          <CardDescription>
+            เรียงตามชื่อ field — แสดง {DEMO_PARAMETERS.length} จาก{" "}
+            {DEMO_PARAMETERS_TOTAL} field ที่ seed ไว้ในระบบ
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /config-definitions" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -65,14 +71,20 @@ function ParameterLibraryContent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-              </TableRow>
+              {DEMO_PARAMETERS.map((param) => (
+                <TableRow key={param.fieldName}>
+                  <TableCell className="font-mono text-sm">
+                    {param.fieldName}
+                  </TableCell>
+                  <TableCell>{param.dataType}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {param.required ? "ใช่" : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {param.models}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

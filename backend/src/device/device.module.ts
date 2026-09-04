@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import {
+  CONFIG_APPLIER,
+  type ConfigApplier,
+  MockConfigApplier,
+} from './config-applier';
+import {
   DEVICE_CONNECTION_TESTER,
   type DeviceConnectionTester,
   MockDeviceConnectionTester,
@@ -35,6 +40,25 @@ import { DeviceService } from './device.service';
           );
         }
         return new MockDeviceConnectionTester();
+      },
+      inject: [NestConfigService],
+    },
+    // CONFIG_APPLIER: env `DEVICE_CONFIG_APPLY_MODE` (`mock` default | `real`)
+    // — kittiphong (B) เสนอ reuse `DEVICE_SIMULATOR_MODE` แต่เลือก env แยกตาม
+    // แพทเทิร์นในโมดูลนี้เอง (`DEVICE_CONNECTION_TEST_MODE` ก็แยก — mock/real
+    // ของแต่ละ capability progress คนละจังหวะ) ถ้าทีมอยาก reuse เปลี่ยน
+    // บรรทัดเดียว · `real` ยัง throw เพราะยังไม่มีช่องทางเขียน Config เข้ากล่อง
+    // จริง (ดู config-applier.ts + config-sync-writer #32)
+    {
+      provide: CONFIG_APPLIER,
+      useFactory: (nestConfig: NestConfigService): ConfigApplier => {
+        const mode = nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE', 'mock');
+        if (mode === 'real') {
+          throw new Error(
+            'DEVICE_CONFIG_APPLY_MODE=real ยังไม่รองรับ (ยังไม่มีช่องทางเขียน Config เข้าอุปกรณ์จริง — ดู config-sync-writer #32)',
+          );
+        }
+        return new MockConfigApplier();
       },
       inject: [NestConfigService],
     },

@@ -73,6 +73,7 @@ export class ConfigDefinitionService {
           dataType: dto.dataType,
           allowedValues: dto.allowedValues ?? [],
           required: dto.required,
+          unknownSpec: dto.unknownSpec ?? false,
           description: dto.description,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({

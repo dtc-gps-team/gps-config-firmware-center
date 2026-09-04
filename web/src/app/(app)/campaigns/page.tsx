@@ -14,6 +14,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateCampaignButton } from "./create-campaign-button";
+import { DemoNote } from "@/components/demo/demo-note";
+import {
+  DEMO_CAMPAIGNS,
+  CAMPAIGN_STATUS_TONE,
+  pillClass,
+} from "@/lib/demo-data";
 
 export const metadata = {
   title: "Campaign | GPS Config Center",
@@ -42,7 +48,8 @@ export default function CampaignsPage() {
           <CardTitle>รายการแคมเปญ</CardTitle>
           <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /campaigns (ยังไม่มีใน spec)" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -53,14 +60,26 @@ export default function CampaignsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-              </TableRow>
+              {DEMO_CAMPAIGNS.map((campaign) => (
+                <TableRow key={campaign.name}>
+                  <TableCell className="font-medium">{campaign.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {campaign.target}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {campaign.failureRate}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={pillClass(
+                        CAMPAIGN_STATUS_TONE[campaign.status],
+                      )}
+                    >
+                      {campaign.status}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
