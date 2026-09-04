@@ -30,11 +30,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-60 shrink-0 border-r bg-background md:flex md:flex-col">
+      <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col">
         <div className="flex h-14 items-center px-4">
           <span className="text-sm font-semibold">GPS Config Center</span>
         </div>
-        <Separator />
+        <Separator className="bg-sidebar-border" />
         <div className="flex-1 overflow-y-auto p-3">
           <NavLinks />
         </div>
@@ -66,9 +66,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-64 p-0">
+        <SheetContent
+          side="left"
+          className="w-64 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground"
+        >
           <SheetHeader>
-            <SheetTitle>GPS Config Center</SheetTitle>
+            <SheetTitle className="text-sidebar-foreground">
+              GPS Config Center
+            </SheetTitle>
           </SheetHeader>
           <div className="p-3">
             <NavLinks onNavigate={() => setMobileNavOpen(false)} />

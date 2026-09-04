@@ -48,73 +48,79 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Harbor Palette — Direction A (see design proposal artifact).
+   Two-tone navy: deep navy #0F3350 on the chrome (--sidebar), a brighter
+   action blue #1C6FB2 on everything interactive (--primary / --ring). Neutrals
+   are cool greys biased toward the navy. Chrome navy stays within a shade of
+   the Flutter app's _TaskColors.navy (#12344D) so both platforms read as one
+   product. Hex noted inline; ship the oklch() forms. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.979 0.003 264.5); /* #F7F8FA */
+  --foreground: oklch(0.267 0.028 248.9); /* #1B2733 navy-tinted ink */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.267 0.028 248.9);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.267 0.028 248.9);
+  --primary: oklch(0.528 0.13 248.3); /* #1C6FB2 action blue — buttons, CTAs */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.957 0.006 255.5); /* #EEF1F5 */
+  --secondary-foreground: oklch(0.267 0.028 248.9);
+  --muted: oklch(0.957 0.006 255.5);
+  --muted-foreground: oklch(0.542 0.028 259.8); /* #667080 */
+  --accent: oklch(0.961 0.011 243.7); /* #ECF3F9 pale blue — hover fills, selected rows */
+  --accent-foreground: oklch(0.313 0.06 243.7); /* #12344D */
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: oklch(0.923 0.008 253.9); /* #E2E6EB */
+  --input: oklch(0.923 0.008 253.9);
+  --ring: oklch(0.528 0.13 248.3); /* #1C6FB2 — same blue for focus + links */
+  --chart-1: oklch(0.528 0.13 248.3); /* #1C6FB2 */
+  --chart-2: oklch(0.511 0.086 186.4); /* #0F766E */
+  --chart-3: oklch(0.555 0.146 49); /* #B45309 */
+  --chart-4: oklch(0.491 0.241 292.6); /* #6D28D9 */
+  --chart-5: oklch(0.522 0.14 146.9); /* #1E7E34 */
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.311 0.066 246.6); /* #0F3350 deep navy — chrome only */
+  --sidebar-foreground: oklch(0.866 0.024 246.1); /* #C7D5E2 */
+  --sidebar-primary: oklch(0.528 0.13 248.3); /* #1C6FB2 — active nav item */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.361 0.07 243.2); /* #17415F — sidebar hover */
+  --sidebar-accent-foreground: oklch(0.941 0.008 253.9);
+  --sidebar-border: oklch(0.377 0.063 238.4); /* #1D465F */
+  --sidebar-ring: oklch(0.528 0.13 248.3);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.198 0.023 257.3); /* #0F1620 deep slate-navy, not black */
+  --foreground: oklch(0.941 0.008 253.9); /* #E8ECF1 */
+  --card: oklch(0.24 0.027 253.4); /* #16202C */
+  --card-foreground: oklch(0.941 0.008 253.9);
+  --popover: oklch(0.24 0.027 253.4);
+  --popover-foreground: oklch(0.941 0.008 253.9);
+  --primary: oklch(0.686 0.114 239.6); /* #4FA3D9 action blue, lifted for dark */
+  --primary-foreground: oklch(0.182 0.026 246.9); /* #08131D */
+  --secondary: oklch(0.281 0.031 252.7); /* #1E2A38 */
+  --secondary-foreground: oklch(0.941 0.008 253.9);
+  --muted: oklch(0.281 0.031 252.7);
+  --muted-foreground: oklch(0.7 0.025 250.2); /* #93A0AE */
+  --accent: oklch(0.258 0.031 247.3); /* #172532 */
+  --accent-foreground: oklch(0.941 0.008 253.9);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: oklch(0.32 0.03 252.6); /* #283442 */
+  --input: oklch(0.358 0.034 250.4); /* #2F3E4E */
+  --ring: oklch(0.686 0.114 239.6); /* #4FA3D9 */
+  --chart-1: oklch(0.706 0.108 239.4); /* #5BA9DC */
+  --chart-2: oklch(0.695 0.111 182.1); /* #34B3A2 */
+  --chart-3: oklch(0.731 0.128 63.3); /* #E0954A */
+  --chart-4: oklch(0.688 0.137 294.8); /* #A188E6 */
+  --chart-5: oklch(0.755 0.133 153.9); /* #63C888 */
+  --sidebar: oklch(0.251 0.045 243.8); /* #0C2436 deep navy chrome */
+  --sidebar-foreground: oklch(0.866 0.024 246.1); /* #C7D5E2 */
+  --sidebar-primary: oklch(0.686 0.114 239.6); /* #4FA3D9 — active nav item */
+  --sidebar-primary-foreground: oklch(0.182 0.026 246.9);
+  --sidebar-accent: oklch(0.31 0.055 244.1); /* #15334A — sidebar hover */
+  --sidebar-accent-foreground: oklch(0.941 0.008 253.9);
+  --sidebar-border: oklch(0.303 0.049 243.6); /* #173145 */
+  --sidebar-ring: oklch(0.686 0.114 239.6);
 }
 
 @layer base {
