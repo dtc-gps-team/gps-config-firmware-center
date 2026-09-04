@@ -68,6 +68,31 @@ class ApiClient {
     );
   }
 
+  /// `GET /tasks` — self-scoped to the caller by the backend for ST/OT roles.
+  Future<List<Task>> listTasks() async {
+    return _wrapList(() => _dio.get<List<dynamic>>('/tasks'), Task.fromJson);
+  }
+
+  /// `GET /tasks/{taskId}`
+  Future<Task> getTask(String taskId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/tasks/$taskId'),
+      Task.fromJson,
+    );
+  }
+
+  /// `PATCH /tasks/{taskId}` — partial update. Mobile only ever changes
+  /// `status` (ST/OT are limited to that field by the backend).
+  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+    return _wrap(
+      () => _dio.patch<Map<String, dynamic>>(
+        '/tasks/$taskId',
+        data: {'status': status.wireName},
+      ),
+      Task.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/status`
   Future<DeviceStatus> getDeviceStatus(String deviceId) async {
     return _wrap(
@@ -102,15 +127,35 @@ class ApiClient {
       }
       return parse(body);
     } on DioException catch (e) {
-      throw ApiException(
-        _messageFromResponse(e.response) ??
-            e.response?.statusMessage ??
-            e.message ??
-            'Network error',
-        statusCode: e.response?.statusCode,
-      );
+      throw _toApiException(e);
     }
   }
+
+  /// Same as [_wrap] but for endpoints that return a JSON array. Non-object
+  /// entries are skipped defensively.
+  Future<List<T>> _wrapList<T>(
+    Future<Response<List<dynamic>>> Function() send,
+    T Function(Map<String, dynamic> json) parse,
+  ) async {
+    try {
+      final response = await send();
+      final body = response.data ?? const <dynamic>[];
+      return body
+          .whereType<Map>()
+          .map((e) => parse(e.cast<String, dynamic>()))
+          .toList(growable: false);
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
+  static ApiException _toApiException(DioException e) => ApiException(
+    _messageFromResponse(e.response) ??
+        e.response?.statusMessage ??
+        e.message ??
+        'Network error',
+    statusCode: e.response?.statusCode,
+  );
 
   /// Prefer the backend's JSON `message` field (localized, user-facing text)
   /// over the raw HTTP reason phrase. Defensive: `response.data` is not always
