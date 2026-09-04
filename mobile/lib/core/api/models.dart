@@ -47,6 +47,27 @@ enum TaskStatus {
   }
 }
 
+/// `Notification.type` enum — matches `docs/api/openapi.yaml` `Notification.type`
+/// and the Prisma `NotificationType` enum.
+enum NotificationType {
+  taskAssigned('task_assigned'),
+  configApproved('config_approved'),
+  configRejected('config_rejected'),
+  firmwareReady('firmware_ready'),
+  incidentAlert('incident_alert');
+
+  const NotificationType(this.wireName);
+
+  final String wireName;
+
+  static NotificationType fromWire(String value) {
+    for (final type in NotificationType.values) {
+      if (type.wireName == value) return type;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown notification type');
+  }
+}
+
 /// `DeviceConfigDraft.status` enum.
 enum ConfigStatus {
   draft('draft'),
@@ -240,4 +261,56 @@ class Task {
       dueDate: parseDate(json['dueDate']),
     );
   }
+}
+
+/// A user notification — mirrors `docs/api/openapi.yaml` `Notification`
+/// (Prisma model `Notification`). `GET /notifications` and
+/// `PATCH /notifications/{id}/read` both return this shape.
+///
+/// Named `AppNotification` to avoid clashing with Flutter's `Notification`.
+/// `payload` is free-form JSON that varies by [type] — Phase 1 does not parse
+/// into it, so it is kept as a raw map.
+class AppNotification {
+  const AppNotification({
+    required this.id,
+    required this.userId,
+    required this.type,
+    required this.payload,
+    required this.read,
+    required this.createdAt,
+    this.sentAt,
+  });
+
+  final String id;
+  final String userId;
+  final NotificationType type;
+  final Map<String, dynamic> payload;
+  final bool read;
+  final DateTime createdAt;
+  final DateTime? sentAt;
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+
+    return AppNotification(
+      id: json['id'] as String,
+      userId: json['userId'] as String? ?? '',
+      type: NotificationType.fromWire(json['type'] as String),
+      payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
+      read: json['read'] as bool? ?? false,
+      createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
+      sentAt: parseDate(json['sentAt']),
+    );
+  }
+
+  AppNotification copyWith({bool? read}) => AppNotification(
+    id: id,
+    userId: userId,
+    type: type,
+    payload: payload,
+    read: read ?? this.read,
+    createdAt: createdAt,
+    sentAt: sentAt,
+  );
 }

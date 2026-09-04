@@ -8,6 +8,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -67,11 +68,40 @@ class _FakeTaskRepository implements TaskRepository {
       throw UnimplementedError();
 }
 
+class _FakeNotificationRepository implements NotificationRepository {
+  _FakeNotificationRepository({this.unreadCount = 0});
+
+  final int unreadCount;
+
+  AppNotification _n(int i, bool read) => AppNotification(
+    id: 'n$i',
+    userId: 'u1',
+    type: NotificationType.taskAssigned,
+    payload: const {},
+    read: read,
+    createdAt: DateTime(2026, 9, 4, 8, i),
+  );
+
+  @override
+  Future<List<AppNotification>> list({bool? unread}) async {
+    final items = [
+      for (var i = 0; i < unreadCount; i++) _n(i, false),
+      _n(99, true),
+    ];
+    return unread == true ? items.where((n) => !n.read).toList() : items;
+  }
+
+  @override
+  Future<AppNotification> markRead(String id) async =>
+      throw UnimplementedError();
+}
+
 /// Plain pump — no router. Fine for visibility / snackbar assertions.
 Future<void> _pumpHome(
   WidgetTester tester,
   UserRole? role, {
   TaskRepository? taskRepo,
+  NotificationRepository? notiRepo,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -80,6 +110,9 @@ Future<void> _pumpHome(
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
         taskRepositoryProvider.overrideWithValue(
           taskRepo ?? _FakeTaskRepository(),
+        ),
+        notificationRepositoryProvider.overrideWithValue(
+          notiRepo ?? _FakeNotificationRepository(),
         ),
       ],
       child: const MaterialApp(home: HomePage()),
@@ -94,6 +127,7 @@ Future<void> _pumpHomeRouted(
   WidgetTester tester,
   UserRole? role, {
   TaskRepository? taskRepo,
+  NotificationRepository? notiRepo,
 }) async {
   final router = GoRouter(
     initialLocation: '/home',
@@ -113,6 +147,10 @@ Future<void> _pumpHomeRouted(
           body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
         ),
       ),
+      GoRoute(
+        path: AppRoutes.notifications,
+        builder: (_, _) => const Scaffold(body: Text('NOTIFICATION_LIST_STUB')),
+      ),
     ],
   );
   await tester.pumpWidget(
@@ -121,6 +159,9 @@ Future<void> _pumpHomeRouted(
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         taskRepositoryProvider.overrideWithValue(
           taskRepo ?? _FakeTaskRepository(),
+        ),
+        notificationRepositoryProvider.overrideWithValue(
+          notiRepo ?? _FakeNotificationRepository(),
         ),
       ],
       child: MaterialApp.router(routerConfig: router),
@@ -277,12 +318,47 @@ void main() {
       await tester.pump();
       expect(find.textContaining('เร็ว'), findsOneWidget);
     });
+  });
 
-    testWidgets('แตะไอคอนกระดิ่งแจ้งเตือน mock', (tester) async {
-      await _pumpHome(tester, UserRole.st);
+  group('กระดิ่งแจ้งเตือน — badge จริง + navigate', () {
+    testWidgets('unread > 0 -> badge โชว์จำนวน', (tester) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        notiRepo: _FakeNotificationRepository(unreadCount: 3),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Badge), findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(Badge), matching: find.text('3')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unread = 0 -> ไม่มี badge', (tester) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        notiRepo: _FakeNotificationRepository(unreadCount: 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Badge), findsNothing);
+    });
+
+    testWidgets('แตะกระดิ่ง -> navigate ไปหน้ารายการแจ้งเตือน', (tester) async {
+      await _pumpHomeRouted(
+        tester,
+        UserRole.st,
+        notiRepo: _FakeNotificationRepository(unreadCount: 2),
+      );
+      await tester.pumpAndSettle();
+
       await tester.tap(find.byKey(const Key('home_notifications')));
-      await tester.pump();
-      expect(find.textContaining('เร็ว'), findsOneWidget);
+      await tester.pumpAndSettle();
+
+      expect(find.text('NOTIFICATION_LIST_STUB'), findsOneWidget);
     });
   });
 
@@ -294,6 +370,9 @@ void main() {
         ),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
         taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
+        notificationRepositoryProvider.overrideWithValue(
+          _FakeNotificationRepository(),
+        ),
       ],
     );
     addTearDown(container.dispose);

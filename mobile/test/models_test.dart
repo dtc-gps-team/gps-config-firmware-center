@@ -165,4 +165,79 @@ void main() {
       expect(task.status, TaskStatus.pending);
     });
   });
+
+  group('NotificationType', () {
+    test('wire names match openapi.yaml / Prisma enum', () {
+      expect(NotificationType.values.map((t) => t.wireName).toList(), [
+        'task_assigned',
+        'config_approved',
+        'config_rejected',
+        'firmware_ready',
+        'incident_alert',
+      ]);
+    });
+
+    test('fromWire maps known values and rejects unknown', () {
+      expect(
+        NotificationType.fromWire('firmware_ready'),
+        NotificationType.firmwareReady,
+      );
+      expect(() => NotificationType.fromWire('nope'), throwsArgumentError);
+    });
+  });
+
+  group('AppNotification.fromJson', () {
+    test('parses a full payload', () {
+      final n = AppNotification.fromJson({
+        'id': 'noti-1',
+        'userId': 'user-9',
+        'type': 'task_assigned',
+        'payload': {'taskId': 't1'},
+        'read': false,
+        'sentAt': '2026-09-04T08:31:00.000Z',
+        'createdAt': '2026-09-04T08:30:00.000Z',
+      });
+
+      expect(n.id, 'noti-1');
+      expect(n.userId, 'user-9');
+      expect(n.type, NotificationType.taskAssigned);
+      expect(n.payload, {'taskId': 't1'});
+      expect(n.read, isFalse);
+      expect(n.sentAt, DateTime.utc(2026, 9, 4, 8, 31));
+      expect(n.createdAt, DateTime.utc(2026, 9, 4, 8, 30));
+    });
+
+    test('tolerates null sentAt and missing payload', () {
+      final n = AppNotification.fromJson({
+        'id': 'noti-2',
+        'userId': 'u1',
+        'type': 'incident_alert',
+        'payload': null,
+        'read': true,
+        'sentAt': null,
+        'createdAt': '2026-09-04T00:00:00Z',
+      });
+
+      expect(n.sentAt, isNull);
+      expect(n.payload, isEmpty);
+      expect(n.read, isTrue);
+    });
+
+    test('copyWith(read:) flips read only', () {
+      final n = AppNotification.fromJson({
+        'id': 'noti-3',
+        'userId': 'u1',
+        'type': 'config_approved',
+        'payload': const {},
+        'read': false,
+        'createdAt': '2026-09-04T00:00:00Z',
+      });
+
+      final updated = n.copyWith(read: true);
+      expect(updated.read, isTrue);
+      expect(updated.id, n.id);
+      expect(updated.type, n.type);
+      expect(updated.createdAt, n.createdAt);
+    });
+  });
 }
