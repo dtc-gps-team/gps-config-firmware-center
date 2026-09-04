@@ -560,9 +560,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/Task"
         "400":
-          description: ข้อมูลไม่ถูกต้อง
+          description: ข้อมูลไม่ถูกต้อง (รวมถึง configId ไม่ใช่ uuid)
         "403":
           description: ไม่มีสิทธิ์สร้างงาน — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Config (configId) ที่ระบุ
+        "409":
+          description: >-
+            configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
 
   /tasks/{taskId}:
     get:
@@ -614,15 +620,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Task"
         "400":
-          description: ข้อมูลไม่ถูกต้อง
+          description: ข้อมูลไม่ถูกต้อง (รวมถึง configId ไม่ใช่ uuid)
         "403":
           description: >-
             ไม่มีสิทธิ์แก้ไขงานนี้ — Operation แก้ได้ทุก field, ST/OT แก้ได้เฉพาะ
-            field status ของงานที่ตัวเองถูก assign เท่านั้น (role อื่นแก้ไม่ได้เลย)
+            field status ของงานที่ตัวเองถูก assign เท่านั้น (role อื่นแก้ไม่ได้เลย
+            — ST/OT ที่ส่ง configId มาด้วยก็ถือเป็น 403)
         "404":
           description: >-
             ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามแก้งานที่ไม่ใช่ของตัวเอง — ตอบ 404
-            แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่)
+            แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่) หรือไม่พบ Config (configId)
+            ที่ระบุ
+        "409":
+          description: >-
+            configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
 
   /firmware:
     get:
@@ -1031,6 +1043,14 @@ components:
           type: string
           nullable: true
           description: กล่อง GPS ที่เกี่ยวข้องกับงานนี้ (ถ้ามี)
+        configId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Config ที่ Operation ผูกกับงานติดตั้ง/เปลี่ยน config — Mobile อ่านค่านี้
+            ส่งเป็น body ของ POST /devices/{deviceId}/apply-config ตอนทำจอ Confirm
+            Install · null สำหรับงานประเภทอื่น (เช็คสัญญาณ, เปลี่ยนซิม)
         status:
           type: string
           enum: [pending, in_progress, completed, cancelled]
@@ -1058,6 +1078,12 @@ components:
           type: string
         deviceId:
           type: string
+        configId:
+          type: string
+          format: uuid
+          description: >-
+            ต้องเป็น Config สถานะ approved หรือ synced เท่านั้น — ถ้าระบุ deviceId
+            ด้วยและมี Device record จริง deviceModel/protocol ต้องตรงกัน
         dueDate:
           type: string
           format: date-time
@@ -1078,6 +1104,13 @@ components:
         deviceId:
           type: string
           nullable: true
+        configId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            ผูก/เปลี่ยน Config ของงาน (Operation เท่านั้น — ST/OT แก้ได้เฉพาะ status)
+            ส่ง null เพื่อล้างค่า · เงื่อนไข Config เหมือน TaskCreateRequest.configId
         status:
           type: string
           enum: [pending, in_progress, completed, cancelled]

@@ -101,6 +101,7 @@ class MockTaskRepository implements TaskRepository {
       updatedAt: DateTime.now(),
       description: current.description,
       deviceId: current.deviceId,
+      configId: current.configId,
       dueDate: current.dueDate,
     );
     _tasks[index] = updated;

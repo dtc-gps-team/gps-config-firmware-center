@@ -98,13 +98,28 @@ model Task {
   description String?
   assignedTo  String
   deviceId    String?
+  // Config ที่ Operation เลือกผูกกับงานตอนสร้าง Task ประเภท "ติดตั้ง/เปลี่ยน
+  // config" — Mobile อ่านค่านี้ส่งเป็น body ของ POST /devices/{deviceId}/apply-config
+  // ตอนทำจอ "Confirm Install" (#26 Sprint 3) · Task ประเภทอื่น (เช็คสัญญาณ,
+  // เปลี่ยนซิม) configId เป็น null — Mobile ไม่เลือก config เอง แค่ apply ตัวที่
+  // ผูกกับ Task ตกลงแนวทางนี้ (option a) กับ paveekornkwork-dev (A) ใน PR #81
+  // comment thread (https://github.com/dtc-gps-team/gps-config-firmware-center/pull/81)
+  //
+  // onDelete: SetNull (default ของ optional relation) — สอดคล้องกับ
+  // Campaign.config / Incident.relatedConfig (nullable Config FK ตัวอื่น) การลบ
+  // Config ไม่ควร block หรือ cascade ลบ Task ที่เป็นงานปฏิบัติการ · ในทางปฏิบัติ
+  // Config ที่ผูกกับ Task จะสถานะ approved/synced เสมอ (validate ใน
+  // TaskService) จึงไม่มีทางถูก ConfigService.remove() ลบอยู่แล้ว (เช็ค
+  // status === 'draft')
+  configId    String?
   status      TaskStatus @default(pending)
   dueDate     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   // user id ของผู้รับผิดชอบงาน (ดู docs/api/openapi.yaml Task.assignedTo)
-  assignedUser User @relation(fields: [assignedTo], references: [id])
+  assignedUser User    @relation(fields: [assignedTo], references: [id])
+  config       Config? @relation(fields: [configId], references: [id])
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +277,7 @@ model Config {
   campaigns Campaign[]
   incidents Incident[]
   versions  ConfigVersion[]
+  tasks     Task[]
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve

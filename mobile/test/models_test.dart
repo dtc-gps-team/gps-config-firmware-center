@@ -129,6 +129,7 @@ void main() {
         'description': 'รายละเอียด',
         'assignedTo': 'user-9',
         'deviceId': 'DVC-1',
+        'configId': 'cfg-7',
         'status': 'in_progress',
         'dueDate': '2026-09-10T00:00:00.000Z',
         'createdAt': '2026-09-01T08:00:00.000Z',
@@ -140,6 +141,7 @@ void main() {
       expect(task.description, 'รายละเอียด');
       expect(task.assignedTo, 'user-9');
       expect(task.deviceId, 'DVC-1');
+      expect(task.configId, 'cfg-7');
       expect(task.status, TaskStatus.inProgress);
       expect(task.dueDate, DateTime.utc(2026, 9, 10));
       expect(task.createdAt, DateTime.utc(2026, 9, 1, 8));
@@ -161,6 +163,7 @@ void main() {
 
       expect(task.description, isNull);
       expect(task.deviceId, isNull);
+      expect(task.configId, isNull);
       expect(task.dueDate, isNull);
       expect(task.status, TaskStatus.pending);
     });
