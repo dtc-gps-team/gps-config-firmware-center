@@ -3,6 +3,12 @@
 .env.local
 .env.*.local
 
+# FCM service account credentials (FCM_SERVICE_ACCOUNT_PATH) — ห้าม commit ของจริง
+# (.env.example ชี้ path นี้ไว้เป็น placeholder เฉยๆ)
+secrets/
+*service-account*.json
+!*service-account*.example.json
+
 # Node
 node_modules/
 npm-debug.log*

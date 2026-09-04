@@ -59,6 +59,9 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   await prisma.firmware.deleteMany();
   await prisma.task.deleteMany();
   await prisma.notification.deleteMany();
+  // DeviceToken มี FK onDelete: Cascade ไป User อยู่แล้ว แต่ลบตรงนี้ให้ชัด
+  // (เด็กก่อนพ่อแม่) ตามคอนเวนชันของไฟล์นี้
+  await prisma.deviceToken.deleteMany();
   await prisma.device.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.user.deleteMany();

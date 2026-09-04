@@ -54,6 +54,7 @@ model User {
   role          Role            @relation(fields: [roleId], references: [id])
   tasks         Task[]
   notifications Notification[]
+  deviceTokens  DeviceToken[]
   auditLogs     AuditLog[]
   configsCreated  Config[]   @relation("ConfigCreatedBy")
   configsApproved Config[]   @relation("ConfigApprovedBy")
@@ -130,6 +131,38 @@ model Notification {
 
   // user id ของเจ้าของ notification (ดู docs/api/openapi.yaml Notification.userId)
   user User @relation(fields: [userId], references: [id])
+}
+
+// Push Notification (FCM) groundwork — Sprint 3 item #17, PR A ของแผน 4-PR
+// (A: model+endpoint / B: ส่งจริงผ่าน FCM / C: Mobile setup+registration /
+// D: Mobile handle push+deep link) รอบนี้ทำแค่ที่เก็บ device token — ยังไม่มี
+// โค้ดส่ง push จริง (NotificationService mode `fcm` ยัง throw เหมือนเดิม)
+//
+// 1 user มีได้หลาย token (หลายเครื่อง) · unique ที่ `token` เพราะ FCM token
+// เป็น identifier ของ "แอป+เครื่อง" 1 ตัว — เครื่องเดิม/แอปเดิมได้ token เดิม
+// เสมอจนกว่าจะถูก refresh · ตอน register ถ้า token เดิมมีอยู่แล้วให้ upsert
+// ทับ userId/updatedAt (เครื่องเปลี่ยนคนใช้ / ผู้ใช้ล็อกอินใหม่)
+//
+// platform: "android" | "ios" | "web" — ตอนนี้ scope แค่ Mobile แต่เผื่อ Web
+// push ผ่าน service worker (FCM รองรับ) ทีหลัง · เก็บเป็น String ไม่ทำ enum
+// เพราะรายการค่าอาจขยาย (เช่น "huawei") และไม่มี business logic แตกตาม platform
+// ในตอนนี้ — DTO ฝั่ง endpoint คุมด้วย @IsIn([...]) พอ
+//
+// onDelete: Cascade (เบี่ยงจาก implicit Restrict ที่ Notification/Task ใช้)
+// โดยตั้งใจ — device token เป็น client-registration ชั่วคราว สร้างใหม่ทุกครั้ง
+// ที่เปิดแอป ไม่มีค่าเชิง audit/ประวัติ ลบ user แล้วเก็บ token ค้างไว้ไม่มี
+// ประโยชน์ (ต่างจาก Notification/Task ที่เป็นบันทึกงาน)
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
