@@ -755,6 +755,50 @@ paths:
         "409":
           description: Device ยังไม่ถึงสถานะ installed (ยังเป็น registered หรือ decommissioned ไปแล้ว) จึงทดสอบสัญญาณไม่ได้
 
+  /devices/{deviceId}/apply-config:
+    post:
+      tags: [device]
+      operationId: applyConfigToDevice
+      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13)
+      description: >-
+        สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — เลือก Config ที่ผูกกับ Task
+        ที่กำลังทำ แล้วส่งให้อุปกรณ์เครื่องนั้น. **ไม่ persist / ไม่แตะสถานะใดๆ**
+        (fire-and-forget) — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป
+        (01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
+        โหมด mock ตรวจค่าเบื้องต้น (field ≥ 1, Timeout/Interval ไม่ติดลบ)
+        แล้วคืน `applied: true`
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigApplyInput"
+      responses:
+        "200":
+          description: "ผลการ apply (applied=false = ค่าใน Config ไม่ผ่านการตรวจเบื้องต้น)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyResult"
+        "400":
+          description: configId ไม่ใช่ uuid ที่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ใส่ Config ให้อุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Config (configId) นี้
+        "409":
+          description: >-
+            ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
+            (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1078,6 +1122,35 @@ components:
         testedAt:
           type: string
           format: date-time
+
+    ConfigApplyInput:
+      type: object
+      description: Request body สำหรับ applyConfigToDevice
+      required: [configId]
+      properties:
+        configId:
+          type: string
+          format: uuid
+          description: id ของ Config ที่จะใส่ (ต้องเป็นสถานะ approved หรือ synced)
+
+    ConfigApplyResult:
+      type: object
+      description: >-
+        ผลการใส่ Config ให้อุปกรณ์ (`applyConfigToDevice`) — ไม่มีสถานะอุปกรณ์
+        เพราะกล่องรับค่าเมื่อเปิดเครื่องครั้งถัดไปเท่านั้น (ไม่มี ack แบบ synchronous)
+      required: [applied, details, appliedAt]
+      properties:
+        applied:
+          type: boolean
+          description: "ถ้า false = ค่าใน Config ไม่ผ่านการตรวจเบื้องต้น (ดู details)"
+        details:
+          type: array
+          items:
+            type: string
+        appliedAt:
+          type: string
+          format: date-time
+          description: เวลาที่ server รับคำสั่ง (ไม่ใช่เวลาที่กล่องรับค่าจริง)
 
     DeviceStatus:
       type: object
