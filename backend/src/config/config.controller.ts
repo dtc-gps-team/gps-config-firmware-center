@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Put,
   Post,
@@ -16,7 +17,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ActionType, Config } from '@prisma/client';
+import { ActionType, Config, ConfigVersion } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
@@ -93,6 +94,28 @@ export class ConfigController {
   @RequirePermission('config', ActionType.Read)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
     return this.configService.findOne(id);
+  }
+
+  // Stage 5 (#26 ข้อ 9) — ประวัติเวอร์ชันของ Config (snapshot ทุกครั้งที่
+  // approve) resource 'config'+Read ตัวเดียวกับ findOne โดยตั้งใจ — version
+  // เป็นแค่ snapshot ของ fields ที่ทุก Role ซึ่ง Read config ได้เห็นอยู่แล้ว
+  // ไม่อ่อนไหวกว่าเดิม และ Auditor (compliance) *ต้อง* ดูประวัติได้ ต่างจาก
+  // simulate/decide ที่แยก resource เพื่อกัน Auditor/Admin
+  @Get(':id/versions')
+  @RequirePermission('config', ActionType.Read)
+  listVersions(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ConfigVersion[]> {
+    return this.configService.listVersions(id);
+  }
+
+  @Get(':id/versions/:versionNumber')
+  @RequirePermission('config', ActionType.Read)
+  getVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionNumber', ParseIntPipe) versionNumber: number,
+  ): Promise<ConfigVersion> {
+    return this.configService.getVersion(id, versionNumber);
   }
 
   // Stage 3 (#26) — ทดสอบกับ Device Simulator (dry-run, ไม่แตะ status)
