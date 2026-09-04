@@ -168,6 +168,12 @@ async function main() {
     grant('ST', 'device-connection-test', 'Read'),
     grant('OT', 'device-connection-test', 'Read'),
 
+    // ---- device-config-apply (POST /devices/{deviceId}/apply-config) ----
+    // ช่างหน้างานใส่ Config ที่อนุมัติแล้วเข้าอุปกรณ์ที่ติดตั้งจริง — ST/OT
+    // เท่านั้น (mirror device-connection-test) SW/Operation ไม่ apply หน้างาน
+    grant('ST', 'device-config-apply', 'Read'),
+    grant('OT', 'device-config-apply', 'Read'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),
@@ -528,8 +534,77 @@ async function main() {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // 5) Device ตัวอย่าง — ให้ dev/demo มีเลขเครื่องจริงไว้ยิง
+  //    `POST /devices/{deviceId}/test-connection` และ `.../apply-config`
+  //
+  //    **`deviceId` ใช้รูปแบบ `DEV-00xx` ชั่วคราว** — kittiphong (B) ยืนยันว่า
+  //    ยังไม่มี barcode scan / จอเลือกอุปกรณ์ในแผน (ช่างเปิดจาก Task ที่มี
+  //    `Task.deviceId` ติดมา) รูปแบบเลขเครื่องจริงของระบบเดิม (IMEI / serial /
+  //    ICCID) รอ Device Registration Flow ฝั่ง Mobile (Phase 5) — ตอนนั้นค่อย
+  //    ปรับ seed + migration ให้ตรง
+  //
+  //    ทีม B ที่ทำ Task module: ใช้ deviceId ชุดนี้ตอน seed `Task.deviceId`
+  //    ด้วย จะได้ทดสอบ apply-config ทะลุจาก Task ได้
+  // ---------------------------------------------------------------------
+  const demoDevices: {
+    deviceId: string;
+    simNumber: string;
+    deviceModel: string;
+    protocol: string;
+    status: 'registered' | 'installed';
+  }[] = [
+    {
+      deviceId: 'DEV-0001',
+      simNumber: '0810000001',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'installed',
+    },
+    {
+      deviceId: 'DEV-0002',
+      simNumber: '0810000002',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'installed',
+    },
+    {
+      deviceId: 'DEV-0003',
+      simNumber: '0810000003',
+      deviceModel: 'GT06L',
+      protocol: 'TCP',
+      status: 'installed',
+    },
+    {
+      deviceId: 'DEV-0004',
+      simNumber: '0810000004',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'installed',
+    },
+    // ยังไม่ติดตั้ง — ไว้ทดสอบ 409 ของ test-connection / apply-config
+    {
+      deviceId: 'DEV-0009',
+      simNumber: '0810000009',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'registered',
+    },
+  ];
+
+  for (const d of demoDevices) {
+    await prisma.device.upsert({
+      where: { deviceId: d.deviceId },
+      update: {},
+      create: {
+        ...d,
+        installedAt: d.status === 'installed' ? new Date() : null,
+      },
+    });
+  }
+
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoDevices.length} devices.`,
   );
 }
 

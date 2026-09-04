@@ -6,6 +6,7 @@ import '../../features/auth/login_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
 import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/task/task_detail_page.dart';
 import '../auth/auth_controller.dart';
 
 class AppRoutes {
@@ -15,6 +16,10 @@ class AppRoutes {
   static const home = '/home';
   static const simulator = '/simulator';
   static const deviceConnectionTest = '/device-connection-test';
+
+  /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
+  static const taskDetailPattern = '/tasks/:id';
+  static String taskDetail(String id) => '/tasks/$id';
 }
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
@@ -54,6 +59,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.deviceConnectionTest,
         builder: (context, state) => const DeviceConnectionTestPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.taskDetailPattern,
+        builder: (context, state) =>
+            TaskDetailPage(taskId: state.pathParameters['id']!),
       ),
     ],
   );
