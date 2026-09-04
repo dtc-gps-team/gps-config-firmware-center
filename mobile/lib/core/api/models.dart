@@ -27,6 +27,26 @@ enum UserRole {
   }
 }
 
+/// `Task.status` enum — matches `docs/api/openapi.yaml` `Task.status`
+/// and the Prisma `TaskStatus` enum.
+enum TaskStatus {
+  pending('pending'),
+  inProgress('in_progress'),
+  completed('completed'),
+  cancelled('cancelled');
+
+  const TaskStatus(this.wireName);
+
+  final String wireName;
+
+  static TaskStatus fromWire(String value) {
+    for (final status in TaskStatus.values) {
+      if (status.wireName == value) return status;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown task status');
+  }
+}
+
 /// `DeviceConfigDraft.status` enum.
 enum ConfigStatus {
   draft('draft'),
@@ -172,4 +192,52 @@ class DeviceStatus {
     firmwareStatus: json['firmwareStatus'] as String?,
     lastCheckInMessage: json['lastCheckInMessage'] as String?,
   );
+}
+
+/// A job assigned to field staff — mirrors `docs/api/openapi.yaml` `Task`
+/// (and the Prisma model `Task`). `GET /tasks` / `GET /tasks/{taskId}` /
+/// `PATCH /tasks/{taskId}` all return this shape.
+class Task {
+  const Task({
+    required this.id,
+    required this.title,
+    required this.assignedTo,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.description,
+    this.deviceId,
+    this.dueDate,
+  });
+
+  final String id;
+  final String title;
+
+  /// user id of the assignee (`Task.assignedTo`).
+  final String assignedTo;
+  final TaskStatus status;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? description;
+  final String? deviceId;
+  final DateTime? dueDate;
+
+  factory Task.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+
+    return Task(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      assignedTo: json['assignedTo'] as String? ?? '',
+      status: TaskStatus.fromWire(json['status'] as String),
+      // spec marks createdAt/updatedAt required, but decode defensively so a
+      // slightly-off payload renders instead of throwing.
+      createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
+      updatedAt: parseDate(json['updatedAt']) ?? DateTime.now(),
+      description: json['description'] as String?,
+      deviceId: json['deviceId'] as String?,
+      dueDate: parseDate(json['dueDate']),
+    );
+  }
 }
