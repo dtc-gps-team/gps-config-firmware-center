@@ -133,6 +133,36 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 - supportedModels ทั้งหมดผูกกับ `GT06N/TCP` (device model มาตรฐานเดียวกับทุก test
   file) — field ทยอยเพิ่ม deviceModel/protocol อื่นเมื่อมีข้อมูลจริง
 
+## Validation strictness — `unknownSpec` = Metadata "รู้กฎ vs รู้แค่ Data Type"
+
+`03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3 พูดถึงการ mark field ด้วย
+`validation_level: syntactic_only` เทียบกับ `semantic` และ Checkpoint ข้อ 6
+ต้องการ Metadata ระบุว่าฟิลด์ไหน "รู้กฎ" ฟิลด์ไหน "รู้แค่ Data Type"
+
+**field `ConfigFieldDefinition.unknownSpec` คือ Metadata ตัวนั้น** — ไม่เพิ่ม
+field `validationLevel` แยก:
+
+| `unknownSpec` | ความหมาย | ตัวอย่าง |
+|---|---|---|
+| `false` | รู้กฎครบ (semantic) — `dataType` + `allowedValues` + `required` ที่กรอกไว้เชื่อถือได้ | `APN` |
+| `true` | รู้แค่ว่ามีฟิลด์นี้จริง + `dataType` (syntactic_only) — ยังไม่รู้ `allowedValues`/`required`/ช่วงค่า | `APN1`, `MTYP`, ... |
+
+### ยังไม่ทำรอบนี้ (deferred อย่างเป็นทางการ — ไม่ใช่ Gap)
+
+ทั้ง 3 ข้อนี้ **ติด blocker เดียวกับ [#68](https://github.com/dtc-gps-team/gps-config-firmware-center/issues/68)** —
+ยังไม่มีเอกสารสเปกฟิลด์จริงว่าฟิลด์ไหนมีกฎ semantic อะไร จะสร้าง infra ตอนนี้
+ก็ไม่มีข้อมูลจะใส่:
+
+1. **`validateFields()` ยังตรวจเหมือนกันหมดทุก field** ไม่ได้ branch ตาม
+   `unknownSpec` — field ที่ `unknownSpec: true` ถ้ามี `allowedValues` ก็ยัง
+   บังคับอยู่ (ตอนนี้ทุก field seed ไว้ `allowedValues: []` จึงไม่มีผลต่างจริง)
+2. **ไม่มี field เก็บกฎ semantic รายฟิลด์** บน `ConfigFieldDefinition`
+   (`minValue`/`maxValue`/`pattern`/cross-field) — เพิ่มเป็น additive migration
+   ทีหลังได้เมื่อมีสเปกจริง
+3. **กฎ "Timeout/Interval ห้ามติดลบ"** ยังอยู่ใน `MockDeviceSimulator`
+   (เดาจากชื่อ field) — Phase 1 ข้อ 3 อยากให้ย้ายมา validation layer แต่รอ
+   ข้อ 2 ก่อน
+
 ## อ้างอิง
 
 - `docs/api/openapi.yaml` — สัญญา request/response เต็มของ
