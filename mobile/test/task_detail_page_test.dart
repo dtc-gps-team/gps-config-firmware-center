@@ -124,6 +124,13 @@ void main() {
     expect(find.byKey(const Key('task_status_save')), findsOneWidget);
     expect(_saveButton(tester).onPressed, isNull);
 
+    // ST/OT may only move a task to in_progress / completed — not cancel it
+    // (Operation's call) and not back to pending.
+    expect(find.byKey(const Key('status_choice_in_progress')), findsOneWidget);
+    expect(find.byKey(const Key('status_choice_completed')), findsOneWidget);
+    expect(find.byKey(const Key('status_choice_pending')), findsNothing);
+    expect(find.byKey(const Key('status_choice_cancelled')), findsNothing);
+
     await tester.tap(find.byKey(const Key('status_choice_in_progress')));
     await tester.pump();
 
@@ -138,7 +145,8 @@ void main() {
     );
 
     expect(find.byKey(const Key('task_status_save')), findsNothing);
-    expect(find.byKey(const Key('status_choice_pending')), findsNothing);
+    expect(find.byKey(const Key('status_choice_in_progress')), findsNothing);
+    expect(find.byKey(const Key('status_choice_completed')), findsNothing);
     // still shows the read-only status pill
     expect(find.text('รอดำเนินการ'), findsOneWidget);
   });

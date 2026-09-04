@@ -26,6 +26,15 @@ String _formatDate(DateTime dt) {
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
 
+/// Statuses a field tech (ST/OT) may set from Mobile. Cancelling a task is an
+/// Operation decision, not the assignee's, and `pending` is the initial state
+/// Operation assigns — so neither is offered here. (Matching backend
+/// enforcement is tracked in issue #73.)
+const _fieldStaffStatusChoices = <TaskStatus>[
+  TaskStatus.inProgress,
+  TaskStatus.completed,
+];
+
 /// "รายละเอียดงาน" — opened from a task card on Home. Shows one task from
 /// `GET /tasks/{id}` and, for ST/OT, lets the assignee change its status via
 /// `PATCH /tasks/{id}` (backend restricts them to the `status` field of their
@@ -194,7 +203,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final status in TaskStatus.values)
+              for (final status in _fieldStaffStatusChoices)
                 ChoiceChip(
                   key: Key('status_choice_${status.wireName}'),
                   label: Text(TaskStatusStyle.label(status)),

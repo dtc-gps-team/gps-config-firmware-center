@@ -186,9 +186,13 @@ void main() {
           error: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
         ),
       );
+      await tester.pumpAndSettle();
 
       expect(find.text('เซิร์ฟเวอร์ล่ม'), findsOneWidget);
       expect(find.byKey(const Key('tasks_retry')), findsOneWidget);
+      // greeting must not stay stuck on the loading line, and shows no count
+      expect(find.textContaining('กำลังโหลดงานที่ได้รับมอบหมาย'), findsNothing);
+      expect(find.textContaining('งานที่ได้รับมอบหมาย'), findsNothing);
     });
 
     testWidgets('แตะการ์ดงาน -> navigate ไปหน้า Task Detail ของงานนั้น', (

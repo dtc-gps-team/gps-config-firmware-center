@@ -67,9 +67,12 @@ class HomePage extends ConsumerWidget {
     // a field-staff app — only shows "งานวันนี้", and only fetches it, for
     // ST/OT. Same gate as the "ทดสอบสัญญาณ" shortcut below.
     final isFieldStaff = role == UserRole.st || role == UserRole.ot;
-    final taskCount = isFieldStaff
-        ? ref.watch(taskListProvider).valueOrNull?.length
-        : null;
+    final tasksAsync = isFieldStaff ? ref.watch(taskListProvider) : null;
+    final taskCount = tasksAsync?.valueOrNull?.length;
+    // Show the "N งานที่ได้รับมอบหมาย" line only while loading (count == null)
+    // or once loaded. On error the section below already shows a card + retry,
+    // so drop the greeting line rather than leaving it stuck on "กำลังโหลด…".
+    final showTaskCount = isFieldStaff && !(tasksAsync?.hasError ?? false);
 
     return Scaffold(
       backgroundColor: _HomeColors.background,
@@ -106,7 +109,7 @@ class HomePage extends ConsumerWidget {
             username: auth.username,
             role: role,
             taskCount: taskCount,
-            showTaskCount: isFieldStaff,
+            showTaskCount: showTaskCount,
           ),
           const SizedBox(height: 24),
           if (isFieldStaff) ...[
