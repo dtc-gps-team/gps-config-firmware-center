@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
+import '../task/task_repository.dart';
+import '../task/task_status_ui.dart';
 
 /// Home-screen palette. Scoped to this file on purpose — the shared [AppTheme]
 /// drives the rest of the app and this redesign only covers Home, so nothing
@@ -19,14 +22,7 @@ class _HomeColors {
   static const textSecondary = Color(0xFF5F6E79);
   static const badgeBg = Color(0xFFE3ECF4); // light blue
   static const iconTintBg = Color(0xFFE8EEF3);
-
-  // status pills
-  static const urgentBg = Color(0xFFFCE8E6);
-  static const urgentFg = Color(0xFFC0392B);
-  static const progressBg = Color(0xFFE3F0FB);
-  static const progressFg = Color(0xFF1F6FB2);
-  static const pendingBg = Color(0xFFECEFF1);
-  static const pendingFg = Color(0xFF5F6E79);
+  static const errorFg = Color(0xFFC0392B);
 }
 
 /// Human-readable role label shown in the greeting badge.
@@ -48,41 +44,6 @@ String _roleLabel(UserRole? role) {
   }
 }
 
-// TODO: mock data — รอ task module (Sprint ถัดไป). ทั้ง section "งานวันนี้"
-// รวมถึงตัวเลขใน greeting เป็นข้อมูลปลอม ยังไม่มี GET /tasks ฝั่ง Mobile UI จริง
-const _mockAssignedTaskCount = 3;
-const _mockTasks = <_MockTask>[
-  _MockTask(
-    title: 'ติดตั้งกล่อง GPS รถบรรทุก',
-    deviceId: 'DVC-40271',
-    status: _TaskStatus.urgent,
-  ),
-  _MockTask(
-    title: 'ตรวจเช็คสัญญาณรถโดยสาร',
-    deviceId: 'DVC-39118',
-    status: _TaskStatus.inProgress,
-  ),
-  _MockTask(
-    title: 'เปลี่ยนซิมการ์ดอุปกรณ์',
-    deviceId: 'DVC-38004',
-    status: _TaskStatus.pending,
-  ),
-];
-
-enum _TaskStatus { urgent, inProgress, pending }
-
-class _MockTask {
-  const _MockTask({
-    required this.title,
-    required this.deviceId,
-    required this.status,
-  });
-
-  final String title;
-  final String deviceId;
-  final _TaskStatus status;
-}
-
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -101,6 +62,17 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final role = auth.role;
+    // `GET /tasks` is only self-scoped by the backend for ST/OT. Every other
+    // role (and an unknown one) gets back every task in the system, so Mobile —
+    // a field-staff app — only shows "งานวันนี้", and only fetches it, for
+    // ST/OT. Same gate as the "ทดสอบสัญญาณ" shortcut below.
+    final isFieldStaff = role == UserRole.st || role == UserRole.ot;
+    final tasksAsync = isFieldStaff ? ref.watch(taskListProvider) : null;
+    final taskCount = tasksAsync?.valueOrNull?.length;
+    // Show the "N งานที่ได้รับมอบหมาย" line only while loading (count == null)
+    // or once loaded. On error the section below already shows a card + retry,
+    // so drop the greeting line rather than leaving it stuck on "กำลังโหลด…".
+    final showTaskCount = isFieldStaff && !(tasksAsync?.hasError ?? false);
 
     return Scaffold(
       backgroundColor: _HomeColors.background,
@@ -133,19 +105,19 @@ class HomePage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          _GreetingBlock(username: auth.username, role: role),
+          _GreetingBlock(
+            username: auth.username,
+            role: role,
+            taskCount: taskCount,
+            showTaskCount: showTaskCount,
+          ),
           const SizedBox(height: 24),
-          const _SectionLabel('งานวันนี้'),
-          const SizedBox(height: 12),
-          for (var i = 0; i < _mockTasks.length; i++) ...[
-            _TaskCard(
-              key: Key('task_card_$i'),
-              task: _mockTasks[i],
-              onTap: () => _comingSoon(context),
-            ),
-            if (i != _mockTasks.length - 1) const SizedBox(height: 10),
+          if (isFieldStaff) ...[
+            const _SectionLabel('งานวันนี้'),
+            const SizedBox(height: 12),
+            const _TodayTasksSection(),
+            const SizedBox(height: 24),
           ],
-          const SizedBox(height: 24),
           const _SectionLabel('ทางลัด'),
           const SizedBox(height: 12),
           _ShortcutGrid(
@@ -195,10 +167,21 @@ class HomePage extends ConsumerWidget {
 }
 
 class _GreetingBlock extends StatelessWidget {
-  const _GreetingBlock({required this.username, required this.role});
+  const _GreetingBlock({
+    required this.username,
+    required this.role,
+    required this.taskCount,
+    required this.showTaskCount,
+  });
 
   final String? username;
   final UserRole? role;
+
+  /// `null` while the task list is still loading.
+  final int? taskCount;
+
+  /// Only ST/OT get a meaningful "งานที่ได้รับมอบหมาย" count (see [HomePage]).
+  final bool showTaskCount;
 
   @override
   Widget build(BuildContext context) {
@@ -217,15 +200,18 @@ class _GreetingBlock extends StatelessWidget {
                   color: _HomeColors.textPrimary,
                 ),
               ),
-              const SizedBox(height: 4),
-              const Text(
-                // TODO: mock — ตัวเลขงานยังไม่ได้ดึงจาก GET /tasks จริง
-                'วันนี้ $_mockAssignedTaskCount งานที่ได้รับมอบหมาย',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _HomeColors.textSecondary,
+              if (showTaskCount) ...[
+                const SizedBox(height: 4),
+                Text(
+                  taskCount == null
+                      ? 'กำลังโหลดงานที่ได้รับมอบหมาย…'
+                      : 'วันนี้ $taskCount งานที่ได้รับมอบหมาย',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _HomeColors.textSecondary,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -279,10 +265,127 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// "งานวันนี้" — real task list from `GET /tasks` (self-scoped to the caller
+/// by the backend for ST/OT). Keeps the card layout from the Home redesign
+/// (PR #66); only the data source changed from mock to the live endpoint.
+class _TodayTasksSection extends ConsumerWidget {
+  const _TodayTasksSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tasksAsync = ref.watch(taskListProvider);
+
+    return tasksAsync.when(
+      skipLoadingOnRefresh: true,
+      data: (tasks) {
+        if (tasks.isEmpty) return const _TasksEmpty();
+        return Column(
+          children: [
+            for (var i = 0; i < tasks.length; i++) ...[
+              _TaskCard(
+                key: Key('task_card_$i'),
+                task: tasks[i],
+                onTap: () => context.push(AppRoutes.taskDetail(tasks[i].id)),
+              ),
+              if (i != tasks.length - 1) const SizedBox(height: 10),
+            ],
+          ],
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, _) => _TasksError(
+        message: error is ApiException ? error.message : 'โหลดงานไม่สำเร็จ',
+        onRetry: () => ref.invalidate(taskListProvider),
+      ),
+    );
+  }
+}
+
+class _TasksEmpty extends StatelessWidget {
+  const _TasksEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _HomeColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.inbox_outlined, color: _HomeColors.textSecondary),
+          SizedBox(height: 8),
+          Text(
+            'ยังไม่มีงานที่ได้รับมอบหมาย',
+            style: TextStyle(fontSize: 13, color: _HomeColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TasksError extends StatelessWidget {
+  const _TasksError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _HomeColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 18,
+                color: _HomeColors.errorFg,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _HomeColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              key: const Key('tasks_retry'),
+              onPressed: onRetry,
+              child: const Text('ลองอีกครั้ง'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TaskCard extends StatelessWidget {
   const _TaskCard({super.key, required this.task, required this.onTap});
 
-  final _MockTask task;
+  final Task task;
   final VoidCallback onTap;
 
   @override
@@ -311,7 +414,7 @@ class _TaskCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Device: ${task.deviceId}',
+                      'Device: ${task.deviceId ?? '—'}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: _HomeColors.textSecondary,
@@ -321,48 +424,10 @@ class _TaskCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              _StatusPill(status: task.status),
+              TaskStatusPill(status: task.status),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
-
-  final _TaskStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final (bg, fg, label) = switch (status) {
-      _TaskStatus.urgent => (
-        _HomeColors.urgentBg,
-        _HomeColors.urgentFg,
-        'ด่วน',
-      ),
-      _TaskStatus.inProgress => (
-        _HomeColors.progressBg,
-        _HomeColors.progressFg,
-        'กำลังทำ',
-      ),
-      _TaskStatus.pending => (
-        _HomeColors.pendingBg,
-        _HomeColors.pendingFg,
-        'รอดำเนินการ',
-      ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg),
       ),
     );
   }

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
@@ -21,6 +24,60 @@ ApiClient _clientFailingWith(DioException Function(RequestOptions) build) {
     ..interceptors.add(_RejectInterceptor(build));
   return ApiClient(dio: dio);
 }
+
+/// Adapter that returns a canned JSON body for every request and records the
+/// [RequestOptions] it saw — lets us assert the method / path / body an
+/// [ApiClient] method produced, and exercise the happy-path decoding.
+class _FakeAdapter implements HttpClientAdapter {
+  _FakeAdapter(this.body, {this.statusCode = 200});
+
+  final Object? body;
+  final int statusCode;
+  RequestOptions? lastRequest;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    lastRequest = options;
+    return ResponseBody.fromString(
+      jsonEncode(body),
+      statusCode,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+({ApiClient client, _FakeAdapter adapter}) _clientReturning(
+  Object? body, {
+  int statusCode = 200,
+}) {
+  final adapter = _FakeAdapter(body, statusCode: statusCode);
+  final dio = Dio(BaseOptions(baseUrl: 'http://test.local'))
+    ..httpClientAdapter = adapter;
+  return (client: ApiClient(dio: dio), adapter: adapter);
+}
+
+Map<String, dynamic> _taskJson({
+  String id = 't1',
+  String status = 'pending',
+  String? deviceId,
+}) => {
+  'id': id,
+  'title': 'งาน $id',
+  'assignedTo': 'u1',
+  'deviceId': deviceId,
+  'status': status,
+  'createdAt': '2026-09-01T00:00:00.000Z',
+  'updatedAt': '2026-09-02T00:00:00.000Z',
+};
 
 Response<dynamic> _response(RequestOptions o, int status, dynamic data) =>
     Response<dynamic>(
@@ -158,5 +215,74 @@ void main() {
         );
       },
     );
+  });
+
+  group('task endpoints', () {
+    test('listTasks -> GET /tasks, maps the JSON array', () async {
+      final (:client, :adapter) = _clientReturning([
+        _taskJson(id: 't1', status: 'pending', deviceId: 'DVC-1'),
+        _taskJson(id: 't2', status: 'completed'),
+      ]);
+
+      final tasks = await client.listTasks();
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/tasks');
+      expect(tasks.map((t) => t.id), ['t1', 't2']);
+      expect(tasks[0].deviceId, 'DVC-1');
+      expect(tasks[1].status, TaskStatus.completed);
+    });
+
+    test('listTasks -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listTasks(), isEmpty);
+      expect(adapter.lastRequest?.path, '/tasks');
+    });
+
+    test('getTask -> GET /tasks/{id}', () async {
+      final (:client, :adapter) = _clientReturning(
+        _taskJson(id: 'abc', status: 'in_progress'),
+      );
+
+      final task = await client.getTask('abc');
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/tasks/abc');
+      expect(task.status, TaskStatus.inProgress);
+    });
+
+    test(
+      'updateTaskStatus -> PATCH /tasks/{id} with a status-only body',
+      () async {
+        final (:client, :adapter) = _clientReturning(
+          _taskJson(id: 'abc', status: 'completed'),
+        );
+
+        final task = await client.updateTaskStatus('abc', TaskStatus.completed);
+
+        expect(adapter.lastRequest?.method, 'PATCH');
+        expect(adapter.lastRequest?.path, '/tasks/abc');
+        expect(adapter.lastRequest?.data, {'status': 'completed'});
+        expect(task.status, TaskStatus.completed);
+      },
+    );
+
+    test('getTask -> 404 maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {'message': 'ไม่พบงานนี้'}),
+        ),
+      );
+
+      await expectLater(
+        client.getTask('missing'),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having((e) => e.message, 'message', 'ไม่พบงานนี้'),
+        ),
+      );
+    });
   });
 }
