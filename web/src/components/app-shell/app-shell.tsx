@@ -55,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             GPS Config Center
           </span>
           <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
-            <span>{session?.role ?? "—"}</span>
+            <span>{session?.role ?? "-"}</span>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               ออกจากระบบ
             </Button>

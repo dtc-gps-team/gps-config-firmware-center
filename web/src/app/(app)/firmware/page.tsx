@@ -23,7 +23,7 @@ export default function FirmwarePage() {
         <div>
           <h1 className="text-2xl font-semibold">Firmware Repository</h1>
           <p className="text-sm text-muted-foreground">
-            อัปโหลด + Compatibility Tag — สร้างได้เฉพาะ Role SW
+            อัปโหลด + Compatibility Tag · สร้างได้เฉพาะ Role SW
           </p>
         </div>
         <UploadFirmwareButton />

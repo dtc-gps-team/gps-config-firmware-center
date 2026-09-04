@@ -31,7 +31,7 @@ export default function IncidentsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Incident & Rollback</h1>
         <p className="text-sm text-muted-foreground">
-          Operation สั่ง Rollback — ST แก้ไขเชิงเทคนิค
+          Operation สั่ง Rollback · ST แก้ไขเชิงเทคนิค
         </p>
       </div>
 
