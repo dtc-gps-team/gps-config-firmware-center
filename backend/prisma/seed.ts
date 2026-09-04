@@ -225,7 +225,12 @@ async function main() {
   //    หลัง Semantic Validation (#26) merge เข้า main แล้ว `validateFields()`
   //    บล็อก (400) ทุก field ที่ไม่มีนิยามในคลัง — catalog ที่มีแค่ `APN` ตัว
   //    เดียวทำให้สร้าง/แก้ Config เกือบทุกอันไม่ได้ (kittiphong เปิด issue #68
-  //    [Blocker] + ฝากไว้ใน review PR #62) จึง seed ชุดพื้นฐานเพิ่มตรงนี้
+  //    [Blocker] + ฝากไว้ใน review PR #62) จึง seed 3 ชุดตรงนี้:
+  //      (ก) `APN` — นิยามชัดเจน (`unknownSpec: false`, required)
+  //      (ข) `UNKNOWN_SPEC_LEGACY_FIELDS` — ชื่อ field ยืนยันจริง 9 ตัว
+  //          แต่ยังไม่รู้กฎ semantic (`unknownSpec: true`)
+  //      (ค) `REPRESENTATIVE_FIELDS` — ชุด parameter "ตัวแทน" สำหรับ dev/demo
+  //          (ยังไม่ใช่สเปกจริง — ดูคอมเมนต์เต็มเหนือ array นั้น)
   //
   //    **ที่มาของชื่อ field:** `01_GPS_Build_Reference.md` §5 ("โปรโตคอลที่
   //    ยืนยันแล้วกับระบบเดิม `config.dtc.co.th:909`") ระบุตัวอย่าง field ที่
@@ -247,6 +252,9 @@ async function main() {
   //    Checkpoint Phase 1 ข้อ 6 ต้องการ
   // ---------------------------------------------------------------------
   const KNOWN_LEGACY_MODEL = { deviceModel: 'GT06N', protocol: 'TCP' };
+  // รุ่นที่สองสำหรับ demo การผูก field เข้าหลาย (deviceModel, protocol) —
+  // GT06L อยู่ในตระกูลเดียวกับ GT06N ใช้โปรโตคอล text KV ผ่าน TCP เหมือนกัน
+  const SECONDARY_LEGACY_MODEL = { deviceModel: 'GT06L', protocol: 'TCP' };
 
   // field ที่ยืนยันแค่ชื่อจาก Build Reference §5 — dataType=string (โปรโตคอล
   // text KV), unknownSpec=true (ยังไม่รู้กฎ semantic), ไม่บังคับกรอก
@@ -264,6 +272,192 @@ async function main() {
     { fieldName: 'RS232', note: 'การตั้งค่าพอร์ต RS232' },
     { fieldName: 'PROD', note: 'รหัส/ชื่อรุ่นผลิตภัณฑ์' },
     { fieldName: 'COMP', note: 'ค่าที่เกี่ยวกับ compatibility ของอุปกรณ์' },
+  ];
+
+  // -------------------------------------------------------------------
+  //  ชุด parameter "ตัวแทน" สำหรับ dev / demo — ยังไม่ใช่สเปกฟิลด์จริง
+  // -------------------------------------------------------------------
+  //  โปรเจกต์นี้ยังไม่ได้รับเอกสารสเปก config field ตัวจริง (~262 ค่า) จาก
+  //  ทีมระบบเดิม (ดู issue #68) — catalog ที่มีแค่ APN + ชื่อ field ยืนยัน 9
+  //  ตัว (unknown_spec) ทำให้ทดสอบ Config flow / validation ได้เคสเดียว
+  //
+  //  ชุดนี้เป็น parameter ที่ "เป็นตัวแทนได้" ของ GPS tracker ตระกูล GT06 —
+  //  ชื่อ / dataType / allowedValues อ้างอิงความสามารถมาตรฐานของอุปกรณ์กลุ่ม
+  //  นี้ (network/server/report interval/digital I/O/CAN ฯลฯ) เพื่อให้ Web
+  //  Config Editor + simulate + Semantic Validation มีข้อมูลพอ demo ได้ครบ
+  //  ทุก branch (dataType string/number/boolean, allowedValues, หลาย
+  //  deviceModel)
+  //
+  //  **กติกา (CLAUDE.md — ห้ามเบี่ยงจาก Data Dictionary เงียบๆ):**
+  //  - `unknownSpec: false` เพราะ "ภายในชุด mock นี้" กฎครบ (validateFields
+  //    บังคับ dataType/allowedValues ได้จริง) — คำเตือนว่าเป็น mock อยู่ใน
+  //    `description` ของทุกตัว ไม่ใช่ที่ flag นี้
+  //  - `required: false` ทุกตัว — ความจำเป็นรายฟิลด์ต่อรุ่นเป็นข้อมูลที่ยัง
+  //    ไม่รู้จริง ไม่เดา (APN ตัวเดียวที่ `required: true` ตามที่ยืนยันใน #68)
+  //  - เมื่อได้เอกสารจริง: แก้ทับ / เพิ่ม field ในชุดนี้ได้เลย (upsert by
+  //    fieldName) และปรับ `description` ออกจาก "(ชุดตัวแทน)"
+  const REPRESENTATIVE_FIELDS: {
+    fieldName: string;
+    dataType: 'string' | 'number' | 'boolean';
+    allowedValues: string[];
+    description: string;
+    supportedModels: { deviceModel: string; protocol: string }[];
+  }[] = [
+    // ── เครือข่าย / GPRS ──
+    {
+      fieldName: 'APN_USER',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'ชื่อผู้ใช้ APN (ถ้าผู้ให้บริการกำหนด)',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'APN_PASSWORD',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'รหัสผ่าน APN (ถ้าผู้ให้บริการกำหนด)',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── เซิร์ฟเวอร์ปลายทาง ──
+    {
+      fieldName: 'SERVER_HOST',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'hostname หรือ IP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
+      supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'SERVER_PORT',
+      dataType: 'number',
+      allowedValues: [],
+      description: 'พอร์ต TCP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
+      supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'BACKUP_SERVER_HOST',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'hostname หรือ IP ของเซิร์ฟเวอร์สำรอง',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'TRANSPORT_PROTOCOL',
+      dataType: 'string',
+      allowedValues: ['TCP', 'UDP'],
+      description: 'โปรโตคอลขาส่งข้อมูลขึ้นเซิร์ฟเวอร์',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── การรายงานตำแหน่ง ──
+    {
+      fieldName: 'REPORT_INTERVAL_MOVING',
+      dataType: 'number',
+      allowedValues: [],
+      description: 'ช่วงเวลารายงานตำแหน่งขณะรถเคลื่อนที่ (วินาที)',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'REPORT_INTERVAL_IDLE',
+      dataType: 'number',
+      allowedValues: [],
+      description: 'ช่วงเวลารายงานตำแหน่งขณะรถจอด (วินาที)',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'HEADING_CHANGE_REPORT',
+      dataType: 'number',
+      allowedValues: [],
+      description: 'องศาการเปลี่ยนทิศที่กระตุ้นให้ส่งรายงานเพิ่ม (องศา)',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'GNSS_MODE',
+      dataType: 'string',
+      allowedValues: ['GPS', 'GPS_GLONASS', 'GPS_BEIDOU'],
+      description: 'ชุดระบบดาวเทียมที่ให้โมดูลใช้หาตำแหน่ง',
+      supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
+    },
+    // ── เซนเซอร์ / ดิจิทัล I/O ──
+    {
+      fieldName: 'IGNITION_DETECT_SOURCE',
+      dataType: 'string',
+      allowedValues: ['ACC_WIRE', 'VOLTAGE', 'MOTION'],
+      description: 'วิธีที่อุปกรณ์ใช้ตัดสินว่ารถติดเครื่องอยู่หรือไม่',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'DIGITAL_INPUT_1',
+      dataType: 'string',
+      allowedValues: ['NONE', 'SOS', 'DOOR', 'PANIC'],
+      description: 'ฟังก์ชันที่ผูกกับพอร์ตอินพุตดิจิทัลช่อง 1',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'DIGITAL_OUTPUT_1',
+      dataType: 'string',
+      allowedValues: ['NONE', 'ENGINE_CUT', 'BUZZER'],
+      description: 'ฟังก์ชันที่ผูกกับพอร์ตเอาต์พุตดิจิทัลช่อง 1',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── โหมดประหยัดพลังงาน ──
+    {
+      fieldName: 'SLEEP_MODE',
+      dataType: 'string',
+      allowedValues: ['NONE', 'TIME', 'MOTION', 'DEEP'],
+      description: 'เงื่อนไขที่ให้อุปกรณ์เข้าสู่โหมดประหยัดพลังงาน',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'LOW_BATTERY_THRESHOLD',
+      dataType: 'number',
+      allowedValues: [],
+      description: 'เปอร์เซ็นต์แบตเตอรี่สำรองที่จะแจ้งเตือน low battery',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── ความปลอดภัย ──
+    {
+      fieldName: 'COMMAND_PASSWORD',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'รหัสผ่านสำหรับสั่งงานอุปกรณ์ผ่าน SMS / แพลตฟอร์ม',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'SOS_NUMBER_1',
+      dataType: 'string',
+      allowedValues: [],
+      description: 'เบอร์โทรปลายทางลำดับที่ 1 เมื่อกดปุ่ม SOS',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── พฤติกรรมการเก็บข้อมูล ──
+    {
+      fieldName: 'MILEAGE_COUNTER_ENABLED',
+      dataType: 'boolean',
+      allowedValues: [],
+      description: 'เปิดการสะสมเลขไมล์สะสม (odometer) ในตัวอุปกรณ์',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'STATIC_DRIFT_FILTER',
+      dataType: 'boolean',
+      allowedValues: [],
+      description: 'กรองการกระเพื่อมของพิกัด GPS ขณะรถจอดนิ่ง',
+      supportedModels: [KNOWN_LEGACY_MODEL],
+    },
+    // ── CAN / OBD ──
+    {
+      fieldName: 'CAN_BUS_ENABLED',
+      dataType: 'boolean',
+      allowedValues: [],
+      description: 'เปิดการอ่านข้อมูลจากสาย CAN bus / OBD ของรถ',
+      supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
+    },
+    {
+      fieldName: 'OBD_PROTOCOL',
+      dataType: 'string',
+      allowedValues: ['AUTO', 'ISO15765', 'J1939', 'J1708'],
+      description: 'โปรโตคอล OBD ที่ให้อุปกรณ์ใช้คุยกับ ECU ของรถ',
+      supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
+    },
   ];
 
   const configFieldDefinitions: {
@@ -297,6 +491,15 @@ async function main() {
       unknownSpec: true,
       description: `${f.note} — ยืนยันแค่ชื่อจาก Build Reference §5 ยังไม่มีสเปกเต็ม (unknown_spec)`,
       supportedModels: [KNOWN_LEGACY_MODEL],
+    })),
+    ...REPRESENTATIVE_FIELDS.map((f) => ({
+      fieldName: f.fieldName,
+      dataType: f.dataType,
+      allowedValues: f.allowedValues,
+      required: false,
+      unknownSpec: false,
+      description: `${f.description} — (ชุด parameter ตัวแทนสำหรับ dev/demo ยังไม่ใช่สเปกฟิลด์จริง ดู #68)`,
+      supportedModels: f.supportedModels,
     })),
   ];
 

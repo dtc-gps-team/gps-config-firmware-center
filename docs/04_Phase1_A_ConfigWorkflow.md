@@ -114,25 +114,50 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 ## Config Definition Lookup — catalog เริ่มต้นใน seed
 
 หลัง Semantic Validation (#26) merge แล้ว `ConfigDefinitionService.validateFields()`
-บล็อก (400) ทุก field ที่ไม่มีนิยามในคลัง — `backend/prisma/seed.ts` จึง seed
-ชุดพื้นฐานไว้ให้ dev/test ใช้งานได้:
+บล็อก (400) ทุก field ที่ไม่มีนิยามในคลัง — `backend/prisma/seed.ts` จึง seed 3 ชุด
+รวม **31 field** ไว้ให้ dev/test ใช้งานได้:
 
-| fieldName | dataType | required | unknownSpec | ที่มา |
-|---|---|---|---|---|
-| `APN` | string | ✅ | `false` (รู้กฎ) | นิยามชัดเจน — Access Point Name |
-| `APN1` `APN2` `MTYP` `SIM1` `SIM2` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` (รู้แค่ชื่อ) | `01_GPS_Build_Reference.md` §5 + `APN2`/`SIM2` ตาม issue #68 |
+| ชุด | field | dataType | required | unknownSpec | ที่มา |
+|---|---|---|---|---|---|
+| (ก) นิยามชัดเจน | `APN` | string | ✅ | `false` | นิยามชัดเจน — Access Point Name |
+| (ข) ชื่อยืนยัน / ยังไม่รู้กฎ | `APN1` `APN2` `MTYP` `SIM1` `SIM2` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` | `01_GPS_Build_Reference.md` §5 + `APN2`/`SIM2` ตาม #68 |
+| (ค) ชุดตัวแทน dev/demo | `APN_USER` `APN_PASSWORD` `SERVER_HOST` `SERVER_PORT` `BACKUP_SERVER_HOST` `TRANSPORT_PROTOCOL` `REPORT_INTERVAL_MOVING` `REPORT_INTERVAL_IDLE` `HEADING_CHANGE_REPORT` `GNSS_MODE` `IGNITION_DETECT_SOURCE` `DIGITAL_INPUT_1` `DIGITAL_OUTPUT_1` `SLEEP_MODE` `LOW_BATTERY_THRESHOLD` `COMMAND_PASSWORD` `SOS_NUMBER_1` `MILEAGE_COUNTER_ENABLED` `STATIC_DRIFT_FILTER` `CAN_BUS_ENABLED` `OBD_PROTOCOL` | string / number / boolean | — | `false` | ความสามารถมาตรฐานของ tracker ตระกูล GT06 — **ยังไม่ใช่สเปกจริง** |
+
+### ชุด (ข) — ชื่อ field ยืนยันจริง แต่ยังไม่รู้กฎ
 
 - **ยืนยันแค่ "ชื่อ" field** — เอกสารสเปกฟิลด์เต็ม (~262 ค่า) จากพี่ในทีมยังไม่
   เข้า repo และ `GPS_Data_Dictionary.xlsx` เก็บแค่ schema ตาราง `CONFIG_DEFINITION`
-  ไม่ได้เก็บนิยามราย parameter → catalog นี้ยังไม่ครบตาม [#68](https://github.com/dtc-gps-team/gps-config-firmware-center/issues/68)
-  ทั้งหมด (ส่วนที่เหลือรอเอกสารต้นฉบับ)
+  ไม่ได้เก็บนิยามราย parameter
 - `dataType: string` มาจากข้อเท็จจริงว่าระบบเดิมเป็น Text-based Key-Value ผ่าน TCP
   (Build Reference §5) — ทุกค่าเป็น string บนสาย **ไม่ใช่การเดา type จากชื่อ field**
 - กฎ semantic ที่ลึกกว่านั้น (`allowedValues` / `required` / ช่วงค่า) ยังไม่รู้ →
   `unknownSpec: true` ตาม Phase 1 ข้อ 2 — flag นี้คือ Metadata "รู้กฎ vs รู้แค่
   Data Type" ที่ Checkpoint Phase 1 ข้อ 6 ต้องการ
-- supportedModels ทั้งหมดผูกกับ `GT06N/TCP` (device model มาตรฐานเดียวกับทุก test
-  file) — field ทยอยเพิ่ม deviceModel/protocol อื่นเมื่อมีข้อมูลจริง
+
+### ชุด (ค) — parameter ตัวแทนสำหรับ dev/demo (ยังไม่ใช่สเปกจริง)
+
+โปรเจกต์ยังไม่ได้รับเอกสารสเปก config field ตัวจริง — ชุด (ก)+(ข) ทำให้ทดสอบ
+Config flow / Semantic Validation ได้แค่ไม่กี่เคส (ทุก field เป็น `string`,
+`allowedValues` ว่างหมด) ชุด (ค) เป็น parameter ที่ **เป็นตัวแทนได้** ของ tracker
+ตระกูล GT06 เพื่อให้ Web Config Editor + simulate + validation มีข้อมูลพอ demo
+ครบทุก branch
+
+- ครอบ 7 หมวด: เครือข่าย / เซิร์ฟเวอร์ / การรายงานตำแหน่ง / เซนเซอร์ I/O /
+  ประหยัดพลังงาน / ความปลอดภัย / CAN-OBD
+- ครบทุก `dataType` ที่ `validateFields()` ตรวจได้จริง: `string`, `number`,
+  `boolean` + `allowedValues` แบบ enum (`GNSS_MODE`, `OBD_PROTOCOL`, ฯลฯ)
+- `unknownSpec: false` เพราะ**ภายในชุด mock นี้** กฎครบ (dataType/allowedValues
+  บังคับได้จริง) — คำเตือนว่าเป็น mock อยู่ใน `description` ของทุก field ไม่ใช่ที่ flag
+- `required: false` ทุกตัว — ความจำเป็นรายฟิลด์ต่อรุ่นเป็นข้อมูลที่ยังไม่รู้จริง
+  ไม่เดา (มีแต่ `APN` ที่ `required: true`)
+- เมื่อได้เอกสารจริง: `upsert` by `fieldName` แก้ทับ / เพิ่มได้เลย + ตัด
+  "(ชุดตัวแทน)" ออกจาก `description`
+
+### supportedModels
+
+- ส่วนใหญ่ผูกกับ `GT06N/TCP` (device model มาตรฐานเดียวกับทุก test file)
+- `SERVER_HOST` `SERVER_PORT` `GNSS_MODE` `CAN_BUS_ENABLED` `OBD_PROTOCOL` ผูกกับ
+  ทั้ง `GT06N/TCP` และ `GT06L/TCP` — demo การผูก field เข้าหลาย (deviceModel, protocol)
 
 ## Validation strictness — `unknownSpec` = Metadata "รู้กฎ vs รู้แค่ Data Type"
 
