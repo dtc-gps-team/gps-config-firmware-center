@@ -150,8 +150,10 @@ Config flow / Semantic Validation ได้แค่ไม่กี่เคส 
   บังคับได้จริง) — คำเตือนว่าเป็น mock อยู่ใน `description` ของทุก field ไม่ใช่ที่ flag
 - `required: false` ทุกตัว — ความจำเป็นรายฟิลด์ต่อรุ่นเป็นข้อมูลที่ยังไม่รู้จริง
   ไม่เดา (มีแต่ `APN` ที่ `required: true`)
-- เมื่อได้เอกสารจริง: `upsert` by `fieldName` แก้ทับ / เพิ่มได้เลย + ตัด
-  "(ชุดตัวแทน)" ออกจาก `description`
+- เมื่อได้เอกสารจริง: **เพิ่ม** field ใหม่ในชุดได้เลย (ลูป seed เป็น insert-only —
+  `update: {}`) · ถ้าจะ**แก้ค่าเดิมทับ** ต้องแก้ `update: {}` ในลูป upsert ให้ใส่
+  field ที่จะอัปเดตด้วย ไม่งั้น seed ซ้ำบน DB เดิมจะไม่เปลี่ยน + ตัด "(ชุดตัวแทน)"
+  ออกจาก `description`
 
 ### supportedModels
 

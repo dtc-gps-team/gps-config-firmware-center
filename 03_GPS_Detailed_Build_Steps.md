@@ -40,7 +40,7 @@
 
 1. `[A]` สร้างโมดูล `config`: Endpoint CRUD Config (Draft/Update/Delete Draft)
 2. `[A]` **ทำ Config Definition Lookup ก่อน** — ตารางเก็บนิยามฟิลด์ Config ทั้ง ~262 ฟิลด์ (ชื่อ, Data Type, ค่าที่ยอมรับได้ถ้ารู้, Required/Optional) แม้เอกสารต้นฉบับจากพี่ในทีมยังไม่ครบ ก็ให้เริ่มจากฟิลด์ที่รู้แน่นอนก่อน (APN1, MTYP, SIM1, SEV1 ฯลฯ) ที่เหลือ mark เป็น `unknown_spec: true` ไว้ในตาราง Definition
-   - _(#74)_ เอกสารสเปกฟิลด์จริงยังไม่เข้า repo → `prisma/seed.ts` seed เพิ่มชุด `REPRESENTATIVE_FIELDS` 21 ตัว (parameter ตัวแทนของ tracker ตระกูล GT06 สำหรับ dev/demo — **ยังไม่ใช่สเปกจริง**, แก้ทับด้วย `upsert` ได้เมื่อได้เอกสาร) ดู `docs/04_Phase1_A_ConfigWorkflow.md` § Config Definition Lookup
+   - _(#74)_ เอกสารสเปกฟิลด์จริงยังไม่เข้า repo → `prisma/seed.ts` seed เพิ่มชุด `REPRESENTATIVE_FIELDS` 21 ตัว (parameter ตัวแทนของ tracker ตระกูล GT06 สำหรับ dev/demo — **ยังไม่ใช่สเปกจริง**, backfill สเปกจริงทีหลังตาม #68) ดู `docs/04_Phase1_A_ConfigWorkflow.md` § Config Definition Lookup
 3. `[A]` **เพิ่ม Semantic Validation เท่าที่ทำได้** (Gap ที่พบ) — นอกจากตรวจ Data Type ตรงกันแล้ว ใส่กฎเพิ่มเท่าที่รู้จริง เช่น ค่าตัวเลขต้องไม่ติดลบถ้ารู้ว่าฟิลด์นั้นเป็นค่าที่เป็นบวกเสมอ (Timeout, Interval) — ฟิลด์ที่ไม่รู้กฎให้ตรวจแค่ Data Type ตรงกันตามที่ตกลงไว้ (ทำเครื่องหมาย `validation_level: syntactic_only` เทียบกับฟิลด์ที่มี `validation_level: semantic` ไว้ในโค้ด เพื่อให้เห็นชัดว่าฟิลด์ไหนตรวจแน่นแค่ไหน)
 4. `[A]` สร้างหน้า Web "Config Editor" (ฟอร์มกรอกตาม Config Definition Lookup) พร้อม Client-side Validation (React Hook Form + Zod)
 5. `[A]` สร้างฟีเจอร์ "Import Config จากไฟล์ JSON" (v3.2) ตาม Interface `ConfigImporter` ใน Build Reference Section 3.1 — Validate Schema ก่อนแปลงเป็น `DeviceConfigDraft` เดียวกับที่ฟอร์มสร้าง

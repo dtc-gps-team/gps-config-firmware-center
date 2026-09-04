@@ -294,8 +294,11 @@ async function main() {
   //    `description` ของทุกตัว ไม่ใช่ที่ flag นี้
   //  - `required: false` ทุกตัว — ความจำเป็นรายฟิลด์ต่อรุ่นเป็นข้อมูลที่ยัง
   //    ไม่รู้จริง ไม่เดา (APN ตัวเดียวที่ `required: true` ตามที่ยืนยันใน #68)
-  //  - เมื่อได้เอกสารจริง: แก้ทับ / เพิ่ม field ในชุดนี้ได้เลย (upsert by
-  //    fieldName) และปรับ `description` ออกจาก "(ชุดตัวแทน)"
+  //  - เมื่อได้เอกสารจริง: **เพิ่ม** field ใหม่ในชุดนี้ได้เลย (ลูป upsert ด้าน
+  //    ล่างเป็น insert-only — `update: {}`) แต่ถ้าจะ**แก้ค่าเดิมทับ** (เช่น
+  //    เปลี่ยน dataType/allowedValues/required ของ field ที่ seed ไปแล้ว) ต้อง
+  //    แก้ `update: {}` ในลูปให้ใส่ field ที่จะอัปเดตด้วย ไม่งั้นรัน seed ซ้ำบน
+  //    DB เดิมจะไม่เปลี่ยน — และปรับ `description` ออกจาก "(ชุดตัวแทน)"
   const REPRESENTATIVE_FIELDS: {
     fieldName: string;
     dataType: 'string' | 'number' | 'boolean';
