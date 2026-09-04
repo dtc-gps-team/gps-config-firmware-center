@@ -113,8 +113,17 @@ final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   return ApiTaskRepository(ref.watch(apiClientProvider));
 });
 
-/// The signed-in user's task list (self-scoped by the backend for ST/OT).
+/// The signed-in user's task list.
+///
+/// `GET /tasks` is only self-scoped by the backend for ST/OT — every other role
+/// (and an unknown/unrestored one) would receive every task in the system. This
+/// is a field-staff app, so for anyone else we return an empty list and never
+/// hit the network. The Home UI also hides the "งานวันนี้" section for them.
 final taskListProvider = FutureProvider.autoDispose<List<Task>>((ref) {
+  final role = ref.watch(authControllerProvider.select((s) => s.role));
+  if (role != UserRole.st && role != UserRole.ot) {
+    return const <Task>[];
+  }
   return ref.watch(taskRepositoryProvider).listTasks();
 });
 

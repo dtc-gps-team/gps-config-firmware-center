@@ -50,8 +50,11 @@ class _FakeTaskRepository implements TaskRepository {
   final List<Task> _tasks;
   final Object? error;
 
+  int listCalls = 0;
+
   @override
   Future<List<Task>> listTasks() async {
+    listCalls++;
     if (error != null) throw error!;
     return _tasks;
   }
@@ -199,6 +202,48 @@ void main() {
       expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
     });
   });
+
+  group(
+    'RBAC — "งานวันนี้" เฉพาะ ST/OT (backend GET /tasks self-scope 2 role นี้)',
+    () {
+      for (final role in [UserRole.sw, UserRole.operation, UserRole.auditor]) {
+        testWidgets('${role.wireName}: ไม่เห็น section + ไม่ยิง GET /tasks', (
+          tester,
+        ) async {
+          final repo = _FakeTaskRepository();
+          await _pumpHome(tester, role, taskRepo: repo);
+          await tester.pumpAndSettle();
+
+          expect(find.text('งานวันนี้'), findsNothing);
+          expect(find.byKey(const Key('task_card_0')), findsNothing);
+          expect(find.textContaining('งานที่ได้รับมอบหมาย'), findsNothing);
+          expect(repo.listCalls, 0);
+        });
+      }
+
+      testWidgets('role ว่าง (session ที่ยังไม่มี role): ไม่ยิง GET /tasks', (
+        tester,
+      ) async {
+        final repo = _FakeTaskRepository();
+        await _pumpHome(tester, null, taskRepo: repo);
+        await tester.pumpAndSettle();
+
+        expect(find.text('งานวันนี้'), findsNothing);
+        expect(repo.listCalls, 0);
+      });
+
+      testWidgets('ST: ยังเห็น section + ยิง GET /tasks ตามเดิม', (
+        tester,
+      ) async {
+        final repo = _FakeTaskRepository();
+        await _pumpHome(tester, UserRole.st, taskRepo: repo);
+        await tester.pumpAndSettle();
+
+        expect(find.text('งานวันนี้'), findsOneWidget);
+        expect(repo.listCalls, 1);
+      });
+    },
+  );
 
   group('การ navigate ของทางลัดของจริง (ต้องทำงานเหมือนเดิม)', () {
     testWidgets('แตะ "ทดสอบการตั้งค่า" -> ไปหน้า Config Simulator', (

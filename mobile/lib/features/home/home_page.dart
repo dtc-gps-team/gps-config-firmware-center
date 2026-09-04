@@ -62,7 +62,14 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final role = auth.role;
-    final taskCount = ref.watch(taskListProvider).valueOrNull?.length;
+    // `GET /tasks` is only self-scoped by the backend for ST/OT. Every other
+    // role (and an unknown one) gets back every task in the system, so Mobile —
+    // a field-staff app — only shows "งานวันนี้", and only fetches it, for
+    // ST/OT. Same gate as the "ทดสอบสัญญาณ" shortcut below.
+    final isFieldStaff = role == UserRole.st || role == UserRole.ot;
+    final taskCount = isFieldStaff
+        ? ref.watch(taskListProvider).valueOrNull?.length
+        : null;
 
     return Scaffold(
       backgroundColor: _HomeColors.background,
@@ -99,12 +106,15 @@ class HomePage extends ConsumerWidget {
             username: auth.username,
             role: role,
             taskCount: taskCount,
+            showTaskCount: isFieldStaff,
           ),
           const SizedBox(height: 24),
-          const _SectionLabel('งานวันนี้'),
-          const SizedBox(height: 12),
-          const _TodayTasksSection(),
-          const SizedBox(height: 24),
+          if (isFieldStaff) ...[
+            const _SectionLabel('งานวันนี้'),
+            const SizedBox(height: 12),
+            const _TodayTasksSection(),
+            const SizedBox(height: 24),
+          ],
           const _SectionLabel('ทางลัด'),
           const SizedBox(height: 12),
           _ShortcutGrid(
@@ -158,6 +168,7 @@ class _GreetingBlock extends StatelessWidget {
     required this.username,
     required this.role,
     required this.taskCount,
+    required this.showTaskCount,
   });
 
   final String? username;
@@ -165,6 +176,9 @@ class _GreetingBlock extends StatelessWidget {
 
   /// `null` while the task list is still loading.
   final int? taskCount;
+
+  /// Only ST/OT get a meaningful "งานที่ได้รับมอบหมาย" count (see [HomePage]).
+  final bool showTaskCount;
 
   @override
   Widget build(BuildContext context) {
@@ -183,16 +197,18 @@ class _GreetingBlock extends StatelessWidget {
                   color: _HomeColors.textPrimary,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                taskCount == null
-                    ? 'กำลังโหลดงานที่ได้รับมอบหมาย…'
-                    : 'วันนี้ $taskCount งานที่ได้รับมอบหมาย',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: _HomeColors.textSecondary,
+              if (showTaskCount) ...[
+                const SizedBox(height: 4),
+                Text(
+                  taskCount == null
+                      ? 'กำลังโหลดงานที่ได้รับมอบหมาย…'
+                      : 'วันนี้ $taskCount งานที่ได้รับมอบหมาย',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _HomeColors.textSecondary,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
