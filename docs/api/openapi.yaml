@@ -661,6 +661,8 @@ paths:
           description: อัปโหลดสำเร็จ — แสดง upload_status บนหน้าเว็บ
         "400":
           description: ไฟล์หรือ deviceModel ไม่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์อัปโหลด Firmware — เฉพาะ Role SW เท่านั้น
 
@@ -693,6 +695,8 @@ paths:
                 $ref: "#/components/schemas/SimulationResult"
         "400":
           description: deviceModel ไม่ถูกต้องหรือไม่รองรับ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ทดสอบ Firmware นี้ — เฉพาะ Role SW, Operation, ST, OT
         "404":
@@ -720,6 +724,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceStatus"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบ Device นี้
 
