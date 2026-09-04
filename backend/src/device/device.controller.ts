@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   HttpCode,
   HttpStatus,
@@ -10,7 +11,9 @@ import { ActionType } from '@prisma/client';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
+import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
+import { ApplyConfigDto } from './dto/apply-config.dto';
 import { DeviceService } from './device.service';
 
 // Device module — รอบนี้ทำแค่ `POST /devices/:deviceId/test-connection`
@@ -35,5 +38,22 @@ export class DeviceController {
     @Param('deviceId') deviceId: string,
   ): Promise<DeviceConnectionTestResult> {
     return this.deviceService.testConnection(deviceId);
+  }
+
+  // resource `device-config-apply` action Read — grant ให้ ST/OT เท่านั้น
+  // (mirror `device-connection-test` — คนหน้างานที่ใช้ Mobile) SW/Operation
+  // ยังไม่เปิด (ทำ Config บน Web ไม่ได้ apply หน้างาน)
+  //
+  // action ใช้ `Read` (ไม่ใช่ Update/Create) โดยตั้งใจ — apply-config ไม่ persist
+  // อะไรในระบบเรา (fire-and-forget mock, ยืนยัน scope กับ B) จึงไม่ตรงกับ
+  // Update/Create ที่หมายถึงแก้ข้อมูลใน DB — pattern เดียวกับ `config-simulation`
+  @Post(':deviceId/apply-config')
+  @RequirePermission('device-config-apply', ActionType.Read)
+  @HttpCode(HttpStatus.OK)
+  applyConfig(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: ApplyConfigDto,
+  ): Promise<ConfigApplyResult> {
+    return this.deviceService.applyConfig(deviceId, dto.configId);
   }
 }
