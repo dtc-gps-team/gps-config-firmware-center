@@ -44,6 +44,14 @@ export class CreateConfigDefinitionDto {
   @IsBoolean()
   required!: boolean;
 
+  /** `true` = รู้แค่ว่า field นี้มีจริง + `dataType` (syntactic_only) ยังไม่
+   * รู้ `allowedValues`/`required`/ช่วงค่าที่แท้จริง — ปล่อยว่างได้ default
+   * `false` (รู้กฎครบ) ตรงกับ `ConfigFieldDefinition.unknownSpec` ใน schema
+   * ดู `docs/04_Phase1_A_ConfigWorkflow.md` § Validation strictness */
+  @IsOptional()
+  @IsBoolean()
+  unknownSpec?: boolean;
+
   @IsOptional()
   @IsString()
   description?: string;

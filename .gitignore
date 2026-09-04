@@ -27,3 +27,6 @@ Thumbs.db
 
 # Scratch
 commit-msg.txt
+
+# Claude Code local scratch output — ไม่ commit
+Claude outputs/
