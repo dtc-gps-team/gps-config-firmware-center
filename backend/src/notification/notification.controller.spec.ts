@@ -38,13 +38,18 @@ function buildToken(sub: string, role: string): string {
 describe('NotificationController', () => {
   let controller: NotificationController;
   let service: jest.Mocked<
-    Pick<NotificationService, 'findByUser' | 'markRead'>
+    Pick<
+      NotificationService,
+      'findByUser' | 'markRead' | 'registerDeviceToken' | 'removeDeviceToken'
+    >
   >;
 
   beforeEach(async () => {
     service = {
       findByUser: jest.fn(),
       markRead: jest.fn(),
+      registerDeviceToken: jest.fn(),
+      removeDeviceToken: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,6 +107,49 @@ describe('NotificationController', () => {
     expect(service.markRead).toHaveBeenCalledWith(
       sampleNotification.id,
       'user-abc',
+    );
+  });
+
+  it('POST /notifications/device-tokens — ส่ง userId จาก JWT (ไม่ใช่จาก body) เข้า service', async () => {
+    const row = {
+      id: 'dt-1',
+      userId: 'user-abc',
+      token: 'fcm-xyz',
+      platform: 'android' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    service.registerDeviceToken.mockResolvedValue(row);
+
+    const fakeReq = {
+      user: { sub: 'user-abc', role: 'ST' },
+    } as Parameters<typeof controller.registerDeviceToken>[1];
+
+    const result = await controller.registerDeviceToken(
+      { token: 'fcm-xyz', platform: 'android' },
+      fakeReq,
+    );
+
+    expect(result).toEqual(row);
+    expect(service.registerDeviceToken).toHaveBeenCalledWith(
+      'user-abc',
+      'fcm-xyz',
+      'android',
+    );
+  });
+
+  it('DELETE /notifications/device-tokens — ส่ง userId จาก JWT + token จาก query เข้า service', async () => {
+    service.removeDeviceToken.mockResolvedValue(undefined);
+
+    const fakeReq = {
+      user: { sub: 'user-abc', role: 'OT' },
+    } as Parameters<typeof controller.removeDeviceToken>[1];
+
+    await controller.removeDeviceToken({ token: 'fcm-xyz' }, fakeReq);
+
+    expect(service.removeDeviceToken).toHaveBeenCalledWith(
+      'user-abc',
+      'fcm-xyz',
     );
   });
 
