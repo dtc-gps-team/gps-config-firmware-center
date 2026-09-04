@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -21,22 +23,75 @@ class _FakeAuthController extends AuthController {
   );
 }
 
+final _fakeTasks = <Task>[
+  Task(
+    id: 't1',
+    title: 'ติดตั้งกล่อง GPS รถบรรทุก',
+    assignedTo: 'u1',
+    status: TaskStatus.pending,
+    createdAt: DateTime(2026, 9, 1),
+    updatedAt: DateTime(2026, 9, 1),
+    deviceId: 'DVC-40271',
+  ),
+  Task(
+    id: 't2',
+    title: 'ตรวจเช็คสัญญาณรถโดยสาร',
+    assignedTo: 'u1',
+    status: TaskStatus.inProgress,
+    createdAt: DateTime(2026, 9, 2),
+    updatedAt: DateTime(2026, 9, 2),
+  ),
+];
+
+class _FakeTaskRepository implements TaskRepository {
+  _FakeTaskRepository({List<Task>? tasks, this.error})
+    : _tasks = tasks ?? _fakeTasks;
+
+  final List<Task> _tasks;
+  final Object? error;
+
+  @override
+  Future<List<Task>> listTasks() async {
+    if (error != null) throw error!;
+    return _tasks;
+  }
+
+  @override
+  Future<Task> getTask(String id) async => _tasks.firstWhere((t) => t.id == id);
+
+  @override
+  Future<Task> updateStatus(String id, TaskStatus status) async =>
+      throw UnimplementedError();
+}
+
 /// Plain pump — no router. Fine for visibility / snackbar assertions.
-Future<void> _pumpHome(WidgetTester tester, UserRole? role) {
-  return tester.pumpWidget(
+Future<void> _pumpHome(
+  WidgetTester tester,
+  UserRole? role, {
+  TaskRepository? taskRepo,
+}) async {
+  await tester.pumpWidget(
     ProviderScope(
       overrides: [
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        taskRepositoryProvider.overrideWithValue(
+          taskRepo ?? _FakeTaskRepository(),
+        ),
       ],
       child: const MaterialApp(home: HomePage()),
     ),
   );
+  await tester.pump(); // resolve the task list future
 }
 
 /// Router-backed pump with stub destinations, so `context.push(...)` from the
-/// shortcut tiles can be asserted.
-Future<void> _pumpHomeRouted(WidgetTester tester, UserRole? role) {
+/// shortcut tiles and task cards can be asserted.
+Future<void> _pumpHomeRouted(
+  WidgetTester tester,
+  UserRole? role, {
+  TaskRepository? taskRepo,
+}) async {
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
@@ -49,16 +104,26 @@ Future<void> _pumpHomeRouted(WidgetTester tester, UserRole? role) {
         path: AppRoutes.deviceConnectionTest,
         builder: (_, _) => const Scaffold(body: Text('DEVICE_TEST_PAGE_STUB')),
       ),
+      GoRoute(
+        path: AppRoutes.taskDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
+        ),
+      ),
     ],
   );
-  return tester.pumpWidget(
+  await tester.pumpWidget(
     ProviderScope(
       overrides: [
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
+        taskRepositoryProvider.overrideWithValue(
+          taskRepo ?? _FakeTaskRepository(),
+        ),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
   );
+  await tester.pump();
 }
 
 void main() {
@@ -83,6 +148,55 @@ void main() {
     testWidgets('role ว่าง ไม่เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
       await _pumpHome(tester, null);
       expect(deviceTestTile, findsNothing);
+    });
+  });
+
+  group('"งานวันนี้" — task list จริงจาก GET /tasks', () {
+    testWidgets('แสดงการ์ดงานจาก repository + จำนวนใน greeting', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+
+      expect(find.text('ติดตั้งกล่อง GPS รถบรรทุก'), findsOneWidget);
+      expect(find.text('ตรวจเช็คสัญญาณรถโดยสาร'), findsOneWidget);
+      expect(find.text('Device: DVC-40271'), findsOneWidget);
+      expect(find.text('Device: —'), findsOneWidget); // t2 has no deviceId
+      expect(find.text('วันนี้ 2 งานที่ได้รับมอบหมาย'), findsOneWidget);
+    });
+
+    testWidgets('empty state เมื่อไม่มีงาน', (tester) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(tasks: const []),
+      );
+
+      expect(find.text('ยังไม่มีงานที่ได้รับมอบหมาย'), findsOneWidget);
+      expect(find.text('วันนี้ 0 งานที่ได้รับมอบหมาย'), findsOneWidget);
+    });
+
+    testWidgets('error state + ปุ่มลองอีกครั้ง', (tester) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(
+          error: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
+        ),
+      );
+
+      expect(find.text('เซิร์ฟเวอร์ล่ม'), findsOneWidget);
+      expect(find.byKey(const Key('tasks_retry')), findsOneWidget);
+    });
+
+    testWidgets('แตะการ์ดงาน -> navigate ไปหน้า Task Detail ของงานนั้น', (
+      tester,
+    ) async {
+      await _pumpHomeRouted(tester, UserRole.st);
+
+      await tester.tap(find.byKey(const Key('task_card_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
     });
   });
 
@@ -115,13 +229,6 @@ void main() {
       expect(find.textContaining('เร็ว'), findsOneWidget);
     });
 
-    testWidgets('แตะการ์ดงาน mock ใบแรก', (tester) async {
-      await _pumpHome(tester, UserRole.st);
-      await tester.tap(find.byKey(const Key('task_card_0')));
-      await tester.pump();
-      expect(find.textContaining('เร็ว'), findsOneWidget);
-    });
-
     testWidgets('แตะไอคอนกระดิ่งแจ้งเตือน mock', (tester) async {
       await _pumpHome(tester, UserRole.st);
       await tester.tap(find.byKey(const Key('home_notifications')));
@@ -137,6 +244,7 @@ void main() {
           () => _FakeAuthController(UserRole.st),
         ),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
       ],
     );
     addTearDown(container.dispose);
@@ -146,6 +254,7 @@ void main() {
         child: const MaterialApp(home: HomePage()),
       ),
     );
+    await tester.pump();
 
     await tester.tap(find.byKey(const Key('home_logout')));
     await tester.pumpAndSettle();
