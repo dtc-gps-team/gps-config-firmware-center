@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Config, type ConfigStatus, Prisma } from '@prisma/client';
+import {
+  Config,
+  type ConfigStatus,
+  type ConfigVersion,
+  Prisma,
+} from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -241,6 +246,15 @@ export class ConfigService {
    * ตาม Auth Pattern ใน CLAUDE.md) — เป็นร่องรอย Separation of Duty ว่าใคร
    * เป็นผู้อนุมัติจริง (`Config.approver` relation) `reject` ไม่แตะ field นี้
    * เพราะ Config ที่ถูกปฏิเสธถือว่ายังไม่เคยอนุมัติ
+   *
+   * Stage 5 (#26 ข้อ 9) — เก็บ `ConfigVersion` snapshot (append-only) ทุกครั้ง
+   * ที่ approve: บันทึก `fields`/`deviceModel`/`protocol` ณ ตอนนั้น + running
+   * `versionNumber` ต่อ config เป็นฐานของ Rollback ใน Phase 4 (#28) —
+   * snapshot + เปลี่ยนสถานะทำใน `$transaction` เดียว (crash กลางคันห้ามเหลือ
+   * config `approved` ที่ไม่มี version) `@@unique([configId, versionNumber])`
+   * เป็น backstop กัน 2 approve ชนกัน (แม้ปกติ precondition `testing` กันไว้
+   * อยู่แล้ว) `fields` ที่ snapshot คือค่าที่ SW simulate จริง — config แก้
+   * ไม่ได้หลังพ้น `draft` อยู่แล้ว
    */
   async approve(id: string, actor: ActingUser): Promise<Config> {
     const config = await this.findOne(id);
@@ -251,7 +265,70 @@ export class ConfigService {
       );
     }
 
-    return this.updateStatus(id, 'approved', { approvedBy: actor.id });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const priorVersions = await tx.configVersion.count({
+          where: { configId: id },
+        });
+        await tx.configVersion.create({
+          data: {
+            configId: id,
+            versionNumber: priorVersions + 1,
+            fields: config.fields as Prisma.InputJsonValue,
+            deviceModel: config.deviceModel,
+            protocol: config.protocol,
+            approvedBy: actor.id,
+          },
+        });
+        return tx.config.update({
+          where: { id },
+          data: { status: 'approved', approvedBy: actor.id },
+        });
+      });
+    } catch (err) {
+      // race: config ถูกลบระหว่าง findOne กับ transaction (rare) — pattern
+      // เดียวกับ updateStatus()/update()/remove()
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Stage 5 (#26 ข้อ 9) — ดึงประวัติเวอร์ชันทั้งหมดของ Config หนึ่งตัว เรียง
+   * `versionNumber` มาก→น้อย (ล่าสุดก่อน) — `findOne` ก่อนเพื่อแยก 404
+   * "ไม่พบ config" ออกจาก "config มีจริงแต่ยังไม่เคยถูก approve" (คืน `[]`)
+   */
+  async listVersions(configId: string): Promise<ConfigVersion[]> {
+    await this.findOne(configId);
+    return this.prisma.configVersion.findMany({
+      where: { configId },
+      orderBy: { versionNumber: 'desc' },
+    });
+  }
+
+  /**
+   * Stage 5 (#26 ข้อ 9) — ดึง snapshot เวอร์ชันเดียวตาม `versionNumber` —
+   * Phase 4 Rollback (#28) ใช้เมธอดนี้ดึง `fields` ไปสร้าง Config ใหม่
+   */
+  async getVersion(
+    configId: string,
+    versionNumber: number,
+  ): Promise<ConfigVersion> {
+    await this.findOne(configId);
+    const version = await this.prisma.configVersion.findUnique({
+      where: { configId_versionNumber: { configId, versionNumber } },
+    });
+    if (!version) {
+      throw new NotFoundException(
+        `ไม่พบเวอร์ชัน ${versionNumber} ของ Config id ${configId}`,
+      );
+    }
+    return version;
   }
 
   /**
@@ -336,10 +413,7 @@ export class ConfigService {
     await this.validateFields(
       dto.deviceModel ?? existing.deviceModel,
       dto.protocol ?? existing.protocol,
-      (dto.fields ?? (existing.fields as Record<string, unknown>)) as Record<
-        string,
-        unknown
-      >,
+      dto.fields ?? (existing.fields as Record<string, unknown>),
     );
 
     // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน

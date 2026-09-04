@@ -19,6 +19,13 @@ type ConfigDelegateMock = {
   delete: jest.Mock;
 };
 
+type ConfigVersionDelegateMock = {
+  count: jest.Mock;
+  create: jest.Mock;
+  findMany: jest.Mock;
+  findUnique: jest.Mock;
+};
+
 const draftConfig: Config = {
   id: '11111111-1111-1111-1111-111111111111',
   deviceModel: 'GT06N',
@@ -64,6 +71,7 @@ function makeMulterFile(
 describe('ConfigService', () => {
   let service: ConfigService;
   let config: ConfigDelegateMock;
+  let configVersion: ConfigVersionDelegateMock;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
 
@@ -75,6 +83,12 @@ describe('ConfigService', () => {
       update: jest.fn(),
       delete: jest.fn(),
     };
+    configVersion = {
+      count: jest.fn().mockResolvedValue(0),
+      create: jest.fn().mockResolvedValue(undefined),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+    };
     deviceSimulator = { simulateConfig: jest.fn() };
     // default: ผ่าน validate เสมอ (test เดิมทั้งหมดไม่เกี่ยวกับ Semantic
     // Validation) — describe('create'/'update') ด้านล่างจะ override เฉพาะ
@@ -83,10 +97,21 @@ describe('ConfigService', () => {
       validateFields: jest.fn().mockResolvedValue(undefined),
     };
 
+    // $transaction (interactive form) — เรียก callback ด้วย tx ที่ใช้ delegate
+    // mock ตัวเดียวกับนอก transaction เพื่อให้ assertion เดิม (config.update
+    // ฯลฯ) ยังทำงาน และเทส approve เช็ค configVersion.create ได้
+    const prismaMock = {
+      config,
+      configVersion,
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
+        cb({ config, configVersion }),
+      ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConfigService,
-        { provide: PrismaService, useValue: { config } },
+        { provide: PrismaService, useValue: prismaMock },
         { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
         {
           provide: ConfigDefinitionService,
@@ -386,6 +411,53 @@ describe('ConfigService', () => {
       });
     });
 
+    it('Stage 5: เขียน ConfigVersion snapshot (versionNumber = prior + 1) ใน transaction เดียวกัน', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(2); // เคย approve มาแล้ว 2 ครั้ง
+
+      await service.approve(testingConfig.id, operation);
+
+      expect(configVersion.create).toHaveBeenCalledWith({
+        data: {
+          configId: testingConfig.id,
+          versionNumber: 3,
+          fields: testingConfig.fields,
+          deviceModel: testingConfig.deviceModel,
+          protocol: testingConfig.protocol,
+          approvedBy: operation.id,
+        },
+      });
+    });
+
+    it('Stage 5: config ที่ approve ครั้งแรก -> versionNumber = 1', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(0);
+
+      await service.approve(testingConfig.id, operation);
+
+      expect(configVersion.create).toHaveBeenCalledWith({
+        data: {
+          configId: testingConfig.id,
+          versionNumber: 1,
+          fields: testingConfig.fields,
+          deviceModel: testingConfig.deviceModel,
+          protocol: testingConfig.protocol,
+          approvedBy: operation.id,
+        },
+      });
+    });
+
+    it('Stage 5: precondition ไม่ผ่าน -> ไม่แตะ ConfigVersion เลย', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+
+      await expect(service.approve(draftConfig.id, operation)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(configVersion.create).not.toHaveBeenCalled();
+    });
+
     it('status draft (ยังไม่ผ่าน decide ของ SW) -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
@@ -469,6 +541,96 @@ describe('ConfigService', () => {
       await expect(service.reject(testingConfig.id)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('listVersions (Stage 5, #26 ข้อ 9)', () => {
+    const v1 = {
+      id: 'v-1',
+      configId: draftConfig.id,
+      versionNumber: 1,
+      fields: { APN1: 'internet' },
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      approvedBy: 'op-1',
+      approvedAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+
+    it('config มีจริง -> คืน versions เรียง versionNumber มาก→น้อย', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configVersion.findMany.mockResolvedValue([v1]);
+
+      const result = await service.listVersions(draftConfig.id);
+
+      expect(result).toEqual([v1]);
+      expect(configVersion.findMany).toHaveBeenCalledWith({
+        where: { configId: draftConfig.id },
+        orderBy: { versionNumber: 'desc' },
+      });
+    });
+
+    it('config มีจริงแต่ยังไม่เคย approve -> คืน []', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      configVersion.findMany.mockResolvedValue([]);
+
+      await expect(service.listVersions(draftConfig.id)).resolves.toEqual([]);
+    });
+
+    it('ไม่พบ config -> NotFoundException (ไม่ query versions)', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.listVersions('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(configVersion.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getVersion (Stage 5, #26 ข้อ 9)', () => {
+    const v2 = {
+      id: 'v-2',
+      configId: draftConfig.id,
+      versionNumber: 2,
+      fields: { APN1: 'internet2' },
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      approvedBy: 'op-1',
+      approvedAt: new Date('2026-03-01T00:00:00.000Z'),
+    };
+
+    it('เจอเวอร์ชัน -> คืน snapshot', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configVersion.findUnique.mockResolvedValue(v2);
+
+      const result = await service.getVersion(draftConfig.id, 2);
+
+      expect(result).toEqual(v2);
+      expect(configVersion.findUnique).toHaveBeenCalledWith({
+        where: {
+          configId_versionNumber: {
+            configId: draftConfig.id,
+            versionNumber: 2,
+          },
+        },
+      });
+    });
+
+    it('config เจอ แต่ไม่มีเวอร์ชันนั้น -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configVersion.findUnique.mockResolvedValue(null);
+
+      await expect(service.getVersion(draftConfig.id, 99)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('ไม่พบ config -> NotFoundException (ไม่ query version)', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.getVersion('missing-id', 1)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(configVersion.findUnique).not.toHaveBeenCalled();
     });
   });
 
