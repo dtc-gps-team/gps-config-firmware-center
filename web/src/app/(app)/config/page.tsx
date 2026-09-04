@@ -14,12 +14,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateConfigButton } from "./create-config-button";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_CONFIGS, CONFIG_STATUS_TONE, pillClass } from "@/lib/demo-data";
 
 export const metadata = {
   title: "Config Editor | GPS Config Center",
 };
 
-/** Scaffold — รอต่อ GET/POST /config (โมดูล Config CRUD คือ #26) */
+/** Scaffold — รอต่อ GET/POST /config (โมดูล Config CRUD คือ #26)
+ *  ตารางแสดง DEMO_CONFIGS (ดู web/src/lib/demo-data.ts) แทนแถวว่างสำหรับ demo */
 export default function ConfigPage() {
   return (
     <div className="flex flex-col gap-6">
@@ -38,7 +41,8 @@ export default function ConfigPage() {
           <CardTitle>รายการ Config</CardTitle>
           <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /config (#26)" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -49,14 +53,24 @@ export default function ConfigPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API (#26)
-                </TableCell>
-              </TableRow>
+              {DEMO_CONFIGS.map((config) => (
+                <TableRow key={config.id}>
+                  <TableCell className="font-medium">{config.name}</TableCell>
+                  <TableCell>
+                    {config.deviceModel}/{config.protocol}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={pillClass(CONFIG_STATUS_TONE[config.status])}
+                    >
+                      {config.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {config.updatedAt}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
