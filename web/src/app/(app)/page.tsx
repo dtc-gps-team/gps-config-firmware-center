@@ -23,7 +23,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          ภาพรวมระบบ — ทุก Role เข้าถึงได้ (Read-only ทั้งหมด)
+          ภาพรวมระบบ · ทุก Role เข้าถึงได้ (Read-only ทั้งหมด)
         </p>
         <DemoNote endpoint="หลาย endpoint (config / campaign / incident)" />
       </div>
