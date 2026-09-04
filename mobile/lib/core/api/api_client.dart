@@ -93,6 +93,28 @@ class ApiClient {
     );
   }
 
+  /// `GET /notifications` — always scoped to the caller by the backend (every
+  /// role). Pass `unread: true` for `?unread=true`.
+  Future<List<AppNotification>> listNotifications({bool? unread}) async {
+    return _wrapList(
+      () => _dio.get<List<dynamic>>(
+        '/notifications',
+        queryParameters: unread == null ? null : {'unread': unread},
+      ),
+      AppNotification.fromJson,
+    );
+  }
+
+  /// `PATCH /notifications/{notificationId}/read` — marks it read (`read=true`).
+  Future<AppNotification> markNotificationRead(String notificationId) async {
+    return _wrap(
+      () => _dio.patch<Map<String, dynamic>>(
+        '/notifications/$notificationId/read',
+      ),
+      AppNotification.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/status`
   Future<DeviceStatus> getDeviceStatus(String deviceId) async {
     return _wrap(

@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
+import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
 
@@ -82,18 +83,7 @@ class HomePage extends ConsumerWidget {
         elevation: 0,
         title: const Text('หน้าหลัก'),
         actions: [
-          IconButton(
-            // TODO: mock — ยังไม่มี notification module ฝั่ง Mobile จุดแดงเป็น
-            // placeholder ไม่ผูกกับข้อมูลจริง
-            key: const Key('home_notifications'),
-            tooltip: 'การแจ้งเตือน',
-            onPressed: () => _comingSoon(context),
-            icon: const Badge(
-              smallSize: 8,
-              backgroundColor: Color(0xFFE53935),
-              child: Icon(Icons.notifications_outlined),
-            ),
-          ),
+          const _NotificationBell(),
           IconButton(
             key: const Key('home_logout'),
             icon: const Icon(Icons.logout),
@@ -162,6 +152,31 @@ class HomePage extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Home app-bar bell. Badge shows the real unread count from
+/// `GET /notifications?unread=true` (hidden when 0); tapping opens the list.
+class _NotificationBell extends ConsumerWidget {
+  const _NotificationBell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(unreadNotificationCountProvider).valueOrNull ?? 0;
+    const bellIcon = Icon(Icons.notifications_outlined);
+
+    return IconButton(
+      key: const Key('home_notifications'),
+      tooltip: 'การแจ้งเตือน',
+      onPressed: () => context.push(AppRoutes.notifications),
+      icon: unread > 0
+          ? Badge(
+              label: Text(unread > 99 ? '99+' : '$unread'),
+              backgroundColor: const Color(0xFFE53935),
+              child: bellIcon,
+            )
+          : bellIcon,
     );
   }
 }

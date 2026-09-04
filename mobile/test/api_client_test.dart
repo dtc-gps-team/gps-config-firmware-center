@@ -285,4 +285,49 @@ void main() {
       );
     });
   });
+
+  group('notification endpoints', () {
+    Map<String, dynamic> notiJson({String id = 'n1', bool read = false}) => {
+      'id': id,
+      'userId': 'u1',
+      'type': 'task_assigned',
+      'payload': const <String, dynamic>{},
+      'read': read,
+      'createdAt': '2026-09-04T08:30:00.000Z',
+    };
+
+    test(
+      'listNotifications() -> GET /notifications, ไม่มี query unread',
+      () async {
+        final (:client, :adapter) = _clientReturning([notiJson()]);
+
+        final items = await client.listNotifications();
+
+        expect(adapter.lastRequest?.method, 'GET');
+        expect(adapter.lastRequest?.path, '/notifications');
+        expect(adapter.lastRequest?.queryParameters, isEmpty);
+        expect(items.single.type, NotificationType.taskAssigned);
+      },
+    );
+
+    test('listNotifications(unread: true) -> ?unread=true', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+
+      await client.listNotifications(unread: true);
+
+      expect(adapter.lastRequest?.queryParameters, {'unread': true});
+    });
+
+    test('markNotificationRead -> PATCH /notifications/{id}/read', () async {
+      final (:client, :adapter) = _clientReturning(
+        notiJson(id: 'abc', read: true),
+      );
+
+      final n = await client.markNotificationRead('abc');
+
+      expect(adapter.lastRequest?.method, 'PATCH');
+      expect(adapter.lastRequest?.path, '/notifications/abc/read');
+      expect(n.read, isTrue);
+    });
+  });
 }
