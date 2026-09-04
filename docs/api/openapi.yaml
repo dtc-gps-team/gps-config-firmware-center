@@ -979,6 +979,12 @@ components:
             type: string
         required:
           type: boolean
+        unknownSpec:
+          type: boolean
+          default: false
+          description: >-
+            field ที่รู้ว่ามีอยู่ในระบบเดิม แต่ยังไม่มี spec ยืนยันชัดเจน
+            (รู้แค่ชื่อ + dataType) — ปล่อยว่างได้ default false
         description:
           type: string
         supportedModels:

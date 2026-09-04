@@ -190,14 +190,43 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
 
       const body = res.body as {
         fieldName: string;
+        unknownSpec: boolean;
         supportedModels: { deviceModel: string; protocol: string }[];
       };
       expect(body.fieldName).toBe('MTYP');
+      // ไม่ได้ส่ง unknownSpec มา -> default false
+      expect(body.unknownSpec).toBe(false);
       expect(body.supportedModels).toHaveLength(1);
       expect(body.supportedModels[0]).toMatchObject({
         deviceModel: 'GT06N',
         protocol: 'TCP',
       });
+    });
+
+    it('SW สร้าง field พร้อม unknownSpec: true -> 201 เก็บ flag ตามที่ส่ง', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Create, 'config-definition');
+      const token = tokenFor(swUser.id, 'SW');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, fieldName: 'RS232', unknownSpec: true })
+        .expect(201);
+
+      expect((res.body as { unknownSpec: boolean }).unknownSpec).toBe(true);
+    });
+
+    it('unknownSpec ไม่ใช่ boolean -> 400 (IsBoolean ที่ DTO)', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Create, 'config-definition');
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, unknownSpec: 'yes' })
+        .expect(400);
     });
 
     it('fieldName ซ้ำ -> 409', async () => {
