@@ -122,6 +122,28 @@ describe('ConfigDefinitionService', () => {
           dataType: 'string',
           allowedValues: [],
           required: true,
+          unknownSpec: false,
+          description: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ส่ง unknownSpec: true มา -> เขียนลง DB ตามนั้น (ไม่ default เป็น false)', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({ ...dto, unknownSpec: true });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: true,
           description: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
