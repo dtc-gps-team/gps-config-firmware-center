@@ -1,9 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -13,12 +8,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UploadFirmwareButton } from "./upload-firmware-button";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_FIRMWARE } from "@/lib/demo-data";
 
 export const metadata = {
   title: "Firmware Repository | GPS Config Center",
 };
 
-/** Scaffold — รอต่อ endpoint firmware (ดู docs/api/openapi.yaml) */
+/** Scaffold — รอต่อ endpoint firmware · ตารางแสดง DEMO_FIRMWARE สำหรับ demo */
 export default function FirmwarePage() {
   return (
     <div className="flex flex-col gap-6">
@@ -36,7 +33,8 @@ export default function FirmwarePage() {
         <CardHeader>
           <CardTitle>รายการ Firmware</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /firmware" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -46,14 +44,17 @@ export default function FirmwarePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-              </TableRow>
+              {DEMO_FIRMWARE.map((fw) => (
+                <TableRow key={fw.version}>
+                  <TableCell className="font-mono text-sm">
+                    {fw.version}
+                  </TableCell>
+                  <TableCell>{fw.models}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {fw.uploadedAt}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CreateTaskButton } from "./create-task-button";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_TASKS, TASK_STATUS_TONE, pillClass } from "@/lib/demo-data";
 
 export const metadata = {
   title: "Task Management | GPS Config Center",
@@ -44,7 +46,8 @@ export default function TasksPage() {
             Operation เห็นทุก Task — ST/OT เห็นเฉพาะงานที่ตัวเองถูกมอบหมาย
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          <DemoNote endpoint="GET /tasks" />
           <Table>
             <TableHeader>
               <TableRow>
@@ -55,14 +58,22 @@ export default function TasksPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-sm text-muted-foreground"
-                >
-                  ยังไม่มีข้อมูล — รอต่อ API
-                </TableCell>
-              </TableRow>
+              {DEMO_TASKS.map((task) => (
+                <TableRow key={task.id}>
+                  <TableCell className="font-medium">{task.title}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {task.assignee}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {task.device}
+                  </TableCell>
+                  <TableCell>
+                    <span className={pillClass(TASK_STATUS_TONE[task.status])}>
+                      {task.status}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

@@ -17,6 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_AUDIT } from "@/lib/demo-data";
 
 /**
  * เนื้อหาจริงของหน้า Audit Log — แยกเป็น client component ต่างหากจาก
@@ -39,7 +41,8 @@ export function AuditLogView() {
             <CardTitle>ประวัติการทำงาน</CardTitle>
             <CardDescription>เรียงจากล่าสุด</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
+            <DemoNote endpoint="GET /audit-logs (ยังไม่มีใน spec)" />
             <Table>
               <TableHeader>
                 <TableRow>
@@ -50,14 +53,18 @@ export function AuditLogView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="text-center text-sm text-muted-foreground"
-                  >
-                    ยังไม่มีข้อมูล — รอต่อ API
-                  </TableCell>
-                </TableRow>
+                {DEMO_AUDIT.map((entry, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {entry.time}
+                    </TableCell>
+                    <TableCell>{entry.actor}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {entry.action}
+                    </TableCell>
+                    <TableCell>{entry.detail}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </CardContent>

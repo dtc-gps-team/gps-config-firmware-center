@@ -5,31 +5,31 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
+import { DemoNote } from "@/components/demo/demo-note";
+import {
+  DEMO_DASHBOARD_SUMMARY,
+  DEMO_DASHBOARD_ACTIVITY,
+} from "@/lib/demo-data";
 
 export const metadata = {
   title: "Dashboard | GPS Config Center",
 };
 
-const SUMMARY_CARDS = [
-  { label: "อุปกรณ์ทั้งหมด", value: "—" },
-  { label: "Config รออนุมัติ", value: "—" },
-  { label: "Campaign กำลังทำงาน", value: "—" },
-  { label: "Incident ที่ยังไม่ปิด", value: "—" },
-];
-
-/** Scaffold — ยังไม่ต่อ API จริง เลขสรุปเป็น placeholder ทั้งหมด */
+/** Scaffold — ยังไม่ต่อ API จริง เลขสรุป + กิจกรรมเป็น DEMO_* สำหรับ demo
+ *  (ดู web/src/lib/demo-data.ts) */
 export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
           ภาพรวมระบบ — ทุก Role เข้าถึงได้ (Read-only ทั้งหมด)
         </p>
+        <DemoNote endpoint="หลาย endpoint (config / campaign / incident)" />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {SUMMARY_CARDS.map((card) => (
+        {DEMO_DASHBOARD_SUMMARY.map((card) => (
           <Card key={card.label}>
             <CardHeader>
               <CardDescription>{card.label}</CardDescription>
@@ -42,10 +42,19 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>กิจกรรมล่าสุด</CardTitle>
-          <CardDescription>รอต่อ API จริง</CardDescription>
+          <CardDescription>เรียงจากล่าสุด</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          ยังไม่มีข้อมูล
+        <CardContent>
+          <ul className="flex flex-col gap-2 text-sm">
+            {DEMO_DASHBOARD_ACTIVITY.map((item, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">
+                  {item.time}
+                </span>
+                <span>{item.text}</span>
+              </li>
+            ))}
+          </ul>
         </CardContent>
       </Card>
     </div>

@@ -18,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoNote } from "@/components/demo/demo-note";
+import { DEMO_USERS } from "@/lib/demo-data";
 
 /**
  * เนื้อหาจริงของหน้า User / Role Management — แยกเป็น client component
@@ -43,7 +45,8 @@ export function UserManagementView() {
             <CardTitle>รายชื่อผู้ใช้</CardTitle>
             <CardDescription>ทั้งหมดในระบบ</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
+            <DemoNote endpoint="GET /users (ยังไม่มีใน spec)" />
             <Table>
               <TableHeader>
                 <TableRow>
@@ -53,14 +56,15 @@ export function UserManagementView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="text-center text-sm text-muted-foreground"
-                  >
-                    ยังไม่มีข้อมูล — รอต่อ API
-                  </TableCell>
-                </TableRow>
+                {DEMO_USERS.map((user) => (
+                  <TableRow key={user.username}>
+                    <TableCell className="font-mono text-sm">
+                      {user.username}
+                    </TableCell>
+                    <TableCell>{user.fullName}</TableCell>
+                    <TableCell>{user.role}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </CardContent>
