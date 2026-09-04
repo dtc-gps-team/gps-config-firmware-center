@@ -1,8 +1,9 @@
-# 04 — Phase 1-A: Config Workflow (Stage 1-3)
+# 04 — Phase 1-A: Config Workflow
 
-> เอกสารสรุป workflow ของโมดูล Config (issue #26) เฉพาะ Stage ที่ทำเสร็จแล้ว
-> (Stage 1: CRUD, Stage 2: Import จากไฟล์ JSON, Stage 3: Simulate) — Stage 4
-> (SW ปักผลตัดสินใจ/Approve/Reject) จะเพิ่มเข้ามาต่อในเอกสารนี้เมื่อเริ่มทำจริง
+> เอกสารสรุป workflow ของโมดูล Config (issue #26) — Stage 1: CRUD, Stage 2:
+> Import จากไฟล์ JSON, Stage 3: Simulate, Stage 4: SW decide + Operation
+> approve/reject, Stage 5: Version History (เอกสารนี้ครอบ Stage 2/3/5 ละเอียด —
+> Stage 1/4 ดูที่ `03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 1, 7-8)
 
 ## ภาพรวม
 
@@ -162,6 +163,45 @@ field `validationLevel` แยก:
 3. **กฎ "Timeout/Interval ห้ามติดลบ"** ยังอยู่ใน `MockDeviceSimulator`
    (เดาจากชื่อ field) — Phase 1 ข้อ 3 อยากให้ย้ายมา validation layer แต่รอ
    ข้อ 2 ก่อน
+
+## Stage 5: Version History (#26 ข้อ 9)
+
+เก็บประวัติทุกเวอร์ชันของ Config ที่ถูกอนุมัติ — เป็นฐานของ Rollback ใน Phase 4
+(#28) ที่ให้ Operation "ย้อนกลับไปเวอร์ชันก่อนหน้า" ได้
+
+### เขียน snapshot ตอนไหน
+
+`ConfigService.approve()` — ทุกครั้งที่ Operation กดอนุมัติ เขียน `ConfigVersion`
+1 แถว (append-only) **ใน `$transaction` เดียวกับการเปลี่ยน status → `approved`**
+เพื่อไม่ให้ crash กลางคันเหลือ config `approved` ที่ไม่มี version
+
+- `versionNumber` = `count(ConfigVersion where configId) + 1` (running 1, 2, 3...)
+- `@@unique([configId, versionNumber])` เป็น backstop กัน 2 approve ชนกัน (ปกติ
+  precondition `status === testing` กันไว้อยู่แล้ว)
+- snapshot `fields`/`deviceModel`/`protocol` = ค่า ณ ตอนนั้น (config แก้ไม่ได้
+  หลังพ้น `draft` → คือค่าที่ SW simulate จริง)
+- `reject()` **ไม่เขียน** — config ที่ถูกปฏิเสธถือว่าไม่เคยผ่าน
+- **ยังไม่ snapshot ตอน `synced`** (Phase 2 config-sync-writer) — Phase 1 ทำแค่
+  ที่ `approved`
+
+### API
+
+| endpoint | operationId | คืน |
+|---|---|---|
+| `GET /config/{configId}/versions` | `listConfigVersions` | `ConfigVersion[]` เรียง `versionNumber` มาก→น้อย (ว่าง = ยังไม่เคย approve) |
+| `GET /config/{configId}/versions/{versionNumber}` | `getConfigVersion` | `ConfigVersion` เดียว (มี `fields` เต็ม — Phase 4 rollback ดึงอันนี้ไปสร้าง config ใหม่) |
+
+- `findOne(configId)` ก่อนเสมอ → แยก 404 "ไม่พบ config" ออกจาก "config มีจริงแต่
+  ไม่มีเวอร์ชันนั้น"
+- `versionNumber` ไม่ใช่จำนวนเต็ม → 400 (`ParseIntPipe`)
+
+### สิทธิ์ (RBAC)
+
+ใช้ `config` + `Read` **ตัวเดียวกับ `getConfig`** ไม่แยก resource ใหม่ — ต่างจาก
+`config-simulation`/`config-decision` ที่แยกเพื่อกัน Auditor/Admin: version history
+เป็นแค่ snapshot ของ `fields` ที่ทุก Role ซึ่ง Read config ได้เห็นอยู่แล้ว และ
+Auditor (compliance) **ต้อง** ดูประวัติได้ — SW/Operation/ST/OT/Auditor/Admin ได้
+หมดตาม seed
 
 ## อ้างอิง
 

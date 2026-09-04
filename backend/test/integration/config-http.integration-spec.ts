@@ -874,4 +874,129 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(404);
     });
   });
+
+  describe('GET /config/:id/versions + /versions/:n (Stage 5, #26 ข้อ 9)', () => {
+    /** สร้าง config สถานะ testing แล้วให้ Operation กด approve จริงผ่าน HTTP
+     * (เพื่อให้ ConfigVersion ถูกเขียนโดย service ไม่ใช่ fixture) คืน configId */
+    async function createApprovedConfig(): Promise<string> {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .expect(200);
+      return configRow.id;
+    }
+
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/config/22222222-2222-2222-2222-222222222222/versions')
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ config.Read -> 403', async () => {
+      const auditor = await makeUser(prisma, { role: 'Auditor' });
+      const configId = await createApprovedConfig();
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/config/${configId}/versions`)
+        .set('Authorization', `Bearer ${tokenFor(auditor.id, 'Auditor')}`)
+        .expect(403);
+    });
+
+    it('approve แล้ว -> GET /versions คืน 1 แถว (versionNumber 1) + GET /versions/1 คืน fields snapshot', async () => {
+      const configId = await createApprovedConfig();
+      const auditor = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read, 'config');
+      const token = tokenFor(auditor.id, 'Auditor');
+
+      const list = await request(app.getHttpServer())
+        .get(`/api/v1/config/${configId}/versions`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const versions = list.body as Array<Record<string, unknown>>;
+      expect(versions).toHaveLength(1);
+      expect(versions[0]).toMatchObject({
+        configId,
+        versionNumber: 1,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      });
+
+      const one = await request(app.getHttpServer())
+        .get(`/api/v1/config/${configId}/versions/1`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(one.body as Record<string, unknown>).toMatchObject({
+        versionNumber: 1,
+        fields: { APN1: 'internet' },
+      });
+    });
+
+    it('config มีจริงแต่ยังไม่เคย approve -> GET /versions คืน [] (200)', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const reader = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/config/${configRow.id}/versions`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .expect(200);
+
+      expect(res.body as unknown[]).toEqual([]);
+    });
+
+    it('ไม่เจอ configId -> 404', async () => {
+      const reader = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/config/22222222-2222-2222-2222-222222222222/versions')
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .expect(404);
+    });
+
+    it('versionNumber ไม่ใช่จำนวนเต็ม -> 400', async () => {
+      const configId = await createApprovedConfig();
+      const reader = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config');
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/config/${configId}/versions/abc`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .expect(400);
+    });
+
+    it('versionNumber ที่ไม่มี -> 404', async () => {
+      const configId = await createApprovedConfig();
+      const reader = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config');
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/config/${configId}/versions/99`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .expect(404);
+    });
+  });
 });

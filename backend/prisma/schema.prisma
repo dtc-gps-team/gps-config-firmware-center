@@ -265,17 +265,27 @@ model Config {
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve
+// (Phase 1 ข้อ 9 / #26) — ใช้เป็นฐานของ Rollback ใน Phase 4 (#28)
 model ConfigVersion {
-  id          String   @id @default(uuid())
-  configId    String
-  fields      Json
-  deviceModel String
-  protocol    String
-  approvedBy  String
-  approvedAt  DateTime @default(now())
+  id            String   @id @default(uuid())
+  configId      String
+  // running number ต่อ config (1, 2, 3...) — ให้ UI/rollback อ้าง "เวอร์ชัน N"
+  // ได้ตรงๆ ไม่ต้องพก UUID และ @@unique ด้านล่างเป็น backstop กัน approve ชนกัน
+  versionNumber Int
+  fields        Json
+  deviceModel   String
+  protocol      String
+  approvedBy    String
+  approvedAt    DateTime @default(now())
 
-  config   Config @relation(fields: [configId], references: [id])
+  // onDelete: Restrict ประกาศเจตนาให้ชัด — config ที่มี version จะสถานะ
+  // approved/synced เสมอ (กลับไป draft ไม่ได้หลัง approve) จึงไม่มีทางถูก
+  // ConfigService.remove() ลบอยู่แล้ว (เช็ค status === 'draft')
+  config   Config @relation(fields: [configId], references: [id], onDelete: Restrict)
   approver User   @relation("ConfigVersionApprovedBy", fields: [approvedBy], references: [id])
+
+  @@unique([configId, versionNumber])
+  @@index([configId])
 }
 
 // เพิ่มใหม่: "Config Definition Lookup" เก็บนิยามฟิลด์ Config (~262 ฟิลด์
