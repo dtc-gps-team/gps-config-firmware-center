@@ -14,8 +14,9 @@
  */
 
 /* ---------------------------------------------------------------- */
-/*  status pill — className ตาม Tailwind default (ไม่ผูกกับธีมที่ยัง     */
-/*  ไม่อนุมัติ) ใช้ร่วมกันทุกหน้า                                        */
+/*  status pill — className ตาม Tailwind default palette (แยกจาก theme   */
+/*  token ใน globals.css โดยตั้งใจ: signal color ของ status ไม่ควรผูกกับ  */
+/*  --primary/--accent) ใช้ร่วมกันทุกหน้า                                */
 /* ---------------------------------------------------------------- */
 
 type PillTone = "neutral" | "info" | "progress" | "success" | "danger";
