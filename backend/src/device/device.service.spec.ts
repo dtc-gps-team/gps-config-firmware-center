@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config, Device } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEVICE_SIMULATOR, DeviceSimulator } from '../config/device-simulator';
 import { CONFIG_APPLIER, ConfigApplier } from './config-applier';
 import {
   DEVICE_CONNECTION_TESTER,
@@ -55,18 +56,28 @@ const applyResult = {
   appliedAt: '2026-09-04T10:00:00.000Z',
 };
 
+const simPass = { passed: true, details: ['config ok (mock)'] };
+const connPass = {
+  passed: true,
+  signalStrength: -65,
+  details: ['สัญญาณ ok (mock)'],
+  testedAt: '2026-09-07T10:00:00.000Z',
+};
+
 describe('DeviceService', () => {
   let service: DeviceService;
   let device: { findUnique: jest.Mock };
   let config: { findUnique: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
+  let deviceSimulator: jest.Mocked<DeviceSimulator>;
 
   beforeEach(async () => {
     device = { findUnique: jest.fn() };
     config = { findUnique: jest.fn() };
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
+    deviceSimulator = { simulateConfig: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -74,6 +85,7 @@ describe('DeviceService', () => {
         { provide: PrismaService, useValue: { device, config } },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
+        { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
       ],
     }).compile();
 
@@ -230,6 +242,130 @@ describe('DeviceService', () => {
         service.applyConfig('DTC-0001', approvedConfig.id),
       ).rejects.toThrow(ConflictException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('simulateConfig', () => {
+    it('device installed + config approved + รุ่นตรง -> รวม 3 check, passed:true', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      const result = await service.simulateConfig(
+        'DTC-0001',
+        approvedConfig.id,
+      );
+
+      expect(result.passed).toBe(true);
+      expect(result.configCheck).toEqual(simPass);
+      expect(result.compatibilityCheck.passed).toBe(true);
+      expect(result.connectionCheck).toEqual(connPass);
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
+      expect(connectionTester.testConnection).toHaveBeenCalledWith({
+        deviceId: 'DTC-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+      });
+    });
+
+    it('config synced ก็เช็คได้', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        status: 'synced',
+      });
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).resolves.toMatchObject({ passed: true });
+    });
+
+    it('รุ่นไม่ตรง -> ไม่ throw, compatibilityCheck.passed:false + passed:false แต่ยังรัน config/connection check', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deviceModel: 'GT06L',
+      });
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      const result = await service.simulateConfig(
+        'DTC-0001',
+        approvedConfig.id,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.compatibilityCheck.passed).toBe(false);
+      expect(result.configCheck.passed).toBe(true);
+      expect(result.connectionCheck.passed).toBe(true);
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalled();
+      expect(connectionTester.testConnection).toHaveBeenCalled();
+    });
+
+    it('configCheck ไม่ผ่าน -> passed:false', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceSimulator.simulateConfig.mockResolvedValue({
+        passed: false,
+        details: ['ไม่มี field'],
+      });
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      const result = await service.simulateConfig(
+        'DTC-0001',
+        approvedConfig.id,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.compatibilityCheck.passed).toBe(true);
+    });
+
+    it('device ไม่พบ -> NotFoundException', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.simulateConfig('NOPE', approvedConfig.id),
+      ).rejects.toThrow(NotFoundException);
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('device registered -> ConflictException ไม่ query config', async () => {
+      device.findUnique.mockResolvedValue(registeredDevice);
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).rejects.toThrow(ConflictException);
+      expect(config.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('config ไม่พบ -> NotFoundException', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).rejects.toThrow(NotFoundException);
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('config draft -> ConflictException (ยังไม่อนุมัติ)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        status: 'draft',
+      });
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).rejects.toThrow(ConflictException);
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
     });
   });
 });

@@ -327,4 +327,135 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(Number.isNaN(Date.parse(body.appliedAt))).toBe(false);
     });
   });
+
+  describe('POST /devices/:deviceId/simulate-config', () => {
+    async function stToken(): Promise<string> {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-connection-test');
+      return tokenFor(stUser.id, 'ST');
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('SC-401', 'installed');
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-401/simulate-config')
+        .send({ configId: '00000000-0000-0000-0000-000000000000' })
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ device-connection-test (SW) -> 403', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config-simulation');
+      await makeDevice('SC-403', 'installed');
+      const token = tokenFor(swUser.id, 'SW');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-403/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: '00000000-0000-0000-0000-000000000000' })
+        .expect(403);
+    });
+
+    it('configId ไม่ใช่ uuid -> 400', async () => {
+      await makeDevice('SC-400', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-400/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: 'not-a-uuid' })
+        .expect(400);
+    });
+
+    it('deviceId ไม่พบ -> 404', async () => {
+      const token = await stToken();
+      const configId = await makeConfig('approved');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/NOPE/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(404);
+    });
+
+    it('configId ไม่พบ -> 404', async () => {
+      await makeDevice('SC-404C', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-404C/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })
+        .expect(404);
+    });
+
+    it('Device ยัง registered -> 409', async () => {
+      await makeDevice('SC-409D', 'registered');
+      const token = await stToken();
+      const configId = await makeConfig('approved');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-409D/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(409);
+    });
+
+    it('Config ยัง draft -> 409', async () => {
+      await makeDevice('SC-409C', 'installed');
+      const token = await stToken();
+      const configId = await makeConfig('draft');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-409C/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(409);
+    });
+
+    it('ST + installed + approved + รุ่นตรง -> 200 passed:true (3 check ครบ)', async () => {
+      await makeDevice('SC-200', 'installed');
+      const token = await stToken();
+      const configId = await makeConfig('approved');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-200/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      const body = res.body as {
+        passed: boolean;
+        configCheck: { passed: boolean; details: string[] };
+        compatibilityCheck: { passed: boolean; details: string[] };
+        connectionCheck: { passed: boolean; signalStrength: number };
+      };
+      expect(body.passed).toBe(true);
+      expect(body.configCheck.passed).toBe(true);
+      expect(body.compatibilityCheck.passed).toBe(true);
+      expect(body.connectionCheck.passed).toBe(true);
+      expect(typeof body.connectionCheck.signalStrength).toBe('number');
+    });
+
+    it('Config คนละรุ่นกับ Device -> 200 passed:false, compatibilityCheck.passed:false (ไม่ใช่ 409)', async () => {
+      await makeDevice('SC-200M', 'installed', 'GT06N');
+      const token = await stToken();
+      const configId = await makeConfig('approved', 'GT06L');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-200M/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      const body = res.body as {
+        passed: boolean;
+        compatibilityCheck: { passed: boolean };
+        connectionCheck: { passed: boolean };
+      };
+      expect(body.passed).toBe(false);
+      expect(body.compatibilityCheck.passed).toBe(false);
+      expect(body.connectionCheck.passed).toBe(true);
+    });
+  });
 });

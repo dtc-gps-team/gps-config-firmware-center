@@ -13,10 +13,18 @@ import {
   type ConfigApplyResult,
 } from './config-applier';
 import {
+  DEVICE_SIMULATOR,
+  type DeviceSimulator,
+} from '../config/device-simulator';
+import {
   DEVICE_CONNECTION_TESTER,
   type DeviceConnectionTester,
   type DeviceConnectionTestResult,
 } from './device-connection-tester';
+import type {
+  CompatibilityCheckResult,
+  DeviceSimulateConfigResult,
+} from './simulate-config-result';
 
 /** สถานะเดียวที่ทดสอบสัญญาณ / ใส่ Config ได้ — อุปกรณ์ต้องติดตั้งจริงแล้ว
  * อุปกรณ์ที่ยัง `registered` (ยังไม่ติดตั้ง) หรือ `decommissioned` (ปลดระวางแล้ว)
@@ -31,6 +39,8 @@ export class DeviceService {
     private readonly connectionTester: DeviceConnectionTester,
     @Inject(CONFIG_APPLIER)
     private readonly configApplier: ConfigApplier,
+    @Inject(DEVICE_SIMULATOR)
+    private readonly deviceSimulator: DeviceSimulator,
   ) {}
 
   /**
@@ -121,5 +131,94 @@ export class DeviceService {
       protocol: device.protocol,
       fields: config.fields as Record<string, unknown>,
     });
+  }
+
+  /**
+   * เช็คว่า Config ที่อนุมัติแล้ว "พร้อมอัพโหลดเข้าอุปกรณ์เครื่องนี้" ไหม —
+   * dry-run ก่อน `applyConfig` จริง สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile)
+   * **ไม่ persist / ไม่แตะ state ใดๆ** ทั้ง Device และ Config
+   *
+   * รวม 3 ส่วนเป็นผลเดียว:
+   * 1. `configCheck` — ตัว Config เองพร้อมไหม (reuse `DeviceSimulator` ตัวเดียว
+   *    กับ `POST /config/{id}/simulate`)
+   * 2. `compatibilityCheck` — deviceModel/protocol ของ Config ตรงกับอุปกรณ์ไหม
+   * 3. `connectionCheck` — สัญญาณกล่องเครื่องนั้น (reuse `DeviceConnectionTester`
+   *    ตัวเดียวกับ `POST /devices/{id}/test-connection`)
+   *
+   * เงื่อนไข 4xx (mirror `applyConfig` เฉพาะส่วนที่เช็คไม่ได้เลย):
+   * - ไม่พบ Device / Config → 404
+   * - Device ยังไม่ `installed` → 409
+   * - Config ยังไม่ `approved`/`synced` → 409
+   *
+   * **ต่างจาก `applyConfig`:** deviceModel/protocol mismatch **ไม่ใช่ 409** —
+   * endpoint นี้เป็น readiness check จึง report เป็น `compatibilityCheck.passed:
+   * false` ใน 200 ให้ช่างเห็นว่าอะไรไม่ตรง (ดู PR description — รอ B ยืนยัน)
+   */
+  async simulateConfig(
+    deviceId: string,
+    configId: string,
+  ): Promise<DeviceSimulateConfigResult> {
+    const device = await this.findByDeviceId(deviceId);
+
+    if (device.status !== TESTABLE_DEVICE_STATUS) {
+      throw new ConflictException(
+        `Device สถานะปัจจุบัน (${device.status}) ยังเช็คความพร้อมไม่ได้ — ต้องเป็น ${TESTABLE_DEVICE_STATUS} (ติดตั้งจริงแล้ว) เท่านั้น`,
+      );
+    }
+
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+    });
+    if (!config) {
+      throw new NotFoundException(`ไม่พบ Config id ${configId}`);
+    }
+    if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
+      throw new ConflictException(
+        `Config สถานะปัจจุบัน (${config.status}) ยังเช็คความพร้อมเพื่ออัพโหลดหน้างานไม่ได้ — ต้องผ่านการอนุมัติ (${APPLICABLE_CONFIG_STATUSES.join('/')}) ก่อน`,
+      );
+    }
+
+    const compatible =
+      config.deviceModel === device.deviceModel &&
+      config.protocol === device.protocol;
+    const compatibilityCheck: CompatibilityCheckResult = compatible
+      ? {
+          passed: true,
+          details: [
+            `Config (${config.deviceModel}/${config.protocol}) ตรงกับอุปกรณ์ ${device.deviceId}`,
+          ],
+        }
+      : {
+          passed: false,
+          details: [
+            `Config นี้เป็นของ ${config.deviceModel}/${config.protocol} ไม่ตรงกับอุปกรณ์ ${device.deviceModel}/${device.protocol}`,
+          ],
+        };
+
+    // configCheck + connectionCheck รันเสมอ แม้ compatibilityCheck ไม่ผ่าน —
+    // ช่างจะได้เห็นภาพรวมครบในครั้งเดียว (configCheck ตรวจตัว Config เอง,
+    // connectionCheck ตรวจสัญญาณกล่อง ทั้งคู่ไม่ขึ้นกับผล compat)
+    const [configCheck, connectionCheck] = await Promise.all([
+      this.deviceSimulator.simulateConfig({
+        deviceModel: config.deviceModel,
+        protocol: config.protocol,
+        fields: config.fields as Record<string, unknown>,
+      }),
+      this.connectionTester.testConnection({
+        deviceId: device.deviceId,
+        deviceModel: device.deviceModel,
+        protocol: device.protocol,
+      }),
+    ]);
+
+    return {
+      passed:
+        configCheck.passed &&
+        compatibilityCheck.passed &&
+        connectionCheck.passed,
+      configCheck,
+      compatibilityCheck,
+      connectionCheck,
+    };
   }
 }
