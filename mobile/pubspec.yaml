@@ -44,6 +44,10 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  # Only for test/token_store_test.dart + test/auth_controller_test.dart —
+  # both fake FlutterSecureStoragePlatform.instance to exercise
+  # SecureSessionProfileStore without a real device keystore.
+  flutter_secure_storage_platform_interface: ^2.0.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

@@ -174,10 +174,34 @@ class ApiClient {
   static ApiException _toApiException(DioException e) => ApiException(
     _messageFromResponse(e.response) ??
         e.response?.statusMessage ??
-        e.message ??
-        'Network error',
+        _transportErrorMessage(e.type) ??
+        'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
     statusCode: e.response?.statusCode,
   );
+
+  /// Thai, user-facing text for transport-level failures where there is no
+  /// HTTP response to read a message from (backend unreachable, timed out,
+  /// etc). `DioException.message` for these is a raw diagnostic string aimed
+  /// at developers/logs (e.g. "The connection errored: Connection refused
+  /// This indicates an error which most likely cannot be solved by the
+  /// library."), not something to show a field technician — every page that
+  /// falls through to `ApiException.message` (task detail, task list,
+  /// notifications, ...) was leaking that raw string before this existed.
+  static String? _transportErrorMessage(DioExceptionType type) {
+    switch (type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
+      case DioExceptionType.connectionError:
+        return 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง';
+      case DioExceptionType.badCertificate:
+      case DioExceptionType.badResponse:
+      case DioExceptionType.cancel:
+      case DioExceptionType.unknown:
+        return null;
+    }
+  }
 
   /// Prefer the backend's JSON `message` field (localized, user-facing text)
   /// over the raw HTTP reason phrase. Defensive: `response.data` is not always
