@@ -26,6 +26,7 @@ ProviderContainer _container(AuthRepository repository) {
     overrides: [
       authRepositoryProvider.overrideWithValue(repository),
       tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+      sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
     ],
   );
   addTearDown(container.dispose);

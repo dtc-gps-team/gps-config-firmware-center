@@ -22,6 +22,7 @@ void main() {
       overrides: [
         authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
       ],
     );
     addTearDown(container.dispose);

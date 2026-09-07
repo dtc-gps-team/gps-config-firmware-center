@@ -59,6 +59,7 @@ Future<void> _pump(
       overrides: [
         authControllerProvider.overrideWith(_FakeAuthController.new),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
         notificationRepositoryProvider.overrideWithValue(repo),
       ],
       child: const MaterialApp(home: NotificationListPage()),

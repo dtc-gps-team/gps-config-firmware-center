@@ -194,14 +194,22 @@ void main() {
     );
 
     test(
-      'ไม่มี response เลย (connection error) -> ใช้ e.message เหมือนเดิม',
+      'ไม่มี response เลย (connection error) -> ข้อความไทยอ่านเข้าใจได้ '
+      'ไม่ใช่ raw DioException.message (regression test: เคยหลุดข้อความดิบ '
+      'อย่าง "The connection errored: Connection refused ..." ไปที่ UI '
+      'ตรง ๆ พบตอนทดสอบบน Android Emulator 7 กันยายน 2569)',
       () async {
         final client = _clientFailingWith(
           (o) => DioException(
             requestOptions: o,
             type: DioExceptionType.connectionError,
             error: 'boom',
-            message: 'Connection refused',
+            // สตริงจริงที่ Dio สร้างให้ตอน connection refused — ต้อง "ไม่"
+            // โผล่ใน ApiException.message เลยหลัง fix
+            message:
+                'The connection errored: Connection refused This indicates '
+                'an error which most likely cannot be solved by the '
+                'library.',
           ),
         );
 
@@ -209,8 +217,62 @@ void main() {
           _login(client),
           throwsA(
             isA<ApiException>()
-                .having((e) => e.message, 'message', 'Connection refused')
+                .having(
+                  (e) => e.message,
+                  'message',
+                  isNot(contains('cannot be solved by the library')),
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+                )
                 .having((e) => e.statusCode, 'statusCode', null),
+          ),
+        );
+      },
+    );
+
+    test(
+      'connection timeout -> ข้อความไทยเดียวกับ connection error',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            type: DioExceptionType.connectionTimeout,
+            message: 'Connecting timed out',
+          ),
+        );
+
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'DioExceptionType.unknown ไม่มี message เลย -> generic Thai fallback '
+      '(ไม่ใช่ "Network error" ภาษาอังกฤษเหมือนเดิม)',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(requestOptions: o, type: DioExceptionType.unknown),
+        );
+
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
+            ),
           ),
         );
       },

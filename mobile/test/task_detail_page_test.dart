@@ -84,6 +84,7 @@ Future<void> _pump(
         taskRepositoryProvider.overrideWithValue(repo),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
       ],
       child: MaterialApp(home: TaskDetailPage(taskId: taskId)),
     ),
@@ -188,6 +189,35 @@ void main() {
     expect(find.text('ไม่พบงานนี้ อาจถูกลบไปแล้ว'), findsOneWidget);
     expect(find.byKey(const Key('task_detail_retry')), findsOneWidget);
   });
+
+  testWidgets(
+    'backend เข้าไม่ถึง (connection error, ไม่มี statusCode) -> ข้อความไทย '
+    'อ่านเข้าใจได้ + ปุ่มลองอีกครั้ง ไม่ใช่ raw exception message '
+    '(regression test: เคยหลุดข้อความ Dio ดิบไปที่ UI พบตอนทดสอบบน Android '
+    'Emulator 7 กันยายน 2569 — ApiClient._toApiException คือจุดที่แก้จริง, '
+    'เทสนี้ยืนยันว่า task detail page แสดงข้อความที่ ApiException.message '
+    'ถืออยู่ตรง ๆ ถูกต้อง)',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          getError: ApiException(
+            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('task_detail_error')), findsOneWidget);
+      expect(
+        find.text(
+          'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('cannot be solved by the library'), findsNothing);
+      expect(find.byKey(const Key('task_detail_retry')), findsOneWidget);
+    },
+  );
 
   testWidgets('บันทึกแล้วเจอ 403 -> ข้อความ error เฉพาะ', (tester) async {
     final repo = _FakeTaskRepository(
