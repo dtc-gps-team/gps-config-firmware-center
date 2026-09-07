@@ -14,7 +14,9 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
+import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import { DeviceService } from './device.service';
+import type { DeviceSimulateConfigResult } from './simulate-config-result';
 
 // Device module — รอบนี้ทำแค่ `POST /devices/:deviceId/test-connection`
 // (ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง สำหรับช่างหน้างาน ST/OT ผ่าน Mobile)
@@ -55,5 +57,21 @@ export class DeviceController {
     @Body() dto: ApplyConfigDto,
   ): Promise<ConfigApplyResult> {
     return this.deviceService.applyConfig(deviceId, dto.configId);
+  }
+
+  // resource `device-connection-test` action Read — reuse permission เดิม
+  // (ST/OT เท่านั้น) endpoint นี้เช็คสัญญาณอุปกรณ์จริงเหมือนกัน ตกลงกับ
+  // kittiphong (B) บน PR #92 ว่าใช้สิทธิ์เดียวกัน ไม่ต้อง seed เพิ่ม
+  //
+  // action `Read` — ไม่ persist อะไร (dry-run readiness check) pattern เดียว
+  // กับ `test-connection` / `apply-config`
+  @Post(':deviceId/simulate-config')
+  @RequirePermission('device-connection-test', ActionType.Read)
+  @HttpCode(HttpStatus.OK)
+  simulateConfig(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SimulateConfigOnDeviceDto,
+  ): Promise<DeviceSimulateConfigResult> {
+    return this.deviceService.simulateConfig(deviceId, dto.configId);
   }
 }
