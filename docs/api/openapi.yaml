@@ -892,7 +892,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConfigApplyInput"
+              $ref: "#/components/schemas/SimulateConfigOnDeviceInput"
       responses:
         "200":
           description: >-
@@ -1275,6 +1275,19 @@ components:
           type: string
           format: uuid
           description: id ของ Config ที่จะใส่ (ต้องเป็นสถานะ approved หรือ synced)
+
+    SimulateConfigOnDeviceInput:
+      type: object
+      description: >-
+        Request body สำหรับ simulateConfigOnDevice — shape เหมือน
+        `ConfigApplyInput` ตอนนี้ แต่แยก schema ไว้เพื่อไม่ผูก 2 endpoint
+        เข้าด้วยกัน (ตรงกับ `SimulateConfigOnDeviceDto` ฝั่ง TS)
+      required: [configId]
+      properties:
+        configId:
+          type: string
+          format: uuid
+          description: id ของ Config ที่จะเช็คความพร้อม (ต้องเป็นสถานะ approved หรือ synced)
 
     ConfigApplyResult:
       type: object
