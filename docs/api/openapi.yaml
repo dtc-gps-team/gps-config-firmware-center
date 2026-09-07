@@ -867,6 +867,54 @@ paths:
             ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
             (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
 
+  /devices/{deviceId}/simulate-config:
+    post:
+      tags: [device]
+      operationId: simulateConfigOnDevice
+      summary: เช็คว่า Config พร้อมอัพโหลดเข้าอุปกรณ์เครื่องนี้จริงไหม (v3.15)
+      description: >-
+        สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — dry-run ก่อน `applyConfigToDevice`
+        จริง รวม 3 ส่วนเป็นผลเดียว: (1) Config เองพร้อมไหม (reuse ตัวเดียวกับ
+        `simulateConfig`) (2) deviceModel/protocol ของ Config ตรงกับอุปกรณ์เครื่อง
+        นี้ไหม (3) สัญญาณอุปกรณ์จริง (reuse ตัวเดียวกับ `testDeviceConnection`).
+        **ไม่ persist / ไม่แตะสถานะใดๆ** ทั้ง Device และ Config. อ้างด้วยเลขเครื่อง
+        จริง (`Device.deviceId`). ต่างจาก `applyConfigToDevice`: deviceModel/protocol
+        ไม่ตรง **ไม่ใช่ 409** — คืน 200 พร้อม `compatibilityCheck.passed:false`
+        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateConfigOnDeviceInput"
+      responses:
+        "200":
+          description: >-
+            ผลเช็คความพร้อม (3 ส่วนรวมใน response เดียว) — `passed:false` = ส่วนใด
+            ส่วนหนึ่งไม่ผ่าน (รวมถึง deviceModel/protocol ไม่ตรง)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSimulateConfigResult"
+        "400":
+          description: configId ไม่ใช่ uuid ที่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์เช็คความพร้อมของอุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Config (configId) นี้
+        "409":
+          description: >-
+            เช็คความพร้อมไม่ได้ — Device ยังไม่ installed หรือ Config ยังไม่ผ่าน
+            อนุมัติ (ต้อง approved หรือ synced)
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1228,6 +1276,19 @@ components:
           format: uuid
           description: id ของ Config ที่จะใส่ (ต้องเป็นสถานะ approved หรือ synced)
 
+    SimulateConfigOnDeviceInput:
+      type: object
+      description: >-
+        Request body สำหรับ simulateConfigOnDevice — shape เหมือน
+        `ConfigApplyInput` ตอนนี้ แต่แยก schema ไว้เพื่อไม่ผูก 2 endpoint
+        เข้าด้วยกัน (ตรงกับ `SimulateConfigOnDeviceDto` ฝั่ง TS)
+      required: [configId]
+      properties:
+        configId:
+          type: string
+          format: uuid
+          description: id ของ Config ที่จะเช็คความพร้อม (ต้องเป็นสถานะ approved หรือ synced)
+
     ConfigApplyResult:
       type: object
       description: >-
@@ -1246,6 +1307,38 @@ components:
           type: string
           format: date-time
           description: เวลาที่ server รับคำสั่ง (ไม่ใช่เวลาที่กล่องรับค่าจริง)
+
+    DeviceSimulateConfigResult:
+      type: object
+      description: >-
+        ผลเช็คความพร้อมของ Config บนอุปกรณ์เครื่องหนึ่ง (`simulateConfigOnDevice`)
+        — รวม 3 ส่วนเป็นผลเดียว ไม่มีส่วนไหนเป็น null (endpoint บังคับส่งทั้ง
+        deviceId และ configId เสมอ). แยก schema จาก `SimulationResult` เดิม
+        (ใช้ร่วมกับ Web Config Editor dry-run) โดยตั้งใจ
+      required: [passed, configCheck, compatibilityCheck, connectionCheck]
+      properties:
+        passed:
+          type: boolean
+          description: true เมื่อ configCheck, compatibilityCheck, connectionCheck ผ่านทั้งหมด
+        configCheck:
+          allOf:
+            - $ref: "#/components/schemas/SimulationResult"
+          description: ตัว Config เองพร้อมไหม (ผลจาก Device Simulator)
+        compatibilityCheck:
+          type: object
+          description: deviceModel/protocol ของ Config ตรงกับอุปกรณ์เครื่องนี้ไหม
+          required: [passed, details]
+          properties:
+            passed:
+              type: boolean
+            details:
+              type: array
+              items:
+                type: string
+        connectionCheck:
+          allOf:
+            - $ref: "#/components/schemas/DeviceConnectionTestResult"
+          description: สัญญาณของกล่องเครื่องนั้น (ผลจาก Device Connection Tester)
 
     DeviceStatus:
       type: object

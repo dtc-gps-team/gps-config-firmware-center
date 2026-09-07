@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import {
+  DEVICE_SIMULATOR,
+  type DeviceSimulator,
+  MockDeviceSimulator,
+} from '../config/device-simulator';
+import {
   CONFIG_APPLIER,
   type ConfigApplier,
   MockConfigApplier,
@@ -59,6 +64,25 @@ import { DeviceService } from './device.service';
           );
         }
         return new MockConfigApplier();
+      },
+      inject: [NestConfigService],
+    },
+    // DEVICE_SIMULATOR: `simulateConfigOnDevice` (dry-run readiness check ฝั่ง
+    // ช่างหน้างาน) ต้องใช้ผลเช็คตัว Config เดียวกับ `POST /config/{id}/simulate`
+    // — interface/mock อยู่ที่ `../config/device-simulator` (self-contained,
+    // ไม่ผูก ConfigModule) ลงทะเบียน provider ของ module นี้เองแบบเดียวกับ
+    // `DEVICE_CONNECTION_TESTER` แทนการ import ConfigModule ทั้งก้อนมาเพื่อ
+    // token เดียว · env `DEVICE_SIMULATOR_MODE` ตัวเดียวกัน (`real` ยัง throw)
+    {
+      provide: DEVICE_SIMULATOR,
+      useFactory: (nestConfig: NestConfigService): DeviceSimulator => {
+        const mode = nestConfig.get<string>('DEVICE_SIMULATOR_MODE', 'mock');
+        if (mode === 'real') {
+          throw new Error(
+            'DEVICE_SIMULATOR_MODE=real ยังไม่รองรับ (ยังไม่มี Device Simulator ตัวจริงให้เชื่อม)',
+          );
+        }
+        return new MockDeviceSimulator();
       },
       inject: [NestConfigService],
     },
