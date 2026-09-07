@@ -158,7 +158,7 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
    → ต้องเป็น shape เดียวกัน
 2. **NotificationType สำหรับ sync failure** — 2 ทางเลือก (ให้ที่ประชุม #32 เลือก):
    - **(a) reuse `incident_alert`** ที่มีอยู่แล้ว (`schema.prisma:119`,
-     `openapi.yaml:1248`) — ไม่แตะ schema เลย เพราะ sync failure สร้าง Incident อยู่แล้ว
+     `openapi.yaml:1198`) — ไม่แตะ schema เลย เพราะ sync failure สร้าง Incident อยู่แล้ว
      ก็ถือเป็น incident alert ปกติ
    - **(b) เพิ่ม enum value ใหม่ `sync_failed`** — แยกให้ Operation กรอง/เห็นชัดว่าเป็น
      sync failure โดยเฉพาะ · ต้องแก้ Prisma enum + migration + `openapi.yaml` + Mobile
