@@ -144,6 +144,36 @@ class ApiClient {
     );
   }
 
+  /// `POST /notifications/device-tokens` — upsert (200, not 201; idempotent
+  /// on repeat calls with the same token). Response body is the stored
+  /// `DeviceToken` row, but callers here (`PushTokenRepository`) only care
+  /// that the call succeeded — no model to parse into yet.
+  Future<void> registerDeviceToken({
+    required String token,
+    required String platform,
+  }) async {
+    try {
+      await _dio.post<Map<String, dynamic>>(
+        '/notifications/device-tokens',
+        data: {'token': token, 'platform': platform},
+      );
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
+  /// `DELETE /notifications/device-tokens?token=<token>` — 204, no body.
+  Future<void> unregisterDeviceToken(String token) async {
+    try {
+      await _dio.delete<void>(
+        '/notifications/device-tokens',
+        queryParameters: {'token': token},
+      );
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
   Future<T> _wrap<T>(
     Future<Response<Map<String, dynamic>>> Function() send,
     T Function(Map<String, dynamic> json) parse,
