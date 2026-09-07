@@ -339,6 +339,41 @@ void main() {
     });
   });
 
+  group('config endpoints', () {
+    Map<String, dynamic> configJson({
+      String id = 'c1',
+      String status = 'draft',
+      String deviceModel = 'GT06N',
+    }) => {
+      'id': id,
+      'deviceModel': deviceModel,
+      'protocol': 'TCP',
+      'status': status,
+      'fields': {'APN': 'internet'},
+    };
+
+    test('listConfigs -> GET /config, maps the JSON array', () async {
+      final (:client, :adapter) = _clientReturning([
+        configJson(id: 'c1', status: 'draft'),
+        configJson(id: 'c2', status: 'approved'),
+      ]);
+
+      final configs = await client.listConfigs();
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/config');
+      expect(configs.map((c) => c.id), ['c1', 'c2']);
+      expect(configs[0].status, ConfigStatus.draft);
+      expect(configs[1].status, ConfigStatus.approved);
+    });
+
+    test('listConfigs -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listConfigs(), isEmpty);
+      expect(adapter.lastRequest?.path, '/config');
+    });
+  });
+
   group('notification endpoints', () {
     Map<String, dynamic> notiJson({String id = 'n1', bool read = false}) => {
       'id': id,

@@ -52,6 +52,16 @@ class ApiClient {
     );
   }
 
+  /// `GET /config` — not scoped per-user by the backend (every role with
+  /// `config:Read` sees every Config, deliberately — see
+  /// `backend/src/config/config.service.ts` `findAll()`).
+  Future<List<DeviceConfigDraft>> listConfigs() async {
+    return _wrapList(
+      () => _dio.get<List<dynamic>>('/config'),
+      DeviceConfigDraft.fromJson,
+    );
+  }
+
   /// `POST /config/{configId}/simulate`
   Future<SimulationResult> simulateConfig({
     required String configId,
