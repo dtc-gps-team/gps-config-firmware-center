@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeviceToken,
@@ -7,8 +7,21 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FCM_SENDER, type FcmSender } from './fcm-sender';
 
 export type NotificationMode = 'mock' | 'fcm';
+
+/**
+ * ขอบเขต Phase นี้ (PR B) — เปิด push จริงให้แค่ type เดียวก่อน `task_assigned`
+ * เป็น type ที่ B คุมเองทั้ง flow (สร้างจาก `TaskService` ตอนมอบหมายงาน) จึง
+ * ทดสอบ end-to-end ได้ครบวงจรโดยไม่ต้องรอ module อื่น ส่วน type ที่เหลือ
+ * (`config_approved`/`config_rejected`/`firmware_ready`/`incident_alert` —
+ * ของ A) จะเปิดทีละตัวใน PR ถัดไปหลังยืนยันกับ A ว่าข้อความที่ mobile
+ * แสดงผลของแต่ละ type พร้อมแล้ว
+ */
+export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
+  'task_assigned',
+];
 
 export interface SendNotificationInput {
   userId: string;
@@ -17,11 +30,15 @@ export interface SendNotificationInput {
 }
 
 /**
- * Skeleton ของ notification module (ดู 01_GPS_Build_Reference.md Section 3)
+ * Notification module (ดู 01_GPS_Build_Reference.md Section 3 +
+ * docs/05_Mobile_Notification_FCM.md)
  *
  * ควบคุมด้วย env `NOTIFICATION_MODE`:
  *   - `mock` (ค่าเริ่มต้น) — บันทึก record ลง DB แล้ว log อย่างเดียว ไม่ยิงออกจริง
- *   - `fcm` — ช่องทางส่งจริง (FCM mobile + WebSocket web) ยังไม่ implement จนถึง Phase 4
+ *   - `fcm` — ส่งจริงผ่าน FCM (Android เท่านั้นตอนนี้ — ดู `RealFcmSender`)
+ *     แต่เฉพาะ type ใน `FCM_ENABLED_NOTIFICATION_TYPES` เท่านั้น type อื่น
+ *     fallback เป็น mock เงียบๆ (PR B, ขยายทีละ type ใน PR ถัดไป) เว็บ
+ *     (WebSocket) ยังไม่ implement
  *
  * module ฝั่ง A (config-sync-writer / incident) จะ inject service นี้เพื่อยิง Alert
  */
@@ -33,6 +50,7 @@ export class NotificationService {
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
+    @Inject(FCM_SENDER) private readonly fcmSender: FcmSender,
   ) {
     this.mode =
       config.get<string>('NOTIFICATION_MODE', 'mock') === 'fcm'
@@ -62,8 +80,48 @@ export class NotificationService {
       return notification;
     }
 
-    // TODO(Phase 4): ส่งจริงผ่าน FCM (mobile) + WebSocket (web) แล้วเรียก markSent()
-    throw new Error(`NOTIFICATION_MODE=${this.mode} ยังไม่รองรับ`);
+    // mode === 'fcm' แต่ type นี้ยังไม่อยู่ใน FCM_ENABLED_NOTIFICATION_TYPES —
+    // ต้อง fallback เงียบๆ เหมือน mode=mock ไม่ throw เด็ดขาด เพราะ send()
+    // ถูกเรียกจากหลาย module (task/config/incident) อยู่แล้วสำหรับ type อื่นๆ
+    // ด้วย ถ้า throw ตรงนี้จะทำให้ module ที่ยังไม่ถึงคิวเปิด push จริง error
+    // ทั้งที่โค้ดของเขาไม่ได้ทำอะไรผิด
+    if (!FCM_ENABLED_NOTIFICATION_TYPES.includes(input.type)) {
+      this.logger.log(
+        `[fcm] type "${input.type}" ยังไม่เปิด push จริง (fallback เหมือน mock) notification ${notification.id}`,
+      );
+      return notification;
+    }
+
+    const tokens = await this.prisma.deviceToken.findMany({
+      where: { userId: input.userId },
+    });
+
+    if (tokens.length === 0) {
+      this.logger.log(
+        `[fcm] user ${input.userId} ไม่มี device token ที่ลงทะเบียนไว้ — ข้าม notification ${notification.id}`,
+      );
+      return notification;
+    }
+
+    // Android-only (Phase นี้): ไม่ filter ตาม DeviceToken.platform ก่อนส่ง —
+    // Mobile ยังไม่มีโค้ดฝั่ง iOS/Web ที่ลงทะเบียน token จริง (PR C/D) token
+    // ที่มีอยู่ใน DB ตอนนี้จึงเป็น Android ทั้งหมดโดยพฤตินัย วันที่มี platform
+    // อื่นเข้ามาจริงต้องกรองตรงนี้ก่อนส่ง (ดูคอมเมนต์ที่หัว RealFcmSender ด้วย)
+    const { invalidTokens } = await this.fcmSender.sendToTokens({
+      tokens: tokens.map((t) => t.token),
+      notification: { type: input.type, payload: input.payload ?? {} },
+    });
+
+    if (invalidTokens.length > 0) {
+      await this.prisma.deviceToken.deleteMany({
+        where: { token: { in: invalidTokens } },
+      });
+      this.logger.log(
+        `[fcm] ลบ device token ที่ invalid ${invalidTokens.length} ตัว (user ${input.userId})`,
+      );
+    }
+
+    return this.markSent(notification.id);
   }
 
   /** ทำเครื่องหมายว่าส่งออกไปแล้ว (บันทึกเวลา sentAt) */

@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient, User } from '@prisma/client';
+import type { FcmSender } from '../../src/notification/fcm-sender';
 import { NotificationService } from '../../src/notification/notification.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { createTestPrisma, makeUser, resetDb } from './setup';
@@ -9,7 +10,16 @@ function buildService(prisma: PrismaClient): NotificationService {
   const config = {
     get: (_key: string, def?: string) => def ?? 'mock',
   } as unknown as ConfigService;
-  return new NotificationService(prisma as unknown as PrismaService, config);
+  // ทั้งไฟล์นี้รันแค่ mode=mock (ดู config.get ด้านบน) — ไม่เคยเรียก
+  // fcmSender จริง ใส่ stub ไว้แค่ให้ตรงกับ constructor signature
+  const fcmSender: FcmSender = {
+    sendToTokens: () => Promise.resolve({ invalidTokens: [] }),
+  };
+  return new NotificationService(
+    prisma as unknown as PrismaService,
+    config,
+    fcmSender,
+  );
 }
 
 describe('NotificationService (integration — real postgres)', () => {
