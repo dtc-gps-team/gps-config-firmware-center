@@ -1,9 +1,10 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Task } from '@prisma/client';
+import { ConfigStatus, Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -20,6 +21,16 @@ const OPERATION_ROLE = 'Operation';
 // ST/OT = ผู้ใช้ Mobile ที่เห็น/แก้ได้เฉพาะงานที่ตัวเองถูก assign เท่านั้น
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
 const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
+
+// สถานะ Config ที่ Operation ผูกกับงานติดตั้งได้ — ต้องผ่าน Operation อนุมัติ
+// มาแล้วเท่านั้น (`approved` = อนุมัติแล้ว, `synced` = เขียนเข้าระบบเดิมแล้ว)
+// ตรงกับ APPLICABLE_CONFIG_STATUSES ใน src/device/config-applier.ts (เงื่อนไข
+// ของ POST /devices/{deviceId}/apply-config ที่ Mobile จะเรียกต่อ) — ทำสำเนา
+// ไว้ในโมดูล task เพื่อไม่ให้ task (โมดูล B) ผูก import ข้ามไป device (โมดูล A)
+const CONFIG_STATUSES_ASSIGNABLE_TO_TASK: readonly ConfigStatus[] = [
+  'approved',
+  'synced',
+];
 
 /** แปลงค่าวันที่จาก DTO (ISO string / null / undefined) ให้เป็นรูปแบบที่ Prisma รับ */
 function toDbDate(value: string | null | undefined): Date | null | undefined {
@@ -40,12 +51,16 @@ export class TaskService {
     if (actor.role !== OPERATION_ROLE) {
       throw new ForbiddenException('สร้างงานได้เฉพาะ Role Operation เท่านั้น');
     }
+    if (dto.configId != null) {
+      await this.assertConfigAssignable(dto.configId, dto.deviceId);
+    }
     return this.prisma.task.create({
       data: {
         title: dto.title,
         description: dto.description,
         assignedTo: dto.assignedTo,
         deviceId: dto.deviceId,
+        configId: dto.configId,
         dueDate: toDbDate(dto.dueDate),
       },
     });
@@ -80,7 +95,14 @@ export class TaskService {
     actor: ActingUser,
   ): Promise<Task> {
     if (actor.role === OPERATION_ROLE) {
-      await this.findOne(id, actor);
+      const existing = await this.findOne(id, actor);
+      if (dto.configId != null) {
+        // deviceId ที่จะมีผลหลัง update: ถ้า dto ส่ง deviceId มาด้วยใช้ค่านั้น
+        // ไม่งั้นใช้ค่าที่งานมีอยู่เดิม
+        const effectiveDeviceId =
+          dto.deviceId !== undefined ? dto.deviceId : existing.deviceId;
+        await this.assertConfigAssignable(dto.configId, effectiveDeviceId);
+      }
       // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบไปพอดีจาก
       // request อื่น (rare) — Prisma โยน P2025 ("Record to update not found")
       // ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500 (pattern เดียวกับ
@@ -93,6 +115,7 @@ export class TaskService {
             description: dto.description,
             assignedTo: dto.assignedTo,
             deviceId: dto.deviceId,
+            configId: dto.configId,
             status: dto.status,
             dueDate: toDbDate(dto.dueDate),
           },
@@ -142,7 +165,53 @@ export class TaskService {
       dto.description,
       dto.assignedTo,
       dto.deviceId,
+      dto.configId,
       dto.dueDate,
     ].some((value) => value !== undefined);
+  }
+
+  /**
+   * ตรวจ Config ที่ Operation จะผูกกับงาน — mirror เงื่อนไขของ
+   * DeviceService.applyConfig เพื่อไม่ให้ผูก Config ที่ apply-config จะปฏิเสธ
+   * ทีหลังตอนช่างกดยืนยันหน้างาน:
+   * - Config ต้องมีอยู่จริง → 404
+   * - Config ต้อง approved/synced → 409
+   * - ถ้า Task มี deviceId และมี Device record จริงสำหรับเลขนั้น: deviceModel/
+   *   protocol ของ Config ต้องตรงกับ Device → 409
+   *
+   * `deviceId` ที่ยังไม่มี Device record (อ้างลอยๆ ตามที่ Task.deviceId เป็น
+   * อยู่ตอนนี้) ข้ามการเช็ครุ่นไป — Device Registration ยังเป็น Phase 5
+   */
+  private async assertConfigAssignable(
+    configId: string,
+    deviceId: string | null | undefined,
+  ): Promise<void> {
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+    });
+    if (!config) {
+      throw new NotFoundException(`ไม่พบ Config id ${configId}`);
+    }
+    if (!CONFIG_STATUSES_ASSIGNABLE_TO_TASK.includes(config.status)) {
+      throw new ConflictException(
+        `Config สถานะปัจจุบัน (${config.status}) ยังผูกกับงานไม่ได้ — ต้องผ่านการอนุมัติ (${CONFIG_STATUSES_ASSIGNABLE_TO_TASK.join('/')}) ก่อน`,
+      );
+    }
+    if (deviceId == null) {
+      return;
+    }
+    // Task.deviceId เป็นเลขเครื่องจริง (Device.deviceId) ไม่ใช่ Device.id
+    const device = await this.prisma.device.findUnique({ where: { deviceId } });
+    if (!device) {
+      return;
+    }
+    if (
+      config.deviceModel !== device.deviceModel ||
+      config.protocol !== device.protocol
+    ) {
+      throw new ConflictException(
+        `Config นี้เป็นของ ${config.deviceModel}/${config.protocol} ไม่ตรงกับอุปกรณ์ ${device.deviceModel}/${device.protocol}`,
+      );
+    }
   }
 }

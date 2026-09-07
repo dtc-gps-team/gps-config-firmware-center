@@ -14,6 +14,7 @@ const sampleTask: Task = {
   description: null,
   assignedTo: 'tech-1',
   deviceId: null,
+  configId: null,
   status: 'pending',
   dueDate: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),

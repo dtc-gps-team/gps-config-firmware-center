@@ -163,4 +163,139 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       .send({ status: 'completed' })
       .expect(403);
   });
+
+  describe('Task.configId (งานติดตั้ง — ผูก Config ที่ Mobile จะ apply)', () => {
+    async function makeConfig(
+      status: 'draft' | 'approved',
+      opts: { deviceModel?: string; protocol?: string } = {},
+    ): Promise<string> {
+      const creator = await makeUser(prisma, { role: 'SW' });
+      const config = await prisma.config.create({
+        data: {
+          deviceModel: opts.deviceModel ?? 'GT06N',
+          protocol: opts.protocol ?? 'TCP',
+          status,
+          fields: { APN: 'internet' },
+          createdBy: creator.id,
+        },
+      });
+      return config.id;
+    }
+
+    it('Operation สร้างงานพร้อม configId ที่ approved -> 201 + task.configId', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const configId = await makeConfig('approved');
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'ติดตั้ง', assignedTo: otUser.id, configId })
+        .expect(201);
+
+      expect((res.body as { configId: string }).configId).toBe(configId);
+    });
+
+    it('configId ที่ไม่พบ Config -> 404', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'x',
+          assignedTo: otUser.id,
+          configId: '00000000-0000-0000-0000-000000000000',
+        })
+        .expect(404);
+    });
+
+    it('configId เป็น Config สถานะ draft -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const configId = await makeConfig('draft');
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'x', assignedTo: otUser.id, configId })
+        .expect(409);
+    });
+
+    it('configId ไม่ใช่ uuid -> 400', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'x', assignedTo: otUser.id, configId: 'not-a-uuid' })
+        .expect(400);
+    });
+
+    it('deviceId มี Device record จริงแต่คนละรุ่นกับ Config -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const configId = await makeConfig('approved', { deviceModel: 'GT06N' });
+      await prisma.device.create({
+        data: {
+          deviceId: 'DEV-CFG-409',
+          simNumber: 'sim-DEV-CFG-409',
+          deviceModel: 'GT06L',
+          protocol: 'TCP',
+          status: 'installed',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          title: 'x',
+          assignedTo: otUser.id,
+          deviceId: 'DEV-CFG-409',
+          configId,
+        })
+        .expect(409);
+    });
+
+    it('PATCH role ST ส่ง configId มาด้วย -> 403 (สิทธิ์ Operation เท่านั้น)', async () => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const configId = await makeConfig('approved');
+      const task = await prisma.task.create({
+        data: { title: 'mine', assignedTo: stUser.id },
+      });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(403);
+    });
+
+    it('PATCH Operation เปลี่ยน configId เป็น Config approved -> 200', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const configId = await makeConfig('approved');
+      const task = await prisma.task.create({
+        data: { title: 'x', assignedTo: otUser.id },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      expect((res.body as { configId: string }).configId).toBe(configId);
+    });
+  });
 });

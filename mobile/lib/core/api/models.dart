@@ -228,6 +228,7 @@ class Task {
     required this.updatedAt,
     this.description,
     this.deviceId,
+    this.configId,
     this.dueDate,
   });
 
@@ -241,6 +242,11 @@ class Task {
   final DateTime updatedAt;
   final String? description;
   final String? deviceId;
+
+  /// Config bound by Operation for an install task — the "Confirm Install"
+  /// screen (Sprint 3) sends this to `POST /devices/{deviceId}/apply-config`.
+  /// `null` for other task types (signal check, SIM swap).
+  final String? configId;
   final DateTime? dueDate;
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -258,6 +264,7 @@ class Task {
       updatedAt: parseDate(json['updatedAt']) ?? DateTime.now(),
       description: json['description'] as String?,
       deviceId: json['deviceId'] as String?,
+      configId: json['configId'] as String?,
       dueDate: parseDate(json['dueDate']),
     );
   }

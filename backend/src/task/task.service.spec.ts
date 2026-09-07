@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -25,16 +29,26 @@ type TaskDelegateMock = {
   updateMany: jest.Mock;
 };
 
+const CONFIG_ID = '99999999-9999-9999-9999-999999999999';
+
 const sampleTask: Task = {
   id: '11111111-1111-1111-1111-111111111111',
   title: 'ตรวจสอบกล่อง',
   description: null,
   assignedTo: 'tech-1',
   deviceId: null,
+  configId: null,
   status: 'pending',
   dueDate: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
+const approvedConfig = {
+  id: CONFIG_ID,
+  deviceModel: 'GT06N',
+  protocol: 'TCP',
+  status: 'approved' as const,
 };
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
@@ -46,6 +60,8 @@ const auditor: ActingUser = { id: 'auditor-1', role: 'Auditor' };
 describe('TaskService', () => {
   let service: TaskService;
   let task: TaskDelegateMock;
+  let config: { findUnique: jest.Mock };
+  let device: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     task = {
@@ -56,9 +72,14 @@ describe('TaskService', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     };
+    config = { findUnique: jest.fn() };
+    device = { findUnique: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [TaskService, { provide: PrismaService, useValue: { task } }],
+      providers: [
+        TaskService,
+        { provide: PrismaService, useValue: { task, config, device } },
+      ],
     }).compile();
 
     service = module.get(TaskService);
@@ -83,6 +104,7 @@ describe('TaskService', () => {
           description: undefined,
           assignedTo: 'tech-1',
           deviceId: undefined,
+          configId: undefined,
           dueDate: new Date('2026-02-01T00:00:00.000Z'),
         },
       });
@@ -97,6 +119,99 @@ describe('TaskService', () => {
         expect(task.create).not.toHaveBeenCalled();
       },
     );
+
+    describe('configId', () => {
+      it('Config approved/synced: ผูกกับงานได้ ส่ง configId เข้า create', async () => {
+        config.findUnique.mockResolvedValue(approvedConfig);
+        task.create.mockResolvedValue({ ...sampleTask, configId: CONFIG_ID });
+
+        await service.create(
+          { title: 'ติดตั้ง', assignedTo: 'tech-1', configId: CONFIG_ID },
+          operation,
+        );
+
+        expect(config.findUnique).toHaveBeenCalledWith({
+          where: { id: CONFIG_ID },
+        });
+        expect(task.create).toHaveBeenCalledWith({
+          data: {
+            title: 'ติดตั้ง',
+            description: undefined,
+            assignedTo: 'tech-1',
+            deviceId: undefined,
+            configId: CONFIG_ID,
+            dueDate: undefined,
+          },
+        });
+      });
+
+      it('ไม่พบ Config: 404 ไม่สร้างงาน', async () => {
+        config.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.create(
+            { title: 'x', assignedTo: 'tech-1', configId: CONFIG_ID },
+            operation,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(task.create).not.toHaveBeenCalled();
+      });
+
+      it('Config สถานะ draft: 409 ไม่สร้างงาน', async () => {
+        config.findUnique.mockResolvedValue({
+          ...approvedConfig,
+          status: 'draft',
+        });
+
+        await expect(
+          service.create(
+            { title: 'x', assignedTo: 'tech-1', configId: CONFIG_ID },
+            operation,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(task.create).not.toHaveBeenCalled();
+      });
+
+      it('deviceId มี Device record จริงแต่คนละรุ่นกับ Config: 409', async () => {
+        config.findUnique.mockResolvedValue(approvedConfig);
+        device.findUnique.mockResolvedValue({
+          deviceId: 'DEV-0001',
+          deviceModel: 'GT06L',
+          protocol: 'TCP',
+        });
+
+        await expect(
+          service.create(
+            {
+              title: 'x',
+              assignedTo: 'tech-1',
+              deviceId: 'DEV-0001',
+              configId: CONFIG_ID,
+            },
+            operation,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(task.create).not.toHaveBeenCalled();
+      });
+
+      it('deviceId ยังไม่มี Device record: ข้ามการเช็ครุ่น สร้างงานได้', async () => {
+        config.findUnique.mockResolvedValue(approvedConfig);
+        device.findUnique.mockResolvedValue(null);
+        task.create.mockResolvedValue(sampleTask);
+
+        await service.create(
+          {
+            title: 'x',
+            assignedTo: 'tech-1',
+            deviceId: 'DEV-FLOATING',
+            configId: CONFIG_ID,
+          },
+          operation,
+        );
+
+        expect(task.create).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('findAll', () => {
@@ -204,9 +319,107 @@ describe('TaskService', () => {
             description: undefined,
             assignedTo: undefined,
             deviceId: undefined,
+            configId: undefined,
             status: undefined,
             dueDate: undefined,
           },
+        });
+      });
+
+      describe('configId', () => {
+        it('ผูก Config approved ใหม่ได้: validate แล้วส่ง configId เข้า update', async () => {
+          task.findUnique.mockResolvedValue(sampleTask);
+          config.findUnique.mockResolvedValue(approvedConfig);
+          task.update.mockResolvedValue({ ...sampleTask, configId: CONFIG_ID });
+
+          await service.update(
+            sampleTask.id,
+            { configId: CONFIG_ID },
+            operation,
+          );
+
+          expect(config.findUnique).toHaveBeenCalledWith({
+            where: { id: CONFIG_ID },
+          });
+          expect(task.update).toHaveBeenCalledWith({
+            where: { id: sampleTask.id },
+            data: {
+              title: undefined,
+              description: undefined,
+              assignedTo: undefined,
+              deviceId: undefined,
+              configId: CONFIG_ID,
+              status: undefined,
+              dueDate: undefined,
+            },
+          });
+        });
+
+        it('configId ที่ไม่พบ Config: 404 ไม่เรียก update', async () => {
+          task.findUnique.mockResolvedValue(sampleTask);
+          config.findUnique.mockResolvedValue(null);
+
+          await expect(
+            service.update(sampleTask.id, { configId: CONFIG_ID }, operation),
+          ).rejects.toBeInstanceOf(NotFoundException);
+          expect(task.update).not.toHaveBeenCalled();
+        });
+
+        it('Config สถานะ testing: 409 ไม่เรียก update', async () => {
+          task.findUnique.mockResolvedValue(sampleTask);
+          config.findUnique.mockResolvedValue({
+            ...approvedConfig,
+            status: 'testing',
+          });
+
+          await expect(
+            service.update(sampleTask.id, { configId: CONFIG_ID }, operation),
+          ).rejects.toBeInstanceOf(ConflictException);
+          expect(task.update).not.toHaveBeenCalled();
+        });
+
+        it('ล้าง configId ได้ด้วย null (ไม่ validate)', async () => {
+          task.findUnique.mockResolvedValue({
+            ...sampleTask,
+            configId: CONFIG_ID,
+          });
+          task.update.mockResolvedValue({ ...sampleTask, configId: null });
+
+          await service.update(sampleTask.id, { configId: null }, operation);
+
+          expect(config.findUnique).not.toHaveBeenCalled();
+          expect(task.update).toHaveBeenCalledWith({
+            where: { id: sampleTask.id },
+            data: {
+              title: undefined,
+              description: undefined,
+              assignedTo: undefined,
+              deviceId: undefined,
+              configId: null,
+              status: undefined,
+              dueDate: undefined,
+            },
+          });
+        });
+
+        it('validate ใช้ deviceId เดิมของงานเมื่อ dto ไม่ได้ส่ง deviceId มา', async () => {
+          task.findUnique.mockResolvedValue({
+            ...sampleTask,
+            deviceId: 'DEV-0001',
+          });
+          config.findUnique.mockResolvedValue(approvedConfig);
+          device.findUnique.mockResolvedValue({
+            deviceId: 'DEV-0001',
+            deviceModel: 'GT06L',
+            protocol: 'TCP',
+          });
+
+          await expect(
+            service.update(sampleTask.id, { configId: CONFIG_ID }, operation),
+          ).rejects.toBeInstanceOf(ConflictException);
+          expect(device.findUnique).toHaveBeenCalledWith({
+            where: { deviceId: 'DEV-0001' },
+          });
         });
       });
     });
@@ -237,6 +450,14 @@ describe('TaskService', () => {
           service.update(sampleTask.id, { title: 'hacked' }, owner),
         ).rejects.toBeInstanceOf(ForbiddenException);
         expect(task.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('ส่ง configId มาด้วย (สิทธิ์ Operation เท่านั้น): 403 ไม่เรียก DB', async () => {
+        await expect(
+          service.update(sampleTask.id, { configId: CONFIG_ID }, owner),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(task.updateMany).not.toHaveBeenCalled();
+        expect(config.findUnique).not.toHaveBeenCalled();
       });
     });
 
@@ -276,6 +497,7 @@ describe('TaskService', () => {
           description: undefined,
           assignedTo: undefined,
           deviceId: undefined,
+          configId: undefined,
           status: undefined,
           dueDate: null,
         },
