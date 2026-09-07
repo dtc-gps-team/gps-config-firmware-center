@@ -418,4 +418,72 @@ void main() {
       expect(n.read, isTrue);
     });
   });
+
+  group('device token endpoints', () {
+    test('registerDeviceToken -> POST /notifications/device-tokens with '
+        '{token, platform} body', () async {
+      final (:client, :adapter) = _clientReturning({
+        'id': 'dt-1',
+        'userId': 'u1',
+        'token': 'fcm-abc',
+        'platform': 'android',
+        'createdAt': '2026-09-01T00:00:00.000Z',
+        'updatedAt': '2026-09-01T00:00:00.000Z',
+      });
+
+      await client.registerDeviceToken(token: 'fcm-abc', platform: 'android');
+
+      expect(adapter.lastRequest?.method, 'POST');
+      expect(adapter.lastRequest?.path, '/notifications/device-tokens');
+      expect(adapter.lastRequest?.data, {
+        'token': 'fcm-abc',
+        'platform': 'android',
+      });
+    });
+
+    test('registerDeviceToken -> error maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 401, {'message': 'Unauthorized'}),
+        ),
+      );
+
+      await expectLater(
+        client.registerDeviceToken(token: 't', platform: 'android'),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
+        ),
+      );
+    });
+
+    test(
+      'unregisterDeviceToken -> DELETE /notifications/device-tokens?token=...',
+      () async {
+        final (:client, :adapter) = _clientReturning(null, statusCode: 204);
+
+        await client.unregisterDeviceToken('fcm-abc');
+
+        expect(adapter.lastRequest?.method, 'DELETE');
+        expect(adapter.lastRequest?.path, '/notifications/device-tokens');
+        expect(adapter.lastRequest?.queryParameters, {'token': 'fcm-abc'});
+      },
+    );
+
+    test('unregisterDeviceToken -> error maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {'message': 'ไม่พบ token นี้'}),
+        ),
+      );
+
+      await expectLater(
+        client.unregisterDeviceToken('missing'),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
+        ),
+      );
+    });
+  });
 }

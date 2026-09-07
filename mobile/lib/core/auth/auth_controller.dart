@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/push_notification/push_notification_service.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 import '../config/app_config.dart';
@@ -95,6 +98,11 @@ class AuthController extends Notifier<AuthState> {
       username: profile?.username,
       role: profile?.role,
     );
+    // Fire-and-forget: the FCM token may have rotated while the app was
+    // closed. Never blocks first paint / restore on push registration.
+    unawaited(
+      ref.read(pushNotificationServiceProvider).initializeAndRegister(),
+    );
   }
 
   Future<void> login(String username, String password) async {
@@ -117,6 +125,10 @@ class AuthController extends Notifier<AuthState> {
         role: response.role,
         username: trimmedUsername,
       );
+      // Fire-and-forget: push registration must never block/fail a login.
+      unawaited(
+        ref.read(pushNotificationServiceProvider).initializeAndRegister(),
+      );
     } on ApiException catch (e) {
       state = AuthState(status: AuthStatus.unauthenticated, error: e.message);
     } catch (e) {
@@ -128,6 +140,10 @@ class AuthController extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
+    // Best-effort unregister while the token is still valid for the
+    // Authorization header — never throws (see PushNotificationService), so
+    // this can't block logout.
+    await ref.read(pushNotificationServiceProvider).unregisterAndStop();
     await _tokenStore.clear();
     await _profileStore.clear();
     ref.read(apiClientProvider).setAuthToken(null);

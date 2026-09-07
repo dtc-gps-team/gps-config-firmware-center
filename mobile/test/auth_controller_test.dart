@@ -5,11 +5,33 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/features/push_notification/push_notification_service.dart';
 
 class _NoopAuthRepository implements AuthRepository {
   @override
   Future<LoginResponse> login(String username, String password) =>
       throw UnimplementedError();
+}
+
+/// Spy standing in for `PushNotificationService` — lets these tests assert
+/// `AuthController` actually calls into it on login/logout/restore, without
+/// depending on `AppConfig.pushNotificationsEnabled` (which is hardcoded
+/// `false` right now — see that flag's docstring). The flag-gating itself
+/// (real `PushNotificationService` no-ops while the flag is off) is covered
+/// separately in `push_notification_service_test.dart`.
+class _FakePushNotificationService implements PushNotificationService {
+  int initializeAndRegisterCalls = 0;
+  int unregisterAndStopCalls = 0;
+
+  @override
+  Future<void> initializeAndRegister() async {
+    initializeAndRegisterCalls++;
+  }
+
+  @override
+  Future<void> unregisterAndStop() async {
+    unregisterAndStopCalls++;
+  }
 }
 
 /// Same fake as `token_store_test.dart` (kept local — these test files don't
@@ -213,6 +235,111 @@ void main() {
       expect(await profileStore.read(), isNull);
     },
   );
+
+  group('push notification hook', () {
+    test('login success calls PushNotificationService.initializeAndRegister() '
+        'once, fire-and-forget (does not block login completing)', () async {
+      final fakeRepo = _FakeAuthRepository(
+        const LoginResponse(accessToken: 'fresh-token', role: UserRole.ot),
+      );
+      final fakePush = _FakePushNotificationService();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(fakeRepo),
+          tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+          sessionProfileStoreProvider.overrideWithValue(
+            InMemorySessionProfileStore(),
+          ),
+          pushNotificationServiceProvider.overrideWithValue(fakePush),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login('ot.test', 'password123');
+      await pumpEventQueue();
+
+      expect(fakePush.initializeAndRegisterCalls, 1);
+    });
+
+    test(
+      'logout awaits PushNotificationService.unregisterAndStop() once',
+      () async {
+        final fakePush = _FakePushNotificationService();
+        final container = ProviderContainer(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+            tokenStoreProvider.overrideWithValue(
+              InMemoryTokenStore('saved-token'),
+            ),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(
+                const SessionProfile('st.test', UserRole.st),
+              ),
+            ),
+            pushNotificationServiceProvider.overrideWithValue(fakePush),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await container.read(authControllerProvider.notifier).logout();
+
+        expect(fakePush.unregisterAndStopCalls, 1);
+      },
+    );
+
+    test(
+      'restoring a session with a saved token also calls '
+      'initializeAndRegister() (token may have rotated while app was closed)',
+      () async {
+        final fakePush = _FakePushNotificationService();
+        final container = ProviderContainer(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+            tokenStoreProvider.overrideWithValue(
+              InMemoryTokenStore('saved-token'),
+            ),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(
+                const SessionProfile('st.test', UserRole.st),
+              ),
+            ),
+            pushNotificationServiceProvider.overrideWithValue(fakePush),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.read(authControllerProvider);
+        await pumpEventQueue();
+
+        expect(fakePush.initializeAndRegisterCalls, 1);
+      },
+    );
+
+    test(
+      'restoring with no saved token does not call initializeAndRegister()',
+      () async {
+        final fakePush = _FakePushNotificationService();
+        final container = ProviderContainer(
+          overrides: [
+            authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(),
+            ),
+            pushNotificationServiceProvider.overrideWithValue(fakePush),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.read(authControllerProvider);
+        await pumpEventQueue();
+
+        expect(fakePush.initializeAndRegisterCalls, 0);
+      },
+    );
+  });
 }
 
 class _FakeAuthRepository implements AuthRepository {
