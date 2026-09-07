@@ -1,6 +1,6 @@
 # 07 — config-sync-writer: ข้อเสนอ + วาระประชุม #32
 
-> เสนอโดย: paveekornk (A) — 2026-09-04
+> เสนอโดย: paveekornk (A) — 2026-09-07
 > สถานะ: **เอกสารเตรียมประชุม ยังไม่ได้เขียนโค้ดจริง** — เป็นงานร่วม A + B
 > ตาม `02_GPS_Development_Plan.md` แถวที่ 9 (Sprint 2) ต้องคุยกันก่อนเริ่ม (issue #32)
 >
@@ -34,14 +34,23 @@
 | เชื่อม "Operation อนุมัติ → เรียก writer เป็น background job" | ✅ | |
 | retry logic + สร้าง Incident อัตโนมัติเมื่อ fail (ทดสอบด้วย mock) | ✅ | |
 | โหมด `docker` (ยิง TCP เข้า `127.0.0.1:801`) | ออกแบบ interface ให้รองรับ | implementation — ต้องรู้คำสั่งเขียน (TBD) + มีเครื่องทดสอบของ DTC |
-| โหมด `production` (ยิงเข้า `config.dtc.co.th:909`) | ออกแบบ interface ให้รองรับ | implementation — คำสั่งเขียน + สิทธิ์ + **คำสั่งเริ่มจากทีม** (ชะลอไว้ v3.4) |
+| โหมด `production` (ยิงเข้า `config.dtc.co.th:909`) | ออกแบบ interface ให้รองรับ | implementation — คำสั่งเขียน + สิทธิ์ + **คำสั่งเริ่มจากทีม** (ชะลอไว้ตามคำสั่งทีม 27 ส.ค. 2569 — `03_GPS_Detailed_Build_Steps.md:149`) |
 
-**หมายเหตุ:** Checkpoint Sprint 2 เขียนว่า *"เห็น Log การเขียนเข้าระบบเดิม (โหมด mock และ
-docker)"* แต่ในทางปฏิบัติ docker ก็ทำไม่ได้จนกว่าจะรู้คำสั่งเขียน + มีเครื่องทดสอบ `:801`
+**หัวข้อวาระประชุม — checkpoint Sprint 2 ครอบ docker ด้วยไหม:**
+Checkpoint Sprint 2 (`03_GPS_Detailed_Build_Steps.md:81`) เขียนว่าต้อง *"เห็น Log การเขียน
+เข้าระบบเดิม (โหมด mock **และ** docker)"* แต่ในทางปฏิบัติ docker mode ทดสอบจริงไม่ได้จนกว่า
+จะรู้ payload format ของคำสั่ง Write/Set ระบบเดิม (ยังเป็น TBD — §8) + มีเครื่องทดสอบ `:801`
 ของ DTC (เป็น infra ของทีม ไม่ใช่สิ่งที่เด็กฝึกงาน spin เอง และงานฝึกงานนี้ไม่แตะการทดสอบ
-กับ hardware/ระบบเดิม) — แผนอนุญาตให้ผ่านเฉพาะ mock ได้
-(`02_GPS_Development_Plan.md` §หมายเหตุแถวที่ 9) → **ผลตรวจ Sprint 2 = mock ผ่าน,
-docker/production เปิด backlog แยก**
+กับ hardware/ระบบเดิม)
+
+`02_GPS_Development_Plan.md:90` อนุญาตให้ผ่าน mock/Docker ไปก่อนได้ แต่ไม่ได้ระบุว่าตัด docker
+ออกจาก checkpoint → **ขอให้ที่ประชุม #32 ตัดสินร่วมกัน** (วาระข้อ 9) ว่า:
+- (ก) เลื่อน checkpoint ส่วน docker ออกไปเป็น backlog แยก (รอ TBD คำสั่งเขียน) แล้ว Sprint 2
+  ตรวจเฉพาะ mock, หรือ
+- (ข) คงเกณฑ์เดิม แต่ถือว่า "docker ผ่าน" = ต่อ TCP `:801` ได้ + ส่ง byte ออกได้ (ยังไม่
+  ตรวจว่าระบบเดิมรับถูก เพราะยังไม่รู้ format)
+
+เอกสารนี้ **ไม่ fix ข้อสรุปนี้ฝ่ายเดียว** — เป็นวาระให้ตัดสินที่ประชุม
 
 ---
 
@@ -67,6 +76,8 @@ export interface LegacyConfigWrite {
 
 export interface ConfigSyncWriter {
   writeConfigToLegacySystem(input: LegacyConfigWrite): Promise<void>;
+  // LegacyFirmwareWrite — TBD Phase 3 (firmware module ยังไม่มี) นิยาม shape ตอนทำ
+  // firmware pointer sync จริง ตอนนี้ใส่ไว้ให้ interface รองรับล่วงหน้าเท่านั้น
   writeFirmwarePointerToLegacySystem(input: LegacyFirmwareWrite): Promise<void>;
 }
 
@@ -117,6 +128,13 @@ Operation กด approve
   เมื่อ writer สำเร็จ (ยังไม่ทำใน Phase 1 — Build Reference / doc 04 ระบุว่า `synced` เป็น Phase 2)
 - background job runner: เสนอใช้ **BullMQ + Redis** (มี Redis ใน docker-compose แล้ว)
   หรือถ้าจะเบากว่านั้นในช่วง mock ใช้ in-process queue ก่อนก็ได้ — **หัวข้อประชุม**
+- `03_GPS_Detailed_Build_Steps.md` Phase 2 ข้อ 5 ระบุตรงๆ ว่า "ต้องมี config-sync-writer
+  และ Queue พร้อมใช้" ก่อนปิด Phase 2
+- **หมายเหตุกันสับสน:** job queue ที่เสนอนี้ (retry การเขียน config เข้า data กลาง)
+  **≠** device-communication message queue / Adapter / Registry / Profile แบบ Device
+  Gateway เดิม ที่ถูกตัดออกตั้งแต่ v3.0 (`01_GPS_Build_Reference.md` L189
+  "ไม่ต้องสร้าง Adapter/Registry/Profile/Queue แบบ Device Gateway เดิม") — ตัวนี้เป็น
+  แค่ job runner ธรรมดาสำหรับ retry งานเขียน ไม่ใช่ layer คุยกับกล่อง
 
 ---
 
@@ -130,7 +148,7 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
             │      { source: 'config-sync-writer', configId, versionNumber,
             │        deviceIdentifier, reason, attempts, lastError }
             └─ [B] notification: ยิง alert ให้ Operation
-                   (ใช้ NotificationType ที่มี — เสนอเพิ่ม 'sync_failed')
+                   (NotificationType — 2 ทางเลือกให้ประชุมเลือก ดูข้อ 2 ด้านล่าง)
 ```
 
 **จุดที่ A กับ B ต้องตกลงก่อนเขียนโค้ด:**
@@ -138,8 +156,16 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
 1. **รูปแบบข้อมูล Incident** ที่ A ส่งให้ B — Incident มาได้ 2 ทาง:
    `config-sync-writer` (ฝั่ง A) และ Mobile Simulator Test (ฝั่ง B, Phase 5)
    → ต้องเป็น shape เดียวกัน
-2. **NotificationType ใหม่** สำหรับ sync failure (`sync_failed`?) — ต้องเพิ่มใน
-   Prisma enum + `openapi.yaml` + Mobile `NotificationType` พร้อมกัน
+2. **NotificationType สำหรับ sync failure** — 2 ทางเลือก (ให้ที่ประชุม #32 เลือก):
+   - **(a) reuse `incident_alert`** ที่มีอยู่แล้ว (`schema.prisma:119`,
+     `openapi.yaml:1248`) — ไม่แตะ schema เลย เพราะ sync failure สร้าง Incident อยู่แล้ว
+     ก็ถือเป็น incident alert ปกติ
+   - **(b) เพิ่ม enum value ใหม่ `sync_failed`** — แยกให้ Operation กรอง/เห็นชัดว่าเป็น
+     sync failure โดยเฉพาะ · ต้องแก้ Prisma enum + migration + `openapi.yaml` + Mobile
+     `NotificationType` พร้อมกันทั้ง 4 ที่ · ถ้าเลือกทางนี้ migration ต้อง **stack ต่อจาก
+     PR #87** (`feat/notification-device-tokens` แตะ `schema.prisma`/`openapi.yaml`/
+     migration ในโมดูล notification อยู่แล้ว) — merge #87 ก่อน แล้ว migration `sync_failed`
+     ค่อยตามหลัง กัน checksum drift
 3. retry อยู่ชั้นไหน — ใน writer เอง หรือใน background job runner
 
 ---
@@ -190,15 +216,24 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
 ## 9. วาระประชุม #32
 
 1. Interface `ConfigSyncWriter` — ตกลง shape (§3)
-2. background job runner — BullMQ+Redis หรือ in-process ช่วง mock (§5)
+2. background job runner — BullMQ+Redis หรือ in-process ช่วง mock (§5) · วางไว้ module ไหน
 3. เปลี่ยน `approved` → `synced` เมื่อ sync สำเร็จ ทำใน scope นี้เลยไหม (§5)
-4. retry policy — ชั้นไหน, N ครั้ง, backoff (§6)
+4. retry policy — ชั้นไหน, N ครั้ง, backoff (§6 ข้อ 3)
 5. **รูปแบบข้อมูล Incident ที่ใช้ร่วมกัน** A↔B (§6 ข้อ 1) — สำคัญสุด
-6. NotificationType ใหม่สำหรับ sync failure (§6 ข้อ 2)
-7. ความสัมพันธ์กับ `POST /devices/{deviceId}/apply-config` (#81) — apply-config เป็น
-   fire-and-forget mock ต่อกล่องเดียว, config-sync-writer เป็น batch เข้า data กลาง
-   → เขียนซ้ำหน้าที่กันไหม / คนละเลเยอร์
-8. ใครเริ่มเขียน mock impl ก่อน + timeline
+6. NotificationType สำหรับ sync failure — เลือก (a) reuse `incident_alert` หรือ
+   (b) เพิ่ม `sync_failed` (§6 ข้อ 2) · ถ้าเลือก (b) ต้องกำหนด merge order กับ PR #87
+7. **idempotency ของ retry write** — เขียนซ้ำเข้าระบบเดิมหลัง timeout ปลอดภัยไหม
+   (ระบบเดิมรับ write ซ้ำ field เดิมโดยไม่มี side effect?)
+8. **ordering / concurrency** — config เดียวกัน หรือกล่องเดียวกัน ถูก approve ซ้อนกัน
+   เร็วๆ → job ต้อง serialize ต่อกล่องไหม / กันเขียนทับเวอร์ชันเก่าทับใหม่
+9. **checkpoint Sprint 2 ครอบ docker ไหม** (§2) — เลือก (ก) เลื่อน docker เป็น backlog
+   ตรวจเฉพาะ mock / (ข) คงเกณฑ์แบบผ่อนปรน "ต่อ TCP `:801` ได้ + ส่ง byte ออกได้"
+10. ความสัมพันธ์กับ `POST /devices/{deviceId}/apply-config` (#81) — apply-config เป็น
+    fire-and-forget mock ต่อกล่องเดียว, config-sync-writer เป็น batch เข้า data กลาง
+    → เขียนซ้ำหน้าที่กันไหม / คนละเลเยอร์
+11. ที่บันทึกมติที่ประชุม — อัปเดตกลับไฟล์นี้ หรือทำ decision log แยก
+12. ใครเริ่มเขียน mock impl ก่อน + timeline — mock impl ต้องเสร็จก่อน **Sprint 2
+    checkpoint 27/09/2026**
 
 ---
 
