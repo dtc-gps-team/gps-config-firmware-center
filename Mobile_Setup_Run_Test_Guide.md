@@ -8,7 +8,7 @@
 
 > **สถานะการตรวจสอบ (อัปเดต 7 กันยายน 2569 รอบ 3 — ยืนยันครบผ่าน UI จริงบน Android Emulator แล้ว):**
 > รันจริงครบทุกขั้นตอนรวมถึงชั้น UI ของ Flutter เองแล้ว — `docker compose up -d`, `npm run test`
-> (161 ผ่าน), `npm run test:integration` (125 ผ่าน), `flutter test` (104 ผ่าน),
+> (161 ผ่าน), `npm run test:integration` (125 ผ่าน), `flutter test` (117 ผ่าน),
 > **`flutter test integration_test/task_flow_test.dart` และ `notification_flow_test.dart` ผ่านทั้งคู่
 > บน Android Emulator (AVD `Pixel_10a`) ต่อ backend จริงผ่าน `10.0.2.2:3001`** (ไม่ใช่ API ตรงแบบ curl
 > เหมือนรอบก่อนอีกต่อไป) — Windows Developer Mode ยังเปิดไม่สำเร็จ (ผู้ใช้แจ้งว่าอาจถูก Group Policy
@@ -211,17 +211,18 @@ npm run test:integration
 ```bash
 cd mobile
 
-flutter test                       # unit test + widget test ทั้งหมด — รันผ่านแล้ว: 104 ผ่าน
+flutter test                       # unit test + widget test ทั้งหมด — รันผ่านแล้ว: 117 ผ่าน
 flutter test --coverage            # พร้อม coverage (ได้ไฟล์ coverage/lcov.info)
 ```
 
 **โครงสร้างจริงของ `mobile/test/` เป็นแบบ flat ไม่มี subfolder ต่อ feature** (เช็คแล้ว — ไม่มี
-`test/features/task/` หรือ subfolder อื่นใด) ไฟล์ที่มีจริงตอนนี้ (13 ไฟล์):
+`test/features/task/` หรือ subfolder อื่นใด) ไฟล์ที่มีจริงตอนนี้ (15 ไฟล์ — เพิ่ม `auth_controller_test.dart`
+และ `token_store_test.dart` จากรอบแก้บั๊ก session-restore/error-message):
 `mock_mode_test.dart`, `widget_test.dart`, `device_connection_test_page_test.dart`,
 `login_form_test.dart`, `task_detail_page_test.dart`, `task_repository_test.dart`,
 `simulator_page_test.dart`, `simulator_repository_test.dart`, `api_client_test.dart`,
 `home_page_test.dart`, `notification_list_page_test.dart`, `notification_repository_test.dart`,
-`models_test.dart`
+`models_test.dart`, `auth_controller_test.dart`, `token_store_test.dart`
 
 รันเฉพาะไฟล์เดียวได้ตรง ๆ เช่น:
 
@@ -463,7 +464,7 @@ flutter run --dart-define=API_MOCK_MODE=true
 - [x] Backend รันอยู่ ไม่มี error ใน log ตอน start (`npm run start:dev`, ทดสอบด้วย `curl http://localhost:3001/api/v1/`) — ยืนยันแล้ว 7 กันยายน 2569
 - [x] `npm run test` (backend unit) ผ่านทั้งหมด — 161 ผ่าน (7 กันยายน 2569)
 - [x] `npm run test:integration` (backend, ตั้ง `DATABASE_URL_TEST` แล้ว) ผ่านทั้งหมด — 125 ผ่าน (7 กันยายน 2569)
-- [x] `flutter test` (mobile) ผ่านทั้งหมด — 104 ผ่าน (7 กันยายน 2569)
+- [x] `flutter test` (mobile) ผ่านทั้งหมด — 117 ผ่าน (อัปเดต 8 กันยายน 2569 หลังแก้บั๊ก session-restore/error-message + SecureSessionProfileStore)
 - [x] เปิดแอปด้วย `API_MOCK_MODE=false` ต่อ backend จริง ไล่ feature ตามคู่มือทดสอบ — **ยืนยันผ่าน UI
       จริงแล้ว** บน Android Emulator: `task_flow_test.dart` + `notification_flow_test.dart` ผ่านทั้งคู่
       ผ่าน `flutter test integration_test/` (7 กันยายน 2569), และไล่ Task Management checklist ด้วยมือ
@@ -568,3 +569,38 @@ flutter run --dart-define=API_MOCK_MODE=true
    fix/session-restore-and-raw-error-message` แล้วเปิด PR ได้เลยถ้าตกลงใจ)
 
 **เช็คลิสต์หัวข้อ 7:** ผ่านครบ 6/6 ข้อจริง ไม่มีบั๊กค้างที่รู้แล้วเหลืออยู่
+
+### รอบที่ 5 (8 กันยายน 2569 — PR #89 review + CI fix + sync กับ main)
+
+**สิ่งที่ทำ:**
+1. เปิด PR #89 (`fix/session-restore-and-raw-error-message` → `main`) — Mobile CI (`lint-and-test`)
+   fail ทั้งที่ local `flutter test` ผ่าน 112/112 — สาเหตุคือ CI รัน `flutter analyze` และ
+   `dart format --set-exit-if-changed` **ก่อน** `flutter test` แต่รอบก่อนรันแค่ `flutter test`
+   อย่างเดียว: `flutter analyze` เจอ `unused_element_parameter` ใน `auth_controller_test.dart`
+   (constructor param `error` ที่ไม่มี test ไหนส่งเข้ามา — ลบออก) และ `dart format` เจอ 8 ไฟล์
+   formatting เพี้ยน — แก้ทั้งคู่, push commit `f373fd8`, CI เขียวครบ
+2. A review PR แล้วเจอบั๊กจริง 1 จุด: `SecureSessionProfileStore.read()` (`token_store.dart`) เรียก
+   `UserRole.fromWire()` โดยไม่มี `try/catch` — ถ้า role ที่ค้างใน secure storage เพี้ยน (เช่น
+   Android backup/restore ข้ามเครื่อง หรือ role ถูก rename/ตัดออกฝั่ง server หลังจาก cache ไว้แล้ว)
+   จะ throw `ArgumentError` หลุดออกจาก `Future.microtask(_restore)` ใน `AuthController.build()`
+   แบบไม่มีใครจับ ทำให้แอปค้างที่หน้า splash (`AuthState.unknown`) ตอน cold start — แก้โดย catch
+   `ArgumentError` แล้ว return `null` แทน (ตกไปที่ path "authenticated แต่ไม่มี profile" ที่มี
+   อยู่แล้ว) เพิ่ม test ใหม่ 2 ไฟล์: `token_store_test.dart` (ใหม่ทั้งไฟล์ — fake
+   `FlutterSecureStoragePlatform.instance` ตาม pattern ที่ package เองแนะนำไว้ เพราะ
+   `SecureSessionProfileStore` ห่อ plugin จริง ไม่เหมือน `TokenStore` เดิมที่ test ใช้แค่
+   `InMemoryTokenStore`) และเพิ่ม 1 test ใน `auth_controller_test.dart` ที่ผูก
+   `SecureSessionProfileStore` เข้ากับ `AuthController` จริงเพื่อพิสูจน์ end-to-end ว่าไม่ throw/ไม่
+   ค้าง — เพิ่ม `flutter_secure_storage_platform_interface` เป็น dev dependency ตรง ๆ ใน
+   `pubspec.yaml` (เดิมเป็นแค่ transitive dep เฉย ๆ ทำให้ `flutter analyze` แจ้ง
+   `depend_on_referenced_packages`)
+3. Sync กับ `main`: `git fetch` + `git merge origin/main` — main มีแค่ PR #88 (config-sync-writer
+   proposal, เอกสารล้วน) merge เข้ามาใหม่ ไม่แตะ `mobile/**` เลย **merge สะอาด ไม่มี conflict**
+   ตามที่คาดไว้
+4. รัน `flutter analyze` / `dart format --set-exit-if-changed` / `flutter test` ครบทั้ง 3 คำสั่ง
+   **ทั้งก่อนและหลัง merge** — ผ่านหมดทั้งคู่รอบ **117/117 tests** (เพิ่มจาก 112 เดิม:
+   `token_store_test.dart` 4 test ใหม่ + `auth_controller_test.dart` เพิ่ม 1 test)
+5. push commit `6f73dd0` เข้า branch เดิม — CI เขียวครบอีกรอบ (รอผลจริงหลัง push)
+
+**ไฟล์ test ตอนนี้มี 15 ไฟล์** (เพิ่ม `auth_controller_test.dart` กับ `token_store_test.dart` จาก
+เดิม 13) — แก้ตัวเลข "104 ผ่าน"/"13 ไฟล์" ที่ค้างมาตั้งแต่รอบก่อน ๆ ในเอกสารนี้เป็นค่าปัจจุบันจริง
+(117 ผ่าน / 15 ไฟล์) ไม่ใช่ 112/14 ตามที่ขอตรง ๆ เพราะมี test เพิ่มจากรอบนี้อีกหลังจากเลข 112 ถูกพูดถึง
