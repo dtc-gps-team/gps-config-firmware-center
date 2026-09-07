@@ -84,7 +84,9 @@ Future<void> _pump(
         taskRepositoryProvider.overrideWithValue(repo),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
-        sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
       ],
       child: MaterialApp(home: TaskDetailPage(taskId: taskId)),
     ),
@@ -214,7 +216,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('cannot be solved by the library'), findsNothing);
+      expect(
+        find.textContaining('cannot be solved by the library'),
+        findsNothing,
+      );
       expect(find.byKey(const Key('task_detail_retry')), findsOneWidget);
     },
   );

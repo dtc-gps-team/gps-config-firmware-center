@@ -78,7 +78,8 @@ class AuthController extends Notifier<AuthState> {
   }
 
   TokenStore get _tokenStore => ref.read(tokenStoreProvider);
-  SessionProfileStore get _profileStore => ref.read(sessionProfileStoreProvider);
+  SessionProfileStore get _profileStore =>
+      ref.read(sessionProfileStoreProvider);
   AuthRepository get _repository => ref.read(authRepositoryProvider);
 
   Future<void> _restore() async {

@@ -26,129 +26,125 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
 }
 
 void main() {
-  test('restoring a session with no saved token stays unauthenticated', () async {
-    final container = _container();
-
-    // Reading the provider triggers build(), which schedules `_restore()`.
-    container.read(authControllerProvider);
-    await pumpEventQueue();
-
-    final state = container.read(authControllerProvider);
-    expect(state.status, AuthStatus.unauthenticated);
-    expect(state.username, isNull);
-    expect(state.role, isNull);
-  });
-
   test(
-    'restoring a session with a saved token but no cached profile leaves '
-    'username/role null (pre-fix behaviour, still valid if profile was never '
-    'saved e.g. an older install upgrading)',
+    'restoring a session with no saved token stays unauthenticated',
     () async {
-      final container = _container(token: 'saved-token');
+      final container = _container();
 
+      // Reading the provider triggers build(), which schedules `_restore()`.
       container.read(authControllerProvider);
       await pumpEventQueue();
 
       final state = container.read(authControllerProvider);
-      expect(state.status, AuthStatus.authenticated);
+      expect(state.status, AuthStatus.unauthenticated);
       expect(state.username, isNull);
       expect(state.role, isNull);
     },
   );
 
-  test(
-    'restoring a session with a saved token AND cached profile restores '
-    'username and role (regression test for the cold-start bug found on '
-    '7 กันยายน 2569: Home showed "สวัสดี, ผู้ใช้งาน" and hid the task section '
-    'after Android killed and relaunched the app)',
-    () async {
-      final container = _container(
-        token: 'saved-token',
-        profile: const SessionProfile('st.test', UserRole.st),
-      );
+  test('restoring a session with a saved token but no cached profile leaves '
+      'username/role null (pre-fix behaviour, still valid if profile was never '
+      'saved e.g. an older install upgrading)', () async {
+    final container = _container(token: 'saved-token');
 
-      container.read(authControllerProvider);
+    container.read(authControllerProvider);
+    await pumpEventQueue();
+
+    final state = container.read(authControllerProvider);
+    expect(state.status, AuthStatus.authenticated);
+    expect(state.username, isNull);
+    expect(state.role, isNull);
+  });
+
+  test('restoring a session with a saved token AND cached profile restores '
+      'username and role (regression test for the cold-start bug found on '
+      '7 กันยายน 2569: Home showed "สวัสดี, ผู้ใช้งาน" and hid the task section '
+      'after Android killed and relaunched the app)', () async {
+    final container = _container(
+      token: 'saved-token',
+      profile: const SessionProfile('st.test', UserRole.st),
+    );
+
+    container.read(authControllerProvider);
+    await pumpEventQueue();
+
+    final state = container.read(authControllerProvider);
+    expect(state.status, AuthStatus.authenticated);
+    expect(state.username, 'st.test');
+    expect(state.role, UserRole.st);
+  });
+
+  test(
+    'login persists username + role so a later restore recovers them',
+    () async {
+      final fakeRepo = _FakeAuthRepository(
+        const LoginResponse(accessToken: 'fresh-token', role: UserRole.ot),
+      );
+      final tokenStore = InMemoryTokenStore();
+      final profileStore = InMemorySessionProfileStore();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(fakeRepo),
+          tokenStoreProvider.overrideWithValue(tokenStore),
+          sessionProfileStoreProvider.overrideWithValue(profileStore),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login('ot.test', 'password123');
+
+      // Simulate a cold start in a fresh container backed by the same stores.
+      final restoredContainer = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+          tokenStoreProvider.overrideWithValue(tokenStore),
+          sessionProfileStoreProvider.overrideWithValue(profileStore),
+        ],
+      );
+      addTearDown(restoredContainer.dispose);
+
+      restoredContainer.read(authControllerProvider);
       await pumpEventQueue();
 
-      final state = container.read(authControllerProvider);
-      expect(state.status, AuthStatus.authenticated);
-      expect(state.username, 'st.test');
-      expect(state.role, UserRole.st);
+      final restored = restoredContainer.read(authControllerProvider);
+      expect(restored.status, AuthStatus.authenticated);
+      expect(restored.username, 'ot.test');
+      expect(restored.role, UserRole.ot);
     },
   );
 
-  test('login persists username + role so a later restore recovers them', () async {
-    final fakeRepo = _FakeAuthRepository(
-      response: const LoginResponse(
-        accessToken: 'fresh-token',
-        role: UserRole.ot,
-      ),
-    );
-    final tokenStore = InMemoryTokenStore();
-    final profileStore = InMemorySessionProfileStore();
-    final container = ProviderContainer(
-      overrides: [
-        authRepositoryProvider.overrideWithValue(fakeRepo),
-        tokenStoreProvider.overrideWithValue(tokenStore),
-        sessionProfileStoreProvider.overrideWithValue(profileStore),
-      ],
-    );
-    addTearDown(container.dispose);
+  test(
+    'logout clears the cached profile so a later restore stays anonymous',
+    () async {
+      final tokenStore = InMemoryTokenStore('saved-token');
+      final profileStore = InMemorySessionProfileStore(
+        const SessionProfile('st.test', UserRole.st),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+          tokenStoreProvider.overrideWithValue(tokenStore),
+          sessionProfileStoreProvider.overrideWithValue(profileStore),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    await container.read(authControllerProvider.notifier).login(
-      'ot.test',
-      'password123',
-    );
+      await container.read(authControllerProvider.notifier).logout();
 
-    // Simulate a cold start in a fresh container backed by the same stores.
-    final restoredContainer = ProviderContainer(
-      overrides: [
-        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
-        tokenStoreProvider.overrideWithValue(tokenStore),
-        sessionProfileStoreProvider.overrideWithValue(profileStore),
-      ],
-    );
-    addTearDown(restoredContainer.dispose);
-
-    restoredContainer.read(authControllerProvider);
-    await pumpEventQueue();
-
-    final restored = restoredContainer.read(authControllerProvider);
-    expect(restored.status, AuthStatus.authenticated);
-    expect(restored.username, 'ot.test');
-    expect(restored.role, UserRole.ot);
-  });
-
-  test('logout clears the cached profile so a later restore stays anonymous', () async {
-    final tokenStore = InMemoryTokenStore('saved-token');
-    final profileStore = InMemorySessionProfileStore(
-      const SessionProfile('st.test', UserRole.st),
-    );
-    final container = ProviderContainer(
-      overrides: [
-        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
-        tokenStoreProvider.overrideWithValue(tokenStore),
-        sessionProfileStoreProvider.overrideWithValue(profileStore),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await container.read(authControllerProvider.notifier).logout();
-
-    expect(await tokenStore.read(), isNull);
-    expect(await profileStore.read(), isNull);
-  });
+      expect(await tokenStore.read(), isNull);
+      expect(await profileStore.read(), isNull);
+    },
+  );
 }
 
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository({this.response, this.error});
+  _FakeAuthRepository(this.response);
 
-  final LoginResponse? response;
-  final Object? error;
+  final LoginResponse response;
 
   @override
-  Future<LoginResponse> login(String username, String password) async {
-    if (error != null) throw error!;
-    return response!;
-  }
+  Future<LoginResponse> login(String username, String password) async =>
+      response;
 }
