@@ -108,6 +108,9 @@ Future<void> _pumpHome(
       overrides: [
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
         taskRepositoryProvider.overrideWithValue(
           taskRepo ?? _FakeTaskRepository(),
         ),
@@ -369,6 +372,9 @@ void main() {
           () => _FakeAuthController(UserRole.st),
         ),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
         taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
         notificationRepositoryProvider.overrideWithValue(
           _FakeNotificationRepository(),

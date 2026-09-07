@@ -21,8 +21,10 @@ class AuthState {
 
   /// Username entered at login. The backend `LoginResponse` carries only
   /// `accessToken` + `role` (no display name, and there is no `/auth/me`
-  /// endpoint yet), so this is the only identity string we can show. It is not
-  /// persisted, so it is `null` after a session is restored from a saved token.
+  /// endpoint yet), so this is the only identity string we can show.
+  /// Persisted via [SessionProfileStore] alongside the token, so it — and
+  /// [role] — survive a session restore (`AuthController._restore`), not just
+  /// a fresh login.
   final String? username;
   final String? error;
 
@@ -52,6 +54,12 @@ final tokenStoreProvider = Provider<TokenStore>((ref) {
   return AppConfig.apiMockMode ? InMemoryTokenStore() : SecureTokenStore();
 });
 
+final sessionProfileStoreProvider = Provider<SessionProfileStore>((ref) {
+  return AppConfig.apiMockMode
+      ? InMemorySessionProfileStore()
+      : SecureSessionProfileStore();
+});
+
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   if (AppConfig.apiMockMode) return MockAuthRepository();
   return RealAuthRepository(ref.watch(apiClientProvider));
@@ -70,6 +78,8 @@ class AuthController extends Notifier<AuthState> {
   }
 
   TokenStore get _tokenStore => ref.read(tokenStoreProvider);
+  SessionProfileStore get _profileStore =>
+      ref.read(sessionProfileStoreProvider);
   AuthRepository get _repository => ref.read(authRepositoryProvider);
 
   Future<void> _restore() async {
@@ -79,7 +89,12 @@ class AuthController extends Notifier<AuthState> {
       return;
     }
     ref.read(apiClientProvider).setAuthToken(token);
-    state = state.copyWith(status: AuthStatus.authenticated);
+    final profile = await _profileStore.read();
+    state = state.copyWith(
+      status: AuthStatus.authenticated,
+      username: profile?.username,
+      role: profile?.role,
+    );
   }
 
   Future<void> login(String username, String password) async {
@@ -92,6 +107,10 @@ class AuthController extends Notifier<AuthState> {
         throw ApiException('เข้าสู่ระบบไม่สำเร็จ: ไม่ได้รับ token');
       }
       await _tokenStore.save(token);
+      final role = response.role;
+      if (role != null) {
+        await _profileStore.save(trimmedUsername, role);
+      }
       ref.read(apiClientProvider).setAuthToken(token);
       state = AuthState(
         status: AuthStatus.authenticated,
@@ -110,6 +129,7 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> logout() async {
     await _tokenStore.clear();
+    await _profileStore.clear();
     ref.read(apiClientProvider).setAuthToken(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
