@@ -85,7 +85,18 @@ class SecureSessionProfileStore implements SessionProfileStore {
     final username = await _storage.read(key: _usernameKey);
     final roleWire = await _storage.read(key: _roleKey);
     if (username == null || roleWire == null) return null;
-    return SessionProfile(username, UserRole.fromWire(roleWire));
+    try {
+      return SessionProfile(username, UserRole.fromWire(roleWire));
+    } on ArgumentError {
+      // roleWire doesn't match any known UserRole (e.g. storage corrupted by
+      // an Android backup/restore, or the role was renamed/removed
+      // server-side since it was cached). Treat it the same as "no cached
+      // profile" — AuthController._restore() already has an authenticated-
+      // but-no-profile path for this — rather than letting it escape as an
+      // unhandled error out of the Future.microtask(_restore) in build(),
+      // which would leave the app stuck on AuthState.unknown at cold start.
+      return null;
+    }
   }
 
   @override

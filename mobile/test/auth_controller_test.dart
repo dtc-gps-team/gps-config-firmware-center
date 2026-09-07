@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
@@ -9,6 +10,48 @@ class _NoopAuthRepository implements AuthRepository {
   @override
   Future<LoginResponse> login(String username, String password) =>
       throw UnimplementedError();
+}
+
+/// Same fake as `token_store_test.dart` (kept local — these test files don't
+/// import each other), used here to exercise `SecureSessionProfileStore`
+/// (not just the in-memory test double) through a real `AuthController`
+/// restore, so the fix is proven end-to-end and not just at the store layer.
+class _FakeSecureStoragePlatform extends FlutterSecureStoragePlatform {
+  final Map<String, String> values = {};
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async => values[key] = value;
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => values[key];
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => values.containsKey(key);
+
+  @override
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async => values.remove(key);
+
+  @override
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => Map.of(values);
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async =>
+      values.clear();
 }
 
 ProviderContainer _container({String? token, SessionProfile? profile}) {
@@ -47,6 +90,39 @@ void main() {
       'saved e.g. an older install upgrading)', () async {
     final container = _container(token: 'saved-token');
 
+    container.read(authControllerProvider);
+    await pumpEventQueue();
+
+    final state = container.read(authControllerProvider);
+    expect(state.status, AuthStatus.authenticated);
+    expect(state.username, isNull);
+    expect(state.role, isNull);
+  });
+
+  test('corrupted role cached in secure storage -> _restore() does not throw, '
+      'lands on authenticated with no profile instead of hanging on cold '
+      'start (regression test: SecureSessionProfileStore.read() used to let '
+      "UserRole.fromWire's ArgumentError escape as an unhandled error out of "
+      "AuthController.build()'s Future.microtask(_restore), leaving the app "
+      'stuck on the splash screen)', () async {
+    final fakePlatform = _FakeSecureStoragePlatform()
+      ..values['session_username'] = 'st.test'
+      ..values['session_role'] = 'NOT_A_REAL_ROLE';
+    FlutterSecureStoragePlatform.instance = fakePlatform;
+
+    final container = ProviderContainer(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore('saved-token')),
+        sessionProfileStoreProvider.overrideWithValue(
+          SecureSessionProfileStore(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // Would previously throw synchronously out of the microtask instead
+    // of returning — asserting no throw here is the point of this test.
     container.read(authControllerProvider);
     await pumpEventQueue();
 
