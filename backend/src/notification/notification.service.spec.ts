@@ -1,8 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Notification } from '@prisma/client';
+import { DeviceToken, Notification } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FCM_SENDER, type FcmSendResult } from './fcm-sender';
 import { NotificationService } from './notification.service';
 
 type NotificationDelegateMock = {
@@ -13,7 +14,29 @@ type NotificationDelegateMock = {
 type DeviceTokenDelegateMock = {
   upsert: jest.Mock;
   deleteMany: jest.Mock;
+  findMany: jest.Mock;
 };
+
+type FcmSenderMock = { sendToTokens: jest.Mock };
+
+const sampleTokens: DeviceToken[] = [
+  {
+    id: 'dt-1',
+    userId: 'user-1',
+    token: 'tok-1',
+    platform: 'android',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'dt-2',
+    userId: 'user-1',
+    token: 'tok-2',
+    platform: 'android',
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  },
+];
 
 const sampleNotification: Notification = {
   id: '22222222-2222-2222-2222-222222222222',
@@ -31,7 +54,9 @@ async function buildService(
   deviceToken: DeviceTokenDelegateMock = {
     upsert: jest.fn(),
     deleteMany: jest.fn(),
+    findMany: jest.fn(),
   },
+  fcmSender: FcmSenderMock = { sendToTokens: jest.fn() },
 ): Promise<NotificationService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -43,6 +68,7 @@ async function buildService(
           get: (_key: string, def?: string) => mode ?? def,
         },
       },
+      { provide: FCM_SENDER, useValue: fcmSender },
     ],
   }).compile();
 
@@ -55,7 +81,11 @@ describe('NotificationService', () => {
 
   beforeEach(() => {
     notification = { create: jest.fn(), update: jest.fn() };
-    deviceToken = { upsert: jest.fn(), deleteMany: jest.fn() };
+    deviceToken = {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+      findMany: jest.fn(),
+    };
   });
 
   it('ค่าเริ่มต้นเป็นโหมด mock', async () => {
@@ -94,14 +124,113 @@ describe('NotificationService', () => {
     });
   });
 
-  it('mode fcm: ยังไม่รองรับ ต้อง throw (แต่ record ถูกสร้างแล้ว)', async () => {
-    notification.create.mockResolvedValue(sampleNotification);
-    const service = await buildService('fcm', notification);
+  describe('mode fcm', () => {
+    it('type=task_assigned + มี device token → เรียก fcmSender แล้ว markSent', async () => {
+      notification.create.mockResolvedValue(sampleNotification);
+      notification.update.mockResolvedValue({
+        ...sampleNotification,
+        sentAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+      deviceToken.findMany.mockResolvedValue(sampleTokens);
+      const fcmSender: FcmSenderMock = {
+        sendToTokens: jest
+          .fn()
+          .mockResolvedValue({ invalidTokens: [] } satisfies FcmSendResult),
+      };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
 
-    await expect(
-      service.send({ userId: 'user-1', type: 'task_assigned' }),
-    ).rejects.toThrow('NOTIFICATION_MODE=fcm');
-    expect(notification.create).toHaveBeenCalled();
+      const result = await service.send({
+        userId: 'user-1',
+        type: 'task_assigned',
+        payload: { taskId: 'abc' },
+      });
+
+      expect(deviceToken.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+      expect(fcmSender.sendToTokens).toHaveBeenCalledWith({
+        tokens: ['tok-1', 'tok-2'],
+        notification: { type: 'task_assigned', payload: { taskId: 'abc' } },
+      });
+      expect(notification.update).toHaveBeenCalledWith({
+        where: { id: sampleNotification.id },
+        data: { sentAt: expect.any(Date) as Date },
+      });
+      expect(result.sentAt).not.toBeNull();
+    });
+
+    it('fcmSender คืน token invalid → ลบ token นั้นออกจาก DeviceToken', async () => {
+      notification.create.mockResolvedValue(sampleNotification);
+      notification.update.mockResolvedValue(sampleNotification);
+      deviceToken.findMany.mockResolvedValue(sampleTokens);
+      deviceToken.deleteMany.mockResolvedValue({ count: 1 });
+      const fcmSender: FcmSenderMock = {
+        sendToTokens: jest.fn().mockResolvedValue({
+          invalidTokens: ['tok-2'],
+        } satisfies FcmSendResult),
+      };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
+
+      await service.send({ userId: 'user-1', type: 'task_assigned' });
+
+      expect(deviceToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: { in: ['tok-2'] } },
+      });
+    });
+
+    it('type ที่ไม่ใช่ task_assigned → ไม่เรียก fcmSender เลย (fallback เหมือน mock)', async () => {
+      notification.create.mockResolvedValue({
+        ...sampleNotification,
+        type: 'config_approved',
+      });
+      const fcmSender: FcmSenderMock = { sendToTokens: jest.fn() };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
+
+      const result = await service.send({
+        userId: 'user-1',
+        type: 'config_approved',
+      });
+
+      expect(fcmSender.sendToTokens).not.toHaveBeenCalled();
+      expect(deviceToken.findMany).not.toHaveBeenCalled();
+      expect(notification.update).not.toHaveBeenCalled();
+      expect(result.type).toBe('config_approved');
+    });
+
+    it('ไม่มี device token ที่ลงทะเบียนไว้เลย → ไม่เรียก fcmSender ไม่ error', async () => {
+      notification.create.mockResolvedValue(sampleNotification);
+      deviceToken.findMany.mockResolvedValue([]);
+      const fcmSender: FcmSenderMock = { sendToTokens: jest.fn() };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
+
+      const result = await service.send({
+        userId: 'user-1',
+        type: 'task_assigned',
+      });
+
+      expect(fcmSender.sendToTokens).not.toHaveBeenCalled();
+      expect(result).toEqual(sampleNotification);
+    });
   });
 
   describe('registerDeviceToken', () => {
