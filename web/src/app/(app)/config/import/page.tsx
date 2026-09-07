@@ -18,7 +18,7 @@ export default function ConfigImportPage() {
       <div>
         <h1 className="text-2xl font-semibold">Config Import</h1>
         <p className="text-sm text-muted-foreground">
-          นำเข้า Config จากไฟล์ JSON — สร้างได้เฉพาะ Role SW
+          นำเข้า Config จากไฟล์ JSON · สร้างได้เฉพาะ Role SW
         </p>
       </div>
 

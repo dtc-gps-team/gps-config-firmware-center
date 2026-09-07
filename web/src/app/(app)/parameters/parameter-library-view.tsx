@@ -45,7 +45,7 @@ function ParameterLibraryContent() {
         <div>
           <h1 className="text-2xl font-semibold">คลัง Parameter</h1>
           <p className="text-sm text-muted-foreground">
-            นิยาม field ที่ใช้กรอก Config — สร้างได้เฉพาะ Role SW
+            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role SW
           </p>
         </div>
         {canCreate ? <Button disabled>+ สร้าง Parameter ใหม่</Button> : null}
@@ -55,7 +55,7 @@ function ParameterLibraryContent() {
         <CardHeader>
           <CardTitle>รายการ Parameter ทั้งหมด</CardTitle>
           <CardDescription>
-            เรียงตามชื่อ field — แสดง {DEMO_PARAMETERS.length} จาก{" "}
+            เรียงตามชื่อ field · แสดง {DEMO_PARAMETERS.length} จาก{" "}
             {DEMO_PARAMETERS_TOTAL} field ที่ seed ไว้ในระบบ
           </CardDescription>
         </CardHeader>
@@ -78,7 +78,7 @@ function ParameterLibraryContent() {
                   </TableCell>
                   <TableCell>{param.dataType}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {param.required ? "ใช่" : "—"}
+                    {param.required ? "ใช่" : "-"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {param.models}

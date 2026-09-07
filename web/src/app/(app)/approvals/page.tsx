@@ -29,7 +29,7 @@ export default function ApprovalsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Approval Center</h1>
         <p className="text-sm text-muted-foreground">
-          อนุมัติ/ปฏิเสธ Config — Operation เท่านั้น
+          อนุมัติ/ปฏิเสธ Config · Operation เท่านั้น
         </p>
       </div>
 

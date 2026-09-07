@@ -33,7 +33,7 @@ export default function TasksPage() {
         <div>
           <h1 className="text-2xl font-semibold">Task Management</h1>
           <p className="text-sm text-muted-foreground">
-            มอบหมายงานช่าง — สร้าง/มอบหมายได้เฉพาะ Role Operation
+            มอบหมายงานช่าง · สร้าง/มอบหมายได้เฉพาะ Role Operation
           </p>
         </div>
         <CreateTaskButton />
@@ -43,7 +43,7 @@ export default function TasksPage() {
         <CardHeader>
           <CardTitle>รายการ Task</CardTitle>
           <CardDescription>
-            Operation เห็นทุก Task — ST/OT เห็นเฉพาะงานที่ตัวเองถูกมอบหมาย
+            Operation เห็นทุก Task · ST/OT เห็นเฉพาะงานที่ตัวเองถูกมอบหมาย
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

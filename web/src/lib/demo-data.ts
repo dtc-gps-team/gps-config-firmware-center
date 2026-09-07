@@ -76,7 +76,7 @@ export const DEMO_DASHBOARD_SUMMARY = [
 
 export const DEMO_DASHBOARD_ACTIVITY = [
   { time: "09:24", text: "operation.test อนุมัติ Config GT06N/TCP (v3)" },
-  { time: "08:51", text: "sw.test รัน simulation Config GT06L/TCP — ผ่าน" },
+  { time: "08:51", text: "sw.test รัน simulation Config GT06L/TCP · ผ่าน" },
   {
     time: "08:10",
     text: "ระบบสร้าง Incident: อุปกรณ์ DEV-0042 sync ไม่สำเร็จ",
@@ -103,7 +103,7 @@ export interface DemoConfig {
 export const DEMO_CONFIGS: DemoConfig[] = [
   {
     id: "cfg-1041",
-    name: "GT06N — ตั้งค่ามาตรฐานภาคกลาง",
+    name: "GT06N · ตั้งค่ามาตรฐานภาคกลาง",
     deviceModel: "GT06N",
     protocol: "TCP",
     status: "approved",
@@ -113,7 +113,7 @@ export const DEMO_CONFIGS: DemoConfig[] = [
   },
   {
     id: "cfg-1040",
-    name: "GT06N — รอบรายงานถี่ (ทดสอบ)",
+    name: "GT06N · รอบรายงานถี่ (ทดสอบ)",
     deviceModel: "GT06N",
     protocol: "TCP",
     status: "testing",
@@ -123,7 +123,7 @@ export const DEMO_CONFIGS: DemoConfig[] = [
   },
   {
     id: "cfg-1039",
-    name: "GT06L — ชุดร่างสำหรับลูกค้าใหม่",
+    name: "GT06L · ชุดร่างสำหรับลูกค้าใหม่",
     deviceModel: "GT06L",
     protocol: "TCP",
     status: "draft",
@@ -133,7 +133,7 @@ export const DEMO_CONFIGS: DemoConfig[] = [
   },
   {
     id: "cfg-1037",
-    name: "GT06N — ตั้งค่าที่ใช้งานจริง (sync แล้ว)",
+    name: "GT06N · ตั้งค่าที่ใช้งานจริง (sync แล้ว)",
     deviceModel: "GT06N",
     protocol: "TCP",
     status: "synced",
@@ -143,7 +143,7 @@ export const DEMO_CONFIGS: DemoConfig[] = [
   },
   {
     id: "cfg-1035",
-    name: "GT06L — รอบรายงานถี่เกินไป (ถูกปฏิเสธ)",
+    name: "GT06L · รอบรายงานถี่เกินไป (ถูกปฏิเสธ)",
     deviceModel: "GT06L",
     protocol: "TCP",
     status: "rejected",
@@ -162,7 +162,7 @@ export const DEMO_PENDING_APPROVALS = DEMO_CONFIGS.filter(
 ).concat([
   {
     id: "cfg-1038",
-    name: "GT06N — ปรับ APN ผู้ให้บริการรายใหม่",
+    name: "GT06N · ปรับ APN ผู้ให้บริการรายใหม่",
     deviceModel: "GT06N",
     protocol: "TCP",
     status: "testing",
@@ -172,7 +172,7 @@ export const DEMO_PENDING_APPROVALS = DEMO_CONFIGS.filter(
   },
   {
     id: "cfg-1036",
-    name: "GT06L — เปิดอ่านค่า CAN bus",
+    name: "GT06L · เปิดอ่านค่า CAN bus",
     deviceModel: "GT06L",
     protocol: "TCP",
     status: "testing",
@@ -400,19 +400,19 @@ export const DEMO_DEVICE_DETAIL = {
 
 export const DEMO_CAMPAIGNS = [
   {
-    name: "นำร่องภาคเหนือ — GT06N v2.4.1",
+    name: "นำร่องภาคเหนือ · GT06N v2.4.1",
     target: "Firmware GT06N-v2.4.1",
     failureRate: "0%",
     status: "กำลังทำงาน" as const,
   },
   {
-    name: "อัปเดตรอบรายงาน Q3 — ภาคกลาง",
+    name: "อัปเดตรอบรายงาน Q3 · ภาคกลาง",
     target: "Config cfg-1037",
     failureRate: "1.2%",
     status: "กำลังทำงาน" as const,
   },
   {
-    name: "ทดสอบ CAN bus — 20 คันแรก",
+    name: "ทดสอบ CAN bus · 20 คันแรก",
     target: "Config cfg-1036",
     failureRate: "0%",
     status: "เสร็จสิ้น" as const,
@@ -457,7 +457,7 @@ export const DEMO_AUDIT = [
     time: "2026-09-04 08:51",
     actor: "sw.test",
     action: "config.simulate",
-    detail: "รัน simulation cfg-1040 — ผ่าน",
+    detail: "รัน simulation cfg-1040 · ผ่าน",
   },
   {
     time: "2026-09-04 08:05",

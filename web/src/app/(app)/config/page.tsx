@@ -30,7 +30,7 @@ export default function ConfigPage() {
         <div>
           <h1 className="text-2xl font-semibold">Config Editor</h1>
           <p className="text-sm text-muted-foreground">
-            สร้าง/แก้ Draft — สร้างได้เฉพาะ Role SW
+            สร้าง/แก้ Draft · สร้างได้เฉพาะ Role SW
           </p>
         </div>
         <CreateConfigButton />

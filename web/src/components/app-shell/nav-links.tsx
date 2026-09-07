@@ -19,11 +19,25 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
       item.allowedRoles.some((role) => role === session?.role),
   );
 
+  // เมนูไหน "ครอบ" หน้าปัจจุบัน — match ที่ขอบ segment (ไม่ใช่ prefix เปล่าๆ ที่
+  // ทำให้ /config ติด active ค้างตอนอยู่ /config/import) แล้วเลือกอันที่เจาะจง
+  // ที่สุด (href ยาวสุด) เพื่อให้ /devices/:id ยัง highlight "Device Search" อยู่
+  const activeHref = visibleItems
+    .filter((item) =>
+      item.href === "/"
+        ? pathname === "/"
+        : pathname === item.href || pathname.startsWith(`${item.href}/`),
+    )
+    .reduce<string | null>(
+      (best, item) =>
+        best === null || item.href.length > best.length ? item.href : best,
+      null,
+    );
+
   return (
     <nav className="flex flex-col gap-1">
       {visibleItems.map((item) => {
-        const active =
-          item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+        const active = item.href === activeHref;
         return (
           <Link
             key={item.href}
