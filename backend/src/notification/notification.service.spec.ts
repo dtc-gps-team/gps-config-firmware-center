@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Notification } from '@prisma/client';
@@ -7,6 +8,11 @@ import { NotificationService } from './notification.service';
 type NotificationDelegateMock = {
   create: jest.Mock;
   update: jest.Mock;
+};
+
+type DeviceTokenDelegateMock = {
+  upsert: jest.Mock;
+  deleteMany: jest.Mock;
 };
 
 const sampleNotification: Notification = {
@@ -22,11 +28,15 @@ const sampleNotification: Notification = {
 async function buildService(
   mode: string | undefined,
   notification: NotificationDelegateMock,
+  deviceToken: DeviceTokenDelegateMock = {
+    upsert: jest.fn(),
+    deleteMany: jest.fn(),
+  },
 ): Promise<NotificationService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       NotificationService,
-      { provide: PrismaService, useValue: { notification } },
+      { provide: PrismaService, useValue: { notification, deviceToken } },
       {
         provide: ConfigService,
         useValue: {
@@ -41,9 +51,11 @@ async function buildService(
 
 describe('NotificationService', () => {
   let notification: NotificationDelegateMock;
+  let deviceToken: DeviceTokenDelegateMock;
 
   beforeEach(() => {
     notification = { create: jest.fn(), update: jest.fn() };
+    deviceToken = { upsert: jest.fn(), deleteMany: jest.fn() };
   });
 
   it('ค่าเริ่มต้นเป็นโหมด mock', async () => {
@@ -90,6 +102,57 @@ describe('NotificationService', () => {
       service.send({ userId: 'user-1', type: 'task_assigned' }),
     ).rejects.toThrow('NOTIFICATION_MODE=fcm');
     expect(notification.create).toHaveBeenCalled();
+  });
+
+  describe('registerDeviceToken', () => {
+    it('upsert ตาม token — สร้างใหม่ถ้ายังไม่มี, ทับ userId/platform ถ้ามีแล้ว', async () => {
+      const row = {
+        id: 'dt-1',
+        userId: 'user-1',
+        token: 'fcm-abc',
+        platform: 'android',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      deviceToken.upsert.mockResolvedValue(row);
+      const service = await buildService('mock', notification, deviceToken);
+
+      const result = await service.registerDeviceToken(
+        'user-1',
+        'fcm-abc',
+        'android',
+      );
+
+      expect(result).toEqual(row);
+      expect(deviceToken.upsert).toHaveBeenCalledWith({
+        where: { token: 'fcm-abc' },
+        create: { userId: 'user-1', token: 'fcm-abc', platform: 'android' },
+        update: { userId: 'user-1', platform: 'android' },
+      });
+    });
+  });
+
+  describe('removeDeviceToken', () => {
+    it('ลบ token ของตัวเองสำเร็จ (count > 0)', async () => {
+      deviceToken.deleteMany.mockResolvedValue({ count: 1 });
+      const service = await buildService('mock', notification, deviceToken);
+
+      await expect(
+        service.removeDeviceToken('user-1', 'fcm-abc'),
+      ).resolves.toBeUndefined();
+      expect(deviceToken.deleteMany).toHaveBeenCalledWith({
+        where: { token: 'fcm-abc', userId: 'user-1' },
+      });
+    });
+
+    it('IDOR: ลบ token ของคนอื่น (count === 0) → NotFoundException', async () => {
+      deviceToken.deleteMany.mockResolvedValue({ count: 0 });
+      const service = await buildService('mock', notification, deviceToken);
+
+      await expect(
+        service.removeDeviceToken('attacker', 'someone-elses-token'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   it('markSent: บันทึกเวลา sentAt', async () => {

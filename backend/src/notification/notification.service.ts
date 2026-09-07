@@ -1,6 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Notification, NotificationType, Prisma } from '@prisma/client';
+import {
+  DeviceToken,
+  Notification,
+  NotificationType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type NotificationMode = 'mock' | 'fcm';
@@ -97,5 +102,47 @@ export class NotificationService {
     return this.prisma.notification.findUnique({
       where: { id },
     }) as Promise<Notification>;
+  }
+
+  // -------------------------------------------------------------------------
+  // Device tokens (Push Notification groundwork — Sprint 3 #17, PR A)
+  // ยังไม่มีโค้ดส่ง push จริง (PR B) — รอบนี้แค่เก็บ token
+  // -------------------------------------------------------------------------
+
+  /**
+   * ลงทะเบียน / อัปเดต FCM device token ของ user — upsert ตาม `token`
+   *
+   * FCM token = identifier ของ "แอป+เครื่อง" 1 ตัว ถ้า token เดิมส่งเข้ามาอีก
+   * (เครื่องเดิม แต่คนละ user เช่นผู้ใช้ล็อกอินใหม่บนเครื่องเดิม) ให้ทับ
+   * `userId`/`platform` — `updatedAt` Prisma bump ให้เอง
+   *
+   * `userId` มาจาก JWT (`req.user.sub`) เสมอ ไม่รับจาก client
+   */
+  registerDeviceToken(
+    userId: string,
+    token: string,
+    platform: string,
+  ): Promise<DeviceToken> {
+    return this.prisma.deviceToken.upsert({
+      where: { token },
+      create: { userId, token, platform },
+      update: { userId, platform },
+    });
+  }
+
+  /**
+   * ถอนทะเบียน device token (เรียกตอน logout)
+   *
+   * IDOR Prevention Pattern (CLAUDE.md): `deleteMany({ where: { token, userId } })`
+   * + เช็ค `count === 0` → 404 — ลบ token ของ user อื่นไม่ได้
+   */
+  async removeDeviceToken(userId: string, token: string): Promise<void> {
+    const result = await this.prisma.deviceToken.deleteMany({
+      where: { token, userId },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Device token not found');
+    }
   }
 }

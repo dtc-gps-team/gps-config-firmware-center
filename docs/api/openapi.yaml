@@ -515,6 +515,56 @@ paths:
         "404":
           description: ไม่พบ Notification นี้
 
+  /notifications/device-tokens:
+    post:
+      tags: [notification]
+      operationId: registerDeviceToken
+      summary: >-
+        ลงทะเบียน / อัปเดต FCM device token ของ user ปัจจุบัน (Push Notification
+        groundwork — v3.14) — upsert ตาม token, ผูกกับ JWT ไม่รับ userId จาก client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceTokenInput"
+      responses:
+        "200":
+          description: ลงทะเบียน / อัปเดตสำเร็จ (upsert idempotent — ไม่ตอบ 201)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceToken"
+        "400":
+          description: ข้อมูลไม่ถูกต้อง (token ว่าง / platform ไม่ใช่ android|ios|web)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+    delete:
+      tags: [notification]
+      operationId: deleteDeviceToken
+      summary: >-
+        ถอนทะเบียน device token (เรียกตอน logout — v3.14) — ลบได้เฉพาะ token
+        ของตัวเอง · token เป็น query param (ไม่ใช่ path) เพราะ FCM token มี `/` `:`
+        และ path `/device-tokens/{token}` ชนกับ `/{notificationId}/read`
+      parameters:
+        - in: query
+          name: token
+          required: true
+          description: FCM registration token
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "204":
+          description: ถอนทะเบียนสำเร็จ (ไม่มี body)
+        "400":
+          description: ไม่ได้ระบุ token
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ device token นี้ (หรือเป็นของ user อื่น — ตอบ 404 ไม่เปิดเผย)
+
   /tasks:
     get:
       tags: [task]
@@ -1211,3 +1261,39 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    DeviceToken:
+      type: object
+      description: FCM device token ของ user (ตรงกับ Prisma model DeviceToken)
+      required: [id, userId, token, platform, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: user id ของเจ้าของ token (ผูกจาก JWT)
+        token:
+          type: string
+          description: FCM registration token
+        platform:
+          type: string
+          enum: [android, ios, web]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RegisterDeviceTokenInput:
+      type: object
+      required: [token, platform]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: FCM registration token ของเครื่อง
+        platform:
+          type: string
+          enum: [android, ios, web]
