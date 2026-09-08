@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { randomUUID } from 'node:crypto';
 import {
   ActionType,
   DeviceLifecycleStatus,
@@ -107,6 +108,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
     const user = await makeUser(prisma, { role: 'SW' });
     const config = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel,
         protocol: 'TCP',
         status,

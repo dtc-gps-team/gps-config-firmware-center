@@ -295,7 +295,16 @@ enum ConfigStatus {
 }
 
 model Config {
-  id          String       @id @default(uuid())
+  id String @id @default(uuid())
+  // ชื่อ Config ที่คนตั้ง — unique ทั้งระบบ กัน SW สร้าง/แก้แล้วชนกันเอง หรือมี
+  // config ซ้ำที่แยกไม่ออกว่าอันไหนคืออันจริง (มติ Sprint 1 review ข้อ 4 —
+  // ดู docs/09_Sprint1_Review_Decisions.md §2)
+  //
+  // Deviation จาก Data Dictionary: model Config ทั้งตัวเป็นเวอร์ชันย่อของดีไซน์
+  // template-based ใน DD (CONFIG_TEMPLATE + CONFIG_TEMPLATE_VERSION + ...) —
+  // field นี้เทียบเท่ากับ CONFIG_TEMPLATE.template_name ของ DD แต่บังคับ unique
+  // ทั้งระบบตามมติ review ข้างต้น
+  name        String       @unique
   deviceModel String
   protocol    String
   status      ConfigStatus @default(draft)

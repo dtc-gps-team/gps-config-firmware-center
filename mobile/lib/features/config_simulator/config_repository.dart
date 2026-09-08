@@ -26,6 +26,7 @@ class MockConfigRepository implements ConfigRepository {
   final List<DeviceConfigDraft> _configs = const [
     DeviceConfigDraft(
       id: 'mock-config-1',
+      name: 'GT06N · ตั้งค่ามาตรฐาน',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: ConfigStatus.approved,
@@ -33,6 +34,7 @@ class MockConfigRepository implements ConfigRepository {
     ),
     DeviceConfigDraft(
       id: 'mock-config-2',
+      name: 'GT06N · รอบรายงานถี่ (ใช้งานจริง)',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: ConfigStatus.synced,
@@ -44,6 +46,7 @@ class MockConfigRepository implements ConfigRepository {
     // non-deployable example to test that filter against.
     DeviceConfigDraft(
       id: 'mock-config-3',
+      name: 'GT06L · ชุดร่าง',
       deviceModel: 'GT06L',
       protocol: 'TCP',
       status: ConfigStatus.draft,

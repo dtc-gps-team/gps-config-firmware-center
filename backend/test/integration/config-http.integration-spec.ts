@@ -3,6 +3,7 @@ import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ActionType, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { ConfigModule } from '../../src/config/config.module';
@@ -139,6 +140,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .post('/api/v1/config')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: { APN1: 'internet' },
@@ -148,6 +150,66 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const body = res.body as { createdBy: string; status: string };
     expect(body.createdBy).toBe(swUser.id);
     expect(body.status).toBe('draft');
+  });
+
+  it('POST /config ชื่อ Config ซ้ำกับที่มีอยู่ -> 409 (unique ทั้งระบบ — มติ Sprint 1 review ข้อ 4)', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(swUser.id, 'SW');
+    const dupName = `cfg-${randomUUID()}`;
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: dupName,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: dupName,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
+      .expect(409);
+  });
+
+  it('PUT /config/:id เปลี่ยนชื่อไปชนกับ Config อื่น -> 409', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Update);
+    const taken = await prisma.config.create({
+      data: {
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: {},
+        createdBy: swUser.id,
+      },
+    });
+    const target = await prisma.config.create({
+      data: {
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: {},
+        createdBy: swUser.id,
+      },
+    });
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/config/${target.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: taken.name })
+      .expect(409);
   });
 
   it('POST /config/import role ไม่มีสิทธิ์ config.Create -> 403', async () => {
@@ -182,6 +244,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         'file',
         Buffer.from(
           JSON.stringify({
+            name: `cfg-${randomUUID()}`,
             deviceModel: 'GT06N',
             protocol: 'TCP',
             fields: { APN1: 'internet' },
@@ -295,6 +358,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await grant('Auditor', ActionType.Read);
     await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -315,6 +379,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const swUser = await makeUser(prisma, { role: 'SW' });
     const configRow = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -345,6 +410,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await grant('SW', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -367,6 +433,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await grant('SW', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -390,6 +457,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await grant('SW', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -413,6 +481,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     await grant('SW', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -437,6 +506,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -456,6 +526,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Auditor', ActionType.Read, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -475,6 +546,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet', CONN_TIMEOUT: 30 },
@@ -498,6 +570,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -522,6 +595,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -554,6 +628,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -572,6 +647,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const opUser = await makeUser(prisma, { role: 'Operation' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -592,6 +668,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -612,6 +689,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -634,6 +712,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -656,6 +735,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -690,6 +770,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -707,6 +788,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -728,6 +810,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -757,6 +840,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -788,6 +872,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -805,6 +890,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       const swUser = await makeUser(prisma, { role: 'SW' });
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -826,6 +912,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -849,6 +936,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -884,6 +972,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -952,6 +1041,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       await grant('SW', ActionType.Read, 'config');
       const configRow = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
