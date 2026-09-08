@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app';
@@ -81,31 +82,48 @@ export class RealFcmSender implements FcmSender {
   private readonly messaging: Messaging;
 
   constructor(serviceAccountPath: string) {
+    const resolvedPath = RealFcmSender.resolvePath(serviceAccountPath);
+
     // Fail fast ตอน startup (provider factory รัน) ไม่ใช่ตอนส่งจริงครั้งแรก —
     // เหมือน pattern `DEVICE_CONNECTION_TEST_MODE=real` เดิมใน device.module.ts
-    if (!fs.existsSync(serviceAccountPath)) {
+    if (!fs.existsSync(resolvedPath)) {
       throw new Error(
-        `FCM_SERVICE_ACCOUNT_PATH ไม่พบไฟล์: ${serviceAccountPath}`,
+        `FCM_SERVICE_ACCOUNT_PATH ไม่พบไฟล์: ${serviceAccountPath} (resolve เป็น ${resolvedPath})`,
       );
     }
 
     const app =
       getApps().find((a) => a.name === FIREBASE_APP_NAME) ??
-      this.initApp(serviceAccountPath);
+      this.initApp(resolvedPath);
     this.messaging = getMessaging(app);
   }
 
-  private initApp(serviceAccountPath: string): App {
+  /**
+   * `FCM_SERVICE_ACCOUNT_PATH` ใน `.env`/`.env.example` ตั้งใจเป็น path
+   * relative จาก **repo root** (เช่น `./secrets/fcm-service-account.json`) —
+   * convention เดียวกับที่ `app.module.ts` ใช้กับ `envFilePath: ['../.env']`
+   * (cwd ตอน `nest start` / `npm run start:dev` คือ `backend/` ขึ้นไป 1 level
+   * = repo root) `fs.existsSync()` / `cert()` resolve เทียบ `process.cwd()`
+   * ตรงๆ path ที่ถูกตาม convention จึงเคยหาไฟล์ไม่เจอ (พบตอนทดสอบ FCM
+   * end-to-end) — แปลง relative เทียบ repo root ที่นี่ ส่วน absolute path
+   * ผ่านตรงไม่แตะ (รองรับกรณีตั้ง path เต็มเอง)
+   */
+  static resolvePath(serviceAccountPath: string): string {
+    if (path.isAbsolute(serviceAccountPath)) return serviceAccountPath;
+    return path.resolve(process.cwd(), '..', serviceAccountPath);
+  }
+
+  private initApp(resolvedPath: string): App {
     try {
       // `cert()` รับ path string ตรงๆ ได้ (อ่าน + parse JSON เองข้างใน แบบ
       // synchronous) ไม่ต้อง `require()` ไฟล์เอง
       return initializeApp(
-        { credential: cert(serviceAccountPath) },
+        { credential: cert(resolvedPath) },
         FIREBASE_APP_NAME,
       );
     } catch (err) {
       throw new Error(
-        `โหลด FCM service account ไม่สำเร็จ (${serviceAccountPath}): ${
+        `โหลด FCM service account ไม่สำเร็จ (${resolvedPath}): ${
           (err as Error).message
         }`,
       );

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { NotificationModule } from '../notification/notification.module';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 
@@ -14,6 +15,8 @@ import { TaskService } from './task.service';
       secret: process.env.JWT_SECRET ?? 'changeme',
       signOptions: { expiresIn: '8h' },
     }),
+    // TaskService ยิง notification `task_assigned` ตอนมอบหมาย/ย้ายงาน
+    NotificationModule,
   ],
   controllers: [TaskController],
   providers: [TaskService, JwtAuthGuard],
