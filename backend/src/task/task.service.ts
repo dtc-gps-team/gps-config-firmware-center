@@ -2,10 +2,12 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigStatus, Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
@@ -45,7 +47,12 @@ function toDbDate(value: string | null | undefined): Date | null | undefined {
 
 @Injectable()
 export class TaskService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(TaskService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   async create(dto: CreateTaskDto, actor: ActingUser): Promise<Task> {
     if (actor.role !== OPERATION_ROLE) {
@@ -54,7 +61,7 @@ export class TaskService {
     if (dto.configId != null) {
       await this.assertConfigAssignable(dto.configId, dto.deviceId);
     }
-    return this.prisma.task.create({
+    const created = await this.prisma.task.create({
       data: {
         title: dto.title,
         description: dto.description,
@@ -64,6 +71,9 @@ export class TaskService {
         dueDate: toDbDate(dto.dueDate),
       },
     });
+    // งานใหม่ทุกงานมีคนถูก assign เสมอ (assignedTo required ใน CreateTaskDto)
+    await this.notifyTaskAssigned(created);
+    return created;
   }
 
   findAll(query: QueryTaskDto, actor: ActingUser): Promise<Task[]> {
@@ -107,8 +117,9 @@ export class TaskService {
       // request อื่น (rare) — Prisma โยน P2025 ("Record to update not found")
       // ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500 (pattern เดียวกับ
       // ConfigService.update/updateStatus)
+      let updated: Task;
       try {
-        return await this.prisma.task.update({
+        updated = await this.prisma.task.update({
           where: { id },
           data: {
             title: dto.title,
@@ -129,6 +140,15 @@ export class TaskService {
         }
         throw err;
       }
+      // แจ้งเตือนเฉพาะตอน "ย้ายงานไปคนใหม่" จริง — Operation ส่ง assignedTo มา
+      // และค่าต่างจากเดิม (แก้แค่ title/dueDate ฯลฯ ไม่ควรมี push)
+      if (
+        dto.assignedTo !== undefined &&
+        dto.assignedTo !== existing.assignedTo
+      ) {
+        await this.notifyTaskAssigned(updated);
+      }
+      return updated;
     }
 
     if (!SELF_SCOPED_ROLES.includes(actor.role)) {
@@ -168,6 +188,28 @@ export class TaskService {
       dto.configId,
       dto.dueDate,
     ].some((value) => value !== undefined);
+  }
+
+  /**
+   * แจ้ง user ที่ถูก assign งาน (`task_assigned`). **Never throws** — push ที่
+   * ล้มเหลวต้องไม่ทำให้ทั้ง request create/update Task ล้มตาม (ผู้ใช้เห็นผลของ
+   * DB write ที่สำเร็จจริง ไม่ใช่ผลของ notification) `NotificationService.send()`
+   * catch/degrade ส่วนใหญ่ให้อยู่แล้ว — try/catch ตรงนี้เป็นชั้นกันเพิ่ม.
+   */
+  private async notifyTaskAssigned(task: Task): Promise<void> {
+    try {
+      await this.notificationService.send({
+        userId: task.assignedTo,
+        type: 'task_assigned',
+        payload: { taskId: task.id, title: task.title },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน task_assigned ไม่สำเร็จ (task ${task.id}, user ${task.assignedTo}): ${
+          (err as Error).message
+        }`,
+      );
+    }
   }
 
   /**

@@ -1,10 +1,12 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { NotificationService } from '../../src/notification/notification.service';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import { TaskModule } from '../../src/task/task.module';
 import {
@@ -32,8 +34,19 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [PrismaModule, TaskModule],
-    }).compile();
+      // TaskModule -> NotificationModule -> NotificationService inject
+      // @nestjs/config — forRoot เองเหมือน notification-http spec
+      imports: [
+        NestConfigModule.forRoot({ isGlobal: true }),
+        PrismaModule,
+        TaskModule,
+      ],
+    })
+      // เทสนี้เช็ค RBAC + JwtAuthGuard ล้วน — ไม่ให้ notification (task_assigned
+      // ตอน create) แตะ DB จริงหรือ FCM
+      .overrideProvider(NotificationService)
+      .useValue({ send: jest.fn().mockResolvedValue(undefined) })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
