@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
+import { useMemo, useState } from "react";
+import type { ColumnDef, Row } from "@tanstack/react-table";
 
 import {
   Card,
@@ -19,36 +19,24 @@ import {
 import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
+import { ConfigDetailSheet } from "./config-detail-sheet";
 
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("th-TH", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+/** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
+function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
+  return String(a.getValue(columnId)).localeCompare(
+    String(b.getValue(columnId)),
+    "th",
+  );
 }
 
 const columns: ColumnDef<Config>[] = [
   {
     accessorKey: "name",
     header: "ชื่อ Config",
+    sortingFn: thTextSort,
     meta: { filterVariant: "text", label: "ชื่อ" },
-    cell: ({ row }) => (
-      <span className="font-medium">{row.original.name}</span>
-    ),
-  },
-  {
-    accessorKey: "deviceModel",
-    header: "รุ่นอุปกรณ์",
-    filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "รุ่น" },
-  },
-  {
-    accessorKey: "protocol",
-    header: "โปรโตคอล",
-    filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "โปรโตคอล" },
+    cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
   },
   {
     accessorKey: "status",
@@ -65,14 +53,29 @@ const columns: ColumnDef<Config>[] = [
     },
   },
   {
+    accessorKey: "deviceModel",
+    header: "รุ่นอุปกรณ์",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "รุ่น" },
+  },
+  {
+    accessorKey: "protocol",
+    header: "โปรโตคอล",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "โปรโตคอล" },
+  },
+  {
     accessorKey: "updatedAt",
     header: "แก้ไขล่าสุด",
     filterFn: dateRangeFilterFn,
     enableGlobalFilter: false,
-    meta: { filterVariant: "date-range", label: "แก้ไขล่าสุด" },
+    meta: { filterVariant: "date-range", label: "แก้ไขล่าสุด", align: "end" },
     cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {formatDateTime(row.original.updatedAt)}
+      <span
+        className="text-muted-foreground"
+        title={formatDateTime(row.original.updatedAt)}
+      >
+        {formatRelativeTime(row.original.updatedAt)}
       </span>
     ),
   },
@@ -81,13 +84,14 @@ const columns: ColumnDef<Config>[] = [
 export function ConfigTableCard() {
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
+  const [selected, setSelected] = useState<Config | null>(null);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>รายการ Config</CardTitle>
         <CardDescription>
-          ทุก Role ที่ login แล้วดูได้ · ค้นหารวมหรือกรองต่อคอลัมน์ได้
+          ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -112,9 +116,21 @@ export function ConfigTableCard() {
             data={configs}
             searchPlaceholder="ค้นหาชื่อ / รุ่น / โปรโตคอล…"
             emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
+            onRowClick={setSelected}
           />
         )}
       </CardContent>
+
+      <ConfigDetailSheet
+        config={selected}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+        onDeleted={() => {
+          setSelected(null);
+          void refetch();
+        }}
+      />
     </Card>
   );
 }
