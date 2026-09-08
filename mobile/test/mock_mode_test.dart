@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/main.dart';
@@ -13,7 +15,26 @@ void main() {
   testWidgets('boots to the login screen without a backend in mock mode', (
     tester,
   ) async {
-    await tester.pumpWidget(const ProviderScope(child: GpsMobileApp()));
+    // Override the real (`Secure*`) stores even in "real mode" here — this
+    // test isn't about token persistence, and `SecureTokenStore`'s real
+    // `flutter_secure_storage` plugin call has been observed to hang
+    // indefinitely under `flutter_tester`'s single-threaded harness on
+    // Windows (a platform-channel deadlock, not a Dart-catchable error —
+    // `Future.timeout()` can't preempt it either), which would otherwise
+    // strand `AuthController` at `AuthStatus.unknown` forever and hang this
+    // test's `pumpAndSettle()` on the splash spinner. Every other test in
+    // this suite already avoids the real stores the same way.
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+          sessionProfileStoreProvider.overrideWithValue(
+            InMemorySessionProfileStore(),
+          ),
+        ],
+        child: const GpsMobileApp(),
+      ),
+    );
     await tester.pumpAndSettle();
 
     if (AppConfig.apiMockMode) {
