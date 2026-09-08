@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/activity_log/activity_log_repository.dart';
 import '../../features/push_notification/push_notification_service.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
@@ -156,6 +157,9 @@ class AuthController extends Notifier<AuthState> {
     await ref.read(pushNotificationServiceProvider).unregisterAndStop();
     await _tokenStore.clear();
     await _profileStore.clear();
+    // Shared devices — the previous user's activity log must not linger
+    // (docs/10 §6.4). Repository.clear() never throws.
+    await ref.read(activityLogRepositoryProvider).clear();
     ref.read(apiClientProvider).setAuthToken(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

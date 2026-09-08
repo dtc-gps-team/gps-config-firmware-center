@@ -91,7 +91,7 @@ gps-config-firmware-center/
 
 > ไม่มีโมดูล `device-gateway` หรือ `device-notify` อีกต่อไป — ถูกตัดออกแล้วเพราะไม่มี Device Gateway และไม่มีกลไก SMS ในระบบ
 
-> **read-level activity (เปลี่ยนหน้า / เสิร์ช) ไม่ลง `AuditLog`** — เก็บ local ในเครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: sqlite) เป็น "กิจกรรมล่าสุด" ส่วนตัว ไม่ใช่ compliance · Auditor มองไม่เห็น · retention: Web 30 วัน หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน (มติ Sprint 1 review — proposal `docs/10`)
+> **read-level activity (เปลี่ยนหน้า / เสิร์ช) ไม่ลง `AuditLog`** — เก็บ local ในเครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: `shared_preferences` JSON list — ไม่มี sqlite ในโปรเจกต์) เป็น "กิจกรรมล่าสุด" ส่วนตัว ไม่ใช่ compliance · Auditor มองไม่เห็น · retention: Web 30 วัน หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน · ล้างทั้งหมดตอน logout · ดู proposal `docs/10_LocalActivityLog_Proposal.md` (มติ Sprint 1 review) — ฝั่ง Mobile implement `navigation` แล้ว (`features/activity_log/`), `search`/`filter` รอทำคู่กับฟิลเตอร์ตาราง
 
 > **UI standard — ฟิลเตอร์ตาราง list:** ทุกหน้าที่แสดงข้อมูลเป็นตาราง ใช้ฟิลเตอร์ต่อคอลัมน์ — คอลัมน์ข้อความ (ชื่อ, deviceId ฯลฯ) = ช่องพิมพ์กรองสดแบบ debounce · คอลัมน์หมวดหมู่ (status, deviceModel, protocol, role) = dropdown ที่ตัวเลือกมาจากค่า distinct ในข้อมูลจริง · + global search box · เริ่ม client-side ออกแบบให้สลับเป็น server-side ได้ภายหลัง (มติ Sprint 1 review — ดู `docs/09`)
 
