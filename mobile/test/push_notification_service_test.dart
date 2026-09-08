@@ -22,35 +22,34 @@ class _SpyPushTokenRepository implements PushTokenRepository {
 }
 
 void main() {
-  // AppConfig.pushNotificationsEnabled is hardcoded `false` right now (see
-  // its docstring — no Firebase project exists yet). These tests assert the
-  // guard actually holds: neither public method may reach the token
-  // repository (a stand-in for "reach the Firebase SDK") while the flag is
-  // off. If this ever fails, either the flag flipped to `true` without
-  // native Firebase config being wired, or the guard clause was removed.
+  // `AppConfig.pushNotificationsEnabled` is `true` now — the real Firebase
+  // project exists and the native Android wiring (google-services.json, the
+  // Gradle plugin, POST_NOTIFICATIONS) is in place. These tests lock that in
+  // and prove the flag guard is no longer blocking the SDK path. Running the
+  // enabled path to completion needs a real device / platform binding, so
+  // here it only gets far enough to fail inside `Firebase.initializeApp()`.
   test(
-    'AppConfig.pushNotificationsEnabled is off (no Firebase project yet)',
+    'AppConfig.pushNotificationsEnabled is on (feature is live on Android)',
     () {
-      expect(AppConfig.pushNotificationsEnabled, isFalse);
+      expect(AppConfig.pushNotificationsEnabled, isTrue);
     },
   );
 
-  test(
-    'initializeAndRegister() is a no-op while pushNotificationsEnabled=false '
-    '— never touches PushTokenRepository (stand-in for the Firebase SDK)',
-    () async {
-      final repo = _SpyPushTokenRepository();
-      final service = PushNotificationService(repo);
+  test('initializeAndRegister() now passes the flag guard and reaches the '
+      'Firebase SDK — throws only because the test env has no platform binding; '
+      'a real Android build initialises for real', () async {
+    final repo = _SpyPushTokenRepository();
+    final service = PushNotificationService(repo);
 
-      await service.initializeAndRegister();
+    await expectLater(service.initializeAndRegister(), throwsA(anything));
 
-      expect(repo.registerCalls, 0);
-      expect(repo.unregisterCalls, 0);
-    },
-  );
+    // Never got as far as registering a token — Firebase.initializeApp()
+    // failed first.
+    expect(repo.registerCalls, 0);
+  });
 
-  test('unregisterAndStop() is a no-op while pushNotificationsEnabled=false — '
-      'never touches PushTokenRepository, never throws', () async {
+  test('unregisterAndStop() still never throws — its try/catch swallows the '
+      'Firebase failure so logout can never be blocked', () async {
     final repo = _SpyPushTokenRepository();
     final service = PushNotificationService(repo);
 

@@ -9,16 +9,21 @@ import 'push_token_repository.dart';
 
 /// Orchestrates push registration around the Firebase Messaging SDK.
 ///
-/// **Current state (PR C, Dart-level only):** `AppConfig.pushNotificationsEnabled`
-/// is hardcoded `false` — there is no real Firebase project yet, so
-/// `android/`/`ios/` have no `google-services.json` /
-/// `GoogleService-Info.plist`. Every public method below starts with a guard
-/// on that flag and returns immediately when it is `false`, so nothing in
-/// this class ever calls into the Firebase SDK today. `AuthController`
-/// already calls into this service from `login()` / `logout()` / `_restore()`
-/// — flipping the flag to `true` (after native Firebase config + the Gradle
-/// `com.google.gms.google-services` plugin are wired in a separate PR) is the
-/// only change needed to turn registration on for real. See
+/// **Current state (Android, live):** `AppConfig.pushNotificationsEnabled` is
+/// `true`. The real Firebase project (`gps-config-firmware-center`) exists,
+/// `android/app/google-services.json` is in place (gitignored — placed
+/// per-machine from the Firebase Console), and the
+/// `com.google.gms.google-services` Gradle plugin + `POST_NOTIFICATIONS`
+/// manifest permission are wired. `AuthController` drives this service from
+/// `login()` / `logout()` / `_restore()`, so on the Android build path a real
+/// token is now requested and registered with the backend.
+///
+/// Every public method still guards on the flag first (returns immediately
+/// when `false`) — that path stays the effective behaviour on any build
+/// without `google-services.json` (e.g. a CI job that skips it) and on iOS,
+/// which has no native Firebase config yet (team decision — Android only for
+/// this phase). History: shipped `false` as Dart-only scaffolding in PR C
+/// (#95) before the Firebase project / native wiring existed. See
 /// `docs/05_Mobile_Notification_FCM.md`.
 class PushNotificationService {
   PushNotificationService(this._tokenRepository);
