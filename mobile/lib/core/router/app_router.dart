@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/activity_log/activity_log_navigator_observer.dart';
+import '../../features/activity_log/activity_log_repository.dart';
 import '../../features/auth/login_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
 import '../../features/device_connection_test/device_connection_test_page.dart';
@@ -43,6 +45,19 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
     refreshListenable: refresh,
+    // Local activity log (docs/10) — record every real screen entry on-device.
+    // The repository never throws, so this is safe fire-and-forget.
+    observers: [
+      ActivityLogNavigatorObserver((route) async {
+        await ref
+            .read(activityLogRepositoryProvider)
+            .record(path: route.path, title: route.title);
+        // Home stays mounted under a pushed route, so its
+        // `recentActivityProvider` won't refetch on its own when the user pops
+        // back — mark it stale after each recorded navigation.
+        ref.invalidate(recentActivityProvider);
+      }),
+    ],
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final atSplash = state.matchedLocation == AppRoutes.splash;

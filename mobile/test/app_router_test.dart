@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/activity_log/activity_log_repository.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
@@ -63,6 +64,9 @@ Future<GoRouter> _pumpApp(
       taskRepositoryProvider.overrideWithValue(_EmptyTaskRepository()),
       notificationRepositoryProvider.overrideWithValue(
         _EmptyNotificationRepository(),
+      ),
+      activityLogRepositoryProvider.overrideWithValue(
+        DefaultActivityLogRepository(InMemoryActivityLogStore()),
       ),
     ],
   );
@@ -159,6 +163,9 @@ void main() {
           taskRepositoryProvider.overrideWithValue(_EmptyTaskRepository()),
           notificationRepositoryProvider.overrideWithValue(
             _EmptyNotificationRepository(),
+          ),
+          activityLogRepositoryProvider.overrideWithValue(
+            DefaultActivityLogRepository(InMemoryActivityLogStore()),
           ),
         ],
       );
