@@ -5,12 +5,30 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/features/activity_log/activity_log_entry.dart';
+import 'package:mobile/features/activity_log/activity_log_repository.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 
 class _NoopAuthRepository implements AuthRepository {
   @override
   Future<LoginResponse> login(String username, String password) =>
       throw UnimplementedError();
+}
+
+/// Spy for [ActivityLogRepository] — asserts `logout()` clears the on-device
+/// log (docs/10 §6.4), and keeps the real `shared_preferences`-backed one out
+/// of these tests.
+class _SpyActivityLogRepository implements ActivityLogRepository {
+  int clearCalls = 0;
+
+  @override
+  Future<void> clear() async => clearCalls++;
+
+  @override
+  Future<void> record({required String path, required String title}) async {}
+
+  @override
+  Future<List<ActivityLogEntry>> list({int limit = 10}) async => const [];
 }
 
 /// Spy standing in for `PushNotificationService` — lets these tests assert
@@ -89,6 +107,11 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
       // one would call `Firebase.initializeApp()` and fail with no binding.
       pushNotificationServiceProvider.overrideWithValue(
         _FakePushNotificationService(),
+      ),
+      // logout() also clears the activity log — keep the real
+      // shared_preferences-backed one out of these tests.
+      activityLogRepositoryProvider.overrideWithValue(
+        _SpyActivityLogRepository(),
       ),
     ],
   );
@@ -243,6 +266,9 @@ void main() {
           pushNotificationServiceProvider.overrideWithValue(
             _FakePushNotificationService(),
           ),
+          activityLogRepositoryProvider.overrideWithValue(
+            _SpyActivityLogRepository(),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -297,6 +323,9 @@ void main() {
               ),
             ),
             pushNotificationServiceProvider.overrideWithValue(fakePush),
+            activityLogRepositoryProvider.overrideWithValue(
+              _SpyActivityLogRepository(),
+            ),
           ],
         );
         addTearDown(container.dispose);
@@ -306,6 +335,30 @@ void main() {
         expect(fakePush.unregisterAndStopCalls, 1);
       },
     );
+
+    test('logout() ล้าง activity log (docs/10 §6.4)', () async {
+      final spyActivity = _SpyActivityLogRepository();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+          tokenStoreProvider.overrideWithValue(
+            InMemoryTokenStore('saved-token'),
+          ),
+          sessionProfileStoreProvider.overrideWithValue(
+            InMemorySessionProfileStore(),
+          ),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
+          activityLogRepositoryProvider.overrideWithValue(spyActivity),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(authControllerProvider.notifier).logout();
+
+      expect(spyActivity.clearCalls, 1);
+    });
 
     test(
       'restoring a session with a saved token also calls '
