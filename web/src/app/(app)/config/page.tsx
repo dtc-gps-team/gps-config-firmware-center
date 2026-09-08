@@ -1,28 +1,16 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { CreateConfigButton } from "./create-config-button";
-import { DemoNote } from "@/components/demo/demo-note";
-import { DEMO_CONFIGS, CONFIG_STATUS_TONE, pillClass } from "@/lib/demo-data";
+import { ConfigTableCard } from "./config-table";
 
 export const metadata = {
   title: "Config Editor | GPS Config Center",
 };
 
-/** Scaffold — รอต่อ GET/POST /config (โมดูล Config CRUD คือ #26)
- *  ตารางแสดง DEMO_CONFIGS (ดู web/src/lib/demo-data.ts) แทนแถวว่างสำหรับ demo */
+/**
+ * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวดูรายละเอียด
+ * (แผง `ConfigDetailSheet`) + ลบ Config สถานะ draft (Sprint 2 #12)
+ * ฟอร์มสร้าง/แก้ยังเป็น scaffold (`CreateConfigButton` disabled) — ต่อ POST/PUT
+ * ใน PR ถัดไป (ต้องต่อ `GET /config-definitions` มาทำ field editor)
+ */
 export default function ConfigPage() {
   return (
     <div className="flex flex-col gap-6">
@@ -36,45 +24,7 @@ export default function ConfigPage() {
         <CreateConfigButton />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>รายการ Config</CardTitle>
-          <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <DemoNote endpoint="GET /config (#26)" />
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ชื่อ Config</TableHead>
-                <TableHead>อุปกรณ์เป้าหมาย</TableHead>
-                <TableHead>สถานะ</TableHead>
-                <TableHead>แก้ไขล่าสุด</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {DEMO_CONFIGS.map((config) => (
-                <TableRow key={config.id}>
-                  <TableCell className="font-medium">{config.name}</TableCell>
-                  <TableCell>
-                    {config.deviceModel}/{config.protocol}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={pillClass(CONFIG_STATUS_TONE[config.status])}
-                    >
-                      {config.status}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {config.updatedAt}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <ConfigTableCard />
     </div>
   );
 }

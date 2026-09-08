@@ -70,3 +70,29 @@ export async function apiFetch(
     headers: mergedHeaders,
   });
 }
+
+/**
+ * `apiFetch` + parse JSON + โยน `ApiError` เมื่อ response ไม่ ok (4xx/5xx) —
+ * ใช้กับทุก endpoint ที่ต้อง auth (ส่ง `token` มาด้วย) `message` ของ error
+ * เอามาจาก body ของ backend (`{ message }`) ถ้ามี ไม่งั้นใช้ fallback
+ */
+export async function apiJson<T>(
+  path: string,
+  init: RequestInit & { token?: string } = {},
+): Promise<T> {
+  const response = await apiFetch(path, init);
+
+  // 204 No Content (เช่น DELETE) — ไม่มี body ให้ parse
+  if (response.status === 204) return undefined as T;
+
+  const body: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new ApiError(
+      getErrorMessage(body, `คำขอไม่สำเร็จ (${response.status})`),
+      response.status,
+    );
+  }
+
+  return body as T;
+}
