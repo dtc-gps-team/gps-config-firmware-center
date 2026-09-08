@@ -34,6 +34,8 @@ logs/
 Thumbs.db
 .idea/
 .vscode/
+# MS Office lock/temp files (เกิดตอนเปิด .xlsx/.docx ค้างไว้)
+~$*
 
 # Scratch
 commit-msg.txt
