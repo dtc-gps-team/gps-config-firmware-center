@@ -45,9 +45,9 @@ Task _task({required String id, String? deviceId}) => Task(
   deviceId: deviceId,
 );
 
-/// `ApiClient.simulateConfig` error-mapping is already covered end-to-end in
+/// `ApiClient` error-mapping is already covered end-to-end in
 /// `api_client_test.dart` — this fake just proves `ApiSimulatorRepository`
-/// forwards to it with the right configId.
+/// forwards to `simulateConfigOnDevice` with the right deviceId + configId.
 class _RecordingDio {
   RequestOptions? lastRequest;
 
@@ -87,50 +87,84 @@ class _FakeAdapter implements HttpClientAdapter {
 
 void main() {
   group('MockSimulatorRepository', () {
-    test('configId ไม่ว่าง -> passed + details มี MOCK/ค่าที่ส่ง', () async {
+    test('deviceId + configId ไม่ว่าง -> ผ่านครบ 3 ส่วน', () async {
       final result = await MockSimulatorRepository().simulate(
+        deviceId: 'DVC-1',
         configId: 'cfg-1',
       );
 
       expect(result.passed, isTrue);
-      expect(result.details.first, startsWith('MOCK'));
-      expect(result.details, contains('configId = cfg-1'));
-      expect(
-        result.details.any((line) => line.contains('ผ่านการตรวจ')),
-        isTrue,
-      );
+      expect(result.configCheck.passed, isTrue);
+      expect(result.configCheck.details.first, startsWith('MOCK'));
+      expect(result.configCheck.details, contains('configId = cfg-1'));
+      expect(result.compatibilityCheck.passed, isTrue);
+      expect(result.connectionCheck.passed, isTrue);
+      expect(result.connectionCheck.signalStrength, -65);
     });
 
-    test('configId ว่าง -> ไม่ผ่าน + แจ้งให้ระบุ', () async {
-      final result = await MockSimulatorRepository().simulate(configId: '');
+    test('configId ว่าง -> ไม่ผ่าน + configCheck แจ้งให้ระบุ', () async {
+      final result = await MockSimulatorRepository().simulate(
+        deviceId: 'DVC-1',
+        configId: '',
+      );
 
       expect(result.passed, isFalse);
-      expect(result.details, contains('ต้องระบุ configId'));
+      expect(result.configCheck.passed, isFalse);
+      expect(result.configCheck.details, contains('ต้องระบุ configId'));
+    });
+
+    test('deviceId ว่าง -> ไม่ผ่าน + connectionCheck แจ้งให้ระบุ', () async {
+      final result = await MockSimulatorRepository().simulate(
+        deviceId: '',
+        configId: 'cfg-1',
+      );
+
+      expect(result.passed, isFalse);
+      expect(result.connectionCheck.passed, isFalse);
+      expect(result.connectionCheck.details, contains('ต้องระบุ deviceId'));
     });
 
     test('configId เป็น whitespace ล้วน -> ไม่ผ่าน', () async {
-      final result = await MockSimulatorRepository().simulate(configId: '   ');
+      final result = await MockSimulatorRepository().simulate(
+        deviceId: 'DVC-1',
+        configId: '   ',
+      );
       expect(result.passed, isFalse);
     });
   });
 
   group('ApiSimulatorRepository', () {
-    test('simulate() -> POST /config/{configId}/simulate', () async {
+    test('simulate() -> POST /devices/{deviceId}/simulate-config', () async {
       final recorder = _RecordingDio();
       final api = ApiClient(
         dio: recorder.build({
           'passed': true,
-          'details': ['ok'],
+          'configCheck': {
+            'passed': true,
+            'details': ['ok'],
+          },
+          'compatibilityCheck': {
+            'passed': true,
+            'details': ['GT06N/TCP match'],
+          },
+          'connectionCheck': {
+            'passed': true,
+            'signalStrength': -65,
+            'details': ['online'],
+            'testedAt': '2026-09-08T10:00:00.000Z',
+          },
         }),
       );
       final repo = ApiSimulatorRepository(api);
 
-      final result = await repo.simulate(configId: 'cfg-42');
+      final result = await repo.simulate(deviceId: 'DVC-7', configId: 'cfg-42');
 
       expect(recorder.lastRequest?.method, 'POST');
-      expect(recorder.lastRequest?.path, '/config/cfg-42/simulate');
+      expect(recorder.lastRequest?.path, '/devices/DVC-7/simulate-config');
+      expect(recorder.lastRequest?.data, {'configId': 'cfg-42'});
       expect(result.passed, isTrue);
-      expect(result.details, ['ok']);
+      expect(result.configCheck.details, ['ok']);
+      expect(result.compatibilityCheck.passed, isTrue);
     });
   });
 

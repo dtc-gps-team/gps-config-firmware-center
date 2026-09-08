@@ -193,6 +193,60 @@ class DeviceConnectionTestResult {
   }
 }
 
+/// `compatibilityCheck` ของ [DeviceSimulateConfigResult] — `Config.deviceModel`
+/// / `Config.protocol` ตรงกับอุปกรณ์เครื่องที่เลือกไหม (`CompatibilityCheckResult`).
+/// mismatch ไม่ใช่ error — `passed: false` พร้อม `details` บอกว่าอะไรไม่ตรง.
+class CompatibilityCheckResult {
+  const CompatibilityCheckResult({required this.passed, required this.details});
+
+  final bool passed;
+  final List<String> details;
+
+  factory CompatibilityCheckResult.fromJson(Map<String, dynamic> json) {
+    final rawDetails = json['details'] as List<dynamic>?;
+    return CompatibilityCheckResult(
+      passed: json['passed'] as bool? ?? false,
+      details: rawDetails == null
+          ? const []
+          : rawDetails.map((e) => e.toString()).toList(growable: false),
+    );
+  }
+}
+
+/// Result of `POST /devices/{deviceId}/simulate-config`
+/// (`DeviceSimulateConfigResult`, config_simulator Phase 2) — readiness check
+/// เต็มรูปแบบก่อน apply Config เข้าอุปกรณ์จริง รวม 3 ส่วน: ตัว Config เองพร้อม
+/// ไหม ([configCheck]), deviceModel/protocol ตรงกับอุปกรณ์นี้ไหม
+/// ([compatibilityCheck]), สัญญาณของกล่องเครื่องนั้น ([connectionCheck]).
+/// [passed] เป็น `true` ก็ต่อเมื่อทั้ง 3 ส่วนผ่านหมด.
+class DeviceSimulateConfigResult {
+  const DeviceSimulateConfigResult({
+    required this.passed,
+    required this.configCheck,
+    required this.compatibilityCheck,
+    required this.connectionCheck,
+  });
+
+  final bool passed;
+  final SimulationResult configCheck;
+  final CompatibilityCheckResult compatibilityCheck;
+  final DeviceConnectionTestResult connectionCheck;
+
+  factory DeviceSimulateConfigResult.fromJson(Map<String, dynamic> json) =>
+      DeviceSimulateConfigResult(
+        passed: json['passed'] as bool? ?? false,
+        configCheck: SimulationResult.fromJson(
+          json['configCheck'] as Map<String, dynamic>? ?? const {},
+        ),
+        compatibilityCheck: CompatibilityCheckResult.fromJson(
+          json['compatibilityCheck'] as Map<String, dynamic>? ?? const {},
+        ),
+        connectionCheck: DeviceConnectionTestResult.fromJson(
+          json['connectionCheck'] as Map<String, dynamic>? ?? const {},
+        ),
+      );
+}
+
 /// `GET /devices/{deviceId}/status` response (`DeviceStatus`).
 class DeviceStatus {
   const DeviceStatus({

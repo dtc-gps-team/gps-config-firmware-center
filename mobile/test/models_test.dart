@@ -91,6 +91,41 @@ void main() {
     });
   });
 
+  group('DeviceSimulateConfigResult.fromJson', () {
+    test('parses all 3 sub-checks', () {
+      final result = DeviceSimulateConfigResult.fromJson({
+        'passed': true,
+        'configCheck': {
+          'passed': true,
+          'details': ['ทุก field ผ่าน'],
+        },
+        'compatibilityCheck': {
+          'passed': true,
+          'details': ['GT06N/TCP ตรงกับอุปกรณ์'],
+        },
+        'connectionCheck': {
+          'passed': true,
+          'signalStrength': -65,
+          'details': ['ออนไลน์'],
+          'testedAt': '2026-09-08T10:00:00.000Z',
+        },
+      });
+      expect(result.passed, isTrue);
+      expect(result.configCheck.details, ['ทุก field ผ่าน']);
+      expect(result.compatibilityCheck.passed, isTrue);
+      expect(result.connectionCheck.signalStrength, -65);
+    });
+
+    test('defaults every sub-check to failed/empty on a bare object', () {
+      final result = DeviceSimulateConfigResult.fromJson(const {});
+      expect(result.passed, isFalse);
+      expect(result.configCheck.passed, isFalse);
+      expect(result.compatibilityCheck.passed, isFalse);
+      expect(result.compatibilityCheck.details, isEmpty);
+      expect(result.connectionCheck.passed, isFalse);
+    });
+  });
+
   group('DeviceConfigDraft.fromJson', () {
     test('parses status enum and fields map', () {
       final draft = DeviceConfigDraft.fromJson({

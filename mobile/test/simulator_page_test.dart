@@ -51,13 +51,41 @@ class _FakeTaskRepository implements TaskRepository {
 
 DeviceConfigDraft _config({
   required String id,
-  ConfigStatus status = ConfigStatus.draft,
+  ConfigStatus status = ConfigStatus.approved,
   String deviceModel = 'GT06N',
 }) => DeviceConfigDraft(
   id: id,
   deviceModel: deviceModel,
   protocol: 'TCP',
   status: status,
+);
+
+/// A fully-passing [DeviceSimulateConfigResult] with each field overridable —
+/// keeps the per-test noise down.
+DeviceSimulateConfigResult _simResult({
+  bool passed = true,
+  SimulationResult? configCheck,
+  CompatibilityCheckResult? compatibilityCheck,
+  DeviceConnectionTestResult? connectionCheck,
+}) => DeviceSimulateConfigResult(
+  passed: passed,
+  configCheck:
+      configCheck ??
+      const SimulationResult(passed: true, details: ['ทุก field ผ่าน']),
+  compatibilityCheck:
+      compatibilityCheck ??
+      const CompatibilityCheckResult(
+        passed: true,
+        details: ['GT06N/TCP ตรงกับอุปกรณ์'],
+      ),
+  connectionCheck:
+      connectionCheck ??
+      DeviceConnectionTestResult(
+        passed: true,
+        signalStrength: -65,
+        details: const ['อุปกรณ์ออนไลน์'],
+        testedAt: DateTime(2026, 9, 8),
+      ),
 );
 
 class _FakeConfigRepository implements ConfigRepository {
@@ -77,13 +105,18 @@ class _FakeConfigRepository implements ConfigRepository {
 class _FakeSimulatorRepository implements SimulatorRepository {
   _FakeSimulatorRepository({this.result, this.error});
 
-  final SimulationResult? result;
+  final DeviceSimulateConfigResult? result;
   final Object? error;
 
+  String? lastDeviceId;
   String? lastConfigId;
 
   @override
-  Future<SimulationResult> simulate({required String configId}) async {
+  Future<DeviceSimulateConfigResult> simulate({
+    required String deviceId,
+    required String configId,
+  }) async {
+    lastDeviceId = deviceId;
     lastConfigId = configId;
     if (error != null) throw error!;
     return result!;
@@ -97,8 +130,9 @@ Future<void> _pump(
   Object? tasksError,
   List<DeviceConfigDraft>? configs,
   Object? configsError,
-  SimulationResult? simulateResult,
+  DeviceSimulateConfigResult? simulateResult,
   Object? simulateError,
+  _FakeSimulatorRepository? simulatorRepo,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -111,10 +145,11 @@ Future<void> _pump(
           _FakeConfigRepository(configs: configs, error: configsError),
         ),
         simulatorRepositoryProvider.overrideWithValue(
-          _FakeSimulatorRepository(
-            result: simulateResult,
-            error: simulateError,
-          ),
+          simulatorRepo ??
+              _FakeSimulatorRepository(
+                result: simulateResult,
+                error: simulateError,
+              ),
         ),
       ],
       child: const MaterialApp(home: SimulatorPage()),
@@ -143,9 +178,9 @@ void main() {
     _task(id: 't3', deviceId: 'DVC-1'), // ซ้ำ — ต้อง dedupe
   ];
   final threeConfigsMixedStatus = [
-    _config(id: 'cfg-draft', status: ConfigStatus.draft),
-    _config(id: 'cfg-testing', status: ConfigStatus.testing),
     _config(id: 'cfg-approved', status: ConfigStatus.approved),
+    _config(id: 'cfg-synced', status: ConfigStatus.synced),
+    _config(id: 'cfg-draft', status: ConfigStatus.draft),
   ];
 
   testWidgets('render — device dropdown มีเฉพาะอุปกรณ์ของ user (dedupe แล้ว)', (
@@ -161,16 +196,16 @@ void main() {
   });
 
   testWidgets(
-    'render — config dropdown แสดงเฉพาะ draft/testing (ตัด approved ออก)',
+    'render — config dropdown แสดงเฉพาะ approved/synced (ตัด draft ออก)',
     (tester) async {
       await _pump(tester, tasks: twoDevices, configs: threeConfigsMixedStatus);
 
       await tester.tap(find.byKey(const Key('simulator_config_dropdown')));
       await tester.pumpAndSettle();
 
-      expect(find.text('GT06N/TCP · draft'), findsOneWidget);
-      expect(find.text('GT06N/TCP · testing'), findsOneWidget);
-      expect(find.text('GT06N/TCP · approved'), findsNothing);
+      expect(find.text('GT06N/TCP · approved'), findsOneWidget);
+      expect(find.text('GT06N/TCP · synced'), findsOneWidget);
+      expect(find.text('GT06N/TCP · draft'), findsNothing);
     },
   );
 
@@ -191,21 +226,63 @@ void main() {
     await _selectDropdown(
       tester,
       const Key('simulator_config_dropdown'),
-      'GT06N/TCP · draft',
+      'GT06N/TCP · approved',
     );
     expect(tester.widget<FilledButton>(_runButton).onPressed, isNotNull);
   });
 
   testWidgets(
-    'เลือกครบแล้วกดทดสอบ -> เรียก repo ด้วย configId ที่เลือก + แสดงผลผ่าน',
+    'เลือกครบแล้วกดทดสอบ -> เรียก repo ด้วย deviceId + configId ที่เลือก + '
+    'แสดงผล 3 ส่วน',
+    (tester) async {
+      final repo = _FakeSimulatorRepository(result: _simResult());
+      await _pump(
+        tester,
+        tasks: twoDevices,
+        configs: threeConfigsMixedStatus,
+        simulatorRepo: repo,
+      );
+
+      await _selectDropdown(
+        tester,
+        const Key('simulator_device_dropdown'),
+        'DVC-1',
+      );
+      await _selectDropdown(
+        tester,
+        const Key('simulator_config_dropdown'),
+        'GT06N/TCP · approved',
+      );
+
+      await tester.tap(_runButton);
+      await tester.pump(); // kick off _run
+      await tester.pumpAndSettle();
+
+      expect(repo.lastDeviceId, 'DVC-1');
+      expect(repo.lastConfigId, 'cfg-approved');
+      expect(find.text('พร้อมติดตั้ง'), findsOneWidget);
+      expect(find.text('Config — ผ่าน'), findsOneWidget);
+      expect(find.text('ความเข้ากันได้กับอุปกรณ์ — ผ่าน'), findsOneWidget);
+      expect(find.text('สัญญาณอุปกรณ์ — ผ่าน'), findsOneWidget);
+      expect(find.text('• ทุก field ผ่าน'), findsOneWidget);
+      expect(find.text('• GT06N/TCP ตรงกับอุปกรณ์'), findsOneWidget);
+      expect(find.text('• แรงสัญญาณ: -65 dBm'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'compatibilityCheck ไม่ผ่าน -> ผลรวม "ยังไม่พร้อมติดตั้ง" + บล็อกนั้นโชว์เหตุผล',
     (tester) async {
       await _pump(
         tester,
         tasks: twoDevices,
         configs: threeConfigsMixedStatus,
-        simulateResult: const SimulationResult(
-          passed: true,
-          details: ['ทดสอบผ่าน — GT06N/TCP (mock)'],
+        simulateResult: _simResult(
+          passed: false,
+          compatibilityCheck: const CompatibilityCheckResult(
+            passed: false,
+            details: ['Config เป็น GT06L แต่อุปกรณ์เป็น GT06N'],
+          ),
         ),
       );
 
@@ -217,47 +294,21 @@ void main() {
       await _selectDropdown(
         tester,
         const Key('simulator_config_dropdown'),
-        'GT06N/TCP · draft',
+        'GT06N/TCP · approved',
       );
-
       await tester.tap(_runButton);
-      await tester.pump(); // kick off _run
       await tester.pumpAndSettle();
 
-      expect(find.text('ผ่าน'), findsOneWidget);
-      expect(find.text('• ทดสอบผ่าน — GT06N/TCP (mock)'), findsOneWidget);
+      expect(find.text('ยังไม่พร้อมติดตั้ง'), findsOneWidget);
+      expect(find.text('ความเข้ากันได้กับอุปกรณ์ — ไม่ผ่าน'), findsOneWidget);
+      expect(
+        find.text('• Config เป็น GT06L แต่อุปกรณ์เป็น GT06N'),
+        findsOneWidget,
+      );
+      // ส่วนที่ยังผ่านยังแสดง "ผ่าน" ของตัวเอง
+      expect(find.text('Config — ผ่าน'), findsOneWidget);
     },
   );
-
-  testWidgets('ผลลัพธ์ "ไม่ผ่าน" แสดงเหตุผลจาก backend response', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      tasks: twoDevices,
-      configs: threeConfigsMixedStatus,
-      simulateResult: const SimulationResult(
-        passed: false,
-        details: ['Config ยังไม่มี field ใดเลย'],
-      ),
-    );
-
-    await _selectDropdown(
-      tester,
-      const Key('simulator_device_dropdown'),
-      'DVC-1',
-    );
-    await _selectDropdown(
-      tester,
-      const Key('simulator_config_dropdown'),
-      'GT06N/TCP · draft',
-    );
-    await tester.tap(_runButton);
-    await tester.pumpAndSettle();
-
-    expect(find.text('ไม่ผ่าน'), findsOneWidget);
-    expect(find.text('• Config ยังไม่มี field ใดเลย'), findsOneWidget);
-  });
 
   testWidgets(
     'backend ล่มตอนกดทดสอบ -> ข้อความ error จาก ApiException.message ไม่ใช่ raw exception',
@@ -279,7 +330,7 @@ void main() {
       await _selectDropdown(
         tester,
         const Key('simulator_config_dropdown'),
-        'GT06N/TCP · draft',
+        'GT06N/TCP · approved',
       );
       await tester.tap(_runButton);
       await tester.pumpAndSettle();
@@ -306,23 +357,15 @@ void main() {
     },
   );
 
-  testWidgets(
-    'ไม่มี Config ที่พร้อมทดสอบ (ทุกตัว approved หมด) -> ข้อความแจ้ง',
-    (tester) async {
-      await _pump(
-        tester,
-        tasks: twoDevices,
-        configs: [_config(id: 'c1', status: ConfigStatus.approved)],
-      );
+  testWidgets('ไม่มี Config ที่พร้อมทดสอบ (ทุกตัวยัง draft) -> ข้อความแจ้ง', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      tasks: twoDevices,
+      configs: [_config(id: 'c1', status: ConfigStatus.draft)],
+    );
 
-      expect(find.byKey(const Key('simulator_config_empty')), findsOneWidget);
-    },
-  );
-
-  testWidgets('หมายเหตุ partial readiness check ปรากฏอยู่เสมอ', (tester) async {
-    await _pump(tester, tasks: twoDevices, configs: threeConfigsMixedStatus);
-
-    expect(find.byKey(const Key('simulator_partial_notice')), findsOneWidget);
-    expect(find.textContaining('ยังไม่ตรวจว่ารุ่น/โปรโตคอล'), findsOneWidget);
+    expect(find.byKey(const Key('simulator_config_empty')), findsOneWidget);
   });
 }

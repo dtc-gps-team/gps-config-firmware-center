@@ -78,6 +78,23 @@ class ApiClient {
     );
   }
 
+  /// `POST /devices/{deviceId}/simulate-config` — readiness check เต็มรูปแบบ
+  /// (config_simulator Phase 2): รวม config + compatibility + connection check
+  /// เป็นผลเดียว ต่างจาก [simulateConfig] (Phase 1) ที่เช็คแค่ตัว Config เอง.
+  /// `deviceId` คือ `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ Prisma id.
+  Future<DeviceSimulateConfigResult> simulateConfigOnDevice({
+    required String deviceId,
+    required String configId,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/devices/$deviceId/simulate-config',
+        data: {'configId': configId},
+      ),
+      DeviceSimulateConfigResult.fromJson,
+    );
+  }
+
   /// `GET /tasks` — self-scoped to the caller by the backend for ST/OT roles.
   Future<List<Task>> listTasks() async {
     return _wrapList(() => _dio.get<List<dynamic>>('/tasks'), Task.fromJson);
