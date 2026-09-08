@@ -31,8 +31,8 @@
 | 4 | Sprint 1 | 13/09/2026 | Login | Mobile | B | Not Tested |
 | 5 | Sprint 1 | 13/09/2026 | Role-Based Access Control (RBAC) | Web + Mobile | **A** (Backend RBAC/Permission Matrix — ต้องเสร็จก่อน B ถึงจะ Finalize สิทธิ์ฝั่ง Mobile ได้) | Not Tested |
 | 6 | Sprint 1 | 13/09/2026 | Config Definition Lookup (ตั้ง field ของ Config) | Backend | A | Not Tested |
-| 7 | Sprint 2 | 27/09/2026 | Task Management | Web | A | Not Tested |
-| 8 | Sprint 2 | 27/09/2026 | Task Management | Mobile | B | Not Tested |
+| 7 | Sprint 2 | 27/09/2026 | มอบหมายงาน + ติดตามสถานะ (Web) — list + ฟอร์มมอบหมายพื้นฐาน **ไม่ใช่ planning tool** (มติ Sprint 1 review — ดู `docs/09`) | Web | A | Not Tested |
+| 8 | Sprint 2 | 27/09/2026 | รับงาน + อัปเดตสถานะ (Mobile) — list งานของตัวเอง + เปลี่ยนสถานะ | Mobile | B | Not Tested |
 | 9 | Sprint 2 | 27/09/2026 | **config-sync-writer Pipeline (mock → Docker → Production)** | Backend | ร่วมกัน (Critical Infra) | Not Tested |
 | 10 | Sprint 2 | 27/09/2026 | Dashboard/Main | Web | A | Not Tested |
 | 11 | Sprint 2 | 27/09/2026 | Device Search + Device Detail | Web | A | Not Tested |
@@ -62,6 +62,21 @@
 | 33 | Sprint 4 | 23/10/2026 | Backlog Scope Report (งานที่ตัดออก) | ทีม | ร่วมกัน | Not Tested |
 
 **จุดส่งมอบ (Handoff) ที่ต้องระวัง:** แถวที่ 5 (RBAC — A ทำ) ต้องเสร็จก่อนแถวที่ 6, 12, 18, 19 (ของ A เอง) และก่อนที่ B จะ Finalize สิทธิ์ฝั่ง Mobile ได้ — ถ้า A ทำ RBAC ไม่ทันตามนัด ทั้งคู่ยังเริ่มหน้าจอ/ฟีเจอร์อื่นที่ไม่ต้องพึ่ง Permission Check ได้ก่อน แต่ต้องพักส่วนตรวจสิทธิ์ไว้ก่อน อย่ารอจนตัน — อีกจุดคือแถวที่ 26b ที่ B ต้องรอ Endpoint `/simulate` จาก A (แถวที่ 13/18) ให้นิ่งก่อนถึงจะเชื่อมฝั่ง Mobile ได้เต็มรูปแบบ
+
+---
+
+## Backlog เพิ่มเติม — มติจาก Sprint 1 Review (ดู `docs/09_Sprint1_Review_Decisions.md`)
+
+หลังนำเสนอ Sprint 1 พี่เลี้ยงให้ feedback 7 ข้อ ทีมตกลงกันแล้ว (PR #99) — งานที่เพิ่มเข้ามา:
+
+| งาน | ฝั่ง | ผู้รับผิดชอบ | จังหวะ | หมายเหตุ |
+|---|---|---|---|---|
+| ชื่อ Config ต้องไม่ซ้ำ (unique ทั้งระบบ) | Backend + Web | A | quick win | เพิ่ม `Config.name @unique` + migration backfill + 409 |
+| ฟิลเตอร์ตารางต่อคอลัมน์ (ข้อความ = พิมพ์ค้นสด, หมวดหมู่ = dropdown จากข้อมูลจริง) | Web | A | Sprint 2 | UI standard ทุกหน้า list — เริ่ม client-side |
+| Local Activity Log (เปลี่ยนหน้า/เสิร์ช — เก็บ local เครื่องเดียว ไม่ลง `AuditLog`) | Web + Mobile | A (web) + B (mobile) | proposal `docs/10` ก่อน | Web IndexedDB / Mobile sqlite · retention Web 30วัน/1000, Mobile 14วัน/300 |
+| ลบ Config ที่ไม่ได้ใช้นาน — `draft`/`rejected` + ไม่มี Task/Campaign/Incident + 90 วัน → คำขอลบอัตโนมัติ → SuperAdmin อนุมัติ → soft delete | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | รวมกับ role SuperAdmin |
+| Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
+| เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |
 
 ---
 
