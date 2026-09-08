@@ -118,6 +118,7 @@ class LoginResponse {
 class DeviceConfigDraft {
   const DeviceConfigDraft({
     this.id,
+    this.name,
     this.deviceModel,
     this.protocol,
     this.status,
@@ -125,6 +126,10 @@ class DeviceConfigDraft {
   });
 
   final String? id;
+
+  /// ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4).
+  /// Nullable ฝั่ง client เผื่อ response เก่า/mock ที่ไม่มี field นี้.
+  final String? name;
   final String? deviceModel;
   final String? protocol;
   final ConfigStatus? status;
@@ -134,6 +139,7 @@ class DeviceConfigDraft {
     final rawStatus = json['status'] as String?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
+      name: json['name'] as String?,
       deviceModel: json['deviceModel'] as String?,
       protocol: json['protocol'] as String?,
       status: rawStatus == null ? null : ConfigStatus.fromWire(rawStatus),

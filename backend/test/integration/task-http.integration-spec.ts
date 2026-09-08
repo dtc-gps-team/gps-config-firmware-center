@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaModule } from '../../src/prisma/prisma.module';
@@ -172,6 +173,7 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       const creator = await makeUser(prisma, { role: 'SW' });
       const config = await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: opts.deviceModel ?? 'GT06N',
           protocol: opts.protocol ?? 'TCP',
           status,

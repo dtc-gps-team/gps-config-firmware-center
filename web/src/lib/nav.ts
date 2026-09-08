@@ -62,11 +62,10 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/campaigns",
     screenName: "Campaign Wizard / Campaign Monitor",
   },
-  {
-    label: "Task Management",
-    href: "/tasks",
-    screenName: "Task Management",
-  },
+  // "Task Management" ถูกซ่อนชั่วคราว (มติ Sprint 1 review ข้อ 1 — ดู docs/09
+  // §2) จอเดิมเป็น planning tool เกินขอบเขต ต้อง redesign เป็น "list งานที่
+  // มอบหมาย + ฟอร์มมอบหมายพื้นฐาน" ก่อนถึงจะเปิดเมนูใหม่ · โค้ด scaffold เดิม
+  // pin ไว้ที่ web/src/app/(app)/_tasks/ (Next private folder = ไม่ถูก route)
   {
     label: "Incident & Rollback",
     href: "/incidents",
