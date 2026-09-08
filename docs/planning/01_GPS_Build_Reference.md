@@ -83,13 +83,17 @@ gps-config-firmware-center/
 | `firmware` | รับไฟล์ Firmware ผ่าน**การอัปโหลดตรงเข้าระบบเราทางเดียวเท่านั้น** (v3.7 — ตัดช่องทาง "ดึงจากระบบเดิม" ออก) เก็บอย่างเดียว พร้อมรายงานสถานะอัปโหลด/จัดเก็บฝั่งเรา | สร้างได้เต็มรูปแบบทันที |
 | `config-sync-writer` | เขียน Config/Firmware ที่อนุมัติแล้วเข้าระบบเดิม `config.dtc.co.th` | **ต้อง Mock/Stub ก่อน** — ดู Section 4.1 |
 | `device-status` | เช็คสถานะกล่องอัตโนมัติ แสดงบนหน้าเว็บ — ครอบคลุมทั้ง Config และสถานะอัปเดตเวอร์ชัน Firmware ของกล่อง (v3.7) | **ต้อง Placeholder ก่อน** — ดู Section 4.2 |
-| `task` | มอบหมาย/ติดตามงาน | สร้างได้เต็มรูปแบบทันที |
+| `task` | มอบหมาย/ติดตามงาน — list งานที่ได้รับมอบหมาย + อัปเดตสถานะ (Mobile) + ฟอร์มมอบหมายพื้นฐาน (Web) · **ไม่รวม** จัดตารางงาน / วางแผนกำลังคน / ปฏิทิน / บอร์ด workload (มติ Sprint 1 review — ดู `docs/09`) | สร้างได้เต็มรูปแบบทันที |
 | `campaign` | จัดลำดับ/ทยอยเขียนข้อมูลเข้าระบบเดิมเป็นกลุ่ม (Pilot/Canary/Batch) | สร้างได้เต็มรูปแบบทันที (เรียกผ่าน `config-sync-writer`) |
 | `incident` | สร้าง/ติดตาม Incident | สร้างได้เต็มรูปแบบทันที |
 | `notification` | แจ้งเตือนผ่าน FCM (Mobile) และ WebSocket (Web) | สร้างได้เต็มรูปแบบทันที |
-| `audit` | บันทึกประวัติการเปลี่ยนแปลง | สร้างได้เต็มรูปแบบทันที |
+| `audit` | บันทึกประวัติการเปลี่ยนแปลง — **`AuditLog` (DB) = mutation-only** เท่านั้น (สร้าง/แก้/อนุมัติ/ปฏิเสธ/นำไปใช้/Override + ทุก action ของ SuperAdmin) | สร้างได้เต็มรูปแบบทันที |
 
 > ไม่มีโมดูล `device-gateway` หรือ `device-notify` อีกต่อไป — ถูกตัดออกแล้วเพราะไม่มี Device Gateway และไม่มีกลไก SMS ในระบบ
+
+> **read-level activity (เปลี่ยนหน้า / เสิร์ช) ไม่ลง `AuditLog`** — เก็บ local ในเครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: sqlite) เป็น "กิจกรรมล่าสุด" ส่วนตัว ไม่ใช่ compliance · Auditor มองไม่เห็น · retention: Web 30 วัน หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน (มติ Sprint 1 review — proposal `docs/10`)
+
+> **UI standard — ฟิลเตอร์ตาราง list:** ทุกหน้าที่แสดงข้อมูลเป็นตาราง ใช้ฟิลเตอร์ต่อคอลัมน์ — คอลัมน์ข้อความ (ชื่อ, deviceId ฯลฯ) = ช่องพิมพ์กรองสดแบบ debounce · คอลัมน์หมวดหมู่ (status, deviceModel, protocol, role) = dropdown ที่ตัวเลือกมาจากค่า distinct ในข้อมูลจริง · + global search box · เริ่ม client-side ออกแบบให้สลับเป็น server-side ได้ภายหลัง (มติ Sprint 1 review — ดู `docs/09`)
 
 ### 3.1 Config Import จากไฟล์ (v3.2 — เลือก JSON เป็นจุดเริ่มต้น)
 
@@ -213,10 +217,10 @@ export interface DeviceStatusChecker {
 
 - **ตาราง Config**: field ข้อมูล Config, `status` (draft / testing / sw_approved / operation_approved / rejected / synced), `device_model`, `protocol`, ผลการทดสอบจาก Device Simulator, ผู้สร้าง/ผู้อนุมัติ, เวลาอนุมัติ
 - **ตาราง Firmware**: metadata เวอร์ชัน, path ใน Object Storage, `upload_status` (สถานะอัปโหลด/จัดเก็บฝั่งเรา — v3.7 เหลือช่องทางอัปโหลดตรงทางเดียว), `device_update_status` (สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก `device-status`)
-- **ตาราง Task**: งานที่มอบหมายให้ช่างหน้างาน เชื่อมกับ Config/Firmware ที่เกี่ยวข้อง
+- **ตาราง Task**: งานที่มอบหมายให้ช่างหน้างาน เชื่อมกับ Config/Firmware ที่เกี่ยวข้อง — **ไม่มี field/flow สำหรับวางแผนหรือจัดตารางงาน** (มติ Sprint 1 review)
 - **ตาราง Campaign**: การปล่อยเวอร์ชันเป็นกลุ่ม (Pilot/Canary/Batch) พร้อมสถานะการเขียนเข้าระบบเดิมของแต่ละกล่องในกลุ่ม
 - **ตาราง Incident**: ปัญหาที่เกิดขึ้นระหว่างการอัปเดต
-- **ตาราง Audit Log**: ประวัติการเปลี่ยนแปลงทุกจุดที่สำคัญ (ใครอนุมัติ/ปฏิเสธ/แก้ไขอะไรเมื่อไหร่)
+- **ตาราง Audit Log**: ประวัติการเปลี่ยนแปลงทุกจุดที่สำคัญ (ใครอนุมัติ/ปฏิเสธ/แก้ไขอะไรเมื่อไหร่) — **mutation-only** ไม่เก็บ read-level (เปลี่ยนหน้า/เสิร์ช เป็น local เครื่องผู้ใช้ ดูหมายเหตุ Section 3)
 - **ตาราง Device Status (หรือฝังในตาราง Device/Box)**: ผลเช็คสถานะล่าสุดจาก `device-status` module
 
 > ข้อควรระวัง: มีเอกสาร `06-database-design-NEW.md` เก่าอยู่ใน `docs/design/` แต่เอกสารนั้นถูกติดป้ายว่าล้าสมัยแล้ว (ออกแบบมาจากสถาปัตยกรรมคนละเวอร์ชัน มี RBAC 6 role, 49 ตาราง) — **ห้ามใช้เป็นต้นแบบ Schema ของระบบปัจจุบัน**

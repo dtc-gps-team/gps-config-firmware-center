@@ -944,8 +944,8 @@ components:
           # (feature/rbac-role-table, 2026-08-28) Admin สร้าง Role ใหม่ผ่านหน้า
           # User/Role Management ได้เอง ค่า role ที่ส่งกลับมาจึงไม่ใช่ค่าคงที่ 6 ตัวอีกต่อไป
           description: >-
-            Role code ของผู้ใช้ (เช่น SW, Operation, ST, OT, Auditor, Admin
-            หรือ role อื่นที่ Admin สร้างเพิ่มภายหลัง)
+            Role code ของผู้ใช้ (เช่น SW, Operation, ST, OT, Auditor, Admin,
+            SuperAdmin หรือ role อื่นที่ Admin สร้างเพิ่มภายหลัง)
           example: SW
 
     DeviceConfigDraft:

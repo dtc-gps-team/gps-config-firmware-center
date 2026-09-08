@@ -32,12 +32,21 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 ## Role Enum (ห้ามผิดพลาดซ้ำ)
 
-- Role มีแค่ **6 ค่าเท่านั้น**: `SW`, `Operation`, `ST`, `OT`, `Auditor`, `Admin`
+- Role มีแค่ **7 ค่าเท่านั้น**: `SW`, `Operation`, `ST`, `OT`, `Auditor`, `Admin`,
+  `SuperAdmin`
+- **`SuperAdmin` เพิ่มโดยตั้งใจ** ตามมติ Sprint 1 review (PR #99 → `docs/09_Sprint1_Review_Decisions.md`)
+  — ต่างจาก `FieldTechnician` ที่เป็นความผิดพลาด · ขอบเขต: ทำได้ทุกอย่างที่ `Admin`
+  ทำ **+** อนุมัติคำขอลบ Config (auto delete-request), จัดการบัญชี `Admin`/`SuperAdmin`,
+  แก้ role/permission · **ไม่ข้าม Separation of Duty** — อนุมัติ Config/Firmware/Campaign
+  แทน Operation **ไม่ได้** · สิทธิ์ resource ใหม่ (`config-deletion`, `admin-management`,
+  `role-management`) รอ `docs/11` (proposal) — ยังไม่ finalize ใน RBAC Matrix §2/§4
 - **ห้ามมี `FieldTechnician` เด็ดขาด** — role นี้ไม่เคยมีอยู่จริง เคยถูกใส่ผิดพลาดใน
   ดราฟต์ก่อนหน้าแล้วถูกแก้ออกทั้งหมด (อ้างอิง PR #11, #13, #15) ช่างหน้างานที่ใช้
   Mobile คือ `ST` / `OT` ที่ login เข้าแอป ไม่ใช่ role แยก
 - Source of truth: `GPS_Data_Dictionary.xlsx` (ROLE table) และ `docs/api/openapi.yaml`
-  (`LoginResponse.role`) — Prisma: `enum Role` ใน `backend/prisma/schema.prisma`
+  (`LoginResponse.role`) — Prisma: **`model Role` (ตาราง RBAC ตั้งแต่ PR #34 ไม่ใช่ `enum`
+  แล้ว)** ใน `backend/prisma/schema.prisma` · `Role.code` เป็น string อิสระ → เพิ่ม role
+  ใหม่ = seed row ใน `backend/prisma/seed.ts` ไม่ต้อง migration
 
 ## Config Status Enum
 
@@ -89,6 +98,17 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 - รัน `npx @redocly/cli lint docs/api/openapi.yaml` ก่อน commit ทุกครั้งที่แก้ไฟล์นี้
   (ต้องไม่มี error ใหม่ — warning ของเดิมยอมได้)
 - โค้ด client (Mobile models, Web types) ต้อง type ตรงกับ schema ใน spec เป๊ะ
+
+## Audit Pattern
+
+- `AuditLog` (DB) = **mutation-only** — บันทึกเฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง /
+  แก้ไข / อนุมัติ / ปฏิเสธ / นำ Config ไปใช้ / Override) รวมถึงทุก action ของ `SuperAdmin`
+- **read-level activity** (เปลี่ยนหน้า, เสิร์ช) **ไม่ลง `AuditLog`** — เก็บ local ใน
+  เครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: sqlite) rolling retention (Web 30 วัน
+  หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน) — ดู
+  `docs/10` (proposal) · Auditor มองไม่เห็น log ส่วนนี้ (โดยตั้งใจ — เป็น "กิจกรรม
+  ล่าสุด" ส่วนตัว ไม่ใช่ compliance)
+- มติ Sprint 1 review (`docs/09_Sprint1_Review_Decisions.md` ข้อ 3)
 
 ## Mock Mode Pattern
 
