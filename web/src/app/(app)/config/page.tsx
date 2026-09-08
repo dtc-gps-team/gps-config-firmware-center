@@ -6,9 +6,10 @@ export const metadata = {
 };
 
 /**
- * Config Editor — list Config จาก `GET /config` จริง (Sprint 2 #12)
+ * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวดูรายละเอียด
+ * (แผง `ConfigDetailSheet`) + ลบ Config สถานะ draft (Sprint 2 #12)
  * ฟอร์มสร้าง/แก้ยังเป็น scaffold (`CreateConfigButton` disabled) — ต่อ POST/PUT
- * ใน PR ถัดไป
+ * ใน PR ถัดไป (ต้องต่อ `GET /config-definitions` มาทำ field editor)
  */
 export default function ConfigPage() {
   return (
