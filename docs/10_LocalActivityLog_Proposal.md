@@ -2,8 +2,8 @@
 
 > **จาก:** paveekornk (A) — **ถึง:** kittiphong (B) + พี่เลี้ยง
 > **มติต้นทาง:** Sprint 1 review **ข้อ 3** (ดู `09_Sprint1_Review_Decisions.md` §2)
-> **สถานะ:** ข้อเสนอ — ยังไม่แตะโค้ด · รอ B รีวิว (โดยเฉพาะฝั่ง mobile §6) + พี่เลี้ยงเคาะ retention (§4)
-> **จังหวะ:** implement หลังอนุมัติ — web (A) + mobile (B) แยกกันทำ pattern เดียวกัน
+> **สถานะ:** **B รีวิว + อนุมัติแล้ว (PR #105)** — ตอบคำถามเปิดครบใน §9 · รอพี่เลี้ยงเคาะ retention (§4) แล้วเริ่ม implement ได้
+> **จังหวะ:** implement หลัง `docs/11` (Sprint 3) — web (A) + mobile (B) แยกกันทำ pattern เดียวกัน · เริ่มได้แค่ `navigation` ก่อน, `search`/`filter` รอข้อ 2 (ฟิลเตอร์ตาราง)
 
 ---
 
@@ -58,7 +58,7 @@
 | แพลตฟอร์ม | เพดาน | เหตุผล |
 |---|---|---|
 | **Web** | **30 วัน หรือ 1000 รายการ** แล้วแต่อันไหนถึงก่อน | storage เบราว์เซอร์ยืดหยุ่นกว่า |
-| **Mobile** | **14 วัน หรือ 300 รายการ** แล้วแต่อันไหนถึงก่อน | storage มือถือจำกัดกว่า (ยืนยันตามรีวิว B ใน PR #99) |
+| **Mobile** | **14 วัน หรือ 300 รายการ** แล้วแต่อันไหนถึงก่อน | storage มือถือจำกัดกว่า · ใช้ `shared_preferences` เก็บ JSON list — deserialize ทั้งก้อนที่ ≤ 300 รายการไม่หนัก (ยืนยันตามรีวิว B PR #99 + #105) |
 
 - เช็ค + ตัดตอน **write** ทุกครั้ง (ไม่ต้องมี background job) — append entry ใหม่ แล้วลบ entry ที่ `at` เก่ากว่า cutoff หรือเกินจำนวนสูงสุด
 - ล้างทั้งหมดเมื่อ **logout** (เครื่องอาจใช้ร่วมกัน — activity ของคนก่อนไม่ควรค้าง)
@@ -91,25 +91,21 @@
 
 ## 6. ฝั่ง Mobile (งาน B — ขอ B ช่วยเติม/แก้ส่วนนี้)
 
-### 6.1 Storage — ตัวเลือก
+### 6.1 Storage — `shared_preferences` (มติ B)
 
-| ตัวเลือก | ข้อดี | ข้อสังเกต |
-|---|---|---|
-| `sqflite` (sqlite) | query/ตัดตาม `at` ได้ตรง, scale ดี | เพิ่ม dependency + table migration |
-| `shared_preferences` เก็บ JSON list | ง่ายสุด ไม่มี dep ใหม่ (ถ้ามีอยู่แล้ว) | ต้อง deserialize ทั้งก้อนทุกครั้ง — โอเคที่เพดาน 300 รายการ |
-
-**ข้อเสนอ:** เริ่มด้วย `shared_preferences` (JSON list ≤ 300) ถ้ายังไม่มี sqlite ในโปรเจกต์ — B ตัดสินใจ
+- เก็บเป็น **JSON list** ใน `shared_preferences` — ไม่มี sqlite ในโปรเจกต์อยู่แล้ว, เพดาน 300 รายการ deserialize ทั้งก้อนทุกครั้งไม่หนัก
+- ถ้าวันหน้าต้อง scale ค่อยย้ายเป็น sqlite
 
 ### 6.2 จุด hook
 
-| event | จุดต่อ |
-|---|---|
-| `navigation` | `NavigatorObserver` เพิ่มใน `GoRouter` (`mobile/lib/core/router/app_router.dart`) — override `didPush`/`didReplace` แล้ว record `route.settings.name` |
-| `search` | field ค้นหาในจอที่มี (task list ฯลฯ) — hook `onSubmitted` / debounced `onChanged` |
+| event | จุดต่อ | จังหวะ |
+|---|---|---|
+| `navigation` | `NavigatorObserver` เพิ่มใน `GoRouter` (`mobile/lib/core/router/app_router.dart`) — override `didPush`/`didReplace` แล้ว record `route.settings.name` | **เริ่มได้เลย** |
+| `search` / `filter` | **มือถือยังไม่มีหน้าไหนมีช่องค้นตอนนี้ (ตรวจแล้ว โดย B)** — รอ implement พร้อมข้อ 2 (ฟิลเตอร์ตาราง) ค่อยเลือก scope | รอข้อ 2 |
 
-### 6.3 UI
+### 6.3 UI — Home section (มติ B)
 
-- section "กิจกรรมล่าสุด" ในหน้า Home (`mobile/lib/features/home/home_page.dart`) หรือใน drawer — B เลือกที่เหมาะกับ layout ปัจจุบัน
+section "กิจกรรมล่าสุด" ในหน้า Home (`mobile/lib/features/home/home_page.dart`) — เห็นทันทีตอนเปิดแอป เข้ากับ pattern การ์ดสรุปที่ Home มีอยู่แล้ว
 
 ### 6.4 logout
 
@@ -124,14 +120,16 @@ hook ล้าง activity ใน flow logout ของ `auth_controller.dart` (
 
 ## 8. Next step
 
-1. B รีวิว §6 (mobile) + ยืนยันตัวเลือก storage
-2. พี่เลี้ยงเคาะ retention §4
-3. แยกเป็น 2 PR (web / mobile) — web เริ่ม `navigation` ได้เลย, `search`/`filter` ตามหลังข้อ 2
+1. ~~B รีวิว §6~~ ✅ (PR #105) · พี่เลี้ยงเคาะ retention §4
+2. เข้าคิว **หลัง `docs/11` (Sprint 3)** — แยกเป็น 2 PR (web / mobile)
+3. web + mobile เริ่ม `navigation` ก่อน · `search`/`filter` ตามหลังข้อ 2 (ฟิลเตอร์ตาราง)
 4. อัปเดตเอกสารตาม §7 คู่กับ PR
 
-## 9. คำถามเปิด → B
+## 9. คำถามเปิด → ตอบครบแล้ว (B, PR #105)
 
-1. mobile storage: `shared_preferences` (JSON list) พอไหม หรืออยากได้ sqlite ตั้งแต่แรก?
-2. `search`/`filter` ฝั่ง mobile — จอไหนบ้างที่มีช่องค้นตอนนี้ (จะได้ scope ให้ตรง)?
-3. UI "กิจกรรมล่าสุด" มือถือ — Home section หรือ drawer?
-4. "อื่น ๆ" ที่พี่เลี้ยงพูด — v1 เอาแค่ navigation/search/filter พอไหม หรือมี event อื่นที่ควรนับเป็น read-level (เช่น เปิด modal รายละเอียด, สลับ tab)?
+| # | คำถาม | มติ |
+|---|---|---|
+| 1 | mobile storage — `shared_preferences` หรือ sqlite | **`shared_preferences`** (JSON list ≤ 300) — ไม่มี sqlite ในโปรเจกต์, ย้ายทีหลังได้ถ้าต้อง scale |
+| 2 | `search`/`filter` มือถือ — จอไหนมีช่องค้น | **ยังไม่มีจอไหนมีช่องค้นตอนนี้** — event 2 ตัวนี้รอ implement พร้อมข้อ 2 · เริ่มแค่ `navigation` ก่อน |
+| 3 | UI "กิจกรรมล่าสุด" มือถือ — Home section หรือ drawer | **Home section** — เห็นทันทีตอนเปิดแอป เข้ากับการ์ดสรุปที่มีอยู่ |
+| 4 | ขอบเขต v1 — แค่ navigation/search/filter พอไหม | **พอ** — ตรงตามที่พี่เลี้ยงขอ ไม่ over-engineer ตั้งแต่ v1 เพิ่มทีหลังได้ถ้าจำเป็นจริง |

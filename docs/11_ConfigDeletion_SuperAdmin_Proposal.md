@@ -2,8 +2,8 @@
 
 > **จาก:** paveekornk (A) — **ถึง:** kittiphong (B) + พี่เลี้ยง
 > **มติต้นทาง:** Sprint 1 review **ข้อ 5 + ข้อ 7** (ดู `09_Sprint1_Review_Decisions.md` §2 — สองข้อผูกกันเพราะ SuperAdmin คือผู้อนุมัติคำขอลบ)
-> **สถานะ:** ข้อเสนอ — ยังไม่แตะโค้ด · รอ B รีวิว (§7 กระทบ `notification` ของ B) + พี่เลี้ยงเคาะ flow
-> **จังหวะ:** **Sprint 3** (ยืนยันตามรีวิว B — PR #99 §5 ข้อ 5)
+> **สถานะ:** **B รีวิว + อนุมัติแล้ว (PR #105)** — ตอบคำถามเปิดครบใน §10 (รวมยืนยัน 2 `NotificationType` ใหม่ในโมดูล B) · รอพี่เลี้ยงเคาะ flow แล้วเข้าคิว
+> **จังหวะ:** **Sprint 3** (ยืนยันตามรีวิว B — PR #99 §5 ข้อ 5 + PR #105)
 
 ---
 
@@ -103,6 +103,17 @@ model ConfigDeletionRequest {
 - ทุก action ลง `AuditLog` (`auditModule: "config-deletion"`)
 - scheduled job อยู่ใน `config.module` — ต้อง `npm i @nestjs/schedule` + `ScheduleModule.forRoot()` ใน `AppModule` (ยังไม่มีในโปรเจกต์ตอนนี้)
 
+### 5.1 Notification (โมดูล B — ยืนยันแล้ว PR #105)
+
+เพิ่ม `NotificationType` **2 ค่าใหม่** (`backend/prisma/schema.prisma` enum + mobile `NotificationType` + `NotificationTypeStyle`):
+
+| ค่า | ผู้รับ | ยิงเมื่อ |
+|---|---|---|
+| `config_deletion_pending` | SuperAdmin ทุกคน | job สร้าง `ConfigDeletionRequest` |
+| `config_deletion_grace` | ผู้สร้าง Config (`Config.createdBy`) | request เข้า state `grace` — เตือนให้กด "เก็บไว้" ภายใน 7 วัน |
+
+แยก type ชัดเจนกว่า reuse ค่าเดิม — ผู้ใช้แยกแยะประเภทแจ้งเตือนได้ · B รับ 2 type นี้ตอน implement Sprint 3
+
 ---
 
 ## PART B — Role SuperAdmin
@@ -138,12 +149,16 @@ model ConfigDeletionRequest {
 ### Backend
 - `package.json` — `+ @nestjs/schedule`
 - `src/app.module.ts` — `ScheduleModule.forRoot()`
-- `prisma/schema.prisma` — model `ConfigDeletionRequest` + `Config.deletedAt` + relations (**`git pull` ก่อน** — shared)
-- `prisma/migrations/<ts>_add_config_deletion_request/` — additive
+- `prisma/schema.prisma` — model `ConfigDeletionRequest` + `Config.deletedAt` + relations + `enum NotificationType` เพิ่ม `config_deletion_pending` / `config_deletion_grace` (§5.1) (**`git pull` ก่อน** — shared · enum NotificationType เป็นของโมดูล B ประสานก่อนแก้)
+- `prisma/migrations/<ts>_add_config_deletion_request/` — additive (รวม 2 ค่า enum ใหม่)
 - `prisma/seed.ts` — Role row `SuperAdmin` (`INITIAL_ROLES`) + user ทดสอบ `superadmin.test` + grants: ทุก grant ที่ Admin มี **+** `config-deletion`/`admin-management`/`role-management` · **ไม่มี migration สำหรับ Role** (เป็นตาราง, `code` เป็น free string)
 - `src/config/` — `config-deletion.service.ts` + controller endpoints + scheduled job · เติม `deletedAt: null` ในทุก query เดิมของ `config.service.ts`
 - `src/config/*.spec.ts` + integration — เกณฑ์ §2, flow approve/reject/keep, guard §7
 - `src/common/guards/` — resource ใหม่ + logic "ห้ามแตะ SuperAdmin/Admin" ใน user management
+- `src/notification/` (B) — ยิง `config_deletion_pending` / `config_deletion_grace` ที่ event ของ job/flow (§5.1)
+
+### Mobile (B)
+- `lib/core/api/models.dart` `NotificationType` + `notification_ui.dart` `NotificationTypeStyle` — เพิ่ม 2 ค่าใหม่ (label + icon)
 
 ### เอกสาร
 - `CLAUDE.md` §Role Enum — **แก้แล้วใน PR #101** (6→7, SuperAdmin) · ไม่ต้องแตะซ้ำ
@@ -154,13 +169,14 @@ model ConfigDeletionRequest {
 
 ## 9. Next step
 
-1. B รีวิว — โดยเฉพาะ §7 (notification): ต้องมี `NotificationType` ใหม่ไหม (`config_deletion_pending`? `config_deletion_grace`?) — enum นี้อยู่ในโมดูล B
-2. พี่เลี้ยงเคาะ: grace period 7 วัน + cooldown 90 วัน + soft-delete-only เหมาะไหม
-3. เข้าคิว Sprint 3 — implement Part B (SuperAdmin + seed) ก่อน แล้ว Part A (ต้องมี SuperAdmin เป็นผู้อนุมัติก่อน)
+1. ~~B รีวิว §5.1 (notification)~~ ✅ (PR #105) · พี่เลี้ยงเคาะ: grace period 7 วัน + cooldown 90 วัน + soft-delete-only
+2. เข้าคิว **Sprint 3** — implement **Part B** (SuperAdmin + seed) ก่อน แล้ว **Part A** ตามหลัง (Part A ต้องมี SuperAdmin เป็นผู้อนุมัติก่อน)
 
-## 10. คำถามเปิด → B
+## 10. คำถามเปิด → ตอบครบแล้ว (B, PR #105)
 
-1. **`NotificationType`** — เพิ่มค่าใหม่กี่ตัว? เสนอ 2: `config_deletion_pending` (→ SuperAdmin), `config_deletion_grace` (→ ผู้สร้าง Config) — B เห็นด้วยไหม หรือ reuse ค่าเดิม / ใช้ generic
-2. **grace period** — ทำเป็น pre-notification 7 วันก่อนสร้าง request (job เห็นเกณฑ์ครบ → เตือน → อีก 7 วันค่อยสร้าง request) หรือสร้าง request เลยแต่ให้ status `grace` 7 วันก่อนโผล่ในคิว SuperAdmin? เสนอแบบหลัง (state เดียว track ง่ายกว่า)
-3. **cooldown หลัง reject** — เก็บเป็น query `ConfigDeletionRequest` ล่าสุดที่ `rejected` (เสนอ, ไม่ต้องเพิ่ม field) หรือเพิ่ม `Config.deletionCooldownUntil`?
-4. **`config-sync-writer`** — SuperAdmin approve ให้ soft-delete Config ที่ `synced`... ไม่ได้ (เกณฑ์ §2.1 กันไว้แล้ว) — B เห็นช่องโหว่ตรง config-sync-writer ที่อาจ sync Config ที่ `deletedAt != null` ไหม? (คิดว่าไม่ เพราะ sync trigger จาก `approved`→`synced` ซึ่งเกิดก่อน delete เสมอ)
+| # | คำถาม | มติ |
+|---|---|---|
+| 1 | `NotificationType` ใหม่กี่ตัว | **2 ตัว** — `config_deletion_pending` (→ SuperAdmin), `config_deletion_grace` (→ ผู้สร้าง Config) · แยก type ชัดกว่า reuse (ดู §5.1) |
+| 2 | grace period — pre-notification แยก หรือ state เดียว | **state เดียว** (`grace` 7 วันก่อนโผล่ในคิว SuperAdmin) — track ง่ายกว่า ไม่ต้องมี state พิเศษก่อนสร้าง request |
+| 3 | cooldown หลัง reject — query หรือเพิ่ม field | **query** `ConfigDeletionRequest` ล่าสุดที่ `rejected` — ไม่เพิ่ม `Config.deletionCooldownUntil` ลด surface ของ schema |
+| 4 | ช่องโหว่ `config-sync-writer` (sync Config ที่ `deletedAt != null`) | **ไม่มีช่องโหว่** — sync trigger จาก `approved`→`synced` เกิดก่อน delete เสมอ (เกณฑ์ §2.1 กัน `approved`/`synced` ไว้แล้ว) |
