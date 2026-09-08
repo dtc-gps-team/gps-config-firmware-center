@@ -30,7 +30,7 @@ export interface SendNotificationInput {
 }
 
 /**
- * Notification module (ดู 01_GPS_Build_Reference.md Section 3 +
+ * Notification module (ดู docs/planning/01_GPS_Build_Reference.md Section 3 +
  * docs/05_Mobile_Notification_FCM.md)
  *
  * ควบคุมด้วย env `NOTIFICATION_MODE`:

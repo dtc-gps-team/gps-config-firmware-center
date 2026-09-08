@@ -6,7 +6,7 @@ import { ConfigStatus } from '@prisma/client';
  * `ConfigApplyResult` ใน docs/api/openapi.yaml (`applyConfigToDevice`)
  *
  * **ไม่มี field สถานะอุปกรณ์หลัง apply** โดยตั้งใจ — กล่องเช็ค Config ของตัวเอง
- * ตอน **เปิดเครื่องครั้งถัดไป** เท่านั้น (01_GPS_Build_Reference.md §4.2)
+ * ตอน **เปิดเครื่องครั้งถัดไป** เท่านั้น (docs/planning/01_GPS_Build_Reference.md §4.2)
  * ไม่มีสถานะ synchronous ให้คืน ถ้าใส่ไปจะทำให้ Mobile เข้าใจผิด (ยืนยันกับ
  * kittiphong (B) 2026-09 — ผู้ใช้ endpoint นี้ฝั่ง Mobile)
  */

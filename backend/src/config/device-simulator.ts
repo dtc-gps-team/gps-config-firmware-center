@@ -44,7 +44,7 @@ export interface DeviceSimulator {
 export const DEVICE_SIMULATOR = Symbol('DEVICE_SIMULATOR');
 
 /** ชื่อฟิลด์ที่รู้แน่นอนว่าต้องเป็นค่าบวกเสมอถ้ามันมีอยู่ในฟิลด์ (ค่า Timeout/
- * Interval) — ตรงกับตัวอย่างใน 03_GPS_Detailed_Build_Steps.md Phase 1 ข้อ 3
+ * Interval) — ตรงกับตัวอย่างใน docs/planning/03_GPS_Detailed_Build_Steps.md Phase 1 ข้อ 3
  * (Semantic Validation เท่าที่ทำได้) จับคู่แบบ case-insensitive substring
  * เพราะยังไม่มีตาราง Config Definition Lookup (`ConfigFieldDefinition`) ที่รู้
  * ชื่อฟิลด์จริงทั้ง ~262 ตัวในระบบ ณ ตอนนี้ (ดู TODO(Stage 3) ใน

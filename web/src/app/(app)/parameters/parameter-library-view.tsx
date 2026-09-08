@@ -27,7 +27,7 @@ import { DEMO_PARAMETERS, DEMO_PARAMETERS_TOTAL } from "@/lib/demo-data";
 
 /**
  * คลัง Parameter (Config Definition Lookup, #12/#26) — Sprint 1 นับเป็นฝั่ง
- * Backend เท่านั้น (ดู 02_GPS_Development_Plan.md) หน้านี้จึงเป็น scaffold
+ * Backend เท่านั้น (ดู docs/planning/02_GPS_Development_Plan.md) หน้านี้จึงเป็น scaffold
  * รอต่อ API ตอนถึงรอบ Sprint จริง เหมือน pattern ของหน้าอื่น (Config
  * Editor, Task Management ฯลฯ) — ตั้งใจไม่เชื่อม `GET`/`POST
  * /config-definitions` ตอนนี้ แม้ backend จะมีจริงแล้ว เพราะ (1) ยังไม่ถึง

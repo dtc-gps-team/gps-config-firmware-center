@@ -14,8 +14,8 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 | `backend/` | NestJS + Prisma + PostgreSQL |
 | `mobile/` | Flutter |
 
-เอกสารหลัก: `01_GPS_Build_Reference.md`, `02_GPS_Development_Plan.md`,
-`03_GPS_Detailed_Build_Steps.md`, `00_Sprint0_Setup_Guide.md` (ที่ root),
+เอกสารหลัก: `docs/planning/01_GPS_Build_Reference.md`, `docs/planning/02_GPS_Development_Plan.md`,
+`docs/planning/03_GPS_Detailed_Build_Steps.md`, `docs/planning/00_Sprint0_Setup_Guide.md`,
 `docs/api/openapi.yaml`, `docs/architecture/RBAC_Matrix.md`
 
 ## Git / Commit Convention

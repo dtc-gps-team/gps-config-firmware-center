@@ -2,7 +2,7 @@
 
 > เสนอโดย: paveekornk (A) — 2026-09-07
 > สถานะ: **เอกสารเตรียมประชุม ยังไม่ได้เขียนโค้ดจริง** — เป็นงานร่วม A + B
-> ตาม `02_GPS_Development_Plan.md` แถวที่ 9 (Sprint 2) ต้องคุยกันก่อนเริ่ม (issue #32)
+> ตาม `planning/02_GPS_Development_Plan.md` แถวที่ 9 (Sprint 2) ต้องคุยกันก่อนเริ่ม (issue #32)
 >
 > **ขอบเขตงาน A+B = `ConfigSyncWriter` interface + `mock` implementation เท่านั้น**
 > โหมด `docker` / `production` เขียนไว้ในเอกสารนี้เพื่อให้ interface ออกแบบมารองรับได้
@@ -34,16 +34,16 @@
 | เชื่อม "Operation อนุมัติ → เรียก writer เป็น background job" | ✅ | |
 | retry logic + สร้าง Incident อัตโนมัติเมื่อ fail (ทดสอบด้วย mock) | ✅ | |
 | โหมด `docker` (ยิง TCP เข้า `127.0.0.1:801`) | ออกแบบ interface ให้รองรับ | implementation — ต้องรู้คำสั่งเขียน (TBD) + มีเครื่องทดสอบของ DTC |
-| โหมด `production` (ยิงเข้า `config.dtc.co.th:909`) | ออกแบบ interface ให้รองรับ | implementation — คำสั่งเขียน + สิทธิ์ + **คำสั่งเริ่มจากทีม** (ชะลอไว้ตามคำสั่งทีม 27 ส.ค. 2569 — `03_GPS_Detailed_Build_Steps.md:149`) |
+| โหมด `production` (ยิงเข้า `config.dtc.co.th:909`) | ออกแบบ interface ให้รองรับ | implementation — คำสั่งเขียน + สิทธิ์ + **คำสั่งเริ่มจากทีม** (ชะลอไว้ตามคำสั่งทีม 27 ส.ค. 2569 — `planning/03_GPS_Detailed_Build_Steps.md:149`) |
 
 **หัวข้อวาระประชุม — checkpoint Sprint 2 ครอบ docker ด้วยไหม:**
-Checkpoint Sprint 2 (`03_GPS_Detailed_Build_Steps.md:81`) เขียนว่าต้อง *"เห็น Log การเขียน
+Checkpoint Sprint 2 (`planning/03_GPS_Detailed_Build_Steps.md:81`) เขียนว่าต้อง *"เห็น Log การเขียน
 เข้าระบบเดิม (โหมด mock **และ** docker)"* แต่ในทางปฏิบัติ docker mode ทดสอบจริงไม่ได้จนกว่า
 จะรู้ payload format ของคำสั่ง Write/Set ระบบเดิม (ยังเป็น TBD — §8) + มีเครื่องทดสอบ `:801`
 ของ DTC (เป็น infra ของทีม ไม่ใช่สิ่งที่เด็กฝึกงาน spin เอง และงานฝึกงานนี้ไม่แตะการทดสอบ
 กับ hardware/ระบบเดิม)
 
-`02_GPS_Development_Plan.md:90` อนุญาตให้ผ่าน mock/Docker ไปก่อนได้ แต่ไม่ได้ระบุว่าตัด docker
+`planning/02_GPS_Development_Plan.md:90` อนุญาตให้ผ่าน mock/Docker ไปก่อนได้ แต่ไม่ได้ระบุว่าตัด docker
 ออกจาก checkpoint → **ขอให้ที่ประชุม #32 ตัดสินร่วมกัน** (วาระข้อ 9) ว่า:
 - (ก) เลื่อน checkpoint ส่วน docker ออกไปเป็น backlog แยก (รอ TBD คำสั่งเขียน) แล้ว Sprint 2
   ตรวจเฉพาะ mock, หรือ
@@ -128,11 +128,11 @@ Operation กด approve
   เมื่อ writer สำเร็จ (ยังไม่ทำใน Phase 1 — Build Reference / doc 04 ระบุว่า `synced` เป็น Phase 2)
 - background job runner: เสนอใช้ **BullMQ + Redis** (มี Redis ใน docker-compose แล้ว)
   หรือถ้าจะเบากว่านั้นในช่วง mock ใช้ in-process queue ก่อนก็ได้ — **หัวข้อประชุม**
-- `03_GPS_Detailed_Build_Steps.md` Phase 2 ข้อ 5 ระบุตรงๆ ว่า "ต้องมี config-sync-writer
+- `planning/03_GPS_Detailed_Build_Steps.md` Phase 2 ข้อ 5 ระบุตรงๆ ว่า "ต้องมี config-sync-writer
   และ Queue พร้อมใช้" ก่อนปิด Phase 2
 - **หมายเหตุกันสับสน:** job queue ที่เสนอนี้ (retry การเขียน config เข้า data กลาง)
   **≠** device-communication message queue / Adapter / Registry / Profile แบบ Device
-  Gateway เดิม ที่ถูกตัดออกตั้งแต่ v3.0 (`01_GPS_Build_Reference.md` L189
+  Gateway เดิม ที่ถูกตัดออกตั้งแต่ v3.0 (`planning/01_GPS_Build_Reference.md` L189
   "ไม่ต้องสร้าง Adapter/Registry/Profile/Queue แบบ Device Gateway เดิม") — ตัวนี้เป็น
   แค่ job runner ธรรมดาสำหรับ retry งานเขียน ไม่ใช่ layer คุยกับกล่อง
 
@@ -239,8 +239,8 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
 
 ## 10. อ้างอิง
 
-- `01_GPS_Build_Reference.md` §1, §4.1, §5 (โปรโตคอลระบบเดิม), §8 (รายการ TBD)
-- `02_GPS_Development_Plan.md` แถวที่ 9 + §หมายเหตุแถวที่ 9
-- `03_GPS_Detailed_Build_Steps.md` Phase 2 (Checkpoint) + Phase 3 ข้อ 3 (firmware pointer) + Phase 4 ข้อ 1 (rollback เรียก writer)
+- `planning/01_GPS_Build_Reference.md` §1, §4.1, §5 (โปรโตคอลระบบเดิม), §8 (รายการ TBD)
+- `planning/02_GPS_Development_Plan.md` แถวที่ 9 + §หมายเหตุแถวที่ 9
+- `planning/03_GPS_Detailed_Build_Steps.md` Phase 2 (Checkpoint) + Phase 3 ข้อ 3 (firmware pointer) + Phase 4 ข้อ 1 (rollback เรียก writer)
 - `docs/04_Phase1_A_ConfigWorkflow.md` (สถานะ `synced` = Phase 2)
 - issue #32 (นัดประชุม), #28 (Incident & Rollback), #68 (field catalog backfill)

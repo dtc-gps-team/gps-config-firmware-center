@@ -238,7 +238,7 @@ async function main() {
   //      (ค) `REPRESENTATIVE_FIELDS` — ชุด parameter "ตัวแทน" สำหรับ dev/demo
   //          (ยังไม่ใช่สเปกจริง — ดูคอมเมนต์เต็มเหนือ array นั้น)
   //
-  //    **ที่มาของชื่อ field:** `01_GPS_Build_Reference.md` §5 ("โปรโตคอลที่
+  //    **ที่มาของชื่อ field:** `docs/planning/01_GPS_Build_Reference.md` §5 ("โปรโตคอลที่
   //    ยืนยันแล้วกับระบบเดิม `config.dtc.co.th:909`") ระบุตัวอย่าง field ที่
   //    ยืนยันแล้วว่ามีจริงในระบบเดิม: APN1, MTYP, SIM1, SEV1, RS232, PROD, COMP
   //    (+ APN2/SIM2 คู่ dual-SIM ตามที่ kittiphong ระบุใน #68) — **ยืนยันแค่
