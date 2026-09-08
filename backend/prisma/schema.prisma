@@ -83,7 +83,7 @@ model RolePermission {
 }
 
 // ---------------------------------------------------------------------------
-// Module: task  (มอบหมาย/ติดตามงาน — ดู 01_GPS_Build_Reference.md Section 3)
+// Module: task  (มอบหมาย/ติดตามงาน — ดู docs/planning/01_GPS_Build_Reference.md Section 3)
 // ---------------------------------------------------------------------------
 
 enum TaskStatus {
@@ -182,7 +182,7 @@ model DeviceToken {
 
 // ---------------------------------------------------------------------------
 // Module: device  (Device Registration — ร่วมกัน A/B ตาม
-// 03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8: B ใช้ทำ Device Registration Flow
+// docs/planning/03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8: B ใช้ทำ Device Registration Flow
 // ฝั่ง Mobile ใน Phase 5, A ใช้ทำ Device Search/Override ฝั่ง Web ใน Phase 4)
 //
 // เบี่ยงจาก GPS_Data_Dictionary.xlsx (ตาราง DEVICE ใน "Product Hierarchy /
@@ -204,7 +204,7 @@ model DeviceToken {
 // GitHub PR review, ยังไม่ approve — แค่ COMMENTED ถามว่าเป็นการตัดออกโดยตั้งใจ
 // หรือเปล่า): เพิ่ม deviceId String @unique แยกจาก id — id เป็น internal
 // surrogate key ของ Prisma ใช้ทำ FK/index เท่านั้น ส่วน deviceId เป็นเลขที่ติดมา
-// กับตัวเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (ดู 03_GPS_Detailed_Build_Steps.md
+// กับตัวเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (ดู docs/planning/03_GPS_Detailed_Build_Steps.md
 // ข้อ 8, ข้อ 130) มี lifecycle ต่างจาก id (เปลี่ยนรูปแบบได้ตามผู้ผลิต หรือกรอกผิด
 // แล้วต้องแก้ทีหลัง) แยกออกจากกันเพื่อไม่ให้กระทบ relation อื่นที่ผูกกับ Device.id
 // ถ้าค่านี้ต้องแก้ในอนาคต

@@ -3,7 +3,7 @@ info:
   title: GPS Config & Firmware Center API
   description: >
     โครง API เริ่มต้นสำหรับ Sprint 0 — ยังไม่ครบทุก Endpoint
-    เพิ่มเติมทีละ Phase ตามที่ Build จริง (ดู 01_GPS_Build_Reference.md Section 3)
+    เพิ่มเติมทีละ Phase ตามที่ Build จริง (ดู ../planning/01_GPS_Build_Reference.md Section 3)
   version: "0.1.0"
 servers:
   - url: http://localhost:3001/api/v1
@@ -832,7 +832,7 @@ paths:
         สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — เลือก Config ที่ผูกกับ Task
         ที่กำลังทำ แล้วส่งให้อุปกรณ์เครื่องนั้น. **ไม่ persist / ไม่แตะสถานะใดๆ**
         (fire-and-forget) — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป
-        (01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
+        (../planning/01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
         โหมด mock ตรวจค่าเบื้องต้น (field ≥ 1, Timeout/Interval ไม่ติดลบ)
         แล้วคืน `applied: true`
       parameters:

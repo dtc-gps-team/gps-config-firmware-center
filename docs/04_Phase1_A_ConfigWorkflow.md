@@ -3,7 +3,7 @@
 > เอกสารสรุป workflow ของโมดูล Config (issue #26) — Stage 1: CRUD, Stage 2:
 > Import จากไฟล์ JSON, Stage 3: Simulate, Stage 4: SW decide + Operation
 > approve/reject, Stage 5: Version History (เอกสารนี้ครอบ Stage 2/3/5 ละเอียด —
-> Stage 1/4 ดูที่ `03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 1, 7-8)
+> Stage 1/4 ดูที่ `planning/03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 1, 7-8)
 
 ## ภาพรวม
 
@@ -85,7 +85,7 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 1. Config ต้องมีอย่างน้อย 1 field
 2. ฟิลด์ที่ชื่อเข้าเงื่อนไข Timeout/Interval (จับคู่แบบ case-insensitive
    substring กับ `TIMEOUT`/`INTERVAL`) ต้องไม่เป็นค่าติดลบ — ตรงกับตัวอย่างใน
-   `03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3
+   `planning/03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3
 
 นอกเหนือจากนี้ถือว่าผ่าน แยก Interface (`DeviceSimulator`) จาก Implementation
 ตาม Build Reference §4.3 (Extensibility) ไว้แล้ว — วันไหนมี Simulator จริง
@@ -120,7 +120,7 @@ DeviceConfigDraft แล้วเข้า flow ทดสอบ/อนุมั�
 | ชุด | field | dataType | required | unknownSpec | ที่มา |
 |---|---|---|---|---|---|
 | (ก) นิยามชัดเจน | `APN` | string | ✅ | `false` | นิยามชัดเจน — Access Point Name |
-| (ข) ชื่อยืนยัน / ยังไม่รู้กฎ | `APN1` `APN2` `MTYP` `SIM1` `SIM2` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` | `01_GPS_Build_Reference.md` §5 + `APN2`/`SIM2` ตาม #68 |
+| (ข) ชื่อยืนยัน / ยังไม่รู้กฎ | `APN1` `APN2` `MTYP` `SIM1` `SIM2` `SEV1` `RS232` `PROD` `COMP` | string | — | `true` | `planning/01_GPS_Build_Reference.md` §5 + `APN2`/`SIM2` ตาม #68 |
 | (ค) ชุดตัวแทน dev/demo | `APN_USER` `APN_PASSWORD` `SERVER_HOST` `SERVER_PORT` `BACKUP_SERVER_HOST` `TRANSPORT_PROTOCOL` `REPORT_INTERVAL_MOVING` `REPORT_INTERVAL_IDLE` `HEADING_CHANGE_REPORT` `GNSS_MODE` `IGNITION_DETECT_SOURCE` `DIGITAL_INPUT_1` `DIGITAL_OUTPUT_1` `SLEEP_MODE` `LOW_BATTERY_THRESHOLD` `COMMAND_PASSWORD` `SOS_NUMBER_1` `MILEAGE_COUNTER_ENABLED` `STATIC_DRIFT_FILTER` `CAN_BUS_ENABLED` `OBD_PROTOCOL` | string / number / boolean | — | `false` | ความสามารถมาตรฐานของ tracker ตระกูล GT06 — **ยังไม่ใช่สเปกจริง** |
 
 ### ชุด (ข) — ชื่อ field ยืนยันจริง แต่ยังไม่รู้กฎ
@@ -163,7 +163,7 @@ Config flow / Semantic Validation ได้แค่ไม่กี่เคส 
 
 ## Validation strictness — `unknownSpec` = Metadata "รู้กฎ vs รู้แค่ Data Type"
 
-`03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3 พูดถึงการ mark field ด้วย
+`planning/03_GPS_Detailed_Build_Steps.md` Phase 1 ข้อ 3 พูดถึงการ mark field ด้วย
 `validation_level: syntactic_only` เทียบกับ `semantic` และ Checkpoint ข้อ 6
 ต้องการ Metadata ระบุว่าฟิลด์ไหน "รู้กฎ" ฟิลด์ไหน "รู้แค่ Data Type"
 
@@ -236,5 +236,5 @@ Auditor (compliance) **ต้อง** ดูประวัติได้ — S
   `importConfig`/`createConfig`
 - `docs/architecture/RBAC_Matrix.md` — ตาราง permission เต็ม + footnote
   การตัดสินใจเรื่อง ownership
-- `01_GPS_Build_Reference.md` §3.1 — บริบทที่มาของแนวคิด
+- `planning/01_GPS_Build_Reference.md` §3.1 — บริบทที่มาของแนวคิด
   `ConfigImporter`/`parseConfigFile` ที่ยังไม่ได้ทำ (ดูเหตุผล YAGNI ด้านบน)
