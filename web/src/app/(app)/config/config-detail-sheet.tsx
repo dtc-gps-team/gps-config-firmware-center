@@ -17,11 +17,12 @@ import { deleteConfig, type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 
-/** value ของ field อาจเป็น object/array — โชว์เป็น JSON, string โชว์ตรงๆ */
+/** value ของ field อาจเป็น object/array — โชว์เป็น JSON แบบ indent (อ่านออก),
+ * string โชว์ตรงๆ */
 function renderFieldValue(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "string") return value;
-  return JSON.stringify(value);
+  return JSON.stringify(value, null, 2);
 }
 
 function InfoRow({
@@ -34,7 +35,7 @@ function InfoRow({
   return (
     <div className="flex justify-between gap-4 py-1.5 text-sm">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-all">{children}</span>
+      <span className="text-right break-words">{children}</span>
     </div>
   );
 }
@@ -104,7 +105,7 @@ function ConfigDetailContent({
   return (
     <>
       <SheetHeader className="gap-2">
-        <SheetTitle className="break-all pr-8">{config.name}</SheetTitle>
+        <SheetTitle className="break-words pr-8">{config.name}</SheetTitle>
         <div>
           <span
             className={pillClass(CONFIG_STATUS_TONE[config.status] ?? "neutral")}
@@ -149,19 +150,28 @@ function ConfigDetailContent({
             </p>
           ) : (
             <div className="divide-y rounded-lg border">
-              {fieldEntries.map(([key, value]) => (
-                <div
-                  key={key}
-                  className="flex justify-between gap-4 px-3 py-2 text-sm"
-                >
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {key}
-                  </span>
-                  <span className="text-right font-mono text-xs break-all">
-                    {renderFieldValue(value)}
-                  </span>
-                </div>
-              ))}
+              {fieldEntries.map(([key, value]) => {
+                const rendered = renderFieldValue(value);
+                const multiline = rendered.includes("\n");
+                return (
+                  <div
+                    key={key}
+                    className="flex justify-between gap-4 px-3 py-2 text-sm"
+                  >
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                      {key}
+                    </span>
+                    <span
+                      className={
+                        "min-w-0 font-mono text-xs break-words whitespace-pre-wrap " +
+                        (multiline ? "text-left" : "text-right")
+                      }
+                    >
+                      {rendered}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
