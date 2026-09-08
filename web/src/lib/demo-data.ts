@@ -14,47 +14,23 @@
  */
 
 /* ---------------------------------------------------------------- */
-/*  status pill — className ตาม Tailwind default palette (แยกจาก theme   */
-/*  token ใน globals.css โดยตั้งใจ: signal color ของ status ไม่ควรผูกกับ  */
-/*  --primary/--accent) ใช้ร่วมกันทุกหน้า                                */
+/*  status pill — ย้ายไป `@/lib/status-pill` แล้ว (ไม่ใช่ demo data —    */
+/*  หน้าจริงที่ต่อ API ก็ใช้) re-export ต่อให้หน้า scaffold เดิมไม่ต้องแก้ import */
 /* ---------------------------------------------------------------- */
 
-type PillTone = "neutral" | "info" | "progress" | "success" | "danger";
+import {
+  type PillTone,
+  CONFIG_STATUS_TONE,
+  TASK_STATUS_TONE,
+  DEVICE_STATUS_TONE,
+} from "@/lib/status-pill";
 
-const PILL_TONE: Record<PillTone, string> = {
-  neutral: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  info: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  progress: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  success:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  danger: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
-};
-
-export function pillClass(tone: PillTone): string {
-  return `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PILL_TONE[tone]}`;
-}
-
-/** Config lifecycle: draft → testing → approved → synced (rejected = ย้อน draft) */
-export const CONFIG_STATUS_TONE: Record<string, PillTone> = {
-  draft: "neutral",
-  testing: "progress",
-  approved: "success",
-  synced: "info",
-  rejected: "danger",
-};
-
-export const TASK_STATUS_TONE: Record<string, PillTone> = {
-  pending: "neutral",
-  in_progress: "progress",
-  completed: "success",
-  cancelled: "danger",
-};
-
-export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
-  registered: "neutral",
-  installed: "success",
-  decommissioned: "danger",
-};
+export {
+  pillClass,
+  CONFIG_STATUS_TONE,
+  TASK_STATUS_TONE,
+  DEVICE_STATUS_TONE,
+} from "@/lib/status-pill";
 
 export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
   ร่าง: "neutral",
