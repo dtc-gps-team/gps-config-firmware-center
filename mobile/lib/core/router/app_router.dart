@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -13,6 +13,9 @@ import '../auth/auth_controller.dart';
 class AppRoutes {
   const AppRoutes._();
 
+  /// Startup route — shown only while [AuthStatus.unknown] (session restore
+  /// hasn't resolved yet). Never a destination a user navigates to.
+  static const splash = '/';
   static const login = '/login';
   static const home = '/home';
   static const simulator = '/simulator';
@@ -25,27 +28,44 @@ class AppRoutes {
 }
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
-/// to `/login`, and an authenticated user landing on `/login` is sent to
-/// `/home`. While the session is still restoring ([AuthStatus.unknown]) no
-/// redirect happens.
+/// to `/login`, and an authenticated user landing on `/login` (or `/`) is
+/// sent to `/home`. While the session is still restoring ([AuthStatus.unknown])
+/// the router is held at [AppRoutes.splash] — `initialLocation` is `/`, not
+/// `/login`, specifically so an already-authenticated user never sees
+/// [LoginPage] flash on screen before landing on Home (regression: it used to
+/// start at `/login` and "no redirect" while restoring meant staying put —
+/// i.e. rendering the login form — until `_restore()`'s microtask resolved).
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.onDispose(refresh.dispose);
   ref.listen(authControllerProvider, (_, _) => refresh.value++);
 
   return GoRouter(
-    initialLocation: AppRoutes.login,
+    initialLocation: AppRoutes.splash,
     refreshListenable: refresh,
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
-      if (auth.status == AuthStatus.unknown) return null;
+      final atSplash = state.matchedLocation == AppRoutes.splash;
+
+      if (auth.status == AuthStatus.unknown) {
+        // Session restore still in flight — hold at splash. Never let this
+        // fall through to "stay put", or whatever route we started on
+        // (historically `/login`) renders for real.
+        return atSplash ? null : AppRoutes.splash;
+      }
 
       final atLogin = state.matchedLocation == AppRoutes.login;
       if (!auth.isAuthenticated) return atLogin ? null : AppRoutes.login;
-      if (atLogin) return AppRoutes.home;
+
+      // Authenticated: neither splash nor login is a valid resting place.
+      if (atLogin || atSplash) return AppRoutes.home;
       return null;
     },
     routes: [
+      GoRoute(
+        path: AppRoutes.splash,
+        builder: (context, state) => const _SplashPage(),
+      ),
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginPage(),
@@ -74,3 +94,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Shown only for the brief window while [AuthController] is restoring a
+/// persisted session ([AuthStatus.unknown]) — no form, no branding copy, just
+/// a neutral loading state so nothing flashes before the redirect to `/login`
+/// or `/home` lands. No explicit `backgroundColor`, same as [LoginPage] /
+/// other pages — picks up the ambient [ThemeData.colorScheme] so it doesn't
+/// flash a different color than the page that follows it.
+class _SplashPage extends StatelessWidget {
+  const _SplashPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
+}

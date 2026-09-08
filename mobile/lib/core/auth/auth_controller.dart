@@ -86,23 +86,33 @@ class AuthController extends Notifier<AuthState> {
   AuthRepository get _repository => ref.read(authRepositoryProvider);
 
   Future<void> _restore() async {
-    final token = await _tokenStore.read();
-    if (token == null) {
+    try {
+      final token = await _tokenStore.read();
+      if (token == null) {
+        state = state.copyWith(status: AuthStatus.unauthenticated);
+        return;
+      }
+      ref.read(apiClientProvider).setAuthToken(token);
+      final profile = await _profileStore.read();
+      state = state.copyWith(
+        status: AuthStatus.authenticated,
+        username: profile?.username,
+        role: profile?.role,
+      );
+      // Fire-and-forget: the FCM token may have rotated while the app was
+      // closed. Never blocks first paint / restore on push registration.
+      unawaited(
+        ref.read(pushNotificationServiceProvider).initializeAndRegister(),
+      );
+    } catch (_) {
+      // Any failure reading the token/profile store (corrupted keystore,
+      // a platform-channel error, ...) must not leave `state.status` stuck
+      // at `AuthStatus.unknown` forever — `routerProvider` (app_router.dart)
+      // holds the splash screen indefinitely while status is `unknown`, so
+      // an unhandled error here would trap the user on a spinner instead of
+      // falling back to the login screen.
       state = state.copyWith(status: AuthStatus.unauthenticated);
-      return;
     }
-    ref.read(apiClientProvider).setAuthToken(token);
-    final profile = await _profileStore.read();
-    state = state.copyWith(
-      status: AuthStatus.authenticated,
-      username: profile?.username,
-      role: profile?.role,
-    );
-    // Fire-and-forget: the FCM token may have rotated while the app was
-    // closed. Never blocks first paint / restore on push registration.
-    unawaited(
-      ref.read(pushNotificationServiceProvider).initializeAndRegister(),
-    );
   }
 
   Future<void> login(String username, String password) async {
