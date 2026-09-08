@@ -5,6 +5,7 @@ import type { ColumnDef, Row } from "@tanstack/react-table";
 
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -21,6 +22,11 @@ import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { ConfigDetailSheet } from "./config-detail-sheet";
+import { CreateConfigButton } from "./create-config-button";
+import {
+  ConfigFormSheet,
+  type ConfigFormState,
+} from "./config-form-sheet";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -85,6 +91,7 @@ export function ConfigTableCard() {
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
   const [selected, setSelected] = useState<Config | null>(null);
+  const [form, setForm] = useState<ConfigFormState | null>(null);
 
   return (
     <Card>
@@ -93,6 +100,9 @@ export function ConfigTableCard() {
         <CardDescription>
           ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
+        <CardAction>
+          <CreateConfigButton onClick={() => setForm({ mode: "create" })} />
+        </CardAction>
       </CardHeader>
       <CardContent>
         {isLoading && data === null ? (
@@ -126,9 +136,25 @@ export function ConfigTableCard() {
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
+        onEdit={(config) => {
+          setSelected(null);
+          setForm({ mode: "edit", config });
+        }}
         onDeleted={() => {
           setSelected(null);
           void refetch();
+        }}
+      />
+
+      <ConfigFormSheet
+        state={form}
+        onOpenChange={(open) => {
+          if (!open) setForm(null);
+        }}
+        onSaved={(config) => {
+          setForm(null);
+          void refetch();
+          setSelected(config);
         }}
       />
     </Card>

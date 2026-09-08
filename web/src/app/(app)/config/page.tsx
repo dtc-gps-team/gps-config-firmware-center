@@ -1,4 +1,3 @@
-import { CreateConfigButton } from "./create-config-button";
 import { ConfigTableCard } from "./config-table";
 
 export const metadata = {
@@ -7,21 +6,18 @@ export const metadata = {
 
 /**
  * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวดูรายละเอียด
- * (แผง `ConfigDetailSheet`) + ลบ Config สถานะ draft (Sprint 2 #12)
- * ฟอร์มสร้าง/แก้ยังเป็น scaffold (`CreateConfigButton` disabled) — ต่อ POST/PUT
- * ใน PR ถัดไป (ต้องต่อ `GET /config-definitions` มาทำ field editor)
+ * (แผง `ConfigDetailSheet`) + ฟอร์มสร้าง/แก้/ลบ Config สถานะ draft
+ * (`ConfigFormSheet` — field editor สร้างจาก `GET /config-definitions`)
+ * ปุ่ม "สร้าง Config ใหม่" + การ gate ตาม Role อยู่ใน `ConfigTableCard`
  */
 export default function ConfigPage() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Config Editor</h1>
-          <p className="text-sm text-muted-foreground">
-            สร้าง/แก้ Draft · สร้างได้เฉพาะ Role SW
-          </p>
-        </div>
-        <CreateConfigButton />
+      <div>
+        <h1 className="text-2xl font-semibold">Config Editor</h1>
+        <p className="text-sm text-muted-foreground">
+          สร้าง/แก้ Draft · สร้างได้เฉพาะ Role SW
+        </p>
       </div>
 
       <ConfigTableCard />
