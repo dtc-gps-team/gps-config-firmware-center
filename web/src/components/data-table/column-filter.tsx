@@ -14,6 +14,25 @@ import {
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
+/** สไตล์ปุ่มเปิด popover ของฟิลเตอร์ (multi-select / date-range) — หน้าตาเดียว
+ * กับช่อง `<Input>` เพื่อให้หัวตารางดูเป็นชุดเดียวกัน */
+const FILTER_TRIGGER_CLASS = cn(
+  "flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-input bg-transparent px-2 text-xs outline-none transition-colors",
+  "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+  "dark:bg-input/30",
+);
+
+/** `YYYY-MM-DD` -> `1 ม.ค. 68` (พาร์สเป็นวันตามเวลาเครื่อง ไม่ผ่าน UTC) */
+function formatThaiShortDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
 /**
  * ฟิลเตอร์ต่อคอลัมน์ (มติ Sprint 1 review ข้อ 2):
  * - `filterVariant: "text"`         → ช่องพิมพ์ กรองสดแบบ debounce
@@ -97,11 +116,7 @@ function MultiSelectFilter<TData, TValue>({
   return (
     <Popover>
       <PopoverTrigger
-        className={cn(
-          "flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-input bg-transparent px-2 text-xs outline-none transition-colors",
-          "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-          "dark:bg-input/30",
-        )}
+        className={FILTER_TRIGGER_CLASS}
         aria-label={`กรอง ${label}`}
       >
         <span className={cn("truncate", selected.length === 0 && "text-muted-foreground")}>
@@ -161,23 +176,62 @@ function DateRangeFilter<TData, TValue>({
     column.setFilterValue(next[0] || next[1] ? next : undefined);
   }
 
+  const summary =
+    from && to
+      ? `${formatThaiShortDate(from)} – ${formatThaiShortDate(to)}`
+      : from
+        ? `ตั้งแต่ ${formatThaiShortDate(from)}`
+        : to
+          ? `ถึง ${formatThaiShortDate(to)}`
+          : "ทั้งหมด";
+
+  const dateInputClass =
+    "h-7 w-full min-w-0 rounded-lg border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
+
   return (
-    <div className="flex items-center gap-1" aria-label={`ช่วงวันที่ ${label}`}>
-      <input
-        type="date"
-        value={from ?? ""}
-        onChange={(e) => setRange([e.target.value || undefined, to])}
-        aria-label={`${label} ตั้งแต่`}
-        className="h-7 w-full min-w-0 rounded-lg border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-      />
-      <span className="text-xs text-muted-foreground">–</span>
-      <input
-        type="date"
-        value={to ?? ""}
-        onChange={(e) => setRange([from, e.target.value || undefined])}
-        aria-label={`${label} ถึง`}
-        className="h-7 w-full min-w-0 rounded-lg border border-input bg-transparent px-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-      />
-    </div>
+    <Popover>
+      <PopoverTrigger
+        className={FILTER_TRIGGER_CLASS}
+        aria-label={`กรอง ${label}`}
+      >
+        <span className={cn("truncate", !from && !to && "text-muted-foreground")}>
+          {summary}
+        </span>
+        <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent className="flex w-56 flex-col gap-2 p-2">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          ตั้งแต่
+          <input
+            type="date"
+            value={from ?? ""}
+            max={to || undefined}
+            onChange={(e) => setRange([e.target.value || undefined, to])}
+            aria-label={`${label} ตั้งแต่`}
+            className={dateInputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          ถึง
+          <input
+            type="date"
+            value={to ?? ""}
+            min={from || undefined}
+            onChange={(e) => setRange([from, e.target.value || undefined])}
+            aria-label={`${label} ถึง`}
+            className={dateInputClass}
+          />
+        </label>
+        {(from || to) && (
+          <button
+            type="button"
+            onClick={() => column.setFilterValue(undefined)}
+            className="w-full rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted"
+          >
+            ล้างช่วงวันที่
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
