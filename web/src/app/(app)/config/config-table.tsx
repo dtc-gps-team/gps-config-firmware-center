@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
+import {
+  dateRangeFilterFn,
+  multiSelectFilterFn,
+} from "@/components/data-table/filter-fns";
 import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
@@ -37,20 +41,20 @@ const columns: ColumnDef<Config>[] = [
   {
     accessorKey: "deviceModel",
     header: "รุ่นอุปกรณ์",
-    filterFn: "equalsString",
-    meta: { filterVariant: "select", label: "รุ่น" },
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "รุ่น" },
   },
   {
     accessorKey: "protocol",
     header: "โปรโตคอล",
-    filterFn: "equalsString",
-    meta: { filterVariant: "select", label: "โปรโตคอล" },
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "โปรโตคอล" },
   },
   {
     accessorKey: "status",
     header: "สถานะ",
-    filterFn: "equalsString",
-    meta: { filterVariant: "select", label: "สถานะ" },
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "สถานะ" },
     cell: ({ row }) => {
       const status = row.original.status;
       return (
@@ -63,8 +67,9 @@ const columns: ColumnDef<Config>[] = [
   {
     accessorKey: "updatedAt",
     header: "แก้ไขล่าสุด",
-    enableColumnFilter: false,
+    filterFn: dateRangeFilterFn,
     enableGlobalFilter: false,
+    meta: { filterVariant: "date-range", label: "แก้ไขล่าสุด" },
     cell: ({ row }) => (
       <span className="text-muted-foreground">
         {formatDateTime(row.original.updatedAt)}

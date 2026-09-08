@@ -29,10 +29,11 @@ declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
     /**
      * ชนิดฟิลเตอร์ต่อคอลัมน์ (มติ Sprint 1 review ข้อ 2):
-     * `"text"` = ช่องพิมพ์กรองสด · `"select"` = dropdown ค่า distinct จากข้อมูลจริง
+     * `"text"` = ช่องพิมพ์กรองสด · `"multi-select"` = dropdown checkbox หลายค่า
+     * (ตัวเลือกจากข้อมูลจริง) · `"date-range"` = ช่วงวันที่
      * ไม่ใส่ = คอลัมน์นี้ไม่มีฟิลเตอร์ต่อคอลัมน์
      */
-    filterVariant?: "text" | "select";
+    filterVariant?: "text" | "multi-select" | "date-range";
     /** ป้ายชื่อคอลัมน์ (ใช้ใน placeholder ของช่องฟิลเตอร์) */
     label?: string;
   }
