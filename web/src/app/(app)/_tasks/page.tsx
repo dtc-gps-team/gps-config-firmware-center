@@ -22,9 +22,13 @@ export const metadata = {
 };
 
 /**
- * Scaffold — `GET /tasks` มีจริงใน spec แล้ว (ดู RBAC_Matrix.md ตาราง 4.1)
- * แต่ยังไม่ต่อ UI ตรงนี้ — ST/OT เห็นเฉพาะ Task ที่ตัวเองถูก assign, Operation
- * เห็นทุก Task (backend กรองให้ ไม่ใช่ UI)
+ * ⚠️ ซ่อนชั่วคราว — อยู่ใน private folder `_tasks/` จึงไม่ถูก route (ดู README
+ * ในโฟลเดอร์นี้ + docs/09 §2 มติ Sprint 1 review ข้อ 1) จอนี้ต้อง redesign เป็น
+ * "list งานที่มอบหมาย + ฟอร์มมอบหมายพื้นฐาน" ไม่ใช่ planning tool ก่อนเปิดใช้
+ *
+ * Scaffold เดิม — `GET /tasks` มีจริงใน spec แล้ว (ดู RBAC_Matrix.md ตาราง 4.1)
+ * ST/OT เห็นเฉพาะ Task ที่ตัวเองถูก assign, Operation เห็นทุก Task (backend
+ * กรองให้ ไม่ใช่ UI)
  */
 export default function TasksPage() {
   return (
