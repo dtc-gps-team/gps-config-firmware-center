@@ -14,11 +14,11 @@ class _NoopAuthRepository implements AuthRepository {
 }
 
 /// Spy standing in for `PushNotificationService` — lets these tests assert
-/// `AuthController` actually calls into it on login/logout/restore, without
-/// depending on `AppConfig.pushNotificationsEnabled` (which is hardcoded
-/// `false` right now — see that flag's docstring). The flag-gating itself
-/// (real `PushNotificationService` no-ops while the flag is off) is covered
-/// separately in `push_notification_service_test.dart`.
+/// `AuthController` actually calls into it on login/logout/restore, and keeps
+/// the real service (which now hits the Firebase SDK, since
+/// `AppConfig.pushNotificationsEnabled` is `true`) out of every test in this
+/// file. The flag-gating itself is covered separately in
+/// `push_notification_service_test.dart`.
 class _FakePushNotificationService implements PushNotificationService {
   int initializeAndRegisterCalls = 0;
   int unregisterAndStopCalls = 0;
@@ -84,6 +84,12 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
       sessionProfileStoreProvider.overrideWithValue(
         InMemorySessionProfileStore(profile),
       ),
+      // Keep the real Firebase-backed service out of restore/login/logout in
+      // these tests — `pushNotificationsEnabled` is `true` now, so the real
+      // one would call `Firebase.initializeApp()` and fail with no binding.
+      pushNotificationServiceProvider.overrideWithValue(
+        _FakePushNotificationService(),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -139,6 +145,9 @@ void main() {
         sessionProfileStoreProvider.overrideWithValue(
           SecureSessionProfileStore(),
         ),
+        pushNotificationServiceProvider.overrideWithValue(
+          _FakePushNotificationService(),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -185,6 +194,9 @@ void main() {
           authRepositoryProvider.overrideWithValue(fakeRepo),
           tokenStoreProvider.overrideWithValue(tokenStore),
           sessionProfileStoreProvider.overrideWithValue(profileStore),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -199,6 +211,9 @@ void main() {
           authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
           tokenStoreProvider.overrideWithValue(tokenStore),
           sessionProfileStoreProvider.overrideWithValue(profileStore),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
         ],
       );
       addTearDown(restoredContainer.dispose);
@@ -225,6 +240,9 @@ void main() {
           authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
           tokenStoreProvider.overrideWithValue(tokenStore),
           sessionProfileStoreProvider.overrideWithValue(profileStore),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
         ],
       );
       addTearDown(container.dispose);

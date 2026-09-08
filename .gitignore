@@ -9,6 +9,10 @@ secrets/
 *service-account*.json
 !*service-account*.example.json
 
+# Firebase Android config (google-services.json) — ห้าม commit ของจริง
+# (มี API key ผูกกับ Firebase project จริง — devices/CI ต้องวางเองจาก Firebase Console)
+mobile/android/app/google-services.json
+
 # Node
 node_modules/
 npm-debug.log*
