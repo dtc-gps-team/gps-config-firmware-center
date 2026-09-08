@@ -28,24 +28,25 @@ class MockConfigRepository implements ConfigRepository {
       id: 'mock-config-1',
       deviceModel: 'GT06N',
       protocol: 'TCP',
-      status: ConfigStatus.draft,
+      status: ConfigStatus.approved,
       fields: {'APN': 'internet'},
     ),
     DeviceConfigDraft(
       id: 'mock-config-2',
       deviceModel: 'GT06N',
       protocol: 'TCP',
-      status: ConfigStatus.testing,
+      status: ConfigStatus.synced,
       fields: {'APN': 'internet', 'REPORT_INTERVAL_MOVING': 30},
     ),
-    // approved -> intentionally excluded by simulatableConfigListProvider,
-    // kept here so MockConfigRepository.listConfigs() itself (unfiltered)
-    // has a non-simulatable example to test that filter against.
+    // draft -> intentionally excluded by deployableConfigListProvider (endpoint
+    // 409s anything outside approved/synced), kept here so
+    // MockConfigRepository.listConfigs() itself (unfiltered) has a
+    // non-deployable example to test that filter against.
     DeviceConfigDraft(
       id: 'mock-config-3',
       deviceModel: 'GT06L',
       protocol: 'TCP',
-      status: ConfigStatus.approved,
+      status: ConfigStatus.draft,
       fields: {'APN': 'internet'},
     ),
   ];
@@ -62,20 +63,20 @@ final configRepositoryProvider = Provider<ConfigRepository>((ref) {
   return ApiConfigRepository(ref.watch(apiClientProvider));
 });
 
-/// Configs eligible for a readiness check. `POST /config/{id}/simulate`
-/// blocks (409) anything outside `draft`/`testing` — see
-/// `backend/src/config/config-status.ts` `SIMULATABLE_CONFIG_STATUSES` — so
-/// the picker only offers configs that won't immediately fail. Filtered
-/// client-side because `GET /config`'s `status` query param only accepts one
-/// value, not "draft or testing".
-final simulatableConfigListProvider =
+/// Configs ที่พร้อมเช็คความพร้อมกับอุปกรณ์จริง (`POST
+/// /devices/{deviceId}/simulate-config` บล็อก 409 ถ้าไม่ใช่สถานะนี้ — ดู
+/// `APPLICABLE_CONFIG_STATUSES` ใน `backend/src/device/config-applier.ts`,
+/// ชุดเดียวกับที่ `applyConfigToDevice` ใช้). Filtered client-side because
+/// `GET /config`'s `status` query param only accepts one value, not
+/// "approved or synced".
+final deployableConfigListProvider =
     FutureProvider.autoDispose<List<DeviceConfigDraft>>((ref) async {
       final all = await ref.watch(configRepositoryProvider).listConfigs();
       return all
           .where(
             (c) =>
-                c.status == ConfigStatus.draft ||
-                c.status == ConfigStatus.testing,
+                c.status == ConfigStatus.approved ||
+                c.status == ConfigStatus.synced,
           )
           .toList(growable: false);
     });

@@ -6,24 +6,17 @@ import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
 import '../task/task_repository.dart'; // taskListProvider
 
-/// Runs a Config readiness check — `POST /config/{configId}/simulate`, a
-/// dry-run against the config's own persisted deviceModel/protocol/fields
-/// (see `backend/src/config/config.service.ts` `simulate()`). Does not touch
-/// the config's status.
-///
-/// **Phase 1 scope — partial readiness check only.** This confirms the
-/// selected Config is internally consistent (has fields at all, no negative
-/// Timeout/Interval values in mock mode) — it does **not** confirm the
-/// selected device's actual model/protocol matches this Config. That
-/// compatibility check exists server-side only inside
-/// `TaskService.assertConfigAssignable()` / the apply-config flow, not as a
-/// standalone endpoint yet (see survey, 2026-09-07) — a real device+config
-/// compatibility check is a Phase 2 follow-up pending a new backend endpoint
-/// from [A]. The selected device is therefore not sent to this call at all;
-/// it is only carried in the UI for context and to require a deliberate
-/// device+config pairing before "ทดสอบความพร้อม" is enabled.
+/// Runs a full Config readiness check for a specific device —
+/// `POST /devices/{deviceId}/simulate-config` (config_simulator Phase 2).
+/// Rolls up 3 checks into one [DeviceSimulateConfigResult]: the Config itself
+/// (`configCheck`), whether its deviceModel/protocol match the selected device
+/// (`compatibilityCheck`), and that device's live signal (`connectionCheck`).
+/// A dry-run — nothing is written and the Config's status is untouched.
 abstract class SimulatorRepository {
-  Future<SimulationResult> simulate({required String configId});
+  Future<DeviceSimulateConfigResult> simulate({
+    required String deviceId,
+    required String configId,
+  });
 }
 
 /// Talks to the real backend.
@@ -33,23 +26,58 @@ class ApiSimulatorRepository implements SimulatorRepository {
   final ApiClient _api;
 
   @override
-  Future<SimulationResult> simulate({required String configId}) =>
-      _api.simulateConfig(configId: configId);
+  Future<DeviceSimulateConfigResult> simulate({
+    required String deviceId,
+    required String configId,
+  }) => _api.simulateConfigOnDevice(deviceId: deviceId, configId: configId);
 }
 
 /// In-memory fake for `API_MOCK_MODE`.
 class MockSimulatorRepository implements SimulatorRepository {
   @override
-  Future<SimulationResult> simulate({required String configId}) async {
+  Future<DeviceSimulateConfigResult> simulate({
+    required String deviceId,
+    required String configId,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 600));
-    final passed = configId.trim().isNotEmpty;
-    return SimulationResult(
+    final passed = configId.trim().isNotEmpty && deviceId.trim().isNotEmpty;
+    final missing = [
+      if (configId.trim().isEmpty) 'configId',
+      if (deviceId.trim().isEmpty) 'deviceId',
+    ];
+    return DeviceSimulateConfigResult(
       passed: passed,
-      details: [
-        'MOCK — ยังไม่ได้เรียก backend จริง',
-        'configId = $configId',
-        if (passed) 'ทุก field ผ่านการตรวจ (จำลอง)' else 'ต้องระบุ configId',
-      ],
+      configCheck: SimulationResult(
+        passed: configId.trim().isNotEmpty,
+        details: [
+          'MOCK — ยังไม่ได้เรียก backend จริง',
+          'configId = $configId',
+          if (configId.trim().isNotEmpty)
+            'ทุก field ผ่านการตรวจ (จำลอง)'
+          else
+            'ต้องระบุ configId',
+        ],
+      ),
+      compatibilityCheck: CompatibilityCheckResult(
+        passed: passed,
+        details: [
+          if (passed)
+            'MOCK — deviceModel/protocol ตรงกับอุปกรณ์ $deviceId (จำลอง)'
+          else
+            'ต้องระบุ ${missing.join(' และ ')}',
+        ],
+      ),
+      connectionCheck: DeviceConnectionTestResult(
+        passed: deviceId.trim().isNotEmpty,
+        signalStrength: -65,
+        details: [
+          if (deviceId.trim().isNotEmpty)
+            'MOCK — อุปกรณ์ $deviceId ออนไลน์ สัญญาณ -65 dBm (จำลอง)'
+          else
+            'ต้องระบุ deviceId',
+        ],
+        testedAt: DateTime.now(),
+      ),
     );
   }
 }

@@ -32,12 +32,13 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> {
   String? _selectedDeviceId;
   String? _selectedConfigId;
   bool _running = false;
-  SimulationResult? _result;
+  DeviceSimulateConfigResult? _result;
   String? _error;
 
   Future<void> _run() async {
     final configId = _selectedConfigId;
-    if (configId == null || _selectedDeviceId == null) return;
+    final deviceId = _selectedDeviceId;
+    if (configId == null || deviceId == null) return;
     setState(() {
       _running = true;
       _result = null;
@@ -46,7 +47,7 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> {
     try {
       final result = await ref
           .read(simulatorRepositoryProvider)
-          .simulate(configId: configId);
+          .simulate(deviceId: deviceId, configId: configId);
       if (!mounted) return;
       setState(() {
         _running = false;
@@ -64,7 +65,7 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> {
   @override
   Widget build(BuildContext context) {
     final deviceIdsAsync = ref.watch(assignedDeviceIdListProvider);
-    final configsAsync = ref.watch(simulatableConfigListProvider);
+    final configsAsync = ref.watch(deployableConfigListProvider);
     final result = _result;
 
     final canRun =
@@ -90,8 +91,6 @@ class _SimulatorPageState extends ConsumerState<SimulatorPage> {
             value: _selectedConfigId,
             onChanged: (v) => setState(() => _selectedConfigId = v),
           ),
-          const SizedBox(height: 16),
-          const _PartialReadinessNotice(),
           const SizedBox(height: 20),
           FilledButton(
             key: const Key('simulator_run'),
@@ -193,7 +192,8 @@ class _ConfigDropdown extends StatelessWidget {
           return const _InlineMessage(
             key: Key('simulator_config_empty'),
             message:
-                'ไม่มี Config ที่พร้อมทดสอบตอนนี้ (ต้องเป็นสถานะ draft หรือ testing)',
+                'ไม่มี Config ที่พร้อมทดสอบตอนนี้ '
+                '(ต้องเป็นสถานะ approved หรือ synced — ผ่านการอนุมัติแล้ว)',
             isError: false,
           );
         }
@@ -274,42 +274,6 @@ class _InlineMessage extends StatelessWidget {
   }
 }
 
-/// **Phase 1 hint — do not remove without a real device+config compatibility
-/// check to replace it.** `POST /config/{id}/simulate` only validates the
-/// Config in isolation (see `SimulatorRepository` doc comment); it never
-/// receives the device selected above, so this readiness check cannot catch
-/// a config bound to the wrong deviceModel/protocol for that device.
-class _PartialReadinessNotice extends StatelessWidget {
-  const _PartialReadinessNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('simulator_partial_notice'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        border: Border.all(color: Colors.amber.shade200),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, size: 18, color: Colors.amber.shade800),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'ผลทดสอบนี้ตรวจแค่ว่า Config เองพร้อมไหม — ยังไม่ตรวจว่ารุ่น/โปรโตคอลของ Config '
-              'ตรงกับอุปกรณ์ที่เลือกจริงหรือไม่ (รอ endpoint ตรวจความเข้ากันได้เพิ่มเติมจากทีม backend)',
-              style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.message});
 
@@ -335,14 +299,18 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
+/// ผลจาก `POST /devices/{deviceId}/simulate-config` — หัวข้อรวม (`result.passed`)
+/// แล้วแยกแสดง 3 ส่วน (Config / ความเข้ากันได้ / สัญญาณอุปกรณ์) พร้อม
+/// pass-fail + details ของแต่ละส่วน.
 class _ResultCard extends StatelessWidget {
   const _ResultCard({required this.result});
 
-  final SimulationResult result;
+  final DeviceSimulateConfigResult result;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final conn = result.connectionCheck;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -357,20 +325,77 @@ class _ResultCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  result.passed ? 'ผ่าน' : 'ไม่ผ่าน',
+                  result.passed ? 'พร้อมติดตั้ง' : 'ยังไม่พร้อมติดตั้ง',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ],
             ),
+            const Divider(height: 24),
+            _CheckBlock(
+              label: 'Config',
+              passed: result.configCheck.passed,
+              details: result.configCheck.details,
+            ),
             const SizedBox(height: 12),
-            for (final line in result.details)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• $line'),
-              ),
+            _CheckBlock(
+              label: 'ความเข้ากันได้กับอุปกรณ์',
+              passed: result.compatibilityCheck.passed,
+              details: result.compatibilityCheck.details,
+            ),
+            const SizedBox(height: 12),
+            _CheckBlock(
+              label: 'สัญญาณอุปกรณ์',
+              passed: conn.passed,
+              details: [
+                'แรงสัญญาณ: ${conn.signalStrength} dBm',
+                ...conn.details,
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// หนึ่งส่วนย่อยของ [_ResultCard] — label + pass/fail ของตัวเอง + bullet details.
+class _CheckBlock extends StatelessWidget {
+  const _CheckBlock({
+    required this.label,
+    required this.passed,
+    required this.details,
+  });
+
+  final String label;
+  final bool passed;
+  final List<String> details;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              passed ? Icons.check_circle_outline : Icons.cancel_outlined,
+              size: 18,
+              color: passed ? Colors.green : scheme.error,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$label — ${passed ? 'ผ่าน' : 'ไม่ผ่าน'}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        for (final line in details)
+          Padding(
+            padding: const EdgeInsets.only(left: 24, top: 4),
+            child: Text('• $line'),
+          ),
+      ],
     );
   }
 }
