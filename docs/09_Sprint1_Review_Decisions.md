@@ -1,9 +1,9 @@
 # 09 — มติจาก Sprint 1 Review (พี่เลี้ยง) + แผนการปรับระบบ
 
 > เสนอโดย: paveekornk (A) — 2026-09-08
-> สถานะ: **เอกสารบันทึกมติ + แผน ยังไม่ได้แก้โค้ด/เอกสารอื่นใด** — รอ B และพี่เลี้ยง
-> ให้ความเห็น + อนุมัติก่อน แล้วค่อยเริ่มลงมือทีละข้อ (บางข้อต้องแตกเป็น proposal
-> doc ย่อยอีกที)
+> สถานะ: **เอกสารบันทึกมติ + แผน ยังไม่ได้แก้โค้ด/เอกสารอื่นใด** — B รีวิว + อนุมัติ
+> แล้ว (PR #99, ตอบ 5 คำถามใน §5) · รอพี่เลี้ยงยืนยันอีกรอบ แล้วค่อยเริ่มลงมือทีละข้อ
+> ตาม §4 (บางข้อต้องแตกเป็น proposal doc ย่อยอีกที)
 >
 > ทั้ง 7 ข้อนี้เป็น **การปรับทิศทางของระบบ** ไม่ใช่งานแก้เฉพาะ Sprint 1 — จึงต้อง
 > ลงไปแก้เอกสารออกแบบหลัก (`CLAUDE.md`, `docs/planning/*`, `RBAC_Matrix.md`,
@@ -89,8 +89,10 @@ uncomment · ต่อ `page.tsx` → `GET /tasks` · เปลี่ยน `Cre
 - **`AuditLog` ใน DB ยังเป็น mutation-only เหมือนเดิม** (สร้าง/แก้/อนุมัติ/ปฏิเสธ/นำไปใช้)
 - Auditor มองไม่เห็น log นี้ (โดยตั้งใจ — มันคือ "กิจกรรมล่าสุด" ส่วนตัวของผู้ใช้ ไม่ใช่ compliance)
 
-**Retention**
-เก็บ **30 วัน หรือ 1000 รายการล่าสุด แล้วแต่อันไหนถึงก่อน** (rolling — ตัดตัวเก่าสุด)
+**Retention** (ยืนยันตามรีวิว B)
+- web: **30 วัน หรือ 1000 รายการล่าสุด** แล้วแต่อันไหนถึงก่อน
+- mobile: **14 วัน หรือ 300 รายการล่าสุด** แล้วแต่อันไหนถึงก่อน (storage มือถือจำกัดกว่า)
+- rolling — ตัดตัวเก่าสุด · ตัวเลขสุดท้ายรอ `docs/10` ยืนยันอีกที ใช้เป็น baseline ได้
 
 **เชิงเทคนิค**
 - web: IndexedDB (ไม่ใช่ localStorage — sync + โควตาจำกัด)
@@ -171,7 +173,7 @@ uncomment · ต่อ `page.tsx` → `GET /tasks` · เปลี่ยน `Cre
 - proposal doc ใหม่: `docs/11_ConfigDeletion_SuperAdmin_Proposal.md`
 - `CLAUDE.md` — แก้กฎ **"Role มีแค่ 6 ค่าเท่านั้น" → 7 ค่า** (เพิ่ม `SuperAdmin`) พร้อมเหตุผล + อ้าง PR นี้ · **คง**ข้อห้าม `FieldTechnician` ไว้ (คนละเรื่อง — นั่นคือความผิดพลาด, SuperAdmin คือการเพิ่มโดยตั้งใจ)
 - `backend/prisma/seed.ts` — เพิ่ม Role row `SuperAdmin` + permission grants + resource ใหม่ 3 ตัว · **ไม่มี migration** (Role เป็นตาราง, `code` เป็น free string อยู่แล้ว)
-- `backend/prisma/schema.prisma` — เพิ่ม model `ConfigDeletionRequest` (หรือ reuse โครง approval กลางถ้าจะออกแบบ) + `Config.deletedAt DateTime?`
+- `backend/prisma/schema.prisma` — เพิ่ม model `ConfigDeletionRequest` **แยกของตัวเอง** (ยืนยันตามรีวิว B — ไม่รวม approval framework กลาง กัน over-engineer ก่อนเห็น use case ที่สาม) + `Config.deletedAt DateTime?`
 - `backend/prisma/migrations/` — migration additive สำหรับ 2 อย่างข้างบน
 - `backend/src/config/` — soft-delete logic, endpoint คำขอลบ + อนุมัติ, scheduled job (`@nestjs/schedule`)
 - `backend/src/common/guards/` — permission ใหม่ + กติกา "ห้ามแตะ SuperAdmin/Admin"
@@ -219,10 +221,10 @@ uncomment · ต่อ `page.tsx` → `GET /tasks` · เปลี่ยน `Cre
 
 ---
 
-## 5. คำถามที่ยังเปิด / อยากได้ความเห็น B
+## 5. คำถามเปิด — ตอบครบแล้วในรีวิว B (PR #99)
 
-1. ข้อ 4 — โอเคไหมกับ backfill ชื่อ Config row เดิมเป็น `${deviceModel}-${protocol}-${id}` หรือมี pattern ที่ดีกว่า
-2. ข้อ 5 — model `ConfigDeletionRequest` แยก vs reuse โครง approval กลาง (ถ้าจะมี approval framework รวมสำหรับ config/firmware/campaign/deletion) — B มีความเห็นเรื่องนี้ไหมเพราะกระทบ noti
-3. ข้อ 7 — resource `admin-management` / `role-management` แยกกัน 2 ตัว หรือรวมเป็น `system-admin` ตัวเดียว
-4. ข้อ 3 — retention 30 วัน / 1000 รายการ พอไหม สำหรับ mobile
-5. จังหวะรวม — ข้อ 5+7 ควรเป็น Sprint 3 หรือหลังจากนั้น
+1. **ข้อ 4 — backfill ชื่อ Config:** B ไม่มีความเห็นเพิ่ม เป็นฝั่ง A ล้วน → ใช้ `${deviceModel}-${protocol}-${short id}` ตามที่เสนอ
+2. **ข้อ 5 — model คำขอลบ:** → **แยก `ConfigDeletionRequest` ของตัวเอง** ไม่รวม approval framework กลาง (B: business rule ของ config/firmware/campaign approval ต่างกันพอควรอยู่แล้ว รวมตอนนี้เสี่ยง over-engineer · noti hook ที่ event ไม่ใช่ schema จึงไม่กระทบ)
+3. **ข้อ 7 — resource SuperAdmin:** → **แยก `admin-management` / `role-management` 2 ตัว** ตามที่เสนอ (B: ยืดหยุ่นกว่าถ้าอนาคตต้องแยกสิทธิ์)
+4. **ข้อ 3 — retention mobile:** → **14 วัน / 300 รายการ** (ไม่ใช่ 30/1000 แบบ web — storage มือถือจำกัดกว่า) รายละเอียดสุดท้ายรอ `docs/10`
+5. **จังหวะข้อ 5+7:** → **Sprint 3** ตามที่เสนอ (ให้เวลา `docs/11` + review · ไม่ชนคิว PR C native / PR D ของ B)
