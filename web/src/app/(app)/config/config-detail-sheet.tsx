@@ -15,12 +15,7 @@ import { canUpdateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { deleteConfig, type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
-}
+import { formatDateTime } from "@/lib/format-date";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON, string โชว์ตรงๆ */
 function renderFieldValue(value: unknown): string {

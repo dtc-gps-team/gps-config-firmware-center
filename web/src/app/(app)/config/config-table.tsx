@@ -19,16 +19,8 @@ import {
 import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { ConfigDetailSheet } from "./config-detail-sheet";
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("th-TH", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -79,8 +71,11 @@ const columns: ColumnDef<Config>[] = [
     enableGlobalFilter: false,
     meta: { filterVariant: "date-range", label: "แก้ไขล่าสุด", align: "end" },
     cell: ({ row }) => (
-      <span className="text-muted-foreground">
-        {formatDateTime(row.original.updatedAt)}
+      <span
+        className="text-muted-foreground"
+        title={formatDateTime(row.original.updatedAt)}
+      >
+        {formatRelativeTime(row.original.updatedAt)}
       </span>
     ),
   },
