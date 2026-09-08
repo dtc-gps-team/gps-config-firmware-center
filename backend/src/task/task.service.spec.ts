@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from './task.service';
 
@@ -62,6 +63,7 @@ describe('TaskService', () => {
   let task: TaskDelegateMock;
   let config: { findUnique: jest.Mock };
   let device: { findUnique: jest.Mock };
+  let notification: { send: jest.Mock };
 
   beforeEach(async () => {
     task = {
@@ -74,11 +76,13 @@ describe('TaskService', () => {
     };
     config = { findUnique: jest.fn() };
     device = { findUnique: jest.fn() };
+    notification = { send: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: PrismaService, useValue: { task, config, device } },
+        { provide: NotificationService, useValue: notification },
       ],
     }).compile();
 
@@ -502,6 +506,95 @@ describe('TaskService', () => {
           dueDate: null,
         },
       });
+    });
+  });
+
+  describe('แจ้งเตือน task_assigned', () => {
+    it('create(): ส่ง task_assigned ให้คนที่ถูก assign 1 ครั้ง', async () => {
+      const created = { ...sampleTask, id: 'task-new', assignedTo: 'tech-7' };
+      task.create.mockResolvedValue(created);
+
+      await service.create(
+        { title: created.title, assignedTo: 'tech-7' },
+        operation,
+      );
+
+      expect(notification.send).toHaveBeenCalledTimes(1);
+      expect(notification.send).toHaveBeenCalledWith({
+        userId: 'tech-7',
+        type: 'task_assigned',
+        payload: { taskId: 'task-new', title: created.title },
+      });
+    });
+
+    it('update() โดย Operation ย้ายงานไปคนใหม่: ส่ง task_assigned ให้คนใหม่', async () => {
+      task.findUnique.mockResolvedValue(sampleTask); // assignedTo: 'tech-1'
+      const updated = { ...sampleTask, assignedTo: 'tech-9' };
+      task.update.mockResolvedValue(updated);
+
+      await service.update(sampleTask.id, { assignedTo: 'tech-9' }, operation);
+
+      expect(notification.send).toHaveBeenCalledTimes(1);
+      expect(notification.send).toHaveBeenCalledWith({
+        userId: 'tech-9',
+        type: 'task_assigned',
+        payload: { taskId: sampleTask.id, title: sampleTask.title },
+      });
+    });
+
+    it('update() โดย Operation ไม่ได้ส่ง assignedTo (แก้แค่ title): ไม่ส่ง notification', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      task.update.mockResolvedValue({ ...sampleTask, title: 'ใหม่' });
+
+      await service.update(sampleTask.id, { title: 'ใหม่' }, operation);
+
+      expect(notification.send).not.toHaveBeenCalled();
+    });
+
+    it('update() โดย Operation ส่ง assignedTo มาแต่ค่าเดิม: ไม่ส่ง notification', async () => {
+      task.findUnique.mockResolvedValue(sampleTask); // assignedTo: 'tech-1'
+      task.update.mockResolvedValue(sampleTask);
+
+      await service.update(
+        sampleTask.id,
+        { assignedTo: sampleTask.assignedTo },
+        operation,
+      );
+
+      expect(notification.send).not.toHaveBeenCalled();
+    });
+
+    it('update() โดย ST/OT (แก้ status): ไม่ส่ง notification', async () => {
+      task.updateMany.mockResolvedValue({ count: 1 });
+      task.findUniqueOrThrow.mockResolvedValue({
+        ...sampleTask,
+        status: 'completed',
+      });
+
+      await service.update(sampleTask.id, { status: 'completed' }, owner);
+
+      expect(notification.send).not.toHaveBeenCalled();
+    });
+
+    it('create() ยังสำเร็จปกติแม้ notification.send reject (never-throw)', async () => {
+      const created = { ...sampleTask, id: 'task-x' };
+      task.create.mockResolvedValue(created);
+      notification.send.mockRejectedValue(new Error('FCM ล่ม'));
+
+      await expect(
+        service.create({ title: 'x', assignedTo: 'tech-1' }, operation),
+      ).resolves.toEqual(created);
+    });
+
+    it('update() (ย้ายงาน) ยังสำเร็จปกติแม้ notification.send reject', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      const updated = { ...sampleTask, assignedTo: 'tech-9' };
+      task.update.mockResolvedValue(updated);
+      notification.send.mockRejectedValue(new Error('FCM ล่ม'));
+
+      await expect(
+        service.update(sampleTask.id, { assignedTo: 'tech-9' }, operation),
+      ).resolves.toEqual(updated);
     });
   });
 });

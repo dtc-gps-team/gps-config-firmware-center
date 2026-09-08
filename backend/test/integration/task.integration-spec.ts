@@ -1,8 +1,15 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaClient, User } from '@prisma/client';
 import { ActingUser, TaskService } from '../../src/task/task.service';
+import { NotificationService } from '../../src/notification/notification.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { createTestPrisma, makeUser, resetDb } from './setup';
+
+// TaskService ยิง task_assigned notification ตอน create/reassign — integration
+// test นี้เช็ค RBAC/DB logic ของ task ล้วน ไม่ใช่ notification จึง stub ทิ้ง
+const notificationStub = {
+  send: () => Promise.resolve(undefined),
+} as unknown as NotificationService;
 
 function actorFor(user: User, role: ActingUser['role']): ActingUser {
   return { id: user.id, role };
@@ -16,7 +23,10 @@ describe('TaskService (integration — real postgres)', () => {
   beforeAll(async () => {
     prisma = createTestPrisma();
     await prisma.$connect();
-    service = new TaskService(prisma as unknown as PrismaService);
+    service = new TaskService(
+      prisma as unknown as PrismaService,
+      notificationStub,
+    );
   });
 
   afterAll(async () => {
