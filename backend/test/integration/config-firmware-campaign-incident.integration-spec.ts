@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { createTestPrisma, resetDb, makeUser } from './setup';
 
 /**
@@ -31,6 +32,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
     try {
       await prisma.config.create({
         data: {
+          name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
@@ -47,6 +49,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
     const sw = await makeUser(prisma, { role: 'SW' });
     await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
@@ -69,6 +72,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
 
     const config = await prisma.config.create({
       data: {
+        name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},

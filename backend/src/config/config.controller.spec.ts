@@ -12,6 +12,7 @@ const JWT_SECRET = 'test-secret';
 
 const sampleConfig: Config = {
   id: '11111111-1111-1111-1111-111111111111',
+  name: 'ชุดตั้งค่าทดสอบ',
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'draft',
@@ -92,7 +93,12 @@ describe('ConfigController', () => {
 
   it('POST /config -> service.create พร้อม dto และ actor จาก JWT', async () => {
     service.create.mockResolvedValue(sampleConfig);
-    const dto = { deviceModel: 'GT06N', protocol: 'TCP', fields: {} };
+    const dto = {
+      name: 'ชุดตั้งค่าทดสอบ',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      fields: {},
+    };
     await controller.create(dto, swReq);
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'sw-1',

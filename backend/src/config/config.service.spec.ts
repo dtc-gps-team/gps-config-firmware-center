@@ -28,6 +28,7 @@ type ConfigVersionDelegateMock = {
 
 const draftConfig: Config = {
   id: '11111111-1111-1111-1111-111111111111',
+  name: 'ชุดตั้งค่าทดสอบ',
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'draft',
@@ -124,16 +125,22 @@ describe('ConfigService', () => {
   });
 
   describe('create', () => {
-    it('ผูก createdBy จาก actor และส่ง fields/deviceModel/protocol ตรงๆ ให้ Prisma', async () => {
+    it('ผูก createdBy จาก actor และส่ง name/fields/deviceModel/protocol ตรงๆ ให้ Prisma', async () => {
       config.create.mockResolvedValue(draftConfig);
 
       await service.create(
-        { deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'internet' } },
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        },
         sw,
       );
 
       expect(config.create).toHaveBeenCalledWith({
         data: {
+          name: 'ชุดตั้งค่าทดสอบ',
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -146,7 +153,12 @@ describe('ConfigService', () => {
       config.create.mockResolvedValue(draftConfig);
 
       await service.create(
-        { deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'internet' } },
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        },
         sw,
       );
 
@@ -164,11 +176,38 @@ describe('ConfigService', () => {
 
       await expect(
         service.create(
-          { deviceModel: 'GT06N', protocol: 'TCP', fields: { APN1: 'xxx' } },
+          {
+            name: 'ชุดตั้งค่าทดสอบ',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            fields: { APN1: 'xxx' },
+          },
           sw,
         ),
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('ชื่อ Config ซ้ำ (Prisma P2002 บน name) -> ConflictException (409)', async () => {
+      config.create.mockRejectedValue(
+        new PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['name'] },
+        }),
+      );
+
+      await expect(
+        service.create(
+          {
+            name: 'ชื่อซ้ำ',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+          },
+          sw,
+        ),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
@@ -256,6 +295,7 @@ describe('ConfigService', () => {
       config.create.mockResolvedValue(draftConfig);
       const file = makeMulterFile(
         JSON.stringify({
+          name: 'ชุดตั้งค่านำเข้า',
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
@@ -267,12 +307,28 @@ describe('ConfigService', () => {
       expect(result).toEqual(draftConfig);
       expect(config.create).toHaveBeenCalledWith({
         data: {
+          name: 'ชุดตั้งค่านำเข้า',
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           createdBy: 'sw-1',
         },
       });
+    });
+
+    it('JSON ไม่มี field name -> BadRequestException (name บังคับกรอก — มติ Sprint 1 review ข้อ 4)', async () => {
+      const file = makeMulterFile(
+        JSON.stringify({
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        }),
+      );
+
+      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(config.create).not.toHaveBeenCalled();
     });
   });
 
@@ -685,11 +741,27 @@ describe('ConfigService', () => {
       expect(config.update).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
         data: {
+          name: undefined,
           deviceModel: 'GT06L',
           protocol: undefined,
           fields: undefined,
         },
       });
+    });
+
+    it('เปลี่ยนชื่อไปชนกับ Config อื่น (Prisma P2002 บน name) -> ConflictException (409)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockRejectedValue(
+        new PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['name'] },
+        }),
+      );
+
+      await expect(
+        service.update(draftConfig.id, { name: 'ชื่อที่มีอยู่แล้ว' }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ไม่เจอ config เลย -> NotFoundException (ไม่ใช่ ConflictException)', async () => {

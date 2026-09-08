@@ -130,13 +130,24 @@ void main() {
     test('parses status enum and fields map', () {
       final draft = DeviceConfigDraft.fromJson({
         'id': 'cfg-1',
+        'name': 'GT06N · ตั้งค่ามาตรฐาน',
         'deviceModel': 'GT06N',
         'protocol': 'TCP',
         'status': 'testing',
         'fields': {'APN1': 'internet'},
       });
+      expect(draft.name, 'GT06N · ตั้งค่ามาตรฐาน');
       expect(draft.status, ConfigStatus.testing);
       expect(draft.fields, {'APN1': 'internet'});
+    });
+
+    test('name absent -> null (tolerates older responses)', () {
+      final draft = DeviceConfigDraft.fromJson({
+        'id': 'cfg-1',
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+      });
+      expect(draft.name, isNull);
     });
   });
 

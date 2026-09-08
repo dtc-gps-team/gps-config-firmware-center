@@ -69,24 +69,52 @@ export class ConfigService {
     );
   }
 
+  /**
+   * Prisma P2002 (unique constraint) บน `Config.name` -> 409 พร้อมระบุชื่อที่ชน
+   * (มติ Sprint 1 review ข้อ 4 — ชื่อ Config ต้อง unique ทั้งระบบ) error อื่น
+   * โยนต่อตามเดิม `meta.target` เป็นได้ทั้ง string (constraint name) หรือ
+   * string[] (field names) แล้วแต่เวอร์ชัน Prisma/driver — เช็คทั้งสองแบบ
+   */
+  private throwIfDuplicateName(err: unknown, name: string | undefined): never {
+    const target =
+      err instanceof PrismaClientKnownRequestError && err.code === 'P2002'
+        ? err.meta?.target
+        : undefined;
+    const hitName =
+      typeof target === 'string'
+        ? target.includes('name')
+        : Array.isArray(target) && target.includes('name');
+    if (hitName) {
+      throw new ConflictException(
+        `มี Config ชื่อ "${name}" อยู่แล้ว — ชื่อต้องไม่ซ้ำกับ Config อื่นในระบบ`,
+      );
+    }
+    throw err;
+  }
+
   async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
     // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
     await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
 
-    return this.prisma.config.create({
-      data: {
-        deviceModel: dto.deviceModel,
-        protocol: dto.protocol,
-        // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
-        // ตรงๆ (class-validator @IsObject() ไม่รู้จัก type ของ Prisma) แต่
-        // Prisma.JsonValue ปฏิเสธ Record ธรรมดาเพราะ type ของมันรวม array
-        // แบบ readonly ที่ไม่ตรงกับ Record shape เป๊ะๆ — cast ตรงจุดที่ส่งเข้า
-        // Prisma พอ ไม่ต้องเปลี่ยน type ของ DTO
-        fields: dto.fields as Prisma.InputJsonValue,
-        createdBy: actor.id,
-      },
-    });
+    try {
+      return await this.prisma.config.create({
+        data: {
+          name: dto.name,
+          deviceModel: dto.deviceModel,
+          protocol: dto.protocol,
+          // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
+          // ตรงๆ (class-validator @IsObject() ไม่รู้จัก type ของ Prisma) แต่
+          // Prisma.JsonValue ปฏิเสธ Record ธรรมดาเพราะ type ของมันรวม array
+          // แบบ readonly ที่ไม่ตรงกับ Record shape เป๊ะๆ — cast ตรงจุดที่ส่งเข้า
+          // Prisma พอ ไม่ต้องเปลี่ยน type ของ DTO
+          fields: dto.fields as Prisma.InputJsonValue,
+          createdBy: actor.id,
+        },
+      });
+    } catch (err) {
+      this.throwIfDuplicateName(err, dto.name);
+    }
   }
 
   /**
@@ -423,6 +451,7 @@ export class ConfigService {
       return await this.prisma.config.update({
         where: { id },
         data: {
+          name: dto.name,
           deviceModel: dto.deviceModel,
           protocol: dto.protocol,
           fields: dto.fields as Prisma.InputJsonValue | undefined,
@@ -435,7 +464,8 @@ export class ConfigService {
       ) {
         throw new NotFoundException(`ไม่พบ Config id ${id}`);
       }
-      throw err;
+      // ชื่อใหม่ชนกับ Config อื่น -> 409 (unique ทั้งระบบ)
+      this.throwIfDuplicateName(err, dto.name);
     }
   }
 

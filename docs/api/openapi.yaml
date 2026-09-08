@@ -99,6 +99,8 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role SW เท่านั้น
+        "409":
+          description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
 
   # เพิ่มใหม่: GET/PUT/DELETE Config รายตัว (เดิมมีแค่ list/create/import/
   # simulate/approve/reject)
@@ -156,7 +158,7 @@ paths:
         "404":
           description: ไม่พบ Config นี้
         "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงแก้ไขไม่ได้
+          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงแก้ไขไม่ได้ หรือชื่อใหม่ซ้ำกับ Config อื่น
     delete:
       tags: [config]
       operationId: deleteConfig
@@ -205,11 +207,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
-          description: ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น DeviceConfigDraft ไม่สำเร็จ
+          description: >-
+            ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น
+            DeviceConfigDraft ไม่สำเร็จ (รวมถึงไฟล์ไม่มี field name)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role SW เท่านั้น
+        "409":
+          description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
         "413":
           description: ไฟล์มีขนาดเกิน limit ที่กำหนดไว้ (1MB)
 
@@ -954,6 +960,10 @@ components:
       properties:
         id:
           type: string
+        name:
+          type: string
+          description: ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4)
+          example: GT06N · ตั้งค่ามาตรฐานภาคกลาง
         deviceModel:
           type: string
         protocol:
@@ -1109,8 +1119,18 @@ components:
     # ถ้า client ยิงตาม DeviceConfigDraft เป๊ะๆ พร้อม id/status จะโดน 400)
     ConfigWriteInput:
       type: object
-      description: Request body สำหรับ createConfig/updateConfig — ไม่มี id/status (server กำหนดเอง)
+      description: >-
+        Request body สำหรับ createConfig/updateConfig — ไม่มี id/status (server
+        กำหนดเอง) createConfig ต้องส่ง name/deviceModel/protocol/fields ครบ,
+        updateConfig ส่งเฉพาะ field ที่จะแก้ (ทุกตัว optional)
       properties:
+        name:
+          type: string
+          maxLength: 120
+          description: >-
+            ชื่อ Config ที่ผู้ใช้ตั้ง — unique ทั้งระบบ (มติ Sprint 1 review
+            ข้อ 4) ชื่อซ้ำกับ Config อื่น -> 409
+          example: GT06N · ตั้งค่ามาตรฐานภาคกลาง
         deviceModel:
           type: string
         protocol:
