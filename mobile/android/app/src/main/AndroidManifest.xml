@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Runtime notification permission dialog on Android 13 (API 33)+ —
+         PushNotificationService.initializeAndRegister() calls
+         FirebaseMessaging.requestPermission(), which only prompts when this
+         permission is declared. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="mobile"
         android:name="${applicationName}"
