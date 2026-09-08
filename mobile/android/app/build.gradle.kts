@@ -15,6 +15,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications 10+ ต้องเปิด desugaring แม้ไม่ใช้ scheduled
+        // notification (PR D — รับ push จริง) ดู README ของ plugin
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -45,4 +48,9 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // ต้องมาคู่กับ isCoreLibraryDesugaringEnabled ข้างบน (flutter_local_notifications)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
