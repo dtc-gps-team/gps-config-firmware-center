@@ -49,10 +49,12 @@ function InfoRow({
 export function ConfigDetailSheet({
   config,
   onOpenChange,
+  onEdit,
   onDeleted,
 }: {
   config: Config | null;
   onOpenChange: (open: boolean) => void;
+  onEdit: (config: Config) => void;
   onDeleted: () => void;
 }) {
   return (
@@ -62,6 +64,7 @@ export function ConfigDetailSheet({
           <ConfigDetailContent
             key={config.id}
             config={config}
+            onEdit={onEdit}
             onDeleted={onDeleted}
           />
         )}
@@ -74,9 +77,11 @@ export function ConfigDetailSheet({
  * เลือก Config ตัวใหม่ */
 function ConfigDetailContent({
   config,
+  onEdit,
   onDeleted,
 }: {
   config: Config;
+  onEdit: (config: Config) => void;
   onDeleted: () => void;
 }) {
   const { session } = useAuth();
@@ -84,7 +89,8 @@ function ConfigDetailContent({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canDelete =
+  // draft + SW เท่านั้นที่แก้/ลบได้ (เงื่อนไขเดียวกับ backend)
+  const canModify =
     config.status === "draft" && canUpdateConfig(session?.role);
 
   async function handleDelete() {
@@ -177,7 +183,7 @@ function ConfigDetailContent({
         </div>
       </div>
 
-      {canDelete && (
+      {canModify && (
         <SheetFooter>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {confirming ? (
@@ -203,12 +209,15 @@ function ConfigDetailContent({
               </div>
             </div>
           ) : (
-            <Button
-              variant="destructive"
-              onClick={() => setConfirming(true)}
-            >
-              ลบ Config
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => onEdit(config)}>แก้ไข</Button>
+              <Button
+                variant="destructive"
+                onClick={() => setConfirming(true)}
+              >
+                ลบ
+              </Button>
+            </div>
           )}
         </SheetFooter>
       )}

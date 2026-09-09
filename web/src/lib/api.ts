@@ -12,6 +12,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly statusCode?: number,
+    /** รายการ error ย่อย (เช่น backend validateFields ที่ส่ง `{ message, errors: string[] }`) */
+    readonly details?: string[],
   ) {
     super(message);
     this.name = "ApiError";
@@ -30,6 +32,16 @@ function getErrorMessage(body: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+function getErrorDetails(body: unknown): string[] | undefined {
+  if (typeof body === "object" && body !== null && "errors" in body) {
+    const errors = (body as { errors: unknown }).errors;
+    if (Array.isArray(errors) && errors.every((e) => typeof e === "string")) {
+      return errors;
+    }
+  }
+  return undefined;
 }
 
 export async function login(request: LoginRequest): Promise<LoginResponse> {
@@ -91,6 +103,7 @@ export async function apiJson<T>(
     throw new ApiError(
       getErrorMessage(body, `คำขอไม่สำเร็จ (${response.status})`),
       response.status,
+      getErrorDetails(body),
     );
   }
 
