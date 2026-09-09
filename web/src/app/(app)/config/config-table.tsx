@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 
 import {
@@ -23,10 +24,6 @@ import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { ConfigDetailSheet } from "./config-detail-sheet";
 import { CreateConfigButton } from "./create-config-button";
-import {
-  ConfigFormSheet,
-  type ConfigFormState,
-} from "./config-form-sheet";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -87,21 +84,46 @@ const columns: ColumnDef<Config>[] = [
   },
 ];
 
-export function ConfigTableCard() {
+export function ConfigTableCard({
+  justSavedId = null,
+}: {
+  justSavedId?: string | null;
+}) {
+  const router = useRouter();
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
   const [selected, setSelected] = useState<Config | null>(null);
-  const [form, setForm] = useState<ConfigFormState | null>(null);
+  const [dismissedBanner, setDismissedBanner] = useState(false);
+
+  const savedConfig =
+    justSavedId != null
+      ? configs.find((c) => c.id === justSavedId) ?? null
+      : null;
 
   return (
     <Card>
+      {savedConfig && !dismissedBanner && (
+        <div className="mx-6 -mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          <span>
+            บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว — สถานะ{" "}
+            <strong>{savedConfig.status}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => setDismissedBanner(true)}
+            className="shrink-0 text-xs underline"
+          >
+            ปิด
+          </button>
+        </div>
+      )}
       <CardHeader>
         <CardTitle>รายการ Config</CardTitle>
         <CardDescription>
           ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
         <CardAction>
-          <CreateConfigButton onClick={() => setForm({ mode: "create" })} />
+          <CreateConfigButton />
         </CardAction>
       </CardHeader>
       <CardContent>
@@ -138,23 +160,11 @@ export function ConfigTableCard() {
         }}
         onEdit={(config) => {
           setSelected(null);
-          setForm({ mode: "edit", config });
+          router.push(`/config/${config.id}/edit`);
         }}
         onDeleted={() => {
           setSelected(null);
           void refetch();
-        }}
-      />
-
-      <ConfigFormSheet
-        state={form}
-        onOpenChange={(open) => {
-          if (!open) setForm(null);
-        }}
-        onSaved={(config) => {
-          setForm(null);
-          void refetch();
-          setSelected(config);
         }}
       />
     </Card>

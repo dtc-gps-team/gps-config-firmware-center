@@ -6,11 +6,16 @@ export const metadata = {
 
 /**
  * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวดูรายละเอียด
- * (แผง `ConfigDetailSheet`) + ฟอร์มสร้าง/แก้/ลบ Config สถานะ draft
- * (`ConfigFormSheet` — field editor สร้างจาก `GET /config-definitions`)
- * ปุ่ม "สร้าง Config ใหม่" + การ gate ตาม Role อยู่ใน `ConfigTableCard`
+ * (แผง `ConfigDetailSheet`) · ปุ่ม "สร้าง Config ใหม่" พาไปหน้า wizard
+ * `/config/new` (แก้ที่ `/config/{id}/edit`) — สร้าง/แก้ได้เฉพาะ Role SW
  */
-export default function ConfigPage() {
+export default async function ConfigPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>;
+}) {
+  const { saved } = await searchParams;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -20,7 +25,7 @@ export default function ConfigPage() {
         </p>
       </div>
 
-      <ConfigTableCard />
+      <ConfigTableCard justSavedId={saved ?? null} />
     </div>
   );
 }
