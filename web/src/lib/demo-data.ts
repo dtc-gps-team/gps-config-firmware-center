@@ -387,4 +387,9 @@ export const DEMO_USERS = [
   { username: "ot.test", fullName: "OT Tester", role: "OT" },
   { username: "auditor.test", fullName: "Auditor Tester", role: "Auditor" },
   { username: "admin.test", fullName: "Admin Tester", role: "Admin" },
+  {
+    username: "superadmin.test",
+    fullName: "SuperAdmin Tester",
+    role: "SuperAdmin",
+  },
 ];

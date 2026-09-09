@@ -76,13 +76,14 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/audit-log",
     screenName: "Audit Log",
     // Section 2: ทุก Role มี R ยกเว้น SW ที่เป็น "-"
-    allowedRoles: ["Operation", "ST", "OT", "Auditor", "Admin"],
+    allowedRoles: ["Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"],
   },
   {
     label: "User Management",
     href: "/users",
     screenName: "User / Role Management",
-    // Section 2: Admin เท่านั้น (C, R, U) — Role อื่นเป็น "-" หมด
-    allowedRoles: ["Admin"],
+    // Section 2: Admin + SuperAdmin (SuperAdmin ทำได้ทุกอย่างที่ Admin ทำได้ +
+    // จัดการบัญชี Admin/SuperAdmin) — Role อื่นเป็น "-" หมด
+    allowedRoles: ["Admin", "SuperAdmin"],
   },
 ];
