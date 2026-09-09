@@ -18,6 +18,10 @@ tags:
     description: Login และการยืนยันตัวตน (JWT)
   - name: config
     description: จัดการ Device Config — สร้าง/นำเข้า/ทดสอบ/อนุมัติ
+  - name: config-deletion
+    description: >-
+      คำขอลบ Config อัตโนมัติ (docs/11 Part A) — scheduled job เสนอลบ Config
+      ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · SW/ผู้สร้างกด "เก็บไว้"
   - name: firmware
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
@@ -417,6 +421,139 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบ Config นี้ หรือไม่พบเวอร์ชันที่ระบุ
+
+  # เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน
+  # สร้าง ConfigDeletionRequest ให้ Config ที่เข้าเกณฑ์ §2 · SuperAdmin ดูคิว +
+  # approve (soft delete) / reject (Config อยู่ต่อ + cooldown 90 วัน) · SW หรือ
+  # ผู้สร้างกด keep ระหว่าง grace period 7 วัน -> cancelled
+  /config-deletion-requests:
+    get:
+      tags: [config-deletion]
+      operationId: listConfigDeletionRequests
+      summary: SuperAdmin ดูคิวคำขอลบ Config (docs/11 §5 — v3.16)
+      description: >-
+        ไม่ระบุ `status` = `pending` (คิวที่ต้องตัดสิน) · รับค่าอื่น
+        (`approved`/`rejected`/`cancelled`) ได้เผื่อหน้าประวัติ
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected, cancelled]
+      responses:
+        "200":
+          description: รายการ ConfigDeletionRequest (แนบ config เต็ม)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคำขอลบ Config — เฉพาะ Role SuperAdmin
+
+  /config-deletion-requests/{id}/approve:
+    post:
+      tags: [config-deletion]
+      operationId: approveConfigDeletionRequest
+      summary: SuperAdmin อนุมัติคำขอลบ Config -> soft delete (docs/11 §5 — v3.16)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — Config ถูก soft-delete (`deletedAt` != null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติคำขอลบ — เฉพาะ Role SuperAdmin
+        "404":
+          description: ไม่พบคำขอลบนี้
+        "409":
+          description: คำขอลบนี้ถูกตัดสินไปแล้ว (สถานะไม่ใช่ pending)
+
+  /config-deletion-requests/{id}/reject:
+    post:
+      tags: [config-deletion]
+      operationId: rejectConfigDeletionRequest
+      summary: SuperAdmin ปฏิเสธคำขอลบ Config — Config อยู่ต่อ + cooldown 90 วัน (docs/11 §5 — v3.16)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลที่ไม่อนุมัติให้ลบ — เก็บใน `decisionNote` ให้ผู้สร้างเห็น
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ — Config ไม่ถูกแตะ, เข้า cooldown 90 วัน
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "400":
+          description: ไม่ได้ส่ง `note` หรือยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธคำขอลบ — เฉพาะ Role SuperAdmin
+        "404":
+          description: ไม่พบคำขอลบนี้
+        "409":
+          description: คำขอลบนี้ถูกตัดสินไปแล้ว (สถานะไม่ใช่ pending)
+
+  # `keep` key ด้วย config id (ไม่ใช่ request id) — SW/ผู้สร้างได้ notification
+  # เรื่อง "Config X" ไม่รู้ request id · resource `config` action Update ที่ SW
+  # มีอยู่แล้ว (ต่างจาก docs/11 §5 ที่วางเป็น `/config-deletion-requests/{id}/keep`
+  # — ปรับ path ให้ตรงกับสิทธิ์/บริบทผู้ใช้จริง ดู RBAC_Matrix.md §4.2)
+  /config/{configId}/deletion-requests/keep:
+    post:
+      tags: [config-deletion]
+      operationId: keepConfigDeletionRequest
+      summary: SW / ผู้สร้างกด "เก็บไว้" ระหว่าง grace period -> cancelled + reset นาฬิกา (docs/11 §3 — v3.16)
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ยกเลิกคำขอลบสำเร็จ — `Config.updatedAt` ถูกแตะใหม่ (reset นาฬิกา 90 วัน)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role SW
+        "404":
+          description: ไม่มีคำขอลบที่รอดำเนินการ (pending) สำหรับ Config นี้
 
   /config-definitions:
     get:
@@ -1107,6 +1244,47 @@ components:
         approvedAt:
           type: string
           format: date-time
+
+    ConfigDeletionRequest:
+      type: object
+      description: >-
+        คำขอลบ Config อัตโนมัติ (docs/11 Part A) — ตรงกับ Prisma model
+        ConfigDeletionRequest · scheduled job สร้างเป็น `pending` · SuperAdmin
+        approve (soft delete) / reject (cooldown) · SW/ผู้สร้าง keep -> cancelled
+      required: [id, configId, reason, status, detectedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        configId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: เหตุผลที่ job สร้างคำขอ (human-readable ให้ SuperAdmin อ่าน)
+        status:
+          type: string
+          enum: [pending, approved, rejected, cancelled]
+        detectedAt:
+          type: string
+          format: date-time
+          description: เวลาที่ job ตรวจพบและสร้างคำขอ
+        reviewedBy:
+          type: string
+          nullable: true
+          description: user id ของ SuperAdmin ที่ approve/reject (null ถ้ายัง pending หรือถูก keep)
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        decisionNote:
+          type: string
+          nullable: true
+          description: เหตุผลตอน reject (SuperAdmin กรอก)
+        config:
+          allOf:
+            - $ref: "#/components/schemas/DeviceConfigDraft"
+          description: Config ที่ถูกเสนอลบ (แนบมากับ listConfigDeletionRequests)
 
     ConfigFieldDefinition:
       type: object

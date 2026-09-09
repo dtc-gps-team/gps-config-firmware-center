@@ -410,14 +410,20 @@ export class ConfigService {
     // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
     // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
     return this.prisma.config.findMany({
-      where: { status: query.status },
+      // soft-delete (docs/11 Part A): Config ที่ SuperAdmin อนุมัติให้ลบแล้ว
+      // (`deletedAt != null`) ต้องหายจากทุก query อ่าน — hard delete ของ SW
+      // (remove()) ยังลบ row จริงเหมือนเดิม ไม่เกี่ยวกับ filter นี้
+      where: { status: query.status, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string): Promise<Config> {
     const config = await this.prisma.config.findUnique({ where: { id } });
-    if (!config) {
+    // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" (404) — เช็คหลัง
+    // findUnique เพื่อไม่ต้องเปลี่ยนเป็น findFirst (deletedAt ไม่ใช่ unique key)
+    // ดูคอมเมนต์ที่ findAll()
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${id}`);
     }
     return config;

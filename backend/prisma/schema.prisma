@@ -62,6 +62,7 @@ model User {
   firmwareUploads Firmware[]
   campaignsCreated Campaign[]
   configVersionsApproved ConfigVersion[] @relation("ConfigVersionApprovedBy")
+  configDeletionReviews  ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -318,15 +319,21 @@ model Config {
   fields      Json
   createdBy   String
   approvedBy  String?
+  // soft-delete ของ flow "คำขอลบ Config อัตโนมัติ" (docs/11 Part A) — เซ็ตตอน
+  // SuperAdmin approve คำขอลบ · ทุก query อ่านของ config.service.ts เติม
+  // `where: { deletedAt: null }` · คนละเรื่องกับ ConfigService.remove() (hard
+  // delete ของ SW ลบ draft ตัวเอง) ที่ยังทำงานเหมือนเดิม
+  deletedAt   DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  creator   User            @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
-  approver  User?           @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
-  campaigns Campaign[]
-  incidents Incident[]
-  versions  ConfigVersion[]
-  tasks     Task[]
+  creator          User                    @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
+  approver         User?                   @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
+  campaigns        Campaign[]
+  incidents        Incident[]
+  versions         ConfigVersion[]
+  tasks            Task[]
+  deletionRequests ConfigDeletionRequest[]
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve
@@ -351,6 +358,43 @@ model ConfigVersion {
 
   @@unique([configId, versionNumber])
   @@index([configId])
+}
+
+// เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน
+// กวาดหา Config ที่เข้าเกณฑ์ §2 (draft/rejected · ไม่ผูก Task/Campaign/Incident
+// · updatedAt เก่ากว่า 90 วัน · ไม่มีคำขอ pending ค้าง · ไม่อยู่ใน cooldown 90
+// วันหลังเคยถูก reject) แล้วสร้างคำขอ pending + แจ้ง SuperAdmin/ผู้สร้าง
+// SuperAdmin เท่านั้นที่ approve (soft delete) / reject (Config อยู่ต่อ + เข้า
+// cooldown) · SW/ผู้สร้างกด "เก็บไว้" ระหว่าง grace period 7 วัน -> cancelled
+//
+// ไม่ใช้ approval framework กลาง (ยืนยันตามรีวิว B — PR #99 §5 ข้อ 2)
+enum ConfigDeletionRequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+model ConfigDeletionRequest {
+  id           String                      @id @default(uuid())
+  configId     String
+  // เหตุผลที่ job สร้างคำขอ — human-readable ให้ SuperAdmin อ่านตอนตัดสิน
+  reason       String
+  status       ConfigDeletionRequestStatus @default(pending)
+  detectedAt   DateTime                    @default(now())
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  // เหตุผลตอน reject (SuperAdmin กรอก) — ใช้แสดงให้ผู้สร้างเห็นว่าทำไมไม่ให้ลบ
+  decisionNote String?
+
+  // onDelete: Cascade — ถ้า Config ถูก hard-delete จริง (SW ลบ draft ตัวเอง
+  // ผ่าน ConfigService.remove ก่อน job รัน) คำขอลบที่ผูกอยู่ก็ไม่มีความหมาย
+  // แล้ว ลบตามไปด้วย (ต่างจาก soft-delete ที่ deletedAt != null แต่ row ยังอยู่)
+  config   Config @relation(fields: [configId], references: [id], onDelete: Cascade)
+  reviewer User?  @relation("ConfigDeletionReviewedBy", fields: [reviewedBy], references: [id])
+
+  @@index([configId])
+  @@index([status])
 }
 
 // เพิ่มใหม่: "Config Definition Lookup" เก็บนิยามฟิลด์ Config (~262 ฟิลด์
