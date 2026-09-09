@@ -13,6 +13,9 @@ secrets/
 # (มี API key ผูกกับ Firebase project จริง — devices/CI ต้องวางเองจาก Firebase Console)
 mobile/android/app/google-services.json
 
+# Firebase iOS config (GoogleService-Info.plist) — ห้าม commit ของจริง
+mobile/ios/Runner/GoogleService-Info.plist
+
 # Node
 node_modules/
 npm-debug.log*
