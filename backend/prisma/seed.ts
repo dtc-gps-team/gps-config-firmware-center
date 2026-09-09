@@ -310,6 +310,8 @@ async function main() {
     dataType: 'string' | 'number' | 'boolean';
     allowedValues: string[];
     description: string;
+    /** หน่วยของค่า (metadata แสดงผลข้าง input ตอนสร้าง Config — frame 08) */
+    unit?: string;
     supportedModels: { deviceModel: string; protocol: string }[];
   }[] = [
     // ── เครือข่าย / GPRS ──
@@ -340,6 +342,7 @@ async function main() {
       dataType: 'number',
       allowedValues: [],
       description: 'พอร์ต TCP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
+      unit: 'พอร์ต',
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
     {
@@ -362,6 +365,7 @@ async function main() {
       dataType: 'number',
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถเคลื่อนที่ (วินาที)',
+      unit: 'วินาที',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -369,6 +373,7 @@ async function main() {
       dataType: 'number',
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถจอด (วินาที)',
+      unit: 'วินาที',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -376,6 +381,7 @@ async function main() {
       dataType: 'number',
       allowedValues: [],
       description: 'องศาการเปลี่ยนทิศที่กระตุ้นให้ส่งรายงานเพิ่ม (องศา)',
+      unit: 'องศา',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -420,6 +426,7 @@ async function main() {
       dataType: 'number',
       allowedValues: [],
       description: 'เปอร์เซ็นต์แบตเตอรี่สำรองที่จะแจ้งเตือน low battery',
+      unit: '%',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── ความปลอดภัย ──
@@ -476,6 +483,7 @@ async function main() {
     required: boolean;
     unknownSpec: boolean;
     description: string;
+    unit: string | null;
     // (deviceModel, protocol) ที่ field นี้รองรับ — ตั้งแต่ Semantic
     // Validation (#26) field ที่ supportedModels ว่างเปล่าใช้งานไม่ได้เลย
     // (validateFields บล็อกทุก deviceModel/protocol ถ้าไม่มีคู่ไหนตรงกัน
@@ -490,6 +498,7 @@ async function main() {
       required: true,
       unknownSpec: false,
       description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
+      unit: null,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     ...UNKNOWN_SPEC_LEGACY_FIELDS.map((f) => ({
@@ -499,6 +508,7 @@ async function main() {
       required: false,
       unknownSpec: true,
       description: `${f.note} — ยืนยันแค่ชื่อจาก Build Reference §5 ยังไม่มีสเปกเต็ม (unknown_spec)`,
+      unit: null,
       supportedModels: [KNOWN_LEGACY_MODEL],
     })),
     ...REPRESENTATIVE_FIELDS.map((f) => ({
@@ -508,6 +518,7 @@ async function main() {
       required: false,
       unknownSpec: false,
       description: `${f.description} — (ชุด parameter ตัวแทนสำหรับ dev/demo ยังไม่ใช่สเปกฟิลด์จริง ดู #68)`,
+      unit: f.unit ?? null,
       supportedModels: f.supportedModels,
     })),
   ];
@@ -516,7 +527,9 @@ async function main() {
     const { supportedModels, ...fieldData } = def;
     const existing = await prisma.configFieldDefinition.upsert({
       where: { fieldName: def.fieldName },
-      update: {},
+      // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น `unit` ที่เพิ่งเพิ่ม
+      // เป็นคอลัมน์ใหม่ (nullable) backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย
+      update: { unit: fieldData.unit },
       create: fieldData,
     });
     for (const support of supportedModels) {

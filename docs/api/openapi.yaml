@@ -972,6 +972,10 @@ components:
         status:
           type: string
           enum: [draft, testing, approved, rejected, synced]
+        description:
+          type: string
+          nullable: true
+          description: คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ)
         fields:
           type: object
           additionalProperties: true
@@ -1055,6 +1059,12 @@ components:
         description:
           type: string
           nullable: true
+        unit:
+          type: string
+          nullable: true
+          description: >-
+            หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — metadata สำหรับ
+            แสดงผลข้างช่องกรอกตอนสร้าง Config เท่านั้น ไม่ถูกใช้ตอน validate
         supportedModels:
           type: array
           description: >-
@@ -1107,6 +1117,10 @@ components:
             (รู้แค่ชื่อ + dataType) — ปล่อยว่างได้ default false
         description:
           type: string
+        unit:
+          type: string
+          maxLength: 20
+          description: หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — ไม่บังคับ
         supportedModels:
           type: array
           minItems: 1
@@ -1140,6 +1154,10 @@ components:
           type: object
           additionalProperties: true
           description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
+        description:
+          type: string
+          maxLength: 500
+          description: คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update)
 
     Task:
       type: object
