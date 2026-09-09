@@ -38,6 +38,33 @@ export function listConfigDefinitions(
   return apiJson<ConfigFieldDefinition[]>("/config-definitions", { token });
 }
 
+/** request body — `CreateConfigDefinitionInput` ใน openapi.yaml
+ * (`createConfigDefinition`) · SW เท่านั้น · `supportedModels` ต้องมี ≥ 1 คู่ */
+export type CreateConfigDefinitionInput = {
+  fieldName: string;
+  dataType: string;
+  /** ว่าง = ไม่จำกัดค่า */
+  allowedValues?: string[];
+  required: boolean;
+  /** `true` = รู้แค่ชื่อ + dataType ยังไม่รู้กฎครบ — default `false` */
+  unknownSpec?: boolean;
+  description?: string;
+  /** หน่วยของค่า (เช่น "วินาที", "%") — ไม่บังคับ, maxLength 20 */
+  unit?: string;
+  supportedModels: ConfigFieldModelSupport[];
+};
+
+export function createConfigDefinition(
+  token: string,
+  input: CreateConfigDefinitionInput,
+): Promise<ConfigFieldDefinition> {
+  return apiJson<ConfigFieldDefinition>("/config-definitions", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
 /** "GT06N/TCP, GT06L/TCP" — ใช้โชว์ในตารางและเป็นค่าให้ filter ข้อความ */
 export function formatModelSupport(
   models: ConfigFieldModelSupport[],
