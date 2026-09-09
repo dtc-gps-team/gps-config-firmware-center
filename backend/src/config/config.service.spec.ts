@@ -36,6 +36,7 @@ const draftConfig: Config = {
   fields: { APN1: 'internet' },
   createdBy: 'sw-1',
   approvedBy: null,
+  deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -719,14 +720,14 @@ describe('ConfigService', () => {
   });
 
   describe('findAll', () => {
-    it('ส่ง status filter ต่อให้ Prisma ตรงๆ ไม่ scope ตาม creator', async () => {
+    it('ส่ง status filter ต่อให้ Prisma ตรงๆ + กรอง soft-deleted ออก ไม่ scope ตาม creator', async () => {
       config.findMany.mockResolvedValue([draftConfig]);
 
       const result = await service.findAll({ status: 'draft' });
 
       expect(result).toEqual([draftConfig]);
       expect(config.findMany).toHaveBeenCalledWith({
-        where: { status: 'draft' },
+        where: { status: 'draft', deletedAt: null },
         orderBy: { createdAt: 'desc' },
       });
     });
@@ -736,6 +737,16 @@ describe('ConfigService', () => {
     it('ไม่เจอ config -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
       await expect(service.findOne('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('config ถูก soft-delete (deletedAt != null) -> NotFoundException (docs/11 Part A)', async () => {
+      config.findUnique.mockResolvedValue({
+        ...draftConfig,
+        deletedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+      await expect(service.findOne(draftConfig.id)).rejects.toThrow(
         NotFoundException,
       );
     });
