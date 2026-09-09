@@ -142,6 +142,31 @@ function ConfigFormContent({
     clearErrors();
   }
 
+  /** เปลี่ยนรุ่น/โปรโตคอล (โหมดสร้างเท่านั้น) — ตัดค่า field ที่รุ่นใหม่ไม่รองรับ
+   * ทิ้ง เก็บเฉพาะ field ที่ใช้ร่วมกันได้ (เช่น GNSS_MODE) กันค่าของรุ่นเก่าค้าง
+   * เป็น hidden state แล้วโผล่กลับมาตอนสลับรุ่นไปมา */
+  function changeModel(nextKey: string) {
+    setModelKey(nextKey);
+    setMissingRequired([]);
+    clearErrors();
+    const valid = new Set(
+      nextKey
+        ? (defs ?? [])
+            .filter((d) =>
+              d.supportedModels.some(
+                (m) => modelKeyOf(m.deviceModel, m.protocol) === nextKey,
+              ),
+            )
+            .map((d) => d.fieldName)
+        : [],
+    );
+    setValues((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([name]) => valid.has(name)),
+      ),
+    );
+  }
+
   function isEmpty(value: FieldValue | undefined): boolean {
     return value === undefined || value === "";
   }
@@ -276,11 +301,7 @@ function ConfigFormContent({
                 id="config-model"
                 value={modelKey}
                 disabled={!!editing}
-                onChange={(e) => {
-                  setModelKey(e.target.value);
-                  setMissingRequired([]);
-                  clearErrors();
-                }}
+                onChange={(e) => changeModel(e.target.value)}
                 className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30"
               >
                 <option value="">— เลือก —</option>
