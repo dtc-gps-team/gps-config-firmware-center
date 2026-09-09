@@ -40,5 +40,15 @@ class AppConfig {
   /// `android/settings.gradle.kts` + `android/app/build.gradle.kts`, and the
   /// `POST_NOTIFICATIONS` manifest permission. See
   /// `docs/05_Mobile_Notification_FCM.md`.
-  static const bool pushNotificationsEnabled = true;
+  ///
+  /// Default `true` (dev/prod Android). The E2E CI job
+  /// (`.github/workflows/mobile-integration-test.yml`) builds with only a
+  /// placeholder `google-services.json`, so it passes
+  /// `--dart-define=PUSH_NOTIFICATIONS_ENABLED=false` — otherwise
+  /// `FirebaseMessaging.requestPermission()` throws in the emulator and fails
+  /// every integration test at login.
+  static const bool pushNotificationsEnabled = bool.fromEnvironment(
+    'PUSH_NOTIFICATIONS_ENABLED',
+    defaultValue: true,
+  );
 }

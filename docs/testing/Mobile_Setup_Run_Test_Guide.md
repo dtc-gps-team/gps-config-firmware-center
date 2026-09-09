@@ -310,6 +310,30 @@ curl -sS -X PATCH http://localhost:3001/api/v1/notifications/<notification_id>/r
 รายการ (2 unread), หลัง PATCH mark read แล้ว GET ซ้ำเห็น `read: true` และ unread count ลดลงจาก 2
 เหลือ 1 ตรงตาม flow ที่ `notification_flow_test.dart` คาดหวัง (เช็ค `unread_dot` ลดลงหลัง tap)
 
+#### 4.3.2 CI อัตโนมัติ — workflow `mobile-integration-test.yml` (issue #75)
+
+ตั้งแต่ issue #75 — integration test ทั้ง 2 ไฟล์ผูกเข้า CI แล้วผ่าน workflow
+[`.github/workflows/mobile-integration-test.yml`](../../.github/workflows/mobile-integration-test.yml):
+
+- **ไม่ใช่ required check** และ **ไม่ผูกกับ `pull_request`** — `mobile-ci.yml`
+  (`Mobile / lint-and-test`) ยังเป็น required check ตัวเดิมที่เร็วเหมือนเดิม
+  workflow ตัวนี้เป็น regression net เสริม ไม่บล็อก PR ใคร
+- **trigger:** `workflow_dispatch` (สั่งเองก่อน merge PR ที่แตะ Task/Notification flow)
+  + `schedule` cron `0 19 * * *` UTC (= 02:00 เวลาไทย) รัน nightly
+- workflow spin up Postgres (service container) → `prisma migrate deploy` →
+  `prisma db seed` (Role/User) → `npm run seed:ci-fixtures`
+  ([`backend/scripts/seed-ci-fixtures.ts`](../../backend/scripts/seed-ci-fixtures.ts) —
+  seed 3 tasks + 4 notifications ให้ `st.test` เพราะ CI ใช้ DB สดใหม่ ไม่มีข้อมูล
+  ทดสอบสะสมเหมือน dev DB) → build + start backend background → บูต Android
+  emulator (`reactivecircus/android-emulator-runner`, api-level 34) แล้วรัน
+  `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/{task,notification}_flow_test.dart -d emulator-5554`
+  ต่อ backend ผ่าน `API_BASE_URL=http://10.0.2.2:3001/api/v1`
+  (ใช้ `flutter drive` ไม่ใช่ `flutter test` — Flutter 3.47 ไม่ให้รัน
+  `flutter test` ชี้ไฟล์ใน `integration_test/` ตรง ๆ · driver เก็บ screenshot
+  ลง `mobile/screenshots/` upload เป็น artifact ชื่อ `integration-test-screenshots`)
+- สั่งรันเอง: `gh workflow run mobile-integration-test.yml` (หรือแท็บ Actions บน GitHub)
+- ใช้เวลา ~15-25 นาที/รอบ (emulator boot + Gradle build) — จึงไม่เหมาะเป็น required check
+
 ### 4.4 Task Management Checklist — ผลทดสอบผ่าน UI จริงบน Android Emulator (7 กันยายน 2569)
 
 ทดสอบด้วยมือผ่าน `adb input` + screenshot (`adb exec-out screencap`) บน AVD `Pixel_10a` ต่อ backend

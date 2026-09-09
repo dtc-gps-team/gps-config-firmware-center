@@ -1,0 +1,205 @@
+name: Mobile Integration Test (E2E)
+
+# integration_test/*.dart (task_flow, notification_flow) รันบน Android emulator
+# จริง + ต้องมี backend + Postgres รันอยู่ระหว่างเทส — emulator boot + Gradle
+# build ~10-15 นาที ช้าเกินกว่าจะเป็น required check ของทุก PR
+#
+# จึงแยกออกมาเป็น workflow ต่างหาก **ไม่ผูกกับ pull_request** — mobile-ci.yml
+# (Mobile / lint-and-test) ยังเป็น required check ที่เร็วเหมือนเดิม workflow นี้
+# เป็น regression net เสริม รันแบบสั่งเอง (workflow_dispatch) + รายวันตอนกลางคืน
+#   ref: issue #75
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 19:00 UTC = 02:00 เวลาไทย — nightly regression run
+    - cron: "0 19 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-integration-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-test:
+    name: Mobile / integration-test (Android emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gps_user
+          POSTGRES_PASSWORD: gps_password
+          POSTGRES_DB: gps_config_firmware_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gps_user"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://gps_user:gps_password@localhost:5432/gps_config_firmware_e2e
+      JWT_SECRET: ci-e2e-secret
+      NOTIFICATION_MODE: mock
+      WEB_ORIGIN: http://localhost:3000
+      # emulator เข้าถึง host loopback ผ่าน 10.0.2.2 (ข้อจำกัดของ Android emulator)
+      API_BASE_URL: http://10.0.2.2:3001/api/v1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # Backend: install -> migrate -> seed (Role/User) -> CI fixtures
+      #          (Task/Notification) -> build -> รันค้างไว้เป็น background
+      # ---------------------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Backend — install deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend — prisma migrate deploy
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      - name: Backend — seed (Role / User / RolePermission / Device)
+        working-directory: backend
+        run: npx prisma db seed
+
+      - name: Backend — seed CI fixtures (Task / Notification ของ st.test)
+        working-directory: backend
+        run: npm run seed:ci-fixtures
+
+      - name: Backend — build
+        working-directory: backend
+        run: |
+          npm run build
+          # nest build เก็บ output ที่ dist/src/main.js (ไม่ใช่ dist/main.js —
+          # prisma.config.ts ที่ root ดัน common source root ขึ้นมาเป็น backend/)
+          MAIN_JS="$(find dist -name main.js | head -n 1)"
+          echo "MAIN_JS=$MAIN_JS" >> "$GITHUB_ENV"
+          test -n "$MAIN_JS"
+
+      - name: Backend — start (background)
+        working-directory: backend
+        run: |
+          nohup node "$MAIN_JS" > "$RUNNER_TEMP/backend.log" 2>&1 &
+          echo "backend pid=$! main=$MAIN_JS"
+
+      - name: Backend — wait for healthy
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf -m 2 -o /dev/null http://localhost:3001/api/v1; then
+              echo "backend up after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::backend ไม่ตอบภายใน 180s"
+          cat "$RUNNER_TEMP/backend.log" || true
+          exit 1
+
+      # ---------------------------------------------------------------
+      # Mobile: Flutter + Android emulator + flutter drive integration_test/
+      # ---------------------------------------------------------------
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # pin ให้ nightly run deterministic — bump เมื่อ dev อัป Flutter local
+          flutter-version: "3.47.2"
+          channel: "stable"
+          cache: true
+
+      - name: Mobile — install deps
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Mobile — google-services.json placeholder
+        # google-services.json จริงไม่ commit เข้า repo (gitignore) แต่ปลั๊กอิน
+        # com.google.gms.google-services บังคับให้มีไฟล์ตอน Gradle build — สร้าง
+        # stub ค่า placeholder ทั้งหมด (ไม่ใช่ credential จริง) พอให้ build ผ่าน
+        # FCM ใช้งานไม่ได้จาก stub นี้ แต่ไม่กระทบเทส: NOTIFICATION_MODE=mock และ
+        # integration test ไม่ได้ทดสอบ push จริง
+        run: |
+          cat > mobile/android/app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "gps-ci-placeholder",
+              "storage_bucket": "gps-ci-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.example.mobile" }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  { "current_key": "AIzaSyPlaceholder-CI-not-a-real-key-0000000" }
+                ],
+                "services": {
+                  "appinvite_service": { "other_platform_oauth_client": [] }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+
+      - name: Enable KVM (emulator acceleration)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run integration tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -no-boot-anim -noaudio -gpu swiftshader_indirect -camera-back none
+          working-directory: mobile
+          # ใช้ `flutter drive` + test_driver/integration_test.dart (มีอยู่แล้วใน
+          # repo) — `flutter test <ไฟล์ integration_test>` ตรง ๆ ใช้ไม่ได้บน
+          # Flutter 3.47 (error "Integration tests and unit tests cannot be run
+          # in a single invocation") · driver ยังจัดการ takeScreenshot เขียนลง
+          # mobile/screenshots/ ให้ด้วย
+          #
+          # หมายเหตุ: android-emulator-runner รัน `script` ทีละบรรทัด (แต่ละบรรทัด
+          # = `sh -c` แยกกัน) — ห้ามใช้ `\` ต่อบรรทัด · เขียนแต่ละคำสั่งบรรทัดเดียว
+          # แล้ว chain ด้วย `&&` ให้ fail-fast
+          # PUSH_NOTIFICATIONS_ENABLED=false — CI build มีแค่ google-services.json
+          # placeholder · ถ้าปล่อย true FirebaseMessaging.requestPermission() จะ
+          # throw บน emulator แล้วเทสล้มตอน login ทุกครั้ง
+          script: |
+            flutter drive --driver=test_driver/integration_test.dart --target=integration_test/task_flow_test.dart -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define=API_MOCK_MODE=false --dart-define=PUSH_NOTIFICATIONS_ENABLED=false && flutter drive --driver=test_driver/integration_test.dart --target=integration_test/notification_flow_test.dart -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define=API_MOCK_MODE=false --dart-define=PUSH_NOTIFICATIONS_ENABLED=false
+
+      - name: Upload integration-test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-screenshots
+          path: mobile/screenshots/
+          if-no-files-found: warn
+
+      - name: Backend log (on failure)
+        if: failure()
+        run: cat "$RUNNER_TEMP/backend.log" || true
