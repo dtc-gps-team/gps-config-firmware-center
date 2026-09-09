@@ -24,6 +24,7 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
  * AuditLog, reset นาฬิกา)
  *
  * scheduled job (`sweep()`) ทดสอบใน unit spec (`config-deletion.service.spec.ts`)
+ * — ที่นี่ไม่ import `ScheduleModule.forRoot()` จึงไม่มี cron job รันจริง
  */
 describe('ConfigDeletion Part A endpoints (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
