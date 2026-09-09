@@ -53,6 +53,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState(editing?.name ?? "");
+  const [description, setDescription] = useState(editing?.description ?? "");
   const [deviceModel, setDeviceModel] = useState(editing?.deviceModel ?? "");
   const [protocol, setProtocol] = useState(editing?.protocol ?? "");
   const [search, setSearch] = useState("");
@@ -238,6 +239,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
     if (!session?.accessToken) return;
     const fields = buildFields();
+    const trimmedDesc = description.trim();
 
     setSubmitting(true);
     try {
@@ -245,12 +247,15 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
         ? await updateConfig(session.accessToken, editing.id, {
             name: trimmed,
             fields,
+            // ส่งเสมอตอนแก้ — "" = ล้างคำอธิบายเดิม
+            description: trimmedDesc,
           })
         : await createConfig(session.accessToken, {
             name: trimmed,
             deviceModel,
             protocol,
             fields,
+            ...(trimmedDesc ? { description: trimmedDesc } : {}),
           });
       router.push(`/config?saved=${encodeURIComponent(saved.id)}`);
       router.refresh();
@@ -355,6 +360,27 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
               แล้วสร้างใหม่
             </p>
           )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="config-description">
+              คำอธิบาย{" "}
+              <span className="font-normal text-muted-foreground">
+                (ไม่บังคับ)
+              </span>
+            </Label>
+            <textarea
+              id="config-description"
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                clearErrors();
+              }}
+              maxLength={500}
+              rows={3}
+              placeholder="อธิบายวัตถุประสงค์ของ Config ชุดนี้…"
+              className="min-h-16 resize-y rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            />
+          </div>
 
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
@@ -598,29 +624,43 @@ function TemplateRow({
           เปิดใช้งาน
         </label>
       ) : def.allowedValues.length > 0 ? (
-        <select
-          id={id}
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={missing ? true : undefined}
-          className={inputClass}
-        >
-          <option value="">— เลือก —</option>
-          {def.allowedValues.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            id={id}
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={missing ? true : undefined}
+            className={inputClass}
+          >
+            <option value="">— เลือก —</option>
+            {def.allowedValues.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          {def.unit && <UnitLabel unit={def.unit} />}
+        </div>
       ) : (
-        <Input
-          id={id}
-          type={def.dataType === "number" ? "number" : "text"}
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-          aria-invalid={missing ? true : undefined}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            id={id}
+            type={def.dataType === "number" ? "number" : "text"}
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={missing ? true : undefined}
+          />
+          {def.unit && <UnitLabel unit={def.unit} />}
+        </div>
       )}
     </div>
+  );
+}
+
+function UnitLabel({ unit }: { unit: string }) {
+  return (
+    <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">
+      {unit}
+    </span>
   );
 }

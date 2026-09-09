@@ -122,6 +122,12 @@ function ConfigDetailContent({
       </SheetHeader>
 
       <div className="flex flex-col gap-4 px-4 pb-4">
+        {config.description && (
+          <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+            {config.description}
+          </p>
+        )}
+
         <div className="divide-y">
           <InfoRow label="รุ่นอุปกรณ์">{config.deviceModel}</InfoRow>
           <InfoRow label="โปรโตคอล">{config.protocol}</InfoRow>

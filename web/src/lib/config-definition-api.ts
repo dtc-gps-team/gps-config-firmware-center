@@ -4,8 +4,8 @@ import { apiJson } from "@/lib/api";
  * Config Definition Lookup API client — ตรงกับ `docs/api/openapi.yaml`
  * (`ConfigFieldDefinition` / `listConfigDefinitions`)
  *
- * คลัง field ที่ระบบรู้จัก ใช้อ้างอิงตอนกรอก/ตรวจ Config — ฟอร์มสร้าง/แก้ Config
- * (PR ถัดไป) จะ filter ด้วย `supportedModels` เพื่อ render ช่องกรอกที่ถูกต้อง
+ * คลัง field ที่ระบบรู้จัก ใช้อ้างอิงตอนกรอก/ตรวจ Config — wizard สร้าง/แก้ Config
+ * filter ด้วย `supportedModels` เพื่อ render ช่องกรอกที่ถูกต้อง + โชว์ `unit`
  */
 
 /** คู่ (deviceModel, protocol) หนึ่งคู่ที่ field นี้ใช้ได้ */
@@ -25,6 +25,8 @@ export type ConfigFieldDefinition = {
   /** field ที่รู้ว่ามีในระบบเดิม แต่ยังไม่มี spec ยืนยันชัดเจน */
   unknownSpec: boolean;
   description: string | null;
+  /** หน่วยของค่า field (เช่น "วินาที", "%") — โชว์ข้างช่องกรอก ไม่ใช้ validate */
+  unit: string | null;
   supportedModels: ConfigFieldModelSupport[];
   createdAt: string;
   updatedAt: string;
