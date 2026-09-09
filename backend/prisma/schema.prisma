@@ -16,7 +16,7 @@ datasource db {
 //
 // Role เป็นตารางจริง (ไม่ใช่ enum) เพื่อให้ Admin สร้าง/แก้ Role ใหม่ได้ผ่านหน้า
 // "User / Role Management" (RBAC_Matrix.md Section 2 — ยืนยันกับทีมแล้วว่า Admin
-// ต้องสร้าง Role ใหม่ได้จริง ไม่ใช่แค่ assign Role ที่มีอยู่ 6 ตัว)
+// ต้องสร้าง Role ใหม่ได้จริง ไม่ใช่แค่ assign Role เริ่มต้น 7 ตัว)
 // ---------------------------------------------------------------------------
 
 enum ActionType {
@@ -30,7 +30,8 @@ enum ActionType {
 model Role {
   id          String   @id @default(uuid())
   // code = ค่าคงที่ที่โค้ด/seed อ้างอิง (แทน enum เดิม): SW, Operation, ST, OT,
-  // Auditor, Admin — Role ใหม่ที่ Admin สร้างเพิ่มทีหลังตั้ง code เองได้อิสระ
+  // Auditor, Admin, SuperAdmin — Role ใหม่ที่ Admin สร้างเพิ่มทีหลังตั้ง code
+  // เองได้อิสระ
   code        String   @unique
   name        String
   description String?
