@@ -77,6 +77,7 @@
 | ลบ Config ที่ไม่ได้ใช้นาน — `draft`/`rejected` + ไม่มี Task/Campaign/Incident + 90 วัน → คำขอลบอัตโนมัติ → SuperAdmin อนุมัติ → soft delete | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | รวมกับ role SuperAdmin |
 | Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
 | เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |
+| Customer Scope (ลูกค้า/โปรเจกต์/รถ) — เติมส่วนที่ตัดจาก Data Dictionary กลับแบบเป็นเฟส A→B→C | Backend + Web (+ Mobile เฟส B/C) | A (เสนอ) | **DRAFT** — `docs/12` ไว้คุยรีวิวรายอาทิตย์ · เฟส A เริ่มได้ถ้าทีมโอเค | ไม่ใช่มติ Sprint 1 — A เสนอจาก deviation ใน `schema.prisma` (`model Device` / `model Config`) |
 
 ---
 
