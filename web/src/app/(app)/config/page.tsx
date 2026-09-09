@@ -5,8 +5,8 @@ export const metadata = {
 };
 
 /**
- * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวดูรายละเอียด
- * (แผง `ConfigDetailSheet`) · ปุ่ม "สร้าง Config ใหม่" พาไปหน้า wizard
+ * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวไปหน้า
+ * รายละเอียดเต็ม `/config/{id}` · ปุ่ม "สร้าง Config ใหม่" พาไปหน้า wizard
  * `/config/new` (แก้ที่ `/config/{id}/edit`) — สร้าง/แก้ได้เฉพาะ Role SW
  */
 export default async function ConfigPage({

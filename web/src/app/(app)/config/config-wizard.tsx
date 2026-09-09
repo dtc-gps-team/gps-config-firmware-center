@@ -20,7 +20,7 @@ import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 type FieldValue = string | boolean;
 
 export type ConfigWizardMode =
-  | { kind: "create" }
+  | { kind: "create"; cloneFrom?: Config }
   | { kind: "edit"; config: Config };
 
 const SELECT_CLASS =
@@ -40,8 +40,8 @@ function isEmpty(value: FieldValue | undefined): boolean {
  * (แก้ได้แค่ตอนสร้าง — มติ PR 3b) · validate ฝั่ง client แบบเบา (required +
  * allowedValues) ที่เหลือพึ่ง 400 จาก backend (`validateFields`)
  *
- * customer toggle / คำอธิบาย / unit ใน wireframe ตัดออกจาก PR นี้ — ต้องมี
- * field ใน backend ก่อน (เก็บเป็น follow-up)
+ * โหมดโคลน (`create` + `cloneFrom`) — prefill ทุกอย่างจาก config ต้นทาง ยกเว้น
+ * ชื่อ (ต่อท้าย "(สำเนา)") · รุ่น/โปรโตคอลยังเปลี่ยนได้ (เป็น create ใหม่)
  */
 export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const router = useRouter();
@@ -50,23 +50,29 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     useConfigDefinitions();
 
   const editing = mode.kind === "edit" ? mode.config : null;
+  const cloneFrom = mode.kind === "create" ? mode.cloneFrom ?? null : null;
+  // ค่าเดิมที่เอามา prefill — โหมดแก้ใช้ config ตัวเอง · โหมดโคลนใช้ config ต้นทาง
+  // (โคลน = create ใหม่ ยังเปลี่ยนรุ่น/โปรโตคอลได้ ต่างจากโหมดแก้ที่ล็อก)
+  const source = editing ?? cloneFrom;
 
   const [step, setStep] = useState<1 | 2>(1);
-  const [name, setName] = useState(editing?.name ?? "");
-  const [description, setDescription] = useState(editing?.description ?? "");
-  const [deviceModel, setDeviceModel] = useState(editing?.deviceModel ?? "");
-  const [protocol, setProtocol] = useState(editing?.protocol ?? "");
+  const [name, setName] = useState(
+    editing ? editing.name : cloneFrom ? `${cloneFrom.name} (สำเนา)` : "",
+  );
+  const [description, setDescription] = useState(source?.description ?? "");
+  const [deviceModel, setDeviceModel] = useState(source?.deviceModel ?? "");
+  const [protocol, setProtocol] = useState(source?.protocol ?? "");
   const [search, setSearch] = useState("");
   const [values, setValues] = useState<Record<string, FieldValue>>(() => {
-    if (!editing) return {};
+    if (!source) return {};
     const out: Record<string, FieldValue> = {};
-    for (const [k, v] of Object.entries(editing.fields)) {
+    for (const [k, v] of Object.entries(source.fields)) {
       out[k] = typeof v === "boolean" ? v : String(v);
     }
     return out;
   });
   const [selected, setSelected] = useState<string[]>(() =>
-    editing ? Object.keys(editing.fields) : [],
+    source ? Object.keys(source.fields) : [],
   );
 
   const [submitting, setSubmitting] = useState(false);

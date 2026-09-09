@@ -22,7 +22,6 @@ import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
-import { ConfigDetailSheet } from "./config-detail-sheet";
 import { CreateConfigButton } from "./create-config-button";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
@@ -92,7 +91,6 @@ export function ConfigTableCard({
   const router = useRouter();
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
-  const [selected, setSelected] = useState<Config | null>(null);
   const [dismissedBanner, setDismissedBanner] = useState(false);
 
   const savedConfig =
@@ -148,25 +146,10 @@ export function ConfigTableCard({
             data={configs}
             searchPlaceholder="ค้นหาชื่อ / รุ่น / โปรโตคอล…"
             emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
-            onRowClick={setSelected}
+            onRowClick={(config) => router.push(`/config/${config.id}`)}
           />
         )}
       </CardContent>
-
-      <ConfigDetailSheet
-        config={selected}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-        onEdit={(config) => {
-          setSelected(null);
-          router.push(`/config/${config.id}/edit`);
-        }}
-        onDeleted={() => {
-          setSelected(null);
-          void refetch();
-        }}
-      />
     </Card>
   );
 }
