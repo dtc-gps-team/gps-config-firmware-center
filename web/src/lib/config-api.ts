@@ -32,6 +32,19 @@ export type Config = {
   updatedAt: string;
 };
 
+/** snapshot ของ Config ตอน Operation approve — `ConfigVersion` ใน openapi.yaml
+ * (append-only · ว่าง = ยังไม่เคยถูก approve) */
+export type ConfigVersion = {
+  id: string;
+  configId: string;
+  versionNumber: number;
+  deviceModel: string;
+  protocol: string;
+  fields: Record<string, unknown>;
+  approvedBy: string;
+  approvedAt: string;
+};
+
 /** request body — `ConfigWriteInput` ใน openapi.yaml (createConfig ส่งครบทุก field) */
 export type ConfigWriteInput = {
   name: string;
@@ -52,6 +65,14 @@ export function listConfigs(
 
 export function getConfig(token: string, id: string): Promise<Config> {
   return apiJson<Config>(`/config/${id}`, { token });
+}
+
+/** ประวัติเวอร์ชัน (snapshot ตอน approve) — เรียงล่าสุดก่อน · [] = ยังไม่เคย approve */
+export function listConfigVersions(
+  token: string,
+  id: string,
+): Promise<ConfigVersion[]> {
+  return apiJson<ConfigVersion[]>(`/config/${id}/versions`, { token });
 }
 
 export function createConfig(

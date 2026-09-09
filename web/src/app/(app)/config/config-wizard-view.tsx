@@ -5,19 +5,33 @@ import Link from "next/link";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import type { Config } from "@/lib/config-api";
 import { useConfig } from "@/hooks/use-config";
-import { ConfigWizard } from "./config-wizard";
+import { ConfigWizard, type ConfigWizardMode } from "./config-wizard";
+
+type ViewProps =
+  | { mode: "create"; cloneFromId?: string }
+  | { mode: "edit"; configId: string };
 
 /**
- * หน้า wizard สร้าง/แก้ Config (route เต็ม `/config/new`, `/config/{id}/edit`) —
- * gate ทั้งหน้าด้วย RoleGuard (SW เท่านั้น) · โหมดแก้โหลด Config เดิมมา prefill
- * ก่อน แล้วเช็คว่าสถานะ `draft` เท่านั้นที่แก้ได้ (เงื่อนไขเดียวกับ backend)
+ * หน้า wizard สร้าง/แก้/โคลน Config (route เต็ม `/config/new`,
+ * `/config/new?from={id}`, `/config/{id}/edit`) — gate ทั้งหน้าด้วย RoleGuard
+ * (SW เท่านั้น) · โหมดแก้/โคลนโหลด Config ต้นทางมา prefill ก่อน · โหมดแก้
+ * เช็คสถานะ `draft` ด้วย (เงื่อนไขเดียวกับ backend) — โคลนไม่เช็ค (ต้นทางเป็น
+ * สถานะไหนก็โคลนได้)
  */
-export function ConfigWizardView(
-  props: { mode: "create" } | { mode: "edit"; configId: string },
-) {
+export function ConfigWizardView(props: ViewProps) {
+  const cloning = props.mode === "create" && props.cloneFromId;
+  const title = cloning
+    ? "โคลน Config"
+    : props.mode === "create"
+      ? "สร้าง Config ใหม่"
+      : "แก้ไข Config";
+
   return (
-    <RoleGuard allow={props.mode === "create" ? canCreateConfig : canUpdateConfig}>
+    <RoleGuard
+      allow={props.mode === "create" ? canCreateConfig : canUpdateConfig}
+    >
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <Link
@@ -26,22 +40,38 @@ export function ConfigWizardView(
           >
             ← กลับไปรายการ Config
           </Link>
-          <h1 className="text-2xl font-semibold">
-            {props.mode === "create" ? "สร้าง Config ใหม่" : "แก้ไข Config"}
-          </h1>
+          <h1 className="text-2xl font-semibold">{title}</h1>
         </div>
 
-        {props.mode === "create" ? (
-          <ConfigWizard mode={{ kind: "create" }} />
+        {props.mode === "edit" ? (
+          <SourcedWizard
+            configId={props.configId}
+            requireDraft
+            build={(config) => ({ kind: "edit", config })}
+          />
+        ) : props.cloneFromId ? (
+          <SourcedWizard
+            configId={props.cloneFromId}
+            build={(config) => ({ kind: "create", cloneFrom: config })}
+          />
         ) : (
-          <EditWizard configId={props.configId} />
+          <ConfigWizard mode={{ kind: "create" }} />
         )}
       </div>
     </RoleGuard>
   );
 }
 
-function EditWizard({ configId }: { configId: string }) {
+/** โหลด Config ต้นทาง (แก้ / โคลน) แล้วส่งให้ ConfigWizard ผ่าน `build()` */
+function SourcedWizard({
+  configId,
+  requireDraft = false,
+  build,
+}: {
+  configId: string;
+  requireDraft?: boolean;
+  build: (config: Config) => ConfigWizardMode;
+}) {
   const { data, isLoading, error, refetch } = useConfig(configId);
 
   if (isLoading && !data) {
@@ -55,9 +85,7 @@ function EditWizard({ configId }: { configId: string }) {
   if (error || !data) {
     return (
       <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">
-          {error ?? "ไม่พบ Config นี้"}
-        </p>
+        <p className="text-sm text-destructive">{error ?? "ไม่พบ Config นี้"}</p>
         <Button variant="outline" size="sm" onClick={() => void refetch()}>
           ลองใหม่
         </Button>
@@ -65,7 +93,7 @@ function EditWizard({ configId }: { configId: string }) {
     );
   }
 
-  if (data.status !== "draft") {
+  if (requireDraft && data.status !== "draft") {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
         Config นี้อยู่สถานะ <strong>{data.status}</strong> — แก้ไขได้เฉพาะสถานะ
@@ -74,5 +102,5 @@ function EditWizard({ configId }: { configId: string }) {
     );
   }
 
-  return <ConfigWizard mode={{ kind: "edit", config: data }} />;
+  return <ConfigWizard mode={build(data)} />;
 }
