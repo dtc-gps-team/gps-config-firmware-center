@@ -16,7 +16,7 @@
 | **OT** | Operation-Technician | Web + Mobile | ช่างเทคนิคที่ทำงานสังกัดฝั่ง Operation — สนับสนุนงานปฏิบัติการประจำวัน (มอบหมาย/ติดตามงานช่าง, จัดการ Change Request ที่ส่งเข้ามา) และมีสิทธิ์ Override Config/Firmware เช่นเดียวกับ ST |
 | **Auditor** | Auditor | Web | ดูข้อมูลอย่างเดียวทุกจอเพื่อตรวจสอบ (compliance) — ห้าม Create/Update/Approve/Override ทุกกรณี |
 | **Admin** | System Admin | Web | จัดการผู้ใช้/สิทธิ์ในระบบ (ยกเว้นบัญชี Admin/SuperAdmin), ปลดระวางกล่อง (Decommission Device), ดูข้อมูลทุกจอ — **ไม่ใช่ผู้อนุมัติ Config แทน Operation** (คงหลัก Separation of Duty) |
-| **SuperAdmin** | System Super Admin | Web | ทำได้ทุกอย่างที่ Admin ทำ **+** อนุมัติ/ปฏิเสธคำขอลบ Config (auto delete-request), สร้าง/ปิด/เปลี่ยน role ของบัญชี Admin และ SuperAdmin, เพิ่ม Role ใหม่ + แก้ `RolePermission` — **ไม่ใช่ผู้อนุมัติ Config/Firmware/Campaign แทน Operation และไม่ข้าม Separation of Duty ใด ๆ** · ต้องมี SuperAdmin ≥ 1 คนเสมอ · ทุก action ลง Audit Log · เพิ่มตามมติ Sprint 1 review (`../09_Sprint1_Review_Decisions.md`) — สิทธิ์ resource ใหม่ (`config-deletion`, `admin-management`, `role-management`) finalize ใน Section 2/4 พร้อม `docs/11` |
+| **SuperAdmin** | System Super Admin | Web | ทำได้ทุกอย่างที่ Admin ทำ **+** อนุมัติ/ปฏิเสธคำขอลบ Config (auto delete-request), สร้าง/ปิด/เปลี่ยน role ของบัญชี Admin และ SuperAdmin, เพิ่ม Role ใหม่ + แก้ `RolePermission` — **ไม่ใช่ผู้อนุมัติ Config/Firmware/Campaign แทน Operation และไม่ข้าม Separation of Duty ใด ๆ** · ต้องมี SuperAdmin ≥ 1 คนเสมอ · ทุก action ลง Audit Log · เพิ่มตามมติ Sprint 1 review (`../09_Sprint1_Review_Decisions.md`) — สิทธิ์ resource ใหม่ (`config-deletion`, `admin-management`, `role-management`) อยู่ใน Section 2 (คอลัมน์ SuperAdmin) + Section 4.2 แล้ว · endpoint จริงทยอยมากับ `docs/11` (Part A = `config-deletion`, Part B2 = อีก 2 resource) — ดู footnote ³ ของ Section 2 |
 
 > **✅ ยืนยันแล้วผ่าน [PR #13](https://github.com/dtc-gps-team/gps-config-firmware-center/pull/13) (merged): ตัด Role `FieldTechnician` ออกทั้งเอกสาร — ไม่มี Role นี้อยู่จริง** เดิม `../planning/03_GPS_Detailed_Build_Steps.md` ระบุว่ามี 7 Role รวม "Field Technician" แต่ทีมยืนยันแล้วว่าเป็นชื่อตกค้างจากตอนออกแบบครั้งแรก คนที่ทำงานหน้างาน (ติดตั้งกล่อง/รับ Task/Confirm Install/ส่ง Change Request ผ่านมือถือ) ที่จริงคือ **ST/OT ที่ login เข้าแอป Mobile** ไม่ใช่ Role แยกต่างหาก — enum `role` ใน `openapi.yaml` ก็ไม่เคยมี `FieldTechnician` มาตั้งแต่ต้น จึงตรงกับโค้ดจริงพอดี (ก่อนหน้านี้เอกสารฉบับร่างเข้าใจผิดคิดว่าต้องเพิ่ม `FieldTechnician` เข้า enum — **ไม่ต้องทำแล้ว**) เพราะฉะนั้น ST/OT จึงใช้ทั้ง **Web + Mobile** (ดู Section 3 ที่แก้ตามนี้ทั้งตาราง)
 >
@@ -37,32 +37,39 @@
 
 ## 2. Matrix — หน้าจอ/โมดูลฝั่ง Web
 
-| หน้าจอ / Action | SW | Operation | ST | OT | Auditor | Admin |
-|---|---|---|---|---|---|---|
-| **Login** | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) |
-| **Dashboard / Main** | R | R | R | R | R | R |
-| **Device Search / Device Detail** | R | R | R | R | R | R |
-| **Config Editor** (สร้าง/แก้ Draft ผ่านฟอร์ม — สถานะ `draft`) | C, R, U ² | R | R | R | R | R |
-| **Config Import จากไฟล์ (JSON)** (เข้า flow เดียวกับฟอร์ม) | C | R | R | R | R | R |
-| **Config Simulation (dry-run)** — รันทดสอบผ่าน `POST /config/{id}/simulate` (**ไม่เปลี่ยนสถานะ** — คืนแค่ผลทดสอบ กดซ้ำได้ระหว่างที่ยังเป็น `draft`) | C, R, U | R | R | R | R | R |
-| **Approval Center** — Operation อนุมัติ/ปฏิเสธ Config (อนุมัติ → `approved`, ปฏิเสธ → กลับ `draft` ทั้งหมด) | R | R, **A** | R | R | R | R |
-| **Config Simulation Gate** (บล็อก/แก้ไข/ผ่าน ก่อนเข้า Approval) | R | R | R | R | R | R |
-| **Device Config Override** | R | R | **C, R, U, O** | **C, R, U, O** | R | R |
-| **Firmware Repository** (อัปโหลด + Compatibility Tag) | C, R, U | R | R | R | R | R |
-| **Firmware Override รายเครื่อง** | R | R | **C, R, U, O** | **C, R, U, O** | R | R |
-| **Campaign Wizard** (สร้างแคมเปญ) | R | C, R, U | R | R | R | R |
-| **Campaign Monitor** (ติดตาม Failure Rate) | R | R, U | R | R | R | R |
-| **Task Management** (สร้าง/มอบหมาย/ติดตามงานช่าง — ดูรายละเอียดสิทธิ์ที่ 4.3) | R | C, R, U | R¹ | R¹ | R | R |
-| **Change Request Inbox** (จากมือถือ) | R | R, U | R | R, U | R | R |
-| **Incident & Rollback** | R (สร้าง Incident อัตโนมัติจากระบบ) | C, R, **U** (สั่ง Rollback) | R, U (แก้ไขเชิงเทคนิค) | R | R | R |
-| **Audit Log** | - | R | R | R | **R** | R |
-| **Decommission Device** | - | C, U | R | R | R | C, U |
-| **User / Role Management** | - | - | - | - | - | **C, R, U** |
-| **Notification Center** (ของตนเอง) | R, U (mark read) | R, U | R, U | R, U | R, U | R, U |
+| หน้าจอ / Action | SW | Operation | ST | OT | Auditor | Admin | SuperAdmin |
+|---|---|---|---|---|---|---|---|
+| **Login** | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) | R (ตนเอง) |
+| **Dashboard / Main** | R | R | R | R | R | R | R |
+| **Device Search / Device Detail** | R | R | R | R | R | R | R |
+| **Config Editor** (สร้าง/แก้ Draft ผ่านฟอร์ม — สถานะ `draft`) | C, R, U ² | R | R | R | R | R | R |
+| **Config Import จากไฟล์ (JSON)** (เข้า flow เดียวกับฟอร์ม) | C | R | R | R | R | R | R |
+| **Config Simulation (dry-run)** — รันทดสอบผ่าน `POST /config/{id}/simulate` (**ไม่เปลี่ยนสถานะ** — คืนแค่ผลทดสอบ กดซ้ำได้ระหว่างที่ยังเป็น `draft`) | C, R, U | R | R | R | R | R | R |
+| **Approval Center** — Operation อนุมัติ/ปฏิเสธ Config (อนุมัติ → `approved`, ปฏิเสธ → กลับ `draft` ทั้งหมด) | R | R, **A** | R | R | R | R | R |
+| **คำขอลบ Config อัตโนมัติ** (auto delete-request — อนุมัติ/ปฏิเสธ · resource `config-deletion`) ³ | - | - | - | - | - | - | **R, A** |
+| **Config Simulation Gate** (บล็อก/แก้ไข/ผ่าน ก่อนเข้า Approval) | R | R | R | R | R | R | R |
+| **Device Config Override** | R | R | **C, R, U, O** | **C, R, U, O** | R | R | R |
+| **Firmware Repository** (อัปโหลด + Compatibility Tag) | C, R, U | R | R | R | R | R | R |
+| **Firmware Override รายเครื่อง** | R | R | **C, R, U, O** | **C, R, U, O** | R | R | R |
+| **Campaign Wizard** (สร้างแคมเปญ) | R | C, R, U | R | R | R | R | R |
+| **Campaign Monitor** (ติดตาม Failure Rate) | R | R, U | R | R | R | R | R |
+| **Task Management** (สร้าง/มอบหมาย/ติดตามงานช่าง — ดูรายละเอียดสิทธิ์ที่ 4.3) | R | C, R, U | R¹ | R¹ | R | R | R |
+| **Change Request Inbox** (จากมือถือ) | R | R, U | R | R, U | R | R | R |
+| **Incident & Rollback** | R (สร้าง Incident อัตโนมัติจากระบบ) | C, R, **U** (สั่ง Rollback) | R, U (แก้ไขเชิงเทคนิค) | R | R | R | R |
+| **Audit Log** | - | R | R | R | **R** | R | R |
+| **Decommission Device** | - | C, U | R | R | R | C, U | C, U |
+| **User / Role Management** (บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin) | - | - | - | - | - | **C, R, U** | **C, R, U** |
+| **จัดการบัญชี Admin/SuperAdmin + Role/Permission** (resource `admin-management`, `role-management`) ³ | - | - | - | - | - | - | **C, R, U** |
+| **Notification Center** (ของตนเอง) | R, U (mark read) | R, U | R, U | R, U | R, U | R, U | R, U |
 
 ¹ ST/OT บน Web ดู Task ที่ตัวเองถูก assign ได้อย่างเดียว — การแก้ `status` ของงานตัวเอง (รับงาน/ปิดงาน) ทำผ่าน **Mobile** (ดู Section 3 และ 4.3)
 
 ² **ปิด open question: Config ไม่ scope ตาม creator** — ยืนยันโดย paveekornk (A) เจ้าของ module `config`: SW ทุกคนแก้ไข/ลบ Config ที่ยังเป็น `draft` ร่วมกันได้ ไม่ใช่แยกเป็นของใครของมัน (ต่างจาก Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — ดู footnote ¹) `ConfigService.update`/`remove` จึงไม่ filter ด้วย `createdBy` โดยตั้งใจ — ถ้าทีมต้องการเปลี่ยนเป็นแยกตามเจ้าของทีหลัง ต้องแก้ทั้งแถวนี้และ service layer ใหม่
+
+³ **สิทธิ์เฉพาะ SuperAdmin — endpoint ยังไม่ครบ (`docs/11` Config Deletion + SuperAdmin, Sprint 3)** · สถานะปัจจุบัน:
+  - **Part B1 (เสร็จ)** — seed Role `SuperAdmin` + user `superadmin.test` + grant = ทุกสิทธิ์ที่ Admin มี **+** `config-deletion` (Read, Approve) ล่วงหน้า · วันนี้ SuperAdmin จึงทำได้เท่ากับ Admin ทุกอย่าง
+  - **Part A (ทีม B, ถัดไป)** — endpoint คำขอลบ Config อัตโนมัติ (`config-deletion`) + scheduled job — grant มีรอไว้แล้ว
+  - **Part B2 (ทีม A, ตามหลัง)** — endpoint `admin-management` / `role-management` + guard "Admin แตะบัญชี Admin/SuperAdmin ไม่ได้" + กติกา SuperAdmin ≥ 1 คน · grant 2 resource นี้ seed พร้อม endpoint (ยังไม่ seed ตอนนี้)
 
 ---
 
@@ -134,7 +141,10 @@
 | `/change-requests` | GET/PATCH | Operation, OT | เช่นเดียวกับข้างบน |
 | `/incidents` | GET/POST/PATCH | ระบบสร้างอัตโนมัติ (POST), Operation/ST อ่าน-แก้ (GET/PATCH) | ยังไม่มีโมดูล `incident` ใน spec |
 | `/audit-logs` | GET | Operation, ST, OT, Auditor, Admin | ยังไม่มีโมดูล `audit` ใน spec |
-| `/users` | GET/POST/PATCH | Admin เท่านั้น | ยังไม่มีโมดูล User/Role Management ใน spec |
+| `/users` | GET/POST/PATCH | Admin เท่านั้น (filter `role.code NOT IN ('Admin','SuperAdmin')` — บัญชี Admin/SuperAdmin จัดการผ่าน `admin-management` เท่านั้น) | ยังไม่มีโมดูล User/Role Management ใน spec |
+| `/config/{configId}/deletion-requests` (path เป็นข้อเสนอ) | GET/PATCH | **SuperAdmin** (resource `config-deletion` — Read คิวคำขอ, Approve = อนุมัติ/ปฏิเสธ) | `docs/11` Part A (ทีม B) — grant seed แล้วใน Part B1 รอ endpoint |
+| `/admin/accounts` (path เป็นข้อเสนอ) | GET/POST/PATCH | **SuperAdmin** (resource `admin-management` — สร้าง/ปิด/เปลี่ยน role บัญชี Admin/SuperAdmin · ต้องมี SuperAdmin ≥ 1) | `docs/11` Part B2 (ทีม A) — grant seed พร้อม endpoint |
+| `/roles`, `/roles/{roleId}/permissions` (path เป็นข้อเสนอ) | GET/POST/PATCH | **SuperAdmin** (resource `role-management` — เพิ่ม Role + แก้ `RolePermission`) | `docs/11` Part B2 (ทีม A) — grant seed พร้อม endpoint |
 
 > ตามหมายเหตุท้าย `openapi.yaml`: "ทุกครั้งที่เพิ่ม Endpoint ใหม่ในแต่ละ Phase ถัดไป ให้กลับมาอัปเดตไฟล์นี้ด้วย" — ตาราง 4.2 นี้คือ backlog ของสิ่งที่ต้องอัปเดตเข้า spec ก่อน ไม่ใช่สิ่งที่ Guard เขียนได้ตอนนี้
 
@@ -204,3 +214,4 @@
 | 2026-09-04 | kittiphong | แก้ครั้งที่ 18 — **Push Notification (FCM) groundwork** (Sprint 3 #17, PR A ของแผน 4-PR: A model+endpoint / B ส่งจริงผ่าน FCM / C Mobile setup+registration / D Mobile handle push+deep link) เจ้าของ module `notification` (B): (1) schema เพิ่ม model `DeviceToken` (`userId`, `token @unique`, `platform`, timestamps, `@@index([userId])`, FK `onDelete: Cascade` — เบี่ยงจาก implicit Restrict ของ Notification/Task โดยตั้งใจ เพราะ device token เป็น client-registration ชั่วคราว ไม่มีค่าเชิง audit) — additive migration `20260904094500_add_device_token` (2) ตาราง 4.1 เพิ่ม 2 แถว `POST /notifications/device-tokens` (`registerDeviceToken` — upsert ตาม token) + `DELETE /notifications/device-tokens?token=` (`deleteDeviceToken` — IDOR-safe `deleteMany where {token,userId}` + 404) — **JwtAuthGuard อย่างเดียว ไม่เพิ่ม resource/PermissionGuard** เพราะ self-scoped ล้วน (`userId` จาก JWT เสมอ) ทุก Role ที่ login ผ่าน Mobile ต้องลงทะเบียน token ของตัวเองได้ ไม่มี Role ไหนควรถูกห้าม — เหมือน `/notifications` GET/read (Section 5 ข้อ 8) (3) `.env.example`: แทน `FCM_SERVER_KEY` (FCM Legacy HTTP API — Google deprecate 2023 → shut down 2024) ด้วย `FCM_SERVICE_ACCOUNT_PATH` (FCM HTTP v1 ใช้ Service Account JSON) — **เบี่ยงจาก `../planning/01_GPS_Build_Reference.md` ที่อ้าง server key โดยตั้งใจ** เพราะ API เดิมตายแล้ว ใช้ server key เดี่ยวไม่ได้อีก (4) **รอบนี้ยังไม่ส่ง push จริง** — `NotificationService.send()` mode `fcm` ยัง throw เหมือนเดิม, ไม่เพิ่ม `firebase-admin` (เก็บไว้ PR B) — ดู `backend/src/notification/` + `docs/api/openapi.yaml` (v3.14) |
 | 2026-09-07 | paveekornk | แก้ครั้งที่ 19 — implement **`POST /devices/{deviceId}/simulate-config`** (Sprint 2 #13 · config_simulator Phase 2 · design ตกลงกับ kittiphong (B) บน PR #92 → `docs/08_ConfigSimulator_Phase2_Proposal.md`): ช่างหน้างาน (ST/OT ผ่าน Mobile) dry-run เช็คความพร้อม Config ก่อน `applyConfigToDevice` จริง (1) ตาราง 4.1 เพิ่มแถว — **reuse resource `device-connection-test` action `Read`** (ST/OT เท่านั้น) ไม่ seed เพิ่ม เพราะเช็คสัญญาณอุปกรณ์จริงเหมือนกัน (2) รวม 3 ส่วนเป็นผลเดียว `DeviceSimulateConfigResult`: `configCheck` (reuse `DEVICE_SIMULATOR` เดียวกับ `/config/{id}/simulate`) + `compatibilityCheck` (deviceModel/protocol Config ตรงกับ Device ไหม) + `connectionCheck` (reuse `DEVICE_CONNECTION_TESTER` เดียวกับ `/test-connection`) (3) precondition mirror `apply-config`: 404 (device/config ไม่พบ) · 409 (device ยังไม่ `installed` / config ยังไม่ `approved`,`synced`) (4) **ต่างจาก `apply-config`:** deviceModel/protocol mismatch เป็น `compatibilityCheck.passed:false` ใน 200 (ไม่ใช่ 409) เพราะเป็น readiness check ต้อง report ให้ช่างเห็น — **รอ B ยืนยันบน PR** (5) **ไม่แตะ schema.prisma** · env reuse `DEVICE_SIMULATOR_MODE` + `DEVICE_CONNECTION_TEST_MODE` (ไม่มี env ใหม่) · ปิด open question Section 6 เรื่อง endpoint ช่างหน้างาน — ดู `backend/src/device/simulate-config-result.ts` + `docs/api/openapi.yaml` (v3.15) |
 | 2026-09-08 | paveekornk | แก้ครั้งที่ 20 — **มติ Sprint 1 review** (`../09_Sprint1_Review_Decisions.md`, PR #99): (1) Section 1 เพิ่ม Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการบัญชี Admin/SuperAdmin + แก้ role/permission · **ไม่ข้าม Separation of Duty** (อนุมัติ Config/Firmware/Campaign แทน Operation ไม่ได้) · ต้องมี SuperAdmin ≥ 1 เสมอ · ทุก action ลง Audit Log (2) Section 5 ข้อ 5 เพิ่มย่อหน้า SuperAdmin ไม่ข้าม SoD (3) header ตาราง Section 1 แก้ "enum" → `Role.code` (Role เป็นตาราง RBAC ตั้งแต่ PR #34) · **ยังไม่ finalize** Section 2/4: สิทธิ์ resource ใหม่ (`config-deletion`, `admin-management`, `role-management`) + seed grants ไปกับ proposal `docs/11` (Config Deletion + SuperAdmin, Sprint 3) · CLAUDE.md §Role Enum + §Audit Pattern + `GPS_Data_Dictionary.xlsx` ROLE table แก้คู่กันใน PR เดียวกันนี้ |
+| 2026-09-09 | paveekornk | แก้ครั้งที่ 21 — **`docs/11` Part B1 (SuperAdmin seed) — ปลดล็อก Part A ของทีม B** เจ้าของ module `auth` (A): (1) `seed.ts` — เพิ่ม Role `SuperAdmin` (`INITIAL_ROLES`) + user ทดสอบ `superadmin.test` + grant = **ทุกสิทธิ์ที่ Admin มี** (derive อัตโนมัติจาก grant ของ Admin กันหลุด sync) **+** `config-deletion` (Read, Approve) seed ล่วงหน้าให้ handoff Part A ไหลลื่น — **ไม่มี migration** (Role เป็นตาราง, `code` เป็น free string) (2) Section 2 เพิ่มคอลัมน์ `SuperAdmin` (ทุกแถว = Admin) + 2 แถวสิทธิ์เฉพาะ SuperAdmin (`config-deletion`, `admin-management`/`role-management`) + footnote ³ (สถานะ Part B1/A/B2) (3) Section 4.2 เพิ่ม 3 แถว endpoint ที่รอ (`/config/{id}/deletion-requests`, `/admin/accounts`, `/roles`) + หมายเหตุ `/users` filter `role.code NOT IN ('Admin','SuperAdmin')` (4) `schema.prisma` — comment `Role.code` เพิ่ม SuperAdmin (comment-only ไม่ใช่ schema change) · **ยังไม่ทำ (Part B2, ทีม A):** endpoint + guard `admin-management`/`role-management` + logic "Admin แตะบัญชี Admin/SuperAdmin ไม่ได้" + กติกา SuperAdmin ≥ 1 — grant 2 resource นี้ seed พร้อม endpoint · **Part A (ทีม B):** `config-deletion` flow — grant มีรอแล้ว |

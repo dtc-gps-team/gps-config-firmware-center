@@ -3,9 +3,10 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// code ของ Role เริ่มต้นทั้ง 6 ตัว (แทน enum เดิม) — ตรงกับ docs/api/openapi.yaml
-// Role ใหม่ที่ Admin สร้างเพิ่มทีหลังผ่านหน้า User/Role Management ไม่ต้องอยู่ใน
-// รายการนี้ ไฟล์นี้ seed แค่ค่าเริ่มต้นตอน dev/test เท่านั้น
+// code ของ Role เริ่มต้นทั้ง 7 ตัว (แทน enum เดิม) — ตรงกับ CLAUDE.md §Role Enum
+// + docs/architecture/RBAC_Matrix.md §1 · Role ใหม่ที่ Admin สร้างเพิ่มทีหลัง
+// ผ่านหน้า User/Role Management ไม่ต้องอยู่ในรายการนี้ ไฟล์นี้ seed แค่ค่า
+// เริ่มต้นตอน dev/test เท่านั้น
 const INITIAL_ROLES: { code: string; name: string; description: string }[] = [
   {
     code: 'SW',
@@ -36,6 +37,14 @@ const INITIAL_ROLES: { code: string; name: string; description: string }[] = [
     code: 'Admin',
     name: 'System Admin',
     description: 'จัดการ User/Role, Decommission Device',
+  },
+  {
+    // = Admin ทุกอย่าง + อนุมัติคำขอลบ Config, จัดการบัญชี Admin/SuperAdmin,
+    // แก้ role/permission · ไม่ข้าม Separation of Duty (docs/11 §6, RBAC §1)
+    code: 'SuperAdmin',
+    name: 'System Super Admin',
+    description:
+      'ทุกอย่างที่ Admin ทำได้ + อนุมัติคำขอลบ Config, จัดการบัญชี Admin/SuperAdmin, แก้ role/permission',
   },
 ];
 
@@ -84,6 +93,11 @@ async function main() {
         roleCode: 'Auditor',
       },
       { username: 'admin.test', fullName: 'Admin Tester', roleCode: 'Admin' },
+      {
+        username: 'superadmin.test',
+        fullName: 'SuperAdmin Tester',
+        roleCode: 'SuperAdmin',
+      },
     ];
 
   const passwordHash = await bcrypt.hash('password123', 10);
@@ -207,6 +221,23 @@ async function main() {
     // ---- devices (getDeviceStatus — ทุก role อ่านได้) ----
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'devices', 'Read')),
   ];
+
+  // ---- SuperAdmin (docs/11 Part B) ----
+  // = ทุก grant ที่ Admin มี — derive อัตโนมัติกันหลุด sync ถ้ามีการเพิ่มสิทธิ์
+  // Admin ทีหลัง (SuperAdmin "ทำได้ทุกอย่างที่ Admin ทำ" ตาม RBAC_Matrix.md §1)
+  // upsert idempotent อยู่แล้ว → grant ของ notifications/devices ที่ ALL_ROLE_CODES
+  // ให้ SuperAdmin ไปแล้วข้างบน ซ้ำได้ไม่เป็นไร
+  for (const g of grants.filter((x) => x.roleCode === 'Admin')) {
+    grants.push(grant('SuperAdmin', g.resource, g.action));
+  }
+  // สิทธิ์เฉพาะ SuperAdmin: อนุมัติ/ปฏิเสธคำขอลบ Config (docs/11 §5–6) — action
+  // `Approve` ครอบทั้ง approve+reject (แพทเทิร์นเดียวกับ config:Approve) · endpoint
+  // จริงมากับ Part A (โมดูล config, ทีม B) — grant ล่วงหน้าให้ handoff ไหลลื่น
+  // admin-management / role-management เลื่อนไป seed พร้อม endpoint (Part B2)
+  grants.push(
+    grant('SuperAdmin', 'config-deletion', 'Read'),
+    grant('SuperAdmin', 'config-deletion', 'Approve'),
+  );
 
   for (const g of grants) {
     const roleId = roleIdByCode.get(g.roleCode);
