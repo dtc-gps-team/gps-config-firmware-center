@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -23,7 +23,11 @@ import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import {
   formatModelSupport,
   type ConfigFieldDefinition,
+  type ConfigFieldModelSupport,
 } from "@/lib/config-definition-api";
+import { ParameterCreateForm } from "./parameter-create-form";
+
+type DefinitionsState = ReturnType<typeof useConfigDefinitions>;
 
 const columns: ColumnDef<ConfigFieldDefinition>[] = [
   {
@@ -99,8 +103,8 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
   },
 ];
 
-function ParameterTableCard() {
-  const { data, isLoading, error, refetch } = useConfigDefinitions();
+function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) {
+  const { data, isLoading, error, refetch } = definitions;
   const rows = useMemo(() => data ?? [], [data]);
 
   return (
@@ -144,12 +148,37 @@ function ParameterTableCard() {
 /**
  * คลัง Parameter (Config Definition Lookup, #12/#26) — ต่อ `GET
  * /config-definitions` จริง · SW/Operation/ST/OT เท่านั้น (gate ทั้งหน้าผ่าน
- * RoleGuard) · ฟอร์มสร้าง Parameter ใหม่ยังไม่ทำ (`POST /config-definitions` —
- * PR ถัดไป) ปุ่มยัง disabled
+ * RoleGuard) · ฟอร์มสร้าง Parameter ใหม่ (`POST /config-definitions`) เปิด/ปิด
+ * ด้วยปุ่ม — เฉพาะ Role SW (gate ที่ปุ่ม + PermissionGuard ฝั่ง backend)
  */
 function ParameterLibraryContent() {
   const { session } = useAuth();
   const canCreate = canCreateFieldDefinition(session?.role);
+  const definitions = useConfigDefinitions();
+  const [showForm, setShowForm] = useState(false);
+
+  /** คู่ (รุ่น/โปรโตคอล) ที่มีในระบบแล้ว — ให้ฟอร์มเลือกเป็น supportedModels */
+  const knownPairs = useMemo<ConfigFieldModelSupport[]>(() => {
+    const seen = new Set<string>();
+    const out: ConfigFieldModelSupport[] = [];
+    for (const d of definitions.data ?? []) {
+      for (const m of d.supportedModels) {
+        const key = `${m.deviceModel}/${m.protocol}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ deviceModel: m.deviceModel, protocol: m.protocol });
+      }
+    }
+    return out;
+  }, [definitions.data]);
+
+  const existingNames = useMemo(
+    () =>
+      new Set(
+        (definitions.data ?? []).map((d) => d.fieldName.trim().toLowerCase()),
+      ),
+    [definitions.data],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -160,10 +189,26 @@ function ParameterLibraryContent() {
             นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role SW
           </p>
         </div>
-        {canCreate ? <Button disabled>+ สร้าง Parameter ใหม่</Button> : null}
+        {canCreate && !showForm ? (
+          <Button onClick={() => setShowForm(true)}>
+            + สร้าง Parameter ใหม่
+          </Button>
+        ) : null}
       </div>
 
-      <ParameterTableCard />
+      {canCreate && showForm ? (
+        <ParameterCreateForm
+          knownPairs={knownPairs}
+          existingNames={existingNames}
+          onCancel={() => setShowForm(false)}
+          onCreated={async () => {
+            await definitions.refetch();
+            setShowForm(false);
+          }}
+        />
+      ) : null}
+
+      <ParameterTableCard definitions={definitions} />
     </div>
   );
 }
