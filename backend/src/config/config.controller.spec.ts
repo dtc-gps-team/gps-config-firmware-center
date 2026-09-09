@@ -13,6 +13,7 @@ const JWT_SECRET = 'test-secret';
 const sampleConfig: Config = {
   id: '11111111-1111-1111-1111-111111111111',
   name: 'ชุดตั้งค่าทดสอบ',
+  description: null,
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'draft',

@@ -41,6 +41,7 @@ const mockResult = {
 const approvedConfig: Config = {
   id: '22222222-2222-2222-2222-222222222222',
   name: 'ชุดตั้งค่าทดสอบ (device spec)',
+  description: null,
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'approved',

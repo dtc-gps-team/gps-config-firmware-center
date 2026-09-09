@@ -307,6 +307,10 @@ model Config {
   name        String       @unique
   deviceModel String
   protocol    String
+  // คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร — ไม่บังคับ (optional)
+  // เทียบเท่า CONFIG_TEMPLATE.description ของ Data Dictionary (สอดคล้อง ไม่ใช่
+  // deviation) · ใช้แสดงในหน้ารายละเอียด / wizard สร้าง Config (frame 07)
+  description String?
   status      ConfigStatus @default(draft)
   fields      Json
   createdBy   String
@@ -358,6 +362,10 @@ model ConfigFieldDefinition {
   required      Boolean  @default(false)
   unknownSpec   Boolean  @default(false)
   description   String?
+  // หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "เมตร", "%") — ไม่บังคับ
+  // เป็น metadata สำหรับแสดงผลข้างช่องกรอกตอนสร้าง Config (frame 08) เท่านั้น
+  // ไม่ถูกใช้ใน validateFields
+  unit          String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

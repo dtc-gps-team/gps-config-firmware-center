@@ -75,6 +75,7 @@ export class ConfigDefinitionService {
           required: dto.required,
           unknownSpec: dto.unknownSpec ?? false,
           description: dto.description,
+          unit: dto.unit,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({
               deviceModel: m.deviceModel,
