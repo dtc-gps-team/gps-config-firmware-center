@@ -1,4 +1,10 @@
-import { IsObject, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateConfigDto {
   // ชื่อ Config ที่คนตั้ง — unique ทั้งระบบ (มติ Sprint 1 review ข้อ 4) ชนกัน ->
@@ -22,4 +28,11 @@ export class CreateConfigDto {
   // ก่อน ดู backend/prisma/schema.prisma) รอ Stage ถัดไปที่ต่อ validation จริง
   @IsObject()
   fields!: Record<string, unknown>;
+
+  // คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร — ไม่บังคับ MaxLength 500
+  // พอสำหรับ note ที่อ่านรู้เรื่อง ไม่เปิดช่องยัด payload ยาว
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
 }

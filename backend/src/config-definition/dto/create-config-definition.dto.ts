@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -55,6 +56,13 @@ export class CreateConfigDefinitionDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  /** หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — metadata สำหรับแสดงผล
+   * ข้างช่องกรอกตอนสร้าง Config เท่านั้น ไม่ถูกใช้ตอน validate */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  unit?: string;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -29,6 +29,7 @@ type ConfigVersionDelegateMock = {
 const draftConfig: Config = {
   id: '11111111-1111-1111-1111-111111111111',
   name: 'ชุดตั้งค่าทดสอบ',
+  description: null,
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'draft',
@@ -144,6 +145,33 @@ describe('ConfigService', () => {
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
+          description: undefined,
+          createdBy: 'sw-1',
+        },
+      });
+    });
+
+    it('ส่ง description มา -> เขียนลง DB ตามนั้น', async () => {
+      config.create.mockResolvedValue(draftConfig);
+
+      await service.create(
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          description: 'ตั้งค่ามาตรฐานภาคกลาง',
+        },
+        sw,
+      );
+
+      expect(config.create).toHaveBeenCalledWith({
+        data: {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          description: 'ตั้งค่ามาตรฐานภาคกลาง',
           createdBy: 'sw-1',
         },
       });
@@ -745,6 +773,25 @@ describe('ConfigService', () => {
           deviceModel: 'GT06L',
           protocol: undefined,
           fields: undefined,
+          description: undefined,
+        },
+      });
+    });
+
+    it('ส่ง description ใหม่มา -> update ค่านั้น', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue(draftConfig);
+
+      await service.update(draftConfig.id, { description: 'อัปเดตคำอธิบาย' });
+
+      expect(config.update).toHaveBeenCalledWith({
+        where: { id: draftConfig.id },
+        data: {
+          name: undefined,
+          deviceModel: undefined,
+          protocol: undefined,
+          fields: undefined,
+          description: 'อัปเดตคำอธิบาย',
         },
       });
     });

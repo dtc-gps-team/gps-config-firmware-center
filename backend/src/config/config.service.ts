@@ -109,6 +109,7 @@ export class ConfigService {
           // แบบ readonly ที่ไม่ตรงกับ Record shape เป๊ะๆ — cast ตรงจุดที่ส่งเข้า
           // Prisma พอ ไม่ต้องเปลี่ยน type ของ DTO
           fields: dto.fields as Prisma.InputJsonValue,
+          description: dto.description,
           createdBy: actor.id,
         },
       });
@@ -455,6 +456,7 @@ export class ConfigService {
           deviceModel: dto.deviceModel,
           protocol: dto.protocol,
           fields: dto.fields as Prisma.InputJsonValue | undefined,
+          description: dto.description,
         },
       });
     } catch (err) {

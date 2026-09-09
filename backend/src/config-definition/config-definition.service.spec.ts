@@ -26,6 +26,7 @@ const apnDef: ConfigFieldDefinition & {
   required: true,
   unknownSpec: false,
   description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
+  unit: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -41,6 +42,7 @@ const modeDef: ConfigFieldDefinition & {
   required: false,
   unknownSpec: false,
   description: null,
+  unit: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -124,6 +126,33 @@ describe('ConfigDefinitionService', () => {
           required: true,
           unknownSpec: false,
           description: undefined,
+          unit: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ส่ง description + unit มา -> เขียนลง DB ตามนั้น', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({
+        ...dto,
+        description: 'ช่วงเวลารายงาน',
+        unit: 'วินาที',
+      });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: 'ช่วงเวลารายงาน',
+          unit: 'วินาที',
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -145,6 +174,7 @@ describe('ConfigDefinitionService', () => {
           required: true,
           unknownSpec: true,
           description: undefined,
+          unit: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },

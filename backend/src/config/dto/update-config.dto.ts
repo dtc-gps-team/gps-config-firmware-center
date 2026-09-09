@@ -28,4 +28,10 @@ export class UpdateConfigDto {
   @IsOptional()
   @IsObject()
   fields?: Record<string, unknown>;
+
+  // แก้คำอธิบายได้ตอนยัง draft — ส่ง "" เพื่อล้างค่า
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
 }
