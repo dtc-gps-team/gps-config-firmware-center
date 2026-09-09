@@ -22,6 +22,8 @@ export type Config = {
   name: string;
   deviceModel: string;
   protocol: string;
+  /** คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ) */
+  description: string | null;
   status: ConfigStatus;
   fields: Record<string, unknown>;
   createdBy: string;
@@ -36,6 +38,8 @@ export type ConfigWriteInput = {
   deviceModel: string;
   protocol: string;
   fields: Record<string, unknown>;
+  /** ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update */
+  description?: string;
 };
 
 export function listConfigs(

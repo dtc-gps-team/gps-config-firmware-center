@@ -75,6 +75,19 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       ),
   },
   {
+    id: "unit",
+    accessorFn: (row) => row.unit ?? "",
+    header: "หน่วย",
+    enableSorting: false,
+    enableGlobalFilter: false,
+    cell: ({ row }) =>
+      row.original.unit ? (
+        row.original.unit
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
     id: "supportedModels",
     accessorFn: (row) => formatModelSupport(row.supportedModels),
     header: "รุ่น/โปรโตคอลที่รองรับ",
