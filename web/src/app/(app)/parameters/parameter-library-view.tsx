@@ -75,9 +75,11 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       ),
   },
   {
-    accessorKey: "unit",
+    id: "unit",
+    accessorFn: (row) => row.unit ?? "",
     header: "หน่วย",
     enableSorting: false,
+    enableGlobalFilter: false,
     cell: ({ row }) =>
       row.original.unit ? (
         row.original.unit

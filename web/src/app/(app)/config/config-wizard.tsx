@@ -494,7 +494,13 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
           <div className="flex justify-end gap-2 border-t pt-4">
-            <Button variant="outline" onClick={() => setStep(1)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                clearErrors();
+                setStep(1);
+              }}
+            >
               ← ย้อนกลับ
             </Button>
             <Button onClick={handleSubmit} disabled={submitting}>
