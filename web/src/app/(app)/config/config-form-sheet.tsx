@@ -128,9 +128,18 @@ function ConfigFormContent({
       );
   }, [defs, modelKey]);
 
+  /** ล้าง error ทั้งหมดทันทีที่ผู้ใช้เริ่มแก้ฟอร์ม — validate ใหม่ตอน submit
+   * (กัน banner "ยังไม่ได้กรอก..." / error จาก backend ค้างทั้งที่แก้ไปแล้ว) */
+  function clearErrors() {
+    setNameError(null);
+    setFormError(null);
+    setFormErrorList([]);
+  }
+
   function setValue(fieldName: string, value: FieldValue) {
     setValues((prev) => ({ ...prev, [fieldName]: value }));
     setMissingRequired((prev) => prev.filter((f) => f !== fieldName));
+    clearErrors();
   }
 
   function isEmpty(value: FieldValue | undefined): boolean {
@@ -250,7 +259,7 @@ function ConfigFormContent({
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value);
-                  setNameError(null);
+                  clearErrors();
                 }}
                 maxLength={120}
                 placeholder="เช่น GT06N · ตั้งค่ามาตรฐานภาคกลาง"
@@ -270,6 +279,7 @@ function ConfigFormContent({
                 onChange={(e) => {
                   setModelKey(e.target.value);
                   setMissingRequired([]);
+                  clearErrors();
                 }}
                 className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30"
               >
