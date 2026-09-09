@@ -223,6 +223,8 @@ void main() {
         'config_rejected',
         'firmware_ready',
         'incident_alert',
+        'config_deletion_pending',
+        'config_deletion_grace',
       ]);
     });
 

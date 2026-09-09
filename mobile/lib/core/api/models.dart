@@ -54,7 +54,9 @@ enum NotificationType {
   configApproved('config_approved'),
   configRejected('config_rejected'),
   firmwareReady('firmware_ready'),
-  incidentAlert('incident_alert');
+  incidentAlert('incident_alert'),
+  configDeletionPending('config_deletion_pending'),
+  configDeletionGrace('config_deletion_grace');
 
   const NotificationType(this.wireName);
 

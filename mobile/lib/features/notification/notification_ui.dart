@@ -13,6 +13,9 @@ class NotificationTypeStyle {
     NotificationType.configRejected => 'Config ถูกปฏิเสธ',
     NotificationType.firmwareReady => 'เฟิร์มแวร์พร้อมใช้งาน',
     NotificationType.incidentAlert => 'แจ้งเตือนเหตุการณ์',
+    NotificationType.configDeletionPending => 'มีคำขอลบ Config รออนุมัติ',
+    NotificationType.configDeletionGrace =>
+      'Config ของคุณถูกเสนอลบ — กด "เก็บไว้" ถ้ายังต้องใช้',
   };
 
   static IconData icon(NotificationType type) => switch (type) {
@@ -21,5 +24,7 @@ class NotificationTypeStyle {
     NotificationType.configRejected => Icons.cancel_outlined,
     NotificationType.firmwareReady => Icons.system_update_alt,
     NotificationType.incidentAlert => Icons.report_problem_outlined,
+    NotificationType.configDeletionPending => Icons.delete_outline,
+    NotificationType.configDeletionGrace => Icons.warning_amber_outlined,
   };
 }
