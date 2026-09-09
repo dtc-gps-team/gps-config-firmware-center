@@ -16,7 +16,14 @@
  * สมบูรณ์
  */
 
-export type Role = "SW" | "Operation" | "ST" | "OT" | "Auditor" | "Admin";
+export type Role =
+  | "SW"
+  | "Operation"
+  | "ST"
+  | "OT"
+  | "Auditor"
+  | "Admin"
+  | "SuperAdmin";
 
 /**
  * ปุ่ม "สร้าง Config ใหม่" / "Import Config" — Section 2 แถว Config Editor,
@@ -74,11 +81,16 @@ export function canAccessAuditLog(role: string | null | undefined): boolean {
  * หน้า User / Role Management — Section 2 แถว User / Role Management:
  * Admin เท่านั้นที่มีสิทธิ์ (C, R, U) ทุก Role อื่นเป็น "-" หมด ต้อง gate
  * ทั้งหน้า — ใช้คู่กับ RoleGuard
+ *
+ * SuperAdmin รวมด้วย: ขอบเขต SuperAdmin = "ทำได้ทุกอย่างที่ Admin ทำได้ +
+ * จัดการบัญชี Admin/SuperAdmin" (CLAUDE.md · RBAC_Matrix.md Section 2 คอลัมน์
+ * SuperAdmin) — endpoint จริงของสิทธิ์เพิ่มเติม (`admin-management`,
+ * `role-management`) รอ Part B2 · seed สิทธิ์ SuperAdmin ทำแล้วใน PR #123
  */
 export function canAccessUserManagement(
   role: string | null | undefined,
 ): boolean {
-  return role === "Admin";
+  return role === "Admin" || role === "SuperAdmin";
 }
 
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */

@@ -215,7 +215,7 @@ export interface DeviceStatusChecker {
 
 ยังไม่มี Schema ฉบับเต็มในเอกสารสถาปัตยกรรม แต่จากขั้นตอนงานที่ยืนยันแล้ว ต้องมีอย่างน้อย:
 
-- **ตาราง Config**: field ข้อมูล Config, `status` (draft / testing / sw_approved / operation_approved / rejected / synced), `device_model`, `protocol`, ผลการทดสอบจาก Device Simulator, ผู้สร้าง/ผู้อนุมัติ, เวลาอนุมัติ
+- **ตาราง Config**: field ข้อมูล Config, `status` (draft / testing / approved / rejected / synced — **single-stage** ไม่แยก `sw_approved`/`operation_approved`; SW รัน simulation แล้วปักผลผ่านเอง จากนั้น Operation เป็นผู้อนุมัติ ตาม Separation of Duty — ดู RBAC_Matrix.md §6 และ CLAUDE.md "Config Status Enum"), `device_model`, `protocol`, ผลการทดสอบจาก Device Simulator, ผู้สร้าง/ผู้อนุมัติ, เวลาอนุมัติ
 - **ตาราง Firmware**: metadata เวอร์ชัน, path ใน Object Storage, `upload_status` (สถานะอัปโหลด/จัดเก็บฝั่งเรา — v3.7 เหลือช่องทางอัปโหลดตรงทางเดียว), `device_update_status` (สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก `device-status`)
 - **ตาราง Task**: งานที่มอบหมายให้ช่างหน้างาน เชื่อมกับ Config/Firmware ที่เกี่ยวข้อง — **ไม่มี field/flow สำหรับวางแผนหรือจัดตารางงาน** (มติ Sprint 1 review)
 - **ตาราง Campaign**: การปล่อยเวอร์ชันเป็นกลุ่ม (Pilot/Canary/Batch) พร้อมสถานะการเขียนเข้าระบบเดิมของแต่ละกล่องในกลุ่ม
