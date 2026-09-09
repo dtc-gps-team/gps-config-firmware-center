@@ -772,6 +772,83 @@ paths:
         "409":
           description: uploadStatus ของ Firmware ยังไม่พร้อมทดสอบ (เช่น pending/failed)
 
+  /devices:
+    get:
+      tags: [device]
+      operationId: listDevices
+      summary: ค้นหา/รายการอุปกรณ์ (Device Search — v3.17)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Device Search /
+        Device Detail" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา =
+        คืนทุกเครื่อง · `search` match ทั้ง `deviceId` และ `simNumber`
+        (contains, case-insensitive) · ยังไม่มี paging (จำนวน Device ใน MVP น้อย)
+      parameters:
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: คำค้น — match deviceId หรือ simNumber แบบ contains
+        - in: query
+          name: deviceModel
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - in: query
+          name: protocol
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [registered, installed, decommissioned]
+      responses:
+        "200":
+          description: รายการ Device (เรียงตาม deviceId)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "400":
+          description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /devices/{deviceId}:
+    get:
+      tags: [device]
+      operationId: getDevice
+      summary: ดูรายละเอียดอุปกรณ์ 1 เครื่อง (Device Detail — v3.17)
+      description: >-
+        อ้างด้วย `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` (UUID
+        ภายใน) · คืนเฉพาะ field ของ record Device เอง — สถานะ Config/Firmware
+        ของกล่อง (`GET /devices/{deviceId}/status`) ยังไม่ implement
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ข้อมูล Device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+
   /devices/{deviceId}/status:
     get:
       tags: [device-status]
@@ -1377,6 +1454,43 @@ components:
           allOf:
             - $ref: "#/components/schemas/DeviceConnectionTestResult"
           description: สัญญาณของกล่องเครื่องนั้น (ผลจาก Device Connection Tester)
+
+    Device:
+      type: object
+      description: >-
+        อุปกรณ์ GPS หนึ่งเครื่อง (ตรงกับ Prisma model Device — MVP ตาม
+        ../planning/03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8 · ยังไม่มี FK
+        ไป Vehicle/Customer/HardwareRevision ตาม Data Dictionary — ดู
+        schema.prisma comment + docs/12_CustomerScope_Proposal.md)
+      required:
+        [id, deviceId, simNumber, deviceModel, protocol, status, registeredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: surrogate key ภายใน (ใช้ทำ FK/index) — client อ้างอิงด้วย deviceId
+        deviceId:
+          type: string
+          description: เลขเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (unique)
+          example: DEV-0001
+        simNumber:
+          type: string
+        deviceModel:
+          type: string
+          example: GT06N
+        protocol:
+          type: string
+          example: TCP
+        status:
+          type: string
+          enum: [registered, installed, decommissioned]
+        registeredAt:
+          type: string
+          format: date-time
+        installedAt:
+          type: string
+          format: date-time
+          nullable: true
 
     DeviceStatus:
       type: object

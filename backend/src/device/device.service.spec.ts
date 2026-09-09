@@ -68,14 +68,14 @@ const connPass = {
 
 describe('DeviceService', () => {
   let service: DeviceService;
-  let device: { findUnique: jest.Mock };
+  let device: { findUnique: jest.Mock; findMany: jest.Mock };
   let config: { findUnique: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
 
   beforeEach(async () => {
-    device = { findUnique: jest.fn() };
+    device = { findUnique: jest.fn(), findMany: jest.fn() };
     config = { findUnique: jest.fn() };
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
@@ -92,6 +92,62 @@ describe('DeviceService', () => {
     }).compile();
 
     service = module.get(DeviceService);
+  });
+
+  describe('findAll', () => {
+    it('ไม่มี filter -> where ว่าง (ทุก field undefined) เรียงตาม deviceId', async () => {
+      device.findMany.mockResolvedValue([installedDevice]);
+
+      const result = await service.findAll({});
+
+      expect(result).toEqual([installedDevice]);
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceModel: undefined,
+          protocol: undefined,
+          status: undefined,
+        },
+        orderBy: { deviceId: 'asc' },
+      });
+    });
+
+    it('มี deviceModel/protocol/status -> ส่งต่อ Prisma ตรงๆ', async () => {
+      device.findMany.mockResolvedValue([]);
+
+      await service.findAll({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        status: 'installed',
+      });
+
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+        },
+        orderBy: { deviceId: 'asc' },
+      });
+    });
+
+    it('search -> OR match deviceId + simNumber (contains, insensitive)', async () => {
+      device.findMany.mockResolvedValue([installedDevice]);
+
+      await service.findAll({ search: '0001' });
+
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceModel: undefined,
+          protocol: undefined,
+          status: undefined,
+          OR: [
+            { deviceId: { contains: '0001', mode: 'insensitive' } },
+            { simNumber: { contains: '0001', mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { deviceId: 'asc' },
+      });
+    });
   });
 
   describe('findByDeviceId', () => {
