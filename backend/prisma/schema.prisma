@@ -323,8 +323,8 @@ model Config {
   // "ผู้อนุมัติที่ SW เจาะจง" (Approval Center — Sprint 3 #19) — SW เลือกตอนกด
   // decide(passed:true) ว่าอยากให้ Operation คนไหนดูเป็นพิเศษ · **ไม่ผูกมัด**:
   // Operation คนอื่นก็ approve ได้ (POST /config/{id}/approve เช็คแค่ role) ·
-  // เคลียร์เมื่อ decide(passed:false) พา Config กลับ draft · nullable — Config
-  // เดิมที่ไม่มีค่านี้ยังใช้ได้ปกติ
+  // แค่ hint สำหรับ tab "เจาะจงถึงฉัน" · nullable — Config เดิมที่ไม่มีค่านี้
+  // ใช้ได้ปกติ · ยังไม่มี endpoint แก้ค่านี้หลัง decide (v1 — เพิ่มทีหลังได้)
   suggestedApproverId String?
   // soft-delete ของ flow "คำขอลบ Config อัตโนมัติ" (docs/11 Part A) — เซ็ตตอน
   // SuperAdmin approve คำขอลบ · ทุก query อ่านของ config.service.ts เติม

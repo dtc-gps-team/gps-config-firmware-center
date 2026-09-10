@@ -253,7 +253,11 @@ export class ConfigService {
    * (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ต้องย้อนกลับ — คืน config
    * เดิมโดยไม่ยิง UPDATE ลง DB เลย)
    */
-  async decide(id: string, passed: boolean): Promise<Config> {
+  async decide(
+    id: string,
+    passed: boolean,
+    suggestedApproverId?: string,
+  ): Promise<Config> {
     const config = await this.findOne(id);
 
     if (config.status !== DECIDABLE_CONFIG_STATUS) {
@@ -266,7 +270,23 @@ export class ConfigService {
       return config;
     }
 
-    return this.updateStatus(id, 'testing');
+    // "เจาะจงผู้อนุมัติ" (Approval Center #19) — optional · ต้องเป็น user role
+    // Operation ที่ยัง active (ไม่ผูกมัด — Operation คนอื่นก็ approve ได้)
+    if (suggestedApproverId !== undefined) {
+      const approver = await this.prisma.user.findUnique({
+        where: { id: suggestedApproverId },
+        include: { role: true },
+      });
+      if (!approver || !approver.isActive || approver.role.code !== 'Operation') {
+        throw new BadRequestException(
+          'ผู้อนุมัติที่เจาะจงต้องเป็นผู้ใช้ role Operation ที่ยังใช้งานอยู่',
+        );
+      }
+    }
+
+    return this.updateStatus(id, 'testing', {
+      suggestedApproverId: suggestedApproverId ?? null,
+    });
   }
 
   /**
@@ -434,8 +454,9 @@ export class ConfigService {
   private async updateStatus(
     id: string,
     status: ConfigStatus,
-    // approvedBy เป็น scalar FK — ใช้รูป unchecked เหมือน createdBy ใน create()
-    extra?: { approvedBy?: string },
+    // approvedBy / suggestedApproverId เป็น scalar FK — ใช้รูป unchecked
+    // เหมือน createdBy ใน create() · suggestedApproverId: null = เคลียร์ค่า
+    extra?: { approvedBy?: string; suggestedApproverId?: string | null },
   ): Promise<Config> {
     try {
       return await this.prisma.config.update({

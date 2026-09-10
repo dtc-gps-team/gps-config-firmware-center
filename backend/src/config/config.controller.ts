@@ -145,7 +145,7 @@ export class ConfigController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DecideConfigDto,
   ): Promise<Config> {
-    return this.configService.decide(id, dto.passed);
+    return this.configService.decide(id, dto.passed, dto.suggestedApproverId);
   }
 
   // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ SW ปักผลผ่านแล้ว
