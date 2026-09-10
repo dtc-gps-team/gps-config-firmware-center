@@ -142,6 +142,23 @@ class ApiClient {
     );
   }
 
+  /// `GET /devices` — Device Search. Every logged-in role may call it
+  /// (RBAC_Matrix.md §2 "Device Search / Device Detail" = R for every role).
+  /// No query params: returns every device. Mobile filters/searches client-side
+  /// like Web does (the list is small in the MVP).
+  Future<List<Device>> listDevices() async {
+    return _wrapList(() => _dio.get<List<dynamic>>('/devices'), Device.fromJson);
+  }
+
+  /// `GET /devices/{deviceId}` — Device Detail. Keyed by `Device.deviceId`
+  /// (the real hardware number), not the internal UUID. 404 when not found.
+  Future<Device> getDevice(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/devices/$deviceId'),
+      Device.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/status`
   Future<DeviceStatus> getDeviceStatus(String deviceId) async {
     return _wrap(
