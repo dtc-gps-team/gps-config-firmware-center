@@ -83,6 +83,43 @@ GLOBAL  →  MANUFACTURER  →  MODEL  →  CUSTOMER  →  PROJECT  →  VEHICLE
 
 ---
 
+## 3.5 หลักฐานจากระบบ DMS เดิม (ยืนยันว่า entity เหล่านี้มีจริง)
+
+พี่เลี้ยงให้ schema (โครงสร้างตาราง) ของฐานข้อมูล DMS เดิมส่วนหนึ่งมา — เป็น snapshot เก่า
+(ตารางตั้งชื่อด้วยวันที่ ช่วง 2016–2021) **ไม่ใช่ schema สด** แต่ยืนยันว่าส่วนที่ตัดออกใน §1
+**เคยมีอยู่จริงในระบบเดิม** ไม่ใช่แค่พิมพ์เขียวใน Data Dictionary:
+
+| entity ในเอกสารนี้ | คอลัมน์ที่พบในระบบเดิม (ตัด value ข้อมูลจริงออกทั้งหมด) |
+|---|---|
+| **Customer** (เฟส B) | `customer` (ชื่อบริษัท — free text), `cus_id` (รหัสอ้างอิง) |
+| **Vehicle** (เฟส C) | `truck` / `number_truck` / `car_type` (ประเภท + ทะเบียนรถ), `cussei` |
+| **Subscription / สัญญาบริการ** | `expri_date` (วันหมดอายุบริการ) — ตรงกับที่ DD ผูก `priority_tier` เข้ากับ SLA/Contract |
+| **Device ↔ SIM** | มี SIM **2 ตัวระบุ**: `sim` (เบอร์โทร / MSISDN) และ `serial` / `serial_sim` (ICCID) — ปัจจุบัน `Device.simNumber` มีช่องเดียว |
+| **Server ปลายทาง (เป็นส่วนหนึ่งของ config)** | `tcp` (IP ของ server ที่กล่องรายงานเข้า) + `port` — ตรงกับ field `SERVER_HOST` / `SERVER_PORT` ที่ seed ไว้ใน `config-definition` แล้ว · มีหลาย server (fleet ของ receiver) |
+| **Config profile ผูกกับ scope** | คอลัมน์ชื่อ `email` (ชื่อไม่ตรงความหมาย) เก็บ**รหัส config profile** — บางค่าเป็น `<model>` เปล่า ๆ บางค่ามี suffix ระบุลูกค้า/หน่วยงานกำกับ → ยืนยันว่า Config ในระบบเดิม**ผูกกับ scope** (ลูกค้า + regulator) ไม่ใช่ก้อนแบน ๆ |
+| **Config ที่ระดับตัวกล่อง** | `fuel_config`, `io_detail`, `analog1_detail`, `analog2_detail`, `aleart_detail` (เก็บเป็น string) — ยืนยันว่า config จริงมีมิติ sensor / IO / alert เยอะ ตรงทิศทาง `REPRESENTATIVE_FIELDS` ใน seed |
+| **เวอร์ชัน config/firmware ต่อกล่อง** | `version` (บนตาราง master ของกล่อง) — ตรงแนวคิด `ConfigVersion` |
+
+**สิ่งที่ dump นี้ยืนยันไม่ได้:**
+
+- รูปแบบคำสั่ง write เข้า "data กลาง" (`config.dtc.co.th:909`) — dump นี้เป็น DB ของ DMS
+  ซึ่งเป็น**คนละระบบ**กับ data กลางที่กล่อง poll
+- spec ของ field (data type / allowed values) — ในระบบเดิม config เก็บเป็น opaque string
+  ไม่มี field catalog (จึงยัง**ไม่ปลด blocker #68**)
+
+**ผลต่อแผนในเอกสารนี้:**
+
+- **เฟส C** ต้องรองรับ scope แบบ "หน่วยงานกำกับ" (เช่น DLT — กรมการขนส่งทางบก) เพิ่มจาก
+  "ลูกค้า" — profile suffix ในระบบเดิมมีทั้งสองแบบ
+- **พิจารณาเพิ่ม `Device.simIccid`** แยกจาก `simNumber` (additive — ทำได้ตั้งแต่เฟส A/B) —
+  ระบบเดิมแยก MSISDN กับ ICCID ชัดเจน
+
+> ⚠️ **dump ต้นฉบับมีข้อมูลลูกค้าจริง** (ชื่อบริษัท, เบอร์ SIM, ICCID, ทะเบียนรถ, IP server,
+> วันติดตั้ง) — เก็บไว้**นอก repo** เท่านั้น · เอกสารนี้อ้างอิงเฉพาะ **ชื่อคอลัมน์และชนิดข้อมูล**
+> ไม่มี value ใด ๆ จากตารางจริง
+
+---
+
 ## 4. แผนเติมกลับแบบ 3 เฟส (additive ทุกเฟส — ไม่ทำลายของเดิม)
 
 | เฟส | ทำอะไร | schema เปลี่ยน | ขนาด | breaking? |
@@ -155,6 +192,9 @@ GLOBAL  →  MANUFACTURER  →  MODEL  →  CUSTOMER  →  PROJECT  →  VEHICLE
 | 2 | ต้องการให้ `ST` / `OT` เห็นเฉพาะลูกค้าตัวเองไหม? | เป็นตัวตัดสินว่าต้องทำเฟส C หรือไม่ (ถ้าไม่ ก็หยุดที่ B ได้) |
 | 3 | ต้องการ Config แบบ "ตั้งทีเดียวใช้ทั้งลูกค้า" (scope levels) ไหม? หรือตั้งรายกล่องพอ? | ถ้าตั้งรายกล่องพอ ไม่ต้องทำ `CONFIG_SCOPE_LEVELS` เต็มรูปแบบ |
 | 4 | `priority_tier` (P1–P4) ของลูกค้า มีผลกับ flow ไหนบ้างใน MVP? | DD บอกว่ากระทบ SLA/Contract — ถ้า MVP ยังไม่มี SLA ก็เลื่อน field นี้ไปเฟสหลัง |
+| 5 | `config.dtc.co.th:909` ("data กลาง" ที่กล่อง poll) ใช้ data model เดียวกับ DMS เดิม หรือแยกกัน? | ตัดสินว่าจะ reuse โครง Customer/Vehicle จาก DMS ได้ หรือต้องออกแบบใหม่ (ดู §3.5) |
+| 6 | คอลัมน์ `master_id` ในระบบเดิม (เป็นตัวเลข) หมายถึงอะไร — บัญชี master ของลูกค้า / node เซิร์ฟเวอร์ / อื่น? | อาจเป็น entity ที่ต้องเพิ่มในลำดับชั้น (เหนือ Customer?) |
+| 7 | รหัส config profile ในระบบเดิม (คอลัมน์ `email`) มี catalog กลางไหม · suffix ระบุลูกค้า/หน่วยงานกำกับ มีกี่แบบ? | ออกแบบ `ConfigScopeLevel` เฟส C ให้ตรงของจริง |
 
 ---
 
@@ -170,6 +210,7 @@ GLOBAL  →  MANUFACTURER  →  MODEL  →  CUSTOMER  →  PROJECT  →  VEHICLE
 - `web/src/app/(app)/config/config-table.tsx` + `config-detail-view.tsx` — คอลัมน์ / แสดงผล
 - `docs/api/openapi.yaml` — `DeviceConfigDraft` + `ConfigWriteInput` + `redocly lint`
 - `docs/database/GPS_Data_Dictionary.xlsx` — mark `CONFIG_TEMPLATE.customer` เทียบเท่า (หรือ note deviation)
+- _(พิจารณาแยก — ไม่บังคับในเฟส A)_ `Device.simIccid String?` แยกจาก `simNumber` — ระบบ DMS เดิมแยก MSISDN กับ ICCID ชัดเจน (ดู §3.5) · additive เหมือน `customerName`
 
 ### เฟส B / C
 - (ระบุตอนเปิด proposal แยก — scope ใหญ่เกินกว่าจะ freeze ตอนนี้)
@@ -181,3 +222,4 @@ GLOBAL  →  MANUFACTURER  →  MODEL  →  CUSTOMER  →  PROJECT  →  VEHICLE
 | วันที่ | โดย | หมายเหตุ |
 |---|---|---|
 | 2026-09-09 | paveekornk | ร่างแรก — วางแผน 3 เฟส A/B/C ไว้คุยรีวิวรายอาทิตย์ |
+| 2026-09-10 | paveekornk | เพิ่ม §3.5 — หลักฐานจาก schema DMS เดิม (พี่เลี้ยงให้มา) ยืนยัน Customer/Vehicle/expiry/SIM 2 ตัว/server-เป็น-config/profile-ผูก-scope มีจริง (อ้างชื่อคอลัมน์เท่านั้น ไม่มี value) · +คำถามเปิด #5–7 · +note พิจารณา `Device.simIccid` |
