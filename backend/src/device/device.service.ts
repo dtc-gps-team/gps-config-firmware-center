@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Device } from '@prisma/client';
+import { Device, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueryDeviceDto } from './dto/query-device.dto';
 import {
   APPLICABLE_CONFIG_STATUSES,
   CONFIG_APPLIER,
@@ -44,9 +45,41 @@ export class DeviceService {
   ) {}
 
   /**
+   * Device Search (Sprint 2 #11) — คืนรายการอุปกรณ์ทั้งหมด กรองตาม query
+   * (ทุกตัว optional) เรียงตาม `deviceId` · ทุก Role อ่านได้ (RBAC_Matrix.md
+   * §2 แถว "Device Search / Device Detail" = R ทุก Role · resource `devices`
+   * action `Read` ที่ seed ให้ทุก role อยู่แล้ว)
+   *
+   * ยังไม่มี paging — จำนวน Device ใน MVP น้อย + UI ทำ filter/search ฝั่ง
+   * client (UI standard ../planning/01_GPS_Build_Reference.md §3) · ออกแบบให้
+   * เพิ่ม cursor paging ทีหลังได้ถ้าข้อมูลโต
+   */
+  findAll(query: QueryDeviceDto): Promise<Device[]> {
+    const { search, deviceModel, protocol, status } = query;
+
+    const where: Prisma.DeviceWhereInput = {
+      deviceModel: deviceModel || undefined,
+      protocol: protocol || undefined,
+      status: status || undefined,
+    };
+    if (search) {
+      where.OR = [
+        { deviceId: { contains: search, mode: 'insensitive' } },
+        { simNumber: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return this.prisma.device.findMany({
+      where,
+      orderBy: { deviceId: 'asc' },
+    });
+  }
+
+  /**
    * ค้นด้วย `Device.deviceId` (เลขเครื่องจริงที่ช่างกรอก/สแกน) **ไม่ใช่**
    * `Device.id` (surrogate UUID ภายในของ Prisma) — ตกลงกับ paveekornkwork-dev
-   * บน PR #52: endpoint ฝั่งช่างหน้างานอ้างด้วยเลขเครื่องจริงเสมอ
+   * บน PR #52: endpoint ฝั่งช่างหน้างานอ้างด้วยเลขเครื่องจริงเสมอ · ใช้ทั้ง
+   * `GET /devices/{deviceId}` (Device Detail) และ endpoint ช่างหน้างาน
    */
   async findByDeviceId(deviceId: string): Promise<Device> {
     const device = await this.prisma.device.findUnique({ where: { deviceId } });

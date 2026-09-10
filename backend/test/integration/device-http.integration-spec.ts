@@ -460,4 +460,111 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(body.connectionCheck.passed).toBe(true);
     });
   });
+
+  describe('GET /devices (Device Search) + GET /devices/:deviceId (Detail)', () => {
+    /** ทุก Role มี `devices` Read — ใช้ Auditor เป็นตัวแทน (role ที่ไม่มีสิทธิ์
+     * อื่นในโมดูล device เลย) เพื่อยืนยันว่า grant `devices` อย่างเดียวพอ */
+    async function auditorToken(): Promise<string> {
+      const user = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read, 'devices');
+      return tokenFor(user.id, 'Auditor');
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await request(app.getHttpServer()).get('/api/v1/devices').expect(401);
+    });
+
+    it('role ไม่มี devices.Read -> 403', async () => {
+      const user = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Read, 'config');
+      const token = tokenFor(user.id, 'SW');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('list ทั้งหมด เรียงตาม deviceId', async () => {
+      await makeDevice('DL-0002', 'installed', 'GT06N');
+      await makeDevice('DL-0001', 'registered', 'GT06L');
+      const token = await auditorToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { deviceId: string }[];
+      expect(body.map((d) => d.deviceId)).toEqual(['DL-0001', 'DL-0002']);
+    });
+
+    it('filter status + deviceModel', async () => {
+      await makeDevice('DF-A', 'installed', 'GT06N');
+      await makeDevice('DF-B', 'registered', 'GT06N');
+      await makeDevice('DF-C', 'installed', 'GT06L');
+      const token = await auditorToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices?status=installed&deviceModel=GT06N')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { deviceId: string }[];
+      expect(body.map((d) => d.deviceId)).toEqual(['DF-A']);
+    });
+
+    it('search match deviceId หรือ simNumber (contains)', async () => {
+      await makeDevice('SRCH-9', 'installed');
+      const token = await auditorToken();
+
+      const byId = await request(app.getHttpServer())
+        .get('/api/v1/devices?search=rch-9')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (byId.body as { deviceId: string }[]).map((d) => d.deviceId),
+      ).toEqual(['SRCH-9']);
+
+      const bySim = await request(app.getHttpServer())
+        .get('/api/v1/devices?search=sim-SRCH-9')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (bySim.body as { deviceId: string }[]).map((d) => d.deviceId),
+      ).toEqual(['SRCH-9']);
+    });
+
+    it('status ไม่อยู่ใน enum -> 400', async () => {
+      const token = await auditorToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices?status=broken')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('GET /devices/:deviceId เจอ -> 200 record เดียว', async () => {
+      await makeDevice('DET-1', 'installed', 'GT06L');
+      const token = await auditorToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/DET-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { deviceId: string; deviceModel: string };
+      expect(body.deviceId).toBe('DET-1');
+      expect(body.deviceModel).toBe('GT06L');
+    });
+
+    it('GET /devices/:deviceId ไม่พบ -> 404', async () => {
+      const token = await auditorToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/NOPE-404')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
 });
