@@ -222,6 +222,82 @@ void main() {
     });
   });
 
+  group('IncidentSeverity / IncidentStatus', () {
+    test(
+      'severity wire names match openapi.yaml / Prisma IncidentSeverity',
+      () {
+        expect(IncidentSeverity.values.map((s) => s.wireName).toList(), [
+          'critical',
+          'high',
+          'medium',
+          'low',
+        ]);
+      },
+    );
+
+    test('status wire names match openapi.yaml / Prisma IncidentStatus', () {
+      expect(IncidentStatus.values.map((s) => s.wireName).toList(), [
+        'open',
+        'investigating',
+        'rolled_back',
+        'resolved',
+      ]);
+    });
+
+    test('fromWire maps known values and rejects unknown', () {
+      expect(IncidentSeverity.fromWire('critical'), IncidentSeverity.critical);
+      expect(IncidentStatus.fromWire('rolled_back'), IncidentStatus.rolledBack);
+      expect(() => IncidentSeverity.fromWire('urgent'), throwsArgumentError);
+      expect(() => IncidentStatus.fromWire('closed'), throwsArgumentError);
+    });
+  });
+
+  group('Incident.fromJson', () {
+    Map<String, dynamic> base() => {
+      'id': 'inc-1',
+      'title': 'เขียน Config ไม่สำเร็จ',
+      'severity': 'high',
+      'status': 'open',
+      'source': 'config-sync-writer',
+      'metadata': {'attempts': 3},
+      'createdAt': '2026-09-09T14:30:00.000Z',
+      'updatedAt': '2026-09-09T14:30:00.000Z',
+    };
+
+    test('parses all fields', () {
+      final incident = Incident.fromJson({
+        ...base(),
+        'description': 'retry 3 ครั้งแล้วยังพัง',
+        'relatedConfigId': 'cfg-1',
+      });
+      expect(incident.id, 'inc-1');
+      expect(incident.severity, IncidentSeverity.high);
+      expect(incident.status, IncidentStatus.open);
+      expect(incident.description, 'retry 3 ครั้งแล้วยังพัง');
+      expect(incident.relatedConfigId, 'cfg-1');
+      expect(incident.source, 'config-sync-writer');
+      expect(incident.metadata, {'attempts': 3});
+    });
+
+    test('nullable fields absent -> null', () {
+      final incident = Incident.fromJson(base());
+      expect(incident.description, isNull);
+      expect(incident.relatedConfigId, isNull);
+      expect(incident.relatedFirmwareId, isNull);
+    });
+
+    test('unknown severity/status -> throws (contract drift is loud)', () {
+      expect(
+        () => Incident.fromJson({...base(), 'severity': 'boom'}),
+        throwsArgumentError,
+      );
+      expect(
+        () => Incident.fromJson({...base(), 'status': 'boom'}),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('TaskStatus', () {
     test('wire names match openapi.yaml / Prisma enum', () {
       expect(TaskStatus.values.map((s) => s.wireName).toList(), [

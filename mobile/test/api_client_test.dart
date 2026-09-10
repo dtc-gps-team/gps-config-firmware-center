@@ -451,6 +451,65 @@ void main() {
     });
   });
 
+  group('incident endpoints', () {
+    Map<String, dynamic> incidentJson({
+      String id = 'inc-1',
+      String severity = 'high',
+      String status = 'open',
+    }) => {
+      'id': id,
+      'title': 'เขียน Config ไม่สำเร็จ',
+      'description': null,
+      'severity': severity,
+      'status': status,
+      'relatedConfigId': 'cfg-1',
+      'relatedFirmwareId': null,
+      'source': 'config-sync-writer',
+      'metadata': {'attempts': 3},
+      'createdAt': '2026-09-09T14:30:00.000Z',
+      'updatedAt': '2026-09-09T14:30:00.000Z',
+    };
+
+    test('listIncidents -> GET /incidents, maps the JSON array', () async {
+      final (:client, :adapter) = _clientReturning([
+        incidentJson(id: 'inc-1', severity: 'high', status: 'open'),
+        incidentJson(id: 'inc-2', severity: 'low', status: 'resolved'),
+      ]);
+
+      final incidents = await client.listIncidents();
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/incidents');
+      expect(incidents.map((i) => i.id), ['inc-1', 'inc-2']);
+      expect(incidents[0].severity, IncidentSeverity.high);
+      expect(incidents[0].status, IncidentStatus.open);
+      expect(incidents[0].source, 'config-sync-writer');
+      expect(incidents[1].status, IncidentStatus.resolved);
+    });
+
+    test('listIncidents -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listIncidents(), isEmpty);
+      expect(adapter.lastRequest?.path, '/incidents');
+    });
+
+    test('listIncidents -> error maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 401, {'message': 'Unauthorized'}),
+        ),
+      );
+
+      await expectLater(
+        client.listIncidents(),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
+        ),
+      );
+    });
+  });
+
   group('notification endpoints', () {
     Map<String, dynamic> notiJson({String id = 'n1', bool read = false}) => {
       'id': id,

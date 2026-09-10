@@ -120,6 +120,16 @@ class ApiClient {
     );
   }
 
+  /// `GET /incidents` — read-only. Every logged-in role may call it
+  /// (RBAC_Matrix.md "Incident & Rollback" = R for every role). No query
+  /// params: returns every incident, backend sorts `createdAt` desc.
+  Future<List<Incident>> listIncidents() async {
+    return _wrapList(
+      () => _dio.get<List<dynamic>>('/incidents'),
+      Incident.fromJson,
+    );
+  }
+
   /// `GET /notifications` — always scoped to the caller by the backend (every
   /// role). Pass `unread: true` for `?unread=true`.
   Future<List<AppNotification>> listNotifications({bool? unread}) async {
