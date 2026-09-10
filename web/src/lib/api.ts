@@ -49,13 +49,40 @@ function getErrorMessage(body: unknown, fallback: string): string {
 }
 
 function getErrorDetails(body: unknown): string[] | undefined {
-  if (typeof body === "object" && body !== null && "errors" in body) {
-    const errors = (body as { errors: unknown }).errors;
-    if (Array.isArray(errors) && errors.every((e) => typeof e === "string")) {
-      return errors;
-    }
+  if (typeof body !== "object" || body === null || !("errors" in body)) {
+    return undefined;
   }
-  return undefined;
+  const errors = (body as { errors: unknown }).errors;
+  if (!Array.isArray(errors)) return undefined;
+
+  // backend validateFields — `errors: string[]`
+  if (errors.every((e) => typeof e === "string")) {
+    return errors as string[];
+  }
+
+  // class-validator shape (เช่น `POST /config/import`) —
+  // `errors: [{ property, constraints: { rule: message } }]` → flatten เป็น string
+  const flattened = errors
+    .map((e) => {
+      if (typeof e !== "object" || e === null) return null;
+      const { property, constraints } = e as {
+        property?: unknown;
+        constraints?: unknown;
+      };
+      const messages =
+        typeof constraints === "object" && constraints !== null
+          ? Object.values(constraints).filter(
+              (m): m is string => typeof m === "string",
+            )
+          : [];
+      if (messages.length === 0) return null;
+      return typeof property === "string" && property
+        ? `${property}: ${messages.join(", ")}`
+        : messages.join(", ");
+    })
+    .filter((m): m is string => m !== null);
+
+  return flattened.length > 0 ? flattened : undefined;
 }
 
 export async function login(request: LoginRequest): Promise<LoginResponse> {
@@ -84,7 +111,12 @@ export async function apiFetch(
   const { token, headers, ...rest } = init;
 
   const mergedHeaders = new Headers(headers);
-  if (!mergedHeaders.has("Content-Type")) {
+  // FormData (เช่น อัปโหลดไฟล์ `POST /config/import`) ต้องปล่อยให้ browser ตั้ง
+  // `Content-Type: multipart/form-data; boundary=…` เอง — ถ้า set เป็น JSON
+  // ทับไว้ boundary จะหาย แล้ว backend parse ไฟล์ไม่ออก
+  const isFormData =
+    typeof FormData !== "undefined" && rest.body instanceof FormData;
+  if (!isFormData && !mergedHeaders.has("Content-Type")) {
     mergedHeaders.set("Content-Type", "application/json");
   }
   if (token) {
