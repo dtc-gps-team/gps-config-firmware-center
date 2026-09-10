@@ -103,12 +103,12 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 - `AuditLog` (DB) = **mutation-only** — บันทึกเฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง /
   แก้ไข / อนุมัติ / ปฏิเสธ / นำ Config ไปใช้ / Override) รวมถึงทุก action ของ `SuperAdmin`
-- **read-level activity** (เปลี่ยนหน้า, เสิร์ช) **ไม่ลง `AuditLog`** — เก็บ local ใน
-  เครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: sqlite) rolling retention (Web 30 วัน
-  หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน) — ดู
-  `docs/10` (proposal) · Auditor มองไม่เห็น log ส่วนนี้ (โดยตั้งใจ — เป็น "กิจกรรม
-  ล่าสุด" ส่วนตัว ไม่ใช่ compliance)
-- มติ Sprint 1 review (`docs/09_Sprint1_Review_Decisions.md` ข้อ 3)
+- **read-level activity** (เปลี่ยนหน้า, เสิร์ช) **ไม่ลง `AuditLog`** — การดูอย่างเดียว
+  ไม่ต้องบันทึกลง compliance log · หลักการนี้ยังใช้อยู่แม้ **Local Activity Log**
+  (ฟีเจอร์เก็บ read-level activity ไว้ในเครื่องผู้ใช้ + section "กิจกรรมล่าสุด" บน Home)
+  จะถูก**ยกเลิกไปแล้ว (10/09/2026)** — เหตุผล: ประโยชน์น้อยกว่าที่คาด เพราะ Mobile เป็น
+  Home-centric อยู่แล้ว · ดู `docs/10_LocalActivityLog_Proposal.md` (banner ยกเลิกหัวไฟล์)
+- มติต้นทาง Sprint 1 review (`docs/09_Sprint1_Review_Decisions.md` ข้อ 3) — ถูกยกเลิกภายหลัง
 
 ## Mock Mode Pattern
 

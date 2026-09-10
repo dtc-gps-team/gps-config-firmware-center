@@ -16,7 +16,10 @@ export const metadata = {
 /**
  * Dashboard — การ์ด "อุปกรณ์ทั้งหมด" (`GET /devices`) + "Config รออนุมัติ"
  * (`GET /config`, นับ status = testing) ต่อ API จริงแล้ว · การ์ด Campaign /
- * Incident + กิจกรรมล่าสุด ยังเป็นตัวอย่าง รอ endpoint (Sprint ถัดไป)
+ * Incident + "กิจกรรมล่าสุด" (mockup ของ compliance AuditLog ผ่าน
+ * `GET /audit-logs`, Sprint 3 checklist #27) ยังเป็นตัวอย่าง รอ endpoint —
+ * **คนละฟีเจอร์กับ Local Activity Log ที่ถูกยกเลิกไปแล้ว** (`docs/10`) ชื่อไทย
+ * บังเอิญซ้ำกันเฉยๆ ไม่ต้องลบ/แก้อะไรเพิ่มจากเหตุการณ์นั้น
  */
 export default function DashboardPage() {
   return (
