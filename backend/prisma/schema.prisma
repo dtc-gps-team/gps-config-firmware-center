@@ -562,6 +562,15 @@ model Incident {
   status            IncidentStatus   @default(open)
   relatedConfigId   String?
   relatedFirmwareId String?
+  // ต้นทางที่สร้าง Incident (มติที่ประชุม #32 — docs/07 §9.5 Q2) — free string:
+  //   'config-sync-writer'    = เขียน Config เข้า data กลางไม่สำเร็จ (ฝั่ง A)
+  //   'mobile-simulator-test' = ช่างเทสต์ Simulator หน้างานไม่ผ่าน (ฝั่ง B, Phase 5)
+  //   null                    = สร้างมือ / ยังไม่ระบุ
+  // Incident มาจาก 2 ทางนี้ ต้อง shape เดียวกัน — ดู src/incident/incident-metadata.ts
+  source            String?
+  // รายละเอียดเชิงโครงสร้างเฉพาะ source นั้น (IncidentMetadata — ทุก key optional)
+  // FK ที่ schema มีอยู่แล้ว (relatedConfigId/relatedFirmwareId) ไม่ต้องซ้ำที่นี่
+  metadata          Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
