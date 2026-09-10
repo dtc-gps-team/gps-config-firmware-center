@@ -73,7 +73,7 @@
 |---|---|---|---|---|
 | ชื่อ Config ต้องไม่ซ้ำ (unique ทั้งระบบ) | Backend + Web | A | quick win | เพิ่ม `Config.name @unique` + migration backfill + 409 |
 | ฟิลเตอร์ตารางต่อคอลัมน์ (ข้อความ = พิมพ์ค้นสด, หมวดหมู่ = dropdown จากข้อมูลจริง) | Web | A | Sprint 2 | UI standard ทุกหน้า list — เริ่ม client-side |
-| Local Activity Log (เปลี่ยนหน้า/เสิร์ช — เก็บ local เครื่องเดียว ไม่ลง `AuditLog`) | Web + Mobile | A (web) + B (mobile) | proposal `docs/10` ก่อน | Web IndexedDB / Mobile sqlite · retention Web 30วัน/1000, Mobile 14วัน/300 |
+| ~~Local Activity Log (เปลี่ยนหน้า/เสิร์ช — เก็บ local เครื่องเดียว ไม่ลง `AuditLog`)~~ | ~~Web + Mobile~~ | — | **❌ ยกเลิก (10/09/2026)** | ตัดฟีเจอร์ทิ้งทั้งหมด — Mobile เป็น Home-centric อยู่แล้ว · Web ไม่เคย implement · โค้ด `mobile/features/activity_log/` ถูกลบ · ดู `docs/10` (banner หัวไฟล์) + `docs/09` ข้อ 3 |
 | ลบ Config ที่ไม่ได้ใช้นาน — `draft`/`rejected` + ไม่มี Task/Campaign/Incident + 90 วัน → คำขอลบอัตโนมัติ → SuperAdmin อนุมัติ → soft delete | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | รวมกับ role SuperAdmin |
 | Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
 | เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |
