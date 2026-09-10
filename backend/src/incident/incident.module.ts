@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ConfigSyncWriterModule } from '../config-sync-writer/config-sync-writer.module';
 import { IncidentController } from './incident.controller';
 import { IncidentService } from './incident.service';
@@ -16,7 +17,11 @@ import { IncidentService } from './incident.service';
  * Rollback flow (Sprint Checklist แถว 28)
  */
 @Module({
-  imports: [ConfigSyncWriterModule],
+  // AuthModule — JwtAuthGuard/JwtModule ร่วม (สำหรับ IncidentController) ·
+  //   PermissionGuard resolve เองผ่าน PrismaModule @Global + Reflector
+  // ConfigSyncWriterModule — inject ConfigSyncWriterQueue เข้า IncidentService
+  //   (listener `'sync-failed'`)
+  imports: [AuthModule, ConfigSyncWriterModule],
   controllers: [IncidentController],
   providers: [IncidentService],
   exports: [IncidentService],
