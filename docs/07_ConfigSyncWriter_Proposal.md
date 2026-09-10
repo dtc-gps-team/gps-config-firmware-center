@@ -237,6 +237,35 @@ writer throw (TCP timeout / ระบบเดิมตอบ error)
 
 ---
 
+## 9.5 ข้อเสนอนัดประชุม (B, 09/09/2026)
+
+วาระ §9 พร้อมครบ 12 ข้อมา 2 วันแล้วตั้งแต่ PR #88 merge แต่ยังไม่มีนัดจริง — เสนอนัดตอนนี้เพราะ
+mock implementation ต้องเสร็จก่อน **Sprint 2 checkpoint 27/09/2026** (เหลือ ~18 วัน ณ วันที่เขียน)
+ถ้าเลื่อนออกไปอีกจะกระทบเวลาที่เหลือให้เขียนโค้ดจริง
+
+**เสนอเวลา:** 30-45 นาที ภายในสัปดาห์นี้ — @paveekornkwork-dev บอกวันที่สะดวกได้ใน comment ของ PR
+นี้เลย ถ้าตารางไม่ตรงกันจริงๆ เสนอทำเป็น **async ผ่าน comment ของ PR นี้แทน** — ตอบทีละข้อในวาระ
+ด้านล่าง แล้วปิดมติเป็นลายลักษณ์อักษรตรงนี้
+
+**จัดลำดับวาระ §9 ใหม่ตาม critical path — ต้องปิดให้จบก่อนเริ่มเขียนโค้ด (block ทุกอย่าง):**
+
+1. Interface `ConfigSyncWriter` — ตกลง shape (§3)
+2. **รูปแบบข้อมูล Incident ที่ A↔B ใช้ร่วมกัน** (§6 ข้อ 1) — สำคัญสุด เพราะ Incident มา 2 ทาง
+   (config-sync-writer ของ A + Mobile Simulator Test ของ B) ต้อง shape เดียวกัน
+3. NotificationType สำหรับ sync failure — reuse `incident_alert` หรือเพิ่ม `sync_failed` ใหม่
+   (§6 ข้อ 2) — ถ้าเพิ่มใหม่ต้องคุย merge order กับ PR #87
+4. **checkpoint Sprint 2 ครอบโหมด docker ไหม** (§2, §9 ข้อ 9) — (ก) เลื่อน docker เป็น backlog
+   ตรวจแค่ mock หรือ (ข) คงเกณฑ์ผ่อนปรน — กระทบ scope ที่เหลือทั้งหมดของ Sprint 2
+
+**คุยต่อได้ทีหลังถ้าเวลาไม่พอ ไม่ block การเริ่มเขียนโค้ด:** background job runner (§9 ข้อ 2),
+`approved`→`synced` ใน scope นี้ไหม (ข้อ 3), retry policy (ข้อ 4), idempotency (ข้อ 7),
+ordering/concurrency (ข้อ 8), ความสัมพันธ์กับ `apply-config` #81 (ข้อ 10)
+
+**หลังตัดสินแล้ว:** อัปเดตมติกลับมาต่อท้าย section นี้ (ไม่ต้องเปิดไฟล์ใหม่) แล้วแบ่งงานเขียน
+mock impl ตาม §7 — เป้าหมาย merge เสร็จก่อน 27/09 อย่างน้อย 3-4 วัน เผื่อเวลาแก้ตาม review
+
+---
+
 ## 10. อ้างอิง
 
 - `planning/01_GPS_Build_Reference.md` §1, §4.1, §5 (โปรโตคอลระบบเดิม), §8 (รายการ TBD)
