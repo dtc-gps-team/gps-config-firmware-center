@@ -277,16 +277,22 @@ export class ConfigService {
         where: { id: suggestedApproverId },
         include: { role: true },
       });
-      if (!approver || !approver.isActive || approver.role.code !== 'Operation') {
+      if (
+        !approver ||
+        !approver.isActive ||
+        approver.role.code !== 'Operation'
+      ) {
         throw new BadRequestException(
           'ผู้อนุมัติที่เจาะจงต้องเป็นผู้ใช้ role Operation ที่ยังใช้งานอยู่',
         );
       }
     }
 
-    return this.updateStatus(id, 'testing', {
-      suggestedApproverId: suggestedApproverId ?? null,
-    });
+    return this.updateStatus(
+      id,
+      'testing',
+      suggestedApproverId !== undefined ? { suggestedApproverId } : undefined,
+    );
   }
 
   /**
