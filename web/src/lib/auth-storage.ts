@@ -1,3 +1,5 @@
+import { isTokenExpired } from "./jwt";
+
 const TOKEN_KEY = "gps.accessToken";
 const ROLE_KEY = "gps.role";
 
@@ -12,6 +14,14 @@ export function getStoredSession(): AuthSession | null {
   const accessToken = localStorage.getItem(TOKEN_KEY);
   const role = localStorage.getItem(ROLE_KEY);
   if (!accessToken || !role) return null;
+
+  // token หมดอายุ (เช่น เปิดแอปทิ้งไว้ข้ามคืน / reboot แล้วกลับมา) — ล้างทิ้ง
+  // ไม่คืน session ที่ยิง API ไม่ผ่าน ให้ AuthGuard เด้งไป /login แทนการค้าง
+  // หน้าเดิมที่ทุก call เป็น 401 เงียบๆ
+  if (isTokenExpired(accessToken)) {
+    clearSession();
+    return null;
+  }
 
   return { accessToken, role };
 }
