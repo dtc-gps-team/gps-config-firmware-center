@@ -52,10 +52,14 @@ describe('ConfigSyncWriterQueue', () => {
     }
   };
 
+  let errorLog: jest.SpyInstance<unknown, unknown[]>;
+
   beforeEach(() => {
     jest.useFakeTimers();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    errorLog = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     writer = {
       writeConfigToLegacySystem: jest.fn(),
       writeFirmwarePointerToLegacySystem: jest.fn(),
@@ -125,6 +129,22 @@ describe('ConfigSyncWriterQueue', () => {
         lastError: 'boom',
       },
     ]);
+  });
+
+  it('พังครบ 3 ครั้ง โดยไม่มี listener — ยัง log บรรทัดสรุป "ล้มเหลวถาวร" (review #131 ข้อ 1)', async () => {
+    writer.writeConfigToLegacySystem.mockRejectedValue(new Error('boom'));
+    // ไม่ผูก listener 'sync-failed' เลย
+
+    queue.enqueueConfigSync(write({ versionNumber: 7 }));
+    const p = pending('cfg-1');
+    await jest.advanceTimersByTimeAsync(1500);
+    await p;
+
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    const msg = String(errorLog.mock.calls[0]?.[0]);
+    expect(msg).toContain('ล้มเหลวถาวร');
+    expect(msg).toContain('cfg-1 v7');
+    expect(msg).toContain('boom');
   });
 
   it('2 job ของ configId เดียวกัน enqueue พร้อมกัน — รันตามลำดับ ไม่ overlap', async () => {

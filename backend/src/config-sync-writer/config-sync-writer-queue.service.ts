@@ -12,7 +12,12 @@ const BASE_BACKOFF_MS = 500;
 /** payload ของ event `'sync-failed'` — A ใช้สร้าง Incident (`source:
  * 'config-sync-writer'`, `metadata` ตาม `IncidentMetadata` — ดู
  * `src/incident/incident-metadata.ts`), B ใช้ยิง notification (`incident_alert`)
- * — คนละ listener คนละ PR ไม่ต้องแก้ไฟล์นี้เลย */
+ * — คนละ listener คนละ PR ไม่ต้องแก้ไฟล์นี้เลย
+ *
+ * **listener ต้อง self-contain error handling เอง** — `emit()` เป็น sync
+ * ไม่ await ผล listener · async listener (เช่น `await prisma.incident.create`)
+ * ที่ reject จะกลายเป็น unhandledRejection ระดับ process · queue นี้ log ได้แค่
+ * listener ที่ throw แบบ sync เท่านั้น (review #131 ข้อ 2 — A handle ใน listener) */
 export interface ConfigSyncFailure {
   configId: string;
   versionNumber: number;
@@ -89,6 +94,13 @@ export class ConfigSyncWriterQueue extends EventEmitter {
       attempts: MAX_ATTEMPTS,
       lastError: (lastError as Error)?.message ?? String(lastError),
     };
+    // บรรทัดสรุป "ล้มเหลวถาวร" — log เสมอ ไม่ผูกกับว่ามี listener 'sync-failed'
+    // ไหม (event นี้ไม่ใช่ 'error' → Node drop เงียบถ้าไม่มี listener) · review
+    // #131 ข้อ 1
+    this.logger.error(
+      `config-sync ล้มเหลวถาวรหลัง retry ${MAX_ATTEMPTS} ครั้ง — config ${input.configId} ` +
+        `v${input.versionNumber} (${input.deviceModel}/${input.protocol}): ${failure.lastError}`,
+    );
     // EventEmitter.emit ไม่ throw ออกมาแม้ listener ข้างในจะ throw แบบ sync
     // (Node ปล่อยเป็น uncaught ใน microtask ถัดไป) — ครอบ try/catch กันไว้อีก
     // ชั้นเผื่อ listener throw sync ตรงๆ ในเธรดเดียวกัน
