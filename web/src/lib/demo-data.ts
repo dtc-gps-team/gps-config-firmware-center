@@ -39,12 +39,13 @@ export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
 };
 
 /* ---------------------------------------------------------------- */
-/*  Dashboard — GET /config?status=testing / campaigns / incidents  */
+/*  Dashboard — การ์ด "อุปกรณ์ทั้งหมด" + "Config รออนุมัติ" ต่อ API จริงแล้ว  */
+/*  (GET /devices, GET /config) ที่ dashboard-summary.tsx · เหลือ 2 ใบนี้    */
+/*  รอ endpoint campaign / incident (Sprint ถัดไป) · activity feed ยังเป็น    */
+/*  ตัวอย่าง — รอ GET /audit-logs                                            */
 /* ---------------------------------------------------------------- */
 
 export const DEMO_DASHBOARD_SUMMARY = [
-  { label: "อุปกรณ์ทั้งหมด", value: "1,284" },
-  { label: "Config รออนุมัติ", value: "3" },
   { label: "Campaign กำลังทำงาน", value: "2" },
   { label: "Incident ที่ยังไม่ปิด", value: "1" },
 ];
