@@ -48,6 +48,11 @@ export function ApprovalCard({
             <span className="font-mono">{item.createdBy}</span> · เข้าคิว{" "}
             {formatDateTime(item.queuedAt)}
           </p>
+          {item.suggestedApprover && (
+            <span className="mt-1 inline-flex w-fit items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+              เจาะจงถึง: {item.suggestedApprover.fullName}
+            </span>
+          )}
         </div>
         <ApprovalActions
           configId={item.id}

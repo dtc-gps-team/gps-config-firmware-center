@@ -28,6 +28,10 @@ export type Config = {
   fields: Record<string, unknown>;
   createdBy: string;
   approvedBy: string | null;
+  /** user id ของ Operation ที่ SW เจาะจงให้ดู Config นี้เป็นพิเศษ (#19) ·
+   *  null = ไม่เจาะจง · ไม่ผูกมัด — Operation คนอื่นก็ approve ได้ · Web
+   *  resolve ชื่อจาก `listUsers("Operation")` เอง */
+  suggestedApproverId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -139,6 +143,24 @@ export function simulateConfig(
   return apiJson<SimulationResult>(`/config/${id}/simulate`, {
     method: "POST",
     token,
+  });
+}
+
+/**
+ * `POST /config/{id}/decide` — SW ปักผลหลังดู `simulate` (Stage 4) ·
+ * `passed:true` → `draft`→`testing` (ส่งให้ Operation) · `passed:false` →
+ * คาไว้ `draft` · `suggestedApproverId` (optional, เฉพาะ passed:true) เจาะจง
+ * Operation ที่อยากให้ดู — 400 ถ้าไม่ใช่ role Operation ที่ active · SW เท่านั้น
+ */
+export function decideConfig(
+  token: string,
+  id: string,
+  body: { passed: boolean; suggestedApproverId?: string },
+): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/decide`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
   });
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listConfigs, type Config } from "@/lib/config-api";
+import { listUsers } from "@/lib/users-api";
 
 /**
  * View-model ของ 1 รายการในคิว Approval Center — ตั้งใจ decouple จาก `Config`
@@ -22,20 +23,9 @@ export type PendingApproval = {
   fields: Record<string, unknown>;
   /** เวลาที่ SW ปักผลผ่าน (`decide`) แล้ว Config เข้าสถานะ testing */
   queuedAt: string;
+  /** ผู้อนุมัติที่ SW เจาะจง (resolve ชื่อจาก GET /users) · null = ไม่เจาะจง */
+  suggestedApprover: { id: string; fullName: string } | null;
 };
-
-function toPendingApproval(config: Config): PendingApproval {
-  return {
-    id: config.id,
-    name: config.name,
-    deviceModel: config.deviceModel,
-    protocol: config.protocol,
-    createdBy: config.createdBy,
-    description: config.description,
-    fields: config.fields,
-    queuedAt: config.updatedAt,
-  };
-}
 
 type State = {
   data: PendingApproval[] | null;
@@ -45,8 +35,8 @@ type State = {
 
 /**
  * คิว Config ที่รอ Operation อนุมัติ — `GET /config?status=testing`
- * (ผ่าน simulation + SW ปักผ่านแล้ว) · เรียง queued ใหม่สุดก่อน ·
- * คืน `refetch` ให้เรียกหลัง approve/reject
+ * (ผ่าน simulation + SW ปักผ่านแล้ว) · เรียง queued ใหม่สุดก่อน · แนบชื่อ
+ * ผู้อนุมัติที่เจาะจงจาก `GET /users?role=Operation` · คืน `refetch`
  */
 export function usePendingApprovals() {
   const { session } = useAuth();
@@ -61,9 +51,33 @@ export function usePendingApprovals() {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const configs = await listConfigs(token, { status: "testing" });
+      const [configs, operators] = await Promise.all([
+        listConfigs(token, { status: "testing" }),
+        // ชื่อ Operation ไว้ resolve badge "เจาะจงถึง" — พังไม่ block คิว
+        listUsers(token, { role: "Operation" }).catch(() => []),
+      ]);
+      const nameById = new Map(operators.map((u) => [u.id, u.fullName]));
       const data = configs
-        .map(toPendingApproval)
+        .map(
+          (config: Config): PendingApproval => ({
+            id: config.id,
+            name: config.name,
+            deviceModel: config.deviceModel,
+            protocol: config.protocol,
+            createdBy: config.createdBy,
+            description: config.description,
+            fields: config.fields,
+            queuedAt: config.updatedAt,
+            suggestedApprover: config.suggestedApproverId
+              ? {
+                  id: config.suggestedApproverId,
+                  fullName:
+                    nameById.get(config.suggestedApproverId) ??
+                    config.suggestedApproverId,
+                }
+              : null,
+          }),
+        )
         .sort((a, b) => b.queuedAt.localeCompare(a.queuedAt));
       setState({ data, isLoading: false, error: null });
     } catch (err) {
