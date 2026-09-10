@@ -40,7 +40,9 @@ class TaskListPage extends ConsumerWidget {
         title: const Text('งานของฉัน'),
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.invalidate(taskListProvider),
+        // await refetch จริง (pattern เดียวกับ DeviceSearchPage #137) —
+        // spinner ค้างจนข้อมูลใหม่มา ไม่หายก่อน
+        onRefresh: () => ref.refresh(taskListProvider.future),
         child: tasksAsync.when(
           skipLoadingOnRefresh: true,
           data: (tasks) {

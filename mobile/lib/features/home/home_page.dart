@@ -142,13 +142,15 @@ class HomePage extends ConsumerWidget {
                   onTap: () => context.push(AppRoutes.myTasks),
                 ),
               ],
-              // ---- mock — ยังไม่มีหน้าจอปลายทางจริง (Sprint ถัดไป) ----
+              // ค้นหาอุปกรณ์ — ทุก role เรียก GET /devices ได้ (RBAC "R" ทุก
+              // Role) ไม่ต้อง gate เหมือน "ทดสอบสัญญาณ"
               _Shortcut(
                 key: const Key('shortcut_find_device'),
                 icon: Icons.search,
                 label: 'ค้นหาอุปกรณ์',
-                onTap: () => _comingSoon(context),
+                onTap: () => context.push(AppRoutes.deviceSearch),
               ),
+              // ---- mock — ยังไม่มีหน้าจอปลายทางจริง (Sprint ถัดไป) ----
               _Shortcut(
                 key: const Key('shortcut_report_incident'),
                 icon: Icons.report_problem_outlined,

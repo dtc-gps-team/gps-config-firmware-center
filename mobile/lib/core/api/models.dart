@@ -70,6 +70,25 @@ enum NotificationType {
   }
 }
 
+/// `Device.status` enum — matches `docs/api/openapi.yaml` `Device.status`
+/// and the Prisma enum `DeviceLifecycleStatus`.
+enum DeviceLifecycleStatus {
+  registered('registered'),
+  installed('installed'),
+  decommissioned('decommissioned');
+
+  const DeviceLifecycleStatus(this.wireName);
+
+  final String wireName;
+
+  static DeviceLifecycleStatus fromWire(String value) {
+    for (final status in DeviceLifecycleStatus.values) {
+      if (status.wireName == value) return status;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown device status');
+  }
+}
+
 /// `DeviceConfigDraft.status` enum.
 enum ConfigStatus {
   draft('draft'),
@@ -328,6 +347,50 @@ class Task {
       deviceId: json['deviceId'] as String?,
       configId: json['configId'] as String?,
       dueDate: parseDate(json['dueDate']),
+    );
+  }
+}
+
+/// Device Search / Device Detail — mirrors `docs/api/openapi.yaml` `Device`
+/// (Prisma model `Device`). `GET /devices` / `GET /devices/{deviceId}` both
+/// return this shape. `deviceId` (ไม่ใช่ `id`) คือเลขเครื่องจริงที่ใช้อ้างอิงใน
+/// path — ตรงกับ convention เดียวกับที่ web ใช้ (`web/src/lib/device-api.ts`).
+class Device {
+  const Device({
+    required this.id,
+    required this.deviceId,
+    required this.simNumber,
+    required this.deviceModel,
+    required this.protocol,
+    required this.status,
+    required this.registeredAt,
+    this.installedAt,
+  });
+
+  final String id;
+  final String deviceId;
+  final String simNumber;
+  final String deviceModel;
+  final String protocol;
+  final DeviceLifecycleStatus status;
+  final DateTime registeredAt;
+  final DateTime? installedAt;
+
+  factory Device.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+
+    return Device(
+      id: json['id'] as String,
+      deviceId: json['deviceId'] as String,
+      simNumber: json['simNumber'] as String? ?? '',
+      deviceModel: json['deviceModel'] as String? ?? '',
+      protocol: json['protocol'] as String? ?? '',
+      status: DeviceLifecycleStatus.fromWire(json['status'] as String),
+      // spec marks registeredAt required, but decode defensively so a
+      // slightly-off payload renders instead of throwing (same as Task).
+      registeredAt: parseDate(json['registeredAt']) ?? DateTime.now(),
+      installedAt: parseDate(json['installedAt']),
     );
   }
 }
