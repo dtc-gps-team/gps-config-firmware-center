@@ -51,8 +51,7 @@ class _FakeTaskRepository implements TaskRepository {
   }
 
   @override
-  Future<Task> getTask(String id) async =>
-      _tasks.firstWhere((t) => t.id == id);
+  Future<Task> getTask(String id) async => _tasks.firstWhere((t) => t.id == id);
 
   @override
   Future<Task> updateStatus(String id, TaskStatus status) async =>
@@ -87,10 +86,7 @@ Future<void> _pumpRouted(
   final router = GoRouter(
     initialLocation: AppRoutes.myTasks,
     routes: [
-      GoRoute(
-        path: AppRoutes.myTasks,
-        builder: (_, _) => const TaskListPage(),
-      ),
+      GoRoute(path: AppRoutes.myTasks, builder: (_, _) => const TaskListPage()),
       GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
