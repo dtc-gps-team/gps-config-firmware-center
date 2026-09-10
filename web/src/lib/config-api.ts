@@ -86,6 +86,25 @@ export function createConfig(
   });
 }
 
+/**
+ * `POST /config/import` — อัปโหลดไฟล์ JSON แล้วให้ backend แปลงเป็น
+ * DeviceConfigDraft (สถานะ `draft`) เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม
+ * (openapi.yaml `importConfig`) · เฉพาะ Role SW (RBAC `config` action Create)
+ *
+ * error ที่ backend อาจคืน: 400 (ไฟล์/format ผิด หรือ JSON ไม่ตรง schema —
+ * `ApiError.details` มีรายการ field ที่ผิด), 409 (ชื่อ Config ซ้ำ), 413 (ไฟล์เกิน 1MB)
+ */
+export function importConfig(token: string, file: File): Promise<Config> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("format", "json");
+  return apiJson<Config>("/config/import", {
+    method: "POST",
+    token,
+    body: form,
+  });
+}
+
 export function updateConfig(
   token: string,
   id: string,

@@ -124,7 +124,8 @@ export type ConfigFileFormat = 'json'; // เพิ่ม 'csv' | 'excel' | 'leg
 
 - **Implementation:** เขียน `JsonConfigImporter implements ConfigImporter` เป็นตัวแรก — parse JSON แล้ว map เข้า `DeviceConfigDraft` โครงสร้างเดียวกับที่ Config Editor (ฟอร์ม) สร้าง เพื่อให้เข้า flow ทดสอบ/อนุมัติเดียวกันได้โดยไม่ต้องแยกโค้ด
 - **Validation:** ตรวจ Schema ของไฟล์ JSON ก่อน (เช่นด้วย Zod ตัวเดียวกับที่ฝั่งฟอร์มใช้อยู่แล้ว) ก่อนส่งเข้า Device Simulator — ป้องกันไฟล์รูปแบบผิดหลุดเข้า flow ทดสอบ
-- **UI ฝั่ง Web:** เพิ่มปุ่ม "Import จากไฟล์ (JSON)" ในหน้า Config Editor เป็นอีกทางเลือกควบคู่กับกรอกฟอร์มเอง ไม่ใช่หน้าจอแยกต่างหาก
+- **UI ฝั่ง Web:** เพิ่มปุ่ม "Import จากไฟล์ (JSON)" ในหน้า Config Editor เป็นอีกทางเลือกควบคู่กับกรอกฟอร์มเอง
+  - _หมายเหตุ implementation (PR #12b):_ ปุ่มอยู่ในหน้า Config Editor ตามนี้ แต่พาไป**หน้าเต็ม `/config/import`** แทน Dialog — เพราะต้องมีที่โชว์ preview ไฟล์ก่อนส่ง + รายการ validation error หลายบรรทัดจาก backend · flow ทดสอบ/อนุมัติยังเหมือนกันทุกประการ (backend ใช้ `ConfigService.create()` ตัวเดียวกับฟอร์ม) · client parse แค่เช็ค field บังคับ (`name`/`deviceModel`/`protocol`/`fields`) — validation จริงทั้งหมดอยู่ที่ backend
 - **ถ้าต้องเปลี่ยนรูปแบบไฟล์ทีหลัง:** เพิ่ม Implementation ใหม่ของ `ConfigImporter` (เช่น `ExcelConfigImporter`) และเพิ่มค่าใน `ConfigFileFormat` — ไม่ต้องแก้โค้ดส่วนอื่นที่เรียกผ่าน Interface
 
 ---
