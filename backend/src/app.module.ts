@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
+import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.module';
 import { DeviceModule } from './device/device.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -28,6 +29,7 @@ import { TaskModule } from './task/task.module';
     ConfigModule,
     ConfigDefinitionModule,
     ConfigDeletionModule,
+    ConfigSyncWriterModule,
     DeviceModule,
     TaskModule,
     NotificationModule,
