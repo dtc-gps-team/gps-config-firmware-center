@@ -12,6 +12,7 @@ import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
+import '../../features/task/task_list_page.dart';
 import '../auth/auth_controller.dart';
 
 class AppRoutes {
@@ -34,6 +35,10 @@ class AppRoutes {
   /// go_router never confuses the two.
   static const deviceDetailPattern = '/devices/:deviceId';
   static String deviceDetail(String deviceId) => '/devices/$deviceId';
+
+  /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
+  /// `/tasks/:id` by segment count, so go_router never confuses the two).
+  static const myTasks = '/tasks';
 
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
@@ -116,6 +121,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.deviceDetailPattern,
         builder: (context, state) =>
             DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.myTasks,
+        builder: (context, state) => const TaskListPage(),
       ),
       GoRoute(
         path: AppRoutes.taskDetailPattern,
