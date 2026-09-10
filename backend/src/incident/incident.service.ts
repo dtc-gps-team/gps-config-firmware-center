@@ -87,7 +87,7 @@ export class IncidentService implements OnModuleInit {
   }
 
   /**
-   * รายการ Incident ทั้งหมด (read-only) — resource `incident` action `Read`
+   * รายการ Incident ทั้งหมด (read-only) — resource `incidents` action `Read`
    * grant ให้ทุก role (RBAC_Matrix.md แถว "Incident & Rollback" = R ทุก role) ·
    * เรียงตาม `createdAt desc` (ใหม่สุดก่อน) · ไม่มี paging ตาม MVP เดียวกับ
    * `devices` (จำนวนข้อมูลน้อย)

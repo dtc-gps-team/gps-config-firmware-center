@@ -1143,7 +1143,7 @@ paths:
     get:
       tags: [incident]
       operationId: listIncidents
-      summary: รายการ Incident (read-only)
+      summary: รายการ Incident (read-only) — v3.18
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Incident &
         Rollback" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา = คืน
@@ -1185,7 +1185,7 @@ paths:
     get:
       tags: [incident]
       operationId: getIncident
-      summary: ดูรายละเอียด Incident 1 รายการ
+      summary: ดูรายละเอียด Incident 1 รายการ — v3.18
       parameters:
         - in: path
           name: id
