@@ -10,6 +10,7 @@ import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/device_search/device_detail_page.dart';
 import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
 import '../../features/task/task_list_page.dart';
@@ -26,6 +27,9 @@ class AppRoutes {
   static const simulator = '/simulator';
   static const deviceConnectionTest = '/device-connection-test';
   static const notifications = '/notifications';
+
+  /// Incident list (read-only) — `/incidents`.
+  static const incidents = '/incidents';
 
   /// Device Search — `/devices`.
   static const deviceSearch = '/devices';
@@ -112,6 +116,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.deviceConnectionTest,
         builder: (context, state) => const DeviceConnectionTestPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.incidents,
+        builder: (context, state) => const IncidentListPage(),
       ),
       GoRoute(
         path: AppRoutes.deviceSearch,

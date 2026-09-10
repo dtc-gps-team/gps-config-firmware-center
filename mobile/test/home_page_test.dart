@@ -167,6 +167,11 @@ Future<void> _pumpHomeRouted(
         builder: (_, _) => const Scaffold(body: Text('MY_TASKS_PAGE_STUB')),
       ),
       GoRoute(
+        path: AppRoutes.incidents,
+        builder: (_, _) =>
+            const Scaffold(body: Text('INCIDENT_LIST_PAGE_STUB')),
+      ),
+      GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
           body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
@@ -375,19 +380,45 @@ void main() {
     });
   });
 
-  group('ส่วน mock -> snackbar "เร็ว ๆ นี้" (ไม่เงียบ ไม่ crash)', () {
-    // "แจ้งเหตุ" เป็นทางลัด mock ตัวสุดท้ายที่ยังไม่มีหน้าจอปลายทาง
-    // (ค้นหาอุปกรณ์ / งานของฉัน ต่อ route จริงแล้วใน #137 / #138)
-    testWidgets('แตะทางลัด mock "แจ้งเหตุ"', (tester) async {
-      await _pumpHome(tester, UserRole.st);
-      final tile = find.byKey(const Key('shortcut_report_incident'));
-      await tester.ensureVisible(tile);
-      await tester.pumpAndSettle();
-      await tester.tap(tile);
-      await tester.pump();
-      expect(find.textContaining('เร็ว'), findsOneWidget);
-    });
-  });
+  group(
+    'ทางลัด "ดู Incident" — read-only, ทุก role (GET /incidents = R ทุก Role)',
+    () {
+      for (final role in [
+        UserRole.st,
+        UserRole.sw,
+        UserRole.operation,
+        UserRole.auditor,
+        UserRole.admin,
+      ]) {
+        testWidgets('${role.wireName} เห็นทางลัด "ดู Incident"', (
+          tester,
+        ) async {
+          await _pumpHome(tester, role);
+          final tile = find.byKey(const Key('shortcut_report_incident'));
+          expect(tile, findsOneWidget);
+          // label = "ดู Incident" ไม่ใช่ "แจ้งเหตุ" (read-only ดูอย่างเดียว)
+          expect(
+            find.descendant(of: tile, matching: find.text('ดู Incident')),
+            findsOneWidget,
+          );
+        });
+      }
+
+      testWidgets(
+        'แตะแล้ว navigate ไปหน้า Incident (ไม่ใช่ snackbar อีกต่อไป)',
+        (tester) async {
+          await _pumpHomeRouted(tester, UserRole.st);
+          final tile = find.byKey(const Key('shortcut_report_incident'));
+          await tester.ensureVisible(tile);
+          await tester.pumpAndSettle();
+          await tester.tap(tile);
+          await tester.pumpAndSettle();
+          expect(find.text('INCIDENT_LIST_PAGE_STUB'), findsOneWidget);
+          expect(find.textContaining('เร็ว'), findsNothing);
+        },
+      );
+    },
+  );
 
   group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
     for (final role in [

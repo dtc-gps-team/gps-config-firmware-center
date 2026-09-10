@@ -51,17 +51,6 @@ String _roleLabel(UserRole? role) {
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('ฟีเจอร์นี้จะเปิดให้ใช้เร็ว ๆ นี้'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
@@ -115,7 +104,7 @@ class HomePage extends ConsumerWidget {
           const SizedBox(height: 12),
           _ShortcutGrid(
             items: [
-              // ---- ของจริง — navigate ไปหน้าที่มีอยู่แล้ว (route เดิม) ----
+              // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
               _Shortcut(
                 key: const Key('shortcut_simulator'),
                 icon: Icons.tune,
@@ -150,12 +139,15 @@ class HomePage extends ConsumerWidget {
                 label: 'ค้นหาอุปกรณ์',
                 onTap: () => context.push(AppRoutes.deviceSearch),
               ),
-              // ---- mock — ยังไม่มีหน้าจอปลายทางจริง (Sprint ถัดไป) ----
+              // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
+              // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
+              // (ST/OT) ไม่มีสิทธิ์ Create Incident (RBAC_Matrix — Create =
+              // Operation เท่านั้น) กดแล้วดูได้อย่างเดียว
               _Shortcut(
                 key: const Key('shortcut_report_incident'),
                 icon: Icons.report_problem_outlined,
-                label: 'แจ้งเหตุ',
-                onTap: () => _comingSoon(context),
+                label: 'ดู Incident',
+                onTap: () => context.push(AppRoutes.incidents),
               ),
             ],
           ),
