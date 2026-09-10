@@ -4,15 +4,20 @@ import {
   CONFIG_SYNC_WRITER,
   ConfigSyncWriter,
 } from './config-sync-writer.interface';
+import { ConfigSyncWriterQueue } from './config-sync-writer-queue.service';
 import { MockConfigSyncWriter } from './mock-config-sync-writer';
 
 /**
  * config-sync-writer — งานร่วม A+B (Critical Infra) · ดู `docs/07`
  *
- * รอบนี้ (PR interface): interface + `CONFIG_SYNC_WRITER` token + `mock` impl +
- * shared type `IncidentMetadata` (`src/incident/`) เท่านั้น — **ยังไม่มี**
- * background job runner / เชื่อม `ConfigService.approve()` → enqueue / สร้าง
- * Incident อัตโนมัติ · พวกนั้นเป็นงาน pair A+B ใน PR ถัดไป (มติ #32 §7)
+ * มีแล้ว: interface + `CONFIG_SYNC_WRITER` token + `mock` impl + shared type
+ * `IncidentMetadata` (`src/incident/`) + `ConfigSyncWriterQueue` (job runner
+ * in-process + retry N=3 exponential backoff + serialize ต่อ configId — มติ
+ * #32 §7 คอลัมน์ "ร่วมกัน")
+ *
+ * **ยังไม่มี** — เชื่อม `ConfigService.approve()` → `enqueueConfigSync()` (งาน A,
+ * `config` module) · `.on('sync-failed')` สร้าง Incident (งาน A) · `.on(
+ * 'sync-failed')` ยิง notification `incident_alert` (งาน B) — คนละ PR
  *
  * provider factory อ่าน `LEGACY_SYNC_MODE` (`mock` default | `docker` |
  * `production`) ตาม Mock Mode Pattern (CLAUDE.md) — `docker`/`production` ยัง
@@ -34,7 +39,8 @@ import { MockConfigSyncWriter } from './mock-config-sync-writer';
       },
       inject: [NestConfigService],
     },
+    ConfigSyncWriterQueue,
   ],
-  exports: [CONFIG_SYNC_WRITER],
+  exports: [CONFIG_SYNC_WRITER, ConfigSyncWriterQueue],
 })
 export class ConfigSyncWriterModule {}
