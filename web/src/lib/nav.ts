@@ -34,11 +34,10 @@ export const NAV_ITEMS: NavItem[] = [
     screenName: "Device Search / Device Detail",
   },
   { label: "Config Editor", href: "/config", screenName: "Config Editor" },
-  {
-    label: "Config Import",
-    href: "/config/import",
-    screenName: "Config Import จากไฟล์ (JSON)",
-  },
+  // "Config Import จากไฟล์ (JSON)" (RBAC_Matrix.md Section 2) ไม่มี entry ใน
+  // sidebar โดยตั้งใจ — Build Reference §3.1 ระบุว่าเป็น "ปุ่มในหน้า Config
+  // Editor ไม่ใช่หน้าจอแยก" · เข้าผ่านปุ่ม "Import จากไฟล์" ในหน้า /config
+  // (SW เท่านั้น — import-config-button.tsx) ที่พาไป route /config/import
   {
     label: "Parameter Library",
     href: "/parameters",

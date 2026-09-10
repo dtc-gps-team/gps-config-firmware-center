@@ -23,6 +23,7 @@ import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { CreateConfigButton } from "./create-config-button";
+import { ImportConfigButton } from "./import-config-button";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -120,7 +121,8 @@ export function ConfigTableCard({
         <CardDescription>
           ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex gap-2">
+          <ImportConfigButton />
           <CreateConfigButton />
         </CardAction>
       </CardHeader>
