@@ -264,6 +264,63 @@ ordering/concurrency (ข้อ 8), ความสัมพันธ์กั�
 **หลังตัดสินแล้ว:** อัปเดตมติกลับมาต่อท้าย section นี้ (ไม่ต้องเปิดไฟล์ใหม่) แล้วแบ่งงานเขียน
 mock impl ตาม §7 — เป้าหมาย merge เสร็จก่อน 27/09 อย่างน้อย 3-4 วัน เผื่อเวลาแก้ตาม review
 
+### มติที่ประชุม (A+B, async ผ่าน PR comment — ปิดครบ 09/09/2026)
+
+**Q1 — Interface `ConfigSyncWriter` (§3): ตัด `deviceIdentifier` ออกจาก `LegacyConfigWrite`**
+Config ไม่ผูกกับ device ตรง — job ตอน approve รู้แค่ `configId` เดียว ไม่รู้ว่ากล่องไหนใช้ config
+นี้บ้าง การ fan-out ไปเขียนรายกล่องขึ้นกับว่าคำสั่ง Write ระบบเดิมเป็น per-box หรือ per-model
+(ยังเป็น TBD — §8 ข้อ 2-3) จึงเป็นงาน handoff ไม่ใช่ของ interface รอบนี้ — shape ที่ตกลง:
+
+```typescript
+export interface LegacyConfigWrite {
+  configId: string;
+  versionNumber: number;
+  deviceModel: string;
+  protocol: string;
+  fields: Record<string, string | number>;
+}
+```
+
+mock log: `[mock] เขียน config <id> v<n> (<model>/<protocol>) เข้า config.dtc.co.th:909 — <k> field`
+ส่วนอื่นของ §3 (Symbol token, property-function type, throw-on-error,
+`writeFirmwarePointerToLegacySystem` placeholder) คงตามเดิม
+
+**Q2 — Incident shape ร่วม A↔B (§6 ข้อ 1, สำคัญสุด): เพิ่ม `Incident.source String?` + `metadata Json?`**
+Additive ล้วน (2 คอลัมน์ nullable ไม่ต้อง backfill) — `source` = free string
+(`'config-sync-writer'` จาก A / `'mobile-simulator-test'` จาก B), `metadata` = Json blob เก็บ
+เฉพาะส่วนที่ไม่มี column จริงอยู่แล้ว (ทุก key optional):
+`{ configId?, versionNumber?, firmwareId?, deviceIdentifier?, attempts?, lastError?, checkResults? }`
+— FK ที่มีอยู่แล้ว (`relatedConfigId`/`relatedFirmwareId`) ยังใช้ต่อตามปกติ ไม่ต้องซ้ำใน metadata
+· **A เพิ่ม `source`+`metadata` เข้า schema ตอนทำ PR config-sync-writer นี้เลย** (A เจ้าของ module
+`incident` ที่ยังไม่มีจริงในโค้ดตอนนี้) แล้ว config-sync-writer (A) + Mobile Simulator Test (B)
+ค่อยใช้ตาม — merge order: schema ก่อน → ทั้ง 2 ฝั่งใช้
+
+**Q3 — NotificationType สำหรับ sync failure (§6 ข้อ 2): เลือก (a) reuse `incident_alert`**
+sync failure สร้าง Incident อยู่แล้ว → ถือเป็น incident alert ปกติ ไม่แตะ schema/migration/openapi/
+mobile เลย ไม่ต้อง stack กับ PR #87 — Operation แยก sync failure จาก incident อื่นได้จาก
+`Incident.source = 'config-sync-writer'` (Q2) ถ้าวันหน้าอยากมี filter/หน้าจอเฉพาะค่อยเพิ่ม type
+ใหม่ทีหลัง (ไม่ breaking)
+
+**Q4 — Sprint 2 checkpoint ครอบ docker ไหม (§9 ข้อ 9): เลือก (ก) เลื่อน docker เป็น backlog**
+Sprint 2 ตรวจเฉพาะ mock — docker ทดสอบจริงไม่ได้ตอนนี้ (ไม่รู้ payload format คำสั่ง Write ระบบเดิม
++ เครื่องทดสอบ `:801` เป็น infra ของ DTC ไม่ใช่ scope งานฝึกงาน) ตัวเลือก (ข) "ต่อ TCP ได้" พิสูจน์
+แค่ socket เปิด ไม่พิสูจน์ว่าเขียนถูก เพิ่มงานได้ค่าน้อย `planning/02:90` อนุญาต pass ด้วย mock อยู่แล้ว
+— เปิด backlog item ใน `docs/planning/02_GPS_Development_Plan.md` แถวที่ 33 (Backlog Scope Report,
+Sprint 4): "config-sync-writer docker/production impl — รอ TBD คำสั่ง Write + เครื่องทดสอบ DTC +
+ไฟเขียวทีม" **ต้องให้พี่เลี้ยงรับทราบ + เห็นชอบด้วย** (เป็น scope decision ที่ mentor ต้องเห็น)
+
+**ข้อที่ไม่ block — ตกลงไว้ด้วยเลย (คุยต่อได้ถ้าจำเป็นทีหลัง แต่ไม่รอ):**
+- §9 ข้อ 2 (job runner): in-process queue ช่วง mock, สลับ BullMQ+Redis ตอน docker/production handoff, วางใน module `config-sync-writer` เอง
+- §9 ข้อ 3 (`approved`→`synced`): ไม่ทำใน scope นี้ (Phase 2 ตาม doc 04/Build Reference), mock แค่ log
+- §9 ข้อ 4 (retry): N=3 exponential backoff, อยู่ชั้น job runner ไม่ใช่ใน writer (writer แค่ throw)
+- §9 ข้อ 7-8 (idempotency/ordering): เป็นคำถามของ implementation จริง (TBD) — ช่วง mock serialize job ต่อ `configId` ไว้ก่อนกันซ้อน
+- §9 ข้อ 10 (`apply-config` #81): คนละเลเยอร์ — apply-config fire-and-forget รายกล่องหน้างาน, config-sync-writer batch เข้า data กลางหลัง approve ไม่ทับกัน
+
+**Timeline (§9 ข้อ 12):** target merge mock impl **~23/09/2026** (ก่อน checkpoint 27/09 ~4 วัน)
+แบ่งงานตาม §7: ร่วมกัน (interface+mock impl+unit test, job runner setup+retry policy) ·
+A (เชื่อม `ConfigService.approve()`→enqueue, Incident อัตโนมัติ+schema `source`/`metadata`) ·
+B (alert เข้า notification, reuse `incident_alert`)
+
 ---
 
 ## 10. อ้างอิง
