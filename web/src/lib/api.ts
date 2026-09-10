@@ -23,6 +23,20 @@ export class ApiError extends Error {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "/api/v1";
 
+/**
+ * เรียกเมื่อ authenticated request (ส่ง token) เจอ 401 — token หมดอายุ / ถูก
+ * เพิกถอน / `JWT_SECRET` เปลี่ยน · `AuthProvider` ลงทะเบียน `logout` ไว้ที่นี่
+ * เพื่อให้ `AuthGuard` เด้งไป `/login` แทนการวนลูป error 401 ในทุกหน้า
+ */
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(
+  handler: UnauthorizedHandler | null,
+): void {
+  onUnauthorized = handler;
+}
+
 function getErrorMessage(body: unknown, fallback: string): string {
   if (typeof body === "object" && body !== null && "message" in body) {
     const message = (body as { message: unknown }).message;
@@ -77,10 +91,19 @@ export async function apiFetch(
     mergedHeaders.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...rest,
     headers: mergedHeaders,
   });
+
+  // เฉพาะ call ที่ส่ง token มาแล้วโดน 401 = session ใช้ไม่ได้แล้ว → แจ้ง
+  // AuthProvider ให้ logout (call ที่ไม่มี token ไม่นับ — ไม่ควรมีอยู่แล้ว
+  // สำหรับ endpoint ที่ต้อง auth แต่กันไว้)
+  if (response.status === 401 && token) {
+    onUnauthorized?.();
+  }
+
+  return response;
 }
 
 /**

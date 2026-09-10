@@ -8,13 +8,14 @@ import {
   useMemo,
   useState,
 } from "react";
-import { login as loginRequest } from "@/lib/api";
+import { login as loginRequest, setUnauthorizedHandler } from "@/lib/api";
 import {
   clearSession,
   getStoredSession,
   saveSession,
   type AuthSession,
 } from "@/lib/auth-storage";
+import { getTokenExpiryMs } from "@/lib/jwt";
 
 type AuthContextValue = {
   isReady: boolean;
@@ -53,6 +54,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearSession();
     setSession(null);
   }, []);
+
+  // 401 จาก API call ใดๆ (token หมดอายุ / ถูกเพิกถอน) → logout ทันที
+  // AuthGuard จะ redirect ไป /login ต่อเอง
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
+
+  // token หมดอายุระหว่างเปิดแอปค้างไว้ → logout ตอนถึงเวลา ไม่ต้องรอให้ผู้ใช้
+  // ยิง API แล้วเจอ 401 ก้อนแรกก่อน · setTimeout(delay <= 0) เด้ง next tick
+  // ไม่ใช่ระหว่าง render
+  useEffect(() => {
+    if (!session) return;
+    const expiryMs = getTokenExpiryMs(session.accessToken);
+    if (expiryMs === null) return;
+    const timer = setTimeout(logout, Math.max(0, expiryMs - Date.now()));
+    return () => clearTimeout(timer);
+  }, [session, logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
