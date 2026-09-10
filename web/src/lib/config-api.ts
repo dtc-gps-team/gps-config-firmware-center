@@ -120,3 +120,41 @@ export function updateConfig(
 export function deleteConfig(token: string, id: string): Promise<void> {
   return apiJson<void>(`/config/${id}`, { method: "DELETE", token });
 }
+
+/** ผลทดสอบจาก Device Simulator — schema `SimulationResult` ใน openapi.yaml */
+export type SimulationResult = {
+  passed: boolean;
+  details: string[];
+};
+
+/**
+ * `POST /config/{id}/simulate` — dry-run ทดสอบ Config กับ Device Simulator ·
+ * ไม่แตะ status · SW/Operation/ST/OT เรียกได้ (resource `config-simulation`)
+ * · 409 ถ้าสถานะ Config ไม่รองรับการทดสอบ
+ */
+export function simulateConfig(
+  token: string,
+  id: string,
+): Promise<SimulationResult> {
+  return apiJson<SimulationResult>(`/config/${id}/simulate`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * `POST /config/{id}/approve` — Operation อนุมัติ Config สถานะ `testing` →
+ * `approved` + snapshot `ConfigVersion` · Separation of Duty: SW อนุมัติของ
+ * ตัวเองไม่ได้ (บังคับที่ backend) · Operation เท่านั้น (resource `config` Approve)
+ */
+export function approveConfig(token: string, id: string): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/approve`, { method: "POST", token });
+}
+
+/**
+ * `POST /config/{id}/reject` — Operation ปฏิเสธ Config สถานะ `testing` →
+ * `rejected` · ไม่มี body (endpoint ยังไม่รับเหตุผล)
+ */
+export function rejectConfig(token: string, id: string): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/reject`, { method: "POST", token });
+}
