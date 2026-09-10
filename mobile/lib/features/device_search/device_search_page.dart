@@ -108,7 +108,9 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                 data: (devices) {
                   final filtered = _filterDevices(devices, _query);
                   if (filtered.isEmpty) {
-                    return _DeviceSearchEmpty(searching: _query.trim().isNotEmpty);
+                    return _DeviceSearchEmpty(
+                      searching: _query.trim().isNotEmpty,
+                    );
                   }
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -123,8 +125,7 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                     ),
                   );
                 },
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (error, _) => _DeviceSearchError(
                   message: error is ApiException
                       ? error.message

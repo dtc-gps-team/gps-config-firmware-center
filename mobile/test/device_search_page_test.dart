@@ -50,9 +50,7 @@ Future<void> _pump(
 }) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        deviceSearchRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
       child: const MaterialApp(home: DeviceSearchPage()),
     ),
   );
@@ -81,9 +79,7 @@ Future<void> _pumpRouted(
   );
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        deviceSearchRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp.router(routerConfig: router),
     ),
   );
@@ -156,10 +152,7 @@ void main() {
       repo: _FakeDeviceSearchRepository(devices: [_device(deviceId: 'DEV-1')]),
     );
 
-    await tester.enterText(
-      find.byKey(const Key('device_search_field')),
-      'zzz',
-    );
+    await tester.enterText(find.byKey(const Key('device_search_field')), 'zzz');
     await tester.pump();
 
     expect(find.byKey(const Key('device_search_empty')), findsOneWidget);
@@ -167,10 +160,7 @@ void main() {
   });
 
   testWidgets('ไม่มีอุปกรณ์ในระบบ -> empty state', (tester) async {
-    await _pump(
-      tester,
-      repo: _FakeDeviceSearchRepository(devices: const []),
-    );
+    await _pump(tester, repo: _FakeDeviceSearchRepository(devices: const []));
 
     expect(find.byKey(const Key('device_search_empty')), findsOneWidget);
     expect(find.text('ยังไม่มีอุปกรณ์ในระบบ'), findsOneWidget);

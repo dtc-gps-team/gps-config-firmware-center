@@ -147,7 +147,10 @@ class ApiClient {
   /// No query params: returns every device. Mobile filters/searches client-side
   /// like Web does (the list is small in the MVP).
   Future<List<Device>> listDevices() async {
-    return _wrapList(() => _dio.get<List<dynamic>>('/devices'), Device.fromJson);
+    return _wrapList(
+      () => _dio.get<List<dynamic>>('/devices'),
+      Device.fromJson,
+    );
   }
 
   /// `GET /devices/{deviceId}` — Device Detail. Keyed by `Device.deviceId`

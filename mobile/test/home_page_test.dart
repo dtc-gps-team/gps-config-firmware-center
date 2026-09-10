@@ -159,7 +159,8 @@ Future<void> _pumpHomeRouted(
       ),
       GoRoute(
         path: AppRoutes.deviceSearch,
-        builder: (_, _) => const Scaffold(body: Text('DEVICE_SEARCH_PAGE_STUB')),
+        builder: (_, _) =>
+            const Scaffold(body: Text('DEVICE_SEARCH_PAGE_STUB')),
       ),
       GoRoute(
         path: AppRoutes.taskDetailPattern,
@@ -355,18 +356,19 @@ void main() {
       });
     }
 
-    testWidgets('แตะแล้ว navigate ไปหน้าค้นหาอุปกรณ์ (ไม่ใช่ snackbar อีกต่อไป)', (
-      tester,
-    ) async {
-      await _pumpHomeRouted(tester, UserRole.operation);
-      final tile = find.byKey(const Key('shortcut_find_device'));
-      await tester.ensureVisible(tile);
-      await tester.pumpAndSettle();
-      await tester.tap(tile);
-      await tester.pumpAndSettle();
-      expect(find.text('DEVICE_SEARCH_PAGE_STUB'), findsOneWidget);
-      expect(find.textContaining('เร็ว'), findsNothing);
-    });
+    testWidgets(
+      'แตะแล้ว navigate ไปหน้าค้นหาอุปกรณ์ (ไม่ใช่ snackbar อีกต่อไป)',
+      (tester) async {
+        await _pumpHomeRouted(tester, UserRole.operation);
+        final tile = find.byKey(const Key('shortcut_find_device'));
+        await tester.ensureVisible(tile);
+        await tester.pumpAndSettle();
+        await tester.tap(tile);
+        await tester.pumpAndSettle();
+        expect(find.text('DEVICE_SEARCH_PAGE_STUB'), findsOneWidget);
+        expect(find.textContaining('เร็ว'), findsNothing);
+      },
+    );
   });
 
   group('กระดิ่งแจ้งเตือน — badge จริง + navigate', () {

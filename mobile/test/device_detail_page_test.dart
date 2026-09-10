@@ -44,9 +44,7 @@ Future<void> _pump(
 }) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        deviceSearchRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp(home: DeviceDetailPage(deviceId: deviceId)),
     ),
   );

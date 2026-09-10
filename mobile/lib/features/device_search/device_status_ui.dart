@@ -15,7 +15,9 @@ class DeviceStatusStyle {
   };
 
   /// `(background, foreground)` for the status pill.
-  static (Color, Color) colors(DeviceLifecycleStatus status) => switch (status) {
+  static (Color, Color) colors(
+    DeviceLifecycleStatus status,
+  ) => switch (status) {
     DeviceLifecycleStatus.registered => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
     DeviceLifecycleStatus.installed => (Color(0xFFE6F4EA), Color(0xFF1E7E34)),
     DeviceLifecycleStatus.decommissioned => (

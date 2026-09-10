@@ -41,9 +41,7 @@ void main() {
     test('deviceListProvider hits the repository (no role gate)', () async {
       final repo = _RecordingDeviceSearchRepository();
       final container = ProviderContainer(
-        overrides: [
-          deviceSearchRepositoryProvider.overrideWithValue(repo),
-        ],
+        overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
       );
       addTearDown(container.dispose);
 
@@ -55,9 +53,7 @@ void main() {
     test('deviceDetailProvider forwards the deviceId', () async {
       final repo = _RecordingDeviceSearchRepository();
       final container = ProviderContainer(
-        overrides: [
-          deviceSearchRepositoryProvider.overrideWithValue(repo),
-        ],
+        overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
       );
       addTearDown(container.dispose);
 
