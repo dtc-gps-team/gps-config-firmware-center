@@ -22,7 +22,6 @@ import {
   type PillTone,
   CONFIG_STATUS_TONE,
   TASK_STATUS_TONE,
-  DEVICE_STATUS_TONE,
 } from "@/lib/status-pill";
 
 export {
@@ -231,60 +230,8 @@ export const DEMO_FIRMWARE = [
   },
 ];
 
-/* ---------------------------------------------------------------- */
-/*  Device Search — GET /devices (ยังไม่มี list endpoint ในสเปค)     */
-/* ---------------------------------------------------------------- */
-
-export interface DemoDevice {
-  deviceId: string;
-  sim: string;
-  model: string;
-  status: keyof typeof DEVICE_STATUS_TONE;
-}
-
-export const DEMO_DEVICES: DemoDevice[] = [
-  {
-    deviceId: "DEV-0117",
-    sim: "0812345678",
-    model: "GT06N",
-    status: "installed",
-  },
-  {
-    deviceId: "DEV-0092",
-    sim: "0898765432",
-    model: "GT06N",
-    status: "installed",
-  },
-  {
-    deviceId: "DEV-0043",
-    sim: "0865551212",
-    model: "GT06L",
-    status: "installed",
-  },
-  {
-    deviceId: "DEV-0201",
-    sim: "0801119999",
-    model: "GT06N",
-    status: "registered",
-  },
-  {
-    deviceId: "DEV-0007",
-    sim: "0877773333",
-    model: "GT06L",
-    status: "decommissioned",
-  },
-];
-
-export const DEMO_DEVICE_DETAIL = {
-  deviceId: "DEV-0117",
-  sim: "0812345678",
-  model: "GT06N",
-  protocol: "TCP",
-  status: "installed" as const,
-  configStatus: "synced",
-  firmwareVersion: "GT06N-v2.4.1",
-  lastCheckIn: "12 นาทีก่อน",
-};
+/* Device Search / Device Detail — ต่อ `GET /devices` จริงแล้ว (Sprint 2 #11)
+ * ดู web/src/app/(app)/devices/ · DEMO_DEVICES / DEMO_DEVICE_DETAIL ถูกลบออก */
 
 /* ---------------------------------------------------------------- */
 /*  Campaign — โมดูล campaign (ยังไม่มี endpoint ในสเปค)             */
