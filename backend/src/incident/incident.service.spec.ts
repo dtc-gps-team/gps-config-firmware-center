@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigSyncFailure } from '../config-sync-writer/config-sync-writer-queue.service';
@@ -19,6 +19,8 @@ const failure: ConfigSyncFailure = {
 describe('IncidentService', () => {
   let service: IncidentService;
   let incidentCreate: jest.Mock;
+  let incidentFindMany: jest.Mock;
+  let incidentFindUnique: jest.Mock;
   /** EventEmitter จริง — เทส wiring ของ onModuleInit ครบเส้น */
   let queue: ConfigSyncWriterQueue;
 
@@ -27,6 +29,8 @@ describe('IncidentService', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     incidentCreate = jest.fn().mockResolvedValue({ id: 'inc-1' });
+    incidentFindMany = jest.fn().mockResolvedValue([]);
+    incidentFindUnique = jest.fn().mockResolvedValue(null);
     queue = new EventEmitter() as unknown as ConfigSyncWriterQueue;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -34,7 +38,13 @@ describe('IncidentService', () => {
         IncidentService,
         {
           provide: PrismaService,
-          useValue: { incident: { create: incidentCreate } },
+          useValue: {
+            incident: {
+              create: incidentCreate,
+              findMany: incidentFindMany,
+              findUnique: incidentFindUnique,
+            },
+          },
         },
         { provide: ConfigSyncWriterQueue, useValue: queue },
       ],
@@ -94,5 +104,76 @@ describe('IncidentService', () => {
 
     expect(() => queue.emit('sync-failed', failure)).not.toThrow();
     await Promise.resolve();
+  });
+
+  describe('findAllIncidents (read-only endpoint)', () => {
+    it('ไม่ส่ง filter -> findMany where ว่าง (undefined ทุกตัว) + orderBy createdAt desc', async () => {
+      await service.findAllIncidents({});
+
+      expect(incidentFindMany).toHaveBeenCalledWith({
+        where: {
+          status: undefined,
+          relatedConfigId: undefined,
+          relatedFirmwareId: undefined,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('filter status อย่างเดียว', async () => {
+      await service.findAllIncidents({ status: 'open' });
+
+      expect(incidentFindMany).toHaveBeenCalledWith({
+        where: {
+          status: 'open',
+          relatedConfigId: undefined,
+          relatedFirmwareId: undefined,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('filter relatedConfigId + relatedFirmwareId พร้อมกัน', async () => {
+      await service.findAllIncidents({
+        relatedConfigId: 'cfg-1',
+        relatedFirmwareId: 'fw-1',
+      });
+
+      expect(incidentFindMany).toHaveBeenCalledWith({
+        where: {
+          status: undefined,
+          relatedConfigId: 'cfg-1',
+          relatedFirmwareId: 'fw-1',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('คืนผลจาก prisma ตรงๆ', async () => {
+      const rows = [{ id: 'inc-1' }, { id: 'inc-2' }];
+      incidentFindMany.mockResolvedValue(rows);
+
+      await expect(service.findAllIncidents({})).resolves.toBe(rows);
+    });
+  });
+
+  describe('findIncidentById (read-only endpoint)', () => {
+    it('พบ -> คืน record', async () => {
+      const row = { id: 'inc-9', title: 'x' };
+      incidentFindUnique.mockResolvedValue(row);
+
+      await expect(service.findIncidentById('inc-9')).resolves.toBe(row);
+      expect(incidentFindUnique).toHaveBeenCalledWith({
+        where: { id: 'inc-9' },
+      });
+    });
+
+    it('ไม่พบ -> NotFoundException', async () => {
+      incidentFindUnique.mockResolvedValue(null);
+
+      await expect(service.findIncidentById('nope')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 });

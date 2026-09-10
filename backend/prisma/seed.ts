@@ -220,6 +220,11 @@ async function main() {
 
     // ---- devices (getDeviceStatus — ทุก role อ่านได้) ----
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'devices', 'Read')),
+
+    // ---- incidents (read-only list/detail — ทุก role อ่านได้) ----
+    // RBAC_Matrix.md §2 แถว "Incident & Rollback" = R ทุกคอลัมน์ (SW/Operation/
+    // ST/OT/Auditor/Admin/SuperAdmin) · Create/Update ยังไม่เปิดผ่าน API
+    ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'incidents', 'Read')),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----
