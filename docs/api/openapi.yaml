@@ -18,6 +18,10 @@ tags:
     description: Login และการยืนยันตัวตน (JWT)
   - name: config
     description: จัดการ Device Config — สร้าง/นำเข้า/ทดสอบ/อนุมัติ
+  - name: config-deletion
+    description: >-
+      คำขอลบ Config อัตโนมัติ (docs/11 Part A) — scheduled job เสนอลบ Config
+      ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · SW/ผู้สร้างกด "เก็บไว้"
   - name: firmware
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
@@ -28,6 +32,10 @@ tags:
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
   - name: notification
     description: Notification ของ user ปัจจุบัน — list และ mark อ่านแล้ว
+  - name: incident
+    description: >-
+      รายการเหตุการณ์ผิดปกติ (Incident) — รอบนี้ read-only เท่านั้น
+      ดูรายการ/รายละเอียด · Create ยังเป็นแค่ auto จาก config-sync-writer
 
 paths:
   /auth/login:
@@ -418,6 +426,139 @@ paths:
         "404":
           description: ไม่พบ Config นี้ หรือไม่พบเวอร์ชันที่ระบุ
 
+  # เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน
+  # สร้าง ConfigDeletionRequest ให้ Config ที่เข้าเกณฑ์ §2 · SuperAdmin ดูคิว +
+  # approve (soft delete) / reject (Config อยู่ต่อ + cooldown 90 วัน) · SW หรือ
+  # ผู้สร้างกด keep ระหว่าง grace period 7 วัน -> cancelled
+  /config-deletion-requests:
+    get:
+      tags: [config-deletion]
+      operationId: listConfigDeletionRequests
+      summary: SuperAdmin ดูคิวคำขอลบ Config (docs/11 §5 — v3.16)
+      description: >-
+        ไม่ระบุ `status` = `pending` (คิวที่ต้องตัดสิน) · รับค่าอื่น
+        (`approved`/`rejected`/`cancelled`) ได้เผื่อหน้าประวัติ
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected, cancelled]
+      responses:
+        "200":
+          description: รายการ ConfigDeletionRequest (แนบ config เต็ม)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคำขอลบ Config — เฉพาะ Role SuperAdmin
+
+  /config-deletion-requests/{id}/approve:
+    post:
+      tags: [config-deletion]
+      operationId: approveConfigDeletionRequest
+      summary: SuperAdmin อนุมัติคำขอลบ Config -> soft delete (docs/11 §5 — v3.16)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — Config ถูก soft-delete (`deletedAt` != null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติคำขอลบ — เฉพาะ Role SuperAdmin
+        "404":
+          description: ไม่พบคำขอลบนี้
+        "409":
+          description: คำขอลบนี้ถูกตัดสินไปแล้ว (สถานะไม่ใช่ pending)
+
+  /config-deletion-requests/{id}/reject:
+    post:
+      tags: [config-deletion]
+      operationId: rejectConfigDeletionRequest
+      summary: SuperAdmin ปฏิเสธคำขอลบ Config — Config อยู่ต่อ + cooldown 90 วัน (docs/11 §5 — v3.16)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลที่ไม่อนุมัติให้ลบ — เก็บใน `decisionNote` ให้ผู้สร้างเห็น
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ — Config ไม่ถูกแตะ, เข้า cooldown 90 วัน
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "400":
+          description: ไม่ได้ส่ง `note` หรือยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธคำขอลบ — เฉพาะ Role SuperAdmin
+        "404":
+          description: ไม่พบคำขอลบนี้
+        "409":
+          description: คำขอลบนี้ถูกตัดสินไปแล้ว (สถานะไม่ใช่ pending)
+
+  # `keep` key ด้วย config id (ไม่ใช่ request id) — SW/ผู้สร้างได้ notification
+  # เรื่อง "Config X" ไม่รู้ request id · resource `config` action Update ที่ SW
+  # มีอยู่แล้ว (ต่างจาก docs/11 §5 ที่วางเป็น `/config-deletion-requests/{id}/keep`
+  # — ปรับ path ให้ตรงกับสิทธิ์/บริบทผู้ใช้จริง ดู RBAC_Matrix.md §4.2)
+  /config/{configId}/deletion-requests/keep:
+    post:
+      tags: [config-deletion]
+      operationId: keepConfigDeletionRequest
+      summary: SW / ผู้สร้างกด "เก็บไว้" ระหว่าง grace period -> cancelled + reset นาฬิกา (docs/11 §3 — v3.16)
+      parameters:
+        - in: path
+          name: configId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ยกเลิกคำขอลบสำเร็จ — `Config.updatedAt` ถูกแตะใหม่ (reset นาฬิกา 90 วัน)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDeletionRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role SW
+        "404":
+          description: ไม่มีคำขอลบที่รอดำเนินการ (pending) สำหรับ Config นี้
+
   /config-definitions:
     get:
       tags: [config]
@@ -772,6 +913,83 @@ paths:
         "409":
           description: uploadStatus ของ Firmware ยังไม่พร้อมทดสอบ (เช่น pending/failed)
 
+  /devices:
+    get:
+      tags: [device]
+      operationId: listDevices
+      summary: ค้นหา/รายการอุปกรณ์ (Device Search — v3.17)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Device Search /
+        Device Detail" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา =
+        คืนทุกเครื่อง · `search` match ทั้ง `deviceId` และ `simNumber`
+        (contains, case-insensitive) · ยังไม่มี paging (จำนวน Device ใน MVP น้อย)
+      parameters:
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: คำค้น — match deviceId หรือ simNumber แบบ contains
+        - in: query
+          name: deviceModel
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - in: query
+          name: protocol
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [registered, installed, decommissioned]
+      responses:
+        "200":
+          description: รายการ Device (เรียงตาม deviceId)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "400":
+          description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /devices/{deviceId}:
+    get:
+      tags: [device]
+      operationId: getDevice
+      summary: ดูรายละเอียดอุปกรณ์ 1 เครื่อง (Device Detail — v3.17)
+      description: >-
+        อ้างด้วย `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` (UUID
+        ภายใน) · คืนเฉพาะ field ของ record Device เอง — สถานะ Config/Firmware
+        ของกล่อง (`GET /devices/{deviceId}/status`) ยังไม่ implement
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ข้อมูล Device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+
   /devices/{deviceId}/status:
     get:
       tags: [device-status]
@@ -921,6 +1139,72 @@ paths:
             เช็คความพร้อมไม่ได้ — Device ยังไม่ installed หรือ Config ยังไม่ผ่าน
             อนุมัติ (ต้อง approved หรือ synced)
 
+  /incidents:
+    get:
+      tags: [incident]
+      operationId: listIncidents
+      summary: รายการ Incident (read-only) — v3.18
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Incident &
+        Rollback" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา = คืน
+        ทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน)
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [open, investigating, rolled_back, resolved]
+        - in: query
+          name: relatedConfigId
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - in: query
+          name: relatedFirmwareId
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        "200":
+          description: รายการ Incident (เรียงตาม createdAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Incident"
+        "400":
+          description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /incidents/{id}:
+    get:
+      tags: [incident]
+      operationId: getIncident
+      summary: ดูรายละเอียด Incident 1 รายการ — v3.18
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ข้อมูล Incident
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Incident นี้
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1030,6 +1314,47 @@ components:
         approvedAt:
           type: string
           format: date-time
+
+    ConfigDeletionRequest:
+      type: object
+      description: >-
+        คำขอลบ Config อัตโนมัติ (docs/11 Part A) — ตรงกับ Prisma model
+        ConfigDeletionRequest · scheduled job สร้างเป็น `pending` · SuperAdmin
+        approve (soft delete) / reject (cooldown) · SW/ผู้สร้าง keep -> cancelled
+      required: [id, configId, reason, status, detectedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        configId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: เหตุผลที่ job สร้างคำขอ (human-readable ให้ SuperAdmin อ่าน)
+        status:
+          type: string
+          enum: [pending, approved, rejected, cancelled]
+        detectedAt:
+          type: string
+          format: date-time
+          description: เวลาที่ job ตรวจพบและสร้างคำขอ
+        reviewedBy:
+          type: string
+          nullable: true
+          description: user id ของ SuperAdmin ที่ approve/reject (null ถ้ายัง pending หรือถูก keep)
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        decisionNote:
+          type: string
+          nullable: true
+          description: เหตุผลตอน reject (SuperAdmin กรอก)
+        config:
+          allOf:
+            - $ref: "#/components/schemas/DeviceConfigDraft"
+          description: Config ที่ถูกเสนอลบ (แนบมากับ listConfigDeletionRequests)
 
     ConfigFieldDefinition:
       type: object
@@ -1377,6 +1702,86 @@ components:
           allOf:
             - $ref: "#/components/schemas/DeviceConnectionTestResult"
           description: สัญญาณของกล่องเครื่องนั้น (ผลจาก Device Connection Tester)
+
+    Device:
+      type: object
+      description: >-
+        อุปกรณ์ GPS หนึ่งเครื่อง (ตรงกับ Prisma model Device — MVP ตาม
+        ../planning/03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8 · ยังไม่มี FK
+        ไป Vehicle/Customer/HardwareRevision ตาม Data Dictionary — ดู
+        schema.prisma comment + docs/12_CustomerScope_Proposal.md)
+      required:
+        [id, deviceId, simNumber, deviceModel, protocol, status, registeredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: surrogate key ภายใน (ใช้ทำ FK/index) — client อ้างอิงด้วย deviceId
+        deviceId:
+          type: string
+          description: เลขเครื่องจริงที่ช่างกรอก/สแกนตอนลงทะเบียน (unique)
+          example: DEV-0001
+        simNumber:
+          type: string
+        deviceModel:
+          type: string
+          example: GT06N
+        protocol:
+          type: string
+          example: TCP
+        status:
+          type: string
+          enum: [registered, installed, decommissioned]
+        registeredAt:
+          type: string
+          format: date-time
+        installedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Incident:
+      type: object
+      description: >-
+        เหตุการณ์ผิดปกติ 1 รายการ (ตรงกับ Prisma model Incident) — รอบนี้
+        สร้างอัตโนมัติจาก config-sync-writer เท่านั้น (source =
+        'config-sync-writer') ช่องทางสร้างอื่นยังไม่เปิด
+      required: [id, title, severity, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        status:
+          type: string
+          enum: [open, investigating, rolled_back, resolved]
+        relatedConfigId:
+          type: string
+          nullable: true
+        relatedFirmwareId:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+          example: config-sync-writer
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     DeviceStatus:
       type: object

@@ -8,6 +8,7 @@ import { Config } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
 import { ActingUser, ConfigService } from './config.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from './device-simulator';
 
@@ -36,6 +37,7 @@ const draftConfig: Config = {
   fields: { APN1: 'internet' },
   createdBy: 'sw-1',
   approvedBy: null,
+  deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -76,6 +78,7 @@ describe('ConfigService', () => {
   let configVersion: ConfigVersionDelegateMock;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
+  let configSyncQueue: { enqueueConfigSync: jest.Mock };
 
   beforeEach(async () => {
     config = {
@@ -98,6 +101,7 @@ describe('ConfigService', () => {
     configDefinitionService = {
       validateFields: jest.fn().mockResolvedValue(undefined),
     };
+    configSyncQueue = { enqueueConfigSync: jest.fn() };
 
     // $transaction (interactive form) — เรียก callback ด้วย tx ที่ใช้ delegate
     // mock ตัวเดียวกับนอก transaction เพื่อให้ assertion เดิม (config.update
@@ -118,6 +122,10 @@ describe('ConfigService', () => {
         {
           provide: ConfigDefinitionService,
           useValue: configDefinitionService,
+        },
+        {
+          provide: ConfigSyncWriterQueue,
+          useValue: configSyncQueue,
         },
       ],
     }).compile();
@@ -542,6 +550,49 @@ describe('ConfigService', () => {
       expect(configVersion.create).not.toHaveBeenCalled();
     });
 
+    it('config-sync: approve สำเร็จ -> enqueue งานเขียนเข้าระบบเดิม พร้อม payload ครบ', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(0);
+
+      await service.approve(testingConfig.id, operation);
+
+      expect(configSyncQueue.enqueueConfigSync).toHaveBeenCalledTimes(1);
+      expect(configSyncQueue.enqueueConfigSync).toHaveBeenCalledWith({
+        configId: approvedConfig.id,
+        versionNumber: 1,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      });
+    });
+
+    it('config-sync: precondition ไม่ผ่าน -> ไม่ enqueue งาน config-sync', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await expect(
+        service.approve(approvedConfig.id, operation),
+      ).rejects.toThrow(ConflictException);
+      expect(configSyncQueue.enqueueConfigSync).not.toHaveBeenCalled();
+    });
+
+    it('config-sync: fields ที่มี boolean -> แปลงเป็น "true"/"false" ตอน enqueue', async () => {
+      config.findUnique.mockResolvedValue({
+        ...testingConfig,
+        fields: { GPS: true, RATE: 30, APN: 'internet' },
+      });
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(0);
+
+      await service.approve(testingConfig.id, operation);
+
+      expect(configSyncQueue.enqueueConfigSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fields: { GPS: 'true', RATE: 30, APN: 'internet' },
+        }),
+      );
+    });
+
     it('status draft (ยังไม่ผ่าน decide ของ SW) -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
@@ -719,14 +770,14 @@ describe('ConfigService', () => {
   });
 
   describe('findAll', () => {
-    it('ส่ง status filter ต่อให้ Prisma ตรงๆ ไม่ scope ตาม creator', async () => {
+    it('ส่ง status filter ต่อให้ Prisma ตรงๆ + กรอง soft-deleted ออก ไม่ scope ตาม creator', async () => {
       config.findMany.mockResolvedValue([draftConfig]);
 
       const result = await service.findAll({ status: 'draft' });
 
       expect(result).toEqual([draftConfig]);
       expect(config.findMany).toHaveBeenCalledWith({
-        where: { status: 'draft' },
+        where: { status: 'draft', deletedAt: null },
         orderBy: { createdAt: 'desc' },
       });
     });
@@ -736,6 +787,16 @@ describe('ConfigService', () => {
     it('ไม่เจอ config -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
       await expect(service.findOne('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('config ถูก soft-delete (deletedAt != null) -> NotFoundException (docs/11 Part A)', async () => {
+      config.findUnique.mockResolvedValue({
+        ...draftConfig,
+        deletedAt: new Date('2026-06-01T00:00:00.000Z'),
+      });
+      await expect(service.findOne(draftConfig.id)).rejects.toThrow(
         NotFoundException,
       );
     });

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
+import { ConfigSyncWriterModule } from '../config-sync-writer/config-sync-writer.module';
 import { ConfigController } from './config.controller';
 import { ConfigService } from './config.service';
 import {
@@ -19,7 +20,10 @@ import {
   // ConfigDefinitionModule: ConfigService ต้องเรียก
   // ConfigDefinitionService.validateFields() (ดู config.service.ts) — ต้อง
   // export ConfigDefinitionService ไว้แล้วที่ config-definition.module.ts
-  imports: [AuthModule, ConfigDefinitionModule],
+  // ConfigSyncWriterModule: ConfigService.approve() enqueue งานเขียน Config ที่
+  // อนุมัติแล้วเข้าระบบเดิมผ่าน ConfigSyncWriterQueue (docs/07 §5) — module
+  // export queue ไว้แล้ว
+  imports: [AuthModule, ConfigDefinitionModule, ConfigSyncWriterModule],
   controllers: [ConfigController],
   providers: [
     ConfigService,

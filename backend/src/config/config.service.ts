@@ -15,6 +15,8 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
+import { type LegacyConfigWrite } from '../config-sync-writer/config-sync-writer.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
@@ -47,6 +49,7 @@ export class ConfigService {
     @Inject(DEVICE_SIMULATOR)
     private readonly deviceSimulator: DeviceSimulator,
     private readonly configDefinitionService: ConfigDefinitionService,
+    private readonly configSyncQueue: ConfigSyncWriterQueue,
   ) {}
 
   /**
@@ -294,26 +297,32 @@ export class ConfigService {
       );
     }
 
+    let approved: Config;
+    let versionNumber: number;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const priorVersions = await tx.configVersion.count({
           where: { configId: id },
         });
+        const nextVersion = priorVersions + 1;
         await tx.configVersion.create({
           data: {
             configId: id,
-            versionNumber: priorVersions + 1,
+            versionNumber: nextVersion,
             fields: config.fields as Prisma.InputJsonValue,
             deviceModel: config.deviceModel,
             protocol: config.protocol,
             approvedBy: actor.id,
           },
         });
-        return tx.config.update({
+        const updated = await tx.config.update({
           where: { id },
           data: { status: 'approved', approvedBy: actor.id },
         });
+        return { updated, nextVersion };
       });
+      approved = result.updated;
+      versionNumber = result.nextVersion;
     } catch (err) {
       // race: config ถูกลบระหว่าง findOne กับ transaction (rare) — pattern
       // เดียวกับ updateStatus()/update()/remove()
@@ -325,6 +334,47 @@ export class ConfigService {
       }
       throw err;
     }
+
+    // config-sync-writer (docs/07 §5) — enqueue "หลัง transaction commit" โดย
+    // ตั้งใจ ไม่รวมกับ transaction ของ approve · fire-and-forget: ตัว queue
+    // จัดการ retry N=3 + emit 'sync-failed' -> IncidentModule สร้าง Incident
+    // ให้เองถ้าเขียนไม่สำเร็จ (ไม่ทำให้ approve ล้ม) · กันยิงซ้ำจากกดปุ่มรัว
+    // มาให้แล้วโดย precondition ด้านบน (status ต้อง = testing เท่านั้น — approve
+    // ครั้งที่ 2 เจอ 409 ก่อนมาถึงบรรทัดนี้)
+    this.configSyncQueue.enqueueConfigSync({
+      configId: approved.id,
+      versionNumber,
+      deviceModel: approved.deviceModel,
+      protocol: approved.protocol,
+      fields: this.toLegacyFields(config.fields),
+    });
+
+    return approved;
+  }
+
+  /**
+   * แปลง `Config.fields` (Json — ค่าเป็น string/number/boolean ตาม
+   * ConfigFieldDefinition) เป็น shape ที่ `LegacyConfigWrite.fields` รับ
+   * (`Record<string, string | number>`) — boolean -> "true"/"false",
+   * null/undefined ตัดทิ้ง · การ map ชื่อ field + รูปแบบค่าที่ระบบเดิมต้องการ
+   * จริงเป็น TBD ของ handoff (docs/07 §8) ตอน mock ขอแค่ serialize ได้
+   */
+  private toLegacyFields(fields: unknown): LegacyConfigWrite['fields'] {
+    const out: Record<string, string | number> = {};
+    if (fields != null && typeof fields === 'object') {
+      for (const [key, value] of Object.entries(
+        fields as Record<string, unknown>,
+      )) {
+        if (value === null || value === undefined) continue;
+        out[key] =
+          typeof value === 'number' || typeof value === 'string'
+            ? value
+            : typeof value === 'boolean'
+              ? String(value)
+              : JSON.stringify(value);
+      }
+    }
+    return out;
   }
 
   /**
@@ -410,14 +460,20 @@ export class ConfigService {
     // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
     // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
     return this.prisma.config.findMany({
-      where: { status: query.status },
+      // soft-delete (docs/11 Part A): Config ที่ SuperAdmin อนุมัติให้ลบแล้ว
+      // (`deletedAt != null`) ต้องหายจากทุก query อ่าน — hard delete ของ SW
+      // (remove()) ยังลบ row จริงเหมือนเดิม ไม่เกี่ยวกับ filter นี้
+      where: { status: query.status, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string): Promise<Config> {
     const config = await this.prisma.config.findUnique({ where: { id } });
-    if (!config) {
+    // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" (404) — เช็คหลัง
+    // findUnique เพื่อไม่ต้องเปลี่ยนเป็น findFirst (deletedAt ไม่ใช่ unique key)
+    // ดูคอมเมนต์ที่ findAll()
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${id}`);
     }
     return config;

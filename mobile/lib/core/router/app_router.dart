@@ -7,9 +7,12 @@ import '../../features/activity_log/activity_log_repository.dart';
 import '../../features/auth/login_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
 import '../../features/device_connection_test/device_connection_test_page.dart';
+import '../../features/device_search/device_detail_page.dart';
+import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
+import '../../features/task/task_list_page.dart';
 import '../auth/auth_controller.dart';
 
 class AppRoutes {
@@ -23,6 +26,19 @@ class AppRoutes {
   static const simulator = '/simulator';
   static const deviceConnectionTest = '/device-connection-test';
   static const notifications = '/notifications';
+
+  /// Device Search — `/devices`.
+  static const deviceSearch = '/devices';
+
+  /// Device Detail — `/devices/:deviceId`. Use [deviceDetail] to build a
+  /// concrete path. Distinct from [deviceSearch] by segment count, so
+  /// go_router never confuses the two.
+  static const deviceDetailPattern = '/devices/:deviceId';
+  static String deviceDetail(String deviceId) => '/devices/$deviceId';
+
+  /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
+  /// `/tasks/:id` by segment count, so go_router never confuses the two).
+  static const myTasks = '/tasks';
 
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
@@ -96,6 +112,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.deviceConnectionTest,
         builder: (context, state) => const DeviceConnectionTestPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceSearch,
+        builder: (context, state) => const DeviceSearchPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceDetailPattern,
+        builder: (context, state) =>
+            DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.myTasks,
+        builder: (context, state) => const TaskListPage(),
       ),
       GoRoute(
         path: AppRoutes.taskDetailPattern,

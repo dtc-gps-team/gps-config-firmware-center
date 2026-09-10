@@ -1,34 +1,60 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType } from '@prisma/client';
+import { ActionType, Device } from '@prisma/client';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
+import { QueryDeviceDto } from './dto/query-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
 
-// Device module — รอบนี้ทำแค่ `POST /devices/:deviceId/test-connection`
-// (ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง สำหรับช่างหน้างาน ST/OT ผ่าน Mobile)
+// Device module:
+//   GET  /devices                 — Device Search (list + filter)  · ทุก Role
+//   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
+//   POST /devices/:deviceId/test-connection | apply-config | simulate-config
+//                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
 //
-// **ไม่ implement `GET /devices/:deviceId/status`** ในรอบนี้ — มีแต่ spec ใน
-// openapi.yaml ยังไม่เคยมีโค้ดจริง และตกลงกับ paveekornkwork-dev (A) บน
-// คอมเมนต์ PR #52 ว่าตัดออก เพราะการคำนวณ configStatus/firmwareStatus ต้อง
-// ออกแบบใหม่ทั้งก้อน (Device ไม่มี FK ตรงไป Config/Firmware) — เป็น PR แยกในอนาคต
+// **ยังไม่ implement `GET /devices/:deviceId/status`** — มีแต่ spec ใน
+// openapi.yaml (schema `DeviceStatus`) ยังไม่เคยมีโค้ดจริง · การคำนวณ
+// configStatus/firmwareStatus ต้องออกแบบใหม่ทั้งก้อน (Device ไม่มี FK ตรงไป
+// Config/Firmware — ตกลงกับ B บน PR #52) เป็น PR แยกในอนาคต · Device Detail
+// (`GET /devices/:deviceId`) รอบนี้คืนแค่ field ของ record Device เอง
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('devices')
 export class DeviceController {
   constructor(private readonly deviceService: DeviceService) {}
+
+  // Device Search / Device Detail (Sprint 2 #11) — resource `devices` action
+  // Read · RBAC_Matrix.md §2 แถว "Device Search / Device Detail" = R ทุก Role
+  // · grant `devices` Read seed ให้ทุก role อยู่แล้ว (prisma/seed.ts — เดิม
+  // เตรียมไว้ให้ getDeviceStatus ที่ยังไม่ implement) ไม่ต้อง seed เพิ่ม
+  //
+  // key ด้วย `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` (UUID
+  // ภายใน) — เหมือน endpoint ช่างหน้างานด้านล่าง
+  @Get()
+  @RequirePermission('devices', ActionType.Read)
+  findAll(@Query() query: QueryDeviceDto): Promise<Device[]> {
+    return this.deviceService.findAll(query);
+  }
+
+  @Get(':deviceId')
+  @RequirePermission('devices', ActionType.Read)
+  findOne(@Param('deviceId') deviceId: string): Promise<Device> {
+    return this.deviceService.findByDeviceId(deviceId);
+  }
 
   // resource `device-connection-test` action Read — grant ให้ ST/OT เท่านั้น
   // (ดู prisma/seed.ts) A ยืนยันบน PR #52 ว่ายังไม่เปิดให้ SW/Operation

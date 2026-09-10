@@ -55,6 +55,9 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   // ConfigVersion ก่อน Config — FK มี onDelete: Restrict (Stage 5, #26 ข้อ 9)
   // ลบ Config ทั้งที่ยังมี version อยู่ไม่ได้
   await prisma.configVersion.deleteMany();
+  // ConfigDeletionRequest — FK ไป Config เป็น onDelete: Cascade (docs/11 Part A)
+  // แต่ลบเองก่อนให้ชัดเจน (style เดียวกับ Incident/Campaign ข้างบน)
+  await prisma.configDeletionRequest.deleteMany();
   await prisma.config.deleteMany();
   await prisma.firmware.deleteMany();
   await prisma.task.deleteMany();
@@ -69,7 +72,8 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
 
 let seq = 0;
 
-export type RoleCode = 'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin';
+export type RoleCode =
+  'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin' | 'SuperAdmin';
 
 /**
  * Find-or-create a Role row by code. Role is a real table now (not a Postgres
