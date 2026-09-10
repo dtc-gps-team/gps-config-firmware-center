@@ -374,6 +374,83 @@ void main() {
     });
   });
 
+  group('device endpoints', () {
+    Map<String, dynamic> deviceJson({
+      String id = 'uuid-1',
+      String deviceId = 'DEV-0001',
+      String status = 'registered',
+      String? installedAt,
+    }) => {
+      'id': id,
+      'deviceId': deviceId,
+      'simNumber': '0812345678',
+      'deviceModel': 'GT06N',
+      'protocol': 'TCP',
+      'status': status,
+      'registeredAt': '2026-06-01T00:00:00.000Z',
+      'installedAt': installedAt,
+    };
+
+    test('listDevices -> GET /devices, maps the JSON array', () async {
+      final (:client, :adapter) = _clientReturning([
+        deviceJson(deviceId: 'DEV-0001', status: 'registered'),
+        deviceJson(
+          id: 'uuid-2',
+          deviceId: 'DEV-0002',
+          status: 'installed',
+          installedAt: '2026-06-03T00:00:00.000Z',
+        ),
+      ]);
+
+      final devices = await client.listDevices();
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/devices');
+      expect(devices.map((d) => d.deviceId), ['DEV-0001', 'DEV-0002']);
+      expect(devices[0].status, DeviceLifecycleStatus.registered);
+      expect(devices[0].installedAt, isNull);
+      expect(devices[1].status, DeviceLifecycleStatus.installed);
+      expect(devices[1].installedAt, isNotNull);
+    });
+
+    test('listDevices -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listDevices(), isEmpty);
+      expect(adapter.lastRequest?.path, '/devices');
+    });
+
+    test('getDevice -> GET /devices/{deviceId}', () async {
+      final (:client, :adapter) = _clientReturning(
+        deviceJson(deviceId: 'DEV-0117', status: 'installed'),
+      );
+
+      final device = await client.getDevice('DEV-0117');
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/devices/DEV-0117');
+      expect(device.deviceId, 'DEV-0117');
+      expect(device.status, DeviceLifecycleStatus.installed);
+    });
+
+    test('getDevice -> 404 maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {'message': 'ไม่พบ Device นี้'}),
+        ),
+      );
+
+      await expectLater(
+        client.getDevice('missing'),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having((e) => e.message, 'message', 'ไม่พบ Device นี้'),
+        ),
+      );
+    });
+  });
+
   group('notification endpoints', () {
     Map<String, dynamic> notiJson({String id = 'n1', bool read = false}) => {
       'id': id,

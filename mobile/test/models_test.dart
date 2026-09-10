@@ -151,6 +151,77 @@ void main() {
     });
   });
 
+  group('DeviceLifecycleStatus', () {
+    test('wire names match openapi.yaml / Prisma DeviceLifecycleStatus', () {
+      expect(DeviceLifecycleStatus.values.map((s) => s.wireName).toList(), [
+        'registered',
+        'installed',
+        'decommissioned',
+      ]);
+    });
+
+    test('fromWire maps known values and rejects unknown', () {
+      expect(
+        DeviceLifecycleStatus.fromWire('installed'),
+        DeviceLifecycleStatus.installed,
+      );
+      expect(
+        () => DeviceLifecycleStatus.fromWire('retired'),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('Device.fromJson', () {
+    test('parses all fields incl. nullable installedAt', () {
+      final device = Device.fromJson({
+        'id': 'uuid-1',
+        'deviceId': 'DEV-0117',
+        'simNumber': '0812345678',
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+        'status': 'installed',
+        'registeredAt': '2026-06-01T00:00:00.000Z',
+        'installedAt': '2026-06-03T00:00:00.000Z',
+      });
+      expect(device.id, 'uuid-1');
+      expect(device.deviceId, 'DEV-0117');
+      expect(device.simNumber, '0812345678');
+      expect(device.status, DeviceLifecycleStatus.installed);
+      expect(device.installedAt, isNotNull);
+    });
+
+    test('installedAt null -> null (not-yet-installed device)', () {
+      final device = Device.fromJson({
+        'id': 'uuid-2',
+        'deviceId': 'DEV-0092',
+        'simNumber': '0899999999',
+        'deviceModel': 'GT06L',
+        'protocol': 'TCP',
+        'status': 'registered',
+        'registeredAt': '2026-08-20T00:00:00.000Z',
+        'installedAt': null,
+      });
+      expect(device.installedAt, isNull);
+      expect(device.status, DeviceLifecycleStatus.registered);
+    });
+
+    test('unknown status -> throws (contract drift is loud)', () {
+      expect(
+        () => Device.fromJson({
+          'id': 'uuid-3',
+          'deviceId': 'DEV-3',
+          'simNumber': '0800000000',
+          'deviceModel': 'X',
+          'protocol': 'TCP',
+          'status': 'exploded',
+          'registeredAt': '2026-06-01T00:00:00.000Z',
+        }),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('TaskStatus', () {
     test('wire names match openapi.yaml / Prisma enum', () {
       expect(TaskStatus.values.map((s) => s.wireName).toList(), [
