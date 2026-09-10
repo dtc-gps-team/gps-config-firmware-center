@@ -158,6 +158,15 @@ Future<void> _pumpHomeRouted(
         builder: (_, _) => const Scaffold(body: Text('DEVICE_TEST_PAGE_STUB')),
       ),
       GoRoute(
+        path: AppRoutes.deviceSearch,
+        builder: (_, _) =>
+            const Scaffold(body: Text('DEVICE_SEARCH_PAGE_STUB')),
+      ),
+      GoRoute(
+        path: AppRoutes.myTasks,
+        builder: (_, _) => const Scaffold(body: Text('MY_TASKS_PAGE_STUB')),
+      ),
+      GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
           body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
@@ -323,18 +332,90 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('DEVICE_TEST_PAGE_STUB'), findsOneWidget);
     });
+
+    testWidgets('ST แตะ "งานของฉัน" -> ไปหน้ารายการงาน (ไม่ใช่ snackbar)', (
+      tester,
+    ) async {
+      await _pumpHomeRouted(tester, UserRole.st);
+      final tile = find.byKey(const Key('shortcut_my_tasks'));
+      await tester.ensureVisible(tile);
+      await tester.pumpAndSettle();
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+      expect(find.text('MY_TASKS_PAGE_STUB'), findsOneWidget);
+      expect(find.textContaining('เร็ว'), findsNothing);
+    });
+  });
+
+  group('RBAC — ทางลัด "งานของฉัน" เฉพาะ ST/OT', () {
+    final myTasksTile = find.byKey(const Key('shortcut_my_tasks'));
+
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('${role.wireName} เห็นทางลัด "งานของฉัน"', (tester) async {
+        await _pumpHome(tester, role);
+        expect(myTasksTile, findsOneWidget);
+      });
+    }
+
+    for (final role in [
+      UserRole.sw,
+      UserRole.operation,
+      UserRole.auditor,
+      UserRole.admin,
+    ]) {
+      testWidgets('${role.wireName} ไม่เห็นทางลัด "งานของฉัน"', (tester) async {
+        await _pumpHome(tester, role);
+        expect(myTasksTile, findsNothing);
+      });
+    }
+
+    testWidgets('role ว่าง ไม่เห็นทางลัด "งานของฉัน"', (tester) async {
+      await _pumpHome(tester, null);
+      expect(myTasksTile, findsNothing);
+    });
   });
 
   group('ส่วน mock -> snackbar "เร็ว ๆ นี้" (ไม่เงียบ ไม่ crash)', () {
-    testWidgets('แตะทางลัด mock "ค้นหาอุปกรณ์"', (tester) async {
+    // "แจ้งเหตุ" เป็นทางลัด mock ตัวสุดท้ายที่ยังไม่มีหน้าจอปลายทาง
+    // (ค้นหาอุปกรณ์ / งานของฉัน ต่อ route จริงแล้วใน #137 / #138)
+    testWidgets('แตะทางลัด mock "แจ้งเหตุ"', (tester) async {
       await _pumpHome(tester, UserRole.st);
-      final tile = find.byKey(const Key('shortcut_find_device'));
+      final tile = find.byKey(const Key('shortcut_report_incident'));
       await tester.ensureVisible(tile);
       await tester.pumpAndSettle();
       await tester.tap(tile);
       await tester.pump();
       expect(find.textContaining('เร็ว'), findsOneWidget);
     });
+  });
+
+  group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
+    for (final role in [
+      UserRole.st,
+      UserRole.sw,
+      UserRole.operation,
+      UserRole.auditor,
+      UserRole.admin,
+    ]) {
+      testWidgets('${role.wireName} เห็นทางลัด "ค้นหาอุปกรณ์"', (tester) async {
+        await _pumpHome(tester, role);
+        expect(find.byKey(const Key('shortcut_find_device')), findsOneWidget);
+      });
+    }
+
+    testWidgets(
+      'แตะแล้ว navigate ไปหน้าค้นหาอุปกรณ์ (ไม่ใช่ snackbar อีกต่อไป)',
+      (tester) async {
+        await _pumpHomeRouted(tester, UserRole.operation);
+        final tile = find.byKey(const Key('shortcut_find_device'));
+        await tester.ensureVisible(tile);
+        await tester.pumpAndSettle();
+        await tester.tap(tile);
+        await tester.pumpAndSettle();
+        expect(find.text('DEVICE_SEARCH_PAGE_STUB'), findsOneWidget);
+        expect(find.textContaining('เร็ว'), findsNothing);
+      },
+    );
   });
 
   group('กระดิ่งแจ้งเตือน — badge จริง + navigate', () {
