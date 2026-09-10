@@ -77,6 +77,7 @@
 | ลบ Config ที่ไม่ได้ใช้นาน — `draft`/`rejected` + ไม่มี Task/Campaign/Incident + 90 วัน → คำขอลบอัตโนมัติ → SuperAdmin อนุมัติ → soft delete | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | รวมกับ role SuperAdmin |
 | Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
 | เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |
+| config-sync-writer docker/production impl — รอ TBD คำสั่ง Write ระบบเดิม + เครื่องทดสอบ DTC (`:801`) + ไฟเขียวทีม | Backend | handoff (นอก scope งานฝึกงาน) | **เลื่อน** — ระบุใน Scope Report (แถวที่ 33) | Sprint 2 checkpoint ตรวจเฉพาะโหมด mock (มติที่ประชุม #32, ดู `docs/07` §9.5) · ต้องให้พี่เลี้ยงรับทราบ |
 
 ---
 
