@@ -10,6 +10,7 @@ import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
+import '../../features/task/task_list_page.dart';
 import '../auth/auth_controller.dart';
 
 class AppRoutes {
@@ -23,6 +24,10 @@ class AppRoutes {
   static const simulator = '/simulator';
   static const deviceConnectionTest = '/device-connection-test';
   static const notifications = '/notifications';
+
+  /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
+  /// `/tasks/:id` by segment count, so go_router never confuses the two).
+  static const myTasks = '/tasks';
 
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
@@ -96,6 +101,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.deviceConnectionTest,
         builder: (context, state) => const DeviceConnectionTestPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.myTasks,
+        builder: (context, state) => const TaskListPage(),
       ),
       GoRoute(
         path: AppRoutes.taskDetailPattern,

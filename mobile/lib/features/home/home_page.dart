@@ -125,24 +125,28 @@ class HomePage extends ConsumerWidget {
               // ทดสอบสัญญาณ — ช่างหน้างานเท่านั้น (backend บังคับ RBAC 403 ให้
               // เฉพาะ ST/OT อยู่แล้ว — ซ่อนจาก UI เพื่อ UX ที่ดีกว่า) พฤติกรรม
               // เดิมจากก่อน redesign ยกมาทั้งหมด แค่ย้ายเข้ากริดทางลัด
-              if (role == UserRole.st || role == UserRole.ot)
+              if (role == UserRole.st || role == UserRole.ot) ...[
                 _Shortcut(
                   key: const Key('shortcut_device_test'),
                   icon: Icons.wifi_tethering,
                   label: 'ทดสอบสัญญาณ',
                   onTap: () => context.push(AppRoutes.deviceConnectionTest),
                 ),
+                // "งานของฉัน" — หน้าเต็มของ taskListProvider (backend self-scope
+                // GET /tasks ให้ ST/OT อยู่แล้ว) · role อื่น taskListProvider คืน
+                // ว่างเสมอ ไม่มีประโยชน์ให้เห็นปุ่มนี้ (gate เดียวกับ "ทดสอบสัญญาณ")
+                _Shortcut(
+                  key: const Key('shortcut_my_tasks'),
+                  icon: Icons.assignment_outlined,
+                  label: 'งานของฉัน',
+                  onTap: () => context.push(AppRoutes.myTasks),
+                ),
+              ],
               // ---- mock — ยังไม่มีหน้าจอปลายทางจริง (Sprint ถัดไป) ----
               _Shortcut(
                 key: const Key('shortcut_find_device'),
                 icon: Icons.search,
                 label: 'ค้นหาอุปกรณ์',
-                onTap: () => _comingSoon(context),
-              ),
-              _Shortcut(
-                key: const Key('shortcut_my_tasks'),
-                icon: Icons.assignment_outlined,
-                label: 'งานของฉัน',
                 onTap: () => _comingSoon(context),
               ),
               _Shortcut(
