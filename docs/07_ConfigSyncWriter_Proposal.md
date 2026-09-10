@@ -1,8 +1,9 @@
 # 07 — config-sync-writer: ข้อเสนอ + วาระประชุม #32
 
 > เสนอโดย: paveekornk (A) — 2026-09-07
-> สถานะ: **เอกสารเตรียมประชุม ยังไม่ได้เขียนโค้ดจริง** — เป็นงานร่วม A + B
+> สถานะ: **มติปิดครบแล้ว (09/09/2026) · โหมด mock implement เสร็จ** — เป็นงานร่วม A + B
 > ตาม `planning/02_GPS_Development_Plan.md` แถวที่ 9 (Sprint 2) ต้องคุยกันก่อนเริ่ม (issue #32)
+> — ความคืบหน้าโค้ดดู §11 ท้ายเอกสาร
 >
 > **ขอบเขตงาน A+B = `ConfigSyncWriter` interface + `mock` implementation เท่านั้น**
 > โหมด `docker` / `production` เขียนไว้ในเอกสารนี้เพื่อให้ interface ออกแบบมารองรับได้
@@ -330,3 +331,21 @@ B (alert เข้า notification, reuse `incident_alert`)
 - `planning/03_GPS_Detailed_Build_Steps.md` Phase 2 (Checkpoint) + Phase 3 ข้อ 3 (firmware pointer) + Phase 4 ข้อ 1 (rollback เรียก writer)
 - `docs/04_Phase1_A_ConfigWorkflow.md` (สถานะ `synced` = Phase 2)
 - issue #32 (นัดประชุม), #28 (Incident & Rollback), #68 (field catalog backfill)
+
+---
+
+## 11. สถานะการทำงาน (โหมด mock)
+
+| ส่วน (§7) | สถานะ | PR |
+|---|---|---|
+| `Incident.source` + `Incident.metadata` schema (Q2) | ✅ merged | #130 |
+| `ConfigSyncWriter` interface + `MockConfigSyncWriter` + token/module | ✅ merged | #130 |
+| `ConfigSyncWriterQueue` (job runner in-process + retry N=3 + serialize ต่อ configId) | ✅ merged | #131 |
+| เชื่อม `ConfigService.approve()` → `enqueueConfigSync()` (หลัง transaction commit) | ✅ | #135 |
+| `IncidentModule` — สร้าง Incident อัตโนมัติจาก event `'sync-failed'` (`source: 'config-sync-writer'` + `IncidentMetadata`) | ✅ | #135 |
+| Alert เข้า notification (`.on('sync-failed')` → reuse `incident_alert`) — **งาน B** | 🔄 review | #134 |
+| `approved` → `synced` เมื่อ writer สำเร็จ | ⬜ นอก scope (Phase 2 — doc 04) | — |
+| `writeFirmwarePointerToLegacySystem()` จริง | ⬜ Phase 3 (firmware module) | — |
+| `docker` / `production` impl | ⬜ handoff (Q4 — Scope Report แถว 33) | — |
+
+**หมายเหตุ #135:** `IncidentModule` รอบนี้มีแค่ listener + สร้าง Incident — **ยังไม่มี** controller / endpoint (`GET /incidents`, incident detail, Rollback) · พวกนั้น Sprint 3 (checklist แถว 28) · `createFromSyncFailure()` เป็น never-throws (mirror `task.service.ts`) เพราะ `emit()` เป็น sync ไม่ await ผล listener

@@ -10,6 +10,7 @@ import { ConfigDefinitionModule } from './config-definition/config-definition.mo
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
 import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.module';
 import { DeviceModule } from './device/device.module';
+import { IncidentModule } from './incident/incident.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TaskModule } from './task/task.module';
@@ -31,6 +32,7 @@ import { TaskModule } from './task/task.module';
     ConfigDeletionModule,
     ConfigSyncWriterModule,
     DeviceModule,
+    IncidentModule,
     TaskModule,
     NotificationModule,
   ],
