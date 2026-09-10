@@ -32,6 +32,10 @@ tags:
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
   - name: notification
     description: Notification ของ user ปัจจุบัน — list และ mark อ่านแล้ว
+  - name: incident
+    description: >-
+      รายการเหตุการณ์ผิดปกติ (Incident) — รอบนี้ read-only เท่านั้น
+      ดูรายการ/รายละเอียด · Create ยังเป็นแค่ auto จาก config-sync-writer
 
 paths:
   /auth/login:
@@ -1135,6 +1139,72 @@ paths:
             เช็คความพร้อมไม่ได้ — Device ยังไม่ installed หรือ Config ยังไม่ผ่าน
             อนุมัติ (ต้อง approved หรือ synced)
 
+  /incidents:
+    get:
+      tags: [incident]
+      operationId: listIncidents
+      summary: รายการ Incident (read-only)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Incident &
+        Rollback" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา = คืน
+        ทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน)
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [open, investigating, rolled_back, resolved]
+        - in: query
+          name: relatedConfigId
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - in: query
+          name: relatedFirmwareId
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        "200":
+          description: รายการ Incident (เรียงตาม createdAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Incident"
+        "400":
+          description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /incidents/{id}:
+    get:
+      tags: [incident]
+      operationId: getIncident
+      summary: ดูรายละเอียด Incident 1 รายการ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ข้อมูล Incident
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Incident นี้
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1669,6 +1739,49 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    Incident:
+      type: object
+      description: >-
+        เหตุการณ์ผิดปกติ 1 รายการ (ตรงกับ Prisma model Incident) — รอบนี้
+        สร้างอัตโนมัติจาก config-sync-writer เท่านั้น (source =
+        'config-sync-writer') ช่องทางสร้างอื่นยังไม่เปิด
+      required: [id, title, severity, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        status:
+          type: string
+          enum: [open, investigating, rolled_back, resolved]
+        relatedConfigId:
+          type: string
+          nullable: true
+        relatedFirmwareId:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+          example: config-sync-writer
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     DeviceStatus:
       type: object

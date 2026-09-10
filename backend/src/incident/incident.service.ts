@@ -1,18 +1,28 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
+import { Incident, Prisma } from '@prisma/client';
 import {
   ConfigSyncFailure,
   ConfigSyncWriterQueue,
 } from '../config-sync-writer/config-sync-writer-queue.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueryIncidentDto } from './dto/query-incident.dto';
 import { INCIDENT_SOURCE, IncidentMetadata } from './incident-metadata';
 
 /**
- * incident module (ฝั่ง A) — รอบนี้ทำเฉพาะ **สร้าง Incident อัตโนมัติเมื่อ
- * config-sync-writer เขียนไม่สำเร็จ** (มติที่ประชุม #32 — docs/07 §9.5, §5) ·
- * ยังไม่มี controller / endpoint (incident detail UI = Sprint 3, checklist แถว 28)
+ * incident module (ฝั่ง A) — 2 หน้าที่:
+ *   1. สร้าง Incident อัตโนมัติเมื่อ config-sync-writer เขียนไม่สำเร็จ
+ *      (`createFromSyncFailure`, listener — มติที่ประชุม #32, docs/07 §9.5/§5)
+ *   2. read-only endpoint `GET /incidents` + `GET /incidents/:id`
+ *      (`findAllIncidents` / `findIncidentById` — Sprint 2, ดู incident.controller.ts)
  *
- * ฟัง event `'sync-failed'` จาก `ConfigSyncWriterQueue` — B จะมี listener แยก
+ * ยังไม่มี Create/Update/Rollback ผ่าน API — Create เป็น auto อย่างเดียว
+ *
+ * ฟัง event `'sync-failed'` จาก `ConfigSyncWriterQueue` — B มี listener แยก
  * ของตัวเอง (`incident_alert` notification) คนละ PR โดยไม่ต้องแตะไฟล์นี้
  */
 @Injectable()
@@ -74,5 +84,32 @@ export class IncidentService implements OnModuleInit {
           `${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * รายการ Incident ทั้งหมด (read-only) — resource `incident` action `Read`
+   * grant ให้ทุก role (RBAC_Matrix.md แถว "Incident & Rollback" = R ทุก role) ·
+   * เรียงตาม `createdAt desc` (ใหม่สุดก่อน) · ไม่มี paging ตาม MVP เดียวกับ
+   * `devices` (จำนวนข้อมูลน้อย)
+   */
+  findAllIncidents(query: QueryIncidentDto): Promise<Incident[]> {
+    const { status, relatedConfigId, relatedFirmwareId } = query;
+    return this.prisma.incident.findMany({
+      where: {
+        status: status || undefined,
+        relatedConfigId: relatedConfigId || undefined,
+        relatedFirmwareId: relatedFirmwareId || undefined,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /** Incident 1 รายการตาม id — 404 ถ้าไม่พบ (mirror `device.service` findByDeviceId) */
+  async findIncidentById(id: string): Promise<Incident> {
+    const incident = await this.prisma.incident.findUnique({ where: { id } });
+    if (!incident) {
+      throw new NotFoundException(`ไม่พบ Incident id ${id}`);
+    }
+    return incident;
   }
 }
