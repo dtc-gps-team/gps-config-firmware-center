@@ -5,6 +5,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -22,6 +23,7 @@ Task _makeTask({
   TaskStatus status = TaskStatus.pending,
   String? description,
   String? deviceId = 'DVC-1',
+  String? configId,
 }) => Task(
   id: id,
   title: 'ติดตั้งกล่อง GPS',
@@ -31,6 +33,7 @@ Task _makeTask({
   updatedAt: DateTime(2026, 9, 2, 9, 30),
   description: description,
   deviceId: deviceId,
+  configId: configId,
 );
 
 class _FakeTaskRepository implements TaskRepository {
@@ -72,11 +75,40 @@ class _FakeTaskRepository implements TaskRepository {
   }
 }
 
+class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
+  _FakeConfirmInstallRepository({this.result, this.error});
+
+  final ConfigApplyResult? result;
+  final Object? error;
+
+  int calls = 0;
+  String? lastDeviceId;
+  String? lastConfigId;
+
+  @override
+  Future<ConfigApplyResult> applyConfig({
+    required String deviceId,
+    required String configId,
+  }) async {
+    calls++;
+    lastDeviceId = deviceId;
+    lastConfigId = configId;
+    if (error != null) throw error!;
+    return result ??
+        ConfigApplyResult(
+          applied: true,
+          details: const ['ok'],
+          appliedAt: DateTime(2026, 9, 11),
+        );
+  }
+}
+
 Future<void> _pump(
   WidgetTester tester, {
   required TaskRepository repo,
   UserRole? role = UserRole.st,
   String taskId = 't1',
+  ConfirmInstallRepository? confirmInstallRepo,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -87,6 +119,9 @@ Future<void> _pump(
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
         ),
+        confirmInstallRepositoryProvider.overrideWithValue(
+          confirmInstallRepo ?? _FakeConfirmInstallRepository(),
+        ),
       ],
       child: MaterialApp(home: TaskDetailPage(taskId: taskId)),
     ),
@@ -96,6 +131,22 @@ Future<void> _pump(
 
 FilledButton _saveButton(WidgetTester tester) =>
     tester.widget<FilledButton>(find.byKey(const Key('task_status_save')));
+
+Finder get _confirmInstallButton =>
+    find.byKey(const Key('confirm_install_button'));
+
+/// The button sits below the fold on the test surface — `ListView`'s
+/// underlying sliver only builds elements within the viewport + cache
+/// extent, so `find.byKey` can't see it (and `tap()` can't reach it) until
+/// it's scrolled into view.
+Future<void> _scrollToConfirmInstallButton(WidgetTester tester) async {
+  await tester.dragUntilVisible(
+    _confirmInstallButton,
+    find.byType(Scrollable),
+    const Offset(0, -150),
+  );
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('แสดงหัวข้องาน + สถานะ + ข้อมูลอุปกรณ์', (tester) async {
@@ -241,6 +292,258 @@ void main() {
     expect(
       find.text('แก้สถานะได้เฉพาะงานที่มอบหมายให้คุณเท่านั้น'),
       findsOneWidget,
+    );
+  });
+
+  group('Confirm Install', () {
+    testWidgets(
+      'ST + configId + deviceId + in_progress -> เห็นปุ่มยืนยันติดตั้ง',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.st,
+        );
+        await _scrollToConfirmInstallButton(tester);
+
+        expect(_confirmInstallButton, findsOneWidget);
+      },
+    );
+
+    testWidgets('configId เป็น null -> ไม่เห็นปุ่ม', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress),
+        ),
+        role: UserRole.st,
+      );
+
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets('สถานะงานยัง pending (ยังไม่เริ่ม) -> ไม่เห็นปุ่ม', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.pending, configId: 'cfg-1'),
+        ),
+        role: UserRole.st,
+      );
+
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets('สถานะงาน completed (จบไปแล้ว) -> ไม่เห็นปุ่ม', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.completed, configId: 'cfg-1'),
+        ),
+        role: UserRole.st,
+      );
+
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets('role SW (ไม่ใช่ ST/OT) -> ไม่เห็นปุ่มแม้เงื่อนไขอื่นครบ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        role: UserRole.sw,
+      );
+
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets('deviceId เป็น null -> ไม่เห็นปุ่มแม้มี configId', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(
+            status: TaskStatus.inProgress,
+            configId: 'cfg-1',
+            deviceId: null,
+          ),
+        ),
+        role: UserRole.ot,
+      );
+
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets(
+      'กดยืนยัน -> เรียก repo ด้วย deviceId/configId ของ task + snackbar + '
+      'ปุ่มเปลี่ยนเป็น disabled ถาวร (กันกดซ้ำ)',
+      (tester) async {
+        final confirmRepo = _FakeConfirmInstallRepository(
+          result: ConfigApplyResult(
+            applied: true,
+            details: const ['ส่ง Config 3 ฟิลด์ให้ DVC-1 แล้ว'],
+            appliedAt: DateTime(2026, 9, 11),
+          ),
+        );
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(
+              status: TaskStatus.inProgress,
+              configId: 'cfg-1',
+              deviceId: 'DVC-1',
+            ),
+          ),
+          role: UserRole.st,
+          confirmInstallRepo: confirmRepo,
+        );
+        await _scrollToConfirmInstallButton(tester);
+
+        await tester.tap(_confirmInstallButton);
+        await tester.pump(); // kick off _confirmInstall
+        await tester.pump(); // await applyConfig
+
+        expect(confirmRepo.calls, 1);
+        expect(confirmRepo.lastDeviceId, 'DVC-1');
+        expect(confirmRepo.lastConfigId, 'cfg-1');
+        expect(
+          find.text('ส่ง Config เข้าอุปกรณ์เรียบร้อยแล้ว'),
+          findsOneWidget,
+        );
+        expect(find.text('ยืนยันติดตั้งสำเร็จแล้ว'), findsOneWidget);
+        expect(
+          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+          isNull,
+        );
+
+        await tester.pump(const Duration(seconds: 5)); // snackbar timeout
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'applied: false (200 แต่ field ไม่ผ่าน pre-flight) -> แสดง details '
+      'เป็น error, ปุ่มกดซ้ำได้',
+      (tester) async {
+        final confirmRepo = _FakeConfirmInstallRepository(
+          result: ConfigApplyResult(
+            applied: false,
+            details: const ['ฟิลด์ "Timeout" ต้องไม่ติดลบ'],
+            appliedAt: DateTime(2026, 9, 11),
+          ),
+        );
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(
+              status: TaskStatus.inProgress,
+              configId: 'cfg-1',
+              deviceId: 'DVC-1',
+            ),
+          ),
+          role: UserRole.st,
+          confirmInstallRepo: confirmRepo,
+        );
+        await _scrollToConfirmInstallButton(tester);
+
+        await tester.tap(_confirmInstallButton);
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
+        expect(find.text('ฟิลด์ "Timeout" ต้องไม่ติดลบ'), findsOneWidget);
+        expect(
+          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    testWidgets(
+      '409 (device ยังไม่ installed) -> ข้อความจาก backend, ปุ่มกดซ้ำได้',
+      (tester) async {
+        final confirmRepo = _FakeConfirmInstallRepository(
+          error: ApiException(
+            'Device สถานะปัจจุบัน (registered) ยังใส่ Config ไม่ได้ — '
+            'ต้องเป็น installed (ติดตั้งจริงแล้ว) เท่านั้น',
+            statusCode: 409,
+          ),
+        );
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(
+              status: TaskStatus.inProgress,
+              configId: 'cfg-1',
+              deviceId: 'DVC-1',
+            ),
+          ),
+          role: UserRole.st,
+          confirmInstallRepo: confirmRepo,
+        );
+        await _scrollToConfirmInstallButton(tester);
+
+        await tester.tap(_confirmInstallButton);
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
+        expect(
+          find.text(
+            'Device สถานะปัจจุบัน (registered) ยังใส่ Config ไม่ได้ — '
+            'ต้องเป็น installed (ติดตั้งจริงแล้ว) เท่านั้น',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    testWidgets(
+      'backend เข้าไม่ถึง (connection error) -> ข้อความไทยจาก ApiException, '
+      'ไม่ใช่ raw exception',
+      (tester) async {
+        final confirmRepo = _FakeConfirmInstallRepository(
+          error: ApiException(
+            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+          ),
+        );
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(
+              status: TaskStatus.inProgress,
+              configId: 'cfg-1',
+              deviceId: 'DVC-1',
+            ),
+          ),
+          role: UserRole.st,
+          confirmInstallRepo: confirmRepo,
+        );
+        await _scrollToConfirmInstallButton(tester);
+
+        await tester.tap(_confirmInstallButton);
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text(
+            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+          ),
+          findsOneWidget,
+        );
+      },
     );
   });
 }

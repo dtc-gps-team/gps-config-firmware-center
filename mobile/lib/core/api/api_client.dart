@@ -191,6 +191,26 @@ class ApiClient {
     );
   }
 
+  /// `POST /devices/{deviceId}/apply-config` — ส่ง Config ที่ผูกกับ Task ให้
+  /// อุปกรณ์ที่ติดตั้งจริง (Confirm Install, Sprint 3). `deviceId` คือ
+  /// `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ Prisma id — เหมือน
+  /// [simulateConfigOnDevice]. Fire-and-forget: `200` เสมอเมื่อ request ผ่าน
+  /// validation (`applied: false` ใน response ไม่ใช่ HTTP error — ดู
+  /// [ConfigApplyResult]) ส่วน 404/409 คือ error จริง (ไม่พบ device/config,
+  /// device ยังไม่ installed, config ยังไม่อนุมัติ, หรือรุ่น/โปรโตคอลไม่ตรง).
+  Future<ConfigApplyResult> applyConfigToDevice({
+    required String deviceId,
+    required String configId,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/devices/$deviceId/apply-config',
+        data: {'configId': configId},
+      ),
+      ConfigApplyResult.fromJson,
+    );
+  }
+
   /// `POST /notifications/device-tokens` — upsert (200, not 201; idempotent
   /// on repeat calls with the same token). Response body is the stored
   /// `DeviceToken` row, but callers here (`PushTokenRepository`) only care

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
 
@@ -102,6 +103,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   bool _saving = false;
   String? _saveError;
 
+  bool _confirmingInstall = false;
+  bool _installConfirmed = false;
+  String? _confirmInstallError;
+
   bool get _dirty => _selected != widget.task.status;
 
   Future<void> _save() async {
@@ -140,11 +145,62 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     }
   }
 
+  /// เรียก `POST /devices/{deviceId}/apply-config` ด้วย `task.deviceId` +
+  /// `task.configId` — fire-and-forget ฝั่ง backend จึงไม่มีสถานะอุปกรณ์ให้
+  /// รีเฟรชหลังเรียกสำเร็จ (กล่องรับค่าตอนเปิดเครื่องครั้งถัดไป) แค่ mark
+  /// เครื่องหมายว่ายืนยันแล้วในหน้านี้กันกดซ้ำ.
+  Future<void> _confirmInstall() async {
+    final deviceId = widget.task.deviceId;
+    final configId = widget.task.configId;
+    if (deviceId == null || configId == null) return;
+
+    setState(() {
+      _confirmingInstall = true;
+      _confirmInstallError = null;
+    });
+    try {
+      final result = await ref
+          .read(confirmInstallRepositoryProvider)
+          .applyConfig(deviceId: deviceId, configId: configId);
+      if (!mounted) return;
+      setState(() {
+        _confirmingInstall = false;
+        _installConfirmed = result.applied;
+        _confirmInstallError = result.applied
+            ? null
+            : (result.details.isEmpty
+                  ? 'ส่ง Config เข้าอุปกรณ์ไม่สำเร็จ'
+                  : result.details.join('\n'));
+      });
+      if (!mounted || !result.applied) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('ส่ง Config เข้าอุปกรณ์เรียบร้อยแล้ว')),
+        );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _confirmingInstall = false;
+        _confirmInstallError = e.message;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final task = widget.task;
     final role = ref.watch(authControllerProvider).role;
     final canEditStatus = role == UserRole.st || role == UserRole.ot;
+    // Confirm Install (Sprint 3): เฉพาะ ST/OT ที่กำลังทำงานติดตั้ง config อยู่
+    // จริง — ต้องมีทั้ง configId (Operation ผูกไว้ตอนสร้างงาน) และ deviceId
+    // (จะส่งไปให้ endpoint ไหน) และงานต้อง in_progress (ไม่ใช่ pending ที่ยัง
+    // ไม่เริ่ม หรือ completed/cancelled ที่จบไปแล้ว)
+    final canConfirmInstall =
+        canEditStatus &&
+        task.configId != null &&
+        task.deviceId != null &&
+        task.status == TaskStatus.inProgress;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -266,6 +322,78 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     ),
                   )
                 : const Text('บันทึกสถานะ'),
+          ),
+        ],
+        if (canConfirmInstall) ...[
+          const SizedBox(height: 24),
+          const _SectionLabel('ยืนยันติดตั้ง Config'),
+          const SizedBox(height: 8),
+          Text(
+            'ส่ง Config เข้าอุปกรณ์ ${task.deviceId} — ทำหลังติดตั้งกล่อง GPS '
+            'เสร็จแล้วเท่านั้น',
+            style: const TextStyle(
+              fontSize: 13,
+              color: _TaskColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_confirmInstallError != null) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 18,
+                  color: _TaskColors.error,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _confirmInstallError!,
+                    key: const Key('confirm_install_error'),
+                    style: const TextStyle(
+                      color: _TaskColors.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+          FilledButton(
+            key: const Key('confirm_install_button'),
+            onPressed: (_confirmingInstall || _installConfirmed)
+                ? null
+                : _confirmInstall,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              backgroundColor: _TaskColors.navy,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: _TaskColors.navy.withValues(alpha: 0.4),
+              disabledForegroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            child: _confirmingInstall
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    _installConfirmed
+                        ? 'ยืนยันติดตั้งสำเร็จแล้ว'
+                        : 'ยืนยันติดตั้งสำเร็จ',
+                  ),
           ),
         ],
       ],

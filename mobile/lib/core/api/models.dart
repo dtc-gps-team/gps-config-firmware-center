@@ -314,6 +314,38 @@ class DeviceSimulateConfigResult {
       );
 }
 
+/// Result of `POST /devices/{deviceId}/apply-config` (`ConfigApplyResult`,
+/// Confirm Install — Sprint 3). Fire-and-forget on the backend: there is no
+/// device status in the response because the box only picks up the new
+/// Config on its next power-on (no synchronous ack) — see
+/// `backend/src/device/config-applier.ts`. [applied] can be `false` on a
+/// `200` (not just thrown errors) when the Config's fields fail the backend's
+/// basic pre-flight checks — [details] explains why.
+class ConfigApplyResult {
+  const ConfigApplyResult({
+    required this.applied,
+    required this.details,
+    required this.appliedAt,
+  });
+
+  final bool applied;
+  final List<String> details;
+  final DateTime appliedAt;
+
+  factory ConfigApplyResult.fromJson(Map<String, dynamic> json) {
+    final rawDetails = json['details'] as List<dynamic>?;
+    return ConfigApplyResult(
+      applied: json['applied'] as bool? ?? false,
+      details: rawDetails == null
+          ? const []
+          : rawDetails.map((e) => e.toString()).toList(growable: false),
+      appliedAt:
+          DateTime.tryParse(json['appliedAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+}
+
 /// `GET /devices/{deviceId}/status` response (`DeviceStatus`).
 class DeviceStatus {
   const DeviceStatus({
