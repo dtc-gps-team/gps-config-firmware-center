@@ -37,6 +37,7 @@ const draftConfig: Config = {
   fields: { APN1: 'internet' },
   createdBy: 'sw-1',
   approvedBy: null,
+  suggestedApproverId: null,
   deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -76,6 +77,7 @@ describe('ConfigService', () => {
   let service: ConfigService;
   let config: ConfigDelegateMock;
   let configVersion: ConfigVersionDelegateMock;
+  let user: { findUnique: jest.Mock };
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
@@ -94,6 +96,7 @@ describe('ConfigService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     };
+    user = { findUnique: jest.fn() };
     deviceSimulator = { simulateConfig: jest.fn() };
     // default: ผ่าน validate เสมอ (test เดิมทั้งหมดไม่เกี่ยวกับ Semantic
     // Validation) — describe('create'/'update') ด้านล่างจะ override เฉพาะ
@@ -109,6 +112,7 @@ describe('ConfigService', () => {
     const prismaMock = {
       config,
       configVersion,
+      user,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
         cb({ config, configVersion }),
       ),
@@ -483,6 +487,85 @@ describe('ConfigService', () => {
       await expect(service.decide(draftConfig.id, true)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    describe('suggestedApproverId (เจาะจงผู้อนุมัติ — #19)', () => {
+      it('ไม่ส่ง suggestedApproverId -> update แค่ status (ไม่แตะ user.findUnique)', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+        config.update.mockResolvedValue(testingConfig);
+
+        await service.decide(draftConfig.id, true);
+
+        expect(user.findUnique).not.toHaveBeenCalled();
+        expect(config.update).toHaveBeenCalledWith({
+          where: { id: draftConfig.id },
+          data: { status: 'testing' },
+        });
+      });
+
+      it('suggestedApproverId เป็น Operation ที่ active -> set ค่าใน update', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+        config.update.mockResolvedValue(testingConfig);
+        user.findUnique.mockResolvedValue({
+          id: 'op-1',
+          isActive: true,
+          role: { code: 'Operation' },
+        });
+
+        await service.decide(draftConfig.id, true, 'op-1');
+
+        expect(config.update).toHaveBeenCalledWith({
+          where: { id: draftConfig.id },
+          data: { status: 'testing', suggestedApproverId: 'op-1' },
+        });
+      });
+
+      it('suggestedApproverId เป็น role อื่น (ไม่ใช่ Operation) -> BadRequestException', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+        user.findUnique.mockResolvedValue({
+          id: 'sw-2',
+          isActive: true,
+          role: { code: 'SW' },
+        });
+
+        await expect(
+          service.decide(draftConfig.id, true, 'sw-2'),
+        ).rejects.toThrow(BadRequestException);
+        expect(config.update).not.toHaveBeenCalled();
+      });
+
+      it('suggestedApproverId เป็น Operation ที่ถูกปิดใช้งาน -> BadRequestException', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+        user.findUnique.mockResolvedValue({
+          id: 'op-x',
+          isActive: false,
+          role: { code: 'Operation' },
+        });
+
+        await expect(
+          service.decide(draftConfig.id, true, 'op-x'),
+        ).rejects.toThrow(BadRequestException);
+        expect(config.update).not.toHaveBeenCalled();
+      });
+
+      it('suggestedApproverId ไม่มี user นี้ -> BadRequestException', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+        user.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.decide(draftConfig.id, true, 'ghost'),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('passed:false -> ไม่เช็ค suggestedApproverId เลย (คืน config เดิม)', async () => {
+        config.findUnique.mockResolvedValue(draftConfig);
+
+        const result = await service.decide(draftConfig.id, false, 'op-1');
+
+        expect(result).toEqual(draftConfig);
+        expect(user.findUnique).not.toHaveBeenCalled();
+        expect(config.update).not.toHaveBeenCalled();
+      });
     });
   });
 
