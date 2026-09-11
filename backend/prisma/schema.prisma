@@ -479,6 +479,14 @@ model Firmware {
   deviceModelCompatibility String[]
   uploadStatus             FirmwareUploadStatus       @default(pending)
   deviceUpdateStatus       FirmwareDeviceUpdateStatus @default(unknown)
+  // 3 field ด้านล่าง — `01_GPS_Build_Reference.md` §3 ระบุไว้แต่แรกว่าตาราง
+  // Firmware ต้องมี "path ใน Object Storage" แต่ schema เดิม (ก่อน Sprint 3
+  // #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว — ปิด gap นี้ตอน implement
+  // module จริง (ไม่ใช่แค่ objectKey เฉยๆ — เก็บชื่อไฟล์เดิม+ขนาดไว้ด้วยเพื่อ
+  // แสดงผลบนหน้าเว็บ/ตรวจสอบภายหลัง โดยไม่ต้องไปเรียก HEAD object ที่ MinIO)
+  objectKey                String
+  originalFilename         String
+  fileSizeBytes            Int
   uploadedBy               String
   uploadedAt               DateTime                   @default(now())
 

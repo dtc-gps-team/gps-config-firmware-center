@@ -104,6 +104,9 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
       data: {
         version: '1.2.3',
         deviceModelCompatibility: ['GT06N'],
+        objectKey: 'firmware/test/1.2.3.bin',
+        originalFilename: '1.2.3.bin',
+        fileSizeBytes: 1024,
         uploadedBy: sw.id,
       },
     });

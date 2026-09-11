@@ -864,7 +864,8 @@ paths:
     get:
       tags: [firmware]
       operationId: listFirmware
-      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ
+      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ (v3.21)
+      description: ทุก Role ที่ login แล้วเรียกได้ (resource `firmware` action `Read`) เรียงตาม `uploadedAt` desc
       responses:
         "200":
           description: รายการ Firmware
@@ -879,46 +880,138 @@ paths:
     post:
       tags: [firmware]
       operationId: uploadFirmware
-      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว)
+      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.21 implement จริง)
+      description: >-
+        **SW เท่านั้น** (resource `firmware` action `Create`) — อัปโหลดไฟล์ขึ้น
+        Object Storage (MinIO ตอนนี้ → AWS S3 ตอนใช้งานจริง) แบบ synchronous
+        แล้วตั้ง `uploadStatus` ตามผลจริง (`stored`/`failed` — ไม่ throw 500
+        ถ้า Object Storage ล้มเหลว) `deviceModel` เดียวตอนอัปโหลดกลายเป็น
+        compatibility tag เริ่มต้น (1 รุ่น) — เพิ่ม/แก้รุ่นที่รองรับทีหลังผ่าน
+        `PATCH /firmware/{firmwareId}` (Compatibility Tag) แยกต่างหาก · ขนาด
+        ไฟล์สูงสุด 50MB
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required: [file, version, deviceModel]
               properties:
                 file:
                   type: string
                   format: binary
+                version:
+                  type: string
                 deviceModel:
                   type: string
       responses:
         "201":
-          description: อัปโหลดสำเร็จ — แสดง upload_status บนหน้าเว็บ
+          description: อัปโหลดสำเร็จ (ไม่ว่า `uploadStatus` จะเป็น `stored` หรือ `failed`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
         "400":
-          description: ไฟล์หรือ deviceModel ไม่ถูกต้อง
+          description: ไม่มีไฟล์แนบมา หรือไม่ระบุ `version`/`deviceModel`
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์อัปโหลด Firmware — เฉพาะ Role SW เท่านั้น
 
-  /firmware/{firmwareId}/simulate:
-    post:
+  /firmware/{firmwareId}:
+    get:
       tags: [firmware]
-      operationId: simulateFirmware
-      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5)
+      operationId: getFirmware
+      summary: รายละเอียด Firmware 1 รายการ (v3.21)
+      description: เหมือน `listFirmware` — resource `firmware` action `Read` เดียวกัน
       parameters:
         - in: path
           name: firmwareId
           required: true
           schema:
             type: string
+            format: uuid
+      responses:
+        "200":
+          description: ข้อมูล Firmware
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Firmware นี้
+    patch:
+      tags: [firmware]
+      operationId: updateFirmwareCompatibility
+      summary: แก้ Compatibility Tag (v3.21)
+      description: >-
+        **SW เท่านั้น** (resource `firmware` action `Update`) — แทนที่
+        `deviceModelCompatibility` ทั้ง array เสมอ (ไม่ merge กับของเดิม) แยก
+        จากขั้นตอนอัปโหลด ตามชื่อ dev plan แถวที่ 23 "(อัปโหลด + Compatibility Tag)"
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [deviceModelCompatibility]
+              properties:
+                deviceModelCompatibility:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: อัปเดตสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "400":
+          description: deviceModelCompatibility ว่างเปล่า
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้ Compatibility Tag — เฉพาะ Role SW เท่านั้น
+        "404":
+          description: ไม่พบ Firmware นี้
+
+  /firmware/{firmwareId}/simulate:
+    post:
+      tags: [firmware]
+      operationId: simulateFirmware
+      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.21 implement จริง)
+      description: >-
+        SW/Operation/ST/OT (resource `firmware-simulation` action `Read` —
+        แยกจาก `firmware` ธรรมดา mirror `config`/`config-simulation` กัน
+        Auditor/Admin ที่มีแค่ `firmware.Read` เรียกได้โดยไม่ตั้งใจ) mock
+        เช็คว่า `deviceModel` ที่ระบุอยู่ใน `deviceModelCompatibility` ของ
+        Firmware นี้ไหม (env `FIRMWARE_SIMULATOR_MODE` — ยังไม่มี Device
+        Simulator ตัวจริงที่ทดสอบ Firmware ได้) ไม่แตะ `uploadStatus`/state ใดๆ
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceModel]
               properties:
                 deviceModel:
                   type: string
@@ -930,7 +1023,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SimulationResult"
         "400":
-          description: deviceModel ไม่ถูกต้องหรือไม่รองรับ
+          description: ไม่ระบุ deviceModel
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -938,7 +1031,7 @@ paths:
         "404":
           description: ไม่พบ Firmware นี้
         "409":
-          description: uploadStatus ของ Firmware ยังไม่พร้อมทดสอบ (เช่น pending/failed)
+          description: uploadStatus ของ Firmware ปัจจุบันยังไม่พร้อมทดสอบ — ต้องเป็น `stored` เท่านั้น
 
   /devices:
     get:
@@ -1951,9 +2044,28 @@ components:
 
     Firmware:
       type: object
+      description: >-
+        1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.21) — `objectKey`/
+        `originalFilename`/`fileSizeBytes` ปิด gap ที่ `01_GPS_Build_Reference.md`
+        §3 ระบุไว้แต่แรกว่าต้องมี "path ใน Object Storage" แต่ schema เดิม
+        (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว
+      required:
+        [
+          id,
+          version,
+          deviceModelCompatibility,
+          uploadStatus,
+          deviceUpdateStatus,
+          objectKey,
+          originalFilename,
+          fileSizeBytes,
+          uploadedBy,
+          uploadedAt,
+        ]
       properties:
         id:
           type: string
+          format: uuid
         version:
           type: string
         deviceModelCompatibility:
@@ -1966,8 +2078,26 @@ components:
           enum: [pending, stored, failed]
         deviceUpdateStatus:
           type: string
-          description: สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก device-status (v3.7)
+          description: >-
+            สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก device-status (v3.7) —
+            ยังคงเป็น `unknown` เสมอในเวอร์ชันนี้ (v3.21) เพราะ device-status
+            ยังไม่ implement (ดู RBAC_Matrix.md Section 6)
           enum: [unknown, up_to_date, pending_update]
+        objectKey:
+          type: string
+          description: >-
+            key/path ใน Object Storage bucket (ภายใน — ไม่มี endpoint ให้
+            download ไฟล์กลับตอนนี้ เก็บไว้เผื่ออนาคต)
+        originalFilename:
+          type: string
+        fileSizeBytes:
+          type: integer
+        uploadedBy:
+          type: string
+          format: uuid
+        uploadedAt:
+          type: string
+          format: date-time
 
     SimulationResult:
       type: object
