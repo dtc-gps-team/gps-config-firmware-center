@@ -1512,6 +1512,14 @@ components:
             Config ที่ Operation ผูกกับงานติดตั้ง/เปลี่ยน config — Mobile อ่านค่านี้
             ส่งเป็น body ของ POST /devices/{deviceId}/apply-config ตอนทำจอ Confirm
             Install · null สำหรับงานประเภทอื่น (เช็คสัญญาณ, เปลี่ยนซิม)
+        campaignId:
+          type: string
+          nullable: true
+          description: >-
+            Campaign ที่มอบหมายงานนี้มา (ถ้ามี) — ไม่ใส่ format: uuid เพราะที่ระดับ
+            Prisma ไม่มี relation constraint ไปยัง Campaign.id (mirror deviceId)
+            · null ตราบใดที่ backend campaign module (สร้าง Campaign+CampaignTarget[]
+            +Task[] พร้อมกัน) ยังไม่ถูกสร้าง — PR #147 เป็น schema-only prerequisite
         status:
           type: string
           enum: [pending, in_progress, completed, cancelled]
