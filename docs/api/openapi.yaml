@@ -36,6 +36,12 @@ tags:
     description: >-
       รายการเหตุการณ์ผิดปกติ (Incident) — รอบนี้ read-only เท่านั้น
       ดูรายการ/รายละเอียด · Create ยังเป็นแค่ auto จาก config-sync-writer
+  - name: audit
+    description: >-
+      ประวัติการทำงานแบบ mutation-only (สร้าง/แก้ไข/อนุมัติ/ปฏิเสธ/นำ Config
+      ไปใช้ ฯลฯ) — Sprint 3 #27, read-only เท่านั้น การเขียนไม่มี endpoint ตรง
+      (แต่ละโมดูลเขียนเองตอนเกิด mutation) · read-level activity (เปลี่ยนหน้า/
+      เสิร์ช) ไม่อยู่ในนี้ — ดู CLAUDE.md Audit Pattern
   - name: user
     description: >-
       รายชื่อ user แบบย่อ (id + ชื่อ + role) — สำหรับ dropdown "เจาะจงผู้อนุมัติ"
@@ -1220,6 +1226,51 @@ paths:
         "404":
           description: ไม่พบ Incident นี้
 
+  /audit-logs:
+    get:
+      tags: [audit]
+      operationId: listAuditLogs
+      summary: ประวัติการทำงานแบบ mutation-only (list + filter) — v3.19
+      description: >-
+        ทุก Role ยกเว้น **SW** (RBAC_Matrix.md §2 แถว "Audit Log" — SW เป็น "-"
+        ทั้งแถว) resource `audit-logs` action Read · filter ทุกตัว optional —
+        ไม่ส่งอะไรมา = คืนทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน) · ไม่
+        join ชื่อผู้ใช้มาให้ (คืนแค่ userId ดิบ) — client resolve ชื่อเอง
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - in: query
+          name: auditModule
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device)
+        - in: query
+          name: action
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: เช่น create, update, delete, decide, approve, reject, apply-config
+      responses:
+        "200":
+          description: รายการ AuditLog (เรียงตาม createdAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ audit-logs.Read (เช่น SW)
+
   /users:
     get:
       tags: [user]
@@ -1283,6 +1334,34 @@ components:
             Role code ของผู้ใช้ (เช่น SW, Operation, ST, OT, Auditor, Admin,
             SuperAdmin หรือ role อื่นที่ Admin สร้างเพิ่มภายหลัง)
           example: SW
+
+    AuditLogEntry:
+      type: object
+      description: >-
+        แถวประวัติการทำงาน 1 รายการ (listAuditLogs — v3.19) — mutation-only
+        ตาม CLAUDE.md Audit Pattern ไม่มี resourceId (ไม่ผูกกับ record ที่ถูก
+        แก้โดยตรง เก็บแค่ผู้ทำ/โมดูล/action) · ipAddress ยังไม่มี endpoint ไหน
+        ส่งมาจริงตอนนี้ (nullable ไว้รอ)
+      required: [id, userId, auditModule, action, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        auditModule:
+          type: string
+          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device)
+        action:
+          type: string
+          description: เช่น create, update, delete, decide, approve, reject, apply-config
+        ipAddress:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
 
     UserSummary:
       type: object
