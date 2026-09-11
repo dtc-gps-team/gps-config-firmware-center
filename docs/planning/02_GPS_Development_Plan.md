@@ -78,6 +78,7 @@
 | Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
 | เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |
 | config-sync-writer docker/production impl — รอ TBD คำสั่ง Write ระบบเดิม + เครื่องทดสอบ DTC (`:801`) + ไฟเขียวทีม | Backend | handoff (นอก scope งานฝึกงาน) | **เลื่อน** — ระบุใน Scope Report (แถวที่ 33) | Sprint 2 checkpoint ตรวจเฉพาะโหมด mock (มติที่ประชุม #32, ดู `docs/07` §9.5) · ต้องให้พี่เลี้ยงรับทราบ |
+| Customer Scope (ลูกค้า/โปรเจกต์/รถ) — เติมส่วนที่ตัดจาก Data Dictionary กลับแบบเป็นเฟส A→B→C | Backend + Web (+ Mobile เฟส B/C) | A (เสนอ) | **DRAFT** — `docs/12` ไว้คุยรีวิวรายอาทิตย์ · เฟส A เริ่มได้ถ้าทีมโอเค | ไม่ใช่มติ Sprint 1 — A เสนอจาก deviation ใน `schema.prisma` (`model Device` / `model Config`) |
 
 ---
 
