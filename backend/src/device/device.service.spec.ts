@@ -8,7 +8,7 @@ import {
   DEVICE_CONNECTION_TESTER,
   DeviceConnectionTester,
 } from './device-connection-tester';
-import { DeviceService } from './device.service';
+import { ActingUser, DeviceService } from './device.service';
 
 const installedDevice: Device = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -60,6 +60,8 @@ const applyResult = {
   appliedAt: '2026-09-04T10:00:00.000Z',
 };
 
+const st: ActingUser = { id: 'st-1', role: 'ST' };
+
 const simPass = { passed: true, details: ['config ok (mock)'] };
 const connPass = {
   passed: true,
@@ -72,6 +74,7 @@ describe('DeviceService', () => {
   let service: DeviceService;
   let device: { findUnique: jest.Mock; findMany: jest.Mock };
   let config: { findUnique: jest.Mock };
+  let auditLog: { create: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
@@ -79,6 +82,7 @@ describe('DeviceService', () => {
   beforeEach(async () => {
     device = { findUnique: jest.fn(), findMany: jest.fn() };
     config = { findUnique: jest.fn() };
+    auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
     deviceSimulator = { simulateConfig: jest.fn() };
@@ -86,7 +90,7 @@ describe('DeviceService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeviceService,
-        { provide: PrismaService, useValue: { device, config } },
+        { provide: PrismaService, useValue: { device, config, auditLog } },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
         { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
@@ -222,7 +226,11 @@ describe('DeviceService', () => {
       config.findUnique.mockResolvedValue(approvedConfig);
       configApplier.applyConfig.mockResolvedValue(applyResult);
 
-      const result = await service.applyConfig('DTC-0001', approvedConfig.id);
+      const result = await service.applyConfig(
+        'DTC-0001',
+        approvedConfig.id,
+        st,
+      );
 
       expect(result).toEqual(applyResult);
       expect(config.findUnique).toHaveBeenCalledWith({
@@ -236,6 +244,33 @@ describe('DeviceService', () => {
       });
     });
 
+    it('AuditLog (#27) -> เขียน action apply-config หลัง applier สำเร็จ', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'st-1',
+          auditModule: 'device',
+          action: 'apply-config',
+        },
+      });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> applyConfig() ยังสำเร็จปกติ (never-throw)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).resolves.toEqual(applyResult);
+    });
+
     it('config สถานะ synced ก็ apply ได้', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue({
@@ -245,7 +280,7 @@ describe('DeviceService', () => {
       configApplier.applyConfig.mockResolvedValue(applyResult);
 
       await expect(
-        service.applyConfig('DTC-0001', approvedConfig.id),
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
       ).resolves.toEqual(applyResult);
     });
 
@@ -253,16 +288,17 @@ describe('DeviceService', () => {
       device.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.applyConfig('NOPE', approvedConfig.id),
+        service.applyConfig('NOPE', approvedConfig.id, st),
       ).rejects.toThrow(NotFoundException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(auditLog.create).not.toHaveBeenCalled();
     });
 
     it('device registered -> ConflictException ไม่ query config', async () => {
       device.findUnique.mockResolvedValue(registeredDevice);
 
       await expect(
-        service.applyConfig('DTC-0001', approvedConfig.id),
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
       ).rejects.toThrow(ConflictException);
       expect(config.findUnique).not.toHaveBeenCalled();
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
@@ -273,7 +309,7 @@ describe('DeviceService', () => {
       config.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.applyConfig('DTC-0001', approvedConfig.id),
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
       ).rejects.toThrow(NotFoundException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
@@ -286,7 +322,7 @@ describe('DeviceService', () => {
       });
 
       await expect(
-        service.applyConfig('DTC-0001', approvedConfig.id),
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
       ).rejects.toThrow(ConflictException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
@@ -299,7 +335,7 @@ describe('DeviceService', () => {
       });
 
       await expect(
-        service.applyConfig('DTC-0001', approvedConfig.id),
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
       ).rejects.toThrow(ConflictException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
