@@ -176,7 +176,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('ส่ง Config เข้าอุปกรณ์เรียบร้อยแล้ว')),
+          const SnackBar(
+            content: Text(
+              'ส่ง Config เข้าเครื่องแล้ว — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป',
+            ),
+          ),
         );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -192,10 +196,12 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final task = widget.task;
     final role = ref.watch(authControllerProvider).role;
     final canEditStatus = role == UserRole.st || role == UserRole.ot;
-    // Confirm Install (Sprint 3): เฉพาะ ST/OT ที่กำลังทำงานติดตั้ง config อยู่
-    // จริง — ต้องมีทั้ง configId (Operation ผูกไว้ตอนสร้างงาน) และ deviceId
-    // (จะส่งไปให้ endpoint ไหน) และงานต้อง in_progress (ไม่ใช่ pending ที่ยัง
-    // ไม่เริ่ม หรือ completed/cancelled ที่จบไปแล้ว)
+    // ส่ง Config เข้าเครื่อง (เดิมชื่อ Confirm Install, Sprint 3): เฉพาะ ST/OT
+    // ที่กำลังทำงานติดตั้ง config อยู่จริง — ต้องมีทั้ง configId (Operation
+    // ผูกไว้ตอนสร้างงาน) และ deviceId (จะส่งไปให้ endpoint ไหน) และงานต้อง
+    // in_progress (ไม่ใช่ pending ที่ยังไม่เริ่ม หรือ completed/cancelled ที่
+    // จบไปแล้ว) — ปุ่มนี้แค่ "ส่ง" Config เข้าเครื่อง ไม่ใช่ยืนยันว่าติดตั้ง
+    // สำเร็จ (apply-config เป็น fire-and-forget, ไม่เปลี่ยนสถานะอุปกรณ์)
     final canConfirmInstall =
         canEditStatus &&
         task.configId != null &&
@@ -326,7 +332,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         ],
         if (canConfirmInstall) ...[
           const SizedBox(height: 24),
-          const _SectionLabel('ยืนยันติดตั้ง Config'),
+          const _SectionLabel('ส่ง Config เข้าเครื่อง'),
           const SizedBox(height: 8),
           Text(
             'ส่ง Config เข้าอุปกรณ์ ${task.deviceId} — ทำหลังติดตั้งกล่อง GPS '
@@ -391,8 +397,8 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                   )
                 : Text(
                     _installConfirmed
-                        ? 'ยืนยันติดตั้งสำเร็จแล้ว'
-                        : 'ยืนยันติดตั้งสำเร็จ',
+                        ? 'ส่ง Config เข้าเครื่องแล้ว'
+                        : 'ยืนยันส่ง Config เข้าเครื่อง',
                   ),
           ),
         ],

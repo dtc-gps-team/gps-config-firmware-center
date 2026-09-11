@@ -415,10 +415,12 @@ void main() {
         expect(confirmRepo.lastDeviceId, 'DVC-1');
         expect(confirmRepo.lastConfigId, 'cfg-1');
         expect(
-          find.text('ส่ง Config เข้าอุปกรณ์เรียบร้อยแล้ว'),
+          find.text(
+            'ส่ง Config เข้าเครื่องแล้ว — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป',
+          ),
           findsOneWidget,
         );
-        expect(find.text('ยืนยันติดตั้งสำเร็จแล้ว'), findsOneWidget);
+        expect(find.text('ส่ง Config เข้าเครื่องแล้ว'), findsOneWidget);
         expect(
           tester.widget<FilledButton>(_confirmInstallButton).onPressed,
           isNull,

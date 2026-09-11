@@ -4,9 +4,12 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 
-/// "ยืนยันติดตั้งสำเร็จ" (Confirm Install, Sprint 3) — ส่ง `Task.configId` ให้
-/// อุปกรณ์ `Task.deviceId` ผ่าน `POST /devices/{deviceId}/apply-config` หลัง
-/// ช่างติดตั้งกล่อง GPS จริงเสร็จแล้ว.
+/// "ยืนยันส่ง Config เข้าเครื่อง" (เดิมชื่อ Confirm Install, Sprint 3) — ส่ง
+/// `Task.configId` ให้อุปกรณ์ `Task.deviceId` ผ่าน
+/// `POST /devices/{deviceId}/apply-config` หลังช่างติดตั้งกล่อง GPS จริง
+/// เสร็จแล้ว. Endpoint นี้เป็น fire-and-forget — ไม่เปลี่ยนสถานะอุปกรณ์ใดๆ
+/// กล่องจะรับค่า Config ต่อเมื่อเปิดเครื่องครั้งถัดไปเท่านั้น จึงไม่ใช่การ
+/// ยืนยันว่าติดตั้งสำเร็จ.
 abstract class ConfirmInstallRepository {
   Future<ConfigApplyResult> applyConfig({
     required String deviceId,
