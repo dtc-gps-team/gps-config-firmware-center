@@ -99,15 +99,6 @@ export function canCreateCampaign(role: string | null | undefined): boolean {
 }
 
 /**
- * ปุ่ม "สร้าง/มอบหมาย Task" — Section 4.3 (ปิด open question: Task creator
- * = Operation): Operation เท่านั้น ST/OT ห้ามสร้าง Task เอง (ป้องกันมอบหมาย
- * งานให้ตัวเอง) — แก้ status งานตัวเอง (รับ/ปิดงาน) ทำผ่าน Mobile เท่านั้น
- */
-export function canManageTask(role: string | null | undefined): boolean {
-  return role === "Operation";
-}
-
-/**
  * ปุ่ม "สั่ง Rollback" ใน Incident & Rollback — Section 2 แถว Incident &
  * Rollback: Operation เท่านั้นที่มี U (สั่ง Rollback)
  */

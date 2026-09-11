@@ -31,7 +31,7 @@
 | 4 | Sprint 1 | 13/09/2026 | Login | Mobile | B | Not Tested |
 | 5 | Sprint 1 | 13/09/2026 | Role-Based Access Control (RBAC) | Web + Mobile | **A** (Backend RBAC/Permission Matrix — ต้องเสร็จก่อน B ถึงจะ Finalize สิทธิ์ฝั่ง Mobile ได้) | Not Tested |
 | 6 | Sprint 1 | 13/09/2026 | Config Definition Lookup (ตั้ง field ของ Config) | Backend | A | Not Tested |
-| 7 | Sprint 2 | 27/09/2026 | มอบหมายงาน + ติดตามสถานะ (Web) — list + ฟอร์มมอบหมายพื้นฐาน **ไม่ใช่ planning tool** (มติ Sprint 1 review — ดู `docs/09`) | Web | A | Not Tested |
+| 7 | Sprint 2 | 27/09/2026 | ~~มอบหมายงาน + ติดตามสถานะ (Web)~~ — **ยกเลิกถาวร** ไม่ทำหน้าแยกในรูปแบบไหนเลย (มติพี่เลี้ยงล่าสุด, สืบเนื่องจาก PR #144 review — ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) การมอบหมายงานย้ายไปอยู่ในขั้นตอน "มอบหมายผู้รับผิดชอบหน้างาน" ตอนสร้าง Campaign แทน (แถวที่ 21) | Web | A | Cancelled |
 | 8 | Sprint 2 | 27/09/2026 | รับงาน + อัปเดตสถานะ (Mobile) — list งานของตัวเอง + เปลี่ยนสถานะ | Mobile | B | Not Tested |
 | 9 | Sprint 2 | 27/09/2026 | **config-sync-writer Pipeline (mock → Docker → Production)** | Backend | ร่วมกัน (Critical Infra) | Not Tested |
 | 10 | Sprint 2 | 27/09/2026 | Dashboard/Main | Web | A | Not Tested |
@@ -46,7 +46,7 @@
 | 18 | Sprint 3 | 11/10/2026 | Config Simulation Gate (บล็อก/แก้ไข/ผ่าน) | Web + Backend | A | Not Tested |
 | 19 | Sprint 3 | 11/10/2026 | Approval Center (อนุมัติ/ปฏิเสธจริง) | Web | A | Not Tested |
 | 20 | Sprint 3 | 11/10/2026 | Change Request (ส่งจากมือถือ → เข้า Inbox เว็บ) | Mobile + Web | ร่วมกัน (B ฝั่ง Mobile ส่ง / A ฝั่ง Web รับเข้า Inbox) | Not Tested |
-| 21 | Sprint 3 | 11/10/2026 | Campaign Wizard (สร้างแคมเปญครบขั้นตอน) | Web | A | Not Tested |
+| 21 | Sprint 3 | 11/10/2026 | Campaign Wizard (สร้างแคมเปญครบขั้นตอน) — **รวมขั้น "มอบหมายผู้รับผิดชอบหน้างาน"** ที่เดิมเป็นแถวที่ 7 แยกต่างหาก (ยกเลิกแล้ว — ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) | Web | A | Not Tested |
 | 22 | Sprint 3 | 11/10/2026 | Campaign Monitor (ติดตาม Failure Rate จริง) | Web | A | Not Tested |
 | 23 | Sprint 3 | 11/10/2026 | Firmware Repository (อัปโหลด/Compatibility Tag) | Web | A | Not Tested |
 | 24 | Sprint 3 | 11/10/2026 | Firmware Override รายเครื่อง | Web | A | Not Tested |
