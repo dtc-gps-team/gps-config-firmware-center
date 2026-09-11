@@ -152,6 +152,29 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     expect(body.status).toBe('draft');
   });
 
+  it('POST /config สำเร็จ -> เขียน AuditLog action create (#27)', async () => {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    await grant('SW', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(swUser.id, 'SW');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
+      .expect(201);
+
+    const logs = await prisma.auditLog.findMany({
+      where: { userId: swUser.id, auditModule: 'config', action: 'create' },
+    });
+    expect(logs).toHaveLength(1);
+  });
+
   it('POST /config ชื่อ Config ซ้ำกับที่มีอยู่ -> 409 (unique ทั้งระบบ — มติ Sprint 1 review ข้อ 4)', async () => {
     const swUser = await makeUser(prisma, { role: 'SW' });
     await grant('SW', ActionType.Create);
@@ -832,6 +855,37 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         where: { id: configRow.id },
       });
       expect(persisted?.approvedBy).toBe(opUser.id);
+    });
+
+    it('approve สำเร็จ -> เขียน AuditLog action approve (#27)', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve, 'config');
+      const configRow = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+          status: 'testing',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: {
+          userId: opUser.id,
+          auditModule: 'config',
+          action: 'approve',
+        },
+      });
+      expect(logs).toHaveLength(1);
     });
 
     it('status ยังเป็น draft (ยังไม่ผ่าน decide) -> 409', async () => {

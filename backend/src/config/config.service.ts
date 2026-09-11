@@ -42,6 +42,10 @@ export interface ActingUser {
 /** เฉพาะ format ที่รองรับตอนนี้ (v3.2 — ดู openapi.yaml importConfig summary) */
 const SUPPORTED_IMPORT_FORMATS = ['json'];
 
+/** AuditLog.auditModule ของทุกแถวที่โมดูลนี้เขียน (#27) — mirror
+ * `config-deletion.service.ts` ที่ตั้งชื่อ module string ตรงกับชื่อโมดูลตัวเอง */
+const AUDIT_MODULE = 'config';
+
 @Injectable()
 export class ConfigService {
   constructor(
@@ -100,8 +104,9 @@ export class ConfigService {
     // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
     await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
 
+    let created: Config;
     try {
-      return await this.prisma.config.create({
+      created = await this.prisma.config.create({
         data: {
           name: dto.name,
           deviceModel: dto.deviceModel,
@@ -119,6 +124,16 @@ export class ConfigService {
     } catch (err) {
       this.throwIfDuplicateName(err, dto.name);
     }
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern — "สร้าง") — เขียนแยกจาก
+    // transaction ของตัว mutation โดยตั้งใจ (ต่างจาก approve() ที่ต้อง atomic
+    // กับ ConfigVersion เพื่อความถูกต้องของข้อมูล) เป็น best-effort log ไม่ต้อง
+    // atomic กับตัว mutation หลัก — importFromJson() เรียกผ่าน create() นี้อยู่
+    // แล้ว ไม่ต้องเขียนซ้ำอีกจุด
+    await this.prisma.auditLog.create({
+      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'create' },
+    });
+    return created;
   }
 
   /**
@@ -253,7 +268,11 @@ export class ConfigService {
    * (ยังไม่เคยขยับสถานะมาก่อน จึงไม่มี state ให้ต้องย้อนกลับ — คืน config
    * เดิมโดยไม่ยิง UPDATE ลง DB เลย)
    */
-  async decide(id: string, passed: boolean): Promise<Config> {
+  async decide(
+    id: string,
+    passed: boolean,
+    actor: ActingUser,
+  ): Promise<Config> {
     const config = await this.findOne(id);
 
     if (config.status !== DECIDABLE_CONFIG_STATUS) {
@@ -266,7 +285,14 @@ export class ConfigService {
       return config;
     }
 
-    return this.updateStatus(id, 'testing');
+    const updated = await this.updateStatus(id, 'testing');
+
+    // AuditLog (#27) — เขียนเฉพาะตอน passed:true ที่มีการ UPDATE ลง DB จริง
+    // (passed:false คืน config เดิมโดยไม่แตะ DB เลย ไม่มี mutation ให้ log)
+    await this.prisma.auditLog.create({
+      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'decide' },
+    });
+    return updated;
   }
 
   /**
@@ -318,6 +344,16 @@ export class ConfigService {
         const updated = await tx.config.update({
           where: { id },
           data: { status: 'approved', approvedBy: actor.id },
+        });
+        // AuditLog (#27) — อยู่ใน transaction เดียวกับ ConfigVersion/status
+        // update อยู่แล้ว (ต่างจาก create/update/remove/decide/reject ที่
+        // เขียนแยกนอก transaction — ตรงนี้ join ฟรีเพราะ transaction มีอยู่แล้ว)
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'approve',
+          },
         });
         return { updated, nextVersion };
       });
@@ -417,7 +453,7 @@ export class ConfigService {
    * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ SW แก้ไขต่อได้
    * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
    */
-  async reject(id: string): Promise<Config> {
+  async reject(id: string, actor: ActingUser): Promise<Config> {
     const config = await this.findOne(id);
 
     if (config.status !== APPROVABLE_CONFIG_STATUS) {
@@ -426,7 +462,13 @@ export class ConfigService {
       );
     }
 
-    return this.updateStatus(id, 'draft');
+    const updated = await this.updateStatus(id, 'draft');
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern — "ปฏิเสธ")
+    await this.prisma.auditLog.create({
+      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'reject' },
+    });
+    return updated;
   }
 
   /** race condition เดียวกับ update()/remove() — row อาจถูกลบไปพอดีระหว่าง
@@ -479,7 +521,11 @@ export class ConfigService {
     return config;
   }
 
-  async update(id: string, dto: UpdateConfigDto): Promise<Config> {
+  async update(
+    id: string,
+    dto: UpdateConfigDto,
+    actor: ActingUser,
+  ): Promise<Config> {
     // IDOR/state-guard pattern เดียวกับ Task (CLAUDE.md): filter ด้วย status
     // ตอน update แล้วเช็ค count === 0 -> ต้องแยกให้ออกว่าเป็น "ไม่เจอ id เลย"
     // (404) หรือ "เจอแต่สถานะไม่ใช่ draft" (409) เลย findOne ก่อนเพื่อแยก 2
@@ -504,8 +550,9 @@ export class ConfigService {
     // race condition: ระหว่าง findOne กับ update นี้ row อาจถูกลบ/เปลี่ยน
     // สถานะไปพอดีจาก request อื่น (rare) — Prisma โยน P2025 ("Record to
     // update not found") ในกรณีนั้น แปลงเป็น 404 แทนที่จะปล่อยเป็น 500
+    let updated: Config;
     try {
-      return await this.prisma.config.update({
+      updated = await this.prisma.config.update({
         where: { id },
         data: {
           name: dto.name,
@@ -525,9 +572,15 @@ export class ConfigService {
       // ชื่อใหม่ชนกับ Config อื่น -> 409 (unique ทั้งระบบ)
       this.throwIfDuplicateName(err, dto.name);
     }
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern — "แก้ไข")
+    await this.prisma.auditLog.create({
+      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'update' },
+    });
+    return updated;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor: ActingUser): Promise<void> {
     const existing = await this.findOne(id);
     if (existing.status !== EDITABLE_CONFIG_STATUS) {
       throw new ConflictException(
@@ -547,5 +600,12 @@ export class ConfigService {
       }
       throw err;
     }
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
+    // เหมือนกัน แม้ CLAUDE.md จะยกตัวอย่างไม่ครบทุก verb (การลบ Config เปลี่ยน
+    // ข้อมูลจริงเหมือนกัน compliance/Auditor ต้องเห็นร่องรอย)
+    await this.prisma.auditLog.create({
+      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'delete' },
+    });
   }
 }

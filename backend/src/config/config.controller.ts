@@ -144,8 +144,9 @@ export class ConfigController {
   decide(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DecideConfigDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<Config> {
-    return this.configService.decide(id, dto.passed);
+    return this.configService.decide(id, dto.passed, toActor(req));
   }
 
   // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ SW ปักผลผ่านแล้ว
@@ -167,8 +168,11 @@ export class ConfigController {
   @Post(':id/reject')
   @RequirePermission('config', ActionType.Approve)
   @HttpCode(HttpStatus.OK)
-  reject(@Param('id', ParseUUIDPipe) id: string): Promise<Config> {
-    return this.configService.reject(id);
+  reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Config> {
+    return this.configService.reject(id, toActor(req));
   }
 
   @Put(':id')
@@ -176,14 +180,18 @@ export class ConfigController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateConfigDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<Config> {
-    return this.configService.update(id, dto);
+    return this.configService.update(id, dto, toActor(req));
   }
 
   @Delete(':id')
   @RequirePermission('config', ActionType.Update)
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.configService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.configService.remove(id, toActor(req));
   }
 }

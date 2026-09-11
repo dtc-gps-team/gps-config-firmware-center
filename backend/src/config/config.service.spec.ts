@@ -76,6 +76,7 @@ describe('ConfigService', () => {
   let service: ConfigService;
   let config: ConfigDelegateMock;
   let configVersion: ConfigVersionDelegateMock;
+  let auditLog: { create: jest.Mock };
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
@@ -94,6 +95,7 @@ describe('ConfigService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     };
+    auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     deviceSimulator = { simulateConfig: jest.fn() };
     // default: ผ่าน validate เสมอ (test เดิมทั้งหมดไม่เกี่ยวกับ Semantic
     // Validation) — describe('create'/'update') ด้านล่างจะ override เฉพาะ
@@ -109,8 +111,9 @@ describe('ConfigService', () => {
     const prismaMock = {
       config,
       configVersion,
+      auditLog,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ config, configVersion }),
+        cb({ config, configVersion, auditLog }),
       ),
     };
 
@@ -156,6 +159,24 @@ describe('ConfigService', () => {
           description: undefined,
           createdBy: 'sw-1',
         },
+      });
+    });
+
+    it('AuditLog (#27) -> เขียน action create หลัง config.create สำเร็จ', async () => {
+      config.create.mockResolvedValue(draftConfig);
+
+      await service.create(
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+        },
+        sw,
+      );
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'sw-1', auditModule: 'config', action: 'create' },
       });
     });
 
@@ -432,7 +453,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue(testingConfig);
 
-      const result = await service.decide(draftConfig.id, true);
+      const result = await service.decide(draftConfig.id, true, sw);
 
       expect(result).toEqual(testingConfig);
       expect(config.update).toHaveBeenCalledWith({
@@ -441,19 +462,31 @@ describe('ConfigService', () => {
       });
     });
 
-    it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft)', async () => {
+    it('AuditLog (#27) -> เขียน action decide เฉพาะตอน passed:true', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue(testingConfig);
+
+      await service.decide(draftConfig.id, true, sw);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'sw-1', auditModule: 'config', action: 'decide' },
+      });
+    });
+
+    it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft) ไม่เขียน AuditLog', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
-      const result = await service.decide(draftConfig.id, false);
+      const result = await service.decide(draftConfig.id, false, sw);
 
       expect(result).toEqual(draftConfig);
       expect(config.update).not.toHaveBeenCalled();
+      expect(auditLog.create).not.toHaveBeenCalled();
     });
 
     it('status testing (ส่งต่อ Operation ไปแล้ว) -> ConflictException ไม่ว่า passed จะเป็นอะไร', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
 
-      await expect(service.decide(testingConfig.id, true)).rejects.toThrow(
+      await expect(service.decide(testingConfig.id, true, sw)).rejects.toThrow(
         ConflictException,
       );
       expect(config.update).not.toHaveBeenCalled();
@@ -462,7 +495,7 @@ describe('ConfigService', () => {
     it('status approved -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(approvedConfig);
 
-      await expect(service.decide(approvedConfig.id, true)).rejects.toThrow(
+      await expect(service.decide(approvedConfig.id, true, sw)).rejects.toThrow(
         ConflictException,
       );
       expect(config.update).not.toHaveBeenCalled();
@@ -471,7 +504,7 @@ describe('ConfigService', () => {
     it('ไม่เจอ config เลย -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
 
-      await expect(service.decide('missing-id', true)).rejects.toThrow(
+      await expect(service.decide('missing-id', true, sw)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -480,7 +513,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockRejectedValue(makeP2025());
 
-      await expect(service.decide(draftConfig.id, true)).rejects.toThrow(
+      await expect(service.decide(draftConfig.id, true, sw)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -500,6 +533,18 @@ describe('ConfigService', () => {
       expect(config.update).toHaveBeenCalledWith({
         where: { id: testingConfig.id },
         data: { status: 'approved', approvedBy: operation.id },
+      });
+    });
+
+    it('AuditLog (#27) -> เขียน action approve ใน transaction เดียวกัน', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(0);
+
+      await service.approve(testingConfig.id, operation);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'op-1', auditModule: 'config', action: 'approve' },
       });
     });
 
@@ -634,7 +679,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(testingConfig);
       config.update.mockResolvedValue(draftConfig);
 
-      const result = await service.reject(testingConfig.id);
+      const result = await service.reject(testingConfig.id, operation);
 
       expect(result).toEqual(draftConfig);
       expect(config.update).toHaveBeenCalledWith({
@@ -643,10 +688,21 @@ describe('ConfigService', () => {
       });
     });
 
+    it('AuditLog (#27) -> เขียน action reject หลัง update สำเร็จ', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(draftConfig);
+
+      await service.reject(testingConfig.id, operation);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'op-1', auditModule: 'config', action: 'reject' },
+      });
+    });
+
     it('status draft (ยังไม่เคยส่งต่อ Operation) -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
-      await expect(service.reject(draftConfig.id)).rejects.toThrow(
+      await expect(service.reject(draftConfig.id, operation)).rejects.toThrow(
         ConflictException,
       );
       expect(config.update).not.toHaveBeenCalled();
@@ -655,16 +711,16 @@ describe('ConfigService', () => {
     it('status approved ไปแล้ว -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(approvedConfig);
 
-      await expect(service.reject(approvedConfig.id)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.reject(approvedConfig.id, operation),
+      ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
 
     it('ไม่เจอ config เลย -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
 
-      await expect(service.reject('missing-id')).rejects.toThrow(
+      await expect(service.reject('missing-id', operation)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -673,7 +729,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(testingConfig);
       config.update.mockRejectedValue(makeP2025());
 
-      await expect(service.reject(testingConfig.id)).rejects.toThrow(
+      await expect(service.reject(testingConfig.id, operation)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -813,7 +869,7 @@ describe('ConfigService', () => {
     it('config status ไม่ใช่ draft -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
       await expect(
-        service.update(testingConfig.id, { deviceModel: 'GT06L' }),
+        service.update(testingConfig.id, { deviceModel: 'GT06L' }, sw),
       ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
@@ -825,7 +881,7 @@ describe('ConfigService', () => {
         deviceModel: 'GT06L',
       });
 
-      await service.update(draftConfig.id, { deviceModel: 'GT06L' });
+      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
 
       expect(config.update).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
@@ -839,11 +895,29 @@ describe('ConfigService', () => {
       });
     });
 
+    it('AuditLog (#27) -> เขียน action update หลัง config.update สำเร็จ', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue({
+        ...draftConfig,
+        deviceModel: 'GT06L',
+      });
+
+      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'sw-1', auditModule: 'config', action: 'update' },
+      });
+    });
+
     it('ส่ง description ใหม่มา -> update ค่านั้น', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue(draftConfig);
 
-      await service.update(draftConfig.id, { description: 'อัปเดตคำอธิบาย' });
+      await service.update(
+        draftConfig.id,
+        { description: 'อัปเดตคำอธิบาย' },
+        sw,
+      );
 
       expect(config.update).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
@@ -868,14 +942,14 @@ describe('ConfigService', () => {
       );
 
       await expect(
-        service.update(draftConfig.id, { name: 'ชื่อที่มีอยู่แล้ว' }),
+        service.update(draftConfig.id, { name: 'ชื่อที่มีอยู่แล้ว' }, sw),
       ).rejects.toThrow(ConflictException);
     });
 
     it('ไม่เจอ config เลย -> NotFoundException (ไม่ใช่ ConflictException)', async () => {
       config.findUnique.mockResolvedValue(null);
       await expect(
-        service.update('missing-id', { deviceModel: 'GT06L' }),
+        service.update('missing-id', { deviceModel: 'GT06L' }, sw),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -884,7 +958,7 @@ describe('ConfigService', () => {
       config.update.mockRejectedValue(makeP2025());
 
       await expect(
-        service.update(draftConfig.id, { deviceModel: 'GT06L' }),
+        service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -895,7 +969,7 @@ describe('ConfigService', () => {
         fields: { APN1: 'new-apn' },
       });
 
-      await service.update(draftConfig.id, { fields: { APN1: 'new-apn' } });
+      await service.update(draftConfig.id, { fields: { APN1: 'new-apn' } }, sw);
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
         draftConfig.deviceModel,
@@ -911,7 +985,7 @@ describe('ConfigService', () => {
         deviceModel: 'GT06L',
       });
 
-      await service.update(draftConfig.id, { deviceModel: 'GT06L' });
+      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
         'GT06L',
@@ -927,7 +1001,7 @@ describe('ConfigService', () => {
       );
 
       await expect(
-        service.update(draftConfig.id, { fields: { APN1: 'xxx' } }),
+        service.update(draftConfig.id, { fields: { APN1: 'xxx' } }, sw),
       ).rejects.toThrow(BadRequestException);
       expect(config.update).not.toHaveBeenCalled();
     });
@@ -936,7 +1010,7 @@ describe('ConfigService', () => {
   describe('remove', () => {
     it('config status ไม่ใช่ draft -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
-      await expect(service.remove(testingConfig.id)).rejects.toThrow(
+      await expect(service.remove(testingConfig.id, sw)).rejects.toThrow(
         ConflictException,
       );
       expect(config.delete).not.toHaveBeenCalled();
@@ -946,10 +1020,21 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockResolvedValue(draftConfig);
 
-      await service.remove(draftConfig.id);
+      await service.remove(draftConfig.id, sw);
 
       expect(config.delete).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
+      });
+    });
+
+    it('AuditLog (#27) -> เขียน action delete หลัง config.delete สำเร็จ', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.delete.mockResolvedValue(draftConfig);
+
+      await service.remove(draftConfig.id, sw);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: 'sw-1', auditModule: 'config', action: 'delete' },
       });
     });
 
@@ -957,7 +1042,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockRejectedValue(makeP2025());
 
-      await expect(service.remove(draftConfig.id)).rejects.toThrow(
+      await expect(service.remove(draftConfig.id, sw)).rejects.toThrow(
         NotFoundException,
       );
     });

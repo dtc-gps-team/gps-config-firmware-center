@@ -32,6 +32,17 @@ import type {
  * ไม่มีความหมาย (ดู docs/06_Device_Connection_Test_Spec.md ข้อ 5) */
 const TESTABLE_DEVICE_STATUS = 'installed';
 
+/** AuditLog.auditModule ของแถวที่โมดูลนี้เขียน (#27) — เฉพาะ `applyConfig`
+ * เท่านั้น (CLAUDE.md Audit Pattern ระบุ "นำ Config ไปใช้" ไว้ชัด) —
+ * test-connection/simulate-config เป็น dry-run ไม่ persist จึงไม่ log */
+const AUDIT_MODULE = 'device';
+
+/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
+export interface ActingUser {
+  id: string;
+  role: string;
+}
+
 @Injectable()
 export class DeviceService {
   constructor(
@@ -129,6 +140,7 @@ export class DeviceService {
   async applyConfig(
     deviceId: string,
     configId: string,
+    actor: ActingUser,
   ): Promise<ConfigApplyResult> {
     const device = await this.findByDeviceId(deviceId);
 
@@ -158,12 +170,26 @@ export class DeviceService {
       );
     }
 
-    return this.configApplier.applyConfig({
+    const result = await this.configApplier.applyConfig({
       deviceId: device.deviceId,
       deviceModel: device.deviceModel,
       protocol: device.protocol,
       fields: config.fields as Record<string, unknown>,
     });
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern — "นำ Config ไปใช้") — log ทุกครั้ง
+    // ที่ช่างกดใส่ Config เข้าอุปกรณ์ ไม่ว่าผล `applied` จะ true/false เพราะเป็น
+    // การกระทำจริงที่ต้องมีร่องรอย compliance (endpoint นี้เอง fire-and-forget
+    // ไม่ persist อะไรใน DB ของเรา — AuditLog แถวนี้จึงเป็นร่องรอยเดียวที่มี)
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action: 'apply-config',
+      },
+    });
+
+    return result;
   }
 
   /**

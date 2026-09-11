@@ -124,20 +124,26 @@ describe('ConfigController', () => {
     expect(service.findOne).toHaveBeenCalledWith(sampleConfig.id);
   });
 
-  it('PUT /config/:id -> service.update พร้อม dto', async () => {
+  it('PUT /config/:id -> service.update พร้อม dto และ actor จาก JWT', async () => {
     service.update.mockResolvedValue({
       ...sampleConfig,
       deviceModel: 'GT06L',
     });
     const dto = { deviceModel: 'GT06L' };
-    await controller.update(sampleConfig.id, dto);
-    expect(service.update).toHaveBeenCalledWith(sampleConfig.id, dto);
+    await controller.update(sampleConfig.id, dto, swReq);
+    expect(service.update).toHaveBeenCalledWith(sampleConfig.id, dto, {
+      id: 'sw-1',
+      role: 'SW',
+    });
   });
 
-  it('DELETE /config/:id -> service.remove', async () => {
+  it('DELETE /config/:id -> service.remove พร้อม actor จาก JWT', async () => {
     service.remove.mockResolvedValue(undefined);
-    await controller.remove(sampleConfig.id);
-    expect(service.remove).toHaveBeenCalledWith(sampleConfig.id);
+    await controller.remove(sampleConfig.id, swReq);
+    expect(service.remove).toHaveBeenCalledWith(sampleConfig.id, {
+      id: 'sw-1',
+      role: 'SW',
+    });
   });
 
   it('POST /config/:id/simulate -> service.simulate', async () => {
@@ -147,12 +153,19 @@ describe('ConfigController', () => {
     expect(service.simulate).toHaveBeenCalledWith(sampleConfig.id);
   });
 
-  it('POST /config/:id/decide -> service.decide พร้อม passed จาก body', async () => {
+  it('POST /config/:id/decide -> service.decide พร้อม passed จาก body และ actor จาก JWT', async () => {
     const decided = { ...sampleConfig, status: 'testing' as const };
     service.decide.mockResolvedValue(decided);
-    const result = await controller.decide(sampleConfig.id, { passed: true });
+    const result = await controller.decide(
+      sampleConfig.id,
+      { passed: true },
+      swReq,
+    );
     expect(result).toEqual(decided);
-    expect(service.decide).toHaveBeenCalledWith(sampleConfig.id, true);
+    expect(service.decide).toHaveBeenCalledWith(sampleConfig.id, true, {
+      id: 'sw-1',
+      role: 'SW',
+    });
   });
 
   it('POST /config/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {
@@ -170,10 +183,13 @@ describe('ConfigController', () => {
     });
   });
 
-  it('POST /config/:id/reject -> service.reject', async () => {
+  it('POST /config/:id/reject -> service.reject พร้อม actor จาก JWT', async () => {
     service.reject.mockResolvedValue(sampleConfig);
-    const result = await controller.reject(sampleConfig.id);
+    const result = await controller.reject(sampleConfig.id, opReq);
     expect(result).toEqual(sampleConfig);
-    expect(service.reject).toHaveBeenCalledWith(sampleConfig.id);
+    expect(service.reject).toHaveBeenCalledWith(sampleConfig.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
   });
 });

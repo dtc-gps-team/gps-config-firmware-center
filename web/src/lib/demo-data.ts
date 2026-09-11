@@ -283,43 +283,6 @@ export const DEMO_INCIDENTS = [
 ];
 
 /* ---------------------------------------------------------------- */
-/*  Audit Log — โมดูล audit (ยังไม่มี endpoint ในสเปค)              */
-/* ---------------------------------------------------------------- */
-
-export const DEMO_AUDIT = [
-  {
-    time: "2026-09-04 09:24",
-    actor: "operation.test",
-    action: "config.approve",
-    detail: "อนุมัติ Config cfg-1041 (GT06N/TCP)",
-  },
-  {
-    time: "2026-09-04 08:51",
-    actor: "sw.test",
-    action: "config.simulate",
-    detail: "รัน simulation cfg-1040 · ผ่าน",
-  },
-  {
-    time: "2026-09-04 08:05",
-    actor: "sw.test",
-    action: "config.create",
-    detail: "สร้าง Config cfg-1041",
-  },
-  {
-    time: "2026-09-03 16:40",
-    actor: "operation.test",
-    action: "campaign.start",
-    detail: "เริ่ม Campaign 'นำร่องภาคเหนือ'",
-  },
-  {
-    time: "2026-09-03 14:12",
-    actor: "admin.test",
-    action: "user.create",
-    detail: "เพิ่มผู้ใช้ ot.test (Role OT)",
-  },
-];
-
-/* ---------------------------------------------------------------- */
 /*  User / Role Management — โมดูล users (ยังไม่มี endpoint ในสเปค)  */
 /*  ตรงกับ testUsers ใน backend/prisma/seed.ts                      */
 /* ---------------------------------------------------------------- */
