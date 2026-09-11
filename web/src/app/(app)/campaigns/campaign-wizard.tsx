@@ -419,7 +419,8 @@ function TargetsStep({
               เลือกอุปกรณ์เป้าหมาย + มอบหมายผู้รับผิดชอบหน้างาน
             </p>
             <p className="text-xs text-muted-foreground">
-              เฉพาะอุปกรณ์สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
+              ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์
+              สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
             </p>
           </div>
           <Input
@@ -449,13 +450,28 @@ function TargetsStep({
                 {devices.map((device) => {
                   const checked = device.deviceId in targets;
                   return (
-                    <tr key={device.deviceId} className="border-t">
-                      <td className="px-3 py-2">
+                    <tr
+                      key={device.deviceId}
+                      onClick={() =>
+                        onToggleDevice(device.deviceId, !checked)
+                      }
+                      className="cursor-pointer border-t hover:bg-muted/50"
+                    >
+                      <td
+                        className="px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Checkbox
                           checked={checked}
                           onCheckedChange={(c) =>
                             onToggleDevice(device.deviceId, c === true)
                           }
+                          // border-input เดิม (#E2E6EB) จางเกินไปจนแทบมองไม่
+                          // เห็นเป็นกล่อง checkbox เมื่ออยู่เดี่ยวๆ ในตาราง
+                          // (ไม่มี label ข้างๆ ช่วยเดา ต่างจากที่อื่นที่ใช้
+                          // Checkbox คู่กับ label เสมอ) — override เป็น
+                          // border-muted-foreground ให้เห็นเป็นกล่องชัดเจน
+                          className="size-5 border-2 border-muted-foreground"
                         />
                       </td>
                       <td className="px-2 py-2 font-mono text-xs">
@@ -464,7 +480,10 @@ function TargetsStep({
                       <td className="px-2 py-2 text-muted-foreground">
                         {device.deviceModel} / {device.protocol}
                       </td>
-                      <td className="px-2 py-2">
+                      <td
+                        className="px-2 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <select
                           value={targets[device.deviceId] ?? ""}
                           disabled={!checked}
