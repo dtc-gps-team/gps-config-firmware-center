@@ -6,9 +6,6 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
-import '../activity_log/activity_log_entry.dart';
-import '../activity_log/activity_log_repository.dart';
-import '../activity_log/activity_time_format.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
@@ -50,17 +47,6 @@ String _roleLabel(UserRole? role) {
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
-
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('ฟีเจอร์นี้จะเปิดให้ใช้เร็ว ๆ นี้'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -115,7 +101,7 @@ class HomePage extends ConsumerWidget {
           const SizedBox(height: 12),
           _ShortcutGrid(
             items: [
-              // ---- ของจริง — navigate ไปหน้าที่มีอยู่แล้ว (route เดิม) ----
+              // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
               _Shortcut(
                 key: const Key('shortcut_simulator'),
                 icon: Icons.tune,
@@ -150,89 +136,17 @@ class HomePage extends ConsumerWidget {
                 label: 'ค้นหาอุปกรณ์',
                 onTap: () => context.push(AppRoutes.deviceSearch),
               ),
-              // ---- mock — ยังไม่มีหน้าจอปลายทางจริง (Sprint ถัดไป) ----
+              // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
+              // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
+              // (ST/OT) ไม่มีสิทธิ์ Create Incident (RBAC_Matrix — Create =
+              // Operation เท่านั้น) กดแล้วดูได้อย่างเดียว
               _Shortcut(
                 key: const Key('shortcut_report_incident'),
                 icon: Icons.report_problem_outlined,
-                label: 'แจ้งเหตุ',
-                onTap: () => _comingSoon(context),
+                label: 'ดู Incident',
+                onTap: () => context.push(AppRoutes.incidents),
               ),
             ],
-          ),
-          const _RecentActivitySection(),
-        ],
-      ),
-    );
-  }
-}
-
-/// "กิจกรรมล่าสุด" — last few screens the user opened, read from the on-device
-/// activity log (docs/10 §6.3). Supplementary info, so it sits last on Home
-/// (after the primary "งานวันนี้" / "ทางลัด"). Hidden entirely when empty
-/// (e.g. right after logout cleared it).
-class _RecentActivitySection extends ConsumerWidget {
-  const _RecentActivitySection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final entries = ref.watch(recentActivityProvider).valueOrNull ?? const [];
-    if (entries.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        const _SectionLabel('กิจกรรมล่าสุด'),
-        const SizedBox(height: 12),
-        Container(
-          key: const Key('recent_activity_card'),
-          decoration: BoxDecoration(
-            color: _HomeColors.surface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              for (var i = 0; i < entries.length; i++) ...[
-                if (i != 0) const Divider(height: 1, indent: 14, endIndent: 14),
-                _ActivityRow(entry: entries[i]),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.entry});
-
-  final ActivityLogEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          const Icon(Icons.history, size: 18, color: _HomeColors.textSecondary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              entry.title ?? entry.path ?? '—',
-              style: const TextStyle(
-                fontSize: 14,
-                color: _HomeColors.textPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            activityRelativeTime(entry.at, DateTime.now()),
-            style: const TextStyle(
-              fontSize: 12,
-              color: _HomeColors.textSecondary,
-            ),
           ),
         ],
       ),

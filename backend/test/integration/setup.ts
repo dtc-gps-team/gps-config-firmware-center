@@ -102,6 +102,8 @@ export async function makeUser(
     // ปกติไม่ต้องใช้จริง ('x' พอสำหรับ Task/Notification ที่ไม่ต้อง login จริง) —
     // ใส่ hash จริง (bcrypt.hash(...)) เฉพาะตอนเทส auth.service ที่ต้อง bcrypt.compare ผ่านจริง
     passwordHash: string;
+    fullName: string;
+    isActive: boolean;
   }> = {},
 ) {
   seq += 1;
@@ -110,7 +112,8 @@ export async function makeUser(
     data: {
       username: overrides.username ?? `itest-user-${Date.now()}-${seq}`,
       passwordHash: overrides.passwordHash ?? 'x',
-      fullName: 'Integration Test User',
+      fullName: overrides.fullName ?? 'Integration Test User',
+      isActive: overrides.isActive ?? true,
       roleId: role.id,
     },
   });

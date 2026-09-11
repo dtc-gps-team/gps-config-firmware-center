@@ -4,6 +4,7 @@ import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
@@ -14,6 +15,7 @@ import { IncidentModule } from './incident/incident.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TaskModule } from './task/task.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { TaskModule } from './task/task.module';
     // ไหนใช้ @Cron มาก่อน จึงเพิ่ม ScheduleModule.forRoot() ที่นี่ครั้งเดียว
     ScheduleModule.forRoot(),
     PrismaModule,
+    AuditModule,
     AuthModule,
     ConfigModule,
     ConfigDefinitionModule,
@@ -35,6 +38,7 @@ import { TaskModule } from './task/task.module';
     IncidentModule,
     TaskModule,
     NotificationModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -91,7 +91,7 @@ gps-config-firmware-center/
 
 > ไม่มีโมดูล `device-gateway` หรือ `device-notify` อีกต่อไป — ถูกตัดออกแล้วเพราะไม่มี Device Gateway และไม่มีกลไก SMS ในระบบ
 
-> **read-level activity (เปลี่ยนหน้า / เสิร์ช) ไม่ลง `AuditLog`** — เก็บ local ในเครื่องผู้ใช้เท่านั้น (Web: IndexedDB / Mobile: `shared_preferences` JSON list — ไม่มี sqlite ในโปรเจกต์) เป็น "กิจกรรมล่าสุด" ส่วนตัว ไม่ใช่ compliance · Auditor มองไม่เห็น · retention: Web 30 วัน หรือ 1000 รายการ / Mobile 14 วัน หรือ 300 รายการ แล้วแต่อันไหนถึงก่อน · ล้างทั้งหมดตอน logout · ดู proposal `docs/10_LocalActivityLog_Proposal.md` (มติ Sprint 1 review) — ฝั่ง Mobile implement `navigation` แล้ว (`features/activity_log/`), `search`/`filter` รอทำคู่กับฟิลเตอร์ตาราง
+> **read-level activity (เปลี่ยนหน้า / เสิร์ช) ไม่ลง `AuditLog`** — `AuditLog` ใน DB เป็น mutation-only เสมอ (สร้าง/แก้/อนุมัติ/ปฏิเสธ/นำไปใช้) · ~~เดิมจะเก็บ read-level activity เป็น "กิจกรรมล่าสุด" local ในเครื่องผู้ใช้~~ **❌ ฟีเจอร์ Local Activity Log ถูกยกเลิกแล้ว (10/09/2026)** — ตัดทิ้งทั้งหมด (Mobile เป็น Home-centric อยู่แล้ว · Web ไม่เคย implement) · โค้ดฝั่ง `mobile/features/activity_log/` ถูกลบออก · ดู `docs/10_LocalActivityLog_Proposal.md` (banner หัวไฟล์)
 
 > **UI standard — ฟิลเตอร์ตาราง list:** ทุกหน้าที่แสดงข้อมูลเป็นตาราง ใช้ฟิลเตอร์ต่อคอลัมน์ — คอลัมน์ข้อความ (ชื่อ, deviceId ฯลฯ) = ช่องพิมพ์กรองสดแบบ debounce · คอลัมน์หมวดหมู่ (status, deviceModel, protocol, role) = dropdown ที่ตัวเลือกมาจากค่า distinct ในข้อมูลจริง · + global search box · เริ่ม client-side ออกแบบให้สลับเป็น server-side ได้ภายหลัง (มติ Sprint 1 review — ดู `docs/09`)
 
@@ -124,7 +124,8 @@ export type ConfigFileFormat = 'json'; // เพิ่ม 'csv' | 'excel' | 'leg
 
 - **Implementation:** เขียน `JsonConfigImporter implements ConfigImporter` เป็นตัวแรก — parse JSON แล้ว map เข้า `DeviceConfigDraft` โครงสร้างเดียวกับที่ Config Editor (ฟอร์ม) สร้าง เพื่อให้เข้า flow ทดสอบ/อนุมัติเดียวกันได้โดยไม่ต้องแยกโค้ด
 - **Validation:** ตรวจ Schema ของไฟล์ JSON ก่อน (เช่นด้วย Zod ตัวเดียวกับที่ฝั่งฟอร์มใช้อยู่แล้ว) ก่อนส่งเข้า Device Simulator — ป้องกันไฟล์รูปแบบผิดหลุดเข้า flow ทดสอบ
-- **UI ฝั่ง Web:** เพิ่มปุ่ม "Import จากไฟล์ (JSON)" ในหน้า Config Editor เป็นอีกทางเลือกควบคู่กับกรอกฟอร์มเอง ไม่ใช่หน้าจอแยกต่างหาก
+- **UI ฝั่ง Web:** เพิ่มปุ่ม "Import จากไฟล์ (JSON)" ในหน้า Config Editor เป็นอีกทางเลือกควบคู่กับกรอกฟอร์มเอง
+  - _หมายเหตุ implementation (PR #12b):_ จุดเข้าเดียวคือปุ่ม "Import จากไฟล์" ในหน้า Config Editor (SW เท่านั้น) — **ไม่มี entry ใน sidebar** · ปุ่มพาไป**หน้าเต็ม `/config/import`** แทน Dialog เพราะต้องมีที่โชว์ preview ไฟล์ก่อนส่ง + รายการ validation error หลายบรรทัดจาก backend · flow ทดสอบ/อนุมัติเหมือนกันทุกประการ (backend ใช้ `ConfigService.create()` ตัวเดียวกับฟอร์ม) · client parse แค่เช็ค field บังคับ (`name`/`deviceModel`/`protocol`/`fields`) — validation จริงทั้งหมดอยู่ที่ backend
 - **ถ้าต้องเปลี่ยนรูปแบบไฟล์ทีหลัง:** เพิ่ม Implementation ใหม่ของ `ConfigImporter` (เช่น `ExcelConfigImporter`) และเพิ่มค่าใน `ConfigFileFormat` — ไม่ต้องแก้โค้ดส่วนอื่นที่เรียกผ่าน Interface
 
 ---

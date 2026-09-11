@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/config/app_config.dart';
-import 'package:mobile/features/activity_log/activity_log_repository.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/main.dart';
 
@@ -31,9 +30,6 @@ void main() {
           tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
           sessionProfileStoreProvider.overrideWithValue(
             InMemorySessionProfileStore(),
-          ),
-          activityLogRepositoryProvider.overrideWithValue(
-            DefaultActivityLogRepository(InMemoryActivityLogStore()),
           ),
         ],
         child: const GpsMobileApp(),

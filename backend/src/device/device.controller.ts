@@ -7,19 +7,29 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ActionType, Device } from '@prisma/client';
+import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
+import type { ActingUser } from './device.service';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
+
+/** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ — mirror config.controller.ts */
+type AuthenticatedRequest = Request & { user: JwtPayload };
+
+function toActor(req: AuthenticatedRequest): ActingUser {
+  return { id: req.user.sub, role: req.user.role };
+}
 
 // Device module:
 //   GET  /devices                 — Device Search (list + filter)  · ทุก Role
@@ -81,8 +91,9 @@ export class DeviceController {
   applyConfig(
     @Param('deviceId') deviceId: string,
     @Body() dto: ApplyConfigDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyResult> {
-    return this.deviceService.applyConfig(deviceId, dto.configId);
+    return this.deviceService.applyConfig(deviceId, dto.configId, toActor(req));
   }
 
   // resource `device-connection-test` action Read — reuse permission เดิม

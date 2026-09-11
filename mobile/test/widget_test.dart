@@ -6,7 +6,6 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/features/activity_log/activity_log_repository.dart';
 import 'package:mobile/features/auth/login_page.dart';
 
 class _NoopAuthRepository implements AuthRepository {
@@ -25,9 +24,6 @@ void main() {
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
-        ),
-        activityLogRepositoryProvider.overrideWithValue(
-          DefaultActivityLogRepository(InMemoryActivityLogStore()),
         ),
       ],
     );

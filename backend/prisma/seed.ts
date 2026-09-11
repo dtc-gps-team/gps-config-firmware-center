@@ -85,6 +85,18 @@ async function main() {
         fullName: 'Operation Tester',
         roleCode: 'Operation',
       },
+      // Operation เพิ่ม 2 คน — ให้ dropdown "เจาะจงผู้อนุมัติ" (Approval Center
+      // #19) มีตัวเลือกมากกว่า 1 ตอน dev/demo
+      {
+        username: 'operation2.test',
+        fullName: 'Operation Tester 2',
+        roleCode: 'Operation',
+      },
+      {
+        username: 'operation3.test',
+        fullName: 'Operation Tester 3',
+        roleCode: 'Operation',
+      },
       { username: 'st.test', fullName: 'ST Tester', roleCode: 'ST' },
       { username: 'ot.test', fullName: 'OT Tester', roleCode: 'OT' },
       {
@@ -225,6 +237,16 @@ async function main() {
     // RBAC_Matrix.md §2 แถว "Incident & Rollback" = R ทุกคอลัมน์ (SW/Operation/
     // ST/OT/Auditor/Admin/SuperAdmin) · Create/Update ยังไม่เปิดผ่าน API
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'incidents', 'Read')),
+
+    // ---- audit-logs (GET /audit-logs — Sprint 3 #27) ----
+    // RBAC_Matrix.md §2 แถว "Audit Log" = R ทุก Role ยกเว้น SW ("-" ทั้งแถว —
+    // SW ไม่มีสิทธิ์เข้าถึงจอนี้เลย) SuperAdmin ได้อัตโนมัติจากการ copy สิทธิ์
+    // Admin ด้านล่าง ไม่ต้องเพิ่มตรงนี้
+    grant('Operation', 'audit-logs', 'Read'),
+    grant('ST', 'audit-logs', 'Read'),
+    grant('OT', 'audit-logs', 'Read'),
+    grant('Auditor', 'audit-logs', 'Read'),
+    grant('Admin', 'audit-logs', 'Read'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----

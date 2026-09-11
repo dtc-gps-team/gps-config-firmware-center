@@ -89,6 +89,46 @@ enum DeviceLifecycleStatus {
   }
 }
 
+/// `Incident.severity` enum — matches `docs/api/openapi.yaml` `Incident.severity`
+/// and the Prisma enum `IncidentSeverity`.
+enum IncidentSeverity {
+  critical('critical'),
+  high('high'),
+  medium('medium'),
+  low('low');
+
+  const IncidentSeverity(this.wireName);
+
+  final String wireName;
+
+  static IncidentSeverity fromWire(String value) {
+    for (final s in IncidentSeverity.values) {
+      if (s.wireName == value) return s;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown incident severity');
+  }
+}
+
+/// `Incident.status` enum — matches `docs/api/openapi.yaml` `Incident.status`
+/// and the Prisma enum `IncidentStatus`.
+enum IncidentStatus {
+  open('open'),
+  investigating('investigating'),
+  rolledBack('rolled_back'),
+  resolved('resolved');
+
+  const IncidentStatus(this.wireName);
+
+  final String wireName;
+
+  static IncidentStatus fromWire(String value) {
+    for (final s in IncidentStatus.values) {
+      if (s.wireName == value) return s;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown incident status');
+  }
+}
+
 /// `DeviceConfigDraft.status` enum.
 enum ConfigStatus {
   draft('draft'),
@@ -391,6 +431,62 @@ class Device {
       // slightly-off payload renders instead of throwing (same as Task).
       registeredAt: parseDate(json['registeredAt']) ?? DateTime.now(),
       installedAt: parseDate(json['installedAt']),
+    );
+  }
+}
+
+/// เหตุการณ์ผิดปกติ — mirrors `docs/api/openapi.yaml` `Incident` (Prisma model
+/// `Incident`). `GET /incidents` / `GET /incidents/{id}` return this shape.
+///
+/// Read-only บน Mobile รอบนี้ — ตาม `RBAC_Matrix.md` แถว "Incident & Rollback"
+/// ช่างหน้างาน (ST/OT) มีแค่ Read ไม่มีสิทธิ์ Create/Update (Create = Operation
+/// เท่านั้น) · `metadata` เป็น free-form JsON เก็บเป็น raw map (เหมือน
+/// [AppNotification.payload]) — หน้า list ไม่ parse เข้าไป
+class Incident {
+  const Incident({
+    required this.id,
+    required this.title,
+    required this.severity,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.description,
+    this.relatedConfigId,
+    this.relatedFirmwareId,
+    this.source,
+    this.metadata,
+  });
+
+  final String id;
+  final String title;
+  final String? description;
+  final IncidentSeverity severity;
+  final IncidentStatus status;
+  final String? relatedConfigId;
+  final String? relatedFirmwareId;
+  final String? source;
+  final Map<String, dynamic>? metadata;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Incident.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+
+    return Incident(
+      id: json['id'] as String,
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String?,
+      severity: IncidentSeverity.fromWire(json['severity'] as String),
+      status: IncidentStatus.fromWire(json['status'] as String),
+      relatedConfigId: json['relatedConfigId'] as String?,
+      relatedFirmwareId: json['relatedFirmwareId'] as String?,
+      source: json['source'] as String?,
+      metadata: (json['metadata'] as Map?)?.cast<String, dynamic>(),
+      // spec marks createdAt/updatedAt required, but decode defensively
+      // so a slightly-off payload renders instead of throwing (same as Task).
+      createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
+      updatedAt: parseDate(json['updatedAt']) ?? DateTime.now(),
     );
   }
 }

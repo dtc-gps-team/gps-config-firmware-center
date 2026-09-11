@@ -19,9 +19,10 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
       item.allowedRoles.some((role) => role === session?.role),
   );
 
-  // เมนูไหน "ครอบ" หน้าปัจจุบัน — match ที่ขอบ segment (ไม่ใช่ prefix เปล่าๆ ที่
-  // ทำให้ /config ติด active ค้างตอนอยู่ /config/import) แล้วเลือกอันที่เจาะจง
-  // ที่สุด (href ยาวสุด) เพื่อให้ /devices/:id ยัง highlight "Device Search" อยู่
+  // เมนูไหน "ครอบ" หน้าปัจจุบัน — match ที่ขอบ segment (ไม่ใช่ prefix เปล่าๆ)
+  // แล้วเลือกอันที่เจาะจงที่สุด (href ยาวสุด) เพื่อให้ /devices/:id ยัง
+  // highlight "Device Search" อยู่ · หน้าย่อยที่ไม่มี nav item ของตัวเอง
+  // (/config/new, /config/import, /config/:id) จะ highlight "Config Editor"
   const activeHref = visibleItems
     .filter((item) =>
       item.href === "/"

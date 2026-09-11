@@ -31,7 +31,7 @@
 | 4 | Sprint 1 | 13/09/2026 | Login | Mobile | B | Not Tested |
 | 5 | Sprint 1 | 13/09/2026 | Role-Based Access Control (RBAC) | Web + Mobile | **A** (Backend RBAC/Permission Matrix — ต้องเสร็จก่อน B ถึงจะ Finalize สิทธิ์ฝั่ง Mobile ได้) | Not Tested |
 | 6 | Sprint 1 | 13/09/2026 | Config Definition Lookup (ตั้ง field ของ Config) | Backend | A | Not Tested |
-| 7 | Sprint 2 | 27/09/2026 | มอบหมายงาน + ติดตามสถานะ (Web) — list + ฟอร์มมอบหมายพื้นฐาน **ไม่ใช่ planning tool** (มติ Sprint 1 review — ดู `docs/09`) | Web | A | Not Tested |
+| 7 | Sprint 2 | 27/09/2026 | ~~มอบหมายงาน + ติดตามสถานะ (Web)~~ — **ยกเลิกถาวร** ไม่ทำหน้าแยกในรูปแบบไหนเลย (มติพี่เลี้ยงล่าสุด, สืบเนื่องจาก PR #144 review — ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) การมอบหมายงานย้ายไปอยู่ในขั้นตอน "มอบหมายผู้รับผิดชอบหน้างาน" ตอนสร้าง Campaign แทน (แถวที่ 21) | Web | A | Cancelled |
 | 8 | Sprint 2 | 27/09/2026 | รับงาน + อัปเดตสถานะ (Mobile) — list งานของตัวเอง + เปลี่ยนสถานะ | Mobile | B | Not Tested |
 | 9 | Sprint 2 | 27/09/2026 | **config-sync-writer Pipeline (mock → Docker → Production)** | Backend | ร่วมกัน (Critical Infra) | Not Tested |
 | 10 | Sprint 2 | 27/09/2026 | Dashboard/Main | Web | A | Not Tested |
@@ -46,7 +46,7 @@
 | 18 | Sprint 3 | 11/10/2026 | Config Simulation Gate (บล็อก/แก้ไข/ผ่าน) | Web + Backend | A | Not Tested |
 | 19 | Sprint 3 | 11/10/2026 | Approval Center (อนุมัติ/ปฏิเสธจริง) | Web | A | Not Tested |
 | 20 | Sprint 3 | 11/10/2026 | Change Request (ส่งจากมือถือ → เข้า Inbox เว็บ) | Mobile + Web | ร่วมกัน (B ฝั่ง Mobile ส่ง / A ฝั่ง Web รับเข้า Inbox) | Not Tested |
-| 21 | Sprint 3 | 11/10/2026 | Campaign Wizard (สร้างแคมเปญครบขั้นตอน) | Web | A | Not Tested |
+| 21 | Sprint 3 | 11/10/2026 | Campaign Wizard (สร้างแคมเปญครบขั้นตอน) — **รวมขั้น "มอบหมายผู้รับผิดชอบหน้างาน"** ที่เดิมเป็นแถวที่ 7 แยกต่างหาก (ยกเลิกแล้ว — ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) | Web | A | Not Tested |
 | 22 | Sprint 3 | 11/10/2026 | Campaign Monitor (ติดตาม Failure Rate จริง) | Web | A | Not Tested |
 | 23 | Sprint 3 | 11/10/2026 | Firmware Repository (อัปโหลด/Compatibility Tag) | Web | A | Not Tested |
 | 24 | Sprint 3 | 11/10/2026 | Firmware Override รายเครื่อง | Web | A | Not Tested |
@@ -73,7 +73,7 @@
 |---|---|---|---|---|
 | ชื่อ Config ต้องไม่ซ้ำ (unique ทั้งระบบ) | Backend + Web | A | quick win | เพิ่ม `Config.name @unique` + migration backfill + 409 |
 | ฟิลเตอร์ตารางต่อคอลัมน์ (ข้อความ = พิมพ์ค้นสด, หมวดหมู่ = dropdown จากข้อมูลจริง) | Web | A | Sprint 2 | UI standard ทุกหน้า list — เริ่ม client-side |
-| Local Activity Log (เปลี่ยนหน้า/เสิร์ช — เก็บ local เครื่องเดียว ไม่ลง `AuditLog`) | Web + Mobile | A (web) + B (mobile) | proposal `docs/10` ก่อน | Web IndexedDB / Mobile sqlite · retention Web 30วัน/1000, Mobile 14วัน/300 |
+| ~~Local Activity Log (เปลี่ยนหน้า/เสิร์ช — เก็บ local เครื่องเดียว ไม่ลง `AuditLog`)~~ | ~~Web + Mobile~~ | — | **❌ ยกเลิก (10/09/2026)** | ตัดฟีเจอร์ทิ้งทั้งหมด — Mobile เป็น Home-centric อยู่แล้ว · Web ไม่เคย implement · โค้ด `mobile/features/activity_log/` ถูกลบ · ดู `docs/10` (banner หัวไฟล์) + `docs/09` ข้อ 3 |
 | ลบ Config ที่ไม่ได้ใช้นาน — `draft`/`rejected` + ไม่มี Task/Campaign/Incident + 90 วัน → คำขอลบอัตโนมัติ → SuperAdmin อนุมัติ → soft delete | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | รวมกับ role SuperAdmin |
 | Role `SuperAdmin` — = Admin + อนุมัติคำขอลบ Config + จัดการ Admin + แก้ role/permission · **ไม่ข้าม Separation of Duty** | Backend | A | proposal `docs/11` ก่อน · **Sprint 3** | seed row ไม่ต้อง migration (Role เป็นตาราง) |
 | เก็บ location ที่ช่างทำงาน → DB + `AuditLog` | Mobile + Backend | B (capture) + A (audit) | **เลื่อน** — เปิด issue | พี่เลี้ยงบอกไม่เร่ง |

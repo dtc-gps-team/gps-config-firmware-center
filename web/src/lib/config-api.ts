@@ -28,6 +28,10 @@ export type Config = {
   fields: Record<string, unknown>;
   createdBy: string;
   approvedBy: string | null;
+  /** user id ของ Operation ที่ SW เจาะจงให้ดู Config นี้เป็นพิเศษ (#19) ·
+   *  null = ไม่เจาะจง · ไม่ผูกมัด — Operation คนอื่นก็ approve ได้ · Web
+   *  resolve ชื่อจาก `listUsers("Operation")` เอง */
+  suggestedApproverId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -86,6 +90,25 @@ export function createConfig(
   });
 }
 
+/**
+ * `POST /config/import` — อัปโหลดไฟล์ JSON แล้วให้ backend แปลงเป็น
+ * DeviceConfigDraft (สถานะ `draft`) เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม
+ * (openapi.yaml `importConfig`) · เฉพาะ Role SW (RBAC `config` action Create)
+ *
+ * error ที่ backend อาจคืน: 400 (ไฟล์/format ผิด หรือ JSON ไม่ตรง schema —
+ * `ApiError.details` มีรายการ field ที่ผิด), 409 (ชื่อ Config ซ้ำ), 413 (ไฟล์เกิน 1MB)
+ */
+export function importConfig(token: string, file: File): Promise<Config> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("format", "json");
+  return apiJson<Config>("/config/import", {
+    method: "POST",
+    token,
+    body: form,
+  });
+}
+
 export function updateConfig(
   token: string,
   id: string,
@@ -100,4 +123,60 @@ export function updateConfig(
 
 export function deleteConfig(token: string, id: string): Promise<void> {
   return apiJson<void>(`/config/${id}`, { method: "DELETE", token });
+}
+
+/** ผลทดสอบจาก Device Simulator — schema `SimulationResult` ใน openapi.yaml */
+export type SimulationResult = {
+  passed: boolean;
+  details: string[];
+};
+
+/**
+ * `POST /config/{id}/simulate` — dry-run ทดสอบ Config กับ Device Simulator ·
+ * ไม่แตะ status · SW/Operation/ST/OT เรียกได้ (resource `config-simulation`)
+ * · 409 ถ้าสถานะ Config ไม่รองรับการทดสอบ
+ */
+export function simulateConfig(
+  token: string,
+  id: string,
+): Promise<SimulationResult> {
+  return apiJson<SimulationResult>(`/config/${id}/simulate`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * `POST /config/{id}/decide` — SW ปักผลหลังดู `simulate` (Stage 4) ·
+ * `passed:true` → `draft`→`testing` (ส่งให้ Operation) · `passed:false` →
+ * คาไว้ `draft` · `suggestedApproverId` (optional, เฉพาะ passed:true) เจาะจง
+ * Operation ที่อยากให้ดู — 400 ถ้าไม่ใช่ role Operation ที่ active · SW เท่านั้น
+ */
+export function decideConfig(
+  token: string,
+  id: string,
+  body: { passed: boolean; suggestedApproverId?: string },
+): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/decide`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * `POST /config/{id}/approve` — Operation อนุมัติ Config สถานะ `testing` →
+ * `approved` + snapshot `ConfigVersion` · Separation of Duty: SW อนุมัติของ
+ * ตัวเองไม่ได้ (บังคับที่ backend) · Operation เท่านั้น (resource `config` Approve)
+ */
+export function approveConfig(token: string, id: string): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/approve`, { method: "POST", token });
+}
+
+/**
+ * `POST /config/{id}/reject` — Operation ปฏิเสธ Config สถานะ `testing` →
+ * `rejected` · ไม่มี body (endpoint ยังไม่รับเหตุผล)
+ */
+export function rejectConfig(token: string, id: string): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/reject`, { method: "POST", token });
 }

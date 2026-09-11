@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,18 +7,9 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/features/activity_log/activity_log_repository.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
-
-/// Real in-memory activity log — every Home/logout pump needs it overridden so
-/// the real `shared_preferences`-backed one doesn't hit the plugin under test
-/// (same reason every test overrides `tokenStoreProvider` with `InMemory*`).
-Override _activityLogOverride([ActivityLogStore? store]) =>
-    activityLogRepositoryProvider.overrideWithValue(
-      DefaultActivityLogRepository(store ?? InMemoryActivityLogStore()),
-    );
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -113,7 +102,6 @@ Future<void> _pumpHome(
   UserRole? role, {
   TaskRepository? taskRepo,
   NotificationRepository? notiRepo,
-  ActivityLogStore? activityStore,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -129,7 +117,6 @@ Future<void> _pumpHome(
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
         ),
-        _activityLogOverride(activityStore),
       ],
       child: const MaterialApp(home: HomePage()),
     ),
@@ -167,6 +154,11 @@ Future<void> _pumpHomeRouted(
         builder: (_, _) => const Scaffold(body: Text('MY_TASKS_PAGE_STUB')),
       ),
       GoRoute(
+        path: AppRoutes.incidents,
+        builder: (_, _) =>
+            const Scaffold(body: Text('INCIDENT_LIST_PAGE_STUB')),
+      ),
+      GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
           body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
@@ -188,7 +180,6 @@ Future<void> _pumpHomeRouted(
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
         ),
-        _activityLogOverride(),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -375,19 +366,45 @@ void main() {
     });
   });
 
-  group('ส่วน mock -> snackbar "เร็ว ๆ นี้" (ไม่เงียบ ไม่ crash)', () {
-    // "แจ้งเหตุ" เป็นทางลัด mock ตัวสุดท้ายที่ยังไม่มีหน้าจอปลายทาง
-    // (ค้นหาอุปกรณ์ / งานของฉัน ต่อ route จริงแล้วใน #137 / #138)
-    testWidgets('แตะทางลัด mock "แจ้งเหตุ"', (tester) async {
-      await _pumpHome(tester, UserRole.st);
-      final tile = find.byKey(const Key('shortcut_report_incident'));
-      await tester.ensureVisible(tile);
-      await tester.pumpAndSettle();
-      await tester.tap(tile);
-      await tester.pump();
-      expect(find.textContaining('เร็ว'), findsOneWidget);
-    });
-  });
+  group(
+    'ทางลัด "ดู Incident" — read-only, ทุก role (GET /incidents = R ทุก Role)',
+    () {
+      for (final role in [
+        UserRole.st,
+        UserRole.sw,
+        UserRole.operation,
+        UserRole.auditor,
+        UserRole.admin,
+      ]) {
+        testWidgets('${role.wireName} เห็นทางลัด "ดู Incident"', (
+          tester,
+        ) async {
+          await _pumpHome(tester, role);
+          final tile = find.byKey(const Key('shortcut_report_incident'));
+          expect(tile, findsOneWidget);
+          // label = "ดู Incident" ไม่ใช่ "แจ้งเหตุ" (read-only ดูอย่างเดียว)
+          expect(
+            find.descendant(of: tile, matching: find.text('ดู Incident')),
+            findsOneWidget,
+          );
+        });
+      }
+
+      testWidgets(
+        'แตะแล้ว navigate ไปหน้า Incident (ไม่ใช่ snackbar อีกต่อไป)',
+        (tester) async {
+          await _pumpHomeRouted(tester, UserRole.st);
+          final tile = find.byKey(const Key('shortcut_report_incident'));
+          await tester.ensureVisible(tile);
+          await tester.pumpAndSettle();
+          await tester.tap(tile);
+          await tester.pumpAndSettle();
+          expect(find.text('INCIDENT_LIST_PAGE_STUB'), findsOneWidget);
+          expect(find.textContaining('เร็ว'), findsNothing);
+        },
+      );
+    },
+  );
 
   group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
     for (final role in [
@@ -460,73 +477,6 @@ void main() {
     });
   });
 
-  group('section "กิจกรรมล่าสุด"', () {
-    String seed(List<(String, DateTime)> items) => jsonEncode([
-      for (final (title, at) in items)
-        {
-          'id': 'id-$title',
-          'type': 'navigation',
-          'at': at.toUtc().toIso8601String(),
-          'detail': {'path': '/x', 'title': title},
-        },
-    ]);
-
-    testWidgets('render entries ล่าสุดก่อน + relative time', (tester) async {
-      final now = DateTime.now();
-      await _pumpHome(
-        tester,
-        UserRole.st,
-        activityStore: InMemoryActivityLogStore(
-          seed([
-            ('รายละเอียดงาน DVC-1', now.subtract(const Duration(minutes: 5))),
-            ('รายการแจ้งเตือน', now.subtract(const Duration(hours: 2))),
-          ]),
-        ),
-      );
-      await tester.pumpAndSettle();
-      // section sits last in the Home ListView — off-screen in the test viewport
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('recent_activity_card')),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-
-      final card = find.byKey(const Key('recent_activity_card'));
-      expect(card, findsOneWidget);
-      final recentTile = find.descendant(
-        of: card,
-        matching: find.text('รายละเอียดงาน DVC-1'),
-      );
-      final olderTile = find.descendant(
-        of: card,
-        matching: find.text('รายการแจ้งเตือน'),
-      );
-      expect(recentTile, findsOneWidget);
-      expect(olderTile, findsOneWidget);
-      // ล่าสุด (5 นาที) อยู่เหนือ (2 ชั่วโมง)
-      expect(
-        tester.getCenter(recentTile).dy,
-        lessThan(tester.getCenter(olderTile).dy),
-      );
-      expect(
-        find.descendant(of: card, matching: find.text('5 นาทีที่แล้ว')),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('log ว่าง -> ซ่อน section ไปเลย', (tester) async {
-      await _pumpHome(
-        tester,
-        UserRole.st,
-        activityStore: InMemoryActivityLogStore(),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('recent_activity_card')), findsNothing);
-      expect(find.text('กิจกรรมล่าสุด'), findsNothing);
-    });
-  });
-
   testWidgets('ปุ่ม logout เรียก logout ของ controller', (tester) async {
     final container = ProviderContainer(
       overrides: [
@@ -541,7 +491,6 @@ void main() {
         notificationRepositoryProvider.overrideWithValue(
           _FakeNotificationRepository(),
         ),
-        _activityLogOverride(),
       ],
     );
     addTearDown(container.dispose);
