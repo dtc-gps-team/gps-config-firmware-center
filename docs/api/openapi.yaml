@@ -47,6 +47,12 @@ tags:
       รายชื่อ user แบบย่อ (id + ชื่อ + role) — สำหรับ dropdown "เจาะจงผู้อนุมัติ"
       ใน Approval Center · **ไม่ใช่** จอ User / Role Management (Admin เท่านั้น,
       ยังไม่มีใน spec)
+  - name: campaign
+    description: >-
+      Campaign Wizard (Sprint 3 #21) — Operation สร้างแคมเปญ deploy Config ให้
+      อุปกรณ์หลายเครื่องพร้อมกัน ("ส่งพร้อมกันหมด" — ไม่มี rollout strategy ใน
+      v1) รวมขั้น "มอบหมายผู้รับผิดชอบหน้างาน" (สร้าง Task ต่อเครื่องให้อัตโนมัติ)
+      · payloadType `Firmware` ยังไม่รองรับ (ไม่มี firmware module ให้เลือก)
 
 paths:
   /auth/login:
@@ -1302,6 +1308,98 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
 
+  /campaigns:
+    get:
+      tags: [campaign]
+      operationId: listCampaigns
+      summary: รายการแคมเปญทั้งหมด (v3.20)
+      description: >-
+        RBAC_Matrix.md §2 แถว "Campaign Wizard" — ทุก Role อ่านได้ (resource
+        `campaign` action `Read`) เรียงตาม createdAt desc · filter ทุกตัว
+        optional — ไม่ส่งอะไรมา = คืนทุกแคมเปญ
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: "#/components/schemas/CampaignStatus"
+      responses:
+        "200":
+          description: รายการแคมเปญ (เรียงตาม createdAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Campaign"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+    post:
+      tags: [campaign]
+      operationId: createCampaign
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.20
+      description: >-
+        **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
+        Campaign + CampaignTarget ต่ออุปกรณ์ + Task ต่ออุปกรณ์ (ขั้น "มอบหมาย
+        ผู้รับผิดชอบหน้างาน") ใน transaction เดียว แล้ว active ทันที ("ส่งพร้อม
+        กันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง) · **payloadType
+        `Firmware` ยังไม่รองรับ** (400) เพราะยังไม่มี backend firmware module
+        ให้สร้าง Firmware record เลย (รอ Sprint 3 #23)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignCreateRequest"
+      responses:
+        "201":
+          description: สร้างแคมเปญสำเร็จ (status = active)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          description: >-
+            validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน,
+            payloadType Firmware ยังไม่รองรับ, assignedTo ไม่พบ user หรือถูก
+            ปิดใช้งาน)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบ Config ตาม configId ที่ระบุ
+        "409":
+          description: >-
+            Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรืออุปกรณ์
+            เป้าหมายบางเครื่องยังไม่ installed หรือ deviceModel/protocol ไม่
+            ตรงกับ Config (รวมทุกปัญหาไว้ในข้อความเดียว)
+
+  /campaigns/{id}:
+    get:
+      tags: [campaign]
+      operationId: getCampaign
+      summary: รายละเอียดแคมเปญ 1 รายการ — v3.20
+      description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ listCampaigns)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ข้อมูลแคมเปญ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบแคมเปญนี้
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1378,6 +1476,119 @@ components:
         role:
           type: string
           description: Role code (เช่น Operation)
+
+    CampaignPayloadType:
+      type: string
+      enum: [Config, Firmware]
+      description: >-
+        `Firmware` มีอยู่ใน enum ตาม Data Dictionary แต่ **ยังไม่รองรับผ่าน
+        API ตอนนี้** (createCampaign คืน 400) เพราะยังไม่มี backend firmware
+        module ให้สร้าง Firmware record เลย
+
+    CampaignStatus:
+      type: string
+      enum: [draft, active, completed, cancelled]
+      description: >-
+        v1 ไม่มี workflow อนุมัติแยก — `createCampaign` สร้างแล้ว active
+        ทันที ("ส่งพร้อมกันหมด") `draft`/`completed`/`cancelled` ยังไม่มี
+        endpoint ไหนเปลี่ยนสถานะเข้า-ออก (รอ Campaign Monitor, Sprint 3 #22)
+
+    Campaign:
+      type: object
+      description: >-
+        1 แคมเปญ (listCampaigns/getCampaign/createCampaign — v3.20) ตรงกับ
+        Prisma model `Campaign` — ไม่ embed รายการอุปกรณ์เป้าหมาย/Task ที่สร้าง
+        ไว้ (ยังไม่มี endpoint list ย่อยของแคมเปญหนึ่งตัว รอ Campaign Monitor)
+      required:
+        [
+          id,
+          name,
+          payloadType,
+          status,
+          targetCount,
+          successCount,
+          failureCount,
+          createdBy,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        payloadType:
+          $ref: "#/components/schemas/CampaignPayloadType"
+        configId:
+          type: string
+          format: uuid
+          nullable: true
+        firmwareId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        targetCount:
+          type: integer
+        successCount:
+          type: integer
+          description: >-
+            ยังไม่มี logic ไหนอัปเดตค่านี้ตอนนี้ (เป็น 0 เสมอหลังสร้าง) — รอ
+            Campaign Monitor (#22) ผูกกับผล apply-config จริงของแต่ละ Task
+        failureCount:
+          type: integer
+          description: เหตุผลเดียวกับ successCount ด้านบน
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CampaignTargetInput:
+      type: object
+      description: อุปกรณ์เป้าหมาย 1 เครื่อง + ผู้รับผิดชอบหน้างาน (createCampaign)
+      required: [deviceId, assignedTo]
+      properties:
+        deviceId:
+          type: string
+          description: >-
+            `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน
+            — ต้องเป็นอุปกรณ์สถานะ `installed` และ deviceModel/protocol ตรง
+            กับ Config ที่เลือก ไม่งั้น 409
+        assignedTo:
+          type: string
+          format: uuid
+          description: user id ของช่างหน้างาน (ST/OT) ที่รับผิดชอบเครื่องนี้
+
+    CampaignCreateRequest:
+      type: object
+      required: [name, payloadType, targets]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        payloadType:
+          $ref: "#/components/schemas/CampaignPayloadType"
+        configId:
+          type: string
+          format: uuid
+          description: บังคับเมื่อ payloadType เป็น Config (ตัวเดียวที่รองรับตอนนี้)
+        targets:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CampaignTargetInput"
 
     DeviceConfigDraft:
       type: object

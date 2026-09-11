@@ -230,6 +230,17 @@ async function main() {
     grant('Auditor', 'firmware', 'Read'),
     grant('Admin', 'firmware', 'Read'),
 
+    // ---- campaign (Sprint 3 #21 — Campaign Wizard) ----
+    // RBAC_Matrix.md §2 แถว "Campaign Wizard": Operation = C, R, U (U ยังไม่มี
+    // endpoint จริง — รอ Campaign Monitor แถวที่ 22) role อื่นทั้งหมด = R
+    grant('SW', 'campaign', 'Read'),
+    grant('Operation', 'campaign', 'Create'),
+    grant('Operation', 'campaign', 'Read'),
+    grant('ST', 'campaign', 'Read'),
+    grant('OT', 'campaign', 'Read'),
+    grant('Auditor', 'campaign', 'Read'),
+    grant('Admin', 'campaign', 'Read'),
+
     // ---- devices (getDeviceStatus — ทุก role อ่านได้) ----
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'devices', 'Read')),
 
