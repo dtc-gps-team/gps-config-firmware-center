@@ -18,6 +18,7 @@ import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
+import { ConfigReviewPanel } from "./config-review-panel";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
 function renderFieldValue(value: unknown): string {
@@ -233,6 +234,8 @@ function ConfigDetailContent({
           </div>
         </div>
       )}
+
+      {canModify && <ConfigReviewPanel config={config} />}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">

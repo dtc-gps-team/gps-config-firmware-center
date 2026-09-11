@@ -52,17 +52,18 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  role          Role            @relation(fields: [roleId], references: [id])
-  tasks         Task[]
-  notifications Notification[]
-  deviceTokens  DeviceToken[]
-  auditLogs     AuditLog[]
-  configsCreated  Config[]   @relation("ConfigCreatedBy")
-  configsApproved Config[]   @relation("ConfigApprovedBy")
-  firmwareUploads Firmware[]
-  campaignsCreated Campaign[]
-  configVersionsApproved ConfigVersion[] @relation("ConfigVersionApprovedBy")
-  configDeletionReviews  ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
+  role                      Role                    @relation(fields: [roleId], references: [id])
+  tasks                     Task[]
+  notifications             Notification[]
+  deviceTokens              DeviceToken[]
+  auditLogs                 AuditLog[]
+  configsCreated            Config[]                @relation("ConfigCreatedBy")
+  configsApproved           Config[]                @relation("ConfigApprovedBy")
+  configsSuggestedToApprove Config[]                @relation("ConfigSuggestedApprover")
+  firmwareUploads           Firmware[]
+  campaignsCreated          Campaign[]
+  configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
+  configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -299,7 +300,7 @@ enum ConfigStatus {
 }
 
 model Config {
-  id String @id @default(uuid())
+  id                  String       @id @default(uuid())
   // ชื่อ Config ที่คนตั้ง — unique ทั้งระบบ กัน SW สร้าง/แก้แล้วชนกันเอง หรือมี
   // config ซ้ำที่แยกไม่ออกว่าอันไหนคืออันจริง (มติ Sprint 1 review ข้อ 4 —
   // ดู docs/09_Sprint1_Review_Decisions.md §2)
@@ -308,32 +309,39 @@ model Config {
   // template-based ใน DD (CONFIG_TEMPLATE + CONFIG_TEMPLATE_VERSION + ...) —
   // field นี้เทียบเท่ากับ CONFIG_TEMPLATE.template_name ของ DD แต่บังคับ unique
   // ทั้งระบบตามมติ review ข้างต้น
-  name        String       @unique
-  deviceModel String
-  protocol    String
+  name                String       @unique
+  deviceModel         String
+  protocol            String
   // คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร — ไม่บังคับ (optional)
   // เทียบเท่า CONFIG_TEMPLATE.description ของ Data Dictionary (สอดคล้อง ไม่ใช่
   // deviation) · ใช้แสดงในหน้ารายละเอียด / wizard สร้าง Config (frame 07)
-  description String?
-  status      ConfigStatus @default(draft)
-  fields      Json
-  createdBy   String
-  approvedBy  String?
+  description         String?
+  status              ConfigStatus @default(draft)
+  fields              Json
+  createdBy           String
+  approvedBy          String?
+  // "ผู้อนุมัติที่ SW เจาะจง" (Approval Center — Sprint 3 #19) — SW เลือกตอนกด
+  // decide(passed:true) ว่าอยากให้ Operation คนไหนดูเป็นพิเศษ · **ไม่ผูกมัด**:
+  // Operation คนอื่นก็ approve ได้ (POST /config/{id}/approve เช็คแค่ role) ·
+  // แค่ hint สำหรับ tab "เจาะจงถึงฉัน" · nullable — Config เดิมที่ไม่มีค่านี้
+  // ใช้ได้ปกติ · ยังไม่มี endpoint แก้ค่านี้หลัง decide (v1 — เพิ่มทีหลังได้)
+  suggestedApproverId String?
   // soft-delete ของ flow "คำขอลบ Config อัตโนมัติ" (docs/11 Part A) — เซ็ตตอน
   // SuperAdmin approve คำขอลบ · ทุก query อ่านของ config.service.ts เติม
   // `where: { deletedAt: null }` · คนละเรื่องกับ ConfigService.remove() (hard
   // delete ของ SW ลบ draft ตัวเอง) ที่ยังทำงานเหมือนเดิม
-  deletedAt   DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  deletedAt           DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
-  creator          User                    @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
-  approver         User?                   @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
-  campaigns        Campaign[]
-  incidents        Incident[]
-  versions         ConfigVersion[]
-  tasks            Task[]
-  deletionRequests ConfigDeletionRequest[]
+  creator           User                    @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
+  approver          User?                   @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
+  suggestedApprover User?                   @relation("ConfigSuggestedApprover", fields: [suggestedApproverId], references: [id])
+  campaigns         Campaign[]
+  incidents         Incident[]
+  versions          ConfigVersion[]
+  tasks             Task[]
+  deletionRequests  ConfigDeletionRequest[]
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve

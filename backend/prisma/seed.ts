@@ -85,6 +85,18 @@ async function main() {
         fullName: 'Operation Tester',
         roleCode: 'Operation',
       },
+      // Operation เพิ่ม 2 คน — ให้ dropdown "เจาะจงผู้อนุมัติ" (Approval Center
+      // #19) มีตัวเลือกมากกว่า 1 ตอน dev/demo
+      {
+        username: 'operation2.test',
+        fullName: 'Operation Tester 2',
+        roleCode: 'Operation',
+      },
+      {
+        username: 'operation3.test',
+        fullName: 'Operation Tester 3',
+        roleCode: 'Operation',
+      },
       { username: 'st.test', fullName: 'ST Tester', roleCode: 'ST' },
       { username: 'ot.test', fullName: 'OT Tester', roleCode: 'OT' },
       {
