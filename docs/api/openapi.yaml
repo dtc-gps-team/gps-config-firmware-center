@@ -1255,7 +1255,7 @@ paths:
           schema:
             type: string
             maxLength: 100
-          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device)
+          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device, task)
         - in: query
           name: action
           required: false
@@ -1450,7 +1450,7 @@ components:
           format: uuid
         auditModule:
           type: string
-          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device)
+          description: ชื่อโมดูลที่เกิด mutation (เช่น config, config-deletion, device, task)
         action:
           type: string
           description: เช่น create, update, delete, decide, approve, reject, apply-config
