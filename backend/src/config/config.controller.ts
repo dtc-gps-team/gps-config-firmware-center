@@ -146,7 +146,12 @@ export class ConfigController {
     @Body() dto: DecideConfigDto,
     @Req() req: AuthenticatedRequest,
   ): Promise<Config> {
-    return this.configService.decide(id, dto.passed, toActor(req));
+    return this.configService.decide(
+      id,
+      dto.passed,
+      toActor(req),
+      dto.suggestedApproverId,
+    );
   }
 
   // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ SW ปักผลผ่านแล้ว

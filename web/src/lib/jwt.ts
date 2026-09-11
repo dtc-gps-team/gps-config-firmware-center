@@ -24,3 +24,18 @@ export function isTokenExpired(token: string): boolean {
   if (expiryMs === null) return true;
   return Date.now() >= expiryMs;
 }
+
+/** user id ของเจ้าของ token (`sub` claim) · null ถ้าอ่านไม่ได้ — ใช้ filter
+ *  "ของฉัน" ฝั่ง client (backend ยัง enforce สิทธิ์จริงเสมอ) */
+export function getTokenSubject(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const decoded = JSON.parse(atob(padded)) as { sub?: unknown };
+    return typeof decoded.sub === "string" ? decoded.sub : null;
+  } catch {
+    return null;
+  }
+}

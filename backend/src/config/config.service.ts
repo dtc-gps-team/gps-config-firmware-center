@@ -290,6 +290,7 @@ export class ConfigService {
     id: string,
     passed: boolean,
     actor: ActingUser,
+    suggestedApproverId?: string,
   ): Promise<Config> {
     const config = await this.findOne(id);
 
@@ -303,7 +304,29 @@ export class ConfigService {
       return config;
     }
 
-    const updated = await this.updateStatus(id, 'testing');
+    // "เจาะจงผู้อนุมัติ" (Approval Center #19) — optional · ต้องเป็น user role
+    // Operation ที่ยัง active (ไม่ผูกมัด — Operation คนอื่นก็ approve ได้)
+    if (suggestedApproverId !== undefined) {
+      const approver = await this.prisma.user.findUnique({
+        where: { id: suggestedApproverId },
+        include: { role: true },
+      });
+      if (
+        !approver ||
+        !approver.isActive ||
+        approver.role.code !== 'Operation'
+      ) {
+        throw new BadRequestException(
+          'ผู้อนุมัติที่เจาะจงต้องเป็นผู้ใช้ role Operation ที่ยังใช้งานอยู่',
+        );
+      }
+    }
+
+    const updated = await this.updateStatus(
+      id,
+      'testing',
+      suggestedApproverId !== undefined ? { suggestedApproverId } : undefined,
+    );
 
     // AuditLog (#27) — เขียนเฉพาะตอน passed:true ที่มีการ UPDATE ลง DB จริง
     // (passed:false คืน config เดิมโดยไม่แตะ DB เลย ไม่มี mutation ให้ log)
@@ -498,8 +521,9 @@ export class ConfigService {
   private async updateStatus(
     id: string,
     status: ConfigStatus,
-    // approvedBy เป็น scalar FK — ใช้รูป unchecked เหมือน createdBy ใน create()
-    extra?: { approvedBy?: string },
+    // approvedBy / suggestedApproverId เป็น scalar FK — ใช้รูป unchecked
+    // เหมือน createdBy ใน create() · suggestedApproverId: null = เคลียร์ค่า
+    extra?: { approvedBy?: string; suggestedApproverId?: string | null },
   ): Promise<Config> {
     try {
       return await this.prisma.config.update({

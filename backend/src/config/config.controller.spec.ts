@@ -20,6 +20,7 @@ const sampleConfig: Config = {
   fields: {},
   createdBy: 'sw-1',
   approvedBy: null,
+  suggestedApproverId: null,
   deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -162,10 +163,30 @@ describe('ConfigController', () => {
       swReq,
     );
     expect(result).toEqual(decided);
-    expect(service.decide).toHaveBeenCalledWith(sampleConfig.id, true, {
-      id: 'sw-1',
-      role: 'SW',
+    expect(service.decide).toHaveBeenCalledWith(
+      sampleConfig.id,
+      true,
+      { id: 'sw-1', role: 'SW' },
+      undefined,
+    );
+  });
+
+  it('POST /config/:id/decide -> ส่ง suggestedApproverId ต่อให้ service (#19)', async () => {
+    service.decide.mockResolvedValue({
+      ...sampleConfig,
+      status: 'testing' as const,
     });
+    await controller.decide(
+      sampleConfig.id,
+      { passed: true, suggestedApproverId: 'op-1' },
+      swReq,
+    );
+    expect(service.decide).toHaveBeenCalledWith(
+      sampleConfig.id,
+      true,
+      { id: 'sw-1', role: 'SW' },
+      'op-1',
+    );
   });
 
   it('POST /config/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {

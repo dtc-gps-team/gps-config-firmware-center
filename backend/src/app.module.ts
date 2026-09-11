@@ -15,6 +15,7 @@ import { IncidentModule } from './incident/incident.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TaskModule } from './task/task.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TaskModule } from './task/task.module';
     IncidentModule,
     TaskModule,
     NotificationModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

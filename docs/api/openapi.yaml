@@ -42,6 +42,11 @@ tags:
       ไปใช้ ฯลฯ) — Sprint 3 #27, read-only เท่านั้น การเขียนไม่มี endpoint ตรง
       (แต่ละโมดูลเขียนเองตอนเกิด mutation) · read-level activity (เปลี่ยนหน้า/
       เสิร์ช) ไม่อยู่ในนี้ — ดู CLAUDE.md Audit Pattern
+  - name: user
+    description: >-
+      รายชื่อ user แบบย่อ (id + ชื่อ + role) — สำหรับ dropdown "เจาะจงผู้อนุมัติ"
+      ใน Approval Center · **ไม่ใช่** จอ User / Role Management (Admin เท่านั้น,
+      ยังไม่มีใน spec)
 
 paths:
   /auth/login:
@@ -282,11 +287,13 @@ paths:
     post:
       tags: [config]
       operationId: decideConfig
-      summary: SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate แล้ว (Stage 4)
+      summary: SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate แล้ว (Stage 4 · v3.19 — +suggestedApproverId)
       description: >-
         `passed:true` เปลี่ยนสถานะจาก draft เป็น testing (ส่งต่อให้ Operation
         อนุมัติ/ปฏิเสธต่อ) — `passed:false` ไม่เปลี่ยนสถานะเลย (ยังเป็น draft
-        เหมือนเดิม ให้ SW แก้ไขต่อได้)
+        เหมือนเดิม ให้ SW แก้ไขต่อได้) · ส่ง `suggestedApproverId` (optional,
+        เฉพาะตอน passed:true) เพื่อเจาะจง Operation ที่อยากให้ดูเป็นพิเศษ —
+        ไม่ผูกมัด Operation คนอื่นก็ approve ได้ (Approval Center — Sprint 3 #19)
       parameters:
         - in: path
           name: configId
@@ -303,6 +310,12 @@ paths:
               properties:
                 passed:
                   type: boolean
+                suggestedApproverId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    user id ของ Operation ที่ SW เจาะจง (optional) — ต้องเป็น
+                    role Operation ที่ active จริง ไม่งั้น 400
       responses:
         "200":
           description: ปักผลสำเร็จ (ไม่ว่า passed จะเป็น true หรือ false)
@@ -311,7 +324,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceConfigDraft"
         "400":
-          description: ไม่ส่ง passed มา หรือ passed ไม่ใช่ boolean
+          description: >-
+            ไม่ส่ง passed มา หรือ passed ไม่ใช่ boolean · หรือ suggestedApproverId
+            ไม่ใช่ผู้ใช้ role Operation ที่ active
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -1256,6 +1271,37 @@ paths:
         "403":
           description: Role ไม่มีสิทธิ์ audit-logs.Read (เช่น SW)
 
+  /users:
+    get:
+      tags: [user]
+      operationId: listUsers
+      summary: รายชื่อ user แบบย่อ (id + ชื่อ + role) — v3.19
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
+        PermissionGuard — pattern เดียวกับ /notifications/device-tokens) ·
+        คืนแค่ id/ชื่อ/role ไม่มีข้อมูล sensitive · ใช้ทำ dropdown "เจาะจง
+        ผู้อนุมัติ" ใน Approval Center · **ไม่ใช่** จอ User / Role Management
+        (Admin เท่านั้น — RBAC_Matrix.md §2, docs/11 Part B2 ยังไม่ทำ)
+      parameters:
+        - in: query
+          name: role
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+          description: filter ตาม role code (เช่น Operation) — ไม่ส่ง = ทุก user ที่ active
+      responses:
+        "200":
+          description: รายชื่อ user (เฉพาะ active · เรียงตามชื่อ)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1317,6 +1363,22 @@ components:
           type: string
           format: date-time
 
+    UserSummary:
+      type: object
+      description: >-
+        ข้อมูล user แบบย่อ (listUsers — v3.19) · id + ชื่อ + role code เท่านั้น
+        ไม่มี username / email / สิทธิ์
+      required: [id, fullName, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        role:
+          type: string
+          description: Role code (เช่น Operation)
+
     DeviceConfigDraft:
       type: object
       description: โครงสร้างกลางที่ทั้งฟอร์มและ Import JSON แปลงเข้ามาเป็นแบบเดียวกัน (response shape — มี id/status ที่ server เป็นคนกำหนด)
@@ -1352,6 +1414,15 @@ components:
           description: >-
             user id ของ Operation ที่กดอนุมัติ (null = ยังไม่อนุมัติ) — ตั้งค่าโดย
             approveConfig เพื่อเป็นร่องรอย Separation of Duty
+        suggestedApproverId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            user id ของ Operation ที่ SW เจาะจงให้ดู Config นี้เป็นพิเศษ (v3.19 —
+            Approval Center #19) · null = ไม่เจาะจง · ไม่ผูกมัด Operation คนอื่น
+            ก็ approve ได้ · ตั้งค่าตอน decideConfig(passed:true) · Web resolve
+            ชื่อจาก GET /users?role=Operation เอง
         createdAt:
           type: string
           format: date-time
@@ -1591,6 +1662,14 @@ components:
             Config ที่ Operation ผูกกับงานติดตั้ง/เปลี่ยน config — Mobile อ่านค่านี้
             ส่งเป็น body ของ POST /devices/{deviceId}/apply-config ตอนทำจอ Confirm
             Install · null สำหรับงานประเภทอื่น (เช็คสัญญาณ, เปลี่ยนซิม)
+        campaignId:
+          type: string
+          nullable: true
+          description: >-
+            Campaign ที่มอบหมายงานนี้มา (ถ้ามี) — ไม่ใส่ format: uuid เพราะที่ระดับ
+            Prisma ไม่มี relation constraint ไปยัง Campaign.id (mirror deviceId)
+            · null ตราบใดที่ backend campaign module (สร้าง Campaign+CampaignTarget[]
+            +Task[] พร้อมกัน) ยังไม่ถูกสร้าง — PR #147 เป็น schema-only prerequisite
         status:
           type: string
           enum: [pending, in_progress, completed, cancelled]
