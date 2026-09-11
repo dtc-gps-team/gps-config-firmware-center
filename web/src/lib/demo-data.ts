@@ -18,11 +18,7 @@
 /*  หน้าจริงที่ต่อ API ก็ใช้) re-export ต่อให้หน้า scaffold เดิมไม่ต้องแก้ import */
 /* ---------------------------------------------------------------- */
 
-import {
-  type PillTone,
-  CONFIG_STATUS_TONE,
-  TASK_STATUS_TONE,
-} from "@/lib/status-pill";
+import { type PillTone, TASK_STATUS_TONE } from "@/lib/status-pill";
 
 export {
   pillClass,
@@ -61,102 +57,9 @@ export const DEMO_DASHBOARD_ACTIVITY = [
   { time: "เมื่อวาน", text: "operation.test เริ่ม Campaign 'นำร่องภาคเหนือ'" },
 ];
 
-/* ---------------------------------------------------------------- */
-/*  Config Editor — GET /config                                     */
-/* ---------------------------------------------------------------- */
-
-export interface DemoConfig {
-  id: string;
-  name: string;
-  deviceModel: string;
-  protocol: string;
-  status: keyof typeof CONFIG_STATUS_TONE;
-  updatedAt: string;
-  createdBy: string;
-  simulation: "ผ่าน" | "ไม่ผ่าน" | "-";
-}
-
-export const DEMO_CONFIGS: DemoConfig[] = [
-  {
-    id: "cfg-1041",
-    name: "GT06N · ตั้งค่ามาตรฐานภาคกลาง",
-    deviceModel: "GT06N",
-    protocol: "TCP",
-    status: "approved",
-    updatedAt: "2 ชม.ก่อน",
-    createdBy: "sw.test",
-    simulation: "ผ่าน",
-  },
-  {
-    id: "cfg-1040",
-    name: "GT06N · รอบรายงานถี่ (ทดสอบ)",
-    deviceModel: "GT06N",
-    protocol: "TCP",
-    status: "testing",
-    updatedAt: "5 ชม.ก่อน",
-    createdBy: "sw.test",
-    simulation: "ผ่าน",
-  },
-  {
-    id: "cfg-1039",
-    name: "GT06L · ชุดร่างสำหรับลูกค้าใหม่",
-    deviceModel: "GT06L",
-    protocol: "TCP",
-    status: "draft",
-    updatedAt: "1 วันก่อน",
-    createdBy: "sw.test",
-    simulation: "-",
-  },
-  {
-    id: "cfg-1037",
-    name: "GT06N · ตั้งค่าที่ใช้งานจริง (sync แล้ว)",
-    deviceModel: "GT06N",
-    protocol: "TCP",
-    status: "synced",
-    updatedAt: "2 วันก่อน",
-    createdBy: "sw.test",
-    simulation: "ผ่าน",
-  },
-  {
-    id: "cfg-1035",
-    name: "GT06L · รอบรายงานถี่เกินไป (ถูกปฏิเสธ)",
-    deviceModel: "GT06L",
-    protocol: "TCP",
-    status: "rejected",
-    updatedAt: "3 วันก่อน",
-    createdBy: "sw.test",
-    simulation: "ไม่ผ่าน",
-  },
-];
-
-/* ---------------------------------------------------------------- */
-/*  Approval Center — GET /config?status=testing                    */
-/* ---------------------------------------------------------------- */
-
-export const DEMO_PENDING_APPROVALS = DEMO_CONFIGS.filter(
-  (c) => c.status === "testing",
-).concat([
-  {
-    id: "cfg-1038",
-    name: "GT06N · ปรับ APN ผู้ให้บริการรายใหม่",
-    deviceModel: "GT06N",
-    protocol: "TCP",
-    status: "testing",
-    updatedAt: "1 วันก่อน",
-    createdBy: "sw.test",
-    simulation: "ผ่าน",
-  },
-  {
-    id: "cfg-1036",
-    name: "GT06L · เปิดอ่านค่า CAN bus",
-    deviceModel: "GT06L",
-    protocol: "TCP",
-    status: "testing",
-    updatedAt: "1 วันก่อน",
-    createdBy: "sw.test",
-    simulation: "ผ่าน",
-  },
-]);
+/* Config Editor (GET /config) + Approval Center (GET /config?status=testing)
+   ต่อ API จริงแล้ว — DEMO_CONFIGS / DEMO_PENDING_APPROVALS ถูกลบออก · ดู
+   web/src/hooks/use-configs.ts + use-pending-approvals.ts */
 
 /* ---------------------------------------------------------------- */
 /*  Task Management — GET /tasks (โมดูล task = ฝั่ง B)               */

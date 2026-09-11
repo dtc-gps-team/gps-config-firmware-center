@@ -61,10 +61,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/campaigns",
     screenName: "Campaign Wizard / Campaign Monitor",
   },
-  // "Task Management" ถูกซ่อนชั่วคราว (มติ Sprint 1 review ข้อ 1 — ดู docs/09
-  // §2) จอเดิมเป็น planning tool เกินขอบเขต ต้อง redesign เป็น "list งานที่
-  // มอบหมาย + ฟอร์มมอบหมายพื้นฐาน" ก่อนถึงจะเปิดเมนูใหม่ · โค้ด scaffold เดิม
-  // pin ไว้ที่ web/src/app/(app)/_tasks/ (Next private folder = ไม่ถูก route)
+  // "Task Management" ยกเลิกถาวร ไม่มีวันกลับมา (มติพี่เลี้ยงล่าสุด — สืบเนื่อง
+  // จาก PR #144 review, ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) เดิมพักไว้
+  // ตามมติ Sprint 1 review ข้อ 1 (docs/09 §2) ว่าจะ redesign เป็น list +
+  // ฟอร์มมอบหมายพื้นฐาน — ตอนนี้ปิดขาดแล้ว: การมอบหมายงานย้ายไปอยู่ในขั้นตอน
+  // "มอบหมายผู้รับผิดชอบหน้างาน" ตอนสร้าง Campaign แทน (Sprint 3 #21) · scaffold
+  // เดิม (`_tasks/`) ถูกลบทิ้งแล้ว ไม่ใช่แค่ซ่อน
   {
     label: "Incident & Rollback",
     href: "/incidents",

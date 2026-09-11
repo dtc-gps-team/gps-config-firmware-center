@@ -48,6 +48,7 @@ const approvedConfig: Config = {
   fields: { APN: 'internet' },
   createdBy: 'user-1',
   approvedBy: 'user-2',
+  suggestedApproverId: null,
   deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -257,6 +258,17 @@ describe('DeviceService', () => {
           action: 'apply-config',
         },
       });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> applyConfig() ยังสำเร็จปกติ (never-throw)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).resolves.toEqual(applyResult);
     });
 
     it('config สถานะ synced ก็ apply ได้', async () => {

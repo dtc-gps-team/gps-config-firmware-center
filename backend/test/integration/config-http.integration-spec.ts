@@ -786,6 +786,77 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .send({ passed: true })
         .expect(404);
     });
+
+    it('passed:true + suggestedApproverId เป็น Operation ที่ active -> 200 + เซ็ตค่า', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .send({ passed: true, suggestedApproverId: opUser.id })
+        .expect(200);
+
+      const body = res.body as { status: string; suggestedApproverId: string };
+      expect(body.status).toBe('testing');
+      expect(body.suggestedApproverId).toBe(opUser.id);
+    });
+
+    it('suggestedApproverId เป็น role อื่น (ไม่ใช่ Operation) -> 400, ไม่เปลี่ยนสถานะ', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      const other = await makeUser(prisma, { role: 'ST' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .send({ passed: true, suggestedApproverId: other.id })
+        .expect(400);
+
+      const after = await prisma.config.findUnique({
+        where: { id: configRow.id },
+      });
+      expect(after?.status).toBe('draft');
+    });
+
+    it('suggestedApproverId ไม่ใช่ uuid -> 400 (DTO validation)', async () => {
+      const swUser = await makeUser(prisma, { role: 'SW' });
+      await grant('SW', ActionType.Approve, 'config-decision');
+      const configRow = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {},
+          createdBy: swUser.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/config/${configRow.id}/decide`)
+        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .send({ passed: true, suggestedApproverId: 'not-a-uuid' })
+        .expect(400);
+    });
   });
 
   describe('POST /config/:id/approve (Stage 4)', () => {
