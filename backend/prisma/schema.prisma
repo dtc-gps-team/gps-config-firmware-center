@@ -115,14 +115,26 @@ model Task {
   // TaskService) จึงไม่มีทางถูก ConfigService.remove() ลบอยู่แล้ว (เช็ค
   // status === 'draft')
   configId    String?
+  // Campaign ต้นทางของ Task นี้ — เฉพาะ Task ที่เกิดจากขั้น "มอบหมายผู้
+  // รับผิดชอบหน้างาน" ตอนสร้าง Campaign (Sprint 3 #21 Campaign Wizard)
+  // Task ที่สร้างแบบอื่น (ถ้ามี) configId/campaignId เป็น null ทั้งคู่ —
+  // ตัดสินใจร่วมกับ kittiphong (B) หลัง PR #144 review comment (Task.configId
+  // เป็น null หมดในทางปฏิบัติเพราะไม่มีทางป้อนข้อมูลจริงมาก่อนหน้านี้ —
+  // ที่มาจริงคือ Campaign Wizard ไม่ใช่หน้า Task Management แยก ซึ่งถูกยกเลิก
+  // ถาวรแล้ว ดู web/src/app/(app)/_tasks/README.md)
+  //
+  // onDelete: SetNull เหมือน configId ด้านบน — ลบ Campaign ไม่ควร cascade
+  // ลบ Task ที่เป็นงานปฏิบัติการจริง
+  campaignId  String?
   status      TaskStatus @default(pending)
   dueDate     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   // user id ของผู้รับผิดชอบงาน (ดู docs/api/openapi.yaml Task.assignedTo)
-  assignedUser User    @relation(fields: [assignedTo], references: [id])
-  config       Config? @relation(fields: [configId], references: [id])
+  assignedUser User      @relation(fields: [assignedTo], references: [id])
+  config       Config?   @relation(fields: [configId], references: [id])
+  campaign     Campaign? @relation(fields: [campaignId], references: [id])
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +488,11 @@ model Firmware {
 // auto-pause ที่ยังไม่ใช่ MVP) เหลือ counter รวมแทน per-target tracking
 // ละเอียด
 //
+// **อัปเดต:** เอา `CAMPAIGN_TARGET` กลับมา (ดู `model CampaignTarget`
+// ด้านล่าง) เพราะ Campaign Wizard (#21) ต้องรู้ target list จริงถึงจะสร้าง
+// Task ต่อเครื่องได้ (ตัดสินใจร่วมกับ B หลัง PR #144) — `CAMPAIGN_BATCHES`/
+// rollout strategy/canary/auto-pause **ยังตัดออกเหมือนเดิม** (ยังไม่ใช่ MVP)
+//
 // เพิ่ม payloadType + configId/firmwareId (nullable ตามชนิด) จาก Data
 // Dictionary จริง (DEPLOYMENT_CAMPAIGN.payload_type / firmware_id /
 // config_template_version_id) — ตัดออกไม่ได้เพราะ Campaign ต้องรู้ว่ากำลัง
@@ -521,9 +538,38 @@ model Campaign {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  creator  User      @relation(fields: [createdBy], references: [id])
-  config   Config?   @relation(fields: [configId], references: [id])
-  firmware Firmware? @relation(fields: [firmwareId], references: [id])
+  creator  User             @relation(fields: [createdBy], references: [id])
+  config   Config?          @relation(fields: [configId], references: [id])
+  firmware Firmware?        @relation(fields: [firmwareId], references: [id])
+  targets  CampaignTarget[]
+  tasks    Task[]
+}
+
+// CampaignTarget — รายชื่ออุปกรณ์เป้าหมายจริงของ Campaign หนึ่งตัว กลับมา
+// เอาแค่ตารางเดียวจาก 3 ตารางเดิมที่ถูกตัดออกตอนทำ Campaign MVP
+// (CAMPAIGN_TARGET / CAMPAIGN_BATCHES / CAMPAIGN_ASSIGNMENT — ดู comment
+// เหนือ model Campaign) เพราะเป็น prerequisite ของ Sprint 3 #21 (Campaign
+// Wizard ต้องรู้ target list จริง ไม่ใช่แค่ `targetCount` ตัวเลขรวม) และเป็น
+// input ให้ TaskService สร้าง Task ต่อเครื่องพร้อม `Task.campaignId` ด้านบน
+// — ตัดสินใจร่วมกับ kittiphong (B) หลัง PR #144 review comment
+//
+// deviceId เป็น string หลวมๆ ไม่ใช่ Prisma relation ไปยัง Device.id — mirror
+// `Task.deviceId` ทุกประการ (ค่านี้คือเลขเครื่องจริงจาก `Device.deviceId`
+// ไม่ใช่ `Device.id` UUID ภายใน — Device model เองก็ไม่มี relation กลับมา)
+//
+// ไม่มี `assignedTo` ในตารางนี้โดยตั้งใจ (YAGNI) — ผู้รับผิดชอบหน้างานเก็บที่
+// `Task.assignedTo` ของ Task ที่ระบบสร้างให้ตรงๆ ตอน submit Campaign Wizard
+// ไม่ต้องเก็บซ้ำสองที่
+model CampaignTarget {
+  id         String   @id @default(uuid())
+  campaignId String
+  deviceId   String
+  createdAt  DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, deviceId])
+  @@index([campaignId])
 }
 
 // ---------------------------------------------------------------------------
