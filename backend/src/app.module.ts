@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { CampaignModule } from './campaign/campaign.module';
 import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
@@ -30,6 +31,7 @@ import { UserModule } from './user/user.module';
     PrismaModule,
     AuditModule,
     AuthModule,
+    CampaignModule,
     ConfigModule,
     ConfigDefinitionModule,
     ConfigDeletionModule,
