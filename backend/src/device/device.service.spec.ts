@@ -259,6 +259,17 @@ describe('DeviceService', () => {
       });
     });
 
+    it('AuditLog เขียนไม่สำเร็จ -> applyConfig() ยังสำเร็จปกติ (never-throw)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).resolves.toEqual(applyResult);
+    });
+
     it('config สถานะ synced ก็ apply ได้', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue({

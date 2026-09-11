@@ -180,6 +180,23 @@ describe('ConfigService', () => {
       });
     });
 
+    it('AuditLog เขียนไม่สำเร็จ -> create() ยังสำเร็จปกติ (never-throw)', async () => {
+      config.create.mockResolvedValue(draftConfig);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.create(
+          {
+            name: 'ชุดตั้งค่าทดสอบ',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+          },
+          sw,
+        ),
+      ).resolves.toEqual(draftConfig);
+    });
+
     it('ส่ง description มา -> เขียนลง DB ตามนั้น', async () => {
       config.create.mockResolvedValue(draftConfig);
 
@@ -473,6 +490,16 @@ describe('ConfigService', () => {
       });
     });
 
+    it('AuditLog เขียนไม่สำเร็จ -> decide() ยังสำเร็จปกติ (never-throw)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue(testingConfig);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(service.decide(draftConfig.id, true, sw)).resolves.toEqual(
+        testingConfig,
+      );
+    });
+
     it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft) ไม่เขียน AuditLog', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
@@ -546,6 +573,18 @@ describe('ConfigService', () => {
       expect(auditLog.create).toHaveBeenCalledWith({
         data: { userId: 'op-1', auditModule: 'config', action: 'approve' },
       });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> approve() ยังสำเร็จปกติ ConfigVersion/status ยัง commit (never-throw)', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(approvedConfig);
+      configVersion.count.mockResolvedValue(0);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.approve(testingConfig.id, operation),
+      ).resolves.toEqual(approvedConfig);
+      expect(configVersion.create).toHaveBeenCalled();
     });
 
     it('Stage 5: เขียน ConfigVersion snapshot (versionNumber = prior + 1) ใน transaction เดียวกัน', async () => {
@@ -697,6 +736,16 @@ describe('ConfigService', () => {
       expect(auditLog.create).toHaveBeenCalledWith({
         data: { userId: 'op-1', auditModule: 'config', action: 'reject' },
       });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> reject() ยังสำเร็จปกติ (never-throw)', async () => {
+      config.findUnique.mockResolvedValue(testingConfig);
+      config.update.mockResolvedValue(draftConfig);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.reject(testingConfig.id, operation),
+      ).resolves.toEqual(draftConfig);
     });
 
     it('status draft (ยังไม่เคยส่งต่อ Operation) -> ConflictException', async () => {
@@ -909,6 +958,17 @@ describe('ConfigService', () => {
       });
     });
 
+    it('AuditLog เขียนไม่สำเร็จ -> update() ยังสำเร็จปกติ (never-throw)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      const updated = { ...draftConfig, deviceModel: 'GT06L' };
+      config.update.mockResolvedValue(updated);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw),
+      ).resolves.toEqual(updated);
+    });
+
     it('ส่ง description ใหม่มา -> update ค่านั้น', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue(draftConfig);
@@ -1036,6 +1096,14 @@ describe('ConfigService', () => {
       expect(auditLog.create).toHaveBeenCalledWith({
         data: { userId: 'sw-1', auditModule: 'config', action: 'delete' },
       });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> remove() ยังสำเร็จปกติ (never-throw)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.delete.mockResolvedValue(draftConfig);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(service.remove(draftConfig.id, sw)).resolves.toBeUndefined();
     });
 
     it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ delete (P2025) -> NotFoundException ไม่ใช่ 500', async () => {

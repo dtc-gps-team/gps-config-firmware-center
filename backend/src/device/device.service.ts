@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Device, Prisma } from '@prisma/client';
@@ -45,6 +46,8 @@ export interface ActingUser {
 
 @Injectable()
 export class DeviceService {
+  private readonly logger = new Logger(DeviceService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(DEVICE_CONNECTION_TESTER)
@@ -181,13 +184,23 @@ export class DeviceService {
     // ที่ช่างกดใส่ Config เข้าอุปกรณ์ ไม่ว่าผล `applied` จะ true/false เพราะเป็น
     // การกระทำจริงที่ต้องมีร่องรอย compliance (endpoint นี้เอง fire-and-forget
     // ไม่ persist อะไรใน DB ของเรา — AuditLog แถวนี้จึงเป็นร่องรอยเดียวที่มี)
-    await this.prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        auditModule: AUDIT_MODULE,
-        action: 'apply-config',
-      },
-    });
+    //
+    // **never throws** (แก้ตาม review comment ของ B บน PR #146) — ตอนนี้กล่อง
+    // ได้รับคำสั่ง apply ไปแล้วจริง (fire-and-forget) audit ล้มเหลวไม่ควรทำให้
+    // client เห็น 500 ทั้งที่ผล `result` ข้างบนสำเร็จจริง
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'apply-config',
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action apply-config, user ${actor.id}): ${(err as Error).message}`,
+      );
+    }
 
     return result;
   }

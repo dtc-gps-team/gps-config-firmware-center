@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -48,6 +49,8 @@ const AUDIT_MODULE = 'config';
 
 @Injectable()
 export class ConfigService {
+  private readonly logger = new Logger(ConfigService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(DEVICE_SIMULATOR)
@@ -82,6 +85,26 @@ export class ConfigService {
    * โยนต่อตามเดิม `meta.target` เป็นได้ทั้ง string (constraint name) หรือ
    * string[] (field names) แล้วแต่เวอร์ชัน Prisma/driver — เช็คทั้งสองแบบ
    */
+  /**
+   * เขียน AuditLog — **never throws** (#27, แก้ตาม review comment ของ B บน PR
+   * #146: audit ล้มเหลวไม่ควรทำให้ mutation ที่สำเร็จแล้วกลายเป็น 500 ที่
+   * client เห็น) mirror `TaskService.logAudit` ทุกประการ — เดิมไฟล์นี้เขียน
+   * เป็น unguarded await แยกจาก transaction ของตัว mutation ซึ่งเป็นบั๊กจริง
+   * (ยกเว้นใน `approve()` ที่ join กับ transaction เดิมอยู่แล้ว — wrap
+   * try/catch ตรงนั้นแยกเพราะใช้ `tx` ไม่ใช่ `this.prisma`)
+   */
+  private async logAudit(action: string, userId: string): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: { userId, auditModule: AUDIT_MODULE, action },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${userId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
   private throwIfDuplicateName(err: unknown, name: string | undefined): never {
     const target =
       err instanceof PrismaClientKnownRequestError && err.code === 'P2002'
@@ -125,14 +148,9 @@ export class ConfigService {
       this.throwIfDuplicateName(err, dto.name);
     }
 
-    // AuditLog (#27, CLAUDE.md Audit Pattern — "สร้าง") — เขียนแยกจาก
-    // transaction ของตัว mutation โดยตั้งใจ (ต่างจาก approve() ที่ต้อง atomic
-    // กับ ConfigVersion เพื่อความถูกต้องของข้อมูล) เป็น best-effort log ไม่ต้อง
-    // atomic กับตัว mutation หลัก — importFromJson() เรียกผ่าน create() นี้อยู่
-    // แล้ว ไม่ต้องเขียนซ้ำอีกจุด
-    await this.prisma.auditLog.create({
-      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'create' },
-    });
+    // AuditLog (#27, CLAUDE.md Audit Pattern — "สร้าง") — importFromJson()
+    // เรียกผ่าน create() นี้อยู่แล้ว ไม่ต้องเขียนซ้ำอีกจุด
+    await this.logAudit('create', actor.id);
     return created;
   }
 
@@ -289,9 +307,7 @@ export class ConfigService {
 
     // AuditLog (#27) — เขียนเฉพาะตอน passed:true ที่มีการ UPDATE ลง DB จริง
     // (passed:false คืน config เดิมโดยไม่แตะ DB เลย ไม่มี mutation ให้ log)
-    await this.prisma.auditLog.create({
-      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'decide' },
-    });
+    await this.logAudit('decide', actor.id);
     return updated;
   }
 
@@ -348,13 +364,21 @@ export class ConfigService {
         // AuditLog (#27) — อยู่ใน transaction เดียวกับ ConfigVersion/status
         // update อยู่แล้ว (ต่างจาก create/update/remove/decide/reject ที่
         // เขียนแยกนอก transaction — ตรงนี้ join ฟรีเพราะ transaction มีอยู่แล้ว)
-        await tx.auditLog.create({
-          data: {
-            userId: actor.id,
-            auditModule: AUDIT_MODULE,
-            action: 'approve',
-          },
-        });
+        // **never throws** เหมือน logAudit() — audit ล้มเหลวไม่ควรทำให้ approve
+        // ทั้งก้อน rollback (ConfigVersion/status ยัง commit ตามปกติ)
+        try {
+          await tx.auditLog.create({
+            data: {
+              userId: actor.id,
+              auditModule: AUDIT_MODULE,
+              action: 'approve',
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action approve, user ${actor.id}): ${(err as Error).message}`,
+          );
+        }
         return { updated, nextVersion };
       });
       approved = result.updated;
@@ -465,9 +489,7 @@ export class ConfigService {
     const updated = await this.updateStatus(id, 'draft');
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "ปฏิเสธ")
-    await this.prisma.auditLog.create({
-      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'reject' },
-    });
+    await this.logAudit('reject', actor.id);
     return updated;
   }
 
@@ -574,9 +596,7 @@ export class ConfigService {
     }
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "แก้ไข")
-    await this.prisma.auditLog.create({
-      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'update' },
-    });
+    await this.logAudit('update', actor.id);
     return updated;
   }
 
@@ -604,8 +624,6 @@ export class ConfigService {
     // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
     // เหมือนกัน แม้ CLAUDE.md จะยกตัวอย่างไม่ครบทุก verb (การลบ Config เปลี่ยน
     // ข้อมูลจริงเหมือนกัน compliance/Auditor ต้องเห็นร่องรอย)
-    await this.prisma.auditLog.create({
-      data: { userId: actor.id, auditModule: AUDIT_MODULE, action: 'delete' },
-    });
+    await this.logAudit('delete', actor.id);
   }
 }
