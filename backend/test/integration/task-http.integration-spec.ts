@@ -178,6 +178,83 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       .expect(403);
   });
 
+  describe('AuditLog (Sprint 3 #27 follow-up — PR #145 เปิด audit module แล้ว)', () => {
+    it('POST /tasks สำเร็จ -> เขียน AuditLog action create', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'x', assignedTo: otUser.id })
+        .expect(201);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: opUser.id, auditModule: 'task', action: 'create' },
+      });
+      expect(logs).toHaveLength(1);
+    });
+
+    it('PATCH /tasks/:id โดย Operation สำเร็จ -> เขียน AuditLog action update', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      const task = await prisma.task.create({
+        data: { title: 'x', assignedTo: otUser.id },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'แก้ไขแล้ว' })
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: opUser.id, auditModule: 'task', action: 'update' },
+      });
+      expect(logs).toHaveLength(1);
+    });
+
+    it('PATCH /tasks/:id โดย ST แก้ status งานตัวเองสำเร็จ -> เขียน AuditLog ด้วย userId ของ ST เอง', async () => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const task = await prisma.task.create({
+        data: { title: 'mine', assignedTo: stUser.id },
+      });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: 'in_progress' })
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: stUser.id, auditModule: 'task', action: 'update' },
+      });
+      expect(logs).toHaveLength(1);
+    });
+
+    it('PATCH /tasks/:id ที่โดน 403 (ST แก้ field อื่นนอกจาก status) -> ไม่เขียน AuditLog', async () => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const task = await prisma.task.create({
+        data: { title: 'mine', assignedTo: stUser.id },
+      });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'hacked' })
+        .expect(403);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: stUser.id },
+      });
+      expect(logs).toHaveLength(0);
+    });
+  });
+
   describe('Task.configId (งานติดตั้ง — ผูก Config ที่ Mobile จะ apply)', () => {
     async function makeConfig(
       status: 'draft' | 'approved',
