@@ -52,7 +52,7 @@ jobs:
       # Object Storage (Firmware, Sprint 3 #23) — FirmwareStorageService ไม่มี
       # mock mode (ดู comment ในไฟล์นั้น) เชื่อม MinIO จริงเสมอ ต้องมี service
       # จริงให้เชื่อมใน CI ด้วย (ดู step "Start MinIO" ด้านล่าง — GitHub Actions
-      # `services:` ไม่รองรับ command override ที่ image minio/minio ต้องการ
+      # `services:` ไม่รองรับ command override ที่ image quay.io/minio/minio ต้องการ
       # `server /data` เลยต้อง docker run เองแทนที่จะประกาศเป็น services:)
       OBJECT_STORAGE_ENDPOINT: http://localhost:9000
       OBJECT_STORAGE_ACCESS_KEY: gps_minio_admin
@@ -73,10 +73,17 @@ jobs:
 
       - name: Start MinIO
         run: |
+          # Docker Hub เลิกให้ pull image `minio/minio` แบบ anonymous แล้ว
+          # (เจอ "pull access denied" ตั้งแต่ ก.ย. 2569 เป็นต้นมา ไม่ใช่แค่
+          # rate-limit ชั่วคราว) ย้ายไปดึงจาก quay.io/minio/minio แทน — เช็ค
+          # tag จริงจาก https://quay.io/api/v1/repository/minio/minio/tag/
+          # ก่อน pin เสมอ (tag ที่ pin ไว้ก่อนหน้า RELEASE.2025-10-15T17-29-55Z
+          # ไม่มีอยู่จริงบน quay.io — "manifest unknown" — เป็น tag ที่เดาขึ้น
+          # ไม่ได้เช็ค registry จริงก่อน)
           docker run -d --name minio -p 9000:9000 -p 9001:9001 \
             -e MINIO_ROOT_USER=gps_minio_admin \
             -e MINIO_ROOT_PASSWORD=gps_minio_password \
-            minio/minio:latest server /data --console-address ":9001"
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --console-address ":9001"
 
           echo "รอ MinIO พร้อมใช้งาน..."
           for i in $(seq 1 30); do
