@@ -719,8 +719,70 @@ async function main() {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // 6) Config ตัวอย่างที่ approved/synced แล้ว — ให้ dev/demo มี Config ที่
+  //    สร้างแคมเปญได้ทันที (`APPLICABLE_CONFIG_STATUSES` ใน
+  //    device/config-applier.ts ต้องเป็น approved/synced เท่านั้น) ตรง
+  //    deviceModel/protocol กับ demoDevices ด้านบนพอดี (GT06N/TCP ผูกกับ
+  //    ABC Logistics, GT06L/TCP ผูกกับ Northern Fleet) จะได้ลองสร้างแคมเปญ
+  //    ข้ามลูกค้าดูความแตกต่างของ filter ได้ด้วย
+  // ---------------------------------------------------------------------
+  const swUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'sw.test' },
+  });
+  const operationUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'operation.test' },
+  });
+
+  const demoConfigs: {
+    name: string;
+    deviceModel: string;
+    protocol: string;
+    status: 'approved' | 'synced';
+    fields: Record<string, string>;
+  }[] = [
+    {
+      name: 'GT06N/TCP มาตรฐาน',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'approved',
+      fields: {
+        APN: 'internet',
+        SERVER_HOST: 'config.dtc.co.th',
+        SERVER_PORT: '909',
+      },
+    },
+    {
+      name: 'GT06L/TCP มาตรฐาน',
+      deviceModel: 'GT06L',
+      protocol: 'TCP',
+      status: 'synced',
+      fields: {
+        APN: 'internet',
+        SERVER_HOST: 'config.dtc.co.th',
+        SERVER_PORT: '909',
+      },
+    },
+  ];
+
+  for (const c of demoConfigs) {
+    await prisma.config.upsert({
+      where: { name: c.name },
+      update: {},
+      create: {
+        name: c.name,
+        deviceModel: c.deviceModel,
+        protocol: c.protocol,
+        status: c.status,
+        fields: c.fields,
+        createdBy: swUser.id,
+        approvedBy: operationUser.id,
+      },
+    });
+  }
+
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices, ${demoConfigs.length} configs.`,
   );
 }
 
