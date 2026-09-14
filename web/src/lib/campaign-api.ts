@@ -3,8 +3,13 @@ import { apiJson } from "@/lib/api";
 /**
  * Campaign API client — ตรงกับ `docs/api/openapi.yaml` tag `campaign`
  * (Sprint 3 #21 Campaign Wizard) — `POST /campaigns` สร้าง Campaign+
- * CampaignTarget[]+Task[] (ขั้น "มอบหมายผู้รับผิดชอบหน้างาน") ใน transaction
- * เดียว, active ทันที ("ส่งพร้อมกันหมด" — v1 ไม่มี draft/rollout strategy)
+ * CampaignTarget[] ใน transaction เดียว, active ทันที ("ส่งพร้อมกันหมด" —
+ * v1 ไม่มี draft/rollout strategy) ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม
+ *
+ * **แก้ไข 2026-09-14:** เดิม `POST /campaigns` สร้าง `Task` ต่ออุปกรณ์พร้อม
+ * มอบหมายผู้รับผิดชอบหน้างานด้วย — หัวหน้าแก้ scope ว่า Campaign ไม่ใช่
+ * เครื่องมือมอบหมายงาน (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) จึงตัด
+ * แนวคิด assignedTo ออกจาก `CampaignTargetInput` ทั้งหมด (ดู backend PR #152)
  */
 
 export const CAMPAIGN_STATUSES = [
@@ -34,7 +39,9 @@ export type Campaign = {
   status: CampaignStatus;
   targetCount: number;
   /** ยังไม่มี logic ไหนอัปเดตค่านี้ตอนนี้ (0 เสมอหลังสร้าง) — รอ Campaign
-   * Monitor (#22) ผูกกับผล apply-config จริงของแต่ละ Task */
+   * Monitor (#22) กลไกจริงยังไม่ระบุ (เดิมตั้งใจผูกกับผล apply-config ของ
+   * Task ต่อเป้าหมาย แต่ Campaign ไม่สร้าง Task แล้วตั้งแต่แก้ไข 2026-09-14
+   * — ต้องออกแบบใหม่ตอนทำ Campaign Monitor จริง) */
   successCount: number;
   failureCount: number;
   createdBy: string;
@@ -42,12 +49,10 @@ export type Campaign = {
   updatedAt: string;
 };
 
-/** เป้าหมาย 1 เครื่อง + ผู้รับผิดชอบหน้างาน — body ของ `createCampaign` */
+/** เป้าหมาย 1 เครื่อง — body ของ `createCampaign` */
 export type CampaignTargetInput = {
   /** `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน */
   deviceId: string;
-  /** user id ของช่างหน้างาน (ST/OT) ที่รับผิดชอบเครื่องนี้ */
-  assignedTo: string;
 };
 
 export type CreateCampaignInput = {
@@ -77,7 +82,7 @@ export function getCampaign(token: string, id: string): Promise<Campaign> {
  * `POST /campaigns` — Operation เท่านั้น · 404 ถ้าไม่พบ Config · 409 ถ้า Config
  * ยังไม่อนุมัติ หรืออุปกรณ์เป้าหมายบางเครื่องยังไม่ installed/รุ่นไม่ตรง
  * (backend รวมทุกปัญหาไว้ใน `message` เดียว) · 400 ถ้า targets ว่าง/deviceId
- * ซ้ำ/assignedTo ไม่พบ user หรือ payloadType Firmware
+ * ซ้ำ หรือ payloadType Firmware
  */
 export function createCampaign(
   token: string,

@@ -13,10 +13,8 @@ import { ApiError } from "@/lib/api";
 import { createCampaign, type CampaignTargetInput } from "@/lib/campaign-api";
 import type { Config } from "@/lib/config-api";
 import type { Device } from "@/lib/device-api";
-import type { UserSummary } from "@/lib/users-api";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
-import { useFieldTechnicians } from "@/hooks/use-field-technicians";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
@@ -36,13 +34,19 @@ type Step = (typeof STEPS)[number]["n"];
 
 /**
  * Campaign Wizard (Sprint 3 #21) — สร้างแคมเปญใหม่ 4 ขั้น ตาม wireframe ที่
- * พี่เลี้ยง approve ไว้แต่แรก (เลือกเป้าหมาย+มอบหมาย / เลือก Payload / Rollout
- * / ตรวจสอบ&ยืนยัน — เดิมขั้นสุดท้ายชื่อ "ส่งอนุมัติ" แต่เปลี่ยนเป็น "ยืนยัน"
+ * พี่เลี้ยง approve ไว้แต่แรก (เลือกเป้าหมาย / เลือก Payload / Rollout /
+ * ตรวจสอบ&ยืนยัน — เดิมขั้นสุดท้ายชื่อ "ส่งอนุมัติ" แต่เปลี่ยนเป็น "ยืนยัน"
  * เพราะ `CampaignStatus` ไม่มี approval workflow แยกแบบ Config)
  *
  * v1 = "ส่งพร้อมกันหมด" ล้วน (ไม่มี rollout strategy ให้เลือก) และรองรับแค่
  * `payloadType: Config` (Firmware ยังไม่มี backend module ให้เลือก เลือกไม่ได้
  * ในฟอร์มนี้เลย — ตรงกับที่ backend คืน 400 ถ้าฝืนส่งมา)
+ *
+ * **แก้ไข 2026-09-14:** เดิมขั้นที่ 1 มีการมอบหมายผู้รับผิดชอบหน้างานต่อ
+ * อุปกรณ์ด้วย (dropdown เลือกช่าง ST/OT + validate ครบก่อนไปขั้นถัดไป) —
+ * หัวหน้าแก้ scope ว่า Campaign มีไว้ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น
+ * ไม่ใช่เครื่องมือมอบหมายงาน (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) —
+ * ตัดขั้นตอนมอบหมายทั้งหมดออก เหลือแค่เลือกอุปกรณ์เป้าหมาย (ดู backend PR #152)
  */
 export function CampaignWizard() {
   const router = useRouter();
@@ -50,14 +54,12 @@ export function CampaignWizard() {
 
   const devicesQuery = useDevices();
   const configsQuery = useConfigs();
-  const techniciansQuery = useFieldTechnicians();
 
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [search, setSearch] = useState("");
-  // deviceId -> assignedTo user id ("" = ยังไม่มอบหมาย)
-  const [targets, setTargets] = useState<Record<string, string>>({});
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [configId, setConfigId] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
@@ -92,7 +94,6 @@ export function CampaignWizard() {
     [configsQuery.data],
   );
 
-  const selectedDeviceIds = Object.keys(targets);
   const selectedConfig = eligibleConfigs.find((c) => c.id === configId) ?? null;
   const deviceByDeviceId = useMemo(
     () => new Map(installedDevices.map((d) => [d.deviceId, d])),
@@ -114,26 +115,14 @@ export function CampaignWizard() {
   }, [selectedDeviceIds, selectedConfig, deviceByDeviceId]);
 
   function toggleDevice(deviceId: string, checked: boolean) {
-    setTargets((prev) => {
-      const next = { ...prev };
+    setSelectedDeviceIds((prev) => {
       if (checked) {
-        next[deviceId] = prev[deviceId] ?? "";
-      } else {
-        delete next[deviceId];
+        return prev.includes(deviceId) ? prev : [...prev, deviceId];
       }
-      return next;
+      return prev.filter((id) => id !== deviceId);
     });
     clearErrors();
   }
-
-  function setAssignee(deviceId: string, userId: string) {
-    setTargets((prev) => ({ ...prev, [deviceId]: userId }));
-    clearErrors();
-  }
-
-  const unassignedCount = selectedDeviceIds.filter(
-    (id) => !targets[id],
-  ).length;
 
   function goToStep(next: Step) {
     clearErrors();
@@ -145,12 +134,6 @@ export function CampaignWizard() {
       }
       if (selectedDeviceIds.length === 0) {
         setFormError("เลือกอุปกรณ์เป้าหมายอย่างน้อย 1 เครื่อง");
-        return;
-      }
-      if (unassignedCount > 0) {
-        setFormError(
-          `ยังไม่ได้มอบหมายผู้รับผิดชอบให้ ${unassignedCount} เครื่อง`,
-        );
         return;
       }
     }
@@ -166,7 +149,7 @@ export function CampaignWizard() {
     if (!session?.accessToken || !configId) return;
 
     const targetInputs: CampaignTargetInput[] = selectedDeviceIds.map(
-      (deviceId) => ({ deviceId, assignedTo: targets[deviceId] }),
+      (deviceId) => ({ deviceId }),
     );
 
     setSubmitting(true);
@@ -193,11 +176,9 @@ export function CampaignWizard() {
 
   const loadingInitial =
     (devicesQuery.isLoading && !devicesQuery.data) ||
-    (configsQuery.isLoading && !configsQuery.data) ||
-    (techniciansQuery.isLoading && !techniciansQuery.data);
+    (configsQuery.isLoading && !configsQuery.data);
 
-  const loadError =
-    devicesQuery.error ?? configsQuery.error ?? techniciansQuery.error;
+  const loadError = devicesQuery.error ?? configsQuery.error;
 
   if (loadingInitial) {
     return (
@@ -217,7 +198,6 @@ export function CampaignWizard() {
           onClick={() => {
             void devicesQuery.refetch();
             void configsQuery.refetch();
-            void techniciansQuery.refetch();
           }}
         >
           ลองใหม่
@@ -246,10 +226,8 @@ export function CampaignWizard() {
           search={search}
           onSearchChange={setSearch}
           devices={filteredDevices}
-          technicians={techniciansQuery.data ?? []}
-          targets={targets}
+          selectedDeviceIds={selectedDeviceIds}
           onToggleDevice={toggleDevice}
-          onSetAssignee={setAssignee}
           formError={formError}
           onCancel={() => router.push("/campaigns")}
           onNext={() => goToStep(2)}
@@ -283,10 +261,6 @@ export function CampaignWizard() {
           targets={selectedDeviceIds.map((deviceId) => ({
             deviceId,
             device: deviceByDeviceId.get(deviceId) ?? null,
-            assignee:
-              (techniciansQuery.data ?? []).find(
-                (u) => u.id === targets[deviceId],
-              ) ?? null,
           }))}
           incompatibleCount={incompatibleTargets.length}
           submitting={submitting}
@@ -352,10 +326,8 @@ function TargetsStep({
   search,
   onSearchChange,
   devices,
-  technicians,
-  targets,
+  selectedDeviceIds,
   onToggleDevice,
-  onSetAssignee,
   formError,
   onCancel,
   onNext,
@@ -368,15 +340,13 @@ function TargetsStep({
   search: string;
   onSearchChange: (v: string) => void;
   devices: Device[];
-  technicians: UserSummary[];
-  targets: Record<string, string>;
+  selectedDeviceIds: string[];
   onToggleDevice: (deviceId: string, checked: boolean) => void;
-  onSetAssignee: (deviceId: string, userId: string) => void;
   formError: string | null;
   onCancel: () => void;
   onNext: () => void;
 }) {
-  const selectedCount = Object.keys(targets).length;
+  const selectedCount = selectedDeviceIds.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -415,9 +385,7 @@ function TargetsStep({
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-medium">
-              เลือกอุปกรณ์เป้าหมาย + มอบหมายผู้รับผิดชอบหน้างาน
-            </p>
+            <p className="text-sm font-medium">เลือกอุปกรณ์เป้าหมาย</p>
             <p className="text-xs text-muted-foreground">
               ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์
               สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
@@ -443,12 +411,11 @@ function TargetsStep({
                   <th className="w-10 px-3 py-2" />
                   <th className="px-2 py-2 text-left">เลขเครื่อง</th>
                   <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
-                  <th className="px-2 py-2 text-left">ผู้รับผิดชอบหน้างาน</th>
                 </tr>
               </thead>
               <tbody>
                 {devices.map((device) => {
-                  const checked = device.deviceId in targets;
+                  const checked = selectedDeviceIds.includes(device.deviceId);
                   return (
                     <tr
                       key={device.deviceId}
@@ -479,26 +446,6 @@ function TargetsStep({
                       </td>
                       <td className="px-2 py-2 text-muted-foreground">
                         {device.deviceModel} / {device.protocol}
-                      </td>
-                      <td
-                        className="px-2 py-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <select
-                          value={targets[device.deviceId] ?? ""}
-                          disabled={!checked}
-                          onChange={(e) =>
-                            onSetAssignee(device.deviceId, e.target.value)
-                          }
-                          className={SELECT_CLASS}
-                        >
-                          <option value="">— เลือกช่างหน้างาน —</option>
-                          {technicians.map((tech) => (
-                            <option key={tech.id} value={tech.id}>
-                              {tech.fullName} ({tech.role})
-                            </option>
-                          ))}
-                        </select>
                       </td>
                     </tr>
                   );
@@ -614,7 +561,8 @@ function RolloutStep({
           เวอร์ชันนี้รองรับ <strong className="text-foreground">
             &ldquo;ส่งพร้อมกันหมด&rdquo;
           </strong>{" "}
-          เท่านั้น — ทุกเครื่องได้รับ Task ทันทีที่ยืนยันในขั้นถัดไป ยังไม่มี
+          เท่านั้น — ทุกเครื่องในรายการเป้าหมายจะถูกบันทึกเข้าแคมเปญนี้ทันทีที่
+          ยืนยันในขั้นถัดไป เพื่อติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม ยังไม่มี
           canary / ทยอยส่งเป็นชุด (batch) / auto-pause ในเวอร์ชันนี้
         </p>
       </div>
@@ -646,7 +594,6 @@ function ReviewStep({
   targets: {
     deviceId: string;
     device: Device | null;
-    assignee: UserSummary | null;
   }[];
   incompatibleCount: number;
   submitting: boolean;
@@ -694,7 +641,6 @@ function ReviewStep({
               <tr>
                 <th className="px-2 py-2 text-left">เลขเครื่อง</th>
                 <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
-                <th className="px-2 py-2 text-left">ผู้รับผิดชอบ</th>
               </tr>
             </thead>
             <tbody>
@@ -707,9 +653,6 @@ function ReviewStep({
                     {t.device
                       ? `${t.device.deviceModel} / ${t.device.protocol}`
                       : "—"}
-                  </td>
-                  <td className="px-2 py-2">
-                    {t.assignee ? `${t.assignee.fullName} (${t.assignee.role})` : "—"}
                   </td>
                 </tr>
               ))}
