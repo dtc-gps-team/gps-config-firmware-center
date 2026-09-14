@@ -23,6 +23,10 @@ const SELECT_CLASS =
  * ฝั่ง backend (mirror device.service.ts/campaign.service.ts) */
 const CAMPAIGN_ELIGIBLE_CONFIG_STATUSES = ["approved", "synced"];
 
+/** ค่าที่ใช้แทน "ไม่ได้ผูกลูกค้า" ในตัวกรอง — mirror ข้อความเดียวกับคอลัมน์
+ * "ลูกค้า" ในหน้า Device Search (docs/12 เฟส B) */
+const UNASSIGNED_CUSTOMER = "ไม่ระบุ";
+
 const STEPS = [
   { n: 1, label: "เลือกเป้าหมาย" },
   { n: 2, label: "เลือก Payload" },
@@ -59,6 +63,9 @@ export function CampaignWizard() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [search, setSearch] = useState("");
+  // "" = ทุกลูกค้า (ไม่กรอง) — ค่าอื่นเป็นชื่อบริษัทตรงๆ หรือ UNASSIGNED_CUSTOMER
+  // สำหรับเครื่องที่ยังไม่ผูกลูกค้า (docs/12 เฟส B)
+  const [customerFilter, setCustomerFilter] = useState("");
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [configId, setConfigId] = useState("");
 
@@ -76,15 +83,33 @@ export function CampaignWizard() {
     [devicesQuery.data],
   );
 
+  /** ชื่อลูกค้าที่มีอยู่จริงในอุปกรณ์ที่ installed ทั้งหมด (เรียงตามตัวอักษร) +
+   * "ไม่ระบุ" ต่อท้ายถ้ามีอย่างน้อย 1 เครื่องที่ยังไม่ผูกลูกค้า — derive จาก
+   * ข้อมูลที่โหลดมาแล้วเหมือน filter อื่นๆ ในหน้านี้ (ไม่ยิง `GET /customers`
+   * แยก ต่างจาก "ช่วงที่ 2" ที่ยังไม่ทำ ซึ่งต้องเห็นลูกค้าที่ยังไม่มีอุปกรณ์ด้วย) */
+  const customerOptions = useMemo(() => {
+    const names = new Set<string>();
+    let hasUnassigned = false;
+    for (const d of installedDevices) {
+      if (d.customer) names.add(d.customer.companyName);
+      else hasUnassigned = true;
+    }
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    return hasUnassigned ? [...sorted, UNASSIGNED_CUSTOMER] : sorted;
+  }, [installedDevices]);
+
   const filteredDevices = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return installedDevices;
-    return installedDevices.filter(
-      (d) =>
+    return installedDevices.filter((d) => {
+      const matchesSearch =
+        !q ||
         d.deviceId.toLowerCase().includes(q) ||
-        d.deviceModel.toLowerCase().includes(q),
-    );
-  }, [installedDevices, search]);
+        d.deviceModel.toLowerCase().includes(q);
+      const companyName = d.customer?.companyName ?? UNASSIGNED_CUSTOMER;
+      const matchesCustomer = !customerFilter || companyName === customerFilter;
+      return matchesSearch && matchesCustomer;
+    });
+  }, [installedDevices, search, customerFilter]);
 
   const eligibleConfigs = useMemo(
     () =>
@@ -225,6 +250,9 @@ export function CampaignWizard() {
           nameError={nameError}
           search={search}
           onSearchChange={setSearch}
+          customerOptions={customerOptions}
+          customerFilter={customerFilter}
+          onCustomerFilterChange={setCustomerFilter}
           devices={filteredDevices}
           selectedDeviceIds={selectedDeviceIds}
           onToggleDevice={toggleDevice}
@@ -325,6 +353,9 @@ function TargetsStep({
   nameError,
   search,
   onSearchChange,
+  customerOptions,
+  customerFilter,
+  onCustomerFilterChange,
   devices,
   selectedDeviceIds,
   onToggleDevice,
@@ -339,6 +370,9 @@ function TargetsStep({
   nameError: string | null;
   search: string;
   onSearchChange: (v: string) => void;
+  customerOptions: string[];
+  customerFilter: string;
+  onCustomerFilterChange: (v: string) => void;
   devices: Device[];
   selectedDeviceIds: string[];
   onToggleDevice: (deviceId: string, checked: boolean) => void;
@@ -391,12 +425,26 @@ function TargetsStep({
               สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
             </p>
           </div>
-          <Input
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="ค้นหาเลขเครื่อง/รุ่น…"
-            className="h-8 max-w-52"
-          />
+          <div className="flex gap-2">
+            <select
+              value={customerFilter}
+              onChange={(e) => onCustomerFilterChange(e.target.value)}
+              className={`${SELECT_CLASS} h-8 max-w-40`}
+            >
+              <option value="">ลูกค้า: ทั้งหมด</option>
+              {customerOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <Input
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="ค้นหาเลขเครื่อง/รุ่น…"
+              className="h-8 max-w-52"
+            />
+          </div>
         </div>
 
         <div className="max-h-96 overflow-y-auto rounded-lg border">
@@ -411,6 +459,7 @@ function TargetsStep({
                   <th className="w-10 px-3 py-2" />
                   <th className="px-2 py-2 text-left">เลขเครื่อง</th>
                   <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
+                  <th className="px-2 py-2 text-left">ลูกค้า</th>
                 </tr>
               </thead>
               <tbody>
@@ -446,6 +495,13 @@ function TargetsStep({
                       </td>
                       <td className="px-2 py-2 text-muted-foreground">
                         {device.deviceModel} / {device.protocol}
+                      </td>
+                      <td className="px-2 py-2 text-muted-foreground">
+                        {device.customer ? (
+                          device.customer.companyName
+                        ) : (
+                          <span className="italic">{UNASSIGNED_CUSTOMER}</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -641,6 +697,7 @@ function ReviewStep({
               <tr>
                 <th className="px-2 py-2 text-left">เลขเครื่อง</th>
                 <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
+                <th className="px-2 py-2 text-left">ลูกค้า</th>
               </tr>
             </thead>
             <tbody>
@@ -653,6 +710,13 @@ function ReviewStep({
                     {t.device
                       ? `${t.device.deviceModel} / ${t.device.protocol}`
                       : "—"}
+                  </td>
+                  <td className="px-2 py-2 text-muted-foreground">
+                    {t.device?.customer ? (
+                      t.device.customer.companyName
+                    ) : (
+                      <span className="italic">{UNASSIGNED_CUSTOMER}</span>
+                    )}
                   </td>
                 </tr>
               ))}
