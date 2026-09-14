@@ -11,7 +11,7 @@
 | Role (`Role.code` ในตาราง RBAC — ดู `backend/prisma/seed.ts`) | ชื่อเต็ม | แพลตฟอร์มที่ใช้ | บทบาทโดยสรุป |
 |---|---|---|---|
 | **SW** | Software Engineer | Web | สร้าง/แก้ไข/Import Config, รัน Config/Firmware Simulation, ตัดสินใจผ่าน-ไม่ผ่านด้วยตัวเองก่อนส่งให้ Operation อนุมัติ |
-| **Operation** | Operation | Web | อนุมัติ/ปฏิเสธ Config (Approval Center → status `approved`), จัดการ Campaign, มอบหมายงานให้ช่างหน้างาน, ตัดสินใจ Rollback |
+| **Operation** | Operation | Web | อนุมัติ/ปฏิเสธ Config (Approval Center → status `approved`), จัดการ Campaign (ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม — **ไม่ใช่มอบหมายงานให้ช่างหน้างาน** ตั้งแต่แก้ครั้งที่ 29, ระบบมอบหมายงานจริงเป็นของบริษัทแยกต่างหาก), ตัดสินใจ Rollback |
 | **ST** | Senior Technician | Web + Mobile | ช่างเทคนิคระดับอาวุโส — มีสิทธิ์ Override Config/Firmware ตรงที่หน้างาน/ระบบโดยไม่ต้องผ่าน flow อนุมัติปกติ (ใช้กรณีแก้ปัญหาเฉพาะกล่องที่ Approval Center ไม่ทันการ) และดูแลการแก้ไข Incident เชิงเทคนิค |
 | **OT** | Operation-Technician | Web + Mobile | ช่างเทคนิคที่ทำงานสังกัดฝั่ง Operation — สนับสนุนงานปฏิบัติการประจำวัน (มอบหมาย/ติดตามงานช่าง, จัดการ Change Request ที่ส่งเข้ามา) และมีสิทธิ์ Override Config/Firmware เช่นเดียวกับ ST |
 | **Auditor** | Auditor | Web | ดูข้อมูลอย่างเดียวทุกจอเพื่อตรวจสอบ (compliance) — ห้าม Create/Update/Approve/Override ทุกกรณี |
@@ -140,7 +140,7 @@
 | `/audit-logs` | GET | `listAuditLogs` | ทุก Role **ยกเว้น SW** (resource `audit-logs` action `Read` — grant Operation/ST/OT/Auditor/Admin, SuperAdmin ได้อัตโนมัติจากการ copy สิทธิ์ Admin) · read-only list + filter `userId`/`auditModule`/`action` เรียง `createdAt desc` · ไม่ join ชื่อผู้ใช้ (คืนแค่ `userId` ดิบ) — client resolve ชื่อเอง · **การเขียนไม่มี endpoint ตรง** แต่ละโมดูลเขียน `AuditLog` เองตอนเกิด mutation จริง (ตอนนี้: `config` ครบ create/update/delete/decide/approve/reject, `device` เฉพาะ `applyConfig`, `config-deletion` ทำไปแล้วตั้งแต่แก้ครั้งที่ 22 — **`task`/`notification` ของ B ยังไม่มี**) — ดู changelog แก้ครั้งที่ 27 |
 | `/users` | GET | `listUsers` | ทุก Role ที่ login แล้ว — **JwtAuthGuard อย่างเดียว ไม่มี PermissionGuard/resource** (mirror `/notifications/device-tokens`) · คืนแค่ id/ชื่อ/role code ของ user ที่ active · filter `?role=` · ใช้ทำ dropdown "เจาะจงผู้อนุมัติ" ใน Approval Center (#19) — **ไม่ใช่** จอ User / Role Management (Section 2 = Admin เท่านั้น, ดูตาราง 4.2 `/users` POST/PATCH) · ดู changelog แก้ครั้งที่ 25 |
 | `/campaigns` | GET | `listCampaigns` | ทุก Role ที่ login แล้ว (resource `campaign` action `Read` · เรียง `createdAt desc` · filter optional `status`) — ดู changelog แก้ครั้งที่ 28 |
-| `/campaigns` | POST | `createCampaign` | **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง Campaign+CampaignTarget[]+Task[] ใน transaction เดียว แล้ว active ทันที ("ส่งพร้อมกันหมด") · `payloadType: Firmware` ยังไม่รองรับ (400 — รอ Sprint 3 #23) |
+| `/campaigns` | POST | `createCampaign` | **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง Campaign+CampaignTarget[] ใน transaction เดียว แล้ว active ทันที ("ส่งพร้อมกันหมด") · **ไม่สร้าง Task อีกต่อไป** (ตัดออกแก้ครั้งที่ 29 — Campaign ไม่ใช่เครื่องมือมอบหมายงาน) · `payloadType: Firmware` **รองรับแล้ว** (เปิดใช้งานแก้ครั้งที่ 34) |
 | `/campaigns/{id}` | GET | `getCampaign` | เหมือน `listCampaigns` — resource `campaign` action `Read` เดียวกัน · 404 ถ้าไม่พบ |
 
 ### 4.2 Endpoint ที่ Matrix อ้างถึง แต่ยังไม่มีใน `openapi.yaml` — ต้องเพิ่มก่อนเขียน Guard
@@ -164,6 +164,18 @@
 > ตามหมายเหตุท้าย `openapi.yaml`: "ทุกครั้งที่เพิ่ม Endpoint ใหม่ในแต่ละ Phase ถัดไป ให้กลับมาอัปเดตไฟล์นี้ด้วย" — ตาราง 4.2 นี้คือ backlog ของสิ่งที่ต้องอัปเดตเข้า spec ก่อน ไม่ใช่สิ่งที่ Guard เขียนได้ตอนนี้
 
 ### 4.3 Task module — รายละเอียดสิทธิ์ (ปิด open question: Task creator = Operation)
+
+> **❌ ยกเลิกแล้ว (แก้ครั้งที่ 26, 2026-09-11)** — Task Management (Sprint 2 #7) ถูกยกเลิก
+> ถาวรตามมติพี่เลี้ยง ไม่ทำในรูปแบบไหนทั้งสิ้น (ทั้งหน้า Web และแนวคิด "Operation สร้าง/
+> มอบหมาย Task" ด้านล่างนี้) — และตั้งแต่แก้ครั้งที่ 29 (2026-09-14) Campaign ก็ไม่สร้าง
+> `Task` แทนอีกต่อไปเช่นกัน (มติพี่เลี้ยง: การมอบหมายงานให้ช่างหน้างานเป็นหน้าที่ของระบบ
+> แยกที่บริษัทมีอยู่แล้ว ทำเองในระบบนี้จะซ้อนทับ) **ผลคือไม่มี "ผู้ใช้งานจริง" ทางไหนสร้าง
+> `Task` ได้อีกแล้ว** (หน้า Web ถูก comment out ไปตาม `docs/09` ข้อ 1, Campaign ก็เลิกสร้าง
+> ตามแก้ครั้งที่ 29) — **แต่ backend endpoint `POST /tasks` (ตาราง 4.1 บรรทัด `createTask`)
+> ยังไม่ถูกแตะ ยังเป็น API endpoint จริงที่เรียกได้อยู่** (กลายเป็น endpoint ที่ไม่มี client
+> ไหนเรียกแล้ว — ตัดสินใจว่าจะ deprecate/ลบทิ้งหรือเก็บไว้เป็นของทีม B แยกต่างหาก ตามที่
+> ตกลงกับ kittiphong ไว้ในแก้ครั้งที่ 29 ข้อ 6) — เก็บ section นี้ไว้เป็นบันทึกประวัติการ
+> ตัดสินใจเท่านั้น อย่ายึดเป็นสิทธิ์ที่ยังมี client ใช้งานจริง — ดู changelog แก้ครั้งที่ 26/29
 
 ยืนยันโดย kittiphong (B) เจ้าของ module `task` ตามแพทเทิร์นเดิมของ Matrix นี้ — **Operation สั่งงาน/อนุมัติ, ST/OT ปฏิบัติงาน**
 
