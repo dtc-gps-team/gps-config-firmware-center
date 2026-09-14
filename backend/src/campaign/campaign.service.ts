@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { Campaign, CampaignPayloadType } from '@prisma/client';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
-import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { QueryCampaignDto } from './dto/query-campaign.dto';
@@ -32,10 +31,7 @@ const TARGETABLE_DEVICE_STATUS = 'installed';
 export class CampaignService {
   private readonly logger = new Logger(CampaignService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly notificationService: NotificationService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   findAll(query: QueryCampaignDto): Promise<Campaign[]> {
     return this.prisma.campaign.findMany({
@@ -53,14 +49,19 @@ export class CampaignService {
   }
 
   /**
-   * Campaign Wizard (#21) — สร้าง Campaign + CampaignTarget ต่ออุปกรณ์ +
-   * Task ต่ออุปกรณ์ (ขั้น "มอบหมายผู้รับผิดชอบหน้างาน") ใน `$transaction`
-   * เดียว ไม่มี queue เพราะเป็นแค่เขียน DB ของเราเอง (ตกลงกับ kittiphong แล้ว
-   * — ดู RBAC_Matrix.md changelog แก้ครั้งที่ 26)
+   * Campaign Wizard (#21) — สร้าง Campaign + CampaignTarget ต่ออุปกรณ์ใน
+   * `$transaction` เดียว ไม่มี queue เพราะเป็นแค่เขียน DB ของเราเอง
    *
    * v1 = "ส่งพร้อมกันหมด" ล้วน — ไม่มี draft/rollout strategy เลย ตอน submit
-   * ก็ active ทันที (สร้าง Task ให้ครบทุกเป้าหมายรวดเดียว) ต่างจาก Config ที่มี
-   * ขั้นตอนอนุมัติแยก — `CampaignStatus` ไม่มี approval workflow ของตัวเอง
+   * ก็ active ทันที ต่างจาก Config ที่มีขั้นตอนอนุมัติแยก — `CampaignStatus`
+   * ไม่มี approval workflow ของตัวเอง
+   *
+   * **แก้ไข 2026-09-14:** เดิม step นี้สร้าง `Task` ต่ออุปกรณ์พร้อม
+   * `assignedTo` ด้วย (มอบหมายผู้รับผิดชอบหน้างาน) — หัวหน้าแก้ scope ว่า
+   * Campaign มีไว้ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น การมอบหมายงาน
+   * ให้ช่างหน้างานเป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว ทำเองจะซ้อนทับ
+   * ระบบ จึงตัดการสร้าง Task และการแจ้งเตือนผู้รับผิดชอบออกทั้งหมด เหลือแค่
+   * Campaign + CampaignTarget (ดู RBAC_Matrix.md changelog)
    */
   async create(dto: CreateCampaignDto, actor: ActingUser): Promise<Campaign> {
     if (dto.payloadType !== CampaignPayloadType.Config) {
@@ -95,9 +96,8 @@ export class CampaignService {
     }
 
     await this.assertTargetsDeployable(dto.targets, config);
-    await this.assertAssigneesExist(dto.targets);
 
-    const { campaign, tasks } = await this.prisma.$transaction(async (tx) => {
+    const campaign = await this.prisma.$transaction(async (tx) => {
       const createdCampaign = await tx.campaign.create({
         data: {
           name: dto.name,
@@ -118,26 +118,11 @@ export class CampaignService {
         })),
       });
 
-      const createdTasks = await tx.task.createManyAndReturn({
-        data: dto.targets.map((target) => ({
-          title: `แคมเปญ "${dto.name}" — ติดตั้ง Config "${config.name}"`,
-          description: `อุปกรณ์ ${target.deviceId}`,
-          assignedTo: target.assignedTo,
-          deviceId: target.deviceId,
-          configId: dto.configId,
-          campaignId: createdCampaign.id,
-        })),
-      });
-
-      return { campaign: createdCampaign, tasks: createdTasks };
+      return createdCampaign;
     });
 
     // AuditLog (CLAUDE.md Audit Pattern) — never-throw เหมือนโมดูล config/device
     await this.logAudit('create', actor.id);
-    // แจ้งเตือนผู้รับผิดชอบแต่ละเครื่อง — never-throw (mirror
-    // TaskService.notifyTaskAssigned) push ล้มเหลวต้องไม่ทำให้แคมเปญที่สร้าง
-    // สำเร็จแล้วดูเหมือนล้มเหลวไปด้วย
-    await this.notifyAssignees(tasks);
 
     return campaign;
   }
@@ -197,48 +182,6 @@ export class CampaignService {
 
     if (problems.length > 0) {
       throw new ConflictException(problems.join(' · '));
-    }
-  }
-
-  /**
-   * ตรวจว่าผู้รับผิดชอบทุกคนมีอยู่จริง+active — `Task.assignedTo` มี FK ไป
-   * `User.id` จริง (ต่างจาก `CampaignTarget.deviceId` ที่หลวม) ถ้าไม่เช็คก่อน
-   * `createManyAndReturn` จะโยน FK violation ดิบๆ ที่แปลเป็น error message
-   * ให้ผู้ใช้เข้าใจยาก — เช็คล่วงหน้าแล้วคืน 400 ที่อ่านง่ายกว่าแทน
-   */
-  private async assertAssigneesExist(
-    targets: { assignedTo: string }[],
-  ): Promise<void> {
-    const assigneeIds = [...new Set(targets.map((t) => t.assignedTo))];
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: assigneeIds } },
-    });
-    const activeUserIds = new Set(
-      users.filter((u) => u.isActive).map((u) => u.id),
-    );
-    const missing = assigneeIds.filter((id) => !activeUserIds.has(id));
-    if (missing.length > 0) {
-      throw new BadRequestException(
-        `ผู้รับผิดชอบต่อไปนี้ไม่พบหรือถูกปิดใช้งาน: ${missing.join(', ')}`,
-      );
-    }
-  }
-
-  private async notifyAssignees(
-    tasks: { id: string; title: string; assignedTo: string }[],
-  ): Promise<void> {
-    for (const task of tasks) {
-      try {
-        await this.notificationService.send({
-          userId: task.assignedTo,
-          type: 'task_assigned',
-          payload: { taskId: task.id, title: task.title },
-        });
-      } catch (err) {
-        this.logger.warn(
-          `แจ้งเตือน task_assigned ไม่สำเร็จ (campaign task ${task.id}, user ${task.assignedTo}): ${(err as Error).message}`,
-        );
-      }
     }
   }
 
