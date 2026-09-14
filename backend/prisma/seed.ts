@@ -221,14 +221,22 @@ async function main() {
     grant('Auditor', 'tasks', 'Read'),
     grant('Admin', 'tasks', 'Read'),
 
-    // ---- firmware ----
+    // ---- firmware (Sprint 3 #23 — Firmware Repository) ----
     grant('SW', 'firmware', 'Create'),
-    grant('SW', 'firmware', 'Update'), // simulateFirmware
+    grant('SW', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
     grant('Operation', 'firmware', 'Read'),
     grant('ST', 'firmware', 'Read'),
     grant('OT', 'firmware', 'Read'),
     grant('Auditor', 'firmware', 'Read'),
     grant('Admin', 'firmware', 'Read'),
+
+    // ---- firmware-simulation (แยกจาก firmware ธรรมดา mirror
+    // config/config-simulation — กัน Auditor/Admin ที่มีแค่ firmware.Read
+    // เรียก simulate ได้โดยไม่ตั้งใจ) ----
+    grant('SW', 'firmware-simulation', 'Read'),
+    grant('Operation', 'firmware-simulation', 'Read'),
+    grant('ST', 'firmware-simulation', 'Read'),
+    grant('OT', 'firmware-simulation', 'Read'),
 
     // ---- campaign (Sprint 3 #21 — Campaign Wizard) ----
     // RBAC_Matrix.md §2 แถว "Campaign Wizard": Operation = C, R, U (U ยังไม่มี
