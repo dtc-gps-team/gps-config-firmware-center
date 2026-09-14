@@ -224,6 +224,11 @@ async function main() {
     // ---- firmware (Sprint 3 #23 — Firmware Repository) ----
     grant('SW', 'firmware', 'Create'),
     grant('SW', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
+    // เพิ่มใหม่: RBAC_Matrix.md Section 2 ระบุ Firmware Repository = SW: C,R,U
+    // แต่ seed เดิมมีแค่ C,U ขาด R — บั๊กเดียวกับที่เคยเจอกับ config (ดู
+    // comment เหนือ grant('SW','config','Read') ด้านบน) ทำให้ SW เปิดหน้า
+    // /firmware เองไม่ได้เลย (403 "ไม่มีสิทธิ์ Read บน resource firmware")
+    grant('SW', 'firmware', 'Read'),
     grant('Operation', 'firmware', 'Read'),
     grant('ST', 'firmware', 'Read'),
     grant('OT', 'firmware', 'Read'),
