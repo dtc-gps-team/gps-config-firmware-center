@@ -1308,6 +1308,30 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
 
+  /customers:
+    get:
+      tags: [customer]
+      operationId: listCustomers
+      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.21
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
+        PermissionGuard — pattern เดียวกับ /users) · เรียงตามชื่อบริษัท
+        · ใช้ทำ dropdown filter "ลูกค้า" บนหน้า Device Search
+        (docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) · **ไม่ใช่**
+        จอ "จัดการลูกค้า" (Admin CRUD) — ตัดสินใจร่วมกันแล้วว่าเกินขอบเขต
+        ตอนนี้ ลูกค้าเพิ่ม/แก้ได้ผ่าน seed เท่านั้น
+      responses:
+        "200":
+          description: รายชื่อลูกค้าทั้งหมด (เรียงตามชื่อบริษัท)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerSummary"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
   /campaigns:
     get:
       tags: [campaign]
@@ -2077,8 +2101,9 @@ components:
       description: >-
         อุปกรณ์ GPS หนึ่งเครื่อง (ตรงกับ Prisma model Device — MVP ตาม
         ../planning/03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8 · ยังไม่มี FK
-        ไป Vehicle/Customer/HardwareRevision ตาม Data Dictionary — ดู
-        schema.prisma comment + docs/12_CustomerScope_Proposal.md)
+        ไป Vehicle/HardwareRevision ตาม Data Dictionary (`customer` เพิ่มแล้ว
+        — docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) — ดู
+        schema.prisma comment)
       required:
         [id, deviceId, simNumber, deviceModel, protocol, status, registeredAt]
       properties:
@@ -2108,6 +2133,31 @@ components:
           type: string
           format: date-time
           nullable: true
+        customer:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CustomerSummary"
+          nullable: true
+          description: >-
+            ลูกค้าที่ผูกกับอุปกรณ์นี้ (ถ้ามี) — null = ยังไม่ได้กำหนดลูกค้า
+            รอบนี้เป็น read-only เท่านั้น ยังไม่มี endpoint กำหนด/แก้ลูกค้า
+            ของอุปกรณ์ (ดู docs/12 เฟส B ส่วน "ยังไม่ทำ")
+
+    CustomerSummary:
+      type: object
+      description: >-
+        ข้อมูลลูกค้าแบบย่อ (listCustomers, embed ใน Device) — id + ชื่อบริษัท
+        เท่านั้น ไม่มี contactName/email/phone/priorityTier (docs/12
+        เฟส B, PR #127/#153) — ทุก role ที่ login แล้วเรียกได้ ไม่ควรคืน
+        ข้อมูลติดต่อของลูกค้าที่ละเอียดกว่านี้
+      required: [id, companyName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+          example: ABC Logistics
 
     Incident:
       type: object

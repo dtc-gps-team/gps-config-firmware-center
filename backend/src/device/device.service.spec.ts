@@ -10,6 +10,12 @@ import {
 } from './device-connection-tester';
 import { ActingUser, DeviceService } from './device.service';
 
+/** `include` ที่ `findAll`/`findByDeviceId` แนบไปทุกครั้ง (docs/12 เฟส B —
+ * ดึงลูกค้าแบบย่อมาแสดง/กรองบน Device Search) */
+const CUSTOMER_INCLUDE = {
+  customer: { select: { id: true, companyName: true } },
+};
+
 const installedDevice: Device = {
   id: '11111111-1111-1111-1111-111111111111',
   deviceId: 'DTC-0001',
@@ -115,6 +121,7 @@ describe('DeviceService', () => {
           status: undefined,
         },
         orderBy: { deviceId: 'asc' },
+        include: CUSTOMER_INCLUDE,
       });
     });
 
@@ -134,6 +141,7 @@ describe('DeviceService', () => {
           status: 'installed',
         },
         orderBy: { deviceId: 'asc' },
+        include: CUSTOMER_INCLUDE,
       });
     });
 
@@ -153,6 +161,7 @@ describe('DeviceService', () => {
           ],
         },
         orderBy: { deviceId: 'asc' },
+        include: CUSTOMER_INCLUDE,
       });
     });
   });
@@ -166,6 +175,7 @@ describe('DeviceService', () => {
       expect(result).toEqual(installedDevice);
       expect(device.findUnique).toHaveBeenCalledWith({
         where: { deviceId: 'DTC-0001' },
+        include: CUSTOMER_INCLUDE,
       });
     });
 

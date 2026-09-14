@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType, Device } from '@prisma/client';
+import { ActionType } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
@@ -20,7 +20,7 @@ import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
-import type { ActingUser } from './device.service';
+import type { ActingUser, DeviceWithCustomer } from './device.service';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
 
@@ -56,13 +56,13 @@ export class DeviceController {
   // ภายใน) — เหมือน endpoint ช่างหน้างานด้านล่าง
   @Get()
   @RequirePermission('devices', ActionType.Read)
-  findAll(@Query() query: QueryDeviceDto): Promise<Device[]> {
+  findAll(@Query() query: QueryDeviceDto): Promise<DeviceWithCustomer[]> {
     return this.deviceService.findAll(query);
   }
 
   @Get(':deviceId')
   @RequirePermission('devices', ActionType.Read)
-  findOne(@Param('deviceId') deviceId: string): Promise<Device> {
+  findOne(@Param('deviceId') deviceId: string): Promise<DeviceWithCustomer> {
     return this.deviceService.findByDeviceId(deviceId);
   }
 
