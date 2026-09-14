@@ -499,6 +499,56 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(body.map((d) => d.deviceId)).toEqual(['DL-0001', 'DL-0002']);
     });
 
+    it('เครื่องที่ผูกลูกค้าไว้ -> คืน customer แบบย่อ (id+companyName) ใน list และ detail, เครื่องที่ไม่ผูก -> customer เป็น null (docs/12 เฟส B)', async () => {
+      const customer = await prisma.customer.create({
+        data: { companyName: `Cus-${randomUUID()}` },
+      });
+      const linked = await prisma.device.create({
+        data: {
+          deviceId: `DC-LINKED-${randomUUID().slice(0, 8)}`,
+          simNumber: `sim-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+          customerId: customer.id,
+        },
+      });
+      const unlinked = await prisma.device.create({
+        data: {
+          deviceId: `DC-UNLINKED-${randomUUID().slice(0, 8)}`,
+          simNumber: `sim-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+        },
+      });
+      const token = await auditorToken();
+
+      const list = await request(app.getHttpServer())
+        .get('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const listBody = list.body as {
+        deviceId: string;
+        customer: { id: string; companyName: string } | null;
+      }[];
+      expect(
+        listBody.find((d) => d.deviceId === linked.deviceId)?.customer,
+      ).toEqual({ id: customer.id, companyName: customer.companyName });
+      expect(
+        listBody.find((d) => d.deviceId === unlinked.deviceId)?.customer,
+      ).toBeNull();
+
+      const detail = await request(app.getHttpServer())
+        .get(`/api/v1/devices/${linked.deviceId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (detail.body as { customer: { companyName: string } }).customer
+          .companyName,
+      ).toBe(customer.companyName);
+    });
+
     it('filter status + deviceModel', async () => {
       await makeDevice('DF-A', 'installed', 'GT06N');
       await makeDevice('DF-B', 'registered', 'GT06N');

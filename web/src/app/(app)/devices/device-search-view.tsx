@@ -67,6 +67,21 @@ const columns: ColumnDef<Device>[] = [
       </span>
     ),
   },
+  {
+    id: "customer",
+    // ไม่ระบุลูกค้า = "ไม่ระบุ" ตรงๆ ในค่าที่กรอง เพื่อให้เลือกดูเฉพาะเครื่อง
+    // ที่ยังไม่ผูกลูกค้าได้ผ่าน dropdown filter เดียวกัน (docs/12 เฟส B)
+    accessorFn: (row) => row.customer?.companyName ?? "ไม่ระบุ",
+    header: "ลูกค้า",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "ลูกค้า" },
+    cell: ({ row }) =>
+      row.original.customer ? (
+        row.original.customer.companyName
+      ) : (
+        <span className="text-muted-foreground">ไม่ระบุ</span>
+      ),
+  },
 ];
 
 export function DeviceSearchView() {

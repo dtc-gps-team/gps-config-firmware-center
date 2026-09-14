@@ -11,6 +11,7 @@ import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
 import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.module';
+import { CustomerModule } from './customer/customer.module';
 import { DeviceModule } from './device/device.module';
 import { IncidentModule } from './incident/incident.module';
 import { NotificationModule } from './notification/notification.module';
@@ -36,6 +37,7 @@ import { UserModule } from './user/user.module';
     ConfigDefinitionModule,
     ConfigDeletionModule,
     ConfigSyncWriterModule,
+    CustomerModule,
     DeviceModule,
     IncidentModule,
     TaskModule,

@@ -213,6 +213,13 @@ model DeviceToken {
 // จะเพิ่ม FK ไปยัง Vehicle/Customer/HardwareRevision ทีหลังเมื่อ model เหล่านั้น
 // ถูกสร้างจริง
 //
+// **อัปเดต 2026-09-14 (docs/12_CustomerScope_Proposal.md เฟส B, PR #127):**
+// เพิ่ม `model Customer` + `Device.customerId` (nullable FK) กลับเข้ามาแล้ว —
+// ใช้เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น (ตาม mockup ที่ A
+// ทำไว้ตั้งแต่แรก) ไม่ใช่ RBAC scope — ST/OT ยังเห็นทุกอุปกรณ์เหมือนเดิม
+// (Customer Scope จริงยังเป็นเฟส C แยกต่างหาก ยังไม่ทำ) `Vehicle`/
+// `HardwareRevision` ยังไม่ถูกสร้าง เหมือนเดิม
+//
 // ตั้งชื่อ enum ว่า DeviceLifecycleStatus (ไม่ใช่ DeviceStatus) เพื่อไม่ให้ปนกับ
 // schema DeviceStatus ใน docs/api/openapi.yaml ซึ่งเป็นคนละแนวคิด (response
 // object รวมสถานะ config+firmware ของกล่อง ไม่ใช่สถานะวงจรชีวิตของกล่องเอง)
@@ -256,6 +263,26 @@ enum DeviceLifecycleStatus {
   decommissioned
 }
 
+// Customer (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) — field ตรงตาม
+// GPS_Data_Dictionary.xlsx เท่าที่ยืนยันได้จาก schema DMS เดิมที่พี่เลี้ยงให้มา
+// (§3.5 ของเอกสาร: คอลัมน์ `customer`/`cus_id` ยืนยันว่า entity นี้มีจริง) —
+// `companyName` บังคับ+unique (กัน dropdown filter ในหน้า Device Search มีชื่อ
+// ซ้ำสะกดต่างกัน) ฟิลด์อื่นเป็น optional เพราะยังไม่ยืนยันว่า MVP ต้องกรอกครบ
+// ทุกช่อง — `priorityTier` เก็บเป็น string เฉยๆ ไม่ทำ enum เพราะยังไม่ยืนยันค่า
+// จริงจากพี่เลี้ยง (docs/12 §8 คำถามเปิดข้อ 4) ใช้แค่แสดงผล ไม่มี logic ผูกอยู่
+model Customer {
+  id           String   @id @default(uuid())
+  companyName  String   @unique
+  contactName  String?
+  email        String?
+  phone        String?
+  priorityTier String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  devices Device[]
+}
+
 model Device {
   id           String                @id @default(uuid())
   deviceId     String                @unique
@@ -265,6 +292,11 @@ model Device {
   status       DeviceLifecycleStatus @default(registered)
   registeredAt DateTime              @default(now())
   installedAt  DateTime?
+  // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
+  // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
+  // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
