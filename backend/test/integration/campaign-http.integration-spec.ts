@@ -27,10 +27,13 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
  * PermissionGuard เต็มเส้นทาง) + ยืนยันว่า CampaignTarget ถูกสร้างจริงใน DB
  * ครบทุกแถว ไม่ใช่แค่ response body หน้าเดียว
  *
- * **แก้ไข 2026-09-14:** เดิมเทสนี้ยังยืนยันว่า `POST /campaigns` สร้าง `Task`
- * ต่อเครื่องพร้อมแจ้งเตือนผู้รับผิดชอบด้วย (`assignedTo` ต่อ target) — หัวหน้า
- * แก้ scope ว่า Campaign ไม่มอบหมายงานให้ช่างหน้างานอีกต่อไป จึงตัด
+ * **แก้ไข 2026-09-14 (1):** เดิมเทสนี้ยังยืนยันว่า `POST /campaigns` สร้าง
+ * `Task` ต่อเครื่องพร้อมแจ้งเตือนผู้รับผิดชอบด้วย (`assignedTo` ต่อ target) —
+ * หัวหน้าแก้ scope ว่า Campaign ไม่มอบหมายงานให้ช่างหน้างานอีกต่อไป จึงตัด
  * NotificationModule override และ target.assignedTo ออกจากทุกเทสในไฟล์นี้
+ *
+ * **แก้ไข 2026-09-14 (2):** เพิ่มเทส `payloadType: Firmware` (Sprint 3 #23/
+ * PR #151 implement เสร็จแล้ว) แทนที่เทสเดิมที่ยืนยันว่า Firmware ยัง 400
  */
 describe('CampaignController (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
@@ -118,6 +121,26 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         deviceModel: overrides?.deviceModel ?? 'GT06N',
         protocol: overrides?.protocol ?? 'TCP',
         status: overrides?.status ?? 'installed',
+      },
+    });
+  }
+
+  async function seedStoredFirmware(overrides?: {
+    deviceModelCompatibility?: string[];
+    uploadStatus?: 'pending' | 'stored' | 'failed';
+  }) {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    return prisma.firmware.create({
+      data: {
+        version: `1.0.${Math.floor(Math.random() * 1000)}`,
+        deviceModelCompatibility: overrides?.deviceModelCompatibility ?? [
+          'GT06N',
+        ],
+        uploadStatus: overrides?.uploadStatus ?? 'stored',
+        objectKey: `firmware/${randomUUID()}/test.bin`,
+        originalFilename: 'test.bin',
+        fileSizeBytes: 1024,
+        uploadedBy: swUser.id,
       },
     });
   }
@@ -214,7 +237,35 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       expect(logs[0].action).toBe('create');
     });
 
-    it('payloadType Firmware -> 400 ยังไม่รองรับ', async () => {
+    it('payloadType Firmware, เป้าหมายครบถ้วน -> 201 + configId เป็น null, firmwareId ตรงกับที่เลือก', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware();
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญอัปเดตเฟิร์มแวร์',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(201);
+
+      const body = res.body as {
+        payloadType: string;
+        configId: string | null;
+        firmwareId: string | null;
+      };
+      expect(body.payloadType).toBe('Firmware');
+      expect(body.configId).toBeNull();
+      expect(body.firmwareId).toBe(firmware.id);
+    });
+
+    it('payloadType Firmware, ไม่ส่ง firmwareId -> 400', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const device = await seedInstalledDevice();
@@ -229,6 +280,64 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           targets: [{ deviceId: device.deviceId }],
         })
         .expect(400);
+    });
+
+    it('payloadType Firmware, ไม่พบ Firmware -> 404', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: randomUUID(),
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(404);
+    });
+
+    it('payloadType Firmware, uploadStatus ยัง pending -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware({ uploadStatus: 'pending' });
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(409);
+    });
+
+    it('payloadType Firmware, deviceModel ของ Device ไม่อยู่ใน deviceModelCompatibility -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware({
+        deviceModelCompatibility: ['GT06N'],
+      });
+      const device = await seedInstalledDevice({ deviceModel: 'GT06L' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(409);
     });
 
     it('ไม่พบ Config -> 404', async () => {

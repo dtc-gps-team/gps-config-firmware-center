@@ -49,10 +49,11 @@ tags:
       ยังไม่มีใน spec)
   - name: campaign
     description: >-
-      Campaign Wizard (Sprint 3 #21) — Operation สร้างแคมเปญ deploy Config ให้
-      อุปกรณ์หลายเครื่องพร้อมกัน ("ส่งพร้อมกันหมด" — ไม่มี rollout strategy ใน
-      v1) รวมขั้น "มอบหมายผู้รับผิดชอบหน้างาน" (สร้าง Task ต่อเครื่องให้อัตโนมัติ)
-      · payloadType `Firmware` ยังไม่รองรับ (ไม่มี firmware module ให้เลือก)
+      Campaign Wizard (Sprint 3 #21) — Operation สร้างแคมเปญ deploy Config
+      หรือ Firmware ให้อุปกรณ์หลายเครื่องพร้อมกัน ("ส่งพร้อมกันหมด" — ไม่มี
+      rollout strategy ใน v1) ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม
+      เท่านั้น **ไม่ใช่เครื่องมือมอบหมายงานให้ช่างหน้างาน** (การมอบหมายงาน
+      เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว — แก้ไข 2026-09-14)
 
 paths:
   /auth/login:
@@ -1430,16 +1431,18 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.21
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.22
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว แล้ว active
         ทันที ("ส่งพร้อมกันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง)
         ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม **ไม่สร้าง Task/มอบหมายงาน
         ให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็นหน้าที่ของระบบ
-        แยกที่บริษัทมีอยู่แล้ว) · **payloadType `Firmware` ยังไม่รองรับ** (400)
-        เพราะยังไม่มี backend firmware module ให้สร้าง Firmware record เลย
-        (รอ Sprint 3 #23)
+        แยกที่บริษัทมีอยู่แล้ว) · **payloadType `Firmware` รองรับแล้ว**
+        (แก้ไข 2026-09-14 หลัง Sprint 3 #23/PR #151 — ต้องระบุ `firmwareId`
+        แทน `configId`, Firmware ต้อง `uploadStatus: stored` และอุปกรณ์
+        เป้าหมายต้องมี `deviceModel` อยู่ใน `deviceModelCompatibility` ของ
+        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้)
       requestBody:
         required: true
         content:
@@ -1455,19 +1458,20 @@ paths:
                 $ref: "#/components/schemas/Campaign"
         "400":
           description: >-
-            validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน,
-            payloadType Firmware ยังไม่รองรับ)
+            validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน, ไม่ระบุ
+            configId/firmwareId ให้ตรงกับ payloadType)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
         "404":
-          description: ไม่พบ Config ตาม configId ที่ระบุ
+          description: ไม่พบ Config/Firmware ตาม id ที่ระบุ (ตาม payloadType)
         "409":
           description: >-
-            Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรืออุปกรณ์
-            เป้าหมายบางเครื่องยังไม่ installed หรือ deviceModel/protocol ไม่
-            ตรงกับ Config (รวมทุกปัญหาไว้ในข้อความเดียว)
+            Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรือ Firmware
+            ยัง `uploadStatus` ไม่ใช่ `stored` หรืออุปกรณ์เป้าหมายบางเครื่อง
+            ยังไม่ installed หรือรุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก
+            (รวมทุกปัญหาไว้ในข้อความเดียว)
 
   /campaigns/{id}:
     get:
@@ -1575,9 +1579,9 @@ components:
       type: string
       enum: [Config, Firmware]
       description: >-
-        `Firmware` มีอยู่ใน enum ตาม Data Dictionary แต่ **ยังไม่รองรับผ่าน
-        API ตอนนี้** (createCampaign คืน 400) เพราะยังไม่มี backend firmware
-        module ให้สร้าง Firmware record เลย
+        เลือกได้ทั้งสองแบบ (แก้ไข 2026-09-14 — `Firmware` เปิดใช้งานแล้วหลัง
+        Sprint 3 #23/PR #151) — `createCampaign` ต้องระบุ `configId` คู่กับ
+        `Config` หรือ `firmwareId` คู่กับ `Firmware` ให้ตรงกัน
 
     CampaignStatus:
       type: string
@@ -1677,7 +1681,11 @@ components:
         configId:
           type: string
           format: uuid
-          description: บังคับเมื่อ payloadType เป็น Config (ตัวเดียวที่รองรับตอนนี้)
+          description: บังคับเมื่อ payloadType เป็น Config
+        firmwareId:
+          type: string
+          format: uuid
+          description: บังคับเมื่อ payloadType เป็น Firmware
         targets:
           type: array
           minItems: 1
