@@ -10,11 +10,17 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
-import { createCampaign, type CampaignTargetInput } from "@/lib/campaign-api";
+import {
+  createCampaign,
+  type CampaignPayloadType,
+  type CampaignTargetInput,
+} from "@/lib/campaign-api";
 import type { Config } from "@/lib/config-api";
 import type { Device } from "@/lib/device-api";
+import type { Firmware } from "@/lib/firmware-api";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
+import { useFirmwareList } from "@/hooks/use-firmware";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
@@ -22,6 +28,11 @@ const SELECT_CLASS =
 /** Config สถานะที่ใช้สร้างแคมเปญได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES`
  * ฝั่ง backend (mirror device.service.ts/campaign.service.ts) */
 const CAMPAIGN_ELIGIBLE_CONFIG_STATUSES = ["approved", "synced"];
+
+/** Firmware สถานะที่ใช้สร้างแคมเปญได้ — ตรงกับ `SIMULATABLE_FIRMWARE_STATUS`
+ * ฝั่ง backend (firmware-status.ts) — ต้องอัปโหลดเก็บลง Object Storage
+ * สำเร็จแล้วเท่านั้น (แก้ไข 2026-09-14 — เปิดใช้งาน payloadType Firmware) */
+const CAMPAIGN_ELIGIBLE_FIRMWARE_UPLOAD_STATUS = "stored";
 
 /** ค่าที่ใช้แทน "ไม่ได้ผูกลูกค้า" ในตัวกรอง — mirror ข้อความเดียวกับคอลัมน์
  * "ลูกค้า" ในหน้า Device Search (docs/12 เฟส B) */
@@ -46,11 +57,17 @@ type Step = (typeof STEPS)[number]["n"];
  * `payloadType: Config` (Firmware ยังไม่มี backend module ให้เลือก เลือกไม่ได้
  * ในฟอร์มนี้เลย — ตรงกับที่ backend คืน 400 ถ้าฝืนส่งมา)
  *
- * **แก้ไข 2026-09-14:** เดิมขั้นที่ 1 มีการมอบหมายผู้รับผิดชอบหน้างานต่อ
+ * **แก้ไข 2026-09-14 (1):** เดิมขั้นที่ 1 มีการมอบหมายผู้รับผิดชอบหน้างานต่อ
  * อุปกรณ์ด้วย (dropdown เลือกช่าง ST/OT + validate ครบก่อนไปขั้นถัดไป) —
  * หัวหน้าแก้ scope ว่า Campaign มีไว้ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น
  * ไม่ใช่เครื่องมือมอบหมายงาน (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) —
  * ตัดขั้นตอนมอบหมายทั้งหมดออก เหลือแค่เลือกอุปกรณ์เป้าหมาย (ดู backend PR #152)
+ *
+ * **แก้ไข 2026-09-14 (2):** เปิดเลือก `payloadType: Firmware` ได้แล้ว
+ * (backend PR #154) — ขั้นที่ 2 มีปุ่มสลับ Config/Firmware จริง แทนที่ป้าย
+ * "Firmware (ยังไม่รองรับ)" เดิม เกณฑ์ความเข้ากันได้ของอุปกรณ์เป้าหมายก็ต่าง
+ * กันตาม payloadType (Config เทียบ deviceModel+protocol, Firmware เทียบแค่
+ * deviceModel อยู่ใน deviceModelCompatibility — mirror backend)
  */
 export function CampaignWizard() {
   const router = useRouter();
@@ -58,6 +75,7 @@ export function CampaignWizard() {
 
   const devicesQuery = useDevices();
   const configsQuery = useConfigs();
+  const firmwareQuery = useFirmwareList();
 
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState("");
@@ -67,7 +85,9 @@ export function CampaignWizard() {
   // สำหรับเครื่องที่ยังไม่ผูกลูกค้า (docs/12 เฟส B)
   const [customerFilter, setCustomerFilter] = useState("");
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [payloadType, setPayloadType] = useState<CampaignPayloadType>("Config");
   const [configId, setConfigId] = useState("");
+  const [firmwareId, setFirmwareId] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -119,25 +139,53 @@ export function CampaignWizard() {
     [configsQuery.data],
   );
 
+  const eligibleFirmware = useMemo(
+    () =>
+      (firmwareQuery.data ?? []).filter(
+        (f) => f.uploadStatus === CAMPAIGN_ELIGIBLE_FIRMWARE_UPLOAD_STATUS,
+      ),
+    [firmwareQuery.data],
+  );
+
   const selectedConfig = eligibleConfigs.find((c) => c.id === configId) ?? null;
+  const selectedFirmware =
+    eligibleFirmware.find((f) => f.id === firmwareId) ?? null;
   const deviceByDeviceId = useMemo(
     () => new Map(installedDevices.map((d) => [d.deviceId, d])),
     [installedDevices],
   );
 
-  /** เครื่องที่เลือกไว้แต่ deviceModel/protocol ไม่ตรงกับ Config ที่เลือก —
-   * เตือนไว้ก่อนล่วงหน้า (backend เช็คซ้ำอยู่ดีตอน submit เป็น 409) */
+  /** เครื่องที่เลือกไว้แต่ไม่เข้ากันกับ payload ที่เลือก — เตือนไว้ก่อนล่วงหน้า
+   * (backend เช็คซ้ำอยู่ดีตอน submit เป็น 409) เกณฑ์ต่างกันตาม payloadType:
+   * Config เทียบ deviceModel+protocol ตรงเป๊ะ, Firmware เทียบแค่ deviceModel
+   * อยู่ใน deviceModelCompatibility (mirror campaign.service.ts ฝั่ง backend) */
   const incompatibleTargets = useMemo(() => {
-    if (!selectedConfig) return [] as string[];
+    if (payloadType === "Config") {
+      if (!selectedConfig) return [] as string[];
+      return selectedDeviceIds.filter((deviceId) => {
+        const device = deviceByDeviceId.get(deviceId);
+        if (!device) return false;
+        return (
+          device.deviceModel !== selectedConfig.deviceModel ||
+          device.protocol !== selectedConfig.protocol
+        );
+      });
+    }
+    if (!selectedFirmware) return [] as string[];
     return selectedDeviceIds.filter((deviceId) => {
       const device = deviceByDeviceId.get(deviceId);
       if (!device) return false;
-      return (
-        device.deviceModel !== selectedConfig.deviceModel ||
-        device.protocol !== selectedConfig.protocol
+      return !selectedFirmware.deviceModelCompatibility.includes(
+        device.deviceModel,
       );
     });
-  }, [selectedDeviceIds, selectedConfig, deviceByDeviceId]);
+  }, [
+    payloadType,
+    selectedDeviceIds,
+    selectedConfig,
+    selectedFirmware,
+    deviceByDeviceId,
+  ]);
 
   function toggleDevice(deviceId: string, checked: boolean) {
     setSelectedDeviceIds((prev) => {
@@ -162,16 +210,24 @@ export function CampaignWizard() {
         return;
       }
     }
-    if (next === 3 && !configId) {
-      setFormError("เลือก Config ก่อน");
-      return;
+    if (next === 3) {
+      if (payloadType === "Config" && !configId) {
+        setFormError("เลือก Config ก่อน");
+        return;
+      }
+      if (payloadType === "Firmware" && !firmwareId) {
+        setFormError("เลือก Firmware ก่อน");
+        return;
+      }
     }
     setStep(next);
   }
 
   async function handleSubmit() {
     clearErrors();
-    if (!session?.accessToken || !configId) return;
+    if (!session?.accessToken) return;
+    if (payloadType === "Config" && !configId) return;
+    if (payloadType === "Firmware" && !firmwareId) return;
 
     const targetInputs: CampaignTargetInput[] = selectedDeviceIds.map(
       (deviceId) => ({ deviceId }),
@@ -182,8 +238,8 @@ export function CampaignWizard() {
       const trimmedDesc = description.trim();
       const created = await createCampaign(session.accessToken, {
         name: name.trim(),
-        payloadType: "Config",
-        configId,
+        payloadType,
+        ...(payloadType === "Config" ? { configId } : { firmwareId }),
         targets: targetInputs,
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
       });
@@ -201,9 +257,10 @@ export function CampaignWizard() {
 
   const loadingInitial =
     (devicesQuery.isLoading && !devicesQuery.data) ||
-    (configsQuery.isLoading && !configsQuery.data);
+    (configsQuery.isLoading && !configsQuery.data) ||
+    (firmwareQuery.isLoading && !firmwareQuery.data);
 
-  const loadError = devicesQuery.error ?? configsQuery.error;
+  const loadError = devicesQuery.error ?? configsQuery.error ?? firmwareQuery.error;
 
   if (loadingInitial) {
     return (
@@ -223,6 +280,7 @@ export function CampaignWizard() {
           onClick={() => {
             void devicesQuery.refetch();
             void configsQuery.refetch();
+            void firmwareQuery.refetch();
           }}
         >
           ลองใหม่
@@ -264,10 +322,21 @@ export function CampaignWizard() {
 
       {step === 2 && (
         <PayloadStep
+          payloadType={payloadType}
+          onSelectPayloadType={(v) => {
+            setPayloadType(v);
+            clearErrors();
+          }}
           configs={eligibleConfigs}
           configId={configId}
           onSelectConfig={(v) => {
             setConfigId(v);
+            clearErrors();
+          }}
+          firmwareList={eligibleFirmware}
+          firmwareId={firmwareId}
+          onSelectFirmware={(v) => {
+            setFirmwareId(v);
             clearErrors();
           }}
           incompatibleCount={incompatibleTargets.length}
@@ -285,7 +354,9 @@ export function CampaignWizard() {
         <ReviewStep
           name={name}
           description={description}
+          payloadType={payloadType}
           config={selectedConfig}
+          firmware={selectedFirmware}
           targets={selectedDeviceIds.map((deviceId) => ({
             deviceId,
             device: deviceByDeviceId.get(deviceId) ?? null,
@@ -524,18 +595,53 @@ function TargetsStep({
   );
 }
 
+function PayloadTypeButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-full px-3 py-1 text-xs font-medium transition-colors " +
+        (active
+          ? "bg-primary text-primary-foreground"
+          : "bg-secondary text-muted-foreground hover:bg-secondary/80")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 function PayloadStep({
+  payloadType,
+  onSelectPayloadType,
   configs,
   configId,
   onSelectConfig,
+  firmwareList,
+  firmwareId,
+  onSelectFirmware,
   incompatibleCount,
   formError,
   onBack,
   onNext,
 }: {
+  payloadType: CampaignPayloadType;
+  onSelectPayloadType: (type: CampaignPayloadType) => void;
   configs: Config[];
   configId: string;
   onSelectConfig: (id: string) => void;
+  firmwareList: Firmware[];
+  firmwareId: string;
+  onSelectFirmware: (id: string) => void;
   incompatibleCount: number;
   formError: string | null;
   onBack: () => void;
@@ -547,45 +653,75 @@ function PayloadStep({
         <div className="flex flex-col gap-1.5">
           <Label>ประเภท Payload</Label>
           <div className="flex gap-2">
-            <span className="rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
-              Config
-            </span>
-            <span
-              className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-muted-foreground"
-              title="ยังไม่รองรับ — ยังไม่มี backend firmware module ให้เลือก"
+            <PayloadTypeButton
+              active={payloadType === "Config"}
+              onClick={() => onSelectPayloadType("Config")}
             >
-              Firmware (ยังไม่รองรับ)
-            </span>
+              Config
+            </PayloadTypeButton>
+            <PayloadTypeButton
+              active={payloadType === "Firmware"}
+              onClick={() => onSelectPayloadType("Firmware")}
+            >
+              Firmware
+            </PayloadTypeButton>
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="campaign-config">Config</Label>
-          <select
-            id="campaign-config"
-            value={configId}
-            onChange={(e) => onSelectConfig(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="">— เลือก —</option>
-            {configs.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.deviceModel}/{c.protocol})
-              </option>
-            ))}
-          </select>
-          {configs.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              ยังไม่มี Config สถานะ approved/synced ให้เลือก
-            </p>
-          )}
-        </div>
+        {payloadType === "Config" ? (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="campaign-config">Config</Label>
+            <select
+              id="campaign-config"
+              value={configId}
+              onChange={(e) => onSelectConfig(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">— เลือก —</option>
+              {configs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.deviceModel}/{c.protocol})
+                </option>
+              ))}
+            </select>
+            {configs.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                ยังไม่มี Config สถานะ approved/synced ให้เลือก
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="campaign-firmware">Firmware</Label>
+            <select
+              id="campaign-firmware"
+              value={firmwareId}
+              onChange={(e) => onSelectFirmware(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">— เลือก —</option>
+              {firmwareList.map((f) => (
+                <option key={f.id} value={f.id}>
+                  v{f.version} — รองรับ: {f.deviceModelCompatibility.join(", ")}
+                </option>
+              ))}
+            </select>
+            {firmwareList.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                ยังไม่มี Firmware สถานะ stored (จัดเก็บสำเร็จแล้ว) ให้เลือก
+              </p>
+            )}
+          </div>
+        )}
 
         {incompatibleCount > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-            มีอุปกรณ์เป้าหมาย {incompatibleCount} เครื่องที่รุ่น/โปรโตคอลไม่ตรง
-            กับ Config นี้ — ระบบจะปฏิเสธตอนยืนยัน ย้อนกลับไปแก้เป้าหมายหรือ
-            เปลี่ยน Config ก่อน
+            มีอุปกรณ์เป้าหมาย {incompatibleCount} เครื่องที่
+            {payloadType === "Config"
+              ? "รุ่น/โปรโตคอลไม่ตรงกับ Config นี้"
+              : "รุ่นไม่อยู่ในรายการที่ Firmware นี้รองรับ"}{" "}
+            — ระบบจะปฏิเสธตอนยืนยัน ย้อนกลับไปแก้เป้าหมายหรือเปลี่ยน
+            {payloadType === "Config" ? "Config" : "Firmware"}ก่อน
           </div>
         )}
       </div>
@@ -636,7 +772,9 @@ function RolloutStep({
 function ReviewStep({
   name,
   description,
+  payloadType,
   config,
+  firmware,
   targets,
   incompatibleCount,
   submitting,
@@ -646,7 +784,9 @@ function ReviewStep({
 }: {
   name: string;
   description: string;
+  payloadType: CampaignPayloadType;
   config: Config | null;
+  firmware: Firmware | null;
   targets: {
     deviceId: string;
     device: Device | null;
@@ -672,14 +812,25 @@ function ReviewStep({
         )}
         <div>
           <p className="text-sm text-muted-foreground">Payload</p>
-          <p className="text-sm font-medium">
-            Config: {config?.name ?? "—"}{" "}
-            {config && (
-              <span className="text-muted-foreground">
-                ({config.deviceModel}/{config.protocol})
-              </span>
-            )}
-          </p>
+          {payloadType === "Config" ? (
+            <p className="text-sm font-medium">
+              Config: {config?.name ?? "—"}{" "}
+              {config && (
+                <span className="text-muted-foreground">
+                  ({config.deviceModel}/{config.protocol})
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm font-medium">
+              Firmware: {firmware ? `v${firmware.version}` : "—"}{" "}
+              {firmware && (
+                <span className="text-muted-foreground">
+                  (รองรับ: {firmware.deviceModelCompatibility.join(", ")})
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-sm text-muted-foreground">Rollout</p>
@@ -726,8 +877,11 @@ function ReviewStep({
 
         {incompatibleCount > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-            มีอุปกรณ์ {incompatibleCount} เครื่องที่รุ่น/โปรโตคอลไม่ตรงกับ
-            Config — ระบบจะปฏิเสธการยืนยันนี้
+            มีอุปกรณ์ {incompatibleCount} เครื่องที่
+            {payloadType === "Config"
+              ? "รุ่น/โปรโตคอลไม่ตรงกับ Config"
+              : "รุ่นไม่อยู่ในรายการที่ Firmware รองรับ"}{" "}
+            — ระบบจะปฏิเสธการยืนยันนี้
           </div>
         )}
       </div>

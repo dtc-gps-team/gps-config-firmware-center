@@ -789,8 +789,40 @@ async function main() {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // 7) Firmware ตัวอย่างที่ uploadStatus=stored — ให้ dev/demo ทดสอบสร้าง
+  //    แคมเปญแบบ payloadType: Firmware ได้ทันที (แก้ไข 2026-09-14 — เปิดใช้
+  //    งาน Firmware payload ใน Campaign) **หมายเหตุ:** insert ตรงผ่าน seed
+  //    ไม่ได้อัปโหลดขึ้น MinIO จริง — objectKey ด้านล่างจึงไม่มีไฟล์จริงรออยู่
+  //    ที่ Object Storage พอสำหรับทดสอบ flow สร้างแคมเปญ (ที่ไม่อ่านเนื้อไฟล์
+  //    เลย) แต่ยังกดดาวน์โหลดไฟล์จริงไม่ได้ — ถ้าต้องการไฟล์จริงให้อัปโหลด
+  //    ผ่าน `POST /firmware` ตามปกติแทน
+  // ---------------------------------------------------------------------
+  const demoFirmware: {
+    version: string;
+    deviceModelCompatibility: string[];
+  }[] = [{ version: '2.4.1', deviceModelCompatibility: ['GT06N', 'GT06L'] }];
+
+  for (const f of demoFirmware) {
+    const existing = await prisma.firmware.findFirst({
+      where: { version: f.version },
+    });
+    if (existing) continue;
+    await prisma.firmware.create({
+      data: {
+        version: f.version,
+        deviceModelCompatibility: f.deviceModelCompatibility,
+        uploadStatus: 'stored',
+        objectKey: `firmware/seed-${f.version}/firmware.bin`,
+        originalFilename: 'firmware.bin',
+        fileSizeBytes: 1024,
+        uploadedBy: swUser.id,
+      },
+    });
+  }
+
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices, ${demoConfigs.length} configs.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices, ${demoConfigs.length} configs, ${demoFirmware.length} firmware.`,
   );
 }
 

@@ -6,10 +6,13 @@ import { apiJson } from "@/lib/api";
  * CampaignTarget[] ใน transaction เดียว, active ทันที ("ส่งพร้อมกันหมด" —
  * v1 ไม่มี draft/rollout strategy) ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม
  *
- * **แก้ไข 2026-09-14:** เดิม `POST /campaigns` สร้าง `Task` ต่ออุปกรณ์พร้อม
+ * **แก้ไข 2026-09-14 (1):** เดิม `POST /campaigns` สร้าง `Task` ต่ออุปกรณ์พร้อม
  * มอบหมายผู้รับผิดชอบหน้างานด้วย — หัวหน้าแก้ scope ว่า Campaign ไม่ใช่
  * เครื่องมือมอบหมายงาน (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) จึงตัด
  * แนวคิด assignedTo ออกจาก `CampaignTargetInput` ทั้งหมด (ดู backend PR #152)
+ *
+ * **แก้ไข 2026-09-14 (2):** `payloadType: Firmware` เปิดใช้งานแล้ว (backend
+ * PR #154) — เพิ่ม `firmwareId` เข้า `CreateCampaignInput` คู่กับ `configId`
  */
 
 export const CAMPAIGN_STATUSES = [
@@ -21,9 +24,6 @@ export const CAMPAIGN_STATUSES = [
 
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 
-/** `Firmware` มีอยู่ใน enum ตาม Data Dictionary แต่ยังไม่รองรับผ่าน API เลย
- * (createCampaign คืน 400) — ยังไม่มี backend firmware module ให้เลือก
- * (รอ Sprint 3 #23) — UI นี้จึงล็อกไว้ที่ "Config" เท่านั้น */
 export const CAMPAIGN_PAYLOAD_TYPES = ["Config", "Firmware"] as const;
 
 export type CampaignPayloadType = (typeof CAMPAIGN_PAYLOAD_TYPES)[number];
@@ -59,8 +59,10 @@ export type CreateCampaignInput = {
   name: string;
   description?: string;
   payloadType: CampaignPayloadType;
-  /** บังคับเมื่อ payloadType เป็น Config (ตัวเดียวที่รองรับตอนนี้) */
+  /** บังคับเมื่อ payloadType เป็น Config */
   configId?: string;
+  /** บังคับเมื่อ payloadType เป็น Firmware */
+  firmwareId?: string;
   targets: CampaignTargetInput[];
 };
 
@@ -79,10 +81,11 @@ export function getCampaign(token: string, id: string): Promise<Campaign> {
 }
 
 /**
- * `POST /campaigns` — Operation เท่านั้น · 404 ถ้าไม่พบ Config · 409 ถ้า Config
- * ยังไม่อนุมัติ หรืออุปกรณ์เป้าหมายบางเครื่องยังไม่ installed/รุ่นไม่ตรง
- * (backend รวมทุกปัญหาไว้ใน `message` เดียว) · 400 ถ้า targets ว่าง/deviceId
- * ซ้ำ หรือ payloadType Firmware
+ * `POST /campaigns` — Operation เท่านั้น · 404 ถ้าไม่พบ Config/Firmware ตาม
+ * payloadType · 409 ถ้า Config ยังไม่อนุมัติ, Firmware ยัง `uploadStatus` ไม่
+ * `stored`, หรืออุปกรณ์เป้าหมายบางเครื่องยังไม่ installed/ไม่เข้ากันกับ
+ * payload (backend รวมทุกปัญหาไว้ใน `message` เดียว) · 400 ถ้า targets ว่าง/
+ * deviceId ซ้ำ/ไม่ระบุ configId-firmwareId ให้ตรงกับ payloadType
  */
 export function createCampaign(
   token: string,
