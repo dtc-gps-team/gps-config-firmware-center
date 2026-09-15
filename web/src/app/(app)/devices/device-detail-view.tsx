@@ -106,6 +106,13 @@ function DeviceDetailContent({ device }: { device: Device }) {
               {device.deviceModel} / {device.protocol}
             </InfoRow>
             <InfoRow label="สถานะ">{device.status}</InfoRow>
+            <InfoRow label="ลูกค้า">
+              {device.customer ? (
+                device.customer.companyName
+              ) : (
+                <span className="text-muted-foreground">ไม่ระบุ</span>
+              )}
+            </InfoRow>
             <InfoRow label="ลงทะเบียนเมื่อ">
               {formatDateTime(device.registeredAt)}
             </InfoRow>
