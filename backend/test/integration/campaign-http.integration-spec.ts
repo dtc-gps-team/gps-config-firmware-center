@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { CampaignModule } from '../../src/campaign/campaign.module';
-import { NotificationService } from '../../src/notification/notification.service';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
   createTestPrisma,
@@ -25,31 +24,30 @@ process.env.DATABASE_URL = TEST_DATABASE_URL;
 
 /**
  * Campaign Wizard (#21) — `POST/GET /campaigns` ผ่าน HTTP จริง (JwtAuthGuard ->
- * PermissionGuard เต็มเส้นทาง) + ยืนยันว่า CampaignTarget/Task ถูกสร้างจริงใน DB
+ * PermissionGuard เต็มเส้นทาง) + ยืนยันว่า CampaignTarget ถูกสร้างจริงใน DB
  * ครบทุกแถว ไม่ใช่แค่ response body หน้าเดียว
+ *
+ * **แก้ไข 2026-09-14 (1):** เดิมเทสนี้ยังยืนยันว่า `POST /campaigns` สร้าง
+ * `Task` ต่อเครื่องพร้อมแจ้งเตือนผู้รับผิดชอบด้วย (`assignedTo` ต่อ target) —
+ * หัวหน้าแก้ scope ว่า Campaign ไม่มอบหมายงานให้ช่างหน้างานอีกต่อไป จึงตัด
+ * NotificationModule override และ target.assignedTo ออกจากทุกเทสในไฟล์นี้
+ *
+ * **แก้ไข 2026-09-14 (2):** เพิ่มเทส `payloadType: Firmware` (Sprint 3 #23/
+ * PR #151 implement เสร็จแล้ว) แทนที่เทสเดิมที่ยืนยันว่า Firmware ยัง 400
  */
 describe('CampaignController (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaClient;
   let jwtService: JwtService;
-  let notificationSend: jest.Mock;
 
   beforeAll(async () => {
-    notificationSend = jest.fn().mockResolvedValue(undefined);
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      // CampaignModule -> NotificationModule -> NotificationService inject
-      // @nestjs/config — forRoot เองเหมือน task-http spec
       imports: [
         NestConfigModule.forRoot({ isGlobal: true }),
         PrismaModule,
         CampaignModule,
       ],
-    })
-      // เทสนี้เช็ค RBAC + validation ล้วน — ไม่ให้แจ้งเตือนจริงแตะ DB/FCM
-      .overrideProvider(NotificationService)
-      .useValue({ send: notificationSend })
-      .compile();
+    }).compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api/v1');
@@ -77,7 +75,6 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     // RolePermission ต้อง clean เองทุกเทส (resetDb ไม่แตะ — pattern เดียวกับ
     // config-http.integration-spec.ts)
     await prisma.rolePermission.deleteMany();
-    notificationSend.mockClear();
   });
 
   function tokenFor(sub: string, role: string): string {
@@ -128,6 +125,26 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     });
   }
 
+  async function seedStoredFirmware(overrides?: {
+    deviceModelCompatibility?: string[];
+    uploadStatus?: 'pending' | 'stored' | 'failed';
+  }) {
+    const swUser = await makeUser(prisma, { role: 'SW' });
+    return prisma.firmware.create({
+      data: {
+        version: `1.0.${Math.floor(Math.random() * 1000)}`,
+        deviceModelCompatibility: overrides?.deviceModelCompatibility ?? [
+          'GT06N',
+        ],
+        uploadStatus: overrides?.uploadStatus ?? 'stored',
+        objectKey: `firmware/${randomUUID()}/test.bin`,
+        originalFilename: 'test.bin',
+        fileSizeBytes: 1024,
+        uploadedBy: swUser.id,
+      },
+    });
+  }
+
   describe('POST /campaigns', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
       await request(app.getHttpServer())
@@ -147,14 +164,12 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .expect(403);
     });
 
-    it('Operation มีสิทธิ์ campaign.Create, เป้าหมายครบถ้วน -> 201 + สร้าง CampaignTarget/Task จริงใน DB', async () => {
+    it('Operation มีสิทธิ์ campaign.Create, เป้าหมายครบถ้วน -> 201 + สร้าง CampaignTarget จริงใน DB (ไม่มี Task)', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const config = await seedApprovedConfig();
       const deviceA = await seedInstalledDevice();
       const deviceB = await seedInstalledDevice();
-      const tech1 = await makeUser(prisma, { role: 'ST' });
-      const tech2 = await makeUser(prisma, { role: 'OT' });
       const token = tokenFor(opUser.id, 'Operation');
 
       const res = await request(app.getHttpServer())
@@ -165,8 +180,8 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           payloadType: 'Config',
           configId: config.id,
           targets: [
-            { deviceId: deviceA.deviceId, assignedTo: tech1.id },
-            { deviceId: deviceB.deviceId, assignedTo: tech2.id },
+            { deviceId: deviceA.deviceId },
+            { deviceId: deviceB.deviceId },
           ],
         })
         .expect(201);
@@ -189,18 +204,12 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         [deviceA.deviceId, deviceB.deviceId].sort(),
       );
 
+      // Campaign ไม่มอบหมายงานให้ช่างหน้างานแล้ว (แก้ไข 2026-09-14) — ต้องไม่
+      // มี Task ใดถูกสร้างขึ้นจาก Campaign นี้เลย
       const tasks = await prisma.task.findMany({
         where: { campaignId: body.id },
       });
-      expect(tasks).toHaveLength(2);
-      const task1 = tasks.find((t) => t.assignedTo === tech1.id);
-      expect(task1).toMatchObject({
-        deviceId: deviceA.deviceId,
-        configId: config.id,
-        status: 'pending',
-      });
-
-      expect(notificationSend).toHaveBeenCalledTimes(2);
+      expect(tasks).toHaveLength(0);
     });
 
     it('สำเร็จ -> เขียน AuditLog action create (module campaign)', async () => {
@@ -208,7 +217,6 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await grant('Operation', ActionType.Create);
       const config = await seedApprovedConfig();
       const device = await seedInstalledDevice();
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -218,7 +226,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           name: 'แคมเปญทดสอบ',
           payloadType: 'Config',
           configId: config.id,
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(201);
 
@@ -229,11 +237,38 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       expect(logs[0].action).toBe('create');
     });
 
-    it('payloadType Firmware -> 400 ยังไม่รองรับ', async () => {
+    it('payloadType Firmware, เป้าหมายครบถ้วน -> 201 + configId เป็น null, firmwareId ตรงกับที่เลือก', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware();
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญอัปเดตเฟิร์มแวร์',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(201);
+
+      const body = res.body as {
+        payloadType: string;
+        configId: string | null;
+        firmwareId: string | null;
+      };
+      expect(body.payloadType).toBe('Firmware');
+      expect(body.configId).toBeNull();
+      expect(body.firmwareId).toBe(firmware.id);
+    });
+
+    it('payloadType Firmware, ไม่ส่ง firmwareId -> 400', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const device = await seedInstalledDevice();
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -242,16 +277,73 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .send({
           name: 'แคมเปญทดสอบ',
           payloadType: 'Firmware',
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(400);
+    });
+
+    it('payloadType Firmware, ไม่พบ Firmware -> 404', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: randomUUID(),
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(404);
+    });
+
+    it('payloadType Firmware, uploadStatus ยัง pending -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware({ uploadStatus: 'pending' });
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(409);
+    });
+
+    it('payloadType Firmware, deviceModel ของ Device ไม่อยู่ใน deviceModelCompatibility -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware({
+        deviceModelCompatibility: ['GT06N'],
+      });
+      const device = await seedInstalledDevice({ deviceModel: 'GT06L' });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(409);
     });
 
     it('ไม่พบ Config -> 404', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const device = await seedInstalledDevice();
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -261,7 +353,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           name: 'แคมเปญทดสอบ',
           payloadType: 'Config',
           configId: randomUUID(),
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(404);
     });
@@ -281,7 +373,6 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         },
       });
       const device = await seedInstalledDevice();
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -291,17 +382,16 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           name: 'แคมเปญทดสอบ',
           payloadType: 'Config',
           configId: draftConfig.id,
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(409);
     });
 
-    it('Device ยังไม่ installed -> 409, ไม่มี CampaignTarget/Task ถูกสร้าง', async () => {
+    it('Device ยังไม่ installed -> 409, ไม่มี CampaignTarget ถูกสร้าง', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const config = await seedApprovedConfig();
       const device = await seedInstalledDevice({ status: 'registered' });
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -311,7 +401,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           name: 'แคมเปญทดสอบ',
           payloadType: 'Config',
           configId: config.id,
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(409);
 
@@ -329,7 +419,6 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         deviceModel: 'GT06E',
         protocol: 'UDP',
       });
-      const tech = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -339,28 +428,9 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           name: 'แคมเปญทดสอบ',
           payloadType: 'Config',
           configId: config.id,
-          targets: [{ deviceId: device.deviceId, assignedTo: tech.id }],
+          targets: [{ deviceId: device.deviceId }],
         })
         .expect(409);
-    });
-
-    it('assignedTo ไม่พบ user -> 400', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
-          targets: [{ deviceId: device.deviceId, assignedTo: randomUUID() }],
-        })
-        .expect(400);
     });
 
     it('มี deviceId ซ้ำกันในรายการเป้าหมาย -> 400', async () => {
@@ -368,8 +438,6 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await grant('Operation', ActionType.Create);
       const config = await seedApprovedConfig();
       const device = await seedInstalledDevice();
-      const tech1 = await makeUser(prisma, { role: 'ST' });
-      const tech2 = await makeUser(prisma, { role: 'OT' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
@@ -380,8 +448,8 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           payloadType: 'Config',
           configId: config.id,
           targets: [
-            { deviceId: device.deviceId, assignedTo: tech1.id },
-            { deviceId: device.deviceId, assignedTo: tech2.id },
+            { deviceId: device.deviceId },
+            { deviceId: device.deviceId },
           ],
         })
         .expect(400);

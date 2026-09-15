@@ -83,7 +83,7 @@ describe('CampaignController', () => {
       name: 'แคมเปญทดสอบ',
       payloadType: CampaignPayloadType.Config,
       configId: 'cfg-1',
-      targets: [{ deviceId: 'DEV-0001', assignedTo: 'tech-1' }],
+      targets: [{ deviceId: 'DEV-0001' }],
     };
 
     const result = await controller.create(dto, opReq);

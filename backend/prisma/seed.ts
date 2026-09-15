@@ -221,14 +221,27 @@ async function main() {
     grant('Auditor', 'tasks', 'Read'),
     grant('Admin', 'tasks', 'Read'),
 
-    // ---- firmware ----
+    // ---- firmware (Sprint 3 #23 — Firmware Repository) ----
     grant('SW', 'firmware', 'Create'),
-    grant('SW', 'firmware', 'Update'), // simulateFirmware
+    grant('SW', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
+    // เพิ่มใหม่: RBAC_Matrix.md Section 2 ระบุ Firmware Repository = SW: C,R,U
+    // แต่ seed เดิมมีแค่ C,U ขาด R — บั๊กเดียวกับที่เคยเจอกับ config (ดู
+    // comment เหนือ grant('SW','config','Read') ด้านบน) ทำให้ SW เปิดหน้า
+    // /firmware เองไม่ได้เลย (403 "ไม่มีสิทธิ์ Read บน resource firmware")
+    grant('SW', 'firmware', 'Read'),
     grant('Operation', 'firmware', 'Read'),
     grant('ST', 'firmware', 'Read'),
     grant('OT', 'firmware', 'Read'),
     grant('Auditor', 'firmware', 'Read'),
     grant('Admin', 'firmware', 'Read'),
+
+    // ---- firmware-simulation (แยกจาก firmware ธรรมดา mirror
+    // config/config-simulation — กัน Auditor/Admin ที่มีแค่ firmware.Read
+    // เรียก simulate ได้โดยไม่ตั้งใจ) ----
+    grant('SW', 'firmware-simulation', 'Read'),
+    grant('Operation', 'firmware-simulation', 'Read'),
+    grant('ST', 'firmware-simulation', 'Read'),
+    grant('OT', 'firmware-simulation', 'Read'),
 
     // ---- campaign (Sprint 3 #21 — Campaign Wizard) ----
     // RBAC_Matrix.md §2 แถว "Campaign Wizard": Operation = C, R, U (U ยังไม่มี
@@ -635,6 +648,11 @@ async function main() {
     deviceModel: string;
     protocol: string;
     status: 'registered' | 'installed';
+    // ชื่อบริษัทสมมติ (ดู demoCustomers ด้านล่าง) — undefined = ยังไม่ผูกลูกค้า
+    // (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) ตั้งชื่อเองล้วนๆ
+    // **ห้ามใช้ชื่อ/ข้อมูลจริงจาก schema DMS เดิมที่พี่เลี้ยงให้มาเด็ดขาด**
+    // (มี PII จริง เก็บไว้นอก repo เท่านั้น — ดู docs/12 §3.5)
+    customerName?: string;
   }[] = [
     {
       deviceId: 'DEV-0001',
@@ -642,6 +660,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'ABC Logistics',
     },
     {
       deviceId: 'DEV-0002',
@@ -649,6 +668,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'ABC Logistics',
     },
     {
       deviceId: 'DEV-0003',
@@ -656,6 +676,7 @@ async function main() {
       deviceModel: 'GT06L',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'Northern Fleet',
     },
     {
       deviceId: 'DEV-0004',
@@ -663,6 +684,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      // ไม่ผูกลูกค้า — ไว้ทดสอบ filter "ลูกค้า: ไม่ระบุ" / แถวที่ customerId null
     },
     // ยังไม่ติดตั้ง — ไว้ทดสอบ 409 ของ test-connection / apply-config
     {
@@ -674,19 +696,138 @@ async function main() {
     },
   ];
 
-  for (const d of demoDevices) {
+  // Customer ตัวอย่าง (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) — ชื่อ
+  // สมมติล้วนๆ ตาม mockup หน้า Device Search ที่ A ทำไว้ (ABC Logistics /
+  // Northern Fleet / Metro Transit) ไม่ได้อิงจากข้อมูลลูกค้าจริงใดๆ — Metro
+  // Transit ตั้งใจไม่ผูกกับ device ไหนเลย ไว้ทดสอบว่าลูกค้าที่ยังไม่มีอุปกรณ์
+  // เลยก็ยังต้องโผล่ใน dropdown filter ได้ปกติ
+  const demoCustomers = [
+    { companyName: 'ABC Logistics' },
+    { companyName: 'Northern Fleet' },
+    { companyName: 'Metro Transit' },
+  ];
+
+  for (const c of demoCustomers) {
+    await prisma.customer.upsert({
+      where: { companyName: c.companyName },
+      update: {},
+      create: c,
+    });
+  }
+
+  for (const { customerName, ...d } of demoDevices) {
+    const customer = customerName
+      ? await prisma.customer.findUniqueOrThrow({
+          where: { companyName: customerName },
+        })
+      : null;
     await prisma.device.upsert({
       where: { deviceId: d.deviceId },
       update: {},
       create: {
         ...d,
         installedAt: d.status === 'installed' ? new Date() : null,
+        customerId: customer?.id,
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 6) Config ตัวอย่างที่ approved/synced แล้ว — ให้ dev/demo มี Config ที่
+  //    สร้างแคมเปญได้ทันที (`APPLICABLE_CONFIG_STATUSES` ใน
+  //    device/config-applier.ts ต้องเป็น approved/synced เท่านั้น) ตรง
+  //    deviceModel/protocol กับ demoDevices ด้านบนพอดี (GT06N/TCP ผูกกับ
+  //    ABC Logistics, GT06L/TCP ผูกกับ Northern Fleet) จะได้ลองสร้างแคมเปญ
+  //    ข้ามลูกค้าดูความแตกต่างของ filter ได้ด้วย
+  // ---------------------------------------------------------------------
+  const swUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'sw.test' },
+  });
+  const operationUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'operation.test' },
+  });
+
+  const demoConfigs: {
+    name: string;
+    deviceModel: string;
+    protocol: string;
+    status: 'approved' | 'synced';
+    fields: Record<string, string>;
+  }[] = [
+    {
+      name: 'GT06N/TCP มาตรฐาน',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      status: 'approved',
+      fields: {
+        APN: 'internet',
+        SERVER_HOST: 'config.dtc.co.th',
+        SERVER_PORT: '909',
+      },
+    },
+    {
+      name: 'GT06L/TCP มาตรฐาน',
+      deviceModel: 'GT06L',
+      protocol: 'TCP',
+      status: 'synced',
+      fields: {
+        APN: 'internet',
+        SERVER_HOST: 'config.dtc.co.th',
+        SERVER_PORT: '909',
+      },
+    },
+  ];
+
+  for (const c of demoConfigs) {
+    await prisma.config.upsert({
+      where: { name: c.name },
+      update: {},
+      create: {
+        name: c.name,
+        deviceModel: c.deviceModel,
+        protocol: c.protocol,
+        status: c.status,
+        fields: c.fields,
+        createdBy: swUser.id,
+        approvedBy: operationUser.id,
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 7) Firmware ตัวอย่างที่ uploadStatus=stored — ให้ dev/demo ทดสอบสร้าง
+  //    แคมเปญแบบ payloadType: Firmware ได้ทันที (แก้ไข 2026-09-14 — เปิดใช้
+  //    งาน Firmware payload ใน Campaign) **หมายเหตุ:** insert ตรงผ่าน seed
+  //    ไม่ได้อัปโหลดขึ้น MinIO จริง — objectKey ด้านล่างจึงไม่มีไฟล์จริงรออยู่
+  //    ที่ Object Storage พอสำหรับทดสอบ flow สร้างแคมเปญ (ที่ไม่อ่านเนื้อไฟล์
+  //    เลย) แต่ยังกดดาวน์โหลดไฟล์จริงไม่ได้ — ถ้าต้องการไฟล์จริงให้อัปโหลด
+  //    ผ่าน `POST /firmware` ตามปกติแทน
+  // ---------------------------------------------------------------------
+  const demoFirmware: {
+    version: string;
+    deviceModelCompatibility: string[];
+  }[] = [{ version: '2.4.1', deviceModelCompatibility: ['GT06N', 'GT06L'] }];
+
+  for (const f of demoFirmware) {
+    const existing = await prisma.firmware.findFirst({
+      where: { version: f.version },
+    });
+    if (existing) continue;
+    await prisma.firmware.create({
+      data: {
+        version: f.version,
+        deviceModelCompatibility: f.deviceModelCompatibility,
+        uploadStatus: 'stored',
+        objectKey: `firmware/seed-${f.version}/firmware.bin`,
+        originalFilename: 'firmware.bin',
+        fileSizeBytes: 1024,
+        uploadedBy: swUser.id,
       },
     });
   }
 
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoDevices.length} devices.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices, ${demoConfigs.length} configs, ${demoFirmware.length} firmware.`,
   );
 }
 

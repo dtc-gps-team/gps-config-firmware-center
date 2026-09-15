@@ -18,7 +18,7 @@
 /*  หน้าจริงที่ต่อ API ก็ใช้) re-export ต่อให้หน้า scaffold เดิมไม่ต้องแก้ import */
 /* ---------------------------------------------------------------- */
 
-import { type PillTone, TASK_STATUS_TONE } from "@/lib/status-pill";
+import { TASK_STATUS_TONE } from "@/lib/status-pill";
 
 export {
   pillClass,
@@ -26,13 +26,6 @@ export {
   TASK_STATUS_TONE,
   DEVICE_STATUS_TONE,
 } from "@/lib/status-pill";
-
-export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
-  ร่าง: "neutral",
-  กำลังทำงาน: "progress",
-  เสร็จสิ้น: "success",
-  หยุดชั่วคราว: "danger",
-};
 
 /* ---------------------------------------------------------------- */
 /*  Dashboard — การ์ด "อุปกรณ์ทั้งหมด" + "Config รออนุมัติ" ต่อ API จริงแล้ว  */
@@ -138,35 +131,9 @@ export const DEMO_FIRMWARE = [
  * ดู web/src/app/(app)/devices/ · DEMO_DEVICES / DEMO_DEVICE_DETAIL ถูกลบออก */
 
 /* ---------------------------------------------------------------- */
-/*  Campaign — โมดูล campaign (ยังไม่มี endpoint ในสเปค)             */
+/*  Campaign — ต่อ API จริงแล้ว (GET/POST /campaigns, Sprint 3 #21) —  */
+/*  ดู campaigns/page.tsx + campaigns/campaign-wizard.tsx              */
 /* ---------------------------------------------------------------- */
-
-export const DEMO_CAMPAIGNS = [
-  {
-    name: "นำร่องภาคเหนือ · GT06N v2.4.1",
-    target: "Firmware GT06N-v2.4.1",
-    failureRate: "0%",
-    status: "กำลังทำงาน" as const,
-  },
-  {
-    name: "อัปเดตรอบรายงาน Q3 · ภาคกลาง",
-    target: "Config cfg-1037",
-    failureRate: "1.2%",
-    status: "กำลังทำงาน" as const,
-  },
-  {
-    name: "ทดสอบ CAN bus · 20 คันแรก",
-    target: "Config cfg-1036",
-    failureRate: "0%",
-    status: "เสร็จสิ้น" as const,
-  },
-  {
-    name: "แก้ APN ผู้ให้บริการเก่า",
-    target: "Config cfg-1010",
-    failureRate: "4.8%",
-    status: "หยุดชั่วคราว" as const,
-  },
-];
 
 /* ---------------------------------------------------------------- */
 /*  Incident & Rollback — โมดูล incident (ยังไม่มี endpoint ในสเปค)  */
