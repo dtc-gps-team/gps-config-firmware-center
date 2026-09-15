@@ -1361,14 +1361,16 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.20
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.21
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
-        Campaign + CampaignTarget ต่ออุปกรณ์ + Task ต่ออุปกรณ์ (ขั้น "มอบหมาย
-        ผู้รับผิดชอบหน้างาน") ใน transaction เดียว แล้ว active ทันที ("ส่งพร้อม
-        กันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง) · **payloadType
-        `Firmware` ยังไม่รองรับ** (400) เพราะยังไม่มี backend firmware module
-        ให้สร้าง Firmware record เลย (รอ Sprint 3 #23)
+        Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว แล้ว active
+        ทันที ("ส่งพร้อมกันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง)
+        ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม **ไม่สร้าง Task/มอบหมายงาน
+        ให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็นหน้าที่ของระบบ
+        แยกที่บริษัทมีอยู่แล้ว) · **payloadType `Firmware` ยังไม่รองรับ** (400)
+        เพราะยังไม่มี backend firmware module ให้สร้าง Firmware record เลย
+        (รอ Sprint 3 #23)
       requestBody:
         required: true
         content:
@@ -1385,8 +1387,7 @@ paths:
         "400":
           description: >-
             validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน,
-            payloadType Firmware ยังไม่รองรับ, assignedTo ไม่พบ user หรือถูก
-            ปิดใช้งาน)
+            payloadType Firmware ยังไม่รองรับ)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -1579,8 +1580,12 @@ components:
 
     CampaignTargetInput:
       type: object
-      description: อุปกรณ์เป้าหมาย 1 เครื่อง + ผู้รับผิดชอบหน้างาน (createCampaign)
-      required: [deviceId, assignedTo]
+      description: >-
+        อุปกรณ์เป้าหมาย 1 เครื่อง (createCampaign) — ไม่มี field มอบหมาย
+        ผู้รับผิดชอบหน้างานแล้ว (แก้ไข 2026-09-14: Campaign ใช้สำหรับ
+        ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น การมอบหมายงานเป็นหน้าที่
+        ของระบบแยกที่บริษัทมีอยู่แล้ว)
+      required: [deviceId]
       properties:
         deviceId:
           type: string
@@ -1588,10 +1593,6 @@ components:
             `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน
             — ต้องเป็นอุปกรณ์สถานะ `installed` และ deviceModel/protocol ตรง
             กับ Config ที่เลือก ไม่งั้น 409
-        assignedTo:
-          type: string
-          format: uuid
-          description: user id ของช่างหน้างาน (ST/OT) ที่รับผิดชอบเครื่องนี้
 
     CampaignCreateRequest:
       type: object
@@ -1901,10 +1902,13 @@ components:
           type: string
           nullable: true
           description: >-
-            Campaign ที่มอบหมายงานนี้มา (ถ้ามี) — ไม่ใส่ format: uuid เพราะที่ระดับ
+            Campaign ต้นทางของงานนี้ (ถ้ามี) — ไม่ใส่ format: uuid เพราะที่ระดับ
             Prisma ไม่มี relation constraint ไปยัง Campaign.id (mirror deviceId)
-            · null ตราบใดที่ backend campaign module (สร้าง Campaign+CampaignTarget[]
-            +Task[] พร้อมกัน) ยังไม่ถูกสร้าง — PR #147 เป็น schema-only prerequisite
+            · **เป็น null เสมอในทางปฏิบัติ** (แก้ไข 2026-09-14): เดิมตั้งใจให้
+            `POST /campaigns` สร้าง Task พร้อม campaignId นี้เป็นขั้น "มอบหมาย
+            ผู้รับผิดชอบหน้างาน" แต่หัวหน้าแก้ scope ว่า Campaign ไม่มอบหมายงาน
+            ให้ช่างหน้างานอีกต่อไป (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว)
+            field นี้เหลือไว้เผื่ออนาคตมีช่องทางอื่นเชื่อม Task เข้ากับ Campaign
         status:
           type: string
           enum: [pending, in_progress, completed, cancelled]

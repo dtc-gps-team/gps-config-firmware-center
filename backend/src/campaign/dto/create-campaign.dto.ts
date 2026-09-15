@@ -12,26 +12,22 @@ import {
 } from 'class-validator';
 import { CampaignPayloadType } from '@prisma/client';
 
-/** เครื่องเป้าหมายหนึ่งตัวของแคมเปญ + คนที่ต้องไปติดตั้งหน้างาน — คู่กับ
- * `model CampaignTarget` (เก็บแค่ deviceId) และ `Task.assignedTo` (ผู้รับผิดชอบ
- * เก็บที่ Task ไม่ใช่ CampaignTarget — ดู comment เหนือ model CampaignTarget
- * ใน schema.prisma) */
+/** เครื่องเป้าหมายหนึ่งตัวของแคมเปญ — คู่กับ `model CampaignTarget` (เก็บแค่
+ * deviceId)
+ *
+ * **แก้ไข 2026-09-14:** เดิม DTO นี้มี field `assignedTo` (user id ของช่าง
+ * หน้างานที่รับผิดชอบเครื่องนี้) เพื่อสร้าง Task ต่อเครื่องพร้อมมอบหมายงาน
+ * ตอน submit — หัวหน้าแก้ scope ว่า Campaign มีไว้สำหรับติดตาม/บำรุงรักษา
+ * อุปกรณ์เป็นกลุ่มเท่านั้น (อัปเดต Config/Firmware + สังเกตความผิดปกติ)
+ * **ไม่ใช่มอบหมายงานให้ช่างหน้างาน** เพราะการมอบหมายงานเป็นหน้าที่ของระบบ
+ * แยกที่บริษัทมีอยู่แล้ว — ทำเองจะซ้อนทับระบบ จึงตัด `assignedTo` และการสร้าง
+ * Task ออกจาก Campaign ทั้งหมด (ดู RBAC_Matrix.md changelog) */
 export class CreateCampaignTargetDto {
   /** `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน — mirror
    * ทุก endpoint อื่นที่อ้างอุปกรณ์ (`applyConfigToDevice`, `Task.deviceId`) */
   @IsString()
   @MinLength(1)
   deviceId!: string;
-
-  /** user id ของช่างหน้างาน (ST/OT) ที่รับผิดชอบเครื่องนี้ — ไม่บังคับ role
-   * ที่ระดับ validation (mirror TaskService.create ที่ไม่เช็ค role ของ
-   * assignedTo เช่นกัน) แต่ service จะเช็คว่า user มีอยู่จริง+active เพราะ
-   * `Task.assignedTo` มี FK ไป `User.id` จริง (ต่างจาก `CampaignTarget.deviceId`
-   * ที่เป็น loose string) — insert ทีเดียวหลายแถวถ้ามี id ผิดจะเจอ FK violation
-   * ที่อ่านยาก ถ้าไม่เช็คก่อน */
-  @IsString()
-  @MinLength(1)
-  assignedTo!: string;
 }
 
 /**
