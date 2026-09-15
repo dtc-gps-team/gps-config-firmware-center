@@ -64,6 +64,7 @@ describe('TaskService', () => {
   let task: TaskDelegateMock;
   let config: { findUnique: jest.Mock };
   let device: { findUnique: jest.Mock };
+  let auditLog: { create: jest.Mock };
   let notification: { send: jest.Mock };
 
   beforeEach(async () => {
@@ -77,12 +78,16 @@ describe('TaskService', () => {
     };
     config = { findUnique: jest.fn() };
     device = { findUnique: jest.fn() };
+    auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     notification = { send: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
-        { provide: PrismaService, useValue: { task, config, device } },
+        {
+          provide: PrismaService,
+          useValue: { task, config, device, auditLog },
+        },
         { provide: NotificationService, useValue: notification },
       ],
     }).compile();
@@ -596,6 +601,84 @@ describe('TaskService', () => {
       await expect(
         service.update(sampleTask.id, { assignedTo: 'tech-9' }, operation),
       ).resolves.toEqual(updated);
+    });
+  });
+
+  describe('AuditLog (Sprint 3 #27 follow-up — PR #145 เปิด audit module แล้ว)', () => {
+    it('create() -> เขียน action create หลังสร้างงานสำเร็จ', async () => {
+      task.create.mockResolvedValue(sampleTask);
+
+      await service.create({ title: 'x', assignedTo: 'tech-1' }, operation);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: operation.id, auditModule: 'task', action: 'create' },
+      });
+    });
+
+    it('update() โดย Operation -> เขียน action update', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      task.update.mockResolvedValue({ ...sampleTask, title: 'แก้ไขแล้ว' });
+
+      await service.update(sampleTask.id, { title: 'แก้ไขแล้ว' }, operation);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: operation.id, auditModule: 'task', action: 'update' },
+      });
+    });
+
+    it('update() โดย ST/OT (แก้ status ตัวเอง) -> เขียน action update ด้วย userId ของ ST/OT เอง', async () => {
+      task.updateMany.mockResolvedValue({ count: 1 });
+      task.findUniqueOrThrow.mockResolvedValue({
+        ...sampleTask,
+        status: 'completed',
+      });
+
+      await service.update(sampleTask.id, { status: 'completed' }, owner);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: owner.id, auditModule: 'task', action: 'update' },
+      });
+    });
+
+    it('update() ที่โยน 403/404 ก่อนถึงจุด mutation -> ไม่เขียน AuditLog เลย', async () => {
+      await expect(
+        service.update(sampleTask.id, { title: 'hacked' }, owner),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('create() ยังสำเร็จปกติแม้ auditLog.create reject (never-throw)', async () => {
+      const created = { ...sampleTask, id: 'task-x' };
+      task.create.mockResolvedValue(created);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.create({ title: 'x', assignedTo: 'tech-1' }, operation),
+      ).resolves.toEqual(created);
+    });
+
+    it('update() โดย Operation ยังสำเร็จปกติแม้ auditLog.create reject', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      task.update.mockResolvedValue({ ...sampleTask, title: 'แก้ไขแล้ว' });
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.update(sampleTask.id, { title: 'แก้ไขแล้ว' }, operation),
+      ).resolves.toEqual({ ...sampleTask, title: 'แก้ไขแล้ว' });
+    });
+
+    it('update() โดย ST/OT ยังสำเร็จปกติแม้ auditLog.create reject', async () => {
+      task.updateMany.mockResolvedValue({ count: 1 });
+      task.findUniqueOrThrow.mockResolvedValue({
+        ...sampleTask,
+        status: 'completed',
+      });
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.update(sampleTask.id, { status: 'completed' }, owner),
+      ).resolves.toEqual({ ...sampleTask, status: 'completed' });
     });
   });
 });
