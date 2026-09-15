@@ -41,7 +41,7 @@ workflow มอบหมายซ้ำ — ตลอดไป ไม่ใช�
 | ฝั่ง | ขอบเขตถาวร |
 |---|---|
 | มือถือ (ช่าง ST/OT) | list "งานของฉัน" + เปิดดูรายละเอียด + กดอัปเดตสถานะ — **ทำเสร็จแล้ว ไม่ต้องแตะ** |
-| เว็บ (Operation) | (ก) ตาราง list "งานไหนมอบหมายให้ใคร สถานะอะไร" (ข) ฟอร์มมอบหมายขั้นต่ำ 6 ช่อง (`title`, `description`, `assignedTo`, `deviceId`, `configId`, `dueDate`) เปิดเป็น Dialog จากปุ่มในหน้า `/tasks` |
+| เว็บ (Operation) | ~~(ก) ตาราง list "งานไหนมอบหมายให้ใคร สถานะอะไร" (ข) ฟอร์มมอบหมายขั้นต่ำ 6 ช่อง (`title`, `description`, `assignedTo`, `deviceId`, `configId`, `dueDate`) เปิดเป็น Dialog จากปุ่มในหน้า `/tasks`~~ — **ยกเลิกทั้งหมดในภายหลัง** (Sprint 2 #7, มติพี่เลี้ยง — ดู `docs/planning/02_GPS_Development_Plan.md` แถวที่ 7 + `RBAC_Matrix.md` changelog แก้ครั้งที่ 26/29) ไม่มีแผนทำหน้านี้อีก และแนวคิดย้ายไปไว้ใน Campaign Wizard ก็ถูกตัดออกด้วยเช่นกัน (2026-09-14) |
 
 **ทำเลยรอบนี้**
 - `web/src/app/(app)/tasks/page.tsx` — comment out เนื้อหา เหลือ placeholder (หรือลบ route ชั่วคราว) พร้อม TODO ชี้เอกสารนี้

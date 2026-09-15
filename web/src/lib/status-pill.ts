@@ -47,6 +47,16 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
   decommissioned: "danger",
 };
 
+/** Campaign lifecycle: v1 สร้างแล้ว active ทันที (ไม่มี draft/approval
+ * workflow ของตัวเอง) — completed/cancelled ยังไม่มี endpoint เปลี่ยนสถานะ
+ * เข้า-ออก (รอ Campaign Monitor, Sprint 3 #22) */
+export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
+  draft: "neutral",
+  active: "progress",
+  completed: "success",
+  cancelled: "danger",
+};
+
 /** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend
  * ตั้งเป็น stored/failed ทันทีเสมอ เพราะอัปโหลดขึ้น Object Storage แบบ
  * synchronous) แต่ enum อนุญาตไว้เผื่ออนาคต (เช่น อัปโหลดไฟล์ใหญ่แบบ async) */
