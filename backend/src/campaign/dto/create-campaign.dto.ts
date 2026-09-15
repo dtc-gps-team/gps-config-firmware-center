@@ -12,42 +12,39 @@ import {
 } from 'class-validator';
 import { CampaignPayloadType } from '@prisma/client';
 
-/** เครื่องเป้าหมายหนึ่งตัวของแคมเปญ + คนที่ต้องไปติดตั้งหน้างาน — คู่กับ
- * `model CampaignTarget` (เก็บแค่ deviceId) และ `Task.assignedTo` (ผู้รับผิดชอบ
- * เก็บที่ Task ไม่ใช่ CampaignTarget — ดู comment เหนือ model CampaignTarget
- * ใน schema.prisma) */
+/** เครื่องเป้าหมายหนึ่งตัวของแคมเปญ — คู่กับ `model CampaignTarget` (เก็บแค่
+ * deviceId)
+ *
+ * **แก้ไข 2026-09-14:** เดิม DTO นี้มี field `assignedTo` (user id ของช่าง
+ * หน้างานที่รับผิดชอบเครื่องนี้) เพื่อสร้าง Task ต่อเครื่องพร้อมมอบหมายงาน
+ * ตอน submit — หัวหน้าแก้ scope ว่า Campaign มีไว้สำหรับติดตาม/บำรุงรักษา
+ * อุปกรณ์เป็นกลุ่มเท่านั้น (อัปเดต Config/Firmware + สังเกตความผิดปกติ)
+ * **ไม่ใช่มอบหมายงานให้ช่างหน้างาน** เพราะการมอบหมายงานเป็นหน้าที่ของระบบ
+ * แยกที่บริษัทมีอยู่แล้ว — ทำเองจะซ้อนทับระบบ จึงตัด `assignedTo` และการสร้าง
+ * Task ออกจาก Campaign ทั้งหมด (ดู RBAC_Matrix.md changelog) */
 export class CreateCampaignTargetDto {
   /** `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน — mirror
    * ทุก endpoint อื่นที่อ้างอุปกรณ์ (`applyConfigToDevice`, `Task.deviceId`) */
   @IsString()
   @MinLength(1)
   deviceId!: string;
-
-  /** user id ของช่างหน้างาน (ST/OT) ที่รับผิดชอบเครื่องนี้ — ไม่บังคับ role
-   * ที่ระดับ validation (mirror TaskService.create ที่ไม่เช็ค role ของ
-   * assignedTo เช่นกัน) แต่ service จะเช็คว่า user มีอยู่จริง+active เพราะ
-   * `Task.assignedTo` มี FK ไป `User.id` จริง (ต่างจาก `CampaignTarget.deviceId`
-   * ที่เป็น loose string) — insert ทีเดียวหลายแถวถ้ามี id ผิดจะเจอ FK violation
-   * ที่อ่านยาก ถ้าไม่เช็คก่อน */
-  @IsString()
-  @MinLength(1)
-  assignedTo!: string;
 }
 
 /**
  * Body ของ `POST /campaigns` (Campaign Wizard #21) — Operation เท่านั้น
  * (RBAC_Matrix.md §2 แถว "Campaign Wizard" คอลัมน์ Operation = C, R, U)
  *
- * รวม 3 ขั้นแรกของ wizard (เลือกเป้าหมาย+มอบหมาย / เลือก Payload /
- * ตรวจสอบ&ยืนยัน) เป็น request เดียว — ขั้น "กำหนดกลยุทธ์ Rollout" ไม่มี field
- * ในนี้เพราะ v1 ตัด rollout strategy ออกหมด (canary/batch/auto-pause) เหลือ
- * "ส่งพร้อมกันหมด" ค่าเดียว ไม่ต้องรับ input อะไรเพิ่ม (ดู comment เหนือ
- * `model Campaign` ใน schema.prisma)
+ * รวม 3 ขั้นแรกของ wizard (เลือกเป้าหมาย / เลือก Payload / ตรวจสอบ&ยืนยัน)
+ * เป็น request เดียว — ขั้น "กำหนดกลยุทธ์ Rollout" ไม่มี field ในนี้เพราะ v1
+ * ตัด rollout strategy ออกหมด (canary/batch/auto-pause) เหลือ "ส่งพร้อมกันหมด"
+ * ค่าเดียว ไม่ต้องรับ input อะไรเพิ่ม (ดู comment เหนือ `model Campaign` ใน
+ * schema.prisma)
  *
- * **`payloadType: Firmware` ยังไม่รองรับ** (service throw 400) — ตอนนี้ยังไม่มี
- * backend `firmware` module เลย ไม่มีทางสร้าง Firmware record ผ่าน API ให้เลือก
- * เลย รอ Sprint 3 #23 ก่อนค่อยเปิด (ตัดสินใจกับ paveekornk เอง 2026-09-11 —
- * ดู RBAC_Matrix.md changelog)
+ * **แก้ไข 2026-09-14: เปิดรับ `payloadType: Firmware` แล้ว** — ตอนที่เขียน DTO
+ * นี้ครั้งแรก (Sprint 3 #21) ยังไม่มี backend `firmware` module เลย จึง block
+ * ไว้ก่อน ตอนนี้ Sprint 3 #23 (PR #151) implement เสร็จแล้ว จึงเพิ่ม field
+ * `firmwareId` เข้ามาคู่กับ `configId` — บังคับให้ระบุอย่างใดอย่างหนึ่งตาม
+ * `payloadType` (validate ใน service อีกชั้นด้วย defensive)
  */
 export class CreateCampaignDto {
   @IsString()
@@ -61,12 +58,15 @@ export class CreateCampaignDto {
   @IsEnum(CampaignPayloadType)
   payloadType!: CampaignPayloadType;
 
-  /** บังคับเฉพาะตอน payloadType=Config (ตัวเดียวที่รองรับตอนนี้) — ไม่มี field
-   * `firmwareId` ใน DTO นี้เลยโดยตั้งใจ (ไม่รับผ่าน API จนกว่าจะมี firmware
-   * module จริง) */
+  /** บังคับเฉพาะตอน payloadType=Config */
   @ValidateIf((dto: CreateCampaignDto) => dto.payloadType === 'Config')
   @IsUUID()
   configId?: string;
+
+  /** บังคับเฉพาะตอน payloadType=Firmware */
+  @ValidateIf((dto: CreateCampaignDto) => dto.payloadType === 'Firmware')
+  @IsUUID()
+  firmwareId?: string;
 
   @IsArray()
   @ArrayMinSize(1)
