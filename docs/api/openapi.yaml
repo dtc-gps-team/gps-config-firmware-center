@@ -865,7 +865,7 @@ paths:
     get:
       tags: [firmware]
       operationId: listFirmware
-      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ (v3.21)
+      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ (v3.23)
       description: ทุก Role ที่ login แล้วเรียกได้ (resource `firmware` action `Read`) เรียงตาม `uploadedAt` desc
       responses:
         "200":
@@ -881,7 +881,7 @@ paths:
     post:
       tags: [firmware]
       operationId: uploadFirmware
-      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.21 implement จริง)
+      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.23 implement จริง)
       description: >-
         **SW เท่านั้น** (resource `firmware` action `Create`) — อัปโหลดไฟล์ขึ้น
         Object Storage (MinIO ตอนนี้ → AWS S3 ตอนใช้งานจริง) แบบ synchronous
@@ -923,7 +923,7 @@ paths:
     get:
       tags: [firmware]
       operationId: getFirmware
-      summary: รายละเอียด Firmware 1 รายการ (v3.21)
+      summary: รายละเอียด Firmware 1 รายการ (v3.23)
       description: เหมือน `listFirmware` — resource `firmware` action `Read` เดียวกัน
       parameters:
         - in: path
@@ -946,7 +946,7 @@ paths:
     patch:
       tags: [firmware]
       operationId: updateFirmwareCompatibility
-      summary: แก้ Compatibility Tag (v3.21)
+      summary: แก้ Compatibility Tag (v3.23)
       description: >-
         **SW เท่านั้น** (resource `firmware` action `Update`) — แทนที่
         `deviceModelCompatibility` ทั้ง array เสมอ (ไม่ merge กับของเดิม) แยก
@@ -991,7 +991,7 @@ paths:
     post:
       tags: [firmware]
       operationId: simulateFirmware
-      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.21 implement จริง)
+      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.23 implement จริง)
       description: >-
         SW/Operation/ST/OT (resource `firmware-simulation` action `Read` —
         แยกจาก `firmware` ธรรมดา mirror `config`/`config-simulation` กัน
@@ -1406,7 +1406,7 @@ paths:
     get:
       tags: [customer]
       operationId: listCustomers
-      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.21
+      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.22
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
         PermissionGuard — pattern เดียวกับ /users) · เรียงตามชื่อบริษัท
@@ -1455,7 +1455,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.22
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.24
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว แล้ว active
@@ -2081,7 +2081,7 @@ components:
     Firmware:
       type: object
       description: >-
-        1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.21) — `objectKey`/
+        1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.23) — `objectKey`/
         `originalFilename`/`fileSizeBytes` ปิด gap ที่ `01_GPS_Build_Reference.md`
         §3 ระบุไว้แต่แรกว่าต้องมี "path ใน Object Storage" แต่ schema เดิม
         (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว
@@ -2116,7 +2116,7 @@ components:
           type: string
           description: >-
             สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก device-status (v3.7) —
-            ยังคงเป็น `unknown` เสมอในเวอร์ชันนี้ (v3.21) เพราะ device-status
+            ยังคงเป็น `unknown` เสมอในเวอร์ชันนี้ (v3.23) เพราะ device-status
             ยังไม่ implement (ดู RBAC_Matrix.md Section 6)
           enum: [unknown, up_to_date, pending_update]
         objectKey:

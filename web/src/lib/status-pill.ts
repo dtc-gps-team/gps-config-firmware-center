@@ -56,3 +56,20 @@ export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
   completed: "success",
   cancelled: "danger",
 };
+
+/** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend
+ * ตั้งเป็น stored/failed ทันทีเสมอ เพราะอัปโหลดขึ้น Object Storage แบบ
+ * synchronous) แต่ enum อนุญาตไว้เผื่ออนาคต (เช่น อัปโหลดไฟล์ใหญ่แบบ async) */
+export const FIRMWARE_UPLOAD_STATUS_TONE: Record<string, PillTone> = {
+  pending: "progress",
+  stored: "success",
+  failed: "danger",
+};
+
+/** Firmware.deviceUpdateStatus — คงเป็น `unknown` เสมอตอนนี้ (รอ device-status
+ * module — ดู RBAC_Matrix.md Section 6) แต่ใส่ tone ให้ครบ enum ไว้ก่อน */
+export const FIRMWARE_DEVICE_UPDATE_STATUS_TONE: Record<string, PillTone> = {
+  unknown: "neutral",
+  up_to_date: "success",
+  pending_update: "progress",
+};
