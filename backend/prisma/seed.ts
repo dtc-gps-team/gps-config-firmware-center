@@ -224,6 +224,11 @@ async function main() {
     // ---- firmware (Sprint 3 #23 — Firmware Repository) ----
     grant('SW', 'firmware', 'Create'),
     grant('SW', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
+    // เพิ่มใหม่: RBAC_Matrix.md Section 2 ระบุ Firmware Repository = SW: C,R,U
+    // แต่ seed เดิมมีแค่ C,U ขาด R — บั๊กเดียวกับที่เคยเจอกับ config (ดู
+    // comment เหนือ grant('SW','config','Read') ด้านบน) ทำให้ SW เปิดหน้า
+    // /firmware เองไม่ได้เลย (403 "ไม่มีสิทธิ์ Read บน resource firmware")
+    grant('SW', 'firmware', 'Read'),
     grant('Operation', 'firmware', 'Read'),
     grant('ST', 'firmware', 'Read'),
     grant('OT', 'firmware', 'Read'),
@@ -643,6 +648,11 @@ async function main() {
     deviceModel: string;
     protocol: string;
     status: 'registered' | 'installed';
+    // ชื่อบริษัทสมมติ (ดู demoCustomers ด้านล่าง) — undefined = ยังไม่ผูกลูกค้า
+    // (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) ตั้งชื่อเองล้วนๆ
+    // **ห้ามใช้ชื่อ/ข้อมูลจริงจาก schema DMS เดิมที่พี่เลี้ยงให้มาเด็ดขาด**
+    // (มี PII จริง เก็บไว้นอก repo เท่านั้น — ดู docs/12 §3.5)
+    customerName?: string;
   }[] = [
     {
       deviceId: 'DEV-0001',
@@ -650,6 +660,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'ABC Logistics',
     },
     {
       deviceId: 'DEV-0002',
@@ -657,6 +668,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'ABC Logistics',
     },
     {
       deviceId: 'DEV-0003',
@@ -664,6 +676,7 @@ async function main() {
       deviceModel: 'GT06L',
       protocol: 'TCP',
       status: 'installed',
+      customerName: 'Northern Fleet',
     },
     {
       deviceId: 'DEV-0004',
@@ -671,6 +684,7 @@ async function main() {
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
+      // ไม่ผูกลูกค้า — ไว้ทดสอบ filter "ลูกค้า: ไม่ระบุ" / แถวที่ customerId null
     },
     // ยังไม่ติดตั้ง — ไว้ทดสอบ 409 ของ test-connection / apply-config
     {
@@ -682,19 +696,44 @@ async function main() {
     },
   ];
 
-  for (const d of demoDevices) {
+  // Customer ตัวอย่าง (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) — ชื่อ
+  // สมมติล้วนๆ ตาม mockup หน้า Device Search ที่ A ทำไว้ (ABC Logistics /
+  // Northern Fleet / Metro Transit) ไม่ได้อิงจากข้อมูลลูกค้าจริงใดๆ — Metro
+  // Transit ตั้งใจไม่ผูกกับ device ไหนเลย ไว้ทดสอบว่าลูกค้าที่ยังไม่มีอุปกรณ์
+  // เลยก็ยังต้องโผล่ใน dropdown filter ได้ปกติ
+  const demoCustomers = [
+    { companyName: 'ABC Logistics' },
+    { companyName: 'Northern Fleet' },
+    { companyName: 'Metro Transit' },
+  ];
+
+  for (const c of demoCustomers) {
+    await prisma.customer.upsert({
+      where: { companyName: c.companyName },
+      update: {},
+      create: c,
+    });
+  }
+
+  for (const { customerName, ...d } of demoDevices) {
+    const customer = customerName
+      ? await prisma.customer.findUniqueOrThrow({
+          where: { companyName: customerName },
+        })
+      : null;
     await prisma.device.upsert({
       where: { deviceId: d.deviceId },
       update: {},
       create: {
         ...d,
         installedAt: d.status === 'installed' ? new Date() : null,
+        customerId: customer?.id,
       },
     });
   }
 
   console.log(
-    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoDevices.length} devices.`,
+    `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices.`,
   );
 }
 

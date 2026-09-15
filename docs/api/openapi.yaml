@@ -865,7 +865,7 @@ paths:
     get:
       tags: [firmware]
       operationId: listFirmware
-      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ (v3.21)
+      summary: รายการ Firmware ที่อัปโหลดเข้าระบบ (v3.23)
       description: ทุก Role ที่ login แล้วเรียกได้ (resource `firmware` action `Read`) เรียงตาม `uploadedAt` desc
       responses:
         "200":
@@ -881,7 +881,7 @@ paths:
     post:
       tags: [firmware]
       operationId: uploadFirmware
-      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.21 implement จริง)
+      summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.23 implement จริง)
       description: >-
         **SW เท่านั้น** (resource `firmware` action `Create`) — อัปโหลดไฟล์ขึ้น
         Object Storage (MinIO ตอนนี้ → AWS S3 ตอนใช้งานจริง) แบบ synchronous
@@ -923,7 +923,7 @@ paths:
     get:
       tags: [firmware]
       operationId: getFirmware
-      summary: รายละเอียด Firmware 1 รายการ (v3.21)
+      summary: รายละเอียด Firmware 1 รายการ (v3.23)
       description: เหมือน `listFirmware` — resource `firmware` action `Read` เดียวกัน
       parameters:
         - in: path
@@ -946,7 +946,7 @@ paths:
     patch:
       tags: [firmware]
       operationId: updateFirmwareCompatibility
-      summary: แก้ Compatibility Tag (v3.21)
+      summary: แก้ Compatibility Tag (v3.23)
       description: >-
         **SW เท่านั้น** (resource `firmware` action `Update`) — แทนที่
         `deviceModelCompatibility` ทั้ง array เสมอ (ไม่ merge กับของเดิม) แยก
@@ -991,7 +991,7 @@ paths:
     post:
       tags: [firmware]
       operationId: simulateFirmware
-      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.21 implement จริง)
+      summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.23 implement จริง)
       description: >-
         SW/Operation/ST/OT (resource `firmware-simulation` action `Read` —
         แยกจาก `firmware` ธรรมดา mirror `config`/`config-simulation` กัน
@@ -1402,6 +1402,30 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
 
+  /customers:
+    get:
+      tags: [customer]
+      operationId: listCustomers
+      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.22
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
+        PermissionGuard — pattern เดียวกับ /users) · เรียงตามชื่อบริษัท
+        · ใช้ทำ dropdown filter "ลูกค้า" บนหน้า Device Search
+        (docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) · **ไม่ใช่**
+        จอ "จัดการลูกค้า" (Admin CRUD) — ตัดสินใจร่วมกันแล้วว่าเกินขอบเขต
+        ตอนนี้ ลูกค้าเพิ่ม/แก้ได้ผ่าน seed เท่านั้น
+      responses:
+        "200":
+          description: รายชื่อลูกค้าทั้งหมด (เรียงตามชื่อบริษัท)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerSummary"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
   /campaigns:
     get:
       tags: [campaign]
@@ -1431,7 +1455,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.22
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.24
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว แล้ว active
@@ -2057,7 +2081,7 @@ components:
     Firmware:
       type: object
       description: >-
-        1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.21) — `objectKey`/
+        1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.23) — `objectKey`/
         `originalFilename`/`fileSizeBytes` ปิด gap ที่ `01_GPS_Build_Reference.md`
         §3 ระบุไว้แต่แรกว่าต้องมี "path ใน Object Storage" แต่ schema เดิม
         (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว
@@ -2092,7 +2116,7 @@ components:
           type: string
           description: >-
             สถานะอัปเดตเวอร์ชันจริงของกล่อง อ้างอิงจาก device-status (v3.7) —
-            ยังคงเป็น `unknown` เสมอในเวอร์ชันนี้ (v3.21) เพราะ device-status
+            ยังคงเป็น `unknown` เสมอในเวอร์ชันนี้ (v3.23) เพราะ device-status
             ยังไม่ implement (ดู RBAC_Matrix.md Section 6)
           enum: [unknown, up_to_date, pending_update]
         objectKey:
@@ -2219,8 +2243,9 @@ components:
       description: >-
         อุปกรณ์ GPS หนึ่งเครื่อง (ตรงกับ Prisma model Device — MVP ตาม
         ../planning/03_GPS_Detailed_Build_Steps.md Phase 0 ข้อ 8 · ยังไม่มี FK
-        ไป Vehicle/Customer/HardwareRevision ตาม Data Dictionary — ดู
-        schema.prisma comment + docs/12_CustomerScope_Proposal.md)
+        ไป Vehicle/HardwareRevision ตาม Data Dictionary (`customer` เพิ่มแล้ว
+        — docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) — ดู
+        schema.prisma comment)
       required:
         [id, deviceId, simNumber, deviceModel, protocol, status, registeredAt]
       properties:
@@ -2250,6 +2275,31 @@ components:
           type: string
           format: date-time
           nullable: true
+        customer:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CustomerSummary"
+          nullable: true
+          description: >-
+            ลูกค้าที่ผูกกับอุปกรณ์นี้ (ถ้ามี) — null = ยังไม่ได้กำหนดลูกค้า
+            รอบนี้เป็น read-only เท่านั้น ยังไม่มี endpoint กำหนด/แก้ลูกค้า
+            ของอุปกรณ์ (ดู docs/12 เฟส B ส่วน "ยังไม่ทำ")
+
+    CustomerSummary:
+      type: object
+      description: >-
+        ข้อมูลลูกค้าแบบย่อ (listCustomers, embed ใน Device) — id + ชื่อบริษัท
+        เท่านั้น ไม่มี contactName/email/phone/priorityTier (docs/12
+        เฟส B, PR #127/#153) — ทุก role ที่ login แล้วเรียกได้ ไม่ควรคืน
+        ข้อมูลติดต่อของลูกค้าที่ละเอียดกว่านี้
+      required: [id, companyName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+          example: ABC Logistics
 
     Incident:
       type: object

@@ -1,4 +1,5 @@
 import { apiJson } from "@/lib/api";
+import type { CustomerSummary } from "@/lib/customer-api";
 
 /**
  * Device API client — ตรงกับ `docs/api/openapi.yaml` tag `device`
@@ -25,6 +26,9 @@ export type Device = {
   status: DeviceStatus;
   registeredAt: string;
   installedAt: string | null;
+  /** ลูกค้าที่ผูกไว้ (ถ้ามี) — null = ยังไม่ได้กำหนดลูกค้า (docs/12 เฟส B,
+   * PR #127/#153) — read-only รอบนี้ ยังไม่มี endpoint กำหนด/แก้ */
+  customer: CustomerSummary | null;
 };
 
 export type ListDevicesParams = {
