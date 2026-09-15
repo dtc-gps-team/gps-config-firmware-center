@@ -60,6 +60,30 @@ export function canUploadFirmware(role: string | null | undefined): boolean {
 }
 
 /**
+ * ฟอร์มแก้ Compatibility Tag ของ Firmware — RBAC_Matrix.md ตาราง 4.1
+ * `PATCH /firmware/{firmwareId}`: SW เท่านั้น (resource `firmware` action
+ * `Update`) แยกฟังก์ชันจาก `canUploadFirmware` แม้ role set จะเหมือนกันตอนนี้
+ * เพราะ backend เองก็แยก action Create/Update ไว้คนละสิทธิ์
+ */
+export function canUpdateFirmwareCompatibility(
+  role: string | null | undefined,
+): boolean {
+  return role === "SW";
+}
+
+/**
+ * ปุ่ม "ทดสอบ Firmware" — RBAC_Matrix.md ตาราง 4.1 `POST /firmware/{firmwareId}/simulate`:
+ * resource แยก `firmware-simulation` (ไม่ใช่ `firmware` เฉยๆ) — SW/Operation/ST/OT
+ * เท่านั้น กัน Auditor/Admin ที่มีแค่ `firmware.Read` เห็นปุ่มนี้โดยไม่ตั้งใจ
+ * (mirror `config`/`config-simulation`)
+ */
+export function canSimulateFirmware(role: string | null | undefined): boolean {
+  return (
+    role === "SW" || role === "Operation" || role === "ST" || role === "OT"
+  );
+}
+
+/**
  * Override Config/Firmware รายเครื่อง — Section 2: ST, OT เท่านั้น
  * (C, R, U, O) ยังไม่มีหน้านี้ scaffold ไว้ใน NAV_ITEMS ตอนนี้ — เตรียมไว้
  * ล่วงหน้าเผื่อเพิ่มหน้านี้ทีหลัง

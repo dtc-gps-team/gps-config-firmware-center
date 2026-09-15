@@ -116,13 +116,16 @@ model Task {
   // TaskService) จึงไม่มีทางถูก ConfigService.remove() ลบอยู่แล้ว (เช็ค
   // status === 'draft')
   configId    String?
-  // Campaign ต้นทางของ Task นี้ — เฉพาะ Task ที่เกิดจากขั้น "มอบหมายผู้
-  // รับผิดชอบหน้างาน" ตอนสร้าง Campaign (Sprint 3 #21 Campaign Wizard)
-  // Task ที่สร้างแบบอื่น (ถ้ามี) configId/campaignId เป็น null ทั้งคู่ —
-  // ตัดสินใจร่วมกับ kittiphong (B) หลัง PR #144 review comment (Task.configId
-  // เป็น null หมดในทางปฏิบัติเพราะไม่มีทางป้อนข้อมูลจริงมาก่อนหน้านี้ —
-  // ที่มาจริงคือ Campaign Wizard ไม่ใช่หน้า Task Management แยก ซึ่งถูกยกเลิก
-  // ถาวรแล้ว ดู web/src/app/(app)/_tasks/README.md)
+  // Campaign ต้นทางของ Task นี้ — เดิมตั้งใจให้เป็น Task ที่เกิดจากขั้น
+  // "มอบหมายผู้รับผิดชอบหน้างาน" ตอนสร้าง Campaign (Sprint 3 #21 Campaign
+  // Wizard) ตัดสินใจร่วมกับ kittiphong (B) หลัง PR #144 review comment
+  //
+  // **แก้ไข 2026-09-14:** หัวหน้าแก้ scope ว่า Campaign ไม่มอบหมายงานให้ช่าง
+  // หน้างานอีกต่อไป (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) —
+  // `CampaignService.create()` ไม่สร้าง Task แล้ว field นี้จึงไม่มีทางถูกตั้ง
+  // ค่าจาก path นี้อีก (เป็น null เสมอในทางปฏิบัติ) เหลือไว้เผื่ออนาคตมีช่อง
+  // ทางอื่นเชื่อม Task เข้ากับ Campaign — Task Management หน้าแยกเดิมก็ถูก
+  // ยกเลิกถาวรไปแล้วเช่นกัน ดู web/src/app/(app)/_tasks/README.md)
   //
   // onDelete: SetNull เหมือน configId ด้านบน — ลบ Campaign ไม่ควร cascade
   // ลบ Task ที่เป็นงานปฏิบัติการจริง
@@ -213,6 +216,13 @@ model DeviceToken {
 // จะเพิ่ม FK ไปยัง Vehicle/Customer/HardwareRevision ทีหลังเมื่อ model เหล่านั้น
 // ถูกสร้างจริง
 //
+// **อัปเดต 2026-09-14 (docs/12_CustomerScope_Proposal.md เฟส B, PR #127):**
+// เพิ่ม `model Customer` + `Device.customerId` (nullable FK) กลับเข้ามาแล้ว —
+// ใช้เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น (ตาม mockup ที่ A
+// ทำไว้ตั้งแต่แรก) ไม่ใช่ RBAC scope — ST/OT ยังเห็นทุกอุปกรณ์เหมือนเดิม
+// (Customer Scope จริงยังเป็นเฟส C แยกต่างหาก ยังไม่ทำ) `Vehicle`/
+// `HardwareRevision` ยังไม่ถูกสร้าง เหมือนเดิม
+//
 // ตั้งชื่อ enum ว่า DeviceLifecycleStatus (ไม่ใช่ DeviceStatus) เพื่อไม่ให้ปนกับ
 // schema DeviceStatus ใน docs/api/openapi.yaml ซึ่งเป็นคนละแนวคิด (response
 // object รวมสถานะ config+firmware ของกล่อง ไม่ใช่สถานะวงจรชีวิตของกล่องเอง)
@@ -256,6 +266,26 @@ enum DeviceLifecycleStatus {
   decommissioned
 }
 
+// Customer (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) — field ตรงตาม
+// GPS_Data_Dictionary.xlsx เท่าที่ยืนยันได้จาก schema DMS เดิมที่พี่เลี้ยงให้มา
+// (§3.5 ของเอกสาร: คอลัมน์ `customer`/`cus_id` ยืนยันว่า entity นี้มีจริง) —
+// `companyName` บังคับ+unique (กัน dropdown filter ในหน้า Device Search มีชื่อ
+// ซ้ำสะกดต่างกัน) ฟิลด์อื่นเป็น optional เพราะยังไม่ยืนยันว่า MVP ต้องกรอกครบ
+// ทุกช่อง — `priorityTier` เก็บเป็น string เฉยๆ ไม่ทำ enum เพราะยังไม่ยืนยันค่า
+// จริงจากพี่เลี้ยง (docs/12 §8 คำถามเปิดข้อ 4) ใช้แค่แสดงผล ไม่มี logic ผูกอยู่
+model Customer {
+  id           String   @id @default(uuid())
+  companyName  String   @unique
+  contactName  String?
+  email        String?
+  phone        String?
+  priorityTier String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  devices Device[]
+}
+
 model Device {
   id           String                @id @default(uuid())
   deviceId     String                @unique
@@ -265,6 +295,11 @@ model Device {
   status       DeviceLifecycleStatus @default(registered)
   registeredAt DateTime              @default(now())
   installedAt  DateTime?
+  // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
+  // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
+  // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +514,14 @@ model Firmware {
   deviceModelCompatibility String[]
   uploadStatus             FirmwareUploadStatus       @default(pending)
   deviceUpdateStatus       FirmwareDeviceUpdateStatus @default(unknown)
+  // 3 field ด้านล่าง — `01_GPS_Build_Reference.md` §3 ระบุไว้แต่แรกว่าตาราง
+  // Firmware ต้องมี "path ใน Object Storage" แต่ schema เดิม (ก่อน Sprint 3
+  // #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว — ปิด gap นี้ตอน implement
+  // module จริง (ไม่ใช่แค่ objectKey เฉยๆ — เก็บชื่อไฟล์เดิม+ขนาดไว้ด้วยเพื่อ
+  // แสดงผลบนหน้าเว็บ/ตรวจสอบภายหลัง โดยไม่ต้องไปเรียก HEAD object ที่ MinIO)
+  objectKey                String
+  originalFilename         String
+  fileSizeBytes            Int
   uploadedBy               String
   uploadedAt               DateTime                   @default(now())
 
@@ -497,9 +540,17 @@ model Firmware {
 // ละเอียด
 //
 // **อัปเดต:** เอา `CAMPAIGN_TARGET` กลับมา (ดู `model CampaignTarget`
-// ด้านล่าง) เพราะ Campaign Wizard (#21) ต้องรู้ target list จริงถึงจะสร้าง
-// Task ต่อเครื่องได้ (ตัดสินใจร่วมกับ B หลัง PR #144) — `CAMPAIGN_BATCHES`/
-// rollout strategy/canary/auto-pause **ยังตัดออกเหมือนเดิม** (ยังไม่ใช่ MVP)
+// ด้านล่าง) เพราะ Campaign Wizard (#21) ต้องรู้ target list จริง —
+// `CAMPAIGN_BATCHES`/rollout strategy/canary/auto-pause **ยังตัดออกเหมือนเดิม**
+// (ยังไม่ใช่ MVP)
+//
+// **แก้ไข 2026-09-14:** เดิม comment ตรงนี้ระบุว่า target list มีไว้ "ถึงจะ
+// สร้าง Task ต่อเครื่องได้" — หัวหน้าแก้ scope ว่า Campaign มีไว้ติดตาม/
+// บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น (อัปเดต Config/Firmware + สังเกตความ
+// ผิดปกติ) ไม่ใช่มอบหมายงานให้ช่างหน้างาน (เป็นหน้าที่ของระบบแยกที่บริษัทมี
+// อยู่แล้ว) `CampaignService.create()` จึงไม่สร้าง `Task` อีกต่อไป —
+// `Campaign.tasks` ด้านล่างเหลือไว้เป็น relation เปล่า (ไม่มีอะไรเขียนเข้า
+// จาก module นี้แล้ว) เผื่ออนาคตมีช่องทางอื่นเชื่อม Task เข้ากับ Campaign
 //
 // เพิ่ม payloadType + configId/firmwareId (nullable ตามชนิด) จาก Data
 // Dictionary จริง (DEPLOYMENT_CAMPAIGN.payload_type / firmware_id /
@@ -557,17 +608,17 @@ model Campaign {
 // เอาแค่ตารางเดียวจาก 3 ตารางเดิมที่ถูกตัดออกตอนทำ Campaign MVP
 // (CAMPAIGN_TARGET / CAMPAIGN_BATCHES / CAMPAIGN_ASSIGNMENT — ดู comment
 // เหนือ model Campaign) เพราะเป็น prerequisite ของ Sprint 3 #21 (Campaign
-// Wizard ต้องรู้ target list จริง ไม่ใช่แค่ `targetCount` ตัวเลขรวม) และเป็น
-// input ให้ TaskService สร้าง Task ต่อเครื่องพร้อม `Task.campaignId` ด้านบน
-// — ตัดสินใจร่วมกับ kittiphong (B) หลัง PR #144 review comment
+// Wizard ต้องรู้ target list จริง ไม่ใช่แค่ `targetCount` ตัวเลขรวม)
 //
 // deviceId เป็น string หลวมๆ ไม่ใช่ Prisma relation ไปยัง Device.id — mirror
 // `Task.deviceId` ทุกประการ (ค่านี้คือเลขเครื่องจริงจาก `Device.deviceId`
 // ไม่ใช่ `Device.id` UUID ภายใน — Device model เองก็ไม่มี relation กลับมา)
 //
-// ไม่มี `assignedTo` ในตารางนี้โดยตั้งใจ (YAGNI) — ผู้รับผิดชอบหน้างานเก็บที่
-// `Task.assignedTo` ของ Task ที่ระบบสร้างให้ตรงๆ ตอน submit Campaign Wizard
-// ไม่ต้องเก็บซ้ำสองที่
+// ไม่มี `assignedTo` ในตารางนี้ — เดิมมีแผนให้เป็น input สร้าง `Task` ต่อเครื่อง
+// พร้อมมอบหมายผู้รับผิดชอบหน้างานตอน submit Campaign Wizard (ตัดสินใจร่วมกับ
+// kittiphong (B) หลัง PR #144) **แก้ไข 2026-09-14:** หัวหน้าแก้ scope ว่า
+// Campaign ไม่ใช่เครื่องมือมอบหมายงาน (เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่
+// แล้ว) จึงตัดทั้งแนวคิด assignedTo และการสร้าง Task ออกจาก Campaign ทั้งหมด
 model CampaignTarget {
   id         String   @id @default(uuid())
   campaignId String

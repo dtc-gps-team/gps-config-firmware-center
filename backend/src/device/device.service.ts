@@ -6,8 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Device, Prisma } from '@prisma/client';
+import { CustomerSummary } from '../customer/customer.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryDeviceDto } from './dto/query-device.dto';
+
+/** Device + ลูกค้าแบบย่อ (ถ้าผูกไว้) — docs/12_CustomerScope_Proposal.md เฟส B
+ * (PR #127) · ใช้ `CustomerSummary` เดียวกับ `GET /customers` (id +
+ * companyName เท่านั้น ไม่ embed contactName/email/phone) เพราะ Device Search
+ * เปิดให้ทุก role อ่านได้ ไม่ควรพ่วงข้อมูลติดต่อลูกค้าที่ละเอียดกว่านั้นมาด้วย
+ * — mirror pattern `ConfigFieldDefinitionWithSupport` ใน config-definition */
+export type DeviceWithCustomer = Device & { customer: CustomerSummary | null };
 import {
   APPLICABLE_CONFIG_STATUSES,
   CONFIG_APPLIER,
@@ -67,8 +75,13 @@ export class DeviceService {
    * ยังไม่มี paging — จำนวน Device ใน MVP น้อย + UI ทำ filter/search ฝั่ง
    * client (UI standard ../planning/01_GPS_Build_Reference.md §3) · ออกแบบให้
    * เพิ่ม cursor paging ทีหลังได้ถ้าข้อมูลโต
+   *
+   * เพิ่ม `customer` แบบย่อเข้ามาด้วย (docs/12 เฟส B) ให้ Device Search แสดง/
+   * กรองตามลูกค้าได้ — ยัง**ไม่มี query param กรองตาม customerId ในรอบนี้**
+   * (แค่แสดงผล ยังไม่ทำ filter ฝั่ง backend รอดูก่อนว่า filter ฝั่ง client
+   * พอไหมเหมือน deviceModel/protocol/status ที่ผ่านมา)
    */
-  findAll(query: QueryDeviceDto): Promise<Device[]> {
+  findAll(query: QueryDeviceDto): Promise<DeviceWithCustomer[]> {
     const { search, deviceModel, protocol, status } = query;
 
     const where: Prisma.DeviceWhereInput = {
@@ -86,6 +99,7 @@ export class DeviceService {
     return this.prisma.device.findMany({
       where,
       orderBy: { deviceId: 'asc' },
+      include: { customer: { select: { id: true, companyName: true } } },
     });
   }
 
@@ -93,10 +107,15 @@ export class DeviceService {
    * ค้นด้วย `Device.deviceId` (เลขเครื่องจริงที่ช่างกรอก/สแกน) **ไม่ใช่**
    * `Device.id` (surrogate UUID ภายในของ Prisma) — ตกลงกับ paveekornkwork-dev
    * บน PR #52: endpoint ฝั่งช่างหน้างานอ้างด้วยเลขเครื่องจริงเสมอ · ใช้ทั้ง
-   * `GET /devices/{deviceId}` (Device Detail) และ endpoint ช่างหน้างาน
+   * `GET /devices/{deviceId}` (Device Detail) และ endpoint ช่างหน้างาน (ที่ไม่
+   * ได้ใช้ `customer` เลย แต่ join ทิ้งไว้เฉยๆ ไม่คุ้มแยก query ใหม่ ข้อมูล
+   * น้อยมากใน MVP)
    */
-  async findByDeviceId(deviceId: string): Promise<Device> {
-    const device = await this.prisma.device.findUnique({ where: { deviceId } });
+  async findByDeviceId(deviceId: string): Promise<DeviceWithCustomer> {
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+      include: { customer: { select: { id: true, companyName: true } } },
+    });
     if (!device) {
       throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
     }

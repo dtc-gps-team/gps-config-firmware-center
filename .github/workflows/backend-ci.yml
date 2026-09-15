@@ -49,6 +49,15 @@ jobs:
       REDIS_URL: redis://localhost:6379
       LEGACY_SYNC_MODE: mock
       JWT_SECRET: ci-test-secret
+      # Object Storage (Firmware, Sprint 3 #23) — FirmwareStorageService ไม่มี
+      # mock mode (ดู comment ในไฟล์นั้น) เชื่อม MinIO จริงเสมอ ต้องมี service
+      # จริงให้เชื่อมใน CI ด้วย (ดู step "Start MinIO" ด้านล่าง — GitHub Actions
+      # `services:` ไม่รองรับ command override ที่ image quay.io/minio/minio ต้องการ
+      # `server /data` เลยต้อง docker run เองแทนที่จะประกาศเป็น services:)
+      OBJECT_STORAGE_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_ACCESS_KEY: gps_minio_admin
+      OBJECT_STORAGE_SECRET_KEY: gps_minio_password
+      OBJECT_STORAGE_BUCKET: gps-firmware-ci
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +70,32 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Start MinIO
+        run: |
+          # Docker Hub เลิกให้ pull image `minio/minio` แบบ anonymous แล้ว
+          # (เจอ "pull access denied" ตั้งแต่ ก.ย. 2569 เป็นต้นมา ไม่ใช่แค่
+          # rate-limit ชั่วคราว) ย้ายไปดึงจาก quay.io/minio/minio แทน — เช็ค
+          # tag จริงจาก https://quay.io/api/v1/repository/minio/minio/tag/
+          # ก่อน pin เสมอ (tag ที่ pin ไว้ก่อนหน้า RELEASE.2025-10-15T17-29-55Z
+          # ไม่มีอยู่จริงบน quay.io — "manifest unknown" — เป็น tag ที่เดาขึ้น
+          # ไม่ได้เช็ค registry จริงก่อน)
+          docker run -d --name minio -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER=gps_minio_admin \
+            -e MINIO_ROOT_PASSWORD=gps_minio_password \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --console-address ":9001"
+
+          echo "รอ MinIO พร้อมใช้งาน..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live > /dev/null; then
+              echo "MinIO พร้อมแล้ว"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MinIO ไม่พร้อมภายในเวลาที่กำหนด"
+          docker logs minio
+          exit 1
 
       - name: Lint
         run: npm run lint
@@ -104,6 +139,17 @@ jobs:
           # เปลี่ยนชื่อคอลัมน์ roleId, เพิ่ม NOT NULL คอลัมน์ใหม่) ต้องอัปเดต SQL นี้ให้
           # ตรงกับโครงตาราง "ก่อน" migration ล่าสุดตัวใหม่ด้วย ไม่งั้น insert นี้จะ fail
           # แทน (เห็นชัดว่าต้องแก้ ไม่ใช่ false negative แบบเงียบๆ)
+          #
+          # อัปเดต (2026-09-14, PR #151 review): เพิ่ม smoke row ให้ตาราง "Firmware" ด้วย
+          # ในลักษณะเดียวกัน — PR #151 เพิ่มคอลัมน์ NOT NULL แบบไม่มี default (objectKey,
+          # originalFilename, fileSizeBytes) ลงในตาราง Firmware ที่มีอยู่แล้ว ถ้าไม่มี smoke
+          # row ตรงนี้ CI จะผ่านได้เพราะ DB ว่างเปล่าเหมือนบั๊กเดิมของ User table ทุกประการ
+          # โครงตาราง Firmware "ก่อน" migration ล่าสุดมีแค่ id, version,
+          # deviceModelCompatibility, uploadStatus, deviceUpdateStatus, uploadedBy,
+          # uploadedAt — insert หลัง User เพราะ uploadedBy อ้าง FK ไปที่ User.id ที่ insert
+          # ไว้ก่อนหน้า (ใช้ id เดียวกับ smoke user ด้านบน) เช่นเดียวกับกฎของ User table: ถ้า
+          # มี migration ใหม่ในอนาคตที่แก้โครงตาราง Firmware เพิ่ม ต้องอัปเดต SQL นี้ให้ตรงกับ
+          # โครงตาราง "ก่อน" migration ล่าสุดตัวใหม่ด้วยเสมอ
           LATEST_MIGRATION=$(ls -1 prisma/migrations | grep -v migration_lock.toml | sort | tail -n 1)
           echo "Testing latest migration against existing data: $LATEST_MIGRATION"
 
@@ -115,6 +161,8 @@ jobs:
           npx prisma db execute --url "$DATABASE_URL" --stdin <<'SQL'
           INSERT INTO "User" ("id", "username", "passwordHash", "fullName", "roleId", "updatedAt")
           VALUES ('11111111-1111-1111-1111-111111111111', 'ci.smoke.user', 'x', 'CI Smoke User', (SELECT id FROM "Role" WHERE code = 'Operation'), CURRENT_TIMESTAMP);
+          INSERT INTO "Firmware" ("id", "version", "deviceModelCompatibility", "uploadStatus", "deviceUpdateStatus", "uploadedBy", "uploadedAt")
+          VALUES ('22222222-2222-2222-2222-222222222222', 'ci-smoke-1.0.0', ARRAY['CI-TEST-MODEL'], 'pending', 'unknown', '11111111-1111-1111-1111-111111111111', CURRENT_TIMESTAMP);
           SQL
 
           mv "/tmp/held-migration/$LATEST_MIGRATION" prisma/migrations/
