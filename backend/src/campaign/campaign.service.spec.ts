@@ -39,6 +39,13 @@ const installedDeviceB = {
   status: 'installed' as const,
 };
 
+const storedFirmware = {
+  id: 'fw-1',
+  version: '1.2.3',
+  deviceModelCompatibility: ['GT06N'],
+  uploadStatus: 'stored' as const,
+};
+
 const sampleCampaign: Campaign = {
   id: 'campaign-1',
   name: 'แคมเปญทดสอบ',
@@ -67,11 +74,24 @@ function baseDto(): CreateCampaignDto {
   };
 }
 
+function firmwareDto(): CreateCampaignDto {
+  return {
+    name: 'แคมเปญอัปเดตเฟิร์มแวร์ทดสอบ',
+    payloadType: CampaignPayloadType.Firmware,
+    firmwareId: storedFirmware.id,
+    targets: [
+      { deviceId: installedDeviceA.deviceId },
+      { deviceId: installedDeviceB.deviceId },
+    ],
+  };
+}
+
 describe('CampaignService', () => {
   let service: CampaignService;
   let campaign: CampaignDelegateMock;
   let campaignTarget: { createMany: jest.Mock };
   let config: { findUnique: jest.Mock };
+  let firmware: { findUnique: jest.Mock };
   let device: { findMany: jest.Mock };
   let auditLog: { create: jest.Mock };
 
@@ -83,6 +103,7 @@ describe('CampaignService', () => {
     };
     campaignTarget = { createMany: jest.fn().mockResolvedValue({ count: 2 }) };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
+    firmware = { findUnique: jest.fn().mockResolvedValue(storedFirmware) };
     device = {
       findMany: jest
         .fn()
@@ -94,6 +115,7 @@ describe('CampaignService', () => {
       campaign,
       campaignTarget,
       config,
+      firmware,
       device,
       auditLog,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
@@ -162,15 +184,6 @@ describe('CampaignService', () => {
       );
     });
 
-    it('payloadType Firmware -> BadRequestException ยังไม่รองรับ (ไม่มี firmware module)', async () => {
-      const dto = { ...baseDto(), payloadType: CampaignPayloadType.Firmware };
-
-      await expect(service.create(dto, operation)).rejects.toThrow(
-        BadRequestException,
-      );
-      expect(config.findUnique).not.toHaveBeenCalled();
-    });
-
     it('มี deviceId ซ้ำกันในรายการเป้าหมาย -> BadRequestException', async () => {
       const dto = baseDto();
       dto.targets = [
@@ -228,6 +241,79 @@ describe('CampaignService', () => {
       ]);
 
       await expect(service.create(baseDto(), operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('create — payloadType Firmware', () => {
+    it('เป้าหมายครบถ้วน ผ่านทุกเงื่อนไข -> สร้าง Campaign ด้วย firmwareId (configId เป็น null)', async () => {
+      const result = await service.create(firmwareDto(), operation);
+
+      expect(result).toEqual(sampleCampaign);
+      expect(firmware.findUnique).toHaveBeenCalledWith({
+        where: { id: storedFirmware.id },
+      });
+      expect(campaign.create).toHaveBeenCalledWith({
+        data: {
+          name: 'แคมเปญอัปเดตเฟิร์มแวร์ทดสอบ',
+          description: undefined,
+          payloadType: CampaignPayloadType.Firmware,
+          configId: null,
+          firmwareId: storedFirmware.id,
+          status: 'active',
+          targetCount: 2,
+          createdBy: operation.id,
+        },
+      });
+      expect(config.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ระบุ firmwareId -> BadRequestException', async () => {
+      const dto = { ...firmwareDto(), firmwareId: undefined };
+
+      await expect(service.create(dto, operation)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('ไม่พบ Firmware -> NotFoundException', async () => {
+      firmware.findUnique.mockResolvedValue(null);
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('Firmware uploadStatus ไม่ใช่ stored (เช่น pending) -> ConflictException', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...storedFirmware,
+        uploadStatus: 'pending',
+      });
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('Device deviceModel ไม่อยู่ใน deviceModelCompatibility ของ Firmware -> ConflictException', async () => {
+      device.findMany.mockResolvedValue([
+        installedDeviceA,
+        { ...installedDeviceB, deviceModel: 'GT06E' },
+      ]);
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('Device ยังไม่ installed -> ConflictException (เช็คร่วมกับ Config เหมือนกัน)', async () => {
+      device.findMany.mockResolvedValue([
+        installedDeviceA,
+        { ...installedDeviceB, status: 'registered' },
+      ]);
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
         ConflictException,
       );
     });

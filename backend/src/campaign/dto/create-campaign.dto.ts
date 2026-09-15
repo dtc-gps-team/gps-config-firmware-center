@@ -34,16 +34,17 @@ export class CreateCampaignTargetDto {
  * Body ของ `POST /campaigns` (Campaign Wizard #21) — Operation เท่านั้น
  * (RBAC_Matrix.md §2 แถว "Campaign Wizard" คอลัมน์ Operation = C, R, U)
  *
- * รวม 3 ขั้นแรกของ wizard (เลือกเป้าหมาย+มอบหมาย / เลือก Payload /
- * ตรวจสอบ&ยืนยัน) เป็น request เดียว — ขั้น "กำหนดกลยุทธ์ Rollout" ไม่มี field
- * ในนี้เพราะ v1 ตัด rollout strategy ออกหมด (canary/batch/auto-pause) เหลือ
- * "ส่งพร้อมกันหมด" ค่าเดียว ไม่ต้องรับ input อะไรเพิ่ม (ดู comment เหนือ
- * `model Campaign` ใน schema.prisma)
+ * รวม 3 ขั้นแรกของ wizard (เลือกเป้าหมาย / เลือก Payload / ตรวจสอบ&ยืนยัน)
+ * เป็น request เดียว — ขั้น "กำหนดกลยุทธ์ Rollout" ไม่มี field ในนี้เพราะ v1
+ * ตัด rollout strategy ออกหมด (canary/batch/auto-pause) เหลือ "ส่งพร้อมกันหมด"
+ * ค่าเดียว ไม่ต้องรับ input อะไรเพิ่ม (ดู comment เหนือ `model Campaign` ใน
+ * schema.prisma)
  *
- * **`payloadType: Firmware` ยังไม่รองรับ** (service throw 400) — ตอนนี้ยังไม่มี
- * backend `firmware` module เลย ไม่มีทางสร้าง Firmware record ผ่าน API ให้เลือก
- * เลย รอ Sprint 3 #23 ก่อนค่อยเปิด (ตัดสินใจกับ paveekornk เอง 2026-09-11 —
- * ดู RBAC_Matrix.md changelog)
+ * **แก้ไข 2026-09-14: เปิดรับ `payloadType: Firmware` แล้ว** — ตอนที่เขียน DTO
+ * นี้ครั้งแรก (Sprint 3 #21) ยังไม่มี backend `firmware` module เลย จึง block
+ * ไว้ก่อน ตอนนี้ Sprint 3 #23 (PR #151) implement เสร็จแล้ว จึงเพิ่ม field
+ * `firmwareId` เข้ามาคู่กับ `configId` — บังคับให้ระบุอย่างใดอย่างหนึ่งตาม
+ * `payloadType` (validate ใน service อีกชั้นด้วย defensive)
  */
 export class CreateCampaignDto {
   @IsString()
@@ -57,12 +58,15 @@ export class CreateCampaignDto {
   @IsEnum(CampaignPayloadType)
   payloadType!: CampaignPayloadType;
 
-  /** บังคับเฉพาะตอน payloadType=Config (ตัวเดียวที่รองรับตอนนี้) — ไม่มี field
-   * `firmwareId` ใน DTO นี้เลยโดยตั้งใจ (ไม่รับผ่าน API จนกว่าจะมี firmware
-   * module จริง) */
+  /** บังคับเฉพาะตอน payloadType=Config */
   @ValidateIf((dto: CreateCampaignDto) => dto.payloadType === 'Config')
   @IsUUID()
   configId?: string;
+
+  /** บังคับเฉพาะตอน payloadType=Firmware */
+  @ValidateIf((dto: CreateCampaignDto) => dto.payloadType === 'Firmware')
+  @IsUUID()
+  firmwareId?: string;
 
   @IsArray()
   @ArrayMinSize(1)
