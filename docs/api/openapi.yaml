@@ -1312,7 +1312,7 @@ paths:
     get:
       tags: [customer]
       operationId: listCustomers
-      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.21
+      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.22
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
         PermissionGuard — pattern เดียวกับ /users) · เรียงตามชื่อบริษัท
