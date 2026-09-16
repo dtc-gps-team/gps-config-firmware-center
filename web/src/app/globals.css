@@ -46,6 +46,36 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --animate-drift-a: drift-a 22s ease-in-out infinite;
+  --animate-drift-b: drift-b 28s ease-in-out infinite;
+}
+
+/* พื้นหลังขยับเบาๆ บนพาเนลซ้ายของหน้า Login (LoginHeroPanel) — amplitude
+   ต่ำ (3-4%) + คาบยาว (22-28s) ให้รู้สึกว่า "มีชีวิต" แบบไม่รบกวนสายตา
+   ใช้ transform ล้วน (translate/scale) ไม่แตะ layout property เพื่อ perf */
+@keyframes drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(3%, -4%) scale(1.08);
+  }
+}
+@keyframes drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-4%, 3%) scale(1.05);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift-a,
+  .animate-drift-b {
+    animation: none;
+  }
 }
 
 /* Harbor Palette — Direction A (see design proposal artifact).
