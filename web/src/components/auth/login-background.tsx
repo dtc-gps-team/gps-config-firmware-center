@@ -58,16 +58,26 @@ export function LoginBackground() {
         }}
       />
 
+      {/* วง "ระยะเรดาร์" นิ่งๆ — เป็น anchor ให้สายตาเห็นตำแหน่งตลอดเวลา
+          แม้ตอนที่ลำแสงกวาดไปอยู่อีกด้านหนึ่ง */}
       <div
-        className="animate-radar-spin absolute size-72 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        className="absolute size-80 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/30"
+        style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
+      />
+      <div
+        className="absolute size-52 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/20"
+        style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
+      />
+      <div
+        className="animate-radar-spin absolute size-80 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           left: `${radarPoint.x}%`,
           top: `${radarPoint.y}%`,
           background:
-            "conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.22) 35deg, transparent 90deg)",
-          maskImage: "radial-gradient(circle, black 55%, transparent 100%)",
+            "conic-gradient(from 0deg, transparent 0deg, rgba(120,190,255,0.55) 55deg, transparent 100deg)",
+          maskImage: "radial-gradient(circle, black 75%, transparent 100%)",
           WebkitMaskImage:
-            "radial-gradient(circle, black 55%, transparent 100%)",
+            "radial-gradient(circle, black 75%, transparent 100%)",
         }}
       />
 
