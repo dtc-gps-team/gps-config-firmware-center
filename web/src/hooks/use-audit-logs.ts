@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { listAuditLogs } from "@/lib/audit-api";
 import { ApiError } from "@/lib/api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 /**
  * View-model ของ 1 แถวในหน้า Audit Log — ตอนนี้ `actorName` = `userId` ดิบ
@@ -78,6 +79,7 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }
