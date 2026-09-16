@@ -19,6 +19,11 @@ export interface ActingUser {
   role: string;
 }
 
+/** AuditLog.auditModule ของทุกแถวที่โมดูลนี้เขียน (Sprint 3 #27 follow-up —
+ * PR #145 เปิดโมดูล `audit`/`GET /audit-logs` แล้วแต่ task/notification ยังไม่
+ * เขียน) — mirror ชื่อ module string ของ `config.service.ts`/`device.service.ts` */
+const AUDIT_MODULE = 'task';
+
 const OPERATION_ROLE = 'Operation';
 // ST/OT = ผู้ใช้ Mobile ที่เห็น/แก้ได้เฉพาะงานที่ตัวเองถูก assign เท่านั้น
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
@@ -73,6 +78,7 @@ export class TaskService {
     });
     // งานใหม่ทุกงานมีคนถูก assign เสมอ (assignedTo required ใน CreateTaskDto)
     await this.notifyTaskAssigned(created);
+    await this.logAudit('create', actor);
     return created;
   }
 
@@ -148,6 +154,7 @@ export class TaskService {
       ) {
         await this.notifyTaskAssigned(updated);
       }
+      await this.logAudit('update', actor);
       return updated;
     }
 
@@ -170,6 +177,7 @@ export class TaskService {
     if (result.count === 0) {
       throw new NotFoundException(`ไม่พบงาน id ${id}`);
     }
+    await this.logAudit('update', actor);
     return this.prisma.task.findUniqueOrThrow({ where: { id } });
   }
 
@@ -206,6 +214,28 @@ export class TaskService {
     } catch (err) {
       this.logger.warn(
         `แจ้งเตือน task_assigned ไม่สำเร็จ (task ${task.id}, user ${task.assignedTo}): ${
+          (err as Error).message
+        }`,
+      );
+    }
+  }
+
+  /**
+   * เขียน AuditLog (CLAUDE.md Audit Pattern — "สร้าง"/"แก้ไข", Sprint 3 #27
+   * follow-up ของ PR #145) **Never throws** — มติค้างกับ A ว่า
+   * `config.service.ts` เขียนแบบ unguarded await (audit ล้มเหลว = 500 ทั้งที่
+   * mutation จริงสำเร็จไปแล้ว) ยังไม่ได้ข้อสรุป โมดูลนี้เลือก wrap ด้วย
+   * try/catch แบบเดียวกับ `notifyTaskAssigned` แทน (ผู้ใช้เห็นผลของ DB write
+   * ที่สำเร็จจริง ไม่ใช่ผลของ audit log)
+   */
+  private async logAudit(action: string, actor: ActingUser): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: { userId: actor.id, auditModule: AUDIT_MODULE, action },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${actor.id}): ${
           (err as Error).message
         }`,
       );
