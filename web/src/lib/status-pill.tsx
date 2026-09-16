@@ -34,6 +34,13 @@ export function pillClass(tone: PillTone): string {
   return `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PILL_TONE[tone]}`;
 }
 
+/** สี bg/text ล้วนๆ ต่อ tone (ไม่มีรูปทรง pill) — ใช้ทำ badge ไอคอนที่ไม่ใช่
+ *  pill สถานะ เช่น icon badge บนการ์ดสรุป Dashboard ให้สีชุดเดียวกับ pill
+ *  ทั้งระบบ ไม่ต้องคิดสีชุดใหม่แยก */
+export function toneColorClass(tone: PillTone): string {
+  return PILL_TONE[tone];
+}
+
 /** ไอคอนต่อ tone ของ pill — ใช้กับ <StatusPill> เท่านั้น (ไม่ใช่ pillClass()
  *  เปล่าๆ ที่บางหน้าเอาไปทำ tag/chip ธรรมดาที่ไม่ได้สื่อสถานะ เช่น รุ่นอุปกรณ์
  *  ที่ compatibility ของ Firmware — จุดนั้นไม่ควรมีไอคอนสถานะเพราะไม่ใช่สถานะ) */
