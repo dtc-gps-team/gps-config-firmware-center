@@ -8,6 +8,7 @@ import {
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
+  StatusPill,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
@@ -86,13 +87,11 @@ function FirmwareDetailContent({
           <h1 className="text-2xl font-semibold break-words">
             เวอร์ชัน {firmware.version}
           </h1>
-          <span
-            className={pillClass(
-              FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral",
-            )}
+          <StatusPill
+            tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
           >
             {firmware.uploadStatus}
-          </span>
+          </StatusPill>
         </div>
       </div>
 
@@ -111,15 +110,15 @@ function FirmwareDetailContent({
                 {formatFileSize(firmware.fileSizeBytes)}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
-                <span
-                  className={pillClass(
+                <StatusPill
+                  tone={
                     FIRMWARE_DEVICE_UPDATE_STATUS_TONE[
                       firmware.deviceUpdateStatus
-                    ] ?? "neutral",
-                  )}
+                    ] ?? "neutral"
+                  }
                 >
                   {firmware.deviceUpdateStatus}
-                </span>
+                </StatusPill>
               </InfoRow>
               <InfoRow label="อัปโหลดโดย">
                 <span className="font-mono text-xs">{firmware.uploadedBy}</span>

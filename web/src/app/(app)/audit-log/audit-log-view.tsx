@@ -1,15 +1,27 @@
 "use client";
 
+import { useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
+
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessAuditLog } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,7 +31,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+
+/** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
+ * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
+ * service.ts) · task/notification (โมดูล B) ยังไม่มี audit log */
+const AUDIT_MODULE_OPTIONS = [
+  { value: "config", label: "Config" },
+  { value: "config-deletion", label: "Config Deletion" },
+  { value: "campaign", label: "Campaign" },
+  { value: "firmware", label: "Firmware" },
+  { value: "device", label: "Device" },
+];
 
 /**
  * เนื้อหาจริงของหน้า Audit Log — แยกเป็น client component ต่างหากจาก
@@ -27,7 +51,13 @@ import { TableSkeleton } from "@/components/skeleton/table-skeleton";
  * useAuth() ซึ่งเป็น client-only hook
  */
 export function AuditLogView() {
-  const { data, isLoading, error, refetch } = useAuditLogs();
+  const [auditModule, setAuditModule] = useState("");
+  const [action, setAction] = useState("");
+  const debouncedAction = useDebouncedValue(action.trim(), 300);
+  const { data, isLoading, error, refetch } = useAuditLogs({
+    auditModule: auditModule || undefined,
+    action: debouncedAction || undefined,
+  });
   const rows = data ?? [];
 
   return (
@@ -50,8 +80,46 @@ export function AuditLogView() {
               เรียงจากล่าสุด — เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
               อนุมัติ/ปฏิเสธ/นำ Config ไปใช้) ไม่รวมการดูอย่างเดียว
             </CardDescription>
+            {/* useAuditLogs ดึงล่าสุดให้เองแล้วตอนกลับมาโฟกัสแท็บ (useRefetchOnFocus)
+                ปุ่มนี้เผื่อกรณีอยากดึงทันทีโดยไม่ต้องสลับแท็บไปมา */}
+            <CardAction>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+                disabled={isLoading}
+              >
+                <RefreshCwIcon className={isLoading ? "animate-spin" : ""} />
+                รีเฟรช
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Select
+                value={auditModule}
+                onValueChange={(value) => setAuditModule(value ?? "")}
+              >
+                <SelectTrigger className="h-8 max-w-48">
+                  <SelectValue placeholder="โมดูล: ทั้งหมด" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">โมดูล: ทั้งหมด</SelectItem>
+                  {AUDIT_MODULE_OPTIONS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={action}
+                onChange={(e) => setAction(e.target.value)}
+                placeholder="ค้นหา action เช่น create, approve, reject…"
+                className="h-8 max-w-64"
+              />
+            </div>
+
             {isLoading && data === null ? (
               <TableSkeleton columns={4} />
             ) : error ? (
@@ -67,7 +135,9 @@ export function AuditLogView() {
               </div>
             ) : rows.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                ยังไม่มีประวัติการทำงาน
+                {auditModule || debouncedAction
+                  ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
+                  : "ยังไม่มีประวัติการทำงาน"}
               </p>
             ) : (
               <Table>
@@ -79,6 +149,9 @@ export function AuditLogView() {
                     </TableHead>
                     <TableHead>โมดูล</TableHead>
                     <TableHead>Action</TableHead>
+                    {/* ipAddress เป็น null เสมอตอนนี้ — openapi.yaml AuditLogEntry
+                        ระบุว่ายังไม่มี endpoint ไหนส่งค่านี้มาจริง (nullable ไว้รอ) */}
+                    <TableHead>IP Address</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -95,6 +168,9 @@ export function AuditLogView() {
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {row.action}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {row.ipAddress ?? "-"}
                       </TableCell>
                     </TableRow>
                   ))}

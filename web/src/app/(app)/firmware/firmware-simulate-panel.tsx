@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canSimulateFirmware } from "@/lib/permissions";
@@ -12,7 +13,7 @@ import {
 } from "@/lib/firmware-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { pillClass } from "@/lib/status-pill";
+import { StatusPill } from "@/lib/status-pill";
 
 /**
  * แผง "ทดสอบ Firmware" — SW/Operation/ST/OT (resource `firmware-simulation`
@@ -46,7 +47,9 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
         ),
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ");
+      const message = err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ";
+      setError(message);
+      toast.error(message);
     } finally {
       setRunning(false);
     }
@@ -82,9 +85,9 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
           {running ? "กำลังทดสอบ…" : "ทดสอบ"}
         </Button>
         {sim && (
-          <span className={pillClass(sim.passed ? "success" : "danger")}>
+          <StatusPill tone={sim.passed ? "success" : "danger"}>
             {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </span>
+          </StatusPill>
         )}
         {error && <span className="text-xs text-destructive">{error}</span>}
       </div>

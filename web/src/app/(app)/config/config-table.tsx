@@ -20,7 +20,7 @@ import {
 } from "@/components/data-table/filter-fns";
 import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
-import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CONFIG_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
@@ -50,9 +50,9 @@ const columns: ColumnDef<Config>[] = [
     cell: ({ row }) => {
       const status = row.original.status;
       return (
-        <span className={pillClass(CONFIG_STATUS_TONE[status] ?? "neutral")}>
+        <StatusPill tone={CONFIG_STATUS_TONE[status] ?? "neutral"}>
           {status}
-        </span>
+        </StatusPill>
       );
     },
   },

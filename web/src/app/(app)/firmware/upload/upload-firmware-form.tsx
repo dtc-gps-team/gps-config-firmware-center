@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canUploadFirmware } from "@/lib/permissions";
@@ -90,21 +91,24 @@ export function UploadFirmwareForm() {
         version: trimmedVersion,
         deviceModel: trimmedModel,
       });
+      toast.success(`อัปโหลด Firmware "${created.version}" แล้ว`);
       router.push(`/firmware?uploaded=${encodeURIComponent(created.id)}`);
       router.refresh();
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiError) {
         if (err.statusCode === 413) {
-          setFormError(
-            `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} — เกินขนาดที่ระบบรับ`,
-          );
+          const message = `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} — เกินขนาดที่ระบบรับ`;
+          setFormError(message);
+          toast.error(message);
           return;
         }
         setFormError(err.message);
+        toast.error(err.message);
         return;
       }
       setFormError("อัปโหลด Firmware ไม่สำเร็จ");
+      toast.error("อัปโหลด Firmware ไม่สำเร็จ");
     }
   }
 

@@ -4,8 +4,19 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canUpdateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
@@ -17,7 +28,7 @@ import {
 import {
   CONFIG_STATUS_TONE,
   getConfigNextStepMessage,
-  pillClass,
+  StatusPill,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
@@ -134,13 +145,15 @@ function ConfigDetailContent({
     setDeleteError(null);
     try {
       await deleteConfig(session.accessToken, config.id);
+      toast.success(`ลบ "${config.name}" แล้ว`);
       router.push("/config");
       router.refresh();
     } catch (err) {
       setDeleting(false);
-      setDeleteError(
-        err instanceof ApiError ? err.message : "ลบ Config ไม่สำเร็จ",
-      );
+      const message =
+        err instanceof ApiError ? err.message : "ลบ Config ไม่สำเร็จ";
+      setDeleteError(message);
+      toast.error(message);
     }
   }
 
@@ -155,13 +168,9 @@ function ConfigDetailContent({
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold break-words">{config.name}</h1>
-          <span
-            className={pillClass(
-              CONFIG_STATUS_TONE[config.status] ?? "neutral",
-            )}
-          >
+          <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
             {config.status}
-          </span>
+          </StatusPill>
           {latestVersion != null && (
             <span className="text-sm text-muted-foreground">
               เวอร์ชัน {latestVersion}
@@ -210,34 +219,29 @@ function ConfigDetailContent({
         )}
       </div>
 
-      {confirming && (
-        <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
-          <p className="text-sm">
-            ลบ Config &ldquo;{config.name}&rdquo; ถาวร? กู้คืนไม่ได้
-          </p>
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ลบ Config นี้?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ลบ Config &ldquo;{config.name}&rdquo; ถาวร? กู้คืนไม่ได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           {deleteError && (
             <p className="text-sm text-destructive">{deleteError}</p>
           )}
-          <div className="flex gap-2">
-            <Button
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
-              size="sm"
               onClick={handleDelete}
               disabled={deleting}
             >
               {deleting ? "กำลังลบ…" : "ยืนยันลบ"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-            >
-              ยกเลิก
-            </Button>
-          </div>
-        </div>
-      )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {canModify && <ConfigReviewPanel config={config} />}
 
