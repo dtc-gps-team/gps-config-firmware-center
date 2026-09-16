@@ -452,7 +452,7 @@ function TargetsStep({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex max-w-xl flex-col gap-4 rounded-xl border bg-card p-5">
+      <div className="grid gap-4 rounded-xl border bg-card p-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="campaign-name">ชื่อแคมเปญ</Label>
           <Input
@@ -525,8 +525,8 @@ function TargetsStep({
               <thead className="sticky top-0 bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   <th className="w-10 px-3 py-2" />
-                  <th className="px-2 py-2 text-left">เลขเครื่อง</th>
-                  <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
+                  <th className="w-48 px-2 py-2 text-left">เลขเครื่อง</th>
+                  <th className="w-56 px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
                   <th className="px-2 py-2 text-left">ลูกค้า</th>
                 </tr>
               </thead>
