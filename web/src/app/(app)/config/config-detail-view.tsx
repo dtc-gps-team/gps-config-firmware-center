@@ -22,6 +22,7 @@ import {
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { ConfigReviewPanel } from "./config-review-panel";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
@@ -66,11 +67,7 @@ export function ConfigDetailView({ configId }: { configId: string }) {
   const versions = useConfigVersions(configId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลด Config…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {
