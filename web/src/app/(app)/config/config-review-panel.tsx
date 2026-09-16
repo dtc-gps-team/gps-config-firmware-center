@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
@@ -53,7 +54,9 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
     try {
       setSim(await simulateConfig(session.accessToken, config.id));
     } catch (err) {
-      setSimError(err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ");
+      const message = err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ";
+      setSimError(message);
+      toast.error(message);
     } finally {
       setSimRunning(false);
     }
@@ -68,13 +71,15 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
         passed: true,
         ...(approverId ? { suggestedApproverId: approverId } : {}),
       });
+      toast.success(`ส่ง "${config.name}" ให้ Operation อนุมัติแล้ว`);
       router.push(`/config?saved=${encodeURIComponent(config.id)}`);
       router.refresh();
     } catch (err) {
       setSubmitting(false);
-      setSubmitError(
-        err instanceof ApiError ? err.message : "ส่งอนุมัติไม่สำเร็จ",
-      );
+      const message =
+        err instanceof ApiError ? err.message : "ส่งอนุมัติไม่สำเร็จ";
+      setSubmitError(message);
+      toast.error(message);
     }
   }
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { XIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canUpdateFirmwareCompatibility } from "@/lib/permissions";
@@ -67,12 +68,14 @@ export function EditCompatibilityForm({
         firmware.id,
         models,
       );
+      toast.success("บันทึก Compatibility Tag แล้ว");
       onSaved(updated);
       setEditing(false);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "แก้ Compatibility Tag ไม่สำเร็จ",
-      );
+      const message =
+        err instanceof ApiError ? err.message : "แก้ Compatibility Tag ไม่สำเร็จ";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }

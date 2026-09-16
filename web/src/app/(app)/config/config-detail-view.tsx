@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -133,13 +134,15 @@ function ConfigDetailContent({
     setDeleteError(null);
     try {
       await deleteConfig(session.accessToken, config.id);
+      toast.success(`ลบ "${config.name}" แล้ว`);
       router.push("/config");
       router.refresh();
     } catch (err) {
       setDeleting(false);
-      setDeleteError(
-        err instanceof ApiError ? err.message : "ลบ Config ไม่สำเร็จ",
-      );
+      const message =
+        err instanceof ApiError ? err.message : "ลบ Config ไม่สำเร็จ";
+      setDeleteError(message);
+      toast.error(message);
     }
   }
 

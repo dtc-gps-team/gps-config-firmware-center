@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
@@ -99,9 +100,9 @@ function ApprovalDetail({ item }: { item: PendingApproval }) {
     try {
       setSim(await simulateConfig(session.accessToken, item.id));
     } catch (err) {
-      setSimError(
-        err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ",
-      );
+      const message = err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ";
+      setSimError(message);
+      toast.error(message);
     } finally {
       setSimRunning(false);
     }
