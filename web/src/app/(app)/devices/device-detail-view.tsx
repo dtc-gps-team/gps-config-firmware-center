@@ -14,7 +14,7 @@ import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
 import { type Device } from "@/lib/device-api";
 
-function InfoRow({
+function InfoItem({
   label,
   children,
 }: {
@@ -22,9 +22,9 @@ function InfoRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/60 py-2 text-sm last:border-0">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm break-words">{children}</span>
     </div>
   );
 }
@@ -94,28 +94,27 @@ function DeviceDetailContent({ device }: { device: Device }) {
           <CardTitle className="text-base">ข้อมูลอุปกรณ์</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl>
-            <InfoRow label="SIM Number">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoItem label="SIM Number">
               <span className="font-mono">{device.simNumber}</span>
-            </InfoRow>
-            <InfoRow label="รุ่น / โปรโตคอล">
+            </InfoItem>
+            <InfoItem label="รุ่น / โปรโตคอล">
               {device.deviceModel} / {device.protocol}
-            </InfoRow>
-            <InfoRow label="สถานะ">{device.status}</InfoRow>
-            <InfoRow label="ลูกค้า">
+            </InfoItem>
+            <InfoItem label="ลูกค้า">
               {device.customer ? (
                 device.customer.companyName
               ) : (
                 <span className="text-muted-foreground">ไม่ระบุ</span>
               )}
-            </InfoRow>
-            <InfoRow label="ลงทะเบียนเมื่อ">
+            </InfoItem>
+            <InfoItem label="ลงทะเบียนเมื่อ">
               {formatDateTime(device.registeredAt)}
-            </InfoRow>
-            <InfoRow label="ติดตั้งเมื่อ">
+            </InfoItem>
+            <InfoItem label="ติดตั้งเมื่อ">
               {device.installedAt ? formatDateTime(device.installedAt) : "—"}
-            </InfoRow>
-          </dl>
+            </InfoItem>
+          </div>
         </CardContent>
       </Card>
 
