@@ -73,7 +73,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .animate-drift-a,
-  .animate-drift-b {
+  .animate-drift-b,
+  .animate-ping {
     animation: none;
   }
 }

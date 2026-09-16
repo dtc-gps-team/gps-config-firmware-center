@@ -1,5 +1,5 @@
 import { LoginForm } from "@/components/auth/login-form";
-import { LoginHeroPanel } from "@/components/auth/login-hero-panel";
+import { LoginBackground } from "@/components/auth/login-background";
 
 export const metadata = {
   title: "เข้าสู่ระบบ | GPS Config Center",
@@ -7,9 +7,9 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      <LoginHeroPanel />
-      <div className="flex items-center justify-center bg-muted/30 p-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <LoginBackground />
+      <div className="relative">
         <LoginForm />
       </div>
     </div>
