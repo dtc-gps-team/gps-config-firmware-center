@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessAuditLog } from "@/lib/permissions";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -77,6 +79,20 @@ export function AuditLogView() {
               เรียงจากล่าสุด — เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
               อนุมัติ/ปฏิเสธ/นำ Config ไปใช้) ไม่รวมการดูอย่างเดียว
             </CardDescription>
+            {/* หน้านี้ไม่มี auto-refresh/polling — คนอื่นสร้างรายการใหม่แล้ว
+                จะไม่ขึ้นเองจนกว่าจะโหลดหน้าใหม่ ปุ่มนี้ให้ดึงล่าสุดได้โดยไม่ต้อง
+                รีเฟรชทั้งหน้า (เสีย filter ที่เลือกไว้) */}
+            <CardAction>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+                disabled={isLoading}
+              >
+                <RefreshCwIcon className={isLoading ? "animate-spin" : ""} />
+                รีเฟรช
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
