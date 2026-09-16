@@ -50,6 +50,7 @@
   --animate-drift-b: drift-b 28s ease-in-out infinite;
   --animate-route-flow: route-flow 3.2s linear infinite;
   --animate-device-glow: device-glow 2.4s ease-in-out infinite;
+  --animate-radar-spin: radar-spin 9s linear infinite;
 }
 
 /* พื้นหลังขยับเบาๆ บนพาเนลซ้ายของหน้า Login (LoginHeroPanel) — amplitude
@@ -95,12 +96,21 @@
   }
 }
 
+/* วงแสงเรดาร์กวาดรอบจุดอุปกรณ์ — หมุนรอบตัวเองช้าๆ (9s/รอบ) ใช้ conic-gradient
+   + mask ให้ขอบวงกลมนุ่ม ไม่ตัดแข็งเป็นเส้นวงกลมชัด */
+@keyframes radar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-drift-a,
   .animate-drift-b,
   .animate-ping,
   .animate-route-flow,
-  .animate-device-glow {
+  .animate-device-glow,
+  .animate-radar-spin {
     animation: none;
   }
 }
