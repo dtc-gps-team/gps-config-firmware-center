@@ -58,7 +58,9 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 ## Team Ownership
 
 - **A (`paveekornkwork-dev`)** — Web (Next.js) + backend module: `auth`, `config`,
-  `firmware`, `campaign`, `incident`, `audit`, `device-status`
+  `firmware`, `campaign`, `incident`, `audit`, `device-status`, `customer`
+  (เพิ่ม `customer` หลัง PR #153 — module ทั้งหมดเป็นงาน A ล้วน ไม่ใช่ cross-cutting
+  เพราะ B ไม่เคยแตะ ดู issue #160)
 - **B (`kittiphongkubkub`)** — Mobile (Flutter) + backend module: `task`, `notification`
 - **ร่วมกัน** — `config-sync-writer`, Infra / CI-CD, cross-cutting features
 
