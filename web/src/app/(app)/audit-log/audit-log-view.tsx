@@ -29,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 /** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
  * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
@@ -49,9 +50,10 @@ const AUDIT_MODULE_OPTIONS = [
 export function AuditLogView() {
   const [auditModule, setAuditModule] = useState("");
   const [action, setAction] = useState("");
+  const debouncedAction = useDebouncedValue(action.trim(), 300);
   const { data, isLoading, error, refetch } = useAuditLogs({
     auditModule: auditModule || undefined,
-    action: action.trim() || undefined,
+    action: debouncedAction || undefined,
   });
   const rows = data ?? [];
 
@@ -119,7 +121,7 @@ export function AuditLogView() {
               </div>
             ) : rows.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                {auditModule || action
+                {auditModule || debouncedAction
                   ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
                   : "ยังไม่มีประวัติการทำงาน"}
               </p>

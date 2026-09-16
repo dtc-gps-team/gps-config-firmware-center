@@ -28,7 +28,9 @@ export class AuditService {
       where: {
         userId: userId || undefined,
         auditModule: auditModule || undefined,
-        action: action || undefined,
+        // action เป็นช่องค้นหา (ไม่ใช่ dropdown ค่าคงที่แบบ auditModule) —
+        // ใช้ contains แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ ให้พิมพ์บางส่วนของคำแล้วเจอได้เลย
+        action: action ? { contains: action, mode: 'insensitive' } : undefined,
       },
       orderBy: { createdAt: 'desc' },
     });
