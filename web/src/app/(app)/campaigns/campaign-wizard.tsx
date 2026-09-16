@@ -291,92 +291,82 @@ export function CampaignWizard() {
 
   return (
     <div className="flex flex-col gap-6">
+      <StepIndicator step={step} />
+
       {step === 1 && (
-        <>
-          <StepIndicator step={step} />
-          <TargetsStep
-            name={name}
-            onNameChange={(v) => {
-              setName(v);
-              clearErrors();
-            }}
-            description={description}
-            onDescriptionChange={(v) => {
-              setDescription(v);
-              clearErrors();
-            }}
-            nameError={nameError}
-            search={search}
-            onSearchChange={setSearch}
-            customerOptions={customerOptions}
-            customerFilter={customerFilter}
-            onCustomerFilterChange={setCustomerFilter}
-            devices={filteredDevices}
-            selectedDeviceIds={selectedDeviceIds}
-            onToggleDevice={toggleDevice}
-            formError={formError}
-            onCancel={() => router.push("/campaigns")}
-            onNext={() => goToStep(2)}
-          />
-        </>
+        <TargetsStep
+          name={name}
+          onNameChange={(v) => {
+            setName(v);
+            clearErrors();
+          }}
+          description={description}
+          onDescriptionChange={(v) => {
+            setDescription(v);
+            clearErrors();
+          }}
+          nameError={nameError}
+          search={search}
+          onSearchChange={setSearch}
+          customerOptions={customerOptions}
+          customerFilter={customerFilter}
+          onCustomerFilterChange={setCustomerFilter}
+          devices={filteredDevices}
+          selectedDeviceIds={selectedDeviceIds}
+          onToggleDevice={toggleDevice}
+          formError={formError}
+          onCancel={() => router.push("/campaigns")}
+          onNext={() => goToStep(2)}
+        />
       )}
 
       {step === 2 && (
-        <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
-          <StepIndicator step={step} />
-          <PayloadStep
-            payloadType={payloadType}
-            onSelectPayloadType={(v) => {
-              setPayloadType(v);
-              clearErrors();
-            }}
-            configs={eligibleConfigs}
-            configId={configId}
-            onSelectConfig={(v) => {
-              setConfigId(v);
-              clearErrors();
-            }}
-            firmwareList={eligibleFirmware}
-            firmwareId={firmwareId}
-            onSelectFirmware={(v) => {
-              setFirmwareId(v);
-              clearErrors();
-            }}
-            incompatibleCount={incompatibleTargets.length}
-            formError={formError}
-            onBack={() => goToStep(1)}
-            onNext={() => goToStep(3)}
-          />
-        </div>
+        <PayloadStep
+          payloadType={payloadType}
+          onSelectPayloadType={(v) => {
+            setPayloadType(v);
+            clearErrors();
+          }}
+          configs={eligibleConfigs}
+          configId={configId}
+          onSelectConfig={(v) => {
+            setConfigId(v);
+            clearErrors();
+          }}
+          firmwareList={eligibleFirmware}
+          firmwareId={firmwareId}
+          onSelectFirmware={(v) => {
+            setFirmwareId(v);
+            clearErrors();
+          }}
+          incompatibleCount={incompatibleTargets.length}
+          formError={formError}
+          onBack={() => goToStep(1)}
+          onNext={() => goToStep(3)}
+        />
       )}
 
       {step === 3 && (
-        <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
-          <StepIndicator step={step} />
-          <RolloutStep onBack={() => goToStep(2)} onNext={() => goToStep(4)} />
-        </div>
+        <RolloutStep onBack={() => goToStep(2)} onNext={() => goToStep(4)} />
       )}
 
       {step === 4 && (
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-          <StepIndicator step={step} />
-          <ReviewStep
-            name={name}
-            description={description}
-            payloadType={payloadType}
-            config={selectedConfig}
-            firmware={selectedFirmware}
-            targets={selectedDeviceIds.map((deviceId) => ({
-              deviceId,
-              device: deviceByDeviceId.get(deviceId) ?? null,
-            }))}
-            incompatibleCount={incompatibleTargets.length}
-            submitting={submitting}
-            formError={formError}
-            onBack={() => goToStep(3)}
-            onSubmit={() => void handleSubmit()}
-          />
-        </div>
+        <ReviewStep
+          name={name}
+          description={description}
+          payloadType={payloadType}
+          config={selectedConfig}
+          firmware={selectedFirmware}
+          targets={selectedDeviceIds.map((deviceId) => ({
+            deviceId,
+            device: deviceByDeviceId.get(deviceId) ?? null,
+          }))}
+          incompatibleCount={incompatibleTargets.length}
+          submitting={submitting}
+          formError={formError}
+          onBack={() => goToStep(3)}
+          onSubmit={() => void handleSubmit()}
+        />
       )}
     </div>
   );
@@ -658,7 +648,7 @@ function PayloadStep({
   onNext: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-xl flex-col gap-5">
       <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
         <div className="flex flex-col gap-1.5">
           <Label>ประเภท Payload</Label>
@@ -756,7 +746,7 @@ function RolloutStep({
   onNext: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-xl flex-col gap-5">
       <div className="flex flex-col gap-2 rounded-xl border bg-card p-5">
         <p className="text-sm font-medium">กลยุทธ์ Rollout</p>
         <p className="text-sm text-muted-foreground">
@@ -808,7 +798,7 @@ function ReviewStep({
   onSubmit: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex max-w-2xl flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
         <div>
           <p className="text-sm text-muted-foreground">ชื่อแคมเปญ</p>
