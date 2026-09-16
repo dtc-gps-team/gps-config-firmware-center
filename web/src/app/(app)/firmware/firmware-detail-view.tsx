@@ -101,7 +101,7 @@ function FirmwareDetailContent({
 
       <FirmwareSimulatePanel firmware={firmware} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">

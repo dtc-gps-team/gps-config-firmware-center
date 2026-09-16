@@ -68,7 +68,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
 
 function DeviceDetailContent({ device }: { device: Device }) {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="flex max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/devices"

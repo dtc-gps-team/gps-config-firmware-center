@@ -19,7 +19,7 @@ export const metadata = {
  */
 export default function ConfigImportPage() {
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/config"
@@ -34,7 +34,7 @@ export default function ConfigImportPage() {
         </p>
       </div>
 
-      <Card>
+      <Card className="max-w-lg">
         <CardHeader>
           <CardTitle>อัปโหลดไฟล์</CardTitle>
           <CardDescription>
