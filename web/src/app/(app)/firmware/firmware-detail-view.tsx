@@ -12,6 +12,7 @@ import {
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
 
@@ -34,11 +35,7 @@ export function FirmwareDetailView({ firmwareId }: { firmwareId: string }) {
   const { data, isLoading, error, refetch } = useFirmware(firmwareId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลด Firmware…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {

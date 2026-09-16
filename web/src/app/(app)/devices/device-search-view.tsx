@@ -17,6 +17,7 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useDevices } from "@/hooks/use-devices";
 import { type Device } from "@/lib/device-api";
 import { DEVICE_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 function textSort(a: Row<Device>, b: Row<Device>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(String(b.getValue(columnId)));
@@ -108,9 +109,7 @@ export function DeviceSearchView() {
         </CardHeader>
         <CardContent>
           {isLoading && data === null ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              กำลังโหลด…
-            </p>
+            <TableSkeleton columns={columns.length} />
           ) : error ? (
             <div className="flex flex-col items-center gap-3 py-8">
               <p className="text-sm text-destructive">{error}</p>

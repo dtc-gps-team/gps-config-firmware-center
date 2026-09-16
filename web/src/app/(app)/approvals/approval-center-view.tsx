@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
+import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { ApprovalCard } from "./approval-card";
 
 export function ApprovalCenterView() {
@@ -98,9 +99,7 @@ export function ApprovalCenterView() {
           )}
 
           {isLoading && data === null ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              กำลังโหลด…
-            </p>
+            <CardListSkeleton />
           ) : error ? (
             <div className="flex flex-col items-center gap-3 py-8">
               <p className="text-sm text-destructive">{error}</p>

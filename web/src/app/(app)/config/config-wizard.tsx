@@ -16,6 +16,7 @@ import {
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 type FieldValue = string | boolean;
 
@@ -282,11 +283,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   }
 
   if (isLoading && !defs) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดคลัง Parameter…
-      </p>
-    );
+    return <DetailSkeleton lines={6} />;
   }
 
   if (defsError) {
