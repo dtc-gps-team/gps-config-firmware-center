@@ -50,7 +50,7 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-2xl [--card-spacing:--spacing(9)] shadow-2xl">
+    <Card className="w-full [--card-spacing:--spacing(9)] shadow-2xl">
       <CardHeader className="gap-2">
         <CardTitle className="text-2xl font-semibold">เข้าสู่ระบบ</CardTitle>
         <CardDescription className="text-base">

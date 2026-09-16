@@ -7,9 +7,9 @@ export const metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+    <div className="relative flex min-h-screen flex-col justify-center overflow-hidden p-4">
       <LoginBackground />
-      <div className="relative">
+      <div className="relative mx-auto w-full max-w-2xl">
         <LoginForm />
       </div>
     </div>
