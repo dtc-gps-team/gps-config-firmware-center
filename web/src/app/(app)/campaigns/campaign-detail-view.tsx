@@ -65,7 +65,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/campaigns"
@@ -84,7 +84,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         )}
       </div>
 
-      <div className="max-w-xl rounded-xl border bg-card p-5">
+      <div className="rounded-xl border bg-card p-5">
         <InfoRow label="Payload">
           {data.payloadType === "Config"
             ? (configQuery.data?.name ?? data.configId ?? "—")

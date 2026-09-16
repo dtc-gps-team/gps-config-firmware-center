@@ -305,7 +305,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       <StepIndicator step={step} />
 
       {step === 1 ? (
-        <div className="flex max-w-xl flex-col gap-5 rounded-xl border bg-card p-5">
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-5 rounded-xl border bg-card p-5">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="config-name">ชื่อ Config</Label>
             <Input
