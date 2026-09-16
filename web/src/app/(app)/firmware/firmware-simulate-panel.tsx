@@ -13,7 +13,7 @@ import {
 } from "@/lib/firmware-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { pillClass } from "@/lib/status-pill";
+import { StatusPill } from "@/lib/status-pill";
 
 /**
  * แผง "ทดสอบ Firmware" — SW/Operation/ST/OT (resource `firmware-simulation`
@@ -85,9 +85,9 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
           {running ? "กำลังทดสอบ…" : "ทดสอบ"}
         </Button>
         {sim && (
-          <span className={pillClass(sim.passed ? "success" : "danger")}>
+          <StatusPill tone={sim.passed ? "success" : "danger"}>
             {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </span>
+          </StatusPill>
         )}
         {error && <span className="text-xs text-destructive">{error}</span>}
       </div>

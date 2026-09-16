@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { getFirmware, listFirmware, type Firmware } from "@/lib/firmware-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type FirmwareListState = {
   data: Firmware[] | null;
@@ -46,6 +47,7 @@ export function useFirmwareList() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }
@@ -88,6 +90,7 @@ export function useFirmware(id: string | null) {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

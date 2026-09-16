@@ -14,7 +14,14 @@ import {
 } from "@/lib/config-api";
 import { listUsers, type UserSummary } from "@/lib/users-api";
 import { Button } from "@/components/ui/button";
-import { pillClass } from "@/lib/status-pill";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusPill } from "@/lib/status-pill";
 
 /**
  * แผง "ทดสอบ & ส่งอนุมัติ" ฝั่ง SW (Config Simulation Gate — #18) — โผล่บนหน้า
@@ -97,9 +104,9 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
           {simRunning ? "กำลังทดสอบ…" : "ทดสอบ Config"}
         </Button>
         {sim && (
-          <span className={pillClass(sim.passed ? "success" : "danger")}>
+          <StatusPill tone={sim.passed ? "success" : "danger"}>
             {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </span>
+          </StatusPill>
         )}
         {simError && (
           <span className="text-xs text-destructive">{simError}</span>
@@ -128,18 +135,22 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
             <span className="text-muted-foreground">
               เจาะจงผู้อนุมัติ (ไม่บังคับ — Operation คนอื่นก็อนุมัติได้)
             </span>
-            <select
+            <Select
               value={approverId}
-              onChange={(e) => setApproverId(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-transparent px-2 text-sm"
+              onValueChange={(value) => setApproverId(value ?? "")}
             >
-              <option value="">ไม่เจาะจง</option>
-              {operators.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.fullName}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">ไม่เจาะจง</SelectItem>
+                {operators.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           {submitError && (
             <p className="text-xs text-destructive">{submitError}</p>

@@ -1,3 +1,17 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  LayoutDashboardIcon,
+  SearchIcon,
+  SlidersHorizontalIcon,
+  LibraryIcon,
+  CircleCheckIcon,
+  CpuIcon,
+  RocketIcon,
+  TriangleAlertIcon,
+  ScrollTextIcon,
+  UsersIcon,
+} from "lucide-react";
+
 import type { Role } from "@/lib/permissions";
 
 export interface NavItem {
@@ -7,6 +21,9 @@ export interface NavItem {
    * อ้างอิงชื่อหน้าจอใน docs/architecture/RBAC_Matrix.md Section 2
    */
   screenName: string;
+  /** ไอคอนหน้าเมนู (mockup UX/UI Design ต้นฉบับมีไอคอนทุกเมนู — sidebar
+   *  ของจริงยังไม่มีมาก่อน เพิ่มให้ตรงกันเพื่อลดความรู้สึก "แข็งทื่อ") */
+  icon: LucideIcon;
   /**
    * จำกัด Role ที่เห็นเมนูนี้ — ใส่เฉพาะหน้าที่ RBAC_Matrix.md ระบุว่าบาง Role
    * เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย) เช่น Audit Log (ยกเว้น SW) และ
@@ -27,13 +44,24 @@ export interface NavItem {
  * หน้าที่ RBAC_Matrix.md ระบุว่าบาง Role เป็น "-" หมดทั้งแถว
  */
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/", screenName: "Dashboard / Main" },
+  {
+    label: "Dashboard",
+    href: "/",
+    screenName: "Dashboard / Main",
+    icon: LayoutDashboardIcon,
+  },
   {
     label: "Device Search",
     href: "/devices",
     screenName: "Device Search / Device Detail",
+    icon: SearchIcon,
   },
-  { label: "Config Editor", href: "/config", screenName: "Config Editor" },
+  {
+    label: "Config Editor",
+    href: "/config",
+    screenName: "Config Editor",
+    icon: SlidersHorizontalIcon,
+  },
   // "Config Import จากไฟล์ (JSON)" (RBAC_Matrix.md Section 2) ไม่มี entry ใน
   // sidebar โดยตั้งใจ — Build Reference §3.1 ระบุว่าเป็น "ปุ่มในหน้า Config
   // Editor ไม่ใช่หน้าจอแยก" · เข้าผ่านปุ่ม "Import จากไฟล์" ในหน้า /config
@@ -42,6 +70,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Parameter Library",
     href: "/parameters",
     screenName: "Config Definition Lookup (คลัง Parameter)",
+    icon: LibraryIcon,
     // ตาราง 4.1: SW, Operation, ST, OT เท่านั้น — Auditor/Admin ยังไม่ให้
     // เพราะยังไม่มี use case
     allowedRoles: ["SW", "Operation", "ST", "OT"],
@@ -50,16 +79,19 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Approval Center",
     href: "/approvals",
     screenName: "Approval Center",
+    icon: CircleCheckIcon,
   },
   {
     label: "Firmware Repository",
     href: "/firmware",
     screenName: "Firmware Repository",
+    icon: CpuIcon,
   },
   {
     label: "Campaign",
     href: "/campaigns",
     screenName: "Campaign Wizard / Campaign Monitor",
+    icon: RocketIcon,
   },
   // "Task Management" ยกเลิกถาวร ไม่มีวันกลับมา (มติพี่เลี้ยงล่าสุด — สืบเนื่อง
   // จาก PR #144 review, ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) เดิมพักไว้
@@ -71,11 +103,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Incident & Rollback",
     href: "/incidents",
     screenName: "Incident & Rollback",
+    icon: TriangleAlertIcon,
   },
   {
     label: "Audit Log",
     href: "/audit-log",
     screenName: "Audit Log",
+    icon: ScrollTextIcon,
     // Section 2: ทุก Role มี R ยกเว้น SW ที่เป็น "-"
     allowedRoles: ["Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"],
   },
@@ -83,6 +117,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "User Management",
     href: "/users",
     screenName: "User / Role Management",
+    icon: UsersIcon,
     // Section 2: Admin + SuperAdmin (SuperAdmin ทำได้ทุกอย่างที่ Admin ทำได้ +
     // จัดการบัญชี Admin/SuperAdmin) — Role อื่นเป็น "-" หมด
     allowedRoles: ["Admin", "SuperAdmin"],

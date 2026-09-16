@@ -21,6 +21,7 @@ import {
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
+  StatusPill,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
@@ -69,9 +70,9 @@ const columns: ColumnDef<Firmware>[] = [
     cell: ({ row }) => {
       const status = row.original.uploadStatus;
       return (
-        <span className={pillClass(FIRMWARE_UPLOAD_STATUS_TONE[status] ?? "neutral")}>
+        <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[status] ?? "neutral"}>
           {status}
-        </span>
+        </StatusPill>
       );
     },
   },
@@ -83,13 +84,11 @@ const columns: ColumnDef<Firmware>[] = [
     cell: ({ row }) => {
       const status = row.original.deviceUpdateStatus;
       return (
-        <span
-          className={pillClass(
-            FIRMWARE_DEVICE_UPDATE_STATUS_TONE[status] ?? "neutral",
-          )}
+        <StatusPill
+          tone={FIRMWARE_DEVICE_UPDATE_STATUS_TONE[status] ?? "neutral"}
         >
           {status}
-        </span>
+        </StatusPill>
       );
     },
   },

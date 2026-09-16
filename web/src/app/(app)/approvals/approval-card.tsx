@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { simulateConfig, type SimulationResult } from "@/lib/config-api";
 import { Button } from "@/components/ui/button";
-import { pillClass } from "@/lib/status-pill";
+import { StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
@@ -146,11 +146,9 @@ function ApprovalDetail({ item }: { item: PendingApproval }) {
           {simRunning ? "กำลังทดสอบ…" : "ทดสอบซ้ำ"}
         </Button>
         {sim && (
-          <span
-            className={pillClass(sim.passed ? "success" : "danger")}
-          >
+          <StatusPill tone={sim.passed ? "success" : "danger"}>
             {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </span>
+          </StatusPill>
         )}
         {simError && <span className="text-xs text-destructive">{simError}</span>}
       </div>
