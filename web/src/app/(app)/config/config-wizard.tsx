@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, PlusIcon, XIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -268,6 +269,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             fields,
             ...(trimmedDesc ? { description: trimmedDesc } : {}),
           });
+      toast.success(editing ? `บันทึก "${saved.name}" แล้ว` : `สร้าง "${saved.name}" แล้ว`);
       router.push(`/config?saved=${encodeURIComponent(saved.id)}`);
       router.refresh();
     } catch (err) {
@@ -275,14 +277,17 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       if (err instanceof ApiError && err.statusCode === 409) {
         setStep(1);
         setNameError(err.message);
+        toast.error(err.message);
         return;
       }
       if (err instanceof ApiError) {
         setFormError(err.message);
         setFormErrorList(err.details ?? []);
+        toast.error(err.message);
         return;
       }
       setFormError("บันทึก Config ไม่สำเร็จ");
+      toast.error("บันทึก Config ไม่สำเร็จ");
     }
   }
 

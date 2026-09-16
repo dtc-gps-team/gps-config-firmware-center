@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
@@ -50,17 +51,23 @@ export function ApprovalActions({
       } else {
         await rejectConfig(session.accessToken, configId);
       }
+      toast.success(
+        decision === "approve"
+          ? `อนุมัติ "${configName}" แล้ว`
+          : `ปฏิเสธ "${configName}" แล้ว`,
+      );
       onDecided(decision);
     } catch (err) {
       setPending(false);
       setConfirming(null);
-      setError(
+      const message =
         err instanceof ApiError
           ? err.message
           : decision === "approve"
             ? "อนุมัติไม่สำเร็จ"
-            : "ปฏิเสธไม่สำเร็จ",
-      );
+            : "ปฏิเสธไม่สำเร็จ";
+      setError(message);
+      toast.error(message);
     }
   }
 

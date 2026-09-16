@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -163,15 +164,19 @@ export function ParameterCreateForm({
           protocol: m.protocol,
         })),
       });
+      toast.success(`สร้าง Parameter "${trimmedName}" แล้ว`);
       await onCreated();
     } catch (err) {
       if (err instanceof ApiError && err.statusCode === 409) {
         setNameError(err.message);
+        toast.error(err.message);
       } else if (err instanceof ApiError) {
         setFormError(err.message);
         setFormErrorList(err.details ?? []);
+        toast.error(err.message);
       } else {
         setFormError("สร้าง Parameter ไม่สำเร็จ");
+        toast.error("สร้าง Parameter ไม่สำเร็จ");
       }
     } finally {
       setSubmitting(false);

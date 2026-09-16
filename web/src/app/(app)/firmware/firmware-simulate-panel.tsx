@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canSimulateFirmware } from "@/lib/permissions";
@@ -46,7 +47,9 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
         ),
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ");
+      const message = err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ";
+      setError(message);
+      toast.error(message);
     } finally {
       setRunning(false);
     }

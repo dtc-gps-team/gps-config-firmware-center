@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -248,15 +249,18 @@ export function CampaignWizard() {
         targets: targetInputs,
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
       });
+      toast.success(`สร้างแคมเปญ "${created.name}" แล้ว`);
       router.push(`/campaigns/${created.id}`);
       router.refresh();
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiError) {
         setFormError(err.message);
+        toast.error(err.message);
         return;
       }
       setFormError("สร้างแคมเปญไม่สำเร็จ");
+      toast.error("สร้างแคมเปญไม่สำเร็จ");
     }
   }
 

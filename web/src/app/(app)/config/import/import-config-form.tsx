@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig } from "@/lib/permissions";
@@ -155,22 +156,25 @@ export function ImportConfigForm() {
     setFormErrorList([]);
     try {
       const created = await importConfig(session.accessToken, file);
+      toast.success(`นำเข้า "${created.name}" แล้ว`);
       router.push(`/config?saved=${encodeURIComponent(created.id)}`);
       router.refresh();
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiError) {
         if (err.statusCode === 409) {
-          setFormError(
-            `${err.message} — เปลี่ยนค่า "name" ในไฟล์แล้วลองใหม่`,
-          );
+          const message = `${err.message} — เปลี่ยนค่า "name" ในไฟล์แล้วลองใหม่`;
+          setFormError(message);
+          toast.error(message);
           return;
         }
         setFormError(err.message);
         setFormErrorList(err.details ?? []);
+        toast.error(err.message);
         return;
       }
       setFormError("นำเข้า Config ไม่สำเร็จ");
+      toast.error("นำเข้า Config ไม่สำเร็จ");
     }
   }
 
