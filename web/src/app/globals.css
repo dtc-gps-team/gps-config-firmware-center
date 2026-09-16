@@ -48,6 +48,8 @@
   --radius-4xl: calc(var(--radius) * 2.6);
   --animate-drift-a: drift-a 22s ease-in-out infinite;
   --animate-drift-b: drift-b 28s ease-in-out infinite;
+  --animate-route-flow: route-flow 3.2s linear infinite;
+  --animate-device-glow: device-glow 2.4s ease-in-out infinite;
 }
 
 /* พื้นหลังขยับเบาๆ บนพาเนลซ้ายของหน้า Login (LoginHeroPanel) — amplitude
@@ -71,10 +73,34 @@
     transform: translate(-4%, 3%) scale(1.05);
   }
 }
+/* เส้นทางเชื่อมจุดอุปกรณ์ "ไหล" ต่อเนื่อง — stroke-dasharray ตั้งไว้ที่
+   element เอง (SVG attribute) อันนี้ขยับแค่ offset ให้ดูเหมือนสัญญาณวิ่ง
+   ผ่านเส้นทาง ใช้ linear เพราะต้องการความเร็วคงที่ ไม่ใช่ ease */
+@keyframes route-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* จุดอุปกรณ์ที่ไม่ได้มี ping ring — เรือง/หรี่สลับเบาๆ ให้ดูเหมือนทยอย
+   รายงานเข้ามา ต้อง set animation-delay ต่อจุดแยกกัน (inline style) กัน
+   กระพริบพร้อมกันหมดทุกจุด */
+@keyframes device-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-drift-a,
   .animate-drift-b,
-  .animate-ping {
+  .animate-ping,
+  .animate-route-flow,
+  .animate-device-glow {
     animation: none;
   }
 }
