@@ -50,19 +50,22 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>เข้าสู่ระบบ</CardTitle>
-        <CardDescription>GPS Config &amp; Firmware Center</CardDescription>
+    <Card className="w-full max-w-md [--card-spacing:--spacing(7)] shadow-2xl">
+      <CardHeader className="gap-2">
+        <CardTitle className="text-2xl font-semibold">เข้าสู่ระบบ</CardTitle>
+        <CardDescription className="text-base">
+          GPS Config &amp; Firmware Center
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
               name="username"
               autoComplete="username"
+              className="h-10"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               required
@@ -76,6 +79,7 @@ export function LoginForm() {
               name="password"
               type="password"
               autoComplete="current-password"
+              className="h-10"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
@@ -87,7 +91,12 @@ export function LoginForm() {
               {error}
             </p>
           ) : null}
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full"
+            disabled={isSubmitting}
+          >
             {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
           </Button>
         </form>
