@@ -648,7 +648,7 @@ function PayloadStep({
   onNext: () => void;
 }) {
   return (
-    <div className="flex max-w-xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-5">
       <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
         <div className="flex flex-col gap-1.5">
           <Label>ประเภท Payload</Label>
@@ -746,7 +746,7 @@ function RolloutStep({
   onNext: () => void;
 }) {
   return (
-    <div className="flex max-w-xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-5">
       <div className="flex flex-col gap-2 rounded-xl border bg-card p-5">
         <p className="text-sm font-medium">กลยุทธ์ Rollout</p>
         <p className="text-sm text-muted-foreground">
@@ -798,7 +798,7 @@ function ReviewStep({
   onSubmit: () => void;
 }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
         <div>
           <p className="text-sm text-muted-foreground">ชื่อแคมเปญ</p>
