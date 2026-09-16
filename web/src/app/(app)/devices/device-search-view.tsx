@@ -16,7 +16,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useDevices } from "@/hooks/use-devices";
 import { type Device } from "@/lib/device-api";
-import { DEVICE_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 
 function textSort(a: Row<Device>, b: Row<Device>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(String(b.getValue(columnId)));
@@ -60,11 +60,9 @@ const columns: ColumnDef<Device>[] = [
     filterFn: multiSelectFilterFn,
     meta: { filterVariant: "multi-select", label: "สถานะ" },
     cell: ({ row }) => (
-      <span
-        className={pillClass(DEVICE_STATUS_TONE[row.original.status] ?? "neutral")}
-      >
+      <StatusPill tone={DEVICE_STATUS_TONE[row.original.status] ?? "neutral"}>
         {row.original.status}
-      </span>
+      </StatusPill>
     ),
   },
   {

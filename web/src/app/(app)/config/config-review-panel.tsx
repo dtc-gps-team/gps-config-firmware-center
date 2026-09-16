@@ -13,7 +13,7 @@ import {
 } from "@/lib/config-api";
 import { listUsers, type UserSummary } from "@/lib/users-api";
 import { Button } from "@/components/ui/button";
-import { pillClass } from "@/lib/status-pill";
+import { StatusPill } from "@/lib/status-pill";
 
 /**
  * แผง "ทดสอบ & ส่งอนุมัติ" ฝั่ง SW (Config Simulation Gate — #18) — โผล่บนหน้า
@@ -92,9 +92,9 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
           {simRunning ? "กำลังทดสอบ…" : "ทดสอบ Config"}
         </Button>
         {sim && (
-          <span className={pillClass(sim.passed ? "success" : "danger")}>
+          <StatusPill tone={sim.passed ? "success" : "danger"}>
             {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </span>
+          </StatusPill>
         )}
         {simError && (
           <span className="text-xs text-destructive">{simError}</span>

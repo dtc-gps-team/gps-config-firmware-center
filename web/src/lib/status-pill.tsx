@@ -1,3 +1,12 @@
+import {
+  CircleIcon,
+  InfoIcon,
+  ClockIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  type LucideIcon,
+} from "lucide-react";
+
 /**
  * Status pill — className helper สำหรับ badge สถานะ (Config / Task / Device ฯลฯ)
  *
@@ -23,6 +32,41 @@ const PILL_TONE: Record<PillTone, string> = {
 
 export function pillClass(tone: PillTone): string {
   return `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PILL_TONE[tone]}`;
+}
+
+/** ไอคอนต่อ tone ของ pill — ใช้กับ <StatusPill> เท่านั้น (ไม่ใช่ pillClass()
+ *  เปล่าๆ ที่บางหน้าเอาไปทำ tag/chip ธรรมดาที่ไม่ได้สื่อสถานะ เช่น รุ่นอุปกรณ์
+ *  ที่ compatibility ของ Firmware — จุดนั้นไม่ควรมีไอคอนสถานะเพราะไม่ใช่สถานะ) */
+const PILL_ICON: Record<PillTone, LucideIcon> = {
+  neutral: CircleIcon,
+  info: InfoIcon,
+  progress: ClockIcon,
+  success: CircleCheckIcon,
+  danger: CircleXIcon,
+};
+
+/**
+ * Badge สถานะพร้อมไอคอน — ใช้แทน `<span className={pillClass(tone)}>` เดิม
+ * ทุกจุดที่ text ข้างในสื่อ "สถานะ" จริงๆ (Config/Campaign/Firmware/Device
+ * status, ผลทดสอบผ่าน/ไม่ผ่าน ฯลฯ) เทียบกับ mockup UX/UI Design ต้นฉบับที่มี
+ * ไอคอนกำกับสถานะเสมอ แต่ของจริงเป็น text ล้วนมาตลอด
+ */
+export function StatusPill({
+  tone,
+  children,
+  className,
+}: {
+  tone: PillTone;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const Icon = PILL_ICON[tone];
+  return (
+    <span className={`${pillClass(tone)} gap-1${className ? ` ${className}` : ""}`}>
+      <Icon className="size-3" />
+      {children}
+    </span>
+  );
 }
 
 /** Config lifecycle: draft → testing → approved → synced (rejected = ย้อน draft) */

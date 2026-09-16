@@ -14,7 +14,7 @@ import {
   type Config,
   type ConfigVersion,
 } from "@/lib/config-api";
-import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CONFIG_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
@@ -154,13 +154,9 @@ function ConfigDetailContent({
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold break-words">{config.name}</h1>
-          <span
-            className={pillClass(
-              CONFIG_STATUS_TONE[config.status] ?? "neutral",
-            )}
-          >
+          <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
             {config.status}
-          </span>
+          </StatusPill>
           {latestVersion != null && (
             <span className="text-sm text-muted-foreground">
               เวอร์ชัน {latestVersion}

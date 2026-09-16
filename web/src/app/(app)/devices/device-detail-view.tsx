@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DEVICE_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
 import { type Device } from "@/lib/device-api";
@@ -80,13 +80,9 @@ function DeviceDetailContent({ device }: { device: Device }) {
           <h1 className="font-mono text-2xl font-semibold">
             {device.deviceId}
           </h1>
-          <span
-            className={pillClass(
-              DEVICE_STATUS_TONE[device.status] ?? "neutral",
-            )}
-          >
+          <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
             {device.status}
-          </span>
+          </StatusPill>
         </div>
         <p className="text-sm text-muted-foreground">
           ทุก Role เข้าถึงได้ (Read-only)

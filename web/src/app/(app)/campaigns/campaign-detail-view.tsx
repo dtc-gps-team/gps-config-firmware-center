@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { CAMPAIGN_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CAMPAIGN_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
@@ -75,9 +75,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">{data.name}</h1>
-          <span className={pillClass(CAMPAIGN_STATUS_TONE[data.status])}>
+          <StatusPill tone={CAMPAIGN_STATUS_TONE[data.status]}>
             {data.status}
-          </span>
+          </StatusPill>
         </div>
         {data.description && (
           <p className="text-sm text-muted-foreground">{data.description}</p>
