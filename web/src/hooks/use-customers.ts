@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listCustomers, type CustomerSummary } from "@/lib/customer-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type CustomersState = {
   data: CustomerSummary[] | null;
@@ -53,6 +54,7 @@ export function useCustomers() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

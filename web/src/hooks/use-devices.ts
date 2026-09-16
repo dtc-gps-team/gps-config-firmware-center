@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listDevices, type Device } from "@/lib/device-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type DevicesState = {
   data: Device[] | null;
@@ -44,6 +45,7 @@ export function useDevices() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

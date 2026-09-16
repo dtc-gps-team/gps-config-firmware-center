@@ -8,6 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import {
@@ -22,9 +29,6 @@ import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
-
-const SELECT_CLASS =
-  "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
 
 /** Config สถานะที่ใช้สร้างแคมเปญได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES`
  * ฝั่ง backend (mirror device.service.ts/campaign.service.ts) */
@@ -494,18 +498,22 @@ function TargetsStep({
             </p>
           </div>
           <div className="flex gap-2">
-            <select
+            <Select
               value={customerFilter}
-              onChange={(e) => onCustomerFilterChange(e.target.value)}
-              className={`${SELECT_CLASS} h-8 max-w-40`}
+              onValueChange={(value) => onCustomerFilterChange(value ?? "")}
             >
-              <option value="">ลูกค้า: ทั้งหมด</option>
-              {customerOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-8 max-w-40">
+                <SelectValue placeholder="ลูกค้า: ทั้งหมด" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">ลูกค้า: ทั้งหมด</SelectItem>
+                {customerOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -668,19 +676,21 @@ function PayloadStep({
         {payloadType === "Config" ? (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="campaign-config">Config</Label>
-            <select
-              id="campaign-config"
+            <Select
               value={configId}
-              onChange={(e) => onSelectConfig(e.target.value)}
-              className={SELECT_CLASS}
+              onValueChange={(value) => onSelectConfig(value ?? "")}
             >
-              <option value="">— เลือก —</option>
-              {configs.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.deviceModel}/{c.protocol})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="campaign-config" className="w-full">
+                <SelectValue placeholder="— เลือก —" />
+              </SelectTrigger>
+              <SelectContent>
+                {configs.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} ({c.deviceModel}/{c.protocol})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {configs.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 ยังไม่มี Config สถานะ approved/synced ให้เลือก
@@ -690,19 +700,21 @@ function PayloadStep({
         ) : (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="campaign-firmware">Firmware</Label>
-            <select
-              id="campaign-firmware"
+            <Select
               value={firmwareId}
-              onChange={(e) => onSelectFirmware(e.target.value)}
-              className={SELECT_CLASS}
+              onValueChange={(value) => onSelectFirmware(value ?? "")}
             >
-              <option value="">— เลือก —</option>
-              {firmwareList.map((f) => (
-                <option key={f.id} value={f.id}>
-                  v{f.version} — รองรับ: {f.deviceModelCompatibility.join(", ")}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="campaign-firmware" className="w-full">
+                <SelectValue placeholder="— เลือก —" />
+              </SelectTrigger>
+              <SelectContent>
+                {firmwareList.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    v{f.version} — รองรับ: {f.deviceModelCompatibility.join(", ")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {firmwareList.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 ยังไม่มี Firmware สถานะ stored (จัดเก็บสำเร็จแล้ว) ให้เลือก

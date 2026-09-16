@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { CAMPAIGN_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CAMPAIGN_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatRelativeTime } from "@/lib/format-date";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
@@ -69,9 +69,9 @@ export function CampaignsTable() {
               {campaign.targetCount}
             </TableCell>
             <TableCell>
-              <span className={pillClass(CAMPAIGN_STATUS_TONE[campaign.status])}>
+              <StatusPill tone={CAMPAIGN_STATUS_TONE[campaign.status]}>
                 {campaign.status}
-              </span>
+              </StatusPill>
             </TableCell>
             <TableCell className="text-muted-foreground">
               {formatRelativeTime(campaign.createdAt)}

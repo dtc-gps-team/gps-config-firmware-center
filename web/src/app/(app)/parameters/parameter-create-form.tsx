@@ -13,15 +13,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import {
   createConfigDefinition,
   type ConfigFieldModelSupport,
 } from "@/lib/config-definition-api";
-
-const SELECT_CLASS =
-  "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
 
 /** ชนิดข้อมูลที่ backend `matchesDataType` รู้จัก (ค่าอื่นปล่อยผ่านเหมือนไม่มีนิยาม
  * — ดู config-definition.service.ts) จำกัดไว้ 3 ค่านี้เพื่อไม่ให้พิมพ์ผิด */
@@ -202,18 +206,21 @@ export function ParameterCreateForm({
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="param-datatype">ชนิดข้อมูล</Label>
-              <select
-                id="param-datatype"
+              <Select
                 value={dataType}
-                onChange={(e) => setDataType(e.target.value)}
-                className={SELECT_CLASS}
+                onValueChange={(value) => value && setDataType(value)}
               >
-                {DATA_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="param-datatype" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DATA_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

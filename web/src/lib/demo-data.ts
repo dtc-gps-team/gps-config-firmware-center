@@ -18,7 +18,9 @@
 /*  หน้าจริงที่ต่อ API ก็ใช้) re-export ต่อให้หน้า scaffold เดิมไม่ต้องแก้ import */
 /* ---------------------------------------------------------------- */
 
-import { TASK_STATUS_TONE } from "@/lib/status-pill";
+import { RocketIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react";
+
+import { TASK_STATUS_TONE, type PillTone } from "@/lib/status-pill";
 
 export {
   pillClass,
@@ -34,9 +36,19 @@ export {
 /*  ตัวอย่าง — รอ GET /audit-logs                                            */
 /* ---------------------------------------------------------------- */
 
-export const DEMO_DASHBOARD_SUMMARY = [
-  { label: "Campaign กำลังทำงาน", value: "2" },
-  { label: "Incident ที่ยังไม่ปิด", value: "1" },
+export const DEMO_DASHBOARD_SUMMARY: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  tone: PillTone;
+}[] = [
+  { label: "Campaign กำลังทำงาน", value: "2", icon: RocketIcon, tone: "progress" },
+  {
+    label: "Incident ที่ยังไม่ปิด",
+    value: "1",
+    icon: TriangleAlertIcon,
+    tone: "danger",
+  },
 ];
 
 export const DEMO_DASHBOARD_ACTIVITY = [

@@ -1356,7 +1356,10 @@ paths:
           schema:
             type: string
             maxLength: 100
-          description: เช่น create, update, delete, decide, approve, reject, apply-config
+          description: >-
+            ค้นหาแบบ contains ไม่สนตัวพิมพ์เล็ก-ใหญ่ (ต่างจาก userId/auditModule
+            ที่ match ตรงเป๊ะ) เช่น create, update, delete, decide, approve,
+            reject, apply-config
       responses:
         "200":
           description: รายการ AuditLog (เรียงตาม createdAt desc)

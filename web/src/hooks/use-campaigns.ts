@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listCampaigns, type Campaign } from "@/lib/campaign-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type CampaignsState = {
   data: Campaign[] | null;
@@ -45,6 +46,7 @@ export function useCampaigns() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }
