@@ -24,6 +24,7 @@ import { CONFIG_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -128,9 +129,7 @@ export function ConfigTableCard({
       </CardHeader>
       <CardContent>
         {isLoading && data === null ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            กำลังโหลด…
-          </p>
+          <TableSkeleton columns={columns.length} />
         ) : error ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <p className="text-sm text-destructive">{error}</p>

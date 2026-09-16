@@ -13,6 +13,7 @@ import {
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
 
@@ -35,11 +36,7 @@ export function FirmwareDetailView({ firmwareId }: { firmwareId: string }) {
   const { data, isLoading, error, refetch } = useFirmware(firmwareId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลด Firmware…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {
@@ -100,7 +97,7 @@ function FirmwareDetailContent({
 
       <FirmwareSimulatePanel firmware={firmware} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">

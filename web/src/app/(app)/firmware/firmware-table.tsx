@@ -26,6 +26,7 @@ import {
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { UploadFirmwareButton } from "./upload-firmware-button";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 function thTextSort(a: Row<Firmware>, b: Row<Firmware>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(
@@ -152,9 +153,7 @@ export function FirmwareTableCard({
       </CardHeader>
       <CardContent>
         {isLoading && data === null ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            กำลังโหลด…
-          </p>
+          <TableSkeleton columns={columns.length} />
         ) : error ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <p className="text-sm text-destructive">{error}</p>

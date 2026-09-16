@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 /** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
  * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
@@ -120,9 +121,7 @@ export function AuditLogView() {
             </div>
 
             {isLoading && data === null ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                กำลังโหลด…
-              </p>
+              <TableSkeleton columns={4} />
             ) : error ? (
               <div className="flex flex-col items-center gap-3 py-8">
                 <p className="text-sm text-destructive">{error}</p>

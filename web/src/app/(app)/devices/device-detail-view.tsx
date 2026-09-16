@@ -12,6 +12,7 @@ import {
 import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { type Device } from "@/lib/device-api";
 
 function InfoItem({
@@ -33,11 +34,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
   const { data, isLoading, notFound, error, refetch } = useDevice(deviceId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดข้อมูลอุปกรณ์…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (notFound || error || !data) {
@@ -68,7 +65,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
 
 function DeviceDetailContent({ device }: { device: Device }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/devices"
