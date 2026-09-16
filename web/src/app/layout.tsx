@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Noto_Sans_Thai } from "next/font/google";
+import { Geist_Mono, Noto_Sans_Thai_Looped } from "next/font/google";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -9,7 +9,13 @@ import "./globals.css";
 // ไว้รออยู่แล้ว — ต้องตั้งชื่อให้ตรงกันตัวแปรถึงจะถูกหยิบไปใช้จริง (เดิมตอนเป็น
 // Geist ตัวแปรชื่อ --font-geist-sans ไม่ตรงกับที่ globals.css รออยู่ ทำให้
 // Tailwind fallback ไปใช้ font ระบบเงียบๆ โดยไม่มี error — แก้จุดนี้ไปด้วยเลย)
-const notoSansThai = Noto_Sans_Thai({
+//
+// เปลี่ยนจาก Noto_Sans_Thai (เดิม) → Noto_Sans_Thai_Looped: Google แยกฟอนต์นี้
+// เป็น 2 ตระกูล — "Noto Sans Thai" ดีไซน์แบบไม่มีหัว (loopless) ส่วน "Noto Sans
+// Thai Looped" มีหัวตามอักขระไทยดั้งเดิม อ่านชัดกว่าเมื่อมองจากระยะไกล/ตัวเล็ก
+// (feedback จากผู้ใช้จริง 2026-09-16) — เปลี่ยนแค่ชื่อฟอนต์ที่โหลด ไม่กระทบ
+// ชื่อ CSS variable/weight/subset เดิมเลย
+const notoSansThaiLooped = Noto_Sans_Thai_Looped({
   variable: "--font-sans",
   subsets: ["thai", "latin"],
   weight: ["400", "500", "600", "700"],
@@ -29,7 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="th"
-      className={`${notoSansThai.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoSansThaiLooped.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>
