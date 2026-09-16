@@ -19,7 +19,13 @@ export type AuditLogRow = {
   actorName: string;
   auditModule: string;
   action: string;
+  ipAddress: string | null;
   createdAt: string;
+};
+
+export type AuditLogFilters = {
+  auditModule?: string;
+  action?: string;
 };
 
 type State = {
@@ -30,11 +36,12 @@ type State = {
 
 /**
  * `GET /audit-logs` (Sprint 3 #27) — เรียง createdAt desc มาจาก backend
- * อยู่แล้ว
+ * อยู่แล้ว · filter (auditModule/action) ส่งตรงไป backend ผ่าน query params
  */
-export function useAuditLogs() {
+export function useAuditLogs(filters: AuditLogFilters = {}) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
+  const { auditModule, action } = filters;
   const [state, setState] = useState<State>({
     data: null,
     isLoading: true,
@@ -45,7 +52,7 @@ export function useAuditLogs() {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const logs = await listAuditLogs(token);
+      const logs = await listAuditLogs(token, { auditModule, action });
       const data = logs.map(
         (log): AuditLogRow => ({
           id: log.id,
@@ -53,6 +60,7 @@ export function useAuditLogs() {
           actorName: log.userId,
           auditModule: log.auditModule,
           action: log.action,
+          ipAddress: log.ipAddress,
           createdAt: log.createdAt,
         }),
       );
@@ -65,7 +73,7 @@ export function useAuditLogs() {
           err instanceof ApiError ? err.message : "โหลด Audit Log ไม่สำเร็จ",
       }));
     }
-  }, [token]);
+  }, [token, auditModule, action]);
 
   useEffect(() => {
     void refetch();

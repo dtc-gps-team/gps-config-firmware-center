@@ -6,6 +6,16 @@ import Link from "next/link";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canUpdateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
@@ -202,34 +212,29 @@ function ConfigDetailContent({
         )}
       </div>
 
-      {confirming && (
-        <div className="flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
-          <p className="text-sm">
-            ลบ Config &ldquo;{config.name}&rdquo; ถาวร? กู้คืนไม่ได้
-          </p>
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ลบ Config นี้?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ลบ Config &ldquo;{config.name}&rdquo; ถาวร? กู้คืนไม่ได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           {deleteError && (
             <p className="text-sm text-destructive">{deleteError}</p>
           )}
-          <div className="flex gap-2">
-            <Button
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
-              size="sm"
               onClick={handleDelete}
               disabled={deleting}
             >
               {deleting ? "กำลังลบ…" : "ยืนยันลบ"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-            >
-              ยกเลิก
-            </Button>
-          </div>
-        </div>
-      )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {canModify && <ConfigReviewPanel config={config} />}
 
