@@ -34,6 +34,40 @@ export const CONFIG_STATUS_TONE: Record<string, PillTone> = {
   rejected: "danger",
 };
 
+/**
+ * ข้อความ "ขั้นตอนถัดไป" ต่อสถานะ Config — ตอบ feedback จากที่ประชุมกับอาจารย์
+ * (2026-09-15 ข้อ 1.3): แค่โชว์ status pill ไม่พอ ต้องบอกผู้ใช้ด้วยว่าต้องทำ
+ * อะไรต่อ · แยกข้อความตาม role เท่าที่มีผลกับสิ่งที่ role นั้นทำได้จริงบนหน้านี้
+ * (SW ส่งอนุมัติได้ตอน draft, Operation อนุมัติได้ตอน testing) role อื่นเห็น
+ * ข้อความกลางๆ · อ้างอิง flow จริงจาก ConfigReviewPanel + CONFIG_STATUSES ใน
+ * backend/src/config/config-status.ts (ไม่ใช่แค่เดา)
+ */
+export function getConfigNextStepMessage(
+  status: string,
+  role: string | null | undefined,
+): string {
+  switch (status) {
+    case "draft":
+      return role === "SW"
+        ? 'ทดสอบแล้วกด "ส่งให้ Operation อนุมัติ" เมื่อพร้อม'
+        : "SW กำลังจัดทำ ยังไม่ได้ส่งอนุมัติ";
+    case "testing":
+      return role === "Operation"
+        ? "รอคุณอนุมัติหรือปฏิเสธด้านล่าง"
+        : "ส่งให้ Operation อนุมัติแล้ว กำลังรอผลตัดสินใจ";
+    case "approved":
+      return role === "Operation"
+        ? "อนุมัติแล้ว มอบหมายงานติดตั้งให้ช่างหน้างาน (ST/OT) ผ่าน Task ได้"
+        : "อนุมัติแล้ว รอ Operation มอบหมายงานติดตั้งให้ช่างหน้างาน";
+    case "rejected":
+      return 'ถูกปฏิเสธ ใช้ปุ่ม "โคลน Config" ด้านบนเพื่อแก้ไขแล้วส่งใหม่';
+    case "synced":
+      return "ซิงก์เข้าระบบเดิมเรียบร้อยแล้ว ใช้งานได้เต็มรูปแบบ";
+    default:
+      return "";
+  }
+}
+
 export const TASK_STATUS_TONE: Record<string, PillTone> = {
   pending: "neutral",
   in_progress: "progress",

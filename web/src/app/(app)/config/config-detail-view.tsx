@@ -14,7 +14,11 @@ import {
   type Config,
   type ConfigVersion,
 } from "@/lib/config-api";
-import { CONFIG_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import {
+  CONFIG_STATUS_TONE,
+  getConfigNextStepMessage,
+  pillClass,
+} from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
@@ -167,6 +171,9 @@ function ConfigDetailContent({
             </span>
           )}
         </div>
+        <p className="text-sm text-muted-foreground">
+          {getConfigNextStepMessage(config.status, session?.role)}
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
