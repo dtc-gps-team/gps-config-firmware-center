@@ -21,6 +21,7 @@ import type { Firmware } from "@/lib/firmware-api";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
@@ -263,11 +264,7 @@ export function CampaignWizard() {
   const loadError = devicesQuery.error ?? configsQuery.error ?? firmwareQuery.error;
 
   if (loadingInitial) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดข้อมูล…
-      </p>
-    );
+    return <DetailSkeleton lines={6} />;
   }
 
   if (loadError) {

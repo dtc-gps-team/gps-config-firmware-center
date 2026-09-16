@@ -7,6 +7,7 @@ import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import type { Config } from "@/lib/config-api";
 import { useConfig } from "@/hooks/use-config";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { ConfigWizard, type ConfigWizardMode } from "./config-wizard";
 
 type ViewProps =
@@ -75,11 +76,7 @@ function SourcedWizard({
   const { data, isLoading, error, refetch } = useConfig(configId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลด Config…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {

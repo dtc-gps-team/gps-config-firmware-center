@@ -7,6 +7,7 @@ import { CAMPAIGN_STATUS_TONE, pillClass } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 function InfoRow({
   label,
@@ -38,11 +39,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const configQuery = useConfig(data?.configId ?? null);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดแคมเปญ…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {
