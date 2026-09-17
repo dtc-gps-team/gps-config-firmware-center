@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Campaign, CampaignPayloadType, Device } from '@prisma/client';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
-import { SIMULATABLE_FIRMWARE_STATUS } from '../firmware/firmware-status';
+import {
+  CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
+  SIMULATABLE_FIRMWARE_STATUS,
+} from '../firmware/firmware-status';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { QueryCampaignDto } from './dto/query-campaign.dto';
@@ -186,6 +189,16 @@ export class CampaignService {
     if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {
       throw new ConflictException(
         `Firmware สถานะอัปโหลดปัจจุบัน (${firmware.uploadStatus}) ยังใช้สร้างแคมเปญไม่ได้ — ต้องเป็น "${SIMULATABLE_FIRMWARE_STATUS}" (จัดเก็บสำเร็จแล้ว) เท่านั้น`,
+      );
+    }
+    // Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) —
+    // ต้องผ่านทั้ง uploadStatus (เช็คด้านบน) และ approvalStatus (QAEngineer
+    // อนุมัติคุณภาพแล้ว) — คนละมิติกัน เช็คแยกกันคนละเงื่อนไข
+    if (
+      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
+    ) {
+      throw new ConflictException(
+        `Firmware สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ยังใช้สร้างแคมเปญไม่ได้ — ต้องเป็น "${CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS}" (QAEngineer อนุมัติคุณภาพแล้ว) เท่านั้น`,
       );
     }
 

@@ -412,4 +412,148 @@ describe('FirmwareController (integration — real postgres + guard chain + real
         .expect(404);
     });
   });
+
+  // Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) —
+  // resource 'firmware-decision' แยกจาก 'firmware'/'firmware-simulation'
+  describe('POST /firmware/:id/approve, POST /firmware/:id/reject', () => {
+    async function seedFirmware(
+      uploadedBy: string,
+      overrides?: {
+        approvalStatus?: 'pending_review' | 'approved' | 'rejected';
+      },
+    ) {
+      return prisma.firmware.create({
+        data: {
+          version: 'v1',
+          deviceModelCompatibility: ['GT06N'],
+          uploadStatus: 'stored',
+          approvalStatus: overrides?.approvalStatus ?? 'pending_review',
+          objectKey: 'firmware/x/fw.bin',
+          originalFilename: 'fw.bin',
+          fileSizeBytes: 10,
+          uploadedBy,
+        },
+      });
+    }
+
+    it('role ไม่มีสิทธิ์ firmware-decision (FirmwareEngineer) -> 403', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('QAEngineer มีสิทธิ์ firmware-decision, approvalStatus pending_review -> 200 อนุมัติ + approvedBy', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { approvalStatus: string; approvedBy: string };
+      expect(body.approvalStatus).toBe('approved');
+      expect(body.approvedBy).toBe(qaUser.id);
+    });
+
+    it('สำเร็จ (approve) -> เขียน AuditLog action approve (module firmware)', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: qaUser.id, auditModule: 'firmware' },
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0].action).toBe('approve');
+    });
+
+    it('approvalStatus approved ไปแล้ว -> approve ซ้ำได้ 409', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id, {
+        approvalStatus: 'approved',
+      });
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('QAEngineer มีสิทธิ์ firmware-decision, approvalStatus pending_review -> 200 ปฏิเสธ โดยไม่ตั้ง approvedBy', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as {
+        approvalStatus: string;
+        approvedBy: string | null;
+      };
+      expect(body.approvalStatus).toBe('rejected');
+      expect(body.approvedBy).toBeNull();
+    });
+
+    it('approvalStatus rejected ไปแล้ว -> reject ซ้ำได้ 409', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id, {
+        approvalStatus: 'rejected',
+      });
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/firmware/${firmware.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('ไม่พบ Firmware -> 404', async () => {
+      const qaUser = await makeUser(prisma, { role: 'QAEngineer' });
+      await grant('QAEngineer', ActionType.Approve, 'firmware-decision');
+      const token = tokenFor(qaUser.id, 'QAEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/firmware/11111111-1111-1111-1111-111111111111/approve')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
 });

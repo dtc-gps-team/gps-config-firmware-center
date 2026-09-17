@@ -98,4 +98,31 @@ export class FirmwareController {
   ): Promise<SimulationResult> {
     return this.firmwareService.simulate(id, dto.deviceModel);
   }
+
+  // Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) —
+  // resource แยกเป็น 'firmware-decision' (mirror 'config-decision') กัน
+  // FirmwareEngineer ที่มีแค่ firmware.Read/Update ใช้ endpoint นี้ได้โดยไม่
+  // ตั้งใจ · ครอบคลุมทั้ง approve/reject ด้วย action Approve เดียว (ตรงกับที่
+  // seed ไว้ — grant('QAEngineer', 'firmware-decision', 'Approve')) mirror
+  // ConfigController.approve/reject ที่ใช้ 'config' action Approve ตัวเดียว
+  // ครอบคลุมทั้งคู่เหมือนกัน
+  @Post(':id/approve')
+  @RequirePermission('firmware-decision', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Firmware> {
+    return this.firmwareService.approve(id, toActor(req));
+  }
+
+  @Post(':id/reject')
+  @RequirePermission('firmware-decision', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Firmware> {
+    return this.firmwareService.reject(id, toActor(req));
+  }
 }

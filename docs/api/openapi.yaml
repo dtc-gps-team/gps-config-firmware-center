@@ -1035,6 +1035,72 @@ paths:
         "409":
           description: uploadStatus ของ Firmware ปัจจุบันยังไม่พร้อมทดสอบ — ต้องเป็น `stored` เท่านั้น
 
+  /firmware/{firmwareId}/approve:
+    post:
+      tags: [firmware]
+      operationId: approveFirmware
+      summary: QAEngineer อนุมัติคุณภาพ Firmware (Firmware Approval Lifecycle — docs/13 §3.2)
+      description: >-
+        resource แยกเป็น `firmware-decision` action `Approve` (mirror
+        `config-decision`) — QAEngineer เท่านั้น · สถานะ `pending_review` →
+        `approved` เท่านั้น (ต้องดูผล `simulateFirmware` มาก่อนตามดุลพินิจ QA
+        — ไม่มีขั้น "ส่งต่อ" แยกแบบ Config เพราะ QA เป็นผู้ตัดสินใจคนเดียว)
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — approvalStatus เป็น approved พร้อม approvedBy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติคุณภาพ Firmware — เฉพาะ Role QAEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Firmware นี้
+        "409":
+          description: approvalStatus ของ Firmware ปัจจุบันไม่ใช่ pending_review จึงอนุมัติไม่ได้
+
+  /firmware/{firmwareId}/reject:
+    post:
+      tags: [firmware]
+      operationId: rejectFirmware
+      summary: QAEngineer ปฏิเสธคุณภาพ Firmware (Firmware Approval Lifecycle — docs/13 §3.2)
+      description: >-
+        resource เดียวกับ `approveFirmware` (`firmware-decision` action
+        `Approve`) — สถานะ `pending_review` → `rejected` เท่านั้น · ไม่มี body
+        (ยังไม่รับเหตุผล — mirror `rejectConfig`) FirmwareEngineer ต้องอัปโหลด
+        เวอร์ชันใหม่แก้ไข ไม่มีการแก้ไฟล์เดิมซ้ำ
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ — approvalStatus เป็น rejected (approvedBy ยังเป็น null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธคุณภาพ Firmware — เฉพาะ Role QAEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Firmware นี้
+        "409":
+          description: approvalStatus ของ Firmware ปัจจุบันไม่ใช่ pending_review จึงปฏิเสธไม่ได้
+
   /devices:
     get:
       tags: [device]
@@ -1471,7 +1537,11 @@ paths:
         (แก้ไข 2026-09-14 หลัง Sprint 3 #23/PR #151 — ต้องระบุ `firmwareId`
         แทน `configId`, Firmware ต้อง `uploadStatus: stored` และอุปกรณ์
         เป้าหมายต้องมี `deviceModel` อยู่ใน `deviceModelCompatibility` ของ
-        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้)
+        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้) ·
+        **แก้ไข 2026-09-17 (Firmware Approval Lifecycle, docs/13 §3.2):**
+        Firmware ต้อง `approvalStatus: approved` (QAEngineer อนุมัติคุณภาพ
+        แล้ว) ควบคู่กับ `uploadStatus: stored` ด้วย — เช็คทั้งสองเงื่อนไข
+        แยกกัน คนละมิติกัน
       requestBody:
         required: true
         content:
@@ -1498,9 +1568,9 @@ paths:
         "409":
           description: >-
             Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรือ Firmware
-            ยัง `uploadStatus` ไม่ใช่ `stored` หรืออุปกรณ์เป้าหมายบางเครื่อง
-            ยังไม่ installed หรือรุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก
-            (รวมทุกปัญหาไว้ในข้อความเดียว)
+            ยัง `uploadStatus` ไม่ใช่ `stored` หรือ `approvalStatus` ไม่ใช่
+            `approved` หรืออุปกรณ์เป้าหมายบางเครื่อง ยังไม่ installed หรือ
+            รุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก (รวมทุกปัญหาไว้ในข้อความเดียว)
 
   /campaigns/{id}:
     get:
@@ -2091,7 +2161,9 @@ components:
         1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.23) — `objectKey`/
         `originalFilename`/`fileSizeBytes` ปิด gap ที่ `01_GPS_Build_Reference.md`
         §3 ระบุไว้แต่แรกว่าต้องมี "path ใน Object Storage" แต่ schema เดิม
-        (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว
+        (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว ·
+        `approvalStatus`/`approvedBy` เพิ่มโดย Firmware Approval Lifecycle
+        (docs/13_Role_Redesign_Proposal.md §3.2 — PR ถัดจาก #178)
       required:
         [
           id,
@@ -2104,6 +2176,8 @@ components:
           fileSizeBytes,
           uploadedBy,
           uploadedAt,
+          approvalStatus,
+          approvedBy,
         ]
       properties:
         id:
@@ -2141,6 +2215,22 @@ components:
         uploadedAt:
           type: string
           format: date-time
+        approvalStatus:
+          type: string
+          description: >-
+            สถานะอนุมัติคุณภาพ (Firmware Approval Lifecycle, docs/13 §3.2) —
+            คนละมิติกับ uploadStatus ด้านบน (uploadStatus = ผลทางเทคนิคของ
+            การอัปโหลด, approvalStatus = QAEngineer ตรวจคุณภาพแล้วหรือยัง)
+            ต้อง `approved` ควบคู่กับ uploadStatus `stored` ถึงใช้สร้าง
+            Campaign ได้ (`createCampaign`)
+          enum: [pending_review, approved, rejected]
+        approvedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            user id ของ QAEngineer ที่อนุมัติ — null จนกว่าจะถูกอนุมัติ
+            (ตอน reject ก็ยังเป็น null เช่นกัน — ไม่มีใคร "อนุมัติ" การ reject)
 
     SimulationResult:
       type: object
