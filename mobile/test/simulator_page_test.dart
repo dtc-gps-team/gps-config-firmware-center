@@ -7,6 +7,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/features/config_simulator/config_repository.dart';
 import 'package:mobile/features/config_simulator/simulator_page.dart';
 import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -26,6 +27,34 @@ Task _task({required String id, String? deviceId}) => Task(
   createdAt: DateTime(2026, 9, 1),
   updatedAt: DateTime(2026, 9, 1),
   deviceId: deviceId,
+);
+
+/// Device numbers in tests are already real (e.g. `DVC-1`) — this fake just
+/// lets `assignedDeviceIdListProvider`'s join with `GET /devices` resolve
+/// them as-is (case 2 in simulator_repository.dart), same as before the
+/// deviceId-normalize fix. The normalize-from-UUID path is covered
+/// separately in simulator_repository_test.dart.
+class _FakeDeviceSearchRepository implements DeviceSearchRepository {
+  _FakeDeviceSearchRepository(this._devices);
+
+  final List<Device> _devices;
+
+  @override
+  Future<List<Device>> listDevices() async => _devices;
+
+  @override
+  Future<Device> getDevice(String deviceId) async =>
+      _devices.firstWhere((d) => d.deviceId == deviceId);
+}
+
+Device _device({required String deviceId}) => Device(
+  id: 'uuid-$deviceId',
+  deviceId: deviceId,
+  simNumber: '0800000000',
+  deviceModel: 'GT06N',
+  protocol: 'TCP',
+  status: DeviceLifecycleStatus.registered,
+  registeredAt: DateTime(2026, 1, 1),
 );
 
 class _FakeTaskRepository implements TaskRepository {
@@ -128,18 +157,32 @@ Future<void> _pump(
   UserRole role = UserRole.st,
   List<Task>? tasks,
   Object? tasksError,
+  List<Device>? devices,
   List<DeviceConfigDraft>? configs,
   Object? configsError,
   DeviceSimulateConfigResult? simulateResult,
   Object? simulateError,
   _FakeSimulatorRepository? simulatorRepo,
 }) async {
+  final effectiveDevices =
+      devices ??
+      [
+        for (final id in {
+          for (final t in tasks ?? const <Task>[])
+            if ((t.deviceId ?? '').trim().isNotEmpty) t.deviceId!.trim(),
+        })
+          _device(deviceId: id),
+      ];
+
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         taskRepositoryProvider.overrideWithValue(
           _FakeTaskRepository(tasks: tasks, error: tasksError),
+        ),
+        deviceSearchRepositoryProvider.overrideWithValue(
+          _FakeDeviceSearchRepository(effectiveDevices),
         ),
         configRepositoryProvider.overrideWithValue(
           _FakeConfigRepository(configs: configs, error: configsError),
