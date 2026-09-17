@@ -89,7 +89,7 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
   }
 
   async function makeConfig(): Promise<string> {
-    const user = await makeUser(prisma, { role: 'SW' });
+    const user = await makeUser(prisma, { role: 'ConfigEngineer' });
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
@@ -128,9 +128,9 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
     });
 
     it('role ไม่มี incidents.Read -> 403', async () => {
-      const user = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
-      const token = tokenFor(user.id, 'SW');
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
+      const token = tokenFor(user.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .get('/api/v1/incidents')

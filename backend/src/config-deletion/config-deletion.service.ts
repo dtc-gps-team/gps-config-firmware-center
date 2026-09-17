@@ -49,7 +49,7 @@ export class ConfigDeletionService {
    *
    * **ไม่เขียน `AuditLog`** — job รันโดยระบบ ไม่มี real user actor
    * (`AuditLog.userId` เป็น non-null และไม่มี convention "system actor" ในโค้ด
-   * เดิมให้ mirror) · การกระทำที่ลง audit คือตอน SuperAdmin/SW กด approve /
+   * เดิมให้ mirror) · การกระทำที่ลง audit คือตอน SuperAdmin/ConfigEngineer กด approve /
    * reject / keep เท่านั้น
    *
    * คืน list ของคำขอที่สร้างใหม่ (ให้ job log จำนวน + ให้เทสตรวจได้)
@@ -181,7 +181,7 @@ export class ConfigDeletionService {
   }
 
   /**
-   * ผู้สร้าง Config / SW กด "เก็บไว้" ระหว่าง grace period → คำขอ pending ของ
+   * ผู้สร้าง Config / ConfigEngineer กด "เก็บไว้" ระหว่าง grace period → คำขอ pending ของ
    * Config นั้นกลายเป็น `cancelled` + reset นาฬิกา 90 วัน (§3 — "แตะ
    * Config.updatedAt") + AuditLog · 404 ถ้าไม่มีคำขอ pending
    *

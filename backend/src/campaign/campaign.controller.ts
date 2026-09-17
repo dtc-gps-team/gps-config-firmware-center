@@ -26,8 +26,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 }
 
 // Sprint 3 #21 (Campaign Wizard) — RBAC_Matrix.md §2 แถว "Campaign Wizard":
-// SW/ST/OT/Auditor/Admin/SuperAdmin = R, Operation = C, R, U (ยังไม่มี U ใน
-// module นี้ — รอ Campaign Monitor แถวที่ 22 แยกต่างหาก)
+// ConfigEngineer/ST/OT/Auditor/Admin/SuperAdmin = R (เดิม SW ก่อนแยก role —
+// FirmwareEngineer/QAEngineer ไม่เกี่ยวกับ Campaign เลยจึงไม่มีสิทธิ์นี้),
+// Operation = C, R, U (ยังไม่มี U ใน module นี้ — รอ Campaign Monitor แถวที่
+// 22 แยกต่างหาก)
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('campaigns')
 export class CampaignController {

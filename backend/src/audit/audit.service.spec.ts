@@ -5,7 +5,7 @@ import { AuditService } from './audit.service';
 
 const entry: AuditLog = {
   id: '11111111-1111-1111-1111-111111111111',
-  userId: 'sw-1',
+  userId: 'ce-1',
   auditModule: 'config',
   action: 'create',
   ipAddress: null,
@@ -46,14 +46,14 @@ describe('AuditService', () => {
       auditLog.findMany.mockResolvedValue([]);
 
       await service.findAll({
-        userId: 'sw-1',
+        userId: 'ce-1',
         auditModule: 'config',
         action: 'crea',
       });
 
       expect(auditLog.findMany).toHaveBeenCalledWith({
         where: {
-          userId: 'sw-1',
+          userId: 'ce-1',
           auditModule: 'config',
           action: { contains: 'crea', mode: 'insensitive' },
         },

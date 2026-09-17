@@ -12,7 +12,8 @@ import { IncidentService } from './incident.service';
 //
 // resource `incidents` (พหูพจน์ ตั้งชื่อตาม path — mirror `devices`/`tasks`/
 // `notifications`) action `Read` · RBAC_Matrix.md §2 แถว "Incident & Rollback"
-// = R ทุก Role (คอลัมน์ SW/Operation/ST/OT/Auditor/Admin/SuperAdmin ทั้งหมดมี R)
+// = R ทุก Role (คอลัมน์ ConfigEngineer/FirmwareEngineer/QAEngineer/Operation/
+// ST/OT/Auditor/Admin/SuperAdmin ทั้งหมดมี R)
 // · grant seed เพิ่มใน prisma/seed.ts รอบนี้
 //
 // **ยังไม่มี** Create/Update/Rollback endpoint — Create ยังเป็นแค่ auto จาก

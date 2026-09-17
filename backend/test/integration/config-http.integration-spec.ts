@@ -130,11 +130,13 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .expect(403);
   });
 
-  it('POST /config role SW มีสิทธิ์ config.Create -> 201 พร้อม createdBy จาก JWT', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
+  it('POST /config role ConfigEngineer มีสิทธิ์ config.Create -> 201 พร้อม createdBy จาก JWT', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
     await seedApn1();
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     const res = await request(app.getHttpServer())
       .post('/api/v1/config')
@@ -148,15 +150,17 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .expect(201);
 
     const body = res.body as { createdBy: string; status: string };
-    expect(body.createdBy).toBe(swUser.id);
+    expect(body.createdBy).toBe(configEngineerUser.id);
     expect(body.status).toBe('draft');
   });
 
   it('POST /config สำเร็จ -> เขียน AuditLog action create (#27)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
     await seedApn1();
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config')
@@ -170,16 +174,22 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .expect(201);
 
     const logs = await prisma.auditLog.findMany({
-      where: { userId: swUser.id, auditModule: 'config', action: 'create' },
+      where: {
+        userId: configEngineerUser.id,
+        auditModule: 'config',
+        action: 'create',
+      },
     });
     expect(logs).toHaveLength(1);
   });
 
   it('POST /config ชื่อ Config ซ้ำกับที่มีอยู่ -> 409 (unique ทั้งระบบ — มติ Sprint 1 review ข้อ 4)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
     await seedApn1();
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
     const dupName = `cfg-${randomUUID()}`;
 
     await request(app.getHttpServer())
@@ -206,15 +216,17 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('PUT /config/:id เปลี่ยนชื่อไปชนกับ Config อื่น -> 409', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Update);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Update);
     const taken = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
     const target = await prisma.config.create({
@@ -223,10 +235,10 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .put(`/api/v1/config/${target.id}`)
@@ -254,10 +266,12 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import ไฟล์ JSON ถูกต้อง -> 201 พร้อม createdBy จาก JWT (flow เดียวกับฟอร์ม)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
     await seedApn1();
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     const res = await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -282,15 +296,17 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       status: string;
       deviceModel: string;
     };
-    expect(body.createdBy).toBe(swUser.id);
+    expect(body.createdBy).toBe(configEngineerUser.id);
     expect(body.status).toBe('draft');
     expect(body.deviceModel).toBe('GT06N');
   });
 
   it('POST /config/import เนื้อไฟล์เป็น JSON null -> 400 ไม่ใช่ 500', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -301,9 +317,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import เนื้อไฟล์เป็น JSON array -> 400', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -318,9 +336,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import format ไม่ใช่ json -> 400', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -335,9 +355,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import ไฟล์ไม่ใช่ JSON ที่ถูกต้อง (parse ไม่ผ่าน) -> 400', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -348,9 +370,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import ไม่แนบไฟล์มา -> 400', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/config/import')
@@ -360,9 +384,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('POST /config/import ไฟล์เกินขนาด limit (1MB) -> 413 ไม่ใช่ 500 (Nest แปลง MulterError ให้เองอัตโนมัติ)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Create);
-    const token = tokenFor(swUser.id, 'SW');
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     // เกิน 1MB นิดหน่อยพอ ไม่ต้องสร้างไฟล์ใหญ่มาก
     const oversized = Buffer.alloc(1 * 1024 * 1024 + 1, 'a');
@@ -376,7 +402,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('GET /config role มีสิทธิ์ config.Read -> 200 เห็นรายการทั้งหมด ไม่ scope ตาม creator', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
     const auditorUser = await makeUser(prisma, { role: 'Auditor' });
     await grant('Auditor', ActionType.Read);
     await prisma.config.create({
@@ -385,7 +413,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
     const token = tokenFor(auditorUser.id, 'Auditor');
@@ -399,17 +427,19 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('GET /config/:id role ไม่มีสิทธิ์ config.Read -> 403', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
-    const token = tokenFor(swUser.id, 'SW'); // ไม่ grant Read ให้ SW ในเทสนี้
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer'); // ไม่ grant Read ให้ ConfigEngineer ในเทสนี้
 
     await request(app.getHttpServer())
       .get(`/api/v1/config/${configRow.id}`)
@@ -429,18 +459,20 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('PUT /config/:id สถานะยังเป็น draft -> 200 แก้ไขสำเร็จ', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Update);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     const res = await request(app.getHttpServer())
       .put(`/api/v1/config/${configRow.id}`)
@@ -452,19 +484,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('PUT /config/:id สถานะไม่ใช่ draft แล้ว -> 409', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Update);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
         status: 'testing',
       },
     });
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .put(`/api/v1/config/${configRow.id}`)
@@ -474,20 +508,22 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('DELETE /config/:id สถานะยังเป็น draft -> 204 และลบจริงจาก DB', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
     // DELETE reuse action Update (ไม่มี ActionType.Delete แยก — ดู
     // schema follow-up PR ก่อน #26)
-    await grant('SW', ActionType.Update);
+    await grant('ConfigEngineer', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .delete(`/api/v1/config/${configRow.id}`)
@@ -500,19 +536,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
   });
 
   it('DELETE /config/:id สถานะไม่ใช่ draft -> 409 และไม่ถูกลบ', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Update);
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Update);
     const configRow = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
         status: 'approved',
       },
     });
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .delete(`/api/v1/config/${configRow.id}`)
@@ -526,14 +564,16 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
 
   describe('POST /config/:id/simulate (Stage 3)', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
@@ -543,7 +583,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('role ไม่มีสิทธิ์ config-simulation.Read (เช่น Auditor) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const auditorUser = await makeUser(prisma, { role: 'Auditor' });
       // Auditor มี config.Read ปกติ (ดู view รายการ) แต่ไม่ควรเรียก simulate ได้
       await grant('Auditor', ActionType.Read, 'config');
@@ -553,7 +595,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
       const token = tokenFor(auditorUser.id, 'Auditor');
@@ -564,19 +606,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(403);
     });
 
-    it('SW มีสิทธิ์ config-simulation.Read, Config มี field ครบ -> 200 passed: true', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config-simulation');
+    it('ConfigEngineer มีสิทธิ์ config-simulation.Read, Config มี field ครบ -> 200 passed: true', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet', CONN_TIMEOUT: 30 },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/simulate`)
@@ -588,7 +632,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('Operation มีสิทธิ์ config-simulation.Read, fields ว่างเปล่า -> 200 passed: false', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
@@ -597,7 +643,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -614,19 +660,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('สถานะ Config เป็น approved แล้ว -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config-simulation');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'approved',
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/simulate`)
@@ -635,9 +683,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('ไม่เจอ id -> 404', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config-simulation');
-      const token = tokenFor(swUser.id, 'SW');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/config/22222222-2222-2222-2222-222222222222/simulate')
@@ -648,14 +698,16 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
 
   describe('POST /config/:id/decide (Stage 4)', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
@@ -666,7 +718,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('role ไม่มีสิทธิ์ config-decision.Approve (เช่น Operation) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       const configRow = await prisma.config.create({
         data: {
@@ -674,7 +728,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
       const token = tokenFor(opUser.id, 'Operation');
@@ -686,19 +740,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(403);
     });
 
-    it('SW มีสิทธิ์, ไม่ส่ง passed มา -> 400', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+    it('ConfigEngineer มีสิทธิ์, ไม่ส่ง passed มา -> 400', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
@@ -707,19 +763,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(400);
     });
 
-    it('SW มีสิทธิ์, status draft, passed:true -> 200 สถานะเปลี่ยนเป็น testing', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+    it('ConfigEngineer มีสิทธิ์, status draft, passed:true -> 200 สถานะเปลี่ยนเป็น testing', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
@@ -730,19 +788,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       expect((res.body as { status: string }).status).toBe('testing');
     });
 
-    it('SW มีสิทธิ์, status draft, passed:false -> 200 สถานะยังเป็น draft', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+    it('ConfigEngineer มีสิทธิ์, status draft, passed:false -> 200 สถานะยังเป็น draft', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
@@ -754,19 +814,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('status ไม่ใช่ draft แล้ว (เช่น testing) -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
@@ -776,9 +838,11 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('ไม่เจอ id -> 404', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
-      const token = tokenFor(swUser.id, 'SW');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/config/22222222-2222-2222-2222-222222222222/decide')
@@ -788,22 +852,27 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('passed:true + suggestedApproverId เป็น Operation ที่ active -> 200 + เซ็ตค่า', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
       const res = await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
-        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .set(
+          'Authorization',
+          `Bearer ${tokenFor(configEngineerUser.id, 'ConfigEngineer')}`,
+        )
         .send({ passed: true, suggestedApproverId: opUser.id })
         .expect(200);
 
@@ -813,22 +882,27 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('suggestedApproverId เป็น role อื่น (ไม่ใช่ Operation) -> 400, ไม่เปลี่ยนสถานะ', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const other = await makeUser(prisma, { role: 'ST' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
-        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .set(
+          'Authorization',
+          `Bearer ${tokenFor(configEngineerUser.id, 'ConfigEngineer')}`,
+        )
         .send({ passed: true, suggestedApproverId: other.id })
         .expect(400);
 
@@ -839,21 +913,26 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('suggestedApproverId ไม่ใช่ uuid -> 400 (DTO validation)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Approve, 'config-decision');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Approve, 'config-decision');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/decide`)
-        .set('Authorization', `Bearer ${tokenFor(swUser.id, 'SW')}`)
+        .set(
+          'Authorization',
+          `Bearer ${tokenFor(configEngineerUser.id, 'ConfigEngineer')}`,
+        )
         .send({ passed: true, suggestedApproverId: 'not-a-uuid' })
         .expect(400);
     });
@@ -861,14 +940,16 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
 
   describe('POST /config/:id/approve (Stage 4)', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -878,19 +959,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(401);
     });
 
-    it('role ไม่มีสิทธิ์ config.Approve (เช่น SW) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+    it('role ไม่มีสิทธิ์ config.Approve (เช่น ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/approve`)
@@ -899,7 +982,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('Operation มีสิทธิ์, status testing -> 200 สถานะเปลี่ยนเป็น approved', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -908,7 +993,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -929,7 +1014,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('approve สำเร็จ -> เขียน AuditLog action approve (#27)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -938,7 +1025,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -960,7 +1047,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('status ยังเป็น draft (ยังไม่ผ่าน decide) -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -969,7 +1058,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
       const token = tokenFor(opUser.id, 'Operation');
@@ -994,14 +1083,16 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
 
   describe('POST /config/:id/reject (Stage 4)', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -1011,19 +1102,21 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         .expect(401);
     });
 
-    it('role ไม่มีสิทธิ์ config.Approve (เช่น SW) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+    it('role ไม่มีสิทธิ์ config.Approve (เช่น ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post(`/api/v1/config/${configRow.id}/reject`)
@@ -1032,7 +1125,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('Operation มีสิทธิ์, status testing -> 200 สถานะย้อนกลับเป็น draft', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -1041,7 +1136,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -1056,7 +1151,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('status ยังเป็น draft (ยังไม่เคยส่งต่อ Operation) -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -1065,7 +1162,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
       const token = tokenFor(opUser.id, 'Operation');
@@ -1092,7 +1189,9 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     /** สร้าง config สถานะ testing แล้วให้ Operation กด approve จริงผ่าน HTTP
      * (เพื่อให้ ConfigVersion ถูกเขียนโดย service ไม่ใช่ fixture) คืน configId */
     async function createApprovedConfig(): Promise<string> {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Approve, 'config');
       const configRow = await prisma.config.create({
@@ -1101,7 +1200,7 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
           status: 'testing',
         },
       });
@@ -1161,56 +1260,58 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     });
 
     it('config มีจริงแต่ยังไม่เคย approve -> GET /versions คืน [] (200)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const reader = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      const reader = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
       const configRow = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: {},
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
 
       const res = await request(app.getHttpServer())
         .get(`/api/v1/config/${configRow.id}/versions`)
-        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'ConfigEngineer')}`)
         .expect(200);
 
       expect(res.body as unknown[]).toEqual([]);
     });
 
     it('ไม่เจอ configId -> 404', async () => {
-      const reader = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
+      const reader = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
 
       await request(app.getHttpServer())
         .get('/api/v1/config/22222222-2222-2222-2222-222222222222/versions')
-        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'ConfigEngineer')}`)
         .expect(404);
     });
 
     it('versionNumber ไม่ใช่จำนวนเต็ม -> 400', async () => {
       const configId = await createApprovedConfig();
-      const reader = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
+      const reader = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
 
       await request(app.getHttpServer())
         .get(`/api/v1/config/${configId}/versions/abc`)
-        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'ConfigEngineer')}`)
         .expect(400);
     });
 
     it('versionNumber ที่ไม่มี -> 404', async () => {
       const configId = await createApprovedConfig();
-      const reader = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
+      const reader = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
 
       await request(app.getHttpServer())
         .get(`/api/v1/config/${configId}/versions/99`)
-        .set('Authorization', `Bearer ${tokenFor(reader.id, 'SW')}`)
+        .set('Authorization', `Bearer ${tokenFor(reader.id, 'ConfigEngineer')}`)
         .expect(404);
     });
   });

@@ -124,7 +124,7 @@ export class ConfigService {
 
   async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
-    // (เฉพาะ Role SW ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
+    // (เฉพาะ Role ConfigEngineer ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
     await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
 
     let created: Config;
@@ -241,9 +241,9 @@ export class ConfigService {
   /**
    * Stage 3 (#26) — ทดสอบ Config กับ Device Simulator (dry-run)
    *
-   * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ SW ดูผล กดซ้ำได้
+   * **ไม่แตะ status เลย** — คืนแค่ `SimulationResult` ให้ ConfigEngineer ดูผล กดซ้ำได้
    * เรื่อยๆ ระหว่างที่ยังปรับแก้ค่าอยู่ ตาม docs/api/openapi.yaml
-   * (`simulateConfig` summary) — ขั้นที่ SW ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
+   * (`simulateConfig` summary) — ขั้นที่ ConfigEngineer ปักผลตัดสินใจจริงๆ ว่าจะส่งต่อ
    * Operation หรือไม่ (เปลี่ยน status) อยู่ที่ `decide()` ด้านล่าง (Stage 4 —
    * ยังเป็นข้อเสนอที่ kittiphong (B) ยังไม่ได้รีวิว design ไม่ merge เข้า main
    * จนกว่าจะเสนอแยกเป็น PR ต่างหากและได้รับการยืนยันก่อน)
@@ -272,14 +272,14 @@ export class ConfigService {
   }
 
   /**
-   * Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล `simulate` แล้ว
+   * Stage 4 (#26) — ConfigEngineer ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล `simulate` แล้ว
    * (ข้อเสนอปิด open question ที่ยังค้างอยู่ใน docs/architecture/RBAC_Matrix.md
    * ตาราง 4.2 — **ยังไม่ได้ให้ kittiphong (B) รีวิว design นี้** ต้องเสนอแยก
    * เป็น PR ต่างหากก่อน ห้าม merge เข้า main จนกว่าจะได้รับการยืนยันจาก B —
    * ดูที่มาของการแยกออกจาก PR Stage 3 ใน commit history ของ #49)
    *
    * แยกจาก `simulate` โดยตั้งใจ: `simulate` แค่คืนผลทดสอบ กดซ้ำได้ไม่จำกัด
-   * ไม่แตะสถานะเลย ส่วนเมธอดนี้คือ SW กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ
+   * ไม่แตะสถานะเลย ส่วนเมธอดนี้คือ ConfigEngineer กด "ยืนยัน" ผลที่ตัวเองเห็นแล้วจริงๆ
    * ครั้งเดียวจบ — `passed:true` พา `draft`→`testing` ส่งต่อ Operation
    * (ตรงกับ precondition ที่ `approve`/`reject` ใช้อยู่แล้วพอดี ไม่ต้องเพิ่ม
    * enum สถานะใหม่) ส่วน `passed:false` ปล่อยสถานะเป็น `draft` เหมือนเดิม
@@ -335,7 +335,7 @@ export class ConfigService {
   }
 
   /**
-   * Stage 4 (#26) — Operation อนุมัติ Config ที่ SW ปักผลผ่านแล้ว
+   * Stage 4 (#26) — Operation อนุมัติ Config ที่ ConfigEngineer ปักผลผ่านแล้ว
    * (ต้องอยู่สถานะ `testing` เท่านั้น) เข้า flow `config-sync-writer` ต่อใน
    * Phase 2 (ยังไม่ implement ในนี้ — แค่เปลี่ยนสถานะเป็น `approved`)
    *
@@ -350,7 +350,7 @@ export class ConfigService {
    * snapshot + เปลี่ยนสถานะทำใน `$transaction` เดียว (crash กลางคันห้ามเหลือ
    * config `approved` ที่ไม่มี version) `@@unique([configId, versionNumber])`
    * เป็น backstop กัน 2 approve ชนกัน (แม้ปกติ precondition `testing` กันไว้
-   * อยู่แล้ว) `fields` ที่ snapshot คือค่าที่ SW simulate จริง — config แก้
+   * อยู่แล้ว) `fields` ที่ snapshot คือค่าที่ ConfigEngineer simulate จริง — config แก้
    * ไม่ได้หลังพ้น `draft` อยู่แล้ว
    */
   async approve(id: string, actor: ActingUser): Promise<Config> {
@@ -497,7 +497,7 @@ export class ConfigService {
    * Stage 4 (#26) — Operation ปฏิเสธ Config ที่อยู่สถานะ `testing`
    * สถานะย้อนกลับไป `draft` ทั้งหมดเสมอ (ยืนยันไว้ใน RBAC_Matrix.md Section 5
    * ข้อ 4 — ไม่มี Role ไหน Override ขั้นตอนนี้ได้ นอกจาก ST/OT ที่ใช้ path
-   * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ SW แก้ไขต่อได้
+   * "Override" แยกต่างหากซึ่งไม่ผ่าน Approval Center เลย) ให้ ConfigEngineer แก้ไขต่อได้
    * ทันที (`draft` เป็นสถานะที่ `update`/`remove` อนุญาตอยู่แล้ว)
    */
   async reject(id: string, actor: ActingUser): Promise<Config> {
@@ -543,14 +543,14 @@ export class ConfigService {
 
   findAll(query: QueryConfigDto): Promise<Config[]> {
     // ไม่ scope ตาม creator — ทุก Role ที่มีสิทธิ์ Read เห็น Config ทั้งหมด และ
-    // SW ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
+    // ConfigEngineer ทุกคนแก้/ลบ draft ของกันและกันได้ (update/remove ก็ไม่ filter
     // createdBy เหมือนกัน) ยืนยันเป็นการตัดสินใจแล้วตอนตอบ review PR #46 —
     // ดู RBAC_Matrix.md Section 2 แถว "Config Editor" footnote ² (ต่างจาก
     // Task ที่ ST/OT เห็น/แก้เฉพาะงานตัวเอง — เจตนาต่างกันจริง ไม่ใช่ตกหล่น)
     return this.prisma.config.findMany({
       // soft-delete (docs/11 Part A): Config ที่ SuperAdmin อนุมัติให้ลบแล้ว
-      // (`deletedAt != null`) ต้องหายจากทุก query อ่าน — hard delete ของ SW
-      // (remove()) ยังลบ row จริงเหมือนเดิม ไม่เกี่ยวกับ filter นี้
+      // (`deletedAt != null`) ต้องหายจากทุก query อ่าน — hard delete ของ
+      // ConfigEngineer (remove()) ยังลบ row จริงเหมือนเดิม ไม่เกี่ยวกับ filter นี้
       where: { status: query.status, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });

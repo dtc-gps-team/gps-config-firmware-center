@@ -37,7 +37,7 @@ function matchesDataType(value: unknown, dataType: string): boolean {
  * Config Definition Lookup (task #12, แผน Agile แถว 12) — catalog ของ field ที่
  * ระบบรู้จัก (ชื่อ, ชนิดข้อมูล, ค่าที่ยอมรับ, บังคับกรอกไหม, รุ่นอุปกรณ์ที่ใช้ได้)
  *
- * SW สร้าง field ใหม่เองผ่าน `create()` ทีละตัวตามที่ใช้จริง — ไม่ต้องรออนุมัติ
+ * ConfigEngineer สร้าง field ใหม่เองผ่าน `create()` ทีละตัวตามที่ใช้จริง — ไม่ต้องรออนุมัติ
  * (ต่างจาก Config ที่ต้องผ่าน Operation) เพราะสุดท้าย field ที่มีปัญหาจริงจะ
  * โดนจับตอนเอาไปสร้าง Config Template แล้วเข้า simulate/approve อยู่ดี —
  * ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09 (ดู RBAC_Matrix.md changelog)
@@ -61,7 +61,7 @@ export class ConfigDefinitionService {
   }
 
   /** สร้าง field definition ใหม่ — resource `config-definition` action
-   * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role SW) `fieldName` ซ้ำ
+   * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role ConfigEngineer) `fieldName` ซ้ำ
    * -> 409 (มี `@unique` ที่ schema คุมไว้อีกชั้น กัน race condition) */
   async create(
     dto: CreateConfigDefinitionDto,
@@ -102,7 +102,7 @@ export class ConfigDefinitionService {
    * ตรวจ `fields` ของ Config เทียบกับ catalog สำหรับ `deviceModel`/`protocol`
    * ที่ระบุ — เรียกจาก `ConfigService.create()`/`update()` ก่อนเขียนลง DB
    * เก็บ error ทุกจุดที่เจอไว้ (ไม่หยุดที่จุดแรก) แล้วโยนรวมทีเดียว เพื่อให้
-   * SW เห็นปัญหาทั้งหมดในครั้งเดียว ไม่ต้องแก้ทีละรอบ (แพทเทิร์นเดียวกับ
+   * ConfigEngineer เห็นปัญหาทั้งหมดในครั้งเดียว ไม่ต้องแก้ทีละรอบ (แพทเทิร์นเดียวกับ
    * `importFromJson` ใน config.service.ts)
    *
    * ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09: field ที่ไม่มีนิยามในคลังเลย หรือ

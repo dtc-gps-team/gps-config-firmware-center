@@ -46,7 +46,7 @@ const staleConfig: Config = {
   protocol: 'TCP',
   status: 'draft',
   fields: {},
-  createdBy: 'sw-1',
+  createdBy: 'ce-1',
   approvedBy: null,
   suggestedApproverId: null,
   deletedAt: null,
@@ -66,7 +66,7 @@ const pendingRequest: ConfigDeletionRequest = {
 };
 
 const superAdmin: ActingUser = { id: 'sa-1', role: 'SuperAdmin' };
-const sw: ActingUser = { id: 'sw-1', role: 'SW' };
+const configEngineer: ActingUser = { id: 'ce-1', role: 'ConfigEngineer' };
 
 function makeP2025(): PrismaClientKnownRequestError {
   return new PrismaClientKnownRequestError('Record not found.', {
@@ -183,7 +183,7 @@ describe('ConfigDeletionService', () => {
       );
       expect(notificationService.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          userId: 'sw-1',
+          userId: 'ce-1',
           type: 'config_deletion_grace',
         }),
       );
@@ -331,7 +331,7 @@ describe('ConfigDeletionService', () => {
   describe('keep', () => {
     it('ไม่มีคำขอ pending ของ config นี้ -> NotFoundException (404)', async () => {
       request.findFirst.mockResolvedValue(null);
-      await expect(service.keep('cfg-1', sw)).rejects.toThrow(
+      await expect(service.keep('cfg-1', configEngineer)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -344,7 +344,7 @@ describe('ConfigDeletionService', () => {
       });
       config.update.mockResolvedValue(staleConfig);
 
-      await service.keep('cfg-1', sw);
+      await service.keep('cfg-1', configEngineer);
 
       expect(request.findFirst).toHaveBeenCalledWith({
         where: { configId: 'cfg-1', status: 'pending' },
@@ -360,7 +360,7 @@ describe('ConfigDeletionService', () => {
       });
       expect(auditLog.create).toHaveBeenCalledWith({
         data: {
-          userId: 'sw-1',
+          userId: 'ce-1',
           auditModule: 'config-deletion',
           action: 'keep',
         },

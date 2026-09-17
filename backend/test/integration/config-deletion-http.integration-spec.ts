@@ -208,10 +208,10 @@ describe('ConfigDeletion Part A endpoints (integration — real postgres + guard
       .expect(400);
   });
 
-  it('POST /config/{configId}/deletion-requests/keep เป็น SW -> 200 · cancelled + reset นาฬิกา', async () => {
-    await grant('SW', ActionType.Update, 'config');
-    const sw = await makeUser(prisma, { role: 'SW' });
-    const cfg = await makeStaleConfig(sw.id);
+  it('POST /config/{configId}/deletion-requests/keep เป็น ConfigEngineer -> 200 · cancelled + reset นาฬิกา', async () => {
+    await grant('ConfigEngineer', ActionType.Update, 'config');
+    const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
+    const cfg = await makeStaleConfig(configEngineer.id);
     const reqId = await makePendingRequest(cfg.id);
     const before = (
       await prisma.config.findUniqueOrThrow({ where: { id: cfg.id } })
@@ -220,7 +220,10 @@ describe('ConfigDeletion Part A endpoints (integration — real postgres + guard
     await new Promise((r) => setTimeout(r, 5));
     await request(app.getHttpServer())
       .post(`/api/v1/config/${cfg.id}/deletion-requests/keep`)
-      .set('Authorization', `Bearer ${tokenFor(sw.id, 'SW')}`)
+      .set(
+        'Authorization',
+        `Bearer ${tokenFor(configEngineer.id, 'ConfigEngineer')}`,
+      )
       .expect(200);
 
     const dr = await prisma.configDeletionRequest.findUnique({
@@ -234,13 +237,16 @@ describe('ConfigDeletion Part A endpoints (integration — real postgres + guard
   });
 
   it('POST .../keep เมื่อไม่มีคำขอ pending -> 404', async () => {
-    await grant('SW', ActionType.Update, 'config');
-    const sw = await makeUser(prisma, { role: 'SW' });
-    const cfg = await makeStaleConfig(sw.id);
+    await grant('ConfigEngineer', ActionType.Update, 'config');
+    const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
+    const cfg = await makeStaleConfig(configEngineer.id);
 
     await request(app.getHttpServer())
       .post(`/api/v1/config/${cfg.id}/deletion-requests/keep`)
-      .set('Authorization', `Bearer ${tokenFor(sw.id, 'SW')}`)
+      .set(
+        'Authorization',
+        `Bearer ${tokenFor(configEngineer.id, 'ConfigEngineer')}`,
+      )
       .expect(404);
   });
 });
