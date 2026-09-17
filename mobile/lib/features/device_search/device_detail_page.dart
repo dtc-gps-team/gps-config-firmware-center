@@ -3,20 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import 'device_search_repository.dart';
 import 'device_status_ui.dart';
-
-/// Device Detail palette. Scoped to this file, same values as Task Detail.
-class _DeviceColors {
-  const _DeviceColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const error = Color(0xFFC0392B);
-}
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -38,9 +28,9 @@ class DeviceDetailPage extends ConsumerWidget {
     final deviceAsync = ref.watch(deviceDetailProvider(deviceId));
 
     return Scaffold(
-      backgroundColor: _DeviceColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _DeviceColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('รายละเอียดอุปกรณ์'),
@@ -87,7 +77,7 @@ class _DeviceDetailView extends StatelessWidget {
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: _DeviceColors.textPrimary,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 10),
@@ -127,7 +117,7 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
-        color: _DeviceColors.surface,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -144,7 +134,7 @@ class _InfoCard extends StatelessWidget {
                       label,
                       style: const TextStyle(
                         fontSize: 13,
-                        color: _DeviceColors.textSecondary,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ),
@@ -155,7 +145,7 @@ class _InfoCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: _DeviceColors.textPrimary,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ),
@@ -176,40 +166,11 @@ class _DetailError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              color: _DeviceColors.error,
-              size: 32,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              key: const Key('device_detail_error'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: _DeviceColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('device_detail_retry'),
-              onPressed: onRetry,
-              style: FilledButton.styleFrom(
-                backgroundColor: _DeviceColors.navy,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('ลองอีกครั้ง'),
-            ),
-          ],
-        ),
-      ),
+    return AppErrorView(
+      message: message,
+      onRetry: onRetry,
+      messageKey: const Key('device_detail_error'),
+      retryKey: const Key('device_detail_retry'),
     );
   }
 }

@@ -3,23 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import 'notification_repository.dart';
 import 'notification_ui.dart';
-
-/// Notification-list palette. Scoped to this file, same navy values as the
-/// Home / Task Detail redesigns.
-class _NotiColors {
-  const _NotiColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const unreadTint = Color(0xFFE3ECF4);
-  static const unreadDot = Color(0xFF1F6FB2);
-  static const iconBg = Color(0xFFE8EEF3);
-}
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -77,9 +64,9 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
     final async = ref.watch(notificationListProvider);
 
     return Scaffold(
-      backgroundColor: _NotiColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _NotiColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('รายการแจ้งเตือน'),
@@ -112,12 +99,13 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _CenteredMessage(
-          icon: Icons.error_outline,
-          text: error is ApiException
+        error: (error, _) => AppErrorView(
+          message: error is ApiException
               ? error.message
               : 'โหลดการแจ้งเตือนไม่สำเร็จ',
           onRetry: () => ref.invalidate(notificationListProvider),
+          messageKey: const Key('notification_list_message'),
+          retryKey: const Key('notification_list_retry'),
         ),
       ),
     );
@@ -139,7 +127,7 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: read ? _NotiColors.surface : _NotiColors.unreadTint,
+      color: read ? AppTheme.surface : AppTheme.unreadTint,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -153,12 +141,12 @@ class _NotificationTile extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: const BoxDecoration(
-                  color: _NotiColors.iconBg,
+                  color: AppTheme.iconBg,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   NotificationTypeStyle.icon(notification.type),
-                  color: _NotiColors.navy,
+                  color: AppTheme.navy,
                   size: 20,
                 ),
               ),
@@ -172,7 +160,7 @@ class _NotificationTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: read ? FontWeight.w500 : FontWeight.w700,
-                        color: _NotiColors.textPrimary,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -180,7 +168,7 @@ class _NotificationTile extends StatelessWidget {
                       _formatDate(notification.createdAt),
                       style: const TextStyle(
                         fontSize: 12,
-                        color: _NotiColors.textSecondary,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -194,7 +182,7 @@ class _NotificationTile extends StatelessWidget {
                   height: 10,
                   margin: const EdgeInsets.only(top: 4),
                   decoration: const BoxDecoration(
-                    color: _NotiColors.unreadDot,
+                    color: AppTheme.unreadDot,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -207,16 +195,12 @@ class _NotificationTile extends StatelessWidget {
   }
 }
 
+/// Empty-list state only now — the error+retry case moved to [AppErrorView].
 class _CenteredMessage extends StatelessWidget {
-  const _CenteredMessage({
-    required this.icon,
-    required this.text,
-    this.onRetry,
-  });
+  const _CenteredMessage({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
-  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +210,7 @@ class _CenteredMessage extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 32, color: _NotiColors.textSecondary),
+            Icon(icon, size: 32, color: AppTheme.textSecondary),
             const SizedBox(height: 12),
             Text(
               text,
@@ -234,21 +218,9 @@ class _CenteredMessage extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 14,
-                color: _NotiColors.textSecondary,
+                color: AppTheme.textSecondary,
               ),
             ),
-            if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton(
-                key: const Key('notification_list_retry'),
-                onPressed: onRetry,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _NotiColors.navy,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('ลองอีกครั้ง'),
-              ),
-            ],
           ],
         ),
       ),

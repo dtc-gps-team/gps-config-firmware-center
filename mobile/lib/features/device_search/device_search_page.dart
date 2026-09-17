@@ -5,21 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import 'device_search_repository.dart';
 import 'device_status_ui.dart';
-
-/// Device Search palette. Scoped to this file, same values as the Home / Task
-/// redesigns — nothing here touches the shared [AppTheme].
-class _DeviceColors {
-  const _DeviceColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const error = Color(0xFFC0392B);
-}
 
 /// `deviceId` / `simNumber` contains-match, case-insensitive — same behaviour
 /// as the backend `search` param and the Web search box. Filtering is
@@ -62,9 +51,9 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
     final devicesAsync = ref.watch(deviceListProvider);
 
     return Scaffold(
-      backgroundColor: _DeviceColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _DeviceColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('ค้นหาอุปกรณ์'),
@@ -92,7 +81,7 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                         },
                       ),
                 filled: true,
-                fillColor: _DeviceColors.surface,
+                fillColor: AppTheme.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -150,7 +139,7 @@ class _DeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _DeviceColors.surface,
+      color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -168,7 +157,7 @@ class _DeviceCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: _DeviceColors.textPrimary,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -176,7 +165,7 @@ class _DeviceCard extends StatelessWidget {
                       'ซิม ${device.simNumber} · ${device.deviceModel}/${device.protocol}',
                       style: const TextStyle(
                         fontSize: 13,
-                        color: _DeviceColors.textSecondary,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -207,7 +196,7 @@ class _DeviceSearchEmpty extends StatelessWidget {
             children: [
               const Icon(
                 Icons.devices_other_outlined,
-                color: _DeviceColors.textSecondary,
+                color: AppTheme.textSecondary,
               ),
               const SizedBox(height: 8),
               Text(
@@ -217,7 +206,7 @@ class _DeviceSearchEmpty extends StatelessWidget {
                 key: const Key('device_search_empty'),
                 style: const TextStyle(
                   fontSize: 13,
-                  color: _DeviceColors.textSecondary,
+                  color: AppTheme.textSecondary,
                 ),
               ),
             ],
@@ -239,40 +228,11 @@ class _DeviceSearchError extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 64),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: _DeviceColors.error,
-                  size: 32,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  message,
-                  key: const Key('device_search_error'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: _DeviceColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  key: const Key('device_search_retry'),
-                  onPressed: onRetry,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _DeviceColors.navy,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('ลองอีกครั้ง'),
-                ),
-              ],
-            ),
-          ),
+        AppErrorView(
+          message: message,
+          onRetry: onRetry,
+          messageKey: const Key('device_search_error'),
+          retryKey: const Key('device_search_retry'),
         ),
       ],
     );
