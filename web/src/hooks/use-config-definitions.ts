@@ -7,6 +7,7 @@ import {
   listConfigDefinitions,
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type State = {
   data: ConfigFieldDefinition[] | null;
@@ -48,6 +49,7 @@ export function useConfigDefinitions() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

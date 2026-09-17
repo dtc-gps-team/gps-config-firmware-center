@@ -3,10 +3,11 @@
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { CAMPAIGN_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CAMPAIGN_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 function InfoRow({
   label,
@@ -38,11 +39,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const configQuery = useConfig(data?.configId ?? null);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดแคมเปญ…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {
@@ -65,7 +62,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/campaigns"
@@ -75,16 +72,16 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">{data.name}</h1>
-          <span className={pillClass(CAMPAIGN_STATUS_TONE[data.status])}>
+          <StatusPill tone={CAMPAIGN_STATUS_TONE[data.status]}>
             {data.status}
-          </span>
+          </StatusPill>
         </div>
         {data.description && (
           <p className="text-sm text-muted-foreground">{data.description}</p>
         )}
       </div>
 
-      <div className="max-w-xl rounded-xl border bg-card p-5">
+      <div className="rounded-xl border bg-card p-5">
         <InfoRow label="Payload">
           {data.payloadType === "Config"
             ? (configQuery.data?.name ?? data.configId ?? "—")

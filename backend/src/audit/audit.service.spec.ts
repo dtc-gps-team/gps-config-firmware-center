@@ -42,17 +42,21 @@ describe('AuditService', () => {
       });
     });
 
-    it('มี userId/auditModule/action -> ส่งต่อ Prisma ตรงๆ', async () => {
+    it('มี userId/auditModule -> ส่งต่อ Prisma ตรงๆ, action -> contains ไม่สนตัวพิมพ์เล็ก-ใหญ่', async () => {
       auditLog.findMany.mockResolvedValue([]);
 
       await service.findAll({
         userId: 'sw-1',
         auditModule: 'config',
-        action: 'create',
+        action: 'crea',
       });
 
       expect(auditLog.findMany).toHaveBeenCalledWith({
-        where: { userId: 'sw-1', auditModule: 'config', action: 'create' },
+        where: {
+          userId: 'sw-1',
+          auditModule: 'config',
+          action: { contains: 'crea', mode: 'insensitive' },
+        },
         orderBy: { createdAt: 'desc' },
       });
     });

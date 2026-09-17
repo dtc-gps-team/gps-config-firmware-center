@@ -26,6 +26,7 @@ import {
   type ConfigFieldModelSupport,
 } from "@/lib/config-definition-api";
 import { ParameterCreateForm } from "./parameter-create-form";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 type DefinitionsState = ReturnType<typeof useConfigDefinitions>;
 
@@ -118,9 +119,7 @@ function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) 
       </CardHeader>
       <CardContent>
         {isLoading && data === null ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            กำลังโหลด…
-          </p>
+          <TableSkeleton columns={columns.length} />
         ) : error ? (
           <div className="flex flex-col items-center gap-3 py-8">
             <p className="text-sm text-destructive">{error}</p>

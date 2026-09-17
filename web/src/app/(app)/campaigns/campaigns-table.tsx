@@ -11,9 +11,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { CAMPAIGN_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { CAMPAIGN_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatRelativeTime } from "@/lib/format-date";
 import { useCampaigns } from "@/hooks/use-campaigns";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 /** ตารางรายการแคมเปญ — ต่อ `GET /campaigns` จริง (Sprint 3 #21) ทุก Role
  * ที่ login แล้วดูได้ (resource `campaign` action `Read`) */
@@ -21,11 +22,7 @@ export function CampaignsTable() {
   const { data, isLoading, error, refetch } = useCampaigns();
 
   if (isLoading && !data) {
-    return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        กำลังโหลดรายการแคมเปญ…
-      </p>
-    );
+    return <TableSkeleton columns={4} />;
   }
 
   if (error) {
@@ -72,9 +69,9 @@ export function CampaignsTable() {
               {campaign.targetCount}
             </TableCell>
             <TableCell>
-              <span className={pillClass(CAMPAIGN_STATUS_TONE[campaign.status])}>
+              <StatusPill tone={CAMPAIGN_STATUS_TONE[campaign.status]}>
                 {campaign.status}
-              </span>
+              </StatusPill>
             </TableCell>
             <TableCell className="text-muted-foreground">
               {formatRelativeTime(campaign.createdAt)}

@@ -3,11 +3,19 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon, PlusIcon, XIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { createConfig, updateConfig, type Config } from "@/lib/config-api";
@@ -16,15 +24,13 @@ import {
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 type FieldValue = string | boolean;
 
 export type ConfigWizardMode =
   | { kind: "create"; cloneFrom?: Config }
   | { kind: "edit"; config: Config };
-
-const SELECT_CLASS =
-  "h-9 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 dark:bg-input/30";
 
 function isEmpty(value: FieldValue | undefined): boolean {
   return value === undefined || value === "";
@@ -263,6 +269,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             fields,
             ...(trimmedDesc ? { description: trimmedDesc } : {}),
           });
+      toast.success(editing ? `บันทึก "${saved.name}" แล้ว` : `สร้าง "${saved.name}" แล้ว`);
       router.push(`/config?saved=${encodeURIComponent(saved.id)}`);
       router.refresh();
     } catch (err) {
@@ -270,23 +277,22 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       if (err instanceof ApiError && err.statusCode === 409) {
         setStep(1);
         setNameError(err.message);
+        toast.error(err.message);
         return;
       }
       if (err instanceof ApiError) {
         setFormError(err.message);
         setFormErrorList(err.details ?? []);
+        toast.error(err.message);
         return;
       }
       setFormError("บันทึก Config ไม่สำเร็จ");
+      toast.error("บันทึก Config ไม่สำเร็จ");
     }
   }
 
   if (isLoading && !defs) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดคลัง Parameter…
-      </p>
-    );
+    return <DetailSkeleton lines={6} />;
   }
 
   if (defsError) {
@@ -326,38 +332,42 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="config-device-model">รุ่นอุปกรณ์</Label>
-            <select
-              id="config-device-model"
+            <Select
               value={deviceModel}
               disabled={!!editing}
-              onChange={(e) => changeDeviceModel(e.target.value)}
-              className={SELECT_CLASS}
+              onValueChange={(value) => changeDeviceModel(value ?? "")}
             >
-              <option value="">— เลือก —</option>
-              {deviceModelOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="config-device-model" className="w-full">
+                <SelectValue placeholder="— เลือก —" />
+              </SelectTrigger>
+              <SelectContent>
+                {deviceModelOptions.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="config-protocol">โปรโตคอล</Label>
-            <select
-              id="config-protocol"
+            <Select
               value={protocol}
               disabled={!!editing || !deviceModel}
-              onChange={(e) => changeProtocol(e.target.value)}
-              className={SELECT_CLASS}
+              onValueChange={(value) => changeProtocol(value ?? "")}
             >
-              <option value="">— เลือก —</option>
-              {protocolOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="config-protocol" className="w-full">
+                <SelectValue placeholder="— เลือก —" />
+              </SelectTrigger>
+              <SelectContent>
+                {protocolOptions.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {editing && (
@@ -599,8 +609,6 @@ function TemplateRow({
 }) {
   const id = `field-${def.fieldName}`;
   const hint = def.description ?? formatModelSupport(def.supportedModels);
-  const inputClass =
-    "h-9 w-full rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30";
 
   return (
     <div className="flex flex-col gap-1.5 rounded-lg border p-3">
@@ -637,20 +645,21 @@ function TemplateRow({
         </label>
       ) : def.allowedValues.length > 0 ? (
         <div className="flex items-center gap-2">
-          <select
-            id={id}
+          <Select
             value={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value)}
-            aria-invalid={missing ? true : undefined}
-            className={inputClass}
+            onValueChange={(v) => onChange(v ?? "")}
           >
-            <option value="">— เลือก —</option>
-            {def.allowedValues.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id={id} className="w-full" aria-invalid={missing ? true : undefined}>
+              <SelectValue placeholder="— เลือก —" />
+            </SelectTrigger>
+            <SelectContent>
+              {def.allowedValues.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {def.unit && <UnitLabel unit={def.unit} />}
         </div>
       ) : (

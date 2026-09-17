@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { getConfig, type Config } from "@/lib/config-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 type ConfigState = {
   data: Config | null;
@@ -46,6 +47,7 @@ export function useConfig(id: string | null) {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

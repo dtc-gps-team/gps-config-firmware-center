@@ -8,6 +8,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -34,6 +35,29 @@ class _FakeTaskRepository implements TaskRepository {
   Future<Task> updateStatus(String id, TaskStatus status) async =>
       throw UnimplementedError();
 }
+
+class _FakeDeviceSearchRepository implements DeviceSearchRepository {
+  _FakeDeviceSearchRepository(this._devices);
+
+  final List<Device> _devices;
+
+  @override
+  Future<List<Device>> listDevices() async => _devices;
+
+  @override
+  Future<Device> getDevice(String deviceId) async =>
+      _devices.firstWhere((d) => d.deviceId == deviceId);
+}
+
+Device _device({required String id, required String deviceId}) => Device(
+  id: id,
+  deviceId: deviceId,
+  simNumber: '0800000000',
+  deviceModel: 'GT06N',
+  protocol: 'TCP',
+  status: DeviceLifecycleStatus.registered,
+  registeredAt: DateTime(2026, 1, 1),
+);
 
 Task _task({required String id, String? deviceId}) => Task(
   id: id,
@@ -184,11 +208,18 @@ void main() {
   );
 
   group('assignedDeviceIdListProvider', () {
-    ProviderContainer containerWith(List<Task> tasks, {UserRole? role}) {
+    ProviderContainer containerWith(
+      List<Task> tasks, {
+      UserRole? role,
+      List<Device>? devices,
+    }) {
       final container = ProviderContainer(
         overrides: [
           authControllerProvider.overrideWith(() => _FakeAuthController(role)),
           taskRepositoryProvider.overrideWithValue(_FakeTaskRepository(tasks)),
+          deviceSearchRepositoryProvider.overrideWithValue(
+            _FakeDeviceSearchRepository(devices ?? const []),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -196,15 +227,23 @@ void main() {
     }
 
     test('dedupe + เรียงตัวอักษร, ตัด null/ว่างออก', () async {
-      final container = containerWith([
-        _task(id: 't1', deviceId: 'DVC-2'),
-        _task(id: 't2', deviceId: 'DVC-1'),
-        _task(id: 't3', deviceId: 'DVC-1'), // ซ้ำกับ t2
-        _task(id: 't4'), // ไม่มี deviceId
-        _task(id: 't5', deviceId: '   '), // whitespace ล้วน
-      ], role: UserRole.st);
+      final container = containerWith(
+        [
+          _task(id: 't1', deviceId: 'DVC-2'),
+          _task(id: 't2', deviceId: 'DVC-1'),
+          _task(id: 't3', deviceId: 'DVC-1'), // ซ้ำกับ t2
+          _task(id: 't4'), // ไม่มี deviceId
+          _task(id: 't5', deviceId: '   '), // whitespace ล้วน
+        ],
+        role: UserRole.st,
+        devices: [
+          _device(id: 'uuid-1', deviceId: 'DVC-1'),
+          _device(id: 'uuid-2', deviceId: 'DVC-2'),
+        ],
+      );
 
       await container.read(taskListProvider.future);
+      await container.read(deviceListProvider.future);
       final result = container.read(assignedDeviceIdListProvider);
 
       expect(result.value, ['DVC-1', 'DVC-2']);
@@ -213,11 +252,46 @@ void main() {
     test(
       'role ที่ไม่ใช่ ST/OT -> taskListProvider ว่าง -> ไม่มีอุปกรณ์เลย',
       () async {
-        final container = containerWith([
-          _task(id: 't1', deviceId: 'DVC-1'),
-        ], role: UserRole.sw);
+        final container = containerWith(
+          [_task(id: 't1', deviceId: 'DVC-1')],
+          role: UserRole.sw,
+          devices: [_device(id: 'uuid-1', deviceId: 'DVC-1')],
+        );
 
         await container.read(taskListProvider.future);
+        await container.read(deviceListProvider.future);
+        final result = container.read(assignedDeviceIdListProvider);
+
+        expect(result.value, isEmpty);
+      },
+    );
+
+    test('Task.deviceId เป็น Prisma UUID (Web dropdown) -> normalize เป็น '
+        'Device.deviceId จริง', () async {
+      final container = containerWith(
+        [_task(id: 't1', deviceId: 'uuid-abc')],
+        role: UserRole.ot,
+        devices: [_device(id: 'uuid-abc', deviceId: 'DEV-0117')],
+      );
+
+      await container.read(taskListProvider.future);
+      await container.read(deviceListProvider.future);
+      final result = container.read(assignedDeviceIdListProvider);
+
+      expect(result.value, ['DEV-0117']);
+    });
+
+    test(
+      'Task.deviceId ไม่ match ทั้ง Device.id และ Device.deviceId -> ข้าม',
+      () async {
+        final container = containerWith(
+          [_task(id: 't1', deviceId: 'ghost-device')],
+          role: UserRole.st,
+          devices: [_device(id: 'uuid-1', deviceId: 'DVC-1')],
+        );
+
+        await container.read(taskListProvider.future);
+        await container.read(deviceListProvider.future);
         final result = container.read(assignedDeviceIdListProvider);
 
         expect(result.value, isEmpty);

@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listConfigs, type Config } from "@/lib/config-api";
 import { listUsers } from "@/lib/users-api";
+import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 /**
  * View-model ของ 1 รายการในคิว Approval Center — ตั้งใจ decouple จาก `Config`
@@ -95,6 +96,7 @@ export function usePendingApprovals() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRefetchOnFocus(refetch);
 
   return { ...state, refetch };
 }

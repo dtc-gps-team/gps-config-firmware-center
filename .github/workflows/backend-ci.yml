@@ -60,7 +60,13 @@ jobs:
       OBJECT_STORAGE_BUCKET: gps-firmware-ci
 
     steps:
+      # fetch-depth: 0 (ประวัติเต็ม ไม่ใช่ shallow clone) — ต้องมีให้ step
+      # "Run Prisma migrations" หา migration ที่ "ใหม่จริง" เทียบกับ main
+      # ก่อนหน้าผ่าน git diff ได้ (Issue #158 — เดิม sort ชื่อไฟล์อย่างเดียว
+      # เลือกผิดตัวได้ถ้า migration หลาย PR merge ไม่เรียง timestamp)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -101,6 +107,12 @@ jobs:
         run: npm run lint
 
       - name: Run Prisma migrations
+        env:
+          # SHA ของ main "ก่อน" การเปลี่ยนแปลงรอบนี้ — ใช้หา migration ที่ "ใหม่จริง"
+          # ผ่าน git diff แทนการ sort ชื่อไฟล์ (Issue #158) · pull_request: SHA ของ
+          # main ตอนที่ PR เปิด/sync ล่าสุด · push (เข้า main โดยตรงหลัง merge): SHA
+          # ของ main ก่อนหน้า push นี้ (`github.event.before`)
+          MIGRATION_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ ! -f prisma/schema.prisma ]; then
             echo "No prisma/schema.prisma yet — skipping (Prisma not added to backend yet)"
@@ -150,11 +162,56 @@ jobs:
           # ไว้ก่อนหน้า (ใช้ id เดียวกับ smoke user ด้านบน) เช่นเดียวกับกฎของ User table: ถ้า
           # มี migration ใหม่ในอนาคตที่แก้โครงตาราง Firmware เพิ่ม ต้องอัปเดต SQL นี้ให้ตรงกับ
           # โครงตาราง "ก่อน" migration ล่าสุดตัวใหม่ด้วยเสมอ
-          LATEST_MIGRATION=$(ls -1 prisma/migrations | grep -v migration_lock.toml | sort | tail -n 1)
-          echo "Testing latest migration against existing data: $LATEST_MIGRATION"
+          #
+          # อัปเดต (2026-09-16, Issue #158): เดิม hold-back แค่ "ตัวล่าสุดตาม sort ชื่อ
+          # ไฟล์" ตัวเดียว — ถ้า 2 PR migration merge เข้า main ไม่เรียงตาม timestamp
+          # ที่สร้าง (เช่น PR #153 สร้างทีหลังแต่ merge ก่อน PR #151) จะเลือกผิดตัว แล้ว
+          # migration ที่ควรถูกทดสอบจริงๆ (ของ PR ที่ merge เข้ามาทีหลัง) จะไม่เคยผ่าน
+          # safety-net นี้เลย ไม่ใช่แค่รอบนั้นพลาด แต่หลุดถาวร
+          #
+          # แก้โดยหา migration ที่ "ใหม่จริง" ทั้งหมดเทียบกับ main ก่อนหน้าผ่าน git diff
+          # (ไม่ใช่ sort ชื่อไฟล์) แล้ว hold-back + ทดสอบทุกตัวพร้อมกันเป็นชุดเดียว แทนที่
+          # จะเลือกมาแค่ 1 ตัว — ยังคงหลักการเดิมทุกอย่าง (deploy ทุกอย่าง "ก่อน" ชุดใหม่
+          # → ใส่ smoke data จำลอง DB ที่มีข้อมูลอยู่แล้ว → deploy ชุดใหม่ทับ) แค่เปลี่ยน
+          # จำนวนที่ hold-back จาก 1 เป็น N
+          if [ -z "$MIGRATION_BASE_SHA" ] || ! git cat-file -e "$MIGRATION_BASE_SHA" 2>/dev/null; then
+            # Fallback: หา base SHA ไม่ได้ (เช่น push แรกสุดของ branch, before SHA
+            # เป็น all-zero) — ไม่ใช่เคสปกติของ main แต่กัน CI พังทั้งขบวนไว้ก่อน โดย
+            # ถอยไปใช้พฤติกรรมเดิม (hold-back ตัวเดียวตาม sort) ดีกว่าไม่ทดสอบอะไรเลย
+            echo "::warning::หา MIGRATION_BASE_SHA ไม่ได้ ($MIGRATION_BASE_SHA) — ใช้ fallback hold-back ตัวล่าสุดตาม sort ชื่อไฟล์แทน"
+            NEW_MIGRATIONS=$(ls -1 prisma/migrations | grep -v migration_lock.toml | sort | tail -n 1)
+          else
+            # `|| true` ท้ายสุด — เคสปกติที่สุด (ไม่มี migration ใหม่เลย) ทำให้
+            # `grep -v` ไม่เจออะไรให้ผ่านเลยคืน exit 1 ซึ่งภายใต้ `bash -eo pipefail`
+            # ของ GitHub Actions default shell จะทำให้ step ทั้งก้อนพังไปดื้อๆ ทันที
+            # (ทดสอบยืนยันแล้วว่าเป็นแบบนี้จริง ไม่ใช่แค่ทฤษฎี) ต้องกัน exit code
+            # ของ pipeline นี้ไว้เอง แล้วให้เช็ค "ว่างไหม" ที่เงื่อนไขถัดไปแทน
+            NEW_MIGRATIONS=$(git diff --name-only --diff-filter=A "$MIGRATION_BASE_SHA" HEAD -- prisma/migrations/ \
+              | grep -v migration_lock.toml \
+              | awk -F/ '{print $(NF-1)}' \
+              | sort -u || true)
+          fi
 
-          mkdir -p /tmp/held-migration
-          mv "prisma/migrations/$LATEST_MIGRATION" /tmp/held-migration/
+          NEW_MIGRATION_COUNT=$(echo "$NEW_MIGRATIONS" | grep -c . || true)
+
+          if [ -z "$NEW_MIGRATIONS" ] || [ "$NEW_MIGRATION_COUNT" -ge "$MIGRATION_COUNT" ]; then
+            # ไม่เจอ migration ใหม่เทียบกับ base (เช่น PR นี้ไม่ได้เพิ่ม migration เอง
+            # แค่ sync main ที่มี migration จาก PR อื่นมาแล้ว) หรือ migration ที่มีอยู่
+            # ทั้งหมด "ใหม่" หมดพร้อมกัน (ไม่มี migration เดิมเหลือให้เป็น "ข้อมูลก่อน
+            # หน้า" ให้ทดสอบด้วยเลย — เท่ากับไม่มี existing data ให้ป้องกัน) — ไม่มี
+            # อะไรต้อง hold-back ในเคสนี้
+            echo "ไม่พบ migration เดิมให้ทดสอบย้อนหลังด้วย (เทียบกับ $MIGRATION_BASE_SHA) — deploy ตามปกติ"
+            npx prisma migrate deploy
+            exit 0
+          fi
+
+          echo "Testing migrations against existing data:"
+          echo "$NEW_MIGRATIONS"
+
+          mkdir -p /tmp/held-migrations
+          while IFS= read -r m; do
+            mv "prisma/migrations/$m" /tmp/held-migrations/
+          done <<< "$NEW_MIGRATIONS"
 
           npx prisma migrate deploy
 
@@ -165,7 +222,10 @@ jobs:
           VALUES ('22222222-2222-2222-2222-222222222222', 'ci-smoke-1.0.0', ARRAY['CI-TEST-MODEL'], 'pending', 'unknown', '11111111-1111-1111-1111-111111111111', CURRENT_TIMESTAMP);
           SQL
 
-          mv "/tmp/held-migration/$LATEST_MIGRATION" prisma/migrations/
+          while IFS= read -r m; do
+            mv "/tmp/held-migrations/$m" prisma/migrations/
+          done <<< "$NEW_MIGRATIONS"
+
           npx prisma migrate deploy
 
       - name: Test (unit)

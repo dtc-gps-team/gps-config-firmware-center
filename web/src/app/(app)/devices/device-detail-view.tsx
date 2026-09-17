@@ -9,12 +9,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DEVICE_STATUS_TONE, pillClass } from "@/lib/status-pill";
+import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { type Device } from "@/lib/device-api";
 
-function InfoRow({
+function InfoItem({
   label,
   children,
 }: {
@@ -22,9 +23,9 @@ function InfoRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-border/60 py-2 text-sm last:border-0">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm break-words">{children}</span>
     </div>
   );
 }
@@ -33,11 +34,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
   const { data, isLoading, notFound, error, refetch } = useDevice(deviceId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลดข้อมูลอุปกรณ์…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (notFound || error || !data) {
@@ -68,7 +65,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
 
 function DeviceDetailContent({ device }: { device: Device }) {
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/devices"
@@ -80,13 +77,9 @@ function DeviceDetailContent({ device }: { device: Device }) {
           <h1 className="font-mono text-2xl font-semibold">
             {device.deviceId}
           </h1>
-          <span
-            className={pillClass(
-              DEVICE_STATUS_TONE[device.status] ?? "neutral",
-            )}
-          >
+          <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
             {device.status}
-          </span>
+          </StatusPill>
         </div>
         <p className="text-sm text-muted-foreground">
           ทุก Role เข้าถึงได้ (Read-only)
@@ -98,28 +91,27 @@ function DeviceDetailContent({ device }: { device: Device }) {
           <CardTitle className="text-base">ข้อมูลอุปกรณ์</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl>
-            <InfoRow label="SIM Number">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoItem label="SIM Number">
               <span className="font-mono">{device.simNumber}</span>
-            </InfoRow>
-            <InfoRow label="รุ่น / โปรโตคอล">
+            </InfoItem>
+            <InfoItem label="รุ่น / โปรโตคอล">
               {device.deviceModel} / {device.protocol}
-            </InfoRow>
-            <InfoRow label="สถานะ">{device.status}</InfoRow>
-            <InfoRow label="ลูกค้า">
+            </InfoItem>
+            <InfoItem label="ลูกค้า">
               {device.customer ? (
                 device.customer.companyName
               ) : (
                 <span className="text-muted-foreground">ไม่ระบุ</span>
               )}
-            </InfoRow>
-            <InfoRow label="ลงทะเบียนเมื่อ">
+            </InfoItem>
+            <InfoItem label="ลงทะเบียนเมื่อ">
               {formatDateTime(device.registeredAt)}
-            </InfoRow>
-            <InfoRow label="ติดตั้งเมื่อ">
+            </InfoItem>
+            <InfoItem label="ติดตั้งเมื่อ">
               {device.installedAt ? formatDateTime(device.installedAt) : "—"}
-            </InfoRow>
-          </dl>
+            </InfoItem>
+          </div>
         </CardContent>
       </Card>
 

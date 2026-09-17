@@ -8,10 +8,12 @@ import {
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
+  StatusPill,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
+import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
 
@@ -34,11 +36,7 @@ export function FirmwareDetailView({ firmwareId }: { firmwareId: string }) {
   const { data, isLoading, error, refetch } = useFirmware(firmwareId);
 
   if (isLoading && !data) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        กำลังโหลด Firmware…
-      </p>
-    );
+    return <DetailSkeleton />;
   }
 
   if (error || !data) {
@@ -89,19 +87,17 @@ function FirmwareDetailContent({
           <h1 className="text-2xl font-semibold break-words">
             เวอร์ชัน {firmware.version}
           </h1>
-          <span
-            className={pillClass(
-              FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral",
-            )}
+          <StatusPill
+            tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
           >
             {firmware.uploadStatus}
-          </span>
+          </StatusPill>
         </div>
       </div>
 
       <FirmwareSimulatePanel firmware={firmware} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">
@@ -114,15 +110,15 @@ function FirmwareDetailContent({
                 {formatFileSize(firmware.fileSizeBytes)}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
-                <span
-                  className={pillClass(
+                <StatusPill
+                  tone={
                     FIRMWARE_DEVICE_UPDATE_STATUS_TONE[
                       firmware.deviceUpdateStatus
-                    ] ?? "neutral",
-                  )}
+                    ] ?? "neutral"
+                  }
                 >
                   {firmware.deviceUpdateStatus}
-                </span>
+                </StatusPill>
               </InfoRow>
               <InfoRow label="อัปโหลดโดย">
                 <span className="font-mono text-xs">{firmware.uploadedBy}</span>
