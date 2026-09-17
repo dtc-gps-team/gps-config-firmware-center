@@ -3,7 +3,7 @@ import 'package:mobile/core/api/models.dart';
 
 void main() {
   group('UserRole', () {
-    test('has exactly the 6 roles from openapi.yaml — no FieldTechnician', () {
+    test('has exactly the 7 roles from openapi.yaml — no FieldTechnician', () {
       expect(UserRole.values.map((r) => r.wireName).toList(), [
         'SW',
         'Operation',
@@ -11,12 +11,14 @@ void main() {
         'OT',
         'Auditor',
         'Admin',
+        'SuperAdmin',
       ]);
     });
 
     test('fromWire maps known values', () {
       expect(UserRole.fromWire('SW'), UserRole.sw);
       expect(UserRole.fromWire('Admin'), UserRole.admin);
+      expect(UserRole.fromWire('SuperAdmin'), UserRole.superAdmin);
     });
 
     test('fromWire rejects FieldTechnician and other unknown values', () {

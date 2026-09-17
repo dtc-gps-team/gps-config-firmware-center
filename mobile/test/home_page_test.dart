@@ -190,6 +190,15 @@ Future<void> _pumpHomeRouted(
 void main() {
   final deviceTestTile = find.byKey(const Key('shortcut_device_test'));
 
+  group('role badge label', () {
+    testWidgets('SuperAdmin -> "SuperAdmin • ผู้ดูแลระบบสูงสุด"', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.superAdmin);
+      expect(find.text('SuperAdmin • ผู้ดูแลระบบสูงสุด'), findsOneWidget);
+    });
+  });
+
   group('RBAC — ปุ่ม "ทดสอบสัญญาณ" ในกริดทางลัด', () {
     testWidgets('ST เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
       await _pumpHome(tester, UserRole.st);

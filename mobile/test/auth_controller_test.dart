@@ -13,6 +13,18 @@ class _NoopAuthRepository implements AuthRepository {
       throw UnimplementedError();
 }
 
+/// Stands in for what happens end-to-end when the backend returns a role
+/// string `UserRole.fromWire()` doesn't recognise (a role the mobile enum
+/// hasn't been updated for yet — this used to happen for `SuperAdmin` before
+/// it was added to the enum here). `RealAuthRepository.login()` would let
+/// this `ArgumentError` escape from `LoginResponse.fromJson()` the same way.
+class _ThrowingRoleAuthRepository implements AuthRepository {
+  @override
+  Future<LoginResponse> login(String username, String password) async {
+    throw ArgumentError.value('NOT_A_REAL_ROLE', 'value', 'Unknown role');
+  }
+}
+
 /// Spy standing in for `PushNotificationService` — lets these tests assert
 /// `AuthController` actually calls into it on login/logout/restore, and keeps
 /// the real service (which now hits the Firebase SDK, since
@@ -179,6 +191,31 @@ void main() {
     expect(state.status, AuthStatus.authenticated);
     expect(state.username, 'st.test');
     expect(state.role, UserRole.st);
+  });
+
+  test('login hitting a role UserRole.fromWire() does not recognise -> clear '
+      "error message, not the generic 'unexpected error' catch-all", () async {
+    final container = ProviderContainer(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_ThrowingRoleAuthRepository()),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
+        pushNotificationServiceProvider.overrideWithValue(
+          _FakePushNotificationService(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(authControllerProvider.notifier)
+        .login('super.test', 'password123');
+
+    final state = container.read(authControllerProvider);
+    expect(state.status, AuthStatus.unauthenticated);
+    expect(state.error, 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ');
   });
 
   test(

@@ -141,6 +141,15 @@ class AuthController extends Notifier<AuthState> {
       );
     } on ApiException catch (e) {
       state = AuthState(status: AuthStatus.unauthenticated, error: e.message);
+    } on ArgumentError catch (_) {
+      // UserRole.fromWire() throws this when the backend returns a role the
+      // mobile enum doesn't know about (e.g. SuperAdmin — Web-only, but the
+      // backend doesn't block it by platform, so testing with that account
+      // hits this). A clear message here beats the generic catch-all below.
+      state = AuthState(
+        status: AuthStatus.unauthenticated,
+        error: 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ',
+      );
     } catch (e) {
       state = AuthState(
         status: AuthStatus.unauthenticated,
