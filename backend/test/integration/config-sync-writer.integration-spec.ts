@@ -66,7 +66,7 @@ describe('config-sync-writer wiring (integration — real postgres + DI graph)',
   async function makeTestingConfig(
     fields: Record<string, unknown>,
   ): Promise<{ id: string }> {
-    const sw = await makeUser(prisma, { role: 'SW' });
+    const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
@@ -74,7 +74,7 @@ describe('config-sync-writer wiring (integration — real postgres + DI graph)',
         protocol: 'TCP',
         status: 'testing',
         fields: fields as Prisma.InputJsonValue,
-        createdBy: sw.id,
+        createdBy: configEngineer.id,
       },
     });
     return { id: config.id };

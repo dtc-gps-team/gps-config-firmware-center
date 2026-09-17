@@ -8,7 +8,8 @@ import { QueryAuditLogDto } from './dto/query-audit-log.dto';
 
 // Audit module (read-only — Sprint 3 #27):
 //   GET /audit-logs — list + filter (userId/auditModule/action) · ทุก Role
-//   ยกเว้น SW (RBAC_Matrix.md Section 2 แถว "Audit Log" — SW เป็น "-" ทั้งแถว)
+//   ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer (เดิม SW ก่อนแยก role —
+//   RBAC_Matrix.md Section 2 แถว "Audit Log" — ทั้ง 3 คอลัมน์เป็น "-")
 //
 // resource `audit-logs` (พหูพจน์ ตั้งชื่อตาม path — mirror `devices`/`tasks`/
 // `incidents`) action `Read` · grant seed: Operation/ST/OT/Auditor/Admin

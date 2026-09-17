@@ -76,7 +76,15 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
 let seq = 0;
 
 export type RoleCode =
-  'SW' | 'Operation' | 'ST' | 'OT' | 'Auditor' | 'Admin' | 'SuperAdmin';
+  | 'ConfigEngineer'
+  | 'FirmwareEngineer'
+  | 'QAEngineer'
+  | 'Operation'
+  | 'ST'
+  | 'OT'
+  | 'Auditor'
+  | 'Admin'
+  | 'SuperAdmin';
 
 /**
  * Find-or-create a Role row by code. Role is a real table now (not a Postgres

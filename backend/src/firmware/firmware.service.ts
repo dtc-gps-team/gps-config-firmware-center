@@ -55,7 +55,7 @@ export class FirmwareService {
 
   /**
    * `POST /firmware` (v3.7 — อัปโหลดตรงเข้าระบบเราทางเดียว ไม่มีช่องทาง
-   * "ดึงจากระบบเดิม" แล้ว) — SW เท่านั้น อัปโหลดไฟล์ขึ้น Object Storage
+   * "ดึงจากระบบเดิม" แล้ว) — FirmwareEngineer เท่านั้น อัปโหลดไฟล์ขึ้น Object Storage
    * (MinIO/S3) แบบ synchronous แล้วตั้ง `uploadStatus` ตามผลจริง — ไม่ throw
    * 500 ถ้า Object Storage ล้มเหลว เพราะ `uploadStatus: failed` มีไว้แทนค่านี้
    * อยู่แล้ว (client เห็นสถานะจริงบนหน้าเว็บได้ทันที ไม่ใช่แค่ error ทั่วไป)
@@ -119,7 +119,7 @@ export class FirmwareService {
     return created;
   }
 
-  /** `PATCH /firmware/{id}` — SW แก้ Compatibility Tag ทีหลัง (แทนที่ทั้ง
+  /** `PATCH /firmware/{id}` — FirmwareEngineer แก้ Compatibility Tag ทีหลัง (แทนที่ทั้ง
    * array เสมอ ไม่ merge — ดู comment เหนือ DTO) */
   async updateCompatibility(
     id: string,

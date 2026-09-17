@@ -10,7 +10,7 @@ import { ActingUser, FirmwareService } from './firmware.service';
 import { FirmwareStorageService } from './firmware-storage.service';
 import { FIRMWARE_SIMULATOR } from './firmware-simulator';
 
-const actor: ActingUser = { id: 'sw-1', role: 'SW' };
+const actor: ActingUser = { id: 'fe-1', role: 'FirmwareEngineer' };
 
 const sampleFirmware: Firmware = {
   id: 'fw-1',

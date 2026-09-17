@@ -35,7 +35,7 @@ const draftConfig: Config = {
   protocol: 'TCP',
   status: 'draft',
   fields: { APN1: 'internet' },
-  createdBy: 'sw-1',
+  createdBy: 'ce-1',
   approvedBy: null,
   suggestedApproverId: null,
   deletedAt: null,
@@ -47,7 +47,7 @@ const testingConfig: Config = { ...draftConfig, status: 'testing' };
 const approvedConfig: Config = { ...draftConfig, status: 'approved' };
 const syncedConfig: Config = { ...draftConfig, status: 'synced' };
 
-const sw: ActingUser = { id: 'sw-1', role: 'SW' };
+const configEngineer: ActingUser = { id: 'ce-1', role: 'ConfigEngineer' };
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 
 /** จำลอง Prisma error P2025 ("Record to update/delete not found") ให้ตรงกับ
@@ -151,7 +151,7 @@ describe('ConfigService', () => {
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
-        sw,
+        configEngineer,
       );
 
       expect(config.create).toHaveBeenCalledWith({
@@ -161,7 +161,7 @@ describe('ConfigService', () => {
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           description: undefined,
-          createdBy: 'sw-1',
+          createdBy: 'ce-1',
         },
       });
     });
@@ -176,11 +176,11 @@ describe('ConfigService', () => {
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
-        sw,
+        configEngineer,
       );
 
       expect(auditLog.create).toHaveBeenCalledWith({
-        data: { userId: 'sw-1', auditModule: 'config', action: 'create' },
+        data: { userId: 'ce-1', auditModule: 'config', action: 'create' },
       });
     });
 
@@ -196,7 +196,7 @@ describe('ConfigService', () => {
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           },
-          sw,
+          configEngineer,
         ),
       ).resolves.toEqual(draftConfig);
     });
@@ -212,7 +212,7 @@ describe('ConfigService', () => {
           fields: { APN1: 'internet' },
           description: 'ตั้งค่ามาตรฐานภาคกลาง',
         },
-        sw,
+        configEngineer,
       );
 
       expect(config.create).toHaveBeenCalledWith({
@@ -222,7 +222,7 @@ describe('ConfigService', () => {
           protocol: 'TCP',
           fields: { APN1: 'internet' },
           description: 'ตั้งค่ามาตรฐานภาคกลาง',
-          createdBy: 'sw-1',
+          createdBy: 'ce-1',
         },
       });
     });
@@ -237,7 +237,7 @@ describe('ConfigService', () => {
           protocol: 'TCP',
           fields: { APN1: 'internet' },
         },
-        sw,
+        configEngineer,
       );
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
@@ -260,7 +260,7 @@ describe('ConfigService', () => {
             protocol: 'TCP',
             fields: { APN1: 'xxx' },
           },
-          sw,
+          configEngineer,
         ),
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
@@ -283,7 +283,7 @@ describe('ConfigService', () => {
             protocol: 'TCP',
             fields: { APN1: 'internet' },
           },
-          sw,
+          configEngineer,
         ),
       ).rejects.toThrow(ConflictException);
     });
@@ -292,35 +292,35 @@ describe('ConfigService', () => {
   describe('importFromJson', () => {
     it('ไม่มีไฟล์แนบมา -> BadRequestException', async () => {
       await expect(
-        service.importFromJson(undefined, 'json', sw),
+        service.importFromJson(undefined, 'json', configEngineer),
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('format ไม่ใช่ json (หรือไม่ส่งมา) -> BadRequestException', async () => {
       const file = makeMulterFile('{}');
-      await expect(service.importFromJson(file, 'csv', sw)).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.importFromJson(file, undefined, sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'csv', configEngineer),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.importFromJson(file, undefined, configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('ไฟล์ parse เป็น JSON ไม่ได้ -> BadRequestException', async () => {
       const file = makeMulterFile('{ not valid json');
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('JSON เป็น null (valid JSON แต่ไม่ใช่ object) -> BadRequestException ไม่ใช่ TypeError', async () => {
       const file = makeMulterFile('null');
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -328,18 +328,22 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify([{ deviceModel: 'GT06N', protocol: 'TCP', fields: {} }]),
       );
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
     it('JSON เป็นค่าเดี่ยว (number/string) -> BadRequestException', async () => {
       await expect(
-        service.importFromJson(makeMulterFile('42'), 'json', sw),
+        service.importFromJson(makeMulterFile('42'), 'json', configEngineer),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.importFromJson(makeMulterFile('"hello"'), 'json', sw),
+        service.importFromJson(
+          makeMulterFile('"hello"'),
+          'json',
+          configEngineer,
+        ),
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
@@ -348,9 +352,9 @@ describe('ConfigService', () => {
       const file = makeMulterFile(
         JSON.stringify({ protocol: 'TCP', fields: {} }),
       );
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -363,9 +367,9 @@ describe('ConfigService', () => {
           fields: {},
         }),
       );
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
 
@@ -380,7 +384,7 @@ describe('ConfigService', () => {
         }),
       );
 
-      const result = await service.importFromJson(file, 'json', sw);
+      const result = await service.importFromJson(file, 'json', configEngineer);
 
       expect(result).toEqual(draftConfig);
       expect(config.create).toHaveBeenCalledWith({
@@ -389,7 +393,7 @@ describe('ConfigService', () => {
           deviceModel: 'GT06N',
           protocol: 'TCP',
           fields: { APN1: 'internet' },
-          createdBy: 'sw-1',
+          createdBy: 'ce-1',
         },
       });
     });
@@ -403,9 +407,9 @@ describe('ConfigService', () => {
         }),
       );
 
-      await expect(service.importFromJson(file, 'json', sw)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
   });
@@ -474,7 +478,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue(testingConfig);
 
-      const result = await service.decide(draftConfig.id, true, sw);
+      const result = await service.decide(draftConfig.id, true, configEngineer);
 
       expect(result).toEqual(testingConfig);
       expect(config.update).toHaveBeenCalledWith({
@@ -487,10 +491,10 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockResolvedValue(testingConfig);
 
-      await service.decide(draftConfig.id, true, sw);
+      await service.decide(draftConfig.id, true, configEngineer);
 
       expect(auditLog.create).toHaveBeenCalledWith({
-        data: { userId: 'sw-1', auditModule: 'config', action: 'decide' },
+        data: { userId: 'ce-1', auditModule: 'config', action: 'decide' },
       });
     });
 
@@ -499,15 +503,19 @@ describe('ConfigService', () => {
       config.update.mockResolvedValue(testingConfig);
       auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
 
-      await expect(service.decide(draftConfig.id, true, sw)).resolves.toEqual(
-        testingConfig,
-      );
+      await expect(
+        service.decide(draftConfig.id, true, configEngineer),
+      ).resolves.toEqual(testingConfig);
     });
 
     it('status draft, passed:false -> ไม่ยิง update ลง DB เลย คืน config เดิม (ยังเป็น draft) ไม่เขียน AuditLog', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
-      const result = await service.decide(draftConfig.id, false, sw);
+      const result = await service.decide(
+        draftConfig.id,
+        false,
+        configEngineer,
+      );
 
       expect(result).toEqual(draftConfig);
       expect(config.update).not.toHaveBeenCalled();
@@ -517,36 +525,36 @@ describe('ConfigService', () => {
     it('status testing (ส่งต่อ Operation ไปแล้ว) -> ConflictException ไม่ว่า passed จะเป็นอะไร', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
 
-      await expect(service.decide(testingConfig.id, true, sw)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.decide(testingConfig.id, true, configEngineer),
+      ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
 
     it('status approved -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(approvedConfig);
 
-      await expect(service.decide(approvedConfig.id, true, sw)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.decide(approvedConfig.id, true, configEngineer),
+      ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
 
     it('ไม่เจอ config เลย -> NotFoundException', async () => {
       config.findUnique.mockResolvedValue(null);
 
-      await expect(service.decide('missing-id', true, sw)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.decide('missing-id', true, configEngineer),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ update (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.update.mockRejectedValue(makeP2025());
 
-      await expect(service.decide(draftConfig.id, true, sw)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.decide(draftConfig.id, true, configEngineer),
+      ).rejects.toThrow(NotFoundException);
     });
 
     describe('suggestedApproverId (เจาะจงผู้อนุมัติ — #19)', () => {
@@ -554,7 +562,7 @@ describe('ConfigService', () => {
         config.findUnique.mockResolvedValue(draftConfig);
         config.update.mockResolvedValue(testingConfig);
 
-        await service.decide(draftConfig.id, true, sw);
+        await service.decide(draftConfig.id, true, configEngineer);
 
         expect(user.findUnique).not.toHaveBeenCalled();
         expect(config.update).toHaveBeenCalledWith({
@@ -572,7 +580,7 @@ describe('ConfigService', () => {
           role: { code: 'Operation' },
         });
 
-        await service.decide(draftConfig.id, true, sw, 'op-1');
+        await service.decide(draftConfig.id, true, configEngineer, 'op-1');
 
         expect(config.update).toHaveBeenCalledWith({
           where: { id: draftConfig.id },
@@ -583,13 +591,13 @@ describe('ConfigService', () => {
       it('suggestedApproverId เป็น role อื่น (ไม่ใช่ Operation) -> BadRequestException', async () => {
         config.findUnique.mockResolvedValue(draftConfig);
         user.findUnique.mockResolvedValue({
-          id: 'sw-2',
+          id: 'ce-2',
           isActive: true,
-          role: { code: 'SW' },
+          role: { code: 'ConfigEngineer' },
         });
 
         await expect(
-          service.decide(draftConfig.id, true, sw, 'sw-2'),
+          service.decide(draftConfig.id, true, configEngineer, 'ce-2'),
         ).rejects.toThrow(BadRequestException);
         expect(config.update).not.toHaveBeenCalled();
       });
@@ -603,7 +611,7 @@ describe('ConfigService', () => {
         });
 
         await expect(
-          service.decide(draftConfig.id, true, sw, 'op-x'),
+          service.decide(draftConfig.id, true, configEngineer, 'op-x'),
         ).rejects.toThrow(BadRequestException);
         expect(config.update).not.toHaveBeenCalled();
       });
@@ -613,14 +621,19 @@ describe('ConfigService', () => {
         user.findUnique.mockResolvedValue(null);
 
         await expect(
-          service.decide(draftConfig.id, true, sw, 'ghost'),
+          service.decide(draftConfig.id, true, configEngineer, 'ghost'),
         ).rejects.toThrow(BadRequestException);
       });
 
       it('passed:false -> ไม่เช็ค suggestedApproverId เลย (คืน config เดิม)', async () => {
         config.findUnique.mockResolvedValue(draftConfig);
 
-        const result = await service.decide(draftConfig.id, false, sw, 'op-1');
+        const result = await service.decide(
+          draftConfig.id,
+          false,
+          configEngineer,
+          'op-1',
+        );
 
         expect(result).toEqual(draftConfig);
         expect(user.findUnique).not.toHaveBeenCalled();
@@ -760,7 +773,7 @@ describe('ConfigService', () => {
       );
     });
 
-    it('status draft (ยังไม่ผ่าน decide ของ SW) -> ConflictException', async () => {
+    it('status draft (ยังไม่ผ่าน decide ของ ConfigEngineer) -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
 
       await expect(service.approve(draftConfig.id, operation)).rejects.toThrow(
@@ -1001,7 +1014,11 @@ describe('ConfigService', () => {
     it('config status ไม่ใช่ draft -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
       await expect(
-        service.update(testingConfig.id, { deviceModel: 'GT06L' }, sw),
+        service.update(
+          testingConfig.id,
+          { deviceModel: 'GT06L' },
+          configEngineer,
+        ),
       ).rejects.toThrow(ConflictException);
       expect(config.update).not.toHaveBeenCalled();
     });
@@ -1013,7 +1030,11 @@ describe('ConfigService', () => {
         deviceModel: 'GT06L',
       });
 
-      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
+      await service.update(
+        draftConfig.id,
+        { deviceModel: 'GT06L' },
+        configEngineer,
+      );
 
       expect(config.update).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
@@ -1034,10 +1055,14 @@ describe('ConfigService', () => {
         deviceModel: 'GT06L',
       });
 
-      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
+      await service.update(
+        draftConfig.id,
+        { deviceModel: 'GT06L' },
+        configEngineer,
+      );
 
       expect(auditLog.create).toHaveBeenCalledWith({
-        data: { userId: 'sw-1', auditModule: 'config', action: 'update' },
+        data: { userId: 'ce-1', auditModule: 'config', action: 'update' },
       });
     });
 
@@ -1048,7 +1073,11 @@ describe('ConfigService', () => {
       auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
 
       await expect(
-        service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw),
+        service.update(
+          draftConfig.id,
+          { deviceModel: 'GT06L' },
+          configEngineer,
+        ),
       ).resolves.toEqual(updated);
     });
 
@@ -1059,7 +1088,7 @@ describe('ConfigService', () => {
       await service.update(
         draftConfig.id,
         { description: 'อัปเดตคำอธิบาย' },
-        sw,
+        configEngineer,
       );
 
       expect(config.update).toHaveBeenCalledWith({
@@ -1085,14 +1114,18 @@ describe('ConfigService', () => {
       );
 
       await expect(
-        service.update(draftConfig.id, { name: 'ชื่อที่มีอยู่แล้ว' }, sw),
+        service.update(
+          draftConfig.id,
+          { name: 'ชื่อที่มีอยู่แล้ว' },
+          configEngineer,
+        ),
       ).rejects.toThrow(ConflictException);
     });
 
     it('ไม่เจอ config เลย -> NotFoundException (ไม่ใช่ ConflictException)', async () => {
       config.findUnique.mockResolvedValue(null);
       await expect(
-        service.update('missing-id', { deviceModel: 'GT06L' }, sw),
+        service.update('missing-id', { deviceModel: 'GT06L' }, configEngineer),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1101,7 +1134,11 @@ describe('ConfigService', () => {
       config.update.mockRejectedValue(makeP2025());
 
       await expect(
-        service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw),
+        service.update(
+          draftConfig.id,
+          { deviceModel: 'GT06L' },
+          configEngineer,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1112,7 +1149,11 @@ describe('ConfigService', () => {
         fields: { APN1: 'new-apn' },
       });
 
-      await service.update(draftConfig.id, { fields: { APN1: 'new-apn' } }, sw);
+      await service.update(
+        draftConfig.id,
+        { fields: { APN1: 'new-apn' } },
+        configEngineer,
+      );
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
         draftConfig.deviceModel,
@@ -1128,7 +1169,11 @@ describe('ConfigService', () => {
         deviceModel: 'GT06L',
       });
 
-      await service.update(draftConfig.id, { deviceModel: 'GT06L' }, sw);
+      await service.update(
+        draftConfig.id,
+        { deviceModel: 'GT06L' },
+        configEngineer,
+      );
 
       expect(configDefinitionService.validateFields).toHaveBeenCalledWith(
         'GT06L',
@@ -1144,7 +1189,11 @@ describe('ConfigService', () => {
       );
 
       await expect(
-        service.update(draftConfig.id, { fields: { APN1: 'xxx' } }, sw),
+        service.update(
+          draftConfig.id,
+          { fields: { APN1: 'xxx' } },
+          configEngineer,
+        ),
       ).rejects.toThrow(BadRequestException);
       expect(config.update).not.toHaveBeenCalled();
     });
@@ -1153,9 +1202,9 @@ describe('ConfigService', () => {
   describe('remove', () => {
     it('config status ไม่ใช่ draft -> ConflictException', async () => {
       config.findUnique.mockResolvedValue(testingConfig);
-      await expect(service.remove(testingConfig.id, sw)).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.remove(testingConfig.id, configEngineer),
+      ).rejects.toThrow(ConflictException);
       expect(config.delete).not.toHaveBeenCalled();
     });
 
@@ -1163,7 +1212,7 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockResolvedValue(draftConfig);
 
-      await service.remove(draftConfig.id, sw);
+      await service.remove(draftConfig.id, configEngineer);
 
       expect(config.delete).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
@@ -1174,10 +1223,10 @@ describe('ConfigService', () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockResolvedValue(draftConfig);
 
-      await service.remove(draftConfig.id, sw);
+      await service.remove(draftConfig.id, configEngineer);
 
       expect(auditLog.create).toHaveBeenCalledWith({
-        data: { userId: 'sw-1', auditModule: 'config', action: 'delete' },
+        data: { userId: 'ce-1', auditModule: 'config', action: 'delete' },
       });
     });
 
@@ -1186,16 +1235,18 @@ describe('ConfigService', () => {
       config.delete.mockResolvedValue(draftConfig);
       auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
 
-      await expect(service.remove(draftConfig.id, sw)).resolves.toBeUndefined();
+      await expect(
+        service.remove(draftConfig.id, configEngineer),
+      ).resolves.toBeUndefined();
     });
 
     it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ delete (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockRejectedValue(makeP2025());
 
-      await expect(service.remove(draftConfig.id, sw)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.remove(draftConfig.id, configEngineer),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

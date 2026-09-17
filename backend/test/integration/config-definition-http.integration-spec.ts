@@ -115,11 +115,13 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       .expect(403);
   });
 
-  it('SW มีสิทธิ์ config-definition.Read -> 200 คืนรายการที่ seed ไว้ (APN)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Read, 'config-definition');
+  it('ConfigEngineer มีสิทธิ์ config-definition.Read -> 200 คืนรายการที่ seed ไว้ (APN)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Read, 'config-definition');
     await seedApn();
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     const res = await request(app.getHttpServer())
       .get('/api/v1/config-definitions')
@@ -138,10 +140,12 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
     expect(body[0].required).toBe(true);
   });
 
-  it('SW มีสิทธิ์ แต่ยังไม่มีข้อมูลในตาราง -> 200 คืน []', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Read, 'config-definition');
-    const token = tokenFor(swUser.id, 'SW');
+  it('ConfigEngineer มีสิทธิ์ แต่ยังไม่มีข้อมูลในตาราง -> 200 คืน []', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Read, 'config-definition');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     const res = await request(app.getHttpServer())
       .get('/api/v1/config-definitions')
@@ -152,7 +156,7 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
   });
 
   /**
-   * `POST /config-definitions` (#26) — SW สร้าง field definition เองได้เลย
+   * `POST /config-definitions` (#26) — ConfigEngineer สร้าง field definition เองได้เลย
    * ไม่ต้องผ่านอนุมัติ (ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09 — ดู
    * RBAC_Matrix.md changelog แก้ครั้งที่ 14) ยืนยันผ่าน comment รีวิว PR ของ
    * kittiphong: เดิม RBAC ของ endpoint นี้ถูกทดสอบแค่ทางอ้อมผ่าน unit test
@@ -177,10 +181,12 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
         .expect(403);
     });
 
-    it('SW มีสิทธิ์ config-definition.Create -> 201 สร้างสำเร็จพร้อม supportedModels', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create, 'config-definition');
-      const token = tokenFor(swUser.id, 'SW');
+    it('ConfigEngineer มีสิทธิ์ config-definition.Create -> 201 สร้างสำเร็จพร้อม supportedModels', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/config-definitions')
@@ -203,10 +209,12 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       });
     });
 
-    it('SW สร้าง field พร้อม unknownSpec: true -> 201 เก็บ flag ตามที่ส่ง', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create, 'config-definition');
-      const token = tokenFor(swUser.id, 'SW');
+    it('ConfigEngineer สร้าง field พร้อม unknownSpec: true -> 201 เก็บ flag ตามที่ส่ง', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/config-definitions')
@@ -218,9 +226,11 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
     });
 
     it('unknownSpec ไม่ใช่ boolean -> 400 (IsBoolean ที่ DTO)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create, 'config-definition');
-      const token = tokenFor(swUser.id, 'SW');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/config-definitions')
@@ -230,10 +240,12 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
     });
 
     it('fieldName ซ้ำ -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create, 'config-definition');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
       await seedApn();
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/config-definitions')
@@ -243,9 +255,11 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
     });
 
     it('supportedModels ว่างเปล่า -> 400 (ArrayMinSize(1) ที่ DTO)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create, 'config-definition');
-      const token = tokenFor(swUser.id, 'SW');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/config-definitions')

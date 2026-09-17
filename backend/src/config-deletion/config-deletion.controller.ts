@@ -33,11 +33,11 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //   GET  /config-deletion-requests            config-deletion · Read     (SuperAdmin)
 //   POST /config-deletion-requests/:id/approve config-deletion · Approve  (SuperAdmin)
 //   POST /config-deletion-requests/:id/reject  config-deletion · Approve  (SuperAdmin)
-//   POST /config/:configId/deletion-requests/keep  config · Update        (SW / ผู้สร้าง)
+//   POST /config/:configId/deletion-requests/keep  config · Update        (ConfigEngineer / ผู้สร้าง)
 //
 // 3 endpoint แรก key ด้วย request id (SuperAdmin ทำงานจากคิว) · `keep` key ด้วย
-// config id (SW/ผู้สร้างได้ notification เรื่อง "Config X" ไม่รู้ request id) —
-// resource `config`+Update ที่ SW มีอยู่แล้ว ไม่ต้อง grant เพิ่ม
+// config id (ConfigEngineer/ผู้สร้างได้ notification เรื่อง "Config X" ไม่รู้ request id) —
+// resource `config`+Update ที่ ConfigEngineer มีอยู่แล้ว ไม่ต้อง grant เพิ่ม
 //
 // `keep` ใช้ path `/config/:configId/deletion-requests/keep` ต่างจาก docs/11 §5
 // (`/config-deletion-requests/:id/keep`) โดยตั้งใจ — ดูเหตุผลข้างบน · อัปเดต

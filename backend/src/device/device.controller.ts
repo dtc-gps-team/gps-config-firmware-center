@@ -67,8 +67,8 @@ export class DeviceController {
   }
 
   // resource `device-connection-test` action Read — grant ให้ ST/OT เท่านั้น
-  // (ดู prisma/seed.ts) A ยืนยันบน PR #52 ว่ายังไม่เปิดให้ SW/Operation
-  // เพราะยังไม่เห็น use case ชัดเจน
+  // (ดู prisma/seed.ts) A ยืนยันบน PR #52 ว่ายังไม่เปิดให้ ConfigEngineer/
+  // FirmwareEngineer/Operation เพราะยังไม่เห็น use case ชัดเจน
   @Post(':deviceId/test-connection')
   @RequirePermission('device-connection-test', ActionType.Read)
   @HttpCode(HttpStatus.OK)
@@ -79,8 +79,8 @@ export class DeviceController {
   }
 
   // resource `device-config-apply` action Read — grant ให้ ST/OT เท่านั้น
-  // (mirror `device-connection-test` — คนหน้างานที่ใช้ Mobile) SW/Operation
-  // ยังไม่เปิด (ทำ Config บน Web ไม่ได้ apply หน้างาน)
+  // (mirror `device-connection-test` — คนหน้างานที่ใช้ Mobile) ConfigEngineer/
+  // FirmwareEngineer/Operation ยังไม่เปิด (ทำ Config บน Web ไม่ได้ apply หน้างาน)
   //
   // action ใช้ `Read` (ไม่ใช่ Update/Create) โดยตั้งใจ — apply-config ไม่ persist
   // อะไรในระบบเรา (fire-and-forget mock, ยืนยัน scope กับ B) จึงไม่ตรงกับ

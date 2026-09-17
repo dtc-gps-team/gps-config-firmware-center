@@ -15,7 +15,7 @@ function reqAs(user: JwtPayload): AuthenticatedRequest {
 }
 
 const JWT_SECRET = 'test-secret';
-const swReq = reqAs({ sub: 'sw-1', role: 'SW' });
+const firmwareEngineerReq = reqAs({ sub: 'fe-1', role: 'FirmwareEngineer' });
 
 const sampleFirmware: Firmware = {
   id: 'fw-1',
@@ -26,7 +26,7 @@ const sampleFirmware: Firmware = {
   objectKey: 'firmware/fw-1/gt06n.bin',
   originalFilename: 'gt06n.bin',
   fileSizeBytes: 1024,
-  uploadedBy: 'sw-1',
+  uploadedBy: 'fe-1',
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
@@ -78,12 +78,17 @@ describe('FirmwareController', () => {
     service.upload.mockResolvedValue(sampleFirmware);
     const file = { originalname: 'gt06n.bin' } as Express.Multer.File;
 
-    const result = await controller.upload(file, 'v1', 'GT06N', swReq);
+    const result = await controller.upload(
+      file,
+      'v1',
+      'GT06N',
+      firmwareEngineerReq,
+    );
 
     expect(result).toEqual(sampleFirmware);
     expect(service.upload).toHaveBeenCalledWith(file, 'v1', 'GT06N', {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'fe-1',
+      role: 'FirmwareEngineer',
     });
   });
 
@@ -102,14 +107,14 @@ describe('FirmwareController', () => {
     const result = await controller.updateCompatibility(
       sampleFirmware.id,
       dto,
-      swReq,
+      firmwareEngineerReq,
     );
 
     expect(result).toEqual(sampleFirmware);
     expect(service.updateCompatibility).toHaveBeenCalledWith(
       sampleFirmware.id,
       dto,
-      { id: 'sw-1', role: 'SW' },
+      { id: 'fe-1', role: 'FirmwareEngineer' },
     );
   });
 
