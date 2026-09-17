@@ -56,6 +56,15 @@ Simulation ทดสอบเอง — แต่ PDF §13.1 ตั้งใจ�
 การแยกนี้เป็นการ "ตัดตามรอยต่อ" ที่มีอยู่แล้วในโค้ด (สิทธิ์ config/firmware ของ `SW` แยก
 `grant()` กันอยู่แล้ว) ไม่กระทบ logic เดิม แค่เปลี่ยน role ที่ผูกสิทธิ์อยู่
 
+**Confirm ขอบเขต Mobile (ตอบคำถาม kittiphong ใน PR #174):** ทั้ง 3 role ใหม่เป็น
+**Web-only** ทั้งหมด — ไม่ต้องแก้อะไรฝั่ง Mobile เพิ่มเลยนอกจาก**ลบ** `case UserRole.sw`
+ออกจาก enum exhaustive switch (`mobile/lib/core/api/models.dart` — `_roleLabel()` +
+`MockAuthRepository` prefix map) ไม่ต้องเพิ่ม case ใหม่ให้ 3 role นี้ — ตรงกับ precedent เดิม
+ที่ RBAC_Matrix.md บรรทัด 91 ระบุไว้แล้วว่า Config Editor/Approval Center เป็น Web only
+(ผู้ใช้ Mobile มีแค่ Operation/ST/OT) และ `SW` เองก็ไม่เคย mapped เข้าหน้าจอ Mobile จริงจัง
+สักหน้าอยู่แล้ว (`grant('SW','tasks','Read')` ที่มีอยู่เป็นสิทธิ์ที่ไม่เคยถูกใช้งานจริง เหลือค้างมา
+จากก่อน Task Management จะถูกยกเลิกถาวร)
+
 ### 3.2 QA Engineer — ต้องสร้าง Firmware Approval Lifecycle ใหม่ทั้งหมด
 
 **สถานะปัจจุบัน**: `FirmwareUploadStatus` enum มีแค่ `pending | stored | failed` —
@@ -114,11 +123,22 @@ Campaign ตัวเองไม่ได้ (ต้องกัน self-approv
 ("อนุมัติ Config/Firmware/Campaign แทน Operation ไม่ได้")
 
 **แนวทางที่เลือก**: ใช้ role `Operation` เดิม + เพิ่ม **SelfApprovalGuard** (Operation คนไหน
-ก็อนุมัติ Campaign ของ Operation คนอื่นได้ แต่อนุมัติของตัวเองไม่ได้) — pattern นี้มีอยู่แล้วจริง
-ใน Data Dictionary: *"ผู้อนุมัติจริง (User คนใดก็ได้ที่มี Role ตรงกับ assigned_approver_role) —
-ต้องไม่ใช่คนเดียวกับ requested_by เสมอ (SelfApprovalGuard)"* และตรงกับที่ Config ใช้อยู่แล้ว
-(SW สร้าง → Operation คนไหนก็ได้อนุมัติ ไม่มี "Operation อาวุโส" แยกมาอนุมัติ Config โดยเฉพาะ)
-— ไม่ต้องเพิ่ม role ใหม่ ไม่มีปัญหาเรื่องจำนวนคน ตราบใดที่ทีม Operation มีมากกว่า 1 คน
+ก็อนุมัติ Campaign ของ Operation คนอื่นได้ แต่อนุมัติของตัวเองไม่ได้) — ไม่ต้องเพิ่ม role ใหม่
+ไม่มีปัญหาเรื่องจำนวนคน ตราบใดที่ทีม Operation มีมากกว่า 1 คน
+
+**แก้ไข 2026-09-17 (ตามที่ kittiphong ท้วงใน PR #174):** เดิมเอกสารนี้เขียนว่า
+SelfApprovalGuard "มีอยู่แล้วจริง...ตรงกับที่ Config ใช้อยู่แล้ว" — **ไม่ถูกต้อง** เช็คแล้ว
+(`grep -rn "SelfApprovalGuard" backend/src` ไม่เจอเลย) ไม่มี guard นี้ในโค้ดจริง ๆ และกลไก
+Separation of Duty ที่ Config ใช้อยู่ตอนนี้ทำงานที่**ระดับ Role ล้วนๆ** (SW ถูกห้ามอนุมัติ
+Config ทั้ง role เลย ไม่เคยต้องเทียบว่าเป็น user คนเดียวกับคนสร้างหรือเปล่า) ต่างจากที่ Campaign
+ต้องการ (Operation คนเดียวกันห้ามอนุมัติของตัวเอง แต่ Operation คนอื่นอนุมัติได้ — ต้องเทียบ
+**user id ภายใน role เดียวกัน**) คำว่า "SelfApprovalGuard" เจอแค่ในคำอธิบาย field หนึ่งของ
+Data Dictionary (แนวคิดทั่วไป ไม่ใช่ชื่อ guard ที่ implement จริงในระบบนี้)
+
+**สรุปที่ถูกต้อง**: นี่คือ **mechanism ใหม่ทั้งหมดที่ต้องสร้าง** ไม่ใช่ของที่มีอยู่แล้วให้ reuse —
+ต้องมี (1) migration เพิ่มคอลัมน์ `approvedBy` ให้ `Campaign` (ตอนนี้มีแค่ `createdBy`) และ
+(2) service logic เช็ค `createdBy !== currentUserId` เอง ผลสรุปเรื่อง role ยังเหมือนเดิม
+(ไม่เพิ่ม role ใหม่ ใช้ `Operation`) แค่ขอบเขตงานตอน implement ใหญ่กว่าที่เขียนไว้เดิม
 
 ### 3.6 Customer User / Customer Support — **ไม่เพิ่ม**
 
@@ -149,6 +169,8 @@ docs/12 customer scope เฟส B — ข้อมูลลูกค้าท�
 
 ## 5. สิ่งที่ยังไม่ตัดสินใจ / ต้องคุยต่อ
 
+- [x] ขอบเขต Mobile ของ 3 role ใหม่ — **Web-only ทั้งหมด** ฝั่ง Mobile แค่ลบ
+  `case UserRole.sw` ออกจาก enum พอ ไม่ต้องเพิ่ม case ใหม่ (ดูรายละเอียดในข้อ 3.1)
 - [ ] Code ที่แน่นอนของ 3 role ใหม่ (เช่น `ConfigEngineer` vs `CFG` ฯลฯ)
 - [ ] สิทธิ์ RBAC แบบละเอียด (resource + action) ของ Config Engineer / Firmware Engineer / QA Engineer — ตอนนี้ระบุแค่ทิศทางกว้างๆ
 - [ ] ค่า enum ของ Firmware approval status ใหม่ (เทียบเคียง `draft/testing/approved/rejected` ของ Config)
