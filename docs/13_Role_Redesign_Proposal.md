@@ -152,7 +152,10 @@ docs/12 customer scope เฟส B — ข้อมูลลูกค้าท�
 - [ ] Code ที่แน่นอนของ 3 role ใหม่ (เช่น `ConfigEngineer` vs `CFG` ฯลฯ)
 - [ ] สิทธิ์ RBAC แบบละเอียด (resource + action) ของ Config Engineer / Firmware Engineer / QA Engineer — ตอนนี้ระบุแค่ทิศทางกว้างๆ
 - [ ] ค่า enum ของ Firmware approval status ใหม่ (เทียบเคียง `draft/testing/approved/rejected` ของ Config)
-- [ ] User ที่ยังเป็น `SW` เดิมอยู่ในระบบ (เช่น `sw.test`) จะย้ายไป role ไหนใน 3 ตัวใหม่
+- [x] User ที่ยังเป็น `SW` เดิม (เช่น `sw.test`) — **ไม่ต้อง migrate** เพราะเป็นแค่ test/seed
+  data ใน `backend/prisma/seed.ts` ไม่ใช่ user จริงที่ผูกอยู่กับใคร พอ `SW` ถูกแยกออก
+  `sw.test` ก็หายไปเลย แทนที่ด้วย test user ใหม่ของแต่ละ role (เช่น `config.test`,
+  `firmware.test`, `qa.test`) ตาม pattern เดียวกับ `operation.test`/`st.test` ที่มีอยู่แล้ว
 - [ ] อัปเดต `docs/architecture/RBAC_Matrix.md` และ `CLAUDE.md` §Role Enum ให้ตรงกับ role ชุดใหม่ทั้งหมด
 
 ---
