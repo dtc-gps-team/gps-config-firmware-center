@@ -135,19 +135,6 @@ FilledButton _saveButton(WidgetTester tester) =>
 Finder get _confirmInstallButton =>
     find.byKey(const Key('confirm_install_button'));
 
-/// The button sits below the fold on the test surface — `ListView`'s
-/// underlying sliver only builds elements within the viewport + cache
-/// extent, so `find.byKey` can't see it (and `tap()` can't reach it) until
-/// it's scrolled into view.
-Future<void> _scrollToConfirmInstallButton(WidgetTester tester) async {
-  await tester.dragUntilVisible(
-    _confirmInstallButton,
-    find.byType(Scrollable),
-    const Offset(0, -150),
-  );
-  await tester.pumpAndSettle();
-}
-
 void main() {
   testWidgets('แสดงหัวข้องาน + สถานะ + ข้อมูลอุปกรณ์', (tester) async {
     await _pump(
@@ -306,7 +293,6 @@ void main() {
           ),
           role: UserRole.st,
         );
-        await _scrollToConfirmInstallButton(tester);
 
         expect(_confirmInstallButton, findsOneWidget);
       },
@@ -405,7 +391,6 @@ void main() {
           role: UserRole.st,
           confirmInstallRepo: confirmRepo,
         );
-        await _scrollToConfirmInstallButton(tester);
 
         await tester.tap(_confirmInstallButton);
         await tester.pump(); // kick off _confirmInstall
@@ -454,7 +439,6 @@ void main() {
           role: UserRole.st,
           confirmInstallRepo: confirmRepo,
         );
-        await _scrollToConfirmInstallButton(tester);
 
         await tester.tap(_confirmInstallButton);
         await tester.pump();
@@ -491,7 +475,6 @@ void main() {
           role: UserRole.st,
           confirmInstallRepo: confirmRepo,
         );
-        await _scrollToConfirmInstallButton(tester);
 
         await tester.tap(_confirmInstallButton);
         await tester.pump();
@@ -533,7 +516,6 @@ void main() {
           role: UserRole.st,
           confirmInstallRepo: confirmRepo,
         );
-        await _scrollToConfirmInstallButton(tester);
 
         await tester.tap(_confirmInstallButton);
         await tester.pump();
@@ -547,5 +529,77 @@ void main() {
         );
       },
     );
+  });
+
+  group('Bottom action bar', () {
+    testWidgets(
+      'ทั้ง 2 ปุ่มโชว์พร้อมกันได้จริง (ST + in_progress + configId/deviceId '
+      'ครบ) -> เรียงกันเป็น Column ไม่ซ้อนทับ, ไม่ต้อง scroll หาปุ่มเลย',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.st,
+        );
+
+        // ไม่มีการ scroll ก่อนเลย — ปุ่มต้องเจอทันทีเพราะอยู่ใน
+        // bottomNavigationBar ไม่ใช่ท้าย ListView อีกต่อไป
+        expect(find.byKey(const Key('task_status_save')), findsOneWidget);
+        expect(_confirmInstallButton, findsOneWidget);
+
+        final saveOffset = tester.getTopLeft(
+          find.byKey(const Key('task_status_save')),
+        );
+        final confirmOffset = tester.getTopLeft(_confirmInstallButton);
+        // เรียงบน-ล่าง (Column) ไม่ใช่ซ้อนทับกันที่ตำแหน่งเดียวกัน — บันทึก
+        // สถานะอยู่บน, ส่ง Config อยู่ล่าง
+        expect(saveOffset.dy, lessThan(confirmOffset.dy));
+      },
+    );
+
+    testWidgets(
+      'error ของแต่ละปุ่มอยู่เหนือปุ่มของมันเองใน bottom bar (ไม่ใช่ลอยอยู่'
+      'บนเนื้อหาด้านบน)',
+      (tester) async {
+        final repo = _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.pending),
+          updateError: ApiException('forbidden', statusCode: 403),
+        );
+        await _pump(tester, repo: repo, role: UserRole.st);
+
+        await tester.tap(find.byKey(const Key('status_choice_in_progress')));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('task_status_save')));
+        await tester.pump();
+        await tester.pump();
+
+        final errorOffset = tester.getTopLeft(
+          find.byKey(const Key('task_status_error')),
+        );
+        final buttonOffset = tester.getTopLeft(
+          find.byKey(const Key('task_status_save')),
+        );
+        expect(errorOffset.dy, lessThan(buttonOffset.dy));
+      },
+    );
+
+    testWidgets('SW (ไม่เห็นปุ่มไหนเลย) -> ไม่มี bottomNavigationBar', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        role: UserRole.sw,
+      );
+
+      // 2 Scaffold ซ้อนกัน (นอก: TaskDetailPage มี AppBar, ใน: _TaskDetailView
+      // มี bottomNavigationBar) — ตัวที่ deepest คือตัวใน
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).last);
+      expect(scaffold.bottomNavigationBar, isNull);
+    });
   });
 }
