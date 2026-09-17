@@ -3,20 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import 'incident_repository.dart';
 import 'incident_ui.dart';
-
-/// Incident list palette. Scoped to this file, same values as Home / Task.
-class _IncidentColors {
-  const _IncidentColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const error = Color(0xFFC0392B);
-}
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -36,9 +26,9 @@ class IncidentListPage extends ConsumerWidget {
     final incidentsAsync = ref.watch(incidentListProvider);
 
     return Scaffold(
-      backgroundColor: _IncidentColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _IncidentColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('Incident'),
@@ -83,7 +73,7 @@ class _IncidentCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _IncidentColors.surface,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -94,7 +84,7 @@ class _IncidentCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: _IncidentColors.textPrimary,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -110,10 +100,7 @@ class _IncidentCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             _formatDate(incident.createdAt),
-            style: const TextStyle(
-              fontSize: 12,
-              color: _IncidentColors.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -132,18 +119,12 @@ class _IncidentsEmpty extends StatelessWidget {
         Center(
           child: Column(
             children: [
-              Icon(
-                Icons.check_circle_outline,
-                color: _IncidentColors.textSecondary,
-              ),
+              Icon(Icons.check_circle_outline, color: AppTheme.textSecondary),
               SizedBox(height: 8),
               Text(
                 'ยังไม่มี Incident',
                 key: Key('incidents_empty'),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _IncidentColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -164,40 +145,11 @@ class _IncidentsError extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 64),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  color: _IncidentColors.error,
-                  size: 32,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  message,
-                  key: const Key('incidents_error'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: _IncidentColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  key: const Key('incidents_retry'),
-                  onPressed: onRetry,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _IncidentColors.navy,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('ลองอีกครั้ง'),
-                ),
-              ],
-            ),
-          ),
+        AppErrorView(
+          message: message,
+          onRetry: onRetry,
+          messageKey: const Key('incidents_error'),
+          retryKey: const Key('incidents_retry'),
         ),
       ],
     );
