@@ -47,14 +47,39 @@ Simulation ทดสอบเอง — แต่ PDF §13.1 ตั้งใจ�
 รู้สึก "ไม่สื่อความหมาย" ตามที่ยกขึ้นมา — เพราะมันครอบคลุมงานที่ PDF มองว่าเป็นคนละ
 บทบาทกัน
 
-| Role ใหม่ | ขอบเขต | อ้างอิงสิทธิ์เดิมของ SW |
-|---|---|---|
-| **Config Engineer** | Config เท่านั้น (สร้าง/แก้/Import/Simulate, Config Definition) | `grant('SW', 'config', ...)`, `grant('SW', 'config-definition', ...)` |
-| **Firmware Engineer** | Firmware เท่านั้น (Upload, แก้ Compatibility Tag) | `grant('SW', 'firmware', 'Create'/'Update')` |
-| **QA Engineer** (ใหม่) | อนุมัติคุณภาพ Firmware ก่อนใช้งานได้จริง — ดูข้อ 3.2 | ไม่เคยมีมาก่อน |
+| Role ใหม่ | Code | ขอบเขต | อ้างอิงสิทธิ์เดิมของ SW |
+|---|---|---|---|
+| **Config Engineer** | `ConfigEngineer` | Config เท่านั้น (สร้าง/แก้/Import/Simulate, Config Definition) | `grant('SW', 'config', ...)`, `grant('SW', 'config-definition', ...)` |
+| **Firmware Engineer** | `FirmwareEngineer` | Firmware เท่านั้น (Upload, แก้ Compatibility Tag) | `grant('SW', 'firmware', 'Create'/'Update')` |
+| **QA Engineer** (ใหม่) | `QAEngineer` | อนุมัติคุณภาพ Firmware ก่อนใช้งานได้จริง — ดูข้อ 3.2 | ไม่เคยมีมาก่อน |
+
+**เหตุผลที่เลือก code เป็นชื่อเต็ม** (ไม่ย่อแบบ `SW`/`ST`/`OT`) — เพราะ `Operation`,
+`Auditor`, `Admin`, `SuperAdmin` ที่มีอยู่แล้วก็ใช้ชื่อเต็มเป็น code เหมือนกัน (มีแค่ role
+ฝั่งช่างหน้างานเท่านั้นที่ย่อ) role ใหม่ทั้ง 3 ตัวเป็นสาย engineer/office เหมือนกลุ่มที่ใช้ชื่อเต็ม
+จึงสอดคล้องกับ pattern เดิมมากกว่า
 
 การแยกนี้เป็นการ "ตัดตามรอยต่อ" ที่มีอยู่แล้วในโค้ด (สิทธิ์ config/firmware ของ `SW` แยก
 `grant()` กันอยู่แล้ว) ไม่กระทบ logic เดิม แค่เปลี่ยน role ที่ผูกสิทธิ์อยู่
+
+**สิทธิ์ RBAC แบบละเอียด** (ดึงจาก `grant('SW', ...)` ทั้งหมดใน `backend/prisma/seed.ts`
+ปัจจุบัน แบ่งตามรอยต่อ config/firmware ที่มีอยู่แล้ว):
+
+| Role | Resource | Action |
+|---|---|---|
+| Config Engineer | `config` | Create, Update, Read |
+| Config Engineer | `config-simulation` | Read |
+| Config Engineer | `config-decision` | Approve *(คือ action "ส่งให้ Operation อนุมัติ" ของ SW เอง ไม่ใช่การอนุมัติแบบ Operation — ชื่อ action ในโค้ดเดิมตั้งไว้แบบนี้อยู่แล้ว คงชื่อเดิมไว้)* |
+| Config Engineer | `config-definition` | Read, Create |
+| Config Engineer | `campaign` | Read *(ดูว่า Config ของตัวเองถูกใช้ใน Campaign ไหนบ้าง)* |
+| Firmware Engineer | `firmware` | Create, Update, Read |
+| Firmware Engineer | `firmware-simulation` | Read |
+| QA Engineer | `firmware` | Read |
+| QA Engineer | `firmware-simulation` | Read *(ดูผลทดสอบก่อนตัดสินใจอนุมัติคุณภาพ)* |
+| QA Engineer | `firmware-decision` | Approve *(resource ใหม่ — มิเรอร์ `config-decision` ของ Config Engineer)* |
+
+**ตัดทิ้ง ไม่ย้ายไปไหน**: `grant('SW', 'tasks', 'Read')` — สิทธิ์นี้ไม่เคยถูกใช้งานจริงในหน้าจอไหน
+เลย (ตกค้างมาจากก่อน Task Management จะถูกยกเลิกถาวร — ดู `nav.ts` comment) ไม่มีเหตุผล
+ต้องคงไว้ให้ role ใหม่ตัวไหนเลย
 
 **Confirm ขอบเขต Mobile (ตอบคำถาม kittiphong ใน PR #174):** ทั้ง 3 role ใหม่เป็น
 **Web-only** ทั้งหมด — ไม่ต้องแก้อะไรฝั่ง Mobile เพิ่มเลยนอกจาก**ลบ** `case UserRole.sw`
@@ -83,7 +108,17 @@ Simulation ทดสอบเอง — แต่ PDF §13.1 ตั้งใจ�
 (Separation of Duty จริง: คนสร้าง Firmware ≠ คนอนุมัติคุณภาพ) และสอดคล้องกับ pattern ที่ทีม
 คุ้นเคยอยู่แล้วจาก Config
 
-**ยังไม่ตัดสินใจ** (ดูข้อ 5): ชื่อ/ค่าของ status enum ใหม่ที่แน่นอน, สิทธิ์ RBAC แบบละเอียด
+**Enum สถานะใหม่ (`FirmwareApprovalStatus`, แยกจาก `FirmwareUploadStatus` เดิม — คนละมิติกัน)**:
+
+| ค่า | ความหมาย |
+|---|---|
+| `pending_review` | อัปโหลดสำเร็จแล้ว (`FirmwareUploadStatus = stored`) รอ QA Engineer ตรวจ |
+| `approved` | QA อนุมัติคุณภาพแล้ว — ใช้ใน Campaign ได้ (เงื่อนไข eligibility ของ Campaign ต้องเช็คทั้ง `uploadStatus = stored` **และ** `approvalStatus = approved`) |
+| `rejected` | QA ไม่ผ่าน — Firmware Engineer ต้องอัปโหลดเวอร์ชันใหม่แก้ไข (ไม่มีการแก้ไฟล์เดิมซ้ำ เหมือน Config ที่แก้ไม่ได้หลังส่งอนุมัติ) |
+
+ไม่ทำ `draft` (Firmware ไม่มีขั้น "แก้ไปเรื่อยๆ ก่อนส่ง" แบบ Config — อัปโหลดสำเร็จ =
+พร้อมให้ QA ตรวจทันที) และไม่ทำ `synced` (concept "sync เข้าระบบเดิม" กำลังจะถูกตัดออก
+ทั้งระบบตาม Issue #157 อยู่แล้ว ไม่ควรผูกเพิ่มในฟีเจอร์ใหม่)
 
 ### 3.3 `ST` — คงชื่อเดิม "Senior Technician" (ไม่เปลี่ยน แค่โชว์ให้ถูก)
 
@@ -157,7 +192,7 @@ docs/12 customer scope เฟส B — ข้อมูลลูกค้าท�
 
 | Code | ชื่อแสดงผล | เปลี่ยนจากเดิมไหม |
 |---|---|---|
-| `ConfigEngineer` (ชื่อ code แน่นอนรอตกลง) | Config Engineer | ใหม่ (แยกจาก SW) |
+| `ConfigEngineer` | Config Engineer | ใหม่ (แยกจาก SW) |
 | `FirmwareEngineer` | Firmware Engineer | ใหม่ (แยกจาก SW) |
 | `QAEngineer` | QA Engineer | ใหม่ทั้งหมด |
 | `Operation` | Operation | ไม่เปลี่ยน (แค่เพิ่ม SelfApprovalGuard ตอนอนุมัติ Campaign) |
@@ -171,9 +206,11 @@ docs/12 customer scope เฟส B — ข้อมูลลูกค้าท�
 
 - [x] ขอบเขต Mobile ของ 3 role ใหม่ — **Web-only ทั้งหมด** ฝั่ง Mobile แค่ลบ
   `case UserRole.sw` ออกจาก enum พอ ไม่ต้องเพิ่ม case ใหม่ (ดูรายละเอียดในข้อ 3.1)
-- [ ] Code ที่แน่นอนของ 3 role ใหม่ (เช่น `ConfigEngineer` vs `CFG` ฯลฯ)
-- [ ] สิทธิ์ RBAC แบบละเอียด (resource + action) ของ Config Engineer / Firmware Engineer / QA Engineer — ตอนนี้ระบุแค่ทิศทางกว้างๆ
-- [ ] ค่า enum ของ Firmware approval status ใหม่ (เทียบเคียง `draft/testing/approved/rejected` ของ Config)
+- [x] Code ที่แน่นอนของ 3 role ใหม่ — `ConfigEngineer` / `FirmwareEngineer` / `QAEngineer`
+  (ชื่อเต็ม ไม่ย่อ ตาม pattern ของ `Operation`/`Auditor`/`Admin`/`SuperAdmin` — ดูข้อ 3.1)
+- [x] สิทธิ์ RBAC แบบละเอียด (resource + action) — ดูตารางในข้อ 3.1 (ดึงจาก grant ของ SW เดิม)
+- [x] ค่า enum ของ Firmware approval status ใหม่ — `pending_review` / `approved` / `rejected`
+  (ดูข้อ 3.2 พร้อมเหตุผลที่ไม่ทำ `draft`/`synced`)
 - [x] User ที่ยังเป็น `SW` เดิม (เช่น `sw.test`) — **ไม่ต้อง migrate** เพราะเป็นแค่ test/seed
   data ใน `backend/prisma/seed.ts` ไม่ใช่ user จริงที่ผูกอยู่กับใคร พอ `SW` ถูกแยกออก
   `sw.test` ก็หายไปเลย แทนที่ด้วย test user ใหม่ของแต่ละ role (เช่น `config.test`,
@@ -183,5 +220,8 @@ docs/12 customer scope เฟส B — ข้อมูลลูกค้าท�
 ---
 
 *เอกสารนี้เป็นข้อเสนอสรุปจากบทสนทนาระหว่าง A กับ Claude (เทียบกับ PDF ต้นฉบับ + Data
-Dictionary) ยังไม่ผ่านการยืนยันจาก B/พี่เลี้ยงอย่างเป็นทางการ — ควรคุยยืนยันทีละข้อในข้อ 3
-ก่อนเริ่ม implement จริง*
+Dictionary) — kittiphong review และ approve PR #174 แล้ว (2026-09-17, เห็นด้วยกับ 3.1/3.3/
+3.4/3.6 ทุกข้อ + ท้วง 3.5 กับถามเรื่อง Mobile ซึ่งแก้ตามแล้ว) รายละเอียด RBAC/enum/code ที่
+เพิ่มเข้ามาภายหลัง (ตารางในข้อ 3.1, 3.2) เป็นการตัดสินใจของ A เอง (งาน RBAC ของโมดูล
+config/firmware เป็นของ A โดยตรง ไม่กระทบ Mobile) ยังไม่ได้ผ่านตา kittiphong รอบใหม่ —
+ถ้าจะให้ชัวร์ก่อน implement แจ้งให้ทราบอีกรอบได้*
