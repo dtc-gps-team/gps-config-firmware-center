@@ -81,7 +81,10 @@ describe('UserController (integration — real postgres + JwtAuthGuard)', () => 
       fullName: 'ปิดใช้งาน',
       isActive: false,
     });
-    await makeUser(prisma, { role: 'SW', fullName: 'SW คนหนึ่ง' });
+    await makeUser(prisma, {
+      role: 'ConfigEngineer',
+      fullName: 'ConfigEngineer คนหนึ่ง',
+    });
     const caller = await makeUser(prisma, { role: 'Auditor' });
 
     const res = await request(app.getHttpServer())
@@ -102,11 +105,11 @@ describe('UserController (integration — real postgres + JwtAuthGuard)', () => 
       role: 'Operation',
       fullName: 'ทดสอบ',
     });
-    const caller = await makeUser(prisma, { role: 'SW' });
+    const caller = await makeUser(prisma, { role: 'ConfigEngineer' });
 
     const res = await request(app.getHttpServer())
       .get('/api/v1/users?role=Operation')
-      .set('Authorization', `Bearer ${tokenFor(caller.id, 'SW')}`)
+      .set('Authorization', `Bearer ${tokenFor(caller.id, 'ConfigEngineer')}`)
       .expect(200);
 
     expect(res.body).toEqual([
@@ -115,10 +118,10 @@ describe('UserController (integration — real postgres + JwtAuthGuard)', () => 
   });
 
   it('role ที่ไม่มีจริง -> list ว่าง (ไม่ error)', async () => {
-    const caller = await makeUser(prisma, { role: 'SW' });
+    const caller = await makeUser(prisma, { role: 'ConfigEngineer' });
     const res = await request(app.getHttpServer())
       .get('/api/v1/users?role=NopeRole')
-      .set('Authorization', `Bearer ${tokenFor(caller.id, 'SW')}`)
+      .set('Authorization', `Bearer ${tokenFor(caller.id, 'ConfigEngineer')}`)
       .expect(200);
     expect(res.body).toEqual([]);
   });

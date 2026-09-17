@@ -111,10 +111,12 @@ describe('FirmwareController (integration — real postgres + guard chain + real
         .expect(403);
     });
 
-    it('SW มีสิทธิ์ firmware.Create -> 201 อัปโหลดขึ้น Object Storage จริง + สร้าง record ครบ', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create);
-      const token = tokenFor(swUser.id, 'SW');
+    it('FirmwareEngineer มีสิทธิ์ firmware.Create -> 201 อัปโหลดขึ้น Object Storage จริง + สร้าง record ครบ', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Create);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/firmware')
@@ -138,7 +140,7 @@ describe('FirmwareController (integration — real postgres + guard chain + real
       expect(body.uploadStatus).toBe('stored');
       expect(body.originalFilename).toBe('fw.bin');
       expect(body.fileSizeBytes).toBe(Buffer.byteLength('firmware bytes'));
-      expect(body.uploadedBy).toBe(swUser.id);
+      expect(body.uploadedBy).toBe(firmwareEngineerUser.id);
 
       const stored = await prisma.firmware.findUnique({
         where: { id: body.id },
@@ -147,9 +149,11 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('สำเร็จ -> เขียน AuditLog action create (module firmware)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create);
-      const token = tokenFor(swUser.id, 'SW');
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Create);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/firmware')
@@ -160,16 +164,18 @@ describe('FirmwareController (integration — real postgres + guard chain + real
         .expect(201);
 
       const logs = await prisma.auditLog.findMany({
-        where: { userId: swUser.id, auditModule: 'firmware' },
+        where: { userId: firmwareEngineerUser.id, auditModule: 'firmware' },
       });
       expect(logs).toHaveLength(1);
       expect(logs[0].action).toBe('create');
     });
 
     it('ไม่แนบไฟล์ -> 400', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create);
-      const token = tokenFor(swUser.id, 'SW');
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Create);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/firmware')
@@ -180,9 +186,11 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('ไม่ระบุ version -> 400', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Create);
-      const token = tokenFor(swUser.id, 'SW');
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Create);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/firmware')
@@ -199,7 +207,9 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('role มีสิทธิ์ firmware.Read (Auditor) -> 200 คืนรายการ', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
       await prisma.firmware.create({
         data: {
           version: 'v1',
@@ -208,7 +218,7 @@ describe('FirmwareController (integration — real postgres + guard chain + real
           objectKey: 'firmware/x/fw.bin',
           originalFilename: 'fw.bin',
           fileSizeBytes: 10,
-          uploadedBy: swUser.id,
+          uploadedBy: firmwareEngineerUser.id,
         },
       });
       const auditorUser = await makeUser(prisma, { role: 'Auditor' });
@@ -226,9 +236,11 @@ describe('FirmwareController (integration — real postgres + guard chain + real
 
   describe('GET /firmware/:id', () => {
     it('ไม่เจอ -> 404', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read);
-      const token = tokenFor(swUser.id, 'SW');
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Read);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       await request(app.getHttpServer())
         .get('/api/v1/firmware/11111111-1111-1111-1111-111111111111')
@@ -253,8 +265,10 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     }
 
     it('role ไม่มีสิทธิ์ firmware.Update (ST) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const firmware = await seedFirmware(swUser.id);
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
       const stUser = await makeUser(prisma, { role: 'ST' });
       const token = tokenFor(stUser.id, 'ST');
 
@@ -265,11 +279,13 @@ describe('FirmwareController (integration — real postgres + guard chain + real
         .expect(403);
     });
 
-    it('SW มีสิทธิ์ firmware.Update -> 200 แทนที่ deviceModelCompatibility ทั้ง array', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Update);
-      const firmware = await seedFirmware(swUser.id);
-      const token = tokenFor(swUser.id, 'SW');
+    it('FirmwareEngineer มีสิทธิ์ firmware.Update -> 200 แทนที่ deviceModelCompatibility ทั้ง array', async () => {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Update);
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       const res = await request(app.getHttpServer())
         .patch(`/api/v1/firmware/${firmware.id}`)
@@ -282,10 +298,12 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('array ว่างเปล่า -> 400 (validation)', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Update);
-      const firmware = await seedFirmware(swUser.id);
-      const token = tokenFor(swUser.id, 'SW');
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      await grant('FirmwareEngineer', ActionType.Update);
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
+      const token = tokenFor(firmwareEngineerUser.id, 'FirmwareEngineer');
 
       await request(app.getHttpServer())
         .patch(`/api/v1/firmware/${firmware.id}`)
@@ -314,8 +332,10 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     }
 
     it('role ไม่มีสิทธิ์ firmware-simulation (Auditor) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const firmware = await seedFirmware(swUser.id);
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
       const auditorUser = await makeUser(prisma, { role: 'Auditor' });
       const token = tokenFor(auditorUser.id, 'Auditor');
 
@@ -327,8 +347,10 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('ST มีสิทธิ์ firmware-simulation, รุ่นตรงกับ compatibility -> 200 passed:true', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const firmware = await seedFirmware(swUser.id);
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
       const stUser = await makeUser(prisma, { role: 'ST' });
       await grant('ST', ActionType.Read, 'firmware-simulation');
       const token = tokenFor(stUser.id, 'ST');
@@ -343,8 +365,10 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('รุ่นไม่ตรงกับ compatibility -> 200 passed:false', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const firmware = await seedFirmware(swUser.id);
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id);
       const stUser = await makeUser(prisma, { role: 'ST' });
       await grant('ST', ActionType.Read, 'firmware-simulation');
       const token = tokenFor(stUser.id, 'ST');
@@ -359,8 +383,10 @@ describe('FirmwareController (integration — real postgres + guard chain + real
     });
 
     it('uploadStatus ยัง pending -> 409', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      const firmware = await seedFirmware(swUser.id, {
+      const firmwareEngineerUser = await makeUser(prisma, {
+        role: 'FirmwareEngineer',
+      });
+      const firmware = await seedFirmware(firmwareEngineerUser.id, {
         uploadStatus: 'pending',
       });
       const stUser = await makeUser(prisma, { role: 'ST' });

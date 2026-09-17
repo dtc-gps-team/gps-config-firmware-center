@@ -102,11 +102,11 @@ describe('CustomerController (integration — real postgres + JwtAuthGuard)', ()
   });
 
   it('ไม่มีลูกค้าในระบบ -> คืน array ว่าง', async () => {
-    const caller = await makeUser(prisma, { role: 'SW' });
+    const caller = await makeUser(prisma, { role: 'ConfigEngineer' });
 
     const res = await request(app.getHttpServer())
       .get('/api/v1/customers')
-      .set('Authorization', `Bearer ${tokenFor(caller.id, 'SW')}`)
+      .set('Authorization', `Bearer ${tokenFor(caller.id, 'ConfigEngineer')}`)
       .expect(200);
 
     expect(res.body).toEqual([]);

@@ -34,21 +34,24 @@ describe('AuthService (integration — real postgres)', () => {
   it('login สำเร็จ: query User+Role จริง, bcrypt.compare ผ่านจริง, JWT verify กลับมาได้ payload {sub, role: role.code}', async () => {
     const passwordHash = await bcrypt.hash('correct-password', 10);
     const user = await makeUser(prisma, {
-      username: 'itest.sw',
-      role: 'SW',
+      username: 'itest.config-engineer',
+      role: 'ConfigEngineer',
       passwordHash,
     });
 
-    const result = await service.login('itest.sw', 'correct-password');
+    const result = await service.login(
+      'itest.config-engineer',
+      'correct-password',
+    );
 
-    expect(result.role).toBe('SW');
+    expect(result.role).toBe('ConfigEngineer');
 
     const jwtService = new JwtService({ secret: TEST_JWT_SECRET });
     const decoded = jwtService.verify<{ sub: string; role: string }>(
       result.accessToken,
     );
     expect(decoded.sub).toBe(user.id);
-    expect(decoded.role).toBe('SW');
+    expect(decoded.role).toBe('ConfigEngineer');
   });
 
   it('password ผิด → 401 (แม้ username มีจริง)', async () => {

@@ -18,7 +18,7 @@ const sampleConfig: Config = {
   protocol: 'TCP',
   status: 'draft',
   fields: {},
-  createdBy: 'sw-1',
+  createdBy: 'ce-1',
   approvedBy: null,
   suggestedApproverId: null,
   deletedAt: null,
@@ -30,7 +30,7 @@ function reqAs(payload: JwtPayload): Request & { user: JwtPayload } {
   return { user: payload } as Request & { user: JwtPayload };
 }
 
-const swReq = reqAs({ sub: 'sw-1', role: 'SW' });
+const configEngineerReq = reqAs({ sub: 'ce-1', role: 'ConfigEngineer' });
 const opReq = reqAs({ sub: 'op-1', role: 'Operation' });
 
 describe('ConfigController', () => {
@@ -102,20 +102,20 @@ describe('ConfigController', () => {
       protocol: 'TCP',
       fields: {},
     };
-    await controller.create(dto, swReq);
+    await controller.create(dto, configEngineerReq);
     expect(service.create).toHaveBeenCalledWith(dto, {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'ce-1',
+      role: 'ConfigEngineer',
     });
   });
 
   it('POST /config/import -> service.importFromJson พร้อม file/format/actor จาก JWT', async () => {
     service.importFromJson.mockResolvedValue(sampleConfig);
     const file = { originalname: 'config.json' } as Express.Multer.File;
-    await controller.importConfig(file, 'json', swReq);
+    await controller.importConfig(file, 'json', configEngineerReq);
     expect(service.importFromJson).toHaveBeenCalledWith(file, 'json', {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'ce-1',
+      role: 'ConfigEngineer',
     });
   });
 
@@ -131,19 +131,19 @@ describe('ConfigController', () => {
       deviceModel: 'GT06L',
     });
     const dto = { deviceModel: 'GT06L' };
-    await controller.update(sampleConfig.id, dto, swReq);
+    await controller.update(sampleConfig.id, dto, configEngineerReq);
     expect(service.update).toHaveBeenCalledWith(sampleConfig.id, dto, {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'ce-1',
+      role: 'ConfigEngineer',
     });
   });
 
   it('DELETE /config/:id -> service.remove พร้อม actor จาก JWT', async () => {
     service.remove.mockResolvedValue(undefined);
-    await controller.remove(sampleConfig.id, swReq);
+    await controller.remove(sampleConfig.id, configEngineerReq);
     expect(service.remove).toHaveBeenCalledWith(sampleConfig.id, {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'ce-1',
+      role: 'ConfigEngineer',
     });
   });
 
@@ -160,13 +160,13 @@ describe('ConfigController', () => {
     const result = await controller.decide(
       sampleConfig.id,
       { passed: true },
-      swReq,
+      configEngineerReq,
     );
     expect(result).toEqual(decided);
     expect(service.decide).toHaveBeenCalledWith(
       sampleConfig.id,
       true,
-      { id: 'sw-1', role: 'SW' },
+      { id: 'ce-1', role: 'ConfigEngineer' },
       undefined,
     );
   });
@@ -179,12 +179,12 @@ describe('ConfigController', () => {
     await controller.decide(
       sampleConfig.id,
       { passed: true, suggestedApproverId: 'op-1' },
-      swReq,
+      configEngineerReq,
     );
     expect(service.decide).toHaveBeenCalledWith(
       sampleConfig.id,
       true,
-      { id: 'sw-1', role: 'SW' },
+      { id: 'ce-1', role: 'ConfigEngineer' },
       'op-1',
     );
   });

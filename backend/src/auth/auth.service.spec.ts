@@ -11,17 +11,17 @@ type UserDelegateMock = { findUnique: jest.Mock };
 
 const sampleUser = {
   id: 'user-1',
-  username: 'sw.test',
+  username: 'config.test',
   passwordHash: 'hashed',
-  fullName: 'SW Tester',
+  fullName: 'Config Engineer Tester',
   roleId: 'role-1',
   isActive: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   role: {
     id: 'role-1',
-    code: 'SW',
-    name: 'Software Engineer',
+    code: 'ConfigEngineer',
+    name: 'Config Engineer',
     description: null,
   },
 };
@@ -55,18 +55,21 @@ describe('AuthService', () => {
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     const { service, jwtService } = await buildService(user);
 
-    const result = await service.login('sw.test', 'password123');
+    const result = await service.login('config.test', 'password123');
 
     expect(user.findUnique).toHaveBeenCalledWith({
-      where: { username: 'sw.test' },
+      where: { username: 'config.test' },
       include: { role: true },
     });
     expect(bcrypt.compare).toHaveBeenCalledWith('password123', 'hashed');
     expect(jwtService.sign).toHaveBeenCalledWith({
       sub: 'user-1',
-      role: 'SW',
+      role: 'ConfigEngineer',
     });
-    expect(result).toEqual({ accessToken: 'signed.jwt.token', role: 'SW' });
+    expect(result).toEqual({
+      accessToken: 'signed.jwt.token',
+      role: 'ConfigEngineer',
+    });
   });
 
   it('username ไม่มีในระบบ: throw UnauthorizedException ไม่เรียก bcrypt เลย', async () => {
@@ -83,7 +86,7 @@ describe('AuthService', () => {
     user.findUnique.mockResolvedValue({ ...sampleUser, isActive: false });
     const { service } = await buildService(user);
 
-    await expect(service.login('sw.test', 'password123')).rejects.toThrow(
+    await expect(service.login('config.test', 'password123')).rejects.toThrow(
       UnauthorizedException,
     );
     expect(bcrypt.compare).not.toHaveBeenCalled();
@@ -94,7 +97,7 @@ describe('AuthService', () => {
     (bcrypt.compare as jest.Mock).mockResolvedValue(false);
     const { service } = await buildService(user);
 
-    await expect(service.login('sw.test', 'wrong')).rejects.toThrow(
+    await expect(service.login('config.test', 'wrong')).rejects.toThrow(
       UnauthorizedException,
     );
   });

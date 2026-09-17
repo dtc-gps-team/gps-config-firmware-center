@@ -119,8 +119,8 @@ export class ConfigController {
   }
 
   // Stage 3 (#26) — ทดสอบกับ Device Simulator (dry-run, ไม่แตะ status)
-  // resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดู prisma/seed.ts): SW/Operation/
-  // ST/OT ต้องเรียก endpoint นี้ได้ทั้งคู่ แต่ Auditor/Admin ที่มี config.Read
+  // resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดู prisma/seed.ts):
+  // ConfigEngineer/Operation/ST/OT ต้องเรียก endpoint นี้ได้ทั้งคู่ แต่ Auditor/Admin ที่มี config.Read
   // อยู่แล้ว (ไว้แค่ดูรายการ/รายละเอียด) ไม่ควรเรียก simulate ได้ตาม
   // RBAC_Matrix.md ตาราง 4.1 — ถ้าใช้ 'config'+Read ร่วมกับ endpoint อื่นจะ
   // เผลอเปิดให้ Auditor/Admin เรียกได้ไปด้วยโดยไม่ตั้งใจ
@@ -131,11 +131,11 @@ export class ConfigController {
     return this.configService.simulate(id);
   }
 
-  // Stage 4 (#26) — SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate (ดู
+  // Stage 4 (#26) — ConfigEngineer ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate (ดู
   // ConfigService.decide สำหรับ business logic เต็มๆ) resource แยกเป็น
-  // 'config-decision' (ไม่ใช้ 'config'+Update ที่ SW มีอยู่แล้วสำหรับแก้ไข
+  // 'config-decision' (ไม่ใช้ 'config'+Update ที่ ConfigEngineer มีอยู่แล้วสำหรับแก้ไข
   // field) เพราะเป็นคนละ action กัน (แก้ไข vs ตัดสินใจ) แม้ตอนนี้ Role ที่มี
-  // สิทธิ์จะเป็น SW เหมือนกันก็ตาม — กันเผื่อวันหน้ามีคนแยก Role/สิทธิ์สอง
+  // สิทธิ์จะเป็น ConfigEngineer เหมือนกันก็ตาม — กันเผื่อวันหน้ามีคนแยก Role/สิทธิ์สอง
   // อย่างนี้ออกจากกัน จะได้ไม่ต้องมาแก้ resource ทีหลัง (pattern เดียวกับที่
   // แยก 'config-simulation' ออกจาก 'config' ธรรมดาใน Stage 3)
   @Post(':id/decide')
@@ -154,7 +154,7 @@ export class ConfigController {
     );
   }
 
-  // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ SW ปักผลผ่านแล้ว
+  // Stage 4 (#26) — Operation อนุมัติ/ปฏิเสธ Config ที่ ConfigEngineer ปักผลผ่านแล้ว
   // (ต้องอยู่สถานะ testing) ใช้ resource 'config' action Approve ตัวเดียวกับ
   // ที่ seed ไว้แล้วใน prisma/seed.ts (grant('Operation', 'config', 'Approve'))
   // — ครอบคลุมทั้ง approveConfig และ rejectConfig เพราะเป็นสิทธิ์ระดับ

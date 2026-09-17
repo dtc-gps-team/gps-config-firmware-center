@@ -37,7 +37,7 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 }
 
 // Sprint 3 #23 (Firmware Repository) — RBAC_Matrix.md §2 แถว "Firmware
-// Repository": SW = C, R, U · role อื่นทั้งหมด = R · resource `firmware`
+// Repository": FirmwareEngineer = C, R, U · role อื่นทั้งหมด = R · resource `firmware`
 // แยกจาก `firmware-simulation` (mirror `config`/`config-simulation`) เพราะ
 // simulate ไม่เปิดให้ Auditor/Admin ที่มีแค่ firmware.Read เรียกได้
 @UseGuards(JwtAuthGuard, PermissionGuard)

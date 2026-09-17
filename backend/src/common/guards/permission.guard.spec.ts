@@ -44,7 +44,7 @@ describe('PermissionGuard', () => {
     reflector.getAllAndOverride.mockReturnValue(undefined);
 
     const result = await guard.canActivate(
-      buildContext({ sub: 'u1', role: 'SW' }),
+      buildContext({ sub: 'u1', role: 'ConfigEngineer' }),
     );
 
     expect(result).toBe(true);
@@ -71,7 +71,7 @@ describe('PermissionGuard', () => {
     rolePermission.findFirst.mockResolvedValue({ id: 'rp-1' });
 
     const result = await guard.canActivate(
-      buildContext({ sub: 'u1', role: 'SW' }),
+      buildContext({ sub: 'u1', role: 'ConfigEngineer' }),
     );
 
     expect(result).toBe(true);
@@ -79,7 +79,7 @@ describe('PermissionGuard', () => {
       where: {
         resource: 'config',
         action: ActionType.Update,
-        role: { code: 'SW' },
+        role: { code: 'ConfigEngineer' },
       },
       select: { id: true },
     });
@@ -99,7 +99,7 @@ describe('PermissionGuard', () => {
 
   it('getAllAndOverride เรียกด้วย [handler, class] เพื่อรองรับทั้ง @RequirePermission บน method และบน controller ทั้งตัว', async () => {
     reflector.getAllAndOverride.mockReturnValue(undefined);
-    const context = buildContext({ sub: 'u1', role: 'SW' });
+    const context = buildContext({ sub: 'u1', role: 'ConfigEngineer' });
 
     await guard.canActivate(context);
 

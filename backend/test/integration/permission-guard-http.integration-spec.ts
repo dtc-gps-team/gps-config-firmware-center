@@ -130,9 +130,9 @@ describe('PermissionGuard (integration — real postgres + JwtAuthGuard chain)',
   });
 
   it('login แล้ว role มีสิทธิ์ config.Update ตรงตาม RolePermission -> 200', async () => {
-    const user = await makeUser(prisma, { role: 'SW' });
-    await grantPermission('SW', 'config', ActionType.Update);
-    const token = tokenFor(user.id, 'SW');
+    const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+    await grantPermission('ConfigEngineer', 'config', ActionType.Update);
+    const token = tokenFor(user.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .get('/api/v1/test-permission/config-update')

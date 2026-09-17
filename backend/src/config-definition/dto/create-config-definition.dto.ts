@@ -22,7 +22,7 @@ export class ConfigDefinitionModelSupportDto {
   protocol!: string;
 }
 
-/** Body ของ `POST /config-definitions` — SW สร้าง field definition ใหม่เอง
+/** Body ของ `POST /config-definitions` — ConfigEngineer สร้าง field definition ใหม่เอง
  * (self-service ไม่ต้องรออนุมัติ — ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09)
  *
  * `supportedModels` บังคับต้องมีอย่างน้อย 1 คู่เสมอ — field ที่ไม่ผูกกับรุ่น

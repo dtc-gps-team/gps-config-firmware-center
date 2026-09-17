@@ -96,7 +96,9 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     deviceModel?: string;
     protocol?: string;
   }) {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
     return prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
@@ -104,7 +106,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         protocol: overrides?.protocol ?? 'TCP',
         status: 'approved',
         fields: { APN: 'internet' },
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
       },
     });
   }
@@ -129,7 +131,9 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     deviceModelCompatibility?: string[];
     uploadStatus?: 'pending' | 'stored' | 'failed';
   }) {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const firmwareEngineerUser = await makeUser(prisma, {
+      role: 'FirmwareEngineer',
+    });
     return prisma.firmware.create({
       data: {
         version: `1.0.${Math.floor(Math.random() * 1000)}`,
@@ -140,7 +144,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         objectKey: `firmware/${randomUUID()}/test.bin`,
         originalFilename: 'test.bin',
         fileSizeBytes: 1024,
-        uploadedBy: swUser.id,
+        uploadedBy: firmwareEngineerUser.id,
       },
     });
   }
@@ -361,7 +365,9 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     it('Config ยังไม่อนุมัติ (draft) -> 409', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const swUser = await makeUser(prisma, { role: 'SW' });
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
       const draftConfig = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,
@@ -369,7 +375,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           protocol: 'TCP',
           status: 'draft',
           fields: { APN: 'internet' },
-          createdBy: swUser.id,
+          createdBy: configEngineerUser.id,
         },
       });
       const device = await seedInstalledDevice();
@@ -479,9 +485,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await request(app.getHttpServer()).get('/api/v1/campaigns').expect(401);
     });
 
-    it('role มีสิทธิ์ campaign.Read (SW) -> 200 คืนรายการ', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read);
+    it('role มีสิทธิ์ campaign.Read (ConfigEngineer) -> 200 คืนรายการ', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read);
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await prisma.campaign.create({
         data: {
@@ -491,7 +499,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           createdBy: opUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .get('/api/v1/campaigns')
@@ -504,8 +512,10 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
 
   describe('GET /campaigns/:id', () => {
     it('เจอ -> 200', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read);
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read);
       const opUser = await makeUser(prisma, { role: 'Operation' });
       const created = await prisma.campaign.create({
         data: {
@@ -515,7 +525,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           createdBy: opUser.id,
         },
       });
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       const res = await request(app.getHttpServer())
         .get(`/api/v1/campaigns/${created.id}`)
@@ -526,9 +536,11 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     });
 
     it('ไม่เจอ -> 404', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read);
-      const token = tokenFor(swUser.id, 'SW');
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read);
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .get(`/api/v1/campaigns/${randomUUID()}`)
