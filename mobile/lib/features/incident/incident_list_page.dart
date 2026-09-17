@@ -75,6 +75,9 @@ class _IncidentCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
+        // ตัด affordance ที่ทำให้พื้นขาวลอยดูเหมือนกดได้ — เพิ่มขอบบางๆ แทน
+        // shadow/elevation (การ์ดนี้ไม่มี ripple/onTap อยู่แล้ว — read-only)
+        border: Border.all(color: AppTheme.fieldBorder, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

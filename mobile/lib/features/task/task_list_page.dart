@@ -7,6 +7,7 @@ import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../../core/widgets/skeleton_card.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
 
@@ -48,7 +49,12 @@ class TaskListPage extends ConsumerWidget {
               ),
             );
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
+          loading: () => ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: 5,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, _) => const SkeletonCard(),
+          ),
           error: (error, _) => _TasksError(
             message: error is ApiException ? error.message : 'โหลดงานไม่สำเร็จ',
             onRetry: () => ref.invalidate(taskListProvider),

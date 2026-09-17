@@ -76,6 +76,7 @@ class AppErrorView extends StatelessWidget {
               child: TextButton(
                 key: retryKey,
                 onPressed: onRetry,
+                style: TextButton.styleFrom(foregroundColor: AppTheme.navy),
                 child: const Text('ลองอีกครั้ง'),
               ),
             ),
@@ -90,7 +91,11 @@ class AppErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: AppTheme.error, size: 32),
+            Icon(
+              Icons.error_outline,
+              color: AppTheme.error.withValues(alpha: 0.7),
+              size: 32,
+            ),
             const SizedBox(height: 12),
             Text(
               message,
@@ -102,14 +107,18 @@ class AppErrorView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            FilledButton(
+            // Outlined แทน filled ตั้งใจ — ปุ่ม "ลองอีกครั้ง" เป็น recovery
+            // action ไม่ใช่ action หลักของหน้า ไม่ควรแย่งน้ำหนักสายตาเท่าปุ่ม
+            // FilledButton จริงของหน้านั้น (เช่น "บันทึกสถานะ", "เข้าสู่ระบบ")
+            OutlinedButton.icon(
               key: retryKey,
               onPressed: onRetry,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppTheme.navy,
-                foregroundColor: Colors.white,
+              icon: const Icon(Icons.refresh),
+              label: const Text('ลองอีกครั้ง'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.navy,
+                side: const BorderSide(color: AppTheme.navy),
               ),
-              child: const Text('ลองอีกครั้ง'),
             ),
           ],
         ),
