@@ -4,22 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
-
-/// Task Detail palette. Scoped to this file, same values as the Home / Login
-/// redesigns — nothing here touches the shared [AppTheme].
-class _TaskColors {
-  const _TaskColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const error = Color(0xFFC0392B);
-}
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -50,9 +39,9 @@ class TaskDetailPage extends ConsumerWidget {
     final taskAsync = ref.watch(taskDetailProvider(taskId));
 
     return Scaffold(
-      backgroundColor: _TaskColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _TaskColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('รายละเอียดงาน'),
@@ -216,7 +205,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: _TaskColors.textPrimary,
+            color: AppTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 10),
@@ -244,7 +233,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: _TaskColors.surface,
+              color: AppTheme.surface,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -252,7 +241,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
               style: const TextStyle(
                 fontSize: 14,
                 height: 1.4,
-                color: _TaskColors.textPrimary,
+                color: AppTheme.textPrimary,
               ),
             ),
           ),
@@ -284,17 +273,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 const Icon(
                   Icons.error_outline,
                   size: 18,
-                  color: _TaskColors.error,
+                  color: AppTheme.error,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     _saveError!,
                     key: const Key('task_status_error'),
-                    style: const TextStyle(
-                      color: _TaskColors.error,
-                      fontSize: 13,
-                    ),
+                    style: const TextStyle(color: AppTheme.error, fontSize: 13),
                   ),
                 ),
               ],
@@ -306,9 +292,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             onPressed: (!_dirty || _saving) ? null : _save,
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
-              backgroundColor: _TaskColors.navy,
+              backgroundColor: AppTheme.navy,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: _TaskColors.navy.withValues(alpha: 0.4),
+              disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
               disabledForegroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -337,10 +323,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           Text(
             'ส่ง Config เข้าอุปกรณ์ ${task.deviceId} — ทำหลังติดตั้งกล่อง GPS '
             'เสร็จแล้วเท่านั้น',
-            style: const TextStyle(
-              fontSize: 13,
-              color: _TaskColors.textSecondary,
-            ),
+            style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
           ),
           const SizedBox(height: 12),
           if (_confirmInstallError != null) ...[
@@ -350,17 +333,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 const Icon(
                   Icons.error_outline,
                   size: 18,
-                  color: _TaskColors.error,
+                  color: AppTheme.error,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     _confirmInstallError!,
                     key: const Key('confirm_install_error'),
-                    style: const TextStyle(
-                      color: _TaskColors.error,
-                      fontSize: 13,
-                    ),
+                    style: const TextStyle(color: AppTheme.error, fontSize: 13),
                   ),
                 ),
               ],
@@ -374,9 +354,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 : _confirmInstall,
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
-              backgroundColor: _TaskColors.navy,
+              backgroundColor: AppTheme.navy,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: _TaskColors.navy.withValues(alpha: 0.4),
+              disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
               disabledForegroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -418,7 +398,7 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
-        color: _TaskColors.surface,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -435,7 +415,7 @@ class _InfoCard extends StatelessWidget {
                       label,
                       style: const TextStyle(
                         fontSize: 13,
-                        color: _TaskColors.textSecondary,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ),
@@ -446,7 +426,7 @@ class _InfoCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: _TaskColors.textPrimary,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                   ),
@@ -471,7 +451,7 @@ class _SectionLabel extends StatelessWidget {
       style: const TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w700,
-        color: _TaskColors.textPrimary,
+        color: AppTheme.textPrimary,
       ),
     );
   }
@@ -485,36 +465,11 @@ class _DetailError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: _TaskColors.error, size: 32),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              key: const Key('task_detail_error'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: _TaskColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('task_detail_retry'),
-              onPressed: onRetry,
-              style: FilledButton.styleFrom(
-                backgroundColor: _TaskColors.navy,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('ลองอีกครั้ง'),
-            ),
-          ],
-        ),
-      ),
+    return AppErrorView(
+      message: message,
+      onRetry: onRetry,
+      messageKey: const Key('task_detail_error'),
+      retryKey: const Key('task_detail_retry'),
     );
   }
 }

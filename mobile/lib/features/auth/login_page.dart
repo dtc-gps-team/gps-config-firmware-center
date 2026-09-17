@@ -3,28 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
-
-/// Login-screen colour palette. Scoped to this file on purpose — the shared
-/// [AppTheme] drives every other screen (Home, Config Simulator, ทดสอบสัญญาณ)
-/// and the redesign only covers Login for now, so nothing here touches the
-/// central theme.
-class _LoginColors {
-  const _LoginColors._();
-
-  /// Deep navy — primary surface for the app mark and the submit button.
-  static const primary = Color(0xFF12344D);
-
-  /// Very light, near-white ground with a cool tint. High contrast against the
-  /// navy so the screen stays readable outdoors.
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const fieldBorder = Color(0xFFCED6DE);
-  static const fieldBorderFocused = primary;
-  static const label = Color(0xFF51606B);
-  static const title = Color(0xFF12344D);
-  static const subtitle = Color(0xFF5F6E79);
-  static const error = Color(0xFFC0392B);
-}
+import '../../core/theme/app_theme.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -61,30 +40,27 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }) {
     const border = OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(10)),
-      borderSide: BorderSide(color: _LoginColors.fieldBorder),
+      borderSide: BorderSide(color: AppTheme.fieldBorder),
     );
     return InputDecoration(
       labelText: label,
       hintText: hint,
       filled: true,
-      fillColor: _LoginColors.surface,
-      labelStyle: const TextStyle(color: _LoginColors.label),
-      floatingLabelStyle: const TextStyle(color: _LoginColors.primary),
-      hintStyle: TextStyle(color: _LoginColors.label.withValues(alpha: 0.6)),
+      fillColor: AppTheme.surface,
+      labelStyle: const TextStyle(color: AppTheme.label),
+      floatingLabelStyle: const TextStyle(color: AppTheme.navy),
+      hintStyle: TextStyle(color: AppTheme.label.withValues(alpha: 0.6)),
       suffixIcon: suffixIcon,
       enabledBorder: border,
       border: border,
       focusedBorder: border.copyWith(
-        borderSide: const BorderSide(
-          color: _LoginColors.fieldBorderFocused,
-          width: 1.6,
-        ),
+        borderSide: const BorderSide(color: AppTheme.navy, width: 1.6),
       ),
       errorBorder: border.copyWith(
-        borderSide: const BorderSide(color: _LoginColors.error),
+        borderSide: const BorderSide(color: AppTheme.error),
       ),
       focusedErrorBorder: border.copyWith(
-        borderSide: const BorderSide(color: _LoginColors.error, width: 1.6),
+        borderSide: const BorderSide(color: AppTheme.error, width: 1.6),
       ),
     );
   }
@@ -94,7 +70,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final auth = ref.watch(authControllerProvider);
 
     return Scaffold(
-      backgroundColor: _LoginColors.background,
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -116,7 +92,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
                         height: 1.25,
-                        color: _LoginColors.title,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -125,7 +101,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
-                        color: _LoginColors.subtitle,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                     if (AppConfig.apiMockMode) ...[
@@ -167,7 +143,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             _obscurePassword
                                 ? Icons.visibility_outlined
                                 : Icons.visibility_off_outlined,
-                            color: _LoginColors.label,
+                            color: AppTheme.label,
                           ),
                           tooltip: _obscurePassword
                               ? 'แสดงรหัสผ่าน'
@@ -185,7 +161,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           const Icon(
                             Icons.error_outline,
                             size: 18,
-                            color: _LoginColors.error,
+                            color: AppTheme.error,
                           ),
                           const SizedBox(width: 6),
                           Expanded(
@@ -193,7 +169,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               auth.error!,
                               key: const Key('login_error'),
                               style: const TextStyle(
-                                color: _LoginColors.error,
+                                color: AppTheme.error,
                                 fontSize: 13,
                               ),
                             ),
@@ -224,7 +200,7 @@ class _AppMark extends StatelessWidget {
       width: 76,
       height: 76,
       decoration: BoxDecoration(
-        color: _LoginColors.primary,
+        color: AppTheme.navy,
         borderRadius: BorderRadius.circular(20),
       ),
       child: const Icon(Icons.my_location, color: Colors.white, size: 40),
@@ -245,9 +221,9 @@ class _SubmitButton extends StatelessWidget {
       onPressed: busy ? null : onPressed,
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(52),
-        backgroundColor: _LoginColors.primary,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
-        disabledBackgroundColor: _LoginColors.primary.withValues(alpha: 0.5),
+        disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.5),
         disabledForegroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -287,7 +263,7 @@ class _MockModeBanner extends StatelessWidget {
       child: const Text(
         'API_MOCK_MODE — ล็อกอินด้วย prefix ของ role ได้ทันที '
         '(sw / op / st / ot / admin / audit)',
-        style: TextStyle(color: _LoginColors.label),
+        style: TextStyle(color: AppTheme.label),
         textAlign: TextAlign.center,
       ),
     );
