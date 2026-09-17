@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
+import '../device_search/device_search_repository.dart'; // deviceListProvider
 import '../task/task_repository.dart'; // taskListProvider
 
 /// Runs a full Config readiness check for a specific device —
@@ -87,21 +88,61 @@ final simulatorRepositoryProvider = Provider<SimulatorRepository>((ref) {
   return ApiSimulatorRepository(ref.watch(apiClientProvider));
 });
 
-/// Device IDs the signed-in user can pick for a readiness check — derived
-/// from their own assigned tasks' `Task.deviceId`, deduped + sorted.
+/// Device IDs the signed-in user can pick for a readiness check.
 ///
-/// There is no backend endpoint that lists "devices assigned to me"
-/// directly (see survey, 2026-09-07); `GET /tasks` is already self-scoped to
-/// the caller for ST/OT and carries `deviceId` on each task, so this reuses
-/// `taskListProvider` rather than adding a second task-fetching path.
+/// `Task.deviceId` ใน response มีได้ 2 รูปแบบขึ้นกับว่าใครสร้าง task:
+///   - Prisma UUID (`285445ee-...`) — Operation เลือก Device จาก dropdown บน Web
+///   - เลขเครื่องจริง (`SMOKE-001`, `DEV-0003`) — seed data เก่าหรือ migration
+///
+/// provider นี้ normalize ทั้งสองรูปแบบให้เป็น `Device.deviceId` จริง
+/// (เลขเครื่อง) ที่ endpoint `POST /devices/{deviceId}/simulate-config` ต้องการ
+/// โดย join กับ `GET /devices`:
+///   1. ถ้า task.deviceId ตรงกับ Device.id (Prisma UUID) → ใช้ Device.deviceId
+///   2. ถ้า task.deviceId ตรงกับ Device.deviceId โดยตรง → ใช้ค่านั้นเลย
+///   3. ถ้าไม่ match → ข้าม (device นั้นไม่มีใน Device table จริง)
 final assignedDeviceIdListProvider =
     Provider.autoDispose<AsyncValue<List<String>>>((ref) {
       final tasksAsync = ref.watch(taskListProvider);
-      return tasksAsync.whenData((tasks) {
-        final ids = <String>{
-          for (final task in tasks)
-            if ((task.deviceId ?? '').trim().isNotEmpty) task.deviceId!,
-        };
-        return ids.toList()..sort();
-      });
+      final devicesAsync = ref.watch(deviceListProvider);
+
+      if (tasksAsync.isLoading || devicesAsync.isLoading) {
+        return const AsyncValue.loading();
+      }
+      if (tasksAsync.hasError) {
+        return AsyncValue.error(tasksAsync.error!, tasksAsync.stackTrace!);
+      }
+      if (devicesAsync.hasError) {
+        return AsyncValue.error(devicesAsync.error!, devicesAsync.stackTrace!);
+      }
+
+      final tasks = tasksAsync.requireValue;
+      final devices = devicesAsync.requireValue;
+
+      // index ทั้งสองทิศทาง
+      final byPrismaId = <String, String>{
+        for (final d in devices) d.id: d.deviceId, // UUID → เลขเครื่อง
+      };
+      final knownDeviceIds = <String>{
+        for (final d in devices) d.deviceId, // เลขเครื่องที่มีจริง
+      };
+
+      final realIds = <String>{};
+      for (final task in tasks) {
+        final raw = (task.deviceId ?? '').trim();
+        if (raw.isEmpty) continue;
+
+        if (byPrismaId.containsKey(raw)) {
+          // กรณี 1: Prisma UUID → แปลงเป็นเลขเครื่อง
+          realIds.add(byPrismaId[raw]!);
+        } else if (knownDeviceIds.contains(raw)) {
+          // กรณี 2: เป็นเลขเครื่องจริงอยู่แล้ว
+          realIds.add(raw);
+        }
+        // กรณี 3: ไม่ match → ข้าม (device ไม่มีใน DB จริง)
+      }
+
+      return AsyncValue.data(realIds.toList()..sort());
     });
+
+// deviceListProvider ใช้ตัวที่มีอยู่แล้วใน device_search_repository.dart
+// (รองรับ mock mode + real API ในตัวเดียวกัน — ไม่ define ซ้ำ)
