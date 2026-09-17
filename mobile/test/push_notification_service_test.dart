@@ -35,16 +35,17 @@ void main() {
     },
   );
 
-  test('initializeAndRegister() now passes the flag guard and reaches the '
-      'Firebase SDK — throws only because the test env has no platform binding; '
-      'a real Android build initialises for real', () async {
+  test('initializeAndRegister() now never throws — Firebase.initializeApp() '
+      'fails in the test env (no platform binding), but the whole body is '
+      'wrapped in try/catch so login/restore session can never be blocked '
+      'by a push registration failure', () async {
     final repo = _SpyPushTokenRepository();
     final service = PushNotificationService(repo);
 
-    await expectLater(service.initializeAndRegister(), throwsA(anything));
+    await expectLater(service.initializeAndRegister(), completes);
 
     // Never got as far as registering a token — Firebase.initializeApp()
-    // failed first.
+    // failed first, and that failure was swallowed.
     expect(repo.registerCalls, 0);
   });
 
