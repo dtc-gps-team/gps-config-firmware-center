@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/config/app_config.dart';
@@ -41,27 +42,47 @@ class PushNotificationService {
   /// may have rotated while the app was closed). Requests notification
   /// permission, registers the current FCM token, and starts listening for
   /// refreshes so a rotated token gets re-registered automatically.
+  /// Call after a successful login, and again on session restore.
+  ///
+  /// **Never throws** — any Firebase or network error is swallowed so it
+  /// can never block or crash a login/restore flow. Push registration is
+  /// best-effort: if it fails the user is still logged in and can retry
+  /// on the next app launch. Error log is emitted via `debugPrint` for
+  /// debugging without crashing the app.
   Future<void> initializeAndRegister() async {
     if (!AppConfig.pushNotificationsEnabled) return;
 
-    await Firebase.initializeApp();
-    await FirebaseMessaging.instance.requestPermission();
+    try {
+      await Firebase.initializeApp();
+      await FirebaseMessaging.instance.requestPermission();
 
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      await _tokenRepository.register(token: token, platform: _platform);
-    }
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await _tokenRepository.register(token: token, platform: _platform);
+      }
 
-    await _tokenRefreshSubscription?.cancel();
-    _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
-        .listen((refreshedToken) {
-          unawaited(
-            _tokenRepository.register(
-              token: refreshedToken,
-              platform: _platform,
-            ),
+      await _tokenRefreshSubscription?.cancel();
+      _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
+          .listen(
+            (refreshedToken) {
+              unawaited(
+                _tokenRepository
+                    .register(token: refreshedToken, platform: _platform)
+                    .catchError((_) {
+                      /* best-effort — ignore refresh errors */
+                    }),
+              );
+            },
+            onError: (_) {
+              /* stream error — ignore */
+            },
           );
-        });
+    } catch (e) {
+      // Push registration failed (network down, Firebase error, etc.).
+      // Log for debugging but never rethrow — login must succeed regardless.
+      // ignore: avoid_print
+      debugPrint('[PushNotification] initializeAndRegister failed: $e');
+    }
   }
 
   /// Call before clearing the session on logout. Stops listening for token

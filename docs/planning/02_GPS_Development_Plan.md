@@ -47,7 +47,7 @@
 | 19 | Sprint 3 | 11/10/2026 | Approval Center (อนุมัติ/ปฏิเสธจริง) | Web | A | Not Tested |
 | 20 | Sprint 3 | 11/10/2026 | Change Request (ส่งจากมือถือ → เข้า Inbox เว็บ) | Mobile + Web | ร่วมกัน (B ฝั่ง Mobile ส่ง / A ฝั่ง Web รับเข้า Inbox) | Not Tested |
 | 21 | Sprint 3 | 11/10/2026 | Campaign Wizard (สร้างแคมเปญครบขั้นตอน — ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น) — ~~เคยรวมขั้น "มอบหมายผู้รับผิดชอบหน้างาน" ที่เดิมเป็นแถวที่ 7~~ **ตัดขั้นนี้ออกอีกครั้ง (มติพี่เลี้ยง 2026-09-14)** — Campaign ไม่ใช่เครื่องมือมอบหมายงาน (ดู RBAC_Matrix.md changelog แก้ครั้งที่ 29) | Web | A | Not Tested |
-| 21b | Sprint 3 | 11/10/2026 | **After-sales Campaign** — ใช้ Campaign Wizard เดียวกับแถวที่ 21 (ไม่ใช่ฟีเจอร์แยก) สำหรับจัดกลุ่มอุปกรณ์ที่มีปัญหาหลังการขายเพื่อติดตามแก้ไข ตาม Sitemap เดิม (Deployment Campaign ครอบคลุมทั้ง Rollout เป็นขั้น และ After-sales) — เพิ่มแถวนี้ตามที่ตกลงไว้ใน PR #155 | Web | A | Not Tested |
+| 21b | Sprint 3 | 11/10/2026 | **After-sales Campaign** — **แก้ไข 2026-09-16:** เดิมแถวนี้เข้าใจผิดว่าใช้ Campaign Wizard เดียวกับแถวที่ 21 — ที่ถูกต้องคือ **แยกเมนู/หน้าจอต่างหาก** จาก Campaign Wizard (Pilot/Canary/Batch) เพราะเป็นคนละวัตถุประสงค์กัน (ตาม `docs/12_Campaign_Feature_Spec.md` §2 ที่คุยกับณัฐ) — After-sales Campaign จัดกลุ่มอุปกรณ์ที่มีปัญหาหลังการขายเพื่อติดตามแก้ไข ไม่มีสถานะปิดกลุ่ม ใช้ติดตามสถานะรายเครื่องแทน (§3.3) — อ้างอิง PR #155 | Web | A | Not Tested |
 | 22 | Sprint 3 | 11/10/2026 | Campaign Monitor (ติดตาม Failure Rate จริง) | Web | A | Not Tested |
 | 23 | Sprint 3 | 11/10/2026 | Firmware Repository (อัปโหลด/Compatibility Tag) | Web | A | Not Tested |
 | 24 | Sprint 3 | 11/10/2026 | Firmware Override รายเครื่อง | Web | A | Not Tested |
