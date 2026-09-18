@@ -128,7 +128,7 @@ export function LoginForm() {
       {process.env.NODE_ENV !== "production" ? (
         <CardFooter>
           <p className="text-xs text-muted-foreground">
-            ทดสอบ: sw.test / password123
+            ทดสอบ: config.test / password123
           </p>
         </CardFooter>
       ) : null}

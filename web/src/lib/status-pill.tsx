@@ -89,8 +89,9 @@ export const CONFIG_STATUS_TONE: Record<string, PillTone> = {
  * ข้อความ "ขั้นตอนถัดไป" ต่อสถานะ Config — ตอบ feedback จากที่ประชุมกับอาจารย์
  * (2026-09-15 ข้อ 1.3): แค่โชว์ status pill ไม่พอ ต้องบอกผู้ใช้ด้วยว่าต้องทำ
  * อะไรต่อ · แยกข้อความตาม role เท่าที่มีผลกับสิ่งที่ role นั้นทำได้จริงบนหน้านี้
- * (SW ส่งอนุมัติได้ตอน draft, Operation อนุมัติได้ตอน testing) role อื่นเห็น
- * ข้อความกลางๆ · อ้างอิง flow จริงจาก ConfigReviewPanel + CONFIG_STATUSES ใน
+ * (ConfigEngineer ส่งอนุมัติได้ตอน draft, Operation อนุมัติได้ตอน testing —
+ * เดิม SW ก่อนแยก role, docs/13 §3.1) role อื่นเห็นข้อความกลางๆ · อ้างอิง flow
+ * จริงจาก ConfigReviewPanel + CONFIG_STATUSES ใน
  * backend/src/config/config-status.ts (ไม่ใช่แค่เดา)
  */
 export function getConfigNextStepMessage(
@@ -99,9 +100,9 @@ export function getConfigNextStepMessage(
 ): string {
   switch (status) {
     case "draft":
-      return role === "SW"
+      return role === "ConfigEngineer"
         ? 'ทดสอบแล้วกด "ส่งให้ Operation อนุมัติ" เมื่อพร้อม'
-        : "SW กำลังจัดทำ ยังไม่ได้ส่งอนุมัติ";
+        : "ConfigEngineer กำลังจัดทำ ยังไม่ได้ส่งอนุมัติ";
     case "testing":
       return role === "Operation"
         ? "รอคุณอนุมัติหรือปฏิเสธด้านล่าง"
@@ -159,4 +160,13 @@ export const FIRMWARE_DEVICE_UPDATE_STATUS_TONE: Record<string, PillTone> = {
   unknown: "neutral",
   up_to_date: "success",
   pending_update: "progress",
+};
+
+/** Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) — คนละ
+ * มิติกับ FIRMWARE_UPLOAD_STATUS_TONE ด้านบน (mirror CONFIG_STATUS_TONE ที่
+ * แยก draft/testing/approved/rejected/synced ออกจากกันชัดเจน) */
+export const FIRMWARE_APPROVAL_STATUS_TONE: Record<string, PillTone> = {
+  pending_review: "progress",
+  approved: "success",
+  rejected: "danger",
 };

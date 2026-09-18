@@ -95,14 +95,16 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       .expect(401);
   });
 
-  it('POST /tasks role SW (ไม่ใช่ Operation) -> 403', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    const token = tokenFor(swUser.id, 'SW');
+  it('POST /tasks role ConfigEngineer (ไม่ใช่ Operation) -> 403', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/tasks')
       .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'x', assignedTo: swUser.id })
+      .send({ title: 'x', assignedTo: configEngineerUser.id })
       .expect(403);
   });
 
@@ -260,7 +262,7 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       status: 'draft' | 'approved',
       opts: { deviceModel?: string; protocol?: string } = {},
     ): Promise<string> {
-      const creator = await makeUser(prisma, { role: 'SW' });
+      const creator = await makeUser(prisma, { role: 'ConfigEngineer' });
       const config = await prisma.config.create({
         data: {
           name: `cfg-${randomUUID()}`,

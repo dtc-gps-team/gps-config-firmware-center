@@ -56,7 +56,7 @@ const approvedConfig = {
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 const owner: ActingUser = { id: 'tech-1', role: 'ST' };
 const otherTech: ActingUser = { id: 'tech-2', role: 'OT' };
-const sw: ActingUser = { id: 'sw-1', role: 'SW' };
+const configEngineer: ActingUser = { id: 'ce-1', role: 'ConfigEngineer' };
 const auditor: ActingUser = { id: 'auditor-1', role: 'Auditor' };
 
 describe('TaskService', () => {
@@ -120,7 +120,7 @@ describe('TaskService', () => {
       });
     });
 
-    it.each([sw, owner, otherTech, auditor])(
+    it.each([configEngineer, owner, otherTech, auditor])(
       'role อื่นที่ไม่ใช่ Operation ($role) สร้างงานไม่ได้: 403',
       async (actor) => {
         await expect(
@@ -481,7 +481,7 @@ describe('TaskService', () => {
       });
     });
 
-    describe.each([sw, auditor])(
+    describe.each([configEngineer, auditor])(
       'role ที่ไม่มีสิทธิ์แก้เลย ($role)',
       (actor) => {
         it('403 เสมอ ไม่ว่างานนั้นเป็นของใคร', async () => {

@@ -105,7 +105,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
     status: 'draft' | 'approved' | 'synced',
     deviceModel = 'GT06N',
   ): Promise<string> {
-    const user = await makeUser(prisma, { role: 'SW' });
+    const user = await makeUser(prisma, { role: 'ConfigEngineer' });
     const config = await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
@@ -127,12 +127,14 @@ describe('DeviceController test-connection (integration — real postgres + guar
       .expect(401);
   });
 
-  it('role ไม่มีสิทธิ์ device-connection-test.Read (SW) -> 403', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
-    // SW มีสิทธิ์อื่นเยอะ แต่ไม่มี device-connection-test
-    await grant('SW', ActionType.Read, 'config-simulation');
+  it('role ไม่มีสิทธิ์ device-connection-test.Read (ConfigEngineer) -> 403', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    // ConfigEngineer มีสิทธิ์อื่นเยอะ แต่ไม่มี device-connection-test
+    await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
     await makeDevice('DTC-403A', 'installed');
-    const token = tokenFor(swUser.id, 'SW');
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .post('/api/v1/devices/DTC-403A/test-connection')
@@ -226,11 +228,13 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(401);
     });
 
-    it('role ไม่มีสิทธิ์ device-config-apply (SW) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config-simulation');
+    it('role ไม่มีสิทธิ์ device-config-apply (ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
       await makeDevice('AC-403', 'installed');
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/devices/AC-403/apply-config')
@@ -345,11 +349,13 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(401);
     });
 
-    it('role ไม่มีสิทธิ์ device-connection-test (SW) -> 403', async () => {
-      const swUser = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config-simulation');
+    it('role ไม่มีสิทธิ์ device-connection-test (ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
       await makeDevice('SC-403', 'installed');
-      const token = tokenFor(swUser.id, 'SW');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .post('/api/v1/devices/SC-403/simulate-config')
@@ -475,9 +481,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
     });
 
     it('role ไม่มี devices.Read -> 403', async () => {
-      const user = await makeUser(prisma, { role: 'SW' });
-      await grant('SW', ActionType.Read, 'config');
-      const token = tokenFor(user.id, 'SW');
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
+      const token = tokenFor(user.id, 'ConfigEngineer');
 
       await request(app.getHttpServer())
         .get('/api/v1/devices')

@@ -3,15 +3,40 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-// code ของ Role เริ่มต้นทั้ง 7 ตัว (แทน enum เดิม) — ตรงกับ CLAUDE.md §Role Enum
+// code ของ Role เริ่มต้นทั้ง 9 ตัว (แทน enum เดิม) — ตรงกับ CLAUDE.md §Role Enum
 // + docs/architecture/RBAC_Matrix.md §1 · Role ใหม่ที่ Admin สร้างเพิ่มทีหลัง
 // ผ่านหน้า User/Role Management ไม่ต้องอยู่ในรายการนี้ ไฟล์นี้ seed แค่ค่า
 // เริ่มต้นตอน dev/test เท่านั้น
+//
+// อัปเดต 2026-09-17 (docs/13_Role_Redesign_Proposal.md, PR #174): ยกเลิก `SW`
+// แยกเป็น 3 role ตาม PDF ต้นฉบับ §13.1 ที่แยกหน้าที่นี้ไว้ชัดเจนอยู่แล้ว (SW
+// เดิมรวมทั้ง 3 อย่างไว้ในตัวเดียว) — ConfigEngineer/FirmwareEngineer ตัด
+// ตามรอยต่อสิทธิ์เดิมของ SW (config vs firmware) ส่วน QAEngineer เป็น role
+// ใหม่ทั้งหมด ไม่เคยมีสิทธิ์อะไรมาก่อน (ดู grant ใหม่ 'firmware-decision'
+// ด้านล่าง)
+//
+// **หมายเหตุสำหรับใครที่ re-seed บน DB เดิมที่เคยมี role `SW` อยู่แล้ว**: ลูป
+// upsert ด้านล่างไม่ลบ role/user ที่ตัดออกจากรายการนี้ให้อัตโนมัติ (`SW` +
+// `sw.test` จะยังค้างอยู่ใน DB เดิม ไม่ถูกลบเอง) เพราะการลบ Role/User มี
+// FK เกี่ยวข้องหลายตาราง (Config.createdBy, Firmware.uploadedBy ฯลฯ) เสี่ยง
+// เกินไปที่จะให้ script นี้ลบอัตโนมัติแบบไม่มีคนตรวจสอบก่อน — บน local dev
+// DB ที่ไม่มีข้อมูลสำคัญ ให้ `docker compose down -v` แล้ว up ใหม่ก่อน migrate
+// deploy + seed สะอาดที่สุด
 const INITIAL_ROLES: { code: string; name: string; description: string }[] = [
   {
-    code: 'SW',
-    name: 'Software Engineer',
+    code: 'ConfigEngineer',
+    name: 'Config Engineer',
     description: 'สร้าง/แก้ไข/Import Config, รัน Simulation',
+  },
+  {
+    code: 'FirmwareEngineer',
+    name: 'Firmware Engineer',
+    description: 'อัปโหลด Firmware, แก้ Compatibility Tag',
+  },
+  {
+    code: 'QAEngineer',
+    name: 'QA Engineer',
+    description: 'ตรวจ/อนุมัติคุณภาพ Firmware ก่อนใช้งานจริง',
   },
   {
     code: 'Operation',
@@ -25,7 +50,11 @@ const INITIAL_ROLES: { code: string; name: string; description: string }[] = [
   },
   {
     code: 'OT',
-    name: 'Operation-Technician',
+    // เปลี่ยนชื่อแสดงผลจาก "Operation-Technician" เป็น "Operation Technician"
+    // (ตัดขีดกลางออก) — docs/13 §3.4: กันสับสนกับ role `Operation` เอง (คนละ
+    // role กันโดยสิ้นเชิง) แต่ยังคงคำว่า "Technician" ต่อท้ายเสมอเพื่อไม่ให้
+    // ชนกับชื่อ `Operation` ตรงๆ
+    name: 'Operation Technician',
     description: 'สนับสนุนงานปฏิบัติการ, Override Config/Firmware',
   },
   {
@@ -63,9 +92,16 @@ async function main() {
   const roleIdByCode = new Map<string, string>();
 
   for (const r of INITIAL_ROLES) {
+    // อัปเดต 2026-09-17: เดิม `update: {}` (insert-only) — เจอบั๊กจริงระหว่าง
+    // ทดสอบ role redesign นี้เอง: รัน seed ซ้ำบน DB ที่มี Role เดิมอยู่แล้ว
+    // (เช่น เปลี่ยนชื่อแสดงผลของ `OT` เป็น "Operation Technician") ค่าใหม่
+    // ไม่ถูก apply เลยเพราะ update ว่างเปล่า — ต่างจาก ConfigFieldDefinition
+    // ที่ตั้งใจ insert-only (มีคอมเมนต์อธิบายเหตุผลไว้ที่จุดนั้นแยกต่างหาก)
+    // Role ควร sync `name`/`description` ทุกครั้งที่ seed เพราะไฟล์นี้คือ
+    // source of truth ของ metadata role ไม่ใช่ข้อมูลที่ผู้ใช้แก้เองได้ทีหลัง
     const role = await prisma.role.upsert({
       where: { code: r.code },
-      update: {},
+      update: { name: r.name, description: r.description },
       create: r,
     });
     roleIdByCode.set(r.code, role.id);
@@ -79,7 +115,21 @@ async function main() {
   // ---------------------------------------------------------------------
   const testUsers: { username: string; fullName: string; roleCode: string }[] =
     [
-      { username: 'sw.test', fullName: 'SW Tester', roleCode: 'SW' },
+      {
+        username: 'config.test',
+        fullName: 'Config Engineer Tester',
+        roleCode: 'ConfigEngineer',
+      },
+      {
+        username: 'firmware.test',
+        fullName: 'Firmware Engineer Tester',
+        roleCode: 'FirmwareEngineer',
+      },
+      {
+        username: 'qa.test',
+        fullName: 'QA Engineer Tester',
+        roleCode: 'QAEngineer',
+      },
       {
         username: 'operation.test',
         fullName: 'Operation Tester',
@@ -138,15 +188,15 @@ async function main() {
   const grants: Grant[] = [
     // ---- config ----
     // createConfig, importConfig
-    grant('SW', 'config', 'Create'),
+    grant('ConfigEngineer', 'config', 'Create'),
     // updateConfig (PUT), removeConfig (DELETE ใช้ action Update เดิม — ดู
     // config.controller.ts comment) — เดิมคอมเมนต์แถวนี้เขียนว่าเป็นของ
     // simulateConfig ผิด (ตอนนั้น Stage 3 ยังไม่ได้เริ่มทำจริง) แก้ให้ตรงตอนเริ่ม
     // Stage 3 จริง: simulateConfig ใช้ resource 'config-simulation' แยกต่างหาก
     // ด้านล่าง ไม่ได้ใช้ตัวนี้
-    grant('SW', 'config', 'Update'),
-    // เพิ่มใหม่: RBAC_Matrix.md ระบุ Config Editor = SW: C,R,U แต่ seed เดิมมีแค่ C,U ขาด R
-    grant('SW', 'config', 'Read'),
+    grant('ConfigEngineer', 'config', 'Update'),
+    // เพิ่มใหม่: RBAC_Matrix.md ระบุ Config Editor = ConfigEngineer: C,R,U แต่ seed เดิมมีแค่ C,U ขาด R
+    grant('ConfigEngineer', 'config', 'Read'),
     grant('Operation', 'config', 'Read'),
     // approveConfig, rejectConfig
     grant('Operation', 'config', 'Approve'),
@@ -156,36 +206,36 @@ async function main() {
     grant('Admin', 'config', 'Read'),
 
     // ---- config-simulation (Stage 3, #26) ----
-    // simulateConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ: SW/Operation/
-    // ST/OT ต้องเรียกได้ทั้งคู่ แต่ 'config'+Read ถูก grant ให้ Auditor/Admin
+    // simulateConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ: ConfigEngineer/
+    // Operation/ST/OT ต้องเรียกได้ทั้งคู่ แต่ 'config'+Read ถูก grant ให้ Auditor/Admin
     // ไว้แล้ว (สำหรับดูรายการ/รายละเอียดเฉยๆ) ซึ่งตาม RBAC_Matrix.md ตาราง 4.1
     // Auditor/Admin ไม่ควรเรียก simulate ได้ — ถ้าใช้ 'config'+Read ร่วมกันจะ
     // เผลอเปิดสิทธิ์ให้ 2 role นี้ไปด้วยโดยไม่ตั้งใจ จึงต้องแยก resource ใหม่
-    grant('SW', 'config-simulation', 'Read'),
+    grant('ConfigEngineer', 'config-simulation', 'Read'),
     grant('Operation', 'config-simulation', 'Read'),
     grant('ST', 'config-simulation', 'Read'),
     grant('OT', 'config-simulation', 'Read'),
 
     // ---- config-decision (Stage 4, #26) ----
     // decideConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ (ดูคอมเมนต์เต็ม
-    // ใน config.controller.ts): แม้ตอนนี้มีแค่ SW ที่มีสิทธิ์ ก็ไม่อยากใช้
+    // ใน config.controller.ts): แม้ตอนนี้มีแค่ ConfigEngineer ที่มีสิทธิ์ ก็ไม่อยากใช้
     // 'config'+Update ร่วมกับสิทธิ์แก้ไข field ปกติ เพราะเป็นคนละ action กัน
-    grant('SW', 'config-decision', 'Approve'),
+    grant('ConfigEngineer', 'config-decision', 'Approve'),
 
     // ---- config-definition (Config Definition Lookup, task #12) ----
     // listConfigDefinitions — catalog อ่านอย่างเดียวของ field ที่ระบบรู้จัก
-    // ไม่ใช่ข้อมูลอ่อนไหว เปิดให้ทุก role ที่ทำงานกับ Config (SW/Operation/ST/OT)
+    // ไม่ใช่ข้อมูลอ่อนไหว เปิดให้ทุก role ที่ทำงานกับ Config (ConfigEngineer/Operation/ST/OT)
     // อ่านได้ แพทเทิร์นเดียวกับ 'config-simulation' ด้านบน — Auditor/Admin ยังไม่
     // ให้เพราะยังไม่มี use case (เพิ่มทีหลังได้ถ้าต้องการ ไม่มี side effect)
-    grant('SW', 'config-definition', 'Read'),
+    grant('ConfigEngineer', 'config-definition', 'Read'),
     grant('Operation', 'config-definition', 'Read'),
     grant('ST', 'config-definition', 'Read'),
     grant('OT', 'config-definition', 'Read'),
     // createConfigDefinition (Semantic Validation, #26 — ตัดสินใจร่วมกับ B
-    // และพี่เลี้ยง 2569-09): เฉพาะ SW คนเดียวที่สร้าง field definition ใหม่ได้
+    // และพี่เลี้ยง 2569-09): เฉพาะ ConfigEngineer คนเดียวที่สร้าง field definition ใหม่ได้
     // ไม่ต้องผ่านอนุมัติ — ดูเหตุผลเต็มใน config-definition.service.ts และ
     // RBAC_Matrix.md changelog
-    grant('SW', 'config-definition', 'Create'),
+    grant('ConfigEngineer', 'config-definition', 'Create'),
 
     // ---- device-connection-test (POST /devices/{deviceId}/test-connection) ----
     // ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง — grant ให้ ST/OT เท่านั้น (คนหน้างานที่
@@ -217,18 +267,24 @@ async function main() {
     grant('ST', 'tasks', 'Update'),
     grant('OT', 'tasks', 'Read'),
     grant('OT', 'tasks', 'Update'),
-    grant('SW', 'tasks', 'Read'),
+    // เดิมมี grant('SW', 'tasks', 'Read') ตรงนี้ — ตัดทิ้งตอนแยก role (docs/13
+    // §3.1) เช็คแล้วไม่เคยถูกใช้งานจริงในหน้าจอไหนเลย ตกค้างมาจากก่อน Task
+    // Management จะถูกยกเลิกถาวร (ดู nav.ts comment) ไม่มีเหตุผลต้องคงไว้ให้
+    // Config/Firmware/QA Engineer ตัวไหนเลย
     grant('Auditor', 'tasks', 'Read'),
     grant('Admin', 'tasks', 'Read'),
 
     // ---- firmware (Sprint 3 #23 — Firmware Repository) ----
-    grant('SW', 'firmware', 'Create'),
-    grant('SW', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
-    // เพิ่มใหม่: RBAC_Matrix.md Section 2 ระบุ Firmware Repository = SW: C,R,U
-    // แต่ seed เดิมมีแค่ C,U ขาด R — บั๊กเดียวกับที่เคยเจอกับ config (ดู
-    // comment เหนือ grant('SW','config','Read') ด้านบน) ทำให้ SW เปิดหน้า
+    grant('FirmwareEngineer', 'firmware', 'Create'),
+    grant('FirmwareEngineer', 'firmware', 'Update'), // updateFirmwareCompatibility (Compatibility Tag)
+    // เพิ่มใหม่: RBAC_Matrix.md Section 2 ระบุ Firmware Repository = SW (เดิม)
+    // C,R,U แต่ seed เดิมมีแค่ C,U ขาด R — บั๊กเดียวกับที่เคยเจอกับ config (ดู
+    // comment เหนือ grant('ConfigEngineer','config','Read') ด้านบน) ทำให้เปิดหน้า
     // /firmware เองไม่ได้เลย (403 "ไม่มีสิทธิ์ Read บน resource firmware")
-    grant('SW', 'firmware', 'Read'),
+    grant('FirmwareEngineer', 'firmware', 'Read'),
+    // QAEngineer ต้อง Read ได้ด้วย — เข้ามาตรวจ/อนุมัติคุณภาพก่อนใช้งานจริง
+    // (docs/13 §3.1/§3.2, role ใหม่ทั้งหมด ไม่เคยมีสิทธิ์นี้มาก่อน)
+    grant('QAEngineer', 'firmware', 'Read'),
     grant('Operation', 'firmware', 'Read'),
     grant('ST', 'firmware', 'Read'),
     grant('OT', 'firmware', 'Read'),
@@ -238,15 +294,24 @@ async function main() {
     // ---- firmware-simulation (แยกจาก firmware ธรรมดา mirror
     // config/config-simulation — กัน Auditor/Admin ที่มีแค่ firmware.Read
     // เรียก simulate ได้โดยไม่ตั้งใจ) ----
-    grant('SW', 'firmware-simulation', 'Read'),
+    grant('FirmwareEngineer', 'firmware-simulation', 'Read'),
+    // QAEngineer ดูผลทดสอบ/simulation ก่อนตัดสินใจอนุมัติคุณภาพ (docs/13 §3.1)
+    grant('QAEngineer', 'firmware-simulation', 'Read'),
     grant('Operation', 'firmware-simulation', 'Read'),
     grant('ST', 'firmware-simulation', 'Read'),
     grant('OT', 'firmware-simulation', 'Read'),
 
+    // ---- firmware-decision (ใหม่ทั้งหมด — Firmware Approval Lifecycle,
+    // docs/13 §3.2) — QAEngineer อนุมัติ/ปฏิเสธคุณภาพ Firmware ก่อนใช้ใน
+    // Campaign ได้จริง มิเรอร์ pattern เดียวกับ 'config-decision' ของ
+    // ConfigEngineer ด้านบน (resource แยกจาก 'firmware' ธรรมดาโดยตั้งใจ
+    // เหตุผลเดียวกัน — คนละ action จากการแก้ไข field ปกติ)
+    grant('QAEngineer', 'firmware-decision', 'Approve'),
+
     // ---- campaign (Sprint 3 #21 — Campaign Wizard) ----
     // RBAC_Matrix.md §2 แถว "Campaign Wizard": Operation = C, R, U (U ยังไม่มี
     // endpoint จริง — รอ Campaign Monitor แถวที่ 22) role อื่นทั้งหมด = R
-    grant('SW', 'campaign', 'Read'),
+    grant('ConfigEngineer', 'campaign', 'Read'),
     grant('Operation', 'campaign', 'Create'),
     grant('Operation', 'campaign', 'Read'),
     grant('ST', 'campaign', 'Read'),
@@ -263,9 +328,10 @@ async function main() {
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'incidents', 'Read')),
 
     // ---- audit-logs (GET /audit-logs — Sprint 3 #27) ----
-    // RBAC_Matrix.md §2 แถว "Audit Log" = R ทุก Role ยกเว้น SW ("-" ทั้งแถว —
-    // SW ไม่มีสิทธิ์เข้าถึงจอนี้เลย) SuperAdmin ได้อัตโนมัติจากการ copy สิทธิ์
-    // Admin ด้านล่าง ไม่ต้องเพิ่มตรงนี้
+    // RBAC_Matrix.md §2 แถว "Audit Log" = R ทุก Role ยกเว้น ConfigEngineer/
+    // FirmwareEngineer/QAEngineer (เดิม SW ตัวเดียว — "-" ทั้งแถว ไม่มีสิทธิ์
+    // เข้าถึงจอนี้เลย ทั้ง 3 role ที่แยกออกมาสืบทอดข้อจำกัดนี้เหมือนกันหมด)
+    // SuperAdmin ได้อัตโนมัติจากการ copy สิทธิ์ Admin ด้านล่าง ไม่ต้องเพิ่มตรงนี้
     grant('Operation', 'audit-logs', 'Read'),
     grant('ST', 'audit-logs', 'Read'),
     grant('OT', 'audit-logs', 'Read'),
@@ -740,8 +806,11 @@ async function main() {
   //    ABC Logistics, GT06L/TCP ผูกกับ Northern Fleet) จะได้ลองสร้างแคมเปญ
   //    ข้ามลูกค้าดูความแตกต่างของ filter ได้ด้วย
   // ---------------------------------------------------------------------
-  const swUser = await prisma.user.findUniqueOrThrow({
-    where: { username: 'sw.test' },
+  const configEngineerUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'config.test' },
+  });
+  const firmwareEngineerUser = await prisma.user.findUniqueOrThrow({
+    where: { username: 'firmware.test' },
   });
   const operationUser = await prisma.user.findUniqueOrThrow({
     where: { username: 'operation.test' },
@@ -788,7 +857,7 @@ async function main() {
         protocol: c.protocol,
         status: c.status,
         fields: c.fields,
-        createdBy: swUser.id,
+        createdBy: configEngineerUser.id,
         approvedBy: operationUser.id,
       },
     });
@@ -821,7 +890,7 @@ async function main() {
         objectKey: `firmware/seed-${f.version}/firmware.bin`,
         originalFilename: 'firmware.bin',
         fileSizeBytes: 1024,
-        uploadedBy: swUser.id,
+        uploadedBy: firmwareEngineerUser.id,
       },
     });
   }

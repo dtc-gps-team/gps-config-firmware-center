@@ -15,7 +15,8 @@ function reqAs(user: JwtPayload): AuthenticatedRequest {
 }
 
 const JWT_SECRET = 'test-secret';
-const swReq = reqAs({ sub: 'sw-1', role: 'SW' });
+const firmwareEngineerReq = reqAs({ sub: 'fe-1', role: 'FirmwareEngineer' });
+const qaEngineerReq = reqAs({ sub: 'qa-1', role: 'QAEngineer' });
 
 const sampleFirmware: Firmware = {
   id: 'fw-1',
@@ -26,8 +27,10 @@ const sampleFirmware: Firmware = {
   objectKey: 'firmware/fw-1/gt06n.bin',
   originalFilename: 'gt06n.bin',
   fileSizeBytes: 1024,
-  uploadedBy: 'sw-1',
+  uploadedBy: 'fe-1',
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
+  approvalStatus: 'pending_review',
+  approvedBy: null,
 };
 
 describe('FirmwareController', () => {
@@ -38,6 +41,8 @@ describe('FirmwareController', () => {
     findOne: jest.Mock;
     updateCompatibility: jest.Mock;
     simulate: jest.Mock;
+    approve: jest.Mock;
+    reject: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -47,6 +52,8 @@ describe('FirmwareController', () => {
       findOne: jest.fn(),
       updateCompatibility: jest.fn(),
       simulate: jest.fn(),
+      approve: jest.fn(),
+      reject: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -78,12 +85,17 @@ describe('FirmwareController', () => {
     service.upload.mockResolvedValue(sampleFirmware);
     const file = { originalname: 'gt06n.bin' } as Express.Multer.File;
 
-    const result = await controller.upload(file, 'v1', 'GT06N', swReq);
+    const result = await controller.upload(
+      file,
+      'v1',
+      'GT06N',
+      firmwareEngineerReq,
+    );
 
     expect(result).toEqual(sampleFirmware);
     expect(service.upload).toHaveBeenCalledWith(file, 'v1', 'GT06N', {
-      id: 'sw-1',
-      role: 'SW',
+      id: 'fe-1',
+      role: 'FirmwareEngineer',
     });
   });
 
@@ -102,14 +114,14 @@ describe('FirmwareController', () => {
     const result = await controller.updateCompatibility(
       sampleFirmware.id,
       dto,
-      swReq,
+      firmwareEngineerReq,
     );
 
     expect(result).toEqual(sampleFirmware);
     expect(service.updateCompatibility).toHaveBeenCalledWith(
       sampleFirmware.id,
       dto,
-      { id: 'sw-1', role: 'SW' },
+      { id: 'fe-1', role: 'FirmwareEngineer' },
     );
   });
 
@@ -122,5 +134,31 @@ describe('FirmwareController', () => {
 
     expect(result).toEqual({ passed: true, details: ['ok'] });
     expect(service.simulate).toHaveBeenCalledWith(sampleFirmware.id, 'GT06N');
+  });
+
+  it('POST /firmware/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {
+    const approved = { ...sampleFirmware, approvalStatus: 'approved' as const };
+    service.approve.mockResolvedValue(approved);
+
+    const result = await controller.approve(sampleFirmware.id, qaEngineerReq);
+
+    expect(result).toEqual(approved);
+    expect(service.approve).toHaveBeenCalledWith(sampleFirmware.id, {
+      id: 'qa-1',
+      role: 'QAEngineer',
+    });
+  });
+
+  it('POST /firmware/:id/reject -> service.reject พร้อม actor จาก JWT', async () => {
+    const rejected = { ...sampleFirmware, approvalStatus: 'rejected' as const };
+    service.reject.mockResolvedValue(rejected);
+
+    const result = await controller.reject(sampleFirmware.id, qaEngineerReq);
+
+    expect(result).toEqual(rejected);
+    expect(service.reject).toHaveBeenCalledWith(sampleFirmware.id, {
+      id: 'qa-1',
+      role: 'QAEngineer',
+    });
   });
 });

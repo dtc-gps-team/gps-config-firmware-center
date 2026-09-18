@@ -32,8 +32,16 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 ## Role Enum (ห้ามผิดพลาดซ้ำ)
 
-- Role มีแค่ **7 ค่าเท่านั้น**: `SW`, `Operation`, `ST`, `OT`, `Auditor`, `Admin`,
-  `SuperAdmin`
+- Role มีแค่ **9 ค่าเท่านั้น**: `ConfigEngineer`, `FirmwareEngineer`, `QAEngineer`,
+  `Operation`, `ST`, `OT`, `Auditor`, `Admin`, `SuperAdmin`
+- **`ConfigEngineer`/`FirmwareEngineer`/`QAEngineer` แทน `SW` เดิม** (แยกออกตาม
+  มติทีม 2026-09-17 — `docs/13_Role_Redesign_Proposal.md` → PR #174): `SW`
+  ตัวเดียวเดิมรวม 3 หน้าที่ไว้ในคนเดียว (สร้าง Config, อัปโหลด Firmware, ตรวจ
+  คุณภาพ Firmware) ตาม PDF ต้นฉบับ §13.1 ที่จริงแยกหน้าที่นี้ไว้ชัดเจนอยู่แล้ว
+  — ชื่อ `SW` (Software Engineer) สื่อถึงตำแหน่งงาน ไม่ใช่สิ่งที่ role ทำได้จริง
+  ในระบบ ห้ามใช้ `SW` อีก · `QAEngineer` เป็น role ใหม่ทั้งหมด (resource
+  `firmware-decision` — `POST /firmware/{id}/approve`/`.../reject`, Firmware
+  Approval Lifecycle, docs/13 §3.2 — implement แล้ว)
 - **`SuperAdmin` เพิ่มโดยตั้งใจ** ตามมติ Sprint 1 review (PR #99 → `docs/09_Sprint1_Review_Decisions.md`)
   — ต่างจาก `FieldTechnician` ที่เป็นความผิดพลาด · ขอบเขต: ทำได้ทุกอย่างที่ `Admin`
   ทำ **+** อนุมัติคำขอลบ Config (auto delete-request), จัดการบัญชี `Admin`/`SuperAdmin`,
@@ -53,7 +61,7 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 - เป็น **single-stage เท่านั้น**: `draft`, `testing`, `approved`, `rejected`, `synced`
 - **ไม่ใช่ 2-stage** — ไม่มี `sw_approved` / `operation_approved`
 - มีเฉพาะ **Operation** เท่านั้นที่อนุมัติ Config / Firmware / Campaign ได้
-  SW สร้าง/แก้ไข/รัน simulation ได้ แต่อนุมัติงานตัวเองไม่ได้ (Separation of Duty)
+  ConfigEngineer สร้าง/แก้ไข/รัน simulation ได้ แต่อนุมัติงานตัวเองไม่ได้ (Separation of Duty)
 
 ## Team Ownership
 

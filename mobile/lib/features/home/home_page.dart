@@ -6,25 +6,11 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
-
-/// Home-screen palette. Scoped to this file on purpose — the shared [AppTheme]
-/// drives the rest of the app and this redesign only covers Home, so nothing
-/// here touches the central theme. Same values as the Login redesign (PR #64).
-class _HomeColors {
-  const _HomeColors._();
-
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const badgeBg = Color(0xFFE3ECF4); // light blue
-  static const iconTintBg = Color(0xFFE8EEF3);
-  static const errorFg = Color(0xFFC0392B);
-}
 
 /// Human-readable role label shown in the greeting badge.
 String _roleLabel(UserRole? role) {
@@ -65,9 +51,9 @@ class HomePage extends ConsumerWidget {
     final showTaskCount = isFieldStaff && !(tasksAsync?.hasError ?? false);
 
     return Scaffold(
-      backgroundColor: _HomeColors.background,
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: _HomeColors.navy,
+        backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
         title: const Text('หน้าหลัก'),
@@ -210,7 +196,7 @@ class _GreetingBlock extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: _HomeColors.textPrimary,
+                  color: AppTheme.textPrimary,
                 ),
               ),
               if (showTaskCount) ...[
@@ -221,7 +207,7 @@ class _GreetingBlock extends StatelessWidget {
                       : 'วันนี้ $taskCount งานที่ได้รับมอบหมาย',
                   style: const TextStyle(
                     fontSize: 13,
-                    color: _HomeColors.textSecondary,
+                    color: AppTheme.textSecondary,
                   ),
                 ),
               ],
@@ -245,7 +231,7 @@ class _RoleBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: _HomeColors.badgeBg,
+        color: AppTheme.unreadTint,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -253,7 +239,7 @@ class _RoleBadge extends StatelessWidget {
         style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: _HomeColors.navy,
+          color: AppTheme.navy,
         ),
       ),
     );
@@ -272,7 +258,7 @@ class _SectionLabel extends StatelessWidget {
       style: const TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w700,
-        color: _HomeColors.textPrimary,
+        color: AppTheme.textPrimary,
       ),
     );
   }
@@ -326,16 +312,16 @@ class _TasksEmpty extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _HomeColors.surface,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: const Column(
         children: [
-          Icon(Icons.inbox_outlined, color: _HomeColors.textSecondary),
+          Icon(Icons.inbox_outlined, color: AppTheme.textSecondary),
           SizedBox(height: 8),
           Text(
             'ยังไม่มีงานที่ได้รับมอบหมาย',
-            style: TextStyle(fontSize: 13, color: _HomeColors.textSecondary),
+            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -351,46 +337,11 @@ class _TasksError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _HomeColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 18,
-                color: _HomeColors.errorFg,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: _HomeColors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              key: const Key('tasks_retry'),
-              onPressed: onRetry,
-              child: const Text('ลองอีกครั้ง'),
-            ),
-          ),
-        ],
-      ),
+    return AppErrorView(
+      message: message,
+      onRetry: onRetry,
+      retryKey: const Key('tasks_retry'),
+      compact: true,
     );
   }
 }
@@ -404,7 +355,7 @@ class _TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _HomeColors.surface,
+      color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -422,7 +373,7 @@ class _TaskCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: _HomeColors.textPrimary,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -430,7 +381,7 @@ class _TaskCard extends StatelessWidget {
                       'Device: ${task.deviceId ?? '—'}',
                       style: const TextStyle(
                         fontSize: 13,
-                        color: _HomeColors.textSecondary,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -505,7 +456,7 @@ class _ShortcutTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       key: item.key,
-      color: _HomeColors.surface,
+      color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: item.onTap,
@@ -518,10 +469,10 @@ class _ShortcutTile extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: const BoxDecoration(
-                  color: _HomeColors.iconTintBg,
+                  color: AppTheme.iconBg,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(item.icon, color: _HomeColors.navy, size: 22),
+                child: Icon(item.icon, color: AppTheme.navy, size: 22),
               ),
               const SizedBox(height: 8),
               Text(
@@ -530,7 +481,7 @@ class _ShortcutTile extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: _HomeColors.textPrimary,
+                  color: AppTheme.textPrimary,
                 ),
               ),
             ],

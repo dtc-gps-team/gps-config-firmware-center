@@ -26,7 +26,8 @@ export interface NavItem {
   icon: LucideIcon;
   /**
    * จำกัด Role ที่เห็นเมนูนี้ — ใส่เฉพาะหน้าที่ RBAC_Matrix.md ระบุว่าบาง Role
-   * เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย) เช่น Audit Log (ยกเว้น SW) และ
+   * เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย) เช่น Audit Log (ยกเว้น
+   * ConfigEngineer/FirmwareEngineer/QAEngineer) และ
    * User Management (Admin เท่านั้น) ปล่อยว่างไว้ = ทุก Role เห็นเมนูนี้ เพราะ
    * ส่วนใหญ่ทุก Role มีอย่างน้อย R (ความต่างจริงอยู่ที่ปุ่ม/action ในหน้า ไป
    * gate ที่ web/src/lib/permissions.ts แทน)
@@ -65,15 +66,16 @@ export const NAV_ITEMS: NavItem[] = [
   // "Config Import จากไฟล์ (JSON)" (RBAC_Matrix.md Section 2) ไม่มี entry ใน
   // sidebar โดยตั้งใจ — Build Reference §3.1 ระบุว่าเป็น "ปุ่มในหน้า Config
   // Editor ไม่ใช่หน้าจอแยก" · เข้าผ่านปุ่ม "Import จากไฟล์" ในหน้า /config
-  // (SW เท่านั้น — import-config-button.tsx) ที่พาไป route /config/import
+  // (ConfigEngineer เท่านั้น — import-config-button.tsx) ที่พาไป route
+  // /config/import
   {
     label: "Parameter Library",
     href: "/parameters",
     screenName: "Config Definition Lookup (คลัง Parameter)",
     icon: LibraryIcon,
-    // ตาราง 4.1: SW, Operation, ST, OT เท่านั้น — Auditor/Admin ยังไม่ให้
-    // เพราะยังไม่มี use case
-    allowedRoles: ["SW", "Operation", "ST", "OT"],
+    // ตาราง 4.1: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม SW ก่อนแยก
+    // role — docs/13 §3.1) — Auditor/Admin ยังไม่ให้เพราะยังไม่มี use case
+    allowedRoles: ["ConfigEngineer", "Operation", "ST", "OT"],
   },
   {
     label: "Approval Center",
@@ -110,7 +112,8 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/audit-log",
     screenName: "Audit Log",
     icon: ScrollTextIcon,
-    // Section 2: ทุก Role มี R ยกเว้น SW ที่เป็น "-"
+    // Section 2: ทุก Role มี R ยกเว้น ConfigEngineer/FirmwareEngineer/
+    // QAEngineer ที่เป็น "-" (เดิม SW ตัวเดียวก่อนแยก role — docs/13 §3.1)
     allowedRoles: ["Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"],
   },
   {

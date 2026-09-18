@@ -21,7 +21,7 @@ tags:
   - name: config-deletion
     description: >-
       คำขอลบ Config อัตโนมัติ (docs/11 Part A) — scheduled job เสนอลบ Config
-      ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · SW/ผู้สร้างกด "เก็บไว้"
+      ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · ConfigEngineer/ผู้สร้างกด "เก็บไว้"
   - name: firmware
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
@@ -124,7 +124,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "409":
           description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
 
@@ -180,7 +180,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์แก้ไข Config — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์แก้ไข Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "404":
           description: ไม่พบ Config นี้
         "409":
@@ -201,7 +201,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "404":
           description: ไม่พบ Config นี้
         "409":
@@ -239,7 +239,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์ Import Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "409":
           description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
         "413":
@@ -284,7 +284,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ทดสอบ Config นี้ — เฉพาะ Role SW, Operation, ST, OT
+          description: ไม่มีสิทธิ์ทดสอบ Config นี้ — เฉพาะ Role ConfigEngineer, Operation, ST, OT
         "404":
           description: ไม่พบ Config นี้
         "409":
@@ -294,11 +294,11 @@ paths:
     post:
       tags: [config]
       operationId: decideConfig
-      summary: SW ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate แล้ว (Stage 4 · v3.19 — +suggestedApproverId)
+      summary: ConfigEngineer ปักผลตัดสินใจผ่าน/ไม่ผ่านเองหลังดูผล simulate แล้ว (Stage 4 · v3.19 — +suggestedApproverId)
       description: >-
         `passed:true` เปลี่ยนสถานะจาก draft เป็น testing (ส่งต่อให้ Operation
         อนุมัติ/ปฏิเสธต่อ) — `passed:false` ไม่เปลี่ยนสถานะเลย (ยังเป็น draft
-        เหมือนเดิม ให้ SW แก้ไขต่อได้) · ส่ง `suggestedApproverId` (optional,
+        เหมือนเดิม ให้ ConfigEngineer แก้ไขต่อได้) · ส่ง `suggestedApproverId` (optional,
         เฉพาะตอน passed:true) เพื่อเจาะจง Operation ที่อยากให้ดูเป็นพิเศษ —
         ไม่ผูกมัด Operation คนอื่นก็ approve ได้ (Approval Center — Sprint 3 #19)
       parameters:
@@ -321,7 +321,7 @@ paths:
                   type: string
                   format: uuid
                   description: >-
-                    user id ของ Operation ที่ SW เจาะจง (optional) — ต้องเป็น
+                    user id ของ Operation ที่ ConfigEngineer เจาะจง (optional) — ต้องเป็น
                     role Operation ที่ active จริง ไม่งั้น 400
       responses:
         "200":
@@ -337,7 +337,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ปักผลตัดสินใจ Config — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์ปักผลตัดสินใจ Config — เฉพาะ Role ConfigEngineer เท่านั้น
         "404":
           description: ไม่พบ Config นี้
         "409":
@@ -456,8 +456,8 @@ paths:
 
   # เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน
   # สร้าง ConfigDeletionRequest ให้ Config ที่เข้าเกณฑ์ §2 · SuperAdmin ดูคิว +
-  # approve (soft delete) / reject (Config อยู่ต่อ + cooldown 90 วัน) · SW หรือ
-  # ผู้สร้างกด keep ระหว่าง grace period 7 วัน -> cancelled
+  # approve (soft delete) / reject (Config อยู่ต่อ + cooldown 90 วัน) ·
+  # ConfigEngineer หรือผู้สร้างกด keep ระหว่าง grace period 7 วัน -> cancelled
   /config-deletion-requests:
     get:
       tags: [config-deletion]
@@ -557,15 +557,16 @@ paths:
         "409":
           description: คำขอลบนี้ถูกตัดสินไปแล้ว (สถานะไม่ใช่ pending)
 
-  # `keep` key ด้วย config id (ไม่ใช่ request id) — SW/ผู้สร้างได้ notification
-  # เรื่อง "Config X" ไม่รู้ request id · resource `config` action Update ที่ SW
-  # มีอยู่แล้ว (ต่างจาก docs/11 §5 ที่วางเป็น `/config-deletion-requests/{id}/keep`
-  # — ปรับ path ให้ตรงกับสิทธิ์/บริบทผู้ใช้จริง ดู RBAC_Matrix.md §4.2)
+  # `keep` key ด้วย config id (ไม่ใช่ request id) — ConfigEngineer/ผู้สร้างได้
+  # notification เรื่อง "Config X" ไม่รู้ request id · resource `config` action
+  # Update ที่ ConfigEngineer มีอยู่แล้ว (ต่างจาก docs/11 §5 ที่วางเป็น
+  # `/config-deletion-requests/{id}/keep` — ปรับ path ให้ตรงกับสิทธิ์/บริบท
+  # ผู้ใช้จริง ดู RBAC_Matrix.md §4.2)
   /config/{configId}/deletion-requests/keep:
     post:
       tags: [config-deletion]
       operationId: keepConfigDeletionRequest
-      summary: SW / ผู้สร้างกด "เก็บไว้" ระหว่าง grace period -> cancelled + reset นาฬิกา (docs/11 §3 — v3.16)
+      summary: ConfigEngineer / ผู้สร้างกด "เก็บไว้" ระหว่าง grace period -> cancelled + reset นาฬิกา (docs/11 §3 — v3.16)
       parameters:
         - in: path
           name: configId
@@ -583,7 +584,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ — เฉพาะ Role SW
+          description: ไม่มีสิทธิ์ — เฉพาะ Role ConfigEngineer
         "404":
           description: ไม่มีคำขอลบที่รอดำเนินการ (pending) สำหรับ Config นี้
 
@@ -608,13 +609,13 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์อ่าน Config Definition — เฉพาะ Role SW, Operation, ST, OT
+          description: ไม่มีสิทธิ์อ่าน Config Definition — เฉพาะ Role ConfigEngineer, Operation, ST, OT
     post:
       tags: [config]
       operationId: createConfigDefinition
       summary: สร้าง Config Field Definition ใหม่ (Semantic Validation — v3.11)
       description: >-
-        SW สร้าง field definition ใหม่ในคลังเอง ไม่ต้องผ่านขั้นตอนอนุมัติ
+        ConfigEngineer สร้าง field definition ใหม่ในคลังเอง ไม่ต้องผ่านขั้นตอนอนุมัติ
         เพราะ field ที่มีปัญหาจริงจะโดนจับตอนเอาไปสร้าง Config Template แล้ว
         เข้า simulate/decide/approve อยู่ดี (ตัดสินใจร่วมกับทีมและพี่เลี้ยง
         2569-09 — ดู RBAC_Matrix.md changelog) `supportedModels` ต้องระบุ
@@ -637,7 +638,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์สร้าง Config Definition — เฉพาะ Role SW
+          description: ไม่มีสิทธิ์สร้าง Config Definition — เฉพาะ Role ConfigEngineer
         "409":
           description: มี field ชื่อนี้อยู่แล้วในคลัง (fieldName ซ้ำ)
 
@@ -883,7 +884,7 @@ paths:
       operationId: uploadFirmware
       summary: อัปโหลด Firmware เข้าระบบเราโดยตรง (v3.7 — ทางเดียว ไม่มีช่องทางดึงจากระบบเดิมแล้ว · v3.23 implement จริง)
       description: >-
-        **SW เท่านั้น** (resource `firmware` action `Create`) — อัปโหลดไฟล์ขึ้น
+        **FirmwareEngineer เท่านั้น** (resource `firmware` action `Create`) — อัปโหลดไฟล์ขึ้น
         Object Storage (MinIO ตอนนี้ → AWS S3 ตอนใช้งานจริง) แบบ synchronous
         แล้วตั้ง `uploadStatus` ตามผลจริง (`stored`/`failed` — ไม่ throw 500
         ถ้า Object Storage ล้มเหลว) `deviceModel` เดียวตอนอัปโหลดกลายเป็น
@@ -917,7 +918,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์อัปโหลด Firmware — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์อัปโหลด Firmware — เฉพาะ Role FirmwareEngineer เท่านั้น
 
   /firmware/{firmwareId}:
     get:
@@ -948,7 +949,7 @@ paths:
       operationId: updateFirmwareCompatibility
       summary: แก้ Compatibility Tag (v3.23)
       description: >-
-        **SW เท่านั้น** (resource `firmware` action `Update`) — แทนที่
+        **FirmwareEngineer เท่านั้น** (resource `firmware` action `Update`) — แทนที่
         `deviceModelCompatibility` ทั้ง array เสมอ (ไม่ merge กับของเดิม) แยก
         จากขั้นตอนอัปโหลด ตามชื่อ dev plan แถวที่ 23 "(อัปโหลด + Compatibility Tag)"
       parameters:
@@ -983,7 +984,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์แก้ Compatibility Tag — เฉพาะ Role SW เท่านั้น
+          description: ไม่มีสิทธิ์แก้ Compatibility Tag — เฉพาะ Role FirmwareEngineer เท่านั้น
         "404":
           description: ไม่พบ Firmware นี้
 
@@ -993,7 +994,7 @@ paths:
       operationId: simulateFirmware
       summary: ทดสอบ Firmware กับ Device Simulator (ใช้ทั้งฝั่ง Web และ Mobile — v3.5 · v3.23 implement จริง)
       description: >-
-        SW/Operation/ST/OT (resource `firmware-simulation` action `Read` —
+        FirmwareEngineer/QAEngineer/Operation/ST/OT (resource `firmware-simulation` action `Read` —
         แยกจาก `firmware` ธรรมดา mirror `config`/`config-simulation` กัน
         Auditor/Admin ที่มีแค่ `firmware.Read` เรียกได้โดยไม่ตั้งใจ) mock
         เช็คว่า `deviceModel` ที่ระบุอยู่ใน `deviceModelCompatibility` ของ
@@ -1028,11 +1029,77 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ทดสอบ Firmware นี้ — เฉพาะ Role SW, Operation, ST, OT
+          description: ไม่มีสิทธิ์ทดสอบ Firmware นี้ — เฉพาะ Role FirmwareEngineer, QAEngineer, Operation, ST, OT
         "404":
           description: ไม่พบ Firmware นี้
         "409":
           description: uploadStatus ของ Firmware ปัจจุบันยังไม่พร้อมทดสอบ — ต้องเป็น `stored` เท่านั้น
+
+  /firmware/{firmwareId}/approve:
+    post:
+      tags: [firmware]
+      operationId: approveFirmware
+      summary: QAEngineer อนุมัติคุณภาพ Firmware (Firmware Approval Lifecycle — docs/13 §3.2)
+      description: >-
+        resource แยกเป็น `firmware-decision` action `Approve` (mirror
+        `config-decision`) — QAEngineer เท่านั้น · สถานะ `pending_review` →
+        `approved` เท่านั้น (ต้องดูผล `simulateFirmware` มาก่อนตามดุลพินิจ QA
+        — ไม่มีขั้น "ส่งต่อ" แยกแบบ Config เพราะ QA เป็นผู้ตัดสินใจคนเดียว)
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — approvalStatus เป็น approved พร้อม approvedBy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติคุณภาพ Firmware — เฉพาะ Role QAEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Firmware นี้
+        "409":
+          description: approvalStatus ของ Firmware ปัจจุบันไม่ใช่ pending_review จึงอนุมัติไม่ได้
+
+  /firmware/{firmwareId}/reject:
+    post:
+      tags: [firmware]
+      operationId: rejectFirmware
+      summary: QAEngineer ปฏิเสธคุณภาพ Firmware (Firmware Approval Lifecycle — docs/13 §3.2)
+      description: >-
+        resource เดียวกับ `approveFirmware` (`firmware-decision` action
+        `Approve`) — สถานะ `pending_review` → `rejected` เท่านั้น · ไม่มี body
+        (ยังไม่รับเหตุผล — mirror `rejectConfig`) FirmwareEngineer ต้องอัปโหลด
+        เวอร์ชันใหม่แก้ไข ไม่มีการแก้ไฟล์เดิมซ้ำ
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ — approvalStatus เป็น rejected (approvedBy ยังเป็น null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Firmware"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธคุณภาพ Firmware — เฉพาะ Role QAEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Firmware นี้
+        "409":
+          description: approvalStatus ของ Firmware ปัจจุบันไม่ใช่ pending_review จึงปฏิเสธไม่ได้
 
   /devices:
     get:
@@ -1332,8 +1399,9 @@ paths:
       operationId: listAuditLogs
       summary: ประวัติการทำงานแบบ mutation-only (list + filter) — v3.19
       description: >-
-        ทุก Role ยกเว้น **SW** (RBAC_Matrix.md §2 แถว "Audit Log" — SW เป็น "-"
-        ทั้งแถว) resource `audit-logs` action Read · filter ทุกตัว optional —
+        ทุก Role ยกเว้น **ConfigEngineer/FirmwareEngineer/QAEngineer**
+        (RBAC_Matrix.md §2 แถว "Audit Log" — เดิม SW ตัวเดียวก่อนแยก role
+        เป็น "-" ทั้งแถว) resource `audit-logs` action Read · filter ทุกตัว optional —
         ไม่ส่งอะไรมา = คืนทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน) · ไม่
         join ชื่อผู้ใช้มาให้ (คืนแค่ userId ดิบ) — client resolve ชื่อเอง
       parameters:
@@ -1372,7 +1440,7 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: Role ไม่มีสิทธิ์ audit-logs.Read (เช่น SW)
+          description: Role ไม่มีสิทธิ์ audit-logs.Read (เช่น ConfigEngineer)
 
   /users:
     get:
@@ -1469,7 +1537,11 @@ paths:
         (แก้ไข 2026-09-14 หลัง Sprint 3 #23/PR #151 — ต้องระบุ `firmwareId`
         แทน `configId`, Firmware ต้อง `uploadStatus: stored` และอุปกรณ์
         เป้าหมายต้องมี `deviceModel` อยู่ใน `deviceModelCompatibility` ของ
-        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้)
+        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้) ·
+        **แก้ไข 2026-09-17 (Firmware Approval Lifecycle, docs/13 §3.2):**
+        Firmware ต้อง `approvalStatus: approved` (QAEngineer อนุมัติคุณภาพ
+        แล้ว) ควบคู่กับ `uploadStatus: stored` ด้วย — เช็คทั้งสองเงื่อนไข
+        แยกกัน คนละมิติกัน
       requestBody:
         required: true
         content:
@@ -1496,9 +1568,9 @@ paths:
         "409":
           description: >-
             Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรือ Firmware
-            ยัง `uploadStatus` ไม่ใช่ `stored` หรืออุปกรณ์เป้าหมายบางเครื่อง
-            ยังไม่ installed หรือรุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก
-            (รวมทุกปัญหาไว้ในข้อความเดียว)
+            ยัง `uploadStatus` ไม่ใช่ `stored` หรือ `approvalStatus` ไม่ใช่
+            `approved` หรืออุปกรณ์เป้าหมายบางเครื่อง ยังไม่ installed หรือ
+            รุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก (รวมทุกปัญหาไว้ในข้อความเดียว)
 
   /campaigns/{id}:
     get:
@@ -1554,9 +1626,11 @@ components:
           # (feature/rbac-role-table, 2026-08-28) Admin สร้าง Role ใหม่ผ่านหน้า
           # User/Role Management ได้เอง ค่า role ที่ส่งกลับมาจึงไม่ใช่ค่าคงที่ 6 ตัวอีกต่อไป
           description: >-
-            Role code ของผู้ใช้ (เช่น SW, Operation, ST, OT, Auditor, Admin,
-            SuperAdmin หรือ role อื่นที่ Admin สร้างเพิ่มภายหลัง)
-          example: SW
+            Role code ของผู้ใช้ (เช่น ConfigEngineer, FirmwareEngineer,
+            QAEngineer, Operation, ST, OT, Auditor, Admin, SuperAdmin — เดิมมี
+            SW ตัวเดียวก่อนแยกเป็น 3 role ตาม docs/13_Role_Redesign_Proposal.md
+            — หรือ role อื่นที่ Admin สร้างเพิ่มภายหลัง)
+          example: ConfigEngineer
 
     AuditLogEntry:
       type: object
@@ -1747,7 +1821,7 @@ components:
           description: ค่า field ตาม Config Definition Lookup (เช่น APN1, MTYP, SIM1)
         createdBy:
           type: string
-          description: user id ของ SW ที่สร้าง Config นี้ (server กำหนดจาก JWT)
+          description: user id ของ ConfigEngineer ที่สร้าง Config นี้ (server กำหนดจาก JWT)
         approvedBy:
           type: string
           nullable: true
@@ -1759,7 +1833,7 @@ components:
           format: uuid
           nullable: true
           description: >-
-            user id ของ Operation ที่ SW เจาะจงให้ดู Config นี้เป็นพิเศษ (v3.19 —
+            user id ของ Operation ที่ ConfigEngineer เจาะจงให้ดู Config นี้เป็นพิเศษ (v3.19 —
             Approval Center #19) · null = ไม่เจาะจง · ไม่ผูกมัด Operation คนอื่น
             ก็ approve ได้ · ตั้งค่าตอน decideConfig(passed:true) · Web resolve
             ชื่อจาก GET /users?role=Operation เอง
@@ -1810,7 +1884,7 @@ components:
       description: >-
         คำขอลบ Config อัตโนมัติ (docs/11 Part A) — ตรงกับ Prisma model
         ConfigDeletionRequest · scheduled job สร้างเป็น `pending` · SuperAdmin
-        approve (soft delete) / reject (cooldown) · SW/ผู้สร้าง keep -> cancelled
+        approve (soft delete) / reject (cooldown) · ConfigEngineer/ผู้สร้าง keep -> cancelled
       required: [id, configId, reason, status, detectedAt]
       properties:
         id:
@@ -2087,7 +2161,9 @@ components:
         1 ไฟล์ Firmware ที่อัปโหลดเข้าระบบ (v3.23) — `objectKey`/
         `originalFilename`/`fileSizeBytes` ปิด gap ที่ `01_GPS_Build_Reference.md`
         §3 ระบุไว้แต่แรกว่าต้องมี "path ใน Object Storage" แต่ schema เดิม
-        (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว
+        (ก่อน Sprint 3 #23) ไม่มี field เก็บ reference ไฟล์เลยสักตัว ·
+        `approvalStatus`/`approvedBy` เพิ่มโดย Firmware Approval Lifecycle
+        (docs/13_Role_Redesign_Proposal.md §3.2 — PR ถัดจาก #178)
       required:
         [
           id,
@@ -2100,6 +2176,8 @@ components:
           fileSizeBytes,
           uploadedBy,
           uploadedAt,
+          approvalStatus,
+          approvedBy,
         ]
       properties:
         id:
@@ -2137,6 +2215,22 @@ components:
         uploadedAt:
           type: string
           format: date-time
+        approvalStatus:
+          type: string
+          description: >-
+            สถานะอนุมัติคุณภาพ (Firmware Approval Lifecycle, docs/13 §3.2) —
+            คนละมิติกับ uploadStatus ด้านบน (uploadStatus = ผลทางเทคนิคของ
+            การอัปโหลด, approvalStatus = QAEngineer ตรวจคุณภาพแล้วหรือยัง)
+            ต้อง `approved` ควบคู่กับ uploadStatus `stored` ถึงใช้สร้าง
+            Campaign ได้ (`createCampaign`)
+          enum: [pending_review, approved, rejected]
+        approvedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            user id ของ QAEngineer ที่อนุมัติ — null จนกว่าจะถูกอนุมัติ
+            (ตอน reject ก็ยังเป็น null เช่นกัน — ไม่มีใคร "อนุมัติ" การ reject)
 
     SimulationResult:
       type: object

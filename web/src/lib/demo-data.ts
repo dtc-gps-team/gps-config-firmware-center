@@ -53,12 +53,12 @@ export const DEMO_DASHBOARD_SUMMARY: {
 
 export const DEMO_DASHBOARD_ACTIVITY = [
   { time: "09:24", text: "operation.test อนุมัติ Config GT06N/TCP (v3)" },
-  { time: "08:51", text: "sw.test รัน simulation Config GT06L/TCP · ผ่าน" },
+  { time: "08:51", text: "config.test รัน simulation Config GT06L/TCP · ผ่าน" },
   {
     time: "08:10",
     text: "ระบบสร้าง Incident: อุปกรณ์ DEV-0042 sync ไม่สำเร็จ",
   },
-  { time: "เมื่อวาน", text: "sw.test สร้าง Config ใหม่ GT06N/TCP" },
+  { time: "เมื่อวาน", text: "config.test สร้าง Config ใหม่ GT06N/TCP" },
   { time: "เมื่อวาน", text: "operation.test เริ่ม Campaign 'นำร่องภาคเหนือ'" },
 ];
 
@@ -170,7 +170,17 @@ export const DEMO_INCIDENTS = [
 /* ---------------------------------------------------------------- */
 
 export const DEMO_USERS = [
-  { username: "sw.test", fullName: "SW Tester", role: "SW" },
+  {
+    username: "config.test",
+    fullName: "Config Engineer Tester",
+    role: "ConfigEngineer",
+  },
+  {
+    username: "firmware.test",
+    fullName: "Firmware Engineer Tester",
+    role: "FirmwareEngineer",
+  },
+  { username: "qa.test", fullName: "QA Engineer Tester", role: "QAEngineer" },
   {
     username: "operation.test",
     fullName: "Operation Tester",

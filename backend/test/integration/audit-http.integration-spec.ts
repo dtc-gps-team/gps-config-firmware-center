@@ -81,10 +81,10 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
     await request(app.getHttpServer()).get('/api/v1/audit-logs').expect(401);
   });
 
-  it('role ไม่มี audit-logs.Read (เช่น SW) -> 403', async () => {
-    const user = await makeUser(prisma, { role: 'SW' });
-    await grant('SW', ActionType.Read, 'config');
-    const token = tokenFor(user.id, 'SW');
+  it('role ไม่มี audit-logs.Read (เช่น ConfigEngineer) -> 403', async () => {
+    const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+    await grant('ConfigEngineer', ActionType.Read, 'config');
+    const token = tokenFor(user.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
       .get('/api/v1/audit-logs')
@@ -93,7 +93,7 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
   });
 
   it('Auditor (ได้ audit-logs.Read) -> list ทั้งหมด เรียง createdAt desc', async () => {
-    const actor = await makeUser(prisma, { role: 'SW' });
+    const actor = await makeUser(prisma, { role: 'ConfigEngineer' });
     await prisma.auditLog.create({
       data: {
         userId: actor.id,
@@ -123,7 +123,7 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
   });
 
   it('filter auditModule + action', async () => {
-    const actor = await makeUser(prisma, { role: 'SW' });
+    const actor = await makeUser(prisma, { role: 'ConfigEngineer' });
     await prisma.auditLog.create({
       data: { userId: actor.id, auditModule: 'config', action: 'create' },
     });
@@ -149,8 +149,8 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
   });
 
   it('filter userId', async () => {
-    const actorA = await makeUser(prisma, { role: 'SW' });
-    const actorB = await makeUser(prisma, { role: 'SW' });
+    const actorA = await makeUser(prisma, { role: 'ConfigEngineer' });
+    const actorB = await makeUser(prisma, { role: 'ConfigEngineer' });
     await prisma.auditLog.create({
       data: { userId: actorA.id, auditModule: 'config', action: 'create' },
     });

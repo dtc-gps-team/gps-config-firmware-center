@@ -17,14 +17,17 @@ describe('AuthController', () => {
   });
 
   it('login: ส่งต่อ username/password ให้ service แล้วคืนผลตรงๆ', async () => {
-    service.login.mockResolvedValue({ accessToken: 'token', role: 'SW' });
+    service.login.mockResolvedValue({
+      accessToken: 'token',
+      role: 'ConfigEngineer',
+    });
 
     const result = await controller.login({
-      username: 'sw.test',
+      username: 'config.test',
       password: 'password123',
     });
 
-    expect(service.login).toHaveBeenCalledWith('sw.test', 'password123');
-    expect(result).toEqual({ accessToken: 'token', role: 'SW' });
+    expect(service.login).toHaveBeenCalledWith('config.test', 'password123');
+    expect(result).toEqual({ accessToken: 'token', role: 'ConfigEngineer' });
   });
 });

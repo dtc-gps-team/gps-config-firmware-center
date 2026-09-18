@@ -46,20 +46,20 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
   });
 
   it('Config.createdBy เป็น required relation (ON DELETE RESTRICT) -> ลบ User ที่ยังมี Config อ้างอิงอยู่ไม่ได้', async () => {
-    const sw = await makeUser(prisma, { role: 'SW' });
+    const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
     await prisma.config.create({
       data: {
         name: `cfg-${randomUUID()}`,
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: sw.id,
+        createdBy: configEngineer.id,
       },
     });
 
     expect.assertions(2);
     try {
-      await prisma.user.delete({ where: { id: sw.id } });
+      await prisma.user.delete({ where: { id: configEngineer.id } });
     } catch (err) {
       expect(err).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
       expect((err as Prisma.PrismaClientKnownRequestError).code).toBe('P2003');
@@ -67,7 +67,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
   });
 
   it('Campaign.configId เป็น optional relation (ON DELETE SET NULL) -> ลบ Config แล้ว Campaign เหลืออยู่พร้อม configId เป็น null', async () => {
-    const sw = await makeUser(prisma, { role: 'SW' });
+    const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
     const operation = await makeUser(prisma, { role: 'Operation' });
 
     const config = await prisma.config.create({
@@ -76,7 +76,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: {},
-        createdBy: sw.id,
+        createdBy: configEngineer.id,
       },
     });
 
@@ -98,7 +98,9 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
   });
 
   it('Incident.relatedFirmwareId เป็น optional relation (ON DELETE SET NULL) -> ลบ Firmware แล้ว Incident เหลืออยู่พร้อม relatedFirmwareId เป็น null', async () => {
-    const sw = await makeUser(prisma, { role: 'SW' });
+    const firmwareEngineer = await makeUser(prisma, {
+      role: 'FirmwareEngineer',
+    });
 
     const firmware = await prisma.firmware.create({
       data: {
@@ -107,7 +109,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
         objectKey: 'firmware/test/1.2.3.bin',
         originalFilename: '1.2.3.bin',
         fileSizeBytes: 1024,
-        uploadedBy: sw.id,
+        uploadedBy: firmwareEngineer.id,
       },
     });
 

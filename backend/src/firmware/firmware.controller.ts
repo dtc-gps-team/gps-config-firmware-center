@@ -37,7 +37,7 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 }
 
 // Sprint 3 #23 (Firmware Repository) — RBAC_Matrix.md §2 แถว "Firmware
-// Repository": SW = C, R, U · role อื่นทั้งหมด = R · resource `firmware`
+// Repository": FirmwareEngineer = C, R, U · role อื่นทั้งหมด = R · resource `firmware`
 // แยกจาก `firmware-simulation` (mirror `config`/`config-simulation`) เพราะ
 // simulate ไม่เปิดให้ Auditor/Admin ที่มีแค่ firmware.Read เรียกได้
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -97,5 +97,32 @@ export class FirmwareController {
     @Body() dto: SimulateFirmwareDto,
   ): Promise<SimulationResult> {
     return this.firmwareService.simulate(id, dto.deviceModel);
+  }
+
+  // Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) —
+  // resource แยกเป็น 'firmware-decision' (mirror 'config-decision') กัน
+  // FirmwareEngineer ที่มีแค่ firmware.Read/Update ใช้ endpoint นี้ได้โดยไม่
+  // ตั้งใจ · ครอบคลุมทั้ง approve/reject ด้วย action Approve เดียว (ตรงกับที่
+  // seed ไว้ — grant('QAEngineer', 'firmware-decision', 'Approve')) mirror
+  // ConfigController.approve/reject ที่ใช้ 'config' action Approve ตัวเดียว
+  // ครอบคลุมทั้งคู่เหมือนกัน
+  @Post(':id/approve')
+  @RequirePermission('firmware-decision', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Firmware> {
+    return this.firmwareService.approve(id, toActor(req));
+  }
+
+  @Post(':id/reject')
+  @RequirePermission('firmware-decision', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Firmware> {
+    return this.firmwareService.reject(id, toActor(req));
   }
 }

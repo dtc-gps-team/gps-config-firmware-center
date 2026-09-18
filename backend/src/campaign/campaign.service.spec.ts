@@ -44,6 +44,7 @@ const storedFirmware = {
   version: '1.2.3',
   deviceModelCompatibility: ['GT06N'],
   uploadStatus: 'stored' as const,
+  approvalStatus: 'approved' as const,
 };
 
 const sampleCampaign: Campaign = {
@@ -289,6 +290,17 @@ describe('CampaignService', () => {
       firmware.findUnique.mockResolvedValue({
         ...storedFirmware,
         uploadStatus: 'pending',
+      });
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('Firmware approvalStatus ไม่ใช่ approved (เช่น pending_review) -> ConflictException', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...storedFirmware,
+        approvalStatus: 'pending_review',
       });
 
       await expect(service.create(firmwareDto(), operation)).rejects.toThrow(

@@ -10,7 +10,7 @@ import { ActingUser, FirmwareService } from './firmware.service';
 import { FirmwareStorageService } from './firmware-storage.service';
 import { FIRMWARE_SIMULATOR } from './firmware-simulator';
 
-const actor: ActingUser = { id: 'sw-1', role: 'SW' };
+const actor: ActingUser = { id: 'fe-1', role: 'FirmwareEngineer' };
 
 const sampleFirmware: Firmware = {
   id: 'fw-1',
@@ -23,7 +23,11 @@ const sampleFirmware: Firmware = {
   fileSizeBytes: 1024,
   uploadedBy: actor.id,
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
+  approvalStatus: 'pending_review',
+  approvedBy: null,
 };
+
+const qaActor: ActingUser = { id: 'qa-1', role: 'QAEngineer' };
 
 function makeFile(
   overrides: Partial<Express.Multer.File> = {},
@@ -284,6 +288,109 @@ describe('FirmwareService', () => {
       firmware.findUnique.mockResolvedValue(null);
 
       await expect(service.findOne('missing-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('approve', () => {
+    it('approvalStatus pending_review -> อัปเดตเป็น approved พร้อม approvedBy', async () => {
+      firmware.findUnique.mockResolvedValue(sampleFirmware);
+      firmware.update.mockResolvedValue({
+        ...sampleFirmware,
+        approvalStatus: 'approved',
+        approvedBy: qaActor.id,
+      });
+
+      const result = await service.approve(sampleFirmware.id, qaActor);
+
+      expect(result.approvalStatus).toBe('approved');
+      expect(firmware.update).toHaveBeenCalledWith({
+        where: { id: sampleFirmware.id },
+        data: { approvalStatus: 'approved', approvedBy: qaActor.id },
+      });
+    });
+
+    it('เขียน AuditLog action approve', async () => {
+      firmware.findUnique.mockResolvedValue(sampleFirmware);
+      firmware.update.mockResolvedValue(sampleFirmware);
+
+      await service.approve(sampleFirmware.id, qaActor);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: qaActor.id,
+          auditModule: 'firmware',
+          action: 'approve',
+        },
+      });
+    });
+
+    it('approvalStatus ไม่ใช่ pending_review (approved ไปแล้ว) -> ConflictException', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...sampleFirmware,
+        approvalStatus: 'approved',
+      });
+
+      await expect(service.approve(sampleFirmware.id, qaActor)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(firmware.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบ Firmware -> NotFoundException', async () => {
+      firmware.findUnique.mockResolvedValue(null);
+
+      await expect(service.approve('missing-id', qaActor)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('reject', () => {
+    it('approvalStatus pending_review -> อัปเดตเป็น rejected โดยไม่ตั้ง approvedBy', async () => {
+      firmware.findUnique.mockResolvedValue(sampleFirmware);
+      firmware.update.mockResolvedValue({
+        ...sampleFirmware,
+        approvalStatus: 'rejected',
+      });
+
+      const result = await service.reject(sampleFirmware.id, qaActor);
+
+      expect(result.approvalStatus).toBe('rejected');
+      expect(firmware.update).toHaveBeenCalledWith({
+        where: { id: sampleFirmware.id },
+        data: { approvalStatus: 'rejected' },
+      });
+    });
+
+    it('เขียน AuditLog action reject', async () => {
+      firmware.findUnique.mockResolvedValue(sampleFirmware);
+      firmware.update.mockResolvedValue(sampleFirmware);
+
+      await service.reject(sampleFirmware.id, qaActor);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: { userId: qaActor.id, auditModule: 'firmware', action: 'reject' },
+      });
+    });
+
+    it('approvalStatus ไม่ใช่ pending_review (rejected ไปแล้ว) -> ConflictException', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...sampleFirmware,
+        approvalStatus: 'rejected',
+      });
+
+      await expect(service.reject(sampleFirmware.id, qaActor)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(firmware.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบ Firmware -> NotFoundException', async () => {
+      firmware.findUnique.mockResolvedValue(null);
+
+      await expect(service.reject('missing-id', qaActor)).rejects.toThrow(
         NotFoundException,
       );
     });

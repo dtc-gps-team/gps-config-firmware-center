@@ -13,7 +13,7 @@ import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
 // `config` module (controller + service + module)
 //
 // `POST /config-definitions` (ใหม่ — ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09):
-// SW สร้าง field definition เองได้เลย ไม่ต้องผ่านอนุมัติ เพราะ field ที่มี
+// ConfigEngineer สร้าง field definition เองได้เลย ไม่ต้องผ่านอนุมัติ เพราะ field ที่มี
 // ปัญหาจริงจะโดนจับตอนเอาไปสร้าง Config Template แล้วเข้า simulate/approve
 // อยู่ดี — ดู RBAC_Matrix.md changelog
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -23,7 +23,7 @@ export class ConfigDefinitionController {
     private readonly configDefinitionService: ConfigDefinitionService,
   ) {}
 
-  // resource `config-definition` action Read — เปิดให้ SW/Operation/ST/OT
+  // resource `config-definition` action Read — เปิดให้ ConfigEngineer/Operation/ST/OT
   // (ทุก role ที่ทำงานกับ Config) เพราะเป็นแค่ catalog ไม่ใช่ข้อมูลอ่อนไหว
   // แพทเทิร์นเดียวกับ `config-simulation` ที่เพิ่งเพิ่มใน PR #49 (ดู prisma/seed.ts)
   @Get()
@@ -32,7 +32,7 @@ export class ConfigDefinitionController {
     return this.configDefinitionService.findAll();
   }
 
-  // resource `config-definition` action Create — เฉพาะ SW (คนเดียวที่รู้ว่า
+  // resource `config-definition` action Create — เฉพาะ ConfigEngineer (คนเดียวที่รู้ว่า
   // ต้องสร้าง field อะไรใหม่บ้างตามที่ใช้จริง) ไม่มีขั้นตอนอนุมัติ
   @Post()
   @RequirePermission('config-definition', ActionType.Create)

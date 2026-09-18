@@ -16,7 +16,10 @@ import {
   type FirmwareSimulator,
   type SimulationResult,
 } from './firmware-simulator';
-import { SIMULATABLE_FIRMWARE_STATUS } from './firmware-status';
+import {
+  DECIDABLE_FIRMWARE_APPROVAL_STATUS,
+  SIMULATABLE_FIRMWARE_STATUS,
+} from './firmware-status';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload เสมอ (แต่ละ module ประกาศ
  * interface นี้เองซ้ำกัน ไม่ import ข้าม module — pattern เดียวกับ
@@ -55,7 +58,7 @@ export class FirmwareService {
 
   /**
    * `POST /firmware` (v3.7 — อัปโหลดตรงเข้าระบบเราทางเดียว ไม่มีช่องทาง
-   * "ดึงจากระบบเดิม" แล้ว) — SW เท่านั้น อัปโหลดไฟล์ขึ้น Object Storage
+   * "ดึงจากระบบเดิม" แล้ว) — FirmwareEngineer เท่านั้น อัปโหลดไฟล์ขึ้น Object Storage
    * (MinIO/S3) แบบ synchronous แล้วตั้ง `uploadStatus` ตามผลจริง — ไม่ throw
    * 500 ถ้า Object Storage ล้มเหลว เพราะ `uploadStatus: failed` มีไว้แทนค่านี้
    * อยู่แล้ว (client เห็นสถานะจริงบนหน้าเว็บได้ทันที ไม่ใช่แค่ error ทั่วไป)
@@ -119,7 +122,7 @@ export class FirmwareService {
     return created;
   }
 
-  /** `PATCH /firmware/{id}` — SW แก้ Compatibility Tag ทีหลัง (แทนที่ทั้ง
+  /** `PATCH /firmware/{id}` — FirmwareEngineer แก้ Compatibility Tag ทีหลัง (แทนที่ทั้ง
    * array เสมอ ไม่ merge — ดู comment เหนือ DTO) */
   async updateCompatibility(
     id: string,
@@ -155,6 +158,56 @@ export class FirmwareService {
       deviceModel,
       deviceModelCompatibility: firmware.deviceModelCompatibility,
     });
+  }
+
+  /**
+   * `POST /firmware/{id}/approve` — QAEngineer อนุมัติคุณภาพ Firmware หลังดู
+   * ผล `simulate` แล้ว (docs/13_Role_Redesign_Proposal.md §3.2) — ต้อง
+   * `approvalStatus: pending_review` เท่านั้น (mirror `ConfigService.approve`
+   * แต่ไม่มีขั้น `decide` แยกก่อนหน้าแบบ Config เพราะที่นี่มีผู้ตัดสินใจแค่คน
+   * เดียว ไม่ใช่ 2 actor ต่อกัน — ไม่มี ConfigVersion-style snapshot เพราะ
+   * Firmware แก้ไฟล์เดิมซ้ำไม่ได้อยู่แล้ว ไม่มีอะไรต้อง snapshot เพิ่ม)
+   */
+  async approve(id: string, actor: ActingUser): Promise<Firmware> {
+    const firmware = await this.findOne(id);
+
+    if (firmware.approvalStatus !== DECIDABLE_FIRMWARE_APPROVAL_STATUS) {
+      throw new ConflictException(
+        `สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ไม่ใช่ ${DECIDABLE_FIRMWARE_APPROVAL_STATUS} จึงอนุมัติไม่ได้`,
+      );
+    }
+
+    const updated = await this.prisma.firmware.update({
+      where: { id },
+      data: { approvalStatus: 'approved', approvedBy: actor.id },
+    });
+
+    await this.logAudit('approve', actor.id);
+    return updated;
+  }
+
+  /**
+   * `POST /firmware/{id}/reject` — QAEngineer ปฏิเสธคุณภาพ Firmware — ต้อง
+   * `approvalStatus: pending_review` เท่านั้น (mirror `ConfigService.reject`)
+   * ไม่ตั้งค่า `approvedBy` (คงเป็น null — ไม่มีใคร "อนุมัติ" การ reject)
+   * Firmware Engineer ต้องอัปโหลดเวอร์ชันใหม่แก้ไข ไม่มีการแก้ไฟล์เดิมซ้ำ
+   */
+  async reject(id: string, actor: ActingUser): Promise<Firmware> {
+    const firmware = await this.findOne(id);
+
+    if (firmware.approvalStatus !== DECIDABLE_FIRMWARE_APPROVAL_STATUS) {
+      throw new ConflictException(
+        `สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ไม่ใช่ ${DECIDABLE_FIRMWARE_APPROVAL_STATUS} จึงปฏิเสธไม่ได้`,
+      );
+    }
+
+    const updated = await this.prisma.firmware.update({
+      where: { id },
+      data: { approvalStatus: 'rejected' },
+    });
+
+    await this.logAudit('reject', actor.id);
+    return updated;
   }
 
   private async logAudit(action: string, userId: string): Promise<void> {

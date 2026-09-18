@@ -66,11 +66,13 @@ describe('TaskService (integration — real postgres)', () => {
   });
 
   it('create → role อื่นที่ไม่ใช่ Operation สร้างงานไม่ได้ (403)', async () => {
-    const swUser = await makeUser(prisma, { role: 'SW' });
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
     await expect(
       service.create(
-        { title: 'x', assignedTo: swUser.id },
-        actorFor(swUser, 'SW'),
+        { title: 'x', assignedTo: configEngineerUser.id },
+        actorFor(configEngineerUser, 'ConfigEngineer'),
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(await prisma.task.count()).toBe(0);

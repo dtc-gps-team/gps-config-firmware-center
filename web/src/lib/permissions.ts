@@ -17,7 +17,9 @@
  */
 
 export type Role =
-  | "SW"
+  | "ConfigEngineer"
+  | "FirmwareEngineer"
+  | "QAEngineer"
   | "Operation"
   | "ST"
   | "OT"
@@ -27,23 +29,26 @@ export type Role =
 
 /**
  * ปุ่ม "สร้าง Config ใหม่" / "Import Config" — Section 2 แถว Config Editor,
- * Config Import: มีแค่ SW ที่มีสิทธิ์ Create
+ * Config Import: มีแค่ ConfigEngineer ที่มีสิทธิ์ Create (เดิม SW ก่อนแยก role
+ * — docs/13_Role_Redesign_Proposal.md §3.1)
  */
 export function canCreateConfig(role: string | null | undefined): boolean {
-  return role === "SW";
+  return role === "ConfigEngineer";
 }
 
 /**
- * ปุ่ม "แก้ไข Config" (สถานะ draft) — Section 2 footnote ²: SW ทุกคนแก้ไข
- * draft ร่วมกันได้ ไม่ scope ตาม creator (ไม่ต้องเทียบ user id เจ้าของ)
+ * ปุ่ม "แก้ไข Config" (สถานะ draft) — Section 2 footnote ²: ConfigEngineer
+ * ทุกคนแก้ไข draft ร่วมกันได้ ไม่ scope ตาม creator (ไม่ต้องเทียบ user id
+ * เจ้าของ)
  */
 export function canUpdateConfig(role: string | null | undefined): boolean {
-  return role === "SW";
+  return role === "ConfigEngineer";
 }
 
 /**
  * ปุ่ม "Approve" / "Reject" ใน Approval Center — Section 2 + Section 5 ข้อ 1
- * (Separation of Duty): Operation เท่านั้น — SW ห้ามอนุมัติ Config ของตัวเอง
+ * (Separation of Duty): Operation เท่านั้น — ConfigEngineer ห้ามอนุมัติ
+ * Config ของตัวเอง
  */
 export function canDecideConfigApproval(
   role: string | null | undefined,
@@ -52,35 +57,53 @@ export function canDecideConfigApproval(
 }
 
 /**
- * ปุ่ม "Upload Firmware ใหม่" — Section 2 แถว Firmware Repository: มีแค่ SW
- * ที่มีสิทธิ์ Create
+ * ปุ่ม "Upload Firmware ใหม่" — Section 2 แถว Firmware Repository: มีแค่
+ * FirmwareEngineer ที่มีสิทธิ์ Create (เดิม SW ก่อนแยก role — docs/13 §3.1)
  */
 export function canUploadFirmware(role: string | null | undefined): boolean {
-  return role === "SW";
+  return role === "FirmwareEngineer";
 }
 
 /**
  * ฟอร์มแก้ Compatibility Tag ของ Firmware — RBAC_Matrix.md ตาราง 4.1
- * `PATCH /firmware/{firmwareId}`: SW เท่านั้น (resource `firmware` action
- * `Update`) แยกฟังก์ชันจาก `canUploadFirmware` แม้ role set จะเหมือนกันตอนนี้
- * เพราะ backend เองก็แยก action Create/Update ไว้คนละสิทธิ์
+ * `PATCH /firmware/{firmwareId}`: FirmwareEngineer เท่านั้น (resource
+ * `firmware` action `Update`) แยกฟังก์ชันจาก `canUploadFirmware` แม้ role set
+ * จะเหมือนกันตอนนี้ เพราะ backend เองก็แยก action Create/Update ไว้คนละสิทธิ์
  */
 export function canUpdateFirmwareCompatibility(
   role: string | null | undefined,
 ): boolean {
-  return role === "SW";
+  return role === "FirmwareEngineer";
 }
 
 /**
  * ปุ่ม "ทดสอบ Firmware" — RBAC_Matrix.md ตาราง 4.1 `POST /firmware/{firmwareId}/simulate`:
- * resource แยก `firmware-simulation` (ไม่ใช่ `firmware` เฉยๆ) — SW/Operation/ST/OT
- * เท่านั้น กัน Auditor/Admin ที่มีแค่ `firmware.Read` เห็นปุ่มนี้โดยไม่ตั้งใจ
- * (mirror `config`/`config-simulation`)
+ * resource แยก `firmware-simulation` (ไม่ใช่ `firmware` เฉยๆ) —
+ * FirmwareEngineer/QAEngineer/Operation/ST/OT เท่านั้น กัน Auditor/Admin ที่มี
+ * แค่ `firmware.Read` เห็นปุ่มนี้โดยไม่ตั้งใจ (mirror `config`/`config-simulation`)
+ * — QAEngineer เพิ่มเข้ามาใหม่ (docs/13 §3.1): ต้องดูผล simulation ก่อนตัดสินใจ
+ * อนุมัติคุณภาพ
  */
 export function canSimulateFirmware(role: string | null | undefined): boolean {
   return (
-    role === "SW" || role === "Operation" || role === "ST" || role === "OT"
+    role === "FirmwareEngineer" ||
+    role === "QAEngineer" ||
+    role === "Operation" ||
+    role === "ST" ||
+    role === "OT"
   );
+}
+
+/**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คุณภาพ Firmware — RBAC_Matrix.md ตาราง 4.1
+ * `POST /firmware/{firmwareId}/approve` / `.../reject`: resource แยก
+ * `firmware-decision` (mirror `config-decision`) — QAEngineer เท่านั้น
+ * (docs/13_Role_Redesign_Proposal.md §3.2 — Firmware Approval Lifecycle)
+ */
+export function canDecideFirmwareApproval(
+  role: string | null | undefined,
+): boolean {
+  return role === "QAEngineer";
 }
 
 /**
@@ -93,12 +116,18 @@ export function canOverrideDevice(role: string | null | undefined): boolean {
 }
 
 /**
- * หน้า Audit Log — Section 2 แถว Audit Log: ทุก Role มี R ยกเว้น **SW** ที่
- * เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย) ต่างจาก 4 หน้าด้านบนที่ทุก Role read
+ * หน้า Audit Log — Section 2 แถว Audit Log: ทุก Role มี R ยกเว้น
+ * **ConfigEngineer/FirmwareEngineer/QAEngineer** (เดิม SW ตัวเดียวก่อนแยก role
+ * — docs/13 §3.1) ที่เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย ทั้ง 3 role ที่แยก
+ * ออกมาสืบทอดข้อจำกัดนี้เหมือนกันหมด) ต่างจาก 4 หน้าด้านบนที่ทุก Role read
  * ได้หมด จุดนี้ต้อง gate ทั้งหน้า ไม่ใช่แค่ปุ่ม — ใช้คู่กับ RoleGuard
  */
 export function canAccessAuditLog(role: string | null | undefined): boolean {
-  return role !== "SW";
+  return (
+    role !== "ConfigEngineer" &&
+    role !== "FirmwareEngineer" &&
+    role !== "QAEngineer"
+  );
 }
 
 /**
@@ -144,15 +173,17 @@ export function canEditIncidentTechnical(
 
 /**
  * หน้าคลัง Parameter (Config Definition Lookup) — RBAC_Matrix.md ตาราง 4.1
- * `GET /config-definitions`: SW, Operation, ST, OT เท่านั้น — Auditor/Admin
- * ยังไม่ให้เพราะยังไม่มี use case (ต่างจากหน้าอื่นที่ทุก Role อ่านได้หมด)
- * ต้อง gate ทั้งหน้า — ใช้คู่กับ RoleGuard
+ * `GET /config-definitions`: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม
+ * SW ก่อนแยก role — docs/13 §3.1 · FirmwareEngineer/QAEngineer ไม่ได้ เพราะ
+ * ไม่ทำงานกับ Config) — Auditor/Admin ยังไม่ให้เพราะยังไม่มี use case
+ * (ต่างจากหน้าอื่นที่ทุก Role อ่านได้หมด) ต้อง gate ทั้งหน้า — ใช้คู่กับ
+ * RoleGuard
  */
 export function canAccessParameterLibrary(
   role: string | null | undefined,
 ): boolean {
   return (
-    role === "SW" ||
+    role === "ConfigEngineer" ||
     role === "Operation" ||
     role === "ST" ||
     role === "OT"
@@ -161,11 +192,11 @@ export function canAccessParameterLibrary(
 
 /**
  * ปุ่ม/ฟอร์ม "สร้าง Parameter ใหม่" — RBAC_Matrix.md ตาราง 4.1
- * `POST /config-definitions`: SW เท่านั้น (self-service ไม่ต้องผ่านอนุมัติ —
- * ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09)
+ * `POST /config-definitions`: ConfigEngineer เท่านั้น (self-service ไม่ต้อง
+ * ผ่านอนุมัติ — ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09 · เดิม SW ก่อนแยก role)
  */
 export function canCreateFieldDefinition(
   role: string | null | undefined,
 ): boolean {
-  return role === "SW";
+  return role === "ConfigEngineer";
 }
