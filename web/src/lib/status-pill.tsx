@@ -161,3 +161,12 @@ export const FIRMWARE_DEVICE_UPDATE_STATUS_TONE: Record<string, PillTone> = {
   up_to_date: "success",
   pending_update: "progress",
 };
+
+/** Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) — คนละ
+ * มิติกับ FIRMWARE_UPLOAD_STATUS_TONE ด้านบน (mirror CONFIG_STATUS_TONE ที่
+ * แยก draft/testing/approved/rejected/synced ออกจากกันชัดเจน) */
+export const FIRMWARE_APPROVAL_STATUS_TONE: Record<string, PillTone> = {
+  pending_review: "progress",
+  approved: "success",
+  rejected: "danger",
+};

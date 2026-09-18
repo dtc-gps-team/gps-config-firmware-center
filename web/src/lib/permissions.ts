@@ -95,6 +95,18 @@ export function canSimulateFirmware(role: string | null | undefined): boolean {
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คุณภาพ Firmware — RBAC_Matrix.md ตาราง 4.1
+ * `POST /firmware/{firmwareId}/approve` / `.../reject`: resource แยก
+ * `firmware-decision` (mirror `config-decision`) — QAEngineer เท่านั้น
+ * (docs/13_Role_Redesign_Proposal.md §3.2 — Firmware Approval Lifecycle)
+ */
+export function canDecideFirmwareApproval(
+  role: string | null | undefined,
+): boolean {
+  return role === "QAEngineer";
+}
+
+/**
  * Override Config/Firmware รายเครื่อง — Section 2: ST, OT เท่านั้น
  * (C, R, U, O) ยังไม่มีหน้านี้ scaffold ไว้ใน NAV_ITEMS ตอนนี้ — เตรียมไว้
  * ล่วงหน้าเผื่อเพิ่มหน้านี้ทีหลัง
