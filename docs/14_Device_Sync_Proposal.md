@@ -5,7 +5,15 @@
 > วาระประชุมยังไม่เคยพูดถึง (แบ่งงานเอกสาร, Timeline/ลำดับ PR, ร่าง endpoint contract จริง) —
 > เป้าหมายคือให้ kittiphong (B) รีวิวแนวทางทั้งหมดในที่เดียวผ่าน PR แทนการคุยกันเป็น comment
 > ต่อเนื่องเรื่อยๆ ตาม pattern เดียวกับ `docs/13_Role_Redesign_Proposal.md` — ยัง**ไม่ใช่มติสุดท้าย**
-> จนกว่า B จะรีวิวและเห็นด้วย (โดยเฉพาะเรื่อง Auth ที่ A เองเคย flag ไว้ว่าควรผ่านพี่เลี้ยงก่อน)
+> จนกว่า B จะรีวิวและเห็นด้วย
+>
+> **แก้ไข 2026-09-18:** ข้อ 3.2 (Auth) เคย flag ไว้ว่าต้องรอพี่เลี้ยง sign-off ก่อน — ทบทวนแล้วไม่
+> จำเป็น การออกแบบ/implement scheme auth ใหม่เป็นสิ่งที่ทีมตัดสินใจเองอยู่แล้วเป็นปกติในโปรเจกต์นี้
+> (ดูตัวอย่าง `JwtAuthGuard` + RBAC ทั้งระบบที่ B/A ออกแบบกันเองล้วนๆ ไม่เคยผ่านพี่เลี้ยงมาก่อนสักที)
+> สิ่งที่ยังเป็นขอบเขตของพี่เลี้ยงจริงๆ คือ**การนำไปใช้งานจริงกับอุปกรณ์ภาคสนามจริง** (แจกจ่าย/
+> จัดเก็บ key ให้อุปกรณ์นับพันเครื่องจริง, infra หมุนเวียน/เพิกถอน) ไม่ใช่ตัว scheme เอง — mirror
+> ขอบเขตเดียวกับที่ `config-sync-writer` เคยแยกไว้อยู่แล้ว (`LEGACY_SYNC_MODE`: mock/docker ทำเองได้
+> เต็มที่ มีแค่ `production` ตัวจริงที่เป็นของพี่เลี้ยง) ดูรายละเอียดที่แก้ในข้อ 3.2
 
 ---
 
@@ -61,14 +69,22 @@ actor type — อุปกรณ์ ไม่ใช่ staff ที่มี us
 (แนบ header ทุก request) และถ้าต่อยอดเป็น push ทีหลัง (แนบตอน connect/handshake) ก็ใช้กลไก
 เดียวกันต่อเนื่องได้โดยไม่ต้องคิดระบบ auth ใหม่อีกรอบ
 
-**⚠️ ยังไม่ใช่มติสุดท้าย** — นี่คือจุดที่ A เคย flag ไว้ตั้งแต่ comment แรกว่าเป็นการออกแบบ
-security ระดับ production สำหรับอุปกรณ์จริงหลายพันตัว ซึ่งเกินขอบเขตงานฝึกงานที่ตกลงกันไว้แต่
-แรก (ดู `internship-scope-mock-only` — production integration เป็นส่วนที่พี่เลี้ยงต่อยอดเอง) —
-สิ่งที่ทำได้ในรอบนี้คือ**ออกแบบ interface ให้รองรับ** (guard แยกต่างหาก, ไม่ผูกกับ JWT) ส่วน
-**implementation จริง (การ generate/แจกจ่าย/หมุนเวียน API key ให้อุปกรณ์จริงหลายพันตัว ต้องรอ
-พี่เลี้ยง sign-off ก่อนเริ่ม** — รายละเอียดที่ยังไม่ได้คิด: จะ generate key ตอนไหน (ตอน
-`registerDevice`? มี endpoint แยกต่างหาก?), เก็บ/ส่ง key ให้ทีมช่างหน้างานยังไง, หมุนเวียน/เพิกถอน
-ได้ไหมถ้า key หลุด
+**แก้ไข 2026-09-18 — ทำได้เต็มตัว ไม่ต้องรอพี่เลี้ยง:** ก่อนหน้านี้เอกสารฉบับนี้ flag ข้อนี้ไว้ว่า
+เป็นการออกแบบ security ระดับ production ต้องรอ sign-off ก่อน — ทบทวนแล้วไม่ถูกต้อง เพราะการ
+ออกแบบ auth scheme ใหม่ทั้งระบบไม่ใช่เรื่องใหม่ในโปรเจกต์นี้เลย — `JwtAuthGuard` เอง (แยก guard,
+verify token, ผูก payload เข้า request) และ RBAC ทั้งระบบ (`Role`/`RolePermission`/
+`PermissionGuard`) ก็เป็นการตัดสินใจ security design ที่ A/B ออกแบบกันเองล้วนๆ ไม่เคยผ่าน
+พี่เลี้ยงมาก่อนสักครั้ง — `DeviceApiKeyGuard` อยู่ในระดับความรับผิดชอบเดียวกันเป๊ะ
+
+**ขอบเขตที่แบ่งจริง (mirror `LEGACY_SYNC_MODE` ที่ config-sync-writer ใช้อยู่แล้ว):**
+- **ทำเองได้เต็มที่ (A/B ตัดสินใจ + implement ได้เลย):** ตัว scheme ทั้งหมด — สร้าง key ตอน
+  `registerDevice` (hash เก็บแบบเดียวกับ `User.passwordHash`), `DeviceApiKeyGuard` verify header,
+  endpoint หมุนเวียน/เพิกถอน key เป็น API ปกติที่เทสได้ครบด้วย integration test (mock อุปกรณ์ยิง
+  request มาเหมือนที่ทำกับ endpoint อื่นทุกตัวในระบบนี้)
+- **ยังเป็นของพี่เลี้ยง (production integration จริง, นอกขอบเขตฝึกงาน — ดู
+  `internship-scope-mock-only`):** การแจกจ่าย/ติดตั้ง key ให้อุปกรณ์ภาคสนามจริงนับพันเครื่อง,
+  secrets-management infra จริง (HSM ฯลฯ), policy การหมุนเวียนในระดับ operation จริง — ส่วนนี้
+  ไม่กระทบโค้ดที่ A จะเขียนเลย เป็นแค่ "ใครเอา key ไปใส่กล่องยังไง" ในโลกจริง
 
 ### 3.3 `config-sync-writer` — deprecate ทันที ไม่ทำ transition period
 
@@ -105,9 +121,10 @@ security ระดับ production สำหรับอุปกรณ์จ�
 เสนอแบ่งเป็น **3 PR ต่อเนื่อง** (mirror pattern 3-PR ของ Role Redesign ที่เพิ่งทำสำเร็จ) แทนที่
 จะทำทีเดียวก้อนใหญ่:
 
-1. **PR 1 — Schema + `DeviceApiKeyGuard` (interface เปล่า)**: เพิ่ม `Device.apiKeyHash`, guard
-   ใหม่ที่ verify key แต่ยังไม่ผูกกับ endpoint ไหน + unit test ของ guard เอง — ปลดล็อกให้ทำ PR 2
-   ได้โดยไม่ต้องรอ auth mechanism ตัวจริงชัดเจน 100% ก่อน (ยังแก้ทีหลังได้ถ้าพี่เลี้ยงเปลี่ยนใจ)
+1. **PR 1 — Schema + `DeviceApiKeyGuard` เต็มรูปแบบ**: เพิ่ม `Device.apiKeyHash`, generate key
+   ตอน `registerDevice` (endpoint ลงทะเบียนอุปกรณ์ที่ยังไม่มีตอนนี้ — ต้องทำคู่กันในนี้เลย), guard
+   ใหม่ verify header ครบ + unit/integration test เต็มชุด (mirror ความเข้มเดียวกับ
+   `JwtAuthGuard`/`PermissionGuard`) — ทำได้เต็มตัวไม่ต้องรอใคร ตามที่แก้ไว้ในข้อ 3.2
 2. **PR 2 — `GET /devices/{deviceId}/config`, `GET /devices/{deviceId}/firmware`**: endpoint
    pull จริง ผูก `DeviceApiKeyGuard` จาก PR 1 (ดู contract ร่างในข้อ 6) — เจ้าของ A (โมดูล
    `config`/`firmware`)
@@ -165,11 +182,12 @@ export interface DeviceSyncChannel {
   boot ครั้งถัดไปแยกกันไปเลย)? ยังไม่เคยคุยประเด็นนี้กับ B เลย
 - Campaign Monitor's real Failure Rate (ดูคำถามที่คุยกันก่อนหน้านี้) จะต่อกับ
   `POST /devices/{deviceId}/sync-status` นี้โดยตรงไหม หรือเป็นงานแยกทีหลัง
-- รายละเอียด API key lifecycle (generate/rotate/revoke) — รอพี่เลี้ยง
+- รายละเอียด endpoint หมุนเวียน/เพิกถอน API key (`PATCH /devices/{deviceId}/rotate-key`? ใคร
+  เรียกได้ — Admin เท่านั้นน่าจะสมเหตุสมผล) ยังไม่ได้ร่าง เป็นงานออกแบบที่ทำได้เองใน PR 1 เพิ่ม
 
 ---
 
 *เอกสารนี้เป็นข้อเสนอสรุปจาก async comment ใน issue #157 + งานออกแบบเพิ่มของ A เอง (เทียบกับ
 `docs/07_ConfigSyncWriter_Proposal.md` และ `docs/planning/01_GPS_Build_Reference.md` §4) — ยังไม่
-ได้รับการยืนยันจาก kittiphong หรือพี่เลี้ยงในหัวข้อ Auth (§3.2) รอรีวิว PR นี้ก่อนเริ่ม
-implementation จริงตามลำดับ PR ในข้อ 5*
+ได้รับการยืนยันจาก kittiphong รอรีวิว PR นี้ก่อนเริ่ม implementation จริงตามลำดับ PR ในข้อ 5
+(ข้อ 3.2 Auth ไม่ต้องรอพี่เลี้ยงแล้ว แก้ไขเหตุผลไว้ในเนื้อหาข้อนั้นแล้ว)*
