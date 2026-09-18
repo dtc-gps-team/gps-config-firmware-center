@@ -24,7 +24,6 @@ class RealAuthRepository implements AuthRepository {
 /// [UserRole.st].
 class MockAuthRepository implements AuthRepository {
   static const _rolesByPrefix = <String, UserRole>{
-    'sw': UserRole.sw,
     'op': UserRole.operation,
     'st': UserRole.st,
     'ot': UserRole.ot,

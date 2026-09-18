@@ -18,14 +18,14 @@ String _roleLabel(UserRole? role) {
     case UserRole.st:
     case UserRole.ot:
       return 'ช่างภาคสนาม';
-    case UserRole.sw:
-      return 'วิศวกรซอฟต์แวร์';
     case UserRole.operation:
       return 'ฝ่ายปฏิบัติการ';
     case UserRole.auditor:
       return 'ผู้ตรวจสอบ';
     case UserRole.admin:
       return 'ผู้ดูแลระบบ';
+    case UserRole.superAdmin:
+      return 'ผู้ดูแลระบบสูงสุด';
     case null:
       return 'ผู้ใช้งาน';
   }

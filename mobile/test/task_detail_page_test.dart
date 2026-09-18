@@ -178,11 +178,11 @@ void main() {
     expect(_saveButton(tester).onPressed, isNotNull);
   });
 
-  testWidgets('SW ไม่เห็นตัวเลือกเปลี่ยนสถานะ', (tester) async {
+  testWidgets('Operation ไม่เห็นตัวเลือกเปลี่ยนสถานะ', (tester) async {
     await _pump(
       tester,
       repo: _FakeTaskRepository(task: _makeTask()),
-      role: UserRole.sw,
+      role: UserRole.operation,
     );
 
     expect(find.byKey(const Key('task_status_save')), findsNothing);
@@ -336,19 +336,20 @@ void main() {
       expect(_confirmInstallButton, findsNothing);
     });
 
-    testWidgets('role SW (ไม่ใช่ ST/OT) -> ไม่เห็นปุ่มแม้เงื่อนไขอื่นครบ', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
-        ),
-        role: UserRole.sw,
-      );
+    testWidgets(
+      'role Operation (ไม่ใช่ ST/OT) -> ไม่เห็นปุ่มแม้เงื่อนไขอื่นครบ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.operation,
+        );
 
-      expect(_confirmInstallButton, findsNothing);
-    });
+        expect(_confirmInstallButton, findsNothing);
+      },
+    );
 
     testWidgets('deviceId เป็น null -> ไม่เห็นปุ่มแม้มี configId', (
       tester,
