@@ -24,6 +24,8 @@ String _roleLabel(UserRole? role) {
       return 'ผู้ตรวจสอบ';
     case UserRole.admin:
       return 'ผู้ดูแลระบบ';
+    case UserRole.superAdmin:
+      return 'ผู้ดูแลระบบสูงสุด';
     case null:
       return 'ผู้ใช้งาน';
   }

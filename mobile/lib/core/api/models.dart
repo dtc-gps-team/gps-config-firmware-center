@@ -3,18 +3,24 @@
 /// Keep field names, nullability and enum values in sync with the spec.
 library;
 
-/// `LoginResponse.role` enum — the 5 values in the API contract on `main`
+/// `LoginResponse.role` enum — the 6 values in the API contract on `main`
 /// (see the RBAC Matrix). `SW` was split into `ConfigEngineer`/
 /// `FirmwareEngineer`/`QAEngineer` (docs/13_Role_Redesign_Proposal.md §3.1,
 /// PR #178) — all three are Web-only, so Mobile just drops the case instead
 /// of adding new ones. No mobile-only role exists; field staff log in as ST
 /// or OT.
+///
+/// `SuperAdmin` is Web-only (RBAC_Matrix.md Section 1), same as `Admin` — but
+/// it's still parsed here so a login that somehow returns it (e.g. testing
+/// with the wrong account) gets a clear error message instead of an
+/// unhandled `ArgumentError` from `fromWire`.
 enum UserRole {
   operation('Operation'),
   st('ST'),
   ot('OT'),
   auditor('Auditor'),
-  admin('Admin');
+  admin('Admin'),
+  superAdmin('SuperAdmin');
 
   const UserRole(this.wireName);
 
