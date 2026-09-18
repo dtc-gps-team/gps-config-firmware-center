@@ -63,7 +63,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/campaigns"
@@ -72,7 +72,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           ← กลับไปรายการแคมเปญ
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">{data.name}</h1>
+          <h1 className="text-2xl font-semibold break-words">{data.name}</h1>
           <StatusPill tone={CAMPAIGN_STATUS_TONE[data.status]}>
             {statusLabel(data.status)}
           </StatusPill>
@@ -84,26 +84,38 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
 
       <CampaignApprovalPanel campaign={data} onDecided={() => void refetch()} />
 
-      <div className="rounded-xl border bg-card p-5">
-        <InfoRow label="Payload">
-          {data.payloadType === "Config"
-            ? (configQuery.data?.name ?? data.configId ?? "—")
-            : (data.firmwareId ?? "—")}
-        </InfoRow>
-        <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
-        <InfoRow label="สำเร็จ / ล้มเหลว">
-          {data.successCount} / {data.failureCount}{" "}
-          <span className="text-xs text-muted-foreground">
-            (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
-          </span>
-        </InfoRow>
-        {data.approvedAt && (
-          <InfoRow label="อนุมัติเมื่อ">
-            {formatDateTime(data.approvedAt)}
-          </InfoRow>
-        )}
-        <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
-        <InfoRow label="แก้ไขล่าสุด">{formatDateTime(data.updatedAt)}</InfoRow>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+        <div className="rounded-xl border bg-card p-4">
+          <div className="divide-y">
+            <InfoRow label="Payload">
+              {data.payloadType === "Config"
+                ? (configQuery.data?.name ?? data.configId ?? "—")
+                : (data.firmwareId ?? "—")}
+            </InfoRow>
+            <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
+            <InfoRow label="สำเร็จ / ล้มเหลว">
+              {data.successCount} / {data.failureCount}{" "}
+              <span className="text-xs text-muted-foreground">
+                (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
+              </span>
+            </InfoRow>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium">ไทม์ไลน์</p>
+          <div className="divide-y rounded-xl border bg-card px-4">
+            {data.approvedAt && (
+              <InfoRow label="อนุมัติเมื่อ">
+                {formatDateTime(data.approvedAt)}
+              </InfoRow>
+            )}
+            <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
+            <InfoRow label="แก้ไขล่าสุด">
+              {formatDateTime(data.updatedAt)}
+            </InfoRow>
+          </div>
+        </div>
       </div>
     </div>
   );
