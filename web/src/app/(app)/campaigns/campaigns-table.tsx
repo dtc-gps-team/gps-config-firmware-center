@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
+import { MegaphoneIcon } from "lucide-react";
 
 import {
   Card,
@@ -20,6 +21,7 @@ import { useCampaigns } from "@/hooks/use-campaigns";
 import { type Campaign } from "@/lib/campaign-api";
 import { CreateCampaignButton } from "./create-campaign-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) —
  * mirror `config-table.tsx`/`firmware-table.tsx` */
@@ -115,9 +117,11 @@ export function CampaignsTableCard() {
             </Button>
           </div>
         ) : !data || data.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            ยังไม่มีแคมเปญ
-          </p>
+          <EmptyState
+            icon={MegaphoneIcon}
+            message="ยังไม่มีแคมเปญ"
+            action={<CreateCampaignButton />}
+          />
         ) : (
           <DataTable
             columns={columns}

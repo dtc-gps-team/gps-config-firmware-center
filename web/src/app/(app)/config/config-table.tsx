@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
+import { SlidersHorizontalIcon } from "lucide-react";
 
 import {
   Card,
@@ -25,6 +26,7 @@ import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -140,9 +142,11 @@ export function ConfigTableCard({
             </Button>
           </div>
         ) : configs.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            ยังไม่มี Config ในระบบ
-          </p>
+          <EmptyState
+            icon={SlidersHorizontalIcon}
+            message="ยังไม่มี Config ในระบบ"
+            action={<CreateConfigButton />}
+          />
         ) : (
           <DataTable
             columns={columns}
