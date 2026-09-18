@@ -3,6 +3,14 @@
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
@@ -10,6 +18,7 @@ import { CAMPAIGN_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { type Campaign } from "@/lib/campaign-api";
+import { CreateCampaignButton } from "./create-campaign-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) —
@@ -76,45 +85,49 @@ const columns: ColumnDef<Campaign>[] = [
   },
 ];
 
-/** ตารางรายการแคมเปญ — ต่อ `GET /campaigns` จริง (Sprint 3 #21) ทุก Role
+/** การ์ดรายการแคมเปญ — ต่อ `GET /campaigns` จริง (Sprint 3 #21) ทุก Role
  * ที่ login แล้วดูได้ (resource `campaign` action `Read`) · ใช้ `DataTable`
  * กลางเดียวกับ config-table/firmware-table (ค้นหารวม + ฟิลเตอร์ต่อคอลัมน์ +
- * เรียงลำดับ) แทนตารางดิบเดิม เพื่อให้ 3 หน้ารายการ (Config/Firmware/Campaign)
- * ใช้งานสอดคล้องกัน */
-export function CampaignsTable() {
+ * เรียงลำดับ) · Card + CardAction (ปุ่ม "สร้างแคมเปญ") เป็นเจ้าของโดย
+ * component นี้เอง mirror `ConfigTableCard`/`FirmwareTableCard` (เดิมปุ่ม
+ * สร้างอยู่นอก Card ที่ page.tsx แยกจากอีก 2 หน้า) */
+export function CampaignsTableCard() {
   const router = useRouter();
   const { data, isLoading, error, refetch } = useCampaigns();
 
-  if (isLoading && !data) {
-    return <TableSkeleton columns={columns.length} />;
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-8">
-        <p className="text-sm text-destructive">{error}</p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
-          ลองใหม่
-        </Button>
-      </div>
-    );
-  }
-
-  if (!data || data.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        ยังไม่มีแคมเปญ
-      </p>
-    );
-  }
-
   return (
-    <DataTable
-      columns={columns}
-      data={data}
-      searchPlaceholder="ค้นหาชื่อแคมเปญ…"
-      emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
-      onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
-    />
+    <Card>
+      <CardHeader>
+        <CardTitle>รายการแคมเปญ</CardTitle>
+        <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
+        <CardAction>
+          <CreateCampaignButton />
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {isLoading && data === null ? (
+          <TableSkeleton columns={columns.length} />
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              ลองใหม่
+            </Button>
+          </div>
+        ) : !data || data.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            ยังไม่มีแคมเปญ
+          </p>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={data}
+            searchPlaceholder="ค้นหาชื่อแคมเปญ…"
+            emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
+            onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
