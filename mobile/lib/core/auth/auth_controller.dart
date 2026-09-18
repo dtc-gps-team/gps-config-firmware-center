@@ -124,8 +124,20 @@ class AuthController extends Notifier<AuthState> {
       if (token == null) {
         throw ApiException('เข้าสู่ระบบไม่สำเร็จ: ไม่ได้รับ token');
       }
-      await _tokenStore.save(token);
       final role = response.role;
+      // SuperAdmin เป็น Web-only ตาม RBAC_Matrix.md Section 1 — บล็อกที่นี่
+      // แทนที่จะพึ่ง ArgumentError จาก UserRole.fromWire() (enum รู้จักค่านี้
+      // แล้วตั้งแต่เพิ่ม SuperAdmin เข้า UserRole จึงไม่ throw ให้อีกต่อไป)
+      // ต้องเช็คก่อน save token ลง token store เสมอ — ห้าม persist token ของ
+      // บัญชีนี้แม้ชั่วคราว
+      if (role == UserRole.superAdmin) {
+        state = const AuthState(
+          status: AuthStatus.unauthenticated,
+          error: 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ',
+        );
+        return;
+      }
+      await _tokenStore.save(token);
       if (role != null) {
         await _profileStore.save(trimmedUsername, role);
       }
@@ -143,9 +155,8 @@ class AuthController extends Notifier<AuthState> {
       state = AuthState(status: AuthStatus.unauthenticated, error: e.message);
     } on ArgumentError catch (_) {
       // UserRole.fromWire() throws this when the backend returns a role the
-      // mobile enum doesn't know about (e.g. SuperAdmin — Web-only, but the
-      // backend doesn't block it by platform, so testing with that account
-      // hits this). A clear message here beats the generic catch-all below.
+      // mobile enum doesn't know about yet. A clear message here beats the
+      // generic catch-all below.
       state = AuthState(
         status: AuthStatus.unauthenticated,
         error: 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ',

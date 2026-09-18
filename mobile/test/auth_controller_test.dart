@@ -219,6 +219,82 @@ void main() {
   });
 
   test(
+    'login blocks SuperAdmin explicitly (Web-only per RBAC_Matrix.md) even '
+    'when the repository call itself succeeds — UserRole.fromWire() no '
+    'longer throws for this role now that it is in the enum, so '
+    'AuthController must guard it directly instead of relying on the '
+    "ArgumentError catch above. The token must never reach the token store, "
+    'not even transiently.',
+    () async {
+      final fakeRepo = _FakeAuthRepository(
+        const LoginResponse(
+          accessToken: 'super-token',
+          role: UserRole.superAdmin,
+        ),
+      );
+      final tokenStore = InMemoryTokenStore();
+      final profileStore = InMemorySessionProfileStore();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(fakeRepo),
+          tokenStoreProvider.overrideWithValue(tokenStore),
+          sessionProfileStoreProvider.overrideWithValue(profileStore),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login('super.test', 'password123');
+
+      final state = container.read(authControllerProvider);
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(state.error, 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ');
+      expect(await tokenStore.read(), isNull);
+      expect(await profileStore.read(), isNull);
+    },
+  );
+
+  test('login succeeds normally for every role other than SuperAdmin — the '
+      'SuperAdmin guard must not catch any of these', () async {
+    for (final role in UserRole.values.where(
+      (r) => r != UserRole.superAdmin,
+    )) {
+      final fakeRepo = _FakeAuthRepository(
+        LoginResponse(accessToken: 'token-${role.wireName}', role: role),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(fakeRepo),
+          tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+          sessionProfileStoreProvider.overrideWithValue(
+            InMemorySessionProfileStore(),
+          ),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login('${role.wireName}.test', 'password123');
+
+      final state = container.read(authControllerProvider);
+      expect(
+        state.status,
+        AuthStatus.authenticated,
+        reason: 'role ${role.wireName} should be allowed to log in',
+      );
+      expect(state.role, role);
+    }
+  });
+
+  test(
     'login persists username + role so a later restore recovers them',
     () async {
       final fakeRepo = _FakeAuthRepository(
