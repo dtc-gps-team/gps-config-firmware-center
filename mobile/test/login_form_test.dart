@@ -7,6 +7,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/auth/login_page.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class _FakeAuthRepository implements AuthRepository {
   _FakeAuthRepository({this.response, this.error});
@@ -45,6 +46,16 @@ Future<void> _pumpLogin(WidgetTester tester, ProviderContainer container) {
 }
 
 void main() {
+  setUpAll(() {
+    PackageInfo.setMockInitialValues(
+      appName: 'mobile',
+      packageName: 'com.example.mobile',
+      version: '1.2.3',
+      buildNumber: '45',
+      buildSignature: '',
+    );
+  });
+
   testWidgets('renders username, password and submit', (tester) async {
     await _pumpLogin(tester, _container(_FakeAuthRepository()));
 
@@ -125,5 +136,54 @@ void main() {
     expect(find.byKey(const Key('login_error')), findsOneWidget);
     expect(find.text('Username/Password ไม่ถูกต้อง'), findsOneWidget);
     expect(container.read(authControllerProvider).isAuthenticated, isFalse);
+  });
+
+  testWidgets('username/password fields show a leading (prefix) icon', (
+    tester,
+  ) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    InputDecoration decorationOf(Key key) => tester
+        .widget<TextField>(
+          find.descendant(
+            of: find.byKey(key),
+            matching: find.byType(TextField),
+          ),
+        )
+        .decoration!;
+
+    expect(decorationOf(const Key('login_username')).prefixIcon, isNotNull);
+    expect(decorationOf(const Key('login_password')).prefixIcon, isNotNull);
+    // suffix (show/hide password) ของเดิมยังอยู่ ไม่ได้ถูกแทนที่
+    expect(decorationOf(const Key('login_password')).suffixIcon, isNotNull);
+  });
+
+  testWidgets('shows the app version below the submit button', (tester) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+    await tester.pump(); // ให้ FutureProvider ของ PackageInfo settle
+
+    expect(find.byKey(const Key('login_app_version')), findsOneWidget);
+    expect(find.text('เวอร์ชัน 1.2.3 (build 45)'), findsOneWidget);
+  });
+
+  testWidgets('hides logo/subtitle/app-version while the keyboard is open, '
+      'keeps the submit button reachable', (tester) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+    await tester.pump();
+
+    expect(find.byKey(const Key('login_app_version')), findsOneWidget);
+
+    // จำลองคีย์บอร์ดเปิด — ดัน bottom inset เข้าไปใน MediaQuery แบบเดียวกับ
+    // ตอน soft keyboard แสดงจริงบนอุปกรณ์
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login_app_version')), findsNothing);
+    expect(find.text('ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม'), findsNothing);
+    // ปุ่ม login ยังอยู่ใน widget tree เสมอ (Scrollable ทำให้เลื่อนไปหาได้)
+    expect(find.byKey(const Key('login_submit')), findsOneWidget);
   });
 }
