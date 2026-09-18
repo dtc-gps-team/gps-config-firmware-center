@@ -254,7 +254,7 @@ void main() {
       () async {
         final container = containerWith(
           [_task(id: 't1', deviceId: 'DVC-1')],
-          role: UserRole.sw,
+          role: UserRole.operation,
           devices: [_device(id: 'uuid-1', deviceId: 'DVC-1')],
         );
 
