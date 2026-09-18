@@ -24,23 +24,36 @@ class _FakeAuthController extends AuthController {
   );
 }
 
+/// One completed task (this month), one completed task (a different month,
+/// so it does not count toward "งานที่เสร็จเดือนนี้"), and one still-pending
+/// task (must never show up in the history section).
+final _now = DateTime.now();
 final _fakeTasks = <Task>[
   Task(
     id: 't1',
     title: 'ติดตั้งกล่อง GPS รถบรรทุก',
     assignedTo: 'u1',
-    status: TaskStatus.pending,
-    createdAt: DateTime(2026, 9, 1),
-    updatedAt: DateTime(2026, 9, 1),
+    status: TaskStatus.completed,
+    createdAt: DateTime(_now.year, _now.month, 1),
+    updatedAt: DateTime(_now.year, _now.month, 2),
     deviceId: 'DVC-40271',
   ),
   Task(
     id: 't2',
     title: 'ตรวจเช็คสัญญาณรถโดยสาร',
     assignedTo: 'u1',
-    status: TaskStatus.inProgress,
-    createdAt: DateTime(2026, 9, 2),
-    updatedAt: DateTime(2026, 9, 2),
+    status: TaskStatus.completed,
+    createdAt: DateTime(2020, 1, 1),
+    updatedAt: DateTime(2020, 1, 2),
+  ),
+  Task(
+    id: 't3',
+    title: 'เปลี่ยนซิมการ์ดอุปกรณ์',
+    assignedTo: 'u1',
+    status: TaskStatus.pending,
+    createdAt: DateTime(_now.year, _now.month, 3),
+    updatedAt: DateTime(_now.year, _now.month, 3),
+    deviceId: 'DVC-38004',
   ),
 ];
 
@@ -125,7 +138,7 @@ Future<void> _pumpHome(
 }
 
 /// Router-backed pump with stub destinations, so `context.push(...)` from the
-/// shortcut tiles and task cards can be asserted.
+/// shortcut tiles and history cards can be asserted.
 Future<void> _pumpHomeRouted(
   WidgetTester tester,
   UserRole? role, {
@@ -221,28 +234,30 @@ void main() {
     });
   });
 
-  group('"งานวันนี้" — task list จริงจาก GET /tasks', () {
-    testWidgets('แสดงการ์ดงานจาก repository + จำนวนใน greeting', (
-      tester,
-    ) async {
+  group('"ประวัติงานล่าสุด" — ประวัติงานที่เสร็จแล้วจริงจาก GET /tasks', () {
+    testWidgets('แสดงเฉพาะงานที่เสร็จแล้ว + สถิติงานเดือนนี้', (tester) async {
       await _pumpHome(tester, UserRole.st);
 
+      // t1 (completed, this month) และ t2 (completed, เดือนอื่น) โผล่ในประวัติ
       expect(find.text('ติดตั้งกล่อง GPS รถบรรทุก'), findsOneWidget);
       expect(find.text('ตรวจเช็คสัญญาณรถโดยสาร'), findsOneWidget);
-      expect(find.text('Device: DVC-40271'), findsOneWidget);
-      expect(find.text('Device: —'), findsOneWidget); // t2 has no deviceId
-      expect(find.text('วันนี้ 2 งานที่ได้รับมอบหมาย'), findsOneWidget);
+      // t3 (pending) ต้องไม่โผล่ในหน้า Home อีกต่อไป
+      expect(find.text('เปลี่ยนซิมการ์ดอุปกรณ์'), findsNothing);
+
+      // สถิติ: เดือนนี้เสร็จ 1 งาน (t1), ประวัติทั้งหมด 2 งาน (t1+t2)
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('2 รายการ'), findsOneWidget);
     });
 
-    testWidgets('empty state เมื่อไม่มีงาน', (tester) async {
+    testWidgets('empty state เมื่อไม่มีงานที่เสร็จแล้ว', (tester) async {
       await _pumpHome(
         tester,
         UserRole.st,
         taskRepo: _FakeTaskRepository(tasks: const []),
       );
 
-      expect(find.text('ยังไม่มีงานที่ได้รับมอบหมาย'), findsOneWidget);
-      expect(find.text('วันนี้ 0 งานที่ได้รับมอบหมาย'), findsOneWidget);
+      expect(find.text('ยังไม่มีประวัติงานที่เสร็จสิ้น'), findsOneWidget);
     });
 
     testWidgets('error state + ปุ่มลองอีกครั้ง', (tester) async {
@@ -257,25 +272,36 @@ void main() {
 
       expect(find.text('เซิร์ฟเวอร์ล่ม'), findsOneWidget);
       expect(find.byKey(const Key('tasks_retry')), findsOneWidget);
-      // greeting must not stay stuck on the loading line, and shows no count
-      expect(find.textContaining('กำลังโหลดงานที่ได้รับมอบหมาย'), findsNothing);
-      expect(find.textContaining('งานที่ได้รับมอบหมาย'), findsNothing);
     });
 
-    testWidgets('แตะการ์ดงาน -> navigate ไปหน้า Task Detail ของงานนั้น', (
+    testWidgets('แตะการ์ดประวัติงาน -> navigate ไปหน้า Task Detail ของงานนั้น', (
       tester,
     ) async {
       await _pumpHomeRouted(tester, UserRole.st);
 
-      await tester.tap(find.byKey(const Key('task_card_0')));
+      await tester.tap(find.byKey(const Key('history_card_0')));
       await tester.pumpAndSettle();
 
       expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
     });
+
+    testWidgets('แตะ "ดูประวัติงานทั้งหมด" -> navigate ไปหน้ารายการงาน', (
+      tester,
+    ) async {
+      await _pumpHomeRouted(tester, UserRole.st);
+
+      final btn = find.byKey(const Key('view_all_history'));
+      await tester.ensureVisible(btn);
+      await tester.pumpAndSettle();
+      await tester.tap(btn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('MY_TASKS_PAGE_STUB'), findsOneWidget);
+    });
   });
 
   group(
-    'RBAC — "งานวันนี้" เฉพาะ ST/OT (backend GET /tasks self-scope 2 role นี้)',
+    'RBAC — ประวัติงานเฉพาะ ST/OT (backend GET /tasks self-scope 2 role นี้)',
     () {
       for (final role in [UserRole.operation, UserRole.auditor]) {
         testWidgets('${role.wireName}: ไม่เห็น section + ไม่ยิง GET /tasks', (
@@ -285,9 +311,8 @@ void main() {
           await _pumpHome(tester, role, taskRepo: repo);
           await tester.pumpAndSettle();
 
-          expect(find.text('งานวันนี้'), findsNothing);
-          expect(find.byKey(const Key('task_card_0')), findsNothing);
-          expect(find.textContaining('งานที่ได้รับมอบหมาย'), findsNothing);
+          expect(find.text('ประวัติงานล่าสุด'), findsNothing);
+          expect(find.byKey(const Key('history_card_0')), findsNothing);
           expect(repo.listCalls, 0);
         });
       }
@@ -299,7 +324,7 @@ void main() {
         await _pumpHome(tester, null, taskRepo: repo);
         await tester.pumpAndSettle();
 
-        expect(find.text('งานวันนี้'), findsNothing);
+        expect(find.text('ประวัติงานล่าสุด'), findsNothing);
         expect(repo.listCalls, 0);
       });
 
@@ -310,7 +335,7 @@ void main() {
         await _pumpHome(tester, UserRole.st, taskRepo: repo);
         await tester.pumpAndSettle();
 
-        expect(find.text('งานวันนี้'), findsOneWidget);
+        expect(find.text('ประวัติงานล่าสุด'), findsOneWidget);
         expect(repo.listCalls, 1);
       });
     },
