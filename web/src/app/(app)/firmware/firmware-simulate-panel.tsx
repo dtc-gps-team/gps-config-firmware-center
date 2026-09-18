@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/lib/status-pill";
 
 /**
- * แผง "ทดสอบ Firmware" — SW/Operation/ST/OT (resource `firmware-simulation`
+ * แผง "ทดสอบ Firmware" — FirmwareEngineer/QAEngineer/Operation/ST/OT (resource `firmware-simulation`
  * แยกจาก `firmware` — mirror `ConfigReviewPanel`) mock เช็คว่ารุ่นอุปกรณ์ที่
  * ระบุอยู่ใน compatibility tag ไหม · dry-run ล้วน ไม่แตะ `uploadStatus` ·
  * 409 ถ้า `uploadStatus` ยังไม่ `stored` (ยังไม่มีไฟล์จริงใน Object Storage

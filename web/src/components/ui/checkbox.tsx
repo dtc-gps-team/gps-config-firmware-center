@@ -14,7 +14,11 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         // default) size-4/size-5 (width/height) ใช้ไม่ได้ผลกับ inline element
         // เลย เหลือแค่ border ที่ยุบเป็นเส้นบางๆ แทนที่จะเป็นกล่องสี่เหลี่ยม
         // (เจอจาก click-test จริงตอนทำ Campaign Wizard #21)
-        "peer inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input bg-transparent outline-none transition-colors",
+        // border-input (#E2E6EB) จางเกินไปจนแทบมองไม่เห็นเป็นกล่อง checkbox
+        // เมื่ออยู่เดี่ยวๆ ไม่มี label ข้างๆ ช่วยเดา (เจอจาก click-test ตอนทำ
+        // Campaign Wizard #21 — เดิมแก้เฉพาะจุดนั้น ย้ายมาแก้ที่นี่แทนให้ทุก
+        // checkbox ในระบบได้ผลเหมือนกัน)
+        "peer inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-muted-foreground/60 bg-transparent outline-none transition-colors",
         "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         "data-[checked]:border-primary data-[checked]:bg-primary data-[checked]:text-primary-foreground",
         "disabled:cursor-not-allowed disabled:opacity-50",

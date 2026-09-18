@@ -47,7 +47,7 @@ type Props = {
 
 /**
  * ฟอร์มสร้าง Parameter (Config Field Definition) ใหม่ — `POST /config-definitions`
- * · SW เท่านั้น (gate ที่ปุ่มเปิดฟอร์มใน parameter-library-view.tsx +
+ * · ConfigEngineer เท่านั้น (gate ที่ปุ่มเปิดฟอร์มใน parameter-library-view.tsx +
  * PermissionGuard ฝั่ง backend) ตาม wireframe frame "คลัง Parameter"
  *
  * `supportedModels` เลือกจากคู่รุ่น/โปรโตคอลที่มีในระบบแล้วเท่านั้น (เคสปกติ

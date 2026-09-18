@@ -18,13 +18,13 @@ export type PendingApproval = {
   name: string;
   deviceModel: string;
   protocol: string;
-  /** user id ของ SW ที่สร้าง — context สำหรับ Separation of Duty */
+  /** user id ของ ConfigEngineer ที่สร้าง — context สำหรับ Separation of Duty */
   createdBy: string;
   description: string | null;
   fields: Record<string, unknown>;
-  /** เวลาที่ SW ปักผลผ่าน (`decide`) แล้ว Config เข้าสถานะ testing */
+  /** เวลาที่ ConfigEngineer ปักผลผ่าน (`decide`) แล้ว Config เข้าสถานะ testing */
   queuedAt: string;
-  /** ผู้อนุมัติที่ SW เจาะจง (resolve ชื่อจาก GET /users) · null = ไม่เจาะจง */
+  /** ผู้อนุมัติที่ ConfigEngineer เจาะจง (resolve ชื่อจาก GET /users) · null = ไม่เจาะจง */
   suggestedApprover: { id: string; fullName: string } | null;
 };
 
@@ -36,7 +36,7 @@ type State = {
 
 /**
  * คิว Config ที่รอ Operation อนุมัติ — `GET /config?status=testing`
- * (ผ่าน simulation + SW ปักผ่านแล้ว) · เรียง queued ใหม่สุดก่อน · แนบชื่อ
+ * (ผ่าน simulation + ConfigEngineer ปักผ่านแล้ว) · เรียง queued ใหม่สุดก่อน · แนบชื่อ
  * ผู้อนุมัติที่เจาะจงจาก `GET /users?role=Operation` · คืน `refetch`
  */
 export function usePendingApprovals() {

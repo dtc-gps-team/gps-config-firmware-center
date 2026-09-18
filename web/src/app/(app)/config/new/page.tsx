@@ -6,7 +6,7 @@ export const metadata = {
 
 /** สร้าง Config ใหม่ — wizard 2 ขั้น (ข้อมูลพื้นฐาน → เลือก Parameter)
  *  `?from=<id>` = โคลนจาก Config ที่มีอยู่ (prefill ทุกอย่างยกเว้นชื่อ)
- *  สร้างได้เฉพาะ Role SW (gate ทั้งหน้าใน `ConfigWizardView`) */
+ *  สร้างได้เฉพาะ Role ConfigEngineer (gate ทั้งหน้าใน `ConfigWizardView`) */
 export default async function ConfigNewPage({
   searchParams,
 }: {

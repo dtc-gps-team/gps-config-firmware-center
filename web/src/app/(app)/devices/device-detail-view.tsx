@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
+import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
@@ -78,7 +78,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
             {device.deviceId}
           </h1>
           <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
-            {device.status}
+            {statusLabel(device.status)}
           </StatusPill>
         </div>
         <p className="text-sm text-muted-foreground">
