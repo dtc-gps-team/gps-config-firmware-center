@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCwIcon } from "lucide-react";
+import { HistoryIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessAuditLog } from "@/lib/permissions";
@@ -33,6 +33,7 @@ import {
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 /** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
  * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
@@ -134,11 +135,14 @@ export function AuditLogView() {
                 </Button>
               </div>
             ) : rows.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {auditModule || debouncedAction
-                  ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
-                  : "ยังไม่มีประวัติการทำงาน"}
-              </p>
+              <EmptyState
+                icon={auditModule || debouncedAction ? SearchXIcon : HistoryIcon}
+                message={
+                  auditModule || debouncedAction
+                    ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
+                    : "ยังไม่มีประวัติการทำงาน"
+                }
+              />
             ) : (
               <Table>
                 <TableHeader>

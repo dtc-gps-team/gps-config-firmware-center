@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { ColumnDef, Row } from "@tanstack/react-table";
+import { UsersIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
@@ -21,6 +22,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { UserRowActions } from "./user-row-actions";
 
 function thTextSort(
@@ -155,9 +157,18 @@ export function UserManagementView({
                 </Button>
               </div>
             ) : userList.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                ยังไม่มีผู้ใช้ในระบบ
-              </p>
+              <EmptyState
+                icon={UsersIcon}
+                message="ยังไม่มีผู้ใช้ในระบบ"
+                action={
+                  <Link
+                    href="/users/new"
+                    className={buttonVariants({ size: "sm" })}
+                  >
+                    + เพิ่มผู้ใช้
+                  </Link>
+                }
+              />
             ) : (
               <DataTable
                 columns={columns}
