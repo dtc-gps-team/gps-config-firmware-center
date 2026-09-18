@@ -201,7 +201,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         targetCount: number;
         createdBy: string;
       };
-      expect(body.status).toBe('active');
+      expect(body.status).toBe('pending_approval');
       expect(body.targetCount).toBe(2);
       expect(body.createdBy).toBe(opUser.id);
 
@@ -503,6 +503,116 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           targets: [],
         })
         .expect(400);
+    });
+  });
+
+  describe('POST /campaigns/:id/approve, POST /campaigns/:id/reject', () => {
+    async function seedPendingCampaign(createdBy: string) {
+      return prisma.campaign.create({
+        data: {
+          name: 'แคมเปญรออนุมัติ',
+          payloadType: 'Config',
+          status: 'pending_approval',
+          createdBy,
+        },
+      });
+    }
+
+    it('role ไม่มีสิทธิ์ campaign.Approve (ST) -> 403', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedPendingCampaign(opUser.id);
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('Operation คนอื่น (ไม่ใช่ผู้สร้าง) อนุมัติ pending_approval -> 200, status active + approvedBy', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedPendingCampaign(creator.id);
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(approver.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { status: string; approvedBy: string };
+      expect(body.status).toBe('active');
+      expect(body.approvedBy).toBe(approver.id);
+    });
+
+    it('ผู้สร้าง Campaign พยายามอนุมัติเอง -> 403 (Separation of Duty)', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedPendingCampaign(creator.id);
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(creator.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('สถานะไม่ใช่ pending_approval (active อยู่แล้ว) -> 409', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await prisma.campaign.create({
+        data: {
+          name: 'แคมเปญที่ active แล้ว',
+          payloadType: 'Config',
+          status: 'active',
+          createdBy: creator.id,
+        },
+      });
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(approver.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('Operation คนอื่นปฏิเสธ pending_approval -> 200, status rejected ไม่ตั้ง approvedBy', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedPendingCampaign(creator.id);
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(approver.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/reject`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { status: string; approvedBy: string | null };
+      expect(body.status).toBe('rejected');
+      expect(body.approvedBy).toBeNull();
+    });
+
+    it('สำเร็จ -> เขียน AuditLog action approve', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedPendingCampaign(creator.id);
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(approver.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/approve`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { userId: approver.id, auditModule: 'campaign' },
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0].action).toBe('approve');
     });
   });
 

@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -54,5 +56,30 @@ export class CampaignController {
   @RequirePermission('campaign', ActionType.Read)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Campaign> {
     return this.campaignService.findOne(id);
+  }
+
+  // Campaign Approval (แก้ครั้งที่ 39) — resource `campaign` action `Approve`
+  // เดียวกันทั้ง approve/reject (mirror ConfigController/FirmwareController)
+  // — Operation เท่านั้น (ตัว SelfApprovalGuard/SoD check อยู่ใน service
+  // เพราะต้องรู้ createdBy ของ resource ก่อนตัดสิน ทำเป็น decorator guard
+  // ธรรมดาไม่ได้)
+  @Post(':id/approve')
+  @RequirePermission('campaign', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Campaign> {
+    return this.campaignService.approve(id, toActor(req));
+  }
+
+  @Post(':id/reject')
+  @RequirePermission('campaign', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Campaign> {
+    return this.campaignService.reject(id, toActor(req));
   }
 }

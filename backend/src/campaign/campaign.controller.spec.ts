@@ -26,24 +26,34 @@ const sampleCampaign: Campaign = {
   payloadType: CampaignPayloadType.Config,
   configId: 'cfg-1',
   firmwareId: null,
-  status: 'active',
+  status: 'pending_approval',
   targetCount: 1,
   successCount: 0,
   failureCount: 0,
   createdBy: 'op-1',
+  approvedBy: null,
+  approvedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
 describe('CampaignController', () => {
   let controller: CampaignController;
-  let service: { findAll: jest.Mock; create: jest.Mock; findOne: jest.Mock };
+  let service: {
+    findAll: jest.Mock;
+    create: jest.Mock;
+    findOne: jest.Mock;
+    approve: jest.Mock;
+    reject: jest.Mock;
+  };
 
   beforeEach(async () => {
     service = {
       findAll: jest.fn(),
       create: jest.fn(),
       findOne: jest.fn(),
+      approve: jest.fn(),
+      reject: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,5 +112,31 @@ describe('CampaignController', () => {
 
     expect(result).toEqual(sampleCampaign);
     expect(service.findOne).toHaveBeenCalledWith(sampleCampaign.id);
+  });
+
+  it('POST /campaigns/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {
+    const approved = { ...sampleCampaign, status: 'active' as const };
+    service.approve.mockResolvedValue(approved);
+
+    const result = await controller.approve(sampleCampaign.id, opReq);
+
+    expect(result).toEqual(approved);
+    expect(service.approve).toHaveBeenCalledWith(sampleCampaign.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
+  });
+
+  it('POST /campaigns/:id/reject -> service.reject พร้อม actor จาก JWT', async () => {
+    const rejected = { ...sampleCampaign, status: 'rejected' as const };
+    service.reject.mockResolvedValue(rejected);
+
+    const result = await controller.reject(sampleCampaign.id, opReq);
+
+    expect(result).toEqual(rejected);
+    expect(service.reject).toHaveBeenCalledWith(sampleCampaign.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
   });
 });
