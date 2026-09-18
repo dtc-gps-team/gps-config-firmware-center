@@ -73,7 +73,7 @@ export function getFirmware(token: string, id: string): Promise<Firmware> {
 }
 
 /**
- * `POST /firmware` — SW เท่านั้น · อัปโหลดไฟล์ขึ้น Object Storage จริง
+ * `POST /firmware` — FirmwareEngineer เท่านั้น · อัปโหลดไฟล์ขึ้น Object Storage จริง
  * (synchronous) · `deviceModel` เดี่ยวตอนนี้กลายเป็น compatibility tag
  * เริ่มต้น (1 รุ่น) แก้/เพิ่มทีหลังผ่าน `updateFirmwareCompatibility`
  * แยกต่างหาก · ขนาดไฟล์สูงสุด 50MB (backend บังคับ, client เช็คก่อนด้วย)
@@ -94,7 +94,7 @@ export function uploadFirmware(
 }
 
 /**
- * `PATCH /firmware/{firmwareId}` — SW เท่านั้น · แทนที่ `deviceModelCompatibility`
+ * `PATCH /firmware/{firmwareId}` — FirmwareEngineer เท่านั้น · แทนที่ `deviceModelCompatibility`
  * ทั้ง array เสมอ (ไม่ merge กับของเดิม) — ผู้เรียกต้องส่งรายการเต็มเสมอ
  */
 export function updateFirmwareCompatibility(
@@ -110,7 +110,7 @@ export function updateFirmwareCompatibility(
 }
 
 /**
- * `POST /firmware/{firmwareId}/simulate` — SW/Operation/ST/OT · mock เช็คว่า
+ * `POST /firmware/{firmwareId}/simulate` — FirmwareEngineer/QAEngineer/Operation/ST/OT · mock เช็คว่า
  * `deviceModel` ที่ระบุอยู่ใน `deviceModelCompatibility` ไหม · 409 ถ้า
  * `uploadStatus` ยังไม่ `stored`
  */

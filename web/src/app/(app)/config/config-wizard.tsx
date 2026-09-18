@@ -24,6 +24,7 @@ import {
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 type FieldValue = string | boolean;
@@ -81,6 +82,12 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     source ? Object.keys(source.fields) : [],
   );
 
+  // snapshot ตอน mount — เทียบกับค่าปัจจุบันเพื่อรู้ว่ามีการแก้ไขที่ยังไม่ได้
+  // บันทึกหรือยัง (ใช้เตือนก่อนออกจากหน้า ด้านล่าง)
+  const [initialSnapshot] = useState(() =>
+    JSON.stringify({ name, description, deviceModel, protocol, values, selected }),
+  );
+
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -92,6 +99,14 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     setFormError(null);
     setFormErrorList([]);
   }
+
+  const isDirty = useMemo(
+    () =>
+      JSON.stringify({ name, description, deviceModel, protocol, values, selected }) !==
+      initialSnapshot,
+    [name, description, deviceModel, protocol, values, selected, initialSnapshot],
+  );
+  const { confirmLeave } = useUnsavedChangesWarning(isDirty);
 
   /** รุ่นอุปกรณ์ที่มี field definition รองรับอย่างน้อย 1 ตัว */
   const deviceModelOptions = useMemo(() => {
@@ -401,7 +416,12 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
           <div className="flex justify-end gap-2 border-t pt-4">
-            <Button variant="outline" onClick={() => router.push("/config")}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (confirmLeave()) router.push("/config");
+              }}
+            >
               ยกเลิก
             </Button>
             <Button onClick={goToStep2}>ถัดไป: เลือก Parameter →</Button>

@@ -20,7 +20,7 @@ import {
 } from "@/components/data-table/filter-fns";
 import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
-import { CONFIG_STATUS_TONE, StatusPill } from "@/lib/status-pill";
+import { CONFIG_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
@@ -51,7 +51,7 @@ const columns: ColumnDef<Config>[] = [
       const status = row.original.status;
       return (
         <StatusPill tone={CONFIG_STATUS_TONE[status] ?? "neutral"}>
-          {status}
+          {statusLabel(status)}
         </StatusPill>
       );
     },
@@ -104,9 +104,11 @@ export function ConfigTableCard({
     <Card>
       {savedConfig && !dismissedBanner && (
         <div className="mx-6 -mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-          <span>
+          <span className="flex flex-wrap items-center gap-1">
             บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว — สถานะ{" "}
-            <strong>{savedConfig.status}</strong>
+            <StatusPill tone={CONFIG_STATUS_TONE[savedConfig.status] ?? "neutral"}>
+              {statusLabel(savedConfig.status)}
+            </StatusPill>
           </span>
           <button
             type="button"

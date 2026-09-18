@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DemoNote } from "@/components/demo/demo-note";
 import { DEMO_USERS } from "@/lib/demo-data";
 
@@ -37,7 +38,14 @@ export function UserManagementView() {
               Admin เท่านั้น (RBAC_Matrix.md Section 2)
             </p>
           </div>
-          <Button disabled>+ เพิ่มผู้ใช้</Button>
+          <Tooltip>
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              <Button disabled>+ เพิ่มผู้ใช้</Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              ยังไม่รองรับ — รอ endpoint `POST /users`
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <Card>

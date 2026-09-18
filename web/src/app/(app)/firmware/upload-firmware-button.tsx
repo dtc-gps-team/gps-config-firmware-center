@@ -7,7 +7,7 @@ import { canUploadFirmware } from "@/lib/permissions";
 import { buttonVariants } from "@/components/ui/button";
 
 /**
- * ปุ่ม "+ อัปโหลด Firmware" — SW เท่านั้น (RBAC_Matrix.md Section 2 แถว
+ * ปุ่ม "+ อัปโหลด Firmware" — FirmwareEngineer เท่านั้น (RBAC_Matrix.md Section 2 แถว
  * Firmware Repository) role อื่นไม่เห็นปุ่มนี้เลย (ดู Firmware ได้อย่างเดียว)
  *
  * เดิมเป็นปุ่ม scaffold `disabled` — ต่อจริงแล้วพาไปหน้า `/firmware/upload`
