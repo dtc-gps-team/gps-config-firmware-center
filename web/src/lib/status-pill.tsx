@@ -135,12 +135,15 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
   decommissioned: "danger",
 };
 
-/** Campaign lifecycle: v1 สร้างแล้ว active ทันที (ไม่มี draft/approval
- * workflow ของตัวเอง) — completed/cancelled ยังไม่มี endpoint เปลี่ยนสถานะ
- * เข้า-ออก (รอ Campaign Monitor, Sprint 3 #22) */
+/** Campaign lifecycle — Campaign Approval (แก้ไข 2026-09-18, PR #186):
+ * สร้างแล้วเป็น pending_approval ก่อนเสมอ ต้องรอ Operation อีกคนอนุมัติ
+ * (→ active) หรือปฏิเสธ (→ rejected) — completed/cancelled ยังไม่มี
+ * endpoint เปลี่ยนสถานะเข้า-ออก (รอ Campaign Monitor, Sprint 3 #22) */
 export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
   draft: "neutral",
-  active: "progress",
+  pending_approval: "progress",
+  active: "success",
+  rejected: "danger",
   completed: "success",
   cancelled: "danger",
 };
