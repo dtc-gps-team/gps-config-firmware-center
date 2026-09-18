@@ -360,7 +360,7 @@ describe('CampaignService', () => {
         data: expect.objectContaining({
           status: 'active',
           approvedBy: otherOperation.id,
-        }),
+        }) as Partial<Campaign>,
       });
     });
 
