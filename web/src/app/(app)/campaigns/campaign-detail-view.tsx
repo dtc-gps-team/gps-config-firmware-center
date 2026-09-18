@@ -8,22 +8,8 @@ import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { CampaignApprovalPanel } from "./campaign-approval-panel";
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
-  );
-}
 
 /**
  * รายละเอียดแคมเปญ 1 รายการ — ต่อ `GET /campaigns/{id}` จริง (Sprint 3 #21)
@@ -84,37 +70,33 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
 
       <CampaignApprovalPanel campaign={data} onDecided={() => void refetch()} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
-        <div className="rounded-xl border bg-card p-4">
-          <div className="divide-y">
-            <InfoRow label="Payload">
-              {data.payloadType === "Config"
-                ? (configQuery.data?.name ?? data.configId ?? "—")
-                : (data.firmwareId ?? "—")}
+      {/* เนื้อหาเป็น label/value ล้วน (ไม่มีของหนาแน่นแบบ JSON/parameter list
+       * เหมือน Config/Firmware) — จำกัด max-width ไว้ที่การ์ดนี้แทนที่จะปล่อย
+       * เต็มความกว้างหน้าจอ (อ่านยากถ้า label/value ห่างกันเกินไป) และไม่ใช้
+       * `mx-auto` จัดกึ่งกลาง ให้ชิดซ้ายตรงกับหน้า detail อื่นทั้งหมด */}
+      <div className="max-w-xl rounded-xl border bg-card p-4">
+        <div className="divide-y">
+          <InfoRow label="Payload">
+            {data.payloadType === "Config"
+              ? (configQuery.data?.name ?? data.configId ?? "—")
+              : (data.firmwareId ?? "—")}
+          </InfoRow>
+          <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
+          <InfoRow label="สำเร็จ / ล้มเหลว">
+            {data.successCount} / {data.failureCount}{" "}
+            <span className="text-xs text-muted-foreground">
+              (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
+            </span>
+          </InfoRow>
+          {data.approvedAt && (
+            <InfoRow label="อนุมัติเมื่อ">
+              {formatDateTime(data.approvedAt)}
             </InfoRow>
-            <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
-            <InfoRow label="สำเร็จ / ล้มเหลว">
-              {data.successCount} / {data.failureCount}{" "}
-              <span className="text-xs text-muted-foreground">
-                (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
-              </span>
-            </InfoRow>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium">ไทม์ไลน์</p>
-          <div className="divide-y rounded-xl border bg-card px-4">
-            {data.approvedAt && (
-              <InfoRow label="อนุมัติเมื่อ">
-                {formatDateTime(data.approvedAt)}
-              </InfoRow>
-            )}
-            <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
-            <InfoRow label="แก้ไขล่าสุด">
-              {formatDateTime(data.updatedAt)}
-            </InfoRow>
-          </div>
+          )}
+          <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
+          <InfoRow label="แก้ไขล่าสุด">
+            {formatDateTime(data.updatedAt)}
+          </InfoRow>
         </div>
       </div>
     </div>

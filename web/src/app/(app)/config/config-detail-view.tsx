@@ -35,6 +35,7 @@ import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { ConfigReviewPanel } from "./config-review-panel";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
@@ -56,21 +57,6 @@ function toImportJson(config: Config): string {
     },
     null,
     2,
-  );
-}
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
   );
 }
 
