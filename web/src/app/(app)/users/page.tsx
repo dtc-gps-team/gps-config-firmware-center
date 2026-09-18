@@ -5,10 +5,17 @@ export const metadata = {
 };
 
 /**
- * Scaffold — รอต่อโมดูล `users` (ยังไม่มี endpoint ใน spec — ดู
- * RBAC_Matrix.md ตาราง 4.2) มีแค่ Admin ที่มีสิทธิ์ทั้งแถว — gate ทั้งหน้า
- * ผ่าน UserManagementView (ดูไฟล์นั้น)
+ * User / Role Management (`GET /users/managed`, `POST /users`,
+ * `PATCH /users/{id}`) — Admin เท่านั้น จัดการได้แค่บัญชีทั่วไป ไม่รวม
+ * Admin/SuperAdmin (RBAC_Matrix.md §2 — แก้ครั้งที่ 38) gate ทั้งหน้าผ่าน
+ * UserManagementView (ดูไฟล์นั้น)
  */
-export default function UsersPage() {
-  return <UserManagementView />;
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
+  const { created } = await searchParams;
+
+  return <UserManagementView justCreatedId={created ?? null} />;
 }
