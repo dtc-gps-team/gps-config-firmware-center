@@ -61,12 +61,7 @@ void main() {
       return (tasks: tasks, calls: repo.listCalls);
     }
 
-    for (final role in [
-      UserRole.sw,
-      UserRole.operation,
-      UserRole.admin,
-      null,
-    ]) {
+    for (final role in [UserRole.operation, UserRole.admin, null]) {
       test(
         '${role?.wireName ?? 'no role'} -> empty, repo not called',
         () async {

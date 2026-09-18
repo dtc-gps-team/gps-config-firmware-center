@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { type Firmware } from "@/lib/firmware-api";
 import {
+  FIRMWARE_APPROVAL_STATUS_TONE,
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
@@ -15,6 +16,7 @@ import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
+import { FirmwareApprovalPanel } from "./firmware-approval-panel";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
 
 function InfoRow({
@@ -92,10 +94,19 @@ function FirmwareDetailContent({
           >
             {firmware.uploadStatus}
           </StatusPill>
+          <StatusPill
+            tone={
+              FIRMWARE_APPROVAL_STATUS_TONE[firmware.approvalStatus] ??
+              "neutral"
+            }
+          >
+            {firmware.approvalStatus}
+          </StatusPill>
         </div>
       </div>
 
       <FirmwareSimulatePanel firmware={firmware} />
+      <FirmwareApprovalPanel firmware={firmware} onDecided={onUpdated} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">

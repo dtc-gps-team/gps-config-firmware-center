@@ -40,7 +40,8 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
   คุณภาพ Firmware) ตาม PDF ต้นฉบับ §13.1 ที่จริงแยกหน้าที่นี้ไว้ชัดเจนอยู่แล้ว
   — ชื่อ `SW` (Software Engineer) สื่อถึงตำแหน่งงาน ไม่ใช่สิ่งที่ role ทำได้จริง
   ในระบบ ห้ามใช้ `SW` อีก · `QAEngineer` เป็น role ใหม่ทั้งหมด (resource
-  `firmware-decision` — ยังไม่มี endpoint จริง รอ PR ถัดไป)
+  `firmware-decision` — `POST /firmware/{id}/approve`/`.../reject`, Firmware
+  Approval Lifecycle, docs/13 §3.2 — implement แล้ว)
 - **`SuperAdmin` เพิ่มโดยตั้งใจ** ตามมติ Sprint 1 review (PR #99 → `docs/09_Sprint1_Review_Decisions.md`)
   — ต่างจาก `FieldTechnician` ที่เป็นความผิดพลาด · ขอบเขต: ทำได้ทุกอย่างที่ `Admin`
   ทำ **+** อนุมัติคำขอลบ Config (auto delete-request), จัดการบัญชี `Admin`/`SuperAdmin`,

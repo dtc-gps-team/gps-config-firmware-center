@@ -130,6 +130,10 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
   async function seedStoredFirmware(overrides?: {
     deviceModelCompatibility?: string[];
     uploadStatus?: 'pending' | 'stored' | 'failed';
+    // default: 'approved' — ชื่อ helper บอกว่า "พร้อมใช้แล้ว" (mirror
+    // ความหมายเดิมก่อน Firmware Approval Lifecycle จะเพิ่ม dimension นี้เข้ามา)
+    // เทสที่ตั้งใจเช็ค 409 จาก approvalStatus โดยเฉพาะ ระบุ override ตรงๆ
+    approvalStatus?: 'pending_review' | 'approved' | 'rejected';
   }) {
     const firmwareEngineerUser = await makeUser(prisma, {
       role: 'FirmwareEngineer',
@@ -141,6 +145,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
           'GT06N',
         ],
         uploadStatus: overrides?.uploadStatus ?? 'stored',
+        approvalStatus: overrides?.approvalStatus ?? 'approved',
         objectKey: `firmware/${randomUUID()}/test.bin`,
         originalFilename: 'test.bin',
         fileSizeBytes: 1024,
@@ -308,6 +313,27 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
       const firmware = await seedStoredFirmware({ uploadStatus: 'pending' });
+      const device = await seedInstalledDevice();
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/campaigns')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'แคมเปญทดสอบ',
+          payloadType: 'Firmware',
+          firmwareId: firmware.id,
+          targets: [{ deviceId: device.deviceId }],
+        })
+        .expect(409);
+    });
+
+    it('payloadType Firmware, approvalStatus ยัง pending_review -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const firmware = await seedStoredFirmware({
+        approvalStatus: 'pending_review',
+      });
       const device = await seedInstalledDevice();
       const token = tokenFor(opUser.id, 'Operation');
 

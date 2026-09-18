@@ -24,6 +24,18 @@ export const FIRMWARE_DEVICE_UPDATE_STATUSES = [
 export type FirmwareDeviceUpdateStatus =
   (typeof FIRMWARE_DEVICE_UPDATE_STATUSES)[number];
 
+/** Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2) — คนละ
+ * มิติกับ uploadStatus (ผลทางเทคนิคของการอัปโหลดไฟล์ ไม่ใช่การตัดสินใจเรื่อง
+ * คุณภาพ) */
+export const FIRMWARE_APPROVAL_STATUSES = [
+  "pending_review",
+  "approved",
+  "rejected",
+] as const;
+
+export type FirmwareApprovalStatus =
+  (typeof FIRMWARE_APPROVAL_STATUSES)[number];
+
 /** response shape — `Firmware` ใน openapi.yaml */
 export type Firmware = {
   id: string;
@@ -36,6 +48,8 @@ export type Firmware = {
   fileSizeBytes: number;
   uploadedBy: string;
   uploadedAt: string;
+  approvalStatus: FirmwareApprovalStatus;
+  approvedBy: string | null;
 };
 
 /** ผลทดสอบจาก Device Simulator — schema `SimulationResult` ใน openapi.yaml
@@ -109,5 +123,29 @@ export function simulateFirmware(
     method: "POST",
     token,
     body: JSON.stringify({ deviceModel }),
+  });
+}
+
+/**
+ * `POST /firmware/{firmwareId}/approve` — QAEngineer อนุมัติคุณภาพ Firmware
+ * สถานะ `pending_review` → `approved` (resource `firmware-decision`) ·
+ * ใช้ใน Campaign ได้ต่อเมื่อ uploadStatus:stored **และ** approvalStatus:approved
+ */
+export function approveFirmware(token: string, id: string): Promise<Firmware> {
+  return apiJson<Firmware>(`/firmware/${id}/approve`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * `POST /firmware/{firmwareId}/reject` — QAEngineer ปฏิเสธคุณภาพ Firmware
+ * สถานะ `pending_review` → `rejected` · ไม่มี body (เหมือน `rejectConfig`)
+ * FirmwareEngineer ต้องอัปโหลดเวอร์ชันใหม่แก้ไข ไม่มีการแก้ไฟล์เดิมซ้ำ
+ */
+export function rejectFirmware(token: string, id: string): Promise<Firmware> {
+  return apiJson<Firmware>(`/firmware/${id}/reject`, {
+    method: "POST",
+    token,
   });
 }

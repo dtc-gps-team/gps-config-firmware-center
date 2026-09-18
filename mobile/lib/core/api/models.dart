@@ -4,15 +4,23 @@
 library;
 
 /// `LoginResponse.role` enum — the 6 values in the API contract on `main`
-/// (see the RBAC Matrix). No mobile-only role exists; field staff log in as
-/// ST or OT.
+/// (see the RBAC Matrix). `SW` was split into `ConfigEngineer`/
+/// `FirmwareEngineer`/`QAEngineer` (docs/13_Role_Redesign_Proposal.md §3.1,
+/// PR #178) — all three are Web-only, so Mobile just drops the case instead
+/// of adding new ones. No mobile-only role exists; field staff log in as ST
+/// or OT.
+///
+/// `SuperAdmin` is Web-only (RBAC_Matrix.md Section 1), same as `Admin` — but
+/// it's still parsed here so a login that somehow returns it (e.g. testing
+/// with the wrong account) gets a clear error message instead of an
+/// unhandled `ArgumentError` from `fromWire`.
 enum UserRole {
-  sw('SW'),
   operation('Operation'),
   st('ST'),
   ot('OT'),
   auditor('Auditor'),
-  admin('Admin');
+  admin('Admin'),
+  superAdmin('SuperAdmin');
 
   const UserRole(this.wireName);
 
@@ -344,28 +352,6 @@ class ConfigApplyResult {
           DateTime.now(),
     );
   }
-}
-
-/// `GET /devices/{deviceId}/status` response (`DeviceStatus`).
-class DeviceStatus {
-  const DeviceStatus({
-    this.deviceId,
-    this.configStatus,
-    this.firmwareStatus,
-    this.lastCheckInMessage,
-  });
-
-  final String? deviceId;
-  final String? configStatus;
-  final String? firmwareStatus;
-  final String? lastCheckInMessage;
-
-  factory DeviceStatus.fromJson(Map<String, dynamic> json) => DeviceStatus(
-    deviceId: json['deviceId'] as String?,
-    configStatus: json['configStatus'] as String?,
-    firmwareStatus: json['firmwareStatus'] as String?,
-    lastCheckInMessage: json['lastCheckInMessage'] as String?,
-  );
 }
 
 /// A job assigned to field staff — mirrors `docs/api/openapi.yaml` `Task`
