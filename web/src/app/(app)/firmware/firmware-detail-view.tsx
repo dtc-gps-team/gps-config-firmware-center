@@ -16,24 +16,10 @@ import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareApprovalPanel } from "./firmware-approval-panel";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
-  );
-}
 
 export function FirmwareDetailView({ firmwareId }: { firmwareId: string }) {
   const { data, isLoading, error, refetch } = useFirmware(firmwareId);
