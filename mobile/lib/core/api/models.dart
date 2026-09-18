@@ -348,28 +348,6 @@ class ConfigApplyResult {
   }
 }
 
-/// `GET /devices/{deviceId}/status` response (`DeviceStatus`).
-class DeviceStatus {
-  const DeviceStatus({
-    this.deviceId,
-    this.configStatus,
-    this.firmwareStatus,
-    this.lastCheckInMessage,
-  });
-
-  final String? deviceId;
-  final String? configStatus;
-  final String? firmwareStatus;
-  final String? lastCheckInMessage;
-
-  factory DeviceStatus.fromJson(Map<String, dynamic> json) => DeviceStatus(
-    deviceId: json['deviceId'] as String?,
-    configStatus: json['configStatus'] as String?,
-    firmwareStatus: json['firmwareStatus'] as String?,
-    lastCheckInMessage: json['lastCheckInMessage'] as String?,
-  );
-}
-
 /// A job assigned to field staff — mirrors `docs/api/openapi.yaml` `Task`
 /// (and the Prisma model `Task`). `GET /tasks` / `GET /tasks/{taskId}` /
 /// `PATCH /tasks/{taskId}` all return this shape.

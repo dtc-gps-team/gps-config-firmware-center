@@ -18,6 +18,7 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { type Firmware } from "@/lib/firmware-api";
 import {
+  FIRMWARE_APPROVAL_STATUS_TONE,
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
@@ -71,6 +72,20 @@ const columns: ColumnDef<Firmware>[] = [
       const status = row.original.uploadStatus;
       return (
         <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[status] ?? "neutral"}>
+          {status}
+        </StatusPill>
+      );
+    },
+  },
+  {
+    accessorKey: "approvalStatus",
+    header: "สถานะอนุมัติคุณภาพ",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "สถานะอนุมัติคุณภาพ" },
+    cell: ({ row }) => {
+      const status = row.original.approvalStatus;
+      return (
+        <StatusPill tone={FIRMWARE_APPROVAL_STATUS_TONE[status] ?? "neutral"}>
           {status}
         </StatusPill>
       );

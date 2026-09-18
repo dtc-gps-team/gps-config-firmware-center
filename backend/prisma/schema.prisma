@@ -61,6 +61,7 @@ model User {
   configsApproved           Config[]                @relation("ConfigApprovedBy")
   configsSuggestedToApprove Config[]                @relation("ConfigSuggestedApprover")
   firmwareUploads           Firmware[]
+  firmwareApprovals         Firmware[]              @relation("FirmwareApprovedBy")
   campaignsCreated          Campaign[]
   configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
   configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
@@ -508,6 +509,17 @@ enum FirmwareDeviceUpdateStatus {
   pending_update
 }
 
+// Firmware Approval Lifecycle (docs/13_Role_Redesign_Proposal.md §3.2, PR
+// ถัดจาก #178) — คนละมิติกับ FirmwareUploadStatus (นั่นคือผลทางเทคนิคของการ
+// อัปโหลดไฟล์ ไม่ใช่การตัดสินใจเรื่องคุณภาพ) ไม่มี `draft` (อัปโหลดสำเร็จ =
+// พร้อมให้ QA ตรวจทันที ไม่มีขั้น "แก้ไปเรื่อยๆ ก่อนส่ง" แบบ Config) และไม่มี
+// `synced` (concept "sync เข้าระบบเดิม" กำลังถูกตัดออกทั้งระบบตาม Issue #157)
+enum FirmwareApprovalStatus {
+  pending_review
+  approved
+  rejected
+}
+
 model Firmware {
   id                       String                     @id @default(uuid())
   version                  String
@@ -524,8 +536,15 @@ model Firmware {
   fileSizeBytes            Int
   uploadedBy               String
   uploadedAt               DateTime                   @default(now())
+  // Firmware Approval Lifecycle — mirror Config.status/approvedBy (ดู comment
+  // เหนือ enum) `approvedBy` เป็น null จนกว่า QAEngineer จะตัดสินใจ (approve
+  // หรือ reject ก็ไม่ตั้งค่านี้ตอน reject — mirror ConfigService.reject ที่ไม่
+  // แตะ approvedBy เช่นกัน)
+  approvalStatus           FirmwareApprovalStatus     @default(pending_review)
+  approvedBy               String?
 
   uploader  User       @relation(fields: [uploadedBy], references: [id])
+  approver  User?      @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])
   campaigns Campaign[]
   incidents Incident[]
 }
