@@ -91,7 +91,7 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ &amp; ส่งอนุมัติ</p>
 
       <div className="flex flex-wrap items-center gap-2">
