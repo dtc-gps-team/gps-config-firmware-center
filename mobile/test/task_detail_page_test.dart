@@ -586,7 +586,7 @@ void main() {
       },
     );
 
-    testWidgets('SW (ไม่เห็นปุ่มไหนเลย) -> ไม่มี bottomNavigationBar', (
+    testWidgets('Operation (ไม่เห็นปุ่มไหนเลย) -> ไม่มี bottomNavigationBar', (
       tester,
     ) async {
       await _pump(
@@ -594,7 +594,7 @@ void main() {
         repo: _FakeTaskRepository(
           task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
         ),
-        role: UserRole.sw,
+        role: UserRole.operation,
       );
 
       // 2 Scaffold ซ้อนกัน (นอก: TaskDetailPage มี AppBar, ใน: _TaskDetailView
