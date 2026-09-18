@@ -44,7 +44,7 @@ export function CampaignApprovalPanel({
 
   if (!canDecide) {
     return (
-      <div className="flex flex-col gap-1 rounded-xl border bg-muted/30 p-4">
+      <div className="flex max-w-2xl flex-col gap-1 rounded-xl border bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อนุมัติ</p>
         <p className="text-sm text-muted-foreground">
           แคมเปญนี้ยังไม่ได้รับการอนุมัติ — เฉพาะ Operation
@@ -56,7 +56,7 @@ export function CampaignApprovalPanel({
 
   if (isOwnCampaign) {
     return (
-      <div className="flex flex-col gap-1 rounded-xl border bg-muted/30 p-4">
+      <div className="flex max-w-2xl flex-col gap-1 rounded-xl border bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อีกคนอนุมัติ</p>
         <p className="text-sm text-muted-foreground">
           คุณเป็นผู้สร้างแคมเปญนี้ — อนุมัติ/ปฏิเสธของตัวเองไม่ได้
@@ -96,7 +96,7 @@ export function CampaignApprovalPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติแคมเปญ</p>
       <p className="text-sm text-muted-foreground">
         อนุมัติแล้วแคมเปญเริ่มทำงานทันที ปฏิเสธแล้วผู้สร้างแก้ไขและส่งอนุมัติใหม่ได้
