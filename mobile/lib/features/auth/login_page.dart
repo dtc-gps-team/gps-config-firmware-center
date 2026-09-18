@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
+
+/// App version/build shown at the bottom of Login — read once per app
+/// session (`PackageInfo.fromPlatform()` reflects the installed package, not
+/// something that changes at runtime).
+final _packageInfoProvider = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+);
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -36,6 +44,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   InputDecoration _fieldDecoration({
     required String label,
     required String hint,
+    Widget? prefixIcon,
     Widget? suffixIcon,
   }) {
     const border = OutlineInputBorder(
@@ -50,6 +59,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       labelStyle: const TextStyle(color: AppTheme.label),
       floatingLabelStyle: const TextStyle(color: AppTheme.navy),
       hintStyle: TextStyle(color: AppTheme.label.withValues(alpha: 0.6)),
+      prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       enabledBorder: border,
       border: border,
@@ -69,12 +79,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
 
+    // เมื่อคีย์บอร์ดเปิด (โดยเฉพาะจอเล็ก/ความละเอียดต่ำ) พื้นที่เหนือคีย์บอร์ด
+    // เหลือไม่พอให้ทั้งโลโก้ + หัวข้อ + คำอธิบาย + ช่องกรอกทั้ง 2 + ปุ่ม login
+    // แสดงพร้อมกันได้ — ย่อส่วนที่ไม่จำเป็นตอนกรอกฟอร์ม (โลโก้, คำอธิบายรอง,
+    // mock banner, เวอร์ชันแอป) ออกไปก่อน เพื่อให้ปุ่ม login ยังอยู่ในระยะที่
+    // เลื่อนขึ้นมาเห็นได้ง่ายกว่าเดิม โดยไม่ต้องเขียนโครง layout ใหม่ทั้งหมด
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            padding: EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: keyboardOpen ? 16 : 32,
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Form(
@@ -83,8 +103,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: _AppMark()),
-                    const SizedBox(height: 24),
+                    if (!keyboardOpen) ...[
+                      const Center(child: _AppMark()),
+                      const SizedBox(height: 24),
+                    ],
                     const Text(
                       'GPS Config & Firmware Center',
                       textAlign: TextAlign.center,
@@ -95,20 +117,22 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         color: AppTheme.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.textSecondary,
+                    if (!keyboardOpen) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
-                    ),
-                    if (AppConfig.apiMockMode) ...[
+                    ],
+                    if (AppConfig.apiMockMode && !keyboardOpen) ...[
                       const SizedBox(height: 16),
                       const _MockModeBanner(),
                     ],
-                    const SizedBox(height: 32),
+                    SizedBox(height: keyboardOpen ? 16 : 32),
                     TextFormField(
                       key: const Key('login_username'),
                       controller: _usernameController,
@@ -118,6 +142,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       decoration: _fieldDecoration(
                         label: 'ชื่อผู้ใช้',
                         hint: 'กรอกชื่อผู้ใช้ของคุณ',
+                        prefixIcon: const Icon(
+                          Icons.person_outline,
+                          color: AppTheme.label,
+                        ),
                       ),
                       validator: (value) =>
                           (value == null || value.trim().isEmpty)
@@ -134,6 +162,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       decoration: _fieldDecoration(
                         label: 'รหัสผ่าน',
                         hint: 'กรอกรหัสผ่าน',
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                          color: AppTheme.label,
+                        ),
                         suffixIcon: IconButton(
                           key: const Key('login_password_toggle'),
                           onPressed: () => setState(
@@ -179,6 +211,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     ],
                     const SizedBox(height: 24),
                     _SubmitButton(busy: auth.isBusy, onPressed: _submit),
+                    if (!keyboardOpen) ...[
+                      const SizedBox(height: 24),
+                      const _AppVersionText(),
+                    ],
                   ],
                 ),
               ),
@@ -245,6 +281,30 @@ class _SubmitButton extends StatelessWidget {
                 Icon(Icons.arrow_forward, size: 18),
               ],
             ),
+    );
+  }
+}
+
+/// "เวอร์ชัน x.y.z (build n)" ท้ายจอ Login — เงียบๆ ถ้าอ่านไม่สำเร็จ (ไม่ใช่
+/// ข้อมูลที่จำเป็นต่อการ login เลยไม่ต้องมี error state ของตัวเอง).
+class _AppVersionText extends ConsumerWidget {
+  const _AppVersionText();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final packageInfo = ref.watch(_packageInfoProvider);
+    return packageInfo.when(
+      data: (info) => Text(
+        key: const Key('login_app_version'),
+        'เวอร์ชัน ${info.version} (build ${info.buildNumber})',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 11,
+          color: AppTheme.textSecondary.withValues(alpha: 0.7),
+        ),
+      ),
+      loading: () => const SizedBox.shrink(key: Key('login_app_version')),
+      error: (_, _) => const SizedBox.shrink(key: Key('login_app_version')),
     );
   }
 }
