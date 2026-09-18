@@ -62,7 +62,8 @@ model User {
   configsSuggestedToApprove Config[]                @relation("ConfigSuggestedApprover")
   firmwareUploads           Firmware[]
   firmwareApprovals         Firmware[]              @relation("FirmwareApprovedBy")
-  campaignsCreated          Campaign[]
+  campaignsCreated          Campaign[]              @relation("CampaignCreatedBy")
+  campaignsApproved         Campaign[]              @relation("CampaignApprovedBy")
   configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
   configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
 }
@@ -299,8 +300,8 @@ model Device {
   // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
   // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
   // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId   String?
+  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
@@ -594,9 +595,20 @@ enum CampaignPayloadType {
   Firmware
 }
 
+// Campaign Approval (แก้ครั้งที่ 39, docs/architecture/RBAC_Matrix.md) — เพิ่ม
+// `pending_approval`/`rejected` ปิด gap ที่ System Design PDF §9.1/§10.2/§19
+// ต้องการ Approval step ก่อน Campaign เข้า `active` จริง (เดิม v1 "ส่งพร้อมกัน
+// หมด" ข้ามขั้นนี้ไปเลย — ดู comment เดิมเหนือ `CampaignService.create()`)
+// `rejected` แยกจาก `draft` โดยตั้งใจ mirror `ConfigStatus.rejected` — ให้เห็น
+// ชัดว่าเคยถูกปฏิเสธมาก่อน ไม่ใช่แค่ยังไม่เคยส่งอนุมัติ — Operation แก้ไขแล้ว
+// ส่งอนุมัติใหม่ได้ (`rejected` -> `pending_approval` อีกรอบ ผ่าน endpoint
+// เดียวกับตอนสร้าง เพราะยังไม่มี `PATCH /campaigns/{id}` จริง — รอ Campaign
+// Monitor แถวที่ 22)
 enum CampaignStatus {
   draft
+  pending_approval
   active
+  rejected
   completed
   cancelled
 }
@@ -613,10 +625,18 @@ model Campaign {
   successCount Int                 @default(0)
   failureCount Int                 @default(0)
   createdBy    String
+  // Separation of Duty (แก้ครั้งที่ 39) — Operation สร้าง Campaign เอง จึงต้อง
+  // กันไม่ให้อนุมัติงานตัวเอง (เช็คที่ service layer เทียบ actor.id ตอน
+  // approve/reject กับ field นี้ ไม่ใช่ DB constraint — mirror `Config.approvedBy`
+  // ที่ปล่อยให้ service เป็นคนบังคับเหมือนกัน) `rejectedBy` ไม่มี — reject
+  // ไม่นับเป็น "อนุมัติ" (mirror Config/Firmware ที่ reject ไม่ตั้ง approvedBy)
+  approvedBy   String?
+  approvedAt   DateTime?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  creator  User             @relation(fields: [createdBy], references: [id])
+  creator  User             @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
+  approver User?            @relation("CampaignApprovedBy", fields: [approvedBy], references: [id])
   config   Config?          @relation(fields: [configId], references: [id])
   firmware Firmware?        @relation(fields: [firmwareId], references: [id])
   targets  CampaignTarget[]

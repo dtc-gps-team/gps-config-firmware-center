@@ -311,9 +311,14 @@ async function main() {
     // ---- campaign (Sprint 3 #21 — Campaign Wizard) ----
     // RBAC_Matrix.md §2 แถว "Campaign Wizard": Operation = C, R, U (U ยังไม่มี
     // endpoint จริง — รอ Campaign Monitor แถวที่ 22) role อื่นทั้งหมด = R
+    // แก้ครั้งที่ 39 — เพิ่ม Approve (Campaign Approval) ให้ Operation เท่านั้น
+    // เหมือน Create/Read เดิม (SoD check ว่าห้ามอนุมัติของตัวเองอยู่ใน service
+    // layer ไม่ใช่ grant นี้ — grant แค่บอกว่า role Operation ใช้ endpoint
+    // approve/reject ได้ ไม่ได้บอกว่า instance ไหนอนุมัติได้บ้าง)
     grant('ConfigEngineer', 'campaign', 'Read'),
     grant('Operation', 'campaign', 'Create'),
     grant('Operation', 'campaign', 'Read'),
+    grant('Operation', 'campaign', 'Approve'),
     grant('ST', 'campaign', 'Read'),
     grant('OT', 'campaign', 'Read'),
     grant('Auditor', 'campaign', 'Read'),

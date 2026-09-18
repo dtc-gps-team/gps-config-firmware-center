@@ -3,8 +3,8 @@ import { apiJson } from "@/lib/api";
 /**
  * Campaign API client — ตรงกับ `docs/api/openapi.yaml` tag `campaign`
  * (Sprint 3 #21 Campaign Wizard) — `POST /campaigns` สร้าง Campaign+
- * CampaignTarget[] ใน transaction เดียว, active ทันที ("ส่งพร้อมกันหมด" —
- * v1 ไม่มี draft/rollout strategy) ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม
+ * CampaignTarget[] ใน transaction เดียว ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์
+ * เป็นกลุ่ม
  *
  * **แก้ไข 2026-09-14 (1):** เดิม `POST /campaigns` สร้าง `Task` ต่ออุปกรณ์พร้อม
  * มอบหมายผู้รับผิดชอบหน้างานด้วย — หัวหน้าแก้ scope ว่า Campaign ไม่ใช่
@@ -13,11 +13,19 @@ import { apiJson } from "@/lib/api";
  *
  * **แก้ไข 2026-09-14 (2):** `payloadType: Firmware` เปิดใช้งานแล้ว (backend
  * PR #154) — เพิ่ม `firmwareId` เข้า `CreateCampaignInput` คู่กับ `configId`
+ *
+ * **แก้ไข 2026-09-18 (Campaign Approval, PR #186):** `createCampaign` สร้าง
+ * เป็น `pending_approval` แทน `active` ทันที — ต้องรอ Operation อีกคน
+ * (ไม่ใช่ผู้สร้างเอง — Separation of Duty) กด `approveCampaign`/
+ * `rejectCampaign` ก่อนถึงจะ `active`/`rejected` เพิ่ม `approvedBy`/
+ * `approvedAt` เข้า response shape ด้วย
  */
 
 export const CAMPAIGN_STATUSES = [
   "draft",
+  "pending_approval",
   "active",
+  "rejected",
   "completed",
   "cancelled",
 ] as const;
@@ -45,6 +53,10 @@ export type Campaign = {
   successCount: number;
   failureCount: number;
   createdBy: string;
+  /** user id ของ Operation ที่กด `approveCampaign` — null จนกว่าจะอนุมัติ
+   * (`rejectCampaign` ไม่ตั้งค่านี้ คงเป็น null เสมอ) */
+  approvedBy: string | null;
+  approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -95,5 +107,30 @@ export function createCampaign(
     method: "POST",
     token,
     body: JSON.stringify(input),
+  });
+}
+
+/**
+ * `POST /campaigns/{id}/approve` — Operation เท่านั้น · `pending_approval` →
+ * `active` เท่านั้น (409 ถ้าไม่ใช่) · 403 ถ้าผู้กดเป็นผู้สร้าง Campaign
+ * เดียวกันเอง (Separation of Duty — backend เช็คจริง, ฝั่งนี้แค่ซ่อน/ปิดปุ่ม
+ * ไว้ล่วงหน้าด้วย `getTokenSubject`)
+ */
+export function approveCampaign(token: string, id: string): Promise<Campaign> {
+  return apiJson<Campaign>(`/campaigns/${id}/approve`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * `POST /campaigns/{id}/reject` — resource/เงื่อนไขเดียวกับ `approveCampaign`
+ * แต่เปลี่ยนเป็น `rejected` แทน ไม่ตั้ง `approvedBy`/`approvedAt` · Operation
+ * แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `createCampaign` อีกครั้ง
+ */
+export function rejectCampaign(token: string, id: string): Promise<Campaign> {
+  return apiJson<Campaign>(`/campaigns/${id}/reject`, {
+    method: "POST",
+    token,
   });
 }

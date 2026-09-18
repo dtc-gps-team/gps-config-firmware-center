@@ -1,11 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Campaign, CampaignPayloadType, Device } from '@prisma/client';
+import { APPROVABLE_CAMPAIGN_STATUS } from './campaign-status';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
@@ -56,9 +58,13 @@ export class CampaignService {
    * Campaign Wizard (#21) — สร้าง Campaign + CampaignTarget ต่ออุปกรณ์ใน
    * `$transaction` เดียว ไม่มี queue เพราะเป็นแค่เขียน DB ของเราเอง
    *
-   * v1 = "ส่งพร้อมกันหมด" ล้วน — ไม่มี draft/rollout strategy เลย ตอน submit
-   * ก็ active ทันที ต่างจาก Config ที่มีขั้นตอนอนุมัติแยก — `CampaignStatus`
-   * ไม่มี approval workflow ของตัวเอง
+   * v1 = "ส่งพร้อมกันหมด" ล้วน — ไม่มี draft/rollout strategy เลย
+   *
+   * **แก้ไข (แก้ครั้งที่ 39, Campaign Approval):** เดิม submit แล้ว `active`
+   * ทันที — ปิด gap ที่ System Design PDF §9.1/§10.2/§19 ต้องการขั้นตอน
+   * "ส่งอนุมัติ" ก่อนเข้าใช้งานจริง เปลี่ยนเป็น `pending_approval` แทน ต้องรอ
+   * Operation อีกคน (ไม่ใช่ผู้สร้างเอง — ดู `approve()`/`reject()`) กดอนุมัติ
+   * ก่อนถึงจะ `active`
    *
    * **แก้ไข 2026-09-14 (1):** เดิม step นี้สร้าง `Task` ต่ออุปกรณ์พร้อม
    * `assignedTo` ด้วย (มอบหมายผู้รับผิดชอบหน้างาน) — หัวหน้าแก้ scope ว่า
@@ -96,7 +102,7 @@ export class CampaignService {
           payloadType: dto.payloadType,
           configId,
           firmwareId,
-          status: 'active',
+          status: 'pending_approval',
           targetCount: dto.targets.length,
           createdBy: actor.id,
         },
@@ -116,6 +122,64 @@ export class CampaignService {
     await this.logAudit('create', actor.id);
 
     return campaign;
+  }
+
+  /**
+   * `POST /campaigns/{id}/approve` — Campaign Approval (แก้ครั้งที่ 39) —
+   * Operation อนุมัติ Campaign ที่รอตัดสินใจอยู่ (`pending_approval` เท่านั้น
+   * — 409 ถ้าไม่ใช่ mirror `FirmwareService.approve`) เปลี่ยนเป็น `active`
+   * บันทึก `approvedBy`/`approvedAt`
+   *
+   * **Separation of Duty:** ต่างจาก Config (ConfigEngineer สร้าง / Operation
+   * อนุมัติ คนละ role กันอยู่แล้วโดย RBAC) Campaign สร้างโดย Operation เอง —
+   * ต้องเช็คที่นี่ว่าผู้กดอนุมัติไม่ใช่ผู้สร้างคนเดียวกัน (403) ไม่งั้น
+   * Operation คนเดียวสร้าง+อนุมัติเองได้ ขัดหลัก SoD ที่ CLAUDE.md ระบุไว้
+   */
+  async approve(id: string, actor: ActingUser): Promise<Campaign> {
+    const campaign = await this.findOne(id);
+    this.assertDecidable(campaign, actor);
+
+    const updated = await this.prisma.campaign.update({
+      where: { id },
+      data: { status: 'active', approvedBy: actor.id, approvedAt: new Date() },
+    });
+
+    await this.logAudit('approve', actor.id);
+    return updated;
+  }
+
+  /**
+   * `POST /campaigns/{id}/reject` — mirror `approve()` แต่เปลี่ยนเป็น
+   * `rejected` แทน (แยกจาก `draft` โดยตั้งใจ — mirror `ConfigStatus.rejected`
+   * ให้เห็นชัดว่าเคยถูกปฏิเสธมาก่อน) ไม่ตั้ง `approvedBy`/`approvedAt`
+   * (คงเป็น null — ไม่มีใคร "อนุมัติ" การ reject) Operation แก้ไขแล้วส่ง
+   * อนุมัติใหม่ได้ผ่าน `POST /campaigns` อีกครั้ง (ยังไม่มี endpoint แก้ไข
+   * Campaign เดิม — รอ Campaign Monitor แถวที่ 22)
+   */
+  async reject(id: string, actor: ActingUser): Promise<Campaign> {
+    const campaign = await this.findOne(id);
+    this.assertDecidable(campaign, actor);
+
+    const updated = await this.prisma.campaign.update({
+      where: { id },
+      data: { status: 'rejected' },
+    });
+
+    await this.logAudit('reject', actor.id);
+    return updated;
+  }
+
+  private assertDecidable(campaign: Campaign, actor: ActingUser): void {
+    if (campaign.status !== APPROVABLE_CAMPAIGN_STATUS) {
+      throw new ConflictException(
+        `สถานะ Campaign ปัจจุบัน (${campaign.status}) ไม่ใช่ ${APPROVABLE_CAMPAIGN_STATUS} จึงตัดสินใจไม่ได้`,
+      );
+    }
+    if (campaign.createdBy === actor.id) {
+      throw new ForbiddenException(
+        'ผู้สร้าง Campaign อนุมัติ/ปฏิเสธ Campaign ของตัวเองไม่ได้ (Separation of Duty)',
+      );
+    }
   }
 
   /**

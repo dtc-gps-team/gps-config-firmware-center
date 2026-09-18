@@ -1526,11 +1526,11 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.24
+      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.25
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
-        Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว แล้ว active
-        ทันที ("ส่งพร้อมกันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง)
+        Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว
+        ("ส่งพร้อมกันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง)
         ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม **ไม่สร้าง Task/มอบหมายงาน
         ให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็นหน้าที่ของระบบ
         แยกที่บริษัทมีอยู่แล้ว) · **payloadType `Firmware` รองรับแล้ว**
@@ -1541,7 +1541,10 @@ paths:
         **แก้ไข 2026-09-17 (Firmware Approval Lifecycle, docs/13 §3.2):**
         Firmware ต้อง `approvalStatus: approved` (QAEngineer อนุมัติคุณภาพ
         แล้ว) ควบคู่กับ `uploadStatus: stored` ด้วย — เช็คทั้งสองเงื่อนไข
-        แยกกัน คนละมิติกัน
+        แยกกัน คนละมิติกัน · **แก้ไข 2026-09-18 (Campaign Approval):** สร้าง
+        แล้วเป็น `pending_approval` (ไม่ใช่ `active` ทันทีแบบเดิม) ต้องรอ
+        Operation อีกคนกด `approveCampaign` ก่อนถึงจะ `active` จริง — ดู
+        `CampaignStatus`
       requestBody:
         required: true
         content:
@@ -1550,7 +1553,7 @@ paths:
               $ref: "#/components/schemas/CampaignCreateRequest"
       responses:
         "201":
-          description: สร้างแคมเปญสำเร็จ (status = active)
+          description: สร้างแคมเปญสำเร็จ (status = pending_approval — รออนุมัติ)
           content:
             application/json:
               schema:
@@ -1596,6 +1599,80 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบแคมเปญนี้
+
+  /campaigns/{id}/approve:
+    post:
+      tags: [campaign]
+      operationId: approveCampaign
+      summary: Operation อนุมัติ Campaign (Campaign Approval) — v3.25
+      description: >-
+        resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
+        `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
+        `approvedAt` · **Separation of Duty:** ผู้กดอนุมัติต้องไม่ใช่ผู้สร้าง
+        Campaign เดียวกัน (403) — ต่างจาก Config ที่ ConfigEngineer/Operation
+        เป็นคนละ role กันอยู่แล้วโดย RBAC, Campaign สร้างโดย Operation เอง จึง
+        ต้องเช็คตัวตนเพิ่มที่ endpoint นี้โดยเฉพาะ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: อนุมัติสำเร็จ — status เป็น active พร้อม approvedBy/approvedAt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: >-
+            ไม่มีสิทธิ์อนุมัติ Campaign (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
+            Campaign นี้เอง (Separation of Duty)
+        "404":
+          description: ไม่พบ Campaign นี้
+        "409":
+          description: สถานะ Campaign ปัจจุบันไม่ใช่ pending_approval จึงอนุมัติไม่ได้
+
+  /campaigns/{id}/reject:
+    post:
+      tags: [campaign]
+      operationId: rejectCampaign
+      summary: Operation ปฏิเสธ Campaign (Campaign Approval) — v3.25
+      description: >-
+        resource เดียวกับ `approveCampaign` (`campaign` action `Approve`) —
+        สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง `approvedBy`/
+        `approvedAt` (คงเป็น null — ไม่มีใคร "อนุมัติ" การ reject) เช็ค
+        Separation of Duty เดียวกับ `approveCampaign` (ผู้สร้างปฏิเสธของ
+        ตัวเองไม่ได้) Operation แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `createCampaign`
+        อีกครั้ง
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ปฏิเสธสำเร็จ — status เป็น rejected (approvedBy ยังเป็น null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: >-
+            ไม่มีสิทธิ์ปฏิเสธ Campaign (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
+            Campaign นี้เอง (Separation of Duty)
+        "404":
+          description: ไม่พบ Campaign นี้
+        "409":
+          description: สถานะ Campaign ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
 
 components:
   securitySchemes:
@@ -1686,11 +1763,16 @@ components:
 
     CampaignStatus:
       type: string
-      enum: [draft, active, completed, cancelled]
+      enum: [draft, pending_approval, active, rejected, completed, cancelled]
       description: >-
-        v1 ไม่มี workflow อนุมัติแยก — `createCampaign` สร้างแล้ว active
-        ทันที ("ส่งพร้อมกันหมด") `draft`/`completed`/`cancelled` ยังไม่มี
-        endpoint ไหนเปลี่ยนสถานะเข้า-ออก (รอ Campaign Monitor, Sprint 3 #22)
+        Campaign Approval (แก้ไข — v3.25): `createCampaign` สร้างแล้วเป็น
+        `pending_approval` ก่อนเสมอ ("ส่งพร้อมกันหมด" แต่ต้องรออนุมัติ) ต้อง
+        ผ่าน `approveCampaign` (→ `active`) หรือ `rejectCampaign` (→
+        `rejected`) โดย Operation คนอื่นที่ไม่ใช่ผู้สร้าง (Separation of
+        Duty) `rejected` แยกจาก `draft` โดยตั้งใจ mirror `ConfigStatus` —
+        แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `createCampaign` อีกครั้ง ·
+        `draft`/`completed`/`cancelled` ยังไม่มี endpoint ไหนเปลี่ยนสถานะ
+        เข้า-ออก (รอ Campaign Monitor, Sprint 3 #22)
 
     Campaign:
       type: object
@@ -1708,6 +1790,8 @@ components:
           successCount,
           failureCount,
           createdBy,
+          approvedBy,
+          approvedAt,
           createdAt,
           updatedAt,
         ]
@@ -1745,6 +1829,18 @@ components:
         createdBy:
           type: string
           format: uuid
+        approvedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Campaign Approval (v3.25) — user id ของ Operation ที่กด
+            `approveCampaign` (ต้องไม่ใช่ createdBy คนเดียวกัน) เป็น null
+            จนกว่าจะอนุมัติ · `rejectCampaign` ไม่ตั้งค่านี้ (คงเป็น null)
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time

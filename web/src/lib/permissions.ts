@@ -152,6 +152,21 @@ export function canCreateCampaign(role: string | null | undefined): boolean {
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" Campaign — Section 2 แถว Campaign Wizard (Campaign
+ * Approval, แก้ครั้งที่ 39): Operation เท่านั้น (resource `campaign` action
+ * `Approve`) — role check นี้ไม่พอ: Separation of Duty (ผู้สร้าง Campaign
+ * อนุมัติของตัวเองไม่ได้) ต้องเทียบ user id เพิ่มที่หน้าเรียกใช้เอง (ดู
+ * `campaign-approval-panel.tsx` — ใช้ `getTokenSubject` มิเรอร์
+ * `approval-center-view.tsx`) เพราะ role ต้องแยกออกจาก "ใช่ผู้สร้างไหม"
+ * คนละมิติกัน
+ */
+export function canDecideCampaignApproval(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * ปุ่ม "สั่ง Rollback" ใน Incident & Rollback — Section 2 แถว Incident &
  * Rollback: Operation เท่านั้นที่มี U (สั่ง Rollback)
  */
