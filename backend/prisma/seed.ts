@@ -342,6 +342,15 @@ async function main() {
     grant('OT', 'audit-logs', 'Read'),
     grant('Auditor', 'audit-logs', 'Read'),
     grant('Admin', 'audit-logs', 'Read'),
+
+    // ---- user-management (User / Role Management — บัญชีทั่วไปเท่านั้น,
+    // RBAC_Matrix.md §2) — Admin เท่านั้น (SuperAdmin ได้อัตโนมัติจากการ copy
+    // สิทธิ์ Admin ด้านล่าง) จัดการบัญชี Admin/SuperAdmin เองเป็นสิทธิ์แยก
+    // (`admin-management`) ที่ยังไม่ finalize (docs/11) — ไม่ seed grant นี้ให้
+    // role ไหนตอนนี้
+    grant('Admin', 'user-management', 'Create'),
+    grant('Admin', 'user-management', 'Read'),
+    grant('Admin', 'user-management', 'Update'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----

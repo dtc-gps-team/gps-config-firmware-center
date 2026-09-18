@@ -164,35 +164,6 @@ export const DEMO_INCIDENTS = [
   },
 ];
 
-/* ---------------------------------------------------------------- */
-/*  User / Role Management — โมดูล users (ยังไม่มี endpoint ในสเปค)  */
-/*  ตรงกับ testUsers ใน backend/prisma/seed.ts                      */
-/* ---------------------------------------------------------------- */
-
-export const DEMO_USERS = [
-  {
-    username: "config.test",
-    fullName: "Config Engineer Tester",
-    role: "ConfigEngineer",
-  },
-  {
-    username: "firmware.test",
-    fullName: "Firmware Engineer Tester",
-    role: "FirmwareEngineer",
-  },
-  { username: "qa.test", fullName: "QA Engineer Tester", role: "QAEngineer" },
-  {
-    username: "operation.test",
-    fullName: "Operation Tester",
-    role: "Operation",
-  },
-  { username: "st.test", fullName: "ST Tester", role: "ST" },
-  { username: "ot.test", fullName: "OT Tester", role: "OT" },
-  { username: "auditor.test", fullName: "Auditor Tester", role: "Auditor" },
-  { username: "admin.test", fullName: "Admin Tester", role: "Admin" },
-  {
-    username: "superadmin.test",
-    fullName: "SuperAdmin Tester",
-    role: "SuperAdmin",
-  },
-];
+/* User / Role Management — ต่อ API จริงแล้ว (GET /users/managed, POST/PATCH
+   /users, แก้ครั้งที่ 38) DEMO_USERS ถูกลบออก — ดู
+   web/src/app/(app)/users/user-management-view.tsx */
