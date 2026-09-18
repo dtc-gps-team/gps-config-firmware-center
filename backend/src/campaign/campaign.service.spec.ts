@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -13,6 +14,7 @@ type CampaignDelegateMock = {
   create: jest.Mock;
   findMany: jest.Mock;
   findUnique: jest.Mock;
+  update: jest.Mock;
 };
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
@@ -44,6 +46,7 @@ const storedFirmware = {
   version: '1.2.3',
   deviceModelCompatibility: ['GT06N'],
   uploadStatus: 'stored' as const,
+  approvalStatus: 'approved' as const,
 };
 
 const sampleCampaign: Campaign = {
@@ -53,11 +56,13 @@ const sampleCampaign: Campaign = {
   payloadType: CampaignPayloadType.Config,
   configId: approvedConfig.id,
   firmwareId: null,
-  status: 'active',
+  status: 'pending_approval',
   targetCount: 2,
   successCount: 0,
   failureCount: 0,
   createdBy: operation.id,
+  approvedBy: null,
+  approvedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -100,6 +105,7 @@ describe('CampaignService', () => {
       create: jest.fn().mockResolvedValue(sampleCampaign),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
     };
     campaignTarget = { createMany: jest.fn().mockResolvedValue({ count: 2 }) };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
@@ -145,7 +151,7 @@ describe('CampaignService', () => {
           payloadType: CampaignPayloadType.Config,
           configId: approvedConfig.id,
           firmwareId: null,
-          status: 'active',
+          status: 'pending_approval',
           targetCount: 2,
           createdBy: operation.id,
         },
@@ -261,7 +267,7 @@ describe('CampaignService', () => {
           payloadType: CampaignPayloadType.Firmware,
           configId: null,
           firmwareId: storedFirmware.id,
-          status: 'active',
+          status: 'pending_approval',
           targetCount: 2,
           createdBy: operation.id,
         },
@@ -296,6 +302,17 @@ describe('CampaignService', () => {
       );
     });
 
+    it('Firmware approvalStatus ไม่ใช่ approved (เช่น pending_review) -> ConflictException', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...storedFirmware,
+        approvalStatus: 'pending_review',
+      });
+
+      await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
     it('Device deviceModel ไม่อยู่ใน deviceModelCompatibility ของ Firmware -> ConflictException', async () => {
       device.findMany.mockResolvedValue([
         installedDeviceA,
@@ -316,6 +333,86 @@ describe('CampaignService', () => {
       await expect(service.create(firmwareDto(), operation)).rejects.toThrow(
         ConflictException,
       );
+    });
+  });
+
+  describe('approve', () => {
+    const pendingCampaign: Campaign = {
+      ...sampleCampaign,
+      status: 'pending_approval',
+    };
+    const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
+
+    it('pending_approval + ผู้อนุมัติไม่ใช่ผู้สร้าง -> active พร้อม approvedBy/approvedAt', async () => {
+      campaign.findUnique.mockResolvedValue(pendingCampaign);
+      campaign.update.mockResolvedValue({
+        ...pendingCampaign,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      const result = await service.approve(pendingCampaign.id, otherOperation);
+
+      expect(result.status).toBe('active');
+      expect(campaign.update).toHaveBeenCalledWith({
+        where: { id: pendingCampaign.id },
+        data: expect.objectContaining({
+          status: 'active',
+          approvedBy: otherOperation.id,
+        }) as Partial<Campaign>,
+      });
+    });
+
+    it('สถานะไม่ใช่ pending_approval -> ConflictException', async () => {
+      campaign.findUnique.mockResolvedValue({
+        ...sampleCampaign,
+        status: 'active',
+      });
+
+      await expect(
+        service.approve(sampleCampaign.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('ผู้อนุมัติเป็นผู้สร้าง Campaign เอง -> ForbiddenException (Separation of Duty)', async () => {
+      campaign.findUnique.mockResolvedValue(pendingCampaign);
+
+      await expect(
+        service.approve(pendingCampaign.id, operation),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('reject', () => {
+    const pendingCampaign: Campaign = {
+      ...sampleCampaign,
+      status: 'pending_approval',
+    };
+    const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
+
+    it('pending_approval + ผู้ปฏิเสธไม่ใช่ผู้สร้าง -> rejected ไม่ตั้ง approvedBy', async () => {
+      campaign.findUnique.mockResolvedValue(pendingCampaign);
+      campaign.update.mockResolvedValue({
+        ...pendingCampaign,
+        status: 'rejected',
+      });
+
+      const result = await service.reject(pendingCampaign.id, otherOperation);
+
+      expect(result.status).toBe('rejected');
+      expect(campaign.update).toHaveBeenCalledWith({
+        where: { id: pendingCampaign.id },
+        data: { status: 'rejected' },
+      });
+    });
+
+    it('ผู้ปฏิเสธเป็นผู้สร้าง Campaign เอง -> ForbiddenException', async () => {
+      campaign.findUnique.mockResolvedValue(pendingCampaign);
+
+      await expect(
+        service.reject(pendingCampaign.id, operation),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

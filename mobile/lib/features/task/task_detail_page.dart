@@ -191,197 +191,274 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     // in_progress (ไม่ใช่ pending ที่ยังไม่เริ่ม หรือ completed/cancelled ที่
     // จบไปแล้ว) — ปุ่มนี้แค่ "ส่ง" Config เข้าเครื่อง ไม่ใช่ยืนยันว่าติดตั้ง
     // สำเร็จ (apply-config เป็น fire-and-forget, ไม่เปลี่ยนสถานะอุปกรณ์)
+    //
+    // หมายเหตุ: canEditStatus และ canConfirmInstall เป็นจริงพร้อมกันได้จริง
+    // (ST/OT ที่งาน in_progress + มี configId/deviceId ครบ) — bottom bar ด้าน
+    // ล่างจึงต้องรองรับโชว์ทั้งคู่พร้อมกันแบบเรียงต่อกัน ไม่ใช่แค่กรณีเดียว
     final canConfirmInstall =
         canEditStatus &&
         task.configId != null &&
         task.deviceId != null &&
         task.status == TaskStatus.inProgress;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: [
-        Text(
-          task.title,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          Text(
+            task.title,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TaskStatusPill(status: task.status),
-        ),
-        const SizedBox(height: 20),
-        _InfoCard(
-          rows: [
-            ('อุปกรณ์', task.deviceId ?? '—'),
-            (
-              'กำหนดส่ง',
-              task.dueDate == null ? '—' : _formatDate(task.dueDate!),
-            ),
-            ('สร้างเมื่อ', _formatDate(task.createdAt)),
-            ('แก้ไขล่าสุด', _formatDate(task.updatedAt)),
-          ],
-        ),
-        if ((task.description ?? '').trim().isNotEmpty) ...[
-          const SizedBox(height: 16),
-          const _SectionLabel('รายละเอียด'),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              task.description!.trim(),
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.4,
-                color: AppTheme.textPrimary,
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TaskStatusPill(status: task.status),
+          ),
+          const SizedBox(height: 20),
+          _InfoCard(
+            rows: [
+              ('อุปกรณ์', task.deviceId ?? '—'),
+              (
+                'กำหนดส่ง',
+                task.dueDate == null ? '—' : _formatDate(task.dueDate!),
               ),
-            ),
-          ),
-        ],
-        if (canEditStatus) ...[
-          const SizedBox(height: 24),
-          const _SectionLabel('เปลี่ยนสถานะงาน'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final status in _fieldStaffStatusChoices)
-                ChoiceChip(
-                  key: Key('status_choice_${status.wireName}'),
-                  label: Text(TaskStatusStyle.label(status)),
-                  selected: _selected == status,
-                  onSelected: _saving
-                      ? null
-                      : (_) => setState(() => _selected = status),
-                ),
+              ('สร้างเมื่อ', _formatDate(task.createdAt)),
+              ('แก้ไขล่าสุด', _formatDate(task.updatedAt)),
             ],
           ),
-          if (_saveError != null) ...[
+          if ((task.description ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const _SectionLabel('รายละเอียด'),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                task.description!.trim(),
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+          ],
+          if (canEditStatus) ...[
+            const SizedBox(height: 24),
+            const _SectionLabel('เปลี่ยนสถานะงาน'),
             const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 18,
-                  color: AppTheme.error,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _saveError!,
-                    key: const Key('task_status_error'),
-                    style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                for (final status in _fieldStaffStatusChoices)
+                  ChoiceChip(
+                    key: Key('status_choice_${status.wireName}'),
+                    label: Text(TaskStatusStyle.label(status)),
+                    selected: _selected == status,
+                    onSelected: _saving
+                        ? null
+                        : (_) => setState(() => _selected = status),
                   ),
-                ),
               ],
             ),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            key: const Key('task_status_save'),
-            onPressed: (!_dirty || _saving) ? null : _save,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              backgroundColor: AppTheme.navy,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
-              disabledForegroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+          if (canConfirmInstall) ...[
+            const SizedBox(height: 24),
+            const _SectionLabel('ส่ง Config เข้าเครื่อง'),
+            const SizedBox(height: 8),
+            Text(
+              'ส่ง Config เข้าอุปกรณ์ ${task.deviceId} — ทำหลังติดตั้งกล่อง GPS '
+              'เสร็จแล้วเท่านั้น',
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppTheme.textSecondary,
               ),
             ),
-            child: _saving
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('บันทึกสถานะ'),
-          ),
+          ],
         ],
-        if (canConfirmInstall) ...[
-          const SizedBox(height: 24),
-          const _SectionLabel('ส่ง Config เข้าเครื่อง'),
+      ),
+      // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)
+      // ให้กดได้ง่ายด้วยมือเดียวโดยไม่ต้องเลื่อนจอ — error ของแต่ละปุ่มย้ายมา
+      // อยู่เหนือปุ่มของมันในบาร์นี้ด้วย ไม่ทิ้งไว้บนเนื้อหาด้านบนที่ปุ่มลอยอยู่
+      // ล่างสุดเสมอ (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
+      bottomNavigationBar: (canEditStatus || canConfirmInstall)
+          ? SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canEditStatus)
+                      _StatusSaveBar(
+                        error: _saveError,
+                        saving: _saving,
+                        onPressed: (!_dirty || _saving) ? null : _save,
+                      ),
+                    if (canEditStatus && canConfirmInstall)
+                      const SizedBox(height: 12),
+                    if (canConfirmInstall)
+                      _ConfirmInstallBar(
+                        error: _confirmInstallError,
+                        confirming: _confirmingInstall,
+                        confirmed: _installConfirmed,
+                        onPressed: (_confirmingInstall || _installConfirmed)
+                            ? null
+                            : _confirmInstall,
+                      ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _StatusSaveBar extends StatelessWidget {
+  const _StatusSaveBar({
+    required this.error,
+    required this.saving,
+    required this.onPressed,
+  });
+
+  final String? error;
+  final bool saving;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (error != null) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.error_outline, size: 18, color: AppTheme.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  error!,
+                  key: const Key('task_status_error'),
+                  style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
-          Text(
-            'ส่ง Config เข้าอุปกรณ์ ${task.deviceId} — ทำหลังติดตั้งกล่อง GPS '
-            'เสร็จแล้วเท่านั้น',
-            style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          if (_confirmInstallError != null) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 18,
-                  color: AppTheme.error,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    _confirmInstallError!,
-                    key: const Key('confirm_install_error'),
-                    style: const TextStyle(color: AppTheme.error, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-          ],
-          FilledButton(
-            key: const Key('confirm_install_button'),
-            onPressed: (_confirmingInstall || _installConfirmed)
-                ? null
-                : _confirmInstall,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              backgroundColor: AppTheme.navy,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
-              disabledForegroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            child: _confirmingInstall
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    _installConfirmed
-                        ? 'ส่ง Config เข้าเครื่องแล้ว'
-                        : 'ยืนยันส่ง Config เข้าเครื่อง',
-                  ),
-          ),
         ],
+        FilledButton(
+          key: const Key('task_status_save'),
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            backgroundColor: AppTheme.navy,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
+            disabledForegroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child: saving
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('บันทึกสถานะ'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfirmInstallBar extends StatelessWidget {
+  const _ConfirmInstallBar({
+    required this.error,
+    required this.confirming,
+    required this.confirmed,
+    required this.onPressed,
+  });
+
+  final String? error;
+  final bool confirming;
+  final bool confirmed;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (error != null) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.error_outline, size: 18, color: AppTheme.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  error!,
+                  key: const Key('confirm_install_error'),
+                  style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        FilledButton(
+          key: const Key('confirm_install_button'),
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            backgroundColor: AppTheme.navy,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
+            disabledForegroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          child: confirming
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  confirmed
+                      ? 'ส่ง Config เข้าเครื่องแล้ว'
+                      : 'ยืนยันส่ง Config เข้าเครื่อง',
+                ),
+        ),
       ],
     );
   }

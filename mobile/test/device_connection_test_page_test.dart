@@ -5,6 +5,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/features/device_connection_test/device_connection_test_page.dart';
 import 'package:mobile/features/device_connection_test/device_connection_test_repository.dart';
+import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 
 class _FakeRepo implements DeviceConnectionTestRepository {
   _FakeRepo({this.result, this.error});
@@ -21,11 +22,18 @@ class _FakeRepo implements DeviceConnectionTestRepository {
   }
 }
 
-Future<void> _pump(WidgetTester tester, DeviceConnectionTestRepository repo) {
+Future<void> _pump(
+  WidgetTester tester,
+  DeviceConnectionTestRepository repo, {
+  RecentDeviceIdStore? recentStore,
+}) {
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
         deviceConnectionTestRepositoryProvider.overrideWithValue(repo),
+        recentDeviceIdStoreProvider.overrideWithValue(
+          recentStore ?? InMemoryRecentDeviceIdStore(),
+        ),
       ],
       child: const MaterialApp(home: DeviceConnectionTestPage()),
     ),
@@ -139,5 +147,118 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('เซิร์ฟเวอร์ผิดพลาด'), findsOneWidget);
+  });
+
+  group('ประวัติล่าสุด', () {
+    testWidgets('ยังไม่มีประวัติ -> ไม่โชว์แถวชิปเลย', (tester) async {
+      await _pump(tester, _FakeRepo());
+      await tester.pump();
+
+      expect(find.byType(ActionChip), findsNothing);
+    });
+
+    testWidgets('ทดสอบสำเร็จ (passed: true) -> บันทึกประวัติ + โชว์เป็นชิป', (
+      tester,
+    ) async {
+      final repo = _FakeRepo(
+        result: DeviceConnectionTestResult(
+          passed: true,
+          signalStrength: -65,
+          details: const [],
+          testedAt: DateTime(2026),
+        ),
+      );
+      await _pump(tester, repo);
+
+      await tester.enterText(
+        find.byKey(const Key('device_id_input')),
+        'DEV-001',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('test_connection_submit')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('device_connection_recent_chip_0')),
+        findsOneWidget,
+      );
+      expect(find.text('DEV-001'), findsWidgets); // ชิป + result card
+    });
+
+    testWidgets(
+      'ทดสอบแล้วไม่ passed (signal มีปัญหา) -> ก็ยังนับว่าทดสอบแล้ว บันทึก'
+      'ประวัติเหมือนกัน',
+      (tester) async {
+        final repo = _FakeRepo(
+          result: DeviceConnectionTestResult(
+            passed: false,
+            signalStrength: -110,
+            details: const [],
+            testedAt: DateTime(2026),
+          ),
+        );
+        await _pump(tester, repo);
+
+        await tester.enterText(
+          find.byKey(const Key('device_id_input')),
+          'DEV-002',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('test_connection_submit')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('device_connection_recent_chip_0')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('404 (ไม่พบอุปกรณ์) -> ไม่บันทึกประวัติ', (tester) async {
+      final repo = _FakeRepo(error: ApiException('not found', statusCode: 404));
+      await _pump(tester, repo);
+
+      await tester.enterText(find.byKey(const Key('device_id_input')), 'NOPE');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('test_connection_submit')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ActionChip), findsNothing);
+    });
+
+    testWidgets(
+      'กดชิป -> auto-fill ช่อง device_id_input ทันที (ไม่ auto-submit)',
+      (tester) async {
+        final store = InMemoryRecentDeviceIdStore(['DEV-OLD']);
+        final repo = _FakeRepo(
+          result: DeviceConnectionTestResult(
+            passed: true,
+            signalStrength: -65,
+            details: const [],
+            testedAt: DateTime(2026),
+          ),
+        );
+        await _pump(tester, repo, recentStore: store);
+        await tester.pump();
+
+        expect(
+          find.byKey(const Key('device_connection_recent_chip_0')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('device_connection_recent_chip_0')),
+        );
+        await tester.pump();
+
+        final field = tester.widget<TextField>(
+          find.byKey(const Key('device_id_input')),
+        );
+        expect(field.controller!.text, 'DEV-OLD');
+        // ไม่ auto-submit — ยังไม่มี result card จนกว่าจะกดปุ่มเอง
+        expect(find.byKey(const Key('test_connection_result')), findsNothing);
+        expect(repo.lastDeviceId, isNull);
+      },
+    );
   });
 }

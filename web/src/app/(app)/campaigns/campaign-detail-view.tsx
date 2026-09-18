@@ -8,6 +8,7 @@ import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { CampaignApprovalPanel } from "./campaign-approval-panel";
 
 function InfoRow({
   label,
@@ -81,6 +82,8 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         )}
       </div>
 
+      <CampaignApprovalPanel campaign={data} onDecided={() => void refetch()} />
+
       <div className="rounded-xl border bg-card p-5">
         <InfoRow label="Payload">
           {data.payloadType === "Config"
@@ -94,6 +97,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
           </span>
         </InfoRow>
+        {data.approvedAt && (
+          <InfoRow label="อนุมัติเมื่อ">
+            {formatDateTime(data.approvedAt)}
+          </InfoRow>
+        )}
         <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
         <InfoRow label="แก้ไขล่าสุด">{formatDateTime(data.updatedAt)}</InfoRow>
       </div>

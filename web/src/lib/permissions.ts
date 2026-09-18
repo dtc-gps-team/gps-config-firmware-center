@@ -95,6 +95,18 @@ export function canSimulateFirmware(role: string | null | undefined): boolean {
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คุณภาพ Firmware — RBAC_Matrix.md ตาราง 4.1
+ * `POST /firmware/{firmwareId}/approve` / `.../reject`: resource แยก
+ * `firmware-decision` (mirror `config-decision`) — QAEngineer เท่านั้น
+ * (docs/13_Role_Redesign_Proposal.md §3.2 — Firmware Approval Lifecycle)
+ */
+export function canDecideFirmwareApproval(
+  role: string | null | undefined,
+): boolean {
+  return role === "QAEngineer";
+}
+
+/**
  * Override Config/Firmware รายเครื่อง — Section 2: ST, OT เท่านั้น
  * (C, R, U, O) ยังไม่มีหน้านี้ scaffold ไว้ใน NAV_ITEMS ตอนนี้ — เตรียมไว้
  * ล่วงหน้าเผื่อเพิ่มหน้านี้ทีหลัง
@@ -136,6 +148,21 @@ export function canAccessUserManagement(
 
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
+  return role === "Operation";
+}
+
+/**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" Campaign — Section 2 แถว Campaign Wizard (Campaign
+ * Approval, แก้ครั้งที่ 39): Operation เท่านั้น (resource `campaign` action
+ * `Approve`) — role check นี้ไม่พอ: Separation of Duty (ผู้สร้าง Campaign
+ * อนุมัติของตัวเองไม่ได้) ต้องเทียบ user id เพิ่มที่หน้าเรียกใช้เอง (ดู
+ * `campaign-approval-panel.tsx` — ใช้ `getTokenSubject` มิเรอร์
+ * `approval-center-view.tsx`) เพราะ role ต้องแยกออกจาก "ใช่ผู้สร้างไหม"
+ * คนละมิติกัน
+ */
+export function canDecideCampaignApproval(
+  role: string | null | undefined,
+): boolean {
   return role === "Operation";
 }
 

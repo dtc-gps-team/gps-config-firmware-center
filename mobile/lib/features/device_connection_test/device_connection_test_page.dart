@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import 'device_connection_test_repository.dart';
+import 'recent_device_id_store.dart';
 
 /// "ทดสอบสัญญาณ" — ช่างหน้างาน (ST/OT) กรอกเลขเครื่องแล้วยิงไปที่
 /// `POST /devices/{deviceId}/test-connection` (backend จริง จาก PR #54)
@@ -38,11 +39,18 @@ class _DeviceConnectionTestPageState
       _error = null;
     });
     try {
+      final deviceId = _deviceId;
       final result = await ref
           .read(deviceConnectionTestRepositoryProvider)
-          .testConnection(_deviceId);
+          .testConnection(deviceId);
       if (!mounted) return;
       setState(() => _result = result);
+      // นับว่า "เคยทดสอบ" ไม่ว่า passed จะเป็น true/false ก็ตาม — ไม่บันทึกก็
+      // ต่อเมื่อ API error (เช่น 404 ไม่พบอุปกรณ์) เพราะนั่นไม่ใช่เลขเครื่อง
+      // ที่ใช้งานได้จริง
+      await ref.read(recentDeviceIdStoreProvider).add(deviceId);
+      if (!mounted) return;
+      ref.invalidate(recentDeviceIdsProvider);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _error = _messageFor(e));
@@ -64,11 +72,17 @@ class _DeviceConnectionTestPageState
     }
   }
 
+  void _fillFromRecent(String deviceId) {
+    _deviceIdController.text = deviceId;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final result = _result;
     final error = _error;
     final canRun = !_running && _deviceId.isNotEmpty;
+    final recentIds = ref.watch(recentDeviceIdsProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(title: const Text('ทดสอบสัญญาณ')),
@@ -84,6 +98,21 @@ class _DeviceConnectionTestPageState
               hintText: 'เช่น DEV-001',
             ),
           ),
+          if (recentIds != null && recentIds.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (i, id) in recentIds.indexed)
+                  ActionChip(
+                    key: Key('device_connection_recent_chip_$i'),
+                    label: Text(id),
+                    onPressed: () => _fillFromRecent(id),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton(
             key: const Key('test_connection_submit'),
