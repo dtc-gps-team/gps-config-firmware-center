@@ -3,7 +3,16 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  CheckIcon,
+  ClockIcon,
+  CopyIcon,
+  RadioIcon,
+  SlidersHorizontalIcon,
+  UserCheckIcon,
+  UserIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -242,22 +251,26 @@ function ConfigDetailContent({
 
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">
-              <InfoRow label="รุ่นอุปกรณ์">{config.deviceModel}</InfoRow>
-              <InfoRow label="โปรโตคอล">{config.protocol}</InfoRow>
-              <InfoRow label="สร้างโดย">
+              <InfoRow label="รุ่นอุปกรณ์" icon={SlidersHorizontalIcon}>
+                {config.deviceModel}
+              </InfoRow>
+              <InfoRow label="โปรโตคอล" icon={RadioIcon}>
+                {config.protocol}
+              </InfoRow>
+              <InfoRow label="สร้างโดย" icon={UserIcon}>
                 <span className="font-mono text-xs">{config.createdBy}</span>
               </InfoRow>
-              <InfoRow label="ผู้อนุมัติ">
+              <InfoRow label="ผู้อนุมัติ" icon={UserCheckIcon}>
                 {config.approvedBy ? (
                   <span className="font-mono text-xs">{config.approvedBy}</span>
                 ) : (
                   "-"
                 )}
               </InfoRow>
-              <InfoRow label="สร้างเมื่อ">
+              <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(config.createdAt)}
               </InfoRow>
-              <InfoRow label="แก้ไขล่าสุด">
+              <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
                 {formatDateTime(config.updatedAt)}
               </InfoRow>
             </div>

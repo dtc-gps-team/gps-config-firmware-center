@@ -1,6 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import {
+  ActivityIcon,
+  CalendarCheckIcon,
+  CalendarIcon,
+  ClockIcon,
+  PackageIcon,
+  TargetIcon,
+} from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CAMPAIGN_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
@@ -76,25 +84,29 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
        * `mx-auto` จัดกึ่งกลาง ให้ชิดซ้ายตรงกับหน้า detail อื่นทั้งหมด */}
       <div className="max-w-xl rounded-xl border bg-card p-4">
         <div className="divide-y">
-          <InfoRow label="Payload">
+          <InfoRow label="Payload" icon={PackageIcon}>
             {data.payloadType === "Config"
               ? (configQuery.data?.name ?? data.configId ?? "—")
               : (data.firmwareId ?? "—")}
           </InfoRow>
-          <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
-          <InfoRow label="สำเร็จ / ล้มเหลว">
+          <InfoRow label="จำนวนเป้าหมาย" icon={TargetIcon}>
+            {data.targetCount}
+          </InfoRow>
+          <InfoRow label="สำเร็จ / ล้มเหลว" icon={ActivityIcon}>
             {data.successCount} / {data.failureCount}{" "}
             <span className="text-xs text-muted-foreground">
               (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
             </span>
           </InfoRow>
           {data.approvedAt && (
-            <InfoRow label="อนุมัติเมื่อ">
+            <InfoRow label="อนุมัติเมื่อ" icon={CalendarCheckIcon}>
               {formatDateTime(data.approvedAt)}
             </InfoRow>
           )}
-          <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
-          <InfoRow label="แก้ไขล่าสุด">
+          <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
+            {formatDateTime(data.createdAt)}
+          </InfoRow>
+          <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
             {formatDateTime(data.updatedAt)}
           </InfoRow>
         </div>

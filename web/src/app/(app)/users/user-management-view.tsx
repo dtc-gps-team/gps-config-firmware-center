@@ -109,17 +109,12 @@ export function UserManagementView({
   return (
     <RoleGuard allow={canAccessUserManagement}>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">User / Role Management</h1>
-            <p className="text-sm text-muted-foreground">
-              จัดการได้แค่บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin
-              (RBAC_Matrix.md §2)
-            </p>
-          </div>
-          <Link href="/users/new" className={buttonVariants({ size: "sm" })}>
-            + เพิ่มผู้ใช้
-          </Link>
+        <div>
+          <h1 className="text-2xl font-semibold">User / Role Management</h1>
+          <p className="text-sm text-muted-foreground">
+            จัดการได้แค่บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin
+            (RBAC_Matrix.md §2)
+          </p>
         </div>
 
         <Card>
@@ -132,7 +127,7 @@ export function UserManagementView({
           <CardHeader>
             <CardTitle>รายชื่อผู้ใช้</CardTitle>
             <CardDescription>บัญชีทั่วไปทั้งหมด (รวมที่ปิดใช้งาน)</CardDescription>
-            <CardAction>
+            <CardAction className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -140,6 +135,9 @@ export function UserManagementView({
               >
                 รีเฟรช
               </Button>
+              <Link href="/users/new" className={buttonVariants({ size: "sm" })}>
+                + เพิ่มผู้ใช้
+              </Link>
             </CardAction>
           </CardHeader>
           <CardContent>

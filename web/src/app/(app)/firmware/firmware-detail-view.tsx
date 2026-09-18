@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CalendarIcon, FileIcon, HardDriveIcon, UserIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { type Firmware } from "@/lib/firmware-api";
@@ -99,12 +100,12 @@ function FirmwareDetailContent({
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">
-              <InfoRow label="ไฟล์ต้นฉบับ">
+              <InfoRow label="ไฟล์ต้นฉบับ" icon={FileIcon}>
                 <span className="font-mono text-xs">
                   {firmware.originalFilename}
                 </span>
               </InfoRow>
-              <InfoRow label="ขนาดไฟล์">
+              <InfoRow label="ขนาดไฟล์" icon={HardDriveIcon}>
                 {formatFileSize(firmware.fileSizeBytes)}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
@@ -118,10 +119,10 @@ function FirmwareDetailContent({
                   {statusLabel(firmware.deviceUpdateStatus)}
                 </StatusPill>
               </InfoRow>
-              <InfoRow label="อัปโหลดโดย">
+              <InfoRow label="อัปโหลดโดย" icon={UserIcon}>
                 <span className="font-mono text-xs">{firmware.uploadedBy}</span>
               </InfoRow>
-              <InfoRow label="อัปโหลดเมื่อ">
+              <InfoRow label="อัปโหลดเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(firmware.uploadedAt)}
               </InfoRow>
             </div>
