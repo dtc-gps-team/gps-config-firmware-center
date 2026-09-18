@@ -342,7 +342,11 @@ class _HistorySection extends ConsumerWidget {
             if (completed.isEmpty)
               const _HistoryEmpty()
             else ...[
-              for (var i = 0; i < completed.length && i < _recentHistoryLimit; i++)
+              for (
+                var i = 0;
+                i < completed.length && i < _recentHistoryLimit;
+                i++
+              )
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _HistoryCard(
@@ -362,7 +366,9 @@ class _HistorySection extends ConsumerWidget {
         child: Center(child: CircularProgressIndicator()),
       ),
       error: (error, _) => AppErrorView(
-        message: error is ApiException ? error.message : 'โหลดประวัติงานไม่สำเร็จ',
+        message: error is ApiException
+            ? error.message
+            : 'โหลดประวัติงานไม่สำเร็จ',
         onRetry: () => ref.invalidate(taskListProvider),
         retryKey: const Key('tasks_retry'),
         compact: true,
@@ -483,67 +489,67 @@ class _HistoryCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppTheme.mockSuccessSoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.check,
-                  color: AppTheme.mockSuccess,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.mockTextPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      task.deviceId ?? '—',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppTheme.mockTextSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.mockSuccessSoft,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'เสร็จสิ้น',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.mockSuccessSoft,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.check,
                     color: AppTheme.mockSuccess,
+                    size: 20,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.mockTextPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        task.deviceId ?? '—',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.mockTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.mockSuccessSoft,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'เสร็จสิ้น',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.mockSuccess,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -658,30 +664,30 @@ class _ShortcutTile extends StatelessWidget {
           onTap: item.onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-          child: Column(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  color: AppTheme.mockAccentSoft,
-                  shape: BoxShape.circle,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+            child: Column(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.mockAccentSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(item.icon, color: AppTheme.mockAccent, size: 22),
                 ),
-                child: Icon(item.icon, color: AppTheme.mockAccent, size: 22),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                item.label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.mockTextPrimary,
+                const SizedBox(height: 8),
+                Text(
+                  item.label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.mockTextPrimary,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           ),
         ),
       ),

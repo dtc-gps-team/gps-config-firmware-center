@@ -274,16 +274,17 @@ void main() {
       expect(find.byKey(const Key('tasks_retry')), findsOneWidget);
     });
 
-    testWidgets('แตะการ์ดประวัติงาน -> navigate ไปหน้า Task Detail ของงานนั้น', (
-      tester,
-    ) async {
-      await _pumpHomeRouted(tester, UserRole.st);
+    testWidgets(
+      'แตะการ์ดประวัติงาน -> navigate ไปหน้า Task Detail ของงานนั้น',
+      (tester) async {
+        await _pumpHomeRouted(tester, UserRole.st);
 
-      await tester.tap(find.byKey(const Key('history_card_0')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('history_card_0')));
+        await tester.pumpAndSettle();
 
-      expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
-    });
+        expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
+      },
+    );
 
     testWidgets('แตะ "ดูประวัติงานทั้งหมด" -> navigate ไปหน้ารายการงาน', (
       tester,
