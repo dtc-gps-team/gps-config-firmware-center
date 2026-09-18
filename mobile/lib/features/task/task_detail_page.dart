@@ -293,7 +293,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       // ล่างสุดเสมอ (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
       bottomNavigationBar: (canEditStatus || canConfirmInstall)
           ? SafeArea(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

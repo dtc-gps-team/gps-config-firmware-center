@@ -49,6 +49,7 @@ class _DeviceConnectionTestPageState
       // ต่อเมื่อ API error (เช่น 404 ไม่พบอุปกรณ์) เพราะนั่นไม่ใช่เลขเครื่อง
       // ที่ใช้งานได้จริง
       await ref.read(recentDeviceIdStoreProvider).add(deviceId);
+      if (!mounted) return;
       ref.invalidate(recentDeviceIdsProvider);
     } on ApiException catch (e) {
       if (!mounted) return;
