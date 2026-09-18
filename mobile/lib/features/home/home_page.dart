@@ -10,7 +10,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
-import '../task/task_status_ui.dart';
 
 /// Human-readable role label shown in the greeting badge.
 String _roleLabel(UserRole? role) {
@@ -31,6 +30,19 @@ String _roleLabel(UserRole? role) {
   }
 }
 
+/// Up to two initials for the avatar circle, derived from the real
+/// username — never a placeholder. `null`/empty falls back to "?".
+String _initials(String? username) {
+  if (username == null || username.isEmpty) return '?';
+  final letters = username.replaceAll(RegExp('[^A-Za-zก-๙]'), '');
+  if (letters.isEmpty) return username.substring(0, 1).toUpperCase();
+  return letters.substring(0, letters.length >= 2 ? 2 : 1).toUpperCase();
+}
+
+/// How many completed tasks the "ประวัติงานล่าสุด" section shows before the
+/// "ดูประวัติงานทั้งหมด" link is needed instead.
+const _recentHistoryLimit = 3;
+
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
 
@@ -39,108 +51,148 @@ class HomePage extends ConsumerWidget {
     final auth = ref.watch(authControllerProvider);
     final role = auth.role;
     // `GET /tasks` is only self-scoped by the backend for ST/OT. Every other
-    // role (and an unknown one) gets back every task in the system, so Mobile —
-    // a field-staff app — only shows "งานวันนี้", and only fetches it, for
-    // ST/OT. Same gate as the "ทดสอบสัญญาณ" shortcut below.
+    // role (and an unknown one) gets back every task in the system, so this
+    // field-staff app only fetches — and only shows a task history for —
+    // ST/OT. Same gate the old "งานวันนี้" section used, and the same gate
+    // the "ทดสอบสัญญาณ" shortcut below uses.
     final isFieldStaff = role == UserRole.st || role == UserRole.ot;
     final tasksAsync = isFieldStaff ? ref.watch(taskListProvider) : null;
-    final taskCount = tasksAsync?.valueOrNull?.length;
-    // Show the "N งานที่ได้รับมอบหมาย" line only while loading (count == null)
-    // or once loaded. On error the section below already shows a card + retry,
-    // so drop the greeting line rather than leaving it stuck on "กำลังโหลด…".
-    final showTaskCount = isFieldStaff && !(tasksAsync?.hasError ?? false);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('หน้าหลัก'),
-        actions: [
-          const _NotificationBell(),
-          IconButton(
-            key: const Key('home_logout'),
-            icon: const Icon(Icons.logout),
-            tooltip: 'ออกจากระบบ',
-            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        children: [
-          _GreetingBlock(
-            username: auth.username,
-            role: role,
-            taskCount: taskCount,
-            showTaskCount: showTaskCount,
-          ),
-          const SizedBox(height: 24),
-          if (isFieldStaff) ...[
-            const _SectionLabel('งานวันนี้'),
+      backgroundColor: AppTheme.mockBg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            _HeaderRow(username: auth.username, role: role),
+            const SizedBox(height: 20),
+            if (isFieldStaff) ...[
+              _HistorySection(tasksAsync: tasksAsync!),
+              const SizedBox(height: 24),
+            ],
+            const _SectionLabel('ทางลัด'),
             const SizedBox(height: 12),
-            const _TodayTasksSection(),
-            const SizedBox(height: 24),
-          ],
-          const _SectionLabel('ทางลัด'),
-          const SizedBox(height: 12),
-          _ShortcutGrid(
-            items: [
-              // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
-              _Shortcut(
-                key: const Key('shortcut_simulator'),
-                icon: Icons.tune,
-                label: 'ทดสอบการตั้งค่า',
-                onTap: () => context.push(AppRoutes.simulator),
-              ),
-              // ทดสอบสัญญาณ — ช่างหน้างานเท่านั้น (backend บังคับ RBAC 403 ให้
-              // เฉพาะ ST/OT อยู่แล้ว — ซ่อนจาก UI เพื่อ UX ที่ดีกว่า) พฤติกรรม
-              // เดิมจากก่อน redesign ยกมาทั้งหมด แค่ย้ายเข้ากริดทางลัด
-              if (role == UserRole.st || role == UserRole.ot) ...[
+            _ShortcutGrid(
+              items: [
+                // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
                 _Shortcut(
-                  key: const Key('shortcut_device_test'),
-                  icon: Icons.wifi_tethering,
-                  label: 'ทดสอบสัญญาณ',
-                  onTap: () => context.push(AppRoutes.deviceConnectionTest),
+                  key: const Key('shortcut_simulator'),
+                  icon: Icons.tune,
+                  label: 'ทดสอบการตั้งค่า',
+                  onTap: () => context.push(AppRoutes.simulator),
                 ),
-                // "งานของฉัน" — หน้าเต็มของ taskListProvider (backend self-scope
-                // GET /tasks ให้ ST/OT อยู่แล้ว) · role อื่น taskListProvider คืน
-                // ว่างเสมอ ไม่มีประโยชน์ให้เห็นปุ่มนี้ (gate เดียวกับ "ทดสอบสัญญาณ")
+                // ทดสอบสัญญาณ — ช่างหน้างานเท่านั้น (backend บังคับ RBAC 403 ให้
+                // เฉพาะ ST/OT อยู่แล้ว — ซ่อนจาก UI เพื่อ UX ที่ดีกว่า)
+                if (role == UserRole.st || role == UserRole.ot) ...[
+                  _Shortcut(
+                    key: const Key('shortcut_device_test'),
+                    icon: Icons.wifi_tethering,
+                    label: 'ทดสอบสัญญาณ',
+                    onTap: () => context.push(AppRoutes.deviceConnectionTest),
+                  ),
+                  // "งานของฉัน" — หน้าเต็มของ taskListProvider (backend
+                  // self-scope GET /tasks ให้ ST/OT อยู่แล้ว) · role อื่น
+                  // taskListProvider คืนว่างเสมอ ไม่มีประโยชน์ให้เห็นปุ่มนี้
+                  _Shortcut(
+                    key: const Key('shortcut_my_tasks'),
+                    icon: Icons.assignment_outlined,
+                    label: 'งานของฉัน',
+                    onTap: () => context.push(AppRoutes.myTasks),
+                  ),
+                ],
+                // ค้นหาอุปกรณ์ — ทุก role เรียก GET /devices ได้ (RBAC "R" ทุก
+                // Role) ไม่ต้อง gate เหมือน "ทดสอบสัญญาณ"
                 _Shortcut(
-                  key: const Key('shortcut_my_tasks'),
-                  icon: Icons.assignment_outlined,
-                  label: 'งานของฉัน',
-                  onTap: () => context.push(AppRoutes.myTasks),
+                  key: const Key('shortcut_find_device'),
+                  icon: Icons.search,
+                  label: 'ค้นหาอุปกรณ์',
+                  onTap: () => context.push(AppRoutes.deviceSearch),
+                ),
+                // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
+                // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
+                // (ST/OT) ไม่มีสิทธิ์ Create Incident
+                _Shortcut(
+                  key: const Key('shortcut_report_incident'),
+                  icon: Icons.report_problem_outlined,
+                  label: 'ดู Incident',
+                  onTap: () => context.push(AppRoutes.incidents),
                 ),
               ],
-              // ค้นหาอุปกรณ์ — ทุก role เรียก GET /devices ได้ (RBAC "R" ทุก
-              // Role) ไม่ต้อง gate เหมือน "ทดสอบสัญญาณ"
-              _Shortcut(
-                key: const Key('shortcut_find_device'),
-                icon: Icons.search,
-                label: 'ค้นหาอุปกรณ์',
-                onTap: () => context.push(AppRoutes.deviceSearch),
-              ),
-              // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
-              // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
-              // (ST/OT) ไม่มีสิทธิ์ Create Incident (RBAC_Matrix — Create =
-              // Operation เท่านั้น) กดแล้วดูได้อย่างเดียว
-              _Shortcut(
-                key: const Key('shortcut_report_incident'),
-                icon: Icons.report_problem_outlined,
-                label: 'ดู Incident',
-                onTap: () => context.push(AppRoutes.incidents),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Home app-bar bell. Badge shows the real unread count from
+/// Custom header: avatar + name + role pill on the left, notification bell
+/// and logout on the right. Replaces the old plain `AppBar` — same two
+/// actions, same keys, just laid out to match the mockup.
+class _HeaderRow extends ConsumerWidget {
+  const _HeaderRow({required this.username, required this.role});
+
+  final String? username;
+  final UserRole? role;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppTheme.mockTextPrimary,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            _initials(username),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                username ?? _roleLabel(role),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.mockTextPrimary,
+                ),
+              ),
+              if (role != null) ...[
+                const SizedBox(height: 4),
+                _RoleBadge(role: role!),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        _NotificationBell(),
+        IconButton(
+          key: const Key('home_logout'),
+          icon: const Icon(Icons.logout, color: AppTheme.mockTextSecondary),
+          tooltip: 'ออกจากระบบ',
+          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+        ),
+      ],
+    );
+  }
+}
+
+/// Home header bell. Badge shows the real unread count from
 /// `GET /notifications?unread=true` (hidden when 0); tapping opens the list.
 class _NotificationBell extends ConsumerWidget {
   const _NotificationBell();
@@ -148,7 +200,10 @@ class _NotificationBell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref.watch(unreadNotificationCountProvider).valueOrNull ?? 0;
-    const bellIcon = Icon(Icons.notifications_outlined);
+    const bellIcon = Icon(
+      Icons.notifications_outlined,
+      color: AppTheme.mockTextSecondary,
+    );
 
     return IconButton(
       key: const Key('home_notifications'),
@@ -165,62 +220,6 @@ class _NotificationBell extends ConsumerWidget {
   }
 }
 
-class _GreetingBlock extends StatelessWidget {
-  const _GreetingBlock({
-    required this.username,
-    required this.role,
-    required this.taskCount,
-    required this.showTaskCount,
-  });
-
-  final String? username;
-  final UserRole? role;
-
-  /// `null` while the task list is still loading.
-  final int? taskCount;
-
-  /// Only ST/OT get a meaningful "งานที่ได้รับมอบหมาย" count (see [HomePage]).
-  final bool showTaskCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                username ?? _roleLabel(role),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              if (showTaskCount) ...[
-                const SizedBox(height: 4),
-                Text(
-                  taskCount == null
-                      ? 'กำลังโหลดงานที่ได้รับมอบหมาย…'
-                      : 'วันนี้ $taskCount งานที่ได้รับมอบหมาย',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        if (role != null) _RoleBadge(role: role!),
-      ],
-    );
-  }
-}
-
 class _RoleBadge extends StatelessWidget {
   const _RoleBadge({required this.role});
 
@@ -229,17 +228,17 @@ class _RoleBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: AppTheme.unreadTint,
+        color: AppTheme.mockAccentSoft,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         '${role.wireName} • ${_roleLabel(role)}',
         style: const TextStyle(
-          fontSize: 12,
+          fontSize: 11.5,
           fontWeight: FontWeight.w600,
-          color: AppTheme.navy,
+          color: AppTheme.mockAccent,
         ),
       ),
     );
@@ -258,35 +257,106 @@ class _SectionLabel extends StatelessWidget {
       style: const TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w700,
-        color: AppTheme.textPrimary,
+        color: AppTheme.mockTextPrimary,
       ),
     );
   }
 }
 
-/// "งานวันนี้" — real task list from `GET /tasks` (self-scoped to the caller
-/// by the backend for ST/OT). Keeps the card layout from the Home redesign
-/// (PR #66); only the data source changed from mock to the live endpoint.
-class _TodayTasksSection extends ConsumerWidget {
-  const _TodayTasksSection();
+/// "ประวัติงานล่าสุด" — real completed-task history, derived client-side
+/// from `GET /tasks` (self-scoped to the caller by the backend for ST/OT).
+/// Replaces the old "งานวันนี้" pending-task list: a field technician
+/// already knows their own assignments, so Home's job is to record what
+/// was finished, not to re-list what is still outstanding.
+class _HistorySection extends ConsumerWidget {
+  const _HistorySection({required this.tasksAsync});
+
+  final AsyncValue<List<Task>> tasksAsync;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasksAsync = ref.watch(taskListProvider);
-
     return tasksAsync.when(
       skipLoadingOnRefresh: true,
       data: (tasks) {
-        if (tasks.isEmpty) return const _TasksEmpty();
+        final completed =
+            tasks.where((t) => t.status == TaskStatus.completed).toList()
+              ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        final now = DateTime.now();
+        final completedThisMonth = completed
+            .where(
+              (t) =>
+                  t.updatedAt.year == now.year &&
+                  t.updatedAt.month == now.month,
+            )
+            .length;
+
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var i = 0; i < tasks.length; i++) ...[
-              _TaskCard(
-                key: Key('task_card_$i'),
-                task: tasks[i],
-                onTap: () => context.push(AppRoutes.taskDetail(tasks[i].id)),
-              ),
-              if (i != tasks.length - 1) const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatCard(
+                    icon: Icons.check_circle_outline,
+                    iconColor: AppTheme.mockAccent,
+                    iconBg: AppTheme.mockAccentSoft,
+                    value: '$completedThisMonth',
+                    label: 'งานที่เสร็จเดือนนี้',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatCard(
+                    icon: Icons.history,
+                    iconColor: AppTheme.mockSuccess,
+                    iconBg: AppTheme.mockSuccessSoft,
+                    value: '${completed.length}',
+                    label: 'ประวัติงานทั้งหมด',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'ประวัติงานล่าสุด',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.mockTextPrimary,
+                  ),
+                ),
+                Text(
+                  '${completed.length} รายการ',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.mockTextTertiary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (completed.isEmpty)
+              const _HistoryEmpty()
+            else ...[
+              for (
+                var i = 0;
+                i < completed.length && i < _recentHistoryLimit;
+                i++
+              )
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _HistoryCard(
+                    key: Key('history_card_$i'),
+                    task: completed[i],
+                    onTap: () =>
+                        context.push(AppRoutes.taskDetail(completed[i].id)),
+                  ),
+                ),
+              _ViewAllButton(onTap: () => context.push(AppRoutes.myTasks)),
             ],
           ],
         );
@@ -295,33 +365,73 @@ class _TodayTasksSection extends ConsumerWidget {
         padding: EdgeInsets.symmetric(vertical: 24),
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (error, _) => _TasksError(
-        message: error is ApiException ? error.message : 'โหลดงานไม่สำเร็จ',
+      error: (error, _) => AppErrorView(
+        message: error is ApiException
+            ? error.message
+            : 'โหลดประวัติงานไม่สำเร็จ',
         onRetry: () => ref.invalidate(taskListProvider),
+        retryKey: const Key('tasks_retry'),
+        compact: true,
       ),
     );
   }
 }
 
-class _TasksEmpty extends StatelessWidget {
-  const _TasksEmpty();
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
+  final String value;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.mockShadowCard,
       ),
-      child: const Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.inbox_outlined, color: AppTheme.textSecondary),
-          SizedBox(height: 8),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 18, color: iconColor),
+          ),
+          const SizedBox(height: 10),
           Text(
-            'ยังไม่มีงานที่ได้รับมอบหมาย',
-            style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+            value,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.mockTextPrimary,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppTheme.mockTextSecondary,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -329,67 +439,153 @@ class _TasksEmpty extends StatelessWidget {
   }
 }
 
-class _TasksError extends StatelessWidget {
-  const _TasksError({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
+class _HistoryEmpty extends StatelessWidget {
+  const _HistoryEmpty();
 
   @override
   Widget build(BuildContext context) {
-    return AppErrorView(
-      message: message,
-      onRetry: onRetry,
-      retryKey: const Key('tasks_retry'),
-      compact: true,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.mockShadowCard,
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.inbox_outlined, color: AppTheme.mockTextTertiary),
+          SizedBox(height: 8),
+          Text(
+            'ยังไม่มีประวัติงานที่เสร็จสิ้น',
+            style: TextStyle(fontSize: 13, color: AppTheme.mockTextSecondary),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _TaskCard extends StatelessWidget {
-  const _TaskCard({super.key, required this.task, required this.onTap});
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({super.key, required this.task, required this.onTap});
 
   final Task task;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.mockShadowRow,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.mockSuccessSoft,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.check,
+                    color: AppTheme.mockSuccess,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.mockTextPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        task.deviceId ?? '—',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.mockTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.mockSuccessSoft,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'เสร็จสิ้น',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.mockSuccess,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewAllButton extends StatelessWidget {
+  const _ViewAllButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surface,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
+        key: const Key('view_all_history'),
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Device: ${task.deviceId ?? '—'}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              TaskStatusPill(status: task.status),
-            ],
+        child: Container(
+          height: 50,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.mockCardBorder, width: 1.5),
+          ),
+          child: const Text(
+            'ดูประวัติงานทั้งหมด',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.mockTextPrimary,
+            ),
           ),
         ),
       ),
@@ -454,37 +650,44 @@ class _ShortcutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return Container(
       key: item.key,
-      color: AppTheme.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: item.onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-          child: Column(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  color: AppTheme.iconBg,
-                  shape: BoxShape.circle,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.mockShadowCard,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: item.onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+            child: Column(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.mockAccentSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(item.icon, color: AppTheme.mockAccent, size: 22),
                 ),
-                child: Icon(item.icon, color: AppTheme.navy, size: 22),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                item.label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
+                const SizedBox(height: 8),
+                Text(
+                  item.label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.mockTextPrimary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
