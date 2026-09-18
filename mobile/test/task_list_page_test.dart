@@ -7,6 +7,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/widgets/skeleton_card.dart';
 import 'package:mobile/features/task/task_list_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -110,6 +111,34 @@ Future<void> _pumpRouted(
 }
 
 void main() {
+  testWidgets(
+    'กำลังโหลดครั้งแรก -> โชว์ SkeletonCard (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
+    'skeleton หายไปเหลือแต่การ์ดจริง',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
+            authControllerProvider.overrideWith(
+              () => _FakeAuthController(UserRole.st),
+            ),
+            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(),
+            ),
+          ],
+          child: const MaterialApp(home: TaskListPage()),
+        ),
+      );
+
+      expect(find.byType(SkeletonCard), findsWidgets);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.pump(); // resolve listTasks
+      expect(find.byType(SkeletonCard), findsNothing);
+    },
+  );
+
   testWidgets('loading -> list งานจาก repository', (tester) async {
     await _pump(
       tester,
