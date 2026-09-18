@@ -1386,7 +1386,8 @@ paths:
         PermissionGuard — pattern เดียวกับ /notifications/device-tokens) ·
         คืนแค่ id/ชื่อ/role ไม่มีข้อมูล sensitive · ใช้ทำ dropdown "เจาะจง
         ผู้อนุมัติ" ใน Approval Center · **ไม่ใช่** จอ User / Role Management
-        (Admin เท่านั้น — RBAC_Matrix.md §2, docs/11 Part B2 ยังไม่ทำ)
+        (Admin เท่านั้น — ดู `listManagedUsers`/`createUser`/`updateUser`
+        ด้านล่าง)
       parameters:
         - in: query
           name: role
@@ -1406,6 +1407,102 @@ paths:
                   $ref: "#/components/schemas/UserSummary"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+    post:
+      tags: [user]
+      operationId: createUser
+      summary: สร้างบัญชีทั่วไปใหม่ (User / Role Management — Admin เท่านั้น)
+      description: >-
+        resource `user-management` action `Create` — Admin เท่านั้น (RBAC_Matrix.md
+        §2 "บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin") จัดการได้แค่บัญชีที่ `role`
+        ไม่ใช่ `Admin`/`SuperAdmin` — สร้างบัญชีเป็น 2 role นี้เป็นสิทธิ์แยก
+        (`admin-management`) ที่ยังไม่ finalize (docs/11) · Admin เป็นคนตั้ง
+        รหัสผ่านเริ่มต้นเอง (ระบบยังไม่มี flow ลืมรหัสผ่าน/reset password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserInput"
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedUser"
+        "400":
+          description: >-
+            validation ไม่ผ่าน (username ผิดรูปแบบ, password สั้นกว่า 8 ตัว),
+            ไม่พบ role code ที่ระบุ, หรือ role เป็น Admin/SuperAdmin (สร้างผ่าน
+            หน้านี้ไม่ได้)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์สร้างบัญชี — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
+        "409":
+          description: username ถูกใช้แล้ว
+
+  /users/managed:
+    get:
+      tags: [user]
+      operationId: listManagedUsers
+      summary: รายชื่อบัญชีทั่วไปแบบเต็ม (User / Role Management — Admin เท่านั้น)
+      description: >-
+        resource `user-management` action `Read` — Admin เท่านั้น คืน
+        username/isActive ด้วย (ต่างจาก `listUsers` ที่คืนแค่ id/ชื่อ/role
+        และเฉพาะ user active) ตัดบัญชี Admin/SuperAdmin ออกทั้งหมดเสมอ
+      responses:
+        "200":
+          description: รายชื่อบัญชีทั่วไป (รวม active และ inactive · เรียงตามชื่อ)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManagedUser"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูรายชื่อนี้ — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
+
+  /users/{userId}:
+    patch:
+      tags: [user]
+      operationId: updateUser
+      summary: แก้ role และ/หรือเปิด-ปิดการใช้งานบัญชี (User / Role Management — Admin เท่านั้น)
+      description: >-
+        resource `user-management` action `Update` — Admin เท่านั้น · ไม่มี
+        hard delete ใช้ `isActive: false` แทน · บัญชีเป้าหมายต้องไม่ใช่
+        Admin/SuperAdmin (มองว่า "ไม่มีอยู่" จาก resource นี้ — 404) และแก้
+        `role` ไปเป็น Admin/SuperAdmin ก็ไม่ได้เช่นกัน (กัน privilege escalation)
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserInput"
+      responses:
+        "200":
+          description: แก้ไขสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedUser"
+        "400":
+          description: ไม่พบ role code ที่ระบุ หรือพยายามแก้ role เป็น Admin/SuperAdmin
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้บัญชีนี้ — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
+        "404":
+          description: ไม่พบผู้ใช้ id นี้ (รวมถึงกรณีที่ user มีอยู่จริงแต่ role เป็น Admin/SuperAdmin)
 
   /customers:
     get:
@@ -1605,6 +1702,59 @@ components:
         role:
           type: string
           description: Role code (เช่น Operation)
+
+    ManagedUser:
+      type: object
+      description: >-
+        ข้อมูล user เต็มสำหรับหน้า User / Role Management (listManagedUsers/
+        createUser/updateUser) — ไม่มี passwordHash หลุดออกมาเด็ดขาด · role
+        เป็นไปได้แค่ role ที่ไม่ใช่ Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md §2)
+      required: [id, username, fullName, role, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          description: Role code (เช่น Operation) — ไม่มีทางเป็น Admin/SuperAdmin
+        isActive:
+          type: boolean
+
+    CreateUserInput:
+      type: object
+      required: [username, fullName, password, role]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: "^[a-zA-Z0-9._-]+$"
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+          description: Admin เป็นคนตั้งเอง — ระบบยังไม่มี flow ลืมรหัสผ่าน/reset password
+        role:
+          type: string
+          description: Role code ที่ไม่ใช่ Admin/SuperAdmin (400 ถ้าเป็น 2 role นี้)
+
+    UpdateUserInput:
+      type: object
+      description: ทั้ง 2 field optional — ส่งแค่ตัวที่จะแก้ก็พอ
+      properties:
+        role:
+          type: string
+          description: Role code ที่ไม่ใช่ Admin/SuperAdmin (400 ถ้าเป็น 2 role นี้)
+        isActive:
+          type: boolean
 
     CampaignPayloadType:
       type: string
