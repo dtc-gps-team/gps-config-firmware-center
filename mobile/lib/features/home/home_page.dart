@@ -18,8 +18,6 @@ String _roleLabel(UserRole? role) {
     case UserRole.st:
     case UserRole.ot:
       return 'ช่างภาคสนาม';
-    case UserRole.sw:
-      return 'วิศวกรซอฟต์แวร์';
     case UserRole.operation:
       return 'ฝ่ายปฏิบัติการ';
     case UserRole.auditor:

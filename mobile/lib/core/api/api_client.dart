@@ -172,14 +172,6 @@ class ApiClient {
     );
   }
 
-  /// `GET /devices/{deviceId}/status`
-  Future<DeviceStatus> getDeviceStatus(String deviceId) async {
-    return _wrap(
-      () => _dio.get<Map<String, dynamic>>('/devices/$deviceId/status'),
-      DeviceStatus.fromJson,
-    );
-  }
-
   /// `POST /devices/{deviceId}/test-connection` — no request body.
   Future<DeviceConnectionTestResult> testDeviceConnection(
     String deviceId,

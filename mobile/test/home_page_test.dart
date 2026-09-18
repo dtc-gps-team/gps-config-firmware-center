@@ -210,8 +210,8 @@ void main() {
       expect(deviceTestTile, findsOneWidget);
     });
 
-    testWidgets('SW ไม่เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
-      await _pumpHome(tester, UserRole.sw);
+    testWidgets('Operation ไม่เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
+      await _pumpHome(tester, UserRole.operation);
       expect(deviceTestTile, findsNothing);
     });
 
@@ -277,7 +277,7 @@ void main() {
   group(
     'RBAC — "งานวันนี้" เฉพาะ ST/OT (backend GET /tasks self-scope 2 role นี้)',
     () {
-      for (final role in [UserRole.sw, UserRole.operation, UserRole.auditor]) {
+      for (final role in [UserRole.operation, UserRole.auditor]) {
         testWidgets('${role.wireName}: ไม่เห็น section + ไม่ยิง GET /tasks', (
           tester,
         ) async {
@@ -320,7 +320,7 @@ void main() {
     testWidgets('แตะ "ทดสอบการตั้งค่า" -> ไปหน้า Config Simulator', (
       tester,
     ) async {
-      await _pumpHomeRouted(tester, UserRole.sw);
+      await _pumpHomeRouted(tester, UserRole.operation);
       await tester.tap(find.byKey(const Key('shortcut_simulator')));
       await tester.pumpAndSettle();
       expect(find.text('SIMULATOR_PAGE_STUB'), findsOneWidget);
@@ -357,12 +357,7 @@ void main() {
       });
     }
 
-    for (final role in [
-      UserRole.sw,
-      UserRole.operation,
-      UserRole.auditor,
-      UserRole.admin,
-    ]) {
+    for (final role in [UserRole.operation, UserRole.auditor, UserRole.admin]) {
       testWidgets('${role.wireName} ไม่เห็นทางลัด "งานของฉัน"', (tester) async {
         await _pumpHome(tester, role);
         expect(myTasksTile, findsNothing);
@@ -380,7 +375,6 @@ void main() {
     () {
       for (final role in [
         UserRole.st,
-        UserRole.sw,
         UserRole.operation,
         UserRole.auditor,
         UserRole.admin,
@@ -418,7 +412,6 @@ void main() {
   group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
     for (final role in [
       UserRole.st,
-      UserRole.sw,
       UserRole.operation,
       UserRole.auditor,
       UserRole.admin,
