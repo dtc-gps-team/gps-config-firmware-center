@@ -3,11 +3,13 @@
 /// Keep field names, nullability and enum values in sync with the spec.
 library;
 
-/// `LoginResponse.role` enum — the 6 values in the API contract on `main`
-/// (see the RBAC Matrix). No mobile-only role exists; field staff log in as
-/// ST or OT.
+/// `LoginResponse.role` enum — the 5 values in the API contract on `main`
+/// (see the RBAC Matrix). `SW` was split into `ConfigEngineer`/
+/// `FirmwareEngineer`/`QAEngineer` (docs/13_Role_Redesign_Proposal.md §3.1,
+/// PR #178) — all three are Web-only, so Mobile just drops the case instead
+/// of adding new ones. No mobile-only role exists; field staff log in as ST
+/// or OT.
 enum UserRole {
-  sw('SW'),
   operation('Operation'),
   st('ST'),
   ot('OT'),

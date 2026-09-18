@@ -3,9 +3,8 @@ import 'package:mobile/core/api/models.dart';
 
 void main() {
   group('UserRole', () {
-    test('has exactly the 6 roles from openapi.yaml — no FieldTechnician', () {
+    test('has exactly the 5 roles from openapi.yaml — no FieldTechnician', () {
       expect(UserRole.values.map((r) => r.wireName).toList(), [
-        'SW',
         'Operation',
         'ST',
         'OT',
@@ -15,13 +14,16 @@ void main() {
     });
 
     test('fromWire maps known values', () {
-      expect(UserRole.fromWire('SW'), UserRole.sw);
       expect(UserRole.fromWire('Admin'), UserRole.admin);
     });
 
     test('fromWire rejects FieldTechnician and other unknown values', () {
       expect(() => UserRole.fromWire('FieldTechnician'), throwsArgumentError);
       expect(() => UserRole.fromWire('sw'), throwsArgumentError);
+      // SW ถูกแยกเป็น ConfigEngineer/FirmwareEngineer/QAEngineer แล้ว (Web-only,
+      // docs/13_Role_Redesign_Proposal.md §3.1, PR #178) — wire value 'SW'
+      // (ตัวพิมพ์ใหญ่ ที่เคย valid) ต้องถูก reject เหมือนกันตอนนี้
+      expect(() => UserRole.fromWire('SW'), throwsArgumentError);
     });
   });
 
