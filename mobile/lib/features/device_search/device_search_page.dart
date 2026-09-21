@@ -7,6 +7,7 @@ import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../../core/widgets/skeleton_card.dart';
 import 'device_search_repository.dart';
 import 'device_status_ui.dart';
 
@@ -114,7 +115,12 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                     ),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
+                loading: () => ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  itemCount: 5,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, _) => const SkeletonCard(),
+                ),
                 error: (error, _) => _DeviceSearchError(
                   message: error is ApiException
                       ? error.message

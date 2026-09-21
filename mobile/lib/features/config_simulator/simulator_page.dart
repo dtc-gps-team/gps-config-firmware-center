@@ -3,8 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/theme/app_theme.dart';
 import 'config_repository.dart';
 import 'simulator_repository.dart';
+
+const _dropdownBorder = OutlineInputBorder(
+  borderRadius: BorderRadius.all(Radius.circular(10)),
+  borderSide: BorderSide(color: AppTheme.fieldBorder),
+);
 
 String _configLabel(DeviceConfigDraft c) {
   final model = c.deviceModel ?? '?';
@@ -145,7 +151,11 @@ class _DeviceDropdown extends StatelessWidget {
         }
         final safeValue = ids.contains(value) ? value : null;
         return InputDecorator(
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            border: _dropdownBorder,
+            filled: true,
+            fillColor: AppTheme.surface,
+          ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               key: const Key('simulator_device_dropdown'),
@@ -200,7 +210,11 @@ class _ConfigDropdown extends StatelessWidget {
         final ids = configs.map((c) => c.id).whereType<String>().toSet();
         final safeValue = ids.contains(value) ? value : null;
         return InputDecorator(
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            border: _dropdownBorder,
+            filled: true,
+            fillColor: AppTheme.surface,
+          ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               key: const Key('simulator_config_dropdown'),
@@ -227,7 +241,11 @@ class _DropdownSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const InputDecorator(
-      decoration: InputDecoration(border: OutlineInputBorder()),
+      decoration: InputDecoration(
+        border: _dropdownBorder,
+        filled: true,
+        fillColor: AppTheme.surface,
+      ),
       child: SizedBox(
         height: 20,
         child: Align(
