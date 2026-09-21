@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/lib/status-pill";
 
 /**
- * แผง "ทดสอบ Firmware" — SW/Operation/ST/OT (resource `firmware-simulation`
+ * แผง "ทดสอบ Firmware" — FirmwareEngineer/QAEngineer/Operation/ST/OT (resource `firmware-simulation`
  * แยกจาก `firmware` — mirror `ConfigReviewPanel`) mock เช็คว่ารุ่นอุปกรณ์ที่
  * ระบุอยู่ใน compatibility tag ไหม · dry-run ล้วน ไม่แตะ `uploadStatus` ·
  * 409 ถ้า `uploadStatus` ยังไม่ `stored` (ยังไม่มีไฟล์จริงใน Object Storage
@@ -56,7 +56,7 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ Firmware</p>
       <p className="text-xs text-muted-foreground">
         ระบุรุ่นอุปกรณ์ที่จะทดสอบ (ลองรุ่นนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)

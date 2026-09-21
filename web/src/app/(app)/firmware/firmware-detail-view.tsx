@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CalendarIcon, FileIcon, HardDriveIcon, UserIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { type Firmware } from "@/lib/firmware-api";
@@ -10,29 +11,16 @@ import {
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
   StatusPill,
+  statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareApprovalPanel } from "./firmware-approval-panel";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
-  );
-}
 
 export function FirmwareDetailView({ firmwareId }: { firmwareId: string }) {
   const { data, isLoading, error, refetch } = useFirmware(firmwareId);
@@ -92,7 +80,7 @@ function FirmwareDetailContent({
           <StatusPill
             tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
           >
-            {firmware.uploadStatus}
+            {statusLabel(firmware.uploadStatus)}
           </StatusPill>
           <StatusPill
             tone={
@@ -100,7 +88,7 @@ function FirmwareDetailContent({
               "neutral"
             }
           >
-            {firmware.approvalStatus}
+            {statusLabel(firmware.approvalStatus)}
           </StatusPill>
         </div>
       </div>
@@ -112,12 +100,12 @@ function FirmwareDetailContent({
         <div className="flex flex-col gap-6">
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">
-              <InfoRow label="ไฟล์ต้นฉบับ">
+              <InfoRow label="ไฟล์ต้นฉบับ" icon={FileIcon}>
                 <span className="font-mono text-xs">
                   {firmware.originalFilename}
                 </span>
               </InfoRow>
-              <InfoRow label="ขนาดไฟล์">
+              <InfoRow label="ขนาดไฟล์" icon={HardDriveIcon}>
                 {formatFileSize(firmware.fileSizeBytes)}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
@@ -128,13 +116,13 @@ function FirmwareDetailContent({
                     ] ?? "neutral"
                   }
                 >
-                  {firmware.deviceUpdateStatus}
+                  {statusLabel(firmware.deviceUpdateStatus)}
                 </StatusPill>
               </InfoRow>
-              <InfoRow label="อัปโหลดโดย">
+              <InfoRow label="อัปโหลดโดย" icon={UserIcon}>
                 <span className="font-mono text-xs">{firmware.uploadedBy}</span>
               </InfoRow>
-              <InfoRow label="อัปโหลดเมื่อ">
+              <InfoRow label="อัปโหลดเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(firmware.uploadedAt)}
               </InfoRow>
             </div>

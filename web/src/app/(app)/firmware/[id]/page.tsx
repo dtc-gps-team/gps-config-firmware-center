@@ -5,7 +5,7 @@ export const metadata = {
 };
 
 /** รายละเอียด Firmware แบบหน้าเต็ม — ข้อมูลไฟล์ + Compatibility Tag (แก้ได้
- *  เฉพาะ SW) + ทดสอบกับ Device Simulator (SW/Operation/ST/OT) */
+ *  เฉพาะ FirmwareEngineer) + ทดสอบกับ Device Simulator (FirmwareEngineer/QAEngineer/Operation/ST/OT) */
 export default async function FirmwareDetailPage({
   params,
 }: {

@@ -1,29 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import {
+  ActivityIcon,
+  CalendarCheckIcon,
+  CalendarIcon,
+  ClockIcon,
+  PackageIcon,
+  TargetIcon,
+} from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { CAMPAIGN_STATUS_TONE, StatusPill } from "@/lib/status-pill";
+import { CAMPAIGN_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useConfig } from "@/hooks/use-config";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { CampaignApprovalPanel } from "./campaign-approval-panel";
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
-  );
-}
 
 /**
  * รายละเอียดแคมเปญ 1 รายการ — ต่อ `GET /campaigns/{id}` จริง (Sprint 3 #21)
@@ -63,7 +57,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/campaigns"
@@ -72,9 +66,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           ← กลับไปรายการแคมเปญ
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">{data.name}</h1>
+          <h1 className="text-2xl font-semibold break-words">{data.name}</h1>
           <StatusPill tone={CAMPAIGN_STATUS_TONE[data.status]}>
-            {data.status}
+            {statusLabel(data.status)}
           </StatusPill>
         </div>
         {data.description && (
@@ -84,26 +78,38 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
 
       <CampaignApprovalPanel campaign={data} onDecided={() => void refetch()} />
 
-      <div className="rounded-xl border bg-card p-5">
-        <InfoRow label="Payload">
-          {data.payloadType === "Config"
-            ? (configQuery.data?.name ?? data.configId ?? "—")
-            : (data.firmwareId ?? "—")}
-        </InfoRow>
-        <InfoRow label="จำนวนเป้าหมาย">{data.targetCount}</InfoRow>
-        <InfoRow label="สำเร็จ / ล้มเหลว">
-          {data.successCount} / {data.failureCount}{" "}
-          <span className="text-xs text-muted-foreground">
-            (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
-          </span>
-        </InfoRow>
-        {data.approvedAt && (
-          <InfoRow label="อนุมัติเมื่อ">
-            {formatDateTime(data.approvedAt)}
+      {/* เนื้อหาเป็น label/value ล้วน (ไม่มีของหนาแน่นแบบ JSON/parameter list
+       * เหมือน Config/Firmware) — จำกัด max-width ไว้ที่การ์ดนี้แทนที่จะปล่อย
+       * เต็มความกว้างหน้าจอ (อ่านยากถ้า label/value ห่างกันเกินไป) และไม่ใช้
+       * `mx-auto` จัดกึ่งกลาง ให้ชิดซ้ายตรงกับหน้า detail อื่นทั้งหมด */}
+      <div className="max-w-xl rounded-xl border bg-card p-4">
+        <div className="divide-y">
+          <InfoRow label="Payload" icon={PackageIcon}>
+            {data.payloadType === "Config"
+              ? (configQuery.data?.name ?? data.configId ?? "—")
+              : (data.firmwareId ?? "—")}
           </InfoRow>
-        )}
-        <InfoRow label="สร้างเมื่อ">{formatDateTime(data.createdAt)}</InfoRow>
-        <InfoRow label="แก้ไขล่าสุด">{formatDateTime(data.updatedAt)}</InfoRow>
+          <InfoRow label="จำนวนเป้าหมาย" icon={TargetIcon}>
+            {data.targetCount}
+          </InfoRow>
+          <InfoRow label="สำเร็จ / ล้มเหลว" icon={ActivityIcon}>
+            {data.successCount} / {data.failureCount}{" "}
+            <span className="text-xs text-muted-foreground">
+              (ยังไม่มีระบบอัปเดตค่านี้ — รอ Campaign Monitor)
+            </span>
+          </InfoRow>
+          {data.approvedAt && (
+            <InfoRow label="อนุมัติเมื่อ" icon={CalendarCheckIcon}>
+              {formatDateTime(data.approvedAt)}
+            </InfoRow>
+          )}
+          <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
+            {formatDateTime(data.createdAt)}
+          </InfoRow>
+          <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
+            {formatDateTime(data.updatedAt)}
+          </InfoRow>
+        </div>
       </div>
     </div>
   );

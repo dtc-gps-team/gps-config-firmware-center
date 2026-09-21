@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ClipboardCheckIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canDecideConfigApproval } from "@/lib/permissions";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { ApprovalCard } from "./approval-card";
 
 export function ApprovalCenterView() {
@@ -59,7 +61,7 @@ export function ApprovalCenterView() {
             <span className="text-muted-foreground">({allItems.length})</span>
           </CardTitle>
           <CardDescription>
-            สถานะ Config = testing (ผ่าน simulation + SW ปักผลผ่านแล้ว)
+            สถานะ Config = testing (ผ่าน simulation + ConfigEngineer ปักผลผ่านแล้ว)
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -108,11 +110,14 @@ export function ApprovalCenterView() {
               </Button>
             </div>
           ) : items.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {tab === "mine"
-                ? "ไม่มี Config ที่เจาะจงถึงคุณ"
-                : "ไม่มี Config รออนุมัติ"}
-            </p>
+            <EmptyState
+              icon={ClipboardCheckIcon}
+              message={
+                tab === "mine"
+                  ? "ไม่มี Config ที่เจาะจงถึงคุณ"
+                  : "ไม่มี Config รออนุมัติ"
+              }
+            />
           ) : (
             items.map((item) => (
               <ApprovalCard

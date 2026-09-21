@@ -74,7 +74,7 @@ export function ApprovalActions({
   if (confirming) {
     const isApprove = confirming === "approve";
     return (
-      <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-col items-start gap-2">
         <p className="text-sm">
           {isApprove ? "อนุมัติ" : "ปฏิเสธ"} &ldquo;{configName}&rdquo;?
         </p>
@@ -105,7 +105,7 @@ export function ApprovalActions({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1">
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex gap-2">
         <Button

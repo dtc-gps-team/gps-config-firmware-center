@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
+import { CpuIcon } from "lucide-react";
 
 import {
   Card,
@@ -23,11 +24,13 @@ import {
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
   StatusPill,
+  statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { UploadFirmwareButton } from "./upload-firmware-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 function thTextSort(a: Row<Firmware>, b: Row<Firmware>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(
@@ -72,7 +75,7 @@ const columns: ColumnDef<Firmware>[] = [
       const status = row.original.uploadStatus;
       return (
         <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[status] ?? "neutral"}>
-          {status}
+          {statusLabel(status)}
         </StatusPill>
       );
     },
@@ -86,7 +89,7 @@ const columns: ColumnDef<Firmware>[] = [
       const status = row.original.approvalStatus;
       return (
         <StatusPill tone={FIRMWARE_APPROVAL_STATUS_TONE[status] ?? "neutral"}>
-          {status}
+          {statusLabel(status)}
         </StatusPill>
       );
     },
@@ -151,9 +154,12 @@ export function FirmwareTableCard({
   return (
     <Card>
       {justUploaded && (
-        <div className="mx-6 -mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <div className="mx-6 -mb-2 flex flex-wrap items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
           อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว —
-          สถานะ <strong>{justUploaded.uploadStatus}</strong>
+          สถานะ{" "}
+          <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ?? "neutral"}>
+            {statusLabel(justUploaded.uploadStatus)}
+          </StatusPill>
         </div>
       )}
       <CardHeader>
@@ -177,9 +183,11 @@ export function FirmwareTableCard({
             </Button>
           </div>
         ) : firmwareList.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            ยังไม่มี Firmware ในระบบ
-          </p>
+          <EmptyState
+            icon={CpuIcon}
+            message="ยังไม่มี Firmware ในระบบ"
+            action={<UploadFirmwareButton />}
+          />
         ) : (
           <DataTable
             columns={columns}

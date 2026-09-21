@@ -18,6 +18,7 @@ import {
   ChevronDownIcon,
   ChevronsUpDownIcon,
   ChevronUpIcon,
+  SearchXIcon,
 } from "lucide-react";
 
 import {
@@ -29,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 import { DataTableColumnFilter } from "./column-filter";
 
@@ -178,11 +180,8 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-sm text-muted-foreground"
-                >
-                  {emptyMessage}
+                <TableCell colSpan={columns.length} className="p-0">
+                  <EmptyState icon={SearchXIcon} message={emptyMessage} />
                 </TableCell>
               </TableRow>
             ) : (

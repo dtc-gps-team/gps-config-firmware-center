@@ -27,6 +27,32 @@ class AppTheme {
   static const unreadDot = Color(0xFF1F6FB2);
   static const iconBg = Color(0xFFE8EEF3);
 
+  // --- Redesign tokens (from the field-app visual mockup) ---------------
+  // Scoped to the screens migrated to the new look so far (Home). Not yet
+  // applied app-wide — that is a separate follow-up once every screen has
+  // been checked against the mockup. Do not remove the tokens above while
+  // any screen still depends on them.
+  static const mockBg = Color(0xFFF1F1EE);
+  static const mockAccent = Color(0xFF2955B3);
+  static const mockAccentSoft = Color(0xFFE8EEFB);
+  static const mockSuccess = Color(0xFF2F8F5B);
+  static const mockSuccessSoft = Color(0xFFE7F4EC);
+  static const mockTextPrimary = Color(0xFF1B2333);
+  static const mockTextSecondary = Color(0xFF767C88);
+  static const mockTextTertiary = Color(0xFF9298A3);
+  static const mockCardBorder = Color(0xFFE2E1DA);
+
+  /// Standalone card / detail-panel shadow.
+  static const mockShadowCard = [
+    BoxShadow(color: Color(0x0D141822), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0F141822), blurRadius: 16, offset: Offset(0, 6)),
+  ];
+
+  /// Lighter shadow for repeated list rows (history cards, notif cards…).
+  static const mockShadowRow = [
+    BoxShadow(color: Color(0x0A141822), blurRadius: 2, offset: Offset(0, 1)),
+  ];
+
   static ThemeData light() => _base(Brightness.light);
   static ThemeData dark() => _base(Brightness.dark);
 

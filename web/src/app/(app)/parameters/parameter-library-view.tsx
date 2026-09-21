@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { ListIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { RoleGuard } from "@/components/auth/role-guard";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/config-definition-api";
 import { ParameterCreateForm } from "./parameter-create-form";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 
 type DefinitionsState = ReturnType<typeof useConfigDefinitions>;
 
@@ -104,7 +106,13 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
   },
 ];
 
-function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) {
+function ParameterTableCard({
+  definitions,
+  emptyAction,
+}: {
+  definitions: DefinitionsState;
+  emptyAction?: React.ReactNode;
+}) {
   const { data, isLoading, error, refetch } = definitions;
   const rows = useMemo(() => data ?? [], [data]);
 
@@ -128,9 +136,11 @@ function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) 
             </Button>
           </div>
         ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            ยังไม่มี Parameter ในระบบ
-          </p>
+          <EmptyState
+            icon={ListIcon}
+            message="ยังไม่มี Parameter ในระบบ"
+            action={emptyAction}
+          />
         ) : (
           <DataTable
             columns={columns}
@@ -146,9 +156,9 @@ function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) 
 
 /**
  * คลัง Parameter (Config Definition Lookup, #12/#26) — ต่อ `GET
- * /config-definitions` จริง · SW/Operation/ST/OT เท่านั้น (gate ทั้งหน้าผ่าน
+ * /config-definitions` จริง · ConfigEngineer/Operation/ST/OT เท่านั้น (gate ทั้งหน้าผ่าน
  * RoleGuard) · ฟอร์มสร้าง Parameter ใหม่ (`POST /config-definitions`) เปิด/ปิด
- * ด้วยปุ่ม — เฉพาะ Role SW (gate ที่ปุ่ม + PermissionGuard ฝั่ง backend)
+ * ด้วยปุ่ม — เฉพาะ Role ConfigEngineer (gate ที่ปุ่ม + PermissionGuard ฝั่ง backend)
  */
 function ParameterLibraryContent() {
   const { session } = useAuth();
@@ -185,7 +195,7 @@ function ParameterLibraryContent() {
         <div>
           <h1 className="text-2xl font-semibold">คลัง Parameter</h1>
           <p className="text-sm text-muted-foreground">
-            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role SW
+            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role ConfigEngineer
           </p>
         </div>
         {canCreate && !showForm ? (
@@ -207,7 +217,16 @@ function ParameterLibraryContent() {
         />
       ) : null}
 
-      <ParameterTableCard definitions={definitions} />
+      <ParameterTableCard
+        definitions={definitions}
+        emptyAction={
+          canCreate && !showForm ? (
+            <Button size="sm" onClick={() => setShowForm(true)}>
+              + สร้าง Parameter ใหม่
+            </Button>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
