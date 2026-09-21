@@ -2170,7 +2170,7 @@ components:
       type: object
       description: นิยาม field หนึ่งตัวใน Config Definition Lookup (ตรงกับ Prisma model ConfigFieldDefinition)
       required:
-        [id, fieldName, dataType, allowedValues, required, unknownSpec, createdAt, updatedAt, supportedModels]
+        [id, fieldName, dataType, allowedValues, required, unknownSpec, sensitive, restartRequired, createdAt, updatedAt, supportedModels]
       properties:
         id:
           type: string
@@ -2200,6 +2200,20 @@ components:
           description: >-
             หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — metadata สำหรับ
             แสดงผลข้างช่องกรอกตอนสร้าง Config เท่านั้น ไม่ถูกใช้ตอน validate
+        category:
+          type: string
+          nullable: true
+          description: >-
+            หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server",
+            "Security") — ตรงกับ GPS_Config_Firmware_Center_Design.pdf §5.1
+        sensitive:
+          type: boolean
+          description: >-
+            field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ใช้ซ่อนค่าบน
+            หน้าจอฝั่ง Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม
+        restartRequired:
+          type: boolean
+          description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผลเท่านั้น
         supportedModels:
           type: array
           description: >-
@@ -2256,6 +2270,20 @@ components:
           type: string
           maxLength: 20
           description: หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — ไม่บังคับ
+        category:
+          type: string
+          maxLength: 50
+          description: >-
+            หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server",
+            "Security") — ไม่บังคับ
+        sensitive:
+          type: boolean
+          default: false
+          description: field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ไม่บังคับ
+        restartRequired:
+          type: boolean
+          default: false
+          description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — ไม่บังคับ
         supportedModels:
           type: array
           minItems: 1

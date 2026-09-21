@@ -430,16 +430,69 @@ async function main() {
   // APN2/SIM2 ไม่ได้อยู่ในรายการตัวอย่าง §5 ตรงๆ แต่ kittiphong ระบุใน issue
   // #68 ("APN1/2") + อุปกรณ์ tracker เป็น dual-SIM มาตรฐาน (ช่อง 2 คู่กับช่อง
   // 1) — เพิ่มเป็นคู่ให้ครบ ยัง unknownSpec เหมือนกัน
-  const UNKNOWN_SPEC_LEGACY_FIELDS: { fieldName: string; note: string }[] = [
-    { fieldName: 'APN1', note: 'APN สำหรับ SIM ช่อง 1' },
-    { fieldName: 'APN2', note: 'APN สำหรับ SIM ช่อง 2 (dual-SIM)' },
-    { fieldName: 'MTYP', note: 'ประเภท/โหมดการทำงานของอุปกรณ์ (module type)' },
-    { fieldName: 'SIM1', note: 'ค่าที่เกี่ยวกับ SIM ช่อง 1' },
-    { fieldName: 'SIM2', note: 'ค่าที่เกี่ยวกับ SIM ช่อง 2 (dual-SIM)' },
-    { fieldName: 'SEV1', note: 'ปลายทาง server หลัก (host:port) ช่อง 1' },
-    { fieldName: 'RS232', note: 'การตั้งค่าพอร์ต RS232' },
-    { fieldName: 'PROD', note: 'รหัส/ชื่อรุ่นผลิตภัณฑ์' },
-    { fieldName: 'COMP', note: 'ค่าที่เกี่ยวกับ compatibility ของอุปกรณ์' },
+  // category/restartRequired เพิ่มตาม PDF §5.1 (ดู comment เหนือ model
+  // ConfigFieldDefinition ใน schema.prisma) — sensitive ไม่มีตัวไหนในกลุ่มนี้
+  // เป็นค่าลับ จึงไม่ต้องระบุต่อรายการ (default false)
+  const UNKNOWN_SPEC_LEGACY_FIELDS: {
+    fieldName: string;
+    note: string;
+    category: string;
+    restartRequired: boolean;
+  }[] = [
+    {
+      fieldName: 'APN1',
+      note: 'APN สำหรับ SIM ช่อง 1',
+      category: 'Network',
+      restartRequired: true,
+    },
+    {
+      fieldName: 'APN2',
+      note: 'APN สำหรับ SIM ช่อง 2 (dual-SIM)',
+      category: 'Network',
+      restartRequired: true,
+    },
+    {
+      fieldName: 'MTYP',
+      note: 'ประเภท/โหมดการทำงานของอุปกรณ์ (module type)',
+      category: 'General',
+      restartRequired: false,
+    },
+    {
+      fieldName: 'SIM1',
+      note: 'ค่าที่เกี่ยวกับ SIM ช่อง 1',
+      category: 'Network',
+      restartRequired: true,
+    },
+    {
+      fieldName: 'SIM2',
+      note: 'ค่าที่เกี่ยวกับ SIM ช่อง 2 (dual-SIM)',
+      category: 'Network',
+      restartRequired: true,
+    },
+    {
+      fieldName: 'SEV1',
+      note: 'ปลายทาง server หลัก (host:port) ช่อง 1',
+      category: 'Server',
+      restartRequired: true,
+    },
+    {
+      fieldName: 'RS232',
+      note: 'การตั้งค่าพอร์ต RS232',
+      category: 'Hardware',
+      restartRequired: false,
+    },
+    {
+      fieldName: 'PROD',
+      note: 'รหัส/ชื่อรุ่นผลิตภัณฑ์',
+      category: 'General',
+      restartRequired: false,
+    },
+    {
+      fieldName: 'COMP',
+      note: 'ค่าที่เกี่ยวกับ compatibility ของอุปกรณ์',
+      category: 'General',
+      restartRequired: false,
+    },
   ];
 
   // -------------------------------------------------------------------
@@ -474,6 +527,13 @@ async function main() {
     description: string;
     /** หน่วยของค่า (metadata แสดงผลข้าง input ตอนสร้าง Config — frame 08) */
     unit?: string;
+    // category ตาม PDF §5.1 (ตัวอย่าง: GPS, Network, Server, CAN, Sensor,
+    // Camera, Security — ที่นี่เพิ่ม General/Hardware/Power ให้ครอบกลุ่มที่
+    // PDF ไม่มีตัวอย่างตรงๆ เพราะ field ไม่ใช่ enum) sensitive/restartRequired
+    // default false ถ้าไม่ระบุ (ส่วนใหญ่ของชุดนี้ไม่ใช่ค่าลับและไม่ต้อง restart)
+    category: string;
+    sensitive?: boolean;
+    restartRequired?: boolean;
     supportedModels: { deviceModel: string; protocol: string }[];
   }[] = [
     // ── เครือข่าย / GPRS ──
@@ -482,6 +542,8 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'ชื่อผู้ใช้ APN (ถ้าผู้ให้บริการกำหนด)',
+      category: 'Network',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -489,6 +551,9 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'รหัสผ่าน APN (ถ้าผู้ให้บริการกำหนด)',
+      category: 'Network',
+      sensitive: true,
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── เซิร์ฟเวอร์ปลายทาง ──
@@ -497,6 +562,8 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'hostname หรือ IP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
+      category: 'Server',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
     {
@@ -505,6 +572,8 @@ async function main() {
       allowedValues: [],
       description: 'พอร์ต TCP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
       unit: 'พอร์ต',
+      category: 'Server',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
     {
@@ -512,6 +581,8 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'hostname หรือ IP ของเซิร์ฟเวอร์สำรอง',
+      category: 'Server',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -519,6 +590,8 @@ async function main() {
       dataType: 'string',
       allowedValues: ['TCP', 'UDP'],
       description: 'โปรโตคอลขาส่งข้อมูลขึ้นเซิร์ฟเวอร์',
+      category: 'Server',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── การรายงานตำแหน่ง ──
@@ -528,6 +601,7 @@ async function main() {
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถเคลื่อนที่ (วินาที)',
       unit: 'วินาที',
+      category: 'GPS',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -536,6 +610,7 @@ async function main() {
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถจอด (วินาที)',
       unit: 'วินาที',
+      category: 'GPS',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -544,6 +619,7 @@ async function main() {
       allowedValues: [],
       description: 'องศาการเปลี่ยนทิศที่กระตุ้นให้ส่งรายงานเพิ่ม (องศา)',
       unit: 'องศา',
+      category: 'GPS',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -551,6 +627,8 @@ async function main() {
       dataType: 'string',
       allowedValues: ['GPS', 'GPS_GLONASS', 'GPS_BEIDOU'],
       description: 'ชุดระบบดาวเทียมที่ให้โมดูลใช้หาตำแหน่ง',
+      category: 'GPS',
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
     // ── เซนเซอร์ / ดิจิทัล I/O ──
@@ -559,6 +637,7 @@ async function main() {
       dataType: 'string',
       allowedValues: ['ACC_WIRE', 'VOLTAGE', 'MOTION'],
       description: 'วิธีที่อุปกรณ์ใช้ตัดสินว่ารถติดเครื่องอยู่หรือไม่',
+      category: 'Sensor',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -566,6 +645,7 @@ async function main() {
       dataType: 'string',
       allowedValues: ['NONE', 'SOS', 'DOOR', 'PANIC'],
       description: 'ฟังก์ชันที่ผูกกับพอร์ตอินพุตดิจิทัลช่อง 1',
+      category: 'Sensor',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -573,6 +653,7 @@ async function main() {
       dataType: 'string',
       allowedValues: ['NONE', 'ENGINE_CUT', 'BUZZER'],
       description: 'ฟังก์ชันที่ผูกกับพอร์ตเอาต์พุตดิจิทัลช่อง 1',
+      category: 'Sensor',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── โหมดประหยัดพลังงาน ──
@@ -581,6 +662,7 @@ async function main() {
       dataType: 'string',
       allowedValues: ['NONE', 'TIME', 'MOTION', 'DEEP'],
       description: 'เงื่อนไขที่ให้อุปกรณ์เข้าสู่โหมดประหยัดพลังงาน',
+      category: 'Power',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -589,6 +671,7 @@ async function main() {
       allowedValues: [],
       description: 'เปอร์เซ็นต์แบตเตอรี่สำรองที่จะแจ้งเตือน low battery',
       unit: '%',
+      category: 'Power',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── ความปลอดภัย ──
@@ -597,6 +680,8 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'รหัสผ่านสำหรับสั่งงานอุปกรณ์ผ่าน SMS / แพลตฟอร์ม',
+      category: 'Security',
+      sensitive: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -604,6 +689,8 @@ async function main() {
       dataType: 'string',
       allowedValues: [],
       description: 'เบอร์โทรปลายทางลำดับที่ 1 เมื่อกดปุ่ม SOS',
+      category: 'Security',
+      sensitive: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── พฤติกรรมการเก็บข้อมูล ──
@@ -612,6 +699,7 @@ async function main() {
       dataType: 'boolean',
       allowedValues: [],
       description: 'เปิดการสะสมเลขไมล์สะสม (odometer) ในตัวอุปกรณ์',
+      category: 'General',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     {
@@ -619,6 +707,7 @@ async function main() {
       dataType: 'boolean',
       allowedValues: [],
       description: 'กรองการกระเพื่อมของพิกัด GPS ขณะรถจอดนิ่ง',
+      category: 'GPS',
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     // ── CAN / OBD ──
@@ -627,6 +716,7 @@ async function main() {
       dataType: 'boolean',
       allowedValues: [],
       description: 'เปิดการอ่านข้อมูลจากสาย CAN bus / OBD ของรถ',
+      category: 'CAN',
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
     {
@@ -634,6 +724,7 @@ async function main() {
       dataType: 'string',
       allowedValues: ['AUTO', 'ISO15765', 'J1939', 'J1708'],
       description: 'โปรโตคอล OBD ที่ให้อุปกรณ์ใช้คุยกับ ECU ของรถ',
+      category: 'CAN',
       supportedModels: [KNOWN_LEGACY_MODEL, SECONDARY_LEGACY_MODEL],
     },
   ];
@@ -646,6 +737,12 @@ async function main() {
     unknownSpec: boolean;
     description: string;
     unit: string | null;
+    // category/sensitive/restartRequired เพิ่มตาม PDF §5.1 (ดู comment เหนือ
+    // model ConfigFieldDefinition ใน schema.prisma) — mirror ที่มาแบบเดียวกับ
+    // unit ด้านบน
+    category: string | null;
+    sensitive: boolean;
+    restartRequired: boolean;
     // (deviceModel, protocol) ที่ field นี้รองรับ — ตั้งแต่ Semantic
     // Validation (#26) field ที่ supportedModels ว่างเปล่าใช้งานไม่ได้เลย
     // (validateFields บล็อกทุก deviceModel/protocol ถ้าไม่มีคู่ไหนตรงกัน
@@ -661,6 +758,9 @@ async function main() {
       unknownSpec: false,
       description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
       unit: null,
+      category: 'Network',
+      sensitive: false,
+      restartRequired: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     ...UNKNOWN_SPEC_LEGACY_FIELDS.map((f) => ({
@@ -671,6 +771,9 @@ async function main() {
       unknownSpec: true,
       description: `${f.note} — ยืนยันแค่ชื่อจาก Build Reference §5 ยังไม่มีสเปกเต็ม (unknown_spec)`,
       unit: null,
+      category: f.category,
+      sensitive: false,
+      restartRequired: f.restartRequired,
       supportedModels: [KNOWN_LEGACY_MODEL],
     })),
     ...REPRESENTATIVE_FIELDS.map((f) => ({
@@ -681,6 +784,9 @@ async function main() {
       unknownSpec: false,
       description: `${f.description} — (ชุด parameter ตัวแทนสำหรับ dev/demo ยังไม่ใช่สเปกฟิลด์จริง ดู #68)`,
       unit: f.unit ?? null,
+      category: f.category,
+      sensitive: f.sensitive ?? false,
+      restartRequired: f.restartRequired ?? false,
       supportedModels: f.supportedModels,
     })),
   ];
@@ -689,9 +795,15 @@ async function main() {
     const { supportedModels, ...fieldData } = def;
     const existing = await prisma.configFieldDefinition.upsert({
       where: { fieldName: def.fieldName },
-      // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น `unit` ที่เพิ่งเพิ่ม
-      // เป็นคอลัมน์ใหม่ (nullable) backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย
-      update: { unit: fieldData.unit },
+      // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น field ที่เพิ่มเป็น
+      // คอลัมน์ใหม่ทีหลัง (unit, category, sensitive, restartRequired)
+      // backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย
+      update: {
+        unit: fieldData.unit,
+        category: fieldData.category,
+        sensitive: fieldData.sensitive,
+        restartRequired: fieldData.restartRequired,
+      },
       create: fieldData,
     });
     for (const support of supportedModels) {
