@@ -58,6 +58,8 @@ const owner: ActingUser = { id: 'tech-1', role: 'ST' };
 const otherTech: ActingUser = { id: 'tech-2', role: 'OT' };
 const configEngineer: ActingUser = { id: 'ce-1', role: 'ConfigEngineer' };
 const auditor: ActingUser = { id: 'auditor-1', role: 'Auditor' };
+const admin: ActingUser = { id: 'admin-1', role: 'Admin' };
+const superAdmin: ActingUser = { id: 'superadmin-1', role: 'SuperAdmin' };
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -247,6 +249,41 @@ describe('TaskService', () => {
 
       expect(task.findMany).toHaveBeenCalledWith({
         where: { status: undefined, assignedTo: owner.id },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('Auditor: ไม่ scope เหมือน Operation (ตั้งใจให้เห็นทุก task เพื่อตรวจสอบย้อนหลัง)', async () => {
+      task.findMany.mockResolvedValue([sampleTask]);
+
+      await service.findAll({ status: 'pending' }, auditor);
+
+      expect(task.findMany).toHaveBeenCalledWith({
+        where: { status: 'pending', assignedTo: undefined },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('Admin/SuperAdmin: ไม่ scope เช่นกัน (ดูแลระบบ ต้อง troubleshoot งานของใครก็ได้)', async () => {
+      task.findMany.mockResolvedValue([sampleTask]);
+
+      await service.findAll({}, admin);
+      await service.findAll({}, superAdmin);
+
+      expect(task.findMany).toHaveBeenCalledWith({
+        where: { status: undefined, assignedTo: undefined },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(task.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('issue #73 — role อื่นที่ไม่อยู่ใน UNSCOPED_TASK_ROLES ถูก self-scope เป็น default ปลอดภัย (เช่น ConfigEngineer ต่อให้ได้ grant tasks:Read เพิ่มทีหลังโดยไม่ได้ตั้งใจ ก็ไม่หลุดเห็นทั้งตาราง)', async () => {
+      task.findMany.mockResolvedValue([sampleTask]);
+
+      await service.findAll({ assignedTo: 'someone-else' }, configEngineer);
+
+      expect(task.findMany).toHaveBeenCalledWith({
+        where: { status: undefined, assignedTo: configEngineer.id },
         orderBy: { createdAt: 'desc' },
       });
     });
