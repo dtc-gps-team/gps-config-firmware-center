@@ -146,9 +146,9 @@ function ParameterTableCard({ definitions }: { definitions: DefinitionsState }) 
 
 /**
  * คลัง Parameter (Config Definition Lookup, #12/#26) — ต่อ `GET
- * /config-definitions` จริง · SW/Operation/ST/OT เท่านั้น (gate ทั้งหน้าผ่าน
+ * /config-definitions` จริง · ConfigEngineer/Operation/ST/OT เท่านั้น (gate ทั้งหน้าผ่าน
  * RoleGuard) · ฟอร์มสร้าง Parameter ใหม่ (`POST /config-definitions`) เปิด/ปิด
- * ด้วยปุ่ม — เฉพาะ Role SW (gate ที่ปุ่ม + PermissionGuard ฝั่ง backend)
+ * ด้วยปุ่ม — เฉพาะ Role ConfigEngineer (gate ที่ปุ่ม + PermissionGuard ฝั่ง backend)
  */
 function ParameterLibraryContent() {
   const { session } = useAuth();
@@ -185,7 +185,7 @@ function ParameterLibraryContent() {
         <div>
           <h1 className="text-2xl font-semibold">คลัง Parameter</h1>
           <p className="text-sm text-muted-foreground">
-            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role SW
+            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role ConfigEngineer
           </p>
         </div>
         {canCreate && !showForm ? (

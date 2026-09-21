@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 /**
- * ฟอร์มอัปโหลด Firmware — เฉพาะ Role SW (RBAC_Matrix.md ตาราง 4.1
+ * ฟอร์มอัปโหลด Firmware — เฉพาะ Role FirmwareEngineer (RBAC_Matrix.md ตาราง 4.1
  * `POST /firmware`) role อื่นเห็นข้อความแทนฟอร์ม
  *
  * flow: เลือกไฟล์ + กรอกเวอร์ชัน/รุ่นอุปกรณ์เริ่มต้น (compatibility tag
@@ -45,7 +45,7 @@ export function UploadFirmwareForm() {
   if (!canUploadFirmware(session?.role)) {
     return (
       <p className="text-sm text-muted-foreground">
-        เฉพาะ Role SW เท่านั้นที่อัปโหลด Firmware ได้
+        เฉพาะ Role FirmwareEngineer เท่านั้นที่อัปโหลด Firmware ได้
       </p>
     );
   }

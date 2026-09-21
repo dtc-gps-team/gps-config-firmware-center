@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { ColumnDef } from "@tanstack/react-table";
 import { CheckIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,12 +11,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DataTable } from "@/components/data-table/data-table";
+import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import {
@@ -29,6 +40,7 @@ import type { Firmware } from "@/lib/firmware-api";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
 /** Config สถานะที่ใช้สร้างแคมเปญได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES`
@@ -86,10 +98,6 @@ export function CampaignWizard() {
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [search, setSearch] = useState("");
-  // "" = ทุกลูกค้า (ไม่กรอง) — ค่าอื่นเป็นชื่อบริษัทตรงๆ หรือ UNASSIGNED_CUSTOMER
-  // สำหรับเครื่องที่ยังไม่ผูกลูกค้า (docs/12 เฟส B)
-  const [customerFilter, setCustomerFilter] = useState("");
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [payloadType, setPayloadType] = useState<CampaignPayloadType>("Config");
   const [configId, setConfigId] = useState("");
@@ -104,38 +112,21 @@ export function CampaignWizard() {
     setFormError(null);
   }
 
+  // ทุก field เริ่มว่าง/ค่า default เสมอ (ไม่มีโหมด prefill แบบ ConfigWizard)
+  // — dirty แค่เทียบกับค่าเริ่มต้นตรงๆ พอ ไม่ต้อง snapshot
+  const isDirty =
+    name.trim() !== "" ||
+    description.trim() !== "" ||
+    selectedDeviceIds.length > 0 ||
+    payloadType !== "Config" ||
+    configId !== "" ||
+    firmwareId !== "";
+  const { confirmLeave } = useUnsavedChangesWarning(isDirty);
+
   const installedDevices = useMemo(
     () => (devicesQuery.data ?? []).filter((d) => d.status === "installed"),
     [devicesQuery.data],
   );
-
-  /** ชื่อลูกค้าที่มีอยู่จริงในอุปกรณ์ที่ installed ทั้งหมด (เรียงตามตัวอักษร) +
-   * "ไม่ระบุ" ต่อท้ายถ้ามีอย่างน้อย 1 เครื่องที่ยังไม่ผูกลูกค้า — derive จาก
-   * ข้อมูลที่โหลดมาแล้วเหมือน filter อื่นๆ ในหน้านี้ (ไม่ยิง `GET /customers`
-   * แยก ต่างจาก "ช่วงที่ 2" ที่ยังไม่ทำ ซึ่งต้องเห็นลูกค้าที่ยังไม่มีอุปกรณ์ด้วย) */
-  const customerOptions = useMemo(() => {
-    const names = new Set<string>();
-    let hasUnassigned = false;
-    for (const d of installedDevices) {
-      if (d.customer) names.add(d.customer.companyName);
-      else hasUnassigned = true;
-    }
-    const sorted = [...names].sort((a, b) => a.localeCompare(b));
-    return hasUnassigned ? [...sorted, UNASSIGNED_CUSTOMER] : sorted;
-  }, [installedDevices]);
-
-  const filteredDevices = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return installedDevices.filter((d) => {
-      const matchesSearch =
-        !q ||
-        d.deviceId.toLowerCase().includes(q) ||
-        d.deviceModel.toLowerCase().includes(q);
-      const companyName = d.customer?.companyName ?? UNASSIGNED_CUSTOMER;
-      const matchesCustomer = !customerFilter || companyName === customerFilter;
-      return matchesSearch && matchesCustomer;
-    });
-  }, [installedDevices, search, customerFilter]);
 
   const eligibleConfigs = useMemo(
     () =>
@@ -311,16 +302,13 @@ export function CampaignWizard() {
             clearErrors();
           }}
           nameError={nameError}
-          search={search}
-          onSearchChange={setSearch}
-          customerOptions={customerOptions}
-          customerFilter={customerFilter}
-          onCustomerFilterChange={setCustomerFilter}
-          devices={filteredDevices}
+          devices={installedDevices}
           selectedDeviceIds={selectedDeviceIds}
           onToggleDevice={toggleDevice}
           formError={formError}
-          onCancel={() => router.push("/campaigns")}
+          onCancel={() => {
+            if (confirmLeave()) router.push("/campaigns");
+          }}
           onNext={() => goToStep(2)}
         />
       )}
@@ -427,11 +415,6 @@ function TargetsStep({
   description,
   onDescriptionChange,
   nameError,
-  search,
-  onSearchChange,
-  customerOptions,
-  customerFilter,
-  onCustomerFilterChange,
   devices,
   selectedDeviceIds,
   onToggleDevice,
@@ -444,11 +427,6 @@ function TargetsStep({
   description: string;
   onDescriptionChange: (v: string) => void;
   nameError: string | null;
-  search: string;
-  onSearchChange: (v: string) => void;
-  customerOptions: string[];
-  customerFilter: string;
-  onCustomerFilterChange: (v: string) => void;
   devices: Device[];
   selectedDeviceIds: string[];
   onToggleDevice: (deviceId: string, checked: boolean) => void;
@@ -457,6 +435,77 @@ function TargetsStep({
   onNext: () => void;
 }) {
   const selectedCount = selectedDeviceIds.length;
+
+  /** คอลัมน์ตาราง picker — ใช้ `DataTable` กลาง (ค้นหารวม + ฟิลเตอร์ต่อคอลัมน์
+   * + เรียงลำดับ) แทนตารางดิบเดิม mirror `device-search-view.tsx` (รุ่น/
+   * โปรโตคอล/ลูกค้า แยกคอลัมน์ multi-select) + คอลัมน์ checkbox เพิ่มด้านหน้า
+   * สำหรับเลือกเป้าหมาย — checkbox หยุด propagation กันชนกับคลิกทั้งแถว
+   * (`onRowClick` ด้านล่างก็ toggle เหมือนกัน ให้คลิกตรงไหนของแถวก็ได้) */
+  const columns: ColumnDef<Device>[] = useMemo(
+    () => [
+      {
+        id: "select",
+        header: "",
+        enableSorting: false,
+        enableGlobalFilter: false,
+        cell: ({ row }) => {
+          const checked = selectedDeviceIds.includes(row.original.deviceId);
+          return (
+            <span onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={checked}
+                onCheckedChange={(c) =>
+                  onToggleDevice(row.original.deviceId, c === true)
+                }
+                aria-label={
+                  checked ? "ยกเลิกเลือกอุปกรณ์นี้" : "เลือกอุปกรณ์นี้"
+                }
+                // ขยายจากค่า default size-4 ให้กดง่ายขึ้นในตาราง (border สีเข้ม
+                // พอมองเห็นแล้วจาก default ของ checkbox.tsx)
+                className="size-5"
+              />
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "deviceId",
+        header: "เลขเครื่อง",
+        meta: { filterVariant: "text", label: "เลขเครื่อง" },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">{row.original.deviceId}</span>
+        ),
+      },
+      {
+        accessorKey: "deviceModel",
+        header: "รุ่นอุปกรณ์",
+        filterFn: multiSelectFilterFn,
+        meta: { filterVariant: "multi-select", label: "รุ่น" },
+      },
+      {
+        accessorKey: "protocol",
+        header: "โปรโตคอล",
+        filterFn: multiSelectFilterFn,
+        meta: { filterVariant: "multi-select", label: "โปรโตคอล" },
+      },
+      {
+        id: "customer",
+        accessorFn: (row) => row.customer?.companyName ?? UNASSIGNED_CUSTOMER,
+        header: "ลูกค้า",
+        filterFn: multiSelectFilterFn,
+        meta: { filterVariant: "multi-select", label: "ลูกค้า" },
+        cell: ({ row }) =>
+          row.original.customer ? (
+            row.original.customer.companyName
+          ) : (
+            <span className="italic text-muted-foreground">
+              {UNASSIGNED_CUSTOMER}
+            </span>
+          ),
+      },
+    ],
+    [selectedDeviceIds, onToggleDevice],
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -493,103 +542,32 @@ function TargetsStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-sm font-medium">เลือกอุปกรณ์เป้าหมาย</p>
-            <p className="text-xs text-muted-foreground">
-              ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์
-              สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Select
-              value={customerFilter}
-              onValueChange={(value) => onCustomerFilterChange(value ?? "")}
-            >
-              <SelectTrigger className="h-8 max-w-40">
-                <SelectValue placeholder="ลูกค้า: ทั้งหมด" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">ลูกค้า: ทั้งหมด</SelectItem>
-                {customerOptions.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="ค้นหาเลขเครื่อง/รุ่น…"
-              className="h-8 max-w-52"
-            />
-          </div>
+        <div>
+          <p className="text-sm font-medium">เลือกอุปกรณ์เป้าหมาย</p>
+          <p className="text-xs text-muted-foreground">
+            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์
+            สถานะ installed เท่านั้น · เลือกแล้ว {selectedCount} เครื่อง
+          </p>
         </div>
 
-        <div className="max-h-96 overflow-y-auto rounded-lg border">
-          {devices.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              ไม่พบอุปกรณ์ที่ installed
-            </p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-muted/50 text-xs text-muted-foreground">
-                <tr>
-                  <th className="w-10 px-3 py-2" />
-                  <th className="w-48 px-2 py-2 text-left">เลขเครื่อง</th>
-                  <th className="w-56 px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
-                  <th className="px-2 py-2 text-left">ลูกค้า</th>
-                </tr>
-              </thead>
-              <tbody>
-                {devices.map((device) => {
-                  const checked = selectedDeviceIds.includes(device.deviceId);
-                  return (
-                    <tr
-                      key={device.deviceId}
-                      onClick={() =>
-                        onToggleDevice(device.deviceId, !checked)
-                      }
-                      className="cursor-pointer border-t hover:bg-muted/50"
-                    >
-                      <td
-                        className="px-3 py-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(c) =>
-                            onToggleDevice(device.deviceId, c === true)
-                          }
-                          // border-input เดิม (#E2E6EB) จางเกินไปจนแทบมองไม่
-                          // เห็นเป็นกล่อง checkbox เมื่ออยู่เดี่ยวๆ ในตาราง
-                          // (ไม่มี label ข้างๆ ช่วยเดา ต่างจากที่อื่นที่ใช้
-                          // Checkbox คู่กับ label เสมอ) — override เป็น
-                          // border-muted-foreground ให้เห็นเป็นกล่องชัดเจน
-                          className="size-5 border-2 border-muted-foreground"
-                        />
-                      </td>
-                      <td className="px-2 py-2 font-mono text-xs">
-                        {device.deviceId}
-                      </td>
-                      <td className="px-2 py-2 text-muted-foreground">
-                        {device.deviceModel} / {device.protocol}
-                      </td>
-                      <td className="px-2 py-2 text-muted-foreground">
-                        {device.customer ? (
-                          device.customer.companyName
-                        ) : (
-                          <span className="italic">{UNASSIGNED_CUSTOMER}</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {devices.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            ไม่พบอุปกรณ์ที่ installed
+          </p>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={devices}
+            searchPlaceholder="ค้นหาเลขเครื่อง/รุ่น…"
+            emptyMessage="ไม่พบอุปกรณ์ที่ตรงกับเงื่อนไข"
+            onRowClick={(device) =>
+              onToggleDevice(
+                device.deviceId,
+                !selectedDeviceIds.includes(device.deviceId),
+              )
+            }
+          />
+        )}
       </div>
 
       {formError && <ErrorBanner message={formError} />}
@@ -856,36 +834,36 @@ function ReviewStep({
           อุปกรณ์เป้าหมาย ({targets.length})
         </p>
         <div className="max-h-72 overflow-y-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-muted/50 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-2 py-2 text-left">เลขเครื่อง</th>
-                <th className="px-2 py-2 text-left">รุ่น/โปรโตคอล</th>
-                <th className="px-2 py-2 text-left">ลูกค้า</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-muted/50">
+              <TableRow className="hover:bg-transparent">
+                <TableHead>เลขเครื่อง</TableHead>
+                <TableHead>รุ่น/โปรโตคอล</TableHead>
+                <TableHead>ลูกค้า</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {targets.map((t) => (
-                <tr key={t.deviceId} className="border-t">
-                  <td className="px-2 py-2 font-mono text-xs">
+                <TableRow key={t.deviceId}>
+                  <TableCell className="font-mono text-xs">
                     {t.deviceId}
-                  </td>
-                  <td className="px-2 py-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {t.device
                       ? `${t.device.deviceModel} / ${t.device.protocol}`
                       : "—"}
-                  </td>
-                  <td className="px-2 py-2 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {t.device?.customer ? (
                       t.device.customer.companyName
                     ) : (
                       <span className="italic">{UNASSIGNED_CUSTOMER}</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {incompatibleCount > 0 && (

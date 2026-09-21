@@ -17,7 +17,7 @@ type ViewProps =
 /**
  * หน้า wizard สร้าง/แก้/โคลน Config (route เต็ม `/config/new`,
  * `/config/new?from={id}`, `/config/{id}/edit`) — gate ทั้งหน้าด้วย RoleGuard
- * (SW เท่านั้น) · โหมดแก้/โคลนโหลด Config ต้นทางมา prefill ก่อน · โหมดแก้
+ * (ConfigEngineer เท่านั้น) · โหมดแก้/โคลนโหลด Config ต้นทางมา prefill ก่อน · โหมดแก้
  * เช็คสถานะ `draft` ด้วย (เงื่อนไขเดียวกับ backend) — โคลนไม่เช็ค (ต้นทางเป็น
  * สถานะไหนก็โคลนได้)
  */

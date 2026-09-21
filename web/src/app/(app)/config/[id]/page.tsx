@@ -5,7 +5,7 @@ export const metadata = {
 };
 
 /** รายละเอียด Config แบบหน้าเต็ม — ข้อมูล + JSON + ประวัติเวอร์ชัน
- *  ปุ่ม: คัดลอก JSON · โคลน · แก้ไข/ลบ (draft + SW) */
+ *  ปุ่ม: คัดลอก JSON · โคลน · แก้ไข/ลบ (draft + ConfigEngineer) */
 export default async function ConfigDetailPage({
   params,
 }: {

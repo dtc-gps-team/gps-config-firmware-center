@@ -66,7 +66,7 @@ export function AuditLogView() {
         <div>
           <h1 className="text-2xl font-semibold">Audit Log</h1>
           <p className="text-sm text-muted-foreground">
-            ดูได้อย่างเดียวทุก Role ยกเว้น SW (RBAC_Matrix.md Section 2)
+            ดูได้อย่างเดียวทุก Role ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer (RBAC_Matrix.md Section 2)
           </p>
         </div>
 

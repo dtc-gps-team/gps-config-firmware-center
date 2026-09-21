@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { pillClass } from "@/lib/status-pill";
 
 /**
- * แก้ Compatibility Tag ของ Firmware — SW เท่านั้น (`PATCH /firmware/{id}`)
+ * แก้ Compatibility Tag ของ Firmware — FirmwareEngineer เท่านั้น (`PATCH /firmware/{id}`)
  * แทนที่ทั้ง array เสมอ (ไม่ merge กับของเดิม — mirror backend) จึงส่ง
  * "รายการเต็มหลังแก้" ทุกครั้งที่กด บันทึก ไม่ใช่แค่ตัวที่เพิ่ม/ลบ
  */
