@@ -29,13 +29,13 @@ sync") **มี logic implement จริงอยู่แล้ว** ใน `b
 (canonical) ครอบ string ที่กระจัดกระจายอยู่แล้ว** — ถ้าออกแบบให้ `DeviceModel.name` มีค่าตรงกับ
 string เดิมทุกตัวเป๊ะ (`"GT06N"` ฯลฯ) โค้ด compatibility-check เดิมใน `CampaignService` จะยังทำงาน
 ถูกต้องเหมือนเดิมโดยไม่ต้องแตะเลย แม้จะยังไม่ migrate Config/Firmware ไปใช้ FK ในรอบแรกก็ตาม —
-รายละเอียดอยู่หัวข้อ 3 และ 6
+รายละเอียดอยู่หัวข้อ 3 และ 5
 
 **ไม่มี endpoint สร้าง Device เลย** — เช็ค `device.controller.ts` แล้วมีแค่ `GET /devices`,
 `GET /devices/:deviceId`, และ 3 endpoint test/apply/simulate — **ไม่มี `POST /devices`**
 อุปกรณ์ทั้งหมดตอนนี้เข้าระบบผ่าน `prisma/seed.ts` เท่านั้น ข้อมูลนี้เกี่ยวข้องเพราะ `docs/14`
 (Device Sync Proposal, PR #190 — อนุมัติแล้วแต่ยังไม่ merge) มีแผนเพิ่ม `registerDevice` endpoint
-ใน PR 1 ของ rollout นั้นพอดี — ดูหัวข้อ 7 (คำถามเปิด) เรื่องการประสานงานกับ PR นั้น
+ใน PR 1 ของ rollout นั้นพอดี — ดูหัวข้อ 6 (คำถามเปิด) เรื่องการประสานงานกับ PR นั้น
 
 **ไม่เจอ PR/issue ที่ทำเรื่องนี้ค้างอยู่** — `gh issue list`/`gh pr list` ค้นคำว่า "รุ่น"/"model"
 แล้วไม่มีอะไรตรงประเด็นนี้เลย (ผลที่เจอเป็นเรื่องอื่นที่บังเอิญมีคำว่า "model" ปนอยู่ เช่น Prisma
@@ -43,7 +43,7 @@ string เดิมทุกตัวเป๊ะ (`"GT06N"` ฯลฯ) โค�
 
 `DeviceLifecycleStatus` enum ปัจจุบันมีแค่ `registered | installed | decommissioned` — **ไม่มี
 สถานะ "ซ่อม" เลย** ทั้งที่ kittiphong พูดถึง "พร้อมใช้/ซ่อม/เลิกใช้" ตอนอธิบาย use case inventory —
-ถือเป็น gap ที่เจอระหว่างสำรวจ ใส่เป็นคำถามเปิดไว้หัวข้อ 7 ไม่ได้ตัดสินใจเพิ่ม enum เอง
+ถือเป็น gap ที่เจอระหว่างสำรวจ ใส่เป็นคำถามเปิดไว้หัวข้อ 6 ไม่ได้ตัดสินใจเพิ่ม enum เอง
 
 ไม่พบการพูดถึงแนวคิดนี้ใน `docs/planning/01_GPS_Build_Reference.md`, `02_GPS_Development_Plan.md`,
 หรือ `docs/14_Device_Sync_Proposal.md` เลยเช่นกัน — เป็นพื้นที่ design ใหม่ทั้งหมด
@@ -80,7 +80,7 @@ string เดิมทุกตัวเป๊ะ (`"GT06N"` ฯลฯ) โค�
 สถานการณ์ที่อาจต้องคิดเผื่อ: **RMA / เปลี่ยนฮาร์ดแวร์คืนที่เดิม** (เครื่องเดิมเสีย ส่งเคลม ได้เครื่อง
 ทดแทนกลับมาคนละรุ่น แต่ `deviceId`/`simNumber` เดิมยังผูกกับลูกค้า/site เดิม) — เป็นแค่ความเป็นไปได้
 ที่ยังไม่เจอหลักฐานในโค้ด/เอกสารว่าเคยเกิดขึ้นจริงหรือระบบรองรับอยู่แล้วในแง่ไหน จึงใส่เป็น
-**คำถามเปิด** (หัวข้อ 7) ไม่ตัดสินใจเองว่าต้องรองรับหรือไม่
+**คำถามเปิด** (หัวข้อ 6) ไม่ตัดสินใจเองว่าต้องรองรับหรือไม่
 
 ---
 
@@ -98,7 +98,7 @@ enum DeviceModelStatus {
 
 model DeviceModel {
   id                 String            @id @default(uuid())
-  // ค่าต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — ดูหัวข้อ 6
+  // ค่าต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — ดูหัวข้อ 5
   // เรื่อง migration/backfill
   name               String            @unique
   manufacturer       String?
@@ -109,6 +109,11 @@ model DeviceModel {
   // สร้าง Config ทำได้จริงกับรุ่นนี้ไหมเท่านั้น)
   supportedProtocols String[]
   status             DeviceModelStatus @default(active)
+  // Warranty/lifecycle ต่อรุ่น (ดูหัวข้อ 4.6) — structured field แทนการพักไว้ใน
+  // `notes` แบบข้อความอิสระ ทั้งคู่ optional เพราะรุ่นเก่าที่ backfill เข้ามาตอน
+  // migration (หัวข้อ 5) ส่วนใหญ่ไม่มีข้อมูลนี้ให้กรอกจริง
+  warrantyMonths     Int?
+  endOfSupportDate   DateTime?
   notes              String?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -124,7 +129,7 @@ model Device {
   id           String                @id @default(uuid())
   deviceId     String                @unique
   simNumber    String
-  // เก็บไว้ก่อนช่วง transition (ดูหัวข้อ 6) — เป้าหมายสุดท้ายคือ deprecate แล้วอ่าน
+  // เก็บไว้ก่อนช่วง transition (ดูหัวข้อ 5) — เป้าหมายสุดท้ายคือ deprecate แล้วอ่าน
   // ชื่อรุ่นผ่าน `model.name` แทน แต่ตอนนี้โค้ดอื่น (CampaignService, ConfigWizard
   // ฯลฯ) ยังอ้าง field นี้ตรงๆ เยอะ — ย้ายทีเดียวเสี่ยงเกินไป
   deviceModel  String
@@ -136,7 +141,7 @@ model Device {
   customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   // nullable ในช่วงแรก — อุปกรณ์เดิมทั้งหมดยังไม่มี modelId ผูกไว้จนกว่าจะ backfill
-  // (ดูหัวข้อ 6) เมื่อ backfill ครบแล้วค่อยพิจารณาบังคับ NOT NULL ทีหลัง
+  // (ดูหัวข้อ 5) เมื่อ backfill ครบแล้วค่อยพิจารณาบังคับ NOT NULL ทีหลัง
   modelId      String?
   model        DeviceModel?          @relation(fields: [modelId], references: [id])
 }
@@ -144,7 +149,7 @@ model Device {
 
 **หมายเหตุสำคัญ:** รอบนี้เสนอให้ผูก FK แค่ที่ `Device` เท่านั้น — **ไม่แตะ** `Config`/
 `ConfigVersion`/`Firmware`/`ConfigFieldDefinitionModelSupport` ที่ยังใช้ `deviceModel: String`
-เดิมต่อไป (รายละเอียดเหตุผลหัวข้อ 6) เป็นการขยายแบบ additive ล้วนๆ ไม่กระทบโค้ด/schema เดิมที่
+เดิมต่อไป (รายละเอียดเหตุผลหัวข้อ 5) เป็นการขยายแบบ additive ล้วนๆ ไม่กระทบโค้ด/schema เดิมที่
 ทำงานอยู่แล้วเลยสักจุด
 
 ---
@@ -179,29 +184,72 @@ derive จากข้อมูลที่บังเอิญมีอยู�
 เสนอ endpoint สรุปเช่น `GET /device-models/{id}/inventory` หรือ `GET /device-models` ที่แนบ
 `deviceCount` แยกตาม `DeviceLifecycleStatus` มาด้วย (`registered`/`installed`/`decommissioned`) —
 **แต่ enum นี้ยังไม่มีสถานะ "ซ่อม" ตามที่ kittiphong อธิบาย use case ไว้** (ดูหัวข้อ 0 และคำถามเปิด
-หัวข้อ 7) รอบนี้เสนอโครง endpoint ไว้ก่อน ส่วนจะเพิ่ม enum value ใหม่หรือไม่ขอให้ kittiphong ตัดสินใจ
+หัวข้อ 6) รอบนี้เสนอโครง endpoint ไว้ก่อน ส่วนจะเพิ่ม enum value ใหม่หรือไม่ขอให้ kittiphong ตัดสินใจ
+
+### 4.4 Provisioning default ตอนลงทะเบียนอุปกรณ์ใหม่
+
+**สถานะ: รอ dependency ก่อน — implement ตอนนี้เลยไม่ได้** ต่างจาก 4.1-4.3 ที่ทำได้ทันทีเพราะมี
+`Device` อยู่ในระบบแล้ว ข้อนี้ต้องพึ่ง `registerDevice` endpoint จาก Device Sync PR 1
+(`docs/14` §5) ก่อน — เช็คแล้วยืนยันอีกครั้งว่า **ตอนนี้ยังไม่มี `POST /devices` เลยในระบบ**
+(`device.controller.ts` มีแค่ GET 2 ตัว + test/apply/simulate 3 ตัว) อุปกรณ์ทั้งหมดเข้าระบบผ่าน
+`prisma/seed.ts` เท่านั้น — ดังนั้นฟีเจอร์นี้ไม่มี endpoint ให้ "เสียบ" logic เข้าไปเลยจนกว่า PR 1
+จะ merge
+
+**Flow ที่ตั้งใจไว้ (หลัง PR 1 merge แล้ว):** `registerDevice` DTO รับ `modelId` (หรือชื่อรุ่นแล้ว
+lookup เป็น `modelId` ในนั้น) → ถ้า `DeviceModel.supportedProtocols` มีค่าเดียว ให้ตั้ง
+`Device.protocol` เป็นค่านั้นอัตโนมัติโดยไม่ต้องให้ผู้ใช้กรอกซ้ำ (ถ้ามีมากกว่า 1 ค่ายังต้องเลือกเอง
+เหมือนเดิม) — ลด field ที่กรอกมือได้บางส่วน ไม่ใช่ auto-fill ทั้งหมด
+
+ดูคำถามเปิดข้อ 6 (sequencing กับ PR 1) ประกอบ — เป็นตัวกำหนดว่าข้อนี้จะเริ่มได้เมื่อไหร่จริง
+
+### 4.5 Failure rate / Incident แยกตามรุ่น
+
+**แก้ไขจากที่เคยเสนอไว้ตอนเป็นข้อเสนอ (หัวข้อ 5 เดิม) — เช็คโค้ด `Incident` จริงแล้วพบว่าสมมติฐาน
+เดิมผิด:** ตอนนั้นเขียนว่า "join Device→DeviceModel→Incident ผ่าน relation ที่มีอยู่แล้ว" แต่
+**`Incident` ไม่มี FK ไปหา `Device` เลยสักจุด** (`backend/prisma/schema.prisma` บรรทัด ~701-723) —
+มีแค่ `relatedConfigId`/`relatedFirmwareId` เป็น FK จริง ส่วนอุปกรณ์ที่เกี่ยวข้องถ้ามีจะอยู่ใน
+`Incident.metadata` (Json, unstructured) เป็น key `deviceIdentifier?: string` ซึ่ง comment ใน
+`incident-metadata.ts` ระบุชัดว่าเป็น **"ตัวระบุกล่องในระบบเดิม"** — ไม่รับประกันว่าตรงกับ
+`Device.deviceId` ปัจจุบันรูปแบบเดียวกัน (Incident สร้างได้จาก 2 ทางคือ `config-sync-writer` กับ
+`mobile-simulator-test` เท่านั้นตอนนี้ ตาม `INCIDENT_SOURCE` ในไฟล์เดียวกัน)
+
+**ผลคือ:** การทำ "failure rate by model" ให้เชื่อถือได้จริง ต้อง **เพิ่ม FK ใหม่ `Incident.deviceId`**
+(nullable, ผูกกับ `Device`) เป็นงานที่มากกว่าที่เคยประเมินไว้ตอนเป็นข้อเสนอ (ตอนนั้นคิดว่าไม่ต้องแก้
+อะไรเพิ่มเลยนอกจาก query) — เป็น schema change ที่ตัว `Incident` เอง ไม่ใช่ที่ `DeviceModel`
+ยังคง additive (nullable FK ใหม่) แต่ต้องนับเป็นงานแยกก่อนจะ query "join Device→DeviceModel→
+Incident" ได้จริง ดูคำถามเปิดข้อ 7
+
+หลังมี `Incident.deviceId` แล้ว endpoint ที่เสนอ: `GET /device-models/{id}/incident-summary` นับ
+จำนวน Incident แยกตาม `severity`/`status` ของอุปกรณ์ทุกเครื่องที่ผูกกับรุ่นนั้น
+
+### 4.6 Warranty/lifecycle ต่อรุ่น
+
+เพิ่ม field ลงใน `DeviceModel` ตรงๆ (อัปเดต schema snippet ในหัวข้อ 3 แล้ว) แทนการพักไว้ใน
+`notes` แบบข้อความอิสระเหมือนตอนเป็นข้อเสนอ:
+- `warrantyMonths Int?` — จำนวนเดือนรับประกันมาตรฐานของรุ่นนี้
+- `endOfSupportDate DateTime?` — วันที่เลิกซัพพอร์ต (ใช้คู่กับ `DeviceModelStatus.discontinued`
+  ได้ — discontinued คือเลิกผลิต/สั่งซื้อ ส่วนวันนี้คือเลิกซัพพอร์ต อาจคนละวันกัน)
+
+ยังไม่ลงรายละเอียด RMA policy เป็น structured data (เช่น ขั้นตอนเคลม, ผู้รับผิดชอบ) — ดูคำถามเปิด
+ข้อ 8 ว่าต้อง structured กว่านี้ไหม
+
+### 4.7 Compatibility matrix แบบดูภาพรวม
+
+เสนอ endpoint ใหม่ `GET /device-models/{id}/compatibility` รวม Config version + Firmware
+version ที่ใช้ได้กับรุ่นนั้นไว้ที่เดียว — **ต้อง join ด้วย string เทียบ `DeviceModel.name` กับ
+`deviceModel`/`deviceModelCompatibility` เดิม ไม่ใช่ FK ตรงๆ** เพราะตัดสินใจไว้แล้วในหัวข้อ 3/5
+ว่ารอบนี้ไม่ migrate `Config`/`ConfigVersion`/`Firmware` ไปใช้ `modelId`:
+- ส่วน Config: query `ConfigVersion` ที่ `deviceModel === DeviceModel.name` (คืน
+  `versionNumber`/`approvedAt` ล่าสุดต่อ Config แต่ละตัว)
+- ส่วน Firmware: query `Firmware` ที่ `deviceModelCompatibility` array มี `DeviceModel.name`
+  รวมอยู่ (คืน `version`/`uploadStatus`/`approvalStatus`)
+
+ผลลัพธ์เป็น read-only view รวมข้อมูลจาก 2 แหล่งที่มีอยู่แล้ว ไม่เพิ่ม state ใหม่ ไม่กระทบ
+`CampaignService`'s compatibility-check เดิมเลย (คนละ endpoint กัน)
 
 ---
 
-## 5. ข้อเสนอ Use Case เพิ่มเติม (ให้ kittiphong พิจารณาว่าจะเอาเข้า scope ไหม)
-
-ไม่ใช่มติ เป็นแค่สิ่งที่เจอระหว่างไล่โค้ดแล้วดูเข้าข่ายเกี่ยวข้องกับการมี `DeviceModel` เป็น registry:
-
-1. **Provisioning default ตอนลงทะเบียนอุปกรณ์ใหม่** — `docs/14` (Device Sync, PR #190 อนุมัติ
-   แล้ว) กำลังจะเพิ่ม `registerDevice` endpoint ใน PR 1 ถ้ามี `DeviceModel` แล้ว ตอน register
-   อุปกรณ์ใหม่สามารถ derive ค่า default บางอย่างจากรุ่นได้เลย (เช่น protocol เริ่มต้นถ้ารุ่นนั้น
-   รองรับ protocol เดียว) ลดฟิลด์ที่ต้องกรอกมือ
-2. **Failure rate / Incident แยกตามรุ่น** — ตอนนี้ `Incident` ผูกกับ `Device`/`Firmware` แต่ไม่มี
-   มุมมอง "รุ่นไหนมี Incident บ่อยผิดปกติ" ถ้ามี `DeviceModel` จะ query ง่ายขึ้นมาก (join
-   Device→DeviceModel→Incident) เป็นข้อมูลที่มีประโยชน์เชิงคุณภาพฮาร์ดแวร์
-3. **Warranty/lifecycle ต่อรุ่น** — เก็บวันที่ end-of-support หรือ RMA policy ต่อรุ่น (field เผื่อไว้
-   ใน `DeviceModel.notes` ตอนนี้ ถ้าต้องการ structured field จริงค่อยเพิ่มทีหลัง)
-4. **Compatibility matrix แบบดูภาพรวม** — หน้าเว็บที่โชว์ "รุ่นนี้ใช้ได้กับ Config version ไหนบ้าง,
-   Firmware version ไหนบ้าง" รวมในที่เดียว (ตอนนี้ต้องไล่ดูทีละ Config/Firmware เอาเอง)
-
----
-
-## 6. Migration
+## 5. Migration
 
 เสนอ 2 ทางเลือก ให้ kittiphong เลือก (ไม่ฟันธง):
 
@@ -225,7 +273,7 @@ derive จากข้อมูลที่บังเอิญมีอยู�
 
 ---
 
-## 7. คำถามเปิด (Open Questions)
+## 6. คำถามเปิด (Open Questions)
 
 1. **เปลี่ยนรุ่นของอุปกรณ์ที่มีอยู่แล้วได้ไหม (RMA/สลับฮาร์ดแวร์)?** — ตามที่ kittiphong สั่งไว้ว่า
    1 Device : 1 Model ตายตัว แต่เจอสถานการณ์ RMA ที่อาจต้องคิดเผื่อ (ดูหัวข้อ 2) — ถ้าต้องรองรับ
@@ -246,16 +294,30 @@ derive จากข้อมูลที่บังเอิญมีอยู�
    Sync (อนุมัติแล้ว รอเปิด implement) จะเพิ่ม endpoint ลงทะเบียนอุปกรณ์ใหม่พอดี ถ้าฟีเจอร์นี้เริ่ม
    ทำพร้อมๆ กันหรือหลังจากนั้นไม่นาน `registerDevice` DTO ควรรับ `modelId` ตั้งแต่ต้นเลยไหม หรือ
    ปล่อยให้ PR 1 เสร็จก่อนด้วย `deviceModel` string เดิม แล้วค่อยตามมาแก้ทีหลัง — เป็นเรื่อง
-   sequencing ระหว่าง 2 งานที่ควรคุยกับ Paveekorn (A) ด้วยถ้าตัดสินใจเริ่มทำ
+   sequencing ระหว่าง 2 งานที่ควรคุยกับ Paveekorn (A) ด้วยถ้าตัดสินใจเริ่มทำ **(ยังไม่มีใครตอบ
+   ตั้งแต่เปิด PR — ทวงถามซ้ำใน PR comment แล้ว)**
+6. **Provisioning default (4.4) ต้องรอ PR 1 merge ก่อนถึงจะ implement ได้จริง** — ต่อเนื่องจาก
+   คำถามข้อ 5 โดยตรง: จะเริ่ม implement 4.4 พร้อมกับ Device Sync PR 1 เลย (เผื่อ `registerDevice`
+   DTO ไว้ตั้งแต่ต้น) หรือรอ PR 1 merge เสร็จสมบูรณ์ก่อนค่อยกลับมาต่อ — ผลกระทบต่อลำดับงานทั้ง
+   2 ฝั่งโดยตรง ต้องตัดสินใจคู่กับข้อ 5
+7. **`Incident.deviceId` — ต้องเพิ่ม FK ใหม่ก่อน 4.5 ถึงจะทำได้จริง** — เช็คโค้ดแล้วพบว่า
+   `Incident` ไม่มี FK ไปหา `Device` เลย (มีแค่ `relatedConfigId`/`relatedFirmwareId` และ
+   `metadata.deviceIdentifier` แบบ JSON ที่อ้างอิงระบบเดิม ไม่รับประกันตรงกับ `Device.deviceId`
+   ปัจจุบัน — ดูหัวข้อ 4.5) เป็นงานเพิ่มที่ไม่เคยถูกประเมินไว้ตอนเสนอเป็น use case เสริม — ต้อง
+   ตัดสินใจว่าจะทำ migration เพิ่ม FK นี้ในรอบเดียวกับ `DeviceModel` เลย หรือแยกเป็นอีก PR ต่างหาก
+8. **Warranty/lifecycle (4.6) — field ที่เพิ่มพอไหม?** — `warrantyMonths`/`endOfSupportDate` เป็น
+   scalar field ธรรมดา ยังไม่รองรับ RMA policy แบบมีขั้นตอน/ผู้รับผิดชอบเป็นโครงสร้าง ถ้าต้องการ
+   ระดับนั้นจริงอาจต้องแยกเป็น entity ใหม่ (เช่น `DeviceModelWarrantyPolicy`) แทนที่จะเป็นแค่ 2
+   field บน `DeviceModel` — รอ kittiphong ยืนยันว่าระดับ scalar พอสำหรับตอนนี้ไหม
 
 ---
 
-## 8. Out of Scope (รอบนี้)
+## 7. Out of Scope (รอบนี้)
 
 - ไม่แตะโค้ด/PR ของ Device Sync rollout (`docs/14`, PR 1/2/3) เลย — คนละเรื่องกัน ถึงจะมีจุด
-  ประสานงานกัน (ดูคำถามเปิดข้อ 5)
+  ประสานงานกัน (ดูคำถามเปิดข้อ 5-6)
 - ไม่ migrate `Config`/`ConfigVersion`/`Firmware`/`ConfigFieldDefinitionModelSupport` ไปใช้
-  `modelId` FK ในรอบนี้ (ดูหัวข้อ 6 และคำถามเปิดข้อ 3)
+  `modelId` FK ในรอบนี้ (ดูหัวข้อ 5 และคำถามเปิดข้อ 3)
 - ไม่ออกแบบ RBAC resource ใหม่สำหรับจัดการ `DeviceModel` ในเอกสารนี้ (คำถามเปิดข้อ 4) — รอ
   ตัดสินใจ scope ก่อนแล้วค่อยออกแบบแยก
 - ไม่เพิ่ม/แก้ `DeviceLifecycleStatus` enum ในเอกสารนี้ (คำถามเปิดข้อ 2)
