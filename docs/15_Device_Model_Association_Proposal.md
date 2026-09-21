@@ -1,13 +1,13 @@
 # ข้อเสนอออกแบบ Device–Model Association — ผูกอุปกรณ์เข้ากับรุ่นสินค้า
 
-> **สถานะปัจจุบัน (อัปเดต 2026-09-21):** เปิดเป็น PR #196 แล้ว — เนื้อหาหลักในเอกสารนี้
-> (ความสัมพันธ์ 1 Device : 1 Model, use case ทั้งหมดในหัวข้อ 4, entity `DeviceModel`) **เป็นมติที่
-> kittiphong ทวนและยืนยันแล้วจริง ไม่ใช่ draft ที่หลุดเปิด PR มาก่อนได้ทวนเอง** (ยืนยันตอบคำถามนี้
-> ให้ Paveekorn โดยตรงในคอมเมนต์ PR แล้ว — ดู issue comment 2026-09-21) ส่วนที่ยังไม่นิ่งคือ
-> คำถามเปิดในหัวข้อ 6 เท่านั้น (RMA, สถานะซ่อม, ขอบเขต migration, RBAC, sequencing กับ Device
-> Sync PR 1 ฯลฯ) ซึ่งกำลังตอบ/แก้ร่วมกับ Paveekorn (A) อยู่ในคอมเมนต์ของ PR
+> **สถานะปัจจุบัน (อัปเดต 2026-09-21):** เปิดเป็น PR #196 — เนื้อหาทั้งหมดในเอกสารนี้ (ความสัมพันธ์
+> 1 Device : 1 Model, use case ทั้งหมดในหัวข้อ 4, entity `DeviceModel`) **เป็นมติที่ kittiphong
+> ทวนและยืนยันแล้วจริง** และ**คำถามเปิดทั้ง 8 ข้อในหัวข้อ 6 ปิดครบแล้ว** (Paveekorn ตอบครบใน PR
+> comment, kittiphong เห็นด้วยทุกข้อ — ดู "มติ" ต่อท้ายแต่ละข้อในหัวข้อ 6) **พร้อม implement**
 >
-> ยังไม่ implement จริง รอเคลียร์คำถามเปิดที่เหลือก่อน
+> ไม่มีคำถามเปิดค้างอีกแล้ว — สิ่งที่แยกออกไปเป็นงานคนละ PR ตามมติ (สถานะ "ซ่อม" บน
+> `DeviceLifecycleStatus`, `Incident.deviceId` FK) จะเปิดแยกต่างหากเมื่อถึงคิว ไม่ block การ
+> implement `DeviceModel` ในเอกสารนี้
 
 ---
 
@@ -244,7 +244,11 @@ lookup เป็น `modelId` ในนั้น) → ถ้า `DeviceModel.sup
 `Device.protocol` เป็นค่านั้นอัตโนมัติโดยไม่ต้องให้ผู้ใช้กรอกซ้ำ (ถ้ามีมากกว่า 1 ค่ายังต้องเลือกเอง
 เหมือนเดิม) — ลด field ที่กรอกมือได้บางส่วน ไม่ใช่ auto-fill ทั้งหมด
 
-ดูคำถามเปิดข้อ 6 (sequencing กับ PR 1) ประกอบ — เป็นตัวกำหนดว่าข้อนี้จะเริ่มได้เมื่อไหร่จริง
+**มติเรื่อง sequencing (คำถามเปิดข้อ 5/6 — ปิดแล้ว):** **ไม่เริ่มพร้อมกับ Device Sync PR 1** —
+ให้ PR 1 เดินหน้าด้วย `deviceModel` string เดิมก่อนเลย (พร้อม 100% แล้ว ไม่ควรค้างรอ) รอ
+`DeviceModel` นิ่ง (ผ่านการ implement จริงแล้ว) ค่อยกลับมา **retrofit** `registerDevice` DTO
+เพิ่ม `modelId` เป็น **optional field** ทีหลัง — เป็น additive migration ปกติ ไม่ breaking
+เพราะ endpoint เดิม (ที่ยังไม่มี `modelId`) จะยังใช้งานได้ต่อเนื่อง
 
 ### 4.5 Failure rate / Incident แยกตามรุ่น
 
@@ -323,36 +327,63 @@ version ที่ใช้ได้กับรุ่นนั้นไว้ท
    1 Device : 1 Model ตายตัว แต่เจอสถานการณ์ RMA ที่อาจต้องคิดเผื่อ (ดูหัวข้อ 2) — ถ้าต้องรองรับ
    จะกระทบ design (ต้องมี "history" ของ modelId เดิมไหม หรือแค่ update ตรงๆ พอ) รอ kittiphong
    ยืนยันว่าเข้าข่ายในระบบนี้จริงไหม หรือไม่เคยเกิดขึ้นเลยในทางปฏิบัติ
+   **มติ (Paveekorn ตอบ, kittiphong เห็นด้วย — PR #196 comment 2026-09-21):** ไม่รองรับตอนนี้ —
+   ไม่มีหลักฐานว่าเคยเกิดขึ้นจริงในโค้ด/เอกสาร คง 1:1 แบบง่ายไว้ก่อน ถ้าเจอเคสจริงทีหลังค่อยเปิดให้
+   แก้ `modelId` ผ่าน `PATCH` ธรรมดา ไม่ต้องมี history table แยกตั้งแต่ตอนนี้
 2. **`DeviceLifecycleStatus` ต้องเพิ่มสถานะ "ซ่อม" ไหม?** — enum ปัจจุบันไม่มี ใช้แค่
    `registered/installed/decommissioned` แต่ use case inventory ที่ kittiphong อธิบายพูดถึง
    "พร้อมใช้/ซ่อม/เลิกใช้" — ถ้าต้องเพิ่มจริง เป็นงานแยกจาก DeviceModel (แก้ enum บน `Device` เอง)
    แต่กระทบ endpoint inventory summary ในหัวข้อ 4.3 โดยตรง อยากให้ยืนยันก่อนเริ่ม implement
+   **มติ:** แยกออกจาก PR นี้โดยสิ้นเชิง — คนละเรื่องกับ `DeviceModel` (แก้ enum บน `Device` เอง
+   ไม่เกี่ยวกับ Model registry) 4.3 (inventory summary) รายงานแค่ 3 สถานะเดิมไปก่อน เพิ่ม "ซ่อม"
+   เป็น follow-up แยกทีหลัง (Postgres `ALTER TYPE ... ADD VALUE` ไม่ต้อง migrate ข้อมูลเดิม)
 3. **ต้อง migrate `Config`/`Firmware`/`ConfigFieldDefinitionModelSupport` ไปใช้ `modelId` ด้วย
    ในเฟสนี้เลยไหม หรือเก็บไว้เป็นเฟสถัดไป?** — เอกสารนี้เสนอให้แยกเฟส (แค่ `Device` ก่อน) เพื่อลด
    ความเสี่ยง แต่ถ้า kittiphong อยากทำให้ครบทีเดียวจะกระทบขอบเขต/effort เยอะขึ้นมาก (ต้องแก้
    `CampaignService`, `ConfigWizard`, `parameter-library-view.tsx` ฯลฯ ที่อ้าง string ตรงๆ อยู่)
+   **มติ:** แยกเฟส เก็บไว้ทีหลังตามที่เอกสารเสนอไว้เดิม — `DeviceModel.name` ตั้งใจให้ตรงกับ
+   string เดิมเป๊ะอยู่แล้ว พอถึงเวลาจริงแค่เพิ่ม FK คู่ขนานไปก่อน ไม่ต้องแตะ logic เทียบ string
+   เดิมเลยจนกว่าจะพร้อมสลับจริง
 4. **ใครมีสิทธิ์สร้าง/แก้ `DeviceModel`?** — ยังไม่ได้ออกแบบ RBAC resource ใหม่ให้ (ไม่มีใน
    `RBAC_Matrix.md` ตอนนี้) เดาเบื้องต้นว่าน่าจะเป็น Admin/SuperAdmin (ข้อมูล master data) แต่ยัง
    ไม่ยืนยัน — ต้องออกแบบคู่กับ RBAC Matrix ถ้าตัดสินใจทำจริง
+   **มติ:** Admin/SuperAdmin ตามที่เดาไว้เดิม — mirror pattern เดียวกับ `user-management` เพราะ
+   เป็น master/reference data ที่เพิ่มไม่บ่อย (ต่างจาก `ConfigFieldDefinition` ที่ ConfigEngineer
+   self-service ได้เพราะเพิ่มบ่อยตามงานจริง) ถ้าเปลี่ยนใจทีหลังแค่เพิ่ม grant ใน `seed.ts` ไม่มี
+   migration (Role/RolePermission เป็นข้อมูลใน DB ไม่ใช่โค้ด)
 5. **ประสานงานกับ `docs/14` (Device Sync PR 1 — `registerDevice` endpoint):** PR 1 ของ Device
    Sync (อนุมัติแล้ว รอเปิด implement) จะเพิ่ม endpoint ลงทะเบียนอุปกรณ์ใหม่พอดี ถ้าฟีเจอร์นี้เริ่ม
    ทำพร้อมๆ กันหรือหลังจากนั้นไม่นาน `registerDevice` DTO ควรรับ `modelId` ตั้งแต่ต้นเลยไหม หรือ
    ปล่อยให้ PR 1 เสร็จก่อนด้วย `deviceModel` string เดิม แล้วค่อยตามมาแก้ทีหลัง — เป็นเรื่อง
-   sequencing ระหว่าง 2 งานที่ควรคุยกับ Paveekorn (A) ด้วยถ้าตัดสินใจเริ่มทำ **(ยังไม่มีใครตอบ
-   ตั้งแต่เปิด PR — ทวงถามซ้ำใน PR comment แล้ว)**
+   sequencing ระหว่าง 2 งานที่ควรคุยกับ Paveekorn (A) ด้วยถ้าตัดสินใจเริ่มทำ
+   **มติ:** ไม่เริ่มพร้อมกัน — ให้ Device Sync PR 1 เดินหน้าด้วย `deviceModel` string เดิมไปก่อน
+   เลย (พร้อม 100% แล้ว ไม่ควรค้างรอ DeviceModel) รอ `DeviceModel` นิ่งค่อย retrofit
+   `registerDevice` DTO เพิ่ม `modelId` เป็น optional field ทีหลัง (non-breaking, additive migration
+   ปกติ)
 6. **Provisioning default (4.4) ต้องรอ PR 1 merge ก่อนถึงจะ implement ได้จริง** — ต่อเนื่องจาก
    คำถามข้อ 5 โดยตรง: จะเริ่ม implement 4.4 พร้อมกับ Device Sync PR 1 เลย (เผื่อ `registerDevice`
    DTO ไว้ตั้งแต่ต้น) หรือรอ PR 1 merge เสร็จสมบูรณ์ก่อนค่อยกลับมาต่อ — ผลกระทบต่อลำดับงานทั้ง
    2 ฝั่งโดยตรง ต้องตัดสินใจคู่กับข้อ 5
+   **มติ:** ปิดพร้อมข้อ 5 โดยอนุโลม — ไม่เริ่มพร้อมกัน รอ `DeviceModel` นิ่งก่อนค่อย retrofit
+   `registerDevice` DTO
 7. **`Incident.deviceId` — ต้องเพิ่ม FK ใหม่ก่อน 4.5 ถึงจะทำได้จริง** — เช็คโค้ดแล้วพบว่า
    `Incident` ไม่มี FK ไปหา `Device` เลย (มีแค่ `relatedConfigId`/`relatedFirmwareId` และ
    `metadata.deviceIdentifier` แบบ JSON ที่อ้างอิงระบบเดิม ไม่รับประกันตรงกับ `Device.deviceId`
    ปัจจุบัน — ดูหัวข้อ 4.5) เป็นงานเพิ่มที่ไม่เคยถูกประเมินไว้ตอนเสนอเป็น use case เสริม — ต้อง
    ตัดสินใจว่าจะทำ migration เพิ่ม FK นี้ในรอบเดียวกับ `DeviceModel` เลย หรือแยกเป็นอีก PR ต่างหาก
+   **มติ:** แยกเป็น PR ต่างหาก ไม่รวมกับ `DeviceModel` — คนละ concern กัน (แก้ gap ของ `Incident`
+   module ไม่ใช่เรื่อง Model registry) ยึดบทเรียนจาก scope ปนกันใน PR #187/#188 ให้แต่ละ PR แคบ
+   และตรวจสอบง่าย
 8. **Warranty/lifecycle (4.6) — field ที่เพิ่มพอไหม?** — `warrantyMonths`/`endOfSupportDate` เป็น
    scalar field ธรรมดา ยังไม่รองรับ RMA policy แบบมีขั้นตอน/ผู้รับผิดชอบเป็นโครงสร้าง ถ้าต้องการ
    ระดับนั้นจริงอาจต้องแยกเป็น entity ใหม่ (เช่น `DeviceModelWarrantyPolicy`) แทนที่จะเป็นแค่ 2
    field บน `DeviceModel` — รอ kittiphong ยืนยันว่าระดับ scalar พอสำหรับตอนนี้ไหม
+   **มติ:** พอแล้ว ไม่ต้องแยก entity (YAGNI) — ไม่มี workflow/ผู้รับผิดชอบจริงที่ต้องรองรับตอนนี้
+   ถ้ามี requirement จริงทีหลังค่อยย้ายไป `DeviceModelWarrantyPolicy` แยก (ข้อมูลระดับ "1 แถวต่อ
+   1 รุ่นสินค้า" ปริมาณน้อยมาก ไม่ใช่ต่ออุปกรณ์ — ย้ายทีหลังไม่หนัก)
+
+**สรุป:** ทุกมติยึดหลัก additive-first — ไม่มีข้อไหนที่การเลื่อนออกไปตอนนี้จะทำให้ต้องรื้อของที่
+implement ไปแล้วทีหลัง (ดู PR #196 comment 2026-09-21 ฉบับเต็ม)
 
 ---
 
