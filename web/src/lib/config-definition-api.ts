@@ -39,7 +39,7 @@ export function listConfigDefinitions(
 }
 
 /** request body — `CreateConfigDefinitionInput` ใน openapi.yaml
- * (`createConfigDefinition`) · SW เท่านั้น · `supportedModels` ต้องมี ≥ 1 คู่ */
+ * (`createConfigDefinition`) · ConfigEngineer เท่านั้น · `supportedModels` ต้องมี ≥ 1 คู่ */
 export type CreateConfigDefinitionInput = {
   fieldName: string;
   dataType: string;

@@ -59,7 +59,7 @@ export function ApprovalCenterView() {
             <span className="text-muted-foreground">({allItems.length})</span>
           </CardTitle>
           <CardDescription>
-            สถานะ Config = testing (ผ่าน simulation + SW ปักผลผ่านแล้ว)
+            สถานะ Config = testing (ผ่าน simulation + ConfigEngineer ปักผลผ่านแล้ว)
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

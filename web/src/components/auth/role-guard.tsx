@@ -5,7 +5,7 @@ import { useAuth } from "./auth-provider";
 /**
  * Gate ทั้งหน้า (ไม่ใช่แค่ปุ่ม) — ใช้กับหน้าที่ RBAC_Matrix.md Section 2 ระบุ
  * ว่าบาง Role เป็น "-" หมดทั้งแถว (ไม่มีสิทธิ์เข้าถึงจอนี้เลย) เช่น Audit Log
- * (ยกเว้น SW) และ User Management (Admin เท่านั้น) — ต่างจากหน้าอื่นที่ทุก
+ * (ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer) และ User Management (Admin เท่านั้น) — ต่างจากหน้าอื่นที่ทุก
  * Role อ่านได้หมด (แค่ปุ่ม action ต่างกัน ใช้ gate แบบซ่อนปุ่มพอ ดู
  * approval-actions.tsx เป็นตัวอย่าง)
  *

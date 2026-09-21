@@ -14,7 +14,8 @@ export const metadata = {
 };
 
 /**
- * Config Import — นำเข้า Config จากไฟล์ JSON (`POST /config/import`) · SW เท่านั้น
+ * Config Import — นำเข้า Config จากไฟล์ JSON (`POST /config/import`) ·
+ * ConfigEngineer เท่านั้น
  * Config ที่ได้เป็นสถานะ draft เข้า flow ทดสอบ/อนุมัติเดียวกับการสร้างผ่านฟอร์ม
  */
 export default function ConfigImportPage() {
@@ -29,7 +30,7 @@ export default function ConfigImportPage() {
         </Link>
         <h1 className="text-2xl font-semibold">Config Import</h1>
         <p className="text-sm text-muted-foreground">
-          นำเข้า Config จากไฟล์ JSON · เฉพาะ Role SW · ไฟล์ที่นำเข้าจะกลายเป็น
+          นำเข้า Config จากไฟล์ JSON · เฉพาะ Role ConfigEngineer · ไฟล์ที่นำเข้าจะกลายเป็น
           Config สถานะ draft ต้องทดสอบและให้ Operation อนุมัติเหมือนสร้างผ่านฟอร์ม
         </p>
       </div>

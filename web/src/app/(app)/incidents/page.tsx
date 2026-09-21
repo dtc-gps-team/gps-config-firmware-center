@@ -23,7 +23,7 @@ export const metadata = {
 
 /**
  * Scaffold — รอต่อโมดูล `incident` (ยังไม่มี endpoint ใน spec — ดู
- * RBAC_Matrix.md ตาราง 4.2) SW เห็นเฉพาะ Incident ที่ระบบสร้างอัตโนมัติ
+ * RBAC_Matrix.md ตาราง 4.2) ConfigEngineer/FirmwareEngineer/QAEngineer เห็นเฉพาะ Incident ที่ระบบสร้างอัตโนมัติ
  */
 export default function IncidentsPage() {
   return (
