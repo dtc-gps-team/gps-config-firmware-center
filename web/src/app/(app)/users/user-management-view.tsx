@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { ColumnDef, Row } from "@tanstack/react-table";
+import { UsersIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
@@ -21,6 +22,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { EmptyState } from "@/components/empty-state";
 import { UserRowActions } from "./user-row-actions";
 
 function thTextSort(
@@ -107,17 +109,12 @@ export function UserManagementView({
   return (
     <RoleGuard allow={canAccessUserManagement}>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">User / Role Management</h1>
-            <p className="text-sm text-muted-foreground">
-              จัดการได้แค่บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin
-              (RBAC_Matrix.md §2)
-            </p>
-          </div>
-          <Link href="/users/new" className={buttonVariants({ size: "sm" })}>
-            + เพิ่มผู้ใช้
-          </Link>
+        <div>
+          <h1 className="text-2xl font-semibold">User / Role Management</h1>
+          <p className="text-sm text-muted-foreground">
+            จัดการได้แค่บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin
+            (RBAC_Matrix.md §2)
+          </p>
         </div>
 
         <Card>
@@ -130,7 +127,7 @@ export function UserManagementView({
           <CardHeader>
             <CardTitle>รายชื่อผู้ใช้</CardTitle>
             <CardDescription>บัญชีทั่วไปทั้งหมด (รวมที่ปิดใช้งาน)</CardDescription>
-            <CardAction>
+            <CardAction className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -138,6 +135,9 @@ export function UserManagementView({
               >
                 รีเฟรช
               </Button>
+              <Link href="/users/new" className={buttonVariants({ size: "sm" })}>
+                + เพิ่มผู้ใช้
+              </Link>
             </CardAction>
           </CardHeader>
           <CardContent>
@@ -155,9 +155,18 @@ export function UserManagementView({
                 </Button>
               </div>
             ) : userList.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                ยังไม่มีผู้ใช้ในระบบ
-              </p>
+              <EmptyState
+                icon={UsersIcon}
+                message="ยังไม่มีผู้ใช้ในระบบ"
+                action={
+                  <Link
+                    href="/users/new"
+                    className={buttonVariants({ size: "sm" })}
+                  >
+                    + เพิ่มผู้ใช้
+                  </Link>
+                }
+              />
             ) : (
               <DataTable
                 columns={columns}

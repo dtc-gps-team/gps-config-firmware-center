@@ -56,7 +56,7 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ Firmware</p>
       <p className="text-xs text-muted-foreground">
         ระบุรุ่นอุปกรณ์ที่จะทดสอบ (ลองรุ่นนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)

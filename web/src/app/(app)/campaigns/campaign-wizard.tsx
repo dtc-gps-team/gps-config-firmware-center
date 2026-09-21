@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { CheckIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +41,7 @@ import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { WizardStepIndicator } from "@/components/wizard-step-indicator";
 
 /** Config สถานะที่ใช้สร้างแคมเปญได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES`
  * ฝั่ง backend (mirror device.service.ts/campaign.service.ts) */
@@ -287,7 +287,7 @@ export function CampaignWizard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <StepIndicator step={step} />
+      <WizardStepIndicator steps={STEPS} step={step} />
 
       {step === 1 && (
         <TargetsStep
@@ -361,42 +361,6 @@ export function CampaignWizard() {
           onSubmit={() => void handleSubmit()}
         />
       )}
-    </div>
-  );
-}
-
-function StepIndicator({ step }: { step: Step }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {STEPS.map((s, i) => {
-        const done = step > s.n;
-        const active = step === s.n;
-        return (
-          <div key={s.n} className="flex items-center gap-2">
-            {i > 0 && <span className="h-px w-8 bg-border" />}
-            <span
-              className={
-                "flex items-center gap-1.5 rounded-full py-1 pr-3 pl-1 text-xs font-medium " +
-                (active
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-muted-foreground")
-              }
-            >
-              <span
-                className={
-                  "flex size-5 items-center justify-center rounded-full text-[0.65rem] " +
-                  (active
-                    ? "bg-primary-foreground text-primary"
-                    : "bg-border text-muted-foreground")
-                }
-              >
-                {done ? <CheckIcon className="size-3" /> : s.n}
-              </span>
-              {s.label}
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
