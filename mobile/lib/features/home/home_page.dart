@@ -282,13 +282,10 @@ class _HistorySection extends ConsumerWidget {
             tasks.where((t) => t.status == TaskStatus.completed).toList()
               ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
         final now = DateTime.now();
-        final completedThisMonth = completed
-            .where(
-              (t) =>
-                  t.updatedAt.year == now.year &&
-                  t.updatedAt.month == now.month,
-            )
-            .length;
+        final completedThisMonth = completed.where((t) {
+          final local = t.updatedAt.toLocal();
+          return local.year == now.year && local.month == now.month;
+        }).length;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
