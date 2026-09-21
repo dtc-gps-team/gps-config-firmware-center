@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, PlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,9 @@ import {
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { WizardStepIndicator } from "@/components/wizard-step-indicator";
 
 type FieldValue = string | boolean;
 
@@ -81,6 +83,12 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     source ? Object.keys(source.fields) : [],
   );
 
+  // snapshot ตอน mount — เทียบกับค่าปัจจุบันเพื่อรู้ว่ามีการแก้ไขที่ยังไม่ได้
+  // บันทึกหรือยัง (ใช้เตือนก่อนออกจากหน้า ด้านล่าง)
+  const [initialSnapshot] = useState(() =>
+    JSON.stringify({ name, description, deviceModel, protocol, values, selected }),
+  );
+
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -92,6 +100,14 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     setFormError(null);
     setFormErrorList([]);
   }
+
+  const isDirty = useMemo(
+    () =>
+      JSON.stringify({ name, description, deviceModel, protocol, values, selected }) !==
+      initialSnapshot,
+    [name, description, deviceModel, protocol, values, selected, initialSnapshot],
+  );
+  const { confirmLeave } = useUnsavedChangesWarning(isDirty);
 
   /** รุ่นอุปกรณ์ที่มี field definition รองรับอย่างน้อย 1 ตัว */
   const deviceModelOptions = useMemo(() => {
@@ -308,7 +324,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <StepIndicator step={step} />
+      <WizardStepIndicator steps={CONFIG_WIZARD_STEPS} step={step} />
 
       {step === 1 ? (
         <div className="flex max-w-xl flex-col gap-5 rounded-xl border bg-card p-5">
@@ -401,7 +417,12 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
           <div className="flex justify-end gap-2 border-t pt-4">
-            <Button variant="outline" onClick={() => router.push("/config")}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (confirmLeave()) router.push("/config");
+              }}
+            >
               ยกเลิก
             </Button>
             <Button onClick={goToStep2}>ถัดไป: เลือก Parameter →</Button>
@@ -533,45 +554,10 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   );
 }
 
-function StepIndicator({ step }: { step: 1 | 2 }) {
-  const steps = [
-    { n: 1, label: "ข้อมูลพื้นฐาน" },
-    { n: 2, label: "เลือก Parameter" },
-  ];
-  return (
-    <div className="flex items-center gap-2">
-      {steps.map((s, i) => {
-        const done = step > s.n;
-        const active = step === s.n;
-        return (
-          <div key={s.n} className="flex items-center gap-2">
-            {i > 0 && <span className="h-px w-8 bg-border" />}
-            <span
-              className={
-                "flex items-center gap-1.5 rounded-full py-1 pr-3 pl-1 text-xs font-medium " +
-                (active
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-muted-foreground")
-              }
-            >
-              <span
-                className={
-                  "flex size-5 items-center justify-center rounded-full text-[0.65rem] " +
-                  (active
-                    ? "bg-primary-foreground text-primary"
-                    : "bg-border text-muted-foreground")
-                }
-              >
-                {done ? <CheckIcon className="size-3" /> : s.n}
-              </span>
-              {s.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const CONFIG_WIZARD_STEPS = [
+  { n: 1, label: "ข้อมูลพื้นฐาน" },
+  { n: 2, label: "เลือก Parameter" },
+] as const;
 
 function ErrorBanner({
   message,

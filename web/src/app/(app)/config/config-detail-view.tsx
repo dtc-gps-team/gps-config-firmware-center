@@ -3,7 +3,16 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  CheckIcon,
+  ClockIcon,
+  CopyIcon,
+  RadioIcon,
+  SlidersHorizontalIcon,
+  UserCheckIcon,
+  UserIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -29,11 +38,13 @@ import {
   CONFIG_STATUS_TONE,
   getConfigNextStepMessage,
   StatusPill,
+  statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { InfoRow } from "@/components/info-row";
 import { ConfigReviewPanel } from "./config-review-panel";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
@@ -55,21 +66,6 @@ function toImportJson(config: Config): string {
     },
     null,
     2,
-  );
-}
-
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right break-words">{children}</span>
-    </div>
   );
 }
 
@@ -169,7 +165,7 @@ function ConfigDetailContent({
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold break-words">{config.name}</h1>
           <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
-            {config.status}
+            {statusLabel(config.status)}
           </StatusPill>
           {latestVersion != null && (
             <span className="text-sm text-muted-foreground">
@@ -255,22 +251,26 @@ function ConfigDetailContent({
 
           <div className="rounded-xl border bg-card p-4">
             <div className="divide-y">
-              <InfoRow label="รุ่นอุปกรณ์">{config.deviceModel}</InfoRow>
-              <InfoRow label="โปรโตคอล">{config.protocol}</InfoRow>
-              <InfoRow label="สร้างโดย">
+              <InfoRow label="รุ่นอุปกรณ์" icon={SlidersHorizontalIcon}>
+                {config.deviceModel}
+              </InfoRow>
+              <InfoRow label="โปรโตคอล" icon={RadioIcon}>
+                {config.protocol}
+              </InfoRow>
+              <InfoRow label="สร้างโดย" icon={UserIcon}>
                 <span className="font-mono text-xs">{config.createdBy}</span>
               </InfoRow>
-              <InfoRow label="ผู้อนุมัติ">
+              <InfoRow label="ผู้อนุมัติ" icon={UserCheckIcon}>
                 {config.approvedBy ? (
                   <span className="font-mono text-xs">{config.approvedBy}</span>
                 ) : (
                   "-"
                 )}
               </InfoRow>
-              <InfoRow label="สร้างเมื่อ">
+              <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(config.createdAt)}
               </InfoRow>
-              <InfoRow label="แก้ไขล่าสุด">
+              <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
                 {formatDateTime(config.updatedAt)}
               </InfoRow>
             </div>

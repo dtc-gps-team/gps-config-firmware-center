@@ -6,11 +6,12 @@ import {
   canEditIncidentTechnical,
 } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * ปุ่ม "สั่ง Rollback" (Operation) และ "แก้ไขเชิงเทคนิค" (ST) — RBAC_Matrix.md
  * Section 2 แถว Incident & Rollback: 2 บทบาทแยกกันชัดเจน คนละปุ่ม role อื่น
- * ไม่เห็นปุ่มไหนเลย (SW/OT/Auditor/Admin ดูได้อย่างเดียว)
+ * ไม่เห็นปุ่มไหนเลย (ConfigEngineer/FirmwareEngineer/QAEngineer/OT/Auditor/Admin ดูได้อย่างเดียว)
  *
  * ปุ่มเป็น scaffold `disabled` อยู่แล้ว รอต่อ endpoint จริง (ยังไม่มีโมดูล
  * `incident` ใน spec — ดู RBAC_Matrix.md ตาราง 4.2) component นี้คุมแค่ว่า
@@ -32,14 +33,28 @@ export function IncidentActions() {
   return (
     <div className="flex justify-end gap-2">
       {showTechnicalFix && (
-        <Button variant="outline" size="sm" disabled>
-          แก้ไขเชิงเทคนิค
-        </Button>
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Button variant="outline" size="sm" disabled>
+              แก้ไขเชิงเทคนิค
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            ยังไม่รองรับ — รอโมดูล `incident` (ยังไม่มีใน spec)
+          </TooltipContent>
+        </Tooltip>
       )}
       {showRollback && (
-        <Button size="sm" disabled>
-          สั่ง Rollback
-        </Button>
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Button size="sm" disabled>
+              สั่ง Rollback
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            ยังไม่รองรับ — รอโมดูล `incident` (ยังไม่มีใน spec)
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

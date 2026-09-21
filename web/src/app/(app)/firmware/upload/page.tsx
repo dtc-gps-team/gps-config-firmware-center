@@ -14,7 +14,7 @@ export const metadata = {
 };
 
 /**
- * อัปโหลด Firmware ใหม่ (`POST /firmware`) · SW เท่านั้น — ไฟล์อัปโหลดขึ้น
+ * อัปโหลด Firmware ใหม่ (`POST /firmware`) · FirmwareEngineer เท่านั้น — ไฟล์อัปโหลดขึ้น
  * Object Storage จริงทันที (ไม่มี draft/mock mode — ต่างจาก Config)
  */
 export default function UploadFirmwarePage() {
@@ -29,7 +29,7 @@ export default function UploadFirmwarePage() {
         </Link>
         <h1 className="text-2xl font-semibold">อัปโหลด Firmware</h1>
         <p className="text-sm text-muted-foreground">
-          เฉพาะ Role SW · ไฟล์จะถูกอัปโหลดขึ้น Object Storage ทันที · เพิ่ม/แก้
+          เฉพาะ Role FirmwareEngineer · ไฟล์จะถูกอัปโหลดขึ้น Object Storage ทันที · เพิ่ม/แก้
           รุ่นอุปกรณ์ที่รองรับเพิ่มเติมได้ทีหลังในหน้ารายละเอียด
         </p>
       </div>

@@ -92,7 +92,7 @@ function downloadTemplate() {
 }
 
 /**
- * ฟอร์ม Import Config จากไฟล์ JSON — เฉพาะ Role SW (RBAC_Matrix.md Section 2
+ * ฟอร์ม Import Config จากไฟล์ JSON — เฉพาะ Role ConfigEngineer (RBAC_Matrix.md Section 2
  * แถว Config Import) role อื่นเห็นข้อความแทนฟอร์ม
  *
  * flow: เลือกไฟล์ → preview ฝั่ง client (parse + เช็ค field บังคับ) → กด "นำเข้า"
@@ -117,7 +117,7 @@ export function ImportConfigForm() {
   if (!canCreateConfig(session?.role)) {
     return (
       <p className="text-sm text-muted-foreground">
-        เฉพาะ Role SW เท่านั้นที่นำเข้า Config ได้
+        เฉพาะ Role ConfigEngineer เท่านั้นที่นำเข้า Config ได้
       </p>
     );
   }

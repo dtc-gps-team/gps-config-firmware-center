@@ -24,12 +24,12 @@ import {
 import { StatusPill } from "@/lib/status-pill";
 
 /**
- * แผง "ทดสอบ & ส่งอนุมัติ" ฝั่ง SW (Config Simulation Gate — #18) — โผล่บนหน้า
- * รายละเอียด Config เฉพาะสถานะ `draft` + role SW
+ * แผง "ทดสอบ & ส่งอนุมัติ" ฝั่ง ConfigEngineer (Config Simulation Gate — #18) — โผล่บนหน้า
+ * รายละเอียด Config เฉพาะสถานะ `draft` + role ConfigEngineer
  *
  * 2 step ตามดีไซน์ (ดู ConfigService.decide): (1) "ทดสอบ" = `POST /simulate`
  * dry-run กดกี่ครั้งก็ได้ ไม่แตะ status · (2) "ส่งให้อนุมัติ" = `POST /decide`
- * `passed:true` → `draft`→`testing` (ดุลพินิจ SW — ส่งได้แม้ sim มี warning) +
+ * `passed:true` → `draft`→`testing` (ดุลพินิจ ConfigEngineer — ส่งได้แม้ sim มี warning) +
  * เจาะจงผู้อนุมัติ (optional, dropdown Operation — #19)
  */
 export function ConfigReviewPanel({ config }: { config: Config }) {
@@ -91,7 +91,7 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ &amp; ส่งอนุมัติ</p>
 
       <div className="flex flex-wrap items-center gap-2">
