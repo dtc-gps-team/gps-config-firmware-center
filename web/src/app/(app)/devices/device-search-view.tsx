@@ -16,7 +16,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useDevices } from "@/hooks/use-devices";
 import { type Device } from "@/lib/device-api";
-import { DEVICE_STATUS_TONE, StatusPill } from "@/lib/status-pill";
+import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 
 function textSort(a: Row<Device>, b: Row<Device>, columnId: string): number {
@@ -62,7 +62,7 @@ const columns: ColumnDef<Device>[] = [
     meta: { filterVariant: "multi-select", label: "สถานะ" },
     cell: ({ row }) => (
       <StatusPill tone={DEVICE_STATUS_TONE[row.original.status] ?? "neutral"}>
-        {row.original.status}
+        {statusLabel(row.original.status)}
       </StatusPill>
     ),
   },

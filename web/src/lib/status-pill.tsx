@@ -34,6 +34,23 @@ export function pillClass(tone: PillTone): string {
   return `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PILL_TONE[tone]}`;
 }
 
+/** Label ภาษาไทยสำหรับสถานะ snake_case หลายคำที่โผล่ underscore ตรงๆ เมื่อ
+ * โชว์ enum value ดิบใน `<StatusPill>` (เช่น "pending_approval") — สถานะคำ
+ * เดียว (draft/testing/approved ฯลฯ) อ่านง่ายอยู่แล้วไม่ต้องแปล ใส่เฉพาะตัวที่
+ * มีขีดล่างแทรกอยู่ในข้อความจริง */
+const STATUS_LABEL: Record<string, string> = {
+  pending_approval: "รอการอนุมัติ",
+  pending_review: "รอตรวจสอบคุณภาพ",
+  pending_update: "รอการอัปเดต",
+  up_to_date: "อัปเดตล่าสุดแล้ว",
+};
+
+/** แปลง status enum ดิบเป็น label ที่แสดงผลได้ — คืนค่าเดิมถ้าไม่มีใน
+ * `STATUS_LABEL` (สถานะคำเดียวส่วนใหญ่อ่านได้อยู่แล้ว) */
+export function statusLabel(status: string): string {
+  return STATUS_LABEL[status] ?? status;
+}
+
 /** สี bg/text ล้วนๆ ต่อ tone (ไม่มีรูปทรง pill) — ใช้ทำ badge ไอคอนที่ไม่ใช่
  *  pill สถานะ เช่น icon badge บนการ์ดสรุป Dashboard ให้สีชุดเดียวกับ pill
  *  ทั้งระบบ ไม่ต้องคิดสีชุดใหม่แยก */

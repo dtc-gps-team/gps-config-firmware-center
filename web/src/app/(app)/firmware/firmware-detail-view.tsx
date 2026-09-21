@@ -10,6 +10,7 @@ import {
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
   StatusPill,
+  statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
@@ -92,7 +93,7 @@ function FirmwareDetailContent({
           <StatusPill
             tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
           >
-            {firmware.uploadStatus}
+            {statusLabel(firmware.uploadStatus)}
           </StatusPill>
           <StatusPill
             tone={
@@ -100,7 +101,7 @@ function FirmwareDetailContent({
               "neutral"
             }
           >
-            {firmware.approvalStatus}
+            {statusLabel(firmware.approvalStatus)}
           </StatusPill>
         </div>
       </div>
@@ -128,7 +129,7 @@ function FirmwareDetailContent({
                     ] ?? "neutral"
                   }
                 >
-                  {firmware.deviceUpdateStatus}
+                  {statusLabel(firmware.deviceUpdateStatus)}
                 </StatusPill>
               </InfoRow>
               <InfoRow label="อัปโหลดโดย">

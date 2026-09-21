@@ -29,6 +29,7 @@ import {
   CONFIG_STATUS_TONE,
   getConfigNextStepMessage,
   StatusPill,
+  statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
@@ -169,7 +170,7 @@ function ConfigDetailContent({
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold break-words">{config.name}</h1>
           <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
-            {config.status}
+            {statusLabel(config.status)}
           </StatusPill>
           {latestVersion != null && (
             <span className="text-sm text-muted-foreground">

@@ -7,7 +7,7 @@ import { canCreateConfig } from "@/lib/permissions";
 import { buttonVariants } from "@/components/ui/button";
 
 /**
- * ปุ่ม "Import จากไฟล์" ในหน้า Config Editor — SW เท่านั้น (RBAC_Matrix.md
+ * ปุ่ม "Import จากไฟล์" ในหน้า Config Editor — ConfigEngineer เท่านั้น (RBAC_Matrix.md
  * Section 2 แถว Config Import) role อื่นไม่เห็นปุ่มนี้
  *
  * เป็น UX-level gate เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ ·

@@ -7,7 +7,7 @@ export const metadata = {
 /**
  * Config Editor — list Config จาก `GET /config` จริง + คลิกแถวไปหน้า
  * รายละเอียดเต็ม `/config/{id}` · ปุ่ม "สร้าง Config ใหม่" พาไปหน้า wizard
- * `/config/new` (แก้ที่ `/config/{id}/edit`) — สร้าง/แก้ได้เฉพาะ Role SW
+ * `/config/new` (แก้ที่ `/config/{id}/edit`) — สร้าง/แก้ได้เฉพาะ Role ConfigEngineer
  */
 export default async function ConfigPage({
   searchParams,
@@ -21,7 +21,7 @@ export default async function ConfigPage({
       <div>
         <h1 className="text-2xl font-semibold">Config Editor</h1>
         <p className="text-sm text-muted-foreground">
-          สร้าง/แก้ Draft · สร้างได้เฉพาะ Role SW
+          สร้าง/แก้ Draft · สร้างได้เฉพาะ Role ConfigEngineer
         </p>
       </div>
 
