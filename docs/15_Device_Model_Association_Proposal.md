@@ -1,8 +1,13 @@
 # ข้อเสนอออกแบบ Device–Model Association — ผูกอุปกรณ์เข้ากับรุ่นสินค้า
 
-> เอกสารนี้เป็น **draft สำหรับให้ kittiphong รีวิว** — ยังไม่ใช่มติสุดท้าย ยังไม่ implement
-> จริง และยังไม่เปิด PR จนกว่าจะรีวิว/แก้ไขตามที่ต้องการก่อน (ต่างจาก `docs/14` ที่เปิดเป็น PR
-> ให้รีวิวคู่กับโค้ดจริง — อันนี้เป็นเอกสารเปล่าอยู่ในเครื่อง)
+> **สถานะปัจจุบัน (อัปเดต 2026-09-21):** เปิดเป็น PR #196 แล้ว — เนื้อหาหลักในเอกสารนี้
+> (ความสัมพันธ์ 1 Device : 1 Model, use case ทั้งหมดในหัวข้อ 4, entity `DeviceModel`) **เป็นมติที่
+> kittiphong ทวนและยืนยันแล้วจริง ไม่ใช่ draft ที่หลุดเปิด PR มาก่อนได้ทวนเอง** (ยืนยันตอบคำถามนี้
+> ให้ Paveekorn โดยตรงในคอมเมนต์ PR แล้ว — ดู issue comment 2026-09-21) ส่วนที่ยังไม่นิ่งคือ
+> คำถามเปิดในหัวข้อ 6 เท่านั้น (RMA, สถานะซ่อม, ขอบเขต migration, RBAC, sequencing กับ Device
+> Sync PR 1 ฯลฯ) ซึ่งกำลังตอบ/แก้ร่วมกับ Paveekorn (A) อยู่ในคอมเมนต์ของ PR
+>
+> ยังไม่ implement จริง รอเคลียร์คำถามเปิดที่เหลือก่อน
 
 ---
 
@@ -24,6 +29,14 @@ sync") **มี logic implement จริงอยู่แล้ว** ใน `b
 และ `firmware.deviceModelCompatibility.includes(device.deviceModel)` ตรงๆ แบบ string comparison
 (บรรทัด ~217, ~277) แล้วโยน `ConflictException` ถ้าไม่ตรง — มี unit test คุมพฤติกรรมนี้อยู่แล้วด้วย
 (`campaign.service.spec.ts`)
+
+**แก้ไข (พบเพิ่มจาก Paveekorn รีวิว PR นี้ — ตรวจสอบแล้วถูกต้อง):** pattern
+`deviceModel !== / protocol !==` เดียวกันนี้ไม่ได้มีแค่ใน `CampaignService` จุดเดียว — ยังมีอยู่อีก
+2 จุดที่พลาดไปตอนสำรวจรอบแรก: `backend/src/task/task.service.ts:281` และ
+`backend/src/device/device.service.ts:187` (ทั้งคู่ throw `ConflictException` รูปแบบเดียวกันเป๊ะ)
+รวมเป็น **3 จุด** ที่มี compatibility-check logic นี้ซ้ำกันอยู่ในระบบตอนนี้ — ไม่กระทบทิศทางการ
+ออกแบบ (`DeviceModel.name` ยังต้องตรงกับ string เดิมเป๊ะเหมือนเดิม) แต่กระทบขนาดงานจริงถ้าตัดสินใจ
+migrate ไปใช้ `modelId` ในอนาคต (คำถามเปิดข้อ 3) — blast radius ใหญ่กว่าที่เคยประเมินไว้
 
 **ผลต่อการออกแบบ:** นี่ไม่ใช่การสร้าง use case ใหม่จากศูนย์ แต่เป็นการ **ใส่ registry ที่เป็นทางการ
 (canonical) ครอบ string ที่กระจัดกระจายอยู่แล้ว** — ถ้าออกแบบให้ `DeviceModel.name` มีค่าตรงกับ
@@ -47,6 +60,24 @@ string เดิมทุกตัวเป๊ะ (`"GT06N"` ฯลฯ) โค�
 
 ไม่พบการพูดถึงแนวคิดนี้ใน `docs/planning/01_GPS_Build_Reference.md`, `02_GPS_Development_Plan.md`,
 หรือ `docs/14_Device_Sync_Proposal.md` เลยเช่นกัน — เป็นพื้นที่ design ใหม่ทั้งหมด
+
+**เพิ่มเติม (พบจาก Paveekorn รีวิว หลัง `GPS_Config_Firmware_Center_Design.pdf` merge เข้า repo
+ผ่าน PR #194) — ตรวจสอบ PDF จริงแล้วด้วย `pdftotext` (หน้า 4-5, 13) ยืนยันตรงตามที่อ้างทุกประการ:**
+เอกสารต้นฉบับจากพี่เลี้ยง §4.1-4.2 ออกแบบ "รุ่นอุปกรณ์" เป็นลำดับชั้น **4 ระดับแยก entity กันจริง**
+— `Manufacturer → Product Family → Product Model → Hardware Revision → Firmware Branch` — และ
+§14.1 (โครงสร้างฐานข้อมูล) ยืนยันว่าแต่ละระดับเป็นตารางแยกจริง (`manufacturers`,
+`product_families`, `product_models`, `hardware_revisions`)
+
+ปัจจุบัน `Device.deviceModel` เป็นแค่ string เดียวแบนราบมาตั้งแต่สร้าง `Device` model (PR #38) —
+**ไม่มี comment อธิบาย deviation จากต้นฉบับนี้เลยสักบรรทัด** ต่างจาก `Config.name` ที่มี comment
+ชัดเจนเรื่อง deviation จาก Data Dictionary — เข้าข่ายขัดกับ convention "Deviation จาก Data
+Dictionary" ใน CLAUDE.md (ห้ามเบี่ยงแบบเงียบๆ โดยไม่มี comment อธิบาย) เพิ่ม comment แก้จุดนี้แล้ว
+ในหัวข้อ 3 (schema snippet ของ `Device.deviceModel`)
+
+**มุมมองสำคัญ:** ข้อเสนอ `DeviceModel` ในเอกสารนี้ไม่ได้เบี่ยงออกจากต้นฉบับเพิ่ม แต่เป็นก้าวที่พา
+ระบบเข้าใกล้ต้นฉบับมากขึ้น (ยังย่อกว่าอยู่ — รวม 4 ระดับเป็น entity เดียว ไม่แยกเป็น 4 ตารางตาม
+ต้นฉบับ) การย่อนี้ยังไม่ได้ตัดสินใจเปลี่ยนกลับไปแยก 4 ระดับในรอบนี้ — เก็บไว้เป็นข้อพิจารณาถ้าจะทำ
+ให้ตรงต้นฉบับเป๊ะในอนาคต ไม่ใช่ scope ของ PR นี้
 
 ---
 
@@ -96,6 +127,9 @@ enum DeviceModelStatus {
   discontinued  // เลิกผลิตแล้ว แต่เครื่องที่ใช้งานอยู่ยังทำงานได้ตามปกติ
 }
 
+// ดู deviation comment เหนือ Device.deviceModel (ด้านล่าง) เรื่องความสัมพันธ์กับลำดับชั้น
+// 4 ระดับใน GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1 — entity นี้คือก้าวย่อ
+// เข้าใกล้ต้นฉบับ ไม่ใช่การเบี่ยงเพิ่ม
 model DeviceModel {
   id                 String            @id @default(uuid())
   // ค่าต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — ดูหัวข้อ 5
@@ -132,6 +166,16 @@ model Device {
   // เก็บไว้ก่อนช่วง transition (ดูหัวข้อ 5) — เป้าหมายสุดท้ายคือ deprecate แล้วอ่าน
   // ชื่อรุ่นผ่าน `model.name` แทน แต่ตอนนี้โค้ดอื่น (CampaignService, ConfigWizard
   // ฯลฯ) ยังอ้าง field นี้ตรงๆ เยอะ — ย้ายทีเดียวเสี่ยงเกินไป
+  //
+  // Deviation จาก GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1 (เอกสารต้นฉบับ
+  // พี่เลี้ยง — merge เข้า repo แล้วใน PR #194): ต้นฉบับออกแบบ "รุ่นอุปกรณ์" เป็นลำดับชั้น
+  // 4 ระดับแยก entity กันจริง (Manufacturer → Product Family → Product Model →
+  // Hardware Revision → Firmware Branch, แยกตาราง manufacturers/product_families/
+  // product_models/hardware_revisions ตาม §14.1) — field นี้เป็น string เดียวแบนราบมา
+  // ตั้งแต่ PR #38 (สร้าง Device model) ไม่เคยมี comment อธิบาย deviation นี้มาก่อนจนกว่า
+  // Paveekorn รีวิว PR #196 (docs/15) นี้จะชี้ให้เห็น (2026-09-21) — DeviceModel ที่เสนอใน
+  // เอกสารนี้เป็นก้าวที่พาเข้าใกล้ต้นฉบับมากขึ้น (ยังรวม 4 ระดับเป็น entity เดียว ไม่แยกตาม
+  // ต้นฉบับเป๊ะ) — ดูหัวข้อ 0 ท้ายสุด
   deviceModel  String
   protocol     String
   status       DeviceLifecycleStatus @default(registered)
