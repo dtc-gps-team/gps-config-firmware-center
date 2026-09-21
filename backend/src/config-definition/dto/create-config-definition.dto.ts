@@ -64,6 +64,26 @@ export class CreateConfigDefinitionDto {
   @MaxLength(20)
   unit?: string;
 
+  /** หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server", "Security")
+   * — ตรงกับ `docs/GPS_Config_Firmware_Center_Design.pdf` §5.1 ไม่บังคับ,
+   * ไม่ใช่ enum เพราะยังไม่รู้ชุดหมวดเต็มจนกว่าจะมีสเปกฟิลด์จริง (~262 ค่า) */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string;
+
+  /** field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ใช้ซ่อนค่าบนหน้าจอฝั่ง
+   * Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม default false */
+  @IsOptional()
+  @IsBoolean()
+  sensitive?: boolean;
+
+  /** ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผล/เตือน
+   * ผู้ใช้เท่านั้น ยังไม่ผูกกับ logic ใดใน backend default false */
+  @IsOptional()
+  @IsBoolean()
+  restartRequired?: boolean;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

@@ -459,19 +459,36 @@ model ConfigDeletionRequest {
 // ทีละตัวตามที่ใช้จริง (self-service ไม่ต้องรออนุมัติ — ตัดสินใจร่วมกับ B และ
 // พี่เลี้ยง 2569-09) ไม่ต้องกรอกให้ครบทุก field ล่วงหน้า
 model ConfigFieldDefinition {
-  id            String   @id @default(uuid())
-  fieldName     String   @unique
-  dataType      String
-  allowedValues String[]
-  required      Boolean  @default(false)
-  unknownSpec   Boolean  @default(false)
-  description   String?
+  id              String   @id @default(uuid())
+  fieldName       String   @unique
+  dataType        String
+  allowedValues   String[]
+  required        Boolean  @default(false)
+  unknownSpec     Boolean  @default(false)
+  description     String?
   // หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "เมตร", "%") — ไม่บังคับ
   // เป็น metadata สำหรับแสดงผลข้างช่องกรอกตอนสร้าง Config (frame 08) เท่านั้น
   // ไม่ถูกใช้ใน validateFields
-  unit          String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  unit            String?
+  // 3 field ถัดไปตรงกับ `docs/GPS_Config_Firmware_Center_Design.pdf` §5.1
+  // (ตาราง field ของ config_key) + §14.2 (ตัวอย่าง DDL) ตรงตัว — เพิ่มแบบ
+  // additive ล้วน ไม่ต้องรอสเปกฟิลด์เต็ม ~262 ค่า เพราะเป็น metadata
+  // ง่ายๆ ไม่ผูกกับ validateFields เหมือน `unit` ด้านบน
+  //
+  // จัดหมวดหมู่ field สำหรับแสดงผล (PDF ตัวอย่าง: GPS, Network, Server, CAN,
+  // Sensor, Camera, Security) — ไม่บังคับ, ไม่ใช่ enum เพราะยังไม่รู้ชุดหมวด
+  // เต็มจนกว่าจะมีสเปกฟิลด์จริง
+  category        String?
+  // field ที่เก็บค่าอ่อนไหว (เช่น COMMAND_PASSWORD, APN_PASSWORD, SOS_NUMBER_1
+  // ที่ seed ไว้แล้ว) — ใช้ซ่อนค่าบนหน้าจอ (input type password / mask ตอน
+  // แสดงผล) ฝั่ง Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม (นอกเหนือจาก
+  // scope ของ field metadata นี้)
+  sensitive       Boolean  @default(false)
+  // ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผล/เตือนผู้ใช้
+  // เท่านั้น ยังไม่ผูกกับ logic ใดใน backend (เช่น บังคับ Task แยกสำหรับ restart)
+  restartRequired Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   supportedModels ConfigFieldDefinitionModelSupport[]
 }

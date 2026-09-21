@@ -27,6 +27,9 @@ const apnDef: ConfigFieldDefinition & {
   unknownSpec: false,
   description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
   unit: null,
+  category: 'Network',
+  sensitive: false,
+  restartRequired: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -43,6 +46,9 @@ const modeDef: ConfigFieldDefinition & {
   unknownSpec: false,
   description: null,
   unit: null,
+  category: null,
+  sensitive: false,
+  restartRequired: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -127,6 +133,9 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: false,
           description: undefined,
           unit: undefined,
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -153,6 +162,9 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: false,
           description: 'ช่วงเวลารายงาน',
           unit: 'วินาที',
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -175,6 +187,39 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: true,
           description: undefined,
           unit: undefined,
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ส่ง category/sensitive/restartRequired มา -> เขียนลง DB ตามนั้น', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({
+        ...dto,
+        category: 'Network',
+        sensitive: true,
+        restartRequired: true,
+      });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          category: 'Network',
+          sensitive: true,
+          restartRequired: true,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
