@@ -18,7 +18,19 @@
 /*  หน้าจริงที่ต่อ API ก็ใช้) re-export ต่อให้หน้า scaffold เดิมไม่ต้องแก้ import */
 /* ---------------------------------------------------------------- */
 
-import { RocketIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  CpuIcon,
+  GitCompareIcon,
+  HistoryIcon,
+  RotateCcwIcon,
+  TriangleAlertIcon,
+  Undo2Icon,
+  WifiIcon,
+  WifiOffIcon,
+  XCircleIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 import { TASK_STATUS_TONE, type PillTone } from "@/lib/status-pill";
 
@@ -30,36 +42,50 @@ export {
 } from "@/lib/status-pill";
 
 /* ---------------------------------------------------------------- */
-/*  Dashboard — การ์ด "อุปกรณ์ทั้งหมด" + "Config รออนุมัติ" ต่อ API จริงแล้ว  */
-/*  (GET /devices, GET /config) ที่ dashboard-summary.tsx · เหลือ 2 ใบนี้    */
-/*  รอ endpoint campaign / incident (Sprint ถัดไป) · activity feed ยังเป็น    */
-/*  ตัวอย่าง — รอ GET /audit-logs                                            */
+/*  Dashboard — จัดตาม docs/planning §12.1 (Device Overview /          */
+/*  Deployment Overview / Risk Dashboard) · Customer Priority ไม่เคย    */
+/*  ออกแบบไว้ในระบบนี้เลย + Capacity เป็น infra metric ที่ตัดออกจาก scope  */
+/*  แล้ว (production integration ของ config-sync-writer ไม่ใช่งาน A) —   */
+/*  เลยไม่มีในแดชบอร์ด · ที่เหลือ metric ไหนมี endpoint จริงแล้วต่อจริงที่    */
+/*  dashboard-summary.tsx (`GET /devices`, `/config`, `/campaigns`) —    */
+/*  metric ที่ยังไม่มี endpoint (ต้องรอ device-sync module ที่กำลังเสนอ    */
+/*  อยู่ตอนนี้ หรือ Campaign Monitor #22) ใส่เป็นตัวอย่างไว้ก่อนที่นี่      */
 /* ---------------------------------------------------------------- */
 
-export const DEMO_DASHBOARD_SUMMARY: {
+type DashboardMetric = {
   label: string;
   value: string;
   icon: LucideIcon;
   tone: PillTone;
-}[] = [
-  { label: "Campaign กำลังทำงาน", value: "2", icon: RocketIcon, tone: "progress" },
-  {
-    label: "Incident ที่ยังไม่ปิด",
-    value: "1",
-    icon: TriangleAlertIcon,
-    tone: "danger",
-  },
+};
+
+/** Device Overview — Total/รุ่นอุปกรณ์ ต่อ `GET /devices` จริงแล้ว (ดู
+ * dashboard-summary.tsx) ที่เหลือรอ device-sync module (docs/14 proposal —
+ * ยังไม่ตัดสินใจ ไม่ใช่ตัดออกจาก scope) */
+export const DEMO_DEVICE_OVERVIEW: DashboardMetric[] = [
+  { label: "Online", value: "142", icon: WifiIcon, tone: "success" },
+  { label: "Offline", value: "8", icon: WifiOffIcon, tone: "danger" },
+  { label: "Firmware ไม่ตรงเวอร์ชันล่าสุด", value: "12", icon: CpuIcon, tone: "progress" },
+  { label: "Config ไม่ตรงเวอร์ชันล่าสุด", value: "5", icon: HistoryIcon, tone: "progress" },
+  { label: "Config/Firmware Drift", value: "3", icon: GitCompareIcon, tone: "danger" },
 ];
 
-export const DEMO_DASHBOARD_ACTIVITY = [
-  { time: "09:24", text: "operation.test อนุมัติ Config GT06N/TCP (v3)" },
-  { time: "08:51", text: "config.test รัน simulation Config GT06L/TCP · ผ่าน" },
-  {
-    time: "08:10",
-    text: "ระบบสร้าง Incident: อุปกรณ์ DEV-0042 sync ไม่สำเร็จ",
-  },
-  { time: "เมื่อวาน", text: "config.test สร้าง Config ใหม่ GT06N/TCP" },
-  { time: "เมื่อวาน", text: "operation.test เริ่ม Campaign 'นำร่องภาคเหนือ'" },
+/** Deployment Overview — Campaign กำลังทำงาน/รออนุมัติ + Config รออนุมัติ
+ * ต่อ API จริงแล้ว (ดู dashboard-summary.tsx) ที่เหลือรอ Campaign Monitor
+ * (#22 — วางคิวไว้แล้ว ไม่ใช่ตัดออกจาก scope) */
+export const DEMO_DEPLOYMENT_OVERVIEW: DashboardMetric[] = [
+  { label: "สำเร็จ", value: "128", icon: CheckCircle2Icon, tone: "success" },
+  { label: "ล้มเหลว", value: "4", icon: XCircleIcon, tone: "danger" },
+  { label: "Rollback", value: "1", icon: Undo2Icon, tone: "danger" },
+];
+
+/** Risk Dashboard — ทั้งหมดรอ device-sync module (docs/14 proposal) ยังไม่มี
+ * metric ไหนต่อจริงได้เลยตอนนี้ */
+export const DEMO_RISK_DASHBOARD: DashboardMetric[] = [
+  { label: "Failure สูง", value: "6", icon: TriangleAlertIcon, tone: "danger" },
+  { label: "Firmware Suspended", value: "2", icon: CpuIcon, tone: "danger" },
+  { label: "Reboot Loop", value: "3", icon: RotateCcwIcon, tone: "danger" },
+  { label: "Offline หลังอัปเดต", value: "5", icon: WifiOffIcon, tone: "danger" },
 ];
 
 /* Config Editor (GET /config) + Approval Center (GET /config?status=testing)
