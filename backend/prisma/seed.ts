@@ -205,6 +205,16 @@ async function main() {
     grant('Auditor', 'config', 'Read'),
     grant('Admin', 'config', 'Read'),
 
+    // ---- config-override (Per-Field Override ACL, issue #185) ----
+    // overrideConfig — ให้เฉพาะ ST เท่านั้น ไม่ให้ OT เลยสักฟิลด์ (ตัดสินใจ
+    // ร่วมกับ B 2026-09-18 — ชื่อ resource สื่อ "ST เท่านั้น" ตรงตัว) —
+    // แยก resource ใหม่จาก 'config'+Update เพราะเป็นคนละ flow กันโดยสิ้นเชิง
+    // (override ข้าม Approval Center ไปเลย ต้องคุมแยกจาก Update ปกติที่ไม่มี
+    // role ไหนได้อยู่แล้วในตอนนี้) ถ้าต้องการเปิดให้ role ที่ 3 override ได้
+    // ทีหลัง เพิ่ม grant ตรงนี้ได้เลย ไม่ต้องแก้ schema (YAGNI — ดูคอมเมนต์
+    // ที่ ConfigFieldDefinition.stOverridable ใน schema.prisma)
+    grant('ST', 'config-override', 'Override'),
+
     // ---- config-simulation (Stage 3, #26) ----
     // simulateConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ: ConfigEngineer/
     // Operation/ST/OT ต้องเรียกได้ทั้งคู่ แต่ 'config'+Read ถูก grant ให้ Auditor/Admin
@@ -646,6 +656,9 @@ async function main() {
     unknownSpec: boolean;
     description: string;
     unit: string | null;
+    // ST override ค่า field นี้บนอุปกรณ์ได้ไหม (issue #185) — ไม่ระบุ = false
+    // (override ไม่ได้) มีแค่ APN ด้านล่างที่เปิดไว้เป็นตัวอย่าง demo/ทดสอบ
+    stOverridable?: boolean;
     // (deviceModel, protocol) ที่ field นี้รองรับ — ตั้งแต่ Semantic
     // Validation (#26) field ที่ supportedModels ว่างเปล่าใช้งานไม่ได้เลย
     // (validateFields บล็อกทุก deviceModel/protocol ถ้าไม่มีคู่ไหนตรงกัน
@@ -661,6 +674,10 @@ async function main() {
       unknownSpec: false,
       description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
       unit: null,
+      // เคสตัวอย่างที่พบบ่อยหน้างานจริง (ลูกค้าขอเปลี่ยน APN เพราะเปลี่ยน
+      // ผู้ให้บริการซิม) — เปิด stOverridable ไว้ให้ demo/ทดสอบ #185 ได้ทันที
+      // โดยไม่ต้องสร้าง field ใหม่ก่อน (field อื่นทั้งหมดยัง default false)
+      stOverridable: true,
       supportedModels: [KNOWN_LEGACY_MODEL],
     },
     ...UNKNOWN_SPEC_LEGACY_FIELDS.map((f) => ({
@@ -689,10 +706,14 @@ async function main() {
     const { supportedModels, ...fieldData } = def;
     const existing = await prisma.configFieldDefinition.upsert({
       where: { fieldName: def.fieldName },
-      // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น `unit` ที่เพิ่งเพิ่ม
-      // เป็นคอลัมน์ใหม่ (nullable) backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย
-      update: { unit: fieldData.unit },
-      create: fieldData,
+      // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น `unit`/`stOverridable`
+      // ที่เพิ่มเป็นคอลัมน์ใหม่ทีหลัง (nullable/มี default) backfill ให้ DB
+      // เดิมตอน re-seed ได้ปลอดภัย
+      update: {
+        unit: fieldData.unit,
+        stOverridable: fieldData.stOverridable ?? false,
+      },
+      create: { ...fieldData, stOverridable: fieldData.stOverridable ?? false },
     });
     for (const support of supportedModels) {
       await prisma.configFieldDefinitionModelSupport.upsert({

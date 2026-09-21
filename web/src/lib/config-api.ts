@@ -180,3 +180,23 @@ export function approveConfig(token: string, id: string): Promise<Config> {
 export function rejectConfig(token: string, id: string): Promise<Config> {
   return apiJson<Config>(`/config/${id}/reject`, { method: "POST", token });
 }
+
+/**
+ * `POST /config/{id}/override` — ST override ค่าบาง field ของ Config
+ * `approved`/`synced` แล้วโดยตรง ไม่ผ่าน Approval Center ปกติ (issue #185)
+ *
+ * `fields` เป็น partial — ใส่แค่ field ที่ต้องการแก้ ทุก key ต้อง
+ * `stOverridable: true` ตาม ConfigFieldDefinition ไม่งั้น 400 · `reason`
+ * บังคับกรอกเสมอ (GPS_Config_Firmware_Center_Design.pdf §19 ข้อ 24)
+ */
+export function overrideConfig(
+  token: string,
+  id: string,
+  body: { fields: Record<string, unknown>; reason: string },
+): Promise<Config> {
+  return apiJson<Config>(`/config/${id}/override`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}

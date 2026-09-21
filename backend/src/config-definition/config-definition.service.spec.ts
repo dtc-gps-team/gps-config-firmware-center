@@ -27,6 +27,7 @@ const apnDef: ConfigFieldDefinition & {
   unknownSpec: false,
   description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G ของอุปกรณ์',
   unit: null,
+  stOverridable: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -43,6 +44,7 @@ const modeDef: ConfigFieldDefinition & {
   unknownSpec: false,
   description: null,
   unit: null,
+  stOverridable: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -127,6 +129,7 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: false,
           description: undefined,
           unit: undefined,
+          stOverridable: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -153,6 +156,7 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: false,
           description: 'ช่วงเวลารายงาน',
           unit: 'วินาที',
+          stOverridable: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -175,6 +179,30 @@ describe('ConfigDefinitionService', () => {
           unknownSpec: true,
           description: undefined,
           unit: undefined,
+          stOverridable: false,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ส่ง stOverridable: true มา -> เขียนลง DB ตามนั้น', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({ ...dto, stOverridable: true });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: true,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -290,6 +318,55 @@ describe('ConfigDefinitionService', () => {
       expect(response.errors.some((e) => e.includes('APN1'))).toBe(true);
       expect(response.errors.some((e) => e.includes('MODE'))).toBe(true);
       expect(response.errors.some((e) => e.includes('UNKNOWN'))).toBe(true);
+    });
+  });
+
+  describe('validateOverridableFields', () => {
+    it('field stOverridable: true + ตรงนิยาม -> ผ่าน ไม่ throw', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', {
+          APN1: 'internet2',
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('field stOverridable: false -> BadRequestException แม้นิยามถูกต้องทุกอย่าง', async () => {
+      findMany.mockResolvedValue([modeDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', { MODE: 'GPRS' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('ไม่เช็ค required field ที่ขาด — partial update ปกติของ override', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      // apnDef.required = true แต่ไม่ส่งมาใน fields เลย — validateFields()
+      // ปกติจะ throw แต่ validateOverridableFields ต้องไม่ throw เพราะเป็น
+      // partial update (override field อื่นที่ไม่ใช่ APN1)
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', {}),
+      ).resolves.toBeUndefined();
+    });
+
+    it('field ที่ไม่มีนิยามในคลังเลย -> BadRequestException', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', {
+          UNKNOWN_FIELD: 'x',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('ชนิดข้อมูลไม่ตรง dataType ที่ประกาศ -> BadRequestException', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', { APN1: 12345 }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

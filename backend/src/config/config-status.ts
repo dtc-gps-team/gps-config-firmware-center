@@ -41,3 +41,13 @@ export const DECIDABLE_CONFIG_STATUS: ConfigStatus = 'draft';
  * ส่งต่อมาก่อน) ตรงกับ 409 ของทั้งสอง endpoint ใน docs/api/openapi.yaml ที่
  * ระบุเงื่อนไขเดียวกันเป๊ะๆ */
 export const APPROVABLE_CONFIG_STATUS: ConfigStatus = 'testing';
+
+/** สถานะที่ ST override ค่าได้ (`POST /config/{id}/override`, issue #185) —
+ * ต้องเป็น Config ที่ผ่าน flow อนุมัติปกติมาแล้วและ "ใช้งานจริง" เท่านั้น
+ * (`approved` = อนุมัติแล้วรอ sync, `synced` = เขียนเข้าระบบเดิมแล้ว) —
+ * override ระหว่างยังร่าง/ทดสอบไม่มีความหมาย (ConfigEngineer แก้ตรงๆ ผ่าน
+ * `update()` ปกติได้อยู่แล้วตอนยัง draft/testing) */
+export const OVERRIDABLE_CONFIG_STATUSES: readonly ConfigStatus[] = [
+  'approved',
+  'synced',
+];

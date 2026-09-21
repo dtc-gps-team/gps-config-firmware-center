@@ -76,6 +76,7 @@ export class ConfigDefinitionService {
           unknownSpec: dto.unknownSpec ?? false,
           description: dto.description,
           unit: dto.unit,
+          stOverridable: dto.stOverridable ?? false,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({
               deviceModel: m.deviceModel,
@@ -170,6 +171,76 @@ export class ConfigDefinitionService {
     if (errors.length > 0) {
       throw new BadRequestException({
         message: 'ค่าที่กรอกไม่ตรงกับ Config Definition',
+        errors,
+      });
+    }
+  }
+
+  /**
+   * ตรวจ `fields` ที่ ST ขอ override เทียบกับ catalog — เรียกจาก
+   * `ConfigOverrideService.override()` ก่อนเขียนลง DB (issue #185)
+   *
+   * **ต่างจาก `validateFields()` ด้านบน 2 จุดสำคัญ:**
+   * 1. เช็คเพิ่มว่า field นั้น `stOverridable: true` ไหม — field ที่นิยามไว้
+   *    ถูกต้องแต่ไม่ได้เปิด override ก็ยัง block (แยกจาก "ไม่รู้จัก field")
+   * 2. **ไม่เช็ค required field ที่ขาด** เพราะ override เป็น partial update
+   *    (แก้แค่บาง field ของ Config ที่มีอยู่แล้ว) ไม่ใช่การสร้าง/แทนที่ทั้งชุด
+   *    เหมือน `validateFields()` — ถ้าเช็ค required ครบด้วยจะ false-positive
+   *    ทุกครั้งที่ override แค่ 1-2 field จากทั้งหมด
+   */
+  async validateOverridableFields(
+    deviceModel: string,
+    protocol: string,
+    fields: Record<string, unknown>,
+  ): Promise<void> {
+    const defs = await this.prisma.configFieldDefinition.findMany({
+      include: { supportedModels: true },
+    });
+    const defByName = new Map(defs.map((d) => [d.fieldName, d]));
+    const errors: string[] = [];
+
+    for (const [name, value] of Object.entries(fields)) {
+      const def = defByName.get(name);
+      if (!def) {
+        errors.push(
+          `ไม่รู้จัก field "${name}" — ต้องสร้างนิยามในคลัง Parameter ก่อน`,
+        );
+        continue;
+      }
+
+      if (!def.stOverridable) {
+        errors.push(`field "${name}" ไม่อนุญาตให้ override`);
+        continue;
+      }
+
+      const supportsModel = def.supportedModels.some(
+        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+      );
+      if (!supportsModel) {
+        errors.push(
+          `field "${name}" ไม่รองรับรุ่นอุปกรณ์ ${deviceModel}/${protocol}`,
+        );
+        continue;
+      }
+
+      if (!matchesDataType(value, def.dataType)) {
+        errors.push(`field "${name}" ต้องเป็นชนิดข้อมูล ${def.dataType}`);
+        continue;
+      }
+
+      if (
+        def.allowedValues.length > 0 &&
+        !def.allowedValues.includes(String(value))
+      ) {
+        errors.push(
+          `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message: 'ค่าที่ขอ override ไม่ผ่านการตรวจสอบ',
         errors,
       });
     }

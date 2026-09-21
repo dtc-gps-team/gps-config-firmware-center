@@ -95,6 +95,21 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       ),
   },
   {
+    id: "stOverridable",
+    accessorFn: (row) => (row.stOverridable ? "ST override ได้" : "override ไม่ได้"),
+    header: "ST Override",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "ST Override" },
+    cell: ({ row }) =>
+      row.original.stOverridable ? (
+        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-primary">
+          ST override ได้
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
     id: "supportedModels",
     accessorFn: (row) => formatModelSupport(row.supportedModels),
     header: "รุ่น/โปรโตคอลที่รองรับ",

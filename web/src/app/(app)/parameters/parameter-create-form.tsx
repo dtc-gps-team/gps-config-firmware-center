@@ -68,6 +68,7 @@ export function ParameterCreateForm({
   const [dataType, setDataType] = useState<string>("string");
   const [required, setRequired] = useState(false);
   const [unknownSpec, setUnknownSpec] = useState(false);
+  const [stOverridable, setStOverridable] = useState(false);
   const [unit, setUnit] = useState("");
   const [allowedValues, setAllowedValues] = useState<string[]>([]);
   const [optionDraft, setOptionDraft] = useState("");
@@ -156,6 +157,7 @@ export function ParameterCreateForm({
         dataType,
         required,
         ...(unknownSpec ? { unknownSpec: true } : {}),
+        ...(stOverridable ? { stOverridable: true } : {}),
         ...(allowedValues.length ? { allowedValues } : {}),
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
         ...(trimmedUnit ? { unit: trimmedUnit } : {}),
@@ -356,6 +358,17 @@ export function ParameterCreateForm({
                 onCheckedChange={(c) => setUnknownSpec(c === true)}
               />
               ยังไม่มี spec ครบ (รู้แค่ชื่อ + ชนิดข้อมูล)
+            </label>
+            <label
+              className="flex items-center gap-2 text-sm"
+              htmlFor="param-st-overridable"
+            >
+              <Checkbox
+                id="param-st-overridable"
+                checked={stOverridable}
+                onCheckedChange={(c) => setStOverridable(c === true)}
+              />
+              ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้ — OT ไม่มีสิทธิ์นี้)
             </label>
           </div>
 

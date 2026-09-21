@@ -10,6 +10,7 @@ import { CampaignModule } from './campaign/campaign.module';
 import { ConfigModule } from './config/config.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
+import { ConfigOverrideModule } from './config-override/config-override.module';
 import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.module';
 import { CustomerModule } from './customer/customer.module';
 import { DeviceModule } from './device/device.module';
@@ -37,6 +38,7 @@ import { UserModule } from './user/user.module';
     ConfigModule,
     ConfigDefinitionModule,
     ConfigDeletionModule,
+    ConfigOverrideModule,
     ConfigSyncWriterModule,
     CustomerModule,
     DeviceModule,
