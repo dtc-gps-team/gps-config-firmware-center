@@ -36,6 +36,9 @@ export type ConfigFieldDefinition = {
   sensitive: boolean;
   /** ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม */
   restartRequired: boolean;
+  /** ค่าเริ่มต้นของ field นี้ (issue #202) — string ดิบ, parse ตาม dataType
+   * ตอนใช้งานจริง (ConfigWizard auto-fill ตอนสร้าง Config ใหม่เท่านั้น) */
+  defaultValue: string | null;
   supportedModels: ConfigFieldModelSupport[];
   createdAt: string;
   updatedAt: string;
@@ -69,6 +72,8 @@ export type CreateConfigDefinitionInput = {
   sensitive?: boolean;
   /** ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — ไม่บังคับ, default false */
   restartRequired?: boolean;
+  /** ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ, maxLength 255 */
+  defaultValue?: string;
   supportedModels: ConfigFieldModelSupport[];
 };
 

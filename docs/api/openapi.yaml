@@ -2287,6 +2287,14 @@ components:
         restartRequired:
           type: boolean
           description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผลเท่านั้น
+        defaultValue:
+          type: string
+          nullable: true
+          description: >-
+            ค่าเริ่มต้นของ field นี้ (issue #202) — string ดิบ parse ตาม
+            dataType ตอนใช้งานจริง ฝั่ง Web ที่ ConfigWizard auto-fill ตอน
+            สร้าง Config ใหม่เท่านั้น (v3.26) — ไม่ใช้ตอน Clone ที่ยังใช้ค่า
+            จาก Config ต้นทางเหมือนเดิม
         supportedModels:
           type: array
           description: >-
@@ -2363,6 +2371,11 @@ components:
           type: boolean
           default: false
           description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — ไม่บังคับ
+        defaultValue:
+          type: string
+          maxLength: 255
+          description: >-
+            ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ (v3.26)
         supportedModels:
           type: array
           minItems: 1

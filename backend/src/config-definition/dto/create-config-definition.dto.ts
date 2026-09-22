@@ -92,6 +92,14 @@ export class CreateConfigDefinitionDto {
   @IsBoolean()
   restartRequired?: boolean;
 
+  /** ค่าเริ่มต้นของ field นี้ (issue #202) — เก็บเป็น string ดิบ parse ตาม
+   * dataType ตอนใช้งานจริงฝั่ง Web (ConfigWizard auto-fill ตอนสร้าง Config
+   * ใหม่เท่านั้น ไม่ใช่ตอน Clone) ไม่บังคับ, ไม่ผูกกับ validateFields */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  defaultValue?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

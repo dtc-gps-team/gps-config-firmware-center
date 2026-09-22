@@ -80,6 +80,7 @@ export class ConfigDefinitionService {
           category: dto.category,
           sensitive: dto.sensitive ?? false,
           restartRequired: dto.restartRequired ?? false,
+          defaultValue: dto.defaultValue,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({
               deviceModel: m.deviceModel,

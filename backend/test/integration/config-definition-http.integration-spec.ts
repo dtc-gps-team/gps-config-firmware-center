@@ -225,6 +225,42 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       expect((res.body as { unknownSpec: boolean }).unknownSpec).toBe(true);
     });
 
+    it('ConfigEngineer สร้าง field พร้อม defaultValue -> 201 เก็บค่าตามที่ส่ง (issue #202)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, fieldName: 'SIM1', defaultValue: 'internet' })
+        .expect(201);
+
+      expect((res.body as { defaultValue: string | null }).defaultValue).toBe(
+        'internet',
+      );
+    });
+
+    it('ไม่ส่ง defaultValue มา -> 201 คืน defaultValue เป็น null', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validBody)
+        .expect(201);
+
+      expect(
+        (res.body as { defaultValue: string | null }).defaultValue,
+      ).toBeNull();
+    });
+
     it('unknownSpec ไม่ใช่ boolean -> 400 (IsBoolean ที่ DTO)', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',
