@@ -27,6 +27,9 @@ export type ConfigFieldDefinition = {
   description: string | null;
   /** หน่วยของค่า field (เช่น "วินาที", "%") — โชว์ข้างช่องกรอก ไม่ใช้ validate */
   unit: string | null;
+  /** ST override ค่า field นี้บนอุปกรณ์ผ่าน POST /config/{id}/override ได้ไหม
+   * (issue #185) — OT ไม่มีสิทธิ์ override เลยไม่ว่าค่านี้จะเป็นอะไร */
+  stOverridable: boolean;
   /** หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server", "Security") */
   category: string | null;
   /** field เก็บค่าอ่อนไหว — ใช้ซ่อนค่าบนหน้าจอ */
@@ -57,6 +60,9 @@ export type CreateConfigDefinitionInput = {
   description?: string;
   /** หน่วยของค่า (เช่น "วินาที", "%") — ไม่บังคับ, maxLength 20 */
   unit?: string;
+  /** ST override ค่า field นี้บนอุปกรณ์ได้ไหม (issue #185) — ไม่บังคับ
+   * default false (override ไม่ได้เลยจนกว่าจะเปิดชัดเจน) */
+  stOverridable?: boolean;
   /** หมวดหมู่ field (เช่น "Network", "Server", "Security") — ไม่บังคับ */
   category?: string;
   /** field เก็บค่าอ่อนไหว — ไม่บังคับ, default false */

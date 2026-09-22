@@ -404,8 +404,18 @@ model ConfigVersion {
   fields        Json
   deviceModel   String
   protocol      String
+  // ชื่อ field เดิมหมายถึง "ผู้อนุมัติ" (เขียนตอน ConfigService.approve()) —
+  // issue #185 (ST Override) mirror การสร้าง ConfigVersion แบบเดียวกันทุก
+  // ประการ แต่ actor ไม่ใช่ผู้อนุมัติจริง เป็น ST ที่ทำ override — ใช้ field
+  // เดิมนี้เก็บ id ผู้ทำรายการ (semantic กว้างขึ้นเป็น "ผู้ทำให้เกิด version
+  // นี้" ไม่ใช่แค่ "ผู้อนุมัติ" เท่านั้น) แยกแยะ 2 กรณีได้จาก `reason` ด้านล่าง
+  // (null = มาจาก approve() ปกติ, มีค่า = มาจาก override)
   approvedBy    String
   approvedAt    DateTime @default(now())
+  // เหตุผลของ override — บังคับกรอกตอนยิง POST /config/{id}/override (PDF
+  // §19 ข้อ 24: "ทุกการ Override ต้องมีผู้ดำเนินการ เหตุผล และ Audit Log")
+  // เป็น null เสมอสำหรับ version ที่มาจาก approve() ปกติ (ไม่ใช่ override)
+  reason        String?
 
   // onDelete: Restrict ประกาศเจตนาให้ชัด — config ที่มี version จะสถานะ
   // approved/synced เสมอ (กลับไป draft ไม่ได้หลัง approve) จึงไม่มีทางถูก
@@ -470,6 +480,13 @@ model ConfigFieldDefinition {
   // เป็น metadata สำหรับแสดงผลข้างช่องกรอกตอนสร้าง Config (frame 08) เท่านั้น
   // ไม่ถูกใช้ใน validateFields
   unit            String?
+  // ST override ค่า field นี้บนอุปกรณ์ (ผ่าน POST /config/{id}/override) ได้ไหม
+  // — ตั้งโดย ConfigEngineer ตอนสร้าง/แก้ field ใน Parameter Library (issue #185)
+  // ตั้งใจให้ชื่อ field สื่อว่า "เฉพาะ ST" ตรงตัว — OT ไม่ได้สิทธิ์นี้เลยไม่ว่า
+  // ค่านี้จะเป็นอะไร (ไม่มี RBAC grant `config-override` ให้ OT ตั้งแต่ seed.ts)
+  // ถ้าทีมต้องการเปิดให้ role ที่ 3 override ได้ทีหลัง ค่อยขยายเป็น
+  // role-list แทน Boolean เดี่ยว (YAGNI — ตัดสินใจร่วมกับ B 2026-09-18)
+  stOverridable   Boolean  @default(false)
   // 3 field ถัดไปตรงกับ `docs/GPS_Config_Firmware_Center_Design.pdf` §5.1
   // (ตาราง field ของ config_key) + §14.2 (ตัวอย่าง DDL) ตรงตัว — เพิ่มแบบ
   // additive ล้วน ไม่ต้องรอสเปกฟิลด์เต็ม ~262 ค่า เพราะเป็น metadata

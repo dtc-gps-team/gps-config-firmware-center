@@ -46,6 +46,7 @@ import { useConfigVersions } from "@/hooks/use-config-versions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { ConfigReviewPanel } from "./config-review-panel";
+import { ConfigOverridePanel } from "./config-override-panel";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
 function renderFieldValue(value: unknown): string {
@@ -101,6 +102,7 @@ export function ConfigDetailView({ configId }: { configId: string }) {
       key={data.id}
       config={data}
       versions={versions.data ?? []}
+      onOverridden={refetch}
     />
   );
 }
@@ -108,9 +110,11 @@ export function ConfigDetailView({ configId }: { configId: string }) {
 function ConfigDetailContent({
   config,
   versions,
+  onOverridden,
 }: {
   config: Config;
   versions: ConfigVersion[];
+  onOverridden: () => void;
 }) {
   const router = useRouter();
   const { session } = useAuth();
@@ -240,6 +244,8 @@ function ConfigDetailContent({
       </AlertDialog>
 
       {canModify && <ConfigReviewPanel config={config} />}
+
+      <ConfigOverridePanel config={config} onOverridden={onOverridden} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">

@@ -107,12 +107,17 @@ export function canDecideFirmwareApproval(
 }
 
 /**
- * Override Config/Firmware รายเครื่อง — Section 2: ST, OT เท่านั้น
- * (C, R, U, O) ยังไม่มีหน้านี้ scaffold ไว้ใน NAV_ITEMS ตอนนี้ — เตรียมไว้
- * ล่วงหน้าเผื่อเพิ่มหน้านี้ทีหลัง
+ * Per-Field Config Override (issue #185, Phase 1) — resource `config-override`
+ * action `Override` ให้เฉพาะ **ST เท่านั้น** OT ไม่มีสิทธิ์เลยสักฟิลด์ (ต่างจาก
+ * `canOverrideDevice()` เดิมที่เป็น dead code ไม่เคยถูกเรียกใช้จริง และเช็คแบบ
+ * หยาบ `ST || OT` ซึ่งผิดกับดีไซน์จริงที่ยืนยันกับ B แล้ว 2026-09-18 — ลบทิ้ง
+ * แทนที่ด้วยฟังก์ชันนี้) — เช็ค role อย่างเดียวยังไม่พอ ต้องเช็คคู่กับ
+ * `ConfigFieldDefinition.stOverridable` ราย field ด้วยเสมอ (ดู
+ * `config-override-panel.tsx`) และ backend เป็นคนตัดสินจริงอยู่แล้ว
+ * (PermissionGuard + validateOverridableFields) — ฟังก์ชันนี้ควบคุมแค่ UI
  */
-export function canOverrideDevice(role: string | null | undefined): boolean {
-  return role === "ST" || role === "OT";
+export function canOverrideConfig(role: string | null | undefined): boolean {
+  return role === "ST";
 }
 
 /**

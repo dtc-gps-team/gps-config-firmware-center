@@ -64,6 +64,14 @@ export class CreateConfigDefinitionDto {
   @MaxLength(20)
   unit?: string;
 
+  /** ST override ค่า field นี้บนอุปกรณ์ผ่าน `POST /config/{id}/override` ได้
+   * ไหม — ตั้งใน Parameter Library ตอนสร้าง/แก้ field (issue #185) ปล่อยว่าง
+   * ได้ default `false` (override ไม่ได้เลยจนกว่าจะเปิดชัดเจน) — OT ไม่มี
+   * สิทธิ์ override เลยไม่ว่าค่านี้จะเป็นอะไร (ไม่มี RBAC grant ให้ OT) */
+  @IsOptional()
+  @IsBoolean()
+  stOverridable?: boolean;
+
   /** หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server", "Security")
    * — ตรงกับ `docs/GPS_Config_Firmware_Center_Design.pdf` §5.1 ไม่บังคับ,
    * ไม่ใช่ enum เพราะยังไม่รู้ชุดหมวดเต็มจนกว่าจะมีสเปกฟิลด์จริง (~262 ค่า) */
