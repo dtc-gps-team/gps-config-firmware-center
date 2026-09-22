@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { createTestPrisma, resetDb } from './setup';
+import { createTestPrisma, getOrCreateDeviceModel, resetDb } from './setup';
 
 /**
  * Device.simNumber ไม่มี @unique เต็มคอลัมน์ใน schema.prisma — ใช้ partial
@@ -26,12 +26,14 @@ describe('Device.simNumber partial unique index (integration — real postgres)'
   });
 
   it('สอง Device ที่ status ไม่ decommissioned ใช้ simNumber เดียวกัน -> unique violation ที่ error message อ่านออก', async () => {
+    const model = await getOrCreateDeviceModel(prisma, 'GT06N');
     await prisma.device.create({
       data: {
         deviceId: 'DEV-ACTIVE-1',
         simNumber: 'SIM-DUP-0001',
         deviceModel: 'GT06N',
         protocol: 'TCP',
+        modelId: model.id,
       },
     });
 
@@ -48,6 +50,7 @@ describe('Device.simNumber partial unique index (integration — real postgres)'
           simNumber: 'SIM-DUP-0001',
           deviceModel: 'GT06N',
           protocol: 'TCP',
+          modelId: model.id,
         },
       });
     } catch (err) {
@@ -63,6 +66,7 @@ describe('Device.simNumber partial unique index (integration — real postgres)'
   });
 
   it('Device decommissioned ใช้ simNumber เดิม + Device ใหม่ (status registered) ใช้ simNumber เดียวกัน -> สำเร็จทั้งคู่', async () => {
+    const model = await getOrCreateDeviceModel(prisma, 'GT06N');
     const decommissioned = await prisma.device.create({
       data: {
         deviceId: 'DEV-OLD-1',
@@ -70,6 +74,7 @@ describe('Device.simNumber partial unique index (integration — real postgres)'
         deviceModel: 'GT06N',
         protocol: 'TCP',
         status: 'decommissioned',
+        modelId: model.id,
       },
     });
 
@@ -80,6 +85,7 @@ describe('Device.simNumber partial unique index (integration — real postgres)'
         deviceModel: 'GT06N',
         protocol: 'TCP',
         status: 'registered',
+        modelId: model.id,
       },
     });
 

@@ -22,10 +22,12 @@ const installedDevice: Device = {
   simNumber: '0899999999',
   deviceModel: 'GT06N',
   protocol: 'TCP',
+  hardwareRevisionCode: null,
   status: 'installed',
   registeredAt: new Date('2026-01-01T00:00:00.000Z'),
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
   customerId: null,
+  modelId: 'dm-1',
 };
 
 const registeredDevice: Device = {

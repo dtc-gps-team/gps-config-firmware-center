@@ -361,6 +361,16 @@ async function main() {
     grant('Admin', 'user-management', 'Create'),
     grant('Admin', 'user-management', 'Read'),
     grant('Admin', 'user-management', 'Update'),
+
+    // ---- device-model (DeviceModel registry — issue #209, docs/15) ----
+    // Admin/SuperAdmin เท่านั้นที่สร้าง/แก้ได้ (master/reference data ที่
+    // เพิ่มไม่บ่อย — mirror pattern เดียวกับ user-management ไม่ใช่
+    // self-service แบบ config-definition ที่ ConfigEngineer เพิ่มบ่อยตามงาน
+    // จริง) SuperAdmin ได้อัตโนมัติจากการ copy สิทธิ์ Admin ด้านล่าง —
+    // `GET /device-models` **ไม่ต้องมี grant เลย** เพราะไม่มี PermissionGuard
+    // (เปิดกว้างให้ทุก role ที่ login แล้วอ่านได้ mirror `GET /users`)
+    grant('Admin', 'device-model', 'Create'),
+    grant('Admin', 'device-model', 'Update'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----
@@ -925,19 +935,56 @@ async function main() {
     });
   }
 
+  // DeviceModel registry (issue #209, docs/15) — canonical registry ของ
+  // "รุ่นสินค้า" แทน string อิสระเดิม backfill จากค่า `deviceModel`/`protocol`
+  // ที่ distinct อยู่แล้วในข้อมูลปัจจุบัน (`demoDevices` ด้านบน) ทั้งคู่ใช้
+  // แค่ protocol เดียว (TCP) จริงตอนนี้ — ไม่ auto-map เดา ระบุตรงๆ ทีละรุ่น
+  // ตามที่ตกลงไว้ (ห้าม auto-map เหมารวมแบบไม่ตรวจสอบ)
+  const DEVICE_MODELS: {
+    name: string;
+    supportedProtocols: string[];
+  }[] = [
+    { name: 'GT06N', supportedProtocols: ['TCP'] },
+    { name: 'GT06L', supportedProtocols: ['TCP'] },
+  ];
+
+  const deviceModelByName = new Map<string, { id: string }>();
+  for (const m of DEVICE_MODELS) {
+    const row = await prisma.deviceModel.upsert({
+      where: { name: m.name },
+      update: { supportedProtocols: m.supportedProtocols },
+      create: m,
+    });
+    deviceModelByName.set(m.name, row);
+  }
+
   for (const { customerName, ...d } of demoDevices) {
     const customer = customerName
       ? await prisma.customer.findUniqueOrThrow({
           where: { companyName: customerName },
         })
       : null;
+    // modelId backfill (issue #209 migration step 1 — nullable ก่อน) — ทุก
+    // deviceModel string ใน demoDevices ต้องมีคู่ใน DEVICE_MODELS เสมอ
+    // (ถ้าไม่มีคือลืมเพิ่ม DEVICE_MODELS ตอนเพิ่ม demoDevice รุ่นใหม่ —
+    // ให้พังทันทีตอน seed ดีกว่าเงียบๆ)
+    const model = deviceModelByName.get(d.deviceModel);
+    if (!model) {
+      throw new Error(
+        `demoDevices ใช้ deviceModel "${d.deviceModel}" ที่ไม่มีอยู่ใน DEVICE_MODELS — เพิ่มเข้า DEVICE_MODELS ก่อน`,
+      );
+    }
     await prisma.device.upsert({
       where: { deviceId: d.deviceId },
-      update: {},
+      // update ด้วย เพื่อ backfill modelId ให้แถวที่เคย seed ไว้ก่อนรอบนี้
+      // (mirror pattern เดียวกับที่ configFieldDefinitions backfill unit/
+      // stOverridable/category/sensitive/restartRequired ด้านบน)
+      update: { modelId: model.id },
       create: {
         ...d,
         installedAt: d.status === 'installed' ? new Date() : null,
         customerId: customer?.id,
+        modelId: model.id,
       },
     });
   }
