@@ -77,17 +77,18 @@ export class DeviceService {
    * เพิ่ม cursor paging ทีหลังได้ถ้าข้อมูลโต
    *
    * เพิ่ม `customer` แบบย่อเข้ามาด้วย (docs/12 เฟส B) ให้ Device Search แสดง/
-   * กรองตามลูกค้าได้ — ยัง**ไม่มี query param กรองตาม customerId ในรอบนี้**
-   * (แค่แสดงผล ยังไม่ทำ filter ฝั่ง backend รอดูก่อนว่า filter ฝั่ง client
-   * พอไหมเหมือน deviceModel/protocol/status ที่ผ่านมา)
+   * กรองตามลูกค้าได้ · **filter `customerId` ที่ backend เพิ่มแล้ว (issue #204)**
+   * — Mobile ใช้ดึง "รายการอุปกรณ์ของบริษัทที่เลือก" มา group ตาม deviceModel
+   * เอง (เดิมมีแค่แสดงผลฝั่ง client อย่างเดียว)
    */
   findAll(query: QueryDeviceDto): Promise<DeviceWithCustomer[]> {
-    const { search, deviceModel, protocol, status } = query;
+    const { search, deviceModel, protocol, status, customerId } = query;
 
     const where: Prisma.DeviceWhereInput = {
       deviceModel: deviceModel || undefined,
       protocol: protocol || undefined,
       status: status || undefined,
+      customerId: customerId || undefined,
     };
     if (search) {
       where.OR = [

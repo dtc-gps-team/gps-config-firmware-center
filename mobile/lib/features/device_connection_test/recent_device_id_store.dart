@@ -11,6 +11,10 @@ import '../../core/config/app_config.dart';
 abstract class RecentDeviceIdStore {
   Future<List<String>> read();
   Future<void> add(String deviceId);
+
+  /// Wipes the history — called on logout (issue #204) so the next person to
+  /// log in on this device doesn't see the previous tech's recent device IDs.
+  Future<void> clear();
 }
 
 class SharedPreferencesRecentDeviceIdStore implements RecentDeviceIdStore {
@@ -33,6 +37,12 @@ class SharedPreferencesRecentDeviceIdStore implements RecentDeviceIdStore {
       _key,
       current.length > maxEntries ? current.sublist(0, maxEntries) : current,
     );
+  }
+
+  @override
+  Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
   }
 }
 
@@ -58,6 +68,11 @@ class InMemoryRecentDeviceIdStore implements RecentDeviceIdStore {
         _ids.length,
       );
     }
+  }
+
+  @override
+  Future<void> clear() async {
+    _ids.clear();
   }
 }
 
