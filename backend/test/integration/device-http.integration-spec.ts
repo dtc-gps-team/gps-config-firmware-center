@@ -332,6 +332,34 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(body.details.length).toBeGreaterThan(0);
       expect(Number.isNaN(Date.parse(body.appliedAt))).toBe(false);
     });
+
+    it('ST + apply สำเร็จ -> AuditLog แถวจริงใน DB มี metadata ครบ (deviceId/configId/fieldNames, issue #205)', async () => {
+      await makeDevice('AC-205', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const token = tokenFor(stUser.id, 'ST');
+      const configId = await makeConfig('approved');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-205/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      const log = await prisma.auditLog.findFirst({
+        where: {
+          userId: stUser.id,
+          auditModule: 'device',
+          action: 'apply-config',
+        },
+      });
+      expect(log).not.toBeNull();
+      expect(log?.metadata).toEqual({
+        deviceId: 'AC-205',
+        configId,
+        fieldNames: ['APN'],
+      });
+    });
   });
 
   describe('POST /devices/:deviceId/simulate-config', () => {

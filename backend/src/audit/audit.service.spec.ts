@@ -9,6 +9,7 @@ const entry: AuditLog = {
   auditModule: 'config',
   action: 'create',
   ipAddress: null,
+  metadata: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
