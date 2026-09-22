@@ -154,12 +154,26 @@ class ApiClient {
 
   /// `GET /devices` — Device Search. Every logged-in role may call it
   /// (RBAC_Matrix.md §2 "Device Search / Device Detail" = R for every role).
-  /// No query params: returns every device. Mobile filters/searches client-side
-  /// like Web does (the list is small in the MVP).
-  Future<List<Device>> listDevices() async {
+  /// `customerId` (issue #204) filters server-side to one company's devices —
+  /// omit it to get every device (Mobile filters/searches client-side
+  /// elsewhere, like Web does, since the list is small in the MVP).
+  Future<List<Device>> listDevices({String? customerId}) async {
     return _wrapList(
-      () => _dio.get<List<dynamic>>('/devices'),
+      () => _dio.get<List<dynamic>>(
+        '/devices',
+        queryParameters: customerId != null ? {'customerId': customerId} : null,
+      ),
       Device.fromJson,
+    );
+  }
+
+  /// `GET /customers` — every logged-in role may call it (no PermissionGuard,
+  /// mirrors `GET /users`). Feeds the "เลือกบริษัท" step of the ทดสอบสัญญาณ
+  /// flow (issue #204).
+  Future<List<Customer>> listCustomers() async {
+    return _wrapList(
+      () => _dio.get<List<dynamic>>('/customers'),
+      Customer.fromJson,
     );
   }
 

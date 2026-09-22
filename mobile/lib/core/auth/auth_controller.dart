@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/device_connection_test/recent_device_id_store.dart';
 import '../../features/push_notification/push_notification_service.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
@@ -176,6 +177,9 @@ class AuthController extends Notifier<AuthState> {
     await ref.read(pushNotificationServiceProvider).unregisterAndStop();
     await _tokenStore.clear();
     await _profileStore.clear();
+    // ล้างประวัติเลขเครื่องที่เคยทดสอบสัญญาณ (issue #204) — กันช่างคนถัดไปที่
+    // login เข้าเครื่องเดียวกันเห็นประวัติของคนก่อนหน้า
+    await ref.read(recentDeviceIdStoreProvider).clear();
     ref.read(apiClientProvider).setAuthToken(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

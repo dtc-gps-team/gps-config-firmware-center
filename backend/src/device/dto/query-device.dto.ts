@@ -1,5 +1,5 @@
 import { DeviceLifecycleStatus } from '@prisma/client';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { DEVICE_LIFECYCLE_STATUSES } from '../device-lifecycle-status';
 
 /**
@@ -10,6 +10,14 @@ import { DEVICE_LIFECYCLE_STATUSES } from '../device-lifecycle-status';
  * (case-insensitive) — ตรง UI ที่มีช่องค้นหาช่องเดียว · `deviceModel`/`protocol`/
  * `status` = filter ตรงตัว (dropdown จากค่าจริงในข้อมูล ตาม UI standard
  * ../planning/01_GPS_Build_Reference.md §3)
+ *
+ * `customerId` (issue #204) — ให้ Mobile ดึง "รายการอุปกรณ์ของบริษัทที่เลือก"
+ * มา group ตาม deviceModel เอง ก่อนหน้านี้ `Device.customerId` แสดง/กรองได้
+ * แค่ฝั่ง client เท่านั้น (docs/12 เฟส B) ตัวนี้เปิดให้ filter ที่ backend ได้
+ * จริง — อุปกรณ์ที่ `customerId` เป็น `null` (ยังไม่ผูกบริษัท) จะไม่ถูกคืน
+ * เมื่อส่ง filter นี้มา (ตรงตามเจตนา — หน้าจอ "เลือกจากรายการ" ของ Mobile ใช้
+ * เฉพาะอุปกรณ์ที่ผูกบริษัทแล้วเท่านั้น ส่วนเครื่องที่ยังไม่ผูกยังพิมพ์
+ * device ID เองได้ตามช่องทางเดิม)
  */
 export class QueryDeviceDto {
   @IsOptional()
@@ -30,4 +38,8 @@ export class QueryDeviceDto {
   @IsOptional()
   @IsIn(DEVICE_LIFECYCLE_STATUSES)
   status?: DeviceLifecycleStatus;
+
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }

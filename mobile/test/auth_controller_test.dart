@@ -5,6 +5,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 
 class _NoopAuthRepository implements AuthRepository {
@@ -101,6 +102,11 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
       // one would call `Firebase.initializeApp()` and fail with no binding.
       pushNotificationServiceProvider.overrideWithValue(
         _FakePushNotificationService(),
+      ),
+      // logout() clears this too (issue #204) — override so no test in this
+      // file accidentally touches the real SharedPreferences-backed store.
+      recentDeviceIdStoreProvider.overrideWithValue(
+        InMemoryRecentDeviceIdStore(),
       ),
     ],
   );
@@ -351,6 +357,9 @@ void main() {
           pushNotificationServiceProvider.overrideWithValue(
             _FakePushNotificationService(),
           ),
+          recentDeviceIdStoreProvider.overrideWithValue(
+            InMemoryRecentDeviceIdStore(),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -361,6 +370,33 @@ void main() {
       expect(await profileStore.read(), isNull);
     },
   );
+
+  test('logout clears the recent-device-id history so the next tech to log in '
+      'on this device does not see the previous one\'s (issue #204)', () async {
+    final recentStore = InMemoryRecentDeviceIdStore(['DEV-OLD']);
+    final container = ProviderContainer(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore('saved-token')),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(
+            const SessionProfile('st.test', UserRole.st),
+          ),
+        ),
+        pushNotificationServiceProvider.overrideWithValue(
+          _FakePushNotificationService(),
+        ),
+        recentDeviceIdStoreProvider.overrideWithValue(recentStore),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(await recentStore.read(), ['DEV-OLD']);
+
+    await container.read(authControllerProvider.notifier).logout();
+
+    expect(await recentStore.read(), isEmpty);
+  });
 
   group('push notification hook', () {
     test('login success calls PushNotificationService.initializeAndRegister() '
@@ -405,6 +441,9 @@ void main() {
               ),
             ),
             pushNotificationServiceProvider.overrideWithValue(fakePush),
+            recentDeviceIdStoreProvider.overrideWithValue(
+              InMemoryRecentDeviceIdStore(),
+            ),
           ],
         );
         addTearDown(container.dispose);

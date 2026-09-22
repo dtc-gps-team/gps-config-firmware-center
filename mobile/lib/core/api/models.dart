@@ -453,6 +453,23 @@ class Device {
   }
 }
 
+/// ลูกค้าแบบย่อ — mirrors `GET /customers` (`CustomerSummary` backend-side,
+/// issue #204) id + ชื่อบริษัทเท่านั้น ใช้เป็นรายการให้เลือกก่อนดูอุปกรณ์ของ
+/// บริษัทนั้นในหน้า "ทดสอบสัญญาณ" (เลือกบริษัท → เห็นอุปกรณ์ของบริษัทนั้น)
+class Customer {
+  const Customer({required this.id, required this.companyName});
+
+  final String id;
+  final String companyName;
+
+  factory Customer.fromJson(Map<String, dynamic> json) {
+    return Customer(
+      id: json['id'] as String,
+      companyName: json['companyName'] as String? ?? '',
+    );
+  }
+}
+
 /// เหตุการณ์ผิดปกติ — mirrors `docs/api/openapi.yaml` `Incident` (Prisma model
 /// `Incident`). `GET /incidents` / `GET /incidents/{id}` return this shape.
 ///

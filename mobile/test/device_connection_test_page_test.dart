@@ -149,6 +149,21 @@ void main() {
     expect(find.text('เซิร์ฟเวอร์ผิดพลาด'), findsOneWidget);
   });
 
+  testWidgets(
+    'ปุ่ม "เลือกจากรายการ" (issue #204) อยู่คู่กับช่องพิมพ์เอง ไม่ได้แทนที่กัน',
+    (tester) async {
+      await _pump(tester, _FakeRepo());
+
+      // ช่องพิมพ์เดิมยังอยู่
+      expect(find.byKey(const Key('device_id_input')), findsOneWidget);
+      // ปุ่มเลือกจากรายการเป็นทางเลือกเพิ่ม ไม่ใช่แทนที่
+      expect(
+        find.byKey(const Key('device_connection_pick_from_list')),
+        findsOneWidget,
+      );
+    },
+  );
+
   group('ประวัติล่าสุด', () {
     testWidgets('ยังไม่มีประวัติ -> ไม่โชว์แถวชิปเลย', (tester) async {
       await _pump(tester, _FakeRepo());

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/login_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
+import '../../features/device_connection_test/company_device_picker_page.dart';
 import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/device_search/device_detail_page.dart';
 import '../../features/device_search/device_search_page.dart';
@@ -24,6 +25,12 @@ class AppRoutes {
   static const home = '/home';
   static const simulator = '/simulator';
   static const deviceConnectionTest = '/device-connection-test';
+
+  /// "เลือกจากรายการ" step of ทดสอบสัญญาณ (issue #204) — เลือกบริษัท →
+  /// เลือกอุปกรณ์ pop กลับไปที่ [deviceConnectionTest] พร้อม `deviceId` ที่
+  /// เลือก (ผ่าน `context.push<String>(...)`) ไม่ใช่ทางเข้าเองจาก Home
+  static const deviceConnectionTestPicker =
+      '/device-connection-test/pick-device';
   static const notifications = '/notifications';
 
   /// Incident list (read-only) — `/incidents`.
@@ -101,6 +108,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.deviceConnectionTest,
         builder: (context, state) => const DeviceConnectionTestPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceConnectionTestPicker,
+        builder: (context, state) => const CompanyDevicePickerPage(),
       ),
       GoRoute(
         path: AppRoutes.incidents,
