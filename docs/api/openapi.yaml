@@ -35,6 +35,12 @@ tags:
     description: สถานะ Config และ Firmware รายกล่อง
   - name: device
     description: การทำงานกับตัวกล่อง — ทดสอบการเชื่อมต่อ/สัญญาณ
+  - name: device-model
+    description: >-
+      DeviceModel registry (issue #209, docs/15) — canonical registry ของ
+      "รุ่นสินค้า" แทน string อิสระเดิมที่กระจายอยู่ในหลายตาราง สร้าง/แก้ได้
+      แค่ Admin/SuperAdmin (master/reference data) อ่านเปิดกว้างให้ทุก role
+      ที่ login แล้ว
   - name: task
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
   - name: notification
@@ -1637,6 +1643,120 @@ paths:
         "404":
           description: ไม่พบผู้ใช้ id นี้ (รวมถึงกรณีที่ user มีอยู่จริงแต่ role เป็น Admin/SuperAdmin)
 
+  /device-models:
+    get:
+      tags: [device-model]
+      operationId: listDeviceModels
+      summary: รายชื่อรุ่นอุปกรณ์ทั้งหมด (v3.28, issue #209)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
+        PermissionGuard — pattern เดียวกับ `/users`/`/customers`) · เรียงตาม
+        ชื่อรุ่น · ใช้ทำ dropdown เลือกรุ่นตอนสร้าง Config/เพิ่มอุปกรณ์
+      responses:
+        "200":
+          description: รายชื่อรุ่นอุปกรณ์ทั้งหมด (เรียงตามชื่อ)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceModel"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+    post:
+      tags: [device-model]
+      operationId: createDeviceModel
+      summary: สร้างรุ่นอุปกรณ์ใหม่ (Admin/SuperAdmin เท่านั้น — v3.28, issue #209)
+      description: >-
+        resource `device-model` action `Create` — Admin/SuperAdmin เท่านั้น
+        (master/reference data ที่เพิ่มไม่บ่อย) · `supportedProtocols` บังคับ
+        อย่างน้อย 1 ค่า — กันสร้างรุ่นที่ไม่มี protocol เลยจนสร้าง Config ให้
+        รุ่นนั้นไม่ได้ถาวร (`ConfigService.create()`/`update()` enforce ว่า
+        `Config.protocol` ต้องอยู่ในลิสต์นี้จริง)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeviceModelInput"
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceModel"
+        "400":
+          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่า)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์สร้างรุ่นอุปกรณ์ — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
+        "409":
+          description: มีรุ่นอุปกรณ์ชื่อนี้อยู่แล้ว
+
+  /device-models/{deviceModelId}:
+    get:
+      tags: [device-model]
+      operationId: getDeviceModel
+      summary: รายละเอียดรุ่นอุปกรณ์ 1 ตัว (v3.28, issue #209)
+      description: ทุก Role ที่ login แล้วเรียกได้ (เหมือน listDeviceModels)
+      parameters:
+        - in: path
+          name: deviceModelId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายละเอียดรุ่นอุปกรณ์
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceModel"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบรุ่นอุปกรณ์ id นี้
+    patch:
+      tags: [device-model]
+      operationId: updateDeviceModel
+      summary: แก้ไขรุ่นอุปกรณ์ (Admin/SuperAdmin เท่านั้น — v3.28, issue #209)
+      description: >-
+        resource `device-model` action `Update` — Admin/SuperAdmin เท่านั้น
+        · ไม่มี hard delete ใช้ `status: discontinued` แทน · ไม่มี `name` ให้
+        แก้ (ต้องตรงกับ string เดิมที่กระจายอยู่ทั่วระบบเป๊ะ — เปลี่ยนชื่อ
+        รุ่นทีหลังเสี่ยงทำให้ Device/Config ที่อ้างชื่อเดิมหาไม่เจอ)
+      parameters:
+        - in: path
+          name: deviceModelId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeviceModelInput"
+      responses:
+        "200":
+          description: แก้ไขสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceModel"
+        "400":
+          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่า)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้รุ่นอุปกรณ์นี้ — เฉพาะ Role Admin (และ SuperAdmin) เท่านั้น
+        "404":
+          description: ไม่พบรุ่นอุปกรณ์ id นี้
+
   /customers:
     get:
       tags: [customer]
@@ -1978,6 +2098,112 @@ components:
           description: Role code ที่ไม่ใช่ Admin/SuperAdmin (400 ถ้าเป็น 2 role นี้)
         isActive:
           type: boolean
+
+    DeviceModelStatus:
+      type: string
+      enum: [active, discontinued]
+      description: >-
+        active = ยังผลิต/สั่งซื้อได้ปกติ, discontinued = เลิกผลิตแล้วแต่
+        เครื่องที่ใช้งานอยู่ยังทำงานได้ตามปกติ
+
+    DeviceModel:
+      type: object
+      description: >-
+        รุ่นอุปกรณ์ (v3.28, issue #209, docs/15) — canonical registry แทน
+        string อิสระเดิมที่กระจายอยู่ใน Device/Config/Firmware/
+        ConfigFieldDefinitionModelSupport (ยังไม่ migrate 3 ตัวหลังไปใช้
+        modelId ในรอบนี้)
+      required:
+        [id, name, supportedProtocols, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: GT06N
+          description: ต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ
+        manufacturer:
+          type: string
+          nullable: true
+        supportedProtocols:
+          type: array
+          items:
+            type: string
+          description: >-
+            โปรโตคอลที่รุ่นนี้รองรับ — enforce จริงตอนสร้าง/แก้ Config
+            (Config.protocol ต้องอยู่ในลิสต์นี้ ไม่งั้น 400)
+        status:
+          $ref: "#/components/schemas/DeviceModelStatus"
+        warrantyMonths:
+          type: integer
+          nullable: true
+        endOfSupportDate:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateDeviceModelInput:
+      type: object
+      required: [name, supportedProtocols]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        manufacturer:
+          type: string
+          maxLength: 100
+        supportedProtocols:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: บังคับอย่างน้อย 1 ค่า
+        status:
+          $ref: "#/components/schemas/DeviceModelStatus"
+        warrantyMonths:
+          type: integer
+          minimum: 0
+        endOfSupportDate:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          maxLength: 1000
+
+    UpdateDeviceModelInput:
+      type: object
+      description: ทุก field optional — ส่งแค่ตัวที่จะแก้ก็พอ (ไม่มี `name` ให้แก้)
+      properties:
+        manufacturer:
+          type: string
+          maxLength: 100
+        supportedProtocols:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        status:
+          $ref: "#/components/schemas/DeviceModelStatus"
+        warrantyMonths:
+          type: integer
+          minimum: 0
+        endOfSupportDate:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          maxLength: 1000
 
     CampaignPayloadType:
       type: string

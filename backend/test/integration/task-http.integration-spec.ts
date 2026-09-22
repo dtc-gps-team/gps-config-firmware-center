@@ -11,6 +11,7 @@ import { PrismaModule } from '../../src/prisma/prisma.module';
 import { TaskModule } from '../../src/task/task.module';
 import {
   createTestPrisma,
+  getOrCreateDeviceModel,
   makeUser,
   resetDb,
   TEST_DATABASE_URL,
@@ -336,6 +337,7 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       const opUser = await makeUser(prisma, { role: 'Operation' });
       const otUser = await makeUser(prisma, { role: 'OT' });
       const configId = await makeConfig('approved', { deviceModel: 'GT06N' });
+      const otherModel = await getOrCreateDeviceModel(prisma, 'GT06L');
       await prisma.device.create({
         data: {
           deviceId: 'DEV-CFG-409',
@@ -343,6 +345,7 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
           deviceModel: 'GT06L',
           protocol: 'TCP',
           status: 'installed',
+          modelId: otherModel.id,
         },
       });
       const token = tokenFor(opUser.id, 'Operation');
