@@ -1,5 +1,6 @@
 "use client";
 
+// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอน override เช่นกัน ยังไม่ implement
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 

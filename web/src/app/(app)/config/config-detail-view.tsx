@@ -1,5 +1,6 @@
 "use client";
 
+// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอนแสดงผล (detail/JSON preview) ยังไม่ implement
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";

@@ -1,5 +1,6 @@
 "use client";
 
+// TODO(#200): พิจารณาว่าคอลัมน์ที่โชว์ default/ตัวอย่างค่าควร mask field sensitive ด้วยไหม ยังไม่ implement
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ListIcon } from "lucide-react";

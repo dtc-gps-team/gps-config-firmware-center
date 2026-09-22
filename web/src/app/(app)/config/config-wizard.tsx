@@ -1,5 +1,6 @@
 "use client";
 
+// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอนกรอกในฟอร์มนี้ ยังไม่ implement
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, XIcon } from "lucide-react";

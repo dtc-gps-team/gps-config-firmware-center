@@ -1,5 +1,6 @@
 "use client";
 
+// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่า (input type password) ยังไม่ implement
 import { useMemo, useState } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
