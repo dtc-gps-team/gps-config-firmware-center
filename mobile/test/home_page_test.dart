@@ -7,6 +7,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -518,6 +519,13 @@ void main() {
         taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
         notificationRepositoryProvider.overrideWithValue(
           _FakeNotificationRepository(),
+        ),
+        // logout() clears this too (issue #204) — without an override it
+        // falls through to the real SharedPreferences-backed store, which
+        // throws (no plugin binding in this test) before logout() reaches
+        // `state = ...unauthenticated`.
+        recentDeviceIdStoreProvider.overrideWithValue(
+          InMemoryRecentDeviceIdStore(),
         ),
       ],
     );

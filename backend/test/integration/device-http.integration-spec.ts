@@ -604,6 +604,57 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(body.map((d) => d.deviceId)).toEqual(['DF-A']);
     });
 
+    it('filter customerId -> คืนเฉพาะอุปกรณ์ของลูกค้านั้น ไม่รวมเครื่องที่ customerId ว่าง (issue #204)', async () => {
+      const customerA = await prisma.customer.create({
+        data: { companyName: `Cus-A-${randomUUID()}` },
+      });
+      const customerB = await prisma.customer.create({
+        data: { companyName: `Cus-B-${randomUUID()}` },
+      });
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      await prisma.device.create({
+        data: {
+          deviceId: 'CF-A1',
+          simNumber: `sim-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+          customerId: customerA.id,
+          modelId: model.id,
+        },
+      });
+      await prisma.device.create({
+        data: {
+          deviceId: 'CF-B1',
+          simNumber: `sim-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+          customerId: customerB.id,
+          modelId: model.id,
+        },
+      });
+      await makeDevice('CF-UNLINKED', 'installed');
+      const token = await auditorToken();
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/devices?customerId=${customerA.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { deviceId: string }[];
+      expect(body.map((d) => d.deviceId)).toEqual(['CF-A1']);
+    });
+
+    it('customerId ไม่ใช่ uuid -> 400', async () => {
+      const token = await auditorToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices?customerId=not-a-uuid')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
     it('search match deviceId หรือ simNumber (contains)', async () => {
       await makeDevice('SRCH-9', 'installed');
       const token = await auditorToken();

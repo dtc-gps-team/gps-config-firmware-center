@@ -39,5 +39,18 @@ void main() {
       expect(result, ['DEV-6', 'DEV-5', 'DEV-4', 'DEV-3', 'DEV-2']);
       expect(result, isNot(contains('DEV-1')));
     });
+
+    test(
+      'clear() ล้างประวัติทั้งหมด (issue #204 — ต้องไม่เหลือของ session ก่อนหน้า)',
+      () async {
+        final store = InMemoryRecentDeviceIdStore();
+        await store.add('DEV-1');
+        await store.add('DEV-2');
+
+        await store.clear();
+
+        expect(await store.read(), isEmpty);
+      },
+    );
   });
 }

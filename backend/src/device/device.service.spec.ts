@@ -121,6 +121,7 @@ describe('DeviceService', () => {
           deviceModel: undefined,
           protocol: undefined,
           status: undefined,
+          customerId: undefined,
         },
         orderBy: { deviceId: 'asc' },
         include: CUSTOMER_INCLUDE,
@@ -141,6 +142,26 @@ describe('DeviceService', () => {
           deviceModel: 'GT06N',
           protocol: 'TCP',
           status: 'installed',
+          customerId: undefined,
+        },
+        orderBy: { deviceId: 'asc' },
+        include: CUSTOMER_INCLUDE,
+      });
+    });
+
+    it('มี customerId -> ส่งต่อ Prisma ตรงๆ (issue #204)', async () => {
+      device.findMany.mockResolvedValue([]);
+
+      await service.findAll({
+        customerId: '33333333-3333-3333-3333-333333333333',
+      });
+
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceModel: undefined,
+          protocol: undefined,
+          status: undefined,
+          customerId: '33333333-3333-3333-3333-333333333333',
         },
         orderBy: { deviceId: 'asc' },
         include: CUSTOMER_INCLUDE,
@@ -157,6 +178,7 @@ describe('DeviceService', () => {
           deviceModel: undefined,
           protocol: undefined,
           status: undefined,
+          customerId: undefined,
           OR: [
             { deviceId: { contains: '0001', mode: 'insensitive' } },
             { simNumber: { contains: '0001', mode: 'insensitive' } },

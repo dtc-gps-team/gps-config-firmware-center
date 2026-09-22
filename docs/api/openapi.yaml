@@ -1210,6 +1210,16 @@ paths:
           schema:
             type: string
             enum: [registered, installed, decommissioned]
+        - in: query
+          name: customerId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: >-
+            กรองเฉพาะอุปกรณ์ของลูกค้ารายนี้ (v3.28, issue #204) — เครื่องที่
+            `customerId` เป็น `null` (ยังไม่ผูกบริษัท) จะไม่ถูกคืนเมื่อส่ง
+            filter นี้มา
       responses:
         "200":
           description: รายการ Device (เรียงตาม deviceId)
@@ -1220,7 +1230,9 @@ paths:
                 items:
                   $ref: "#/components/schemas/Device"
         "400":
-          description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
+          description: >-
+            ค่า status ไม่อยู่ใน enum, query param ยาวเกินกำหนด, หรือ
+            customerId ไม่ใช่ uuid
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
 

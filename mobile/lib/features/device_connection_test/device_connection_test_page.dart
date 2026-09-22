@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
 import 'device_connection_test_repository.dart';
 import 'recent_device_id_store.dart';
 
@@ -77,6 +79,19 @@ class _DeviceConnectionTestPageState
     setState(() {});
   }
 
+  /// "เลือกจากรายการ" (issue #204) — flow ใหม่ที่อยู่คู่กับการพิมพ์เลขเครื่อง
+  /// เอง: เปิดหน้าเลือกบริษัท → เลือกอุปกรณ์ แล้วรับ `deviceId` ที่เลือกกลับมา
+  /// เติมลงช่องเดิม ไม่ยิง API ทดสอบให้อัตโนมัติ — ช่างยังกดปุ่ม "ทดสอบสัญญาณ"
+  /// เองเหมือนเดิมทุกทาง (ทั้งพิมพ์เองและเลือกจากรายการ)
+  Future<void> _pickFromList() async {
+    final selected = await context.push<String>(
+      AppRoutes.deviceConnectionTestPicker,
+    );
+    if (selected == null || !mounted) return;
+    _deviceIdController.text = selected;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final result = _result;
@@ -96,6 +111,16 @@ class _DeviceConnectionTestPageState
             decoration: const InputDecoration(
               labelText: 'เลขเครื่อง (Device ID)',
               hintText: 'เช่น DEV-001',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const Key('device_connection_pick_from_list'),
+              onPressed: _running ? null : _pickFromList,
+              icon: const Icon(Icons.apartment_outlined, size: 18),
+              label: const Text('เลือกจากรายการ (ตามบริษัท)'),
             ),
           ),
           if (recentIds != null && recentIds.isNotEmpty) ...[
