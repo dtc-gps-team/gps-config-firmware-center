@@ -392,4 +392,103 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       expect((res.body as { configId: string }).configId).toBe(configId);
     });
   });
+
+  describe('GET /tasks scope (issue #73 — default-deny ผ่าน guard chain จริง)', () => {
+    /** `TaskController` ใช้แค่ `JwtAuthGuard` ไม่มี `PermissionGuard` — ทุก role
+     * ที่ login ได้ยิง `GET /tasks` ผ่านได้เสมอ ตัว scope จริงมาจาก
+     * `TaskService.findAll()` ล้วนๆ (`UNSCOPED_TASK_ROLES`) — เทสชุดนี้พิสูจน์
+     * ว่า scope ทำงานถูกต้องตลอด guard chain จริง ไม่ใช่แค่ mock Prisma ใน
+     * unit test (`task.service.spec.ts`) */
+    async function seedTwoTasks() {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      await prisma.task.create({
+        data: { title: 'task-a', assignedTo: stUser.id },
+      });
+      await prisma.task.create({
+        data: { title: 'task-b', assignedTo: otUser.id },
+      });
+      return { stUser, otUser };
+    }
+
+    it('ST เห็นแค่งานตัวเอง แม้มีงานของคนอื่นในระบบ', async () => {
+      const { stUser } = await seedTwoTasks();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/tasks')
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .expect(200);
+
+      const body = res.body as { assignedTo: string }[];
+      expect(body).toHaveLength(1);
+      expect(body[0].assignedTo).toBe(stUser.id);
+    });
+
+    it('OT เห็นแค่งานตัวเอง แม้มีงานของคนอื่นในระบบ', async () => {
+      const { otUser } = await seedTwoTasks();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/tasks')
+        .set('Authorization', `Bearer ${tokenFor(otUser.id, 'OT')}`)
+        .expect(200);
+
+      const body = res.body as { assignedTo: string }[];
+      expect(body).toHaveLength(1);
+      expect(body[0].assignedTo).toBe(otUser.id);
+    });
+
+    it.each(['Operation', 'Auditor', 'Admin'] as const)(
+      'role %s (อยู่ใน UNSCOPED_TASK_ROLES) เห็นงานของทุกคน',
+      async (roleCode) => {
+        await seedTwoTasks();
+        const actor = await makeUser(prisma, { role: roleCode });
+
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/tasks')
+          .set('Authorization', `Bearer ${tokenFor(actor.id, roleCode)}`)
+          .expect(200);
+
+        expect(res.body).toHaveLength(2);
+      },
+    );
+
+    it('issue #73 — role ที่ไม่อยู่ใน UNSCOPED_TASK_ROLES ถูก self-scope เป็น default (เช่น ConfigEngineer ที่ไม่เคยมีงานเลย ต้องได้ [] ไม่ใช่งานของ ST/OT)', async () => {
+      await seedTwoTasks();
+      const ceUser = await makeUser(prisma, { role: 'ConfigEngineer' });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/tasks')
+        .set('Authorization', `Bearer ${tokenFor(ceUser.id, 'ConfigEngineer')}`)
+        .expect(200);
+
+      expect(res.body).toEqual([]);
+    });
+
+    it('ST ส่ง ?assignedTo=<คนอื่น> มาทาง query -> backend เพิกเฉย ยังบังคับเป็นของตัวเองเสมอ', async () => {
+      const { stUser, otUser } = await seedTwoTasks();
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/tasks?assignedTo=${otUser.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .expect(200);
+
+      const body = res.body as { assignedTo: string }[];
+      expect(body).toHaveLength(1);
+      expect(body[0].assignedTo).toBe(stUser.id);
+    });
+
+    it('Operation ส่ง ?assignedTo=<คนใดคนหนึ่ง> มาทาง query -> ใช้ค่านั้นกรองได้จริง (UNSCOPED role เลือก assignedTo เองได้)', async () => {
+      const { stUser } = await seedTwoTasks();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/tasks?assignedTo=${stUser.id}`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .expect(200);
+
+      const body = res.body as { assignedTo: string }[];
+      expect(body).toHaveLength(1);
+      expect(body[0].assignedTo).toBe(stUser.id);
+    });
+  });
 });

@@ -29,6 +29,23 @@ const OPERATION_ROLE = 'Operation';
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
 const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
 
+// Role ที่ตั้งใจให้เห็นงานของ "ทุกคน" ได้ (RBAC_Matrix.md §4.3/ตาราง Section 2
+// แถว Task — grant tasks:Read ของแต่ละ role มี use case ชัดเจนต่างกัน):
+// - Operation: สั่งงาน/ควบคุม Campaign ต้องเห็นภาพรวมทุก task
+// - Auditor: อ่านทุกอย่างในระบบเพื่อตรวจสอบย้อนหลัง (เหมือนสิทธิ์ AuditLog)
+// - Admin/SuperAdmin: ดูแลระบบ ต้อง troubleshoot งานของใครก็ได้
+// (issue #73 — เดิม findAll ใช้ "ไม่ใช่ ST/OT = ไม่ scope" ซึ่งเป็น default-allow
+// ที่อันตราย: role ใหม่ที่ได้ grant tasks:Read เพิ่มทีหลังโดยไม่ได้ตั้งใจให้เห็น
+// ทุกคนจะหลุดเข้ามาเห็นทั้งตารางทันทีโดยไม่มีใครตัดสินใจ — เปลี่ยนเป็น allowlist
+// ชัดเจนแทน role ไหนไม่อยู่ในนี้ fallback เป็น self-scoped เสมอ ตาม IDOR
+// Prevention Pattern ของ CLAUDE.md (default-deny ไม่ใช่ default-allow)
+const UNSCOPED_TASK_ROLES: readonly string[] = [
+  'Operation',
+  'Auditor',
+  'Admin',
+  'SuperAdmin',
+];
+
 // สถานะ Config ที่ Operation ผูกกับงานติดตั้งได้ — ต้องผ่าน Operation อนุมัติ
 // มาแล้วเท่านั้น (`approved` = อนุมัติแล้ว, `synced` = เขียนเข้าระบบเดิมแล้ว)
 // ตรงกับ APPLICABLE_CONFIG_STATUSES ใน src/device/config-applier.ts (เงื่อนไข
@@ -83,11 +100,14 @@ export class TaskService {
   }
 
   findAll(query: QueryTaskDto, actor: ActingUser): Promise<Task[]> {
-    // ST/OT (ผู้ใช้ Mobile) เห็นเฉพาะงานตัวเอง — บังคับที่ Backend เสมอ ห้ามใช้ค่า
-    // assignedTo จาก client (ดู RBAC_Matrix.md Section 5 ข้อ 8)
-    const assignedTo = SELF_SCOPED_ROLES.includes(actor.role)
-      ? actor.id
-      : query.assignedTo;
+    // เฉพาะ role ใน UNSCOPED_TASK_ROLES เท่านั้นที่เลือก assignedTo เองผ่าน query
+    // ได้ (หรือปล่อยว่างไว้เพื่อดูทุกคน) — role อื่นทั้งหมด (รวม ST/OT และ role
+    // ใหม่ที่อาจได้ grant tasks:Read เพิ่มทีหลังโดยไม่ได้ตั้งใจ) ถูกบังคับ
+    // self-scope เสมอ ห้ามใช้ค่า assignedTo จาก client (ดู issue #73 และ
+    // RBAC_Matrix.md Section 5 ข้อ 8)
+    const assignedTo = UNSCOPED_TASK_ROLES.includes(actor.role)
+      ? query.assignedTo
+      : actor.id;
 
     return this.prisma.task.findMany({
       where: { status: query.status, assignedTo },
