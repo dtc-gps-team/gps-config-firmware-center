@@ -9,6 +9,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
+import { DeviceModelService } from '../device-model/device-model.service';
 import { ActingUser, ConfigService } from './config.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from './device-simulator';
 
@@ -82,6 +83,7 @@ describe('ConfigService', () => {
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
+  let deviceModelService: { findByName: jest.Mock };
 
   beforeEach(async () => {
     config = {
@@ -107,6 +109,16 @@ describe('ConfigService', () => {
       validateFields: jest.fn().mockResolvedValue(undefined),
     };
     configSyncQueue = { enqueueConfigSync: jest.fn() };
+    // default: รุ่น "GT06N" (ค่าเริ่มต้นของ draftConfig ด้านบน) รองรับ TCP —
+    // เทสเดิมทั้งหมดไม่เกี่ยวกับ issue #209 ข้อ 4 โดยตรง จึงให้ผ่านเสมอ
+    // describe ที่เกี่ยวกับ validateDeviceModelProtocol โดยตรงจะ override เอง
+    deviceModelService = {
+      findByName: jest.fn().mockResolvedValue({
+        id: 'dm-1',
+        name: 'GT06N',
+        supportedProtocols: ['TCP'],
+      }),
+    };
 
     // $transaction (interactive form) — เรียก callback ด้วย tx ที่ใช้ delegate
     // mock ตัวเดียวกับนอก transaction เพื่อให้ assertion เดิม (config.update
@@ -133,6 +145,10 @@ describe('ConfigService', () => {
         {
           provide: ConfigSyncWriterQueue,
           useValue: configSyncQueue,
+        },
+        {
+          provide: DeviceModelService,
+          useValue: deviceModelService,
         },
       ],
     }).compile();
@@ -264,6 +280,65 @@ describe('ConfigService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('deviceModel ไม่มีในทะเบียน DeviceModel เลย -> BadRequestException ไม่เรียก config.create (issue #209)', async () => {
+      deviceModelService.findByName.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          {
+            name: 'ชุดตั้งค่าทดสอบ',
+            deviceModel: 'UNKNOWN_MODEL',
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+          },
+          configEngineer,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> BadRequestException ไม่เรียก config.create (issue #209)', async () => {
+      deviceModelService.findByName.mockResolvedValue({
+        id: 'dm-1',
+        name: 'GT06N',
+        supportedProtocols: ['TCP'],
+      });
+
+      await expect(
+        service.create(
+          {
+            name: 'ชุดตั้งค่าทดสอบ',
+            deviceModel: 'GT06N',
+            protocol: 'UDP',
+            fields: { APN1: 'internet' },
+          },
+          configEngineer,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('protocol อยู่ใน supportedProtocols -> ผ่านปกติ เรียก config.create (issue #209)', async () => {
+      config.create.mockResolvedValue(draftConfig);
+      deviceModelService.findByName.mockResolvedValue({
+        id: 'dm-1',
+        name: 'GT06N',
+        supportedProtocols: ['TCP', 'UDP'],
+      });
+
+      await service.create(
+        {
+          name: 'ชุดตั้งค่าทดสอบ',
+          deviceModel: 'GT06N',
+          protocol: 'UDP',
+          fields: { APN1: 'internet' },
+        },
+        configEngineer,
+      );
+
+      expect(config.create).toHaveBeenCalled();
     });
 
     it('ชื่อ Config ซ้ำ (Prisma P2002 บน name) -> ConflictException (409)', async () => {
@@ -1046,6 +1121,20 @@ describe('ConfigService', () => {
           description: undefined,
         },
       });
+    });
+
+    it('protocol ใหม่ไม่อยู่ใน supportedProtocols ของ deviceModel เดิม -> BadRequestException ไม่เรียก config.update (issue #209)', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      deviceModelService.findByName.mockResolvedValue({
+        id: 'dm-1',
+        name: 'GT06N',
+        supportedProtocols: ['TCP'],
+      });
+
+      await expect(
+        service.update(draftConfig.id, { protocol: 'UDP' }, configEngineer),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.update).not.toHaveBeenCalled();
     });
 
     it('AuditLog (#27) -> เขียน action update หลัง config.update สำเร็จ', async () => {

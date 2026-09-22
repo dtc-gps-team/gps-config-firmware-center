@@ -17,6 +17,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
+import { DeviceModelService } from '../device-model/device-model.service';
 import { type LegacyConfigWrite } from '../config-sync-writer/config-sync-writer.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDto } from './dto/create-config.dto';
@@ -57,6 +58,7 @@ export class ConfigService {
     private readonly deviceSimulator: DeviceSimulator,
     private readonly configDefinitionService: ConfigDefinitionService,
     private readonly configSyncQueue: ConfigSyncWriterQueue,
+    private readonly deviceModelService: DeviceModelService,
   ) {}
 
   /**
@@ -77,6 +79,33 @@ export class ConfigService {
       protocol,
       fields,
     );
+  }
+
+  /**
+   * ตรวจว่า `protocol` ที่ระบุ อยู่ใน `DeviceModel.supportedProtocols` ของ
+   * `deviceModel` นั้นไหม (issue #209 ข้อ 4) — enforce เข้มงวดจริง ไม่ใช่แค่
+   * dropdown ช่วยเฉยๆ เพราะ backfill (seed.ts) มีข้อมูลจริงรองรับทุกรุ่นอยู่
+   * แล้ว ไม่มีปัญหาเรื่อง supportedProtocols ว่างเปล่าที่เคยกังวลไว้
+   *
+   * ไม่พบรุ่นนี้ในทะเบียนเลย -> block เหมือนกัน (block ทั้งคู่ ไม่มีทางลัด
+   * ให้รุ่นที่ยังไม่ได้ลงทะเบียนข้ามไปได้ — mirror หลักการเดียวกับ
+   * ConfigDefinitionService.validateFields())
+   */
+  private async validateDeviceModelProtocol(
+    deviceModel: string,
+    protocol: string,
+  ): Promise<void> {
+    const model = await this.deviceModelService.findByName(deviceModel);
+    if (!model) {
+      throw new BadRequestException(
+        `ไม่พบรุ่นอุปกรณ์ "${deviceModel}" ในทะเบียน — ต้องสร้างรุ่นนี้ก่อนใน Device Model Registry`,
+      );
+    }
+    if (!model.supportedProtocols.includes(protocol)) {
+      throw new BadRequestException(
+        `รุ่น "${deviceModel}" ไม่รองรับ protocol "${protocol}" (รองรับ: ${model.supportedProtocols.join(', ')})`,
+      );
+    }
   }
 
   /**
@@ -125,6 +154,7 @@ export class ConfigService {
   async create(dto: CreateConfigDto, actor: ActingUser): Promise<Config> {
     // สิทธิ์ resource "config" action Create เช็คแล้วที่ PermissionGuard
     // (เฉพาะ Role ConfigEngineer ตาม RolePermission seed) เหลือแค่ผูก createdBy จาก JWT
+    await this.validateDeviceModelProtocol(dto.deviceModel, dto.protocol);
     await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
 
     let created: Config;
@@ -587,6 +617,10 @@ export class ConfigService {
     // — validate เทียบกับค่าที่จะเป็นจริงหลัง merge เสมอ (ค่าใหม่จาก dto ถ้ามี
     // ไม่งั้นใช้ค่าเดิมของ Config) ไม่ใช่แค่ค่าที่ dto ส่งมาเฉยๆ เพราะ fields
     // เดิมต้องยังตรงกับ deviceModel/protocol ใหม่ด้วยถ้ามีการเปลี่ยนรุ่น
+    await this.validateDeviceModelProtocol(
+      dto.deviceModel ?? existing.deviceModel,
+      dto.protocol ?? existing.protocol,
+    );
     await this.validateFields(
       dto.deviceModel ?? existing.deviceModel,
       dto.protocol ?? existing.protocol,
