@@ -70,6 +70,7 @@ export function ParameterCreateForm({
   const [unknownSpec, setUnknownSpec] = useState(false);
   const [stOverridable, setStOverridable] = useState(false);
   const [unit, setUnit] = useState("");
+  const [defaultValue, setDefaultValue] = useState("");
   const [allowedValues, setAllowedValues] = useState<string[]>([]);
   const [optionDraft, setOptionDraft] = useState("");
   const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
@@ -143,12 +144,17 @@ export function ParameterCreateForm({
       setFormError("หน่วยยาวเกิน 20 ตัวอักษร");
       return;
     }
+    if (defaultValue.trim().length > 255) {
+      setFormError("ค่าเริ่มต้นยาวเกิน 255 ตัวอักษร");
+      return;
+    }
 
     const supportedModels = dedupedPairs.filter((m) =>
       selectedPairs.has(pairKey(m)),
     );
     const trimmedDesc = description.trim();
     const trimmedUnit = unit.trim();
+    const trimmedDefault = defaultValue.trim();
 
     setSubmitting(true);
     try {
@@ -161,6 +167,7 @@ export function ParameterCreateForm({
         ...(allowedValues.length ? { allowedValues } : {}),
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
         ...(trimmedUnit ? { unit: trimmedUnit } : {}),
+        ...(trimmedDefault ? { defaultValue: trimmedDefault } : {}),
         supportedModels: supportedModels.map((m) => ({
           deviceModel: m.deviceModel,
           protocol: m.protocol,
@@ -253,6 +260,40 @@ export function ParameterCreateForm({
               autoComplete="off"
               className="sm:max-w-56"
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="param-default-value">
+              ค่าเริ่มต้น (Default Value, ไม่บังคับ)
+            </Label>
+            {dataType === "boolean" ? (
+              <Select
+                value={defaultValue}
+                onValueChange={(value) => setDefaultValue(value ?? "")}
+              >
+                <SelectTrigger
+                  id="param-default-value"
+                  className="w-full sm:max-w-56"
+                >
+                  <SelectValue placeholder="— ไม่ตั้งค่าเริ่มต้น —" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">true</SelectItem>
+                  <SelectItem value="false">false</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id="param-default-value"
+                type={dataType === "number" ? "number" : "text"}
+                value={defaultValue}
+                onChange={(e) => setDefaultValue(e.target.value)}
+                placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"
+                maxLength={255}
+                autoComplete="off"
+                className="sm:max-w-56"
+              />
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

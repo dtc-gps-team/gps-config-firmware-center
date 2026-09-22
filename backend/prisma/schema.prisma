@@ -504,6 +504,11 @@ model ConfigFieldDefinition {
   // ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผล/เตือนผู้ใช้
   // เท่านั้น ยังไม่ผูกกับ logic ใดใน backend (เช่น บังคับ Task แยกสำหรับ restart)
   restartRequired Boolean  @default(false)
+  // ค่าเริ่มต้นของ field นี้ (issue #202, feedback พี่เลี้ยง) — เก็บเป็น
+  // String? เหมือน pattern ของ unit/category ด้านบน (parse ตาม dataType
+  // ตอนใช้งานจริง ฝั่ง Web ที่ ConfigWizard ตอนสร้าง Config ใหม่ — ไม่ใช่ตอน
+  // Clone ซึ่งยังใช้ค่าจาก Config ต้นทางเหมือนเดิม) ไม่ผูกกับ validateFields
+  defaultValue    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

@@ -38,6 +38,23 @@ function isEmpty(value: FieldValue | undefined): boolean {
   return value === undefined || value === "";
 }
 
+/** parse `ConfigFieldDefinition.defaultValue` (string ดิบ) ให้ตรงกับ shape ที่
+ * `values` state ใช้เก็บอยู่แล้ว (`FieldValue = string | boolean`) — boolean
+ * dataType เก็บเป็น boolean จริง ส่วนที่เหลือเก็บเป็น string เสมอแล้วค่อยแปลง
+ * ตอน submit ใน `buildFields()` (เหมือนกับตอน prefill จาก `source.fields`
+ * ด้านบน) ตรงกับ dataType-based parse เดียวกับที่ `parseByDataType()` ใน
+ * config-override-panel.tsx ทำ เพียงแต่ไม่ใช้ฟังก์ชันนั้นตรงๆ เพราะ return
+ * type ของมัน (`unknown`, parse เลขเป็น number จริง) ไม่ตรงกับ `FieldValue`
+ * ของไฟล์นี้ — logic parse boolean เหมือนกันทุกประการ */
+function defaultFieldValue(def: ConfigFieldDefinition): FieldValue | undefined {
+  if (def.defaultValue === null || def.defaultValue === undefined) {
+    return undefined;
+  }
+  return def.dataType === "boolean"
+    ? def.defaultValue === "true"
+    : def.defaultValue;
+}
+
 /**
  * ฟอร์มสร้าง/แก้ Config แบบ 2 ขั้น (ตาม wireframe frame 07–08 ที่พี่เลี้ยง
  * approve):
@@ -152,6 +169,19 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       );
   }, [applicableDefs, selected]);
 
+  /** ค่าที่ใช้แสดง/บันทึกจริงของ field หนึ่งตัว — ถ้าผู้ใช้ยังไม่เคยแก้ (`values`
+   * ไม่มี key นี้) และเป็นการสร้าง Config **ใหม่จริงๆ** (`!source` — ไม่ใช่
+   * โหมดแก้/โคลนที่ต้องใช้ค่าจาก Config เดิมเสมอตามมติที่ยืนยันไว้ใน #202)
+   * ให้ fallback ไปใช้ `def.defaultValue` แทน — คำนวณตอน render/submit ไม่
+   * เขียนลง `values` state ตรงๆ (กัน setState-in-effect) พอผู้ใช้แก้ค่าเอง
+   * ผ่าน `setValue()` มันจะเข้า `values` แล้ว fallback นี้จะไม่ทำงานอีกต่อไป —
+   * ยังแก้ไขได้ตามปกติ ไม่ล็อก */
+  function effectiveValue(def: ConfigFieldDefinition): FieldValue | undefined {
+    const v = values[def.fieldName];
+    if (v !== undefined) return v;
+    return source ? undefined : defaultFieldValue(def);
+  }
+
   /** field ในคลังด้านซ้ายที่ยังไม่ได้เพิ่ม (optional เท่านั้น) + กรองด้วยคำค้น */
   const libraryDefs = useMemo(() => {
     const picked = new Set(selected);
@@ -229,7 +259,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   function buildFields(): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const def of chosenDefs) {
-      const raw = values[def.fieldName];
+      const raw = effectiveValue(def);
       if (def.dataType === "boolean") {
         out[def.fieldName] = raw === true;
         continue;
@@ -257,7 +287,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
     const missing = chosenDefs
       .filter((d) => d.required && d.dataType !== "boolean")
-      .filter((d) => isEmpty(values[d.fieldName]))
+      .filter((d) => isEmpty(effectiveValue(d)))
       .map((d) => d.fieldName);
     if (missing.length > 0) {
       setMissingRequired(missing);
@@ -513,7 +543,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                     <TemplateRow
                       key={def.id}
                       def={def}
-                      value={values[def.fieldName]}
+                      value={effectiveValue(def)}
                       missing={missingRequired.includes(def.fieldName)}
                       onChange={(v) => setValue(def.fieldName, v)}
                       onRemove={

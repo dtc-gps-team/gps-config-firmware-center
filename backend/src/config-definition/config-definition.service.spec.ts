@@ -31,6 +31,7 @@ const apnDef: ConfigFieldDefinition & {
   category: 'Network',
   sensitive: false,
   restartRequired: true,
+  defaultValue: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -51,6 +52,7 @@ const modeDef: ConfigFieldDefinition & {
   category: null,
   sensitive: false,
   restartRequired: false,
+  defaultValue: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -139,6 +141,7 @@ describe('ConfigDefinitionService', () => {
           category: undefined,
           sensitive: false,
           restartRequired: false,
+          defaultValue: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -169,6 +172,7 @@ describe('ConfigDefinitionService', () => {
           category: undefined,
           sensitive: false,
           restartRequired: false,
+          defaultValue: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -195,6 +199,7 @@ describe('ConfigDefinitionService', () => {
           category: undefined,
           sensitive: false,
           restartRequired: false,
+          defaultValue: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -221,6 +226,7 @@ describe('ConfigDefinitionService', () => {
           category: undefined,
           sensitive: false,
           restartRequired: false,
+          defaultValue: undefined,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -252,6 +258,127 @@ describe('ConfigDefinitionService', () => {
           category: 'Network',
           sensitive: true,
           restartRequired: true,
+          defaultValue: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ส่ง defaultValue มา -> เขียนลง DB ตามนั้น (issue #202)', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({ ...dto, defaultValue: 'internet' });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: false,
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
+          defaultValue: 'internet',
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('ไม่ส่ง defaultValue มา -> ยังสร้างได้ตามปกติ (undefined, ไม่ error)', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create(dto);
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: false,
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
+          defaultValue: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('sensitive: true + defaultValue มีค่า -> BadRequestException กันค่ารั่วผ่าน GET /config-definitions', async () => {
+      await expect(
+        service.create({
+          ...dto,
+          sensitive: true,
+          defaultValue: 'super-secret-password',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('sensitive: true + ไม่ส่ง defaultValue มา -> ผ่านปกติ', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({ ...dto, sensitive: true });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: false,
+          category: undefined,
+          sensitive: true,
+          restartRequired: false,
+          defaultValue: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
+    });
+
+    it('sensitive: true + defaultValue เป็น "" (ว่างเปล่า) -> ผ่านปกติ (ไม่ถือว่ามีค่า)', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await service.create({ ...dto, sensitive: true, defaultValue: '' });
+
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: false,
+          category: undefined,
+          sensitive: true,
+          restartRequired: false,
+          defaultValue: '',
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },

@@ -225,6 +225,83 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       expect((res.body as { unknownSpec: boolean }).unknownSpec).toBe(true);
     });
 
+    it('ConfigEngineer สร้าง field พร้อม defaultValue -> 201 เก็บค่าตามที่ส่ง (issue #202)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, fieldName: 'SIM1', defaultValue: 'internet' })
+        .expect(201);
+
+      expect((res.body as { defaultValue: string | null }).defaultValue).toBe(
+        'internet',
+      );
+    });
+
+    it('ไม่ส่ง defaultValue มา -> 201 คืน defaultValue เป็น null', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validBody)
+        .expect(201);
+
+      expect(
+        (res.body as { defaultValue: string | null }).defaultValue,
+      ).toBeNull();
+    });
+
+    it('sensitive: true + defaultValue มีค่า -> 400 กันค่ารั่วผ่าน GET /config-definitions (ไม่ mask, ไม่ sensitive)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...validBody,
+          fieldName: 'SEV1',
+          sensitive: true,
+          defaultValue: 'super-secret-password',
+        })
+        .expect(400);
+
+      // ยืนยันว่าไม่ถูกสร้างเข้า DB เลย ไม่ใช่แค่ไม่คืนค่า defaultValue กลับ
+      const created = await prisma.configFieldDefinition.findUnique({
+        where: { fieldName: 'SEV1' },
+      });
+      expect(created).toBeNull();
+    });
+
+    it('sensitive: true + ไม่ส่ง defaultValue มา -> 201 สร้างได้ปกติ', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, fieldName: 'RS232', sensitive: true })
+        .expect(201);
+
+      expect((res.body as { sensitive: boolean }).sensitive).toBe(true);
+    });
+
     it('unknownSpec ไม่ใช่ boolean -> 400 (IsBoolean ที่ DTO)', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',

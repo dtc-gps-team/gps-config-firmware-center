@@ -60,12 +60,32 @@ export class ConfigDefinitionService {
     });
   }
 
+  /** `GET /config-definitions` (`findAll()`) คืน `defaultValue` กลับแบบไม่ mask
+   * ให้ทุก role ที่มีสิทธิ์ `config-definition.Read` (ConfigEngineer/Operation/
+   * ST/OT) เห็นได้หมด — endpoint นี้ถูกออกแบบไว้ตั้งแต่แรกว่าเป็นแค่ catalog
+   * metadata อ่านได้ ไม่ใช่ข้อมูลอ่อนไหว (ดู RBAC_Matrix.md) ถ้า field
+   * `sensitive: true` (เช่น COMMAND_PASSWORD) มี `defaultValue` เป็นตัวอย่างค่า
+   * จริง จะรั่วผ่านช่องทางนี้ทันที — ตัดสินใจป้องกันที่ต้นทาง (validate ตอน
+   * create/update) แทนการ mask ตอน response เพื่อไม่ให้ต้องเปลี่ยน shape ของ
+   * response ที่ client พึ่งพาอยู่แล้ว */
+  private assertNoSensitiveDefaultValue(dto: {
+    sensitive?: boolean;
+    defaultValue?: string;
+  }): void {
+    if (dto.sensitive && dto.defaultValue) {
+      throw new BadRequestException(
+        'defaultValue is not allowed when sensitive is true',
+      );
+    }
+  }
+
   /** สร้าง field definition ใหม่ — resource `config-definition` action
    * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role ConfigEngineer) `fieldName` ซ้ำ
    * -> 409 (มี `@unique` ที่ schema คุมไว้อีกชั้น กัน race condition) */
   async create(
     dto: CreateConfigDefinitionDto,
   ): Promise<ConfigFieldDefinitionWithSupport> {
+    this.assertNoSensitiveDefaultValue(dto);
     try {
       return await this.prisma.configFieldDefinition.create({
         data: {
@@ -80,6 +100,7 @@ export class ConfigDefinitionService {
           category: dto.category,
           sensitive: dto.sensitive ?? false,
           restartRequired: dto.restartRequired ?? false,
+          defaultValue: dto.defaultValue,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({
               deviceModel: m.deviceModel,
