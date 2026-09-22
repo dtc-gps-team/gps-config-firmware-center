@@ -425,6 +425,41 @@ void main() {
       expect(n.read, isTrue);
     });
 
+    test(
+      'createdAt หาย -> throw ArgumentError (ไม่ fallback เป็น DateTime.now() '
+      'เงียบๆ — issue #82 ข้อ 2, backend เรียง createdAt desc มาแล้ว ค่าปลอม '
+      'จะทำให้ลำดับรายการเพี้ยน)',
+      () {
+        expect(
+          () => AppNotification.fromJson({
+            'id': 'noti-4',
+            'userId': 'u1',
+            'type': 'task_assigned',
+            'payload': const {},
+            'read': false,
+          }),
+          throwsArgumentError,
+        );
+      },
+    );
+
+    test(
+      'createdAt parse ไม่ได้ (ไม่ใช่ ISO date string) -> throw ArgumentError',
+      () {
+        expect(
+          () => AppNotification.fromJson({
+            'id': 'noti-5',
+            'userId': 'u1',
+            'type': 'task_assigned',
+            'payload': const {},
+            'read': false,
+            'createdAt': 'not-a-date',
+          }),
+          throwsArgumentError,
+        );
+      },
+    );
+
     test('copyWith(read:) flips read only', () {
       final n = AppNotification.fromJson({
         'id': 'noti-3',

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../config/app_config.dart';
 import 'models.dart';
@@ -267,8 +268,12 @@ class ApiClient {
   }
 
   /// Same as [_wrap] but for endpoints that return a JSON array. Non-object
-  /// entries are skipped defensively.
-  // TODO(#82): skip record ที่ parse() throw ต่อ item แทนที่จะปล่อย throw ทั้งก้อน — ยังไม่ implement
+  /// entries are skipped defensively, and so is any entry whose [parse]
+  /// throws (e.g. `NotificationType.fromWire` hitting a type the app
+  /// doesn't know about yet) — one bad record shouldn't take down the whole
+  /// list (issue #82). Logged via [debugPrint] so it's visible during dev/QA
+  /// without surfacing an error to the user for what is, from their POV, a
+  /// list that's simply missing one item.
   Future<List<T>> _wrapList<T>(
     Future<Response<List<dynamic>>> Function() send,
     T Function(Map<String, dynamic> json) parse,
@@ -276,10 +281,17 @@ class ApiClient {
     try {
       final response = await send();
       final body = response.data ?? const <dynamic>[];
-      return body
-          .whereType<Map>()
-          .map((e) => parse(e.cast<String, dynamic>()))
-          .toList(growable: false);
+      final out = <T>[];
+      for (final e in body.whereType<Map>()) {
+        try {
+          out.add(parse(e.cast<String, dynamic>()));
+        } catch (err) {
+          debugPrint(
+            'ApiClient._wrapList: skip record ที่ parse ไม่ได้ — $err',
+          );
+        }
+      }
+      return out;
     } on DioException catch (e) {
       throw _toApiException(e);
     }

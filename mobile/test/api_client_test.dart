@@ -542,6 +542,34 @@ void main() {
       expect(adapter.lastRequest?.queryParameters, {'unread': true});
     });
 
+    test('listNotifications -> record ที่มี type ที่ไม่รู้จักถูก skip เฉพาะตัว '
+        'แทนที่จะ throw ทั้งก้อน (issue #82 ข้อ 1)', () async {
+      final (:client, :adapter) = _clientReturning([
+        notiJson(id: 'good-1'),
+        {...notiJson(id: 'bad'), 'type': 'some_future_type_we_dont_know'},
+        notiJson(id: 'good-2'),
+      ]);
+
+      final items = await client.listNotifications();
+
+      expect(adapter.lastRequest?.path, '/notifications');
+      expect(items.map((n) => n.id), ['good-1', 'good-2']);
+    });
+
+    test('listNotifications -> record ที่ createdAt หาย/parse ไม่ได้ถูก skip '
+        'เฉพาะตัวเช่นกัน (issue #82 ข้อ 2 ทำงานร่วมกับข้อ 1)', () async {
+      final badRecord = notiJson(id: 'bad')..remove('createdAt');
+      final (:client, :adapter) = _clientReturning([
+        notiJson(id: 'good-1'),
+        badRecord,
+      ]);
+
+      final items = await client.listNotifications();
+
+      expect(adapter.lastRequest?.path, '/notifications');
+      expect(items.map((n) => n.id), ['good-1']);
+    });
+
     test('markNotificationRead -> PATCH /notifications/{id}/read', () async {
       final (:client, :adapter) = _clientReturning(
         notiJson(id: 'abc', read: true),
