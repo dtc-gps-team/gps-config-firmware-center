@@ -81,7 +81,14 @@ export class CreateConfigDefinitionDto {
   category?: string;
 
   /** field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ใช้ซ่อนค่าบนหน้าจอฝั่ง
-   * Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม default false */
+   * Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม default false
+   *
+   * **ห้ามตั้งพร้อมกับ `defaultValue`** — `GET /config-definitions` คืน
+   * `defaultValue` แบบไม่ mask ให้ทุก role ที่มีสิทธิ์ Read เห็น (catalog
+   * metadata ไม่ใช่ข้อมูลอ่อนไหว ตาม RBAC_Matrix.md) ถ้า field `sensitive`
+   * มี `defaultValue` เป็นตัวอย่างค่าจริง (เช่น รหัสผ่าน) จะรั่วผ่านช่องทางนี้
+   * — เช็คบังคับที่ `ConfigDefinitionService.assertNoSensitiveDefaultValue()`
+   * (400 ถ้าฝ่าฝืน) ไม่ใช่แค่ที่ DTO นี้ */
   @IsOptional()
   @IsBoolean()
   sensitive?: boolean;
@@ -94,7 +101,12 @@ export class CreateConfigDefinitionDto {
 
   /** ค่าเริ่มต้นของ field นี้ (issue #202) — เก็บเป็น string ดิบ parse ตาม
    * dataType ตอนใช้งานจริงฝั่ง Web (ConfigWizard auto-fill ตอนสร้าง Config
-   * ใหม่เท่านั้น ไม่ใช่ตอน Clone) ไม่บังคับ, ไม่ผูกกับ validateFields */
+   * ใหม่เท่านั้น ไม่ใช่ตอน Clone) ไม่บังคับ, ไม่ผูกกับ validateFields
+   *
+   * TODO(#201): ยังไม่เช็คว่า `defaultValue` ตรงกับ `dataType` ตอนสร้าง
+   * (เช่น dataType="number" + defaultValue="abc" ผ่านได้ตอนนี้) — ตั้งใจรอทำ
+   * พร้อมกับงาน #201 ที่กำลังปรับชุด dataType ทั้งระบบอยู่แล้ว (จะได้ไม่ต้อง
+   * เขียน type-check logic 2 รอบ) */
   @IsOptional()
   @IsString()
   @MaxLength(255)
