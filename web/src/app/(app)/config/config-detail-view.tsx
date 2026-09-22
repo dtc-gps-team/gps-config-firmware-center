@@ -1,6 +1,5 @@
 "use client";
 
-// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอนแสดงผล (detail/JSON preview) ยังไม่ implement
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,6 +8,8 @@ import {
   CheckIcon,
   ClockIcon,
   CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
   RadioIcon,
   SlidersHorizontalIcon,
   UserCheckIcon,
@@ -44,10 +45,14 @@ import {
 import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
+import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { SensitiveValue } from "@/components/sensitive-value";
 import { ConfigReviewPanel } from "./config-review-panel";
 import { ConfigOverridePanel } from "./config-override-panel";
+
+const MASKED_JSON_PLACEHOLDER = "••••••••";
 
 /** value ของ field อาจเป็น object/array — โชว์เป็น JSON indent, string โชว์ตรงๆ */
 function renderFieldValue(value: unknown): string {
@@ -65,6 +70,34 @@ function toImportJson(config: Config): string {
       deviceModel: config.deviceModel,
       protocol: config.protocol,
       fields: config.fields,
+    },
+    null,
+    2,
+  );
+}
+
+/** เหมือน `toImportJson()` แต่แทนค่า field ที่อยู่ใน `sensitiveFieldNames`
+ * ด้วย placeholder (issue #200 — จอแสดงผล/JSON preview ห้ามโชว์ plain text)
+ * ใช้แค่ตอนแสดงผลเท่านั้น — ปุ่ม "คัดลอก JSON" ยังคงคัดลอกค่าจริงเสมอ เพราะ
+ * เจตนาของ JSON นี้คือเอาไป import กลับ ถ้าคัดลอก placeholder ไปจะเขียนทับ
+ * ค่าจริงในระบบเงียบๆ (เสียหายกว่าแค่โชว์บนจอ)  */
+function toMaskedImportJson(
+  config: Config,
+  sensitiveFieldNames: Set<string>,
+): string {
+  const maskedFields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config.fields)) {
+    maskedFields[key] = sensitiveFieldNames.has(key)
+      ? MASKED_JSON_PLACEHOLDER
+      : value;
+  }
+  return JSON.stringify(
+    {
+      name: config.name,
+      ...(config.description ? { description: config.description } : {}),
+      deviceModel: config.deviceModel,
+      protocol: config.protocol,
+      fields: maskedFields,
     },
     null,
     2,
@@ -119,15 +152,31 @@ function ConfigDetailContent({
 }) {
   const router = useRouter();
   const { session } = useAuth();
+  const definitions = useConfigDefinitions();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showSensitiveJson, setShowSensitiveJson] = useState(false);
 
   const canModify =
     config.status === "draft" && canUpdateConfig(session?.role);
   const fieldEntries = Object.entries(config.fields);
+  const sensitiveFieldNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of definitions.data ?? []) {
+      if (d.sensitive) set.add(d.fieldName);
+    }
+    return set;
+  }, [definitions.data]);
   const importJson = useMemo(() => toImportJson(config), [config]);
+  const displayedJson = useMemo(
+    () =>
+      showSensitiveJson
+        ? importJson
+        : toMaskedImportJson(config, sensitiveFieldNames),
+    [config, importJson, sensitiveFieldNames, showSensitiveJson],
+  );
   const latestVersion = versions[0]?.versionNumber ?? null;
 
   async function copyJson() {
@@ -307,14 +356,18 @@ function ConfigDetailContent({
                       <span className="shrink-0 font-mono text-xs text-muted-foreground">
                         {key}
                       </span>
-                      <span
-                        className={
-                          "min-w-0 font-mono text-xs break-words whitespace-pre-wrap " +
-                          (multiline ? "text-left" : "text-right")
-                        }
-                      >
-                        {rendered}
-                      </span>
+                      {sensitiveFieldNames.has(key) ? (
+                        <SensitiveValue value={rendered} />
+                      ) : (
+                        <span
+                          className={
+                            "min-w-0 font-mono text-xs break-words whitespace-pre-wrap " +
+                            (multiline ? "text-left" : "text-right")
+                          }
+                        >
+                          {rendered}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -343,9 +396,28 @@ function ConfigDetailContent({
         </div>
 
         <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-sm font-medium">Config JSON</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">Config JSON</p>
+            {sensitiveFieldNames.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSensitiveJson((v) => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showSensitiveJson ? (
+                  <>
+                    <EyeOffIcon className="size-3.5" /> ซ่อนค่าอ่อนไหว
+                  </>
+                ) : (
+                  <>
+                    <EyeIcon className="size-3.5" /> แสดงค่าอ่อนไหว
+                  </>
+                )}
+              </button>
+            )}
+          </div>
           <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs">
-            <code>{importJson}</code>
+            <code>{displayedJson}</code>
           </pre>
         </div>
       </div>

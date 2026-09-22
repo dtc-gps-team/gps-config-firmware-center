@@ -1,6 +1,5 @@
 "use client";
 
-// TODO(#200): พิจารณาว่าคอลัมน์ที่โชว์ default/ตัวอย่างค่าควร mask field sensitive ด้วยไหม ยังไม่ implement
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ListIcon } from "lucide-react";
@@ -105,6 +104,21 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       row.original.stOverridable ? (
         <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-primary">
           ST override ได้
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
+    id: "sensitive",
+    accessorFn: (row) => (row.sensitive ? "Sensitive" : "ปกติ"),
+    header: "Sensitive",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "Sensitive" },
+    cell: ({ row }) =>
+      row.original.sensitive ? (
+        <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-destructive">
+          Sensitive
         </span>
       ) : (
         <span className="text-muted-foreground">—</span>

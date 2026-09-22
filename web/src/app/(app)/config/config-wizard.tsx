@@ -1,6 +1,5 @@
 "use client";
 
-// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอนกรอกในฟอร์มนี้ ยังไม่ implement
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PlusIcon, XIcon } from "lucide-react";
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SensitiveInput } from "@/components/sensitive-value";
 import {
   Select,
   SelectContent,
@@ -677,6 +677,16 @@ function TemplateRow({
               ))}
             </SelectContent>
           </Select>
+          {def.unit && <UnitLabel unit={def.unit} />}
+        </div>
+      ) : def.sensitive ? (
+        <div className="flex items-center gap-2">
+          <SensitiveInput
+            id={id}
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={missing ? true : undefined}
+          />
           {def.unit && <UnitLabel unit={def.unit} />}
         </div>
       ) : (

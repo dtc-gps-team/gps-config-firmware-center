@@ -1,6 +1,5 @@
 "use client";
 
-// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่า (input type password) ยังไม่ implement
 import { useMemo, useState } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -70,6 +69,7 @@ export function ParameterCreateForm({
   const [required, setRequired] = useState(false);
   const [unknownSpec, setUnknownSpec] = useState(false);
   const [stOverridable, setStOverridable] = useState(false);
+  const [sensitive, setSensitive] = useState(false);
   const [unit, setUnit] = useState("");
   const [defaultValue, setDefaultValue] = useState("");
   const [allowedValues, setAllowedValues] = useState<string[]>([]);
@@ -165,10 +165,14 @@ export function ParameterCreateForm({
         required,
         ...(unknownSpec ? { unknownSpec: true } : {}),
         ...(stOverridable ? { stOverridable: true } : {}),
+        ...(sensitive ? { sensitive: true } : {}),
         ...(allowedValues.length ? { allowedValues } : {}),
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
         ...(trimmedUnit ? { unit: trimmedUnit } : {}),
-        ...(trimmedDefault ? { defaultValue: trimmedDefault } : {}),
+        // sensitive + defaultValue ห้ามมาคู่กัน (backend ปฏิเสธ 400 — กันค่าอ่อนไหว
+        // รั่วผ่าน GET /config-definitions ที่เปิดกว้างหลาย role) ไม่ส่ง defaultValue
+        // เลยถ้า sensitive ไว้ตั้งแต่ต้น แทนที่จะปล่อยให้ backend ปฏิเสธ
+        ...(!sensitive && trimmedDefault ? { defaultValue: trimmedDefault } : {}),
         supportedModels: supportedModels.map((m) => ({
           deviceModel: m.deviceModel,
           protocol: m.protocol,
@@ -267,7 +271,12 @@ export function ParameterCreateForm({
             <Label htmlFor="param-default-value">
               ค่าเริ่มต้น (Default Value, ไม่บังคับ)
             </Label>
-            {dataType === "boolean" ? (
+            {sensitive ? (
+              <p className="text-xs text-muted-foreground">
+                field ที่เป็น Sensitive ตั้งค่าเริ่มต้นไม่ได้ — ป้องกันค่าอ่อนไหวรั่วผ่าน
+                คลัง Parameter ที่หลาย Role เข้าถึงได้
+              </p>
+            ) : dataType === "boolean" ? (
               <Select
                 value={defaultValue}
                 onValueChange={(value) => setDefaultValue(value ?? "")}
@@ -411,6 +420,17 @@ export function ParameterCreateForm({
                 onCheckedChange={(c) => setStOverridable(c === true)}
               />
               ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้ — OT ไม่มีสิทธิ์นี้)
+            </label>
+            <label
+              className="flex items-center gap-2 text-sm"
+              htmlFor="param-sensitive"
+            >
+              <Checkbox
+                id="param-sensitive"
+                checked={sensitive}
+                onCheckedChange={(c) => setSensitive(c === true)}
+              />
+              ค่าอ่อนไหว (Sensitive — เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)
             </label>
           </div>
 

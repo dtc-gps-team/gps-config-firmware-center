@@ -1,6 +1,5 @@
 "use client";
 
-// TODO(#200): field ที่ ConfigFieldDefinition.sensitive === true ต้อง mask ค่าตอน override เช่นกัน ยังไม่ implement
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +12,7 @@ import { canOverrideConfig } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SensitiveInput, SensitiveValue } from "@/components/sensitive-value";
 import {
   Select,
   SelectContent,
@@ -173,10 +173,14 @@ export function ConfigOverridePanel({
                 </Label>
                 {!def?.stOverridable ? (
                   <span
-                    className="min-w-0 truncate font-mono text-xs text-muted-foreground"
+                    className="flex min-w-0 items-center gap-1 truncate font-mono text-xs text-muted-foreground"
                     title="field นี้ override ไม่ได้ — ยังไม่ได้เปิดไว้ใน Parameter Library"
                   >
-                    {toInputValue(original)}{" "}
+                    {def?.sensitive ? (
+                      <SensitiveValue value={toInputValue(original)} />
+                    ) : (
+                      toInputValue(original)
+                    )}{" "}
                     <span className="text-muted-foreground/70">
                       (override ไม่ได้)
                     </span>
@@ -210,6 +214,13 @@ export function ConfigOverridePanel({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : def.sensitive ? (
+                  <SensitiveInput
+                    id={`override-${key}`}
+                    className="h-8 w-40 font-mono text-xs"
+                    value={currentInputValue(key, original)}
+                    onChange={(e) => setEdit(key, e.target.value)}
+                  />
                 ) : (
                   <Input
                     id={`override-${key}`}
