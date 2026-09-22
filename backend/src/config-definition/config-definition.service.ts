@@ -77,6 +77,9 @@ export class ConfigDefinitionService {
           description: dto.description,
           unit: dto.unit,
           stOverridable: dto.stOverridable ?? false,
+          category: dto.category,
+          sensitive: dto.sensitive ?? false,
+          restartRequired: dto.restartRequired ?? false,
           supportedModels: {
             create: dto.supportedModels.map((m) => ({
               deviceModel: m.deviceModel,

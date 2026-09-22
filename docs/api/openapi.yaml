@@ -2237,7 +2237,7 @@ components:
       type: object
       description: นิยาม field หนึ่งตัวใน Config Definition Lookup (ตรงกับ Prisma model ConfigFieldDefinition)
       required:
-        [id, fieldName, dataType, allowedValues, required, unknownSpec, stOverridable, createdAt, updatedAt, supportedModels]
+        [id, fieldName, dataType, allowedValues, required, unknownSpec, stOverridable, sensitive, restartRequired, createdAt, updatedAt, supportedModels]
       properties:
         id:
           type: string
@@ -2273,6 +2273,20 @@ components:
             ST override ค่า field นี้บนอุปกรณ์ผ่าน POST /config/{id}/override
             ได้ไหม (issue #185) — OT ไม่มีสิทธิ์ override เลยไม่ว่าค่านี้จะเป็น
             อะไร (ไม่มี RBAC grant ให้ OT)
+        category:
+          type: string
+          nullable: true
+          description: >-
+            หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server",
+            "Security") — ตรงกับ GPS_Config_Firmware_Center_Design.pdf §5.1
+        sensitive:
+          type: boolean
+          description: >-
+            field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ใช้ซ่อนค่าบน
+            หน้าจอฝั่ง Web เท่านั้น ไม่ได้เข้ารหัสค่าที่เก็บใน DB เพิ่ม
+        restartRequired:
+          type: boolean
+          description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผลเท่านั้น
         supportedModels:
           type: array
           description: >-
@@ -2335,6 +2349,20 @@ components:
           description: >-
             ST override ค่า field นี้บนอุปกรณ์ได้ไหม (issue #185) — ไม่บังคับ
             default false (override ไม่ได้เลยจนกว่าจะเปิดชัดเจน)
+        category:
+          type: string
+          maxLength: 50
+          description: >-
+            หมวดหมู่ field สำหรับจัดกลุ่มแสดงผล (เช่น "Network", "Server",
+            "Security") — ไม่บังคับ
+        sensitive:
+          type: boolean
+          default: false
+          description: field เก็บค่าอ่อนไหว (เช่น password, เบอร์โทร) — ไม่บังคับ
+        restartRequired:
+          type: boolean
+          default: false
+          description: ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — ไม่บังคับ
         supportedModels:
           type: array
           minItems: 1
