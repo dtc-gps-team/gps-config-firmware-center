@@ -268,6 +268,7 @@ class ApiClient {
 
   /// Same as [_wrap] but for endpoints that return a JSON array. Non-object
   /// entries are skipped defensively.
+  // TODO(#82): skip record ที่ parse() throw ต่อ item แทนที่จะปล่อย throw ทั้งก้อน — ยังไม่ implement
   Future<List<T>> _wrapList<T>(
     Future<Response<List<dynamic>>> Function() send,
     T Function(Map<String, dynamic> json) parse,

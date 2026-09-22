@@ -552,6 +552,7 @@ class AppNotification {
   final DateTime createdAt;
   final DateTime? sentAt;
 
+  // TODO(#82): createdAt fallback เป็น DateTime.now() ทำให้ลำดับรายการเพี้ยนเงียบๆ ถ้า field หาย/parse ไม่ได้ — ยังไม่ implement (log warning หรือ throw แล้วให้ _wrapList skip)
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
