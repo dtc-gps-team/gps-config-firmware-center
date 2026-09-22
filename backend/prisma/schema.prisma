@@ -313,8 +313,15 @@ model Device {
 //
 // field ตรงตาม GPS_Data_Dictionary.xlsx (ตาราง AUDIT_LOG) ตัวต่อตัว: ไม่มี
 // resource/payload แยกต่างหาก ใช้ auditModule + action + ipAddress ตามที่
-// Dictionary ระบุจริง — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่ายังไม่มี use case
-// ที่ต้องเก็บ payload โครงสร้างเพิ่มเติมตอนนี้
+// Dictionary ระบุจริง — ยืนยันกับ kittiphong แล้ว 2026-08-31 ว่าตอนนั้นยังไม่มี
+// use case ที่ต้องเก็บ payload โครงสร้างเพิ่มเติม
+//
+// **อัปเดต (2026-09-22, issue #205, feedback พี่เลี้ยง):** ยืนยันมติใหม่แล้วว่า
+// ต้องการ — เพิ่ม `metadata Json?` (deviation จาก Data Dictionary โดยตั้งใจ
+// เพื่อรองรับการตรวจสอบย้อนหลังที่ละเอียดขึ้น) mirror pattern เดียวกับ
+// `Incident.metadata` ทุกประการ: nullable, ทุก key ใน metadata เป็น optional,
+// เก็บเฉพาะข้อมูลที่ "สำคัญ/จำเป็นต่อการตรวจสอบ" ไม่ใช่ backfill ทุก AuditLog
+// write ที่มีอยู่แล้วในระบบ — ดู src/audit/audit-log-metadata.ts
 // ---------------------------------------------------------------------------
 
 model AuditLog {
@@ -323,6 +330,12 @@ model AuditLog {
   auditModule String
   action      String
   ipAddress   String?
+  // รายละเอียดเชิงโครงสร้างของแถวนี้ (AuditLogMetadata — ทุก key optional)
+  // **ตั้งใจไม่เก็บค่าจริงของ field ที่ apply (เช่น Config.fields ทั้งก้อน)** —
+  // GET /audit-logs เปิดให้ Operation/ST/OT/Auditor/Admin อ่านได้ ถ้าเก็บค่า
+  // field ตรงๆ อาจมีค่าอ่อนไหว (COMMAND_PASSWORD, SOS_NUMBER_1 ฯลฯ) รั่วออกไป
+  // ให้ role ที่ไม่ควรเห็น — เก็บแค่ "มี field อะไรบ้าง" (ชื่อ ไม่ใช่ค่า) พอ
+  metadata    Json?
   createdAt   DateTime @default(now())
 
   // user id ของผู้ทำรายการ (ดู GPS_Data_Dictionary.xlsx AUDIT_LOG.user_id)

@@ -15,6 +15,10 @@ export type AuditLogEntry = {
   auditModule: string;
   action: string;
   ipAddress: string | null;
+  /** รายละเอียดเชิงโครงสร้างเพิ่มเติม (issue #205) — มีเฉพาะบาง action ที่
+   * ถือว่าสำคัญ/จำเป็นต่อการตรวจสอบ (ตอนนี้มีแค่ `apply-config`) แถวเก่าเป็น
+   * `null` — ยังไม่มี UI แสดงผลค่านี้ในหน้า Audit Log */
+  metadata: Record<string, unknown> | null;
   createdAt: string;
 };
 
