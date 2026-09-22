@@ -299,11 +299,26 @@ describe('ConfigDefinitionService', () => {
 
       await service.create(dto);
 
-      expect(create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ defaultValue: undefined }),
-        }),
-      );
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          fieldName: 'APN1',
+          dataType: 'string',
+          allowedValues: [],
+          required: true,
+          unknownSpec: false,
+          description: undefined,
+          unit: undefined,
+          stOverridable: false,
+          category: undefined,
+          sensitive: false,
+          restartRequired: false,
+          defaultValue: undefined,
+          supportedModels: {
+            create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+          },
+        },
+        include: { supportedModels: true },
+      });
     });
 
     it('fieldName ซ้ำ (P2002) -> ConflictException', async () => {
