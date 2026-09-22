@@ -277,7 +277,7 @@ describe('DeviceService', () => {
       });
     });
 
-    it('AuditLog (#27) -> เขียน action apply-config หลัง applier สำเร็จ', async () => {
+    it('AuditLog (#27) -> เขียน action apply-config หลัง applier สำเร็จ พร้อม metadata (issue #205)', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue(approvedConfig);
       configApplier.applyConfig.mockResolvedValue(applyResult);
@@ -289,6 +289,38 @@ describe('DeviceService', () => {
           userId: 'st-1',
           auditModule: 'device',
           action: 'apply-config',
+          metadata: {
+            deviceId: 'DTC-0001',
+            configId: approvedConfig.id,
+            fieldNames: ['APN'],
+          },
+        },
+      });
+    });
+
+    it('AuditLog metadata.fieldNames -> เก็บแค่ชื่อ field ไม่ใช่ค่าจริง (กันข้อมูลอ่อนไหวรั่ว, issue #205)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'internet', COMMAND_PASSWORD: 'super-secret' },
+      });
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      // full object match — ถ้า implementation แอบใส่ค่าจริง (เช่น
+      // "super-secret") ปนเข้ามาใน metadata การเทียบทั้ง object นี้จะ fail
+      // ทันที เพราะ shape ที่คาดไว้มีแค่ fieldNames (ชื่อ) ไม่มีค่าจริงเลย
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'st-1',
+          auditModule: 'device',
+          action: 'apply-config',
+          metadata: {
+            deviceId: 'DTC-0001',
+            configId: approvedConfig.id,
+            fieldNames: ['APN', 'COMMAND_PASSWORD'],
+          },
         },
       });
     });

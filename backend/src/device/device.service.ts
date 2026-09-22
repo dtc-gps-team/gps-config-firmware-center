@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Device, Prisma } from '@prisma/client';
+import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CustomerSummary } from '../customer/customer.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -193,11 +194,12 @@ export class DeviceService {
       );
     }
 
+    const fields = config.fields as Record<string, unknown>;
     const result = await this.configApplier.applyConfig({
       deviceId: device.deviceId,
       deviceModel: device.deviceModel,
       protocol: device.protocol,
-      fields: config.fields as Record<string, unknown>,
+      fields,
     });
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "นำ Config ไปใช้") — log ทุกครั้ง
@@ -205,15 +207,27 @@ export class DeviceService {
     // การกระทำจริงที่ต้องมีร่องรอย compliance (endpoint นี้เอง fire-and-forget
     // ไม่ persist อะไรใน DB ของเรา — AuditLog แถวนี้จึงเป็นร่องรอยเดียวที่มี)
     //
+    // metadata (issue #205, feedback พี่เลี้ยง) — deviceId/configId/fieldNames
+    // ให้ระบุได้ว่า "ใส่ Config ไหนเข้าอุปกรณ์เครื่องไหน มี field อะไรบ้าง"
+    // ตั้งใจเก็บแค่**ชื่อ**ของ field ไม่ใช่ค่าจริง (ดู comment เหนือ
+    // AuditLog.metadata ใน schema.prisma — กัน field ที่มีค่าอ่อนไหว เช่น
+    // COMMAND_PASSWORD/SOS_NUMBER_1 รั่วผ่าน GET /audit-logs)
+    //
     // **never throws** (แก้ตาม review comment ของ B บน PR #146) — ตอนนี้กล่อง
     // ได้รับคำสั่ง apply ไปแล้วจริง (fire-and-forget) audit ล้มเหลวไม่ควรทำให้
     // client เห็น 500 ทั้งที่ผล `result` ข้างบนสำเร็จจริง
     try {
+      const metadata: AuditLogMetadata = {
+        deviceId: device.deviceId,
+        configId: config.id,
+        fieldNames: Object.keys(fields),
+      };
       await this.prisma.auditLog.create({
         data: {
           userId: actor.id,
           auditModule: AUDIT_MODULE,
           action: 'apply-config',
+          metadata: metadata as Prisma.InputJsonValue,
         },
       });
     } catch (err) {

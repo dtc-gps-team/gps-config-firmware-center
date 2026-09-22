@@ -1891,7 +1891,7 @@ components:
         แถวประวัติการทำงาน 1 รายการ (listAuditLogs — v3.19) — mutation-only
         ตาม CLAUDE.md Audit Pattern ไม่มี resourceId (ไม่ผูกกับ record ที่ถูก
         แก้โดยตรง เก็บแค่ผู้ทำ/โมดูล/action) · ipAddress ยังไม่มี endpoint ไหน
-        ส่งมาจริงตอนนี้ (nullable ไว้รอ)
+        ส่งมาจริงตอนนี้ (nullable ไว้รอ) · metadata เพิ่ม v3.27 (issue #205)
       required: [id, userId, auditModule, action, createdAt]
       properties:
         id:
@@ -1909,6 +1909,15 @@ components:
         ipAddress:
           type: string
           nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >-
+            รายละเอียดเชิงโครงสร้างเพิ่มเติม (issue #205) — มีเฉพาะบาง action ที่
+            ถือว่าสำคัญ/จำเป็นต่อการตรวจสอบเท่านั้น (ตอนนี้มีแค่ `apply-config`:
+            `{ deviceId, configId, fieldNames }` — `fieldNames` เป็นชื่อ field
+            ไม่ใช่ค่าจริง กันข้อมูลอ่อนไหวรั่ว) แถวเก่าก่อนหน้านี้เป็น `null`
         createdAt:
           type: string
           format: date-time
