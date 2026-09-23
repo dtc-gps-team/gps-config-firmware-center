@@ -21,10 +21,10 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import {
   formatModelSupport,
   type ConfigFieldDefinition,
-  type ConfigFieldModelSupport,
 } from "@/lib/config-definition-api";
 import { ParameterCreateForm } from "./parameter-create-form";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
@@ -179,22 +179,8 @@ function ParameterLibraryContent() {
   const { session } = useAuth();
   const canCreate = canCreateFieldDefinition(session?.role);
   const definitions = useConfigDefinitions();
+  const deviceModels = useDeviceModels();
   const [showForm, setShowForm] = useState(false);
-
-  /** คู่ (รุ่น/โปรโตคอล) ที่มีในระบบแล้ว — ให้ฟอร์มเลือกเป็น supportedModels */
-  const knownPairs = useMemo<ConfigFieldModelSupport[]>(() => {
-    const seen = new Set<string>();
-    const out: ConfigFieldModelSupport[] = [];
-    for (const d of definitions.data ?? []) {
-      for (const m of d.supportedModels) {
-        const key = `${m.deviceModel}/${m.protocol}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ deviceModel: m.deviceModel, protocol: m.protocol });
-      }
-    }
-    return out;
-  }, [definitions.data]);
 
   const existingNames = useMemo(
     () =>
@@ -222,7 +208,7 @@ function ParameterLibraryContent() {
 
       {canCreate && showForm ? (
         <ParameterCreateForm
-          knownPairs={knownPairs}
+          deviceModels={deviceModels.data ?? []}
           existingNames={existingNames}
           onCancel={() => setShowForm(false)}
           onCreated={async () => {
