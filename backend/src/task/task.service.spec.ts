@@ -317,6 +317,23 @@ describe('TaskService', () => {
         service.findOne(sampleTask.id, otherTech),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it.each([auditor, admin, superAdmin])(
+      'issue #73 — $role (UNSCOPED_TASK_ROLES): เห็นงานได้ ไม่ว่าใครเป็นเจ้าของ',
+      async (actor) => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        await expect(service.findOne(sampleTask.id, actor)).resolves.toEqual(
+          sampleTask,
+        );
+      },
+    );
+
+    it('issue #73 ข้อ 3 — role ที่ไม่อยู่ใน UNSCOPED_TASK_ROLES/SELF_SCOPED_ROLES เลย: 404 เสมอแม้ไม่มี PermissionGuard คุม endpoint นี้ (default-deny ไม่ใช่ default-allow)', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      await expect(
+        service.findOne(sampleTask.id, configEngineer),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   describe('update', () => {
@@ -506,6 +523,32 @@ describe('TaskService', () => {
         expect(task.updateMany).not.toHaveBeenCalled();
         expect(config.findUnique).not.toHaveBeenCalled();
       });
+
+      it.each(['cancelled', 'pending'] as const)(
+        'issue #73 ข้อ 2 — ตั้งสถานะเป็น "%s": 403 ไม่เรียก DB (mirror ตัวเลือกที่ Mobile ให้ ST/OT เห็นแค่ in_progress/completed)',
+        async (status) => {
+          await expect(
+            service.update(sampleTask.id, { status }, owner),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+          expect(task.updateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['in_progress', 'completed'] as const)(
+        'issue #73 ข้อ 2 — ตั้งสถานะเป็น "%s": ผ่าน (สถานะที่ ST/OT ตั้งเองได้)',
+        async (status) => {
+          task.updateMany.mockResolvedValue({ count: 1 });
+          task.findUniqueOrThrow.mockResolvedValue({ ...sampleTask, status });
+
+          await expect(
+            service.update(sampleTask.id, { status }, owner),
+          ).resolves.toMatchObject({ status });
+          expect(task.updateMany).toHaveBeenCalledWith({
+            where: { id: sampleTask.id, assignedTo: owner.id },
+            data: { status },
+          });
+        },
+      );
     });
 
     describe('ST/OT (ไม่ใช่เจ้าของงาน)', () => {
