@@ -61,19 +61,23 @@ function renderFieldValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+/** โครง object ที่ import กลับได้ (`ConfigWriteInput`) ร่วมกันทั้งของจริงและ
+ * ของ mask — รับ `fields` เป็น parameter แยก กันโครงสร้างสองฟังก์ชันเพี้ยนออก
+ * จากกันในอนาคต (JSON preview ที่ mask กับที่คัดลอกจริงต้องตรงกันเป๊ะยกเว้น
+ * ค่า field) */
+function buildImportPayload(config: Config, fields: Record<string, unknown>) {
+  return {
+    name: config.name,
+    ...(config.description ? { description: config.description } : {}),
+    deviceModel: config.deviceModel,
+    protocol: config.protocol,
+    fields,
+  };
+}
+
 /** JSON รูปที่ import กลับได้ (`ConfigWriteInput`) — ใช้กับปุ่มคัดลอก */
 function toImportJson(config: Config): string {
-  return JSON.stringify(
-    {
-      name: config.name,
-      ...(config.description ? { description: config.description } : {}),
-      deviceModel: config.deviceModel,
-      protocol: config.protocol,
-      fields: config.fields,
-    },
-    null,
-    2,
-  );
+  return JSON.stringify(buildImportPayload(config, config.fields), null, 2);
 }
 
 /** เหมือน `toImportJson()` แต่แทนค่า field ที่อยู่ใน `sensitiveFieldNames`
@@ -91,17 +95,7 @@ function toMaskedImportJson(
       ? MASKED_JSON_PLACEHOLDER
       : value;
   }
-  return JSON.stringify(
-    {
-      name: config.name,
-      ...(config.description ? { description: config.description } : {}),
-      deviceModel: config.deviceModel,
-      protocol: config.protocol,
-      fields: maskedFields,
-    },
-    null,
-    2,
-  );
+  return JSON.stringify(buildImportPayload(config, maskedFields), null, 2);
 }
 
 export function ConfigDetailView({ configId }: { configId: string }) {
@@ -162,6 +156,7 @@ function ConfigDetailContent({
   const canModify =
     config.status === "draft" && canUpdateConfig(session?.role);
   const fieldEntries = Object.entries(config.fields);
+  const definitionsReady = !definitions.isLoading;
   const sensitiveFieldNames = useMemo(() => {
     const set = new Set<string>();
     for (const d of definitions.data ?? []) {
@@ -169,13 +164,23 @@ function ConfigDetailContent({
     }
     return set;
   }, [definitions.data]);
+  /** ก่อน `useConfigDefinitions()` โหลดเสร็จ ยังไม่รู้จริงๆ ว่า field ไหน
+   * sensitive — treat ทุก field เป็น sensitive ไว้ก่อน (safe default) แทนที่
+   * จะ default เป็น "ไม่ sensitive" ซึ่งจะเผย plaintext ไปก่อนช่วงสั้นๆ ถ้า
+   * `useConfig`/`useConfigVersions` resolve เร็วกว่า (race condition) */
+  const effectiveSensitiveFieldNames = useMemo(() => {
+    if (!definitionsReady) {
+      return new Set(Object.keys(config.fields));
+    }
+    return sensitiveFieldNames;
+  }, [definitionsReady, sensitiveFieldNames, config.fields]);
   const importJson = useMemo(() => toImportJson(config), [config]);
   const displayedJson = useMemo(
     () =>
       showSensitiveJson
         ? importJson
-        : toMaskedImportJson(config, sensitiveFieldNames),
-    [config, importJson, sensitiveFieldNames, showSensitiveJson],
+        : toMaskedImportJson(config, effectiveSensitiveFieldNames),
+    [config, importJson, effectiveSensitiveFieldNames, showSensitiveJson],
   );
   const latestVersion = versions[0]?.versionNumber ?? null;
 
@@ -356,8 +361,8 @@ function ConfigDetailContent({
                       <span className="shrink-0 font-mono text-xs text-muted-foreground">
                         {key}
                       </span>
-                      {sensitiveFieldNames.has(key) ? (
-                        <SensitiveValue value={rendered} />
+                      {effectiveSensitiveFieldNames.has(key) ? (
+                        <SensitiveValue value={value} />
                       ) : (
                         <span
                           className={
@@ -398,7 +403,7 @@ function ConfigDetailContent({
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">Config JSON</p>
-            {sensitiveFieldNames.size > 0 && (
+            {effectiveSensitiveFieldNames.size > 0 && (
               <button
                 type="button"
                 onClick={() => setShowSensitiveJson((v) => !v)}

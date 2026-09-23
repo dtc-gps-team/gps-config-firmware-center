@@ -81,6 +81,20 @@ export function ConfigOverridePanel({
     return null;
   }
 
+  /** ก่อน `useConfigDefinitions()` โหลดเสร็จ `defByName` ว่างเปล่า — ไม่รู้ว่า
+   * field ไหน sensitive/stOverridable/dataType อะไร (race condition เดียวกับ
+   * `config-detail-view.tsx`) แทนที่จะ render field เป็น read-only plaintext
+   * ไปก่อนอย่างผิดๆ (เพราะ `def` เป็น `undefined` ทุกตัว) รอให้โหลดเสร็จก่อน */
+  if (definitions.isLoading) {
+    return (
+      <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+        <p className="text-sm text-muted-foreground">
+          กำลังโหลดข้อมูล Parameter…
+        </p>
+      </div>
+    );
+  }
+
   const fieldEntries = Object.entries(config.fields);
 
   function currentInputValue(key: string, original: unknown): string {
@@ -177,7 +191,7 @@ export function ConfigOverridePanel({
                     title="field นี้ override ไม่ได้ — ยังไม่ได้เปิดไว้ใน Parameter Library"
                   >
                     {def?.sensitive ? (
-                      <SensitiveValue value={toInputValue(original)} />
+                      <SensitiveValue value={original} />
                     ) : (
                       toInputValue(original)
                     )}{" "}

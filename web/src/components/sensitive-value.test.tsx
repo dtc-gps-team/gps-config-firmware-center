@@ -28,6 +28,30 @@ describe("SensitiveValue", () => {
     expect(screen.getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
   });
+
+  it("รับ raw value เป็น null ตรงๆ — โชว์ — ไม่ mask (ไม่ใช่ placeholder \"-\" ที่แปลงมาก่อนแล้ว ซึ่งจะเป็น truthy string ทำให้โดน mask ผิดๆ)", () => {
+    render(<SensitiveValue value={null} />);
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("รับ raw value เป็น undefined ตรงๆ — โชว์ — ไม่ mask", () => {
+    render(<SensitiveValue value={undefined} />);
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
+  });
+
+  it("ค่าที่ไม่ใช่ string (number) format เป็นข้อความก่อน mask แล้วค่อย toggle ดูค่าจริงได้", async () => {
+    const user = userEvent.setup();
+    render(<SensitiveValue value={8080} />);
+
+    expect(screen.getByText("••••••••")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "แสดงค่า" }));
+    expect(screen.getByText("8080")).toBeInTheDocument();
+  });
 });
 
 describe("SensitiveInput", () => {

@@ -44,19 +44,36 @@ export function SensitiveInput({
   );
 }
 
+/** string โชว์ตรงๆ ค่าอื่น (number/boolean/object/array) แปลงเป็น JSON —
+ * mirror `renderFieldValue`/`fieldValueText` (config-detail-view.tsx /
+ * approval-card.tsx) — เก็บไว้ในไฟล์นี้เพื่อให้ตัว component คุม format เอง
+ * แทนที่จะพึ่งผู้เรียกแปลงมาก่อน (ดูเหตุผลที่ `value` รับ `unknown` ด้านล่าง) */
+function formatSensitiveValue(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
 /**
  * แสดงค่าที่ mask เป็น `••••••••` ตาม default พร้อมปุ่ม toggle ดูค่าจริง — ใช้
  * แสดงผล (ไม่ใช่กรอก) เช่น config detail view / JSON preview / override panel
- * ค่าว่าง (`""`/`null`-like) ไม่ต้อง mask เพราะไม่มีอะไรให้ดู
- */
-export function SensitiveValue({ value }: { value: string }) {
+ * ค่าว่าง (`""`/`null`/`undefined`) ไม่ต้อง mask เพราะไม่มีอะไรให้ดู
+ *
+ * รับ `value: unknown` (ค่าดิบ ก่อนแปลงเป็น placeholder ใดๆ) โดยตั้งใจ — ไม่ใช่
+ * string ที่ format มาแล้ว เพราะผู้เรียกบางจุดแปลง `null`/`undefined` เป็น
+ * placeholder `"-"` ก่อนส่งเข้ามา (เช่น `renderFieldValue`) ซึ่งเป็น truthy
+ * string ทำให้ component คิดว่ามีค่าจริงต้อง mask ทั้งที่จริงๆ ไม่มีอะไรให้ดู
+ * เลย — เช็ค emptiness จากค่าดิบก่อนเสมอ แล้วค่อย format เองด้านใน */
+export function SensitiveValue({ value }: { value: unknown }) {
   const [show, setShow] = useState(false);
-  if (!value) {
+  const isEmpty = value === null || value === undefined || value === "";
+  if (isEmpty) {
     return <span className="text-muted-foreground">—</span>;
   }
+  const display = formatSensitiveValue(value);
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="font-mono text-xs">{show ? value : "••••••••"}</span>
+      <span className="font-mono text-xs whitespace-pre-wrap break-words">
+        {show ? display : "••••••••"}
+      </span>
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
