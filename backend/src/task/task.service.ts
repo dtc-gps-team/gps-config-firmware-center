@@ -46,6 +46,14 @@ const UNSCOPED_TASK_ROLES: readonly string[] = [
   'SuperAdmin',
 ];
 
+// สถานะที่ ST/OT ตั้งเองผ่าน Mobile ได้ (issue #73 ข้อ 2 — Mobile จำกัด UI ไว้
+// แล้วที่ `_fieldStaffStatusChoices` ใน task_detail_page.dart ตัด `cancelled`
+// ออกเพราะการยกเลิกงานเป็นสิทธิ์ Operation ไม่ใช่ผู้ถูก assign และตัด `pending`
+// ออกเพราะเป็นสถานะเริ่มต้นที่ Operation กำหนดตอนสร้างงาน — backend ต้อง
+// enforce ให้ตรงกัน ไม่ใช่พึ่ง UI ฝั่งเดียว (client อื่นที่มี token ST/OT ยิง
+// ตรงได้ถ้าไม่เช็คที่นี่)
+const ST_OT_ALLOWED_STATUSES: readonly string[] = ['in_progress', 'completed'];
+
 // สถานะ Config ที่ Operation ผูกกับงานติดตั้งได้ — ต้องผ่าน Operation อนุมัติ
 // มาแล้วเท่านั้น (`approved` = อนุมัติแล้ว, `synced` = เขียนเข้าระบบเดิมแล้ว)
 // ตรงกับ APPLICABLE_CONFIG_STATUSES ใน src/device/config-applier.ts (เงื่อนไข
@@ -188,6 +196,15 @@ export class TaskService {
       );
     }
 
+    if (
+      dto.status !== undefined &&
+      !ST_OT_ALLOWED_STATUSES.includes(dto.status)
+    ) {
+      throw new ForbiddenException(
+        `ST/OT ตั้งสถานะได้แค่ ${ST_OT_ALLOWED_STATUSES.join('/')} เท่านั้น (ยกเลิกงานเป็นสิทธิ์ Operation)`,
+      );
+    }
+
     // IDOR Prevention Pattern (CLAUDE.md): filter ด้วย assignedTo ตอน update แล้ว
     // เช็ค count === 0 -> 404 แทนที่จะ update() เปล่าๆ ที่ filter แค่ id
     const result = await this.prisma.task.updateMany({
@@ -201,10 +218,21 @@ export class TaskService {
     return this.prisma.task.findUniqueOrThrow({ where: { id } });
   }
 
+  // issue #73 ข้อ 3 — เดิมเช็คแค่ "ST/OT ที่ไม่ใช่เจ้าของงาน" ซ่อน ที่เหลือ
+  // (default-allow) เห็นได้หมด ไม่ว่า role นั้นจะมี use case จริงหรือไม่ —
+  // ไม่มี PermissionGuard คุม `GET /tasks/{id}` เลย (แค่ JwtAuthGuard) จุดนี้
+  // จึงเป็นด่านเดียวที่กันได้ เปลี่ยนเป็น allowlist แบบเดียวกับ findAll():
+  // UNSCOPED_TASK_ROLES เห็นได้หมด, SELF_SCOPED_ROLES เห็นเฉพาะงานตัวเอง,
+  // role อื่นที่ไม่อยู่ใน 2 list นี้เลย (เช่น role ใหม่ที่ได้ grant tasks:Read
+  // เพิ่มทีหลังโดยไม่ได้ตั้งใจ) ถูกซ่อนเสมอ (default-deny)
   private isHiddenFromActor(task: Task, actor: ActingUser): boolean {
-    return (
-      SELF_SCOPED_ROLES.includes(actor.role) && task.assignedTo !== actor.id
-    );
+    if (UNSCOPED_TASK_ROLES.includes(actor.role)) {
+      return false;
+    }
+    if (SELF_SCOPED_ROLES.includes(actor.role)) {
+      return task.assignedTo !== actor.id;
+    }
+    return true;
   }
 
   private touchesNonStatusField(dto: UpdateTaskDto): boolean {

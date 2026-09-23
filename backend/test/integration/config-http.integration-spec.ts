@@ -10,6 +10,7 @@ import { ConfigModule } from '../../src/config/config.module';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
   createTestPrisma,
+  getOrCreateDeviceModel,
   getOrCreateRole,
   makeUser,
   resetDb,
@@ -76,6 +77,12 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     // เดียวกับ config-definition-http.integration-spec.ts)
     await prisma.rolePermission.deleteMany();
     await prisma.configFieldDefinition.deleteMany();
+    // DeviceModel (issue #209 ข้อ 4) — ConfigService.create()/update() เรียก
+    // DeviceModelService.findByName() validate protocol จริงผ่าน HTTP นี้แล้ว
+    // (ไม่ใช่ mock เหมือน config.service.spec.ts) ต้อง seed ให้ทุกเทสในไฟล์นี้
+    // ใช้ได้ (เทสส่วนใหญ่ใช้ GT06N/TCP, บางเทสเปลี่ยนเป็น GT06L ตอน PUT)
+    await getOrCreateDeviceModel(prisma, 'GT06N');
+    await getOrCreateDeviceModel(prisma, 'GT06L');
   });
 
   // Semantic Validation (#26): createConfig/updateConfig เรียก
@@ -152,6 +159,46 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     const body = res.body as { createdBy: string; status: string };
     expect(body.createdBy).toBe(configEngineerUser.id);
     expect(body.status).toBe('draft');
+  });
+
+  it('POST /config deviceModel ไม่มีในทะเบียน DeviceModel -> 400 (issue #209)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'UNKNOWN_MODEL',
+        protocol: 'TCP',
+        fields: {},
+      })
+      .expect(400);
+  });
+
+  it('POST /config protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> 400 (issue #209)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'SMS',
+        fields: {},
+      })
+      .expect(400);
   });
 
   it('POST /config สำเร็จ -> เขียน AuditLog action create (#27)', async () => {

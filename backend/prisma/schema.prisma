@@ -288,12 +288,68 @@ model Customer {
   devices Device[]
 }
 
+// เพิ่มใหม่ (issue #209, docs/15 — ย่อจากลำดับชั้น 4 ระดับใน
+// GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1 เหลือ entity เดียว
+// ดู comment เหนือ Device.deviceModel ด้านล่างเรื่อง deviation นี้) เป็น
+// canonical registry ของ "รุ่นสินค้า" แทน string อิสระที่กระจัดกระจายอยู่
+// ในหลายตาราง (Device/Config/Firmware/ConfigFieldDefinitionModelSupport)
+enum DeviceModelStatus {
+  active // ยังผลิต/สั่งซื้อได้ปกติ
+  discontinued // เลิกผลิตแล้ว แต่เครื่องที่ใช้งานอยู่ยังทำงานได้ตามปกติ
+}
+
+model DeviceModel {
+  id                 String            @id @default(uuid())
+  // ต้องตรงกับ string เดิมที่ใช้อยู่แล้วทุกจุดเป๊ะ (เช่น "GT06N") — Device/
+  // Config/Firmware ยังอ้าง string นี้อยู่ ไม่ได้ migrate ไปใช้ modelId ทั้งระบบ
+  // ในรอบนี้ (out of scope ตาม issue #209 — ดู docs/15 หัวข้อ 5)
+  name               String            @unique
+  manufacturer       String?
+  // โปรโตคอลที่รุ่นนี้รองรับได้ — บังคับอย่างน้อย 1 ค่าตอนสร้าง (DTO
+  // @ArrayMinSize(1)) และ ConfigService บังคับ validate จริงว่า
+  // Config.protocol ต้องอยู่ในลิสต์นี้ก่อนสร้าง/แก้ไข (issue #209 ข้อ 4 —
+  // ตัดสินใจ enforce เข้มงวด ไม่ใช่แค่ dropdown ช่วยเฉยๆ เพราะ backfill
+  // มีข้อมูลจริงรองรับอยู่แล้ว)
+  supportedProtocols String[]
+  status             DeviceModelStatus @default(active)
+  // Warranty/lifecycle ต่อรุ่น — optional เพราะรุ่นที่ backfill เข้ามาตอน
+  // migration ส่วนใหญ่ไม่มีข้อมูลนี้ให้กรอกจริง
+  warrantyMonths     Int?
+  endOfSupportDate   DateTime?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  devices Device[]
+}
+
 model Device {
   id           String                @id @default(uuid())
   deviceId     String                @unique
   simNumber    String
+  // Deviation จาก GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1
+  // (เอกสารต้นฉบับพี่เลี้ยง — ออกแบบ "รุ่นอุปกรณ์" เป็นลำดับชั้น 4 ระดับแยก
+  // entity กันจริง: Manufacturer → Product Family → Product Model → Hardware
+  // Revision → Firmware Branch) — field นี้เป็น string เดียวแบนราบมาตั้งแต่
+  // PR #38 ไม่เคยมี comment อธิบาย deviation นี้จนกว่า docs/15 (PR #196) จะ
+  // ชี้ให้เห็น `DeviceModel` ที่เพิ่มด้านบนเป็นก้าวที่พาเข้าใกล้ต้นฉบับมากขึ้น
+  // (ยังย่อกว่าอยู่ — รวม 4 ระดับเป็น entity เดียว)
+  //
+  // เก็บ field นี้ไว้ต่อช่วง transition — โค้ดหลายจุด (CampaignService,
+  // TaskService, DeviceService เอง) ยังอ่าน string นี้ตรงๆ อยู่ — **server
+  // คำนวณค่านี้ให้เองเสมอจาก `model.name` เมื่อมี `modelId`** ไม่รับเป็น
+  // input แยกจาก client (issue #209 ข้อ 5 — กัน 2 ค่านี้ไม่ตรงกัน)
   deviceModel  String
   protocol     String
+  // รหัสรุ่นย่อย/hardware revision ของเครื่องนี้ (เช่น "RevA", "2023Q1") —
+  // string อิสระ ไม่มีทะเบียนแยก (ต่างจาก docs/15 เดิมที่เสนอ
+  // DeviceModel.hardwareVersion — แก้แล้วเพราะอุปกรณ์รุ่นเดียวกันมีได้หลาย
+  // รหัสรุ่นต่างกันตามรอบผลิต ไม่ใช่ 1 โมเดล = 1 hardwareVersion ตายตัว)
+  // ยังไม่มี metadata/สถานะเป็นของตัวเอง (ไม่รู้ว่าต้องรองรับ protocol/
+  // firmware ต่างกันไหม หรือเลิกผลิตแยกจากรุ่นแม่ได้ไหม) — ถ้าเจอ
+  // requirement จริงทีหลัง ค่อยยกระดับเป็นตารางแยก mirror วิธีที่
+  // deviceModel string เดิมกำลังถูกยกระดับเป็น DeviceModel ตอนนี้
+  hardwareRevisionCode String?
   status       DeviceLifecycleStatus @default(registered)
   registeredAt DateTime              @default(now())
   installedAt  DateTime?
@@ -302,6 +358,11 @@ model Device {
   // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
   customerId   String?
   customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  // เดิม nullable ชั่วคราวตอน migration แรก (issue #209) — บังคับ NOT NULL
+  // ในนี้แล้วหลัง backfill ครบทุกแถวใน seed.ts (ยืนยันด้วย query ตรง — ดู
+  // migration `..._device_model_id_not_null`)
+  modelId      String
+  model        DeviceModel           @relation(fields: [modelId], references: [id])
 }
 
 // ---------------------------------------------------------------------------

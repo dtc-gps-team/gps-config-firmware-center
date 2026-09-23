@@ -552,9 +552,24 @@ class AppNotification {
   final DateTime createdAt;
   final DateTime? sentAt;
 
+  /// `createdAt` เป็น required ใน `openapi.yaml` — ถ้าหาย/parse ไม่ได้ถือเป็น
+  /// ข้อมูลเสีย throw แทนที่จะ fallback เป็น `DateTime.now()` เงียบๆ (เดิมทำแบบนั้น
+  /// — backend เรียง createdAt desc มาให้แล้ว ค่าปลอมจะทำให้ลำดับรายการเพี้ยน
+  /// แบบไม่มีใครรู้) ต่างจาก field อื่นที่ optional ตาม spec — record ที่หลุดผ่าน
+  /// [ApiClient.listNotifications] ถูก [ApiClient._wrapList] ดัก skip + log
+  /// warning ให้เอง (issue #82 ข้อ 2)
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
+
+    final createdAt = parseDate(json['createdAt']);
+    if (createdAt == null) {
+      throw ArgumentError.value(
+        json['createdAt'],
+        'createdAt',
+        'AppNotification.createdAt หาย/parse ไม่ได้',
+      );
+    }
 
     return AppNotification(
       id: json['id'] as String,
@@ -562,7 +577,7 @@ class AppNotification {
       type: NotificationType.fromWire(json['type'] as String),
       payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
       read: json['read'] as bool? ?? false,
-      createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
+      createdAt: createdAt,
       sentAt: parseDate(json['sentAt']),
     );
   }

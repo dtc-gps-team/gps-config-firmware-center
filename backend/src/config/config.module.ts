@@ -3,6 +3,7 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import { ConfigSyncWriterModule } from '../config-sync-writer/config-sync-writer.module';
+import { DeviceModelModule } from '../device-model/device-model.module';
 import { ConfigController } from './config.controller';
 import { ConfigService } from './config.service';
 import {
@@ -23,7 +24,15 @@ import {
   // ConfigSyncWriterModule: ConfigService.approve() enqueue งานเขียน Config ที่
   // อนุมัติแล้วเข้าระบบเดิมผ่าน ConfigSyncWriterQueue (docs/07 §5) — module
   // export queue ไว้แล้ว
-  imports: [AuthModule, ConfigDefinitionModule, ConfigSyncWriterModule],
+  // DeviceModelModule: ConfigService.create()/update() ต้องเรียก
+  // DeviceModelService.findByName() validate ว่า protocol อยู่ใน
+  // supportedProtocols ของรุ่นนั้นไหม (issue #209 ข้อ 4)
+  imports: [
+    AuthModule,
+    ConfigDefinitionModule,
+    ConfigSyncWriterModule,
+    DeviceModelModule,
+  ],
   controllers: [ConfigController],
   providers: [
     ConfigService,

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../config/app_config.dart';
 import 'models.dart';
@@ -56,7 +57,7 @@ class ApiClient {
   /// `config:Read` sees every Config, deliberately — see
   /// `backend/src/config/config.service.ts` `findAll()`).
   Future<List<DeviceConfigDraft>> listConfigs() async {
-    return _wrapList(
+    return _wrapListStrict(
       () => _dio.get<List<dynamic>>('/config'),
       DeviceConfigDraft.fromJson,
     );
@@ -96,8 +97,15 @@ class ApiClient {
   }
 
   /// `GET /tasks` — self-scoped to the caller by the backend for ST/OT roles.
+  /// **Strict** on purpose (see [_wrapListStrict]) — a Task that fails to
+  /// parse (e.g. the backend adds a new `TaskStatus` value this build
+  /// doesn't know yet) must surface as a visible error, not silently vanish
+  /// from an ST/OT's work list.
   Future<List<Task>> listTasks() async {
-    return _wrapList(() => _dio.get<List<dynamic>>('/tasks'), Task.fromJson);
+    return _wrapListStrict(
+      () => _dio.get<List<dynamic>>('/tasks'),
+      Task.fromJson,
+    );
   }
 
   /// `GET /tasks/{taskId}`
@@ -124,16 +132,18 @@ class ApiClient {
   /// (RBAC_Matrix.md "Incident & Rollback" = R for every role). No query
   /// params: returns every incident, backend sorts `createdAt` desc.
   Future<List<Incident>> listIncidents() async {
-    return _wrapList(
+    return _wrapListStrict(
       () => _dio.get<List<dynamic>>('/incidents'),
       Incident.fromJson,
     );
   }
 
   /// `GET /notifications` — always scoped to the caller by the backend (every
-  /// role). Pass `unread: true` for `?unread=true`.
+  /// role). Pass `unread: true` for `?unread=true`. **Lenient** on purpose
+  /// (see [_wrapListLenient]) — notifications are best-effort/non-critical,
+  /// unlike Task/Device/Config/Customer/Incident data.
   Future<List<AppNotification>> listNotifications({bool? unread}) async {
-    return _wrapList(
+    return _wrapListLenient(
       () => _dio.get<List<dynamic>>(
         '/notifications',
         queryParameters: unread == null ? null : {'unread': unread},
@@ -158,7 +168,7 @@ class ApiClient {
   /// omit it to get every device (Mobile filters/searches client-side
   /// elsewhere, like Web does, since the list is small in the MVP).
   Future<List<Device>> listDevices({String? customerId}) async {
-    return _wrapList(
+    return _wrapListStrict(
       () => _dio.get<List<dynamic>>(
         '/devices',
         queryParameters: customerId != null ? {'customerId': customerId} : null,
@@ -171,7 +181,7 @@ class ApiClient {
   /// mirrors `GET /users`). Feeds the "เลือกบริษัท" step of the ทดสอบสัญญาณ
   /// flow (issue #204).
   Future<List<Customer>> listCustomers() async {
-    return _wrapList(
+    return _wrapListStrict(
       () => _dio.get<List<dynamic>>('/customers'),
       Customer.fromJson,
     );
@@ -266,9 +276,17 @@ class ApiClient {
     }
   }
 
-  /// Same as [_wrap] but for endpoints that return a JSON array. Non-object
-  /// entries are skipped defensively.
-  Future<List<T>> _wrapList<T>(
+  /// Same as [_wrap] but for endpoints that return a JSON array — **strict**:
+  /// any entry that isn't a JSON object, or any entry whose [parse] throws,
+  /// fails the whole call (same all-or-nothing behavior as [_wrap] itself).
+  ///
+  /// Used by every list endpoint except [listNotifications] — Task/Device/
+  /// Config/Customer/Incident data backs decisions ST/OT/Operation make on
+  /// real work (e.g. which job to do next), so one record that can't be
+  /// parsed should surface as a visible, retry-able error instead of
+  /// silently vanishing from the list. This app has no Sentry/Crashlytics —
+  /// a silently-skipped record here is a silently-lost bug report.
+  Future<List<T>> _wrapListStrict<T>(
     Future<Response<List<dynamic>>> Function() send,
     T Function(Map<String, dynamic> json) parse,
   ) async {
@@ -279,6 +297,41 @@ class ApiClient {
           .whereType<Map>()
           .map((e) => parse(e.cast<String, dynamic>()))
           .toList(growable: false);
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
+  /// Same as [_wrapListStrict] but **lenient**: non-object entries are
+  /// skipped defensively, and so is any entry whose [parse] throws (e.g.
+  /// `NotificationType.fromWire` hitting a type the app doesn't know about
+  /// yet) — one bad record shouldn't take down the whole list (issue #82).
+  /// Logged via [debugPrint] so it's visible during dev/QA without
+  /// surfacing an error to the user for what is, from their POV, a list
+  /// that's simply missing one item.
+  ///
+  /// **Only [listNotifications] uses this.** Every other list endpoint uses
+  /// [_wrapListStrict] instead — notifications are best-effort/non-critical
+  /// (a missing one isn't a blocker to getting work done), which is not
+  /// true of Task/Device/Config/Customer/Incident data.
+  Future<List<T>> _wrapListLenient<T>(
+    Future<Response<List<dynamic>>> Function() send,
+    T Function(Map<String, dynamic> json) parse,
+  ) async {
+    try {
+      final response = await send();
+      final body = response.data ?? const <dynamic>[];
+      final out = <T>[];
+      for (final e in body.whereType<Map>()) {
+        try {
+          out.add(parse(e.cast<String, dynamic>()));
+        } catch (err) {
+          debugPrint(
+            'ApiClient._wrapListLenient: skip record ที่ parse ไม่ได้ — $err',
+          );
+        }
+      }
+      return out;
     } on DioException catch (e) {
       throw _toApiException(e);
     }
