@@ -1364,6 +1364,52 @@ paths:
             ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
             (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
 
+  /devices/{deviceId}/confirm-firmware-install:
+    post:
+      tags: [device]
+      operationId: confirmFirmwareInstall
+      summary: ช่างยืนยันว่าติดตั้ง Firmware เข้าอุปกรณ์เสร็จแล้วจริง (v3.29, issue #181)
+      description: >-
+        สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — **ไม่ใช่คำสั่งส่งอะไรไปอุปกรณ์เลย**
+        ต่างจาก `applyConfigToDevice` ที่ยังมี mock fire-and-forget อยู่เบื้องหลัง
+        endpoint นี้เป็นแค่การบันทึกว่า "มีการยืนยันเกิดขึ้น" (AuditLog เท่านั้น)
+        **ไม่คำนวณ `Firmware.deviceUpdateStatus` จริง** (ยังคงเป็น unknown ต่อไป)
+        — placeholder ระดับที่ทำได้ในขอบเขตฝึกงาน ต่างจาก Workflow Firmware
+        แบบ state machine อัตโนมัติเต็มรูปแบบใน design doc §10.2-10.3 ที่ทำไม่ได้
+        เพราะระบบเป็น PULL model (backend ไม่คุยกับอุปกรณ์ตรงๆ)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmFirmwareInstallInput"
+      responses:
+        "200":
+          description: ยืนยันสำเร็จ — บันทึก AuditLog แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmFirmwareInstallResult"
+        "400":
+          description: firmwareId ไม่ใช่ uuid ที่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ยืนยันติดตั้ง Firmware — เฉพาะ Role ST, OT
+        "404":
+          description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Firmware (firmwareId) นี้
+        "409":
+          description: >-
+            ยืนยันไม่ได้ — Device ยังไม่ installed / Firmware ยังไม่ผ่านอัปโหลด
+            (ต้อง stored) / Firmware ยังไม่ผ่านอนุมัติคุณภาพ (ต้อง approved) /
+            Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้
+
   /devices/{deviceId}/simulate-config:
     post:
       tags: [device]
@@ -2915,6 +2961,38 @@ components:
           type: string
           format: date-time
           description: เวลาที่ server รับคำสั่ง (ไม่ใช่เวลาที่กล่องรับค่าจริง)
+
+    ConfirmFirmwareInstallInput:
+      type: object
+      description: Request body สำหรับ confirmFirmwareInstall (issue #181)
+      required: [firmwareId]
+      properties:
+        firmwareId:
+          type: string
+          format: uuid
+          description: >-
+            id ของ Firmware ที่ช่างยืนยันว่าติดตั้งเสร็จแล้ว — ต้องเป็นสถานะ
+            uploadStatus:stored และ approvalStatus:approved และรองรับรุ่น
+            อุปกรณ์เครื่องนี้ (deviceModelCompatibility)
+
+    ConfirmFirmwareInstallResult:
+      type: object
+      description: >-
+        ผลการยืนยัน (`confirmFirmwareInstall`) — ไม่มี field สถานะอุปกรณ์ใดๆ
+        เพราะ endpoint นี้ไม่คำนวณ Firmware.deviceUpdateStatus จริง (ยังคง
+        unknown ต่อไป, มติ issue #181 ข้อ 3)
+      required: [deviceId, firmwareId, confirmedAt]
+      properties:
+        deviceId:
+          type: string
+          description: "Device.deviceId (เลขเครื่องจริง)"
+        firmwareId:
+          type: string
+          format: uuid
+        confirmedAt:
+          type: string
+          format: date-time
+          description: เวลาที่ backend บันทึกการยืนยัน (ไม่ใช่เวลาที่ช่างติดตั้งจริงหน้างาน)
 
     DeviceSimulateConfigResult:
       type: object

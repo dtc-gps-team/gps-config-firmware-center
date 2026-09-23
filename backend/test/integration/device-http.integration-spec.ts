@@ -122,6 +122,29 @@ describe('DeviceController test-connection (integration — real postgres + guar
     return config.id;
   }
 
+  async function makeFirmware(
+    options: {
+      uploadStatus?: 'pending' | 'stored' | 'failed';
+      approvalStatus?: 'pending_review' | 'approved' | 'rejected';
+      deviceModelCompatibility?: string[];
+    } = {},
+  ): Promise<string> {
+    const uploader = await makeUser(prisma, { role: 'FirmwareEngineer' });
+    const firmware = await prisma.firmware.create({
+      data: {
+        version: `fw-${randomUUID()}`,
+        deviceModelCompatibility: options.deviceModelCompatibility ?? ['GT06N'],
+        uploadStatus: options.uploadStatus ?? 'stored',
+        approvalStatus: options.approvalStatus ?? 'approved',
+        objectKey: `firmware/${randomUUID()}.bin`,
+        originalFilename: 'fw.bin',
+        fileSizeBytes: 1024,
+        uploadedBy: uploader.id,
+      },
+    });
+    return firmware.id;
+  }
+
   it('ไม่ส่ง Authorization header -> 401', async () => {
     await makeDevice('DTC-401', 'installed');
 
@@ -361,6 +384,183 @@ describe('DeviceController test-connection (integration — real postgres + guar
         deviceId: 'AC-205',
         configId,
         fieldNames: ['APN'],
+      });
+    });
+  });
+
+  describe('POST /devices/:deviceId/confirm-firmware-install (issue #181)', () => {
+    async function stToken(): Promise<string> {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Create, 'device-firmware-confirm');
+      return tokenFor(stUser.id, 'ST');
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('CF-401', 'installed');
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-401/confirm-firmware-install')
+        .send({ firmwareId: '00000000-0000-0000-0000-000000000000' })
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ device-firmware-confirm (ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
+      await makeDevice('CF-403', 'installed');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-403/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId: '00000000-0000-0000-0000-000000000000' })
+        .expect(403);
+    });
+
+    it('firmwareId ไม่ใช่ uuid -> 400', async () => {
+      await makeDevice('CF-400', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-400/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId: 'not-a-uuid' })
+        .expect(400);
+    });
+
+    it('deviceId ไม่พบ -> 404', async () => {
+      const token = await stToken();
+      const firmwareId = await makeFirmware();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/NOPE/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(404);
+    });
+
+    it('firmwareId ไม่พบ -> 404', async () => {
+      await makeDevice('CF-404F', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-404F/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' })
+        .expect(404);
+    });
+
+    it('Device ยัง registered -> 409', async () => {
+      await makeDevice('CF-409D', 'registered');
+      const token = await stToken();
+      const firmwareId = await makeFirmware();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-409D/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(409);
+    });
+
+    it('Firmware uploadStatus ยังไม่ stored -> 409', async () => {
+      await makeDevice('CF-409U', 'installed');
+      const token = await stToken();
+      const firmwareId = await makeFirmware({ uploadStatus: 'pending' });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-409U/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(409);
+    });
+
+    it('Firmware approvalStatus ยังไม่ approved -> 409', async () => {
+      await makeDevice('CF-409A', 'installed');
+      const token = await stToken();
+      const firmwareId = await makeFirmware({
+        approvalStatus: 'pending_review',
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-409A/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(409);
+    });
+
+    it('Firmware คนละรุ่นกับ Device -> 409', async () => {
+      await makeDevice('CF-409M', 'installed', 'GT06N');
+      const token = await stToken();
+      const firmwareId = await makeFirmware({
+        deviceModelCompatibility: ['GT06L'],
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-409M/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(409);
+    });
+
+    it('ST + Device installed + Firmware stored/approved/รุ่นตรง -> 200 พร้อม deviceId/firmwareId/confirmedAt', async () => {
+      await makeDevice('CF-200', 'installed');
+      const token = await stToken();
+      const firmwareId = await makeFirmware();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-200/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(200);
+
+      const body = res.body as {
+        deviceId: string;
+        firmwareId: string;
+        confirmedAt: string;
+      };
+      expect(body.deviceId).toBe('CF-200');
+      expect(body.firmwareId).toBe(firmwareId);
+      expect(Number.isNaN(Date.parse(body.confirmedAt))).toBe(false);
+    });
+
+    it('ST + ยืนยันสำเร็จ -> AuditLog แถวจริงใน DB มี metadata ครบ (deviceId/firmwareId/firmwareVersion)', async () => {
+      await makeDevice('CF-205', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Create, 'device-firmware-confirm');
+      const token = tokenFor(stUser.id, 'ST');
+      const uploader = await makeUser(prisma, { role: 'FirmwareEngineer' });
+      const createdFirmware = await prisma.firmware.create({
+        data: {
+          version: 'GT06N-v9.9.9',
+          deviceModelCompatibility: ['GT06N'],
+          uploadStatus: 'stored',
+          approvalStatus: 'approved',
+          objectKey: `firmware/${randomUUID()}.bin`,
+          originalFilename: 'fw.bin',
+          fileSizeBytes: 1024,
+          uploadedBy: uploader.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-205/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId: createdFirmware.id })
+        .expect(200);
+
+      const log = await prisma.auditLog.findFirst({
+        where: {
+          userId: stUser.id,
+          auditModule: 'device',
+          action: 'confirm-firmware-install',
+        },
+      });
+      expect(log).not.toBeNull();
+      expect(log?.metadata).toEqual({
+        deviceId: 'CF-205',
+        firmwareId: createdFirmware.id,
+        firmwareVersion: 'GT06N-v9.9.9',
       });
     });
   });

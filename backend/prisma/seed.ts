@@ -260,6 +260,13 @@ async function main() {
     grant('ST', 'device-config-apply', 'Read'),
     grant('OT', 'device-config-apply', 'Read'),
 
+    // ---- device-firmware-confirm (POST /devices/{deviceId}/confirm-firmware-install) ----
+    // ช่างหน้างานยืนยันว่าติดตั้ง Firmware เข้าอุปกรณ์เสร็จแล้ว (issue #181) —
+    // ST/OT เท่านั้น (mirror device-config-apply) action `Create` ไม่ใช่ `Read`
+    // เพราะ endpoint นี้เขียน AuditLog จริง — ดู device.controller.ts
+    grant('ST', 'device-firmware-confirm', 'Create'),
+    grant('OT', 'device-firmware-confirm', 'Create'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),
