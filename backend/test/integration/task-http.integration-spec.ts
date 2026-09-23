@@ -166,6 +166,64 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       .expect(404);
   });
 
+  it('GET /tasks/:id role ConfigEngineer (ไม่อยู่ใน UNSCOPED_TASK_ROLES/SELF_SCOPED_ROLES เลย) -> 404 แม้ไม่มี PermissionGuard คุม endpoint นี้ (issue #73 ข้อ 3)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    const otherUser = await makeUser(prisma, { role: 'OT' });
+    const task = await prisma.task.create({
+      data: { title: 'other', assignedTo: otherUser.id },
+    });
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/tasks/${task.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('GET /tasks/:id role Admin -> 200 เห็นงานของคนอื่นได้ (UNSCOPED_TASK_ROLES)', async () => {
+    const adminUser = await makeUser(prisma, { role: 'Admin' });
+    const otherUser = await makeUser(prisma, { role: 'OT' });
+    const task = await prisma.task.create({
+      data: { title: 'other', assignedTo: otherUser.id },
+    });
+    const token = tokenFor(adminUser.id, 'Admin');
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/tasks/${task.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+  });
+
+  it('PATCH /tasks/:id role ST ตั้งสถานะเป็น cancelled (งานตัวเอง) -> 403 (issue #73 ข้อ 2 — ยกเลิกงานเป็นสิทธิ์ Operation)', async () => {
+    const stUser = await makeUser(prisma, { role: 'ST' });
+    const task = await prisma.task.create({
+      data: { title: 'mine', assignedTo: stUser.id },
+    });
+    const token = tokenFor(stUser.id, 'ST');
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/tasks/${task.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'cancelled' })
+      .expect(403);
+  });
+
+  it('PATCH /tasks/:id role ST ตั้งสถานะเป็น pending (งานตัวเอง) -> 403 (issue #73 ข้อ 2)', async () => {
+    const stUser = await makeUser(prisma, { role: 'ST' });
+    const task = await prisma.task.create({
+      data: { title: 'mine', assignedTo: stUser.id, status: 'in_progress' },
+    });
+    const token = tokenFor(stUser.id, 'ST');
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/tasks/${task.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'pending' })
+      .expect(403);
+  });
+
   it('PATCH /tasks/:id role Auditor (ไม่มีสิทธิ์แก้เลย) -> 403', async () => {
     const auditorUser = await makeUser(prisma, { role: 'Auditor' });
     const otUser = await makeUser(prisma, { role: 'OT' });
