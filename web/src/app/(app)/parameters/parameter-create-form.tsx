@@ -27,18 +27,16 @@ import {
   createConfigDefinition,
   type ConfigFieldModelSupport,
 } from "@/lib/config-definition-api";
+import type { DeviceModel } from "@/lib/device-model-api";
 
 /** ชนิดข้อมูลที่ backend `matchesDataType` รู้จัก (ค่าอื่นปล่อยผ่านเหมือนไม่มีนิยาม
  * — ดู config-definition.service.ts) จำกัดไว้ 3 ค่านี้เพื่อไม่ให้พิมพ์ผิด */
 const DATA_TYPES = ["string", "number", "boolean"] as const;
 
-function pairKey(m: ConfigFieldModelSupport): string {
-  return `${m.deviceModel}/${m.protocol}`;
-}
-
 type Props = {
-  /** คู่ (รุ่น/โปรโตคอล) ที่มีในระบบแล้ว — ให้เลือกเป็น checkbox */
-  knownPairs: ConfigFieldModelSupport[];
+  /** ทะเบียนรุ่นอุปกรณ์ทั้งหมด (`GET /device-models`, issue #209) — เลือกเป็น
+   * checkbox แค่ระดับรุ่น ไม่ต้องเลือก protocol เอง (issue #203) */
+  deviceModels: DeviceModel[];
   /** ชื่อ field ที่มีอยู่แล้ว (lowercase) — กันซ้ำตั้งแต่ฝั่ง client */
   existingNames: Set<string>;
   onCreated: () => void | Promise<void>;
@@ -50,12 +48,14 @@ type Props = {
  * · ConfigEngineer เท่านั้น (gate ที่ปุ่มเปิดฟอร์มใน parameter-library-view.tsx +
  * PermissionGuard ฝั่ง backend) ตาม wireframe frame "คลัง Parameter"
  *
- * `supportedModels` เลือกจากคู่รุ่น/โปรโตคอลที่มีในระบบแล้วเท่านั้น (เคสปกติ
- * ทุก field ผูกกับรุ่นเดิม) — ถ้าต้องรองรับรุ่นใหม่ที่ยังไม่เคยมี field เลย
- * ค่อยเพิ่ม flow กรอกเองทีหลัง
+ * `supportedModels` (คู่ deviceModel/protocol ที่ backend ต้องการ) **ไม่ได้ให้
+ * ผู้ใช้เลือก protocol เองแล้ว** (issue #203) — ผู้ใช้เลือกแค่ "รุ่นอุปกรณ์" จาก
+ * ทะเบียน `DeviceModel` แล้วระบบสร้างคู่ให้ครบทุก protocol ที่รุ่นนั้นรองรับเอง
+ * ตาม `DeviceModel.supportedProtocols` (approach ที่ตกลงกันไว้ใน issue #203 —
+ * ไม่เดาว่า 1 รุ่น = 1 protocol เสมอ)
  */
 export function ParameterCreateForm({
-  knownPairs,
+  deviceModels,
   existingNames,
   onCreated,
   onCancel,
@@ -73,24 +73,19 @@ export function ParameterCreateForm({
   const [defaultValue, setDefaultValue] = useState("");
   const [allowedValues, setAllowedValues] = useState<string[]>([]);
   const [optionDraft, setOptionDraft] = useState("");
-  const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
+  const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(
+    new Set(),
+  );
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formErrorList, setFormErrorList] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const dedupedPairs = useMemo(() => {
-    const seen = new Set<string>();
-    const out: ConfigFieldModelSupport[] = [];
-    for (const m of knownPairs) {
-      const k = pairKey(m);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(m);
-    }
-    return out.sort((a, b) => pairKey(a).localeCompare(pairKey(b)));
-  }, [knownPairs]);
+  const sortedModels = useMemo(
+    () => [...deviceModels].sort((a, b) => a.name.localeCompare(b.name)),
+    [deviceModels],
+  );
 
   function clearErrors() {
     setNameError(null);
@@ -98,12 +93,12 @@ export function ParameterCreateForm({
     setFormErrorList([]);
   }
 
-  function togglePair(key: string) {
+  function toggleModel(name: string) {
     clearErrors();
-    setSelectedPairs((prev) => {
+    setSelectedModelNames((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   }
@@ -136,8 +131,8 @@ export function ParameterCreateForm({
       setNameError(`มี field ชื่อ "${trimmedName}" อยู่แล้วในคลัง`);
       return;
     }
-    if (selectedPairs.size === 0) {
-      setFormError("เลือกรุ่น/โปรโตคอลที่รองรับอย่างน้อย 1 คู่");
+    if (selectedModelNames.size === 0) {
+      setFormError("เลือกรุ่นอุปกรณ์ที่รองรับอย่างน้อย 1 รุ่น");
       return;
     }
     if (unit.trim().length > 20) {
@@ -149,9 +144,16 @@ export function ParameterCreateForm({
       return;
     }
 
-    const supportedModels = dedupedPairs.filter((m) =>
-      selectedPairs.has(pairKey(m)),
-    );
+    /** ขยายแต่ละรุ่นที่เลือกเป็นคู่ (deviceModel, protocol) ให้ครบทุก protocol
+     * ที่รุ่นนั้นรองรับ (issue #203 approach ข) — ไม่ใช่ให้ผู้ใช้เลือก protocol เอง */
+    const supportedModels: ConfigFieldModelSupport[] = sortedModels
+      .filter((m) => selectedModelNames.has(m.name))
+      .flatMap((m) =>
+        m.supportedProtocols.map((protocol) => ({
+          deviceModel: m.name,
+          protocol,
+        })),
+      );
     const trimmedDesc = description.trim();
     const trimmedUnit = unit.trim();
     const trimmedDefault = defaultValue.trim();
@@ -168,10 +170,7 @@ export function ParameterCreateForm({
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
         ...(trimmedUnit ? { unit: trimmedUnit } : {}),
         ...(trimmedDefault ? { defaultValue: trimmedDefault } : {}),
-        supportedModels: supportedModels.map((m) => ({
-          deviceModel: m.deviceModel,
-          protocol: m.protocol,
-        })),
+        supportedModels,
       });
       toast.success(`สร้าง Parameter "${trimmedName}" แล้ว`);
       await onCreated();
@@ -347,32 +346,35 @@ export function ParameterCreateForm({
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">
-              รุ่น/โปรโตคอลที่รองรับ
-            </legend>
-            {dedupedPairs.length === 0 ? (
+            <legend className="text-sm font-medium">รุ่นอุปกรณ์ที่รองรับ</legend>
+            {sortedModels.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                ยังไม่มีรุ่น/โปรโตคอลในระบบ — สร้าง Config อย่างน้อย 1 ชุดก่อน
+                ยังไม่มีรุ่นอุปกรณ์ในระบบ (`DeviceModel`) — เพิ่มรุ่นอุปกรณ์ก่อน
               </p>
             ) : (
               <div className="flex flex-wrap gap-x-4 gap-y-2">
-                {dedupedPairs.map((m) => {
-                  const key = pairKey(m);
-                  return (
-                    <label
-                      key={key}
-                      className="flex items-center gap-2 text-sm"
-                      htmlFor={`param-pair-${key}`}
-                    >
-                      <Checkbox
-                        id={`param-pair-${key}`}
-                        checked={selectedPairs.has(key)}
-                        onCheckedChange={() => togglePair(key)}
-                      />
-                      <span className="font-mono">{key}</span>
-                    </label>
-                  );
-                })}
+                {sortedModels.map((m) => (
+                  <label
+                    key={m.id}
+                    className="flex items-center gap-2 text-sm"
+                    htmlFor={`param-model-${m.id}`}
+                  >
+                    <Checkbox
+                      id={`param-model-${m.id}`}
+                      checked={selectedModelNames.has(m.name)}
+                      onCheckedChange={() => toggleModel(m.name)}
+                    />
+                    <span className="font-mono">{m.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({m.supportedProtocols.join(", ")})
+                    </span>
+                    {m.status === "discontinued" && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground">
+                        เลิกผลิต
+                      </span>
+                    )}
+                  </label>
+                ))}
               </div>
             )}
           </fieldset>
