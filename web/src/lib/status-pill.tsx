@@ -43,6 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending_review: "รอตรวจสอบคุณภาพ",
   pending_update: "รอการอัปเดต",
   up_to_date: "อัปเดตล่าสุดแล้ว",
+  rolled_back: "Rollback แล้ว",
 };
 
 /** แปลง status enum ดิบเป็น label ที่แสดงผลได้ — คืนค่าเดิมถ้าไม่มีใน
@@ -189,4 +190,22 @@ export const FIRMWARE_APPROVAL_STATUS_TONE: Record<string, PillTone> = {
   pending_review: "progress",
   approved: "success",
   rejected: "danger",
+};
+
+/** Incident & Rollback (read-only rollout, Sprint 2) — open = เพิ่งเกิด
+ * ยังไม่มีใครดู, investigating = กำลังตรวจสอบ, rolled_back = สั่ง Rollback
+ * แล้ว, resolved = จบเรื่องแล้ว */
+export const INCIDENT_STATUS_TONE: Record<string, PillTone> = {
+  open: "danger",
+  investigating: "progress",
+  rolled_back: "info",
+  resolved: "success",
+};
+
+/** Incident.severity — ไล่ระดับความรุนแรง low → critical */
+export const INCIDENT_SEVERITY_TONE: Record<string, PillTone> = {
+  low: "neutral",
+  medium: "info",
+  high: "progress",
+  critical: "danger",
 };
