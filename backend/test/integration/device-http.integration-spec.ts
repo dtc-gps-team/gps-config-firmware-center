@@ -14,6 +14,7 @@ import { DeviceModule } from '../../src/device/device.module';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
   createTestPrisma,
+  getOrCreateDeviceModel,
   getOrCreateRole,
   makeUser,
   resetDb,
@@ -90,6 +91,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
     status: DeviceLifecycleStatus,
     deviceModel = 'GT06N',
   ): Promise<void> {
+    const model = await getOrCreateDeviceModel(prisma, deviceModel);
     await prisma.device.create({
       data: {
         deviceId,
@@ -97,6 +99,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
         deviceModel,
         protocol: 'TCP',
         status,
+        modelId: model.id,
       },
     });
   }
@@ -537,6 +540,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const customer = await prisma.customer.create({
         data: { companyName: `Cus-${randomUUID()}` },
       });
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
       const linked = await prisma.device.create({
         data: {
           deviceId: `DC-LINKED-${randomUUID().slice(0, 8)}`,
@@ -545,6 +549,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           protocol: 'TCP',
           status: 'installed',
           customerId: customer.id,
+          modelId: model.id,
         },
       });
       const unlinked = await prisma.device.create({
@@ -554,6 +559,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           deviceModel: 'GT06N',
           protocol: 'TCP',
           status: 'installed',
+          modelId: model.id,
         },
       });
       const token = await auditorToken();
@@ -605,6 +611,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       const customerB = await prisma.customer.create({
         data: { companyName: `Cus-B-${randomUUID()}` },
       });
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
       await prisma.device.create({
         data: {
           deviceId: 'CF-A1',
@@ -613,6 +620,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           protocol: 'TCP',
           status: 'installed',
           customerId: customerA.id,
+          modelId: model.id,
         },
       });
       await prisma.device.create({
@@ -623,6 +631,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
           protocol: 'TCP',
           status: 'installed',
           customerId: customerB.id,
+          modelId: model.id,
         },
       });
       await makeDevice('CF-UNLINKED', 'installed');

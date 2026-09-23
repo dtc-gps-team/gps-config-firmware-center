@@ -10,6 +10,7 @@ import { CampaignModule } from '../../src/campaign/campaign.module';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
   createTestPrisma,
+  getOrCreateDeviceModel,
   getOrCreateRole,
   makeUser,
   resetDb,
@@ -116,13 +117,16 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     protocol?: string;
     status?: 'registered' | 'installed' | 'decommissioned';
   }) {
+    const deviceModel = overrides?.deviceModel ?? 'GT06N';
+    const model = await getOrCreateDeviceModel(prisma, deviceModel);
     return prisma.device.create({
       data: {
         deviceId: `DEV-${randomUUID().slice(0, 8)}`,
         simNumber: `89660000${Math.floor(Math.random() * 1e8)}`,
-        deviceModel: overrides?.deviceModel ?? 'GT06N',
+        deviceModel,
         protocol: overrides?.protocol ?? 'TCP',
         status: overrides?.status ?? 'installed',
+        modelId: model.id,
       },
     });
   }

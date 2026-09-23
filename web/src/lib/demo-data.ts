@@ -174,21 +174,9 @@ export const DEMO_FIRMWARE = [
 /* ---------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------- */
-/*  Incident & Rollback — โมดูล incident (ยังไม่มี endpoint ในสเปค)  */
+/*  Incident & Rollback — ต่อ API จริงแล้ว (GET /incidents) — ดู       */
+/*  incidents/incidents-view.tsx · DEMO_INCIDENTS ถูกลบออก             */
 /* ---------------------------------------------------------------- */
-
-export const DEMO_INCIDENTS = [
-  {
-    device: "DEV-0042",
-    detail: "sync Config เข้าระบบเดิมไม่สำเร็จ (timeout) 3 ครั้งติด",
-    occurredAt: "08:10 วันนี้",
-  },
-  {
-    device: "DEV-0188",
-    detail: "อุปกรณ์รายงานเวอร์ชัน firmware ไม่ตรงกับที่ปล่อย",
-    occurredAt: "เมื่อวาน",
-  },
-];
 
 /* User / Role Management — ต่อ API จริงแล้ว (GET /users/managed, POST/PATCH
    /users, แก้ครั้งที่ 38) DEMO_USERS ถูกลบออก — ดู

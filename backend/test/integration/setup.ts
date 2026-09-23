@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
-import { PrismaClient, Role } from '@prisma/client';
+import { DeviceModel, PrismaClient, Role } from '@prisma/client';
 
 // Integration tests read the repo-root .env (same convention as prisma.config.ts).
 loadEnv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
@@ -67,7 +67,11 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   await prisma.deviceToken.deleteMany();
   // Device ก่อน Customer (Device.customerId มี FK ไป Customer, onDelete:
   // SetNull) — ลบลูกก่อนพ่อแม่เหมือนกันทุกจุดในไฟล์นี้ (docs/12 เฟส B, PR #127)
+  // Device ก่อน DeviceModel ด้วย (issue #209) — Device.modelId มี FK ไป
+  // DeviceModel แบบ onDelete: Restrict (บังคับ NOT NULL) ลบ DeviceModel ก่อน
+  // Device ยังมีอยู่จะโดน FK constraint บล็อกทันที
   await prisma.device.deleteMany();
+  await prisma.deviceModel.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.user.deleteMany();
@@ -101,6 +105,25 @@ export async function getOrCreateRole(
     where: { code },
     update: {},
     create: { code, name: code },
+  });
+}
+
+/**
+ * Find-or-create a DeviceModel row by name (issue #209) — `Device.modelId`
+ * เป็น FK บังคับ (NOT NULL) แล้ว ทุกเทสที่สร้าง `Device` ต้องมี `DeviceModel`
+ * ให้ชี้ก่อนเสมอ mirror `getOrCreateRole` ทุกประการ — default
+ * `supportedProtocols` ให้กว้าง (TCP + UDP) เพราะเทสส่วนใหญ่ที่เรียกนี้ไม่ได้
+ * ทดสอบเรื่อง protocol enforcement (issue #209 ข้อ 4) โดยตรง ไม่อยากให้
+ * เทสเดิมพังเพราะ protocol ที่ไม่เกี่ยวกันเลย
+ */
+export async function getOrCreateDeviceModel(
+  prisma: PrismaClient,
+  name: string,
+): Promise<DeviceModel> {
+  return prisma.deviceModel.upsert({
+    where: { name },
+    update: {},
+    create: { name, supportedProtocols: ['TCP', 'UDP'] },
   });
 }
 
