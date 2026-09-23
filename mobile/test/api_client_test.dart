@@ -292,6 +292,23 @@ void main() {
       expect(adapter.lastRequest?.path, '/tasks');
     });
 
+    test(
+      'listTasks -> record เสีย (status ที่ไม่รู้จัก) throw ทั้งก้อน แทนที่จะ '
+      'skip เงียบๆ (strict, ต่างจาก listNotifications — งานจริงของ ST/OT '
+      'ต้องพังชัดเจนให้กด retry ได้ ไม่ใช่หายไปเงียบๆ โดยไม่มี '
+      'Sentry/Crashlytics คอยจับ — regression guard กัน _wrapListStrict '
+      'ถูกเปลี่ยนกลับเป็น lenient โดยไม่ตั้งใจ)',
+      () async {
+        final (:client, :adapter) = _clientReturning([
+          _taskJson(id: 't1'),
+          {..._taskJson(id: 't2'), 'status': 'some_future_status_we_dont_know'},
+        ]);
+
+        await expectLater(client.listTasks(), throwsA(isA<ArgumentError>()));
+        expect(adapter.lastRequest?.path, '/tasks');
+      },
+    );
+
     test('getTask -> GET /tasks/{id}', () async {
       final (:client, :adapter) = _clientReturning(
         _taskJson(id: 'abc', status: 'in_progress'),
@@ -372,6 +389,24 @@ void main() {
       expect(await client.listConfigs(), isEmpty);
       expect(adapter.lastRequest?.path, '/config');
     });
+
+    test(
+      'listConfigs -> record เสีย (status ที่ไม่รู้จัก) throw ทั้งก้อน (strict, '
+      'mirror listTasks — Config data ก็ใช้ตัดสินใจจริง ไม่ใช่ best-effort '
+      'แบบ notifications)',
+      () async {
+        final (:client, :adapter) = _clientReturning([
+          configJson(id: 'c1'),
+          {
+            ...configJson(id: 'c2'),
+            'status': 'some_future_status_we_dont_know',
+          },
+        ]);
+
+        await expectLater(client.listConfigs(), throwsA(isA<ArgumentError>()));
+        expect(adapter.lastRequest?.path, '/config');
+      },
+    );
   });
 
   group('device endpoints', () {
@@ -419,6 +454,20 @@ void main() {
       expect(adapter.lastRequest?.path, '/devices');
     });
 
+    test('listDevices -> record เสีย (status ที่ไม่รู้จัก) throw ทั้งก้อน '
+        '(strict, mirror listTasks)', () async {
+      final (:client, :adapter) = _clientReturning([
+        deviceJson(deviceId: 'DEV-0001'),
+        {
+          ...deviceJson(deviceId: 'DEV-0002'),
+          'status': 'some_future_status_we_dont_know',
+        },
+      ]);
+
+      await expectLater(client.listDevices(), throwsA(isA<ArgumentError>()));
+      expect(adapter.lastRequest?.path, '/devices');
+    });
+
     test('getDevice -> GET /devices/{deviceId}', () async {
       final (:client, :adapter) = _clientReturning(
         deviceJson(deviceId: 'DEV-0117', status: 'installed'),
@@ -448,6 +497,38 @@ void main() {
               .having((e) => e.message, 'message', 'ไม่พบ Device นี้'),
         ),
       );
+    });
+  });
+
+  group('customer endpoints', () {
+    test('listCustomers -> GET /customers, maps the JSON array', () async {
+      final (:client, :adapter) = _clientReturning([
+        {'id': 'cust-1', 'companyName': 'บริษัท เอ จำกัด'},
+        {'id': 'cust-2', 'companyName': 'บริษัท บี จำกัด'},
+      ]);
+
+      final customers = await client.listCustomers();
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/customers');
+      expect(customers.map((c) => c.id), ['cust-1', 'cust-2']);
+    });
+
+    test('listCustomers -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listCustomers(), isEmpty);
+      expect(adapter.lastRequest?.path, '/customers');
+    });
+
+    test('listCustomers -> record เสีย (id หาย) throw ทั้งก้อน (strict, '
+        'mirror listTasks)', () async {
+      final (:client, :adapter) = _clientReturning([
+        {'id': 'cust-1', 'companyName': 'บริษัท เอ จำกัด'},
+        {'companyName': 'บริษัท ไม่มี id'},
+      ]);
+
+      await expectLater(client.listCustomers(), throwsA(isA<TypeError>()));
+      expect(adapter.lastRequest?.path, '/customers');
     });
   });
 
@@ -490,6 +571,20 @@ void main() {
     test('listIncidents -> tolerates an empty array', () async {
       final (:client, :adapter) = _clientReturning(<dynamic>[]);
       expect(await client.listIncidents(), isEmpty);
+      expect(adapter.lastRequest?.path, '/incidents');
+    });
+
+    test('listIncidents -> record เสีย (severity ที่ไม่รู้จัก) throw ทั้งก้อน '
+        '(strict, mirror listTasks)', () async {
+      final (:client, :adapter) = _clientReturning([
+        incidentJson(id: 'inc-1'),
+        {
+          ...incidentJson(id: 'inc-2'),
+          'severity': 'some_future_severity_we_dont_know',
+        },
+      ]);
+
+      await expectLater(client.listIncidents(), throwsA(isA<ArgumentError>()));
       expect(adapter.lastRequest?.path, '/incidents');
     });
 
