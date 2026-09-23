@@ -12,6 +12,7 @@ import { canOverrideConfig } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SensitiveInput, SensitiveValue } from "@/components/sensitive-value";
 import {
   Select,
   SelectContent,
@@ -78,6 +79,20 @@ export function ConfigOverridePanel({
 
   if (!OVERRIDABLE_STATUSES.has(config.status)) {
     return null;
+  }
+
+  /** ก่อน `useConfigDefinitions()` โหลดเสร็จ `defByName` ว่างเปล่า — ไม่รู้ว่า
+   * field ไหน sensitive/stOverridable/dataType อะไร (race condition เดียวกับ
+   * `config-detail-view.tsx`) แทนที่จะ render field เป็น read-only plaintext
+   * ไปก่อนอย่างผิดๆ (เพราะ `def` เป็น `undefined` ทุกตัว) รอให้โหลดเสร็จก่อน */
+  if (definitions.isLoading) {
+    return (
+      <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+        <p className="text-sm text-muted-foreground">
+          กำลังโหลดข้อมูล Parameter…
+        </p>
+      </div>
+    );
   }
 
   const fieldEntries = Object.entries(config.fields);
@@ -172,10 +187,14 @@ export function ConfigOverridePanel({
                 </Label>
                 {!def?.stOverridable ? (
                   <span
-                    className="min-w-0 truncate font-mono text-xs text-muted-foreground"
+                    className="flex min-w-0 items-center gap-1 truncate font-mono text-xs text-muted-foreground"
                     title="field นี้ override ไม่ได้ — ยังไม่ได้เปิดไว้ใน Parameter Library"
                   >
-                    {toInputValue(original)}{" "}
+                    {def?.sensitive ? (
+                      <SensitiveValue value={original} />
+                    ) : (
+                      toInputValue(original)
+                    )}{" "}
                     <span className="text-muted-foreground/70">
                       (override ไม่ได้)
                     </span>
@@ -209,6 +228,13 @@ export function ConfigOverridePanel({
                       ))}
                     </SelectContent>
                   </Select>
+                ) : def.sensitive ? (
+                  <SensitiveInput
+                    id={`override-${key}`}
+                    className="h-8 w-40 font-mono text-xs"
+                    value={currentInputValue(key, original)}
+                    onChange={(e) => setEdit(key, e.target.value)}
+                  />
                 ) : (
                   <Input
                     id={`override-${key}`}

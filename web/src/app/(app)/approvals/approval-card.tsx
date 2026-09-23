@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useConfigVersions } from "@/hooks/use-config-versions";
+import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
+import { SensitiveValue } from "@/components/sensitive-value";
 import { ApprovalActions } from "./approval-actions";
 
 function fieldValueText(value: unknown): string {
@@ -85,12 +87,29 @@ export function ApprovalCard({
 function ApprovalDetail({ item }: { item: PendingApproval }) {
   const { session } = useAuth();
   const versions = useConfigVersions(item.id);
+  const definitions = useConfigDefinitions();
   const [sim, setSim] = useState<SimulationResult | null>(null);
   const [simError, setSimError] = useState<string | null>(null);
   const [simRunning, setSimRunning] = useState(false);
 
   const latestVersion = versions.data?.[0]?.versionNumber ?? null;
   const fieldEntries = Object.entries(item.fields);
+  const definitionsReady = !definitions.isLoading;
+  const sensitiveFieldNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of definitions.data ?? []) {
+      if (d.sensitive) set.add(d.fieldName);
+    }
+    return set;
+  }, [definitions.data]);
+  /** mirror config-detail-view.tsx — ก่อน definitions โหลดเสร็จ treat ทุก
+   * field เป็น sensitive ไว้ก่อน กัน plaintext หลุดช่วงสั้นๆ ระหว่างโหลด */
+  const effectiveSensitiveFieldNames = useMemo(() => {
+    if (!definitionsReady) {
+      return new Set(Object.keys(item.fields));
+    }
+    return sensitiveFieldNames;
+  }, [definitionsReady, sensitiveFieldNames, item.fields]);
 
   async function reSimulate() {
     if (!session?.accessToken) return;
@@ -128,9 +147,13 @@ function ApprovalDetail({ item }: { item: PendingApproval }) {
               <span className="shrink-0 font-mono text-muted-foreground">
                 {key}
               </span>
-              <span className="min-w-0 font-mono break-words">
-                {fieldValueText(value)}
-              </span>
+              {effectiveSensitiveFieldNames.has(key) ? (
+                <SensitiveValue value={value} />
+              ) : (
+                <span className="min-w-0 font-mono break-words">
+                  {fieldValueText(value)}
+                </span>
+              )}
             </div>
           ))}
         </div>
