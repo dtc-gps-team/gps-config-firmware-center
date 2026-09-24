@@ -87,20 +87,47 @@ void main() {
     });
 
     test(
-      'overrideConfig -> field stOverridable:true -> merge ค่าใหม่สำเร็จ, hasDeviceOverride:true',
+      'overrideConfig -> field stOverridable:true -> สร้างคำขอ status pending (มติ 2026-09-24)',
       () async {
         final repo = MockConfigOverrideRepository();
 
-        final after = await repo.overrideConfig(
+        final override = await repo.overrideConfig(
           deviceId: 'DEV-0117',
           fields: {'APN': 'new-apn'},
           reason: 'ทดสอบ',
         );
 
-        expect(after.fields!['APN'], 'new-apn');
-        // field อื่นที่ไม่ได้แก้ยังอยู่ครบ (partial update)
-        expect(after.fields!['REPORT_INTERVAL_MOVING'], isNotNull);
-        expect(after.hasDeviceOverride, isTrue);
+        expect(override.status, 'pending');
+        expect(override.fields['APN'], 'new-apn');
+        // field อื่นที่ไม่ได้แก้ยังอยู่ครบ (partial update สะสมจาก base)
+        expect(override.fields['REPORT_INTERVAL_MOVING'], isNotNull);
+
+        // ยังไม่มีผลกับ Config ปัจจุบันจนกว่าจะอนุมัติ — แต่เห็นผ่าน
+        // pendingOverride แล้ว
+        final config = await repo.getCurrentConfig('DEV-0117');
+        expect(config.hasDeviceOverride, isFalse);
+        expect(config.pendingOverride?.status, 'pending');
+      },
+    );
+
+    test(
+      'overrideConfig -> มีคำขอ pending อยู่แล้ว -> ApiException 409',
+      () async {
+        final repo = MockConfigOverrideRepository();
+        await repo.overrideConfig(
+          deviceId: 'DEV-0117',
+          fields: {'APN': 'new-apn'},
+          reason: 'รอบแรก',
+        );
+
+        await expectLater(
+          repo.overrideConfig(
+            deviceId: 'DEV-0117',
+            fields: {'APN': 'another-apn'},
+            reason: 'รอบสอง',
+          ),
+          throwsA(isA<ApiException>().having((e) => e.statusCode, '', 409)),
+        );
       },
     );
 
@@ -160,17 +187,20 @@ void main() {
     });
 
     test(
-      'overrideConfig -> POST /devices/{deviceId}/config-override (issue #223)',
+      'overrideConfig -> POST /devices/{deviceId}/config-override คืนคำขอ status pending (มติ 2026-09-24)',
       () async {
         final recorder = _RecordingDio();
         final api = ApiClient(
           dio: recorder.build({
-            'id': 'c1',
-            'deviceModel': 'GT06N',
-            'protocol': 'TCP',
-            'status': 'approved',
+            'id': 'ov-1',
+            'deviceId': 'DEV-0117',
+            'configId': 'c1',
+            'versionNumber': 1,
             'fields': {'APN': 'new-apn'},
-            'hasDeviceOverride': true,
+            'reason': 'เหตุผล',
+            'status': 'pending',
+            'overriddenBy': 'st-1',
+            'overriddenAt': '2026-09-24T00:00:00.000Z',
           }),
         );
         final repo = ApiConfigOverrideRepository(api);
@@ -187,7 +217,8 @@ void main() {
           'fields': {'APN': 'new-apn'},
           'reason': 'เหตุผล',
         });
-        expect(result.hasDeviceOverride, isTrue);
+        expect(result.status, 'pending');
+        expect(result.fields['APN'], 'new-apn');
       },
     );
   });

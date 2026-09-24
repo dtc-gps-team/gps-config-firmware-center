@@ -277,13 +277,22 @@ async function main() {
     grant('ST', 'device-firmware-confirm', 'Create'),
     grant('OT', 'device-firmware-confirm', 'Create'),
 
-    // ---- device-config-override (POST /devices/{deviceId}/config-override) ----
-    // Per-device Config Override (issue #223) — mirror config-override เดิม
-    // (issue #185): ให้เฉพาะ ST เท่านั้น ไม่ให้ OT เลยสักฟิลด์ (ดู
+    // ---- device-config-override (issue #223, มติ 2026-09-24) ----
+    // Per-device Config Override — mirror config-override เดิม (issue #185)
+    // เรื่อง grant ให้ ST เท่านั้น ไม่ให้ OT เลยสักฟิลด์ (ดู
     // grant('ST', 'config-override', 'Override') ด้านบน) resource แยกจากของเดิม
-    // เพราะคนละ endpoint/scope กัน (เครื่องเดียว ไม่ใช่ Config ทั้งชุด) —
-    // endpoint เดิม POST /config/{configId}/override ยังอยู่คู่กัน (Web ใช้)
+    // เพราะคนละ endpoint/scope กัน (เครื่องเดียว ไม่ใช่ Config ทั้งชุด)
+    //
+    // POST /devices/{deviceId}/config-override — ST ส่งคำขอ (สถานะ pending)
     grant('ST', 'device-config-override', 'Override'),
+    // GET /device-config-overrides — Operation ดูคิวคำขอรออนุมัติ (mirror
+    // resource `config-deletion` action Read สำหรับ list เดียวกัน)
+    grant('Operation', 'device-config-override', 'Read'),
+    // POST /device-config-overrides/{id}/approve · .../reject — Operation
+    // ตัดสินใจ (Separation of Duty เดิม — ST ส่งคำขอ Operation อนุมัติ)
+    // action เดียวกันคุมทั้ง approve/reject mirror `config-deletion`
+    // (`rejectConfigDeletionRequest` ก็ใช้ action Approve เดียวกับ approve)
+    grant('Operation', 'device-config-override', 'Approve'),
 
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [

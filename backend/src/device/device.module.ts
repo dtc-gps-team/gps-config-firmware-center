@@ -17,6 +17,7 @@ import {
   type DeviceConnectionTester,
   MockDeviceConnectionTester,
 } from './device-connection-tester';
+import { DeviceConfigOverrideController } from './device-config-override.controller';
 import { DeviceController } from './device.controller';
 import { DeviceService } from './device.service';
 
@@ -27,7 +28,7 @@ import { DeviceService } from './device.service';
 // config-override เดิม แทนการเขียนตรรกะ validate ซ้ำ
 @Module({
   imports: [AuthModule, ConfigDefinitionModule],
-  controllers: [DeviceController],
+  controllers: [DeviceController, DeviceConfigOverrideController],
   providers: [
     DeviceService,
     // DEVICE_CONNECTION_TESTER: อ่านโหมดจาก env `DEVICE_CONNECTION_TEST_MODE`

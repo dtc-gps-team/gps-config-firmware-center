@@ -27,11 +27,13 @@ String _toInputValue(dynamic value) {
 
 /// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
 /// เข้าได้เฉพาะ role ST (เช็คที่ entry point ใน `device_detail_page.dart`) —
-/// ให้ ST แก้ค่าบาง field ของ Config ปัจจุบันของ**อุปกรณ์เครื่องนี้เครื่อง
-/// เดียว** ไม่ผ่าน Approval Center ปกติ และไม่กระทบอุปกรณ์อื่นที่ใช้ Config
-/// เดียวกัน (`POST /devices/{deviceId}/config-override` — ต่างจาก
+/// ให้ ST**ส่งคำขอ**แก้ค่าบาง field ของ Config ปัจจุบันของ**อุปกรณ์เครื่องนี้
+/// เครื่องเดียว** ไม่กระทบอุปกรณ์อื่นที่ใช้ Config เดียวกัน
+/// (`POST /devices/{deviceId}/config-override` — ต่างจาก
 /// `POST /config/{configId}/override` เดิมที่ Web ยังใช้อยู่ ดู
-/// `ConfigOverrideRepository`) mirror UX ของ
+/// `ConfigOverrideRepository`) **มติ 2026-09-24 (PR #225): ต้องผ่าน Operation
+/// อนุมัติก่อนถึงมีผลจริง** ไม่ใช่ apply ทันทีเหมือนที่เคยเป็น — ดู
+/// `_PendingOverrideBanner` mirror UX ของ
 /// `web/src/app/(app)/config/config-override-panel.tsx` ทุกจุด: แสดงทุก
 /// field, เฉพาะ `stOverridable: true` แก้ได้ตาม dataType, เหตุผลบังคับกรอก,
 /// ต้องมีอย่างน้อย 1 field เปลี่ยนค่าก่อน submit ได้, ไม่มี confirm dialog
@@ -106,8 +108,11 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
         _reasonController.clear();
       });
       ref.invalidate(currentConfigProvider(widget.deviceId));
+      // มติ 2026-09-24 (PR #225): ส่งคำขอสำเร็จเท่านั้น ยังไม่มีผลจริง —
+      // ข้อความจึงเปลี่ยนจาก "Override สำเร็จ" เดิม (ตอนที่ยัง apply ทันที)
+      // เป็นสถานะ "รอ Operation อนุมัติ" แทน ไม่ให้ ST เข้าใจผิดว่าเสร็จแล้ว
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Override สำเร็จ — ค่าถูกเปลี่ยนแล้ว')),
+        const SnackBar(content: Text('ส่งคำขอแล้ว รอ Operation อนุมัติ')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -244,17 +249,23 @@ class _OverrideForm extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        // issue #223 ตัดสินใจแล้วว่า override เป็น**รายเครื่อง**
-        // (POST /devices/{deviceId}/config-override, ไม่ใช่
-        // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) —
-        // ข้อความนี้เลยยืนยันได้ตรงๆ ว่าไม่กระทบเครื่องอื่น ต่างจากข้อความชั่วคราว
-        // เดิมของ PR #222 ที่เตือนว่ากระทบทั้งระบบ (ตอนนั้นยังใช้ endpoint เดิม)
+        // ข้อความนี้ยืนยัน 2 เรื่อง: (1) issue #223 ตัดสินใจแล้วว่า override
+        // เป็น**รายเครื่อง** (POST /devices/{deviceId}/config-override ไม่ใช่
+        // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) จึงไม่
+        // กระทบเครื่องอื่น (2) **แก้ตามรีวิว A บน PR #225 (มติ 2026-09-24)**:
+        // เปลี่ยนจากข้อความเดิมที่บอกว่า override มีผลทันที เป็นบอกตรงๆ ว่า
+        // ต้องผ่าน Operation อนุมัติก่อน แล้วช่างต้องกด "ใส่ Config เข้าเครื่อง"
+        // ต่อเองอีกครั้ง (apply-config ยังไม่ automation ในรอบนี้)
         const Text(
-          'ค่านี้จะแก้เฉพาะอุปกรณ์เครื่องนี้เท่านั้น ไม่กระทบอุปกรณ์เครื่องอื่นที่ '
-          'ใช้ Config เดียวกัน — ต้องระบุเหตุผลทุกครั้งและถูกบันทึกลง Audit Log '
-          'แบบไม่มีข้อยกเว้น',
+          'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
+          'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
+          'Audit Log ทุกครั้ง',
           style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
+        if (config.pendingOverride != null) ...[
+          const SizedBox(height: 12),
+          _PendingOverrideBanner(pending: config.pendingOverride!),
+        ],
         const SizedBox(height: 16),
         Container(
           decoration: BoxDecoration(
@@ -526,9 +537,63 @@ class _FieldRowState extends State<_FieldRow> {
   }
 }
 
+/// บอกช่างว่าอุปกรณ์เครื่องนี้มีคำขอ override ที่ยังรอ Operation ตัดสินใจอยู่
+/// (`pendingOverride` จาก `GET /devices/{deviceId}/config`, มติ 2026-09-24,
+/// PR #225) — เครื่องหนึ่งมีคำขอ pending พร้อมกันได้แค่ 1 รายการ ส่งคำขอใหม่
+/// ตอนนี้จะโดน 409 (แสดง error ปกติผ่าน `_error`/`_errorList` ถ้า ST กด submit
+/// ซ้ำ ไม่ block ปุ่มไว้ล่วงหน้า — mirror การจัดการ error อื่นในหน้านี้).
+class _PendingOverrideBanner extends StatelessWidget {
+  const _PendingOverrideBanner({required this.pending});
+
+  final DeviceConfigOverride pending;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('config_override_pending_banner'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.mockAccentSoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.hourglass_top, size: 16, color: AppTheme.mockAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'มีคำขอ override รอ Operation อนุมัติอยู่',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.mockAccent,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'เหตุผล: ${pending.reason}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// บอกช่างว่าอุปกรณ์เครื่องนี้มี override เฉพาะเครื่องอยู่แล้ว (issue #223) —
 /// ค่าที่เห็นในฟอร์มด้านล่างจึงไม่ใช่ base Config ล้วนๆ (`hasDeviceOverride`
-/// จาก `GET /devices/{deviceId}/config`).
+/// จาก `GET /devices/{deviceId}/config` — `true` เฉพาะคำขอที่ Operation
+/// อนุมัติแล้วเท่านั้น, มติ 2026-09-24).
 class _DeviceOverrideBadge extends StatelessWidget {
   const _DeviceOverrideBadge();
 

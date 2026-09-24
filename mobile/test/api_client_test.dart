@@ -521,14 +521,22 @@ void main() {
 
     test(
       'overrideDeviceConfig -> POST /devices/{deviceId}/config-override with '
-      '{fields, reason} (issue #223 — per-device, not the old config-scoped endpoint)',
+      '{fields, reason} คืนคำขอ status pending (issue #223, มติ 2026-09-24 — '
+      'per-device, not the old config-scoped endpoint)',
       () async {
         final (:client, :adapter) = _clientReturning({
-          ...configJson(id: 'c1', status: 'approved'),
-          'hasDeviceOverride': true,
+          'id': 'ov-1',
+          'deviceId': 'DEV-0117',
+          'configId': 'c1',
+          'versionNumber': 1,
+          'fields': {'APN': 'new-apn'},
+          'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+          'status': 'pending',
+          'overriddenBy': 'st-1',
+          'overriddenAt': '2026-09-24T00:00:00.000Z',
         });
 
-        final config = await client.overrideDeviceConfig(
+        final override = await client.overrideDeviceConfig(
           deviceId: 'DEV-0117',
           fields: {'APN': 'new-apn'},
           reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
@@ -540,8 +548,9 @@ void main() {
           'fields': {'APN': 'new-apn'},
           'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
         });
-        expect(config.id, 'c1');
-        expect(config.hasDeviceOverride, isTrue);
+        expect(override.id, 'ov-1');
+        expect(override.status, 'pending');
+        expect(override.fields['APN'], 'new-apn');
       },
     );
 

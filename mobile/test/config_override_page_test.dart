@@ -80,7 +80,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
   Future<List<ConfigFieldDefinition>> listDefinitions() async => _definitions;
 
   @override
-  Future<DeviceConfigDraft> overrideConfig({
+  Future<DeviceConfigOverride> overrideConfig({
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
@@ -89,7 +89,17 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     lastFields = fields;
     lastReason = reason;
     if (overrideError != null) throw overrideError!;
-    return _config;
+    return DeviceConfigOverride(
+      id: 'ov-1',
+      deviceId: deviceId,
+      configId: _config.id ?? 'cfg-1',
+      versionNumber: 1,
+      fields: fields,
+      reason: reason,
+      status: 'pending',
+      overriddenBy: 'st-1',
+      overriddenAt: DateTime.now().toIso8601String(),
+    );
   }
 }
 
@@ -193,7 +203,7 @@ void main() {
       expect(fake.lastDeviceId, 'DEV-0117');
       expect(fake.lastFields, {'APN': 'new-apn'});
       expect(fake.lastReason, 'ลูกค้าขอเปลี่ยนค่าหน้างาน');
-      expect(find.text('Override สำเร็จ — ค่าถูกเปลี่ยนแล้ว'), findsOneWidget);
+      expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsOneWidget);
       expect(find.byKey(const Key('config_override_error')), findsNothing);
     },
   );
@@ -262,6 +272,59 @@ void main() {
 
       expect(
         find.byKey(const Key('config_override_has_override_badge')),
+        findsNothing,
+      );
+    });
+  });
+
+  group('pendingOverride banner (มติ 2026-09-24, PR #225)', () {
+    testWidgets(
+      'config.pendingOverride ไม่ null -> เห็น banner รอ Operation อนุมัติ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeConfigOverrideRepository(
+            config: DeviceConfigDraft(
+              id: 'cfg-1',
+              name: 'GT06N · ตั้งค่ามาตรฐาน',
+              deviceModel: 'GT06N',
+              protocol: 'TCP',
+              status: ConfigStatus.approved,
+              fields: const {'APN': 'internet'},
+              pendingOverride: DeviceConfigOverride(
+                id: 'ov-1',
+                deviceId: 'DEV-0117',
+                configId: 'cfg-1',
+                versionNumber: 1,
+                fields: const {'APN': 'new-apn'},
+                reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+                status: 'pending',
+                overriddenBy: 'st-1',
+                overriddenAt: '2026-09-24T00:00:00.000Z',
+              ),
+            ),
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('config_override_pending_banner')),
+          findsOneWidget,
+        );
+        expect(
+          find.text('มีคำขอ override รอ Operation อนุมัติอยู่'),
+          findsOneWidget,
+        );
+        expect(find.text('เหตุผล: ลูกค้าขอเปลี่ยนค่าหน้างาน'), findsOneWidget);
+      },
+    );
+
+    testWidgets('config.pendingOverride เป็น null -> ไม่เห็น banner', (
+      tester,
+    ) async {
+      await _pump(tester); // _defaultConfig: pendingOverride ค่า default null
+
+      expect(
+        find.byKey(const Key('config_override_pending_banner')),
         findsNothing,
       );
     });
