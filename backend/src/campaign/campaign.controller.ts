@@ -5,16 +5,24 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType, Campaign, CampaignTarget } from '@prisma/client';
+import {
+  ActionType,
+  Campaign,
+  CampaignRollout,
+  CampaignTarget,
+} from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
+import { CampaignRolloutService } from './campaign-rollout.service';
 import { ActingUser, CampaignService } from './campaign.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { QueryCampaignRolloutDto } from './dto/query-campaign-rollout.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -31,7 +39,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('campaigns')
 export class CampaignController {
-  constructor(private readonly campaignService: CampaignService) {}
+  constructor(
+    private readonly campaignService: CampaignService,
+    private readonly campaignRolloutService: CampaignRolloutService,
+  ) {}
 
   @Get()
   @RequirePermission('campaign', ActionType.Read)
@@ -46,6 +57,18 @@ export class CampaignController {
     @Req() req: AuthenticatedRequest,
   ): Promise<Campaign> {
     return this.campaignService.create(dto, toActor(req));
+  }
+
+  // ข้าม Campaign ทุกกลุ่ม (Approval Center รวม Campaign Rollout, แก้ไข
+  // 2026-09-24) — ต้องประกาศ**ก่อน** `findOne(':id')` เสมอ ไม่งั้น Express/Nest
+  // จะจับคำว่า "rollouts" เป็นค่า `:id` แทน (route แบบ static ต้องมาก่อน
+  // dynamic param เมื่อ path ชนกัน)
+  @Get('rollouts')
+  @RequirePermission('campaign', ActionType.Read)
+  findAllRollouts(
+    @Query() query: QueryCampaignRolloutDto,
+  ): Promise<CampaignRollout[]> {
+    return this.campaignRolloutService.findAllAcrossCampaigns(query.status);
   }
 
   @Get(':id')

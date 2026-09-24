@@ -339,4 +339,89 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       );
     });
   });
+
+  describe('GET /campaigns/rollouts (ข้ามทุกกลุ่ม — Approval Center)', () => {
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/campaigns/rollouts')
+        .expect(401);
+    });
+
+    it('ต้องไม่ถูก route :id เดิมแย่งจับคำว่า "rollouts" ไปเป็น uuid -> ไม่ใช่ 400', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Read);
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/campaigns/rollouts')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
+    it('คืน Rollout จากหลายกลุ่มรวมกัน เรียง createdAt desc', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Read);
+      const campaignA = await prisma.campaign.create({
+        data: { name: 'กลุ่ม A', createdBy: opUser.id },
+      });
+      const campaignB = await prisma.campaign.create({
+        data: { name: 'กลุ่ม B', createdBy: opUser.id },
+      });
+      const rolloutA = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignA.id,
+          payloadType: 'Config',
+          createdBy: opUser.id,
+        },
+      });
+      const rolloutB = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignB.id,
+          payloadType: 'Config',
+          createdBy: opUser.id,
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/campaigns/rollouts')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const ids = (res.body as { id: string }[]).map((r) => r.id);
+      expect(ids.sort()).toEqual([rolloutA.id, rolloutB.id].sort());
+    });
+
+    it('?status=pending_approval -> กรองเฉพาะสถานะนั้น', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Read);
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มเก่า', createdBy: opUser.id },
+      });
+      const pending = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          status: 'rejected',
+          createdBy: opUser.id,
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/campaigns/rollouts?status=pending_approval')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect((res.body as { id: string }[])[0].id).toBe(pending.id);
+    });
+  });
 });

@@ -484,6 +484,31 @@ describe('CampaignRolloutService', () => {
     });
   });
 
+  describe('findAllAcrossCampaigns', () => {
+    it('ไม่ระบุ status -> where.status เป็น undefined (คืนทุกสถานะ) เรียง createdAt desc', async () => {
+      campaignRollout.findMany.mockResolvedValue([sampleRollout]);
+
+      const result = await service.findAllAcrossCampaigns();
+
+      expect(result).toEqual([sampleRollout]);
+      expect(campaignRollout.findMany).toHaveBeenCalledWith({
+        where: { status: undefined },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('ระบุ status -> filter ตามนั้น (ใช้กับ Approval Center ?status=pending_approval)', async () => {
+      campaignRollout.findMany.mockResolvedValue([sampleRollout]);
+
+      await service.findAllAcrossCampaigns('pending_approval');
+
+      expect(campaignRollout.findMany).toHaveBeenCalledWith({
+        where: { status: 'pending_approval' },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+  });
+
   describe('recordTargetResult', () => {
     const activeRollout: CampaignRollout = {
       ...sampleRollout,
