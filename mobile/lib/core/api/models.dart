@@ -274,6 +274,61 @@ class LoginResponse {
   }
 }
 
+/// Per-device Config Override (issue #223) — คำขอแก้ค่าบาง field ของ Config
+/// เฉพาะอุปกรณ์เครื่องเดียว ต้องผ่าน Operation อนุมัติก่อนถึงมีผล (มติ
+/// 2026-09-24, PR #225) — ตรงกับ schema `DeviceConfigOverride` ใน
+/// `docs/api/openapi.yaml`.
+class DeviceConfigOverride {
+  const DeviceConfigOverride({
+    required this.id,
+    required this.deviceId,
+    required this.configId,
+    required this.versionNumber,
+    required this.fields,
+    required this.reason,
+    required this.status,
+    required this.overriddenBy,
+    required this.overriddenAt,
+    this.decidedBy,
+    this.decidedAt,
+    this.rejectReason,
+  });
+
+  final String id;
+  final String deviceId;
+  final String configId;
+  final int versionNumber;
+  final Map<String, dynamic> fields;
+  final String reason;
+
+  /// `pending` | `approved` | `rejected`
+  final String status;
+  final String overriddenBy;
+  final String overriddenAt;
+  final String? decidedBy;
+  final String? decidedAt;
+  final String? rejectReason;
+
+  bool get isPending => status == 'pending';
+
+  factory DeviceConfigOverride.fromJson(Map<String, dynamic> json) {
+    return DeviceConfigOverride(
+      id: json['id'] as String,
+      deviceId: json['deviceId'] as String,
+      configId: json['configId'] as String,
+      versionNumber: json['versionNumber'] as int,
+      fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
+      reason: json['reason'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
+      overriddenBy: json['overriddenBy'] as String? ?? '',
+      overriddenAt: json['overriddenAt'] as String? ?? '',
+      decidedBy: json['decidedBy'] as String?,
+      decidedAt: json['decidedAt'] as String?,
+      rejectReason: json['rejectReason'] as String?,
+    );
+  }
+}
+
 /// Central shape both the config form and JSON import map into.
 class DeviceConfigDraft {
   const DeviceConfigDraft({
@@ -283,6 +338,8 @@ class DeviceConfigDraft {
     this.protocol,
     this.status,
     this.fields,
+    this.hasDeviceOverride = false,
+    this.pendingOverride,
   });
 
   final String? id;
@@ -295,8 +352,22 @@ class DeviceConfigDraft {
   final ConfigStatus? status;
   final Map<String, dynamic>? fields;
 
+  /// เฉพาะ response ของ `GET /devices/{deviceId}/config` (Per-device Config
+  /// Override, issue #223) — `true` = `fields` ข้างบนถูก merge ด้วยคำขอ
+  /// override ที่ Operation **อนุมัติแล้ว** (`status: approved`) เท่านั้น
+  /// (มติ 2026-09-24, PR #225 — คำขอ `pending`/`rejected` ไม่มีผลต่อค่านี้เลย)
+  /// endpoint อื่น (เช่น `listConfigs`) ไม่มี key นี้ใน response เลย — default
+  /// `false`.
+  final bool hasDeviceOverride;
+
+  /// คำขอ override ที่ยังรอ Operation ตัดสินใจของอุปกรณ์เครื่องนี้ (ถ้ามี —
+  /// เครื่องหนึ่งมีได้ทีละ 1 รายการ) `null` ถ้าไม่มีคำขอค้างอยู่ (มติ
+  /// 2026-09-24, PR #225) ใช้แสดงสถานะ "รอ Operation อนุมัติ" บนหน้า Override
+  final DeviceConfigOverride? pendingOverride;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
+    final rawPending = json['pendingOverride'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
       name: json['name'] as String?,
@@ -304,6 +375,10 @@ class DeviceConfigDraft {
       protocol: json['protocol'] as String?,
       status: rawStatus == null ? null : ConfigStatus.fromWire(rawStatus),
       fields: (json['fields'] as Map?)?.cast<String, dynamic>(),
+      hasDeviceOverride: json['hasDeviceOverride'] as bool? ?? false,
+      pendingOverride: rawPending == null
+          ? null
+          : DeviceConfigOverride.fromJson(rawPending.cast<String, dynamic>()),
     );
   }
 }
