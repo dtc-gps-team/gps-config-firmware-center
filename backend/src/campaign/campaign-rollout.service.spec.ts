@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
+import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 const campaignId = 'campaign-1';
@@ -71,6 +72,8 @@ const sampleRollout: CampaignRollout = {
   createdBy: operation.id,
   approvedBy: null,
   approvedAt: null,
+  isRollback: false,
+  rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -99,17 +102,20 @@ describe('CampaignRolloutService', () => {
     findUnique: jest.Mock;
     findFirst: jest.Mock;
     update: jest.Mock;
+    count: jest.Mock;
   };
   let campaignRolloutTarget: {
     createMany: jest.Mock;
     findFirst: jest.Mock;
+    findMany: jest.Mock;
     update: jest.Mock;
     count: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock };
-  let device: { findMany: jest.Mock };
+  let device: { findMany: jest.Mock; update: jest.Mock };
   let auditLog: { create: jest.Mock };
+  let firmwareRollbackExecutor: { switchPartition: jest.Mock };
 
   beforeEach(async () => {
     campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
@@ -120,10 +126,12 @@ describe('CampaignRolloutService', () => {
       findUnique: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null), // ไม่มี rollout ค้างอยู่ (default)
       update: jest.fn(),
+      count: jest.fn(),
     };
     campaignRolloutTarget = {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
       count: jest.fn(),
     };
@@ -133,8 +141,10 @@ describe('CampaignRolloutService', () => {
       findMany: jest
         .fn()
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
+      update: jest.fn(),
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
+    firmwareRollbackExecutor = { switchPartition: jest.fn() };
 
     const prismaMock = {
       campaign,
@@ -154,6 +164,10 @@ describe('CampaignRolloutService', () => {
       providers: [
         CampaignRolloutService,
         { provide: PrismaService, useValue: prismaMock },
+        {
+          provide: FIRMWARE_ROLLBACK_EXECUTOR,
+          useValue: firmwareRollbackExecutor,
+        },
       ],
     }).compile();
 
@@ -420,6 +434,117 @@ describe('CampaignRolloutService', () => {
         service.approve(pendingRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('Firmware Rollback (isRollback=true) -> อนุมัติแล้วสั่งสลับพาร์ทิชันทันที ไม่รอช่างยืนยัน (Dual Partition mock)', async () => {
+      const firmwareRollback: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: 'fw-old',
+        isRollback: true,
+        rollbackOfId: 'rollout-bad',
+        targetCount: 1,
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollback);
+      campaignRollout.update
+        .mockResolvedValueOnce({
+          ...firmwareRollback,
+          status: 'active',
+          approvedBy: otherOperation.id,
+        })
+        .mockResolvedValueOnce({
+          ...firmwareRollback,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        { id: 'rt-1', rolloutId: firmwareRollback.id, deviceId: 'DEV-0001' },
+      ]);
+      device.findMany.mockResolvedValue([
+        {
+          ...installedDeviceA,
+          activePartition: 'B',
+          partitionAFirmwareId: 'fw-old',
+          partitionBFirmwareId: 'fw-bad',
+        },
+      ]);
+      firmwareRollbackExecutor.switchPartition.mockResolvedValue({
+        switched: true,
+        details: ['สลับสำเร็จ (mock)'],
+        switchedAt: '2026-01-02T00:00:00.000Z',
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1) // success
+        .mockResolvedValueOnce(0); // failed
+
+      const result = await service.approve(firmwareRollback.id, otherOperation);
+
+      expect(firmwareRollbackExecutor.switchPartition).toHaveBeenCalledWith({
+        deviceId: 'DEV-0001',
+        activePartition: 'B',
+        inactivePartitionFirmwareId: 'fw-old',
+        targetFirmwareId: 'fw-old',
+      });
+      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+        where: { id: 'rt-1' },
+        data: { status: 'success', resultDetail: 'สลับสำเร็จ (mock)' },
+      });
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: 'DEV-0001' },
+        data: { activePartition: 'A' },
+      });
+      expect(result.status).toBe('completed');
+    });
+
+    it('Firmware Rollback แต่ของเก่าไม่อยู่บนพาร์ทิชันที่ไม่ active แล้ว -> target เป็น failed', async () => {
+      const firmwareRollback: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: 'fw-old',
+        isRollback: true,
+        rollbackOfId: 'rollout-bad',
+        targetCount: 1,
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollback);
+      campaignRollout.update
+        .mockResolvedValueOnce({ ...firmwareRollback, status: 'active' })
+        .mockResolvedValueOnce({
+          ...firmwareRollback,
+          status: 'completed',
+          successCount: 0,
+          failureCount: 1,
+        });
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        { id: 'rt-1', rolloutId: firmwareRollback.id, deviceId: 'DEV-0001' },
+      ]);
+      device.findMany.mockResolvedValue([
+        {
+          ...installedDeviceA,
+          activePartition: 'B',
+          partitionAFirmwareId: null,
+          partitionBFirmwareId: 'fw-bad',
+        },
+      ]);
+      firmwareRollbackExecutor.switchPartition.mockResolvedValue({
+        switched: false,
+        details: ['ของเก่าไม่อยู่แล้ว (mock)'],
+        switchedAt: '2026-01-02T00:00:00.000Z',
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+
+      const result = await service.approve(firmwareRollback.id, otherOperation);
+
+      expect(device.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+        where: { id: 'rt-1' },
+        data: { status: 'failed', resultDetail: 'ของเก่าไม่อยู่แล้ว (mock)' },
+      });
+      expect(result.status).toBe('completed');
+    });
   });
 
   describe('reject', () => {
@@ -451,6 +576,238 @@ describe('CampaignRolloutService', () => {
       await expect(
         service.reject(pendingRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('resume', () => {
+    it('paused -> active', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.update.mockResolvedValue({
+        ...pausedRollout,
+        status: 'active',
+      });
+
+      const result = await service.resume(pausedRollout.id, operation);
+
+      expect(result.status).toBe('active');
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: pausedRollout.id },
+        data: { status: 'active' },
+      });
+    });
+
+    it('ผู้สร้าง Rollout เองก็ resume ได้ (ไม่เช็ค Separation of Duty)', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+        createdBy: operation.id,
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.update.mockResolvedValue({
+        ...pausedRollout,
+        status: 'active',
+      });
+
+      await expect(
+        service.resume(pausedRollout.id, operation),
+      ).resolves.toMatchObject({ status: 'active' });
+    });
+
+    it('สถานะปัจจุบันไม่ใช่ paused -> ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...sampleRollout,
+        status: 'active',
+      });
+
+      await expect(service.resume(sampleRollout.id, operation)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('rollback', () => {
+    const badRollout: CampaignRollout = {
+      ...sampleRollout,
+      id: 'rollout-bad',
+      status: 'active',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    const previousRollout: CampaignRollout = {
+      ...sampleRollout,
+      id: 'rollout-prev',
+      status: 'completed',
+      configId: 'cfg-old',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+    const successTargets = [
+      {
+        id: 't-1',
+        rolloutId: badRollout.id,
+        deviceId: installedDeviceA.deviceId,
+        status: 'success',
+      },
+      {
+        id: 't-2',
+        rolloutId: badRollout.id,
+        deviceId: installedDeviceB.deviceId,
+        status: 'success',
+      },
+    ];
+
+    beforeEach(() => {
+      campaignRollout.findUnique.mockResolvedValue(badRollout);
+      campaignRollout.findFirst.mockResolvedValue(previousRollout);
+      campaignRolloutTarget.findMany.mockResolvedValue(successTargets);
+      campaignRollout.create.mockResolvedValue({
+        ...previousRollout,
+        id: 'rollout-new',
+        status: 'pending_approval',
+        isRollback: true,
+        rollbackOfId: badRollout.id,
+        targetCount: 2,
+        createdBy: operation.id,
+      });
+    });
+
+    it('สำเร็จ -> สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่ completed ล่าสุด (payloadType เดียวกัน)', async () => {
+      const result = await service.rollback(
+        campaignId,
+        badRollout.id,
+        {},
+        operation,
+      );
+
+      expect(campaignRollout.findFirst).toHaveBeenCalledWith({
+        where: {
+          campaignId,
+          id: { not: badRollout.id },
+          createdAt: { lt: badRollout.createdAt },
+          status: 'completed',
+          payloadType: badRollout.payloadType,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(campaignRollout.create).toHaveBeenCalledWith({
+        data: {
+          campaignId,
+          payloadType: previousRollout.payloadType,
+          configId: previousRollout.configId,
+          firmwareId: previousRollout.firmwareId,
+          status: 'pending_approval',
+          targetCount: 2,
+          createdBy: operation.id,
+          isRollback: true,
+          rollbackOfId: badRollout.id,
+        },
+      });
+      expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
+        data: [
+          { rolloutId: 'rollout-new', deviceId: installedDeviceA.deviceId },
+          { rolloutId: 'rollout-new', deviceId: installedDeviceB.deviceId },
+        ],
+      });
+      expect(result.isRollback).toBe(true);
+    });
+
+    it('excludeDeviceIds เอาเครื่องออก 1 เครื่อง -> targetCount เหลือ 1', async () => {
+      await service.rollback(
+        campaignId,
+        badRollout.id,
+        { excludeDeviceIds: [installedDeviceB.deviceId] },
+        operation,
+      );
+
+      expect(campaignRollout.create).toHaveBeenCalledWith({
+        data: {
+          campaignId,
+          payloadType: previousRollout.payloadType,
+          configId: previousRollout.configId,
+          firmwareId: previousRollout.firmwareId,
+          status: 'pending_approval',
+          targetCount: 1,
+          createdBy: operation.id,
+          isRollback: true,
+          rollbackOfId: badRollout.id,
+        },
+      });
+      expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
+        data: [
+          { rolloutId: 'rollout-new', deviceId: installedDeviceA.deviceId },
+        ],
+      });
+    });
+
+    it('Rollout เป้าหมายอยู่คนละ Campaign -> NotFoundException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        campaignId: 'other-campaign',
+      });
+
+      await expect(
+        service.rollback(campaignId, badRollout.id, {}, operation),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('สถานะยังไม่เคยส่ง payload จริง (pending_approval) -> ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'pending_approval',
+      });
+
+      await expect(
+        service.rollback(campaignId, badRollout.id, {}, operation),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('ไม่มีรอบก่อนหน้าที่ completed ของ payloadType เดียวกัน -> BadRequestException', async () => {
+      campaignRollout.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.rollback(campaignId, badRollout.id, {}, operation),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในรายการที่ได้รับ payload สำเร็จ -> BadRequestException', async () => {
+      await expect(
+        service.rollback(
+          campaignId,
+          badRollout.id,
+          { excludeDeviceIds: ['DEV-9999'] },
+          operation,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('excludeDeviceIds เอาออกหมดทุกเครื่อง -> BadRequestException', async () => {
+      await expect(
+        service.rollback(
+          campaignId,
+          badRollout.id,
+          {
+            excludeDeviceIds: [
+              installedDeviceA.deviceId,
+              installedDeviceB.deviceId,
+            ],
+          },
+          operation,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('เขียน AuditLog action rollback หลังสร้างสำเร็จ', async () => {
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: operation.id,
+          auditModule: 'campaign',
+          action: 'rollback',
+        },
+      });
     });
   });
 
@@ -607,6 +964,52 @@ describe('CampaignRolloutService', () => {
           'ok',
         ),
       ).resolves.toBeUndefined();
+    });
+
+    it('failure rate เกิน 5% ระหว่างยังมี pending เหลือ (rollout ยัง active) -> Auto Pause', async () => {
+      campaignRollout.findFirst.mockResolvedValue(activeRollout);
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0) // success
+        .mockResolvedValueOnce(1) // failed -> failureRate 1/2 = 0.5 > 5%
+        .mockResolvedValueOnce(1); // pending (ยังเหลือ DEV-0002)
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: activeRollout.id },
+        data: { successCount: 0, failureCount: 1, status: 'paused' },
+      });
+    });
+
+    it('rollout ที่ paused อยู่แล้ว -> ไม่เช็ค auto-pause ซ้ำ (คงสถานะ paused ต่อไป)', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+      };
+      campaignRollout.findFirst.mockResolvedValue(pausedRollout);
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: pausedRollout.id },
+        data: { successCount: 0, failureCount: 1, status: 'paused' },
+      });
     });
   });
 });

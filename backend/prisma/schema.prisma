@@ -364,6 +364,25 @@ model Device {
   // migration `..._device_model_id_not_null`)
   modelId              String
   model                DeviceModel           @relation(fields: [modelId], references: [id])
+
+  // Dual Partition (mock) — จำลอง concept จาก GPS_Config_Firmware_Center_Design.pdf
+  // §11.3 ("Firmware ควรกำหนด Rollback Target ล่วงหน้า และใช้ Dual Partition
+  // เมื่ออุปกรณ์รองรับ") — ของจริงกล่องมี 2 พาร์ทิชันเก็บ firmware ในตัวเอง
+  // สลับกลับได้เองโดยไม่ต้องส่งข้อมูลใหม่ทั้งชุด (ต่างจาก Config ที่ไม่มี
+  // concept นี้ ต้องส่งค่าใหม่ทั้งชุดเสมอ) — เก็บไว้แค่ 2 field ชี้ว่าพาร์ทิชัน
+  // ไหนมี Firmware ตัวไหนอยู่ + พาร์ทิชันไหน active อยู่ตอนนี้ ไม่ได้จำลอง
+  // ขั้นตอน download/verify ก่อนสลับ (มีแค่ ConfirmFirmwareInstall attestation
+  // เดียวกับ flow ปกติ — ดู FirmwareRollbackExecutor)
+  activePartition      DevicePartitionSlot @default(A)
+  partitionAFirmwareId String?
+  partitionBFirmwareId String?
+  partitionAFirmware   Firmware?           @relation("DevicePartitionA", fields: [partitionAFirmwareId], references: [id])
+  partitionBFirmware   Firmware?           @relation("DevicePartitionB", fields: [partitionBFirmwareId], references: [id])
+}
+
+enum DevicePartitionSlot {
+  A
+  B
 }
 
 // ---------------------------------------------------------------------------
@@ -658,10 +677,14 @@ model Firmware {
   approvalStatus           FirmwareApprovalStatus     @default(pending_review)
   approvedBy               String?
 
-  uploader         User              @relation(fields: [uploadedBy], references: [id])
-  approver         User?             @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])
-  campaignRollouts CampaignRollout[]
-  incidents        Incident[]
+  uploader            User              @relation(fields: [uploadedBy], references: [id])
+  approver            User?             @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])
+  campaignRollouts    CampaignRollout[]
+  incidents           Incident[]
+  // Dual Partition (mock) — back-relation ของ `Device.partitionAFirmware`/
+  // `partitionBFirmware` ดู comment เหนือ field นั้น
+  devicesOnPartitionA Device[]          @relation("DevicePartitionA")
+  devicesOnPartitionB Device[]          @relation("DevicePartitionB")
 }
 
 // ---------------------------------------------------------------------------
@@ -751,9 +774,18 @@ model CampaignTarget {
 // ให้เห็นชัดว่าเคยถูกปฏิเสธมาก่อน ไม่ใช่แค่ยังไม่เคยส่งอนุมัติ — Operation
 // แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `POST /campaigns/{id}/rollouts` อีกรอบ
 // (rollout เดิมที่ rejected ค้างไว้เป็นประวัติ ไม่มี PATCH แก้ rollout เดิม)
+// `paused` เพิ่ม 2026-09-24 (Incident & Rollback #28 — Auto Pause) — ตรงกับ
+// GPS_Config_Firmware_Center_Design.pdf §11.2/หลักการข้อ 22 ("ต้อง Auto Pause
+// เมื่อ Failure เกิน Threshold") เป็น "Auto Pause" ตัวเดียวที่เอกสารต้นฉบับ
+// เรียกชื่อนี้ตรงๆ (เงื่อนไขอื่นในตาราง 11.2 เช่น Reboot Loop/Offline/GPS
+// data gap/Version Verification ใช้คำตอบสนองอื่น ไม่ใช่ Auto Pause — ตัด
+// ออกเพราะต้องพึ่ง telemetry จากอุปกรณ์ที่ระบบนี้ไม่มีช่องทางรับเข้ามาเลย)
+// นับเป็นสถานะ "ยังไม่จบ" เหมือน active/pending_approval (ดู
+// `OPEN_CAMPAIGN_ROLLOUT_STATUSES`) — resume กลับ active หรือ rollback ได้
 enum CampaignRolloutStatus {
   pending_approval
   active
+  paused
   rejected
   completed
   cancelled
@@ -790,15 +822,26 @@ model CampaignRollout {
   // ไม่นับเป็น "อนุมัติ" (mirror Config/Firmware ที่ reject ไม่ตั้ง approvedBy)
   approvedBy   String?
   approvedAt   DateTime?
+  // Rollback (แก้ไข 2026-09-24, Incident & Rollback #28) — mirror
+  // `POST /api/campaigns/{id}/rollback` ของ GPS_Config_Firmware_Center_Design.pdf
+  // §15.1 แต่ implement เป็น "สร้าง CampaignRollout รอบใหม่ที่ payload เป็น
+  // ของรอบก่อนหน้า" แทนที่จะทำ state machine แยก — รีไซเคิล flow
+  // approve/reject/CampaignRolloutTarget/recordTargetResult เดิมทั้งหมด
+  // ไม่มี rollback ของ rollback ที่เป็น rollback อีกที... จริงๆ มีได้ (self-
+  // relation รองรับ chain ยาวเท่าไหร่ก็ได้) แค่ไม่คาดว่าจะเกิดบ่อยในทางปฏิบัติ
+  isRollback   Boolean               @default(false)
+  rollbackOfId String?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
-  campaign Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  creator  User                    @relation("CampaignRolloutCreatedBy", fields: [createdBy], references: [id])
-  approver User?                   @relation("CampaignRolloutApprovedBy", fields: [approvedBy], references: [id])
-  config   Config?                 @relation(fields: [configId], references: [id])
-  firmware Firmware?               @relation(fields: [firmwareId], references: [id])
-  targets  CampaignRolloutTarget[]
+  campaign         Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creator          User                    @relation("CampaignRolloutCreatedBy", fields: [createdBy], references: [id])
+  approver         User?                   @relation("CampaignRolloutApprovedBy", fields: [approvedBy], references: [id])
+  config           Config?                 @relation(fields: [configId], references: [id])
+  firmware         Firmware?               @relation(fields: [firmwareId], references: [id])
+  targets          CampaignRolloutTarget[]
+  rollbackOf       CampaignRollout?        @relation("RollbackChain", fields: [rollbackOfId], references: [id])
+  rollbackAttempts CampaignRollout[]       @relation("RollbackChain")
 }
 
 // ผลของ rollout หนึ่งรอบต่ออุปกรณ์หนึ่งเครื่อง (แก้ไข 2026-09-24, Campaign
