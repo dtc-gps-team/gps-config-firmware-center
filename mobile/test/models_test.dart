@@ -477,4 +477,74 @@ void main() {
       expect(updated.createdAt, n.createdAt);
     });
   });
+
+  group('ConfigFieldDefinition.fromJson (issue #211 Phase 2)', () {
+    test('parses ครบทุก field รวม supportedModels', () {
+      final def = ConfigFieldDefinition.fromJson({
+        'id': 'def-1',
+        'fieldName': 'APN',
+        'dataType': 'string',
+        'allowedValues': <String>[],
+        'required': true,
+        'unknownSpec': false,
+        'description': 'จุดเข้าถึงเครือข่าย',
+        'unit': null,
+        'stOverridable': true,
+        'category': 'Network',
+        'sensitive': false,
+        'restartRequired': true,
+        'defaultValue': 'internet',
+        'supportedModels': [
+          {'deviceModel': 'GT06N', 'protocol': 'TCP'},
+          {'deviceModel': 'GT06L', 'protocol': 'TCP'},
+        ],
+        'createdAt': '2026-09-01T00:00:00.000Z',
+        'updatedAt': '2026-09-01T00:00:00.000Z',
+      });
+
+      expect(def.id, 'def-1');
+      expect(def.fieldName, 'APN');
+      expect(def.dataType, 'string');
+      expect(def.required, isTrue);
+      expect(def.stOverridable, isTrue);
+      expect(def.sensitive, isFalse);
+      expect(def.category, 'Network');
+      expect(def.defaultValue, 'internet');
+      expect(def.supportedModels, hasLength(2));
+      expect(def.supportedModels.first.deviceModel, 'GT06N');
+      expect(def.supportedModels.first.protocol, 'TCP');
+    });
+
+    test(
+      'stOverridable/sensitive หายจาก response -> default false (field เก่าที่ '
+      'ยังไม่มีค่านี้)',
+      () {
+        final def = ConfigFieldDefinition.fromJson({
+          'id': 'def-2',
+          'fieldName': 'REPORT_INTERVAL_MOVING',
+          'dataType': 'number',
+          'required': false,
+          'supportedModels': <Map<String, dynamic>>[],
+        });
+
+        expect(def.stOverridable, isFalse);
+        expect(def.sensitive, isFalse);
+        expect(def.allowedValues, isEmpty);
+        expect(def.supportedModels, isEmpty);
+      },
+    );
+
+    test('allowedValues -> list ของ string', () {
+      final def = ConfigFieldDefinition.fromJson({
+        'id': 'def-3',
+        'fieldName': 'PROTOCOL_MODE',
+        'dataType': 'string',
+        'allowedValues': ['TCP', 'UDP'],
+        'required': false,
+        'supportedModels': <Map<String, dynamic>>[],
+      });
+
+      expect(def.allowedValues, ['TCP', 'UDP']);
+    });
+  });
 }

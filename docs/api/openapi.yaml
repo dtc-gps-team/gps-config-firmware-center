@@ -1462,6 +1462,39 @@ paths:
             เช็คความพร้อมไม่ได้ — Device ยังไม่ installed หรือ Config ยังไม่ผ่าน
             อนุมัติ (ต้อง approved หรือ synced)
 
+  /devices/{deviceId}/config:
+    get:
+      tags: [device]
+      operationId: getDeviceCurrentConfig
+      summary: Config ปัจจุบันของอุปกรณ์เครื่องนี้ (Config Override Phase 2, Mobile — issue #211, v3.30)
+      description: >-
+        derive จาก `Task.configId` ของ Task ล่าสุด (`status: completed`) ที่ผูก
+        กับอุปกรณ์เครื่องนี้ — Device ไม่มี FK ตรงไป Config เลย (เหมือน
+        `getDeviceStatus` ที่ยังไม่ implement) ใช้เปิดหน้า "Override ค่า
+        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `config-override`) ก่อน
+        เรียก `overrideConfig` ต่อ
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Config ปัจจุบันของอุปกรณ์
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อ่าน Config ปัจจุบันของอุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: >-
+            ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
+            ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
+
   /incidents:
     get:
       tags: [incident]
@@ -1847,7 +1880,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaigns
-      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.30
+      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.31
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
         createdAt desc · **แก้ไข 2026-09-24:** ตัด query param `status` ออก
@@ -1867,7 +1900,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.30
+      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.31
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign (กลุ่ม) + CampaignTarget (สมาชิก) ใน transaction เดียว ·
@@ -1905,7 +1938,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaign
-      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.30
+      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.31
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ listCampaigns)
       parameters:
         - in: path
@@ -1930,7 +1963,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignTargets
-      summary: รายชื่อสมาชิกกลุ่ม — v3.30 (Campaign Monitor #22)
+      summary: รายชื่อสมาชิกกลุ่ม — v3.31 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ getCampaign)
       parameters:
         - in: path
@@ -1955,7 +1988,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRollouts
-      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.30 (Campaign Monitor #22)
+      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.31 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม createdAt desc
       parameters:
         - in: path
@@ -1978,7 +2011,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaignRollout
-      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.30 (Campaign Monitor #22)
+      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.31 (Campaign Monitor #22)
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — เลือก
         Config หรือ Firmware มา push เข้าสมาชิกกลุ่ม (default = ทั้งกลุ่ม
@@ -2032,7 +2065,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaignRollout
-      summary: รายละเอียด Rollout 1 รอบ — v3.30 (Campaign Monitor #22)
+      summary: รายละเอียด Rollout 1 รอบ — v3.31 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`)
       parameters:
         - in: path
@@ -2063,7 +2096,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRolloutTargets
-      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.30 (Campaign Monitor #22)
+      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.31 (Campaign Monitor #22)
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) — อัปเดตจาก
         `applyConfigToDevice`/`confirmFirmwareInstall` จริง (mock mode ก็
@@ -2097,7 +2130,7 @@ paths:
     post:
       tags: [campaign]
       operationId: approveCampaignRollout
-      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.30
+      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.31
       description: >-
         resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
         `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
@@ -2138,7 +2171,7 @@ paths:
     post:
       tags: [campaign]
       operationId: rejectCampaignRollout
-      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.30
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.31
       description: >-
         resource เดียวกับ `approveCampaignRollout` (`campaign` action
         `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
@@ -2435,7 +2468,7 @@ components:
     Campaign:
       type: object
       description: >-
-        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.30) ตรง
+        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.31) ตรง
         กับ Prisma model `Campaign` — ไม่ embed สมาชิกกลุ่ม (ดู
         `listCampaignTargets`) หรือประวัติ Rollout (ดู `listCampaignRollouts`)
         **แก้ไข 2026-09-24 (Campaign Monitor #22):** เดิม schema นี้มี
@@ -2501,7 +2534,7 @@ components:
     CampaignTarget:
       type: object
       description: >-
-        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.30, Campaign Monitor
+        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.31, Campaign Monitor
         #22) ตรงกับ Prisma model `CampaignTarget` — ไม่มี status (สมาชิกกลุ่ม
         ไม่ผูกกับผล push รอบไหนรอบหนึ่ง ดู `CampaignRolloutTarget` แทน)
       required: [id, campaignId, deviceId, createdAt]
@@ -2538,7 +2571,7 @@ components:
       description: >-
         1 รอบ push Config หรือ Firmware เข้ากลุ่มอุปกรณ์หนึ่งกลุ่ม
         (listCampaignRollouts/getCampaignRollout/createCampaignRollout —
-        v3.30, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
+        v3.31, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
         รับ field ที่เคยอยู่บน `Campaign` เดิมมาทั้งหมด (ดู tag `campaign`
         description)
       required:
@@ -2613,7 +2646,7 @@ components:
       type: object
       required: [payloadType]
       description: >-
-        Body ของ `createCampaignRollout` (v3.30, Campaign Monitor #22) — ไม่มี
+        Body ของ `createCampaignRollout` (v3.31, Campaign Monitor #22) — ไม่มี
         field เลือก target เอง default = สมาชิกทั้งกลุ่ม เอาบางเครื่องออกได้
         ผ่าน `excludeDeviceIds` เท่านั้น (ไม่รองรับเพิ่มเครื่องนอกกลุ่ม)
       properties:
@@ -2647,7 +2680,7 @@ components:
     CampaignRolloutTarget:
       type: object
       description: >-
-        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.30,
+        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.31,
         Campaign Monitor #22) ตรงกับ Prisma model `CampaignRolloutTarget`
       required: [id, rolloutId, deviceId, status, createdAt, updatedAt]
       properties:

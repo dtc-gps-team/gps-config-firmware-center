@@ -157,6 +157,97 @@ enum ConfigStatus {
   }
 }
 
+/// หนึ่งคู่ (deviceModel, protocol) ที่ field นี้ใช้ได้ — ส่วนหนึ่งของ
+/// [ConfigFieldDefinition.supportedModels].
+class ConfigFieldModelSupport {
+  const ConfigFieldModelSupport({
+    required this.deviceModel,
+    required this.protocol,
+  });
+
+  final String deviceModel;
+  final String protocol;
+
+  factory ConfigFieldModelSupport.fromJson(Map<String, dynamic> json) {
+    return ConfigFieldModelSupport(
+      deviceModel: json['deviceModel'] as String? ?? '',
+      protocol: json['protocol'] as String? ?? '',
+    );
+  }
+}
+
+/// `GET /config-definitions` — คลัง field ที่ระบบรู้จัก mirrors
+/// `web/src/lib/config-definition-api.ts` `ConfigFieldDefinition` (ตรงกับ
+/// `docs/api/openapi.yaml` `ConfigFieldDefinition`) ใช้อ้างอิงตอนแสดง/ตรวจค่า
+/// Config รวมถึงหน้า Config Override (issue #211 Phase 2, ST เท่านั้น) ที่ต้อง
+/// รู้ว่า field ไหน `stOverridable: true` บ้าง.
+class ConfigFieldDefinition {
+  const ConfigFieldDefinition({
+    required this.id,
+    required this.fieldName,
+    required this.dataType,
+    required this.allowedValues,
+    required this.required,
+    required this.stOverridable,
+    required this.sensitive,
+    required this.supportedModels,
+    this.description,
+    this.unit,
+    this.category,
+    this.defaultValue,
+  });
+
+  final String id;
+  final String fieldName;
+  final String dataType;
+
+  /// ค่าที่ยอมรับได้ — ว่าง = ไม่จำกัดค่า.
+  final List<String> allowedValues;
+  final bool required;
+
+  /// ST override ค่า field นี้บนอุปกรณ์ผ่าน `POST /config/{id}/override` ได้ไหม
+  /// (issue #185) — OT ไม่มีสิทธิ์ override เลยไม่ว่าค่านี้จะเป็นอะไร.
+  final bool stOverridable;
+
+  /// field เก็บค่าอ่อนไหว — ใช้ซ่อนค่าบนหน้าจอ (mirror `SensitiveValue` ฝั่ง Web).
+  final bool sensitive;
+  final List<ConfigFieldModelSupport> supportedModels;
+  final String? description;
+  final String? unit;
+  final String? category;
+  final String? defaultValue;
+
+  factory ConfigFieldDefinition.fromJson(Map<String, dynamic> json) {
+    final rawAllowedValues = json['allowedValues'] as List<dynamic>?;
+    final rawSupportedModels = json['supportedModels'] as List<dynamic>?;
+    return ConfigFieldDefinition(
+      id: json['id'] as String,
+      fieldName: json['fieldName'] as String,
+      dataType: json['dataType'] as String? ?? 'string',
+      allowedValues: rawAllowedValues == null
+          ? const []
+          : rawAllowedValues.map((e) => e.toString()).toList(growable: false),
+      required: json['required'] as bool? ?? false,
+      stOverridable: json['stOverridable'] as bool? ?? false,
+      sensitive: json['sensitive'] as bool? ?? false,
+      supportedModels: rawSupportedModels == null
+          ? const []
+          : rawSupportedModels
+                .whereType<Map>()
+                .map(
+                  (e) => ConfigFieldModelSupport.fromJson(
+                    e.cast<String, dynamic>(),
+                  ),
+                )
+                .toList(growable: false),
+      description: json['description'] as String?,
+      unit: json['unit'] as String?,
+      category: json['category'] as String?,
+      defaultValue: json['defaultValue'] as String?,
+    );
+  }
+}
+
 /// `POST /auth/login` request body.
 class LoginRequest {
   const LoginRequest({required this.username, required this.password});
