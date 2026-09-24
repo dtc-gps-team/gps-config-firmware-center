@@ -1467,8 +1467,10 @@ paths:
         derive จาก `Task.configId` ของ Task ล่าสุด (`status: completed`) ที่ผูก
         กับอุปกรณ์เครื่องนี้ — Device ไม่มี FK ตรงไป Config เลย (เหมือน
         `getDeviceStatus` ที่ยังไม่ implement) ใช้เปิดหน้า "Override ค่า
-        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `config-override`) ก่อน
-        เรียก `overrideConfig` ต่อ
+        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `device-config-override`)
+        ก่อนเรียก `overrideDeviceConfig` ต่อ · **v3.31 (issue #223):** ถ้า
+        อุปกรณ์เครื่องนี้มี `DeviceConfigOverride` อยู่ ค่า `fields` ที่คืนกลับ
+        เป็นค่าที่ merge override ทับ base Config แล้ว (ดู `hasDeviceOverride`)
       parameters:
         - in: path
           name: deviceId
@@ -1477,15 +1479,81 @@ paths:
             type: string
       responses:
         "200":
-          description: Config ปัจจุบันของอุปกรณ์
+          description: Config ปัจจุบันของอุปกรณ์ (merge override เฉพาะเครื่องแล้วถ้ามี)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DeviceConfigDraft"
+                $ref: "#/components/schemas/DeviceCurrentConfig"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์อ่าน Config ปัจจุบันของอุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: >-
+            ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
+            ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
+
+  /devices/{deviceId}/config-override:
+    post:
+      tags: [device]
+      operationId: overrideDeviceConfig
+      summary: ST override ค่าบาง field ของ Config เฉพาะอุปกรณ์เครื่องนี้ (Per-device Config Override — issue #223, v3.31)
+      description: >-
+        **ต่างจาก `overrideConfig` (`POST /config/{configId}/override`, issue
+        #185) ที่แก้ `Config.fields` ทั้งชุด** — endpoint นี้ไม่แตะ `Config`
+        เดิมเลย เขียนเป็นแถวใหม่ใน `DeviceConfigOverride` (ผูกกับอุปกรณ์เครื่อง
+        นี้เท่านั้น) จึงไม่กระทบอุปกรณ์/แคมเปญอื่นที่ใช้ Config เดียวกัน —
+        endpoint เดิมยังอยู่คู่กัน (Web ใช้) เป็น known tech debt รอทีมตัดสินใจ
+        ว่าจะรวม/deprecate ทีหลังไหม (ดู PR #223)
+
+        `fields` เป็น partial update เหมือน `overrideConfig` เดิม — ทุก key
+        ต้อง `stOverridable: true` ตาม `ConfigFieldDefinition` ของ
+        deviceModel/protocol ของอุปกรณ์นี้ (validate ด้วย logic เดียวกับ
+        endpoint เดิม) `reason` บังคับกรอกเสมอ — base Config มาจาก
+        `getDeviceCurrentConfig` (Task ล่าสุดที่ `completed`) ค่าที่เขียนลง
+        `DeviceConfigOverride` เป็นสถานะ override สะสมของอุปกรณ์เครื่องนี้
+        (merge `fields` ที่ส่งมารอบนี้ทับของแถวล่าสุดก่อนหน้า ถ้ามี) ไม่ใช่แค่
+        delta ของรอบนี้เฉยๆ — field ที่ override ไว้ในรอบก่อนหน้าจึงไม่หายไป
+        ถ้ารอบนี้ override field อื่น
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields, reason]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: >-
+                    partial update ของ Config ปัจจุบันของอุปกรณ์เครื่องนี้ — key
+                    ต้องมีนิยามใน ConfigFieldDefinition และ stOverridable: true
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลของการ override — บังคับกรอกเสมอ
+      responses:
+        "200":
+          description: override สำเร็จ — คืน Config ปัจจุบันของอุปกรณ์เครื่องนี้ (merge แล้ว, hasDeviceOverride:true)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCurrentConfig"
+        "400":
+          description: >-
+            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
+            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ override Config ของอุปกรณ์นี้ — เฉพาะ Role ST เท่านั้น (OT ไม่มีสิทธิ์เลย)
         "404":
           description: >-
             ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
@@ -2482,6 +2550,24 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    DeviceCurrentConfig:
+      description: >-
+        `GET /devices/{deviceId}/config` / `POST /devices/{deviceId}/config-override`
+        response — `DeviceConfigDraft` (base Config) + `hasDeviceOverride`
+        (Per-device Config Override, issue #223) `fields` เป็นค่าที่ merge
+        override เฉพาะเครื่องนี้ (ถ้ามี) ทับ base แล้ว — **ไม่ใช่**
+        `Config.fields` ดิบๆ เสมอไป
+      allOf:
+        - $ref: "#/components/schemas/DeviceConfigDraft"
+        - type: object
+          required: [hasDeviceOverride]
+          properties:
+            hasDeviceOverride:
+              type: boolean
+              description: >-
+                อุปกรณ์เครื่องนี้มี `DeviceConfigOverride` ทับ base Config อยู่
+                ไหม — `true` บอกช่างว่าค่าที่เห็นไม่ใช่ Config เดิมล้วนๆ (issue #223)
 
     ConfigVersion:
       type: object

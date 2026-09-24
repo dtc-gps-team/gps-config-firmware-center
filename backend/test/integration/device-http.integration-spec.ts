@@ -69,6 +69,10 @@ describe('DeviceController test-connection (integration — real postgres + guar
     await resetDb(prisma);
     // RolePermission ต้อง clean เอง (resetDb ไม่แตะ — ดู setup.ts)
     await prisma.rolePermission.deleteMany();
+    // ConfigFieldDefinition เหมือนกัน (issue #223 — validateOverridableFields
+    // ต้องมีนิยาม field ก่อน) mirror config-override-http.integration-spec.ts
+    // — fieldName unique ทั้งระบบ กัน test ก่อนหน้าเหลือชื่อค้างชนกัน
+    await prisma.configFieldDefinition.deleteMany();
   });
 
   function tokenFor(sub: string, role: string): string {
@@ -1037,6 +1041,293 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .get('/api/v1/devices/CFG-404P/config')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  describe('POST /devices/:deviceId/config-override (Per-device Config Override, issue #223)', () => {
+    // grant ทั้งสองสิทธิ์ให้ role ST เท่านั้น (ครั้งเดียวต่อเทส กัน unique
+    // constraint ชนกันถ้าเรียก stToken()/stUserToken() มากกว่า 1 ครั้งในเทส
+    // เดียว — RolePermission unique ที่ (roleId, resource, action)) reset ทุก
+    // เทส (`beforeEach` นี้รันหลัง `beforeEach` นอกที่ล้าง RolePermission แล้ว
+    // เสมอ — Jest รัน beforeEach จากนอกเข้าใน) ไม่งั้น flag ค้าง `true` ข้ามเทส
+    // ทั้งที่ RolePermission ถูกล้างไปแล้วจริงในเทสถัดไป
+    let stGranted = false;
+    beforeEach(() => {
+      stGranted = false;
+    });
+    async function grantStOnce(): Promise<void> {
+      if (stGranted) return;
+      await grant('ST', ActionType.Override, 'device-config-override');
+      // ต้องมี device-current-config Read ด้วย เพราะเทสหลายตัวเรียก
+      // GET /devices/:deviceId/config ต่อจาก POST เพื่อยืนยันผล merge
+      await grant('ST', ActionType.Read, 'device-current-config');
+      stGranted = true;
+    }
+
+    async function stToken(): Promise<string> {
+      await grantStOnce();
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      return tokenFor(stUser.id, 'ST');
+    }
+
+    async function makeCompletedTask(
+      deviceId: string,
+      configId: string,
+    ): Promise<void> {
+      const assignee = await makeUser(prisma, { role: 'ST' });
+      await prisma.task.create({
+        data: {
+          title: `ติดตั้ง Config — ${deviceId}`,
+          assignedTo: assignee.id,
+          deviceId,
+          configId,
+          status: 'completed',
+        },
+      });
+    }
+
+    async function makeOverridableField(
+      fieldName: string,
+      overridable: boolean,
+      deviceModel = 'GT06N',
+    ): Promise<void> {
+      await prisma.configFieldDefinition.create({
+        data: {
+          fieldName,
+          dataType: 'string',
+          allowedValues: [],
+          required: false,
+          stOverridable: overridable,
+          supportedModels: {
+            create: [{ deviceModel, protocol: 'TCP' }],
+          },
+        },
+      });
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('DCO-401', 'installed');
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-401/config-override')
+        .send({ fields: {}, reason: 'x' })
+        .expect(401);
+    });
+
+    it('role OT (ไม่มี grant device-config-override เลย — mirror config-override เดิม) -> 403', async () => {
+      const otUser = await makeUser(prisma, { role: 'OT' });
+      await makeDevice('DCO-403A', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-403A', configId);
+      await makeOverridableField('APN', true);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-403A/config-override')
+        .set('Authorization', `Bearer ${tokenFor(otUser.id, 'OT')}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ' })
+        .expect(403);
+    });
+
+    it('role ConfigEngineer (ไม่มีสิทธิ์) -> 403', async () => {
+      const ceUser = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
+      await makeDevice('DCO-403B', 'installed');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-403B/config-override')
+        .set('Authorization', `Bearer ${tokenFor(ceUser.id, 'ConfigEngineer')}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ' })
+        .expect(403);
+    });
+
+    it('deviceId ไม่พบ -> 404', async () => {
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/NOPE/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: {}, reason: 'ทดสอบ' })
+        .expect(404);
+    });
+
+    it('อุปกรณ์ยังไม่เคย Confirm Install (ไม่มี Task completed ที่ผูก configId) -> 404 ข้อความเดียวกับ GET', async () => {
+      await makeDevice('DCO-404', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-404/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: {}, reason: 'ทดสอบ' })
+        .expect(404);
+    });
+
+    it('field stOverridable:false -> 400 ไม่สร้างแถวใน DB (reuse validateOverridableFields)', async () => {
+      await makeDevice('DCO-400', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-400', configId);
+      await makeOverridableField('COMMAND_PASSWORD', false);
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-400/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: { COMMAND_PASSWORD: 'x' }, reason: 'ทดสอบ' })
+        .expect(400);
+
+      const overrides = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: 'DCO-400' },
+      });
+      expect(overrides).toHaveLength(0);
+    });
+
+    it('ไม่ส่ง reason -> 400', async () => {
+      await makeDevice('DCO-400R', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-400R', configId);
+      await makeOverridableField('APN', true);
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-400R/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: { APN: 'new-apn' } })
+        .expect(400);
+    });
+
+    it('ST + field stOverridable:true -> 200 · สร้าง DeviceConfigOverride v1, AuditLog, ไม่กระทบ Config เดิม', async () => {
+      await makeDevice('DCO-200', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-200', configId);
+      await makeOverridableField('APN', true);
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Override, 'device-config-override');
+      const token = tokenFor(stUser.id, 'ST');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-200/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'new-apn' },
+          reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+        })
+        .expect(200);
+
+      const body = res.body as {
+        fields: Record<string, unknown>;
+        hasDeviceOverride: boolean;
+      };
+      expect(body.fields).toEqual({ APN: 'new-apn' });
+      expect(body.hasDeviceOverride).toBe(true);
+
+      // Config ต้นทาง (ใช้ร่วมกันทั้งระบบ) ต้อง**ไม่ถูกแตะ** — ต่างจาก
+      // POST /config/{configId}/override เดิมที่แก้ Config.fields ตรงๆ
+      const untouchedConfig = await prisma.config.findUnique({
+        where: { id: configId },
+      });
+      expect(untouchedConfig?.fields).toEqual({ APN: 'internet' });
+
+      const overrides = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: 'DCO-200' },
+      });
+      expect(overrides).toHaveLength(1);
+      expect(overrides[0]).toMatchObject({
+        versionNumber: 1,
+        configId,
+        overriddenBy: stUser.id,
+        reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+        fields: { APN: 'new-apn' },
+      });
+
+      const audit = await prisma.auditLog.findMany({
+        where: { auditModule: 'device', action: 'device-config-override' },
+      });
+      expect(audit).toHaveLength(1);
+      expect(audit[0].userId).toBe(stUser.id);
+      expect(audit[0].metadata).toEqual({
+        deviceId: 'DCO-200',
+        configId,
+        fieldNames: ['APN'],
+      });
+    });
+
+    it('override 2 ครั้งติดกันคนละ field -> version 2 สะสมค่าจาก version 1 ไว้ด้วย (ไม่หายไปเงียบๆ)', async () => {
+      await makeDevice('DCO-200V2', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-200V2', configId);
+      await makeOverridableField('APN', true);
+      await makeOverridableField('REPORT_INTERVAL_MOVING', true);
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-200V2/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'รอบแรก' })
+        .expect(200);
+
+      const res2 = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-200V2/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: { REPORT_INTERVAL_MOVING: '60' }, reason: 'รอบสอง' })
+        .expect(200);
+
+      const body2 = res2.body as { fields: Record<string, unknown> };
+      expect(body2.fields).toEqual({
+        APN: 'new-apn',
+        REPORT_INTERVAL_MOVING: '60',
+      });
+
+      const overrides = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: 'DCO-200V2' },
+        orderBy: { versionNumber: 'asc' },
+      });
+      expect(overrides).toHaveLength(2);
+      expect(overrides[1]).toMatchObject({
+        versionNumber: 2,
+        fields: { APN: 'new-apn', REPORT_INTERVAL_MOVING: '60' },
+      });
+
+      // GET /devices/:deviceId/config ต้องเห็นค่าสะสมล่าสุดตรงกัน
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-200V2/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const getBody = getRes.body as {
+        fields: Record<string, unknown>;
+        hasDeviceOverride: boolean;
+      };
+      expect(getBody.hasDeviceOverride).toBe(true);
+      expect(getBody.fields).toEqual({
+        APN: 'new-apn',
+        REPORT_INTERVAL_MOVING: '60',
+      });
+    });
+
+    it('อุปกรณ์อื่นที่ใช้ Config เดียวกัน -> ไม่เห็น override ของเครื่องนี้ (per-device จริง, issue #223)', async () => {
+      const configId = await makeConfig('approved');
+      await makeDevice('DCO-SHARED-A', 'installed');
+      await makeDevice('DCO-SHARED-B', 'installed');
+      await makeCompletedTask('DCO-SHARED-A', configId);
+      await makeCompletedTask('DCO-SHARED-B', configId);
+      await makeOverridableField('APN', true);
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-SHARED-A/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ fields: { APN: 'only-for-a' }, reason: 'เฉพาะเครื่อง A' })
+        .expect(200);
+
+      const otherToken = await stToken();
+      const resB = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-SHARED-B/config')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200);
+
+      const bodyB = resB.body as {
+        fields: Record<string, unknown>;
+        hasDeviceOverride: boolean;
+      };
+      expect(bodyB.hasDeviceOverride).toBe(false);
+      expect(bodyB.fields).toEqual({ APN: 'internet' });
     });
   });
 });

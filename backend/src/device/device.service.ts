@@ -41,6 +41,13 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
+
+/** `GET /devices/{deviceId}/config` response — `Config` (base) + `Device`
+ * เครื่องนี้มี override เฉพาะเครื่องทับอยู่ไหม (issue #223) — ดู
+ * `DeviceService.getCurrentConfig()` */
+export type ConfigWithDeviceOverride = Config & { hasDeviceOverride: boolean };
 
 /** สถานะเดียวที่ทดสอบสัญญาณ / ใส่ Config ได้ — อุปกรณ์ต้องติดตั้งจริงแล้ว
  * อุปกรณ์ที่ยัง `registered` (ยังไม่ติดตั้ง) หรือ `decommissioned` (ปลดระวางแล้ว)
@@ -81,6 +88,7 @@ export class DeviceService {
     private readonly configApplier: ConfigApplier,
     @Inject(DEVICE_SIMULATOR)
     private readonly deviceSimulator: DeviceSimulator,
+    private readonly configDefinitionService: ConfigDefinitionService,
   ) {}
 
   /**
@@ -455,9 +463,7 @@ export class DeviceService {
    * เป็น "ล่าสุด" แทน Task ที่ติดตั้งจริงทีหลังกว่าได้ ยอมรับ trade-off นี้ไปก่อน
    * จนกว่าจะมี `completedAt` แยก
    */
-  async getCurrentConfig(deviceId: string): Promise<Config> {
-    await this.findByDeviceId(deviceId);
-
+  private async getBaseConfigForDevice(deviceId: string): Promise<Config> {
     const task = await this.prisma.task.findFirst({
       where: { deviceId, status: 'completed', configId: { not: null } },
       orderBy: { updatedAt: 'desc' },
@@ -474,5 +480,122 @@ export class DeviceService {
       );
     }
     return config;
+  }
+
+  async getCurrentConfig(deviceId: string): Promise<ConfigWithDeviceOverride> {
+    await this.findByDeviceId(deviceId);
+    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+
+    // Per-device Config Override (issue #223) — แถวล่าสุด (ถ้ามี) เก็บ
+    // "สถานะ override สะสม" ของอุปกรณ์เครื่องนี้อยู่แล้ว (ดู
+    // `overrideDeviceConfig()`) จึงแค่ merge แถวเดียวนี้ทับ base fields พอ ไม่ต้อง
+    // ไล่รวมทุก version ย้อนหลังเอง
+    const latestOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: { deviceId },
+      orderBy: { versionNumber: 'desc' },
+    });
+    if (!latestOverride) {
+      return { ...baseConfig, hasDeviceOverride: false };
+    }
+
+    return {
+      ...baseConfig,
+      fields: {
+        ...(baseConfig.fields as Record<string, unknown>),
+        ...(latestOverride.fields as Record<string, unknown>),
+      } as Prisma.JsonValue,
+      hasDeviceOverride: true,
+    };
+  }
+
+  /**
+   * Per-device Config Override (issue #223) — ST แก้ค่าบาง field ของ Config
+   * ปัจจุบันของ**อุปกรณ์เครื่องนี้เครื่องเดียว** ไม่กระทบอุปกรณ์อื่นที่ใช้
+   * Config เดียวกัน (ต่างจาก `POST /config/{configId}/override` เดิม, issue
+   * #185, ที่แก้ `Config.fields` ทั้งชุด — ดู comment เหนือ
+   * `model DeviceConfigOverride` ใน schema.prisma อธิบายที่มา/เหตุผลเต็มๆ)
+   * endpoint เดิมยังอยู่คู่กัน เป็น known tech debt รอ paveekornkwork-dev (A)
+   * ตัดสินใจว่าจะรวม/deprecate ทีหลังไหม (ดู PR #223 description)
+   *
+   * base Config มาจาก `getBaseConfigForDevice()` เดียวกับ `getCurrentConfig()`
+   * เป๊ะ — ไม่พบ (อุปกรณ์ยังไม่เคย Confirm Install หรือ Config ถูกลบไปแล้ว) →
+   * 404 ข้อความเดียวกัน
+   *
+   * **`fields` ที่เขียนลง DB เป็นสถานะ override สะสม ไม่ใช่แค่ `dto.fields`
+   * ดิบๆ** — merge `dto.fields` (partial ที่ ST ส่งมารอบนี้) ทับ fields ของแถว
+   * override ล่าสุดก่อนหน้า (ถ้ามี) ก่อนเขียนแถวใหม่ mirror
+   * `ConfigOverrideService.override()` เดิมที่ merge ทับ `Config.fields` เต็ม
+   * ก้อนก่อนสร้าง `ConfigVersion` ใหม่ทุกครั้ง — **เหตุผลที่ทำแบบนี้แทนที่จะ
+   * เก็บแค่ delta ของรอบนี้ดิบๆ**: `getCurrentConfig()` ข้างบน merge แค่แถว
+   * ล่าสุดแถวเดียวทับ base (ไม่ไล่รวมทุก version) ถ้าเก็บแค่ delta ดิบๆ การ
+   * override field ใหม่ในรอบถัดไปจะ "ลบ" ผล override ของ field อื่นจากรอบก่อน
+   * หน้าไปเงียบๆ โดยไม่ตั้งใจ
+   *
+   * validate เฉพาะ `dto.fields` ที่ส่งมารอบนี้ (ไม่ validate ซ้ำ field เดิมจาก
+   * version ก่อนหน้าที่ผ่านการ validate ไปแล้วตอนนั้น) reuse
+   * `ConfigDefinitionService.validateOverridableFields()` ตัวเดียวกับ
+   * `config-override` เดิมเป๊ะๆ ไม่เขียนตรรกะซ้ำ
+   */
+  async overrideDeviceConfig(
+    deviceId: string,
+    dto: DeviceConfigOverrideDto,
+    actor: ActingUser,
+  ): Promise<ConfigWithDeviceOverride> {
+    await this.findByDeviceId(deviceId);
+    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+
+    await this.configDefinitionService.validateOverridableFields(
+      baseConfig.deviceModel,
+      baseConfig.protocol,
+      dto.fields,
+    );
+
+    const previousOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: { deviceId },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const accumulatedFields = {
+      ...((previousOverride?.fields as Record<string, unknown>) ?? {}),
+      ...dto.fields,
+    };
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const override = await tx.deviceConfigOverride.create({
+        data: {
+          deviceId,
+          configId: baseConfig.id,
+          versionNumber: (previousOverride?.versionNumber ?? 0) + 1,
+          fields: accumulatedFields as Prisma.InputJsonValue,
+          reason: dto.reason,
+          overriddenBy: actor.id,
+        },
+      });
+      // Audit Log บังคับทุกครั้งแบบไม่มีข้อยกเว้น (RBAC_Matrix.md กฎข้อ 3 —
+      // Override ข้าม flow อนุมัติปกติ) mirror `ConfigOverrideService.override()`
+      // — เขียนในทรานแซกชันเดียวกับการเปลี่ยนข้อมูลจริง ไม่ใช่ never-throw
+      const metadata: AuditLogMetadata = {
+        deviceId,
+        configId: baseConfig.id,
+        fieldNames: Object.keys(dto.fields),
+      };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'device-config-override',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return override;
+    });
+
+    return {
+      ...baseConfig,
+      fields: {
+        ...(baseConfig.fields as Record<string, unknown>),
+        ...(created.fields as Record<string, unknown>),
+      } as Prisma.JsonValue,
+      hasDeviceOverride: true,
+    };
   }
 }

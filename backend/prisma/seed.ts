@@ -277,6 +277,14 @@ async function main() {
     grant('ST', 'device-firmware-confirm', 'Create'),
     grant('OT', 'device-firmware-confirm', 'Create'),
 
+    // ---- device-config-override (POST /devices/{deviceId}/config-override) ----
+    // Per-device Config Override (issue #223) — mirror config-override เดิม
+    // (issue #185): ให้เฉพาะ ST เท่านั้น ไม่ให้ OT เลยสักฟิลด์ (ดู
+    // grant('ST', 'config-override', 'Override') ด้านบน) resource แยกจากของเดิม
+    // เพราะคนละ endpoint/scope กัน (เครื่องเดียว ไม่ใช่ Config ทั้งชุด) —
+    // endpoint เดิม POST /config/{configId}/override ยังอยู่คู่กัน (Web ใช้)
+    grant('ST', 'device-config-override', 'Override'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),

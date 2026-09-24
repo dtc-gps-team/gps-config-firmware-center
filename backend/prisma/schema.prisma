@@ -66,6 +66,7 @@ model User {
   campaignsApproved         Campaign[]              @relation("CampaignApprovedBy")
   configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
   configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
+  deviceConfigOverrides     DeviceConfigOverride[]  @relation("DeviceConfigOverrideBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -324,9 +325,9 @@ model DeviceModel {
 }
 
 model Device {
-  id           String                @id @default(uuid())
-  deviceId     String                @unique
-  simNumber    String
+  id                   String                 @id @default(uuid())
+  deviceId             String                 @unique
+  simNumber            String
   // Deviation จาก GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1
   // (เอกสารต้นฉบับพี่เลี้ยง — ออกแบบ "รุ่นอุปกรณ์" เป็นลำดับชั้น 4 ระดับแยก
   // entity กันจริง: Manufacturer → Product Family → Product Model → Hardware
@@ -339,8 +340,8 @@ model Device {
   // TaskService, DeviceService เอง) ยังอ่าน string นี้ตรงๆ อยู่ — **server
   // คำนวณค่านี้ให้เองเสมอจาก `model.name` เมื่อมี `modelId`** ไม่รับเป็น
   // input แยกจาก client (issue #209 ข้อ 5 — กัน 2 ค่านี้ไม่ตรงกัน)
-  deviceModel  String
-  protocol     String
+  deviceModel          String
+  protocol             String
   // รหัสรุ่นย่อย/hardware revision ของเครื่องนี้ (เช่น "RevA", "2023Q1") —
   // string อิสระ ไม่มีทะเบียนแยก (ต่างจาก docs/15 เดิมที่เสนอ
   // DeviceModel.hardwareVersion — แก้แล้วเพราะอุปกรณ์รุ่นเดียวกันมีได้หลาย
@@ -350,19 +351,20 @@ model Device {
   // requirement จริงทีหลัง ค่อยยกระดับเป็นตารางแยก mirror วิธีที่
   // deviceModel string เดิมกำลังถูกยกระดับเป็น DeviceModel ตอนนี้
   hardwareRevisionCode String?
-  status       DeviceLifecycleStatus @default(registered)
-  registeredAt DateTime              @default(now())
-  installedAt  DateTime?
+  status               DeviceLifecycleStatus  @default(registered)
+  registeredAt         DateTime               @default(now())
+  installedAt          DateTime?
   // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
   // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
   // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
-  customerId   String?
-  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId           String?
+  customer             Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
   // เดิม nullable ชั่วคราวตอน migration แรก (issue #209) — บังคับ NOT NULL
   // ในนี้แล้วหลัง backfill ครบทุกแถวใน seed.ts (ยืนยันด้วย query ตรง — ดู
   // migration `..._device_model_id_not_null`)
-  modelId      String
-  model        DeviceModel           @relation(fields: [modelId], references: [id])
+  modelId              String
+  model                DeviceModel            @relation(fields: [modelId], references: [id])
+  configOverrides      DeviceConfigOverride[]
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +467,7 @@ model Config {
   versions          ConfigVersion[]
   tasks             Task[]
   deletionRequests  ConfigDeletionRequest[]
+  deviceOverrides   DeviceConfigOverride[]
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve
@@ -499,6 +502,50 @@ model ConfigVersion {
 
   @@unique([configId, versionNumber])
   @@index([configId])
+}
+
+// เพิ่มใหม่ (issue #223 — Per-device Config Override) — mirror ConfigVersion
+// เกือบทั้งหมด ต่างกันแค่ scope: ตัวนี้ผูกกับ**อุปกรณ์เครื่องเดียว** ไม่ใช่ทั้ง
+// Config ที่ใช้ร่วมกันหลายเครื่อง (ปัญหาที่ paveekornkwork-dev (A) ชี้ไว้ระหว่าง
+// รีวิว PR #222 — override เดิม (issue #185, `POST /config/{configId}/override`)
+// แก้ `Config.fields` ทั้งชุด กระทบทุกอุปกรณ์ที่ใช้ Config เดียวกัน) —
+// `GET /devices/{deviceId}/config` (`DeviceService.getCurrentConfig()`) merge
+// ค่าจากแถวล่าสุดของอุปกรณ์นั้นทับ `Config.fields` (base) ก่อนคืนกลับ ไม่แตะ
+// `Config`/`ConfigVersion` เดิมเลย — endpoint เดิม `POST /config/{configId}/override`
+// (Web, PR #199) ยังอยู่คู่กันเป็น known tech debt รอ A ตัดสินใจว่าจะรวม/
+// deprecate ทีหลังไหม (ดู PR #223 description)
+//
+// **`deviceId` เป็น FK จริงไป `Device.deviceId`** (unique business key ไม่ใช่
+// `Device.id` UUID ภายใน — ตรงกับ convention ที่ endpoint อื่นทุกตัวอ้างอุปกรณ์
+// ด้วยเลขเครื่องจริงเสมอ) — **ตั้งใจต่างจาก** `Task.deviceId`/
+// `CampaignTarget.deviceId` เดิมที่เป็น string หลวมๆ ไม่มี FK คุมเลย (ตัดสินใจ
+// ร่วมกับ kittiphong ใน #223 ว่ารอบนี้อยากได้ FK จริงคุ้มครองข้อมูลให้แน่นขึ้น
+// เพราะเป็นตารางใหม่ ไม่มี legacy data ที่หลุด convention ต้อง normalize แบบ
+// สองตารางเดิม)
+model DeviceConfigOverride {
+  id            String   @id @default(uuid())
+  deviceId      String
+  // denormalized ไว้เพื่อ audit ว่า override ทับ Config ตัวไหน ณ ตอนนั้น —
+  // "Config ปัจจุบัน" ของอุปกรณ์ (จาก Task ล่าสุดที่ completed) เปลี่ยนได้ถ้ามี
+  // Confirm Install ใหม่ทับทีหลัง ค่านี้จึงเป็น snapshot ไม่ใช่ live reference
+  configId      String
+  // running number ต่อ**อุปกรณ์** (1, 2, 3...) mirror ConfigVersion.versionNumber
+  // แต่ scope เป็นรายเครื่อง ไม่ใช่รายConfig
+  versionNumber Int
+  fields        Json
+  // เหตุผลของ override — บังคับกรอกเสมอ (mirror ConfigVersion.reason แต่ที่นี่
+  // ไม่ nullable เพราะทุกแถวมาจาก override เท่านั้น ไม่มี flow อื่นที่สร้างแถวนี้
+  // แบบ "ปกติ" เหมือน ConfigVersion ที่มาได้ทั้งจาก approve()/override())
+  reason        String
+  overriddenBy  String
+  overriddenAt  DateTime @default(now())
+
+  device    Device @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+  config    Config @relation(fields: [configId], references: [id], onDelete: Restrict)
+  overrider User   @relation("DeviceConfigOverrideBy", fields: [overriddenBy], references: [id])
+
+  @@unique([deviceId, versionNumber])
+  @@index([deviceId])
 }
 
 // เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน

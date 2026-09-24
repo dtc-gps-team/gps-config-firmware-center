@@ -153,6 +153,31 @@ void main() {
       });
       expect(draft.name, isNull);
     });
+
+    test(
+      'hasDeviceOverride: true (issue #223 — GET/POST /devices/{deviceId}/config[-override])',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'deviceModel': 'GT06N',
+          'protocol': 'TCP',
+          'hasDeviceOverride': true,
+        });
+        expect(draft.hasDeviceOverride, isTrue);
+      },
+    );
+
+    test(
+      'hasDeviceOverride ไม่มีใน response (เช่น listConfigs) -> default false',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'deviceModel': 'GT06N',
+          'protocol': 'TCP',
+        });
+        expect(draft.hasDeviceOverride, isFalse);
+      },
+    );
   });
 
   group('DeviceLifecycleStatus', () {

@@ -66,7 +66,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
   final List<ConfigFieldDefinition> _definitions;
   final Object? overrideError;
 
-  String? lastConfigId;
+  String? lastDeviceId;
   Map<String, dynamic>? lastFields;
   String? lastReason;
 
@@ -81,11 +81,11 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
 
   @override
   Future<DeviceConfigDraft> overrideConfig({
-    required String configId,
+    required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
   }) async {
-    lastConfigId = configId;
+    lastDeviceId = deviceId;
     lastFields = fields;
     lastReason = reason;
     if (overrideError != null) throw overrideError!;
@@ -136,9 +136,6 @@ void main() {
         find.byKey(const Key('config_override_input_COMMAND_PASSWORD')),
         findsNothing,
       );
-      // ใช้ข้อความเป๊ะ ไม่ใช่ textContaining — ข้อความเตือนหัวหน้า (issue #223)
-      // มีคำว่า "override ไม่ได้" ปนอยู่ด้วย ("การ override ไม่ได้ส่งค่าเข้า
-      // อุปกรณ์ทันที") ถ้าใช้ containing จะ match ทั้งสองที่
       expect(find.textContaining('(override ไม่ได้)'), findsOneWidget);
     },
   );
@@ -157,7 +154,7 @@ void main() {
 
     expect(find.byKey(const Key('config_override_error')), findsOneWidget);
     expect(find.text('กรอกเหตุผลก่อน override'), findsOneWidget);
-    expect(fake.lastConfigId, isNull); // ไม่เรียก repository เลย
+    expect(fake.lastDeviceId, isNull); // ไม่เรียก repository เลย
   });
 
   testWidgets(
@@ -173,7 +170,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('ยังไม่ได้แก้ค่าไหนเลย'), findsOneWidget);
-      expect(fake.lastConfigId, isNull);
+      expect(fake.lastDeviceId, isNull);
     },
   );
 
@@ -193,7 +190,7 @@ void main() {
       await tester.tap(find.byKey(const Key('config_override_submit')));
       await tester.pumpAndSettle();
 
-      expect(fake.lastConfigId, 'cfg-1');
+      expect(fake.lastDeviceId, 'DEV-0117');
       expect(fake.lastFields, {'APN': 'new-apn'});
       expect(fake.lastReason, 'ลูกค้าขอเปลี่ยนค่าหน้างาน');
       expect(find.text('Override สำเร็จ — ค่าถูกเปลี่ยนแล้ว'), findsOneWidget);
@@ -226,12 +223,49 @@ void main() {
       await tester.tap(find.byKey(const Key('config_override_submit')));
       await tester.pumpAndSettle();
 
-      expect(fake.lastConfigId, 'cfg-1');
+      expect(fake.lastDeviceId, 'DEV-0117');
       expect(find.byKey(const Key('config_override_error')), findsOneWidget);
       expect(find.text('ค่าที่ขอ override ไม่ผ่านการตรวจสอบ'), findsOneWidget);
       expect(find.text('• field "APN" ไม่อนุญาตให้ override'), findsOneWidget);
     },
   );
+
+  group('badge hasDeviceOverride (issue #223)', () {
+    testWidgets('config.hasDeviceOverride:true -> เห็น badge', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: const DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'GT06N · ตั้งค่ามาตรฐาน',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'APN': 'internet'},
+            hasDeviceOverride: true,
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('config_override_has_override_badge')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('config.hasDeviceOverride:false -> ไม่เห็น badge', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+      ); // _defaultConfig: hasDeviceOverride ค่า default false
+
+      expect(
+        find.byKey(const Key('config_override_has_override_badge')),
+        findsNothing,
+      );
+    });
+  });
 
   testWidgets(
     'อุปกรณ์ยังไม่มี Config ที่ยืนยันติดตั้ง (404) -> ข้อความเฉพาะ + ปุ่มลองอีกครั้ง',

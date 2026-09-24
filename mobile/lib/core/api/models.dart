@@ -283,6 +283,7 @@ class DeviceConfigDraft {
     this.protocol,
     this.status,
     this.fields,
+    this.hasDeviceOverride = false,
   });
 
   final String? id;
@@ -295,6 +296,13 @@ class DeviceConfigDraft {
   final ConfigStatus? status;
   final Map<String, dynamic>? fields;
 
+  /// เฉพาะ response ของ `GET /devices/{deviceId}/config` /
+  /// `POST /devices/{deviceId}/config-override` (Per-device Config Override,
+  /// issue #223) — `true` = `fields` ข้างบนถูก merge ด้วย override เฉพาะ
+  /// อุปกรณ์เครื่องนี้แล้ว ไม่ใช่ Config เดิมล้วนๆ · endpoint อื่น (เช่น
+  /// `listConfigs`) ไม่มี key นี้ใน response เลย — default `false`.
+  final bool hasDeviceOverride;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
     return DeviceConfigDraft(
@@ -304,6 +312,7 @@ class DeviceConfigDraft {
       protocol: json['protocol'] as String?,
       status: rawStatus == null ? null : ConfigStatus.fromWire(rawStatus),
       fields: (json['fields'] as Map?)?.cast<String, dynamic>(),
+      hasDeviceOverride: json['hasDeviceOverride'] as bool? ?? false,
     );
   }
 }

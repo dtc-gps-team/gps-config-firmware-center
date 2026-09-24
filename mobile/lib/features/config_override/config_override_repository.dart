@@ -5,9 +5,12 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
 
-/// Config Override — Phase 2 (Mobile, issue #211). ST อ่าน Config ปัจจุบันของ
-/// อุปกรณ์แล้วแก้ค่าบาง field ที่ `stOverridable: true` โดยตรง ไม่ผ่าน
-/// Approval Center ปกติ (mirror `web/src/app/(app)/config/config-override-panel.tsx`).
+/// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
+/// ST อ่าน Config ปัจจุบันของอุปกรณ์แล้วแก้ค่าบาง field ที่ `stOverridable:
+/// true` โดยตรง ไม่ผ่าน Approval Center ปกติ — เขียนลง `DeviceConfigOverride`
+/// ผูกกับอุปกรณ์เครื่องนี้เท่านั้น ไม่กระทบอุปกรณ์อื่นที่ใช้ Config เดียวกัน
+/// (mirror UX ของ `web/src/app/(app)/config/config-override-panel.tsx` แต่
+/// endpoint คนละตัวกับที่ Web เรียก — ดู `overrideDeviceConfig`).
 abstract class ConfigOverrideRepository {
   /// `GET /devices/{deviceId}/config`
   Future<DeviceConfigDraft> getCurrentConfig(String deviceId);
@@ -15,9 +18,12 @@ abstract class ConfigOverrideRepository {
   /// `GET /config-definitions`
   Future<List<ConfigFieldDefinition>> listDefinitions();
 
-  /// `POST /config/{configId}/override`
+  /// `POST /devices/{deviceId}/config-override` (issue #223) — **ไม่ใช่**
+  /// `POST /config/{configId}/override` เดิม (issue #185) ที่ Web ยังใช้อยู่
+  /// — endpoint นั้นแก้ Config ทั้งชุด กระทบทุกอุปกรณ์ที่ใช้ Config เดียวกัน
+  /// Mobile เปลี่ยนมาใช้ endpoint per-device นี้เท่านั้นตั้งแต่ #223
   Future<DeviceConfigDraft> overrideConfig({
-    required String configId,
+    required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
   });
@@ -39,10 +45,14 @@ class ApiConfigOverrideRepository implements ConfigOverrideRepository {
 
   @override
   Future<DeviceConfigDraft> overrideConfig({
-    required String configId,
+    required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
-  }) => _api.overrideConfig(configId: configId, fields: fields, reason: reason);
+  }) => _api.overrideDeviceConfig(
+    deviceId: deviceId,
+    fields: fields,
+    reason: reason,
+  );
 }
 
 /// In-memory fake for `API_MOCK_MODE`.
@@ -120,7 +130,7 @@ class MockConfigOverrideRepository implements ConfigOverrideRepository {
 
   @override
   Future<DeviceConfigDraft> overrideConfig({
-    required String configId,
+    required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
   }) async {
@@ -156,6 +166,7 @@ class MockConfigOverrideRepository implements ConfigOverrideRepository {
       protocol: _config.protocol,
       status: _config.status,
       fields: {...?_config.fields, ...fields},
+      hasDeviceOverride: true,
     );
     return _config;
   }

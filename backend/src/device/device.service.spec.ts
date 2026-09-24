@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config, Device, Firmware } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from '../config/device-simulator';
 import { CONFIG_APPLIER, ConfigApplier } from './config-applier';
 import {
@@ -100,31 +101,56 @@ describe('DeviceService', () => {
   let config: { findUnique: jest.Mock };
   let task: { findFirst: jest.Mock };
   let firmware: { findUnique: jest.Mock };
+  let deviceConfigOverride: { findFirst: jest.Mock; create: jest.Mock };
   let auditLog: { create: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
+  let validateOverridableFields: jest.Mock;
 
   beforeEach(async () => {
     device = { findUnique: jest.fn(), findMany: jest.fn() };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
     firmware = { findUnique: jest.fn() };
+    deviceConfigOverride = { findFirst: jest.fn(), create: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
     deviceSimulator = { simulateConfig: jest.fn() };
+    validateOverridableFields = jest.fn().mockResolvedValue(undefined);
+
+    // `overrideDeviceConfig()` (issue #223) เขียนผ่าน `$transaction` — tx ใช้
+    // `deviceConfigOverride.create`/`auditLog.create` mock ตัวเดียวกับด้านนอก
+    // (ไม่แยก mock ใหม่) ให้เทสเดิม/ใหม่ assert ผ่าน mock เดียวกันได้ตรงๆ
+    // mirror pattern ของ `config-override.service.spec.ts`
+    const tx = {
+      deviceConfigOverride: { create: deviceConfigOverride.create },
+      auditLog: { create: auditLog.create },
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeviceService,
         {
           provide: PrismaService,
-          useValue: { device, config, task, firmware, auditLog },
+          useValue: {
+            device,
+            config,
+            task,
+            firmware,
+            deviceConfigOverride,
+            auditLog,
+            $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
+          },
         },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
         { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
+        {
+          provide: ConfigDefinitionService,
+          useValue: { validateOverridableFields },
+        },
       ],
     }).compile();
 
@@ -710,7 +736,7 @@ describe('DeviceService', () => {
 
       const result = await service.getCurrentConfig('DTC-0001');
 
-      expect(result).toEqual(approvedConfig);
+      expect(result).toEqual({ ...approvedConfig, hasDeviceOverride: false });
       expect(task.findFirst).toHaveBeenCalledWith({
         where: {
           deviceId: 'DTC-0001',
@@ -775,6 +801,204 @@ describe('DeviceService', () => {
       );
       expect(task.findFirst).not.toHaveBeenCalled();
       expect(config.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('มี DeviceConfigOverride ล่าสุด -> merge fields ทับ base, hasDeviceOverride:true (issue #223)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'ov-2',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'overridden-apn', EXTRA: true },
+        reason: 'ทดสอบ',
+        overriddenBy: 'st-1',
+        overriddenAt: new Date('2026-09-15T00:00:00.000Z'),
+      });
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.hasDeviceOverride).toBe(true);
+      expect(result.fields).toEqual({
+        APN: 'overridden-apn', // ทับค่า base 'internet'
+        EXTRA: true, // field ใหม่ที่ base ไม่มี
+      });
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: { deviceId: 'DTC-0001' },
+        orderBy: { versionNumber: 'desc' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride เลย -> hasDeviceOverride:false, fields เป็น base ตรงๆ', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.hasDeviceOverride).toBe(false);
+      expect(result.fields).toEqual(approvedConfig.fields);
+    });
+  });
+
+  describe('overrideDeviceConfig (Per-device Config Override, issue #223)', () => {
+    const completedTask = {
+      id: 'task-1',
+      deviceId: 'DTC-0001',
+      status: 'completed',
+      configId: approvedConfig.id,
+      updatedAt: new Date('2026-09-10T00:00:00.000Z'),
+    };
+    const dto = { fields: { APN: 'new-apn' }, reason: 'ลูกค้าขอเปลี่ยนค่า' };
+
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+    });
+
+    it('ไม่มี override เดิม -> สร้าง versionNumber 1, fields = dto.fields ตรงๆ, merge ทับ base คืนกลับ', async () => {
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 1,
+        fields: dto.fields,
+        reason: dto.reason,
+        overriddenBy: 'st-1',
+        overriddenAt: new Date('2026-09-16T00:00:00.000Z'),
+      });
+
+      const result = await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(validateOverridableFields).toHaveBeenCalledWith(
+        'GT06N',
+        'TCP',
+        dto.fields,
+      );
+      expect(deviceConfigOverride.create).toHaveBeenCalledWith({
+        data: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          versionNumber: 1,
+          fields: dto.fields,
+          reason: dto.reason,
+          overriddenBy: 'st-1',
+        },
+      });
+      expect(result.hasDeviceOverride).toBe(true);
+      expect(result.fields).toEqual({ APN: 'new-apn' });
+    });
+
+    it('มี override เดิมอยู่แล้ว -> versionNumber +1, fields สะสม (merge เดิม+ใหม่) ไม่ใช่แค่ dto.fields ดิบๆ', async () => {
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'ov-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 1,
+        fields: { REPORT_INTERVAL_MOVING: 60 },
+        reason: 'เดิม',
+        overriddenBy: 'st-1',
+        overriddenAt: new Date('2026-09-10T00:00:00.000Z'),
+      });
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-2',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { REPORT_INTERVAL_MOVING: 60, APN: 'new-apn' },
+        reason: dto.reason,
+        overriddenBy: 'st-1',
+        overriddenAt: new Date('2026-09-16T00:00:00.000Z'),
+      });
+
+      const result = await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(deviceConfigOverride.create).toHaveBeenCalledWith({
+        data: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          versionNumber: 2,
+          fields: { REPORT_INTERVAL_MOVING: 60, APN: 'new-apn' },
+          reason: dto.reason,
+          overriddenBy: 'st-1',
+        },
+      });
+      // field จาก override รอบก่อน (REPORT_INTERVAL_MOVING) ต้องยังอยู่ในผลลัพธ์
+      // ที่คืนกลับ ไม่หายไปเงียบๆ แม้ dto รอบนี้จะไม่ได้แตะ field นั้นเลย
+      expect(result.fields).toEqual({
+        APN: 'new-apn',
+        REPORT_INTERVAL_MOVING: 60,
+      });
+    });
+
+    it('เขียน AuditLog ในทรานแซกชันเดียวกัน พร้อม fieldNames ของรอบนี้เท่านั้น (ไม่ใช่ field สะสมทั้งหมด)', async () => {
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'ov-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 1,
+        fields: { REPORT_INTERVAL_MOVING: 60 },
+        reason: 'เดิม',
+        overriddenBy: 'st-1',
+        overriddenAt: new Date('2026-09-10T00:00:00.000Z'),
+      });
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-2',
+        fields: { REPORT_INTERVAL_MOVING: 60, APN: 'new-apn' },
+      });
+
+      await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'st-1',
+          auditModule: 'device',
+          action: 'device-config-override',
+          metadata: {
+            deviceId: 'DTC-0001',
+            configId: approvedConfig.id,
+            fieldNames: ['APN'],
+          },
+        },
+      });
+    });
+
+    it('field ไม่ผ่าน validateOverridableFields (stOverridable:false) -> throw, ไม่สร้าง override/AuditLog', async () => {
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      validateOverridableFields.mockRejectedValue(
+        new Error('field "COMMAND_PASSWORD" ไม่อนุญาตให้ override'),
+      );
+
+      await expect(
+        service.overrideDeviceConfig('DTC-0001', dto, st),
+      ).rejects.toThrow();
+      expect(deviceConfigOverride.create).not.toHaveBeenCalled();
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('อุปกรณ์ยังไม่เคย Confirm Install (ไม่มี base config) -> NotFoundException เดียวกับ getCurrentConfig', async () => {
+      task.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.overrideDeviceConfig('DTC-0001', dto, st),
+      ).rejects.toThrow(NotFoundException);
+      expect(validateOverridableFields).not.toHaveBeenCalled();
+      expect(deviceConfigOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('device ไม่พบ -> NotFoundException ไม่ query อะไรต่อ', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.overrideDeviceConfig('NOPE', dto, st),
+      ).rejects.toThrow(NotFoundException);
+      expect(task.findFirst).not.toHaveBeenCalled();
+      expect(validateOverridableFields).not.toHaveBeenCalled();
     });
   });
 });

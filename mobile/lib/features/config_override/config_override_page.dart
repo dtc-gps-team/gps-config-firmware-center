@@ -25,13 +25,17 @@ String _toInputValue(dynamic value) {
   return value.toString();
 }
 
-/// Config Override — Phase 2 (Mobile, issue #211). เข้าได้เฉพาะ role ST
-/// (เช็คที่ entry point ใน `device_detail_page.dart`) — ให้ ST แก้ค่าบาง field
-/// ของ Config ปัจจุบันของอุปกรณ์เครื่องนี้โดยตรง ไม่ผ่าน Approval Center ปกติ
-/// mirror UX ของ `web/src/app/(app)/config/config-override-panel.tsx` ทุกจุด:
-/// แสดงทุก field, เฉพาะ `stOverridable: true` แก้ได้ตาม dataType, เหตุผล
-/// บังคับกรอก, ต้องมีอย่างน้อย 1 field เปลี่ยนค่าก่อน submit ได้, ไม่มี confirm
-/// dialog เพิ่ม (submit ตรงๆ เหมือน Web).
+/// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
+/// เข้าได้เฉพาะ role ST (เช็คที่ entry point ใน `device_detail_page.dart`) —
+/// ให้ ST แก้ค่าบาง field ของ Config ปัจจุบันของ**อุปกรณ์เครื่องนี้เครื่อง
+/// เดียว** ไม่ผ่าน Approval Center ปกติ และไม่กระทบอุปกรณ์อื่นที่ใช้ Config
+/// เดียวกัน (`POST /devices/{deviceId}/config-override` — ต่างจาก
+/// `POST /config/{configId}/override` เดิมที่ Web ยังใช้อยู่ ดู
+/// `ConfigOverrideRepository`) mirror UX ของ
+/// `web/src/app/(app)/config/config-override-panel.tsx` ทุกจุด: แสดงทุก
+/// field, เฉพาะ `stOverridable: true` แก้ได้ตาม dataType, เหตุผลบังคับกรอก,
+/// ต้องมีอย่างน้อย 1 field เปลี่ยนค่าก่อน submit ได้, ไม่มี confirm dialog
+/// เพิ่ม (submit ตรงๆ เหมือน Web).
 class ConfigOverridePage extends ConsumerStatefulWidget {
   const ConfigOverridePage({super.key, required this.deviceId});
 
@@ -86,19 +90,15 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       return;
     }
 
-    final configId = config.id;
-    if (configId == null) {
-      // ไม่น่าเกิดขึ้นจริง — backend คืน id เสมอ — แต่ตั้ง _error ไว้แทนการ
-      // return เงียบๆ เพื่อให้ debug ง่ายขึ้นถ้าเจอ (comment review A บน PR #222)
-      setState(() => _error = 'ไม่พบ Config นี้ — ลองโหลดหน้าใหม่');
-      return;
-    }
-
     setState(() => _submitting = true);
     try {
       await ref
           .read(configOverrideRepositoryProvider)
-          .overrideConfig(configId: configId, fields: changed, reason: reason);
+          .overrideConfig(
+            deviceId: widget.deviceId,
+            fields: changed,
+            reason: reason,
+          );
       if (!mounted) return;
       setState(() {
         _submitting = false;
@@ -223,24 +223,37 @@ class _OverrideForm extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        Text(
-          config.name ??
-              '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                config.name ??
+                    '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+            if (config.hasDeviceOverride) ...[
+              const SizedBox(width: 8),
+              const _DeviceOverrideBadge(),
+            ],
+          ],
         ),
         const SizedBox(height: 4),
-        // ข้อความนี้ผูกกับ issue #223 — แก้ตามผลการตัดสินใจ (ข้อความนี้เป็นการ
-        // ชั่วคราว รอผลตัดสินใจ #223 — ถ้าตัดสินเป็น override รายเครื่อง หรือ
-        // เพิ่มขั้น apply เข้าอุปกรณ์หลัง override จะต้องกลับมาแก้ข้อความนี้)
-        Text(
-          'ค่านี้จะแก้ที่ Config "${config.name ?? '-'}" ซึ่งใช้ร่วมกันทั้งระบบ '
-          '— อุปกรณ์และแคมเปญอื่นที่ใช้ Config นี้จะได้ค่าใหม่ด้วยเมื่อมีการใส่ '
-          'Config ครั้งถัดไป · การ override ไม่ได้ส่งค่าเข้าอุปกรณ์ทันที',
-          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+        // issue #223 ตัดสินใจแล้วว่า override เป็น**รายเครื่อง**
+        // (POST /devices/{deviceId}/config-override, ไม่ใช่
+        // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) —
+        // ข้อความนี้เลยยืนยันได้ตรงๆ ว่าไม่กระทบเครื่องอื่น ต่างจากข้อความชั่วคราว
+        // เดิมของ PR #222 ที่เตือนว่ากระทบทั้งระบบ (ตอนนั้นยังใช้ endpoint เดิม)
+        const Text(
+          'ค่านี้จะแก้เฉพาะอุปกรณ์เครื่องนี้เท่านั้น ไม่กระทบอุปกรณ์เครื่องอื่นที่ '
+          'ใช้ Config เดียวกัน — ต้องระบุเหตุผลทุกครั้งและถูกบันทึกลง Audit Log '
+          'แบบไม่มีข้อยกเว้น',
+          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
         const SizedBox(height: 16),
         Container(
@@ -509,6 +522,40 @@ class _FieldRowState extends State<_FieldRow> {
             : null,
       ),
       onChanged: widget.onChanged,
+    );
+  }
+}
+
+/// บอกช่างว่าอุปกรณ์เครื่องนี้มี override เฉพาะเครื่องอยู่แล้ว (issue #223) —
+/// ค่าที่เห็นในฟอร์มด้านล่างจึงไม่ใช่ base Config ล้วนๆ (`hasDeviceOverride`
+/// จาก `GET /devices/{deviceId}/config`).
+class _DeviceOverrideBadge extends StatelessWidget {
+  const _DeviceOverrideBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('config_override_has_override_badge'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.mockAccentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.tune, size: 12, color: AppTheme.mockAccent),
+          SizedBox(width: 4),
+          Text(
+            'มี override เครื่องนี้',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.mockAccent,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
