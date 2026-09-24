@@ -153,17 +153,26 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
   decommissioned: "danger",
 };
 
-/** Campaign lifecycle — Campaign Approval (แก้ไข 2026-09-18, PR #186):
- * สร้างแล้วเป็น pending_approval ก่อนเสมอ ต้องรอ Operation อีกคนอนุมัติ
- * (→ active) หรือปฏิเสธ (→ rejected) — completed/cancelled ยังไม่มี
- * endpoint เปลี่ยนสถานะเข้า-ออก (รอ Campaign Monitor, Sprint 3 #22) */
-export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
-  draft: "neutral",
+/** CampaignRollout lifecycle (แก้ไข 2026-09-24, Campaign Monitor #22 — เดิม
+ * ชื่อ `CAMPAIGN_STATUS_TONE` อยู่บน `Campaign` ตรงๆ ย้ายมาอยู่ที่
+ * `CampaignRollout` แทน ไม่มี `draft` อีกต่อไป): สร้างแล้วเป็น
+ * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `active`) หรือ
+ * ปฏิเสธ (→ `rejected`) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อ
+ * ทุกเครื่องมีผลครบ */
+export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   pending_approval: "progress",
   active: "success",
   rejected: "danger",
   completed: "success",
   cancelled: "danger",
+};
+
+/** ผลของ CampaignRollout ต่อเครื่อง (Campaign Monitor #22) — `pending` คือ
+ * ยังไม่มีช่างไป apply-config/confirm-install เข้าเครื่องนั้นเลย */
+export const CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE: Record<string, PillTone> = {
+  pending: "neutral",
+  success: "success",
+  failed: "danger",
 };
 
 /** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend

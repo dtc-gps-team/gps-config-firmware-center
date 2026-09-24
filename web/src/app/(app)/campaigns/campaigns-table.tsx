@@ -14,8 +14,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
-import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
-import { CAMPAIGN_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { type Campaign } from "@/lib/campaign-api";
@@ -41,33 +39,12 @@ const columns: ColumnDef<Campaign>[] = [
     cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
   },
   {
-    accessorKey: "payloadType",
-    header: "ประเภท",
-    filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "ประเภท" },
-  },
-  {
-    accessorKey: "status",
-    header: "สถานะ",
-    filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "สถานะ" },
-    cell: ({ row }) => {
-      const status = row.original.status;
-      return (
-        <StatusPill tone={CAMPAIGN_STATUS_TONE[status] ?? "neutral"}>
-          {statusLabel(status)}
-        </StatusPill>
-      );
-    },
-  },
-  {
-    accessorKey: "targetCount",
-    header: "จำนวนเป้าหมาย",
+    accessorKey: "description",
+    header: "คำอธิบาย",
     enableGlobalFilter: false,
-    meta: { align: "end" },
     cell: ({ row }) => (
-      <span className="tabular-nums text-muted-foreground">
-        {row.original.targetCount}
+      <span className="text-muted-foreground">
+        {row.original.description ?? "—"}
       </span>
     ),
   },
