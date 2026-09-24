@@ -87,7 +87,12 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
     }
 
     final configId = config.id;
-    if (configId == null) return;
+    if (configId == null) {
+      // ไม่น่าเกิดขึ้นจริง — backend คืน id เสมอ — แต่ตั้ง _error ไว้แทนการ
+      // return เงียบๆ เพื่อให้ debug ง่ายขึ้นถ้าเจอ (comment review A บน PR #222)
+      setState(() => _error = 'ไม่พบ Config นี้ — ลองโหลดหน้าใหม่');
+      return;
+    }
 
     setState(() => _submitting = true);
     try {
@@ -219,7 +224,8 @@ class _OverrideForm extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
+          config.name ??
+              '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -227,11 +233,14 @@ class _OverrideForm extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'แก้ค่าที่ตั้งใน Parameter Library ว่า "ST override ได้" เท่านั้น — '
-          'ข้ามขั้นตอนอนุมัติปกติ ต้องระบุเหตุผลทุกครั้งและถูกบันทึกลง Audit Log '
-          'แบบไม่มีข้อยกเว้น',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+        // ข้อความนี้ผูกกับ issue #223 — แก้ตามผลการตัดสินใจ (ข้อความนี้เป็นการ
+        // ชั่วคราว รอผลตัดสินใจ #223 — ถ้าตัดสินเป็น override รายเครื่อง หรือ
+        // เพิ่มขั้น apply เข้าอุปกรณ์หลัง override จะต้องกลับมาแก้ข้อความนี้)
+        Text(
+          'ค่านี้จะแก้ที่ Config "${config.name ?? '-'}" ซึ่งใช้ร่วมกันทั้งระบบ '
+          '— อุปกรณ์และแคมเปญอื่นที่ใช้ Config นี้จะได้ค่าใหม่ด้วยเมื่อมีการใส่ '
+          'Config ครั้งถัดไป · การ override ไม่ได้ส่งค่าเข้าอุปกรณ์ทันที',
+          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
         const SizedBox(height: 16),
         Container(

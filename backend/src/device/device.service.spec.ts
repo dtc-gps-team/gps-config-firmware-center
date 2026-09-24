@@ -1,6 +1,6 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Config, Device } from '@prisma/client';
+import { Config, Device, Firmware } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from '../config/device-simulator';
 import { CONFIG_APPLIER, ConfigApplier } from './config-applier';
@@ -69,6 +69,21 @@ const applyResult = {
   appliedAt: '2026-09-04T10:00:00.000Z',
 };
 
+const readyFirmware: Firmware = {
+  id: '33333333-3333-3333-3333-333333333333',
+  version: 'GT06N-v2.4.1',
+  deviceModelCompatibility: ['GT06N'],
+  uploadStatus: 'stored',
+  deviceUpdateStatus: 'unknown',
+  objectKey: 'firmware/gt06n/v2.4.1.bin',
+  originalFilename: 'gt06n-v2.4.1.bin',
+  fileSizeBytes: 2048,
+  uploadedBy: 'user-3',
+  uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
+  approvalStatus: 'approved',
+  approvedBy: 'user-4',
+};
+
 const st: ActingUser = { id: 'st-1', role: 'ST' };
 
 const simPass = { passed: true, details: ['config ok (mock)'] };
@@ -84,6 +99,7 @@ describe('DeviceService', () => {
   let device: { findUnique: jest.Mock; findMany: jest.Mock };
   let config: { findUnique: jest.Mock };
   let task: { findFirst: jest.Mock };
+  let firmware: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
@@ -93,6 +109,7 @@ describe('DeviceService', () => {
     device = { findUnique: jest.fn(), findMany: jest.fn() };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
+    firmware = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
@@ -103,7 +120,7 @@ describe('DeviceService', () => {
         DeviceService,
         {
           provide: PrismaService,
-          useValue: { device, config, task, auditLog },
+          useValue: { device, config, task, firmware, auditLog },
         },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
@@ -413,6 +430,146 @@ describe('DeviceService', () => {
     });
   });
 
+  describe('confirmFirmwareInstall (issue #181)', () => {
+    it('device installed + firmware stored/approved + รุ่นตรง -> เขียน AuditLog แล้วคืนผลสำเร็จ', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      const result = await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        st,
+      );
+
+      expect(result).toEqual({
+        deviceId: 'DTC-0001',
+        firmwareId: readyFirmware.id,
+        confirmedAt: expect.any(String) as string,
+      });
+      expect(firmware.findUnique).toHaveBeenCalledWith({
+        where: { id: readyFirmware.id },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'st-1',
+          auditModule: 'device',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DTC-0001',
+            firmwareId: readyFirmware.id,
+            firmwareVersion: readyFirmware.version,
+          },
+        },
+      });
+    });
+
+    it('AuditLog เขียนไม่สำเร็จ -> โยน error ต่อ (ต่างจาก applyConfig — ไม่ใช่ never-throw เพราะไม่มีการกระทำอื่นให้ถือว่าสำเร็จแล้ว)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+      auditLog.create.mockRejectedValue(new Error('DB ล่ม'));
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow('DB ล่ม');
+    });
+
+    it('device ไม่พบ -> NotFoundException ไม่ query firmware', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'NOPE',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(firmware.findUnique).not.toHaveBeenCalled();
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('device registered (ยังไม่ติดตั้ง) -> ConflictException ไม่ query firmware', async () => {
+      device.findUnique.mockResolvedValue(registeredDevice);
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(firmware.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('firmware ไม่พบ -> NotFoundException ไม่เขียน AuditLog', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('firmware uploadStatus ยังไม่ stored -> ConflictException ไม่เขียน AuditLog', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue({
+        ...readyFirmware,
+        uploadStatus: 'pending',
+      });
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('firmware approvalStatus ยังไม่ approved -> ConflictException ไม่เขียน AuditLog', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue({
+        ...readyFirmware,
+        approvalStatus: 'pending_review',
+      });
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('firmware ไม่รองรับรุ่นอุปกรณ์ -> ConflictException ไม่เขียน AuditLog', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue({
+        ...readyFirmware,
+        deviceModelCompatibility: ['GT06L'],
+      });
+
+      await expect(
+        service.confirmFirmwareInstall(
+          'DTC-0001',
+          { firmwareId: readyFirmware.id },
+          st,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('simulateConfig', () => {
     it('device installed + config approved + รุ่นตรง -> รวม 3 check, passed:true', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
@@ -587,10 +744,23 @@ describe('DeviceService', () => {
       expect(config.findUnique).not.toHaveBeenCalled();
     });
 
-    it('Task ผูก configId ที่ Config ถูกลบไปแล้ว -> NotFoundException', async () => {
+    it('Task ผูก configId ที่ Config ถูกลบไปแล้ว (hard-deleted, findUnique -> null) -> NotFoundException', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       task.findFirst.mockResolvedValue(completedTask);
       config.findUnique.mockResolvedValue(null);
+
+      await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('Config ยังอยู่แต่ถูก soft-delete แล้ว (deletedAt != null, docs/11 Part A) -> NotFoundException (mirror ConfigService.findOne())', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-12T00:00:00.000Z'),
+      });
 
       await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
         NotFoundException,

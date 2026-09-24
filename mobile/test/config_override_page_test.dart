@@ -136,7 +136,10 @@ void main() {
         find.byKey(const Key('config_override_input_COMMAND_PASSWORD')),
         findsNothing,
       );
-      expect(find.textContaining('override ไม่ได้'), findsOneWidget);
+      // ใช้ข้อความเป๊ะ ไม่ใช่ textContaining — ข้อความเตือนหัวหน้า (issue #223)
+      // มีคำว่า "override ไม่ได้" ปนอยู่ด้วย ("การ override ไม่ได้ส่งค่าเข้า
+      // อุปกรณ์ทันที") ถ้าใช้ containing จะ match ทั้งสองที่
+      expect(find.textContaining('(override ไม่ได้)'), findsOneWidget);
     },
   );
 
