@@ -110,6 +110,21 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       ),
   },
   {
+    id: "sensitive",
+    accessorFn: (row) => (row.sensitive ? "Sensitive" : "ปกติ"),
+    header: "Sensitive",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "Sensitive" },
+    cell: ({ row }) =>
+      row.original.sensitive ? (
+        <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-destructive">
+          Sensitive
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
     id: "supportedModels",
     accessorFn: (row) => formatModelSupport(row.supportedModels),
     header: "รุ่น/โปรโตคอลที่รองรับ",
