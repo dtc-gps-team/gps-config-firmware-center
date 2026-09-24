@@ -106,9 +106,10 @@ describe('DeviceService', () => {
   let deviceConfigOverride: {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
     findMany: jest.Mock;
     create: jest.Mock;
-    update: jest.Mock;
+    updateMany: jest.Mock;
   };
   let auditLog: { create: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
@@ -124,9 +125,10 @@ describe('DeviceService', () => {
     deviceConfigOverride = {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findMany: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
+      updateMany: jest.fn(),
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     connectionTester = { testConnection: jest.fn() };
@@ -142,8 +144,9 @@ describe('DeviceService', () => {
     const tx = {
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
+        findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,
         create: deviceConfigOverride.create,
-        update: deviceConfigOverride.update,
+        updateMany: deviceConfigOverride.updateMany,
       },
       auditLog: { create: auditLog.create },
     };
@@ -1186,9 +1189,26 @@ describe('DeviceService', () => {
     };
 
     describe('approveDeviceConfigOverride', () => {
-      it('คำขอยัง pending -> อัปเดตเป็น approved พร้อม decidedBy/decidedAt + AuditLog', async () => {
+      /** approve เรียก `getBaseConfigForDevice()` เพิ่ม (comment A รอบ 2 บน
+       * PR #225 — เช็ค configId staleness) mock ให้ resolve เป็น Config
+       * เดียวกับ `pendingRow.configId` เป็นค่า default ของกลุ่มนี้ */
+      function mockBaseConfigMatches(): void {
+        device.findUnique.mockResolvedValue(installedDevice);
+        task.findFirst.mockResolvedValue({
+          id: 'task-1',
+          deviceId: 'DTC-0001',
+          status: 'completed',
+          configId: approvedConfig.id,
+          updatedAt: new Date('2026-09-10T00:00:00.000Z'),
+        });
+        config.findUnique.mockResolvedValue(approvedConfig);
+      }
+
+      it('คำขอยัง pending, configId ตรงกับ Config ปัจจุบัน -> อัปเดตเป็น approved พร้อม decidedBy/decidedAt + AuditLog', async () => {
         deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
-        deviceConfigOverride.update.mockResolvedValue({
+        mockBaseConfigMatches();
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
           ...pendingRow,
           status: 'approved',
           decidedBy: 'op-1',
@@ -1201,8 +1221,8 @@ describe('DeviceService', () => {
         );
 
         expect(result.status).toBe('approved');
-        expect(deviceConfigOverride.update).toHaveBeenCalledWith({
-          where: { id: 'ov-1' },
+        expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+          where: { id: 'ov-1', status: 'pending' },
           data: expect.objectContaining({
             status: 'approved',
             decidedBy: 'op-1',
@@ -1227,7 +1247,7 @@ describe('DeviceService', () => {
         await expect(
           service.approveDeviceConfigOverride('nope', operation),
         ).rejects.toThrow(NotFoundException);
-        expect(deviceConfigOverride.update).not.toHaveBeenCalled();
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
       });
 
       it('คำขอถูกตัดสินใจไปแล้ว (approved/rejected) -> ConflictException กันตัดสินใจซ้ำ', async () => {
@@ -1239,14 +1259,47 @@ describe('DeviceService', () => {
         await expect(
           service.approveDeviceConfigOverride('ov-1', operation),
         ).rejects.toThrow(ConflictException);
-        expect(deviceConfigOverride.update).not.toHaveBeenCalled();
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('bug fix (comment A รอบ 2 บน PR #225): configId ของคำขอไม่ตรงกับ Config ปัจจุบันของอุปกรณ์แล้ว (มี Confirm Install ใหม่ทับระหว่างรออนุมัติ) -> ConflictException ไม่ update', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        device.findUnique.mockResolvedValue(installedDevice);
+        task.findFirst.mockResolvedValue({
+          id: 'task-2',
+          deviceId: 'DTC-0001',
+          status: 'completed',
+          configId: 'cfg-new-different',
+          updatedAt: new Date('2026-09-20T00:00:00.000Z'),
+        });
+        config.findUnique.mockResolvedValue({
+          ...approvedConfig,
+          id: 'cfg-new-different',
+        });
+
+        await expect(
+          service.approveDeviceConfigOverride('ov-1', operation),
+        ).rejects.toThrow(ConflictException);
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('race condition (comment A รอบ 2 บน PR #225): มีคนอื่นตัดสินใจคำขอนี้ไปแล้วระหว่างรอ (updateMany count 0) -> ConflictException', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        mockBaseConfigMatches();
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.approveDeviceConfigOverride('ov-1', operation),
+        ).rejects.toThrow(ConflictException);
+        expect(auditLog.create).not.toHaveBeenCalled();
       });
     });
 
     describe('rejectDeviceConfigOverride', () => {
       it('คำขอยัง pending -> อัปเดตเป็น rejected พร้อม rejectReason + AuditLog', async () => {
         deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
-        deviceConfigOverride.update.mockResolvedValue({
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
           ...pendingRow,
           status: 'rejected',
           decidedBy: 'op-1',
@@ -1260,8 +1313,8 @@ describe('DeviceService', () => {
         );
 
         expect(result.status).toBe('rejected');
-        expect(deviceConfigOverride.update).toHaveBeenCalledWith({
-          where: { id: 'ov-1' },
+        expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+          where: { id: 'ov-1', status: 'pending' },
           data: expect.objectContaining({
             status: 'rejected',
             rejectReason: 'ไม่เหมาะสมกับสถานการณ์หน้างาน',
@@ -1282,15 +1335,16 @@ describe('DeviceService', () => {
 
       it('ไม่ส่ง rejectReason มา -> เขียนเป็น null (ไม่บังคับ)', async () => {
         deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
-        deviceConfigOverride.update.mockResolvedValue({
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
           ...pendingRow,
           status: 'rejected',
         });
 
         await service.rejectDeviceConfigOverride('ov-1', {}, operation);
 
-        expect(deviceConfigOverride.update).toHaveBeenCalledWith({
-          where: { id: 'ov-1' },
+        expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+          where: { id: 'ov-1', status: 'pending' },
           data: expect.objectContaining({ rejectReason: null }) as unknown,
         });
       });
@@ -1304,6 +1358,17 @@ describe('DeviceService', () => {
         await expect(
           service.rejectDeviceConfigOverride('ov-1', {}, operation),
         ).rejects.toThrow(ConflictException);
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('race condition (comment A รอบ 2 บน PR #225): มีคนอื่นตัดสินใจคำขอนี้ไปแล้วระหว่างรอ (updateMany count 0) -> ConflictException', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.rejectDeviceConfigOverride('ov-1', {}, operation),
+        ).rejects.toThrow(ConflictException);
+        expect(auditLog.create).not.toHaveBeenCalled();
       });
     });
   });

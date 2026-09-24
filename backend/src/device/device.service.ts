@@ -699,6 +699,21 @@ export class DeviceService {
    * สถานะเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้อัตโนมัติ** ช่าง
    * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (ยังไม่ทำใน PR นี้)
    * resource `device-config-override` action `Approve` — Operation เท่านั้น
+   *
+   * **เช็ค `configId` ยังตรงกับ Config ปัจจุบันของอุปกรณ์ไหม (comment A รอบ 2
+   * บน PR #225):** ถ้าเครื่องถูก Confirm Install เป็น Config ใหม่ทับระหว่างที่
+   * คำขอนี้รออนุมัติอยู่ `getCurrentConfig()` จะกรองด้วย configId ปัจจุบันอยู่
+   * แล้วอนุมัติคำขอเก่าไปก็ไม่มีผลอะไรเลย (Operation จะเข้าใจผิดว่ามีผล) — กัน
+   * ด้วย 409 ก่อนเปลี่ยนสถานะ
+   *
+   * **race condition (comment A รอบ 2):** เดิมอ่านสถานะนอก transaction แล้ว
+   * `update()` แบบไม่เช็คซ้ำ — Operation 2 คนกดพร้อมกัน (หรือคนหนึ่ง approve
+   * อีกคน reject) จะผ่านทั้งคู่ได้ แก้ด้วย `updateMany({ where: { id, status:
+   * 'pending' } })` ในทรานแซกชันเดียวกัน (mirror IDOR pattern ใน CLAUDE.md)
+   * `count === 0` แปลว่ามีคนอื่นตัดสินใจคำขอนี้ไปแล้วระหว่างที่เรารออยู่ → 409
+   * — `getPendingOverrideOrThrow()` ยังคงไว้เป็น fast-path ให้ error message
+   * ชัดเจน (404 ไม่พบ / 409 ตัดสินใจไปแล้วตอนเรียก) ส่วน `updateMany` เป็น
+   * backstop กันช่องว่างระหว่าง fast-path กับตอน commit จริง
    */
   async approveDeviceConfigOverride(
     id: string,
@@ -706,14 +721,29 @@ export class DeviceService {
   ): Promise<DeviceConfigOverride> {
     const existing = await this.getPendingOverrideOrThrow(id);
 
+    const baseConfig = await this.getBaseConfigForDevice(existing.deviceId);
+    if (baseConfig.id !== existing.configId) {
+      throw new ConflictException(
+        'Config ของอุปกรณ์นี้เปลี่ยนไปแล้วตั้งแต่ส่งคำขอ (มี Confirm Install ใหม่ทับ) — อนุมัติคำขอนี้ไม่มีผลอะไรแล้ว',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.deviceConfigOverride.update({
-        where: { id },
+      const result = await tx.deviceConfigOverride.updateMany({
+        where: { id, status: 'pending' },
         data: {
           status: 'approved',
           decidedBy: actor.id,
           decidedAt: new Date(),
         },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+        where: { id },
       });
       const metadata: AuditLogMetadata = {
         deviceId: existing.deviceId,
@@ -734,7 +764,14 @@ export class DeviceService {
   /** Operation ปฏิเสธคำขอ override — `rejectReason` ไม่บังคับ (Operation
    * อาจไม่ระบุก็ได้) resource เดียวกับ approve (action `Approve`) mirror
    * `config-deletion` (`rejectConfigDeletionRequest` ใช้ action `Approve`
-   * เดียวกับ approve — "สิทธิ์ตัดสินใจ" ไม่ได้แยกตามผลตัดสินใจ) */
+   * เดียวกับ approve — "สิทธิ์ตัดสินใจ" ไม่ได้แยกตามผลตัดสินใจ)
+   *
+   * **race condition (comment A รอบ 2 บน PR #225):** เดียวกับ
+   * `approveDeviceConfigOverride()` — ใช้ `updateMany` ในทรานแซกชันแทน
+   * `update()` เปล่าๆ กันคนละคนกดตัดสินใจคำขอเดียวกันพร้อมกัน — **ไม่เช็ค
+   * configId staleness เหมือน approve** เพราะ reject คำขอที่ configId เก่าไป
+   * แล้วไม่มีผลเสียอะไร (แค่ทำเครื่องหมายว่าปฏิเสธ ไม่ได้ apply อะไรเข้าระบบ)
+   */
   async rejectDeviceConfigOverride(
     id: string,
     dto: RejectDeviceConfigOverrideDto,
@@ -743,14 +780,22 @@ export class DeviceService {
     const existing = await this.getPendingOverrideOrThrow(id);
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.deviceConfigOverride.update({
-        where: { id },
+      const result = await tx.deviceConfigOverride.updateMany({
+        where: { id, status: 'pending' },
         data: {
           status: 'rejected',
           decidedBy: actor.id,
           decidedAt: new Date(),
           rejectReason: dto.rejectReason ?? null,
         },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+        where: { id },
       });
       const metadata: AuditLogMetadata = {
         deviceId: existing.deviceId,

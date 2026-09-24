@@ -1583,6 +1583,25 @@ describe('DeviceController test-connection (integration — real postgres + guar
         expect(audit).toHaveLength(1);
       });
 
+      it('bug fix (comment A รอบ 2 บน PR #225): configId ของคำขอไม่ตรงกับ Config ปัจจุบันแล้ว (Confirm Install ใหม่ทับระหว่างรออนุมัติ) -> approve 409', async () => {
+        const { overrideId } = await setupPending('DCO-APR-STALE');
+        const opTok = await opToken2();
+        // Confirm Install ใหม่ทับด้วย Config อีกตัว (deviceModel/protocol
+        // เดียวกัน) — base Config ของอุปกรณ์เปลี่ยนไปแล้วตั้งแต่ ST ส่งคำขอ
+        const newConfigId = await makeConfig('approved');
+        await makeCompletedTask('DCO-APR-STALE', newConfigId);
+
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-config-overrides/${overrideId}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(409);
+
+        const row = await prisma.deviceConfigOverride.findUnique({
+          where: { id: overrideId },
+        });
+        expect(row?.status).toBe('pending'); // ไม่ถูก approve
+      });
+
       it('คำขอถูกตัดสินใจไปแล้ว -> approve ซ้ำ 409', async () => {
         const { overrideId } = await setupPending('DCO-APR-409');
         const opTok = await opToken2();
