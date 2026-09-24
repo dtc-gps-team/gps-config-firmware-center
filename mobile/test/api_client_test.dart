@@ -268,6 +268,69 @@ void main() {
         ),
       );
     });
+
+    test(
+      'response.data["errors"] เป็น string[] -> ApiException.details เก็บไว้ '
+      '(mirror ApiError.details ฝั่ง Web api.ts — backend validateOverridableFields '
+      'ส่ง { message, errors: string[] })',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 400, {
+              'message': 'ค่าที่ขอ override ไม่ผ่านการตรวจสอบ',
+              'errors': ['field "X" ไม่อนุญาตให้ override'],
+            }),
+          ),
+        );
+
+        await expectLater(
+          _login(client),
+          throwsA(
+            isA<ApiException>().having((e) => e.details, 'details', [
+              'field "X" ไม่อนุญาตให้ override',
+            ]),
+          ),
+        );
+      },
+    );
+
+    test('response.data ไม่มี key "errors" เลย -> details ว่างเปล่า', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 401, {'message': 'Unauthorized'}),
+        ),
+      );
+
+      await expectLater(
+        _login(client),
+        throwsA(isA<ApiException>().having((e) => e.details, 'details', [])),
+      );
+    });
+
+    test(
+      'response.data["errors"] ไม่ใช่ array ของ string ล้วน (เช่น class-validator '
+      'shape) -> details ว่างเปล่าแทนที่จะพัง',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 400, {
+              'message': 'Bad Request',
+              'errors': [
+                {'property': 'fields', 'constraints': {}},
+              ],
+            }),
+          ),
+        );
+
+        await expectLater(
+          _login(client),
+          throwsA(isA<ApiException>().having((e) => e.details, 'details', [])),
+        );
+      },
+    );
   });
 
   group('task endpoints', () {
@@ -407,6 +470,162 @@ void main() {
         expect(adapter.lastRequest?.path, '/config');
       },
     );
+  });
+
+  group('config override endpoints (Phase 2 Mobile, issue #211)', () {
+    Map<String, dynamic> configJson({
+      String id = 'c1',
+      String status = 'approved',
+    }) => {
+      'id': id,
+      'deviceModel': 'GT06N',
+      'protocol': 'TCP',
+      'status': status,
+      'fields': {'APN': 'internet'},
+    };
+
+    test('getDeviceCurrentConfig -> GET /devices/{deviceId}/config', () async {
+      final (:client, :adapter) = _clientReturning(configJson(id: 'c1'));
+
+      final config = await client.getDeviceCurrentConfig('DEV-0117');
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/devices/DEV-0117/config');
+      expect(config.id, 'c1');
+      expect(config.status, ConfigStatus.approved);
+    });
+
+    test('getDeviceCurrentConfig -> 404 maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {
+            'message': 'อุปกรณ์นี้ยังไม่มี Config ที่ยืนยันติดตั้งแล้ว',
+          }),
+        ),
+      );
+
+      await expectLater(
+        client.getDeviceCurrentConfig('DEV-NONE'),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having(
+                (e) => e.message,
+                'message',
+                'อุปกรณ์นี้ยังไม่มี Config ที่ยืนยันติดตั้งแล้ว',
+              ),
+        ),
+      );
+    });
+
+    test(
+      'overrideConfig -> POST /config/{configId}/override with {fields, reason}',
+      () async {
+        final (:client, :adapter) = _clientReturning(
+          configJson(id: 'c1', status: 'approved'),
+        );
+
+        final config = await client.overrideConfig(
+          configId: 'c1',
+          fields: {'APN': 'new-apn'},
+          reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+        );
+
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(adapter.lastRequest?.path, '/config/c1/override');
+        expect(adapter.lastRequest?.data, {
+          'fields': {'APN': 'new-apn'},
+          'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+        });
+        expect(config.id, 'c1');
+      },
+    );
+
+    test(
+      'overrideConfig -> 400 (field ไม่อนุญาตให้ override) maps to ApiException '
+      'พร้อม details',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 400, {
+              'message': 'ค่าที่ขอ override ไม่ผ่านการตรวจสอบ',
+              'errors': ['field "COMMAND_PASSWORD" ไม่อนุญาตให้ override'],
+            }),
+          ),
+        );
+
+        await expectLater(
+          client.overrideConfig(
+            configId: 'c1',
+            fields: {'COMMAND_PASSWORD': 'x'},
+            reason: 'ทดสอบ',
+          ),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.statusCode, 'statusCode', 400)
+                .having((e) => e.details, 'details', [
+                  'field "COMMAND_PASSWORD" ไม่อนุญาตให้ override',
+                ]),
+          ),
+        );
+      },
+    );
+
+    Map<String, dynamic> definitionJson({
+      String id = 'def-1',
+      String fieldName = 'APN',
+      bool stOverridable = false,
+    }) => {
+      'id': id,
+      'fieldName': fieldName,
+      'dataType': 'string',
+      'allowedValues': <String>[],
+      'required': true,
+      'unknownSpec': false,
+      'description': null,
+      'unit': null,
+      'stOverridable': stOverridable,
+      'category': null,
+      'sensitive': false,
+      'restartRequired': false,
+      'defaultValue': null,
+      'supportedModels': [
+        {'deviceModel': 'GT06N', 'protocol': 'TCP'},
+      ],
+      'createdAt': '2026-09-01T00:00:00.000Z',
+      'updatedAt': '2026-09-01T00:00:00.000Z',
+    };
+
+    test(
+      'listConfigDefinitions -> GET /config-definitions, maps the JSON array',
+      () async {
+        final (:client, :adapter) = _clientReturning([
+          definitionJson(id: 'def-1', fieldName: 'APN', stOverridable: true),
+          definitionJson(
+            id: 'def-2',
+            fieldName: 'COMMAND_PASSWORD',
+            stOverridable: false,
+          ),
+        ]);
+
+        final defs = await client.listConfigDefinitions();
+
+        expect(adapter.lastRequest?.method, 'GET');
+        expect(adapter.lastRequest?.path, '/config-definitions');
+        expect(defs.map((d) => d.fieldName), ['APN', 'COMMAND_PASSWORD']);
+        expect(defs[0].stOverridable, isTrue);
+        expect(defs[1].stOverridable, isFalse);
+        expect(defs[0].supportedModels.single.deviceModel, 'GT06N');
+      },
+    );
+
+    test('listConfigDefinitions -> tolerates an empty array', () async {
+      final (:client, :adapter) = _clientReturning(<dynamic>[]);
+      expect(await client.listConfigDefinitions(), isEmpty);
+      expect(adapter.lastRequest?.path, '/config-definitions');
+    });
   });
 
   group('device endpoints', () {

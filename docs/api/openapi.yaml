@@ -1412,6 +1412,39 @@ paths:
             เช็คความพร้อมไม่ได้ — Device ยังไม่ installed หรือ Config ยังไม่ผ่าน
             อนุมัติ (ต้อง approved หรือ synced)
 
+  /devices/{deviceId}/config:
+    get:
+      tags: [device]
+      operationId: getDeviceCurrentConfig
+      summary: Config ปัจจุบันของอุปกรณ์เครื่องนี้ (Config Override Phase 2, Mobile — issue #211, v3.29)
+      description: >-
+        derive จาก `Task.configId` ของ Task ล่าสุด (`status: completed`) ที่ผูก
+        กับอุปกรณ์เครื่องนี้ — Device ไม่มี FK ตรงไป Config เลย (เหมือน
+        `getDeviceStatus` ที่ยังไม่ implement) ใช้เปิดหน้า "Override ค่า
+        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `config-override`) ก่อน
+        เรียก `overrideConfig` ต่อ
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Config ปัจจุบันของอุปกรณ์
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigDraft"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อ่าน Config ปัจจุบันของอุปกรณ์ — เฉพาะ Role ST, OT
+        "404":
+          description: >-
+            ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
+            ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
+
   /incidents:
     get:
       tags: [incident]

@@ -6,10 +6,15 @@ import 'models.dart';
 
 /// Thrown for any non-2xx response or transport error.
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode});
+  ApiException(this.message, {this.statusCode, this.details = const []});
 
   final String message;
   final int? statusCode;
+
+  /// รายการ error ย่อย (เช่น backend `validateOverridableFields` ที่ส่ง
+  /// `{ message, errors: string[] }`) — mirror `ApiError.details` ฝั่ง Web
+  /// (`web/src/lib/api.ts`) ว่างเปล่าถ้า response ไม่มี `errors` array.
+  final List<String> details;
 
   @override
   String toString() => 'ApiException(${statusCode ?? '-'}): $message';
@@ -196,6 +201,43 @@ class ApiClient {
     );
   }
 
+  /// `GET /devices/{deviceId}/config` — Config ปัจจุบันของอุปกรณ์ (Config
+  /// Override Phase 2, issue #211). 404 ถ้าอุปกรณ์ไม่มี Task สถานะ `completed`
+  /// ที่ผูก `configId` ไว้เลย (ยังไม่เคย confirm install).
+  Future<DeviceConfigDraft> getDeviceCurrentConfig(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/devices/$deviceId/config'),
+      DeviceConfigDraft.fromJson,
+    );
+  }
+
+  /// `POST /config/{configId}/override` — ST แก้ค่าบาง field ของ Config ที่
+  /// `approved`/`synced` แล้วโดยตรง ไม่ผ่าน Approval Center ปกติ (issue #185
+  /// Phase 1 backend, #211 Phase 2 Mobile). `fields` เป็น partial update — ใส่
+  /// แค่ field ที่แก้ ทุก key ต้อง `stOverridable: true` ไม่งั้น 400.
+  Future<DeviceConfigDraft> overrideConfig({
+    required String configId,
+    required Map<String, dynamic> fields,
+    required String reason,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/config/$configId/override',
+        data: {'fields': fields, 'reason': reason},
+      ),
+      DeviceConfigDraft.fromJson,
+    );
+  }
+
+  /// `GET /config-definitions` — คลัง field ที่ระบบรู้จัก ใช้เช็คว่า field ไหน
+  /// `stOverridable: true` บ้างก่อนแสดงหน้า Config Override (issue #211).
+  Future<List<ConfigFieldDefinition>> listConfigDefinitions() async {
+    return _wrapListStrict(
+      () => _dio.get<List<dynamic>>('/config-definitions'),
+      ConfigFieldDefinition.fromJson,
+    );
+  }
+
   /// `POST /devices/{deviceId}/test-connection` — no request body.
   Future<DeviceConnectionTestResult> testDeviceConnection(
     String deviceId,
@@ -343,7 +385,23 @@ class ApiClient {
         _transportErrorMessage(e.type) ??
         'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
     statusCode: e.response?.statusCode,
+    details: _detailsFromResponse(e.response),
   );
+
+  /// backend `validateFields`/`validateOverridableFields` ส่ง
+  /// `{ message, errors: string[] }` — flatten เป็น `List<String>` เสมอ (mirror
+  /// `errorsFromBody` ฝั่ง Web `api.ts`) ว่างเปล่าถ้าไม่มี `errors` array หรือ
+  /// entry ไม่ใช่ string (เช่น class-validator ที่ยังไม่เจอ shape นี้ในระบบนี้).
+  static List<String> _detailsFromResponse(Response<dynamic>? response) {
+    final data = response?.data;
+    if (data is! Map) return const [];
+    final errors = data['errors'];
+    if (errors is! List) return const [];
+    if (errors.every((e) => e is String)) {
+      return errors.cast<String>();
+    }
+    return const [];
+  }
 
   /// Thai, user-facing text for transport-level failures where there is no
   /// HTTP response to read a message from (backend unreachable, timed out,

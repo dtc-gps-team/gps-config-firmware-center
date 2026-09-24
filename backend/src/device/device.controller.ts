@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType } from '@prisma/client';
+import { ActionType, Config } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
@@ -35,6 +35,8 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //   GET  /devices                 — Device Search (list + filter)  · ทุก Role
 //   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
+//                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
+//   GET  /devices/:deviceId/config — Config ปัจจุบันของอุปกรณ์ (issue #211)
 //                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
 //
 // **ยังไม่ implement `GET /devices/:deviceId/status`** — มีแต่ spec ใน
@@ -110,5 +112,15 @@ export class DeviceController {
     @Body() dto: SimulateConfigOnDeviceDto,
   ): Promise<DeviceSimulateConfigResult> {
     return this.deviceService.simulateConfig(deviceId, dto.configId);
+  }
+
+  // resource `device-current-config` action Read — grant ให้ ST/OT เท่านั้น
+  // (mirror device-connection-test/device-config-apply) Config Override
+  // Phase 2 (Mobile, issue #211) — ช่างต้องรู้ Config ปัจจุบันของอุปกรณ์ก่อน
+  // เปิดหน้า Override
+  @Get(':deviceId/config')
+  @RequirePermission('device-current-config', ActionType.Read)
+  getCurrentConfig(@Param('deviceId') deviceId: string): Promise<Config> {
+    return this.deviceService.getCurrentConfig(deviceId);
   }
 }

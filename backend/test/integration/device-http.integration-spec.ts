@@ -708,4 +708,135 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(404);
     });
   });
+
+  describe('GET /devices/:deviceId/config (Config Override Phase 2, Mobile — issue #211)', () => {
+    async function stToken(): Promise<string> {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-current-config');
+      return tokenFor(stUser.id, 'ST');
+    }
+
+    async function makeCompletedTask(
+      deviceId: string,
+      configId: string,
+      updatedAt?: Date,
+    ): Promise<void> {
+      const assignee = await makeUser(prisma, { role: 'ST' });
+      const task = await prisma.task.create({
+        data: {
+          title: `ติดตั้ง Config — ${deviceId}`,
+          assignedTo: assignee.id,
+          deviceId,
+          configId,
+          status: 'completed',
+        },
+      });
+      // `updatedAt` เป็น `@updatedAt` — set ทับตรงๆ ผ่าน `updateMany` (ข้าม
+      // auto-touch) ให้ควบคุมลำดับ "ล่าสุด" ได้แน่นอนในเทส
+      if (updatedAt) {
+        await prisma.$executeRaw`UPDATE "Task" SET "updatedAt" = ${updatedAt} WHERE id = ${task.id}`;
+      }
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('CFG-401', 'installed');
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-401/config')
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ device-current-config (ConfigEngineer) -> 403', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read, 'config-simulation');
+      await makeDevice('CFG-403', 'installed');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-403/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('deviceId ไม่พบ -> 404', async () => {
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/NOPE/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('device มีอยู่ แต่ไม่มี Task completed ที่ผูก configId เลย -> 404', async () => {
+      await makeDevice('CFG-404T', 'installed');
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-404T/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('มี Task completed ผูก configId -> 200 คืน Config นั้น', async () => {
+      await makeDevice('CFG-200', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('CFG-200', configId);
+      const token = await stToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-200/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { id: string; fields: Record<string, unknown> };
+      expect(body.id).toBe(configId);
+      expect(body.fields).toEqual({ APN: 'internet' });
+    });
+
+    it('มีหลาย Task completed -> คืน Config ของ Task ล่าสุด (updatedAt มากสุด)', async () => {
+      await makeDevice('CFG-200L', 'installed');
+      const olderConfigId = await makeConfig('approved');
+      const newerConfigId = await makeConfig('approved');
+      await makeCompletedTask(
+        'CFG-200L',
+        olderConfigId,
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+      await makeCompletedTask(
+        'CFG-200L',
+        newerConfigId,
+        new Date('2026-06-01T00:00:00.000Z'),
+      );
+      const token = await stToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-200L/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect((res.body as { id: string }).id).toBe(newerConfigId);
+    });
+
+    it('Task ที่ผูก device นี้ยัง pending (ไม่ completed) -> ไม่นับ -> 404', async () => {
+      await makeDevice('CFG-404P', 'installed');
+      const configId = await makeConfig('approved');
+      const assignee = await makeUser(prisma, { role: 'ST' });
+      await prisma.task.create({
+        data: {
+          title: 'ติดตั้ง Config — ยังไม่เสร็จ',
+          assignedTo: assignee.id,
+          deviceId: 'CFG-404P',
+          configId,
+          status: 'pending',
+        },
+      });
+      const token = await stToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/CFG-404P/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
 });

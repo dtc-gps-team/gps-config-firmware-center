@@ -260,6 +260,16 @@ async function main() {
     grant('ST', 'device-config-apply', 'Read'),
     grant('OT', 'device-config-apply', 'Read'),
 
+    // ---- device-current-config (GET /devices/{deviceId}/config) ----
+    // Config Override Phase 2 (Mobile, issue #211) — ช่างต้องรู้ว่า Config
+    // ปัจจุบันของอุปกรณ์คืออะไรก่อนเปิดหน้า Override ได้ — resource แยกจาก
+    // `device-config-apply` แม้ action เดียวกัน (`Read`) เพราะคนละความหมาย
+    // (`device-config-apply` = สิทธิ์ "ส่ง Config เข้าอุปกรณ์", ตัวนี้ = สิทธิ์
+    // "อ่าน Config ปัจจุบันของอุปกรณ์") ST/OT เท่านั้น (mirror
+    // device-connection-test/device-config-apply — คนหน้างานที่ใช้ Mobile)
+    grant('ST', 'device-current-config', 'Read'),
+    grant('OT', 'device-current-config', 'Read'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),

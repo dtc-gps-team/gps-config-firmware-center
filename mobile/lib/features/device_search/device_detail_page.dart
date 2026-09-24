@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'device_search_repository.dart';
@@ -15,9 +18,11 @@ String _formatDate(DateTime dt) {
 }
 
 /// "รายละเอียดอุปกรณ์" — one device from `GET /devices/{deviceId}`, opened from
-/// a row on the search screen. Read-only: shows the fields of the `Device`
-/// record itself (config/firmware sync status is a separate, not-yet-built
-/// endpoint).
+/// a row on the search screen. Read-only aside from the "Override ค่า
+/// พารามิเตอร์" entry point (ST only — Config Override Phase 2, issue #211,
+/// via `GET /devices/{deviceId}/config`): shows the fields of the `Device`
+/// record itself, firmware sync status is still a separate, not-yet-built
+/// endpoint.
 class DeviceDetailPage extends ConsumerWidget {
   const DeviceDetailPage({super.key, required this.deviceId});
 
@@ -26,6 +31,7 @@ class DeviceDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceAsync = ref.watch(deviceDetailProvider(deviceId));
+    final isSt = ref.watch(authControllerProvider).role == UserRole.st;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -37,7 +43,8 @@ class DeviceDetailPage extends ConsumerWidget {
       ),
       body: deviceAsync.when(
         skipLoadingOnRefresh: true,
-        data: (device) => _DeviceDetailView(device: device),
+        data: (device) =>
+            _DeviceDetailView(device: device, deviceId: deviceId, isSt: isSt),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailError(
           message: _errorMessage(error),
@@ -63,9 +70,15 @@ class DeviceDetailPage extends ConsumerWidget {
 }
 
 class _DeviceDetailView extends StatelessWidget {
-  const _DeviceDetailView({required this.device});
+  const _DeviceDetailView({
+    required this.device,
+    required this.deviceId,
+    required this.isSt,
+  });
 
   final Device device;
+  final String deviceId;
+  final bool isSt;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +114,21 @@ class _DeviceDetailView extends StatelessWidget {
             ),
           ],
         ),
+        if (isSt) ...[
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            key: const Key('device_detail_config_override'),
+            onPressed: () =>
+                context.push(AppRoutes.deviceConfigOverride(deviceId)),
+            icon: const Icon(Icons.tune),
+            label: const Text('Override ค่าพารามิเตอร์'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.navy,
+              side: const BorderSide(color: AppTheme.navy),
+              minimumSize: const Size.fromHeight(48),
+            ),
+          ),
+        ],
       ],
     );
   }
