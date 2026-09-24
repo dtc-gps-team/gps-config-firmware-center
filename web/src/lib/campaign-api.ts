@@ -159,6 +159,21 @@ export function listCampaignRollouts(
   });
 }
 
+/**
+ * `GET /campaigns/rollouts` — ข้าม Campaign ทุกกลุ่ม (แก้ไข 2026-09-24 —
+ * ใช้กับ Approval Center รวม Campaign Rollout เข้ากับ Config) ต่างจาก
+ * `listCampaignRollouts` ด้านบนที่ scope แค่กลุ่มเดียว
+ */
+export function listAllCampaignRollouts(
+  token: string,
+  params?: { status?: CampaignRolloutStatus },
+): Promise<CampaignRollout[]> {
+  const query = params?.status
+    ? `?status=${encodeURIComponent(params.status)}`
+    : "";
+  return apiJson<CampaignRollout[]>(`/campaigns/rollouts${query}`, { token });
+}
+
 export function getCampaignRollout(
   token: string,
   campaignId: string,

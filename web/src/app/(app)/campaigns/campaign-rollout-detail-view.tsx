@@ -23,6 +23,7 @@ import {
   CAMPAIGN_ROLLOUT_STATUS_TONE,
   CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE,
   StatusPill,
+  getRolloutStatusExplanation,
   statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
@@ -97,6 +98,9 @@ export function CampaignRolloutDetailView({
             {statusLabel(data.status)}
           </StatusPill>
         </div>
+        <p className="text-sm text-muted-foreground">
+          {getRolloutStatusExplanation(data.status)}
+        </p>
       </div>
 
       <CampaignRolloutApprovalPanel

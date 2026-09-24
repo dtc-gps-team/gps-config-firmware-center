@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ClipboardCheckIcon } from "lucide-react";
+import { ClipboardCheckIcon, RocketIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canDecideConfigApproval } from "@/lib/permissions";
@@ -15,9 +15,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
+import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ApprovalCard } from "./approval-card";
+import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 
 export function ApprovalCenterView() {
   const { session } = useAuth();
@@ -26,6 +28,7 @@ export function ApprovalCenterView() {
     ? getTokenSubject(session.accessToken)
     : null;
   const { data, isLoading, error, refetch } = usePendingApprovals();
+  const rolloutsQuery = usePendingCampaignRollouts();
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<"all" | "mine">("all");
 
@@ -47,7 +50,8 @@ export function ApprovalCenterView() {
       <div>
         <h1 className="text-2xl font-semibold">Approval Center</h1>
         <p className="text-sm text-muted-foreground">
-          Config ที่ผ่านการทดสอบแล้ว รอ Operation อนุมัติ ·{" "}
+          Config ที่ผ่านการทดสอบแล้ว และ Campaign Rollout ที่เพิ่งเริ่ม — รอ
+          Operation อนุมัติ ·{" "}
           {canDecide
             ? "คุณอนุมัติ/ปฏิเสธได้"
             : "เฉพาะ Operation ที่อนุมัติ/ปฏิเสธได้ — คุณดูได้อย่างเดียว"}
@@ -131,6 +135,57 @@ export function ApprovalCenterView() {
                       : `ปฏิเสธ "${item.name}" แล้ว`,
                   );
                   void refetch();
+                }}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* section แยกจาก Config ชัดเจน (แก้ไข 2026-09-24 — feedback: หาปุ่ม
+       * อนุมัติ Rollout ยาก) — คนละ Card ไม่ผสมเป็น list เดียวกับ Config
+       * เพราะ resource/flow คนละอย่างกัน (Firmware ยังไม่รวม — อยู่หน้า
+       * Firmware Repository ของตัวเองต่อไป) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Campaign Rollout รออนุมัติ{" "}
+            <span className="text-muted-foreground">
+              ({(rolloutsQuery.data ?? []).length})
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Rollout ที่เพิ่งเริ่มในกลุ่มอุปกรณ์ต่างๆ รอ Operation อีกคนอนุมัติ
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {rolloutsQuery.isLoading && rolloutsQuery.data === null ? (
+            <CardListSkeleton />
+          ) : rolloutsQuery.error ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">{rolloutsQuery.error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void rolloutsQuery.refetch()}
+              >
+                ลองใหม่
+              </Button>
+            </div>
+          ) : (rolloutsQuery.data ?? []).length === 0 ? (
+            <EmptyState icon={RocketIcon} message="ไม่มี Campaign Rollout รออนุมัติ" />
+          ) : (
+            (rolloutsQuery.data ?? []).map((item) => (
+              <CampaignRolloutApprovalCard
+                key={item.rollout.id}
+                item={item}
+                onDecided={(updated) => {
+                  setNotice(
+                    updated.status === "active"
+                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว`
+                      : `ปฏิเสธ Rollout ของ "${item.campaignName}" แล้ว`,
+                  );
+                  void rolloutsQuery.refetch();
                 }}
               />
             ))

@@ -167,6 +167,29 @@ export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   cancelled: "danger",
 };
 
+/**
+ * ข้อความ "ขั้นตอนถัดไป" ต่อสถานะ CampaignRollout (แก้ไข 2026-09-24 —
+ * feedback: กดอนุมัติแล้วดูเหมือนไม่มีอะไรเกิดขึ้นต่อ เพราะไม่รู้ว่า `active`
+ * แปลว่า "ปลดล็อกให้ช่างไปทำที่เครื่องได้แล้ว" — ระบบเป็น PULL model ไม่มีทาง
+ * push เข้าเครื่องจากเว็บได้เลย ดู comment เหนือ `DeviceService.applyConfig`
+ * ฝั่ง backend — mirror `getConfigNextStepMessage` ด้านบน */
+export function getRolloutStatusExplanation(status: string): string {
+  switch (status) {
+    case "pending_approval":
+      return "รอ Operation อีกคนอนุมัติก่อน ถึงจะเริ่มให้ช่างไปทำที่เครื่องได้";
+    case "active":
+      return "อนุมัติแล้ว — รอช่างหน้างาน (ST/OT) ไปกดใส่ Config หรือยืนยันติดตั้ง Firmware ทีละเครื่องผ่าน Mobile";
+    case "rejected":
+      return "ถูกปฏิเสธ — เริ่มรอบใหม่ได้จากหน้ากลุ่ม";
+    case "completed":
+      return "ทุกเครื่องในรอบนี้มีผลครบแล้ว";
+    case "cancelled":
+      return "ถูกยกเลิก";
+    default:
+      return "";
+  }
+}
+
 /** ผลของ CampaignRollout ต่อเครื่อง (Campaign Monitor #22) — `pending` คือ
  * ยังไม่มีช่างไป apply-config/confirm-install เข้าเครื่องนั้นเลย */
 export const CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE: Record<string, PillTone> = {
