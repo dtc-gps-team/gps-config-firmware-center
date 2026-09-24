@@ -98,6 +98,7 @@ describe('DeviceService', () => {
   let service: DeviceService;
   let device: { findUnique: jest.Mock; findMany: jest.Mock };
   let config: { findUnique: jest.Mock };
+  let task: { findFirst: jest.Mock };
   let firmware: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
@@ -107,6 +108,7 @@ describe('DeviceService', () => {
   beforeEach(async () => {
     device = { findUnique: jest.fn(), findMany: jest.fn() };
     config = { findUnique: jest.fn() };
+    task = { findFirst: jest.fn() };
     firmware = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     connectionTester = { testConnection: jest.fn() };
@@ -118,7 +120,7 @@ describe('DeviceService', () => {
         DeviceService,
         {
           provide: PrismaService,
-          useValue: { device, config, firmware, auditLog },
+          useValue: { device, config, task, firmware, auditLog },
         },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
@@ -689,6 +691,90 @@ describe('DeviceService', () => {
         service.simulateConfig('DTC-0001', approvedConfig.id),
       ).rejects.toThrow(ConflictException);
       expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCurrentConfig', () => {
+    const completedTask = {
+      id: 'task-1',
+      deviceId: 'DTC-0001',
+      status: 'completed',
+      configId: approvedConfig.id,
+      updatedAt: new Date('2026-09-10T00:00:00.000Z'),
+    };
+
+    it('มี Task completed ที่ผูก configId -> คืน Config นั้น', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result).toEqual(approvedConfig);
+      expect(task.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          status: 'completed',
+          configId: { not: null },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      expect(config.findUnique).toHaveBeenCalledWith({
+        where: { id: approvedConfig.id },
+      });
+    });
+
+    it('ไม่มี Task completed ที่ผูก configId เลย -> NotFoundException', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(null);
+
+      await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(config.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('Task ที่เจอ configId เป็น null (query filter หลุด) -> NotFoundException ไม่ query config', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue({ ...completedTask, configId: null });
+
+      await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(config.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('Task ผูก configId ที่ Config ถูกลบไปแล้ว (hard-deleted, findUnique -> null) -> NotFoundException', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('Config ยังอยู่แต่ถูก soft-delete แล้ว (deletedAt != null, docs/11 Part A) -> NotFoundException (mirror ConfigService.findOne())', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-12T00:00:00.000Z'),
+      });
+
+      await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('device ไม่พบ -> NotFoundException ไม่ query task/config', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.getCurrentConfig('NOPE')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(task.findFirst).not.toHaveBeenCalled();
+      expect(config.findUnique).not.toHaveBeenCalled();
     });
   });
 });

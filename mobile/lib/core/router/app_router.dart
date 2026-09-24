@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/login_page.dart';
+import '../../features/config_override/config_override_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
 import '../../features/device_connection_test/company_device_picker_page.dart';
 import '../../features/device_connection_test/device_connection_test_page.dart';
@@ -44,6 +45,14 @@ class AppRoutes {
   /// go_router never confuses the two.
   static const deviceDetailPattern = '/devices/:deviceId';
   static String deviceDetail(String deviceId) => '/devices/$deviceId';
+
+  /// Config Override — Phase 2 (Mobile, issue #211). `/devices/:deviceId/config-override`
+  /// — เห็นเฉพาะปุ่มที่ ST เท่านั้น (Device Detail) แต่ distinct จาก
+  /// [deviceDetailPattern] ด้วยจำนวน segment เหมือน [taskDetailPattern].
+  static const deviceConfigOverridePattern =
+      '/devices/:deviceId/config-override';
+  static String deviceConfigOverride(String deviceId) =>
+      '/devices/$deviceId/config-override';
 
   /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
   /// `/tasks/:id` by segment count, so go_router never confuses the two).
@@ -125,6 +134,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.deviceDetailPattern,
         builder: (context, state) =>
             DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceConfigOverridePattern,
+        builder: (context, state) =>
+            ConfigOverridePage(deviceId: state.pathParameters['deviceId']!),
       ),
       GoRoute(
         path: AppRoutes.myTasks,

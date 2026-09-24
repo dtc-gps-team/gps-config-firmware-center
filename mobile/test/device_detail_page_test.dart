@@ -3,8 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
+
+class _FakeAuthController extends AuthController {
+  _FakeAuthController(this._role);
+
+  final UserRole? _role;
+
+  @override
+  AuthState build() => AuthState(status: AuthStatus.authenticated, role: _role);
+}
 
 Device _makeDevice({
   DeviceLifecycleStatus status = DeviceLifecycleStatus.installed,
@@ -41,10 +51,14 @@ Future<void> _pump(
   WidgetTester tester, {
   required DeviceSearchRepository repo,
   String deviceId = 'DEV-0117',
+  UserRole? role,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [deviceSearchRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        deviceSearchRepositoryProvider.overrideWithValue(repo),
+        authControllerProvider.overrideWith(() => _FakeAuthController(role)),
+      ],
       child: MaterialApp(home: DeviceDetailPage(deviceId: deviceId)),
     ),
   );
@@ -127,4 +141,47 @@ void main() {
       expect(find.byKey(const Key('device_detail_retry')), findsOneWidget);
     },
   );
+
+  group('ปุ่ม Override ค่าพารามิเตอร์ (issue #211, ST เท่านั้น)', () {
+    testWidgets('role ST -> เห็นปุ่ม', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+      );
+
+      expect(
+        find.byKey(const Key('device_detail_config_override')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('role OT -> ไม่เห็นปุ่ม (OT ไม่มีสิทธิ์ override เลย)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.ot,
+      );
+
+      expect(
+        find.byKey(const Key('device_detail_config_override')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('role Operation -> ไม่เห็นปุ่ม', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.operation,
+      );
+
+      expect(
+        find.byKey(const Key('device_detail_config_override')),
+        findsNothing,
+      );
+    });
+  });
 }

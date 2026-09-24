@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Device, Prisma } from '@prisma/client';
+import { Config, Device, Prisma } from '@prisma/client';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CustomerSummary } from '../customer/customer.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -430,5 +430,49 @@ export class DeviceService {
       compatibilityCheck,
       connectionCheck,
     };
+  }
+
+  /**
+   * Config ปัจจุบันของอุปกรณ์ — Config Override Phase 2 (Mobile, issue #211)
+   * ต้องรู้ค่านี้ก่อนเปิดหน้า Override ให้ ST แก้ค่าราย field ได้ **ไม่มี FK
+   * ตรงจาก Device ไปหา Config เลย** (เหมือนที่ comment เหนือ
+   * `GET /devices/:deviceId/status` อธิบายไว้) — derive จาก `Task.configId`
+   * ของ Task ล่าสุด (`updatedAt` มากสุด) ที่ `status: 'completed'` และผูกกับ
+   * อุปกรณ์เครื่องนี้แทน (Task ประเภทติดตั้ง/เปลี่ยน Config ผูก `configId` ไว้
+   * ตั้งแต่สร้าง Task — ดู comment เหนือ `Task.configId` ใน schema.prisma)
+   *
+   * `Task.deviceId` เทียบตรงกับ `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่
+   * `Device.id` — ตรงกับ convention ที่ยืนยันไว้ใน `create-campaign.dto.ts`
+   * ว่า `Task.deviceId` เก็บเป็นเลขเครื่องจริงเสมอ (mirror ทุก endpoint อื่นที่
+   * อ้างอุปกรณ์) ต่างจาก mobile client ที่ต้อง normalize สอง format เพราะมี
+   * seed/migration data เก่าที่หลุด convention นี้ไป — backend ฝั่งนี้ยึดตาม
+   * convention ปัจจุบันตรงๆ ไม่ normalize ย้อนกลับให้
+   *
+   * **ข้อจำกัดของ "Task ล่าสุด" (comment A บน PR #222):** ใช้ `updatedAt`
+   * (ไม่ใช่ `completedAt` — ยังไม่มี field นี้ใน schema) ซึ่งขยับทุกครั้งที่มี
+   * การ `PATCH` ใดๆ กับ Task นั้น ไม่ใช่แค่ตอนเปลี่ยนเป็น `completed` — ถ้า Task
+   * ที่ completed ไปแล้วถูกแก้ field อื่น (เช่น `description`) ทีหลัง จะกลาย
+   * เป็น "ล่าสุด" แทน Task ที่ติดตั้งจริงทีหลังกว่าได้ ยอมรับ trade-off นี้ไปก่อน
+   * จนกว่าจะมี `completedAt` แยก
+   */
+  async getCurrentConfig(deviceId: string): Promise<Config> {
+    await this.findByDeviceId(deviceId);
+
+    const task = await this.prisma.task.findFirst({
+      where: { deviceId, status: 'completed', configId: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const config = task?.configId
+      ? await this.prisma.config.findUnique({ where: { id: task.configId } })
+      : null;
+    // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
+    // `ConfigService.findOne()` เป๊ะๆ (comment A บน PR #222: ไม่งั้น endpoint
+    // นี้จะคืน 200 ให้ Config ที่ถูกลบไปแล้ว แล้วไปเจอ 404 ตอน overrideConfig แทน)
+    if (!config || config.deletedAt !== null) {
+      throw new NotFoundException(
+        'อุปกรณ์นี้ยังไม่มี Config ที่ยืนยันติดตั้งแล้ว',
+      );
+    }
+    return config;
   }
 }
