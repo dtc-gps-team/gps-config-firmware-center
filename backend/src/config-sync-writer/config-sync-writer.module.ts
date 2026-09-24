@@ -13,11 +13,13 @@ import { MockConfigSyncWriter } from './mock-config-sync-writer';
  * มีแล้ว: interface + `CONFIG_SYNC_WRITER` token + `mock` impl + shared type
  * `IncidentMetadata` (`src/incident/`) + `ConfigSyncWriterQueue` (job runner
  * in-process + retry N=3 exponential backoff + serialize ต่อ configId — มติ
- * #32 §7 คอลัมน์ "ร่วมกัน")
+ * #32 §7 คอลัมน์ "ร่วมกัน") · `ConfigService.approve()` → `enqueueConfigSync()`
+ * เชื่อมแล้ว (`src/config/config.service.ts`) · `.on('sync-failed')` สร้าง
+ * Incident แล้ว (`src/incident/`) · `.on('sync-failed')` ยิง notification
+ * `incident_alert` แล้ว (`src/notification/config-sync-failure-alert.listener.ts`)
  *
- * **ยังไม่มี** — เชื่อม `ConfigService.approve()` → `enqueueConfigSync()` (งาน A,
- * `config` module) · `.on('sync-failed')` สร้าง Incident (งาน A) · `.on(
- * 'sync-failed')` ยิง notification `incident_alert` (งาน B) — คนละ PR
+ * **ยังไม่มี** — docker/production implementation เป็น handoff แยก (docs/07 §2,
+ * §9.5 Q4)
  *
  * provider factory อ่าน `LEGACY_SYNC_MODE` (`mock` default | `docker` |
  * `production`) ตาม Mock Mode Pattern (CLAUDE.md) — `docker`/`production` ยัง
