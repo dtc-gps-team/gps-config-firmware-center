@@ -211,21 +211,29 @@ class ApiClient {
     );
   }
 
-  /// `POST /config/{configId}/override` — ST แก้ค่าบาง field ของ Config ที่
-  /// `approved`/`synced` แล้วโดยตรง ไม่ผ่าน Approval Center ปกติ (issue #185
-  /// Phase 1 backend, #211 Phase 2 Mobile). `fields` เป็น partial update — ใส่
-  /// แค่ field ที่แก้ ทุก key ต้อง `stOverridable: true` ไม่งั้น 400.
-  Future<DeviceConfigDraft> overrideConfig({
-    required String configId,
+  /// `POST /devices/{deviceId}/config-override` — Per-device Config Override
+  /// (issue #223) — ST ส่ง**คำขอ**แก้ค่าบาง field ของ Config ปัจจุบันของ
+  /// **อุปกรณ์เครื่องนี้เครื่องเดียว** ไม่กระทบอุปกรณ์อื่นที่ใช้ Config เดียวกัน
+  /// (ต่างจาก `POST /config/{configId}/override` เดิม — issue #185 — ที่แก้
+  /// `Config.fields` ทั้งชุดทันที; Mobile เปลี่ยนมาเรียก endpoint นี้ตั้งแต่
+  /// #223 เป็นต้นไป ไม่ใช้ endpoint เดิมอีกแล้ว). `fields` เป็น partial update
+  /// — ใส่แค่ field ที่แก้ ทุก key ต้อง `stOverridable: true` ไม่งั้น 400.
+  ///
+  /// **มติ 2026-09-24 (PR #225):** response คืนคำขอที่เพิ่งสร้าง (สถานะ
+  /// `pending` เสมอ) **ไม่ใช่** Config ที่ merge แล้ว — ยังไม่มีผลจนกว่า
+  /// Operation จะอนุมัติผ่าน endpoint แยก (ยังไม่เรียกจาก Mobile ในรอบนี้ —
+  /// ฝั่ง Operation อนุมัติผ่านช่องทางอื่น)
+  Future<DeviceConfigOverride> overrideDeviceConfig({
+    required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
-        '/config/$configId/override',
+        '/devices/$deviceId/config-override',
         data: {'fields': fields, 'reason': reason},
       ),
-      DeviceConfigDraft.fromJson,
+      DeviceConfigOverride.fromJson,
     );
   }
 

@@ -153,6 +153,67 @@ void main() {
       });
       expect(draft.name, isNull);
     });
+
+    test(
+      'hasDeviceOverride: true (issue #223 — GET/POST /devices/{deviceId}/config[-override])',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'deviceModel': 'GT06N',
+          'protocol': 'TCP',
+          'hasDeviceOverride': true,
+        });
+        expect(draft.hasDeviceOverride, isTrue);
+      },
+    );
+
+    test(
+      'hasDeviceOverride ไม่มีใน response (เช่น listConfigs) -> default false',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'deviceModel': 'GT06N',
+          'protocol': 'TCP',
+        });
+        expect(draft.hasDeviceOverride, isFalse);
+      },
+    );
+
+    test(
+      'pendingOverride parse ครบ (มติ 2026-09-24, PR #225 — GET /devices/{deviceId}/config)',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'deviceModel': 'GT06N',
+          'protocol': 'TCP',
+          'hasDeviceOverride': false,
+          'pendingOverride': {
+            'id': 'ov-1',
+            'deviceId': 'DEV-0117',
+            'configId': 'cfg-1',
+            'versionNumber': 1,
+            'fields': {'APN': 'new-apn'},
+            'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+            'status': 'pending',
+            'overriddenBy': 'st-1',
+            'overriddenAt': '2026-09-24T00:00:00.000Z',
+          },
+        });
+        expect(draft.pendingOverride, isNotNull);
+        expect(draft.pendingOverride!.status, 'pending');
+        expect(draft.pendingOverride!.isPending, isTrue);
+        expect(draft.pendingOverride!.fields['APN'], 'new-apn');
+      },
+    );
+
+    test('pendingOverride ไม่มีใน response -> null', () {
+      final draft = DeviceConfigDraft.fromJson({
+        'id': 'cfg-1',
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+      });
+      expect(draft.pendingOverride, isNull);
+    });
   });
 
   group('DeviceLifecycleStatus', () {

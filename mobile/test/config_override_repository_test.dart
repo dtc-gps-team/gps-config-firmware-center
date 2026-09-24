@@ -87,20 +87,47 @@ void main() {
     });
 
     test(
-      'overrideConfig -> field stOverridable:true -> merge ค่าใหม่สำเร็จ',
+      'overrideConfig -> field stOverridable:true -> สร้างคำขอ status pending (มติ 2026-09-24)',
       () async {
         final repo = MockConfigOverrideRepository();
-        final before = await repo.getCurrentConfig('DEV-0117');
 
-        final after = await repo.overrideConfig(
-          configId: before.id!,
+        final override = await repo.overrideConfig(
+          deviceId: 'DEV-0117',
           fields: {'APN': 'new-apn'},
           reason: 'ทดสอบ',
         );
 
-        expect(after.fields!['APN'], 'new-apn');
-        // field อื่นที่ไม่ได้แก้ยังอยู่ครบ (partial update)
-        expect(after.fields!['REPORT_INTERVAL_MOVING'], isNotNull);
+        expect(override.status, 'pending');
+        expect(override.fields['APN'], 'new-apn');
+        // field อื่นที่ไม่ได้แก้ยังอยู่ครบ (partial update สะสมจาก base)
+        expect(override.fields['REPORT_INTERVAL_MOVING'], isNotNull);
+
+        // ยังไม่มีผลกับ Config ปัจจุบันจนกว่าจะอนุมัติ — แต่เห็นผ่าน
+        // pendingOverride แล้ว
+        final config = await repo.getCurrentConfig('DEV-0117');
+        expect(config.hasDeviceOverride, isFalse);
+        expect(config.pendingOverride?.status, 'pending');
+      },
+    );
+
+    test(
+      'overrideConfig -> มีคำขอ pending อยู่แล้ว -> ApiException 409',
+      () async {
+        final repo = MockConfigOverrideRepository();
+        await repo.overrideConfig(
+          deviceId: 'DEV-0117',
+          fields: {'APN': 'new-apn'},
+          reason: 'รอบแรก',
+        );
+
+        await expectLater(
+          repo.overrideConfig(
+            deviceId: 'DEV-0117',
+            fields: {'APN': 'another-apn'},
+            reason: 'รอบสอง',
+          ),
+          throwsA(isA<ApiException>().having((e) => e.statusCode, '', 409)),
+        );
       },
     );
 
@@ -108,11 +135,10 @@ void main() {
       'overrideConfig -> field stOverridable:false -> ApiException 400',
       () async {
         final repo = MockConfigOverrideRepository();
-        final before = await repo.getCurrentConfig('DEV-0117');
 
         await expectLater(
           repo.overrideConfig(
-            configId: before.id!,
+            deviceId: 'DEV-0117',
             fields: {'COMMAND_PASSWORD': 'x'},
             reason: 'ทดสอบ',
           ),
@@ -127,11 +153,10 @@ void main() {
 
     test('overrideConfig -> reason ว่าง -> ApiException 400', () async {
       final repo = MockConfigOverrideRepository();
-      final before = await repo.getCurrentConfig('DEV-0117');
 
       await expectLater(
         repo.overrideConfig(
-          configId: before.id!,
+          deviceId: 'DEV-0117',
           fields: {'APN': 'x'},
           reason: '',
         ),
@@ -161,32 +186,41 @@ void main() {
       expect(config.id, 'c1');
     });
 
-    test('overrideConfig -> POST /config/{configId}/override', () async {
-      final recorder = _RecordingDio();
-      final api = ApiClient(
-        dio: recorder.build({
-          'id': 'c1',
-          'deviceModel': 'GT06N',
-          'protocol': 'TCP',
-          'status': 'approved',
+    test(
+      'overrideConfig -> POST /devices/{deviceId}/config-override คืนคำขอ status pending (มติ 2026-09-24)',
+      () async {
+        final recorder = _RecordingDio();
+        final api = ApiClient(
+          dio: recorder.build({
+            'id': 'ov-1',
+            'deviceId': 'DEV-0117',
+            'configId': 'c1',
+            'versionNumber': 1,
+            'fields': {'APN': 'new-apn'},
+            'reason': 'เหตุผล',
+            'status': 'pending',
+            'overriddenBy': 'st-1',
+            'overriddenAt': '2026-09-24T00:00:00.000Z',
+          }),
+        );
+        final repo = ApiConfigOverrideRepository(api);
+
+        final result = await repo.overrideConfig(
+          deviceId: 'DEV-0117',
+          fields: {'APN': 'new-apn'},
+          reason: 'เหตุผล',
+        );
+
+        expect(recorder.lastRequest?.method, 'POST');
+        expect(recorder.lastRequest?.path, '/devices/DEV-0117/config-override');
+        expect(recorder.lastRequest?.data, {
           'fields': {'APN': 'new-apn'},
-        }),
-      );
-      final repo = ApiConfigOverrideRepository(api);
-
-      await repo.overrideConfig(
-        configId: 'c1',
-        fields: {'APN': 'new-apn'},
-        reason: 'เหตุผล',
-      );
-
-      expect(recorder.lastRequest?.method, 'POST');
-      expect(recorder.lastRequest?.path, '/config/c1/override');
-      expect(recorder.lastRequest?.data, {
-        'fields': {'APN': 'new-apn'},
-        'reason': 'เหตุผล',
-      });
-    });
+          'reason': 'เหตุผล',
+        });
+        expect(result.status, 'pending');
+        expect(result.fields['APN'], 'new-apn');
+      },
+    );
   });
 
   test('configOverrideRepositoryProvider ให้ ApiConfigOverrideRepository เมื่อ '
