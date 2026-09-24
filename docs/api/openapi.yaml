@@ -62,11 +62,15 @@ tags:
       ยังไม่มีใน spec)
   - name: campaign
     description: >-
-      Campaign Wizard (Sprint 3 #21) — Operation สร้างแคมเปญ deploy Config
-      หรือ Firmware ให้อุปกรณ์หลายเครื่องพร้อมกัน ("ส่งพร้อมกันหมด" — ไม่มี
-      rollout strategy ใน v1) ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม
-      เท่านั้น **ไม่ใช่เครื่องมือมอบหมายงานให้ช่างหน้างาน** (การมอบหมายงาน
-      เป็นหน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว — แก้ไข 2026-09-14)
+      Campaign (Sprint 3 #21) — กลุ่มอุปกรณ์ถาวรสำหรับติดตาม/บำรุงรักษาเป็น
+      กลุ่ม **ไม่ใช่เครื่องมือมอบหมายงานให้ช่างหน้างาน** (การมอบหมายงานเป็น
+      หน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว — แก้ไข 2026-09-14) · **แก้ไข
+      2026-09-24 (Campaign Monitor #22 — แยกกลุ่มออกจากรอบ push):** เดิม 1
+      Campaign ผูก payload+approval+target ไว้ก้อนเดียว ยิงได้ครั้งเดียวจบ —
+      เปลี่ยนเป็นกลุ่มอยู่ยาว ผูก `CampaignRollout` (1 รอบ push Config หรือ
+      Firmware เข้ากลุ่ม) ได้หลายรอบตลอดอายุกลุ่ม **รันได้ทีละรอบเท่านั้น**
+      ต่อกลุ่ม — ผลต่อเครื่องของแต่ละรอบติดตามผ่าน `CampaignRolloutTarget`
+      (อัปเดตจาก `applyConfigToDevice`/`confirmFirmwareInstall` จริง)
 
 paths:
   /auth/login:
@@ -1843,20 +1847,15 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaigns
-      summary: รายการแคมเปญทั้งหมด (v3.20)
+      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.30
       description: >-
-        RBAC_Matrix.md §2 แถว "Campaign Wizard" — ทุก Role อ่านได้ (resource
-        `campaign` action `Read`) เรียงตาม createdAt desc · filter ทุกตัว
-        optional — ไม่ส่งอะไรมา = คืนทุกแคมเปญ
-      parameters:
-        - in: query
-          name: status
-          required: false
-          schema:
-            $ref: "#/components/schemas/CampaignStatus"
+        ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
+        createdAt desc · **แก้ไข 2026-09-24:** ตัด query param `status` ออก
+        — `Campaign` (กลุ่ม) ไม่มีสถานะอีกต่อไป (ย้ายไปอยู่ที่
+        `CampaignRollout.status` แทน ดู tag `campaign` description)
       responses:
         "200":
-          description: รายการแคมเปญ (เรียงตาม createdAt desc)
+          description: รายการกลุ่มอุปกรณ์ (เรียงตาม createdAt desc)
           content:
             application/json:
               schema:
@@ -1868,25 +1867,16 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างแคมเปญใหม่ (Campaign Wizard, #21) — v3.25
+      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.30
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
-        Campaign + CampaignTarget ต่ออุปกรณ์ ใน transaction เดียว
-        ("ส่งพร้อมกันหมด" — v1 ไม่มี rollout strategy/draft ให้แก้ทีหลัง)
-        ใช้สำหรับติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม **ไม่สร้าง Task/มอบหมายงาน
-        ให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็นหน้าที่ของระบบ
-        แยกที่บริษัทมีอยู่แล้ว) · **payloadType `Firmware` รองรับแล้ว**
-        (แก้ไข 2026-09-14 หลัง Sprint 3 #23/PR #151 — ต้องระบุ `firmwareId`
-        แทน `configId`, Firmware ต้อง `uploadStatus: stored` และอุปกรณ์
-        เป้าหมายต้องมี `deviceModel` อยู่ใน `deviceModelCompatibility` ของ
-        Firmware นั้น — ไม่เช็ค protocol เพราะ Firmware ไม่มี field นี้) ·
-        **แก้ไข 2026-09-17 (Firmware Approval Lifecycle, docs/13 §3.2):**
-        Firmware ต้อง `approvalStatus: approved` (QAEngineer อนุมัติคุณภาพ
-        แล้ว) ควบคู่กับ `uploadStatus: stored` ด้วย — เช็คทั้งสองเงื่อนไข
-        แยกกัน คนละมิติกัน · **แก้ไข 2026-09-18 (Campaign Approval):** สร้าง
-        แล้วเป็น `pending_approval` (ไม่ใช่ `active` ทันทีแบบเดิม) ต้องรอ
-        Operation อีกคนกด `approveCampaign` ก่อนถึงจะ `active` จริง — ดู
-        `CampaignStatus`
+        Campaign (กลุ่ม) + CampaignTarget (สมาชิก) ใน transaction เดียว ·
+        **ไม่มี payload/approval ในคำขอนี้แล้ว** (แก้ไข 2026-09-24 —
+        payloadType/configId/firmwareId ย้ายไปอยู่ที่ `createCampaignRollout`
+        แทน เพราะกลุ่มหนึ่ง push payload ได้หลายรอบตลอดอายุการใช้งาน) **ไม่สร้าง
+        Task/มอบหมายงานให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็น
+        หน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) · **MVP:** สมาชิกกลุ่ม fix ตอน
+        สร้างเท่านั้น ยังไม่มี endpoint เพิ่ม/ลบทีหลัง
       requestBody:
         required: true
         content:
@@ -1895,33 +1885,27 @@ paths:
               $ref: "#/components/schemas/CampaignCreateRequest"
       responses:
         "201":
-          description: สร้างแคมเปญสำเร็จ (status = pending_approval — รออนุมัติ)
+          description: สร้างกลุ่มสำเร็จ
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Campaign"
         "400":
-          description: >-
-            validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน, ไม่ระบุ
-            configId/firmwareId ให้ตรงกับ payloadType)
+          description: validation ไม่ผ่าน (targets ว่างเปล่า, deviceId ซ้ำกัน)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
-        "404":
-          description: ไม่พบ Config/Firmware ตาม id ที่ระบุ (ตาม payloadType)
         "409":
           description: >-
-            Config ยังไม่ผ่านการอนุมัติ (ไม่ใช่ approved/synced) หรือ Firmware
-            ยัง `uploadStatus` ไม่ใช่ `stored` หรือ `approvalStatus` ไม่ใช่
-            `approved` หรืออุปกรณ์เป้าหมายบางเครื่อง ยังไม่ installed หรือ
-            รุ่น/โปรโตคอลไม่ตรงกับ payload ที่เลือก (รวมทุกปัญหาไว้ในข้อความเดียว)
+            อุปกรณ์เป้าหมายบางเครื่องไม่พบ หรือยังไม่ installed (รวมทุกปัญหา
+            ไว้ในข้อความเดียว)
 
   /campaigns/{id}:
     get:
       tags: [campaign]
       operationId: getCampaign
-      summary: รายละเอียดแคมเปญ 1 รายการ — v3.20
+      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.30
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ listCampaigns)
       parameters:
         - in: path
@@ -1932,7 +1916,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: ข้อมูลแคมเปญ
+          description: ข้อมูลกลุ่ม
           content:
             application/json:
               schema:
@@ -1940,23 +1924,194 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
-          description: ไม่พบแคมเปญนี้
+          description: ไม่พบกลุ่มนี้
 
-  /campaigns/{id}/approve:
+  /campaigns/{id}/targets:
+    get:
+      tags: [campaign]
+      operationId: listCampaignTargets
+      summary: รายชื่อสมาชิกกลุ่ม — v3.30 (Campaign Monitor #22)
+      description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ getCampaign)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายชื่อสมาชิกกลุ่ม (เรียงตาม createdAt asc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignTarget"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /campaigns/{id}/rollouts:
+    get:
+      tags: [campaign]
+      operationId: listCampaignRollouts
+      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.30 (Campaign Monitor #22)
+      description: ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม createdAt desc
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายการ Rollout ของกลุ่มนี้
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignRollout"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
     post:
       tags: [campaign]
-      operationId: approveCampaign
-      summary: Operation อนุมัติ Campaign (Campaign Approval) — v3.25
+      operationId: createCampaignRollout
+      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.30 (Campaign Monitor #22)
+      description: >-
+        **Operation เท่านั้น** (resource `campaign` action `Create`) — เลือก
+        Config หรือ Firmware มา push เข้าสมาชิกกลุ่ม (default = ทั้งกลุ่ม
+        เอาบางเครื่องออกได้ผ่าน `excludeDeviceIds`) สร้างแล้วเป็น
+        `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติก่อนถึงจะ
+        `active` (Campaign Approval, แก้ครั้งที่ 39) **กลุ่มหนึ่งรัน Rollout
+        ได้ทีละรอบเท่านั้น** — 409 ถ้ายังมีรอบที่ `pending_approval`/`active`
+        ค้างอยู่ · เกณฑ์ payload เดียวกับที่เคยอยู่ใน `createCampaign` เดิม
+        ทุกประการ (Config ต้อง `approved`/`synced` + deviceModel/protocol
+        ตรงกับอุปกรณ์ทุกเครื่อง, Firmware ต้อง `uploadStatus: stored` +
+        `approvalStatus: approved` + `deviceModel` อยู่ใน
+        `deviceModelCompatibility`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignRolloutCreateRequest"
+      responses:
+        "201":
+          description: สร้าง Rollout สำเร็จ (status = pending_approval — รออนุมัติ)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignRollout"
+        "400":
+          description: >-
+            validation ไม่ผ่าน (ไม่ระบุ configId/firmwareId ให้ตรงกับ
+            payloadType, excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในกลุ่ม, หรือ
+            เอาเครื่องออกจนไม่เหลือเป้าหมายเลย)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบกลุ่มนี้ หรือไม่พบ Config/Firmware ตาม id ที่ระบุ
+        "409":
+          description: >-
+            กลุ่มนี้มี Rollout ที่ยังไม่จบค้างอยู่ หรือ Config/Firmware ยังไม่
+            ผ่านเกณฑ์ หรืออุปกรณ์เป้าหมายบางเครื่องยังไม่ installed หรือ
+            รุ่น/โปรโตคอลไม่ตรงกับ payload (รวมทุกปัญหาไว้ในข้อความเดียว)
+
+  /campaigns/{id}/rollouts/{rolloutId}:
+    get:
+      tags: [campaign]
+      operationId: getCampaignRollout
+      summary: รายละเอียด Rollout 1 รอบ — v3.30 (Campaign Monitor #22)
+      description: ทุก Role อ่านได้ (resource `campaign` action `Read`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ข้อมูล Rollout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignRollout"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Rollout นี้
+
+  /campaigns/{id}/rollouts/{rolloutId}/targets:
+    get:
+      tags: [campaign]
+      operationId: listCampaignRolloutTargets
+      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.30 (Campaign Monitor #22)
+      description: >-
+        ทุก Role อ่านได้ (resource `campaign` action `Read`) — อัปเดตจาก
+        `applyConfigToDevice`/`confirmFirmwareInstall` จริง (mock mode ก็
+        รายงานผลได้ ดู `MockConfigApplier`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายการผลต่อเครื่อง (เรียงตาม createdAt asc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignRolloutTarget"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /campaigns/{id}/rollouts/{rolloutId}/approve:
+    post:
+      tags: [campaign]
+      operationId: approveCampaignRollout
+      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.30
       description: >-
         resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
         `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
         `approvedAt` · **Separation of Duty:** ผู้กดอนุมัติต้องไม่ใช่ผู้สร้าง
-        Campaign เดียวกัน (403) — ต่างจาก Config ที่ ConfigEngineer/Operation
-        เป็นคนละ role กันอยู่แล้วโดย RBAC, Campaign สร้างโดย Operation เอง จึง
-        ต้องเช็คตัวตนเพิ่มที่ endpoint นี้โดยเฉพาะ
+        Rollout เดียวกัน (403)
       parameters:
         - in: path
           name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
           required: true
           schema:
             type: string
@@ -1967,33 +2122,39 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Campaign"
+                $ref: "#/components/schemas/CampaignRollout"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: >-
-            ไม่มีสิทธิ์อนุมัติ Campaign (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
-            Campaign นี้เอง (Separation of Duty)
+            ไม่มีสิทธิ์อนุมัติ Rollout (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
+            Rollout นี้เอง (Separation of Duty)
         "404":
-          description: ไม่พบ Campaign นี้
+          description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Campaign ปัจจุบันไม่ใช่ pending_approval จึงอนุมัติไม่ได้
+          description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงอนุมัติไม่ได้
 
-  /campaigns/{id}/reject:
+  /campaigns/{id}/rollouts/{rolloutId}/reject:
     post:
       tags: [campaign]
-      operationId: rejectCampaign
-      summary: Operation ปฏิเสธ Campaign (Campaign Approval) — v3.25
+      operationId: rejectCampaignRollout
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.30
       description: >-
-        resource เดียวกับ `approveCampaign` (`campaign` action `Approve`) —
-        สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง `approvedBy`/
-        `approvedAt` (คงเป็น null — ไม่มีใคร "อนุมัติ" การ reject) เช็ค
-        Separation of Duty เดียวกับ `approveCampaign` (ผู้สร้างปฏิเสธของ
-        ตัวเองไม่ได้) Operation แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `createCampaign`
-        อีกครั้ง
+        resource เดียวกับ `approveCampaignRollout` (`campaign` action
+        `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
+        `approvedBy`/`approvedAt` (คงเป็น null) เช็ค Separation of Duty
+        เดียวกับ approve · Rollout ที่ rejected ค้างไว้เป็นประวัติ — เปิดรอบ
+        ใหม่ในกลุ่มเดิมได้ทันทีผ่าน `createCampaignRollout` (ไม่นับเป็น
+        "ค้างอยู่")
       parameters:
         - in: path
           name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
           required: true
           schema:
             type: string
@@ -2004,17 +2165,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Campaign"
+                $ref: "#/components/schemas/CampaignRollout"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: >-
-            ไม่มีสิทธิ์ปฏิเสธ Campaign (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
-            Campaign นี้เอง (Separation of Duty)
+            ไม่มีสิทธิ์ปฏิเสธ Rollout (ไม่ใช่ Operation) หรือเป็นผู้สร้าง
+            Rollout นี้เอง (Separation of Duty)
         "404":
-          description: ไม่พบ Campaign นี้
+          description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Campaign ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
+          description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
 
 components:
   securitySchemes:
@@ -2268,32 +2429,122 @@ components:
       enum: [Config, Firmware]
       description: >-
         เลือกได้ทั้งสองแบบ (แก้ไข 2026-09-14 — `Firmware` เปิดใช้งานแล้วหลัง
-        Sprint 3 #23/PR #151) — `createCampaign` ต้องระบุ `configId` คู่กับ
-        `Config` หรือ `firmwareId` คู่กับ `Firmware` ให้ตรงกัน
-
-    CampaignStatus:
-      type: string
-      enum: [draft, pending_approval, active, rejected, completed, cancelled]
-      description: >-
-        Campaign Approval (แก้ไข — v3.25): `createCampaign` สร้างแล้วเป็น
-        `pending_approval` ก่อนเสมอ ("ส่งพร้อมกันหมด" แต่ต้องรออนุมัติ) ต้อง
-        ผ่าน `approveCampaign` (→ `active`) หรือ `rejectCampaign` (→
-        `rejected`) โดย Operation คนอื่นที่ไม่ใช่ผู้สร้าง (Separation of
-        Duty) `rejected` แยกจาก `draft` โดยตั้งใจ mirror `ConfigStatus` —
-        แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `createCampaign` อีกครั้ง ·
-        `draft`/`completed`/`cancelled` ยังไม่มี endpoint ไหนเปลี่ยนสถานะ
-        เข้า-ออก (รอ Campaign Monitor, Sprint 3 #22)
+        Sprint 3 #23/PR #151) — `createCampaignRollout` ต้องระบุ `configId`
+        คู่กับ `Config` หรือ `firmwareId` คู่กับ `Firmware` ให้ตรงกัน
 
     Campaign:
       type: object
       description: >-
-        1 แคมเปญ (listCampaigns/getCampaign/createCampaign — v3.20) ตรงกับ
-        Prisma model `Campaign` — ไม่ embed รายการอุปกรณ์เป้าหมาย/Task ที่สร้าง
-        ไว้ (ยังไม่มี endpoint list ย่อยของแคมเปญหนึ่งตัว รอ Campaign Monitor)
+        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.30) ตรง
+        กับ Prisma model `Campaign` — ไม่ embed สมาชิกกลุ่ม (ดู
+        `listCampaignTargets`) หรือประวัติ Rollout (ดู `listCampaignRollouts`)
+        **แก้ไข 2026-09-24 (Campaign Monitor #22):** เดิม schema นี้มี
+        payloadType/configId/firmwareId/status/targetCount/successCount/
+        failureCount/approvedBy/approvedAt ติดตัว — ย้ายทั้งหมดไปอยู่ที่
+        `CampaignRollout` แทน เพราะกลุ่มหนึ่ง push payload ได้หลายรอบ ไม่ผูก
+        กับ payload ตัวเดียวอีกต่อไป (ดู tag `campaign` description)
+      required: [id, name, createdBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CampaignTargetInput:
+      type: object
+      description: >-
+        อุปกรณ์สมาชิก 1 เครื่อง (createCampaign) — ไม่มี field มอบหมาย
+        ผู้รับผิดชอบหน้างานแล้ว (แก้ไข 2026-09-14: Campaign ใช้สำหรับ
+        ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น การมอบหมายงานเป็นหน้าที่
+        ของระบบแยกที่บริษัทมีอยู่แล้ว)
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+          description: >-
+            `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน
+            — ต้องเป็นอุปกรณ์สถานะ `installed` ไม่งั้น 409 (เช็ค compatibility
+            กับ payload ตอนสร้าง Rollout แทน เพราะตอนสร้างกลุ่มยังไม่รู้ว่า
+            จะ push อะไร — แก้ไข 2026-09-24)
+
+    CampaignCreateRequest:
+      type: object
+      required: [name, targets]
+      description: >-
+        **แก้ไข 2026-09-24:** ตัด payloadType/configId/firmwareId ออก — สร้าง
+        กลุ่มเปล่าๆ เท่านั้น เลือก payload ทีหลังผ่าน `createCampaignRollout`
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        targets:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CampaignTargetInput"
+
+    CampaignTarget:
+      type: object
+      description: >-
+        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.30, Campaign Monitor
+        #22) ตรงกับ Prisma model `CampaignTarget` — ไม่มี status (สมาชิกกลุ่ม
+        ไม่ผูกกับผล push รอบไหนรอบหนึ่ง ดู `CampaignRolloutTarget` แทน)
+      required: [id, campaignId, deviceId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        campaignId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CampaignRolloutStatus:
+      type: string
+      enum: [pending_approval, active, rejected, completed, cancelled]
+      description: >-
+        Campaign Approval (แก้ครั้งที่ 39, ย้ายมาจาก `CampaignStatus` เดิม —
+        แก้ไข 2026-09-24): `createCampaignRollout` สร้างแล้วเป็น
+        `pending_approval` เสมอ (ไม่มี `draft` อีกต่อไป) ต้องผ่าน
+        `approveCampaignRollout` (→ `active`) หรือ `rejectCampaignRollout`
+        (→ `rejected`) โดย Operation คนอื่นที่ไม่ใช่ผู้สร้าง (Separation of
+        Duty) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อทุกเครื่องใน
+        รอบมีผล success/failed ครบแล้ว (ดู `CampaignRolloutTarget`) ·
+        `rejected`/`completed`/`cancelled` ไม่นับเป็น "รอบที่ยังไม่จบ" —
+        เปิดรอบใหม่ในกลุ่มเดิมได้ทันที (กลุ่มหนึ่งรัน Rollout ได้ทีละรอบ
+        เท่านั้น ขณะที่ยัง `pending_approval`/`active`)
+
+    CampaignRollout:
+      type: object
+      description: >-
+        1 รอบ push Config หรือ Firmware เข้ากลุ่มอุปกรณ์หนึ่งกลุ่ม
+        (listCampaignRollouts/getCampaignRollout/createCampaignRollout —
+        v3.30, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
+        รับ field ที่เคยอยู่บน `Campaign` เดิมมาทั้งหมด (ดู tag `campaign`
+        description)
       required:
         [
           id,
-          name,
+          campaignId,
           payloadType,
           status,
           targetCount,
@@ -2309,11 +2560,9 @@ components:
         id:
           type: string
           format: uuid
-        name:
+        campaignId:
           type: string
-        description:
-          type: string
-          nullable: true
+          format: uuid
         payloadType:
           $ref: "#/components/schemas/CampaignPayloadType"
         configId:
@@ -2325,17 +2574,19 @@ components:
           format: uuid
           nullable: true
         status:
-          $ref: "#/components/schemas/CampaignStatus"
+          $ref: "#/components/schemas/CampaignRolloutStatus"
         targetCount:
           type: integer
         successCount:
           type: integer
           description: >-
-            ยังไม่มี logic ไหนอัปเดตค่านี้ตอนนี้ (เป็น 0 เสมอหลังสร้าง) — รอ
-            Campaign Monitor (#22) ผูกกับผล apply-config จริงของแต่ละ Task
+            นับจากจำนวน `CampaignRolloutTarget.status = success` จริง —
+            อัปเดตทุกครั้งที่ `applyConfigToDevice`/`confirmFirmwareInstall`
+            รายงานผลเข้ามา (Campaign Monitor #22, แก้ไข 2026-09-24 — เดิมเป็น
+            0 เสมอไม่มี logic อัปเดต)
         failureCount:
           type: integer
-          description: เหตุผลเดียวกับ successCount ด้านบน
+          description: เหตุผลเดียวกับ successCount ด้านบน (นับจาก status = failed)
         createdBy:
           type: string
           format: uuid
@@ -2344,9 +2595,9 @@ components:
           format: uuid
           nullable: true
           description: >-
-            Campaign Approval (v3.25) — user id ของ Operation ที่กด
-            `approveCampaign` (ต้องไม่ใช่ createdBy คนเดียวกัน) เป็น null
-            จนกว่าจะอนุมัติ · `rejectCampaign` ไม่ตั้งค่านี้ (คงเป็น null)
+            user id ของ Operation ที่กด `approveCampaignRollout` (ต้องไม่ใช่
+            createdBy คนเดียวกัน) เป็น null จนกว่าจะอนุมัติ ·
+            `rejectCampaignRollout` ไม่ตั้งค่านี้ (คงเป็น null)
         approvedAt:
           type: string
           format: date-time
@@ -2358,31 +2609,14 @@ components:
           type: string
           format: date-time
 
-    CampaignTargetInput:
+    CampaignRolloutCreateRequest:
       type: object
+      required: [payloadType]
       description: >-
-        อุปกรณ์เป้าหมาย 1 เครื่อง (createCampaign) — ไม่มี field มอบหมาย
-        ผู้รับผิดชอบหน้างานแล้ว (แก้ไข 2026-09-14: Campaign ใช้สำหรับ
-        ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น การมอบหมายงานเป็นหน้าที่
-        ของระบบแยกที่บริษัทมีอยู่แล้ว)
-      required: [deviceId]
+        Body ของ `createCampaignRollout` (v3.30, Campaign Monitor #22) — ไม่มี
+        field เลือก target เอง default = สมาชิกทั้งกลุ่ม เอาบางเครื่องออกได้
+        ผ่าน `excludeDeviceIds` เท่านั้น (ไม่รองรับเพิ่มเครื่องนอกกลุ่ม)
       properties:
-        deviceId:
-          type: string
-          description: >-
-            `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ `Device.id` UUID ภายใน
-            — ต้องเป็นอุปกรณ์สถานะ `installed` และ deviceModel/protocol ตรง
-            กับ Config ที่เลือก ไม่งั้น 409
-
-    CampaignCreateRequest:
-      type: object
-      required: [name, payloadType, targets]
-      properties:
-        name:
-          type: string
-          minLength: 1
-        description:
-          type: string
         payloadType:
           $ref: "#/components/schemas/CampaignPayloadType"
         configId:
@@ -2393,11 +2627,50 @@ components:
           type: string
           format: uuid
           description: บังคับเมื่อ payloadType เป็น Firmware
-        targets:
+        excludeDeviceIds:
           type: array
-          minItems: 1
           items:
-            $ref: "#/components/schemas/CampaignTargetInput"
+            type: string
+          description: >-
+            `Device.deviceId` ของสมาชิกกลุ่มที่ต้องการเอาออกจาก Rollout รอบนี้
+            (ทุกตัวต้องเป็นสมาชิกกลุ่มจริง ไม่งั้น 400 — เอาออกจนไม่เหลือ
+            เป้าหมายเลยก็ 400 เช่นกัน)
+
+    CampaignRolloutTargetStatus:
+      type: string
+      enum: [pending, success, failed]
+      description: >-
+        ผลของ Rollout รอบหนึ่งต่ออุปกรณ์หนึ่งเครื่อง (Campaign Monitor #22) —
+        เริ่มเป็น `pending` เสมอตอนสร้าง Rollout เปลี่ยนเป็น `success`/`failed`
+        เมื่อ `applyConfigToDevice`/`confirmFirmwareInstall` รายงานผลเข้ามา
+
+    CampaignRolloutTarget:
+      type: object
+      description: >-
+        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.30,
+        Campaign Monitor #22) ตรงกับ Prisma model `CampaignRolloutTarget`
+      required: [id, rolloutId, deviceId, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        rolloutId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+        status:
+          $ref: "#/components/schemas/CampaignRolloutTargetStatus"
+        resultDetail:
+          type: string
+          nullable: true
+          description: รายละเอียดผล (จาก `ConfigApplyResult.details` หรือข้อความยืนยันติดตั้ง Firmware)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     DeviceConfigDraft:
       type: object

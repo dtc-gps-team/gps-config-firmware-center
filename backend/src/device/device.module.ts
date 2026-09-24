@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { CampaignModule } from '../campaign/campaign.module';
 import {
   DEVICE_SIMULATOR,
   type DeviceSimulator,
@@ -22,7 +23,7 @@ import { DeviceService } from './device.service';
 // Device module — `POST /devices/:deviceId/test-connection` (ดู device.controller.ts
 // สำหรับเหตุผลที่ยังไม่ทำ `GET /devices/:deviceId/status`)
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, CampaignModule],
   controllers: [DeviceController],
   providers: [
     DeviceService,

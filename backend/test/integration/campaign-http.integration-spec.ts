@@ -24,17 +24,22 @@ import {
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 
 /**
- * Campaign Wizard (#21) — `POST/GET /campaigns` ผ่าน HTTP จริง (JwtAuthGuard ->
+ * Campaign — `POST/GET /campaigns` ผ่าน HTTP จริง (JwtAuthGuard ->
  * PermissionGuard เต็มเส้นทาง) + ยืนยันว่า CampaignTarget ถูกสร้างจริงใน DB
  * ครบทุกแถว ไม่ใช่แค่ response body หน้าเดียว
  *
- * **แก้ไข 2026-09-14 (1):** เดิมเทสนี้ยังยืนยันว่า `POST /campaigns` สร้าง
+ * **แก้ไข 2026-09-24 (Campaign Monitor #22 — แยกกลุ่มออกจากรอบ push):** เดิม
+ * ไฟล์นี้เทส payload/approve/reject มาด้วย (Campaign ผูก payload ตัวเดียว
+ * ยิงจบในคำขอเดียว) ย้ายเทสพวกนั้นทั้งหมดไป
+ * `campaign-rollout-http.integration-spec.ts` แทน เพราะ payload/approval
+ * ย้ายไปอยู่ที่ `CampaignRollout` แล้ว — ไฟล์นี้เหลือแค่เทส "กลุ่มอุปกรณ์"
+ * ล้วนๆ (ไม่มี payloadType/configId/firmwareId/status ใน request/response
+ * อีกต่อไป)
+ *
+ * **แก้ไข 2026-09-14:** เดิมเทสนี้ยังยืนยันว่า `POST /campaigns` สร้าง
  * `Task` ต่อเครื่องพร้อมแจ้งเตือนผู้รับผิดชอบด้วย (`assignedTo` ต่อ target) —
  * หัวหน้าแก้ scope ว่า Campaign ไม่มอบหมายงานให้ช่างหน้างานอีกต่อไป จึงตัด
  * NotificationModule override และ target.assignedTo ออกจากทุกเทสในไฟล์นี้
- *
- * **แก้ไข 2026-09-14 (2):** เพิ่มเทส `payloadType: Firmware` (Sprint 3 #23/
- * PR #151 implement เสร็จแล้ว) แทนที่เทสเดิมที่ยืนยันว่า Firmware ยัง 400
  */
 describe('CampaignController (integration — real postgres + guard chain)', () => {
   let app: INestApplication<App>;
@@ -93,28 +98,8 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     });
   }
 
-  async function seedApprovedConfig(overrides?: {
-    deviceModel?: string;
-    protocol?: string;
-  }) {
-    const configEngineerUser = await makeUser(prisma, {
-      role: 'ConfigEngineer',
-    });
-    return prisma.config.create({
-      data: {
-        name: `cfg-${randomUUID()}`,
-        deviceModel: overrides?.deviceModel ?? 'GT06N',
-        protocol: overrides?.protocol ?? 'TCP',
-        status: 'approved',
-        fields: { APN: 'internet' },
-        createdBy: configEngineerUser.id,
-      },
-    });
-  }
-
   async function seedInstalledDevice(overrides?: {
     deviceModel?: string;
-    protocol?: string;
     status?: 'registered' | 'installed' | 'decommissioned';
   }) {
     const deviceModel = overrides?.deviceModel ?? 'GT06N';
@@ -124,36 +109,9 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         deviceId: `DEV-${randomUUID().slice(0, 8)}`,
         simNumber: `89660000${Math.floor(Math.random() * 1e8)}`,
         deviceModel,
-        protocol: overrides?.protocol ?? 'TCP',
+        protocol: 'TCP',
         status: overrides?.status ?? 'installed',
         modelId: model.id,
-      },
-    });
-  }
-
-  async function seedStoredFirmware(overrides?: {
-    deviceModelCompatibility?: string[];
-    uploadStatus?: 'pending' | 'stored' | 'failed';
-    // default: 'approved' — ชื่อ helper บอกว่า "พร้อมใช้แล้ว" (mirror
-    // ความหมายเดิมก่อน Firmware Approval Lifecycle จะเพิ่ม dimension นี้เข้ามา)
-    // เทสที่ตั้งใจเช็ค 409 จาก approvalStatus โดยเฉพาะ ระบุ override ตรงๆ
-    approvalStatus?: 'pending_review' | 'approved' | 'rejected';
-  }) {
-    const firmwareEngineerUser = await makeUser(prisma, {
-      role: 'FirmwareEngineer',
-    });
-    return prisma.firmware.create({
-      data: {
-        version: `1.0.${Math.floor(Math.random() * 1000)}`,
-        deviceModelCompatibility: overrides?.deviceModelCompatibility ?? [
-          'GT06N',
-        ],
-        uploadStatus: overrides?.uploadStatus ?? 'stored',
-        approvalStatus: overrides?.approvalStatus ?? 'approved',
-        objectKey: `firmware/${randomUUID()}/test.bin`,
-        originalFilename: 'test.bin',
-        fileSizeBytes: 1024,
-        uploadedBy: firmwareEngineerUser.id,
       },
     });
   }
@@ -162,7 +120,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     it('ไม่ส่ง Authorization header -> 401', async () => {
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
-        .send({ name: 'x', payloadType: 'Config', targets: [] })
+        .send({ name: 'x', targets: [] })
         .expect(401);
     });
 
@@ -173,14 +131,13 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'x', payloadType: 'Config', targets: [] })
+        .send({ name: 'x', targets: [] })
         .expect(403);
     });
 
     it('Operation มีสิทธิ์ campaign.Create, เป้าหมายครบถ้วน -> 201 + สร้าง CampaignTarget จริงใน DB (ไม่มี Task)', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
       const deviceA = await seedInstalledDevice();
       const deviceB = await seedInstalledDevice();
       const token = tokenFor(opUser.id, 'Operation');
@@ -189,9 +146,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
         .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
+          name: 'กลุ่มทดสอบ',
           targets: [
             { deviceId: deviceA.deviceId },
             { deviceId: deviceB.deviceId },
@@ -199,14 +154,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         })
         .expect(201);
 
-      const body = res.body as {
-        id: string;
-        status: string;
-        targetCount: number;
-        createdBy: string;
-      };
-      expect(body.status).toBe('pending_approval');
-      expect(body.targetCount).toBe(2);
+      const body = res.body as { id: string; createdBy: string };
       expect(body.createdBy).toBe(opUser.id);
 
       const targets = await prisma.campaignTarget.findMany({
@@ -228,19 +176,13 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     it('สำเร็จ -> เขียน AuditLog action create (module campaign)', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
       const device = await seedInstalledDevice();
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
+        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: device.deviceId }] })
         .expect(201);
 
       const logs = await prisma.auditLog.findMany({
@@ -250,229 +192,38 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       expect(logs[0].action).toBe('create');
     });
 
-    it('payloadType Firmware, เป้าหมายครบถ้วน -> 201 + configId เป็น null, firmwareId ตรงกับที่เลือก', async () => {
+    it('ไม่พบ Device สำหรับ deviceId เป้าหมาย -> 409, ไม่มี Campaign ถูกสร้าง', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const firmware = await seedStoredFirmware();
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      const res = await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญอัปเดตเฟิร์มแวร์',
-          payloadType: 'Firmware',
-          firmwareId: firmware.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(201);
-
-      const body = res.body as {
-        payloadType: string;
-        configId: string | null;
-        firmwareId: string | null;
-      };
-      expect(body.payloadType).toBe('Firmware');
-      expect(body.configId).toBeNull();
-      expect(body.firmwareId).toBe(firmware.id);
-    });
-
-    it('payloadType Firmware, ไม่ส่ง firmwareId -> 400', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const device = await seedInstalledDevice();
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Firmware',
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(400);
-    });
-
-    it('payloadType Firmware, ไม่พบ Firmware -> 404', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Firmware',
-          firmwareId: randomUUID(),
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(404);
-    });
-
-    it('payloadType Firmware, uploadStatus ยัง pending -> 409', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const firmware = await seedStoredFirmware({ uploadStatus: 'pending' });
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Firmware',
-          firmwareId: firmware.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
+        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: 'DEV-NOT-EXIST' }] })
         .expect(409);
-    });
 
-    it('payloadType Firmware, approvalStatus ยัง pending_review -> 409', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const firmware = await seedStoredFirmware({
-        approvalStatus: 'pending_review',
-      });
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Firmware',
-          firmwareId: firmware.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(409);
-    });
-
-    it('payloadType Firmware, deviceModel ของ Device ไม่อยู่ใน deviceModelCompatibility -> 409', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const firmware = await seedStoredFirmware({
-        deviceModelCompatibility: ['GT06N'],
-      });
-      const device = await seedInstalledDevice({ deviceModel: 'GT06L' });
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Firmware',
-          firmwareId: firmware.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(409);
-    });
-
-    it('ไม่พบ Config -> 404', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: randomUUID(),
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(404);
-    });
-
-    it('Config ยังไม่อนุมัติ (draft) -> 409', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const configEngineerUser = await makeUser(prisma, {
-        role: 'ConfigEngineer',
-      });
-      const draftConfig = await prisma.config.create({
-        data: {
-          name: `cfg-${randomUUID()}`,
-          deviceModel: 'GT06N',
-          protocol: 'TCP',
-          status: 'draft',
-          fields: { APN: 'internet' },
-          createdBy: configEngineerUser.id,
-        },
-      });
-      const device = await seedInstalledDevice();
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: draftConfig.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(409);
+      expect(await prisma.campaign.count()).toBe(0);
     });
 
     it('Device ยังไม่ installed -> 409, ไม่มี CampaignTarget ถูกสร้าง', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
       const device = await seedInstalledDevice({ status: 'registered' });
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
+        .send({ name: 'กลุ่มทดสอบ', targets: [{ deviceId: device.deviceId }] })
         .expect(409);
 
       expect(await prisma.campaign.count()).toBe(0);
     });
 
-    it('deviceModel/protocol ของ Device ไม่ตรงกับ Config -> 409', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig({
-        deviceModel: 'GT06N',
-        protocol: 'TCP',
-      });
-      const device = await seedInstalledDevice({
-        deviceModel: 'GT06E',
-        protocol: 'UDP',
-      });
-      const token = tokenFor(opUser.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post('/api/v1/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
-          targets: [{ deviceId: device.deviceId }],
-        })
-        .expect(409);
-    });
-
     it('มี deviceId ซ้ำกันในรายการเป้าหมาย -> 400', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
       const device = await seedInstalledDevice();
       const token = tokenFor(opUser.id, 'Operation');
 
@@ -480,9 +231,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
         .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
+          name: 'กลุ่มทดสอบ',
           targets: [
             { deviceId: device.deviceId },
             { deviceId: device.deviceId },
@@ -494,129 +243,13 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
     it('targets ว่างเปล่า -> 400 (validation)', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await grant('Operation', ActionType.Create);
-      const config = await seedApprovedConfig();
       const token = tokenFor(opUser.id, 'Operation');
 
       await request(app.getHttpServer())
         .post('/api/v1/campaigns')
         .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'แคมเปญทดสอบ',
-          payloadType: 'Config',
-          configId: config.id,
-          targets: [],
-        })
+        .send({ name: 'กลุ่มทดสอบ', targets: [] })
         .expect(400);
-    });
-  });
-
-  describe('POST /campaigns/:id/approve, POST /campaigns/:id/reject', () => {
-    async function seedPendingCampaign(createdBy: string) {
-      return prisma.campaign.create({
-        data: {
-          name: 'แคมเปญรออนุมัติ',
-          payloadType: 'Config',
-          status: 'pending_approval',
-          createdBy,
-        },
-      });
-    }
-
-    it('role ไม่มีสิทธิ์ campaign.Approve (ST) -> 403', async () => {
-      const opUser = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await seedPendingCampaign(opUser.id);
-      const stUser = await makeUser(prisma, { role: 'ST' });
-      const token = tokenFor(stUser.id, 'ST');
-
-      await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/approve`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(403);
-    });
-
-    it('Operation คนอื่น (ไม่ใช่ผู้สร้าง) อนุมัติ pending_approval -> 200, status active + approvedBy', async () => {
-      const creator = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await seedPendingCampaign(creator.id);
-      const approver = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Approve);
-      const token = tokenFor(approver.id, 'Operation');
-
-      const res = await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/approve`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-
-      const body = res.body as { status: string; approvedBy: string };
-      expect(body.status).toBe('active');
-      expect(body.approvedBy).toBe(approver.id);
-    });
-
-    it('ผู้สร้าง Campaign พยายามอนุมัติเอง -> 403 (Separation of Duty)', async () => {
-      const creator = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await seedPendingCampaign(creator.id);
-      await grant('Operation', ActionType.Approve);
-      const token = tokenFor(creator.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/approve`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(403);
-    });
-
-    it('สถานะไม่ใช่ pending_approval (active อยู่แล้ว) -> 409', async () => {
-      const creator = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await prisma.campaign.create({
-        data: {
-          name: 'แคมเปญที่ active แล้ว',
-          payloadType: 'Config',
-          status: 'active',
-          createdBy: creator.id,
-        },
-      });
-      const approver = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Approve);
-      const token = tokenFor(approver.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/approve`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(409);
-    });
-
-    it('Operation คนอื่นปฏิเสธ pending_approval -> 200, status rejected ไม่ตั้ง approvedBy', async () => {
-      const creator = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await seedPendingCampaign(creator.id);
-      const approver = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Approve);
-      const token = tokenFor(approver.id, 'Operation');
-
-      const res = await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/reject`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-
-      const body = res.body as { status: string; approvedBy: string | null };
-      expect(body.status).toBe('rejected');
-      expect(body.approvedBy).toBeNull();
-    });
-
-    it('สำเร็จ -> เขียน AuditLog action approve', async () => {
-      const creator = await makeUser(prisma, { role: 'Operation' });
-      const campaign = await seedPendingCampaign(creator.id);
-      const approver = await makeUser(prisma, { role: 'Operation' });
-      await grant('Operation', ActionType.Approve);
-      const token = tokenFor(approver.id, 'Operation');
-
-      await request(app.getHttpServer())
-        .post(`/api/v1/campaigns/${campaign.id}/approve`)
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-
-      const logs = await prisma.auditLog.findMany({
-        where: { userId: approver.id, auditModule: 'campaign' },
-      });
-      expect(logs).toHaveLength(1);
-      expect(logs[0].action).toBe('approve');
     });
   });
 
@@ -632,12 +265,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await grant('ConfigEngineer', ActionType.Read);
       const opUser = await makeUser(prisma, { role: 'Operation' });
       await prisma.campaign.create({
-        data: {
-          name: 'แคมเปญเก่า',
-          payloadType: 'Config',
-          status: 'active',
-          createdBy: opUser.id,
-        },
+        data: { name: 'กลุ่มเก่า', createdBy: opUser.id },
       });
       const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
@@ -658,12 +286,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
       await grant('ConfigEngineer', ActionType.Read);
       const opUser = await makeUser(prisma, { role: 'Operation' });
       const created = await prisma.campaign.create({
-        data: {
-          name: 'แคมเปญเก่า',
-          payloadType: 'Config',
-          status: 'active',
-          createdBy: opUser.id,
-        },
+        data: { name: 'กลุ่มเก่า', createdBy: opUser.id },
       });
       const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
@@ -686,6 +309,34 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .get(`/api/v1/campaigns/${randomUUID()}`)
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  describe('GET /campaigns/:id/targets', () => {
+    it('เจอกลุ่ม -> 200 คืนสมาชิกกลุ่มทั้งหมด', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Read);
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const device = await seedInstalledDevice();
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มเก่า', createdBy: opUser.id },
+      });
+      await prisma.campaignTarget.create({
+        data: { campaignId: campaign.id, deviceId: device.deviceId },
+      });
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/campaigns/${campaign.id}/targets`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect((res.body as { deviceId: string }[])[0].deviceId).toBe(
+        device.deviceId,
+      );
     });
   });
 });

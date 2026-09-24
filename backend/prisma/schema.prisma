@@ -63,7 +63,8 @@ model User {
   firmwareUploads           Firmware[]
   firmwareApprovals         Firmware[]              @relation("FirmwareApprovedBy")
   campaignsCreated          Campaign[]              @relation("CampaignCreatedBy")
-  campaignsApproved         Campaign[]              @relation("CampaignApprovedBy")
+  campaignRolloutsCreated   CampaignRollout[]       @relation("CampaignRolloutCreatedBy")
+  campaignRolloutsApproved  CampaignRollout[]       @relation("CampaignRolloutApprovedBy")
   configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
   configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
 }
@@ -324,9 +325,9 @@ model DeviceModel {
 }
 
 model Device {
-  id           String                @id @default(uuid())
-  deviceId     String                @unique
-  simNumber    String
+  id                   String                @id @default(uuid())
+  deviceId             String                @unique
+  simNumber            String
   // Deviation จาก GPS_Config_Firmware_Center_Design.pdf §4.1-4.2/§14.1
   // (เอกสารต้นฉบับพี่เลี้ยง — ออกแบบ "รุ่นอุปกรณ์" เป็นลำดับชั้น 4 ระดับแยก
   // entity กันจริง: Manufacturer → Product Family → Product Model → Hardware
@@ -339,8 +340,8 @@ model Device {
   // TaskService, DeviceService เอง) ยังอ่าน string นี้ตรงๆ อยู่ — **server
   // คำนวณค่านี้ให้เองเสมอจาก `model.name` เมื่อมี `modelId`** ไม่รับเป็น
   // input แยกจาก client (issue #209 ข้อ 5 — กัน 2 ค่านี้ไม่ตรงกัน)
-  deviceModel  String
-  protocol     String
+  deviceModel          String
+  protocol             String
   // รหัสรุ่นย่อย/hardware revision ของเครื่องนี้ (เช่น "RevA", "2023Q1") —
   // string อิสระ ไม่มีทะเบียนแยก (ต่างจาก docs/15 เดิมที่เสนอ
   // DeviceModel.hardwareVersion — แก้แล้วเพราะอุปกรณ์รุ่นเดียวกันมีได้หลาย
@@ -350,19 +351,19 @@ model Device {
   // requirement จริงทีหลัง ค่อยยกระดับเป็นตารางแยก mirror วิธีที่
   // deviceModel string เดิมกำลังถูกยกระดับเป็น DeviceModel ตอนนี้
   hardwareRevisionCode String?
-  status       DeviceLifecycleStatus @default(registered)
-  registeredAt DateTime              @default(now())
-  installedAt  DateTime?
+  status               DeviceLifecycleStatus @default(registered)
+  registeredAt         DateTime              @default(now())
+  installedAt          DateTime?
   // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
   // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
   // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
-  customerId   String?
-  customer     Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId           String?
+  customer             Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   // เดิม nullable ชั่วคราวตอน migration แรก (issue #209) — บังคับ NOT NULL
   // ในนี้แล้วหลัง backfill ครบทุกแถวใน seed.ts (ยืนยันด้วย query ตรง — ดู
   // migration `..._device_model_id_not_null`)
-  modelId      String
-  model        DeviceModel           @relation(fields: [modelId], references: [id])
+  modelId              String
+  model                DeviceModel           @relation(fields: [modelId], references: [id])
 }
 
 // ---------------------------------------------------------------------------
@@ -460,7 +461,7 @@ model Config {
   creator           User                    @relation("ConfigCreatedBy", fields: [createdBy], references: [id])
   approver          User?                   @relation("ConfigApprovedBy", fields: [approvedBy], references: [id])
   suggestedApprover User?                   @relation("ConfigSuggestedApprover", fields: [suggestedApproverId], references: [id])
-  campaigns         Campaign[]
+  campaignRollouts  CampaignRollout[]
   incidents         Incident[]
   versions          ConfigVersion[]
   tasks             Task[]
@@ -657,10 +658,10 @@ model Firmware {
   approvalStatus           FirmwareApprovalStatus     @default(pending_review)
   approvedBy               String?
 
-  uploader  User       @relation(fields: [uploadedBy], references: [id])
-  approver  User?      @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])
-  campaigns Campaign[]
-  incidents Incident[]
+  uploader         User              @relation(fields: [uploadedBy], references: [id])
+  approver         User?             @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])
+  campaignRollouts CampaignRollout[]
+  incidents        Incident[]
 }
 
 // ---------------------------------------------------------------------------
@@ -672,35 +673,28 @@ model Firmware {
 // auto-pause ที่ยังไม่ใช่ MVP) เหลือ counter รวมแทน per-target tracking
 // ละเอียด
 //
-// **อัปเดต:** เอา `CAMPAIGN_TARGET` กลับมา (ดู `model CampaignTarget`
-// ด้านล่าง) เพราะ Campaign Wizard (#21) ต้องรู้ target list จริง —
-// `CAMPAIGN_BATCHES`/rollout strategy/canary/auto-pause **ยังตัดออกเหมือนเดิม**
-// (ยังไม่ใช่ MVP)
-//
 // **แก้ไข 2026-09-14:** เดิม comment ตรงนี้ระบุว่า target list มีไว้ "ถึงจะ
 // สร้าง Task ต่อเครื่องได้" — หัวหน้าแก้ scope ว่า Campaign มีไว้ติดตาม/
 // บำรุงรักษาอุปกรณ์เป็นกลุ่มเท่านั้น (อัปเดต Config/Firmware + สังเกตความ
 // ผิดปกติ) ไม่ใช่มอบหมายงานให้ช่างหน้างาน (เป็นหน้าที่ของระบบแยกที่บริษัทมี
 // อยู่แล้ว) `CampaignService.create()` จึงไม่สร้าง `Task` อีกต่อไป —
-// `Campaign.tasks` ด้านล่างเหลือไว้เป็น relation เปล่า (ไม่มีอะไรเขียนเข้า
-// จาก module นี้แล้ว) เผื่ออนาคตมีช่องทางอื่นเชื่อม Task เข้ากับ Campaign
+// `Campaign.tasks` (เดิม) จึงถูกตัดออกทั้งหมดในรอบแก้ไขถัดไปด้านล่าง
 //
-// เพิ่ม payloadType + configId/firmwareId (nullable ตามชนิด) จาก Data
-// Dictionary จริง (DEPLOYMENT_CAMPAIGN.payload_type / firmware_id /
-// config_template_version_id) — ตัดออกไม่ได้เพราะ Campaign ต้องรู้ว่ากำลัง
-// deploy อะไร ไม่งั้นไม่มีทางเชื่อมกับ Config/Firmware ที่สร้างไปแล้วได้เลย
-// issue #25
-//
-// TODO(#Campaign module): payloadType กับ configId/firmwareId ไม่มี DB/Prisma
-// constraint บังคับ mutual exclusivity (เช่น payloadType=Config ต้องมี
-// configId และ firmwareId ต้องเป็น null) — ยืนยันกับ kittiphong แล้วใน PR #25
-// review ว่าตั้งใจปล่อยให้ Campaign service layer เป็นคนบังคับตอนสร้าง module
-// จริง ไม่ใช่ oversight เหตุผลที่ไม่ทำเป็น DB-level CHECK constraint ตอนนี้:
-// (1) ยังไม่มี business logic รองรับเลยสักบรรทัด เพิ่ม constraint ไปก่อนอาจ
-// ต้องแก้อีกรอบถ้า requirement เปลี่ยน (2) แบบเดียวกับ Device.simNumber
-// partial index — raw SQL constraint ที่ Prisma schema DSL มองไม่เห็นมีความ
-// เสี่ยงโดน `prisma migrate dev`/`diff` generate DROP CONSTRAINT ทิ้งโดยไม่
-// ตั้งใจถ้าไม่ระวัง ไม่คุ้มที่จะแบกความเสี่ยงนี้ก่อนมี module จริงมารองรับ
+// **แก้ไข 2026-09-24 (Campaign Monitor #22 — แยก "กลุ่ม" ออกจาก "รอบ push"):**
+// ของเดิม 1 `Campaign` ผูก payload+approval+target ไว้ก้อนเดียว ยิงได้ครั้งเดียว
+// จบ — ไม่ตรงกับ intent "ติดตาม/บำรุงรักษาอุปกรณ์เป็นกลุ่ม" ที่กลุ่มควรอยู่ยาว
+// แล้ว push payload ใหม่ได้หลายรอบ จึงแตกเป็น 2 ระดับ:
+//   - `Campaign` = กลุ่มอุปกรณ์ถาวร (แค่ name/description/สมาชิก) ไม่มี
+//     payload/status/approval ติดตัวอีกต่อไป
+//   - `CampaignRollout` = 1 รอบ push Config หรือ Firmware เข้ากลุ่ม — รับ field
+//     payloadType/configId/firmwareId/status/approval/successCount/
+//     failureCount ทั้งหมดที่เคยอยู่บน `Campaign` มาไว้ที่นี่แทน
+// กลุ่มหนึ่ง **รัน rollout ได้ทีละรอบเท่านั้น** (เช็คที่ service layer — ห้าม
+// สร้างรอบใหม่ถ้ายังมีรอบที่ `pending_approval`/`active` ค้างอยู่) MVP นี้ยัง
+// ไม่เปิดให้เพิ่ม/ลบสมาชิกกลุ่มทีหลัง (`CampaignTarget` fix ตอนสร้างกลุ่ม
+// เท่านั้น — เป็นงานถัดไป) และ rollout หนึ่งรอบ default = สมาชิกทั้งกลุ่ม
+// แต่เลือกเอาบางเครื่องออกได้ตอนสร้าง (`excludeDeviceIds` ใน DTO) กันกรณีบาง
+// เครื่องในกลุ่มไม่พร้อมแล้ว (เช่นปลดระวางไปแล้ว) ไม่ให้ block ทั้ง rollout
 // ---------------------------------------------------------------------------
 
 enum CampaignPayloadType {
@@ -708,59 +702,24 @@ enum CampaignPayloadType {
   Firmware
 }
 
-// Campaign Approval (แก้ครั้งที่ 39, docs/architecture/RBAC_Matrix.md) — เพิ่ม
-// `pending_approval`/`rejected` ปิด gap ที่ System Design PDF §9.1/§10.2/§19
-// ต้องการ Approval step ก่อน Campaign เข้า `active` จริง (เดิม v1 "ส่งพร้อมกัน
-// หมด" ข้ามขั้นนี้ไปเลย — ดู comment เดิมเหนือ `CampaignService.create()`)
-// `rejected` แยกจาก `draft` โดยตั้งใจ mirror `ConfigStatus.rejected` — ให้เห็น
-// ชัดว่าเคยถูกปฏิเสธมาก่อน ไม่ใช่แค่ยังไม่เคยส่งอนุมัติ — Operation แก้ไขแล้ว
-// ส่งอนุมัติใหม่ได้ (`rejected` -> `pending_approval` อีกรอบ ผ่าน endpoint
-// เดียวกับตอนสร้าง เพราะยังไม่มี `PATCH /campaigns/{id}` จริง — รอ Campaign
-// Monitor แถวที่ 22)
-enum CampaignStatus {
-  draft
-  pending_approval
-  active
-  rejected
-  completed
-  cancelled
-}
-
 model Campaign {
-  id           String              @id @default(uuid())
-  name         String
-  description  String?
-  payloadType  CampaignPayloadType
-  configId     String?
-  firmwareId   String?
-  status       CampaignStatus      @default(draft)
-  targetCount  Int                 @default(0)
-  successCount Int                 @default(0)
-  failureCount Int                 @default(0)
-  createdBy    String
-  // Separation of Duty (แก้ครั้งที่ 39) — Operation สร้าง Campaign เอง จึงต้อง
-  // กันไม่ให้อนุมัติงานตัวเอง (เช็คที่ service layer เทียบ actor.id ตอน
-  // approve/reject กับ field นี้ ไม่ใช่ DB constraint — mirror `Config.approvedBy`
-  // ที่ปล่อยให้ service เป็นคนบังคับเหมือนกัน) `rejectedBy` ไม่มี — reject
-  // ไม่นับเป็น "อนุมัติ" (mirror Config/Firmware ที่ reject ไม่ตั้ง approvedBy)
-  approvedBy   String?
-  approvedAt   DateTime?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  creator  User             @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
-  approver User?            @relation("CampaignApprovedBy", fields: [approvedBy], references: [id])
-  config   Config?          @relation(fields: [configId], references: [id])
-  firmware Firmware?        @relation(fields: [firmwareId], references: [id])
+  creator  User              @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
   targets  CampaignTarget[]
+  rollouts CampaignRollout[]
+  // เปล่า ไม่มีอะไรเขียนเข้าจาก module นี้ (ดู comment เหนือ `Task.campaignId`)
+  // — เหลือไว้เพราะ Prisma บังคับประกาศทั้ง 2 ฝั่งของ relation
   tasks    Task[]
 }
 
-// CampaignTarget — รายชื่ออุปกรณ์เป้าหมายจริงของ Campaign หนึ่งตัว กลับมา
-// เอาแค่ตารางเดียวจาก 3 ตารางเดิมที่ถูกตัดออกตอนทำ Campaign MVP
-// (CAMPAIGN_TARGET / CAMPAIGN_BATCHES / CAMPAIGN_ASSIGNMENT — ดู comment
-// เหนือ model Campaign) เพราะเป็น prerequisite ของ Sprint 3 #21 (Campaign
-// Wizard ต้องรู้ target list จริง ไม่ใช่แค่ `targetCount` ตัวเลขรวม)
+// CampaignTarget — สมาชิกกลุ่ม (deviceId เฉยๆ ไม่มี status) แยกจากผลของแต่ละ
+// รอบ push ซึ่งอยู่ที่ `CampaignRolloutTarget` แทน (แก้ไข 2026-09-24)
 //
 // deviceId เป็น string หลวมๆ ไม่ใช่ Prisma relation ไปยัง Device.id — mirror
 // `Task.deviceId` ทุกประการ (ค่านี้คือเลขเครื่องจริงจาก `Device.deviceId`
@@ -781,6 +740,90 @@ model CampaignTarget {
 
   @@unique([campaignId, deviceId])
   @@index([campaignId])
+}
+
+// Campaign Approval (แก้ครั้งที่ 39, docs/architecture/RBAC_Matrix.md) — เพิ่ม
+// `pending_approval`/`rejected` ปิด gap ที่ System Design PDF §9.1/§10.2/§19
+// ต้องการ Approval step ก่อน Rollout เข้า `active` จริง (เดิม v1 "ส่งพร้อมกัน
+// หมด" ข้ามขั้นนี้ไปเลย) `rejected` แยกจาก MVP "ยังไม่ได้ส่ง" (ไม่มีสถานะ
+// draft อีกต่อไป — rollout สร้างแล้วเป็น `pending_approval` ทันทีเสมอ ต่างจาก
+// `Campaign` เดิมที่เคยมี `draft`) โดยตั้งใจ mirror `ConfigStatus.rejected` —
+// ให้เห็นชัดว่าเคยถูกปฏิเสธมาก่อน ไม่ใช่แค่ยังไม่เคยส่งอนุมัติ — Operation
+// แก้ไขแล้วส่งอนุมัติใหม่ได้ผ่าน `POST /campaigns/{id}/rollouts` อีกรอบ
+// (rollout เดิมที่ rejected ค้างไว้เป็นประวัติ ไม่มี PATCH แก้ rollout เดิม)
+enum CampaignRolloutStatus {
+  pending_approval
+  active
+  rejected
+  completed
+  cancelled
+}
+
+// CampaignRollout — 1 รอบ push Config หรือ Firmware เข้ากลุ่มอุปกรณ์
+// (`Campaign`) หนึ่งกลุ่ม (แก้ไข 2026-09-24 — เดิม field พวกนี้อยู่บน
+// `Campaign` ตรงๆ ดู comment เหนือ `model Campaign`)
+//
+// TODO(#Campaign module): payloadType กับ configId/firmwareId ไม่มี DB/Prisma
+// constraint บังคับ mutual exclusivity (เช่น payloadType=Config ต้องมี
+// configId และ firmwareId ต้องเป็น null) — ยืนยันกับ kittiphong แล้วใน PR #25
+// review ว่าตั้งใจปล่อยให้ service layer เป็นคนบังคับ ไม่ใช่ oversight
+// เหตุผลที่ไม่ทำเป็น DB-level CHECK constraint: (1) ยังไม่มี business logic
+// รองรับเลยสักบรรทัด เพิ่ม constraint ไปก่อนอาจต้องแก้อีกรอบถ้า requirement
+// เปลี่ยน (2) แบบเดียวกับ Device.simNumber partial index — raw SQL constraint
+// ที่ Prisma schema DSL มองไม่เห็นมีความเสี่ยงโดน `prisma migrate dev`/`diff`
+// generate DROP CONSTRAINT ทิ้งโดยไม่ตั้งใจถ้าไม่ระวัง
+model CampaignRollout {
+  id           String                @id @default(uuid())
+  campaignId   String
+  payloadType  CampaignPayloadType
+  configId     String?
+  firmwareId   String?
+  status       CampaignRolloutStatus @default(pending_approval)
+  targetCount  Int                   @default(0)
+  successCount Int                   @default(0)
+  failureCount Int                   @default(0)
+  createdBy    String
+  // Separation of Duty (แก้ครั้งที่ 39) — Operation สร้าง Rollout เอง จึงต้อง
+  // กันไม่ให้อนุมัติงานตัวเอง (เช็คที่ service layer เทียบ actor.id ตอน
+  // approve/reject กับ field นี้ ไม่ใช่ DB constraint — mirror `Config.approvedBy`
+  // ที่ปล่อยให้ service เป็นคนบังคับเหมือนกัน) `rejectedBy` ไม่มี — reject
+  // ไม่นับเป็น "อนุมัติ" (mirror Config/Firmware ที่ reject ไม่ตั้ง approvedBy)
+  approvedBy   String?
+  approvedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  campaign Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creator  User                    @relation("CampaignRolloutCreatedBy", fields: [createdBy], references: [id])
+  approver User?                   @relation("CampaignRolloutApprovedBy", fields: [approvedBy], references: [id])
+  config   Config?                 @relation(fields: [configId], references: [id])
+  firmware Firmware?               @relation(fields: [firmwareId], references: [id])
+  targets  CampaignRolloutTarget[]
+}
+
+// ผลของ rollout หนึ่งรอบต่ออุปกรณ์หนึ่งเครื่อง (แก้ไข 2026-09-24, Campaign
+// Monitor #22) — อัปเดตจาก `DeviceService.applyConfig`/`confirmFirmwareInstall`
+// จริง (mock mode ก็รายงานผลได้ — ดู `MockConfigApplier`) ไม่ใช่ทฤษฎีอย่างเดียว
+// deviceId ใช้ `Device.deviceId` เหมือน `CampaignTarget` ทุกประการ
+enum CampaignRolloutTargetStatus {
+  pending
+  success
+  failed
+}
+
+model CampaignRolloutTarget {
+  id           String                      @id @default(uuid())
+  rolloutId    String
+  deviceId     String
+  status       CampaignRolloutTargetStatus @default(pending)
+  resultDetail String?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+
+  rollout CampaignRollout @relation(fields: [rolloutId], references: [id], onDelete: Cascade)
+
+  @@unique([rolloutId, deviceId])
+  @@index([rolloutId])
 }
 
 // ---------------------------------------------------------------------------

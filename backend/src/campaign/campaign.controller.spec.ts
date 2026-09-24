@@ -1,6 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Campaign, CampaignPayloadType } from '@prisma/client';
+import { Campaign, CampaignTarget } from '@prisma/client';
 import { Request } from 'express';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
@@ -21,20 +21,18 @@ const opReq = reqAs({ sub: 'op-1', role: 'Operation' });
 
 const sampleCampaign: Campaign = {
   id: 'campaign-1',
-  name: 'แคมเปญทดสอบ',
+  name: 'กลุ่มทดสอบ',
   description: null,
-  payloadType: CampaignPayloadType.Config,
-  configId: 'cfg-1',
-  firmwareId: null,
-  status: 'pending_approval',
-  targetCount: 1,
-  successCount: 0,
-  failureCount: 0,
   createdBy: 'op-1',
-  approvedBy: null,
-  approvedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
+const sampleTarget: CampaignTarget = {
+  id: 'target-1',
+  campaignId: sampleCampaign.id,
+  deviceId: 'DEV-0001',
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
 describe('CampaignController', () => {
@@ -43,8 +41,7 @@ describe('CampaignController', () => {
     findAll: jest.Mock;
     create: jest.Mock;
     findOne: jest.Mock;
-    approve: jest.Mock;
-    reject: jest.Mock;
+    findTargets: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -52,8 +49,7 @@ describe('CampaignController', () => {
       findAll: jest.fn(),
       create: jest.fn(),
       findOne: jest.fn(),
-      approve: jest.fn(),
-      reject: jest.fn(),
+      findTargets: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -78,21 +74,19 @@ describe('CampaignController', () => {
     controller = module.get(CampaignController);
   });
 
-  it('GET /campaigns -> service.findAll พร้อม query', async () => {
+  it('GET /campaigns -> service.findAll', async () => {
     service.findAll.mockResolvedValue([sampleCampaign]);
 
-    const result = await controller.findAll({ status: 'active' });
+    const result = await controller.findAll();
 
     expect(result).toEqual([sampleCampaign]);
-    expect(service.findAll).toHaveBeenCalledWith({ status: 'active' });
+    expect(service.findAll).toHaveBeenCalledWith();
   });
 
   it('POST /campaigns -> service.create พร้อม actor จาก JWT', async () => {
     service.create.mockResolvedValue(sampleCampaign);
     const dto: CreateCampaignDto = {
-      name: 'แคมเปญทดสอบ',
-      payloadType: CampaignPayloadType.Config,
-      configId: 'cfg-1',
+      name: 'กลุ่มทดสอบ',
       targets: [{ deviceId: 'DEV-0001' }],
     };
 
@@ -114,29 +108,12 @@ describe('CampaignController', () => {
     expect(service.findOne).toHaveBeenCalledWith(sampleCampaign.id);
   });
 
-  it('POST /campaigns/:id/approve -> service.approve พร้อม actor จาก JWT', async () => {
-    const approved = { ...sampleCampaign, status: 'active' as const };
-    service.approve.mockResolvedValue(approved);
+  it('GET /campaigns/:id/targets -> service.findTargets', async () => {
+    service.findTargets.mockResolvedValue([sampleTarget]);
 
-    const result = await controller.approve(sampleCampaign.id, opReq);
+    const result = await controller.findTargets(sampleCampaign.id);
 
-    expect(result).toEqual(approved);
-    expect(service.approve).toHaveBeenCalledWith(sampleCampaign.id, {
-      id: 'op-1',
-      role: 'Operation',
-    });
-  });
-
-  it('POST /campaigns/:id/reject -> service.reject พร้อม actor จาก JWT', async () => {
-    const rejected = { ...sampleCampaign, status: 'rejected' as const };
-    service.reject.mockResolvedValue(rejected);
-
-    const result = await controller.reject(sampleCampaign.id, opReq);
-
-    expect(result).toEqual(rejected);
-    expect(service.reject).toHaveBeenCalledWith(sampleCampaign.id, {
-      id: 'op-1',
-      role: 'Operation',
-    });
+    expect(result).toEqual([sampleTarget]);
+    expect(service.findTargets).toHaveBeenCalledWith(sampleCampaign.id);
   });
 });

@@ -386,6 +386,51 @@ describe('DeviceController test-connection (integration — real postgres + guar
         fieldNames: ['APN'],
       });
     });
+
+    it('Campaign Monitor (#22, แก้ไข 2026-09-24) — apply สำเร็จ + เครื่องอยู่ใน Rollout active ที่ payload ตรงกัน -> CampaignRolloutTarget เปลี่ยนเป็น success, Rollout.successCount เพิ่ม', async () => {
+      await makeDevice('AC-CAMPAIGN-1', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const token = tokenFor(stUser.id, 'ST');
+      const configId = await makeConfig('approved');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มทดสอบ Monitor', createdBy: opUser.id },
+      });
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rollout.id, deviceId: 'AC-CAMPAIGN-1' },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-CAMPAIGN-1/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      const reloadedTarget =
+        await prisma.campaignRolloutTarget.findFirstOrThrow({
+          where: { rolloutId: rollout.id, deviceId: 'AC-CAMPAIGN-1' },
+        });
+      expect(reloadedTarget.status).toBe('success');
+
+      const reloadedRollout = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      expect(reloadedRollout.successCount).toBe(1);
+      // ครบทุกเครื่องในรอบแล้ว (targetCount 1) -> ปิดรอบเป็น completed
+      expect(reloadedRollout.status).toBe('completed');
+    });
   });
 
   describe('POST /devices/:deviceId/confirm-firmware-install (issue #181)', () => {
@@ -562,6 +607,48 @@ describe('DeviceController test-connection (integration — real postgres + guar
         firmwareId: createdFirmware.id,
         firmwareVersion: 'GT06N-v9.9.9',
       });
+    });
+
+    it('Campaign Monitor (#22, แก้ไข 2026-09-24) — ยืนยันสำเร็จ + เครื่องอยู่ใน Rollout active ที่ payload ตรงกัน -> CampaignRolloutTarget เปลี่ยนเป็น success, Rollout.successCount เพิ่ม', async () => {
+      await makeDevice('CF-CAMPAIGN-1', 'installed');
+      const token = await stToken();
+      const firmwareId = await makeFirmware();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มทดสอบ Monitor', createdBy: opUser.id },
+      });
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Firmware',
+          firmwareId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rollout.id, deviceId: 'CF-CAMPAIGN-1' },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-CAMPAIGN-1/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId })
+        .expect(200);
+
+      const reloadedTarget =
+        await prisma.campaignRolloutTarget.findFirstOrThrow({
+          where: { rolloutId: rollout.id, deviceId: 'CF-CAMPAIGN-1' },
+        });
+      expect(reloadedTarget.status).toBe('success');
+
+      const reloadedRollout = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      expect(reloadedRollout.successCount).toBe(1);
+      expect(reloadedRollout.status).toBe('completed');
     });
   });
 
