@@ -1934,6 +1934,37 @@ paths:
             อุปกรณ์เป้าหมายบางเครื่องไม่พบ หรือยังไม่ installed (รวมทุกปัญหา
             ไว้ในข้อความเดียว)
 
+  /campaigns/rollouts:
+    get:
+      tags: [campaign]
+      operationId: listAllCampaignRollouts
+      summary: รายการ Rollout ข้ามทุกกลุ่ม — v3.32 (Approval Center)
+      description: >-
+        ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
+        createdAt desc · **แก้ไข 2026-09-24:** เพิ่มเข้ามาให้ Approval Center
+        ใช้รวม Campaign Rollout เข้ากับ Config (ตามที่ mockup เดิมตั้งใจไว้แต่
+        Firmware/Campaign เคยถูกเลื่อนไว้ก่อน — ดู docs/13 proposal) ·
+        filter `status` optional — ไม่ส่งอะไรมา = คืนทุกสถานะ · **ต่างจาก**
+        `listCampaignRollouts` (nested ใต้ `/campaigns/{id}/rollouts`) ที่
+        scope แค่กลุ่มเดียว ตัวนี้ query ข้ามทุกกลุ่มพร้อมกัน
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: "#/components/schemas/CampaignRolloutStatus"
+      responses:
+        "200":
+          description: รายการ Rollout (เรียงตาม createdAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignRollout"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+
   /campaigns/{id}:
     get:
       tags: [campaign]

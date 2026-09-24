@@ -9,6 +9,7 @@ import {
 import {
   CampaignPayloadType,
   CampaignRollout,
+  CampaignRolloutStatus,
   CampaignRolloutTarget,
   Device,
 } from '@prisma/client';
@@ -57,6 +58,22 @@ export class CampaignRolloutService {
   findAll(campaignId: string): Promise<CampaignRollout[]> {
     return this.prisma.campaignRollout.findMany({
       where: { campaignId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * `GET /campaigns/rollouts` — ข้าม Campaign ทุกกลุ่ม (แก้ไข 2026-09-24 —
+   * Approval Center รวม Campaign Rollout เข้าไปด้วย ตามที่ mockup เดิมตั้งใจ
+   * ไว้ตั้งแต่แรกแต่ Firmware/Campaign เคยถูกเลื่อนไว้ก่อน) — `status` ไม่ระบุ
+   * = คืนทุกสถานะ ใช้ `?status=pending_approval` กรองเฉพาะที่รออนุมัติ mirror
+   * `ConfigService.findAll({ status })`
+   */
+  findAllAcrossCampaigns(
+    status?: CampaignRolloutStatus,
+  ): Promise<CampaignRollout[]> {
+    return this.prisma.campaignRollout.findMany({
+      where: { status },
       orderBy: { createdAt: 'desc' },
     });
   }
