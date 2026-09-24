@@ -18,9 +18,14 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
+import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
-import type { ActingUser, DeviceWithCustomer } from './device.service';
+import type {
+  ActingUser,
+  ConfirmFirmwareInstallResult,
+  DeviceWithCustomer,
+} from './device.service';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
 
@@ -110,5 +115,25 @@ export class DeviceController {
     @Body() dto: SimulateConfigOnDeviceDto,
   ): Promise<DeviceSimulateConfigResult> {
     return this.deviceService.simulateConfig(deviceId, dto.configId);
+  }
+
+  // resource ใหม่ `device-firmware-confirm` action `Create` — grant ให้ ST/OT
+  // เท่านั้น (mirror `device-config-apply`) **action `Create` ไม่ใช่ `Read`**
+  // ต่างจาก apply-config/test-connection/simulate-config โดยตั้งใจ —
+  // endpoint นี้เขียน AuditLog จริง (ไม่ใช่ fire-and-forget ที่ไม่ persist
+  // อะไรเลยแบบพวกนั้น) ดู comment เหนือ `DeviceService.confirmFirmwareInstall()`
+  @Post(':deviceId/confirm-firmware-install')
+  @RequirePermission('device-firmware-confirm', ActionType.Create)
+  @HttpCode(HttpStatus.OK)
+  confirmFirmwareInstall(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: ConfirmFirmwareInstallDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ConfirmFirmwareInstallResult> {
+    return this.deviceService.confirmFirmwareInstall(
+      deviceId,
+      dto,
+      toActor(req),
+    );
   }
 }

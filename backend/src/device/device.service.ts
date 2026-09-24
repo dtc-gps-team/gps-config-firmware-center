@@ -36,16 +36,32 @@ import type {
   CompatibilityCheckResult,
   DeviceSimulateConfigResult,
 } from './simulate-config-result';
+import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
+import {
+  CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
+  SIMULATABLE_FIRMWARE_STATUS,
+} from '../firmware/firmware-status';
 
 /** สถานะเดียวที่ทดสอบสัญญาณ / ใส่ Config ได้ — อุปกรณ์ต้องติดตั้งจริงแล้ว
  * อุปกรณ์ที่ยัง `registered` (ยังไม่ติดตั้ง) หรือ `decommissioned` (ปลดระวางแล้ว)
  * ไม่มีความหมาย (ดู docs/06_Device_Connection_Test_Spec.md ข้อ 5) */
 const TESTABLE_DEVICE_STATUS = 'installed';
 
-/** AuditLog.auditModule ของแถวที่โมดูลนี้เขียน (#27) — เฉพาะ `applyConfig`
- * เท่านั้น (CLAUDE.md Audit Pattern ระบุ "นำ Config ไปใช้" ไว้ชัด) —
- * test-connection/simulate-config เป็น dry-run ไม่ persist จึงไม่ log */
+/** AuditLog.auditModule ของแถวที่โมดูลนี้เขียน (#27) — `applyConfig`
+ * (CLAUDE.md Audit Pattern ระบุ "นำ Config ไปใช้" ไว้ชัด) และ
+ * `confirmFirmwareInstall` (#181) — test-connection/simulate-config เป็น
+ * dry-run ไม่ persist จึงไม่ log */
 const AUDIT_MODULE = 'device';
+
+/** ผลลัพธ์ของ `confirmFirmwareInstall` — ตรงกับ `ConfirmFirmwareInstallResult`
+ * ใน docs/api/openapi.yaml */
+export interface ConfirmFirmwareInstallResult {
+  deviceId: string;
+  firmwareId: string;
+  /** ISO 8601 — เวลาที่ backend บันทึกการยืนยัน (ไม่ใช่เวลาที่ช่างติดตั้งจริง
+   * หน้างาน — endpoint นี้ไม่รู้เวลานั้น) */
+  confirmedAt: string;
+}
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
 export interface ActingUser {
@@ -237,6 +253,94 @@ export class DeviceService {
     }
 
     return result;
+  }
+
+  /**
+   * "Confirm Firmware Install" (issue #181) — ช่างหน้างาน (ST/OT) ยืนยันเองว่า
+   * ติดตั้ง Firmware เข้าอุปกรณ์เครื่องนี้เสร็จจริงแล้ว **ไม่ใช่คำสั่งส่งอะไร
+   * ไปอุปกรณ์เลย** ต่างจาก `applyConfig` ที่ยังมี mock fire-and-forget อยู่
+   * เบื้องหลัง — endpoint นี้เป็นแค่การบันทึก "มีการยืนยันเกิดขึ้น" (attestation)
+   * เท่านั้น ไม่มี mock ฝั่ง push firmware ให้ fire-and-forget ด้วยซ้ำ
+   *
+   * **Deviation จาก GPS_Config_Firmware_Center_Design.pdf §10.2-10.3 โดยตั้งใจ**
+   * — PDF ออกแบบ Workflow Firmware เป็น state machine อัตโนมัติเต็มรูปแบบ
+   * (Pending→Pre-checking→Downloading→Verifying→Installing→Rebooting→Health
+   * Checking→Success/Rollback) ที่ backend สื่อสารกับอุปกรณ์เองทุกขั้นตอน —
+   * ทำไม่ได้เลยเพราะระบบนี้เป็น PULL model (อุปกรณ์ดึงข้อมูลเองตอนบูต backend
+   * ไม่เคยคุยกับอุปกรณ์ตรงๆ) endpoint นี้จึงเป็น placeholder ระดับที่ทำได้ใน
+   * ขอบเขตฝึกงานเท่านั้น (มติ A/B ในเธรด issue #181) — **ไม่คำนวณ**
+   * `Firmware.deviceUpdateStatus` จริง (ยังคงเป็น `unknown` ต่อไป) รอออกแบบ
+   * แยกเป็นงานถัดไปตามมติข้อ 3
+   *
+   * เงื่อนไข 4xx (mirror `applyConfig`):
+   * - ไม่พบ Device / Firmware → 404
+   * - Device ยังไม่ `installed` → 409
+   * - Firmware ยังไม่ `stored` (upload) หรือยังไม่ `approved` (คุณภาพ) → 409
+   * - Firmware ไม่รองรับ `device.deviceModel` (`deviceModelCompatibility`) → 409
+   *
+   * **ไม่ wrap try/catch เหมือน `applyConfig`** — ที่นั่น AuditLog เป็นแค่
+   * ร่องรอยของการกระทำจริงที่สำเร็จไปแล้ว (fire-and-forget) แต่ที่นี่การเขียน
+   * AuditLog **คือ** การกระทำทั้งหมด ไม่มีอย่างอื่นเกิดขึ้นเลยนอกจากแถวนี้ —
+   * ถ้าเขียนไม่สำเร็จต้อง throw 500 ให้ช่างรู้ว่าต้องกดยืนยันใหม่ ไม่ใช่คืน
+   * 200 ทั้งที่ไม่มีอะไรถูกบันทึกจริง
+   */
+  async confirmFirmwareInstall(
+    deviceId: string,
+    dto: ConfirmFirmwareInstallDto,
+    actor: ActingUser,
+  ): Promise<ConfirmFirmwareInstallResult> {
+    const device = await this.findByDeviceId(deviceId);
+
+    if (device.status !== TESTABLE_DEVICE_STATUS) {
+      throw new ConflictException(
+        `Device สถานะปัจจุบัน (${device.status}) ยังยืนยันติดตั้ง Firmware ไม่ได้ — ต้องเป็น ${TESTABLE_DEVICE_STATUS} (ติดตั้งจริงแล้ว) เท่านั้น`,
+      );
+    }
+
+    const firmware = await this.prisma.firmware.findUnique({
+      where: { id: dto.firmwareId },
+    });
+    if (!firmware) {
+      throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
+    }
+    if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {
+      throw new ConflictException(
+        `Firmware สถานะอัปโหลดปัจจุบัน (${firmware.uploadStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${SIMULATABLE_FIRMWARE_STATUS}" (จัดเก็บสำเร็จแล้ว) เท่านั้น`,
+      );
+    }
+    if (
+      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
+    ) {
+      throw new ConflictException(
+        `Firmware สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS}" (QAEngineer อนุมัติคุณภาพแล้ว) เท่านั้น`,
+      );
+    }
+    if (!firmware.deviceModelCompatibility.includes(device.deviceModel)) {
+      throw new ConflictException(
+        `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+      );
+    }
+
+    const confirmedAt = new Date();
+    const metadata: AuditLogMetadata = {
+      deviceId: device.deviceId,
+      firmwareId: firmware.id,
+      firmwareVersion: firmware.version,
+    };
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action: 'confirm-firmware-install',
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      deviceId: device.deviceId,
+      firmwareId: firmware.id,
+      confirmedAt: confirmedAt.toISOString(),
+    };
   }
 
   /**
