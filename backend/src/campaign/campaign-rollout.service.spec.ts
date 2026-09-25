@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { CampaignPayloadType, CampaignRollout } from '@prisma/client';
+import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
@@ -91,6 +91,7 @@ function firmwareDto(): CreateCampaignRolloutDto {
 
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
+  let transactionMock: jest.Mock;
   let campaign: { findUnique: jest.Mock };
   let campaignTarget: { findMany: jest.Mock };
   let campaignRollout: {
@@ -136,6 +137,9 @@ describe('CampaignRolloutService', () => {
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
 
+    transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
+      cb({ campaignRollout, campaignRolloutTarget }),
+    );
     const prismaMock = {
       campaign,
       campaignTarget,
@@ -145,9 +149,7 @@ describe('CampaignRolloutService', () => {
       firmware,
       device,
       auditLog,
-      $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ campaignRollout, campaignRolloutTarget }),
-      ),
+      $transaction: transactionMock,
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -181,6 +183,14 @@ describe('CampaignRolloutService', () => {
           { rolloutId: sampleRollout.id, deviceId: installedDeviceA.deviceId },
           { rolloutId: sampleRollout.id, deviceId: installedDeviceB.deviceId },
         ],
+      });
+    });
+
+    it('เช็ค rollout ค้างอยู่ + สร้าง rollout อยู่ใน $transaction เดียวกัน ด้วย isolationLevel Serializable (กัน race condition — review B บน PR #224)', async () => {
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     });
 
@@ -522,9 +532,11 @@ describe('CampaignRolloutService', () => {
       resultDetail: null,
     };
 
-    it('เจอ rollout active + target pending ที่ตรงกัน -> อัปเดตผล + คำนวณ count ใหม่ (ยังไม่ครบ -> ไม่เปลี่ยนสถานะ)', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
-      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+    it('เจอ target pending ของ rollout active ที่ตรงกัน (scope ด้วย deviceId ก่อนเสมอ) -> อัปเดตผล + คำนวณ count ใหม่ (ยังไม่ครบ -> ไม่เปลี่ยนสถานะ)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({
+        ...pendingTarget,
+        rollout: activeRollout,
+      });
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1) // success
         .mockResolvedValueOnce(0) // failed
@@ -537,6 +549,14 @@ describe('CampaignRolloutService', () => {
         'ok',
       );
 
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rollout: { status: 'active', configId: approvedConfig.id },
+        },
+        include: { rollout: true },
+      });
       expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
         where: { id: pendingTarget.id },
         data: { status: 'success', resultDetail: 'ok' },
@@ -548,8 +568,10 @@ describe('CampaignRolloutService', () => {
     });
 
     it('ครบทุกเครื่องแล้ว (pending เหลือ 0) -> ปิด rollout เป็น completed', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
-      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.findFirst.mockResolvedValue({
+        ...pendingTarget,
+        rollout: activeRollout,
+      });
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(1)
@@ -568,8 +590,8 @@ describe('CampaignRolloutService', () => {
       });
     });
 
-    it('ไม่มี rollout active ที่ตรงกัน -> ไม่ทำอะไรเลย (never-throw)', async () => {
-      campaignRollout.findFirst.mockResolvedValue(null);
+    it('ไม่มี target pending ของ rollout active ที่ตรงกันเลย -> ไม่ทำอะไรเลย (never-throw)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
 
       await expect(
         service.recordTargetResult(
@@ -579,25 +601,42 @@ describe('CampaignRolloutService', () => {
           'ok',
         ),
       ).resolves.toBeUndefined();
-      expect(campaignRolloutTarget.findFirst).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
     });
 
-    it('ไม่มี target pending ที่ตรงกับ deviceId -> ไม่ทำอะไรเลย', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
-      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+    it('Config เดียวกันถูก push เข้า 2 กลุ่มพร้อมกัน (active ทั้งคู่) -> จับ rollout ที่มีอุปกรณ์เครื่องนี้เป็นเป้าหมายจริงเท่านั้น ไม่สุ่มไปกลุ่มอื่น', async () => {
+      // scope ด้วย deviceId ผ่าน relation `rollout` ใน where เอง (ดู assert
+      // ด้านบน) — mock นี้แค่ยืนยันว่าถ้า target ที่หาเจอผูกกับ rollout ไหน
+      // ก็อัปเดต rollout นั้นเท่านั้น ไม่ใช่ rollout อื่นที่ active เหมือนกัน
+      const otherActiveRollout: CampaignRollout = {
+        ...activeRollout,
+        id: 'rollout-other-group',
+        campaignId: 'campaign-2',
+      };
+      campaignRolloutTarget.findFirst.mockResolvedValue({
+        ...pendingTarget,
+        rollout: otherActiveRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
 
       await service.recordTargetResult(
-        'DEV-NOT-IN-ROLLOUT',
+        installedDeviceA.deviceId,
         { configId: approvedConfig.id },
         true,
         'ok',
       );
 
-      expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: otherActiveRollout.id },
+        data: { successCount: 1, failureCount: 0, status: 'completed' },
+      });
     });
 
     it('DB error ระหว่างอัปเดต -> ไม่ throw (never-throw)', async () => {
-      campaignRollout.findFirst.mockRejectedValue(new Error('DB ล่ม'));
+      campaignRolloutTarget.findFirst.mockRejectedValue(new Error('DB ล่ม'));
 
       await expect(
         service.recordTargetResult(
