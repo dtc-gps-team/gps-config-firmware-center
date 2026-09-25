@@ -100,6 +100,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # DEBUG (Issue #227) — pull by digest ที่ pin ไว้คืน "manifest unknown"
+      # แม้ login สำเร็จแล้ว เช็คว่า pull by tag ใช้ได้ไหม + digest จริงคืออะไร
+      # ลบ 2 step นี้ออกทันทีหลังยืนยันคำตอบแล้ว ห้ามปล่อยทิ้งไว้ถาวร
+      - name: DEBUG - test pull by tag
+        run: docker pull ghcr.io/dtc-gps-team/minio:RELEASE.2025-09-07T16-13-09Z
+      - name: DEBUG - get canonical digest
+        run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/dtc-gps-team/minio:RELEASE.2025-09-07T16-13-09Z
+
       - name: Start MinIO
         run: |
           # เดิม pull จาก Docker Hub -> quay.io/minio/minio (ทั้งคู่ปิด
