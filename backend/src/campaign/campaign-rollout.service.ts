@@ -12,6 +12,7 @@ import {
   CampaignRolloutStatus,
   CampaignRolloutTarget,
   Device,
+  Prisma,
 } from '@prisma/client';
 import {
   APPROVABLE_CAMPAIGN_ROLLOUT_STATUS,
@@ -114,18 +115,6 @@ export class CampaignRolloutService {
       throw new NotFoundException(`ไม่พบ Campaign id ${campaignId}`);
     }
 
-    const openRollout = await this.prisma.campaignRollout.findFirst({
-      where: {
-        campaignId,
-        status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
-      },
-    });
-    if (openRollout) {
-      throw new ConflictException(
-        `กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว (${openRollout.status}) — ต้องรอให้จบก่อน (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้`,
-      );
-    }
-
     const groupTargets = await this.prisma.campaignTarget.findMany({
       where: { campaignId },
     });
@@ -154,28 +143,49 @@ export class CampaignRolloutService {
         ? await this.validateConfigPayload(dto, targetRefs)
         : await this.validateFirmwarePayload(dto, targetRefs);
 
-    const rollout = await this.prisma.$transaction(async (tx) => {
-      const createdRollout = await tx.campaignRollout.create({
-        data: {
-          campaignId,
-          payloadType: dto.payloadType,
-          configId,
-          firmwareId,
-          status: 'pending_approval',
-          targetCount: rolloutDeviceIds.length,
-          createdBy: actor.id,
-        },
-      });
+    // เช็ค "มีรอบเปิดอยู่ไหม" + สร้าง rollout ต้องอยู่ใน transaction เดียวกัน
+    // (แก้ตาม review B บน PR #224) — เดิมเช็คนอก transaction ทำให้ 2 requests
+    // ที่ยิงพร้อมกัน (double-click/concurrent) ผ่านเช็คนี้ได้ทั้งคู่แล้วสร้าง
+    // rollout ซ้อนกัน ขัด "กลุ่มหนึ่งรัน rollout ได้ทีละรอบ" — ใช้ Serializable
+    // isolation ให้ Postgres detect ความขัดแย้งของ read-then-write นี้เอง (อีก
+    // request จะได้ serialization error แทนที่จะเห็นทั้งคู่ผ่าน)
+    const rollout = await this.prisma.$transaction(
+      async (tx) => {
+        const openRollout = await tx.campaignRollout.findFirst({
+          where: {
+            campaignId,
+            status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
+          },
+        });
+        if (openRollout) {
+          throw new ConflictException(
+            `กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว (${openRollout.status}) — ต้องรอให้จบก่อน (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้`,
+          );
+        }
 
-      await tx.campaignRolloutTarget.createMany({
-        data: rolloutDeviceIds.map((deviceId) => ({
-          rolloutId: createdRollout.id,
-          deviceId,
-        })),
-      });
+        const createdRollout = await tx.campaignRollout.create({
+          data: {
+            campaignId,
+            payloadType: dto.payloadType,
+            configId,
+            firmwareId,
+            status: 'pending_approval',
+            targetCount: rolloutDeviceIds.length,
+            createdBy: actor.id,
+          },
+        });
 
-      return createdRollout;
-    });
+        await tx.campaignRolloutTarget.createMany({
+          data: rolloutDeviceIds.map((deviceId) => ({
+            rolloutId: createdRollout.id,
+            deviceId,
+          })),
+        });
+
+        return createdRollout;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
 
     await this.logAudit('create', actor.id);
     return rollout;
@@ -271,10 +281,26 @@ export class CampaignRolloutService {
    * แล้วอัปเดตผล + คำนวณ `successCount`/`failureCount` ใหม่ ถ้าครบทุกเครื่อง
    * แล้วให้ปิด Rollout เป็น `completed`
    *
+   * **เริ่มคิวรีจาก `CampaignRolloutTarget` scope ด้วย deviceId ก่อนเสมอ**
+   * (แก้ตาม review B บน PR #224) — เดิมหา `CampaignRollout` ก่อนด้วยแค่
+   * `status: active` + configId/firmwareId เฉยๆ ถ้า Config/Firmware เดียวกัน
+   * ถูก push เข้า 2 กลุ่มพร้อมกัน (active ทั้งคู่) `findFirst` จะได้ rollout
+   * ใดรอบหนึ่งแบบไม่รับประกันว่าอุปกรณ์เครื่องนี้เป็นเป้าหมายของรอบนั้นจริง —
+   * ถ้าสุ่มได้รอบที่ไม่มีอุปกรณ์นี้เป็นเป้าหมาย ผลจะหายเงียบๆ (ไม่เจอ target
+   * เลยไม่ทำอะไร) ทั้งที่รอบที่ถูกต้องยังค้าง `pending` อยู่ — คิวรีนี้ scope
+   * ด้วย deviceId ตั้งแต่ต้นผ่านความสัมพันธ์ `rollout` แทน รับประกันว่า
+   * rollout ที่ได้ต้องมีอุปกรณ์เครื่องนี้เป็นเป้าหมายจริงเสมอ **ไม่ต้องเปลี่ยน
+   * signature ให้รับ `rolloutId` ตรงๆ ตามที่เสนอไว้ก่อน** เพราะจะกลาย
+   * เป็นต้องแก้ contract ของ `POST /devices/{deviceId}/apply-config`/
+   * `confirm-firmware-install` ทั้งคู่ (Mobile ต้องรู้ rolloutId ด้วย) — เกิน
+   * ขอบเขตของ bug fix รอบนี้ (เคสที่เหลืออยู่จริงคือถ้าอุปกรณ์เครื่องเดียวกัน
+   * เป็นเป้าหมายของ 2 รอบที่ active พร้อมกันแบบ payload ตรงกันเป๊ะ ยังเป็น
+   * ambiguous case ที่ต้องออกแบบ contract ใหม่ถ้าเจอจริง)
+   *
    * **never-throw** — เป็นแค่ side-effect ติดตามผล ไม่ใช่ core contract ของ
    * apply-config/confirm-firmware-install เอง (mirror pattern `logAudit` ใน
    * ไฟล์นี้/`device.service.ts`) ถ้าไม่เจอ target ที่ match (เช่น apply
-   * นอกแคมเปญ) ก็แค่ไม่ทำอะไรเลย ไม่ error
+   * นอกแคมเปญ) log warning ไว้ debug แล้ว return เฉยๆ ไม่ throw
    */
   async recordTargetResult(
     deviceId: string,
@@ -283,16 +309,6 @@ export class CampaignRolloutService {
     detail: string,
   ): Promise<void> {
     try {
-      // เดิม query CampaignRollout ด้วย status: 'active' + configId/firmwareId
-      // อย่างเดียว ไม่กรองว่า deviceId นี้เป็นสมาชิกของ rollout นั้นจริงไหม —
-      // ถ้ามี 2 กลุ่มที่ต่างกันมี rollout active ที่ใช้ configId เดียวกัน
-      // พร้อมกัน findFirst() อาจหยิบ rollout ผิดกลุ่มมา แล้วหา target ด้วย
-      // deviceId ไม่เจอ (เพราะเครื่องนี้ไม่ได้อยู่ในกลุ่มนั้นจริง) ผลคือ return
-      // เงียบๆ ทั้งที่ rollout ที่ถูกต้อง (อีกกลุ่ม) ยังมี target ค้างรออยู่จริง
-      // แก้โดย join ผ่าน CampaignRolloutTarget ตรงๆ — filter ด้วย deviceId +
-      // status: 'pending' ก่อน แล้วเช็คเงื่อนไข rollout (active + payload) ผ่าน
-      // relation เดียวกัน รับประกันว่า target ที่ได้เป็นสมาชิกจริงของ rollout
-      // ที่ match เท่านั้น
       const target = await this.prisma.campaignRolloutTarget.findFirst({
         where: {
           deviceId,

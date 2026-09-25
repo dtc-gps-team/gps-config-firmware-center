@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { CampaignPayloadType, CampaignRollout } from '@prisma/client';
+import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
@@ -91,6 +91,7 @@ function firmwareDto(): CreateCampaignRolloutDto {
 
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
+  let transactionMock: jest.Mock;
   let campaign: { findUnique: jest.Mock };
   let campaignTarget: { findMany: jest.Mock };
   let campaignRollout: {
@@ -140,6 +141,9 @@ describe('CampaignRolloutService', () => {
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
 
+    transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
+      cb({ campaignRollout, campaignRolloutTarget }),
+    );
     const prismaMock = {
       campaign,
       campaignTarget,
@@ -149,9 +153,7 @@ describe('CampaignRolloutService', () => {
       firmware,
       device,
       auditLog,
-      $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ campaignRollout, campaignRolloutTarget }),
-      ),
+      $transaction: transactionMock,
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -185,6 +187,14 @@ describe('CampaignRolloutService', () => {
           { rolloutId: sampleRollout.id, deviceId: installedDeviceA.deviceId },
           { rolloutId: sampleRollout.id, deviceId: installedDeviceB.deviceId },
         ],
+      });
+    });
+
+    it('เช็ค rollout ค้างอยู่ + สร้าง rollout อยู่ใน $transaction เดียวกัน ด้วย isolationLevel Serializable (กัน race condition — review B บน PR #224)', async () => {
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     });
 
