@@ -15,6 +15,11 @@ jobs:
   lint-and-test:
     name: Backend / lint-and-test
     runs-on: ubuntu-latest
+    # ต้อง read:packages เพื่อ docker login ghcr.io แล้ว pull image MinIO ที่
+    # เรา mirror ไว้เอง (ดู step "Log in to GHCR" — Issue #227, 2026-09-25)
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: backend
@@ -52,8 +57,15 @@ jobs:
       # Object Storage (Firmware, Sprint 3 #23) — FirmwareStorageService ไม่มี
       # mock mode (ดู comment ในไฟล์นั้น) เชื่อม MinIO จริงเสมอ ต้องมี service
       # จริงให้เชื่อมใน CI ด้วย (ดู step "Start MinIO" ด้านล่าง — GitHub Actions
-      # `services:` ไม่รองรับ command override ที่ image quay.io/minio/minio ต้องการ
-      # `server /data` เลยต้อง docker run เองแทนที่จะประกาศเป็น services:)
+      # `services:` ไม่รองรับ command override ที่ image ต้องการ `server /data`
+      # เลยต้อง docker run เองแทนที่จะประกาศเป็น services:)
+      #
+      # 2026-09-25 (Issue #227): quay.io/minio/minio ก็ปิด anonymous pull ตาม
+      # Docker Hub ไปด้วย ("unauthorized" ทุก tag) เช็คแล้ว ghcr.io/minio/minio
+      # และ dl.min.io binary ตรงก็ปิดหมดเหมือนกัน (นโยบายฝั่ง MinIO เอง ไม่ใช่
+      # rate-limit) แก้โดย mirror image เดิม (RELEASE.2025-09-07T16-13-09Z) ขึ้น
+      # `ghcr.io/dtc-gps-team/minio` เอง แล้ว pin ด้วย digest (ไม่ใช่ tag) กัน
+      # supply-chain risk — ดู step "Log in to GHCR"/"Start MinIO" ด้านล่าง
       OBJECT_STORAGE_ENDPOINT: http://localhost:9000
       OBJECT_STORAGE_ACCESS_KEY: gps_minio_admin
       OBJECT_STORAGE_SECRET_KEY: gps_minio_password
@@ -77,19 +89,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Log in to GHCR
+        # Issue #227 — mirror ของเราอยู่ที่ ghcr.io/dtc-gps-team/minio ไม่ได้
+        # เปิด public ให้ pull แบบ anonymous (package ใหม่บน GHCR ไม่ inherit
+        # สิทธิ์จาก repo อัตโนมัติ) เลย login ด้วย GITHUB_TOKEN ของ workflow นี้
+        # เอง (permissions.packages: read ด้านบน) ก่อน pull เสมอ
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Start MinIO
         run: |
-          # Docker Hub เลิกให้ pull image `minio/minio` แบบ anonymous แล้ว
-          # (เจอ "pull access denied" ตั้งแต่ ก.ย. 2569 เป็นต้นมา ไม่ใช่แค่
-          # rate-limit ชั่วคราว) ย้ายไปดึงจาก quay.io/minio/minio แทน — เช็ค
-          # tag จริงจาก https://quay.io/api/v1/repository/minio/minio/tag/
-          # ก่อน pin เสมอ (tag ที่ pin ไว้ก่อนหน้า RELEASE.2025-10-15T17-29-55Z
-          # ไม่มีอยู่จริงบน quay.io — "manifest unknown" — เป็น tag ที่เดาขึ้น
-          # ไม่ได้เช็ค registry จริงก่อน)
+          # เดิม pull จาก Docker Hub -> quay.io/minio/minio (ทั้งคู่ปิด
+          # anonymous pull ไปแล้ว ก.ย. 2569 — ดู comment ใน env ด้านบน) ตอนนี้
+          # pull จาก mirror ของเราเองบน GHCR แทน pin ด้วย digest (ไม่ใช่ tag)
+          # ของ RELEASE.2025-09-07T16-13-09Z (Issue #227, 2026-09-25) — มี
+          # canary workflow แยก (`minio-mirror-canary.yml`) เช็ครายสัปดาห์ว่า
+          # digest นี้ยัง pull ได้อยู่ กันไฟไหม้แบบนี้อีกโดยไม่รู้ตัว
           docker run -d --name minio -p 9000:9000 -p 9001:9001 \
             -e MINIO_ROOT_USER=gps_minio_admin \
             -e MINIO_ROOT_PASSWORD=gps_minio_password \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --console-address ":9001"
+            ghcr.io/dtc-gps-team/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2 server /data --console-address ":9001"
 
           echo "รอ MinIO พร้อมใช้งาน..."
           for i in $(seq 1 30); do
