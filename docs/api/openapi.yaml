@@ -22,13 +22,6 @@ tags:
     description: >-
       คำขอลบ Config อัตโนมัติ (docs/11 Part A) — scheduled job เสนอลบ Config
       ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · ConfigEngineer/ผู้สร้างกด "เก็บไว้"
-  - name: config-override
-    description: >-
-      Per-Field Config Override ACL (issue #185) — ST แก้ค่าบาง field ของ
-      Config ที่ approved/synced แล้วโดยตรง ไม่ผ่าน Approval Center ปกติ
-      (กรณีลูกค้าขอแก้ค่าหน้างาน หรือช่างต้องแก้เพราะเกิดข้อผิดพลาด) OT ไม่มี
-      สิทธิ์เลย — เฉพาะ field ที่ ConfigEngineer เปิด `stOverridable: true` ไว้
-      ใน Parameter Library เท่านั้น
   - name: firmware
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
@@ -413,66 +406,6 @@ paths:
           description: ไม่พบ Config นี้
         "409":
           description: สถานะ Config ปัจจุบันไม่ใช่ testing จึงปฏิเสธไม่ได้
-
-  # เพิ่มใหม่ (issue #185, Phase 1) — Per-Field Config Override: ST แก้ค่าบาง
-  # field ของ Config ที่ approved/synced แล้วโดยตรง ข้าม Approval Center ปกติ
-  # สร้าง ConfigVersion ใหม่ mirror approveConfig ทุกประการ (เผื่อ Rollback
-  # #28 ใช้ต่อ) แค่ actor ไม่ใช่ผู้อนุมัติจริง (ดู description field `reason`)
-  /config/{configId}/override:
-    post:
-      tags: [config-override]
-      operationId: overrideConfig
-      summary: ST override ค่าบาง field ของ Config ที่ approved/synced แล้ว (Per-Field ACL — issue #185)
-      description: >-
-        `fields` เป็น partial update — ใส่แค่ field ที่ต้องการแก้ ทุก key ต้อง
-        `stOverridable: true` ตาม ConfigFieldDefinition ที่เกี่ยวข้อง ไม่งั้น 400
-        · `reason` บังคับกรอกเสมอ (GPS_Config_Firmware_Center_Design.pdf §19
-        ข้อ 24: "ทุกการ Override ต้องมีผู้ดำเนินการ เหตุผล และ Audit Log") ·
-        สร้าง ConfigVersion ใหม่ทุกครั้ง (versioning เผื่อ Rollback ใช้ต่อ) ·
-        เขียน AuditLog บังคับทุกครั้งแบบไม่มีข้อยกเว้น (RBAC_Matrix.md กฎข้อ 3)
-      parameters:
-        - in: path
-          name: configId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [fields, reason]
-              properties:
-                fields:
-                  type: object
-                  additionalProperties: true
-                  description: >-
-                    partial update ของ Config.fields — key ต้องมีนิยามใน
-                    ConfigFieldDefinition และ stOverridable: true
-                reason:
-                  type: string
-                  maxLength: 500
-                  description: เหตุผลของการ override — บังคับกรอกเสมอ
-      responses:
-        "200":
-          description: override สำเร็จ — Config.fields ถูก merge ค่าใหม่เข้าไปแล้ว
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeviceConfigDraft"
-        "400":
-          description: >-
-            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
-            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
-        "401":
-          description: Token ไม่ถูกต้องหรือหมดอายุ
-        "403":
-          description: ไม่มีสิทธิ์ override Config — เฉพาะ Role ST เท่านั้น (OT ไม่มีสิทธิ์เลย)
-        "404":
-          description: ไม่พบ Config นี้
-        "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ approved/synced จึง override ไม่ได้
 
   # เพิ่มใหม่ (Stage 5, #26 ข้อ 9): ประวัติเวอร์ชันของ Config — snapshot
   # append-only ทุกครั้งที่ Operation approve เป็นฐานของ Rollback ใน Phase 4
@@ -1507,12 +1440,12 @@ paths:
       operationId: overrideDeviceConfig
       summary: ST ส่งคำขอ override ค่าบาง field ของ Config เฉพาะอุปกรณ์เครื่องนี้ (Per-device Config Override — issue #223, v3.32)
       description: >-
-        **ต่างจาก `overrideConfig` (`POST /config/{configId}/override`, issue
-        #185) ที่แก้ `Config.fields` ทั้งชุดทันที** — endpoint นี้ไม่แตะ
-        `Config` เดิมเลย เขียนเป็นแถวใหม่ใน `DeviceConfigOverride` (ผูกกับ
+        **ต่างจาก `overrideConfig` เดิม (`POST /config/{configId}/override`,
+        issue #185) ที่เคยแก้ `Config.fields` ทั้งชุดทันที** — endpoint นี้
+        ไม่แตะ `Config` เลย เขียนเป็นแถวใหม่ใน `DeviceConfigOverride` (ผูกกับ
         อุปกรณ์เครื่องนี้เท่านั้น) จึงไม่กระทบอุปกรณ์/แคมเปญอื่นที่ใช้ Config
-        เดียวกัน — endpoint เดิมยังอยู่คู่กัน (Web ใช้) เป็น known tech debt
-        รอทีมตัดสินใจว่าจะรวม/deprecate ทีหลังไหม (ดู PR #223)
+        เดียวกัน — **endpoint เดิมถูกลบไปแล้ว (v3.33, issue #223, แก้ครั้งที่
+        57)** รวมเป็นกลไกเดียวนี้เท่านั้น
 
         **v3.32 (มติ 2026-09-24, request changes บน PR #225 โดย A):**
         endpoint นี้สร้างคำขอสถานะ `pending` เท่านั้น **ไม่มีผลกับ**
@@ -2073,7 +2006,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaigns
-      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.33
+      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.35
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
         createdAt desc · **แก้ไข 2026-09-24:** ตัด query param `status` ออก
@@ -2093,7 +2026,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.33
+      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.35
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign (กลุ่ม) + CampaignTarget (สมาชิก) ใน transaction เดียว ·
@@ -2131,7 +2064,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listAllCampaignRollouts
-      summary: รายการ Rollout ข้ามทุกกลุ่ม — v3.34 (Approval Center)
+      summary: รายการ Rollout ข้ามทุกกลุ่ม — v3.36 (Approval Center)
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
         createdAt desc · **แก้ไข 2026-09-24:** เพิ่มเข้ามาให้ Approval Center
@@ -2162,7 +2095,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaign
-      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.33
+      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.35
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ listCampaigns)
       parameters:
         - in: path
@@ -2187,7 +2120,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignTargets
-      summary: รายชื่อสมาชิกกลุ่ม — v3.33 (Campaign Monitor #22)
+      summary: รายชื่อสมาชิกกลุ่ม — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ getCampaign)
       parameters:
         - in: path
@@ -2212,7 +2145,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRollouts
-      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.33 (Campaign Monitor #22)
+      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม createdAt desc
       parameters:
         - in: path
@@ -2235,7 +2168,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaignRollout
-      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.33 (Campaign Monitor #22)
+      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.35 (Campaign Monitor #22)
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — เลือก
         Config หรือ Firmware มา push เข้าสมาชิกกลุ่ม (default = ทั้งกลุ่ม
@@ -2289,7 +2222,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaignRollout
-      summary: รายละเอียด Rollout 1 รอบ — v3.33 (Campaign Monitor #22)
+      summary: รายละเอียด Rollout 1 รอบ — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`)
       parameters:
         - in: path
@@ -2320,7 +2253,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRolloutTargets
-      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.33 (Campaign Monitor #22)
+      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.35 (Campaign Monitor #22)
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) — อัปเดตจาก
         `applyConfigToDevice`/`confirmFirmwareInstall` จริง (mock mode ก็
@@ -2354,7 +2287,7 @@ paths:
     post:
       tags: [campaign]
       operationId: approveCampaignRollout
-      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.33
+      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.35
       description: >-
         resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
         `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
@@ -2395,7 +2328,7 @@ paths:
     post:
       tags: [campaign]
       operationId: rejectCampaignRollout
-      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.33
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35
       description: >-
         resource เดียวกับ `approveCampaignRollout` (`campaign` action
         `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
@@ -2692,7 +2625,7 @@ components:
     Campaign:
       type: object
       description: >-
-        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.33) ตรง
+        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.35) ตรง
         กับ Prisma model `Campaign` — ไม่ embed สมาชิกกลุ่ม (ดู
         `listCampaignTargets`) หรือประวัติ Rollout (ดู `listCampaignRollouts`)
         **แก้ไข 2026-09-24 (Campaign Monitor #22):** เดิม schema นี้มี
@@ -2758,7 +2691,7 @@ components:
     CampaignTarget:
       type: object
       description: >-
-        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.33, Campaign Monitor
+        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.35, Campaign Monitor
         #22) ตรงกับ Prisma model `CampaignTarget` — ไม่มี status (สมาชิกกลุ่ม
         ไม่ผูกกับผล push รอบไหนรอบหนึ่ง ดู `CampaignRolloutTarget` แทน)
       required: [id, campaignId, deviceId, createdAt]
@@ -2795,7 +2728,7 @@ components:
       description: >-
         1 รอบ push Config หรือ Firmware เข้ากลุ่มอุปกรณ์หนึ่งกลุ่ม
         (listCampaignRollouts/getCampaignRollout/createCampaignRollout —
-        v3.33, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
+        v3.35, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
         รับ field ที่เคยอยู่บน `Campaign` เดิมมาทั้งหมด (ดู tag `campaign`
         description)
       required:
@@ -2870,7 +2803,7 @@ components:
       type: object
       required: [payloadType]
       description: >-
-        Body ของ `createCampaignRollout` (v3.33, Campaign Monitor #22) — ไม่มี
+        Body ของ `createCampaignRollout` (v3.35, Campaign Monitor #22) — ไม่มี
         field เลือก target เอง default = สมาชิกทั้งกลุ่ม เอาบางเครื่องออกได้
         ผ่าน `excludeDeviceIds` เท่านั้น (ไม่รองรับเพิ่มเครื่องนอกกลุ่ม)
       properties:
@@ -2904,7 +2837,7 @@ components:
     CampaignRolloutTarget:
       type: object
       description: >-
-        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.33,
+        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.35,
         Campaign Monitor #22) ตรงกับ Prisma model `CampaignRolloutTarget`
       required: [id, rolloutId, deviceId, status, createdAt, updatedAt]
       properties:

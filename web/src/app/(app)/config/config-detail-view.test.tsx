@@ -10,9 +10,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/auth/auth-provider", () => ({
-  // role Operation: canUpdateConfig/canOverrideConfig ทั้งคู่ false —
-  // ตัด ConfigReviewPanel/ConfigOverridePanel ออกจากการ render กันชน
-  // กับ field list ที่ทดสอบอยู่
+  // role Operation: canUpdateConfig false — ตัด ConfigReviewPanel ออกจากการ
+  // render กันชนกับ field list ที่ทดสอบอยู่ (ConfigOverridePanel ถูกลบไปแล้ว
+  // — issue #223, แก้ครั้งที่ 55)
   useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
 }));
 
