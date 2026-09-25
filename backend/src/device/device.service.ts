@@ -16,6 +16,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryDeviceDto } from './dto/query-device.dto';
 
@@ -104,6 +105,7 @@ export class DeviceService {
     private readonly deviceSimulator: DeviceSimulator,
     private readonly campaignRolloutService: CampaignRolloutService,
     private readonly configDefinitionService: ConfigDefinitionService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -683,7 +685,7 @@ export class DeviceService {
     );
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const override = await this.prisma.$transaction(async (tx) => {
         // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
         // #226 ข้อ 3) — เดิมเช็คแค่ deviceId เฉยๆ ถ้าเครื่องถูก Confirm
         // Install เป็น Config ใหม่ทับระหว่างที่คำขอเก่ายังรอ Operation
@@ -748,6 +750,13 @@ export class DeviceService {
 
         return override;
       });
+
+      // แจ้ง Operation ว่ามีคำขอ pending ใหม่ (issue #226) — never-throw,
+      // เรียกหลังทรานแซกชันสำเร็จแล้วเท่านั้น ไม่ใช่ core contract ของ
+      // endpoint นี้ (ดู `notifyOperationOfPendingOverride()`)
+      await this.notifyOperationOfPendingOverride(override);
+
+      return override;
     } catch (err) {
       if (
         err instanceof PrismaClientKnownRequestError &&
@@ -781,10 +790,71 @@ export class DeviceService {
     return existing;
   }
 
+  /** แจ้ง Operation ทุกคนที่ active ว่ามีคำขอ override ใหม่รอตัดสินใจ (issue
+   * #226) — mirror pattern เดียวกับ `ConfigDeletionService.notifySuperAdmins()`
+   * **never-throw** — เป็นแค่ side-effect ติดตาม ไม่ใช่ core contract ของ
+   * `overrideDeviceConfig()` เอง (ผู้ใช้ต้องเห็นว่าส่งคำขอสำเร็จแม้แจ้งเตือน
+   * ล้มเหลว) */
+  private async notifyOperationOfPendingOverride(
+    override: DeviceConfigOverride,
+  ): Promise<void> {
+    try {
+      const operations = await this.prisma.user.findMany({
+        where: { role: { code: 'Operation' }, isActive: true },
+        select: { id: true },
+      });
+      for (const operation of operations) {
+        await this.notificationService.send({
+          userId: operation.id,
+          type: 'config_override_pending',
+          payload: {
+            overrideId: override.id,
+            deviceId: override.deviceId,
+            configId: override.configId,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน config_override_pending ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** แจ้ง ST ผู้ส่งคำขอ (`overriddenBy`) ว่า Operation ตัดสินใจแล้ว
+   * (approve/reject) — issue #226 · **never-throw** เดียวกับด้านบน */
+  private async notifyRequesterOfDecision(
+    override: DeviceConfigOverride,
+    outcome: 'approved' | 'rejected',
+  ): Promise<void> {
+    try {
+      await this.notificationService.send({
+        userId: override.overriddenBy,
+        type:
+          outcome === 'approved'
+            ? 'config_override_approved'
+            : 'config_override_rejected',
+        payload: {
+          overrideId: override.id,
+          deviceId: override.deviceId,
+          configId: override.configId,
+          ...(outcome === 'rejected'
+            ? { rejectReason: override.rejectReason }
+            : {}),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน config_override_${outcome} ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
   /**
    * Operation อนุมัติคำขอ override (issue #223, มติ 2026-09-24) — เปลี่ยน
    * สถานะเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้อัตโนมัติ** ช่าง
-   * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (ยังไม่ทำใน PR นี้)
+   * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (`applyConfig()`
+   * merge ค่า override ที่ approved แล้วจริงตั้งแต่แก้ไข issue #226)
    * resource `device-config-override` action `Approve` — Operation เท่านั้น
    *
    * **เช็ค `configId` ยังตรงกับ Config ปัจจุบันของอุปกรณ์ไหม (comment A รอบ 2
@@ -815,7 +885,7 @@ export class DeviceService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.deviceConfigOverride.updateMany({
         where: { id, status: 'pending' },
         data: {
@@ -829,7 +899,7 @@ export class DeviceService {
           'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
-      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+      const row = await tx.deviceConfigOverride.findUniqueOrThrow({
         where: { id },
       });
       const metadata: AuditLogMetadata = {
@@ -844,8 +914,13 @@ export class DeviceService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       });
-      return updated;
+      return row;
     });
+
+    // แจ้ง ST ผู้ส่งคำขอว่า Operation อนุมัติแล้ว (issue #226) — never-throw
+    await this.notifyRequesterOfDecision(updated, 'approved');
+
+    return updated;
   }
 
   /** Operation ปฏิเสธคำขอ override — `rejectReason` ไม่บังคับ (Operation
@@ -866,7 +941,7 @@ export class DeviceService {
   ): Promise<DeviceConfigOverride> {
     const existing = await this.getPendingOverrideOrThrow(id);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.deviceConfigOverride.updateMany({
         where: { id, status: 'pending' },
         data: {
@@ -881,7 +956,7 @@ export class DeviceService {
           'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
-      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+      const row = await tx.deviceConfigOverride.findUniqueOrThrow({
         where: { id },
       });
       const metadata: AuditLogMetadata = {
@@ -896,8 +971,13 @@ export class DeviceService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       });
-      return updated;
+      return row;
     });
+
+    // แจ้ง ST ผู้ส่งคำขอว่า Operation ปฏิเสธแล้ว (issue #226) — never-throw
+    await this.notifyRequesterOfDecision(updated, 'rejected');
+
+    return updated;
   }
 
   /** Operation ดูรายการคำขอ override ทั้งหมด — filter ตาม `status` (optional,

@@ -1814,6 +1814,81 @@ describe('DeviceController test-connection (integration — real postgres + guar
       });
     });
 
+    it('Notification flow (issue #226) — pending แจ้ง Operation, approve แจ้ง ST ผู้ request จริงผ่าน DB', async () => {
+      await makeDevice('DCO-NOTIFY-APPROVE', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-NOTIFY-APPROVE', configId);
+      await makeOverridableField('APN', true);
+      await grantStOnce();
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const stTok = tokenFor(stUser.id, 'ST');
+      await grantOpOnce();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const opTok = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-NOTIFY-APPROVE/config-override')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ notification' })
+        .expect(200);
+      const override = res.body as { id: string };
+
+      // Operation ต้องได้รับ notification ว่ามีคำขอ pending ใหม่
+      const pendingNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: opUser.id, type: 'config_override_pending' },
+      });
+      expect(
+        (pendingNotification.payload as { overrideId: string }).overrideId,
+      ).toBe(override.id);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/device-config-overrides/${override.id}/approve`)
+        .set('Authorization', `Bearer ${opTok}`)
+        .expect(200);
+
+      // ST ผู้ request ต้องได้รับ notification ว่า Operation อนุมัติแล้ว
+      const approvedNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: stUser.id, type: 'config_override_approved' },
+      });
+      expect(
+        (approvedNotification.payload as { overrideId: string }).overrideId,
+      ).toBe(override.id);
+    });
+
+    it('Notification flow (issue #226) — reject แจ้ง ST ผู้ request พร้อม rejectReason จริงผ่าน DB', async () => {
+      await makeDevice('DCO-NOTIFY-REJECT', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-NOTIFY-REJECT', configId);
+      await makeOverridableField('APN', true);
+      await grantStOnce();
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const stTok = tokenFor(stUser.id, 'ST');
+      const opTok = await opToken();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-NOTIFY-REJECT/config-override')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ notification' })
+        .expect(200);
+      const override = res.body as { id: string };
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/device-config-overrides/${override.id}/reject`)
+        .set('Authorization', `Bearer ${opTok}`)
+        .send({ rejectReason: 'ค่าไม่เหมาะสม' })
+        .expect(200);
+
+      const rejectedNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: stUser.id, type: 'config_override_rejected' },
+      });
+      const payload = rejectedNotification.payload as {
+        overrideId: string;
+        rejectReason: string;
+      };
+      expect(payload.overrideId).toBe(override.id);
+      expect(payload.rejectReason).toBe('ค่าไม่เหมาะสม');
+    });
+
     it('Operation reject -> สถานะ rejected พร้อม rejectReason, ไม่กระทบ GET /config, versionNumber รอบถัดไปยังนับต่อจากแถวที่ถูก reject', async () => {
       await makeDevice('DCO-REJ', 'installed');
       const configId = await makeConfig('approved');
