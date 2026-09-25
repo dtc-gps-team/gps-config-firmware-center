@@ -52,21 +52,23 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  role                      Role                    @relation(fields: [roleId], references: [id])
-  tasks                     Task[]
-  notifications             Notification[]
-  deviceTokens              DeviceToken[]
-  auditLogs                 AuditLog[]
-  configsCreated            Config[]                @relation("ConfigCreatedBy")
-  configsApproved           Config[]                @relation("ConfigApprovedBy")
-  configsSuggestedToApprove Config[]                @relation("ConfigSuggestedApprover")
-  firmwareUploads           Firmware[]
-  firmwareApprovals         Firmware[]              @relation("FirmwareApprovedBy")
-  campaignsCreated          Campaign[]              @relation("CampaignCreatedBy")
-  campaignRolloutsCreated   CampaignRollout[]       @relation("CampaignRolloutCreatedBy")
-  campaignRolloutsApproved  CampaignRollout[]       @relation("CampaignRolloutApprovedBy")
-  configVersionsApproved    ConfigVersion[]         @relation("ConfigVersionApprovedBy")
-  configDeletionReviews     ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
+  role                          Role                    @relation(fields: [roleId], references: [id])
+  tasks                         Task[]
+  notifications                 Notification[]
+  deviceTokens                  DeviceToken[]
+  auditLogs                     AuditLog[]
+  configsCreated                Config[]                @relation("ConfigCreatedBy")
+  configsApproved                Config[]                @relation("ConfigApprovedBy")
+  configsSuggestedToApprove     Config[]                @relation("ConfigSuggestedApprover")
+  firmwareUploads               Firmware[]
+  firmwareApprovals             Firmware[]              @relation("FirmwareApprovedBy")
+  campaignsCreated              Campaign[]              @relation("CampaignCreatedBy")
+  campaignRolloutsCreated       CampaignRollout[]       @relation("CampaignRolloutCreatedBy")
+  campaignRolloutsApproved      CampaignRollout[]       @relation("CampaignRolloutApprovedBy")
+  configVersionsApproved        ConfigVersion[]         @relation("ConfigVersionApprovedBy")
+  configDeletionReviews         ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
+  deviceConfigOverrides         DeviceConfigOverride[]  @relation("DeviceConfigOverrideBy")
+  deviceConfigOverrideDecisions DeviceConfigOverride[]  @relation("DeviceConfigOverrideDecidedBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -363,7 +365,8 @@ model Device {
   // ในนี้แล้วหลัง backfill ครบทุกแถวใน seed.ts (ยืนยันด้วย query ตรง — ดู
   // migration `..._device_model_id_not_null`)
   modelId              String
-  model                DeviceModel           @relation(fields: [modelId], references: [id])
+  model                DeviceModel            @relation(fields: [modelId], references: [id])
+  configOverrides      DeviceConfigOverride[]
 
   // Dual Partition (mock) — จำลอง concept จาก GPS_Config_Firmware_Center_Design.pdf
   // §11.3 ("Firmware ควรกำหนด Rollback Target ล่วงหน้า และใช้ Dual Partition
@@ -485,6 +488,7 @@ model Config {
   versions          ConfigVersion[]
   tasks             Task[]
   deletionRequests  ConfigDeletionRequest[]
+  deviceOverrides   DeviceConfigOverride[]
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve
@@ -519,6 +523,91 @@ model ConfigVersion {
 
   @@unique([configId, versionNumber])
   @@index([configId])
+}
+
+enum DeviceConfigOverrideStatus {
+  pending
+  approved
+  rejected
+}
+
+// เพิ่มใหม่ (issue #223 — Per-device Config Override) — mirror ConfigVersion
+// เกือบทั้งหมด ต่างกันแค่ scope: ตัวนี้ผูกกับ**อุปกรณ์เครื่องเดียว** ไม่ใช่ทั้ง
+// Config ที่ใช้ร่วมกันหลายเครื่อง (ปัญหาที่ paveekornkwork-dev (A) ชี้ไว้ระหว่าง
+// รีวิว PR #222 — override เดิม (issue #185, `POST /config/{configId}/override`)
+// แก้ `Config.fields` ทั้งชุด กระทบทุกอุปกรณ์ที่ใช้ Config เดียวกัน) —
+// `GET /devices/{deviceId}/config` (`DeviceService.getCurrentConfig()`) merge
+// เฉพาะแถว `status: approved` ทับ `Config.fields` (base) ก่อนคืนกลับ ไม่แตะ
+// `Config`/`ConfigVersion` เดิมเลย — endpoint เดิม `POST /config/{configId}/override`
+// (Web, PR #199) จะถูก deprecate โดย A แยก PR หลัง PR #225 merge (มติบันทึกใน
+// issue #223, ดู PR #225 review — เลือกรวมเป็น mechanism เดียว ไม่คงคู่กัน
+// ต่างจากที่ร่างไว้ตอนแรกใน PR #225)
+//
+// **มติ 2026-09-24 (บันทึกใน issue #223, request changes บน PR #225 โดย A):**
+// override ไม่มีผลทันทีอีกต่อไป — ต้องผ่าน Operation อนุมัติก่อน (Separation
+// of Duty เดิม) เหมือน Config ปกติ: ST ส่งคำขอ (`status: pending`) →
+// Operation อนุมัติ/ปฏิเสธ (`approved`/`rejected`, เก็บ `decidedBy`/
+// `decidedAt`/`rejectReason`) → หลังอนุมัติแล้วช่างต้องกด apply Config เข้า
+// เครื่องเองอีกครั้งผ่าน `apply-config` เดิม (ยังไม่ทำใน PR นี้ — แยกเป็น PR
+// ถัดไปตามที่ A เสนอ) — เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ
+// (`DeviceService.overrideDeviceConfig()` เช็คก่อนสร้าง 409 ถ้ามีอยู่แล้ว)
+//
+// **`deviceId` เป็น FK จริงไป `Device.deviceId`** (unique business key ไม่ใช่
+// `Device.id` UUID ภายใน — ตรงกับ convention ที่ endpoint อื่นทุกตัวอ้างอุปกรณ์
+// ด้วยเลขเครื่องจริงเสมอ) — **ตั้งใจต่างจาก** `Task.deviceId`/
+// `CampaignTarget.deviceId` เดิมที่เป็น string หลวมๆ ไม่มี FK คุมเลย (รอบนี้
+// อยากได้ FK จริงคุ้มครองข้อมูลให้แน่นขึ้น เพราะเป็นตารางใหม่ ไม่มี legacy
+// data ที่หลุด convention ต้อง normalize แบบสองตารางเดิม)
+//
+// **Deviation จาก `GPS_Data_Dictionary.xlsx` โดยตั้งใจ (ตาม CLAUDE.md หัวข้อ
+// Deviation, ชี้โดย A ระหว่างรีวิว PR #225):** DD มีตาราง
+// `DEVICE_CONFIG_OVERRIDE` อยู่แล้ว แต่เป็น **1 แถวต่อ 1 field**
+// (`config_definition_id` FK + `value` เดี่ยว) และ FK ไป `DEVICE(id)` — ตัวนี้
+// เก็บ **snapshot สะสมทั้งก้อนเป็น version** (`fields` JSON หลาย field ต่อแถว)
+// mirror สไตล์ `ConfigVersion` แทน (เหตุผลเดียวกับที่ `ConfigVersion` เก็บ
+// แบบ snapshot ไม่ใช่ 1 แถวต่อ field) และ FK ไป `Device.deviceId` ไม่ใช่
+// `Device.id` (ดูย่อหน้าบน) — อีกจุด: DD เขียนว่า override ทำบน **Web
+// เท่านั้น** (ตัดออกจาก Mobile ตั้งแต่ต้น) แต่มติล่าสุด (2026-09-24) เปลี่ยน
+// ให้ช่างหน้างานส่งคำขอผ่าน Mobile ได้ (ต้องผ่าน Operation อนุมัติเหมือนกัน
+// ไม่ใช่ bypass) — เป็น deviation ที่ตั้งใจ ไม่ใช่หลุด spec เงียบๆ
+model DeviceConfigOverride {
+  id            String                     @id @default(uuid())
+  deviceId      String
+  // denormalized ไว้เพื่อ audit ว่า override ทับ Config ตัวไหน ณ ตอนนั้น —
+  // "Config ปัจจุบัน" ของอุปกรณ์ (จาก Task ล่าสุดที่ completed) เปลี่ยนได้ถ้ามี
+  // Confirm Install ใหม่ทับทีหลัง ค่านี้จึงเป็น snapshot ไม่ใช่ live reference
+  configId      String
+  // running number ต่อ**อุปกรณ์** (1, 2, 3...) mirror ConfigVersion.versionNumber
+  // แต่ scope เป็นรายเครื่อง ไม่ใช่รายConfig — นับรวมทุกสถานะ (ไม่ใช่แค่
+  // approved) กัน versionNumber ชนกันหลัง reject แล้วส่งคำขอใหม่
+  versionNumber Int
+  fields        Json
+  // เหตุผลของคำขอ override — บังคับกรอกเสมอ (mirror ConfigVersion.reason แต่ที่นี่
+  // ไม่ nullable เพราะทุกแถวมาจาก override เท่านั้น ไม่มี flow อื่นที่สร้างแถวนี้
+  // แบบ "ปกติ" เหมือน ConfigVersion ที่มาได้ทั้งจาก approve()/override())
+  reason        String
+  status        DeviceConfigOverrideStatus @default(pending)
+  overriddenBy  String
+  overriddenAt  DateTime                   @default(now())
+  // ผู้อนุมัติ/ปฏิเสธ — null จนกว่า Operation จะตัดสินใจ (status ยัง pending)
+  decidedBy     String?
+  decidedAt     DateTime?
+  // เหตุผลตอนปฏิเสธ — optional (Operation อาจไม่ระบุก็ได้) ไม่มีความหมายถ้า
+  // status ไม่ใช่ rejected
+  rejectReason  String?
+
+  // onDelete: Restrict (ไม่ใช่ Cascade เดิม — แก้ตาม review A บน PR #225) ทั้ง
+  // Device และ Config — ประวัติคำขอ/override เป็นข้อมูลเชิง audit ไม่ควรหาย
+  // ไปเงียบๆ ตอนลบอุปกรณ์หรือ Config (ในทางปฏิบัติทั้งคู่ไม่มีทาง hard-delete
+  // อยู่แล้วตอนนี้ — ไม่มี endpoint ลบ Device เลย, Config ลบได้แค่ตอนยัง draft)
+  device    Device @relation(fields: [deviceId], references: [deviceId], onDelete: Restrict)
+  config    Config @relation(fields: [configId], references: [id], onDelete: Restrict)
+  overrider User   @relation("DeviceConfigOverrideBy", fields: [overriddenBy], references: [id])
+  decider   User?  @relation("DeviceConfigOverrideDecidedBy", fields: [decidedBy], references: [id])
+
+  @@unique([deviceId, versionNumber])
+  @@index([deviceId])
+  @@index([status])
 }
 
 // เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน

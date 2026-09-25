@@ -402,6 +402,45 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .send({ payloadType: 'Config', configId: config.id })
         .expect(201);
     });
+
+    it('2 request approve/reject พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(creator.id, []);
+      const rollout = await seedPendingRollout(campaign.id, creator.id);
+      const approver1 = await makeUser(prisma, { role: 'Operation' });
+      const approver2 = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer())
+          .post(
+            `/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/approve`,
+          )
+          .set(
+            'Authorization',
+            `Bearer ${tokenFor(approver1.id, 'Operation')}`,
+          ),
+        request(app.getHttpServer())
+          .post(
+            `/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/reject`,
+          )
+          .set(
+            'Authorization',
+            `Bearer ${tokenFor(approver2.id, 'Operation')}`,
+          ),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort((a, b) => a - b);
+      expect(statuses).toEqual([200, 409]);
+
+      // ผลลัพธ์สุดท้ายใน DB ต้องตรงกับคำขอที่ชนะจริง ไม่ใช่ทั้งคู่ผสมกัน
+      const final = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      expect(['active', 'rejected']).toContain(final.status);
+      const winner = res1.status === 200 ? 'active' : 'rejected';
+      expect(final.status).toBe(winner);
+    });
   });
 
   describe('POST /campaigns/:campaignId/rollouts/:id/resume (Incident & Rollback #28)', () => {

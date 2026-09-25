@@ -7,11 +7,11 @@ import { canCreateCampaign } from "@/lib/permissions";
 import { buttonVariants } from "@/components/ui/button";
 
 /**
- * ปุ่ม "+ สร้างแคมเปญ" — Operation เท่านั้น (RBAC_Matrix.md Section 2 แถว
- * Campaign Wizard) role อื่นดูได้อย่างเดียว ไม่เห็นปุ่มนี้เลย
+ * ปุ่ม "+ สร้างกลุ่มอุปกรณ์" — Operation เท่านั้น (RBAC_Matrix.md Section 2
+ * แถว Campaign Wizard) role อื่นดูได้อย่างเดียว ไม่เห็นปุ่มนี้เลย
  *
  * เป็น UX-level gate เท่านั้น — การบังคับสิทธิ์จริงอยู่ที่ backend
- * PermissionGuard เสมอ · พาไปหน้า wizard `/campaigns/new`
+ * PermissionGuard เสมอ · พาไปหน้าสร้างกลุ่ม `/campaigns/new`
  */
 export function CreateCampaignButton() {
   const { session } = useAuth();
@@ -20,7 +20,7 @@ export function CreateCampaignButton() {
 
   return (
     <Link href="/campaigns/new" className={buttonVariants()}>
-      + สร้างแคมเปญ
+      + สร้างกลุ่มอุปกรณ์
     </Link>
   );
 }

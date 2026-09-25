@@ -520,58 +520,67 @@ void main() {
     });
 
     test(
-      'overrideConfig -> POST /config/{configId}/override with {fields, reason}',
+      'overrideDeviceConfig -> POST /devices/{deviceId}/config-override with '
+      '{fields, reason} คืนคำขอ status pending (issue #223, มติ 2026-09-24 — '
+      'per-device, not the old config-scoped endpoint)',
       () async {
-        final (:client, :adapter) = _clientReturning(
-          configJson(id: 'c1', status: 'approved'),
-        );
+        final (:client, :adapter) = _clientReturning({
+          'id': 'ov-1',
+          'deviceId': 'DEV-0117',
+          'configId': 'c1',
+          'versionNumber': 1,
+          'fields': {'APN': 'new-apn'},
+          'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+          'status': 'pending',
+          'overriddenBy': 'st-1',
+          'overriddenAt': '2026-09-24T00:00:00.000Z',
+        });
 
-        final config = await client.overrideConfig(
-          configId: 'c1',
+        final override = await client.overrideDeviceConfig(
+          deviceId: 'DEV-0117',
           fields: {'APN': 'new-apn'},
           reason: 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
         );
 
         expect(adapter.lastRequest?.method, 'POST');
-        expect(adapter.lastRequest?.path, '/config/c1/override');
+        expect(adapter.lastRequest?.path, '/devices/DEV-0117/config-override');
         expect(adapter.lastRequest?.data, {
           'fields': {'APN': 'new-apn'},
           'reason': 'ลูกค้าขอเปลี่ยนค่าหน้างาน',
         });
-        expect(config.id, 'c1');
+        expect(override.id, 'ov-1');
+        expect(override.status, 'pending');
+        expect(override.fields['APN'], 'new-apn');
       },
     );
 
-    test(
-      'overrideConfig -> 400 (field ไม่อนุญาตให้ override) maps to ApiException '
-      'พร้อม details',
-      () async {
-        final client = _clientFailingWith(
-          (o) => DioException(
-            requestOptions: o,
-            response: _response(o, 400, {
-              'message': 'ค่าที่ขอ override ไม่ผ่านการตรวจสอบ',
-              'errors': ['field "COMMAND_PASSWORD" ไม่อนุญาตให้ override'],
-            }),
-          ),
-        );
+    test('overrideDeviceConfig -> 400 (field ไม่อนุญาตให้ override) maps to '
+        'ApiException พร้อม details', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 400, {
+            'message': 'ค่าที่ขอ override ไม่ผ่านการตรวจสอบ',
+            'errors': ['field "COMMAND_PASSWORD" ไม่อนุญาตให้ override'],
+          }),
+        ),
+      );
 
-        await expectLater(
-          client.overrideConfig(
-            configId: 'c1',
-            fields: {'COMMAND_PASSWORD': 'x'},
-            reason: 'ทดสอบ',
-          ),
-          throwsA(
-            isA<ApiException>()
-                .having((e) => e.statusCode, 'statusCode', 400)
-                .having((e) => e.details, 'details', [
-                  'field "COMMAND_PASSWORD" ไม่อนุญาตให้ override',
-                ]),
-          ),
-        );
-      },
-    );
+      await expectLater(
+        client.overrideDeviceConfig(
+          deviceId: 'DEV-0117',
+          fields: {'COMMAND_PASSWORD': 'x'},
+          reason: 'ทดสอบ',
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 400)
+              .having((e) => e.details, 'details', [
+                'field "COMMAND_PASSWORD" ไม่อนุญาตให้ override',
+              ]),
+        ),
+      );
+    });
 
     Map<String, dynamic> definitionJson({
       String id = 'def-1',

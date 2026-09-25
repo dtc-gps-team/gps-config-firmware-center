@@ -5,10 +5,10 @@ export const metadata = {
 };
 
 /**
- * รายการแคมเปญ — ต่อ `GET /campaigns` จริงแล้ว (Sprint 3 #21) · ปุ่มสร้างพา
- * ไป Campaign Wizard (`/campaigns/new`, Operation เท่านั้น) · Campaign
- * Monitor (ติดตาม Failure Rate จริง จาก successCount/failureCount) ยังไม่ทำ
- * ในรอบนี้ — รอ Sprint 3 #22
+ * รายการแคมเปญ (กลุ่มอุปกรณ์) — ต่อ `GET /campaigns` จริง · ปุ่มสร้างพาไปหน้า
+ * สร้างกลุ่ม (`/campaigns/new`, Operation เท่านั้น) — แก้ไข 2026-09-24
+ * (Campaign Monitor #22): กลุ่มหนึ่ง push Config/Firmware เข้าได้หลายรอบผ่าน
+ * "Roll out ใหม่" ในหน้ารายละเอียดกลุ่ม แต่ละรอบมี Failure Rate จริงต่อเครื่อง
  */
 export default function CampaignsPage() {
   return (
@@ -16,7 +16,7 @@ export default function CampaignsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Campaign</h1>
         <p className="text-sm text-muted-foreground">
-          สร้าง/ติดตามแคมเปญ · สร้างได้เฉพาะ Role Operation
+          สร้าง/ติดตามกลุ่มอุปกรณ์ · สร้างได้เฉพาะ Role Operation
         </p>
       </div>
 

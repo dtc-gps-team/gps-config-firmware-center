@@ -206,14 +206,11 @@ async function main() {
     grant('Admin', 'config', 'Read'),
 
     // ---- config-override (Per-Field Override ACL, issue #185) ----
-    // overrideConfig — ให้เฉพาะ ST เท่านั้น ไม่ให้ OT เลยสักฟิลด์ (ตัดสินใจ
-    // ร่วมกับ B 2026-09-18 — ชื่อ resource สื่อ "ST เท่านั้น" ตรงตัว) —
-    // แยก resource ใหม่จาก 'config'+Update เพราะเป็นคนละ flow กันโดยสิ้นเชิง
-    // (override ข้าม Approval Center ไปเลย ต้องคุมแยกจาก Update ปกติที่ไม่มี
-    // role ไหนได้อยู่แล้วในตอนนี้) ถ้าต้องการเปิดให้ role ที่ 3 override ได้
-    // ทีหลัง เพิ่ม grant ตรงนี้ได้เลย ไม่ต้องแก้ schema (YAGNI — ดูคอมเมนต์
-    // ที่ ConfigFieldDefinition.stOverridable ใน schema.prisma)
-    grant('ST', 'config-override', 'Override'),
+    // เดิม grant('ST', 'config-override', 'Override') — endpoint
+    // `POST /config/{configId}/override` ถูกลบไปแล้ว (issue #223, มติ
+    // 2026-09-24 — รวมเป็น "Per-device Config Override" เดียว ดู
+    // resource `device-config-override` ด้านล่างแทน — RBAC_Matrix.md
+    // footnote ⁴ + changelog แก้ครั้งที่ 55)
 
     // ---- config-simulation (Stage 3, #26) ----
     // simulateConfig — resource แยกจาก 'config' ธรรมดาโดยตั้งใจ: ConfigEngineer/
@@ -276,6 +273,23 @@ async function main() {
     // เพราะ endpoint นี้เขียน AuditLog จริง — ดู device.controller.ts
     grant('ST', 'device-firmware-confirm', 'Create'),
     grant('OT', 'device-firmware-confirm', 'Create'),
+
+    // ---- device-config-override (issue #223, มติ 2026-09-24) ----
+    // Per-device Config Override — mirror config-override เดิม (issue #185,
+    // ถูกลบไปแล้ว — ดู comment ด้านบน) เรื่อง grant ให้ ST เท่านั้น ไม่ให้ OT
+    // เลยสักฟิลด์ resource แยกจากของเดิม เพราะคนละ endpoint/scope กัน
+    // (เครื่องเดียว ไม่ใช่ Config ทั้งชุด)
+    //
+    // POST /devices/{deviceId}/config-override — ST ส่งคำขอ (สถานะ pending)
+    grant('ST', 'device-config-override', 'Override'),
+    // GET /device-config-overrides — Operation ดูคิวคำขอรออนุมัติ (mirror
+    // resource `config-deletion` action Read สำหรับ list เดียวกัน)
+    grant('Operation', 'device-config-override', 'Read'),
+    // POST /device-config-overrides/{id}/approve · .../reject — Operation
+    // ตัดสินใจ (Separation of Duty เดิม — ST ส่งคำขอ Operation อนุมัติ)
+    // action เดียวกันคุมทั้ง approve/reject mirror `config-deletion`
+    // (`rejectConfigDeletionRequest` ก็ใช้ action Approve เดียวกับ approve)
+    grant('Operation', 'device-config-override', 'Approve'),
 
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [

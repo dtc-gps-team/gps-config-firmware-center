@@ -153,17 +153,49 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
   decommissioned: "danger",
 };
 
-/** Campaign lifecycle — Campaign Approval (แก้ไข 2026-09-18, PR #186):
- * สร้างแล้วเป็น pending_approval ก่อนเสมอ ต้องรอ Operation อีกคนอนุมัติ
- * (→ active) หรือปฏิเสธ (→ rejected) — completed/cancelled ยังไม่มี
- * endpoint เปลี่ยนสถานะเข้า-ออก (รอ Campaign Monitor, Sprint 3 #22) */
-export const CAMPAIGN_STATUS_TONE: Record<string, PillTone> = {
-  draft: "neutral",
+/** CampaignRollout lifecycle (แก้ไข 2026-09-24, Campaign Monitor #22 — เดิม
+ * ชื่อ `CAMPAIGN_STATUS_TONE` อยู่บน `Campaign` ตรงๆ ย้ายมาอยู่ที่
+ * `CampaignRollout` แทน ไม่มี `draft` อีกต่อไป): สร้างแล้วเป็น
+ * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `active`) หรือ
+ * ปฏิเสธ (→ `rejected`) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อ
+ * ทุกเครื่องมีผลครบ */
+export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   pending_approval: "progress",
   active: "success",
   rejected: "danger",
   completed: "success",
   cancelled: "danger",
+};
+
+/**
+ * ข้อความ "ขั้นตอนถัดไป" ต่อสถานะ CampaignRollout (แก้ไข 2026-09-24 —
+ * feedback: กดอนุมัติแล้วดูเหมือนไม่มีอะไรเกิดขึ้นต่อ เพราะไม่รู้ว่า `active`
+ * แปลว่า "ปลดล็อกให้ช่างไปทำที่เครื่องได้แล้ว" — ระบบเป็น PULL model ไม่มีทาง
+ * push เข้าเครื่องจากเว็บได้เลย ดู comment เหนือ `DeviceService.applyConfig`
+ * ฝั่ง backend — mirror `getConfigNextStepMessage` ด้านบน */
+export function getRolloutStatusExplanation(status: string): string {
+  switch (status) {
+    case "pending_approval":
+      return "รอ Operation อีกคนอนุมัติก่อน ถึงจะเริ่มให้ช่างไปทำที่เครื่องได้";
+    case "active":
+      return "อนุมัติแล้ว — รอช่างหน้างาน (ST/OT) ไปกดใส่ Config หรือยืนยันติดตั้ง Firmware ทีละเครื่องผ่าน Mobile";
+    case "rejected":
+      return "ถูกปฏิเสธ — เริ่มรอบใหม่ได้จากหน้ากลุ่ม";
+    case "completed":
+      return "ทุกเครื่องในรอบนี้มีผลครบแล้ว";
+    case "cancelled":
+      return "ถูกยกเลิก";
+    default:
+      return "";
+  }
+}
+
+/** ผลของ CampaignRollout ต่อเครื่อง (Campaign Monitor #22) — `pending` คือ
+ * ยังไม่มีช่างไป apply-config/confirm-install เข้าเครื่องนั้นเลย */
+export const CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE: Record<string, PillTone> = {
+  pending: "neutral",
+  success: "success",
+  failed: "danger",
 };
 
 /** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend

@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType, Config } from '@prisma/client';
+import { ActionType, DeviceConfigOverride } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
@@ -19,10 +19,12 @@ import type { ConfigApplyResult } from './config-applier';
 import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
 import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
+import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import type {
   ActingUser,
+  ConfigWithDeviceOverride,
   ConfirmFirmwareInstallResult,
   DeviceWithCustomer,
 } from './device.service';
@@ -41,10 +43,18 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
 //                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
-//   GET  /devices/:deviceId/config — Config ปัจจุบันของอุปกรณ์ (issue #211)
+//   GET  /devices/:deviceId/config — Config ปัจจุบันของอุปกรณ์ (issue #211,
+//                                 merge override ที่ approved แล้วจาก #223
+//                                 ถ้ามี + pendingOverride ถ้ามีคำขอค้างอยู่)
 //                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
 //   POST /devices/:deviceId/confirm-firmware-install — ยืนยันติดตั้ง Firmware
 //                                 (issue #181) — ช่างหน้างาน ST/OT ผ่าน Mobile
+//   POST /devices/:deviceId/config-override — Per-device Config Override —
+//                                 ส่งคำขอ (สถานะ pending) (issue #223) —
+//                                 ช่างหน้างาน ST เท่านั้น
+//
+// คิวอนุมัติของ Operation อยู่คนละ controller (`device-config-override.controller.ts`,
+// path `/device-config-overrides`, ไม่ nest ใต้ `/devices/:deviceId`) — ดูที่นั่น
 //
 // **ยังไม่ implement `GET /devices/:deviceId/status`** — มีแต่ spec ใน
 // openapi.yaml (schema `DeviceStatus`) ยังไม่เคยมีโค้ดจริง · การคำนวณ
@@ -127,8 +137,27 @@ export class DeviceController {
   // เปิดหน้า Override
   @Get(':deviceId/config')
   @RequirePermission('device-current-config', ActionType.Read)
-  getCurrentConfig(@Param('deviceId') deviceId: string): Promise<Config> {
+  getCurrentConfig(
+    @Param('deviceId') deviceId: string,
+  ): Promise<ConfigWithDeviceOverride> {
     return this.deviceService.getCurrentConfig(deviceId);
+  }
+
+  // resource ใหม่ `device-config-override` action `Override` — grant ST
+  // เท่านั้น (mirror `config-override` เดิม, issue #185 — seed.ts) OT ไม่มี
+  // สิทธิ์เลยเหมือนกัน Per-device Config Override (issue #223, มติ
+  // 2026-09-24) — ดู comment เหนือ `DeviceService.overrideDeviceConfig()` —
+  // คืนคำขอที่เพิ่งสร้าง (สถานะ `pending` เสมอ) ไม่ใช่ Config ที่ merge แล้ว
+  // เหมือนเดิม เพราะยังไม่มีผลจนกว่า Operation จะอนุมัติ
+  @Post(':deviceId/config-override')
+  @RequirePermission('device-config-override', ActionType.Override)
+  @HttpCode(HttpStatus.OK)
+  overrideDeviceConfig(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: DeviceConfigOverrideDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceConfigOverride> {
+    return this.deviceService.overrideDeviceConfig(deviceId, dto, toActor(req));
   }
 
   // resource ใหม่ `device-firmware-confirm` action `Create` — grant ให้ ST/OT
