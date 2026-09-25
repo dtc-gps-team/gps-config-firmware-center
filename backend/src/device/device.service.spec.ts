@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config, Device, Firmware } from '@prisma/client';
+import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
@@ -115,6 +116,7 @@ describe('DeviceService', () => {
   let connectionTester: jest.Mocked<DeviceConnectionTester>;
   let configApplier: jest.Mocked<ConfigApplier>;
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
+  let campaignRolloutService: { recordTargetResult: jest.Mock };
   let validateOverridableFields: jest.Mock;
 
   beforeEach(async () => {
@@ -134,6 +136,9 @@ describe('DeviceService', () => {
     connectionTester = { testConnection: jest.fn() };
     configApplier = { applyConfig: jest.fn() };
     deviceSimulator = { simulateConfig: jest.fn() };
+    campaignRolloutService = {
+      recordTargetResult: jest.fn().mockResolvedValue(undefined),
+    };
     validateOverridableFields = jest.fn().mockResolvedValue(undefined);
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
@@ -169,6 +174,7 @@ describe('DeviceService', () => {
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
         { provide: CONFIG_APPLIER, useValue: configApplier },
         { provide: DEVICE_SIMULATOR, useValue: deviceSimulator },
+        { provide: CampaignRolloutService, useValue: campaignRolloutService },
         {
           provide: ConfigDefinitionService,
           useValue: { validateOverridableFields },
@@ -397,6 +403,21 @@ describe('DeviceService', () => {
       });
     });
 
+    it('Campaign Monitor (#22, แก้ไข 2026-09-24) -> เรียก recordTargetResult ด้วย deviceId/configId/ผล applied/details', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(campaignRolloutService.recordTargetResult).toHaveBeenCalledWith(
+        'DTC-0001',
+        { configId: approvedConfig.id },
+        true,
+        applyResult.details.join(' · '),
+      );
+    });
+
     it('AuditLog เขียนไม่สำเร็จ -> applyConfig() ยังสำเร็จปกติ (never-throw)', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue(approvedConfig);
@@ -509,6 +530,24 @@ describe('DeviceService', () => {
           },
         },
       });
+    });
+
+    it('Campaign Monitor (#22, แก้ไข 2026-09-24) -> เรียก recordTargetResult ด้วย deviceId/firmwareId/success:true เสมอ', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        st,
+      );
+
+      expect(campaignRolloutService.recordTargetResult).toHaveBeenCalledWith(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        true,
+        expect.any(String) as string,
+      );
     });
 
     it('AuditLog เขียนไม่สำเร็จ -> โยน error ต่อ (ต่างจาก applyConfig — ไม่ใช่ never-throw เพราะไม่มีการกระทำอื่นให้ถือว่าสำเร็จแล้ว)', async () => {

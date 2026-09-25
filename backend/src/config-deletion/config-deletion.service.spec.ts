@@ -17,7 +17,7 @@ type SweepWhere = {
   deletedAt: null;
   updatedAt: { lt: Date };
   tasks: { none: Record<string, unknown> };
-  campaigns: { none: Record<string, unknown> };
+  campaignRollouts: { none: Record<string, unknown> };
   incidents: { none: Record<string, unknown> };
   deletionRequests: {
     none: { OR: { status: string; reviewedAt?: { gte: Date } }[] };
@@ -133,7 +133,7 @@ describe('ConfigDeletionService', () => {
       expect(where.status).toEqual({ in: ['draft', 'rejected'] });
       expect(where.deletedAt).toBeNull();
       expect(where.tasks).toEqual({ none: {} });
-      expect(where.campaigns).toEqual({ none: {} });
+      expect(where.campaignRollouts).toEqual({ none: {} });
       expect(where.incidents).toEqual({ none: {} });
 
       // updatedAt < now - 90d

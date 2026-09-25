@@ -66,7 +66,7 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
     }
   });
 
-  it('Campaign.configId เป็น optional relation (ON DELETE SET NULL) -> ลบ Config แล้ว Campaign เหลืออยู่พร้อม configId เป็น null', async () => {
+  it('CampaignRollout.configId เป็น optional relation (ON DELETE SET NULL) -> ลบ Config แล้ว Rollout เหลืออยู่พร้อม configId เป็น null', async () => {
     const configEngineer = await makeUser(prisma, { role: 'ConfigEngineer' });
     const operation = await makeUser(prisma, { role: 'Operation' });
 
@@ -82,7 +82,14 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
 
     const campaign = await prisma.campaign.create({
       data: {
-        name: 'Rollout GT06N batch 1',
+        name: 'กลุ่ม GT06N batch 1',
+        createdBy: operation.id,
+      },
+    });
+
+    const rollout = await prisma.campaignRollout.create({
+      data: {
+        campaignId: campaign.id,
         payloadType: 'Config',
         configId: config.id,
         createdBy: operation.id,
@@ -91,8 +98,8 @@ describe('Config/Firmware/Campaign/Incident FK constraints (integration — real
 
     await prisma.config.delete({ where: { id: config.id } });
 
-    const reloaded = await prisma.campaign.findUniqueOrThrow({
-      where: { id: campaign.id },
+    const reloaded = await prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rollout.id },
     });
     expect(reloaded.configId).toBeNull();
   });

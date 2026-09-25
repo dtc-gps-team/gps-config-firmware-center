@@ -2,8 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -11,14 +9,20 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType, Campaign } from '@prisma/client';
+import {
+  ActionType,
+  Campaign,
+  CampaignRollout,
+  CampaignTarget,
+} from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
+import { CampaignRolloutService } from './campaign-rollout.service';
 import { ActingUser, CampaignService } from './campaign.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
-import { QueryCampaignDto } from './dto/query-campaign.dto';
+import { QueryCampaignRolloutDto } from './dto/query-campaign-rollout.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -30,17 +34,20 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 // Sprint 3 #21 (Campaign Wizard) — RBAC_Matrix.md §2 แถว "Campaign Wizard":
 // ConfigEngineer/ST/OT/Auditor/Admin/SuperAdmin = R (เดิม SW ก่อนแยก role —
 // FirmwareEngineer/QAEngineer ไม่เกี่ยวกับ Campaign เลยจึงไม่มีสิทธิ์นี้),
-// Operation = C, R, U (ยังไม่มี U ใน module นี้ — รอ Campaign Monitor แถวที่
-// 22 แยกต่างหาก)
+// Operation = C, R (approve/reject ของ payload ย้ายไป
+// `campaign-rollout.controller.ts` แล้ว — แก้ไข 2026-09-24)
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('campaigns')
 export class CampaignController {
-  constructor(private readonly campaignService: CampaignService) {}
+  constructor(
+    private readonly campaignService: CampaignService,
+    private readonly campaignRolloutService: CampaignRolloutService,
+  ) {}
 
   @Get()
   @RequirePermission('campaign', ActionType.Read)
-  findAll(@Query() query: QueryCampaignDto): Promise<Campaign[]> {
-    return this.campaignService.findAll(query);
+  findAll(): Promise<Campaign[]> {
+    return this.campaignService.findAll();
   }
 
   @Post()
@@ -52,34 +59,31 @@ export class CampaignController {
     return this.campaignService.create(dto, toActor(req));
   }
 
+  // ข้าม Campaign ทุกกลุ่ม (Approval Center รวม Campaign Rollout, แก้ไข
+  // 2026-09-24) — ต้องประกาศ**ก่อน** `findOne(':id')` เสมอ ไม่งั้น Express/Nest
+  // จะจับคำว่า "rollouts" เป็นค่า `:id` แทน (route แบบ static ต้องมาก่อน
+  // dynamic param เมื่อ path ชนกัน)
+  @Get('rollouts')
+  @RequirePermission('campaign', ActionType.Read)
+  findAllRollouts(
+    @Query() query: QueryCampaignRolloutDto,
+  ): Promise<CampaignRollout[]> {
+    return this.campaignRolloutService.findAllAcrossCampaigns(query.status);
+  }
+
   @Get(':id')
   @RequirePermission('campaign', ActionType.Read)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Campaign> {
     return this.campaignService.findOne(id);
   }
 
-  // Campaign Approval (แก้ครั้งที่ 39) — resource `campaign` action `Approve`
-  // เดียวกันทั้ง approve/reject (mirror ConfigController/FirmwareController)
-  // — Operation เท่านั้น (ตัว SelfApprovalGuard/SoD check อยู่ใน service
-  // เพราะต้องรู้ createdBy ของ resource ก่อนตัดสิน ทำเป็น decorator guard
-  // ธรรมดาไม่ได้)
-  @Post(':id/approve')
-  @RequirePermission('campaign', ActionType.Approve)
-  @HttpCode(HttpStatus.OK)
-  approve(
+  // สมาชิกกลุ่ม (Campaign Monitor #22 — แสดงรายชื่ออุปกรณ์เป้าหมายจริง แก้ไข
+  // 2026-09-24) — สิทธิ์เดียวกับดู Campaign เอง
+  @Get(':id/targets')
+  @RequirePermission('campaign', ActionType.Read)
+  findTargets(
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: AuthenticatedRequest,
-  ): Promise<Campaign> {
-    return this.campaignService.approve(id, toActor(req));
-  }
-
-  @Post(':id/reject')
-  @RequirePermission('campaign', ActionType.Approve)
-  @HttpCode(HttpStatus.OK)
-  reject(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: AuthenticatedRequest,
-  ): Promise<Campaign> {
-    return this.campaignService.reject(id, toActor(req));
+  ): Promise<CampaignTarget[]> {
+    return this.campaignService.findTargets(id);
   }
 }

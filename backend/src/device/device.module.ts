@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { CampaignModule } from '../campaign/campaign.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import {
   DEVICE_SIMULATOR,
@@ -27,7 +28,7 @@ import { DeviceService } from './device.service';
 // ConfigDefinitionService.validateOverridableFields() ตัวเดียวกับ
 // config-override เดิม แทนการเขียนตรรกะ validate ซ้ำ
 @Module({
-  imports: [AuthModule, ConfigDefinitionModule],
+  imports: [AuthModule, CampaignModule, ConfigDefinitionModule],
   controllers: [DeviceController, DeviceConfigOverrideController],
   providers: [
     DeviceService,

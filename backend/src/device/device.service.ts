@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
+import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -101,6 +102,7 @@ export class DeviceService {
     private readonly configApplier: ConfigApplier,
     @Inject(DEVICE_SIMULATOR)
     private readonly deviceSimulator: DeviceSimulator,
+    private readonly campaignRolloutService: CampaignRolloutService,
     private readonly configDefinitionService: ConfigDefinitionService,
   ) {}
 
@@ -273,6 +275,16 @@ export class DeviceService {
       );
     }
 
+    // Campaign Monitor (#22, แก้ไข 2026-09-24) — รายงานผลให้ Rollout ที่ active
+    // อยู่ (ถ้ามี) รู้ว่าเครื่องนี้สำเร็จ/ล้มเหลว — never-throw อยู่แล้วใน
+    // ตัว recordTargetResult เอง (ดู comment ที่นั่น)
+    await this.campaignRolloutService.recordTargetResult(
+      device.deviceId,
+      { configId: config.id },
+      result.applied,
+      result.details.join(' · '),
+    );
+
     return result;
   }
 
@@ -356,6 +368,18 @@ export class DeviceService {
         metadata: metadata as Prisma.InputJsonValue,
       },
     });
+
+    // Campaign Monitor (#22, แก้ไข 2026-09-24) — ช่างยืนยันติดตั้งสำเร็จ = success
+    // เสมอ (endpoint นี้เป็นแค่ attestation ไม่มีทาง fail อยู่แล้ว — ดู comment
+    // หัวเมธอดนี้) never-throw อยู่แล้วในตัว recordTargetResult เอง จึงไม่กระทบ
+    // ความหมาย "audit เขียนไม่สำเร็จต้อง throw 500" ข้างบน (เกิดขึ้นก่อนหน้านี้
+    // ไปแล้ว)
+    await this.campaignRolloutService.recordTargetResult(
+      device.deviceId,
+      { firmwareId: firmware.id },
+      true,
+      `ยืนยันติดตั้ง Firmware ${firmware.version} สำเร็จ (confirm-firmware-install)`,
+    );
 
     return {
       deviceId: device.deviceId,

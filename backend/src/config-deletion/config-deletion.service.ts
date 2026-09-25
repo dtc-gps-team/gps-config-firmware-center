@@ -63,7 +63,9 @@ export class ConfigDeletionService {
     //   1  status ∈ {draft, rejected}
     //   -  deletedAt: null (ไม่กวาด Config ที่ soft-deleted ไปแล้ว)
     //   2  ไม่มี Task ผูก        5  updatedAt เก่ากว่า 90 วัน
-    //   3  ไม่มี Campaign ผูก
+    //   3  ไม่มี Campaign Rollout ผูก (แก้ไข 2026-09-24 — เดิมเช็คที่ `Campaign`
+    //      ตรงๆ ย้ายมาเช็ค `CampaignRollout` แทน เพราะ configId ย้ายไปอยู่ที่
+    //      นั่นแล้ว ดู comment เหนือ `model CampaignRollout` ใน schema.prisma)
     //   4  ไม่มี Incident ผูก
     //   6  ไม่มีคำขอ pending ค้าง
     //   7  ไม่มีคำขอ rejected ที่ reviewedAt ยังไม่พ้น cooldown 90 วัน
@@ -73,7 +75,7 @@ export class ConfigDeletionService {
         deletedAt: null,
         updatedAt: { lt: inactiveBefore },
         tasks: { none: {} },
-        campaigns: { none: {} },
+        campaignRollouts: { none: {} },
         incidents: { none: {} },
         deletionRequests: {
           none: {
