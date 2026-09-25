@@ -167,20 +167,14 @@ export function DashboardSummary() {
         : null,
     [configs.data],
   );
-  const activeCampaignCount: number | null = useMemo(
-    () =>
-      campaigns.data
-        ? campaigns.data.filter((c) => c.status === "active").length
-        : null,
-    [campaigns.data],
-  );
-  const pendingCampaignCount: number | null = useMemo(
-    () =>
-      campaigns.data
-        ? campaigns.data.filter((c) => c.status === "pending_approval").length
-        : null,
-    [campaigns.data],
-  );
+  // แก้ไข 2026-09-24 (Campaign Monitor #22 — แยกกลุ่มออกจากรอบ push):
+  // `Campaign` (กลุ่ม) ไม่มี `status` อีกต่อไป (ย้ายไปอยู่ที่
+  // `CampaignRollout` แทน) เดิมการ์ดนี้นับ active/pending_approval จาก
+  // status ของ Campaign ตรงๆ — ยังไม่มี endpoint รวม Rollout ข้ามทุกกลุ่ม
+  // ให้นับแบบเดิมได้ จึงเหลือแค่จำนวนกลุ่มทั้งหมดไปก่อน
+  const campaignCount: number | null = campaigns.data
+    ? campaigns.data.length
+    : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -225,19 +219,11 @@ export function DashboardSummary() {
             tone="progress"
           />
           <LiveSummaryCard
-            label="Campaign กำลังทำงาน"
+            label="กลุ่มอุปกรณ์ทั้งหมด"
             href="/campaigns"
-            value={activeCampaignCount}
+            value={campaignCount}
             error={campaigns.error}
             icon={RocketIcon}
-            tone="progress"
-          />
-          <LiveSummaryCard
-            label="Campaign รออนุมัติ"
-            href="/campaigns"
-            value={pendingCampaignCount}
-            error={campaigns.error}
-            icon={ClockIcon}
             tone="progress"
           />
           {DEMO_DEPLOYMENT_OVERVIEW.map((card) => (
