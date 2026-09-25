@@ -16,6 +16,9 @@ class NotificationTypeStyle {
     NotificationType.configDeletionPending => 'มีคำขอลบ Config รออนุมัติ',
     NotificationType.configDeletionGrace =>
       'Config ของคุณถูกเสนอลบ — กด "เก็บไว้" ถ้ายังต้องใช้',
+    NotificationType.configOverridePending => 'มีคำขอ Override รออนุมัติ',
+    NotificationType.configOverrideApproved => 'คำขอ Override ได้รับการอนุมัติ',
+    NotificationType.configOverrideRejected => 'คำขอ Override ถูกปฏิเสธ',
   };
 
   static IconData icon(NotificationType type) => switch (type) {
@@ -26,5 +29,8 @@ class NotificationTypeStyle {
     NotificationType.incidentAlert => Icons.report_problem_outlined,
     NotificationType.configDeletionPending => Icons.delete_outline,
     NotificationType.configDeletionGrace => Icons.warning_amber_outlined,
+    NotificationType.configOverridePending => Icons.edit_note_outlined,
+    NotificationType.configOverrideApproved => Icons.check_circle_outline,
+    NotificationType.configOverrideRejected => Icons.cancel_outlined,
   };
 }
