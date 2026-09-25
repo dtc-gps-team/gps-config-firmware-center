@@ -1,0 +1,36 @@
+name: MinIO Mirror Canary
+
+# เช็คว่า image mirror ที่ backend-ci.yml พึ่งอยู่ (ghcr.io/dtc-gps-team/minio,
+# pin ด้วย digest) ยัง pull ได้อยู่จริง — ก่อนหน้านี้ Docker Hub -> quay.io ->
+# ghcr.io/minio/minio (upstream) ปิด anonymous pull ไปเงียบๆ ทีละที่จนมาเจอตอน
+# PR #224 ค้าง CI (Issue #227, 2026-09-25) เจตนาของ workflow นี้คือให้รู้ก่อน
+# ผ่าน notification ปกติของ GitHub Actions ถ้า mirror ของเราเองพังหรือถูกลบไป
+# ไม่ต้องรอไปเจอตอน PR ค้างอีก
+#
+# รันแค่ `docker pull` เฉยๆ ไม่ต้อง start service จริง — ถ้า pull fail
+# workflow นี้ fail ตามปกติ (ไม่ได้ auto-fix อะไร แค่แจ้งเตือน)
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 19:00 UTC วันจันทร์ = 02:00 เวลาไทย
+    - cron: "0 19 * * 1"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  pull-check:
+    name: MinIO mirror / pull-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull MinIO mirror (digest-pinned, ต้องตรงกับ backend-ci.yml เป๊ะ)
+        run: |
+          docker pull ghcr.io/dtc-gps-team/minio@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2
