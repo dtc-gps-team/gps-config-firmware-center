@@ -62,10 +62,19 @@ jobs:
       #
       # 2026-09-25 (Issue #227): quay.io/minio/minio ก็ปิด anonymous pull ตาม
       # Docker Hub ไปด้วย ("unauthorized" ทุก tag) เช็คแล้ว ghcr.io/minio/minio
-      # และ dl.min.io binary ตรงก็ปิดหมดเหมือนกัน (นโยบายฝั่ง MinIO เอง ไม่ใช่
-      # rate-limit) แก้โดย mirror image เดิม (RELEASE.2025-09-07T16-13-09Z) ขึ้น
-      # `ghcr.io/dtc-gps-team/minio` เอง แล้ว pin ด้วย digest (ไม่ใช่ tag) กัน
-      # supply-chain risk — ดู step "Log in to GHCR"/"Start MinIO" ด้านล่าง
+      # (upstream) และ dl.min.io binary ตรงก็ปิดหมดเหมือนกัน (นโยบายฝั่ง MinIO
+      # เอง ไม่ใช่ rate-limit) แก้โดย mirror image เดิม (RELEASE.2025-09-07T16-
+      # 13-09Z) ขึ้น `ghcr.io/dtc-gps-team/minio` เอง แล้ว pin ด้วย digest
+      # (ไม่ใช่ tag) กัน supply-chain risk — ดู step "Log in to GHCR"/"Start
+      # MinIO" ด้านล่าง
+      #
+      # root cause ตัวจริงของรอบดีบัก #227 ไม่ใช่ digest ผิด (digest ที่ pin
+      # ไว้ถูกตั้งแต่แรก) แต่เป็นเพราะ package `dtc-gps-team/minio` push ขึ้น
+      # ด้วยมือจาก local ไม่เคยผ่าน Actions ของ repo ไหนเลย จึงไม่มี repo ไหน
+      # อยู่ใน "Actions repository access" ของ package นั้น — GITHUB_TOKEN ของ
+      # workflow นี้ login ผ่านได้ (auth สำเร็จ) แต่ pull ไม่ได้ (authz ไม่ผ่าน)
+      # แก้แล้วโดยเพิ่ม `gps-config-firmware-center` เข้า Actions repository
+      # access (Read) ของ package บน GitHub — ไม่ต้องแก้โค้ด/digest อะไรเพิ่ม
       OBJECT_STORAGE_ENDPOINT: http://localhost:9000
       OBJECT_STORAGE_ACCESS_KEY: gps_minio_admin
       OBJECT_STORAGE_SECRET_KEY: gps_minio_password
@@ -90,23 +99,20 @@ jobs:
         run: npm ci
 
       - name: Log in to GHCR
-        # Issue #227 — mirror ของเราอยู่ที่ ghcr.io/dtc-gps-team/minio ไม่ได้
-        # เปิด public ให้ pull แบบ anonymous (package ใหม่บน GHCR ไม่ inherit
-        # สิทธิ์จาก repo อัตโนมัติ) เลย login ด้วย GITHUB_TOKEN ของ workflow นี้
-        # เอง (permissions.packages: read ด้านบน) ก่อน pull เสมอ
+        # Issue #227 — package ghcr.io/dtc-gps-team/minio (org-level, push
+        # ด้วยมือจากเครื่อง local ไม่ได้ผ่าน Actions ของ repo ไหนเลย) ไม่ inherit
+        # สิทธิ์ให้ repo นี้อ่านโดยอัตโนมัติ ต้อง login ด้วย GITHUB_TOKEN ของ
+        # workflow นี้เอง (permissions.packages: read ด้านบน) ก่อน pull เสมอ —
+        # **ยังไม่พอ**: ต้องไปเพิ่ม repo นี้ใน package settings → "Actions
+        # repository access" (สิทธิ์ Read) ด้วย ไม่งั้น login ผ่านแต่ pull ไม่ได้
+        # อยู่ดี (เจอจริงระหว่างดีบัก #227 — คืน "manifest unknown"/"denied"
+        # สลับกันไปตามชนิด request ทั้งที่ root cause เดียวกันคือ access ยังไม่
+        # ถูกเพิ่ม ไม่ใช่ digest ผิด)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # DEBUG (Issue #227) — pull by digest ที่ pin ไว้คืน "manifest unknown"
-      # แม้ login สำเร็จแล้ว เช็คว่า pull by tag ใช้ได้ไหม + digest จริงคืออะไร
-      # ลบ 2 step นี้ออกทันทีหลังยืนยันคำตอบแล้ว ห้ามปล่อยทิ้งไว้ถาวร
-      - name: DEBUG - test pull by tag
-        run: docker pull ghcr.io/dtc-gps-team/minio:RELEASE.2025-09-07T16-13-09Z
-      - name: DEBUG - get canonical digest
-        run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/dtc-gps-team/minio:RELEASE.2025-09-07T16-13-09Z
 
       - name: Start MinIO
         run: |
