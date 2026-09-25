@@ -94,7 +94,9 @@ export function CampaignRolloutDetailView({
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">Rollout — {data.payloadType}</h1>
-          <StatusPill tone={CAMPAIGN_ROLLOUT_STATUS_TONE[data.status]}>
+          <StatusPill
+            tone={CAMPAIGN_ROLLOUT_STATUS_TONE[data.status] ?? "neutral"}
+          >
             {statusLabel(data.status)}
           </StatusPill>
         </div>

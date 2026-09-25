@@ -2367,6 +2367,109 @@ paths:
         "409":
           description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
 
+  /campaigns/{id}/rollouts/{rolloutId}/resume:
+    post:
+      tags: [campaign]
+      operationId: resumeCampaignRollout
+      summary: ปลด Auto Pause กลับไป active ต่อ — v3.37 (Incident & Rollback #28)
+      description: >-
+        resource `campaign` action `Approve` เดียวกับ approve/reject
+        (Operation เท่านั้น) — สถานะ `paused` → `active` เท่านั้น **ไม่เช็ค
+        Separation of Duty** ต่างจาก approve/reject โดยตั้งใจ — resume ไม่ใช่
+        การตัดสินใจอนุมัติงานใหม่ แค่บอกว่า "ดูแล้ว ให้ไปต่อ" ผู้สร้าง
+        Rollout เองก็ทำได้
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: resume สำเร็จ — status เป็น active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignRollout"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ resume Rollout (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบ Rollout นี้
+        "409":
+          description: สถานะ Rollout ปัจจุบันไม่ใช่ paused จึง resume ไม่ได้
+
+  /campaigns/{id}/rollouts/{rolloutId}/rollback:
+    post:
+      tags: [campaign]
+      operationId: rollbackCampaignRollout
+      summary: ย้อนกลับ Rollout — สร้างรอบใหม่จาก payload เดิม — v3.37 (Incident & Rollback #28)
+      description: >-
+        resource `campaign` action `Create` (Operation เท่านั้น — เป็นการ
+        "สร้าง Rollout ใหม่" ในทางปฏิบัติ เหมือน createCampaignRollout ปกติ)
+        · หาของเก่าจาก Rollout รอบก่อนหน้าที่ `completed` ล่าสุดของ
+        payloadType เดียวกันในกลุ่มเดียวกันให้เอง (ไม่รับ configId/firmwareId
+        ตรงๆ) แล้วสร้าง Rollout ใหม่เป็น `pending_approval` (`isRollback:
+        true`, `rollbackOfId` = รอบที่มีปัญหา) ต้องผ่าน approve อีกครั้งปกติ
+        · target = เฉพาะเครื่องที่ได้รับ payload ของรอบที่มีปัญหาสำเร็จจริง
+        (`CampaignRolloutTarget.status = success`) เอาบางเครื่องออกได้ผ่าน
+        `excludeDeviceIds` · **Firmware Rollback เร็วกว่า Config**: พออนุมัติ
+        แล้วระบบสั่งสลับ Dual Partition (mock) ทันที ปิดรอบเป็น `completed`
+        เลยไม่ต้องรอช่างยืนยันที่เครื่องเหมือน Config Rollback (ยังต้องผ่าน
+        apply-config ปกติทุกประการ) · **ไม่เช็ค "มีรอบเปิดอยู่ไหม"** เหมือน
+        createCampaignRollout เพราะ rollback คือวิธีแก้ปัญหารอบที่ค้างอยู่นี้
+        เอง ไม่ใช่การเริ่มงานใหม่
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: id ของ Rollout รอบที่มีปัญหา ต้องการย้อนกลับ
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignRollbackCreateRequest"
+      responses:
+        "201":
+          description: สร้าง Rollout สำหรับ rollback สำเร็จ (status = pending_approval — รออนุมัติ)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignRollout"
+        "400":
+          description: >-
+            ไม่มี Rollout รอบก่อนหน้าที่ completed ให้ย้อนกลับ, excludeDeviceIds
+            มีเครื่องที่ไม่ได้อยู่ในรายการที่ได้รับ payload สำเร็จ, หรือเอา
+            เครื่องออกจนไม่เหลือเป้าหมายเลย
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ rollback (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบ Rollout นี้ในกลุ่มนี้
+        "409":
+          description: >-
+            สถานะ Rollout ปัจจุบันยังไม่เคยส่ง payload ไปอุปกรณ์เลย (ต้องเป็น
+            active/paused/completed เท่านั้น)
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2710,7 +2813,7 @@ components:
 
     CampaignRolloutStatus:
       type: string
-      enum: [pending_approval, active, rejected, completed, cancelled]
+      enum: [pending_approval, active, paused, rejected, completed, cancelled]
       description: >-
         Campaign Approval (แก้ครั้งที่ 39, ย้ายมาจาก `CampaignStatus` เดิม —
         แก้ไข 2026-09-24): `createCampaignRollout` สร้างแล้วเป็น
@@ -2721,7 +2824,11 @@ components:
         รอบมีผล success/failed ครบแล้ว (ดู `CampaignRolloutTarget`) ·
         `rejected`/`completed`/`cancelled` ไม่นับเป็น "รอบที่ยังไม่จบ" —
         เปิดรอบใหม่ในกลุ่มเดิมได้ทันที (กลุ่มหนึ่งรัน Rollout ได้ทีละรอบ
-        เท่านั้น ขณะที่ยัง `pending_approval`/`active`)
+        เท่านั้น ขณะที่ยัง `pending_approval`/`active`/`paused`) ·
+        **`paused` (v3.37, Incident & Rollback #28):** Auto Pause อัตโนมัติ
+        เมื่อ Failure Rate ระหว่างรอบ > 5% (GPS_Config_Firmware_Center_Design.pdf
+        §11.2) กลับไป `active` ต่อผ่าน `resumeCampaignRollout` เท่านั้น
+        (ไม่เช็ค Separation of Duty — ผู้สร้างรอบเองก็ resume ได้)
 
     CampaignRollout:
       type: object
@@ -2743,6 +2850,8 @@ components:
           createdBy,
           approvedBy,
           approvedAt,
+          isRollback,
+          rollbackOfId,
           createdAt,
           updatedAt,
         ]
@@ -2752,7 +2861,6 @@ components:
           format: uuid
         campaignId:
           type: string
-          format: uuid
         payloadType:
           $ref: "#/components/schemas/CampaignPayloadType"
         configId:
@@ -2792,6 +2900,20 @@ components:
           type: string
           format: date-time
           nullable: true
+        isRollback:
+          type: boolean
+          description: >-
+            true = รอบนี้เป็น Rollback ที่สร้างจาก `rollbackCampaignRollout`
+            (v3.37, Incident & Rollback #28) — payload คัดลอกมาจากรอบก่อนหน้า
+            ที่ `completed` ล่าสุดของ payloadType เดียวกันโดยระบบเอง ไม่ใช่
+            จาก request ตรงๆ
+        rollbackOfId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            id ของ Rollout รอบที่มีปัญหาซึ่งรอบนี้ถูกสร้างมาเพื่อย้อนกลับ
+            (null ถ้า `isRollback` เป็น false)
         createdAt:
           type: string
           format: date-time
@@ -2825,6 +2947,24 @@ components:
             `Device.deviceId` ของสมาชิกกลุ่มที่ต้องการเอาออกจาก Rollout รอบนี้
             (ทุกตัวต้องเป็นสมาชิกกลุ่มจริง ไม่งั้น 400 — เอาออกจนไม่เหลือ
             เป้าหมายเลยก็ 400 เช่นกัน)
+
+    CampaignRollbackCreateRequest:
+      type: object
+      description: >-
+        Body ของ `rollbackCampaignRollout` (v3.37, Incident & Rollback #28) —
+        ไม่มี payloadType/configId/firmwareId เพราะระบบหาของเก่ามาใช้เองจาก
+        Rollout รอบก่อนหน้าที่ `completed` ล่าสุดของ payloadType เดียวกัน
+      properties:
+        excludeDeviceIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            `Device.deviceId` ที่ต้องการเอาออกจาก Rollback รอบนี้ (เช่นแก้ไข
+            ด้วยมือไปแล้ว หรือปลดระวางไปแล้ว) — ทุกตัวต้องเป็นเครื่องที่ได้รับ
+            payload ของรอบที่มีปัญหาสำเร็จจริง (`CampaignRolloutTarget.status
+            = success`) ไม่งั้น 400 — ไม่ส่งมา = rollback ทุกเครื่องที่เคย
+            ได้รับสำเร็จ
 
     CampaignRolloutTargetStatus:
       type: string

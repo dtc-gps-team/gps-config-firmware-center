@@ -11,6 +11,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CampaignRolloutController } from './campaign-rollout.controller';
 import { CampaignRolloutService } from './campaign-rollout.service';
+import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 
 const JWT_SECRET = 'test-secret';
@@ -37,6 +38,8 @@ const sampleRollout: CampaignRollout = {
   createdBy: 'op-1',
   approvedBy: null,
   approvedAt: null,
+  isRollback: false,
+  rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -60,6 +63,8 @@ describe('CampaignRolloutController', () => {
     findTargets: jest.Mock;
     approve: jest.Mock;
     reject: jest.Mock;
+    resume: jest.Mock;
+    rollback: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -70,6 +75,8 @@ describe('CampaignRolloutController', () => {
       findTargets: jest.fn(),
       approve: jest.fn(),
       reject: jest.fn(),
+      resume: jest.fn(),
+      rollback: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -156,5 +163,46 @@ describe('CampaignRolloutController', () => {
       id: 'op-1',
       role: 'Operation',
     });
+  });
+
+  it('POST .../resume -> service.resume พร้อม actor จาก JWT', async () => {
+    const resumed = { ...sampleRollout, status: 'active' as const };
+    service.resume.mockResolvedValue(resumed);
+
+    const result = await controller.resume(sampleRollout.id, opReq);
+
+    expect(result).toEqual(resumed);
+    expect(service.resume).toHaveBeenCalledWith(sampleRollout.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
+  });
+
+  it('POST .../rollback -> service.rollback พร้อม campaignId/id/dto/actor จาก JWT', async () => {
+    const rollback = {
+      ...sampleRollout,
+      id: 'rollout-2',
+      isRollback: true,
+      rollbackOfId: sampleRollout.id,
+    };
+    service.rollback.mockResolvedValue(rollback);
+    const dto: CreateCampaignRollbackDto = {
+      excludeDeviceIds: ['DEV-0002'],
+    };
+
+    const result = await controller.rollback(
+      campaignId,
+      sampleRollout.id,
+      dto,
+      opReq,
+    );
+
+    expect(result).toEqual(rollback);
+    expect(service.rollback).toHaveBeenCalledWith(
+      campaignId,
+      sampleRollout.id,
+      dto,
+      { id: 'op-1', role: 'Operation' },
+    );
   });
 });
