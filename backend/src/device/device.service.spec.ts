@@ -965,6 +965,7 @@ describe('DeviceService', () => {
       });
       expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
         where: { deviceId: 'DTC-0001', status: 'pending' },
+        orderBy: { versionNumber: 'desc' },
       });
     });
 
@@ -1169,7 +1170,7 @@ describe('DeviceService', () => {
       expect(result.fields).toEqual({ APN: 'new-apn' });
     });
 
-    it('มีคำขอ pending ของเครื่องนี้อยู่แล้ว -> ConflictException (409), ไม่สร้างแถวใหม่/AuditLog', async () => {
+    it('มีคำขอ pending ของเครื่องนี้อยู่แล้ว (configId เดียวกัน) -> ConflictException (409), ไม่สร้างแถวใหม่/AuditLog', async () => {
       mockOverrideQueries({
         existingPending: { id: 'ov-pending', status: 'pending' },
       });
@@ -1179,6 +1180,63 @@ describe('DeviceService', () => {
       ).rejects.toThrow(ConflictException);
       expect(deviceConfigOverride.create).not.toHaveBeenCalled();
       expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('เช็ค existingPending ต้อง scope ด้วย configId ปัจจุบันของอุปกรณ์เสมอ (issue #226 ข้อ 3)', async () => {
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-1',
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'pending',
+        },
+      });
+    });
+
+    it('มีคำขอ pending ค้างอยู่แต่ผูกกับ configId เก่า (Confirm Install ใหม่ทับไปแล้ว) -> ไม่บล็อกคำขอใหม่กับ configId ปัจจุบัน (issue #226 ข้อ 3)', async () => {
+      // จำลอง Prisma filter จริง — existingPending row มีอยู่แต่เป็นของ
+      // configId คนละตัว query ที่กรอง configId: approvedConfig.id จะไม่แมตช์
+      // แถวนั้นเลย (ต่างจาก mockOverrideQueries เดิมที่ branch แค่ตาม status
+      // เฉยๆ ไม่สนใจ configId)
+      deviceConfigOverride.findFirst.mockImplementation(
+        (args: { where?: { status?: string; configId?: string } }) => {
+          const { status, configId } = args?.where ?? {};
+          if (status === 'pending') {
+            // แถว pending ที่มีอยู่จริงผูกกับ configId เก่า (ไม่ตรงกับ
+            // approvedConfig.id ที่ query รอบนี้กรอง)
+            return Promise.resolve(
+              configId === approvedConfig.id
+                ? null
+                : {
+                    id: 'ov-stale-pending',
+                    configId: 'old-config-id',
+                    status: 'pending',
+                  },
+            );
+          }
+          if (status === 'approved') return Promise.resolve(null);
+          return Promise.resolve(null);
+        },
+      );
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-new',
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await expect(
+        service.overrideDeviceConfig('DTC-0001', dto, st),
+      ).resolves.toMatchObject({ status: 'pending' });
+      expect(deviceConfigOverride.create).toHaveBeenCalled();
     });
 
     it('มี override approved เดิมของ Config เดียวกัน -> versionNumber +1, fields สะสม (merge approved เดิม+dto ใหม่)', async () => {

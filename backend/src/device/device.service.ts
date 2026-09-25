@@ -575,9 +575,16 @@ export class DeviceService {
     // เลย (ต้องผ่าน Operation อนุมัติก่อนถึงมีผล)
     //
     // `pendingOverride` แยกกรองต่างหาก — **ไม่กรอง configId** เพราะคำขอ
-    // pending ผูกกับ "เครื่องนี้" ตรงๆ (จำกัดได้ทีละ 1 รายการต่อเครื่องเสมอ
-    // ไม่ว่าจะผูกกับ Config ตัวไหน — ดู `overrideDeviceConfig()`) ต้องแสดงให้
-    // ST/Operation เห็นเสมอว่ามีคำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    // pending ผูกกับ "เครื่องนี้" ตรงๆ ต้องแสดงให้ ST/Operation เห็นเสมอว่ามี
+    // คำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    //
+    // **ไม่ใช่ทีละ 1 รายการต่อเครื่องเสมอไปอีกต่อไป** (แก้ไข 2026-09-25,
+    // issue #226 ข้อ 3) — `overrideDeviceConfig()` เปลี่ยนไป scope เช็ค
+    // existing-pending ด้วย `configId` ปัจจุบันแล้ว ทำให้คำขอ pending เก่า
+    // (ผูกกับ configId ที่ไม่ใช่ปัจจุบันอีกแล้ว เพราะมี Confirm Install ใหม่
+    // ทับ) กับคำขอ pending ใหม่ (configId ปัจจุบัน) ค้างอยู่พร้อมกันได้ในทาง
+    // ทฤษฎี — ต้อง `orderBy versionNumber desc` เพื่อให้ได้แถวล่าสุดเสมอ
+    // (คำขอเก่าที่ล้าไปแล้วไม่ควรเป็นตัวที่ ST/Operation เห็นบน UI)
     const [latestApproved, pendingOverride] = await Promise.all([
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, configId: baseConfig.id, status: 'approved' },
@@ -585,6 +592,7 @@ export class DeviceService {
       }),
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, status: 'pending' },
+        orderBy: { versionNumber: 'desc' },
       }),
     ]);
 
@@ -615,16 +623,21 @@ export class DeviceService {
    * **มติ 2026-09-24 (request changes บน PR #225 โดย A):** สร้างแถวสถานะ
    * `pending` เท่านั้น — **ไม่มีผลกับ `getCurrentConfig()` ทันที** ต้องรอ
    * Operation อนุมัติผ่าน `approveDeviceConfigOverride()` ก่อน (Separation of
-   * Duty เดิม) แล้วช่างต้องกด `apply-config` เข้าเครื่องเองอีกครั้ง (ยังไม่ทำ
-   * ใน PR นี้ — แยกเป็น PR ถัดไปตามที่ A เสนอ)
+   * Duty เดิม) แล้วช่างต้องกด `apply-config` เข้าเครื่องเองอีกครั้ง —
+   * `applyConfig()`/`simulateConfig()` merge ค่า override ที่ approved แล้ว
+   * จริงตั้งแต่แก้ไข issue #226 (เดิมยังไม่ทำใน PR #225 นี้)
    *
    * base Config มาจาก `getBaseConfigForDevice()` เดียวกับ `getCurrentConfig()`
    * เป๊ะ — ไม่พบ (อุปกรณ์ยังไม่เคย Confirm Install หรือ Config ถูกลบไปแล้ว) →
    * 404 ข้อความเดียวกัน
    *
-   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ** (เสนอโดย A —
-   * กันการจัดการคำขอซ้อนกัน) → 409 ถ้ามีอยู่แล้ว เช็คในทรานแซกชันเดียวกับ
-   * create เสมอ (ไม่เช็คแยกนอก transaction) กัน ST 2 คนส่งพร้อมกันผ่านทั้งคู่
+   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ ต่อ configId
+   * เดียวกัน** (เสนอโดย A — กันการจัดการคำขอซ้อนกัน) → 409 ถ้ามีอยู่แล้ว
+   * เช็คในทรานแซกชันเดียวกับ create เสมอ (ไม่เช็คแยกนอก transaction) กัน ST
+   * 2 คนส่งพร้อมกันผ่านทั้งคู่ — **scope ด้วย configId ปัจจุบันด้วย (แก้ไข
+   * 2026-09-25, issue #226 ข้อ 3):** เดิมเช็คแค่ deviceId เฉยๆ ทำให้คำขอเก่าที่
+   * ตายไปแล้ว (Config ของเครื่องเปลี่ยนไปแล้วตั้งแต่ส่งคำขอ — approve ไม่ได้
+   * อีกต่อไป) ยังบล็อกคำขอใหม่ไม่ให้ส่งได้จนกว่า Operation จะ reject ทิ้งก่อน
    *
    * **`fields` ที่เขียนลง DB เป็นสถานะ override สะสม ไม่ใช่แค่ `dto.fields`
    * ดิบๆ** — merge `dto.fields` (partial ที่ ST ส่งมารอบนี้) ทับ fields ของแถว
@@ -671,8 +684,18 @@ export class DeviceService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
+        // #226 ข้อ 3) — เดิมเช็คแค่ deviceId เฉยๆ ถ้าเครื่องถูก Confirm
+        // Install เป็น Config ใหม่ทับระหว่างที่คำขอเก่ายังรอ Operation
+        // ตัดสินใจอยู่ (คำขอนั้น approve ไม่ได้แล้วเพราะ configId ไม่ตรงกับ
+        // baseConfig ปัจจุบัน — ดู `approveDeviceConfigOverride()`) คำขอเก่า
+        // ที่ตายไปแล้วในทางปฏิบัตินี้จะยังนับเป็น "pending 1 รายการ" บล็อก ST
+        // ส่งคำขอใหม่กับ Config ใหม่ไม่ได้ จนกว่า Operation จะกด reject ทิ้ง
+        // ก่อน — แก้โดยกรอง configId ปัจจุบันด้วย ปล่อยให้คำขอเก่า configId
+        // อื่นค้างเป็นประวัติเฉยๆ ไม่บล็อกคำขอใหม่ (Operation ยังเห็นและ
+        // reject ได้ตามปกติผ่าน `GET /device-config-overrides?status=pending`)
         const existingPending = await tx.deviceConfigOverride.findFirst({
-          where: { deviceId, status: 'pending' },
+          where: { deviceId, configId: baseConfig.id, status: 'pending' },
         });
         if (existingPending) {
           throw new ConflictException(

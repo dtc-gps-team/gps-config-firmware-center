@@ -1692,6 +1692,59 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(overrides).toHaveLength(1);
     });
 
+    it('มีคำขอ pending เก่าผูกกับ configId เดิม แล้ว Confirm Install ใหม่ทับเป็น Config อื่น -> ส่งคำขอใหม่กับ configId ปัจจุบันได้ ไม่ติด 409 (issue #226 ข้อ 3)', async () => {
+      await makeDevice('DCO-STALE-PENDING', 'installed');
+      const configIdOld = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-PENDING', configIdOld);
+      await makeOverridableField('APN', true);
+      const token = await stToken();
+
+      // รอบแรก — ส่งคำขอ override ผูกกับ configIdOld (pending, ยังไม่มี
+      // Operation ตัดสินใจ)
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-STALE-PENDING/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'apn-รอบแรก' },
+          reason: 'รอบแรก (configId เก่า)',
+        })
+        .expect(200);
+
+      // Confirm Install ใหม่ทับ -> Config ปัจจุบันของอุปกรณ์เปลี่ยนเป็น
+      // configIdNew (Task completed ล่าสุด) — คำขอ pending รอบแรกที่ผูกกับ
+      // configIdOld ตอนนี้ approve ไม่ได้แล้วในทางปฏิบัติ แต่ยังเป็นแถวจริง
+      // ในตาราง (Operation ยังไม่ได้ reject)
+      const configIdNew = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-PENDING', configIdNew);
+
+      // รอบสอง — ส่งคำขอใหม่ผูกกับ configId ปัจจุบัน (configIdNew) ต้องผ่าน
+      // ได้ ไม่ควรติด 409 จากคำขอเก่าที่ผูกกับ configId คนละตัวแล้ว
+      const res2 = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-STALE-PENDING/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'apn-รอบสอง' },
+          reason: 'รอบสอง (configId ใหม่)',
+        })
+        .expect(200);
+
+      const body2 = res2.body as { configId: string; status: string };
+      expect(body2.configId).toBe(configIdNew);
+      expect(body2.status).toBe('pending');
+
+      // ทั้ง 2 แถวต้องยังอยู่ในตาราง (คำขอเก่าไม่ได้ถูกลบ/reject อัตโนมัติ —
+      // ตามมติ scope-by-configId ไม่ใช่ auto-reject)
+      const overrides = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: 'DCO-STALE-PENDING' },
+        orderBy: { versionNumber: 'asc' },
+      });
+      expect(overrides).toHaveLength(2);
+      expect(overrides[0].configId).toBe(configIdOld);
+      expect(overrides[0].status).toBe('pending');
+      expect(overrides[1].configId).toBe(configIdNew);
+      expect(overrides[1].status).toBe('pending');
+    });
+
     it('ผ่านทั้งวงจร: submit -> Operation approve -> submit รอบสองสะสมค่าจากรอบแรก -> approve -> GET merge เห็นค่าล่าสุด', async () => {
       await makeDevice('DCO-FLOW', 'installed');
       const configId = await makeConfig('approved');
