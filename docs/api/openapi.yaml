@@ -3719,6 +3719,12 @@ components:
             - incident_alert
             - config_deletion_pending
             - config_deletion_grace
+            # เพิ่มใหม่ (issue #226 — v3.37): Per-device Config Override
+            # (issue #223) — แจ้ง Operation ตอนมีคำขอ pending ใหม่ + แจ้ง ST
+            # ผู้ request ตอน Operation ตัดสินใจแล้ว
+            - config_override_pending
+            - config_override_approved
+            - config_override_rejected
         payload:
           type: object
           additionalProperties: true
