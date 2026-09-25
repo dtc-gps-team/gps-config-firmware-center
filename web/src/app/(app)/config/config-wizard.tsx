@@ -44,7 +44,7 @@ function isEmpty(value: FieldValue | undefined): boolean {
  * dataType เก็บเป็น boolean จริง ส่วนที่เหลือเก็บเป็น string เสมอแล้วค่อยแปลง
  * ตอน submit ใน `buildFields()` (เหมือนกับตอน prefill จาก `source.fields`
  * ด้านบน) ตรงกับ dataType-based parse เดียวกับที่ `parseByDataType()` ใน
- * config-override-panel.tsx ทำ เพียงแต่ไม่ใช้ฟังก์ชันนั้นตรงๆ เพราะ return
+ * config-override-panel.tsx เคยทำ (ไฟล์นั้นถูกลบไปแล้ว — issue #223, แก้ครั้งที่ 55) ไม่ใช้ฟังก์ชันนั้นตรงๆ เพราะ return
  * type ของมัน (`unknown`, parse เลขเป็น number จริง) ไม่ตรงกับ `FieldValue`
  * ของไฟล์นี้ — logic parse boolean เหมือนกันทุกประการ */
 function defaultFieldValue(def: ConfigFieldDefinition): FieldValue | undefined {

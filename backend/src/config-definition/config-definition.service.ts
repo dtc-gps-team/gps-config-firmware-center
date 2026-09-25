@@ -201,8 +201,11 @@ export class ConfigDefinitionService {
   }
 
   /**
-   * ตรวจ `fields` ที่ ST ขอ override เทียบกับ catalog — เรียกจาก
-   * `ConfigOverrideService.override()` ก่อนเขียนลง DB (issue #185)
+   * ตรวจ `fields` ที่ ST ขอ override เทียบกับ catalog — เดิมเรียกจาก
+   * `ConfigOverrideService.override()` (issue #185, module ถูกลบไปแล้ว —
+   * ดู RBAC_Matrix.md changelog แก้ครั้งที่ 55) ปัจจุบันเรียกจาก
+   * `DeviceService.overrideDeviceConfig()` (issue #223) เท่านั้น ก่อนเขียนลง
+   * DB
    *
    * **ต่างจาก `validateFields()` ด้านบน 2 จุดสำคัญ:**
    * 1. เช็คเพิ่มว่า field นั้น `stOverridable: true` ไหม — field ที่นิยามไว้
