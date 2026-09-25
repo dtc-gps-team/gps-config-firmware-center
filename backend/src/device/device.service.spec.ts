@@ -5,6 +5,7 @@ import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { NotificationService } from '../notification/notification.service';
 import { DEVICE_SIMULATOR, DeviceSimulator } from '../config/device-simulator';
 import { CONFIG_APPLIER, ConfigApplier } from './config-applier';
 import {
@@ -118,6 +119,8 @@ describe('DeviceService', () => {
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let campaignRolloutService: { recordTargetResult: jest.Mock };
   let validateOverridableFields: jest.Mock;
+  let user: { findMany: jest.Mock };
+  let notificationService: { send: jest.Mock };
 
   beforeEach(async () => {
     device = { findUnique: jest.fn(), findMany: jest.fn() };
@@ -140,6 +143,10 @@ describe('DeviceService', () => {
       recordTargetResult: jest.fn().mockResolvedValue(undefined),
     };
     validateOverridableFields = jest.fn().mockResolvedValue(undefined);
+    // `notifyOperationOfPendingOverride()` (issue #226) — default ไม่มี
+    // Operation ให้แจ้ง (เทสส่วนใหญ่ไม่สนใจ notification เลย)
+    user = { findMany: jest.fn().mockResolvedValue([]) };
+    notificationService = { send: jest.fn().mockResolvedValue(undefined) };
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
     // `rejectDeviceConfigOverride()` (issue #223) เขียนผ่าน `$transaction` —
@@ -167,6 +174,7 @@ describe('DeviceService', () => {
             task,
             firmware,
             deviceConfigOverride,
+            user,
             auditLog,
             $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
           },
@@ -179,6 +187,7 @@ describe('DeviceService', () => {
           provide: ConfigDefinitionService,
           useValue: { validateOverridableFields },
         },
+        { provide: NotificationService, useValue: notificationService },
       ],
     }).compile();
 
@@ -497,6 +506,66 @@ describe('DeviceService', () => {
       ).rejects.toThrow(ConflictException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
+
+    it('config ถูก soft-delete (deletedAt ไม่ null) -> NotFoundException ไม่เรียก applier (issue #226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-20T00:00:00.000Z'),
+      });
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).rejects.toThrow(NotFoundException);
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> merge fields ทับ base ก่อนส่งเข้า applier (issue #223/#226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DTC-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride ของเครื่องนี้ -> ใช้ base Config เดิมเฉยๆ ไม่ merge อะไร', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DTC-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
+    });
   });
 
   describe('confirmFirmwareInstall (issue #181)', () => {
@@ -779,6 +848,66 @@ describe('DeviceService', () => {
       ).rejects.toThrow(ConflictException);
       expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
     });
+
+    it('config ถูก soft-delete (deletedAt ไม่ null) -> NotFoundException (issue #226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-20T00:00:00.000Z'),
+      });
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).rejects.toThrow(NotFoundException);
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> readiness check ตรวจค่าที่ override แล้ว ไม่ใช่ base เดิม (issue #223/#226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride ของเครื่องนี้ -> ใช้ base Config เดิมเฉยๆ ไม่ merge อะไร', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
+    });
   });
 
   describe('getCurrentConfig', () => {
@@ -845,6 +974,7 @@ describe('DeviceService', () => {
       });
       expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
         where: { deviceId: 'DTC-0001', status: 'pending' },
+        orderBy: { versionNumber: 'desc' },
       });
     });
 
@@ -1049,7 +1179,7 @@ describe('DeviceService', () => {
       expect(result.fields).toEqual({ APN: 'new-apn' });
     });
 
-    it('มีคำขอ pending ของเครื่องนี้อยู่แล้ว -> ConflictException (409), ไม่สร้างแถวใหม่/AuditLog', async () => {
+    it('มีคำขอ pending ของเครื่องนี้อยู่แล้ว (configId เดียวกัน) -> ConflictException (409), ไม่สร้างแถวใหม่/AuditLog', async () => {
       mockOverrideQueries({
         existingPending: { id: 'ov-pending', status: 'pending' },
       });
@@ -1059,6 +1189,63 @@ describe('DeviceService', () => {
       ).rejects.toThrow(ConflictException);
       expect(deviceConfigOverride.create).not.toHaveBeenCalled();
       expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('เช็ค existingPending ต้อง scope ด้วย configId ปัจจุบันของอุปกรณ์เสมอ (issue #226 ข้อ 3)', async () => {
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-1',
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'pending',
+        },
+      });
+    });
+
+    it('มีคำขอ pending ค้างอยู่แต่ผูกกับ configId เก่า (Confirm Install ใหม่ทับไปแล้ว) -> ไม่บล็อกคำขอใหม่กับ configId ปัจจุบัน (issue #226 ข้อ 3)', async () => {
+      // จำลอง Prisma filter จริง — existingPending row มีอยู่แต่เป็นของ
+      // configId คนละตัว query ที่กรอง configId: approvedConfig.id จะไม่แมตช์
+      // แถวนั้นเลย (ต่างจาก mockOverrideQueries เดิมที่ branch แค่ตาม status
+      // เฉยๆ ไม่สนใจ configId)
+      deviceConfigOverride.findFirst.mockImplementation(
+        (args: { where?: { status?: string; configId?: string } }) => {
+          const { status, configId } = args?.where ?? {};
+          if (status === 'pending') {
+            // แถว pending ที่มีอยู่จริงผูกกับ configId เก่า (ไม่ตรงกับ
+            // approvedConfig.id ที่ query รอบนี้กรอง)
+            return Promise.resolve(
+              configId === approvedConfig.id
+                ? null
+                : {
+                    id: 'ov-stale-pending',
+                    configId: 'old-config-id',
+                    status: 'pending',
+                  },
+            );
+          }
+          if (status === 'approved') return Promise.resolve(null);
+          return Promise.resolve(null);
+        },
+      );
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-new',
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await expect(
+        service.overrideDeviceConfig('DTC-0001', dto, st),
+      ).resolves.toMatchObject({ status: 'pending' });
+      expect(deviceConfigOverride.create).toHaveBeenCalled();
     });
 
     it('มี override approved เดิมของ Config เดียวกัน -> versionNumber +1, fields สะสม (merge approved เดิม+dto ใหม่)', async () => {
@@ -1209,6 +1396,58 @@ describe('DeviceService', () => {
       expect(task.findFirst).not.toHaveBeenCalled();
       expect(validateOverridableFields).not.toHaveBeenCalled();
     });
+
+    it('สร้างคำขอสำเร็จ -> แจ้ง Operation ทุกคนที่ active ด้วย type config_override_pending (issue #226)', async () => {
+      user.findMany.mockResolvedValue([{ id: 'op-1' }, { id: 'op-2' }]);
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+      expect(user.findMany).toHaveBeenCalledWith({
+        where: { role: { code: 'Operation' }, isActive: true },
+        select: { id: true },
+      });
+      expect(notificationService.send).toHaveBeenCalledWith({
+        userId: 'op-1',
+        type: 'config_override_pending',
+        payload: {
+          overrideId: 'ov-1',
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+        },
+      });
+      expect(notificationService.send).toHaveBeenCalledWith({
+        userId: 'op-2',
+        type: 'config_override_pending',
+        payload: {
+          overrideId: 'ov-1',
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+        },
+      });
+    });
+
+    it('แจ้งเตือน Operation ล้มเหลว -> overrideDeviceConfig() ยังสำเร็จปกติ (never-throw)', async () => {
+      user.findMany.mockResolvedValue([{ id: 'op-1' }]);
+      notificationService.send.mockRejectedValue(new Error('FCM ล่ม'));
+      deviceConfigOverride.create.mockResolvedValue({
+        id: 'ov-1',
+        fields: dto.fields,
+        versionNumber: 1,
+        status: 'pending',
+      });
+
+      await expect(
+        service.overrideDeviceConfig('DTC-0001', dto, st),
+      ).resolves.toMatchObject({ status: 'pending' });
+    });
   });
 
   describe('approveDeviceConfigOverride / rejectDeviceConfigOverride (Operation, issue #223)', () => {
@@ -1332,6 +1571,44 @@ describe('DeviceService', () => {
         ).rejects.toThrow(ConflictException);
         expect(auditLog.create).not.toHaveBeenCalled();
       });
+
+      it('อนุมัติสำเร็จ -> แจ้ง ST ผู้ส่งคำขอ (overriddenBy) ด้วย type config_override_approved (issue #226)', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        mockBaseConfigMatches();
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
+          ...pendingRow,
+          status: 'approved',
+          decidedBy: 'op-1',
+        });
+
+        await service.approveDeviceConfigOverride('ov-1', operation);
+
+        expect(notificationService.send).toHaveBeenCalledWith({
+          userId: 'st-1',
+          type: 'config_override_approved',
+          payload: {
+            overrideId: 'ov-1',
+            deviceId: 'DTC-0001',
+            configId: approvedConfig.id,
+          },
+        });
+      });
+
+      it('แจ้งเตือน ST ล้มเหลว -> approveDeviceConfigOverride() ยังสำเร็จปกติ (never-throw)', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        mockBaseConfigMatches();
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
+          ...pendingRow,
+          status: 'approved',
+        });
+        notificationService.send.mockRejectedValue(new Error('FCM ล่ม'));
+
+        await expect(
+          service.approveDeviceConfigOverride('ov-1', operation),
+        ).resolves.toMatchObject({ status: 'approved' });
+      });
     });
 
     describe('rejectDeviceConfigOverride', () => {
@@ -1408,6 +1685,48 @@ describe('DeviceService', () => {
           service.rejectDeviceConfigOverride('ov-1', {}, operation),
         ).rejects.toThrow(ConflictException);
         expect(auditLog.create).not.toHaveBeenCalled();
+      });
+
+      it('ปฏิเสธสำเร็จ -> แจ้ง ST ผู้ส่งคำขอ ด้วย type config_override_rejected พร้อม rejectReason (issue #226)', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
+          ...pendingRow,
+          status: 'rejected',
+          decidedBy: 'op-1',
+          rejectReason: 'ไม่เหมาะสมกับสถานการณ์หน้างาน',
+        });
+
+        await service.rejectDeviceConfigOverride(
+          'ov-1',
+          { rejectReason: 'ไม่เหมาะสมกับสถานการณ์หน้างาน' },
+          operation,
+        );
+
+        expect(notificationService.send).toHaveBeenCalledWith({
+          userId: 'st-1',
+          type: 'config_override_rejected',
+          payload: {
+            overrideId: 'ov-1',
+            deviceId: 'DTC-0001',
+            configId: approvedConfig.id,
+            rejectReason: 'ไม่เหมาะสมกับสถานการณ์หน้างาน',
+          },
+        });
+      });
+
+      it('แจ้งเตือน ST ล้มเหลว -> rejectDeviceConfigOverride() ยังสำเร็จปกติ (never-throw)', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceConfigOverride.findUniqueOrThrow.mockResolvedValue({
+          ...pendingRow,
+          status: 'rejected',
+        });
+        notificationService.send.mockRejectedValue(new Error('FCM ล่ม'));
+
+        await expect(
+          service.rejectDeviceConfigOverride('ov-1', {}, operation),
+        ).resolves.toMatchObject({ status: 'rejected' });
       });
     });
   });

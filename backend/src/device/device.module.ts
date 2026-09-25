@@ -3,6 +3,7 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignModule } from '../campaign/campaign.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
+import { NotificationModule } from '../notification/notification.module';
 import {
   DEVICE_SIMULATOR,
   type DeviceSimulator,
@@ -27,8 +28,16 @@ import { DeviceService } from './device.service';
 // imports ConfigDefinitionModule (issue #223) — ให้ DeviceService reuse
 // ConfigDefinitionService.validateOverridableFields() ตัวเดียวกับ
 // config-override เดิม แทนการเขียนตรรกะ validate ซ้ำ
+// imports NotificationModule (issue #226) — แจ้ง Operation ตอนมีคำขอ
+// override pending ใหม่ + แจ้ง ST ผู้ request ตอน Operation ตัดสินใจแล้ว
+// mirror pattern เดียวกับ config-deletion.module.ts
 @Module({
-  imports: [AuthModule, CampaignModule, ConfigDefinitionModule],
+  imports: [
+    AuthModule,
+    CampaignModule,
+    ConfigDefinitionModule,
+    NotificationModule,
+  ],
   controllers: [DeviceController, DeviceConfigOverrideController],
   providers: [
     DeviceService,

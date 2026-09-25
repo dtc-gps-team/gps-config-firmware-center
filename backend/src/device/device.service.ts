@@ -16,6 +16,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryDeviceDto } from './dto/query-device.dto';
 
@@ -104,6 +105,7 @@ export class DeviceService {
     private readonly deviceSimulator: DeviceSimulator,
     private readonly campaignRolloutService: CampaignRolloutService,
     private readonly configDefinitionService: ConfigDefinitionService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -216,7 +218,10 @@ export class DeviceService {
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
     });
-    if (!config) {
+    // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
+    // `ConfigService.findOne()`/`getBaseConfigForDevice()` (issue #226: เดิม
+    // เช็คแค่ `!config` เฉยๆ ทำให้ Config ที่ถูกลบไปแล้วยังเอาไปใส่เข้าอุปกรณ์ได้)
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
     if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
@@ -233,7 +238,24 @@ export class DeviceService {
       );
     }
 
-    const fields = config.fields as Record<string, unknown>;
+    // Per-device Config Override (issue #223/#226) — ใช้ค่าที่ ST override
+    // แล้วผ่านอนุมัติจริง ไม่ใช่ base Config เดิมเฉยๆ mirror pattern เดียวกับ
+    // `getCurrentConfig()` เป๊ะ (merge แถว `status: approved` ล่าสุดของ Config
+    // เดียวกันทับ base — pending/rejected ไม่มีผล)
+    const approvedOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: {
+        deviceId: device.deviceId,
+        configId: config.id,
+        status: 'approved',
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const fields = {
+      ...(config.fields as Record<string, unknown>),
+      ...(approvedOverride
+        ? (approvedOverride.fields as Record<string, unknown>)
+        : {}),
+    };
     const result = await this.configApplier.applyConfig({
       deviceId: device.deviceId,
       deviceModel: device.deviceModel,
@@ -424,7 +446,9 @@ export class DeviceService {
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
     });
-    if (!config) {
+    // soft-deleted Config ถือว่า "ไม่พบ" เช่นกัน — mirror `applyConfig()`/
+    // `getBaseConfigForDevice()` (issue #226)
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
     if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
@@ -450,6 +474,24 @@ export class DeviceService {
           ],
         };
 
+    // Per-device Config Override (issue #223/#226) — dry-run readiness check
+    // ต้องตรวจค่าที่ override แล้ว ไม่ใช่ base Config เดิม mirror pattern
+    // เดียวกับ `applyConfig()`/`getCurrentConfig()`
+    const approvedOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: {
+        deviceId: device.deviceId,
+        configId: config.id,
+        status: 'approved',
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const fields = {
+      ...(config.fields as Record<string, unknown>),
+      ...(approvedOverride
+        ? (approvedOverride.fields as Record<string, unknown>)
+        : {}),
+    };
+
     // configCheck + connectionCheck รันเสมอ แม้ compatibilityCheck ไม่ผ่าน —
     // ช่างจะได้เห็นภาพรวมครบในครั้งเดียว (configCheck ตรวจตัว Config เอง,
     // connectionCheck ตรวจสัญญาณกล่อง ทั้งคู่ไม่ขึ้นกับผล compat)
@@ -457,7 +499,7 @@ export class DeviceService {
       this.deviceSimulator.simulateConfig({
         deviceModel: config.deviceModel,
         protocol: config.protocol,
-        fields: config.fields as Record<string, unknown>,
+        fields,
       }),
       this.connectionTester.testConnection({
         deviceId: device.deviceId,
@@ -535,9 +577,16 @@ export class DeviceService {
     // เลย (ต้องผ่าน Operation อนุมัติก่อนถึงมีผล)
     //
     // `pendingOverride` แยกกรองต่างหาก — **ไม่กรอง configId** เพราะคำขอ
-    // pending ผูกกับ "เครื่องนี้" ตรงๆ (จำกัดได้ทีละ 1 รายการต่อเครื่องเสมอ
-    // ไม่ว่าจะผูกกับ Config ตัวไหน — ดู `overrideDeviceConfig()`) ต้องแสดงให้
-    // ST/Operation เห็นเสมอว่ามีคำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    // pending ผูกกับ "เครื่องนี้" ตรงๆ ต้องแสดงให้ ST/Operation เห็นเสมอว่ามี
+    // คำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    //
+    // **ไม่ใช่ทีละ 1 รายการต่อเครื่องเสมอไปอีกต่อไป** (แก้ไข 2026-09-25,
+    // issue #226 ข้อ 3) — `overrideDeviceConfig()` เปลี่ยนไป scope เช็ค
+    // existing-pending ด้วย `configId` ปัจจุบันแล้ว ทำให้คำขอ pending เก่า
+    // (ผูกกับ configId ที่ไม่ใช่ปัจจุบันอีกแล้ว เพราะมี Confirm Install ใหม่
+    // ทับ) กับคำขอ pending ใหม่ (configId ปัจจุบัน) ค้างอยู่พร้อมกันได้ในทาง
+    // ทฤษฎี — ต้อง `orderBy versionNumber desc` เพื่อให้ได้แถวล่าสุดเสมอ
+    // (คำขอเก่าที่ล้าไปแล้วไม่ควรเป็นตัวที่ ST/Operation เห็นบน UI)
     const [latestApproved, pendingOverride] = await Promise.all([
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, configId: baseConfig.id, status: 'approved' },
@@ -545,6 +594,7 @@ export class DeviceService {
       }),
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, status: 'pending' },
+        orderBy: { versionNumber: 'desc' },
       }),
     ]);
 
@@ -575,16 +625,21 @@ export class DeviceService {
    * **มติ 2026-09-24 (request changes บน PR #225 โดย A):** สร้างแถวสถานะ
    * `pending` เท่านั้น — **ไม่มีผลกับ `getCurrentConfig()` ทันที** ต้องรอ
    * Operation อนุมัติผ่าน `approveDeviceConfigOverride()` ก่อน (Separation of
-   * Duty เดิม) แล้วช่างต้องกด `apply-config` เข้าเครื่องเองอีกครั้ง (ยังไม่ทำ
-   * ใน PR นี้ — แยกเป็น PR ถัดไปตามที่ A เสนอ)
+   * Duty เดิม) แล้วช่างต้องกด `apply-config` เข้าเครื่องเองอีกครั้ง —
+   * `applyConfig()`/`simulateConfig()` merge ค่า override ที่ approved แล้ว
+   * จริงตั้งแต่แก้ไข issue #226 (เดิมยังไม่ทำใน PR #225 นี้)
    *
    * base Config มาจาก `getBaseConfigForDevice()` เดียวกับ `getCurrentConfig()`
    * เป๊ะ — ไม่พบ (อุปกรณ์ยังไม่เคย Confirm Install หรือ Config ถูกลบไปแล้ว) →
    * 404 ข้อความเดียวกัน
    *
-   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ** (เสนอโดย A —
-   * กันการจัดการคำขอซ้อนกัน) → 409 ถ้ามีอยู่แล้ว เช็คในทรานแซกชันเดียวกับ
-   * create เสมอ (ไม่เช็คแยกนอก transaction) กัน ST 2 คนส่งพร้อมกันผ่านทั้งคู่
+   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ ต่อ configId
+   * เดียวกัน** (เสนอโดย A — กันการจัดการคำขอซ้อนกัน) → 409 ถ้ามีอยู่แล้ว
+   * เช็คในทรานแซกชันเดียวกับ create เสมอ (ไม่เช็คแยกนอก transaction) กัน ST
+   * 2 คนส่งพร้อมกันผ่านทั้งคู่ — **scope ด้วย configId ปัจจุบันด้วย (แก้ไข
+   * 2026-09-25, issue #226 ข้อ 3):** เดิมเช็คแค่ deviceId เฉยๆ ทำให้คำขอเก่าที่
+   * ตายไปแล้ว (Config ของเครื่องเปลี่ยนไปแล้วตั้งแต่ส่งคำขอ — approve ไม่ได้
+   * อีกต่อไป) ยังบล็อกคำขอใหม่ไม่ให้ส่งได้จนกว่า Operation จะ reject ทิ้งก่อน
    *
    * **`fields` ที่เขียนลง DB เป็นสถานะ override สะสม ไม่ใช่แค่ `dto.fields`
    * ดิบๆ** — merge `dto.fields` (partial ที่ ST ส่งมารอบนี้) ทับ fields ของแถว
@@ -630,9 +685,19 @@ export class DeviceService {
     );
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const override = await this.prisma.$transaction(async (tx) => {
+        // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
+        // #226 ข้อ 3) — เดิมเช็คแค่ deviceId เฉยๆ ถ้าเครื่องถูก Confirm
+        // Install เป็น Config ใหม่ทับระหว่างที่คำขอเก่ายังรอ Operation
+        // ตัดสินใจอยู่ (คำขอนั้น approve ไม่ได้แล้วเพราะ configId ไม่ตรงกับ
+        // baseConfig ปัจจุบัน — ดู `approveDeviceConfigOverride()`) คำขอเก่า
+        // ที่ตายไปแล้วในทางปฏิบัตินี้จะยังนับเป็น "pending 1 รายการ" บล็อก ST
+        // ส่งคำขอใหม่กับ Config ใหม่ไม่ได้ จนกว่า Operation จะกด reject ทิ้ง
+        // ก่อน — แก้โดยกรอง configId ปัจจุบันด้วย ปล่อยให้คำขอเก่า configId
+        // อื่นค้างเป็นประวัติเฉยๆ ไม่บล็อกคำขอใหม่ (Operation ยังเห็นและ
+        // reject ได้ตามปกติผ่าน `GET /device-config-overrides?status=pending`)
         const existingPending = await tx.deviceConfigOverride.findFirst({
-          where: { deviceId, status: 'pending' },
+          where: { deviceId, configId: baseConfig.id, status: 'pending' },
         });
         if (existingPending) {
           throw new ConflictException(
@@ -685,6 +750,13 @@ export class DeviceService {
 
         return override;
       });
+
+      // แจ้ง Operation ว่ามีคำขอ pending ใหม่ (issue #226) — never-throw,
+      // เรียกหลังทรานแซกชันสำเร็จแล้วเท่านั้น ไม่ใช่ core contract ของ
+      // endpoint นี้ (ดู `notifyOperationOfPendingOverride()`)
+      await this.notifyOperationOfPendingOverride(override);
+
+      return override;
     } catch (err) {
       if (
         err instanceof PrismaClientKnownRequestError &&
@@ -718,10 +790,71 @@ export class DeviceService {
     return existing;
   }
 
+  /** แจ้ง Operation ทุกคนที่ active ว่ามีคำขอ override ใหม่รอตัดสินใจ (issue
+   * #226) — mirror pattern เดียวกับ `ConfigDeletionService.notifySuperAdmins()`
+   * **never-throw** — เป็นแค่ side-effect ติดตาม ไม่ใช่ core contract ของ
+   * `overrideDeviceConfig()` เอง (ผู้ใช้ต้องเห็นว่าส่งคำขอสำเร็จแม้แจ้งเตือน
+   * ล้มเหลว) */
+  private async notifyOperationOfPendingOverride(
+    override: DeviceConfigOverride,
+  ): Promise<void> {
+    try {
+      const operations = await this.prisma.user.findMany({
+        where: { role: { code: 'Operation' }, isActive: true },
+        select: { id: true },
+      });
+      for (const operation of operations) {
+        await this.notificationService.send({
+          userId: operation.id,
+          type: 'config_override_pending',
+          payload: {
+            overrideId: override.id,
+            deviceId: override.deviceId,
+            configId: override.configId,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน config_override_pending ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** แจ้ง ST ผู้ส่งคำขอ (`overriddenBy`) ว่า Operation ตัดสินใจแล้ว
+   * (approve/reject) — issue #226 · **never-throw** เดียวกับด้านบน */
+  private async notifyRequesterOfDecision(
+    override: DeviceConfigOverride,
+    outcome: 'approved' | 'rejected',
+  ): Promise<void> {
+    try {
+      await this.notificationService.send({
+        userId: override.overriddenBy,
+        type:
+          outcome === 'approved'
+            ? 'config_override_approved'
+            : 'config_override_rejected',
+        payload: {
+          overrideId: override.id,
+          deviceId: override.deviceId,
+          configId: override.configId,
+          ...(outcome === 'rejected'
+            ? { rejectReason: override.rejectReason }
+            : {}),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน config_override_${outcome} ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
   /**
    * Operation อนุมัติคำขอ override (issue #223, มติ 2026-09-24) — เปลี่ยน
    * สถานะเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้อัตโนมัติ** ช่าง
-   * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (ยังไม่ทำใน PR นี้)
+   * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (`applyConfig()`
+   * merge ค่า override ที่ approved แล้วจริงตั้งแต่แก้ไข issue #226)
    * resource `device-config-override` action `Approve` — Operation เท่านั้น
    *
    * **เช็ค `configId` ยังตรงกับ Config ปัจจุบันของอุปกรณ์ไหม (comment A รอบ 2
@@ -752,7 +885,7 @@ export class DeviceService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.deviceConfigOverride.updateMany({
         where: { id, status: 'pending' },
         data: {
@@ -766,7 +899,7 @@ export class DeviceService {
           'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
-      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+      const row = await tx.deviceConfigOverride.findUniqueOrThrow({
         where: { id },
       });
       const metadata: AuditLogMetadata = {
@@ -781,8 +914,13 @@ export class DeviceService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       });
-      return updated;
+      return row;
     });
+
+    // แจ้ง ST ผู้ส่งคำขอว่า Operation อนุมัติแล้ว (issue #226) — never-throw
+    await this.notifyRequesterOfDecision(updated, 'approved');
+
+    return updated;
   }
 
   /** Operation ปฏิเสธคำขอ override — `rejectReason` ไม่บังคับ (Operation
@@ -803,7 +941,7 @@ export class DeviceService {
   ): Promise<DeviceConfigOverride> {
     const existing = await this.getPendingOverrideOrThrow(id);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.deviceConfigOverride.updateMany({
         where: { id, status: 'pending' },
         data: {
@@ -818,7 +956,7 @@ export class DeviceService {
           'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
-      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+      const row = await tx.deviceConfigOverride.findUniqueOrThrow({
         where: { id },
       });
       const metadata: AuditLogMetadata = {
@@ -833,8 +971,13 @@ export class DeviceService {
           metadata: metadata as Prisma.InputJsonValue,
         },
       });
-      return updated;
+      return row;
     });
+
+    // แจ้ง ST ผู้ส่งคำขอว่า Operation ปฏิเสธแล้ว (issue #226) — never-throw
+    await this.notifyRequesterOfDecision(updated, 'rejected');
+
+    return updated;
   }
 
   /** Operation ดูรายการคำขอ override ทั้งหมด — filter ตาม `status` (optional,

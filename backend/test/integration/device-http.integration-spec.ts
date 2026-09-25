@@ -512,6 +512,110 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(reloadedRolloutA.successCount).toBe(0);
       expect(reloadedRolloutA.status).toBe('active');
     });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> ใช้ค่าที่ override แล้วจริง ไม่ใช่ base เดิม (issue #223/#226)', async () => {
+      await makeDevice('AC-OVERRIDE-APPROVED', 'installed');
+      const token = await stToken();
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          // ค่า base เดิมถูกต้อง (บวก) — ถ้า apply-config ไม่ merge override เลย
+          // ก็จะ applied: true อยู่ดี ต้อง merge จริงถึงจะเห็น applied: false
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: configEngineerUser.id,
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'AC-OVERRIDE-APPROVED',
+          configId: config.id,
+          versionNumber: 1,
+          // override ค่าติดลบ — MockConfigApplier ต้อง reject ค่านี้ ถ้า merge
+          // จริงตามที่ #226 ต้องการ
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ทดสอบ override ที่ approved แล้ว',
+          status: 'approved',
+          overriddenBy: stUser.id,
+          decidedBy: configEngineerUser.id,
+          decidedAt: new Date(),
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-OVERRIDE-APPROVED/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: config.id })
+        .expect(200);
+
+      const body = res.body as { applied: boolean; details: string[] };
+      expect(body.applied).toBe(false);
+      expect(body.details.join(' ')).toContain('RETRY_INTERVAL_SEC');
+    });
+
+    it('มี DeviceConfigOverride สถานะ rejected ของ Config เดียวกัน -> ไม่ถูกนำมาใช้ ยังคง apply ค่า base เดิม (issue #223/#226)', async () => {
+      await makeDevice('AC-OVERRIDE-REJECTED', 'installed');
+      const token = await stToken();
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: configEngineerUser.id,
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'AC-OVERRIDE-REJECTED',
+          configId: config.id,
+          versionNumber: 1,
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ทดสอบ override ที่ถูกปฏิเสธ',
+          status: 'rejected',
+          overriddenBy: stUser.id,
+          decidedBy: configEngineerUser.id,
+          decidedAt: new Date(),
+          rejectReason: 'ค่าไม่เหมาะสม',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-OVERRIDE-REJECTED/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: config.id })
+        .expect(200);
+
+      const body = res.body as { applied: boolean };
+      expect(body.applied).toBe(true);
+    });
+
+    it('config ถูก soft-delete แล้ว -> 404 (issue #226)', async () => {
+      await makeDevice('AC-SOFT-DELETED', 'installed');
+      const token = await stToken();
+      const configId = await makeConfig('approved');
+      await prisma.config.update({
+        where: { id: configId },
+        data: { deletedAt: new Date() },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-SOFT-DELETED/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(404);
+    });
   });
 
   describe('POST /devices/:deviceId/confirm-firmware-install (issue #181)', () => {
@@ -863,6 +967,112 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(body.passed).toBe(false);
       expect(body.compatibilityCheck.passed).toBe(false);
       expect(body.connectionCheck.passed).toBe(true);
+    });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> configCheck ตรวจค่าที่ override แล้ว ไม่ใช่ base เดิม (issue #223/#226)', async () => {
+      await makeDevice('SC-OVERRIDE-APPROVED', 'installed');
+      const token = await stToken();
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: configEngineerUser.id,
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'SC-OVERRIDE-APPROVED',
+          configId: config.id,
+          versionNumber: 1,
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ทดสอบ override ที่ approved แล้ว',
+          status: 'approved',
+          overriddenBy: stUser.id,
+          decidedBy: configEngineerUser.id,
+          decidedAt: new Date(),
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-OVERRIDE-APPROVED/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: config.id })
+        .expect(200);
+
+      const body = res.body as {
+        passed: boolean;
+        configCheck: { passed: boolean; details: string[] };
+      };
+      expect(body.configCheck.passed).toBe(false);
+      expect(body.configCheck.details.join(' ')).toContain(
+        'RETRY_INTERVAL_SEC',
+      );
+      expect(body.passed).toBe(false);
+    });
+
+    it('มี DeviceConfigOverride สถานะ rejected ของ Config เดียวกัน -> ไม่ถูกนำมาใช้ configCheck ยังผ่านด้วยค่า base เดิม (issue #223/#226)', async () => {
+      await makeDevice('SC-OVERRIDE-REJECTED', 'installed');
+      const token = await stToken();
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: configEngineerUser.id,
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'SC-OVERRIDE-REJECTED',
+          configId: config.id,
+          versionNumber: 1,
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ทดสอบ override ที่ถูกปฏิเสธ',
+          status: 'rejected',
+          overriddenBy: stUser.id,
+          decidedBy: configEngineerUser.id,
+          decidedAt: new Date(),
+          rejectReason: 'ค่าไม่เหมาะสม',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-OVERRIDE-REJECTED/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: config.id })
+        .expect(200);
+
+      const body = res.body as { configCheck: { passed: boolean } };
+      expect(body.configCheck.passed).toBe(true);
+    });
+
+    it('config ถูก soft-delete แล้ว -> 404 (issue #226)', async () => {
+      await makeDevice('SC-SOFT-DELETED', 'installed');
+      const token = await stToken();
+      const configId = await makeConfig('approved');
+      await prisma.config.update({
+        where: { id: configId },
+        data: { deletedAt: new Date() },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/SC-SOFT-DELETED/simulate-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(404);
     });
   });
 
@@ -1482,6 +1692,59 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(overrides).toHaveLength(1);
     });
 
+    it('มีคำขอ pending เก่าผูกกับ configId เดิม แล้ว Confirm Install ใหม่ทับเป็น Config อื่น -> ส่งคำขอใหม่กับ configId ปัจจุบันได้ ไม่ติด 409 (issue #226 ข้อ 3)', async () => {
+      await makeDevice('DCO-STALE-PENDING', 'installed');
+      const configIdOld = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-PENDING', configIdOld);
+      await makeOverridableField('APN', true);
+      const token = await stToken();
+
+      // รอบแรก — ส่งคำขอ override ผูกกับ configIdOld (pending, ยังไม่มี
+      // Operation ตัดสินใจ)
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-STALE-PENDING/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'apn-รอบแรก' },
+          reason: 'รอบแรก (configId เก่า)',
+        })
+        .expect(200);
+
+      // Confirm Install ใหม่ทับ -> Config ปัจจุบันของอุปกรณ์เปลี่ยนเป็น
+      // configIdNew (Task completed ล่าสุด) — คำขอ pending รอบแรกที่ผูกกับ
+      // configIdOld ตอนนี้ approve ไม่ได้แล้วในทางปฏิบัติ แต่ยังเป็นแถวจริง
+      // ในตาราง (Operation ยังไม่ได้ reject)
+      const configIdNew = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-PENDING', configIdNew);
+
+      // รอบสอง — ส่งคำขอใหม่ผูกกับ configId ปัจจุบัน (configIdNew) ต้องผ่าน
+      // ได้ ไม่ควรติด 409 จากคำขอเก่าที่ผูกกับ configId คนละตัวแล้ว
+      const res2 = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-STALE-PENDING/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'apn-รอบสอง' },
+          reason: 'รอบสอง (configId ใหม่)',
+        })
+        .expect(200);
+
+      const body2 = res2.body as { configId: string; status: string };
+      expect(body2.configId).toBe(configIdNew);
+      expect(body2.status).toBe('pending');
+
+      // ทั้ง 2 แถวต้องยังอยู่ในตาราง (คำขอเก่าไม่ได้ถูกลบ/reject อัตโนมัติ —
+      // ตามมติ scope-by-configId ไม่ใช่ auto-reject)
+      const overrides = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: 'DCO-STALE-PENDING' },
+        orderBy: { versionNumber: 'asc' },
+      });
+      expect(overrides).toHaveLength(2);
+      expect(overrides[0].configId).toBe(configIdOld);
+      expect(overrides[0].status).toBe('pending');
+      expect(overrides[1].configId).toBe(configIdNew);
+      expect(overrides[1].status).toBe('pending');
+    });
+
     it('ผ่านทั้งวงจร: submit -> Operation approve -> submit รอบสองสะสมค่าจากรอบแรก -> approve -> GET merge เห็นค่าล่าสุด', async () => {
       await makeDevice('DCO-FLOW', 'installed');
       const configId = await makeConfig('approved');
@@ -1549,6 +1812,81 @@ describe('DeviceController test-connection (integration — real postgres + guar
         APN: 'new-apn',
         REPORT_INTERVAL_MOVING: '60',
       });
+    });
+
+    it('Notification flow (issue #226) — pending แจ้ง Operation, approve แจ้ง ST ผู้ request จริงผ่าน DB', async () => {
+      await makeDevice('DCO-NOTIFY-APPROVE', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-NOTIFY-APPROVE', configId);
+      await makeOverridableField('APN', true);
+      await grantStOnce();
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const stTok = tokenFor(stUser.id, 'ST');
+      await grantOpOnce();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const opTok = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-NOTIFY-APPROVE/config-override')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ notification' })
+        .expect(200);
+      const override = res.body as { id: string };
+
+      // Operation ต้องได้รับ notification ว่ามีคำขอ pending ใหม่
+      const pendingNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: opUser.id, type: 'config_override_pending' },
+      });
+      expect(
+        (pendingNotification.payload as { overrideId: string }).overrideId,
+      ).toBe(override.id);
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/device-config-overrides/${override.id}/approve`)
+        .set('Authorization', `Bearer ${opTok}`)
+        .expect(200);
+
+      // ST ผู้ request ต้องได้รับ notification ว่า Operation อนุมัติแล้ว
+      const approvedNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: stUser.id, type: 'config_override_approved' },
+      });
+      expect(
+        (approvedNotification.payload as { overrideId: string }).overrideId,
+      ).toBe(override.id);
+    });
+
+    it('Notification flow (issue #226) — reject แจ้ง ST ผู้ request พร้อม rejectReason จริงผ่าน DB', async () => {
+      await makeDevice('DCO-NOTIFY-REJECT', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-NOTIFY-REJECT', configId);
+      await makeOverridableField('APN', true);
+      await grantStOnce();
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const stTok = tokenFor(stUser.id, 'ST');
+      const opTok = await opToken();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-NOTIFY-REJECT/config-override')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'ทดสอบ notification' })
+        .expect(200);
+      const override = res.body as { id: string };
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/device-config-overrides/${override.id}/reject`)
+        .set('Authorization', `Bearer ${opTok}`)
+        .send({ rejectReason: 'ค่าไม่เหมาะสม' })
+        .expect(200);
+
+      const rejectedNotification = await prisma.notification.findFirstOrThrow({
+        where: { userId: stUser.id, type: 'config_override_rejected' },
+      });
+      const payload = rejectedNotification.payload as {
+        overrideId: string;
+        rejectReason: string;
+      };
+      expect(payload.overrideId).toBe(override.id);
+      expect(payload.rejectReason).toBe('ค่าไม่เหมาะสม');
     });
 
     it('Operation reject -> สถานะ rejected พร้อม rejectReason, ไม่กระทบ GET /config, versionNumber รอบถัดไปยังนับต่อจากแถวที่ถูก reject', async () => {

@@ -158,6 +158,12 @@ enum NotificationType {
   incident_alert
   config_deletion_pending
   config_deletion_grace
+  // เพิ่มใหม่ (issue #226) — Per-device Config Override (issue #223):
+  // แจ้ง Operation เมื่อมีคำขอ pending ใหม่ + แจ้ง ST ผู้ request เมื่อ
+  // Operation ตัดสินใจแล้ว (mirror pattern config_deletion_pending)
+  config_override_pending
+  config_override_approved
+  config_override_rejected
 }
 
 model Notification {

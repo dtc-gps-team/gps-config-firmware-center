@@ -64,7 +64,11 @@ enum NotificationType {
   firmwareReady('firmware_ready'),
   incidentAlert('incident_alert'),
   configDeletionPending('config_deletion_pending'),
-  configDeletionGrace('config_deletion_grace');
+  configDeletionGrace('config_deletion_grace'),
+  // เพิ่มใหม่ (issue #226) — Per-device Config Override (issue #223)
+  configOverridePending('config_override_pending'),
+  configOverrideApproved('config_override_approved'),
+  configOverrideRejected('config_override_rejected');
 
   const NotificationType(this.wireName);
 
