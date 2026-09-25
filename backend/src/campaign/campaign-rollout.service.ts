@@ -195,9 +195,27 @@ export class CampaignRolloutService {
     const rollout = await this.findOne(id);
     this.assertDecidable(rollout, actor);
 
-    const updated = await this.prisma.campaignRollout.update({
-      where: { id },
-      data: { status: 'active', approvedBy: actor.id, approvedAt: new Date() },
+    // race condition (mirror DeviceConfigOverride approve/reject, PR #225):
+    // เดิม findOne() เช็คสถานะนอก transaction แล้ว update({ where: { id } })
+    // โดยไม่เช็ค status ซ้ำข้างใน — Operation 2 คนกด approve/reject พร้อมกัน
+    // ผ่านได้ทั้งคู่ แก้ด้วย updateMany({ where: { id, status:
+    // APPROVABLE_CAMPAIGN_ROLLOUT_STATUS } }) ใน $transaction เดียวกัน
+    // count === 0 แปลว่ามีคนอื่นตัดสินใจไปแล้วระหว่างที่เรารออยู่ → 409
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: {
+          status: 'active',
+          approvedBy: actor.id,
+          approvedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'Rollout นี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
     await this.logAudit('approve', actor.id);
@@ -215,9 +233,18 @@ export class CampaignRolloutService {
     const rollout = await this.findOne(id);
     this.assertDecidable(rollout, actor);
 
-    const updated = await this.prisma.campaignRollout.update({
-      where: { id },
-      data: { status: 'rejected' },
+    // race condition — เดียวกับ approve() ด้านบน
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: { status: 'rejected' },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'Rollout นี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
     await this.logAudit('reject', actor.id);
@@ -256,20 +283,36 @@ export class CampaignRolloutService {
     detail: string,
   ): Promise<void> {
     try {
-      const rollout = await this.prisma.campaignRollout.findFirst({
-        where: {
-          status: 'active',
-          ...('configId' in payload
-            ? { configId: payload.configId }
-            : { firmwareId: payload.firmwareId }),
-        },
-      });
-      if (!rollout) return;
-
+      // เดิม query CampaignRollout ด้วย status: 'active' + configId/firmwareId
+      // อย่างเดียว ไม่กรองว่า deviceId นี้เป็นสมาชิกของ rollout นั้นจริงไหม —
+      // ถ้ามี 2 กลุ่มที่ต่างกันมี rollout active ที่ใช้ configId เดียวกัน
+      // พร้อมกัน findFirst() อาจหยิบ rollout ผิดกลุ่มมา แล้วหา target ด้วย
+      // deviceId ไม่เจอ (เพราะเครื่องนี้ไม่ได้อยู่ในกลุ่มนั้นจริง) ผลคือ return
+      // เงียบๆ ทั้งที่ rollout ที่ถูกต้อง (อีกกลุ่ม) ยังมี target ค้างรออยู่จริง
+      // แก้โดย join ผ่าน CampaignRolloutTarget ตรงๆ — filter ด้วย deviceId +
+      // status: 'pending' ก่อน แล้วเช็คเงื่อนไข rollout (active + payload) ผ่าน
+      // relation เดียวกัน รับประกันว่า target ที่ได้เป็นสมาชิกจริงของ rollout
+      // ที่ match เท่านั้น
       const target = await this.prisma.campaignRolloutTarget.findFirst({
-        where: { rolloutId: rollout.id, deviceId, status: 'pending' },
+        where: {
+          deviceId,
+          status: 'pending',
+          rollout: {
+            status: 'active',
+            ...('configId' in payload
+              ? { configId: payload.configId }
+              : { firmwareId: payload.firmwareId }),
+          },
+        },
+        include: { rollout: true },
       });
-      if (!target) return;
+      if (!target) {
+        this.logger.warn(
+          `recordTargetResult: ไม่พบ CampaignRolloutTarget ที่ pending ตรงกับ deviceId ${deviceId} + payload ${JSON.stringify(payload)} (ไม่มี Rollout active ที่เครื่องนี้เป็นสมาชิกจริง หรือถูกบันทึกผลไปแล้ว) — ข้ามการอัปเดต Campaign Monitor`,
+        );
+        return;
+      }
+      const rollout = target.rollout;
 
       await this.prisma.$transaction(async (tx) => {
         await tx.campaignRolloutTarget.update({
