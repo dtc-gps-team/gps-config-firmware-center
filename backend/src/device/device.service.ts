@@ -216,7 +216,10 @@ export class DeviceService {
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
     });
-    if (!config) {
+    // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
+    // `ConfigService.findOne()`/`getBaseConfigForDevice()` (issue #226: เดิม
+    // เช็คแค่ `!config` เฉยๆ ทำให้ Config ที่ถูกลบไปแล้วยังเอาไปใส่เข้าอุปกรณ์ได้)
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
     if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
@@ -233,7 +236,24 @@ export class DeviceService {
       );
     }
 
-    const fields = config.fields as Record<string, unknown>;
+    // Per-device Config Override (issue #223/#226) — ใช้ค่าที่ ST override
+    // แล้วผ่านอนุมัติจริง ไม่ใช่ base Config เดิมเฉยๆ mirror pattern เดียวกับ
+    // `getCurrentConfig()` เป๊ะ (merge แถว `status: approved` ล่าสุดของ Config
+    // เดียวกันทับ base — pending/rejected ไม่มีผล)
+    const approvedOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: {
+        deviceId: device.deviceId,
+        configId: config.id,
+        status: 'approved',
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const fields = {
+      ...(config.fields as Record<string, unknown>),
+      ...(approvedOverride
+        ? (approvedOverride.fields as Record<string, unknown>)
+        : {}),
+    };
     const result = await this.configApplier.applyConfig({
       deviceId: device.deviceId,
       deviceModel: device.deviceModel,
@@ -424,7 +444,9 @@ export class DeviceService {
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
     });
-    if (!config) {
+    // soft-deleted Config ถือว่า "ไม่พบ" เช่นกัน — mirror `applyConfig()`/
+    // `getBaseConfigForDevice()` (issue #226)
+    if (!config || config.deletedAt !== null) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
     if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
@@ -450,6 +472,24 @@ export class DeviceService {
           ],
         };
 
+    // Per-device Config Override (issue #223/#226) — dry-run readiness check
+    // ต้องตรวจค่าที่ override แล้ว ไม่ใช่ base Config เดิม mirror pattern
+    // เดียวกับ `applyConfig()`/`getCurrentConfig()`
+    const approvedOverride = await this.prisma.deviceConfigOverride.findFirst({
+      where: {
+        deviceId: device.deviceId,
+        configId: config.id,
+        status: 'approved',
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
+    const fields = {
+      ...(config.fields as Record<string, unknown>),
+      ...(approvedOverride
+        ? (approvedOverride.fields as Record<string, unknown>)
+        : {}),
+    };
+
     // configCheck + connectionCheck รันเสมอ แม้ compatibilityCheck ไม่ผ่าน —
     // ช่างจะได้เห็นภาพรวมครบในครั้งเดียว (configCheck ตรวจตัว Config เอง,
     // connectionCheck ตรวจสัญญาณกล่อง ทั้งคู่ไม่ขึ้นกับผล compat)
@@ -457,7 +497,7 @@ export class DeviceService {
       this.deviceSimulator.simulateConfig({
         deviceModel: config.deviceModel,
         protocol: config.protocol,
-        fields: config.fields as Record<string, unknown>,
+        fields,
       }),
       this.connectionTester.testConnection({
         deviceId: device.deviceId,

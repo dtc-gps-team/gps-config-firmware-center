@@ -497,6 +497,66 @@ describe('DeviceService', () => {
       ).rejects.toThrow(ConflictException);
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
+
+    it('config ถูก soft-delete (deletedAt ไม่ null) -> NotFoundException ไม่เรียก applier (issue #226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-20T00:00:00.000Z'),
+      });
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).rejects.toThrow(NotFoundException);
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> merge fields ทับ base ก่อนส่งเข้า applier (issue #223/#226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DTC-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride ของเครื่องนี้ -> ใช้ base Config เดิมเฉยๆ ไม่ merge อะไร', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DTC-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
+    });
   });
 
   describe('confirmFirmwareInstall (issue #181)', () => {
@@ -778,6 +838,66 @@ describe('DeviceService', () => {
         service.simulateConfig('DTC-0001', approvedConfig.id),
       ).rejects.toThrow(ConflictException);
       expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('config ถูก soft-delete (deletedAt ไม่ null) -> NotFoundException (issue #226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-09-20T00:00:00.000Z'),
+      });
+
+      await expect(
+        service.simulateConfig('DTC-0001', approvedConfig.id),
+      ).rejects.toThrow(NotFoundException);
+      expect(deviceSimulator.simulateConfig).not.toHaveBeenCalled();
+    });
+
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> readiness check ตรวจค่าที่ override แล้ว ไม่ใช่ base เดิม (issue #223/#226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride ของเครื่องนี้ -> ใช้ base Config เดิมเฉยๆ ไม่ merge อะไร', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
     });
   });
 
