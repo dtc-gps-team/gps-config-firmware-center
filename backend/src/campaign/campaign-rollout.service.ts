@@ -205,9 +205,27 @@ export class CampaignRolloutService {
     const rollout = await this.findOne(id);
     this.assertDecidable(rollout, actor);
 
-    const updated = await this.prisma.campaignRollout.update({
-      where: { id },
-      data: { status: 'active', approvedBy: actor.id, approvedAt: new Date() },
+    // race condition (mirror DeviceConfigOverride approve/reject, PR #225):
+    // เดิม findOne() เช็คสถานะนอก transaction แล้ว update({ where: { id } })
+    // โดยไม่เช็ค status ซ้ำข้างใน — Operation 2 คนกด approve/reject พร้อมกัน
+    // ผ่านได้ทั้งคู่ แก้ด้วย updateMany({ where: { id, status:
+    // APPROVABLE_CAMPAIGN_ROLLOUT_STATUS } }) ใน $transaction เดียวกัน
+    // count === 0 แปลว่ามีคนอื่นตัดสินใจไปแล้วระหว่างที่เรารออยู่ → 409
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: {
+          status: 'active',
+          approvedBy: actor.id,
+          approvedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'Rollout นี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
     await this.logAudit('approve', actor.id);
@@ -225,9 +243,18 @@ export class CampaignRolloutService {
     const rollout = await this.findOne(id);
     this.assertDecidable(rollout, actor);
 
-    const updated = await this.prisma.campaignRollout.update({
-      where: { id },
-      data: { status: 'rejected' },
+    // race condition — เดียวกับ approve() ด้านบน
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: { status: 'rejected' },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'Rollout นี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
     await this.logAudit('reject', actor.id);
@@ -273,7 +300,7 @@ export class CampaignRolloutService {
    * **never-throw** — เป็นแค่ side-effect ติดตามผล ไม่ใช่ core contract ของ
    * apply-config/confirm-firmware-install เอง (mirror pattern `logAudit` ใน
    * ไฟล์นี้/`device.service.ts`) ถ้าไม่เจอ target ที่ match (เช่น apply
-   * นอกแคมเปญ) ก็แค่ไม่ทำอะไรเลย ไม่ error
+   * นอกแคมเปญ) log warning ไว้ debug แล้ว return เฉยๆ ไม่ throw
    */
   async recordTargetResult(
     deviceId: string,
@@ -295,8 +322,12 @@ export class CampaignRolloutService {
         },
         include: { rollout: true },
       });
-      if (!target) return;
-
+      if (!target) {
+        this.logger.warn(
+          `recordTargetResult: ไม่พบ CampaignRolloutTarget ที่ pending ตรงกับ deviceId ${deviceId} + payload ${JSON.stringify(payload)} (ไม่มี Rollout active ที่เครื่องนี้เป็นสมาชิกจริง หรือถูกบันทึกผลไปแล้ว) — ข้ามการอัปเดต Campaign Monitor`,
+        );
+        return;
+      }
       const rollout = target.rollout;
 
       await this.prisma.$transaction(async (tx) => {

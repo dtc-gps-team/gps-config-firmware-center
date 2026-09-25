@@ -435,6 +435,83 @@ describe('DeviceController test-connection (integration — real postgres + guar
       // ครบทุกเครื่องในรอบแล้ว (targetCount 1) -> ปิดรอบเป็น completed
       expect(reloadedRollout.status).toBe('completed');
     });
+
+    it('Campaign Monitor race condition fix — 2 กลุ่มต่างกันมี Rollout active ใช้ configId เดียวกันพร้อมกัน -> ผลบันทึกเข้ากลุ่มที่อุปกรณ์เป็นสมาชิกจริงเท่านั้น ไม่ใช่กลุ่มแรกที่เจอ', async () => {
+      await makeDevice('AC-CAMPAIGN-2', 'installed');
+      await makeDevice('AC-CAMPAIGN-OTHER', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const token = tokenFor(stUser.id, 'ST');
+      const configId = await makeConfig('approved');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      // กลุ่ม A (สร้างก่อน — ถ้า query เดิมหยิบ rollout แรกที่เจอแบบไม่กรอง
+      // สมาชิกจะได้ตัวนี้มาผิดๆ) มี rollout active ใช้ configId เดียวกัน แต่
+      // AC-CAMPAIGN-2 ไม่ได้เป็นสมาชิกของกลุ่มนี้เลย
+      const campaignA = await prisma.campaign.create({
+        data: { name: 'กลุ่ม A (ไม่เกี่ยวข้อง)', createdBy: opUser.id },
+      });
+      const rolloutA = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignA.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutA.id, deviceId: 'AC-CAMPAIGN-OTHER' },
+      });
+
+      // กลุ่ม B — AC-CAMPAIGN-2 เป็นสมาชิกจริง ใช้ configId เดียวกัน active
+      // เหมือนกัน
+      const campaignB = await prisma.campaign.create({
+        data: { name: 'กลุ่ม B (ถูกต้อง)', createdBy: opUser.id },
+      });
+      const rolloutB = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignB.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutB.id, deviceId: 'AC-CAMPAIGN-2' },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-CAMPAIGN-2/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId })
+        .expect(200);
+
+      // กลุ่ม B (ที่เครื่องเป็นสมาชิกจริง) ต้องถูกอัปเดตผล
+      const targetB = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutB.id, deviceId: 'AC-CAMPAIGN-2' },
+      });
+      expect(targetB.status).toBe('success');
+      const reloadedRolloutB = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rolloutB.id },
+      });
+      expect(reloadedRolloutB.successCount).toBe(1);
+      expect(reloadedRolloutB.status).toBe('completed');
+
+      // กลุ่ม A (ไม่เกี่ยวข้อง) ต้องไม่ถูกแตะเลย
+      const targetA = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutA.id, deviceId: 'AC-CAMPAIGN-OTHER' },
+      });
+      expect(targetA.status).toBe('pending');
+      const reloadedRolloutA = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rolloutA.id },
+      });
+      expect(reloadedRolloutA.successCount).toBe(0);
+      expect(reloadedRolloutA.status).toBe('active');
+    });
   });
 
   describe('POST /devices/:deviceId/confirm-firmware-install (issue #181)', () => {
