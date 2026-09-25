@@ -22,13 +22,6 @@ tags:
     description: >-
       คำขอลบ Config อัตโนมัติ (docs/11 Part A) — scheduled job เสนอลบ Config
       ที่ค้างไม่ใช้ · SuperAdmin อนุมัติ/ปฏิเสธ · ConfigEngineer/ผู้สร้างกด "เก็บไว้"
-  - name: config-override
-    description: >-
-      Per-Field Config Override ACL (issue #185) — ST แก้ค่าบาง field ของ
-      Config ที่ approved/synced แล้วโดยตรง ไม่ผ่าน Approval Center ปกติ
-      (กรณีลูกค้าขอแก้ค่าหน้างาน หรือช่างต้องแก้เพราะเกิดข้อผิดพลาด) OT ไม่มี
-      สิทธิ์เลย — เฉพาะ field ที่ ConfigEngineer เปิด `stOverridable: true` ไว้
-      ใน Parameter Library เท่านั้น
   - name: firmware
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
@@ -413,66 +406,6 @@ paths:
           description: ไม่พบ Config นี้
         "409":
           description: สถานะ Config ปัจจุบันไม่ใช่ testing จึงปฏิเสธไม่ได้
-
-  # เพิ่มใหม่ (issue #185, Phase 1) — Per-Field Config Override: ST แก้ค่าบาง
-  # field ของ Config ที่ approved/synced แล้วโดยตรง ข้าม Approval Center ปกติ
-  # สร้าง ConfigVersion ใหม่ mirror approveConfig ทุกประการ (เผื่อ Rollback
-  # #28 ใช้ต่อ) แค่ actor ไม่ใช่ผู้อนุมัติจริง (ดู description field `reason`)
-  /config/{configId}/override:
-    post:
-      tags: [config-override]
-      operationId: overrideConfig
-      summary: ST override ค่าบาง field ของ Config ที่ approved/synced แล้ว (Per-Field ACL — issue #185)
-      description: >-
-        `fields` เป็น partial update — ใส่แค่ field ที่ต้องการแก้ ทุก key ต้อง
-        `stOverridable: true` ตาม ConfigFieldDefinition ที่เกี่ยวข้อง ไม่งั้น 400
-        · `reason` บังคับกรอกเสมอ (GPS_Config_Firmware_Center_Design.pdf §19
-        ข้อ 24: "ทุกการ Override ต้องมีผู้ดำเนินการ เหตุผล และ Audit Log") ·
-        สร้าง ConfigVersion ใหม่ทุกครั้ง (versioning เผื่อ Rollback ใช้ต่อ) ·
-        เขียน AuditLog บังคับทุกครั้งแบบไม่มีข้อยกเว้น (RBAC_Matrix.md กฎข้อ 3)
-      parameters:
-        - in: path
-          name: configId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [fields, reason]
-              properties:
-                fields:
-                  type: object
-                  additionalProperties: true
-                  description: >-
-                    partial update ของ Config.fields — key ต้องมีนิยามใน
-                    ConfigFieldDefinition และ stOverridable: true
-                reason:
-                  type: string
-                  maxLength: 500
-                  description: เหตุผลของการ override — บังคับกรอกเสมอ
-      responses:
-        "200":
-          description: override สำเร็จ — Config.fields ถูก merge ค่าใหม่เข้าไปแล้ว
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DeviceConfigDraft"
-        "400":
-          description: >-
-            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
-            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
-        "401":
-          description: Token ไม่ถูกต้องหรือหมดอายุ
-        "403":
-          description: ไม่มีสิทธิ์ override Config — เฉพาะ Role ST เท่านั้น (OT ไม่มีสิทธิ์เลย)
-        "404":
-          description: ไม่พบ Config นี้
-        "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ approved/synced จึง override ไม่ได้
 
   # เพิ่มใหม่ (Stage 5, #26 ข้อ 9): ประวัติเวอร์ชันของ Config — snapshot
   # append-only ทุกครั้งที่ Operation approve เป็นฐานของ Rollback ใน Phase 4
@@ -1466,13 +1399,19 @@ paths:
     get:
       tags: [device]
       operationId: getDeviceCurrentConfig
-      summary: Config ปัจจุบันของอุปกรณ์เครื่องนี้ (Config Override Phase 2, Mobile — issue #211, v3.30)
+      summary: Config ปัจจุบันของอุปกรณ์เครื่องนี้ (Config Override Phase 2, Mobile — issue #211, v3.32)
       description: >-
         derive จาก `Task.configId` ของ Task ล่าสุด (`status: completed`) ที่ผูก
         กับอุปกรณ์เครื่องนี้ — Device ไม่มี FK ตรงไป Config เลย (เหมือน
         `getDeviceStatus` ที่ยังไม่ implement) ใช้เปิดหน้า "Override ค่า
-        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `config-override`) ก่อน
-        เรียก `overrideConfig` ต่อ
+        พารามิเตอร์" ฝั่ง Mobile (ST เท่านั้น — resource `device-config-override`)
+        ก่อนเรียก `overrideDeviceConfig` ต่อ · **v3.31 (issue #223):** ถ้า
+        อุปกรณ์เครื่องนี้มี `DeviceConfigOverride` อยู่ ค่า `fields` ที่คืนกลับ
+        เป็นค่าที่ merge override ทับ base Config แล้ว (ดู `hasDeviceOverride`)
+        · **v3.32 (มติ 2026-09-24, PR #225):** merge เฉพาะแถวที่ Operation
+        อนุมัติแล้ว (`status: approved`) เท่านั้น — คำขอที่ยัง `pending`/ถูก
+        `rejected` ไม่มีผลกับ `fields`/`hasDeviceOverride` เลย ดูได้ผ่าน
+        `pendingOverride` แยกต่างหาก (ถ้ามีคำขอค้างอยู่)
       parameters:
         - in: path
           name: deviceId
@@ -1481,11 +1420,11 @@ paths:
             type: string
       responses:
         "200":
-          description: Config ปัจจุบันของอุปกรณ์
+          description: Config ปัจจุบันของอุปกรณ์ (merge override เฉพาะเครื่องแล้วถ้ามี)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DeviceConfigDraft"
+                $ref: "#/components/schemas/DeviceCurrentConfig"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -1494,6 +1433,193 @@ paths:
           description: >-
             ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
             ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
+
+  /devices/{deviceId}/config-override:
+    post:
+      tags: [device]
+      operationId: overrideDeviceConfig
+      summary: ST ส่งคำขอ override ค่าบาง field ของ Config เฉพาะอุปกรณ์เครื่องนี้ (Per-device Config Override — issue #223, v3.32)
+      description: >-
+        **ต่างจาก `overrideConfig` เดิม (`POST /config/{configId}/override`,
+        issue #185) ที่เคยแก้ `Config.fields` ทั้งชุดทันที** — endpoint นี้
+        ไม่แตะ `Config` เลย เขียนเป็นแถวใหม่ใน `DeviceConfigOverride` (ผูกกับ
+        อุปกรณ์เครื่องนี้เท่านั้น) จึงไม่กระทบอุปกรณ์/แคมเปญอื่นที่ใช้ Config
+        เดียวกัน — **endpoint เดิมถูกลบไปแล้ว (v3.33, issue #223, แก้ครั้งที่
+        57)** รวมเป็นกลไกเดียวนี้เท่านั้น
+
+        **v3.32 (มติ 2026-09-24, request changes บน PR #225 โดย A):**
+        endpoint นี้สร้างคำขอสถานะ `pending` เท่านั้น **ไม่มีผลกับ**
+        `getDeviceCurrentConfig` ทันทีอีกต่อไป — ต้องรอ Operation อนุมัติผ่าน
+        `approveDeviceConfigOverride` ก่อน (Separation of Duty — ST สร้างคำขอ
+        เอง อนุมัติเองไม่ได้) แล้วช่างต้องกด apply-config เข้าเครื่องเองอีกครั้ง
+        (ยังไม่ automation ในรอบนี้ — แยก PR ถัดไป) เครื่องหนึ่งมีคำขอ
+        `pending` พร้อมกันได้แค่ 1 รายการ (409 ถ้ามีอยู่แล้ว)
+
+        `fields` เป็น partial update เหมือน `overrideConfig` เดิม — ทุก key
+        ต้อง `stOverridable: true` ตาม `ConfigFieldDefinition` ของ
+        deviceModel/protocol ของอุปกรณ์นี้ (validate ด้วย logic เดียวกับ
+        endpoint เดิม) `reason` บังคับกรอกเสมอ — base Config มาจาก
+        `getDeviceCurrentConfig` (Task ล่าสุดที่ `completed`) ค่าที่เขียนลง
+        `DeviceConfigOverride.fields` เป็นสถานะ override สะสมของอุปกรณ์เครื่อง
+        นี้ (merge `fields` ที่ส่งมารอบนี้ทับของแถว **`approved`** ล่าสุดของ
+        Config เดียวกัน ถ้ามี) ไม่ใช่แค่ delta ของรอบนี้เฉยๆ — field ที่
+        override ไว้ในรอบก่อนหน้าจึงไม่หายไปถ้ารอบนี้ override field อื่น
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields, reason]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: >-
+                    partial update ของ Config ปัจจุบันของอุปกรณ์เครื่องนี้ — key
+                    ต้องมีนิยามใน ConfigFieldDefinition และ stOverridable: true
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลของการ override — บังคับกรอกเสมอ
+      responses:
+        "200":
+          description: >-
+            ส่งคำขอสำเร็จ — คืนคำขอที่เพิ่งสร้าง (สถานะ `pending` เสมอ)
+            **ไม่ใช่** Config ที่ merge แล้ว เพราะยังไม่มีผลจนกว่า Operation
+            จะอนุมัติ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigOverride"
+        "400":
+          description: >-
+            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
+            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ override Config ของอุปกรณ์นี้ — เฉพาะ Role ST เท่านั้น (OT ไม่มีสิทธิ์เลย)
+        "404":
+          description: >-
+            ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
+            ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
+        "409":
+          description: อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อนส่งคำขอใหม่
+
+  /device-config-overrides:
+    get:
+      tags: [device]
+      operationId: listDeviceConfigOverrides
+      summary: Operation ดูรายการคำขอ Per-device Config Override ทั้งหมด (issue #223, มติ 2026-09-24, v3.32)
+      description: >-
+        คิวอนุมัติของ Operation — filter ตาม `status` (optional, ไม่ส่ง = ทุก
+        สถานะ) เรียงคำขอใหม่สุดก่อน (`overriddenAt` desc) resource
+        `device-config-override` action `Read` — Operation เท่านั้น
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: รายการคำขอ (เรียงตาม overriddenAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceConfigOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
+
+  /device-config-overrides/{id}/approve:
+    post:
+      tags: [device]
+      operationId: approveDeviceConfigOverride
+      summary: Operation อนุมัติคำขอ override (issue #223, มติ 2026-09-24, v3.32)
+      description: >-
+        เปลี่ยนสถานะคำขอเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้
+        อัตโนมัติ** ช่างต้องกด `applyConfig` เข้าเครื่องเองอีกครั้งหลังจากนี้
+        (ยังไม่ automation ในรอบนี้ — แยก PR ถัดไป) resource
+        `device-config-override` action `Approve` — Operation เท่านั้น
+        (Separation of Duty — ST ผู้ส่งคำขอเองอนุมัติไม่ได้)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "อนุมัติสำเร็จ — คืนคำขอที่อัปเดตแล้ว (status: approved)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
+        "409":
+          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
+
+  /device-config-overrides/{id}/reject:
+    post:
+      tags: [device]
+      operationId: rejectDeviceConfigOverride
+      summary: Operation ปฏิเสธคำขอ override (issue #223, มติ 2026-09-24, v3.32)
+      description: >-
+        เปลี่ยนสถานะคำขอเป็น `rejected` — `rejectReason` ไม่บังคับ resource
+        เดียวกับ approve (action `Approve`) — mirror `config-deletion`
+        (`rejectConfigDeletionRequest` ใช้ action `Approve` เดียวกับ approve
+        เพราะเป็น "สิทธิ์ตัดสินใจ" ไม่ได้แยกตามผลตัดสินใจ)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejectReason:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลที่ปฏิเสธ (optional)
+      responses:
+        "200":
+          description: "ปฏิเสธสำเร็จ — คืนคำขอที่อัปเดตแล้ว (status: rejected)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
+        "409":
+          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
 
   /incidents:
     get:
@@ -1880,7 +2006,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaigns
-      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.31
+      summary: รายการกลุ่มอุปกรณ์ทั้งหมด — v3.35
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
         createdAt desc · **แก้ไข 2026-09-24:** ตัด query param `status` ออก
@@ -1900,7 +2026,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaign
-      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.31
+      summary: สร้างกลุ่มอุปกรณ์ใหม่ (Campaign Wizard, #21) — v3.35
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — สร้าง
         Campaign (กลุ่ม) + CampaignTarget (สมาชิก) ใน transaction เดียว ·
@@ -1938,7 +2064,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listAllCampaignRollouts
-      summary: รายการ Rollout ข้ามทุกกลุ่ม — v3.32 (Approval Center)
+      summary: รายการ Rollout ข้ามทุกกลุ่ม — v3.36 (Approval Center)
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม
         createdAt desc · **แก้ไข 2026-09-24:** เพิ่มเข้ามาให้ Approval Center
@@ -1969,7 +2095,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaign
-      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.31
+      summary: รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — v3.35
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ listCampaigns)
       parameters:
         - in: path
@@ -1994,7 +2120,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignTargets
-      summary: รายชื่อสมาชิกกลุ่ม — v3.31 (Campaign Monitor #22)
+      summary: รายชื่อสมาชิกกลุ่ม — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read` เดียวกับ getCampaign)
       parameters:
         - in: path
@@ -2019,7 +2145,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRollouts
-      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.31 (Campaign Monitor #22)
+      summary: ประวัติ Rollout ทั้งหมดของกลุ่มนี้ — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`) เรียงตาม createdAt desc
       parameters:
         - in: path
@@ -2042,7 +2168,7 @@ paths:
     post:
       tags: [campaign]
       operationId: createCampaignRollout
-      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.31 (Campaign Monitor #22)
+      summary: เริ่ม Rollout ใหม่ — push Config/Firmware เข้ากลุ่ม — v3.35 (Campaign Monitor #22)
       description: >-
         **Operation เท่านั้น** (resource `campaign` action `Create`) — เลือก
         Config หรือ Firmware มา push เข้าสมาชิกกลุ่ม (default = ทั้งกลุ่ม
@@ -2096,7 +2222,7 @@ paths:
     get:
       tags: [campaign]
       operationId: getCampaignRollout
-      summary: รายละเอียด Rollout 1 รอบ — v3.31 (Campaign Monitor #22)
+      summary: รายละเอียด Rollout 1 รอบ — v3.35 (Campaign Monitor #22)
       description: ทุก Role อ่านได้ (resource `campaign` action `Read`)
       parameters:
         - in: path
@@ -2127,7 +2253,7 @@ paths:
     get:
       tags: [campaign]
       operationId: listCampaignRolloutTargets
-      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.31 (Campaign Monitor #22)
+      summary: ผลของ Rollout ต่อเครื่อง — Failure Rate จริง — v3.35 (Campaign Monitor #22)
       description: >-
         ทุก Role อ่านได้ (resource `campaign` action `Read`) — อัปเดตจาก
         `applyConfigToDevice`/`confirmFirmwareInstall` จริง (mock mode ก็
@@ -2161,7 +2287,7 @@ paths:
     post:
       tags: [campaign]
       operationId: approveCampaignRollout
-      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.31
+      summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.35
       description: >-
         resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
         `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
@@ -2202,7 +2328,7 @@ paths:
     post:
       tags: [campaign]
       operationId: rejectCampaignRollout
-      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.31
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35
       description: >-
         resource เดียวกับ `approveCampaignRollout` (`campaign` action
         `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
@@ -2499,7 +2625,7 @@ components:
     Campaign:
       type: object
       description: >-
-        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.31) ตรง
+        1 กลุ่มอุปกรณ์ (listCampaigns/getCampaign/createCampaign — v3.35) ตรง
         กับ Prisma model `Campaign` — ไม่ embed สมาชิกกลุ่ม (ดู
         `listCampaignTargets`) หรือประวัติ Rollout (ดู `listCampaignRollouts`)
         **แก้ไข 2026-09-24 (Campaign Monitor #22):** เดิม schema นี้มี
@@ -2565,7 +2691,7 @@ components:
     CampaignTarget:
       type: object
       description: >-
-        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.31, Campaign Monitor
+        สมาชิกกลุ่ม 1 เครื่อง (listCampaignTargets — v3.35, Campaign Monitor
         #22) ตรงกับ Prisma model `CampaignTarget` — ไม่มี status (สมาชิกกลุ่ม
         ไม่ผูกกับผล push รอบไหนรอบหนึ่ง ดู `CampaignRolloutTarget` แทน)
       required: [id, campaignId, deviceId, createdAt]
@@ -2602,7 +2728,7 @@ components:
       description: >-
         1 รอบ push Config หรือ Firmware เข้ากลุ่มอุปกรณ์หนึ่งกลุ่ม
         (listCampaignRollouts/getCampaignRollout/createCampaignRollout —
-        v3.31, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
+        v3.35, Campaign Monitor #22) ตรงกับ Prisma model `CampaignRollout` —
         รับ field ที่เคยอยู่บน `Campaign` เดิมมาทั้งหมด (ดู tag `campaign`
         description)
       required:
@@ -2677,7 +2803,7 @@ components:
       type: object
       required: [payloadType]
       description: >-
-        Body ของ `createCampaignRollout` (v3.31, Campaign Monitor #22) — ไม่มี
+        Body ของ `createCampaignRollout` (v3.35, Campaign Monitor #22) — ไม่มี
         field เลือก target เอง default = สมาชิกทั้งกลุ่ม เอาบางเครื่องออกได้
         ผ่าน `excludeDeviceIds` เท่านั้น (ไม่รองรับเพิ่มเครื่องนอกกลุ่ม)
       properties:
@@ -2711,7 +2837,7 @@ components:
     CampaignRolloutTarget:
       type: object
       description: >-
-        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.31,
+        ผลต่อเครื่องของ Rollout 1 รอบ (listCampaignRolloutTargets — v3.35,
         Campaign Monitor #22) ตรงกับ Prisma model `CampaignRolloutTarget`
       required: [id, rolloutId, deviceId, status, createdAt, updatedAt]
       properties:
@@ -2786,6 +2912,96 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    DeviceCurrentConfig:
+      description: >-
+        `GET /devices/{deviceId}/config` response — `DeviceConfigDraft` (base
+        Config) + `hasDeviceOverride` (Per-device Config Override, issue
+        #223) `fields` เป็นค่าที่ merge override เฉพาะเครื่องนี้ (ถ้ามีและ
+        `status: approved` เท่านั้น — v3.32) ทับ base แล้ว — **ไม่ใช่**
+        `Config.fields` ดิบๆ เสมอไป
+      allOf:
+        - $ref: "#/components/schemas/DeviceConfigDraft"
+        - type: object
+          required: [hasDeviceOverride, pendingOverride]
+          properties:
+            hasDeviceOverride:
+              type: boolean
+              description: >-
+                อุปกรณ์เครื่องนี้มีคำขอ `DeviceConfigOverride` สถานะ `approved`
+                ทับ base Config อยู่ไหม — `true` บอกช่างว่าค่าที่เห็นไม่ใช่
+                Config เดิมล้วนๆ (issue #223) คำขอ `pending`/`rejected` **ไม่
+                มีผล** ต่อค่านี้ (v3.32)
+            pendingOverride:
+              type: object
+              nullable: true
+              description: >-
+                คำขอ override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (ถ้ามี
+                — เครื่องหนึ่งมีได้ทีละ 1 รายการ) `null` ถ้าไม่มีคำขอค้างอยู่
+                (v3.32, มติ 2026-09-24)
+              allOf:
+                - $ref: "#/components/schemas/DeviceConfigOverride"
+
+    DeviceConfigOverride:
+      type: object
+      description: >-
+        Per-device Config Override (issue #223) — คำขอแก้ค่าบาง field ของ
+        Config เฉพาะอุปกรณ์เครื่องเดียว ต้องผ่าน Operation อนุมัติก่อนถึงมีผล
+        (มติ 2026-09-24, PR #225 — ดู comment เหนือ `model DeviceConfigOverride`
+        ใน schema.prisma)
+      required:
+        [
+          id,
+          deviceId,
+          configId,
+          versionNumber,
+          fields,
+          reason,
+          status,
+          overriddenBy,
+          overriddenAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+        configId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+          description: นับจากทุกสถานะ (รวม rejected) เพิ่มทีละ 1 ต่ออุปกรณ์
+        fields:
+          type: object
+          additionalProperties: true
+          description: สถานะ override สะสมของอุปกรณ์เครื่องนี้ ณ version นี้
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        overriddenBy:
+          type: string
+          format: uuid
+          description: userId ของ ST ที่ส่งคำขอ
+        overriddenAt:
+          type: string
+          format: date-time
+        decidedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: userId ของ Operation ที่อนุมัติ/ปฏิเสธ — null ถ้ายัง pending
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectReason:
+          type: string
+          nullable: true
+          description: เหตุผลที่ปฏิเสธ — optional แม้สถานะเป็น rejected
 
     ConfigVersion:
       type: object

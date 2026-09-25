@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { CampaignPayloadType, CampaignRollout } from '@prisma/client';
+import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
@@ -91,14 +91,17 @@ function firmwareDto(): CreateCampaignRolloutDto {
 
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
+  let transactionMock: jest.Mock;
   let campaign: { findUnique: jest.Mock };
   let campaignTarget: { findMany: jest.Mock };
   let campaignRollout: {
     create: jest.Mock;
     findMany: jest.Mock;
     findUnique: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
     findFirst: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
   };
   let campaignRolloutTarget: {
     createMany: jest.Mock;
@@ -118,8 +121,10 @@ describe('CampaignRolloutService', () => {
       create: jest.fn().mockResolvedValue(sampleRollout),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null), // ไม่มี rollout ค้างอยู่ (default)
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }), // ชนะการแข่ง (default)
     };
     campaignRolloutTarget = {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
@@ -136,6 +141,9 @@ describe('CampaignRolloutService', () => {
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
 
+    transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
+      cb({ campaignRollout, campaignRolloutTarget }),
+    );
     const prismaMock = {
       campaign,
       campaignTarget,
@@ -145,9 +153,7 @@ describe('CampaignRolloutService', () => {
       firmware,
       device,
       auditLog,
-      $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ campaignRollout, campaignRolloutTarget }),
-      ),
+      $transaction: transactionMock,
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -181,6 +187,14 @@ describe('CampaignRolloutService', () => {
           { rolloutId: sampleRollout.id, deviceId: installedDeviceA.deviceId },
           { rolloutId: sampleRollout.id, deviceId: installedDeviceB.deviceId },
         ],
+      });
+    });
+
+    it('เช็ค rollout ค้างอยู่ + สร้าง rollout อยู่ใน $transaction เดียวกัน ด้วย isolationLevel Serializable (กัน race condition — review B บน PR #224)', async () => {
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     });
 
@@ -383,7 +397,7 @@ describe('CampaignRolloutService', () => {
 
     it('pending_approval + ผู้อนุมัติไม่ใช่ผู้สร้าง -> active พร้อม approvedBy/approvedAt', async () => {
       campaignRollout.findUnique.mockResolvedValue(pendingRollout);
-      campaignRollout.update.mockResolvedValue({
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
         ...pendingRollout,
         status: 'active',
         approvedBy: otherOperation.id,
@@ -393,8 +407,8 @@ describe('CampaignRolloutService', () => {
       const result = await service.approve(pendingRollout.id, otherOperation);
 
       expect(result.status).toBe('active');
-      expect(campaignRollout.update).toHaveBeenCalledWith({
-        where: { id: pendingRollout.id },
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: pendingRollout.id, status: 'pending_approval' },
         data: expect.objectContaining({
           status: 'active',
           approvedBy: otherOperation.id,
@@ -420,6 +434,16 @@ describe('CampaignRolloutService', () => {
         service.approve(pendingRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วระหว่างที่ทรานแซกชันกำลังจะ update (updateMany count 0) -> ConflictException (409), ไม่ throw P2025', async () => {
+      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.approve(pendingRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
+      expect(campaignRollout.findUniqueOrThrow).not.toHaveBeenCalled();
+    });
   });
 
   describe('reject', () => {
@@ -431,7 +455,7 @@ describe('CampaignRolloutService', () => {
 
     it('pending_approval + ผู้ปฏิเสธไม่ใช่ผู้สร้าง -> rejected ไม่ตั้ง approvedBy', async () => {
       campaignRollout.findUnique.mockResolvedValue(pendingRollout);
-      campaignRollout.update.mockResolvedValue({
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
         ...pendingRollout,
         status: 'rejected',
       });
@@ -439,8 +463,8 @@ describe('CampaignRolloutService', () => {
       const result = await service.reject(pendingRollout.id, otherOperation);
 
       expect(result.status).toBe('rejected');
-      expect(campaignRollout.update).toHaveBeenCalledWith({
-        where: { id: pendingRollout.id },
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: pendingRollout.id, status: 'pending_approval' },
         data: { status: 'rejected' },
       });
     });
@@ -451,6 +475,15 @@ describe('CampaignRolloutService', () => {
       await expect(
         service.reject(pendingRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วพร้อมกัน (updateMany count 0) -> ConflictException (409)', async () => {
+      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.reject(pendingRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
@@ -514,16 +547,21 @@ describe('CampaignRolloutService', () => {
       ...sampleRollout,
       status: 'active',
     };
+    const otherActiveRollout: CampaignRollout = {
+      ...sampleRollout,
+      id: 'rollout-other-group',
+      status: 'active',
+    };
     const pendingTarget = {
       id: 'rt-1',
       rolloutId: activeRollout.id,
       deviceId: installedDeviceA.deviceId,
       status: 'pending' as const,
       resultDetail: null,
+      rollout: activeRollout,
     };
 
-    it('เจอ rollout active + target pending ที่ตรงกัน -> อัปเดตผล + คำนวณ count ใหม่ (ยังไม่ครบ -> ไม่เปลี่ยนสถานะ)', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
+    it('เจอ target pending ที่เป็นสมาชิกของ rollout active ที่ payload ตรงกัน -> อัปเดตผล + คำนวณ count ใหม่ (ยังไม่ครบ -> ไม่เปลี่ยนสถานะ)', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1) // success
@@ -537,6 +575,16 @@ describe('CampaignRolloutService', () => {
         'ok',
       );
 
+      // query ต้องกรองผ่าน membership จริง (deviceId + status pending +
+      // rollout active/configId ตรงกัน) ไม่ใช่แค่ configId เฉยๆ
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rollout: { status: 'active', configId: approvedConfig.id },
+        },
+        include: { rollout: true },
+      });
       expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
         where: { id: pendingTarget.id },
         data: { status: 'success', resultDetail: 'ok' },
@@ -548,7 +596,6 @@ describe('CampaignRolloutService', () => {
     });
 
     it('ครบทุกเครื่องแล้ว (pending เหลือ 0) -> ปิด rollout เป็น completed', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1)
@@ -568,36 +615,58 @@ describe('CampaignRolloutService', () => {
       });
     });
 
-    it('ไม่มี rollout active ที่ตรงกัน -> ไม่ทำอะไรเลย (never-throw)', async () => {
-      campaignRollout.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.recordTargetResult(
-          installedDeviceA.deviceId,
-          { configId: 'other-cfg' },
-          true,
-          'ok',
-        ),
-      ).resolves.toBeUndefined();
-      expect(campaignRolloutTarget.findFirst).not.toHaveBeenCalled();
-    });
-
-    it('ไม่มี target pending ที่ตรงกับ deviceId -> ไม่ทำอะไรเลย', async () => {
-      campaignRollout.findFirst.mockResolvedValue(activeRollout);
-      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+    it('2 กลุ่มต่างกันมี rollout active ใช้ configId เดียวกันพร้อมกัน — เครื่องเป็นสมาชิกของ rollout ตัวที่สองเท่านั้น -> ต้องอัปเดต rollout ตัวที่สอง (สมาชิกจริง) ไม่ใช่ตัวแรกที่เจอ', async () => {
+      // query membership คืน target ที่ผูกกับ otherActiveRollout ตรงๆ (Prisma
+      // เป็นคนกรองด้วย where.rollout ให้แล้ว — ในการใช้งานจริง ถ้าเครื่องไม่ได้
+      // เป็นสมาชิกของ rollout แรก จะไม่ได้ target ของ rollout แรกกลับมาเลย)
+      const targetOfSecondGroup = {
+        ...pendingTarget,
+        rolloutId: otherActiveRollout.id,
+        rollout: otherActiveRollout,
+      };
+      campaignRolloutTarget.findFirst.mockResolvedValue(targetOfSecondGroup);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
 
       await service.recordTargetResult(
-        'DEV-NOT-IN-ROLLOUT',
+        installedDeviceA.deviceId,
         { configId: approvedConfig.id },
         true,
         'ok',
       );
 
+      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+        where: { id: targetOfSecondGroup.id },
+        data: { status: 'success', resultDetail: 'ok' },
+      });
+      // ต้องคำนวณ/ปิดรอบของ otherActiveRollout (กลุ่มที่เครื่องเป็นสมาชิกจริง)
+      // ไม่ใช่ activeRollout (กลุ่มแรกที่ไม่เกี่ยวข้อง)
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: otherActiveRollout.id },
+        data: { successCount: 1, failureCount: 0, status: 'completed' },
+      });
+    });
+
+    it('ไม่มี target pending ที่เป็นสมาชิกจริงของ rollout active ที่ payload ตรงกัน -> ไม่ทำอะไรเลย (never-throw, log warning)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.recordTargetResult(
+          'DEV-NOT-IN-ROLLOUT',
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+        ),
+      ).resolves.toBeUndefined();
+
       expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+      expect(campaignRollout.update).not.toHaveBeenCalled();
     });
 
     it('DB error ระหว่างอัปเดต -> ไม่ throw (never-throw)', async () => {
-      campaignRollout.findFirst.mockRejectedValue(new Error('DB ล่ม'));
+      campaignRolloutTarget.findFirst.mockRejectedValue(new Error('DB ล่ม'));
 
       await expect(
         service.recordTargetResult(

@@ -5,7 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Config, Device, Prisma } from '@prisma/client';
+import {
+  Config,
+  Device,
+  DeviceConfigOverride,
+  DeviceConfigOverrideStatus,
+  Prisma,
+} from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
@@ -42,6 +49,19 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
+import { RejectDeviceConfigOverrideDto } from './dto/reject-device-config-override.dto';
+
+/** `GET /devices/{deviceId}/config` response — `Config` (base) + สถานะ
+ * override เฉพาะเครื่องนี้ (issue #223, มติ 2026-09-24 ผ่านอนุมัติแล้วเท่านั้น
+ * ถึงมีผล) — `hasDeviceOverride` = มีแถว `approved` ที่ merge ทับ `fields`
+ * อยู่ไหม, `pendingOverride` = คำขอที่ยังรอ Operation ตัดสินใจของเครื่องนี้
+ * (ถ้ามี — เครื่องหนึ่งมีได้ทีละ 1 รายการ) ดู `DeviceService.getCurrentConfig()` */
+export type ConfigWithDeviceOverride = Config & {
+  hasDeviceOverride: boolean;
+  pendingOverride: DeviceConfigOverride | null;
+};
 
 /** สถานะเดียวที่ทดสอบสัญญาณ / ใส่ Config ได้ — อุปกรณ์ต้องติดตั้งจริงแล้ว
  * อุปกรณ์ที่ยัง `registered` (ยังไม่ติดตั้ง) หรือ `decommissioned` (ปลดระวางแล้ว)
@@ -83,6 +103,7 @@ export class DeviceService {
     @Inject(DEVICE_SIMULATOR)
     private readonly deviceSimulator: DeviceSimulator,
     private readonly campaignRolloutService: CampaignRolloutService,
+    private readonly configDefinitionService: ConfigDefinitionService,
   ) {}
 
   /**
@@ -479,9 +500,7 @@ export class DeviceService {
    * เป็น "ล่าสุด" แทน Task ที่ติดตั้งจริงทีหลังกว่าได้ ยอมรับ trade-off นี้ไปก่อน
    * จนกว่าจะมี `completedAt` แยก
    */
-  async getCurrentConfig(deviceId: string): Promise<Config> {
-    await this.findByDeviceId(deviceId);
-
+  private async getBaseConfigForDevice(deviceId: string): Promise<Config> {
     const task = await this.prisma.task.findFirst({
       where: { deviceId, status: 'completed', configId: { not: null } },
       orderBy: { updatedAt: 'desc' },
@@ -498,5 +517,335 @@ export class DeviceService {
       );
     }
     return config;
+  }
+
+  async getCurrentConfig(deviceId: string): Promise<ConfigWithDeviceOverride> {
+    await this.findByDeviceId(deviceId);
+    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+
+    // Per-device Config Override (issue #223, มติ 2026-09-24) — merge เฉพาะ
+    // แถว status: approved ของ Config **ตัวเดียวกับ base** เท่านั้น (bug fix
+    // — comment A บน PR #225: เดิมกรองแค่ deviceId ไม่กรอง configId ถ้า
+    // เครื่องนี้ถูก Confirm Install เป็น Config ใหม่ทีหลัง override ที่ทำไว้
+    // กับ Config เก่าจะยังถูก merge ทับ Config ใหม่อยู่ — ถ้า Config ใหม่เป็น
+    // คนละ deviceModel/protocol ก็จะได้ field ที่ไม่ผ่าน validate ของรุ่นใหม่
+    // ติดมาด้วย) แถวล่าสุด (`versionNumber` มากสุด) เก็บสถานะ override สะสม
+    // อยู่แล้ว (ดู `overrideDeviceConfig()`) จึง merge แถวเดียวนี้พอ ไม่ต้อง
+    // ไล่รวมทุก version ย้อนหลังเอง — pending/rejected ไม่มีผลกับค่าที่คืนกลับ
+    // เลย (ต้องผ่าน Operation อนุมัติก่อนถึงมีผล)
+    //
+    // `pendingOverride` แยกกรองต่างหาก — **ไม่กรอง configId** เพราะคำขอ
+    // pending ผูกกับ "เครื่องนี้" ตรงๆ (จำกัดได้ทีละ 1 รายการต่อเครื่องเสมอ
+    // ไม่ว่าจะผูกกับ Config ตัวไหน — ดู `overrideDeviceConfig()`) ต้องแสดงให้
+    // ST/Operation เห็นเสมอว่ามีคำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    const [latestApproved, pendingOverride] = await Promise.all([
+      this.prisma.deviceConfigOverride.findFirst({
+        where: { deviceId, configId: baseConfig.id, status: 'approved' },
+        orderBy: { versionNumber: 'desc' },
+      }),
+      this.prisma.deviceConfigOverride.findFirst({
+        where: { deviceId, status: 'pending' },
+      }),
+    ]);
+
+    if (!latestApproved) {
+      return { ...baseConfig, hasDeviceOverride: false, pendingOverride };
+    }
+
+    return {
+      ...baseConfig,
+      fields: {
+        ...(baseConfig.fields as Record<string, unknown>),
+        ...(latestApproved.fields as Record<string, unknown>),
+      } as Prisma.JsonValue,
+      hasDeviceOverride: true,
+      pendingOverride,
+    };
+  }
+
+  /**
+   * Per-device Config Override (issue #223) — ST **ส่งคำขอ** แก้ค่าบาง field
+   * ของ Config ปัจจุบันของ**อุปกรณ์เครื่องนี้เครื่องเดียว** ไม่กระทบอุปกรณ์อื่น
+   * ที่ใช้ Config เดียวกัน (ต่างจาก `POST /config/{configId}/override` เดิม,
+   * issue #185, ที่แก้ `Config.fields` ทั้งชุด — ดู comment เหนือ
+   * `model DeviceConfigOverride` ใน schema.prisma อธิบายที่มา/เหตุผลเต็มๆ)
+   * `POST /config/{configId}/override` เดิมจะถูก A deprecate แยก PR หลัง PR
+   * #225 merge (มติบันทึกใน issue #223)
+   *
+   * **มติ 2026-09-24 (request changes บน PR #225 โดย A):** สร้างแถวสถานะ
+   * `pending` เท่านั้น — **ไม่มีผลกับ `getCurrentConfig()` ทันที** ต้องรอ
+   * Operation อนุมัติผ่าน `approveDeviceConfigOverride()` ก่อน (Separation of
+   * Duty เดิม) แล้วช่างต้องกด `apply-config` เข้าเครื่องเองอีกครั้ง (ยังไม่ทำ
+   * ใน PR นี้ — แยกเป็น PR ถัดไปตามที่ A เสนอ)
+   *
+   * base Config มาจาก `getBaseConfigForDevice()` เดียวกับ `getCurrentConfig()`
+   * เป๊ะ — ไม่พบ (อุปกรณ์ยังไม่เคย Confirm Install หรือ Config ถูกลบไปแล้ว) →
+   * 404 ข้อความเดียวกัน
+   *
+   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ** (เสนอโดย A —
+   * กันการจัดการคำขอซ้อนกัน) → 409 ถ้ามีอยู่แล้ว เช็คในทรานแซกชันเดียวกับ
+   * create เสมอ (ไม่เช็คแยกนอก transaction) กัน ST 2 คนส่งพร้อมกันผ่านทั้งคู่
+   *
+   * **`fields` ที่เขียนลง DB เป็นสถานะ override สะสม ไม่ใช่แค่ `dto.fields`
+   * ดิบๆ** — merge `dto.fields` (partial ที่ ST ส่งมารอบนี้) ทับ fields ของแถว
+   * **`approved`** ล่าสุดของ Config เดียวกัน (ถ้ามี) ก่อนเขียนแถวใหม่ mirror
+   * `ConfigOverrideService.override()` เดิมที่ merge ทับ `Config.fields` เต็ม
+   * ก้อนก่อนสร้าง `ConfigVersion` ใหม่ทุกครั้ง — **เหตุผลที่ทำแบบนี้แทนที่จะ
+   * เก็บแค่ delta ของรอบนี้ดิบๆ**: `getCurrentConfig()` merge แค่แถว approved
+   * ล่าสุดแถวเดียวทับ base (ไม่ไล่รวมทุก version) ถ้าเก็บแค่ delta ดิบๆ การ
+   * override field ใหม่ในรอบถัดไปจะ "ลบ" ผล override ของ field อื่นจากรอบก่อน
+   * หน้าไปเงียบๆ โดยไม่ตั้งใจ — **กรอง `configId: baseConfig.id` ด้วยเสมอ**
+   * (bug fix เดียวกับ `getCurrentConfig()` — comment A บน PR #225: ไม่งั้น
+   * field ที่เคย override ไว้กับ Config เก่า (ก่อน Confirm Install ใหม่) จะติด
+   * มากับแถวใหม่ที่อ้าง Config คนละตัว)
+   *
+   * **`versionNumber` อ่านในทรานแซกชันเดียวกับ `create` เสมอ** (แก้ race
+   * condition ที่ A ชี้ไว้บน PR #225: เดิมอ่านนอก transaction ทำให้ ST 2 คน
+   * ส่งพร้อมกันกับเครื่องเดียวกันอาจได้ `versionNumber` ซ้ำ ชน
+   * `@@unique([deviceId, versionNumber])` แล้วได้ Prisma P2002 → 500 แทนที่จะ
+   * เป็น error ที่สื่อความหมาย — mirror `ConfigOverrideService` ที่ `count`
+   * ในทรานแซกชันเดียวกับ `create` เช่นกัน) นับจาก**ทุกสถานะ** ไม่ใช่แค่
+   * approved กัน versionNumber ชนกับแถวที่เคยถูก reject ไปแล้ว · เพิ่ม
+   * catch P2002 → 409 เป็น backstop เผื่อหลุดผ่านมาได้จริงภายใต้
+   * concurrent load สูงมากๆ (isolation level ปกติของ Postgres ไม่ใช่
+   * SERIALIZABLE ก็ยังมี race ทางทฤษฎีเหลืออยู่เล็กน้อย)
+   *
+   * validate เฉพาะ `dto.fields` ที่ส่งมารอบนี้ (ไม่ validate ซ้ำ field เดิมจาก
+   * version ก่อนหน้าที่ผ่านการ validate ไปแล้วตอนนั้น) reuse
+   * `ConfigDefinitionService.validateOverridableFields()` ตัวเดียวกับ
+   * `config-override` เดิมเป๊ะๆ ไม่เขียนตรรกะซ้ำ
+   */
+  async overrideDeviceConfig(
+    deviceId: string,
+    dto: DeviceConfigOverrideDto,
+    actor: ActingUser,
+  ): Promise<DeviceConfigOverride> {
+    await this.findByDeviceId(deviceId);
+    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+
+    await this.configDefinitionService.validateOverridableFields(
+      baseConfig.deviceModel,
+      baseConfig.protocol,
+      dto.fields,
+    );
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existingPending = await tx.deviceConfigOverride.findFirst({
+          where: { deviceId, status: 'pending' },
+        });
+        if (existingPending) {
+          throw new ConflictException(
+            'อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อนส่งคำขอใหม่',
+          );
+        }
+
+        const previousApproved = await tx.deviceConfigOverride.findFirst({
+          where: { deviceId, configId: baseConfig.id, status: 'approved' },
+          orderBy: { versionNumber: 'desc' },
+        });
+        const accumulatedFields = {
+          ...((previousApproved?.fields as Record<string, unknown>) ?? {}),
+          ...dto.fields,
+        };
+
+        const latestVersion = await tx.deviceConfigOverride.findFirst({
+          where: { deviceId },
+          orderBy: { versionNumber: 'desc' },
+        });
+
+        const override = await tx.deviceConfigOverride.create({
+          data: {
+            deviceId,
+            configId: baseConfig.id,
+            versionNumber: (latestVersion?.versionNumber ?? 0) + 1,
+            fields: accumulatedFields as Prisma.InputJsonValue,
+            reason: dto.reason,
+            overriddenBy: actor.id,
+            status: 'pending',
+          },
+        });
+
+        // Audit Log บังคับทุกครั้งแบบไม่มีข้อยกเว้น (RBAC_Matrix.md กฎข้อ 3)
+        // mirror `ConfigOverrideService.override()` — เขียนในทรานแซกชันเดียวกับ
+        // การเปลี่ยนข้อมูลจริง ไม่ใช่ never-throw
+        const metadata: AuditLogMetadata = {
+          deviceId,
+          configId: baseConfig.id,
+          fieldNames: Object.keys(dto.fields),
+        };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'device-config-override-request',
+            metadata: metadata as Prisma.InputJsonValue,
+          },
+        });
+
+        return override;
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'ส่งคำขอ override ไม่สำเร็จเพราะมีคำขออื่นเข้ามาพร้อมกัน — กรุณาลองใหม่อีกครั้ง',
+        );
+      }
+      throw err;
+    }
+  }
+
+  /** หาแถว `DeviceConfigOverride` ที่ยัง `pending` — ใช้ร่วมกันโดย
+   * `approveDeviceConfigOverride()`/`rejectDeviceConfigOverride()` — ไม่พบ →
+   * 404, ตัดสินใจไปแล้ว (approved/rejected) → 409 กันตัดสินใจซ้ำ */
+  private async getPendingOverrideOrThrow(
+    id: string,
+  ): Promise<DeviceConfigOverride> {
+    const existing = await this.prisma.deviceConfigOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบคำขอ override id ${id}`);
+    }
+    if (existing.status !== 'pending') {
+      throw new ConflictException(
+        `คำขอนี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+      );
+    }
+    return existing;
+  }
+
+  /**
+   * Operation อนุมัติคำขอ override (issue #223, มติ 2026-09-24) — เปลี่ยน
+   * สถานะเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้อัตโนมัติ** ช่าง
+   * ต้องกด `apply-config` เข้าเครื่องเองอีกครั้งหลังจากนี้ (ยังไม่ทำใน PR นี้)
+   * resource `device-config-override` action `Approve` — Operation เท่านั้น
+   *
+   * **เช็ค `configId` ยังตรงกับ Config ปัจจุบันของอุปกรณ์ไหม (comment A รอบ 2
+   * บน PR #225):** ถ้าเครื่องถูก Confirm Install เป็น Config ใหม่ทับระหว่างที่
+   * คำขอนี้รออนุมัติอยู่ `getCurrentConfig()` จะกรองด้วย configId ปัจจุบันอยู่
+   * แล้วอนุมัติคำขอเก่าไปก็ไม่มีผลอะไรเลย (Operation จะเข้าใจผิดว่ามีผล) — กัน
+   * ด้วย 409 ก่อนเปลี่ยนสถานะ
+   *
+   * **race condition (comment A รอบ 2):** เดิมอ่านสถานะนอก transaction แล้ว
+   * `update()` แบบไม่เช็คซ้ำ — Operation 2 คนกดพร้อมกัน (หรือคนหนึ่ง approve
+   * อีกคน reject) จะผ่านทั้งคู่ได้ แก้ด้วย `updateMany({ where: { id, status:
+   * 'pending' } })` ในทรานแซกชันเดียวกัน (mirror IDOR pattern ใน CLAUDE.md)
+   * `count === 0` แปลว่ามีคนอื่นตัดสินใจคำขอนี้ไปแล้วระหว่างที่เรารออยู่ → 409
+   * — `getPendingOverrideOrThrow()` ยังคงไว้เป็น fast-path ให้ error message
+   * ชัดเจน (404 ไม่พบ / 409 ตัดสินใจไปแล้วตอนเรียก) ส่วน `updateMany` เป็น
+   * backstop กันช่องว่างระหว่าง fast-path กับตอน commit จริง
+   */
+  async approveDeviceConfigOverride(
+    id: string,
+    actor: ActingUser,
+  ): Promise<DeviceConfigOverride> {
+    const existing = await this.getPendingOverrideOrThrow(id);
+
+    const baseConfig = await this.getBaseConfigForDevice(existing.deviceId);
+    if (baseConfig.id !== existing.configId) {
+      throw new ConflictException(
+        'Config ของอุปกรณ์นี้เปลี่ยนไปแล้วตั้งแต่ส่งคำขอ (มี Confirm Install ใหม่ทับ) — อนุมัติคำขอนี้ไม่มีผลอะไรแล้ว',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.deviceConfigOverride.updateMany({
+        where: { id, status: 'pending' },
+        data: {
+          status: 'approved',
+          decidedBy: actor.id,
+          decidedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+        where: { id },
+      });
+      const metadata: AuditLogMetadata = {
+        deviceId: existing.deviceId,
+        configId: existing.configId,
+      };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'device-config-override-approve',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
+    });
+  }
+
+  /** Operation ปฏิเสธคำขอ override — `rejectReason` ไม่บังคับ (Operation
+   * อาจไม่ระบุก็ได้) resource เดียวกับ approve (action `Approve`) mirror
+   * `config-deletion` (`rejectConfigDeletionRequest` ใช้ action `Approve`
+   * เดียวกับ approve — "สิทธิ์ตัดสินใจ" ไม่ได้แยกตามผลตัดสินใจ)
+   *
+   * **race condition (comment A รอบ 2 บน PR #225):** เดียวกับ
+   * `approveDeviceConfigOverride()` — ใช้ `updateMany` ในทรานแซกชันแทน
+   * `update()` เปล่าๆ กันคนละคนกดตัดสินใจคำขอเดียวกันพร้อมกัน — **ไม่เช็ค
+   * configId staleness เหมือน approve** เพราะ reject คำขอที่ configId เก่าไป
+   * แล้วไม่มีผลเสียอะไร (แค่ทำเครื่องหมายว่าปฏิเสธ ไม่ได้ apply อะไรเข้าระบบ)
+   */
+  async rejectDeviceConfigOverride(
+    id: string,
+    dto: RejectDeviceConfigOverrideDto,
+    actor: ActingUser,
+  ): Promise<DeviceConfigOverride> {
+    const existing = await this.getPendingOverrideOrThrow(id);
+
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.deviceConfigOverride.updateMany({
+        where: { id, status: 'pending' },
+        data: {
+          status: 'rejected',
+          decidedBy: actor.id,
+          decidedAt: new Date(),
+          rejectReason: dto.rejectReason ?? null,
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const updated = await tx.deviceConfigOverride.findUniqueOrThrow({
+        where: { id },
+      });
+      const metadata: AuditLogMetadata = {
+        deviceId: existing.deviceId,
+        configId: existing.configId,
+      };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'device-config-override-reject',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
+    });
+  }
+
+  /** Operation ดูรายการคำขอ override ทั้งหมด — filter ตาม `status` (optional,
+   * ไม่ส่ง = ทุกสถานะ) เรียงคำขอใหม่ขึ้นก่อน (`overriddenAt` desc) ให้ดูคิว
+   * `pending` ได้ง่าย */
+  listDeviceConfigOverrides(
+    status?: DeviceConfigOverrideStatus,
+  ): Promise<DeviceConfigOverride[]> {
+    return this.prisma.deviceConfigOverride.findMany({
+      where: status ? { status } : undefined,
+      orderBy: { overriddenAt: 'desc' },
+    });
   }
 }

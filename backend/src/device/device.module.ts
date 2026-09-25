@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignModule } from '../campaign/campaign.module';
+import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import {
   DEVICE_SIMULATOR,
   type DeviceSimulator,
@@ -17,14 +18,18 @@ import {
   type DeviceConnectionTester,
   MockDeviceConnectionTester,
 } from './device-connection-tester';
+import { DeviceConfigOverrideController } from './device-config-override.controller';
 import { DeviceController } from './device.controller';
 import { DeviceService } from './device.service';
 
 // Device module — `POST /devices/:deviceId/test-connection` (ดู device.controller.ts
 // สำหรับเหตุผลที่ยังไม่ทำ `GET /devices/:deviceId/status`)
+// imports ConfigDefinitionModule (issue #223) — ให้ DeviceService reuse
+// ConfigDefinitionService.validateOverridableFields() ตัวเดียวกับ
+// config-override เดิม แทนการเขียนตรรกะ validate ซ้ำ
 @Module({
-  imports: [AuthModule, CampaignModule],
-  controllers: [DeviceController],
+  imports: [AuthModule, CampaignModule, ConfigDefinitionModule],
+  controllers: [DeviceController, DeviceConfigOverrideController],
   providers: [
     DeviceService,
     // DEVICE_CONNECTION_TESTER: อ่านโหมดจาก env `DEVICE_CONNECTION_TEST_MODE`

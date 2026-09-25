@@ -107,20 +107,6 @@ export function canDecideFirmwareApproval(
 }
 
 /**
- * Per-Field Config Override (issue #185, Phase 1) — resource `config-override`
- * action `Override` ให้เฉพาะ **ST เท่านั้น** OT ไม่มีสิทธิ์เลยสักฟิลด์ (ต่างจาก
- * `canOverrideDevice()` เดิมที่เป็น dead code ไม่เคยถูกเรียกใช้จริง และเช็คแบบ
- * หยาบ `ST || OT` ซึ่งผิดกับดีไซน์จริงที่ยืนยันกับ B แล้ว 2026-09-18 — ลบทิ้ง
- * แทนที่ด้วยฟังก์ชันนี้) — เช็ค role อย่างเดียวยังไม่พอ ต้องเช็คคู่กับ
- * `ConfigFieldDefinition.stOverridable` ราย field ด้วยเสมอ (ดู
- * `config-override-panel.tsx`) และ backend เป็นคนตัดสินจริงอยู่แล้ว
- * (PermissionGuard + validateOverridableFields) — ฟังก์ชันนี้ควบคุมแค่ UI
- */
-export function canOverrideConfig(role: string | null | undefined): boolean {
-  return role === "ST";
-}
-
-/**
  * หน้า Audit Log — Section 2 แถว Audit Log: ทุก Role มี R ยกเว้น
  * **ConfigEngineer/FirmwareEngineer/QAEngineer** (เดิม SW ตัวเดียวก่อนแยก role
  * — docs/13 §3.1) ที่เป็น "-" (ไม่มีสิทธิ์เข้าถึงจอนี้เลย ทั้ง 3 role ที่แยก
@@ -189,6 +175,20 @@ export function canEditIncidentTechnical(
   role: string | null | undefined,
 ): boolean {
   return role === "ST";
+}
+
+/**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิว Per-device Config Override — RBAC_Matrix.md
+ * ตาราง 4.1 `POST /device-config-overrides/{id}/approve` / `.../reject`:
+ * resource `device-config-override` action `Approve` — Operation เท่านั้น
+ * (issue #223, มติ 2026-09-24) — ไม่ต้องเช็ค Separation of Duty เพิ่มเหมือน
+ * `canDecideConfigApproval`/`canDecideCampaignApproval` เพราะผู้ส่งคำขอ (ST)
+ * กับผู้อนุมัติ (Operation) เป็นคนละ role กันเสมอ ไม่มีทางเป็น user เดียวกัน
+ */
+export function canDecideDeviceConfigOverride(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
 }
 
 /**
