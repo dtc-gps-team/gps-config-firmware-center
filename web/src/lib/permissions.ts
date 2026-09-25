@@ -192,6 +192,20 @@ export function canEditIncidentTechnical(
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิว Per-device Config Override — RBAC_Matrix.md
+ * ตาราง 4.1 `POST /device-config-overrides/{id}/approve` / `.../reject`:
+ * resource `device-config-override` action `Approve` — Operation เท่านั้น
+ * (issue #223, มติ 2026-09-24) — ไม่ต้องเช็ค Separation of Duty เพิ่มเหมือน
+ * `canDecideConfigApproval`/`canDecideCampaignApproval` เพราะผู้ส่งคำขอ (ST)
+ * กับผู้อนุมัติ (Operation) เป็นคนละ role กันเสมอ ไม่มีทางเป็น user เดียวกัน
+ */
+export function canDecideDeviceConfigOverride(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * หน้าคลัง Parameter (Config Definition Lookup) — RBAC_Matrix.md ตาราง 4.1
  * `GET /config-definitions`: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม
  * SW ก่อนแยก role — docs/13 §3.1 · FirmwareEngineer/QAEngineer ไม่ได้ เพราะ
