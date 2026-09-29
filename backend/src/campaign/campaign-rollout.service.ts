@@ -22,7 +22,11 @@ import {
   RESUMABLE_CAMPAIGN_ROLLOUT_STATUS,
   ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES,
 } from './campaign-rollout-status';
-import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
+import {
+  APPLICABLE_CONFIG_STATUSES,
+  CONFIG_APPLIER,
+  type ConfigApplier,
+} from '../device/config-applier';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
@@ -67,6 +71,8 @@ export class CampaignRolloutService {
     private readonly prisma: PrismaService,
     @Inject(FIRMWARE_ROLLBACK_EXECUTOR)
     private readonly firmwareRollbackExecutor: FirmwareRollbackExecutor,
+    @Inject(CONFIG_APPLIER)
+    private readonly configApplier: ConfigApplier,
   ) {}
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
@@ -243,18 +249,25 @@ export class CampaignRolloutService {
 
     await this.logAudit('approve', actor.id);
 
-    // Firmware Rollback ผ่าน Dual Partition (mock) — เร็วกว่า Config Rollback
-    // โดยตั้งใจ (แก้ไข 2026-09-24, Incident & Rollback #28): ของเก่ายังอยู่
-    // บนอีกพาร์ทิชันอยู่แล้ว แค่สลับกลับ ไม่ต้องรอช่างไปกดที่เครื่องผ่าน
-    // Mobile เหมือน Config Rollback (ที่ยังต้องผ่าน apply-config ปกติทุก
-    // ประการ) — ทำ**หลัง**อัปเดต status เป็น active แล้วเท่านั้น (ไม่ทำใน
-    // transaction เดียวกับด้านบน เพราะเป็นงานที่ "อาจ fail บางเครื่อง" ต่างจาก
-    // การอนุมัติเองที่ทำสำเร็จแน่นอน)
+    // Auto-apply ทันทีตอน active (มติ 2026-09-29 — ระบบเป็น PULL model จริง
+    // กล่องดึง Config/Firmware เองอัตโนมัติจาก data กลาง ไม่มีเหตุผลให้ต้องรอ
+    // ช่างกดยืนยันที่เครื่องผ่าน Mobile เหมือนเดิม (นั่นเป็นแค่ placeholder
+    // ที่คิดขึ้นเพื่อขอบเขตฝึกงาน — ดู comment เหนือ
+    // `DeviceService.confirmFirmwareInstall()`) ทำ**หลัง**อัปเดต status เป็น
+    // active แล้วเท่านั้น (ไม่ทำใน transaction เดียวกับด้านบน เพราะเป็นงานที่
+    // "อาจ fail บางเครื่อง" ต่างจากการอนุมัติเองที่ทำสำเร็จแน่นอน) —
+    // Firmware Rollback ยังคงเร็วกว่าปกติเหมือนเดิม (ของเก่ายังอยู่บนอีก
+    // พาร์ทิชันอยู่แล้ว ใช้ `FirmwareRollbackExecutor` แทนการเขียน Firmware
+    // ใหม่) ส่วน Config (ทั้งปกติและ Rollback) กับ Firmware ปกติ ใช้ loop
+    // auto-apply ใหม่ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/
+    // `autoApplyFirmware` เรื่องการรักษา Auto Pause ให้ยังมีความหมายอยู่
     if (updated.isRollback && updated.payloadType === 'Firmware') {
       return this.executeFirmwarePartitionRollback(updated);
     }
-
-    return updated;
+    if (updated.payloadType === 'Config') {
+      return this.autoApplyConfig(updated);
+    }
+    return this.autoApplyFirmware(updated);
   }
 
   /**
@@ -492,6 +505,158 @@ export class CampaignRolloutService {
     return this.prisma.campaignRollout.update({
       where: { id: rollout.id },
       data: { successCount, failureCount, status: 'completed' },
+    });
+  }
+
+  /**
+   * Auto-apply Config ให้ทุกเครื่องเป้าหมายทันทีตอน Rollout เป็น `active`
+   * (มติ 2026-09-29 — PULL model จริง ไม่มีเหตุผลให้ต้องรอช่างกดยืนยันที่
+   * เครื่องผ่าน Mobile เหมือนเดิม) ใช้ทั้ง Rollout ปกติและ Config Rollback
+   * ร่วมกัน (ไม่ต้องแยกเหมือน Firmware เพราะ Config ไม่มี fast-path แบบ Dual
+   * Partition — Config เขียนทับตรงๆ ทุกครั้งไม่ว่าจะเป็นค่าใหม่หรือค่าเก่าที่
+   * rollback กลับไป)
+   *
+   * **ยังคง Auto Pause ไว้ได้แม้ apply ทุกเครื่องในคำเรียกเดียว** — เช็ค
+   * สถานะ rollout สดใหม่จาก DB ก่อนแตะเครื่องถัดไปทุกรอบ ถ้ารอบก่อนหน้าทำให้
+   * status เปลี่ยนจาก `active` ไปแล้ว (เช่น `paused` จาก Auto Pause ที่
+   * `recordTargetResult()` ทำให้) หยุด loop ทันที ไม่แตะเครื่องที่เหลือ —
+   * เครื่องที่เหลือค้าง `pending` รอ `resume()`/`rollback()` ต่อ มิเรอร์วิธี
+   * ทำงานของ Canary/Batch จริงที่ต้องหยุดก่อนกระทบเครื่องเพิ่ม ไม่ใช่ยิงทุก
+   * เครื่องพร้อมกันจนไม่มีจังหวะให้ตรวจจับปัญหาเลย
+   *
+   * reuse `recordTargetResult()` ทำ update/count/Auto Pause/completed ให้
+   * ทั้งหมด — ไม่เขียนตรรกะซ้ำ
+   */
+  private async autoApplyConfig(
+    rollout: CampaignRollout,
+  ): Promise<CampaignRollout> {
+    if (!rollout.configId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
+
+    const config = await this.prisma.config.findUnique({
+      where: { id: rollout.configId },
+    });
+    if (!config) return rollout; // defensive — validate ไปแล้วตอน create/rollback
+
+    const targets = await this.prisma.campaignRolloutTarget.findMany({
+      where: { rolloutId: rollout.id, status: 'pending' },
+      orderBy: { createdAt: 'asc' },
+    });
+    const devices = await this.loadTargetDevices(
+      targets.map((t) => ({ deviceId: t.deviceId })),
+    );
+    const fields = config.fields as Record<string, unknown>;
+
+    for (const target of targets) {
+      const current = await this.prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      if (current.status !== 'active') break;
+
+      const device = devices.get(target.deviceId);
+      if (!device) {
+        await this.recordTargetResult(
+          target.deviceId,
+          { configId: config.id },
+          false,
+          `ไม่พบ Device deviceId ${target.deviceId}`,
+        );
+        continue;
+      }
+
+      const result = await this.configApplier.applyConfig({
+        deviceId: device.deviceId,
+        deviceModel: device.deviceModel,
+        protocol: device.protocol,
+        fields,
+      });
+      await this.recordTargetResult(
+        device.deviceId,
+        { configId: config.id },
+        result.applied,
+        result.details.join(' · '),
+      );
+    }
+
+    return this.prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rollout.id },
+    });
+  }
+
+  /**
+   * Auto-apply Firmware (ปกติ ไม่ใช่ Rollback) ให้ทุกเครื่องเป้าหมายทันทีตอน
+   * `active` — เหตุผล/วิธีรักษา Auto Pause เดียวกับ `autoApplyConfig` (มติ
+   * 2026-09-29: กล่องดึง Firmware เองจาก server กลางเหมือน Config ทุกประการ
+   * ไม่ใช่แค่ Config) ทำ Dual Partition bookkeeping มิเรอร์
+   * `DeviceService.confirmFirmwareInstall()` เป๊ะ (เขียน Firmware ใหม่ลง
+   * พาร์ทิชันที่ไม่ active แล้วสลับ) — **ต่างจาก**
+   * `executeFirmwarePartitionRollback()` ที่ใช้ `FirmwareRollbackExecutor`
+   * (fast-path เพราะของเก่ายังอยู่บนพาร์ทิชันเดิมอยู่แล้ว) ตัวนี้เป็น
+   * Firmware ใหม่ที่ไม่เคยอยู่บนพาร์ทิชันไหนมาก่อน จึงเขียนตรงๆ ไม่ผ่าน
+   * executor · เหมือน `confirmFirmwareInstall()` เดิม — ไม่มี mock ฝั่ง
+   * validate ให้ fail (เป็นแค่ attestation) จึงสำเร็จเสมอ ไม่ใช่ regression
+   */
+  private async autoApplyFirmware(
+    rollout: CampaignRollout,
+  ): Promise<CampaignRollout> {
+    if (!rollout.firmwareId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
+
+    const firmware = await this.prisma.firmware.findUnique({
+      where: { id: rollout.firmwareId },
+    });
+    if (!firmware) return rollout; // defensive — validate ไปแล้วตอน create
+
+    const targets = await this.prisma.campaignRolloutTarget.findMany({
+      where: { rolloutId: rollout.id, status: 'pending' },
+      orderBy: { createdAt: 'asc' },
+    });
+    const devices = await this.loadTargetDevices(
+      targets.map((t) => ({ deviceId: t.deviceId })),
+    );
+
+    for (const target of targets) {
+      const current = await this.prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      if (current.status !== 'active') break;
+
+      const device = devices.get(target.deviceId);
+      if (!device) {
+        await this.recordTargetResult(
+          target.deviceId,
+          { firmwareId: firmware.id },
+          false,
+          `ไม่พบ Device deviceId ${target.deviceId}`,
+        );
+        continue;
+      }
+
+      const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
+      try {
+        await this.prisma.device.update({
+          where: { deviceId: device.deviceId },
+          data: {
+            activePartition: nextPartition,
+            ...(nextPartition === 'A'
+              ? { partitionAFirmwareId: firmware.id }
+              : { partitionBFirmwareId: firmware.id }),
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `อัปเดต Dual Partition ไม่สำเร็จ (deviceId ${device.deviceId}): ${(err as Error).message}`,
+        );
+      }
+
+      await this.recordTargetResult(
+        device.deviceId,
+        { firmwareId: firmware.id },
+        true,
+        `ติดตั้ง Firmware ${firmware.version} สำเร็จ (auto, mock)`,
+      );
+    }
+
+    return this.prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rollout.id },
     });
   }
 
