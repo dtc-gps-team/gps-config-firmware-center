@@ -34,6 +34,7 @@ import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
+import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 
 /**
  * รายละเอียด Rollout 1 รอบ — ต่อ `GET /campaigns/{id}/rollouts/{rolloutId}`
@@ -111,6 +112,13 @@ export function CampaignRolloutDetailView({
         onDecided={() => void refetch()}
       />
 
+      <CampaignRolloutIncidentPanel
+        campaignId={campaignId}
+        rollout={data}
+        targets={targets}
+        onResumed={() => void refetch()}
+      />
+
       <div className="max-w-xl rounded-xl border bg-card p-4">
         <div className="divide-y">
           <InfoRow label="Payload" icon={PackageIcon}>
@@ -124,7 +132,13 @@ export function CampaignRolloutDetailView({
             {data.targetCount}
           </InfoRow>
           <InfoRow label="สำเร็จ / ล้มเหลว" icon={ActivityIcon}>
-            {data.successCount} / {data.failureCount}
+            <span className="text-emerald-700 dark:text-emerald-400">
+              {data.successCount}
+            </span>{" "}
+            /{" "}
+            <span className="text-rose-700 dark:text-rose-400">
+              {data.failureCount}
+            </span>
           </InfoRow>
           {data.approvedAt && (
             <InfoRow label="อนุมัติเมื่อ" icon={CalendarCheckIcon}>

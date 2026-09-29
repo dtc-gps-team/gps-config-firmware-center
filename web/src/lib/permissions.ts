@@ -158,16 +158,6 @@ export function canDecideCampaignApproval(
 }
 
 /**
- * ปุ่ม "สั่ง Rollback" ใน Incident & Rollback — Section 2 แถว Incident &
- * Rollback: Operation เท่านั้นที่มี U (สั่ง Rollback)
- */
-export function canDecideIncidentRollback(
-  role: string | null | undefined,
-): boolean {
-  return role === "Operation";
-}
-
-/**
  * ปุ่ม "แก้ไขเชิงเทคนิค" ใน Incident & Rollback — Section 2 แถว Incident &
  * Rollback: ST เท่านั้นที่มี R, U (แก้ไขเชิงเทคนิค) — OT มีแค่ R
  */
