@@ -21,6 +21,7 @@ import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
+import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
@@ -97,5 +98,33 @@ export class CampaignRolloutController {
     @Req() req: AuthenticatedRequest,
   ): Promise<CampaignRollout> {
     return this.rolloutService.reject(id, toActor(req));
+  }
+
+  // Auto Pause (Incident & Rollback #28, แก้ไข 2026-09-24) — ปลดกลับ active
+  // ใช้ resource เดียวกับ approve/reject (`campaign` action `Approve`) เพราะ
+  // เป็นสิทธิ์ระดับเดียวกัน (Operation เท่านั้น) แม้ resume เองจะไม่มี
+  // Separation of Duty check ก็ตาม (ดู comment ใน service)
+  @Post(':id/resume')
+  @RequirePermission('campaign', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  resume(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<CampaignRollout> {
+    return this.rolloutService.resume(id, toActor(req));
+  }
+
+  // Rollback (Incident & Rollback #28, แก้ไข 2026-09-24) — resource `campaign`
+  // action `Create` เพราะเป็นการ "สร้าง Rollout ใหม่" ในทางปฏิบัติ (Operation
+  // เท่านั้น เหมือน createCampaignRollout ปกติ)
+  @Post(':id/rollback')
+  @RequirePermission('campaign', ActionType.Create)
+  rollback(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateCampaignRollbackDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<CampaignRollout> {
+    return this.rolloutService.rollback(campaignId, id, dto, toActor(req));
   }
 }

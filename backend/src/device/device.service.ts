@@ -381,6 +381,33 @@ export class DeviceService {
       `ยืนยันติดตั้ง Firmware ${firmware.version} สำเร็จ (confirm-firmware-install)`,
     );
 
+    // Dual Partition (mock, Incident & Rollback #28, แก้ไข 2026-09-24) —
+    // เขียน Firmware ที่เพิ่งยืนยันลงพาร์ทิชันที่ **ไม่ active** แล้วสลับไปหา
+    // (จำลอง "ดาวน์โหลด+ตรวจสอบที่พาร์ทิชันสำรองก่อน แล้วค่อยสลับ") ทำแบบ
+    // เดียวกันทั้งติดตั้งปกติและ Rollback (ฝั่งกล่องไม่รู้ความต่าง — ยืนยันว่า
+    // "Firmware X รันอยู่ตอนนี้" ก็พอ) — ทำให้พาร์ทิชันที่ไม่ active เก็บ
+    // Firmware ตัวก่อนหน้าไว้เสมอ พร้อมใช้ตอน Rollback ครั้งถัดไป · ไม่ผ่าน
+    // `FirmwareRollbackExecutor` (อยู่คนละโมดูล กัน circular dependency กับ
+    // campaign — ดู comment เหนือ `firmware-rollback-executor.ts`) แค่บันทึก
+    // สิ่งที่ attestation ยืนยันไปแล้วเฉยๆ ไม่มีทาง fail ต่างจาก Rollback ที่
+    // ต้องเช็คว่าของเก่ายังอยู่ไหม
+    try {
+      const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
+      await this.prisma.device.update({
+        where: { deviceId: device.deviceId },
+        data: {
+          activePartition: nextPartition,
+          ...(nextPartition === 'A'
+            ? { partitionAFirmwareId: firmware.id }
+            : { partitionBFirmwareId: firmware.id }),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `อัปเดต Dual Partition ไม่สำเร็จ (deviceId ${device.deviceId}): ${(err as Error).message}`,
+      );
+    }
+
     return {
       deviceId: device.deviceId,
       firmwareId: firmware.id,
