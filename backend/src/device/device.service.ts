@@ -576,24 +576,28 @@ export class DeviceService {
     // ไล่รวมทุก version ย้อนหลังเอง — pending/rejected ไม่มีผลกับค่าที่คืนกลับ
     // เลย (ต้องผ่าน Operation อนุมัติก่อนถึงมีผล)
     //
-    // `pendingOverride` แยกกรองต่างหาก — **ไม่กรอง configId** เพราะคำขอ
-    // pending ผูกกับ "เครื่องนี้" ตรงๆ ต้องแสดงให้ ST/Operation เห็นเสมอว่ามี
-    // คำขอค้างอยู่ไหม แม้ Config จะเพิ่งเปลี่ยนไป
+    // `pendingOverride` กรองด้วย `configId: baseConfig.id` เช่นเดียวกับ
+    // `latestApproved` (bug fix — comment A บน PR #234): เดิมกรองแค่ deviceId
+    // เฉยๆ ถ้าเครื่องมีคำขอ pending เก่าที่ผูกกับ configId ที่ไม่ใช่ปัจจุบัน
+    // อีกแล้ว (Config เปลี่ยนไปเพราะมี Confirm Install ใหม่ทับระหว่างที่คำขอ
+    // เก่ายังรออยู่) Mobile จะขึ้น banner "มีคำขอรออนุมัติ" ทั้งที่คำขอนั้น
+    // approve ไม่ได้แล้ว (ดู `approveDeviceConfigOverride()` ที่เช็ค configId
+    // staleness) ทำให้ ST เข้าใจผิดว่าต้องรอ ทั้งที่ส่งคำขอใหม่กับ Config
+    // ปัจจุบันได้เลย — คำขอเก่ายังอยู่ในคิว `GET /device-config-overrides` ให้
+    // Operation reject ทิ้งได้ตามเดิม ไม่ได้หายไปไหน
     //
-    // **ไม่ใช่ทีละ 1 รายการต่อเครื่องเสมอไปอีกต่อไป** (แก้ไข 2026-09-25,
-    // issue #226 ข้อ 3) — `overrideDeviceConfig()` เปลี่ยนไป scope เช็ค
-    // existing-pending ด้วย `configId` ปัจจุบันแล้ว ทำให้คำขอ pending เก่า
-    // (ผูกกับ configId ที่ไม่ใช่ปัจจุบันอีกแล้ว เพราะมี Confirm Install ใหม่
-    // ทับ) กับคำขอ pending ใหม่ (configId ปัจจุบัน) ค้างอยู่พร้อมกันได้ในทาง
-    // ทฤษฎี — ต้อง `orderBy versionNumber desc` เพื่อให้ได้แถวล่าสุดเสมอ
-    // (คำขอเก่าที่ล้าไปแล้วไม่ควรเป็นตัวที่ ST/Operation เห็นบน UI)
+    // **เครื่องหนึ่งมี pending พร้อมกันได้มากกว่า 1 รายการในทางทฤษฎี ถ้าต่าง
+    // configId กัน** (`overrideDeviceConfig()` scope เช็ค existing-pending
+    // ด้วย configId ปัจจุบัน, issue #226 ข้อ 3) — `orderBy versionNumber desc`
+    // ร่วมกับ filter configId นี้ทำให้ได้แถว pending ล่าสุดของ Config ปัจจุบัน
+    // เท่านั้นเสมอ
     const [latestApproved, pendingOverride] = await Promise.all([
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, configId: baseConfig.id, status: 'approved' },
         orderBy: { versionNumber: 'desc' },
       }),
       this.prisma.deviceConfigOverride.findFirst({
-        where: { deviceId, status: 'pending' },
+        where: { deviceId, configId: baseConfig.id, status: 'pending' },
         orderBy: { versionNumber: 'desc' },
       }),
     ]);

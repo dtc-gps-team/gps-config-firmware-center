@@ -1743,6 +1743,56 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(overrides[0].status).toBe('pending');
       expect(overrides[1].configId).toBe(configIdNew);
       expect(overrides[1].status).toBe('pending');
+
+      // GET /config ต้องเห็น pendingOverride เป็นคำขอรอบสอง (configIdNew,
+      // ปัจจุบัน) เท่านั้น — ไม่ใช่คำขอรอบแรกที่ตายไปแล้ว (bug fix comment A
+      // บน PR #234: เดิมกรองแค่ deviceId ทำให้ orderBy versionNumber desc ได้
+      // แถวไหนก็ได้ที่เป็น pending ล่าสุดของเครื่องนี้ ซึ่งบังเอิญถูกต้องกรณีนี้
+      // เพราะรอบสองมี versionNumber สูงกว่าอยู่แล้ว — เทสถัดไปคุมกรณีที่มีแค่
+      // คำขอเก่าอย่างเดียวแทน)
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-STALE-PENDING/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const getBody = getRes.body as {
+        pendingOverride: { configId: string; status: string } | null;
+      };
+      expect(getBody.pendingOverride?.configId).toBe(configIdNew);
+    });
+
+    it('bug fix (comment A บน PR #234): มีแค่คำขอ pending เก่าผูกกับ configId ที่ไม่ใช่ปัจจุบันแล้ว -> GET /config เห็น pendingOverride:null (ไม่ใช่แถวเก่าที่ approve ไม่ได้แล้ว)', async () => {
+      await makeDevice('DCO-STALE-ONLY', 'installed');
+      const configIdOld = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-ONLY', configIdOld);
+      await makeOverridableField('APN', true);
+      const token = await stToken();
+
+      // ส่งคำขอ override ผูกกับ configIdOld (pending, ยังไม่มี Operation
+      // ตัดสินใจ)
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-STALE-ONLY/config-override')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          fields: { APN: 'apn-เก่า' },
+          reason: 'ก่อน Confirm Install ใหม่',
+        })
+        .expect(200);
+
+      // Confirm Install ใหม่ทับ -> Config ปัจจุบันเปลี่ยนเป็น configIdNew —
+      // คำขอ pending ข้างบนตอนนี้ approve ไม่ได้แล้ว (ดู
+      // approveDeviceConfigOverride ที่เช็ค configId staleness) แต่ยังไม่มี
+      // ใครส่งคำขอใหม่/reject คำขอเก่าเลย
+      const configIdNew = await makeConfig('approved');
+      await makeCompletedTask('DCO-STALE-ONLY', configIdNew);
+
+      // เดิม (บั๊ก) จุดนี้จะคืนคำขอเก่าเป็น pendingOverride ทำให้ Mobile ขึ้น
+      // banner "มีคำขอรออนุมัติ" หลอกๆ ทั้งที่ ST ส่งคำขอใหม่ได้เลย
+      const getRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-STALE-ONLY/config')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const getBody = getRes.body as { pendingOverride: unknown };
+      expect(getBody.pendingOverride).toBeNull();
     });
 
     it('ผ่านทั้งวงจร: submit -> Operation approve -> submit รอบสองสะสมค่าจากรอบแรก -> approve -> GET merge เห็นค่าล่าสุด', async () => {

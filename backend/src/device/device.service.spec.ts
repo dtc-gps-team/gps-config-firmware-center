@@ -973,7 +973,11 @@ describe('DeviceService', () => {
         orderBy: { versionNumber: 'desc' },
       });
       expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
-        where: { deviceId: 'DTC-0001', status: 'pending' },
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'pending',
+        },
         orderBy: { versionNumber: 'desc' },
       });
     });
@@ -1100,6 +1104,29 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id, // กรอง configId ด้วยเสมอ — ไม่ใช่แค่ deviceId
           status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+    });
+
+    it('bug fix (comment A บน PR #234): คำขอ pending ผูก configId เก่า (ก่อน Confirm Install ใหม่) -> pendingOverride เป็น null ไม่ใช่แถวเก่านั้น', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask); // ตอนนี้ผูก approvedConfig.id
+      config.findUnique.mockResolvedValue(approvedConfig);
+      // คำขอ pending เดิมผูกกับ Config คนละตัว (เช่น Config ก่อนเปลี่ยน) —
+      // ไม่ควร match query ที่กรอง configId: approvedConfig.id จึงคืน null
+      // (เดิมกรองแค่ deviceId ทำให้แถวนี้ยังโผล่มาเป็น pendingOverride แม้
+      // approve ไม่ได้แล้ว — ดู comment เหนือ query ใน getCurrentConfig())
+      mockOverrideQueries({ pending: null });
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.pendingOverride).toBeNull();
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id, // กรอง configId ด้วยเสมอ — ไม่ใช่แค่ deviceId
+          status: 'pending',
         },
         orderBy: { versionNumber: 'desc' },
       });
