@@ -162,6 +162,7 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
 export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   pending_approval: "progress",
   active: "success",
+  paused: "danger",
   rejected: "danger",
   completed: "success",
   cancelled: "danger",
@@ -179,6 +180,8 @@ export function getRolloutStatusExplanation(status: string): string {
       return "รอ Operation อีกคนอนุมัติก่อน ถึงจะเริ่มให้ช่างไปทำที่เครื่องได้";
     case "active":
       return "อนุมัติแล้ว — รอช่างหน้างาน (ST/OT) ไปกดใส่ Config หรือยืนยันติดตั้ง Firmware ทีละเครื่องผ่าน Mobile";
+    case "paused":
+      return "หยุดอัตโนมัติ (Auto Pause) — Failure Rate เกิน 5% ระหว่างรอบ ต้องกด Resume ถึงจะไปต่อได้";
     case "rejected":
       return "ถูกปฏิเสธ — เริ่มรอบใหม่ได้จากหน้ากลุ่ม";
     case "completed":

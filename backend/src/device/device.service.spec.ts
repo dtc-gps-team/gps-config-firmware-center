@@ -32,6 +32,9 @@ const installedDevice: Device = {
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
   customerId: null,
   modelId: 'dm-1',
+  activePartition: 'A',
+  partitionAFirmwareId: null,
+  partitionBFirmwareId: null,
 };
 
 const registeredDevice: Device = {
@@ -101,7 +104,7 @@ const connPass = {
 
 describe('DeviceService', () => {
   let service: DeviceService;
-  let device: { findUnique: jest.Mock; findMany: jest.Mock };
+  let device: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   let config: { findUnique: jest.Mock };
   let task: { findFirst: jest.Mock };
   let firmware: { findUnique: jest.Mock };
@@ -123,7 +126,11 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
 
   beforeEach(async () => {
-    device = { findUnique: jest.fn(), findMany: jest.fn() };
+    device = {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
     firmware = { findUnique: jest.fn() };
@@ -723,6 +730,55 @@ describe('DeviceService', () => {
         ),
       ).rejects.toThrow(ConflictException);
       expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('Dual Partition (mock, Incident & Rollback #28) -> เขียน Firmware ลงพาร์ทิชันที่ไม่ active แล้วสลับไปหา', async () => {
+      device.findUnique.mockResolvedValue(installedDevice); // activePartition: 'A'
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        st,
+      );
+
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: 'DTC-0001' },
+        data: { activePartition: 'B', partitionBFirmwareId: readyFirmware.id },
+      });
+    });
+
+    it('Dual Partition -> ถ้า activePartition ปัจจุบันเป็น B สลับไป A แทน', async () => {
+      device.findUnique.mockResolvedValue({
+        ...installedDevice,
+        activePartition: 'B',
+      });
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        st,
+      );
+
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: 'DTC-0001' },
+        data: { activePartition: 'A', partitionAFirmwareId: readyFirmware.id },
+      });
+    });
+
+    it('Dual Partition เขียนไม่สำเร็จ -> ไม่ throw (never-throw, ต่างจาก AuditLog ที่ throw)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+      device.update.mockRejectedValue(new Error('DB ล่ม'));
+
+      const result = await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        st,
+      );
+
+      expect(result.firmwareId).toBe(readyFirmware.id);
     });
   });
 
