@@ -266,7 +266,7 @@ export class CampaignRolloutService {
     // ใหม่) ส่วน Config (ทั้งปกติและ Rollback) กับ Firmware ปกติ ใช้ loop
     // auto-apply ใหม่ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/
     // `autoApplyFirmware` เรื่องการรักษา Auto Pause ให้ยังมีความหมายอยู่
-    return this.dispatchAutoApply(updated);
+    return this.dispatchAutoApply(updated, actor.id);
   }
 
   /**
@@ -282,14 +282,15 @@ export class CampaignRolloutService {
    */
   private dispatchAutoApply(
     rollout: CampaignRollout,
+    actorId: string,
   ): Promise<CampaignRollout> {
     if (rollout.isRollback && rollout.payloadType === 'Firmware') {
       return this.executeFirmwarePartitionRollback(rollout);
     }
     if (rollout.payloadType === 'Config') {
-      return this.autoApplyConfig(rollout);
+      return this.autoApplyConfig(rollout, actorId);
     }
-    return this.autoApplyFirmware(rollout);
+    return this.autoApplyFirmware(rollout, actorId);
   }
 
   /**
@@ -372,7 +373,7 @@ export class CampaignRolloutService {
     });
 
     await this.logAudit('resume', actor.id);
-    return this.dispatchAutoApply(updated);
+    return this.dispatchAutoApply(updated, actor.id);
   }
 
   /**
@@ -587,38 +588,51 @@ export class CampaignRolloutService {
    */
   private async autoApplyConfig(
     rollout: CampaignRollout,
+    actorId: string,
   ): Promise<CampaignRollout> {
     if (!rollout.configId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
+    const configId = rollout.configId;
 
     const config = await this.prisma.config.findUnique({
-      where: { id: rollout.configId },
+      where: { id: configId },
     });
-    if (!config) return rollout; // defensive — validate ไปแล้วตอน create/rollback
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
       where: { rolloutId: rollout.id, status: 'pending' },
       orderBy: { createdAt: 'asc' },
     });
 
-    // #235 review รอบ 3 ข้อ 3 — mirror เงื่อนไข 4xx ของ
+    // #235 review รอบ 3 ข้อ 3 + รอบ 4 ข้อ 4/5 — mirror เงื่อนไข 4xx ของ
     // `DeviceService.applyConfig()` ที่ auto-apply ข้ามไปเลย: `create()`
     // validate Config ไว้ตอนสร้าง Rollout ก็จริง แต่เวลาผ่านไปได้ (โดยเฉพาะ
     // รอ Operation resume หลัง Auto Pause) Config อาจถูก soft-delete หรือถอน
-    // อนุมัติระหว่างนั้น — เช็คซ้ำสดๆ ตรงนี้ก่อน apply จริง ถ้าไม่ผ่านให้ fail
-    // ทุกเครื่องที่ยัง pending พร้อมเหตุผลเดียวกัน แทนที่จะเงียบๆ push ค่าที่
-    // ไม่ควร push ไปแล้ว (ไม่ throw ออกจาก request — mirror หลักการ "ไม่ปล่อย
-    // ให้ loop ทำให้ Rollout ค้าง active" ข้อ 3 เดิม)
+    // อนุมัติระหว่างนั้น หรือ (แทบไม่เกิดจริง) หายไปเลย — เช็คซ้ำสดๆ ตรงนี้ก่อน
+    // apply จริง ถ้าไม่ผ่านให้ fail ทุกเครื่องที่ยัง pending พร้อมเหตุผลเดียวกัน
+    // แทนที่จะเงียบๆ push ค่าที่ไม่ควร push ไปแล้ว หรือ (กรณี `!config` เดิม)
+    // return เฉยๆ ปล่อย Rollout ค้าง active ไม่มีทางกู้คืน (ไม่ throw ออกจาก
+    // request — mirror หลักการ "ไม่ปล่อยให้ loop ทำให้ Rollout ค้าง active"
+    // ข้อ 3 เดิม) — log audit ด้วยทุกเครื่องที่ fail จากจุดนี้ (รอบ 4 ข้อ 5:
+    // เดิมไม่มี audit row เลยสำหรับ branch นี้ ทั้งที่ outcome อื่นทุกแบบมี)
     const configStillValid =
+      !!config &&
       config.deletedAt === null &&
       APPLICABLE_CONFIG_STATUSES.includes(config.status);
     if (!configStillValid) {
+      const reason = !config
+        ? `ไม่พบ Config id ${configId}`
+        : `Config สถานะปัจจุบัน (${config.status}${config.deletedAt ? ', ถูกลบไปแล้ว' : ''}) ใช้งานไม่ได้อีกต่อไป`;
       for (const target of targets) {
         await this.recordTargetResult(
           target.deviceId,
-          { configId: config.id },
+          { configId },
           false,
-          `Config สถานะปัจจุบัน (${config.status}${config.deletedAt ? ', ถูกลบไปแล้ว' : ''}) ใช้งานไม่ได้อีกต่อไป`,
+          reason,
         );
+        await this.logAudit('apply-config', actorId, {
+          deviceId: target.deviceId,
+          configId,
+          fieldNames: [],
+        });
       }
       return this.prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
@@ -628,9 +642,6 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
-    // Rollout ผ่าน approve() มาเสมอก่อนเรียกฟังก์ชันนี้ — approvedBy ถูกตั้ง
-    // ในทรานแซกชันเดียวกัน (ดู approve()) จึงไม่มีทางเป็น null ตรงนี้จริง
-    const actorId = rollout.approvedBy as string;
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
@@ -762,34 +773,44 @@ export class CampaignRolloutService {
    */
   private async autoApplyFirmware(
     rollout: CampaignRollout,
+    actorId: string,
   ): Promise<CampaignRollout> {
     if (!rollout.firmwareId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
+    const firmwareId = rollout.firmwareId;
 
     const firmware = await this.prisma.firmware.findUnique({
-      where: { id: rollout.firmwareId },
+      where: { id: firmwareId },
     });
-    if (!firmware) return rollout; // defensive — validate ไปแล้วตอน create
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
       where: { rolloutId: rollout.id, status: 'pending' },
       orderBy: { createdAt: 'asc' },
     });
 
-    // #235 review รอบ 3 ข้อ 4 — mirror เงื่อนไข 4xx ของ
+    // #235 review รอบ 3 ข้อ 4 + รอบ 4 ข้อ 4/5 — mirror เงื่อนไข 4xx ของ
     // `DeviceService.confirmFirmwareInstall()` ที่ auto-apply ข้ามไปเลย
     // (เหตุผลเดียวกับ autoApplyConfig ข้างบน — เวลาผ่านไปได้ระหว่างรอ resume
-    // Firmware อาจถูกถอนอนุมัติคุณภาพหรือลบไฟล์ไปแล้ว)
+    // Firmware อาจถูกถอนอนุมัติคุณภาพ หรือ (แทบไม่เกิดจริง) หายไปเลย — log
+    // audit ด้วยทุกเครื่องที่ fail จากจุดนี้เหมือน autoApplyConfig)
     const firmwareStillValid =
+      !!firmware &&
       firmware.uploadStatus === SIMULATABLE_FIRMWARE_STATUS &&
       firmware.approvalStatus === CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS;
     if (!firmwareStillValid) {
+      const reason = !firmware
+        ? `ไม่พบ Firmware id ${firmwareId}`
+        : `Firmware สถานะปัจจุบัน (upload: ${firmware.uploadStatus}, อนุมัติคุณภาพ: ${firmware.approvalStatus}) ใช้งานไม่ได้อีกต่อไป`;
       for (const target of targets) {
         await this.recordTargetResult(
           target.deviceId,
-          { firmwareId: firmware.id },
+          { firmwareId },
           false,
-          `Firmware สถานะปัจจุบัน (upload: ${firmware.uploadStatus}, อนุมัติคุณภาพ: ${firmware.approvalStatus}) ใช้งานไม่ได้อีกต่อไป`,
+          reason,
         );
+        await this.logAudit('confirm-firmware-install', actorId, {
+          deviceId: target.deviceId,
+          firmwareId,
+        });
       }
       return this.prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
@@ -799,9 +820,6 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
-    // Rollout ผ่าน approve() มาเสมอก่อนเรียกฟังก์ชันนี้ — approvedBy ถูกตั้ง
-    // ในทรานแซกชันเดียวกัน (ดู approve()) จึงไม่มีทางเป็น null ตรงนี้จริง
-    const actorId = rollout.approvedBy as string;
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
