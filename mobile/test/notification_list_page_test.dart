@@ -88,6 +88,118 @@ void main() {
     expect(find.byKey(const Key('unread_dot')), findsOneWidget);
   });
 
+  testWidgets(
+    'render — 3 notification type ใหม่ของ Config Override (issue #226) ไม่ throw',
+    (tester) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [
+            _n('n1', type: NotificationType.configOverridePending),
+            _n('n2', type: NotificationType.configOverrideApproved),
+            _n('n3', type: NotificationType.configOverrideRejected),
+          ],
+        ),
+      );
+
+      expect(find.text('มีคำขอ Override รออนุมัติ'), findsOneWidget);
+      expect(find.text('คำขอ Override ได้รับการอนุมัติ'), findsOneWidget);
+      expect(find.text('คำขอ Override ถูกปฏิเสธ'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Config Override — แสดง deviceId + rejectReason จาก payload', (
+    tester,
+  ) async {
+    AppNotification withPayload(
+      String id,
+      NotificationType type,
+      Map<String, dynamic> payload,
+    ) => AppNotification(
+      id: id,
+      userId: 'u1',
+      type: type,
+      payload: payload,
+      read: true,
+      createdAt: DateTime(2026, 9, 4, 9, 15),
+    );
+
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          withPayload('n1', NotificationType.configOverridePending, {
+            'deviceId': 'DTC-0001',
+          }),
+          withPayload('n2', NotificationType.configOverrideApproved, {
+            'deviceId': 'DTC-0002',
+          }),
+          withPayload('n3', NotificationType.configOverrideRejected, {
+            'deviceId': 'DTC-0003',
+            'rejectReason': 'ค่า APN ไม่ถูกต้อง',
+          }),
+        ],
+      ),
+    );
+
+    expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
+    expect(find.text('อุปกรณ์: DTC-0002'), findsOneWidget);
+    expect(find.text('อุปกรณ์: DTC-0003'), findsOneWidget);
+    expect(find.text('เหตุผล: ค่า APN ไม่ถูกต้อง'), findsOneWidget);
+  });
+
+  testWidgets(
+    'Config Override — rejectReason ว่าง/ไม่มี -> ไม่แสดงบรรทัดเหตุผล',
+    (tester) async {
+      AppNotification rejected(String id, Map<String, dynamic> payload) =>
+          AppNotification(
+            id: id,
+            userId: 'u1',
+            type: NotificationType.configOverrideRejected,
+            payload: payload,
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          );
+
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [
+            rejected('n1', {'deviceId': 'DTC-0001', 'rejectReason': null}),
+            rejected('n2', {'deviceId': 'DTC-0002', 'rejectReason': '  '}),
+            rejected('n3', const {}),
+          ],
+        ),
+      );
+
+      expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
+      expect(find.text('อุปกรณ์: DTC-0002'), findsOneWidget);
+      expect(find.textContaining('เหตุผล:'), findsNothing);
+    },
+  );
+
+  testWidgets('type อื่น — ไม่แสดง detail แม้ payload มี deviceId', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          AppNotification(
+            id: 'n1',
+            userId: 'u1',
+            type: NotificationType.incidentAlert,
+            payload: const {'deviceId': 'DTC-0009'},
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.textContaining('อุปกรณ์:'), findsNothing);
+  });
+
   testWidgets('empty state', (tester) async {
     await _pump(tester, _FakeNotificationRepository(items: []));
     expect(find.text('ไม่มีการแจ้งเตือน'), findsOneWidget);
