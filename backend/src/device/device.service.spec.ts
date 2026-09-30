@@ -810,6 +810,52 @@ describe('DeviceService', () => {
       });
     });
 
+    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> merge fields ทับ base ก่อนส่งเข้า simulator (issue #226)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        fields: { APN: 'override-internet', EXTRA: 'x' },
+        status: 'approved',
+      });
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet', EXTRA: 'x' },
+      });
+    });
+
+    it('ไม่มี DeviceConfigOverride approved -> simulator ได้ base fields เดิมเฉยๆ', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue(null);
+      deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+      connectionTester.testConnection.mockResolvedValue(connPass);
+
+      await service.simulateConfig('DTC-0001', approvedConfig.id);
+
+      expect(deviceSimulator.simulateConfig).toHaveBeenCalledWith({
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'internet' },
+      });
+    });
+
     it('config synced ก็เช็คได้', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue({
