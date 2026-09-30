@@ -53,11 +53,20 @@ export function CampaignRolloutIncidentPanel({
   campaignId,
   rollout,
   targets,
+  targetsLoading = false,
+  targetsError = null,
   onResumed,
 }: {
   campaignId: string;
   rollout: CampaignRollout;
   targets: CampaignRolloutTarget[];
+  /** #238 review comment ข้อ 5 — เดิม parent ส่ง `data ?? []` มาตรงๆ ทำให้
+   * แยกไม่ออกระหว่าง "ยังโหลดอยู่" กับ "โหลดเสร็จแล้วแต่ไม่มีเครื่องสำเร็จ
+   * เลยจริงๆ" (ทั้งคู่ได้ `[]` เหมือนกัน) เพิ่ม 2 prop นี้ให้ panel แยกแสดงผล
+   * ถูกต้องระหว่างเปิดแผง Rollback — ไม่บังคับใส่ (default โหลดเสร็จ/ไม่มี
+   * error) กันพังของเก่าที่ยังไม่ได้ส่งมา */
+  targetsLoading?: boolean;
+  targetsError?: string | null;
   onResumed: (updated: CampaignRollout) => void;
 }) {
   const router = useRouter();
@@ -111,6 +120,10 @@ export function CampaignRolloutIncidentPanel({
       );
       toast.success("Resume แล้ว — status กลับเป็น active");
       onResumed(updated);
+      // #238 review comment ข้อ 5 — เดิม reset เฉพาะใน catch ปกติแผงหายไปเอง
+      // หลัง onResumed ทำให้ parent refetch/re-render (canResume กลาย false)
+      // แต่ถ้า refetch ฝั่ง parent ช้าหรือพัง ปุ่มจะค้าง disabled อยู่ดี
+      setResuming(false);
     } catch (err) {
       setResuming(false);
       const message = err instanceof ApiError ? err.message : "Resume ไม่สำเร็จ";
@@ -168,7 +181,13 @@ export function CampaignRolloutIncidentPanel({
             ({includedCount}/{successTargets.length} เครื่อง)
           </p>
 
-          {successTargets.length === 0 ? (
+          {targetsLoading ? (
+            <p className="text-sm text-muted-foreground">
+              กำลังโหลดรายชื่อเครื่อง…
+            </p>
+          ) : targetsError ? (
+            <p className="text-sm text-destructive">{targetsError}</p>
+          ) : successTargets.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               ยังไม่มีเครื่องที่ได้รับ payload ของรอบนี้สำเร็จเลย
             </p>
@@ -214,7 +233,12 @@ export function CampaignRolloutIncidentPanel({
             <Button
               size="sm"
               variant="destructive"
-              disabled={submitting || successTargets.length === 0}
+              disabled={
+                submitting ||
+                targetsLoading ||
+                !!targetsError ||
+                successTargets.length === 0
+              }
               onClick={() => void handleRollback()}
             >
               {submitting ? "กำลังสร้าง Rollout…" : "ยืนยันสั่ง Rollback"}

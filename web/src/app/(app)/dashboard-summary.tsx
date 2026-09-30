@@ -178,6 +178,9 @@ export function DashboardSummary() {
   const campaignCount: number | null = campaigns.data
     ? campaigns.data.length
     : null;
+  // #238 review comment ข้อ 6 — นับจำนวน "Rollout ที่ paused" (นับเป็นกลุ่ม
+  // ไม่ใช่รายเครื่อง) ไม่ใช่ "จำนวนเครื่องที่ Failure" คนละ metric กับที่
+  // label เดิม ("Failure สูง") สื่อ — ดู label การ์ดด้านล่างที่แก้ตาม
   const pausedRolloutCount: number | null = pausedRollouts.data
     ? pausedRollouts.data.length
     : null;
@@ -247,7 +250,7 @@ export function DashboardSummary() {
       <DashboardSection title="ความเสี่ยง" description="Risk Dashboard">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <LiveSummaryCard
-            label="Failure สูง (Rollout หยุดชั่วคราว)"
+            label="Rollout หยุดชั่วคราว (Auto Pause)"
             href="/campaigns"
             value={pausedRolloutCount}
             error={pausedRollouts.error}

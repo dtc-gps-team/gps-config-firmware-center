@@ -138,6 +138,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             campaignId={campaignId}
             rollout={latestRollout}
             targets={latestRolloutTargetsQuery.data ?? []}
+            targetsLoading={
+              latestRolloutTargetsQuery.isLoading &&
+              !latestRolloutTargetsQuery.data
+            }
+            targetsError={latestRolloutTargetsQuery.error}
             onResumed={() => void rolloutsQuery.refetch()}
           />
         </div>

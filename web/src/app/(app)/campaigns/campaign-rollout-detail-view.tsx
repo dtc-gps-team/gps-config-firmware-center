@@ -116,6 +116,8 @@ export function CampaignRolloutDetailView({
         campaignId={campaignId}
         rollout={data}
         targets={targets}
+        targetsLoading={targetsQuery.isLoading && !targetsQuery.data}
+        targetsError={targetsQuery.error}
         onResumed={() => void refetch()}
       />
 
