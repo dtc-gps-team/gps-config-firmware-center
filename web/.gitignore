@@ -16,6 +16,12 @@
 # next.js
 /.next/
 /out/
+# AGENTS.md/CLAUDE.md ตรงนี้ถูก `next dev` สร้าง/เขียนทับเองทุกครั้ง (เนื้อหา
+# generic บอก AI agent ให้อ่าน docs ใน node_modules/next/dist/docs/ ก่อนเขียน
+# โค้ด) ไม่มีใครแก้ด้วยมือ ไม่ commit เพื่อกัน diff ไร้ความหมายทุกครั้งที่
+# Next.js อัปเดตข้อความ
+/AGENTS.md
+/CLAUDE.md
 
 # production
 /build
