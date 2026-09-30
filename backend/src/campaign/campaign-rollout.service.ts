@@ -622,17 +622,20 @@ export class CampaignRolloutService {
         ? `ไม่พบ Config id ${configId}`
         : `Config สถานะปัจจุบัน (${config.status}${config.deletedAt ? ', ถูกลบไปแล้ว' : ''}) ใช้งานไม่ได้อีกต่อไป`;
       for (const target of targets) {
-        await this.recordTargetResult(
+        const claimed = await this.recordTargetResult(
           target.deviceId,
           { configId },
           false,
           reason,
+          rollout.id,
         );
-        await this.logAudit('apply-config', actorId, {
-          deviceId: target.deviceId,
-          configId,
-          fieldNames: [],
-        });
+        if (claimed) {
+          await this.logAudit('apply-config', actorId, {
+            deviceId: target.deviceId,
+            configId,
+            fieldNames: [],
+          });
+        }
       }
       return this.prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
@@ -656,6 +659,7 @@ export class CampaignRolloutService {
           { configId: config.id },
           false,
           `ไม่พบ Device deviceId ${target.deviceId}`,
+          rollout.id,
         );
         continue;
       }
@@ -669,6 +673,7 @@ export class CampaignRolloutService {
           { configId: config.id },
           false,
           `Device สถานะปัจจุบัน (${device.status}) ไม่ใช่ ${TARGETABLE_DEVICE_STATUS} อีกต่อไป`,
+          rollout.id,
         );
         continue;
       }
@@ -681,6 +686,7 @@ export class CampaignRolloutService {
           { configId: config.id },
           false,
           `Config นี้เป็นของ ${config.deviceModel}/${config.protocol} ไม่ตรงกับอุปกรณ์ ${device.deviceModel}/${device.protocol}`,
+          rollout.id,
         );
         continue;
       }
@@ -714,11 +720,12 @@ export class CampaignRolloutService {
           protocol: device.protocol,
           fields,
         });
-        await this.recordTargetResult(
+        const claimed = await this.recordTargetResult(
           device.deviceId,
           { configId: config.id },
           result.applied,
           result.details.join(' · '),
+          rollout.id,
         );
 
         // AuditLog รายเครื่อง (#235 review comment ข้อ 2 — CLAUDE.md Audit
@@ -726,29 +733,38 @@ export class CampaignRolloutService {
         // `DeviceService.applyConfig()` ทุกประการ (action/metadata shape
         // เดียวกัน) ต่างกันแค่ userId เป็นผู้ที่กด approve Rollout แทนที่จะเป็น
         // ผู้กด apply-config เอง — log ไม่ว่าผล applied จะ true/false เพื่อน
-        // ให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
-        await this.logAudit('apply-config', actorId, {
-          deviceId: device.deviceId,
-          configId: config.id,
-          fieldNames: Object.keys(fields),
-        });
+        // ให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง — **เว้นแต่**
+        // `claimed` เป็น false (#235 review รอบ 4 ข้อ 2 — target ถูกคำขออื่น
+        // claim ไปก่อนแล้วจาก race, ไม่ควร log audit ซ้ำสำหรับเหตุการณ์ที่ไม่ได้
+        // เกิดขึ้นจริงจากฝั่งเรา)
+        if (claimed) {
+          await this.logAudit('apply-config', actorId, {
+            deviceId: device.deviceId,
+            configId: config.id,
+            fieldNames: Object.keys(fields),
+          });
+        }
       } catch (err) {
-        await this.recordTargetResult(
+        const claimed = await this.recordTargetResult(
           device.deviceId,
           { configId: config.id },
           false,
           `auto-apply ล้มเหลว: ${(err as Error).message}`,
+          rollout.id,
         );
         // #235 review รอบ 3 ข้อ 5 — เดิมถ้า throw กลางทางจะไม่มี audit row
         // `apply-config` เลย ทำให้ไม่มีบันทึกว่าเคยพยายาม apply เครื่องนี้
         // (ต่างจากเส้นทางสำเร็จ/ล้มเหลวแบบปกติที่ log เสมอ) — log ไว้แม้ throw
         // เหมือนกัน ไม่รู้ fieldNames จริงตอนนี้ (mergeApprovedOverride อาจ
-        // throw ก่อนคำนวณ fields เสร็จ) ใส่ array ว่างไว้แทน
-        await this.logAudit('apply-config', actorId, {
-          deviceId: device.deviceId,
-          configId: config.id,
-          fieldNames: [],
-        });
+        // throw ก่อนคำนวณ fields เสร็จ) ใส่ array ว่างไว้แทน — เว้นแต่ claimed
+        // เป็น false เหมือนกัน (รอบ 4 ข้อ 2)
+        if (claimed) {
+          await this.logAudit('apply-config', actorId, {
+            deviceId: device.deviceId,
+            configId: config.id,
+            fieldNames: [],
+          });
+        }
       }
     }
 
@@ -801,16 +817,19 @@ export class CampaignRolloutService {
         ? `ไม่พบ Firmware id ${firmwareId}`
         : `Firmware สถานะปัจจุบัน (upload: ${firmware.uploadStatus}, อนุมัติคุณภาพ: ${firmware.approvalStatus}) ใช้งานไม่ได้อีกต่อไป`;
       for (const target of targets) {
-        await this.recordTargetResult(
+        const claimed = await this.recordTargetResult(
           target.deviceId,
           { firmwareId },
           false,
           reason,
+          rollout.id,
         );
-        await this.logAudit('confirm-firmware-install', actorId, {
-          deviceId: target.deviceId,
-          firmwareId,
-        });
+        if (claimed) {
+          await this.logAudit('confirm-firmware-install', actorId, {
+            deviceId: target.deviceId,
+            firmwareId,
+          });
+        }
       }
       return this.prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
@@ -834,6 +853,7 @@ export class CampaignRolloutService {
           { firmwareId: firmware.id },
           false,
           `ไม่พบ Device deviceId ${target.deviceId}`,
+          rollout.id,
         );
         continue;
       }
@@ -847,6 +867,7 @@ export class CampaignRolloutService {
           { firmwareId: firmware.id },
           false,
           `Device สถานะปัจจุบัน (${device.status}) ไม่ใช่ ${TARGETABLE_DEVICE_STATUS} อีกต่อไป`,
+          rollout.id,
         );
         continue;
       }
@@ -856,6 +877,7 @@ export class CampaignRolloutService {
           { firmwareId: firmware.id },
           false,
           `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+          rollout.id,
         );
         continue;
       }
@@ -883,23 +905,28 @@ export class CampaignRolloutService {
         );
       }
 
-      await this.recordTargetResult(
+      const claimed = await this.recordTargetResult(
         device.deviceId,
         { firmwareId: firmware.id },
         partitionWriteSucceeded,
         partitionWriteSucceeded
           ? `ติดตั้ง Firmware ${firmware.version} สำเร็จ (auto, mock)`
           : `เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ`,
+        rollout.id,
       );
 
       // AuditLog รายเครื่อง (#235 review comment ข้อ 2) mirror
       // `DeviceService.confirmFirmwareInstall()` — log ไม่ว่า partition write
-      // จะสำเร็จหรือไม่ เพื่อให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
-      await this.logAudit('confirm-firmware-install', actorId, {
-        deviceId: device.deviceId,
-        firmwareId: firmware.id,
-        firmwareVersion: firmware.version,
-      });
+      // จะสำเร็จหรือไม่ เพื่อให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง —
+      // เว้นแต่ claimed เป็น false (#235 review รอบ 4 ข้อ 2 — race, target
+      // ถูกคำขออื่นจัดการไปแล้ว)
+      if (claimed) {
+        await this.logAudit('confirm-firmware-install', actorId, {
+          deviceId: device.deviceId,
+          firmwareId: firmware.id,
+          firmwareVersion: firmware.version,
+        });
+      }
     }
 
     return this.prisma.campaignRollout.findUniqueOrThrow({
@@ -935,17 +962,36 @@ export class CampaignRolloutService {
    * ถ้าสุ่มได้รอบที่ไม่มีอุปกรณ์นี้เป็นเป้าหมาย ผลจะหายเงียบๆ (ไม่เจอ target
    * เลยไม่ทำอะไร) ทั้งที่รอบที่ถูกต้องยังค้าง `pending` อยู่ — คิวรีนี้ scope
    * ด้วย deviceId ตั้งแต่ต้นผ่านความสัมพันธ์ `rollout` แทน รับประกันว่า
-   * rollout ที่ได้ต้องมีอุปกรณ์เครื่องนี้เป็นเป้าหมายจริงเสมอ **ไม่ต้องเปลี่ยน
-   * signature ให้รับ `rolloutId` ตรงๆ ตามที่เสนอไว้ก่อน** เพราะจะกลาย
-   * เป็นต้องแก้ contract ของ `POST /devices/{deviceId}/apply-config`/
-   * `confirm-firmware-install` ทั้งคู่ (Mobile ต้องรู้ rolloutId ด้วย) — เกิน
-   * ขอบเขตของ bug fix รอบนี้ (เคสที่เหลืออยู่จริงคือถ้าอุปกรณ์เครื่องเดียวกัน
-   * เป็นเป้าหมายของ 2 รอบที่ active พร้อมกันแบบ payload ตรงกันเป๊ะ ยังเป็น
-   * ambiguous case ที่ต้องออกแบบ contract ใหม่ถ้าเจอจริง)
+   * rollout ที่ได้ต้องมีอุปกรณ์เครื่องนี้เป็นเป้าหมายจริงเสมอ
+   *
+   * **`rolloutId` เป็น optional param เพิ่มใหม่ (#235 review รอบ 4 ข้อ 1)**
+   * — `autoApplyConfig()`/`autoApplyFirmware()` รู้ `rollout.id` อยู่แล้วใน
+   * ลูป ส่งเข้ามาตัดความกำกวมได้เลยว่าให้ match แค่ target ของ rollout นี้
+   * เท่านั้น (ไม่ข้ามไปโดน rollout อื่นที่ device+config/firmware เดียวกัน
+   * บังเอิญ pending พร้อมกันอยู่) ส่วน path เดิมจาก
+   * `DeviceService.applyConfig()`/`confirmFirmwareInstall()` (Mobile) ไม่มี
+   * `rolloutId` ให้ส่ง คง query แบบเดิมทุกประการ (ไม่ต้องแก้ contract ของ
+   * endpoint ที่ Mobile เรียก) — เดิมตั้งใจไม่ทำแบบนี้เพราะกลัวต้องแก้
+   * contract ทั้งคู่ แต่จริงๆ แค่ทำเป็น optional ก็พอโดยไม่กระทบ path เดิมเลย
    *
    * **รวม `paused` ด้วย** (แก้ไข 2026-09-24, Auto Pause #28) — เครื่องที่
    * ช่างกำลังทำอยู่ตอน auto-pause เพิ่งเกิดยังต้องบันทึกผลได้ ไม่งั้นผลของ
    * เครื่องนั้นหายไปเฉยๆ ทั้งที่ช่างทำจริงไปแล้ว
+   *
+   * **claim target แบบ atomic ผ่าน `updateMany` (#235 review รอบ 4 ข้อ 2)**
+   * — เดิม `update()` เปล่าๆ ไม่เช็คเงื่อนไขตอนเขียน ถ้ามี 2 คำขอมา match
+   * target เดียวกันพร้อมกัน (เช่น approve() loop เดิมยังไม่ทันเช็คสถานะรอบ
+   * ถัดไป ขณะที่ resume() เริ่ม loop ใหม่ทับ) ทั้งคู่จะ "เจอ" target เป็น
+   * `pending` แล้วอัปเดตซ้ำทั้งคู่ นับ count ซ้ำ + trigger pause/complete ซ้ำ
+   * — เปลี่ยนเป็น `updateMany({ where: { id, status: 'pending' } })` เช็ค
+   * `count` แทน ถ้า 0 แปลว่ามีคำขออื่นชนะไปแล้วระหว่างที่เรา query เจอ target
+   * (TOCTOU) ให้ถือว่า "ไม่ได้ทำอะไร" คืน `false` ไม่ recompute
+   * count/pause/audit ซ้ำ
+   *
+   * **คืน `boolean`** (เดิม `void`) — `true` = claim+อัปเดตสำเร็จจริง (ผู้เรียก
+   * ควร log audit ต่อ), `false` = ไม่เจอ target หรือมีคนอื่น claim ไปก่อน
+   * (ไม่ควร log audit ซ้ำ) — `DeviceService.applyConfig()`/
+   * `confirmFirmwareInstall()` (path เดิม) ไม่ได้ใช้ return value นี้ ไม่กระทบ
    *
    * **never-throw** — เป็นแค่ side-effect ติดตามผล ไม่ใช่ core contract ของ
    * apply-config/confirm-firmware-install เอง (mirror pattern `logAudit` ใน
@@ -957,12 +1003,14 @@ export class CampaignRolloutService {
     payload: { configId: string } | { firmwareId: string },
     success: boolean,
     detail: string,
-  ): Promise<void> {
+    rolloutId?: string,
+  ): Promise<boolean> {
     try {
       const target = await this.prisma.campaignRolloutTarget.findFirst({
         where: {
           deviceId,
           status: 'pending',
+          ...(rolloutId ? { rolloutId } : {}),
           rollout: {
             status: { in: ['active', 'paused'] },
             ...('configId' in payload
@@ -976,18 +1024,24 @@ export class CampaignRolloutService {
         this.logger.warn(
           `recordTargetResult: ไม่พบ CampaignRolloutTarget ที่ pending ตรงกับ deviceId ${deviceId} + payload ${JSON.stringify(payload)} (ไม่มี Rollout active/paused ที่เครื่องนี้เป็นสมาชิกจริง หรือถูกบันทึกผลไปแล้ว) — ข้ามการอัปเดต Campaign Monitor`,
         );
-        return;
+        return false;
       }
       const rollout = target.rollout;
 
-      await this.prisma.$transaction(async (tx) => {
-        await tx.campaignRolloutTarget.update({
-          where: { id: target.id },
+      return await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.campaignRolloutTarget.updateMany({
+          where: { id: target.id, status: 'pending' },
           data: {
             status: success ? 'success' : 'failed',
             resultDetail: detail,
           },
         });
+        if (claim.count === 0) {
+          this.logger.warn(
+            `recordTargetResult: target ${target.id} (deviceId ${deviceId}) ถูกคำขออื่น claim ไปแล้วระหว่างที่เรากำลังประมวลผล (race) — ข้าม ไม่นับซ้ำ`,
+          );
+          return false;
+        }
 
         const [successCount, failureCount, pendingCount, windowFailureCount] =
           await Promise.all([
@@ -1051,11 +1105,13 @@ export class CampaignRolloutService {
                   : rollout.status,
           },
         });
+        return true;
       });
     } catch (err) {
       this.logger.warn(
         `บันทึกผล Campaign Rollout ไม่สำเร็จ (deviceId ${deviceId}): ${(err as Error).message}`,
       );
+      return false;
     }
   }
 

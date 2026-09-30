@@ -114,6 +114,7 @@ describe('CampaignRolloutService', () => {
     findFirst: jest.Mock;
     findMany: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     count: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
@@ -142,6 +143,11 @@ describe('CampaignRolloutService', () => {
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
+      // #235 review รอบ 4 ข้อ 2 — recordTargetResult() claim target ผ่าน
+      // updateMany({where:{id,status:'pending'}}) แทน update() เปล่าๆ แล้ว
+      // default ชนะการ claim เสมอ (count:1) เทสที่ต้องการจำลอง race (แพ้
+      // การ claim) ค่อย mockResolvedValueOnce({count:0}) เฉพาะเทสนั้น
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       count: jest.fn(),
     };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
@@ -651,8 +657,8 @@ describe('CampaignRolloutService', () => {
         // spread เข้า object ใหม่เสมอ (ไม่มี override ค้างอยู่ -> {})
         fields: {},
       });
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: { status: 'success', resultDetail: 'ส่ง Config แล้ว (mock)' },
       });
       expect(result.status).toBe('completed');
@@ -732,6 +738,145 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    it('autoApplyConfig ส่ง rollout.id เข้า recordTargetResult() ด้วยเสมอ (#235 review รอบ 4 ข้อ 1 — end-to-end ผ่าน approve())', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            rolloutId: oneDeviceRollout.id,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+    });
+
+    it('claim target แพ้ race กลางลูป -> ไม่ log audit ซ้ำสำหรับเครื่องนั้น แต่เครื่องถัดไปยัง apply ต่อได้ปกติ (#235 review รอบ 4 ข้อ 2 — end-to-end ผ่าน approve())', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 2
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ ...pendingTargets[0], rollout: activeRollout })
+        .mockResolvedValueOnce({
+          ...pendingTargets[1],
+          rollout: activeRollout,
+        });
+      // เครื่อง 1 แพ้ race (มีคำขออื่น claim target นี้ไปแล้ว) — เครื่อง 2
+      // claim สำเร็จตามปกติ (default mock count:1 จาก beforeEach)
+      campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      await service.approve(twoDeviceRollout.id, otherOperation);
+
+      // เครื่อง 1 แพ้ race -> ไม่ log audit ของ apply-config สำหรับ DEV-0001
+      expect(auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0001',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+      // เครื่อง 2 ยัง apply + log audit ตามปกติ ไม่ได้หยุดทั้ง loop เพราะ
+      // เครื่อง 1 แพ้ race
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0002' }) as Record<
+          string,
+          unknown
+        >,
+      );
+      expect(auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0002',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+    });
+
     it('Config ถูกลบไปแล้ว (soft-delete) ระหว่างรอ resume -> fail ทุกเครื่องที่ pending พร้อมเหตุผล ไม่เรียก applier เลย (#235 review รอบ 3 ข้อ 3)', async () => {
       const twoDeviceRollout: CampaignRollout = {
         ...pendingRollout,
@@ -786,15 +931,15 @@ describe('CampaignRolloutService', () => {
       await service.approve(twoDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining('ถูกลบไปแล้ว') as string,
         },
       });
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-2' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-2', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining('ถูกลบไปแล้ว') as string,
@@ -844,8 +989,8 @@ describe('CampaignRolloutService', () => {
       await service.approve(oneDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining('rejected') as string,
@@ -892,8 +1037,8 @@ describe('CampaignRolloutService', () => {
       await service.approve(oneDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining(approvedConfig.id) as string,
@@ -976,8 +1121,8 @@ describe('CampaignRolloutService', () => {
 
       await service.approve(twoDeviceRollout.id, otherOperation);
 
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining('installed') as string,
@@ -1047,8 +1192,8 @@ describe('CampaignRolloutService', () => {
       // ต้องไม่ throw ออกมาจาก approve() เลย แม้ applyConfig() throw กลางลูป
       const result = await service.approve(twoDeviceRollout.id, otherOperation);
 
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining(
@@ -1186,8 +1331,8 @@ describe('CampaignRolloutService', () => {
         where: { deviceId: 'DEV-0001' },
         data: { activePartition: 'B', partitionBFirmwareId: storedFirmware.id },
       });
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'success',
           resultDetail: expect.stringContaining(
@@ -1266,8 +1411,8 @@ describe('CampaignRolloutService', () => {
 
       const result = await service.approve(firmwareRollout.id, otherOperation);
 
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail:
@@ -1336,8 +1481,8 @@ describe('CampaignRolloutService', () => {
       await service.approve(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining('rejected') as string,
@@ -1387,8 +1532,8 @@ describe('CampaignRolloutService', () => {
       await service.approve(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining(storedFirmware.id) as string,
@@ -1458,8 +1603,8 @@ describe('CampaignRolloutService', () => {
       await service.approve(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: 'rt-1' },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
         data: {
           status: 'failed',
           resultDetail: expect.stringContaining(
@@ -2002,14 +2147,93 @@ describe('CampaignRolloutService', () => {
         },
         include: { rollout: true },
       });
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: pendingTarget.id },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: pendingTarget.id, status: 'pending' },
         data: { status: 'success', resultDetail: 'ok' },
       });
       expect(campaignRollout.update).toHaveBeenCalledWith({
         where: { id: activeRollout.id },
         data: { successCount: 1, failureCount: 0, status: 'active' },
       });
+    });
+
+    it('ส่ง rolloutId เข้ามา -> query findFirst กรองด้วย rolloutId ตรงๆ ด้วย ตัดความกำกวมข้าม rollout (#235 review รอบ 4 ข้อ 1)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+        activeRollout.id, // rolloutId ใหม่ — จาก autoApplyConfig/autoApplyFirmware
+      );
+
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rolloutId: activeRollout.id,
+          rollout: {
+            status: { in: ['active', 'paused'] },
+            configId: approvedConfig.id,
+          },
+        },
+        include: { rollout: true },
+      });
+    });
+
+    it('ไม่ส่ง rolloutId (path เดิมจาก Mobile) -> query findFirst ไม่มี rolloutId ในเงื่อนไข เหมือนเดิมทุกประการ', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      // ไม่มี rolloutId ปนอยู่ใน where เลย (query เดิมทุกประการ, ไม่ใช่แค่ไม่
+      // เท่ากับ undefined — key ต้องไม่ถูกใส่เข้าไปเลย)
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rollout: {
+            status: { in: ['active', 'paused'] },
+            configId: approvedConfig.id,
+          },
+        },
+        include: { rollout: true },
+      });
+    });
+
+    it('claim target ไม่สำเร็จ (มีคำขออื่น claim ไปก่อนแล้วระหว่างที่เรากำลังประมวลผล, race) -> คืน false ไม่ recompute count/pause ซ้ำ (#235 review รอบ 4 ข้อ 2)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      // แพ้ race — target ถูกคำขออื่น claim (status ไม่ใช่ pending แล้ว) ไปก่อน
+      campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(result).toBe(false);
+      // ไม่ควร recompute count หรือ trigger pause/complete ซ้ำ — คำขอที่ชนะ
+      // การ claim ไปแล้วจะเป็นคนจัดการส่วนนี้เอง
+      expect(campaignRolloutTarget.count).not.toHaveBeenCalled();
+      expect(campaignRollout.update).not.toHaveBeenCalled();
     });
 
     it('ครบทุกเครื่องแล้ว (pending เหลือ 0) -> ปิด rollout เป็น completed', async () => {
@@ -2056,8 +2280,8 @@ describe('CampaignRolloutService', () => {
         'ok',
       );
 
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: targetOfSecondGroup.id },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: targetOfSecondGroup.id, status: 'pending' },
         data: { status: 'success', resultDetail: 'ok' },
       });
       // ต้องคำนวณ/ปิดรอบของ otherActiveRollout (กลุ่มที่เครื่องเป็นสมาชิกจริง)
@@ -2078,9 +2302,9 @@ describe('CampaignRolloutService', () => {
           true,
           'ok',
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(false);
 
-      expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
       expect(campaignRollout.update).not.toHaveBeenCalled();
     });
 
@@ -2094,7 +2318,7 @@ describe('CampaignRolloutService', () => {
           true,
           'ok',
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(false);
     });
 
     it('failure rate เกิน 5% ระหว่างยังมี pending เหลือ (rollout ยัง active) -> Auto Pause', async () => {
