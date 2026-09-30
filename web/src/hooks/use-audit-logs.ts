@@ -3,16 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { listAuditLogs } from "@/lib/audit-api";
+import { listUsers } from "@/lib/users-api";
 import { ApiError } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
 /**
- * View-model ของ 1 แถวในหน้า Audit Log — ตอนนี้ `actorName` = `userId` ดิบ
- * (backend คืนมาแค่ `userId` ไม่ join ชื่อมาให้) ยังไม่มี endpoint list user
- * แบบย่อในสาขานี้ให้ resolve ชื่อ (ดู Approval Center #19 — `GET /users`) ·
- * วันที่ endpoint นั้น merge ค่อยต่อ join ชื่อแบบเดียวกับ
- * `use-pending-approvals.ts` (`suggestedApprover`) — เปลี่ยนแค่ไฟล์นี้ไฟล์
- * เดียว component ไม่ต้องแตะ
+ * View-model ของ 1 แถวในหน้า Audit Log — `actorName` resolve จาก `GET /users`
+ * (ไม่ join ชื่อจาก backend — mirror `use-pending-approvals.ts`
+ * `suggestedApprover`) fallback เป็น `userId` ดิบถ้าหา user ไม่เจอ (บัญชีถูกลบไป
+ * แล้ว) หรือถ้า `GET /users` ล่ม (พังไม่ block ตาราง audit log)
  */
 export type AuditLogRow = {
   id: string;
@@ -53,12 +52,18 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const logs = await listAuditLogs(token, { auditModule, action });
+      const [logs, users] = await Promise.all([
+        listAuditLogs(token, { auditModule, action }),
+        // resolve ชื่อผู้ทำรายการ — พังไม่ block ตาราง audit log (fallback
+        // เป็น userId ดิบด้านล่าง)
+        listUsers(token).catch(() => []),
+      ]);
+      const nameById = new Map(users.map((u) => [u.id, u.fullName]));
       const data = logs.map(
         (log): AuditLogRow => ({
           id: log.id,
           actorId: log.userId,
-          actorName: log.userId,
+          actorName: nameById.get(log.userId) ?? log.userId,
           auditModule: log.auditModule,
           action: log.action,
           ipAddress: log.ipAddress,

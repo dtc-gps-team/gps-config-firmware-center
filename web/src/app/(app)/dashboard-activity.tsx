@@ -58,8 +58,8 @@ const ACTION_LABEL: Record<string, string> = {
  * ผิดไปแล้ว — หน้า Audit Log เต็มต่อ endpoint นี้จริงมาก่อนหน้านี้แล้ว)
  *
  * แสดงแค่ 5 รายการล่าสุด ไม่มี filter (ดูทั้งหมด/filter ได้ที่ `/audit-log`) ·
- * ไม่มีชื่อผู้ทำรายการมาให้ตรงๆ จาก backend (แค่ userId ดิบ mirror
- * audit-log-view.tsx เดิม) เลยโชว์ userId ไปก่อนเหมือนกัน
+ * ชื่อผู้ทำรายการ resolve จาก `GET /users` ใน `useAuditLogs` เอง (ดู
+ * comment เหนือ `AuditLogRow` ใน `use-audit-logs.ts`)
  */
 export function DashboardActivity() {
   const { data, isLoading, error, refetch } = useAuditLogs();
@@ -110,7 +110,7 @@ export function DashboardActivity() {
                 <li key={row.id} className="flex items-start gap-3">
                   <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="font-mono text-xs text-muted-foreground">
+                    <span className="text-xs font-medium">
                       {row.actorName}
                     </span>{" "}
                     {actionLabel} {moduleLabel}
