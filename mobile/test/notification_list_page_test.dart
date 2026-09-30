@@ -88,6 +88,26 @@ void main() {
     expect(find.byKey(const Key('unread_dot')), findsOneWidget);
   });
 
+  testWidgets(
+    'render — 3 notification type ใหม่ของ Config Override (issue #226) ไม่ throw',
+    (tester) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [
+            _n('n1', type: NotificationType.configOverridePending),
+            _n('n2', type: NotificationType.configOverrideApproved),
+            _n('n3', type: NotificationType.configOverrideRejected),
+          ],
+        ),
+      );
+
+      expect(find.text('มีคำขอ Override รออนุมัติ'), findsOneWidget);
+      expect(find.text('คำขอ Override ได้รับการอนุมัติ'), findsOneWidget);
+      expect(find.text('คำขอ Override ถูกปฏิเสธ'), findsOneWidget);
+    },
+  );
+
   testWidgets('empty state', (tester) async {
     await _pump(tester, _FakeNotificationRepository(items: []));
     expect(find.text('ไม่มีการแจ้งเตือน'), findsOneWidget);

@@ -437,6 +437,9 @@ void main() {
         'incident_alert',
         'config_deletion_pending',
         'config_deletion_grace',
+        'config_override_pending',
+        'config_override_approved',
+        'config_override_rejected',
       ]);
     });
 
@@ -446,6 +449,22 @@ void main() {
         NotificationType.firmwareReady,
       );
       expect(() => NotificationType.fromWire('nope'), throwsArgumentError);
+    });
+
+    // issue #226 — Per-device Config Override (issue #223)
+    test('fromWire maps config_override_* ใหม่ทั้ง 3 ค่า', () {
+      expect(
+        NotificationType.fromWire('config_override_pending'),
+        NotificationType.configOverridePending,
+      );
+      expect(
+        NotificationType.fromWire('config_override_approved'),
+        NotificationType.configOverrideApproved,
+      );
+      expect(
+        NotificationType.fromWire('config_override_rejected'),
+        NotificationType.configOverrideRejected,
+      );
     });
   });
 
