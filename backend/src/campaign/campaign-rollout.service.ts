@@ -239,6 +239,9 @@ export class CampaignRolloutService {
           status: 'active',
           approvedBy: actor.id,
           approvedAt: new Date(),
+          // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ (#235 review รอบ 3 ข้อ 1) — ดู
+          // comment เหนือ field นี้ใน schema.prisma
+          activeWindowStartedAt: new Date(),
         },
       });
       if (result.count === 0) {
@@ -333,18 +336,39 @@ export class CampaignRolloutService {
    * target สถานะ `pending` สดจาก DB เองอยู่แล้ว (ไม่ผูกกับ target ชุดเดิมตอน
    * approve() ครั้งแรก) จึงหยิบเฉพาะเครื่องที่ยังไม่ถูกแตะมาทำต่อได้ถูกต้องเลย
    * โดยไม่ต้องเปลี่ยนโค้ดใน 2 ฟังก์ชันนั้นแม้แต่บรรทัดเดียว
+   *
+   * **#235 review รอบ 3:** เพิ่ม race-condition guard (ข้อ 2, mirror
+   * approve()) และรีเซ็ต `activeWindowStartedAt` (ข้อ 1 — กัน resume แล้ว
+   * pause ซ้ำทันทีหลังแตะแค่เครื่องเดียว เพราะ failure rate เดิมคำนวณสะสม
+   * ตั้งแต่ต้น rollout ไม่เคยรีเซ็ต)
    */
   async resume(id: string, actor: ActingUser): Promise<CampaignRollout> {
-    const rollout = await this.findOne(id);
-    if (rollout.status !== RESUMABLE_CAMPAIGN_ROLLOUT_STATUS) {
-      throw new ConflictException(
-        `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${RESUMABLE_CAMPAIGN_ROLLOUT_STATUS} จึง resume ไม่ได้`,
-      );
-    }
+    await this.findOne(id); // 404 ถ้าไม่พบ
 
-    const updated = await this.prisma.campaignRollout.update({
-      where: { id },
-      data: { status: 'active' },
+    // race condition (#235 review รอบ 3 ข้อ 2 — mirror approve()/reject()):
+    // เดิมเช็คสถานะนอก transaction แล้ว update({ where: { id } }) โดยไม่เช็ค
+    // status ซ้ำข้างใน — กดปุ่ม resume ซ้ำ (เช่น double-click หรือ client
+    // retry หลัง timeout) จะวน dispatchAutoApply() ซ้ำบน target ชุดเดียวกัน
+    // ได้ (apply ซ้ำ + audit row ซ้ำ) แก้ด้วย updateMany({ where: { id,
+    // status: RESUMABLE... } }) — count === 0 แปลว่ามีคำขออื่นทำสำเร็จไปแล้ว
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: RESUMABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: {
+          status: 'active',
+          // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ (#235 review รอบ 3 ข้อ 1) — ดู
+          // comment เหนือ field นี้ใน schema.prisma — ไม่งั้น failure ที่เคย
+          // ทำให้ pause รอบก่อนจะยังถูกนับรวมต่อ ทำให้ resume แล้ว apply ได้
+          // แค่เครื่องเดียวก่อนโดน pause ซ้ำทันทีเกือบทุกครั้ง
+          activeWindowStartedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          `Rollout นี้ถูกตัดสินใจไปแล้ว (ไม่ใช่สถานะ ${RESUMABLE_CAMPAIGN_ROLLOUT_STATUS} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
     await this.logAudit('resume', actor.id);
@@ -575,6 +599,32 @@ export class CampaignRolloutService {
       where: { rolloutId: rollout.id, status: 'pending' },
       orderBy: { createdAt: 'asc' },
     });
+
+    // #235 review รอบ 3 ข้อ 3 — mirror เงื่อนไข 4xx ของ
+    // `DeviceService.applyConfig()` ที่ auto-apply ข้ามไปเลย: `create()`
+    // validate Config ไว้ตอนสร้าง Rollout ก็จริง แต่เวลาผ่านไปได้ (โดยเฉพาะ
+    // รอ Operation resume หลัง Auto Pause) Config อาจถูก soft-delete หรือถอน
+    // อนุมัติระหว่างนั้น — เช็คซ้ำสดๆ ตรงนี้ก่อน apply จริง ถ้าไม่ผ่านให้ fail
+    // ทุกเครื่องที่ยัง pending พร้อมเหตุผลเดียวกัน แทนที่จะเงียบๆ push ค่าที่
+    // ไม่ควร push ไปแล้ว (ไม่ throw ออกจาก request — mirror หลักการ "ไม่ปล่อย
+    // ให้ loop ทำให้ Rollout ค้าง active" ข้อ 3 เดิม)
+    const configStillValid =
+      config.deletedAt === null &&
+      APPLICABLE_CONFIG_STATUSES.includes(config.status);
+    if (!configStillValid) {
+      for (const target of targets) {
+        await this.recordTargetResult(
+          target.deviceId,
+          { configId: config.id },
+          false,
+          `Config สถานะปัจจุบัน (${config.status}${config.deletedAt ? ', ถูกลบไปแล้ว' : ''}) ใช้งานไม่ได้อีกต่อไป`,
+        );
+      }
+      return this.prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+    }
+
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
@@ -595,6 +645,31 @@ export class CampaignRolloutService {
           { configId: config.id },
           false,
           `ไม่พบ Device deviceId ${target.deviceId}`,
+        );
+        continue;
+      }
+
+      // #235 review รอบ 3 ข้อ 3 — เช็คต่อเครื่องเหมือน `DeviceService.applyConfig()`
+      // (device.status ต้อง installed, deviceModel/protocol ต้องตรง Config)
+      // เผื่อเครื่องถูก decommission หรือเปลี่ยนรุ่นไประหว่างรอ resume
+      if (device.status !== TARGETABLE_DEVICE_STATUS) {
+        await this.recordTargetResult(
+          device.deviceId,
+          { configId: config.id },
+          false,
+          `Device สถานะปัจจุบัน (${device.status}) ไม่ใช่ ${TARGETABLE_DEVICE_STATUS} อีกต่อไป`,
+        );
+        continue;
+      }
+      if (
+        config.deviceModel !== device.deviceModel ||
+        config.protocol !== device.protocol
+      ) {
+        await this.recordTargetResult(
+          device.deviceId,
+          { configId: config.id },
+          false,
+          `Config นี้เป็นของ ${config.deviceModel}/${config.protocol} ไม่ตรงกับอุปกรณ์ ${device.deviceModel}/${device.protocol}`,
         );
         continue;
       }
@@ -653,6 +728,16 @@ export class CampaignRolloutService {
           false,
           `auto-apply ล้มเหลว: ${(err as Error).message}`,
         );
+        // #235 review รอบ 3 ข้อ 5 — เดิมถ้า throw กลางทางจะไม่มี audit row
+        // `apply-config` เลย ทำให้ไม่มีบันทึกว่าเคยพยายาม apply เครื่องนี้
+        // (ต่างจากเส้นทางสำเร็จ/ล้มเหลวแบบปกติที่ log เสมอ) — log ไว้แม้ throw
+        // เหมือนกัน ไม่รู้ fieldNames จริงตอนนี้ (mergeApprovedOverride อาจ
+        // throw ก่อนคำนวณ fields เสร็จ) ใส่ array ว่างไว้แทน
+        await this.logAudit('apply-config', actorId, {
+          deviceId: device.deviceId,
+          configId: config.id,
+          fieldNames: [],
+        });
       }
     }
 
@@ -689,6 +774,28 @@ export class CampaignRolloutService {
       where: { rolloutId: rollout.id, status: 'pending' },
       orderBy: { createdAt: 'asc' },
     });
+
+    // #235 review รอบ 3 ข้อ 4 — mirror เงื่อนไข 4xx ของ
+    // `DeviceService.confirmFirmwareInstall()` ที่ auto-apply ข้ามไปเลย
+    // (เหตุผลเดียวกับ autoApplyConfig ข้างบน — เวลาผ่านไปได้ระหว่างรอ resume
+    // Firmware อาจถูกถอนอนุมัติคุณภาพหรือลบไฟล์ไปแล้ว)
+    const firmwareStillValid =
+      firmware.uploadStatus === SIMULATABLE_FIRMWARE_STATUS &&
+      firmware.approvalStatus === CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS;
+    if (!firmwareStillValid) {
+      for (const target of targets) {
+        await this.recordTargetResult(
+          target.deviceId,
+          { firmwareId: firmware.id },
+          false,
+          `Firmware สถานะปัจจุบัน (upload: ${firmware.uploadStatus}, อนุมัติคุณภาพ: ${firmware.approvalStatus}) ใช้งานไม่ได้อีกต่อไป`,
+        );
+      }
+      return this.prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+    }
+
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
@@ -709,6 +816,28 @@ export class CampaignRolloutService {
           { firmwareId: firmware.id },
           false,
           `ไม่พบ Device deviceId ${target.deviceId}`,
+        );
+        continue;
+      }
+
+      // #235 review รอบ 3 ข้อ 4 — เช็คต่อเครื่องเหมือน
+      // `DeviceService.confirmFirmwareInstall()` (device.status ต้อง
+      // installed, รุ่นอุปกรณ์ต้องอยู่ใน deviceModelCompatibility)
+      if (device.status !== TARGETABLE_DEVICE_STATUS) {
+        await this.recordTargetResult(
+          device.deviceId,
+          { firmwareId: firmware.id },
+          false,
+          `Device สถานะปัจจุบัน (${device.status}) ไม่ใช่ ${TARGETABLE_DEVICE_STATUS} อีกต่อไป`,
+        );
+        continue;
+      }
+      if (!firmware.deviceModelCompatibility.includes(device.deviceModel)) {
+        await this.recordTargetResult(
+          device.deviceId,
+          { firmwareId: firmware.id },
+          false,
+          `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
         );
         continue;
       }
@@ -842,17 +971,37 @@ export class CampaignRolloutService {
           },
         });
 
-        const [successCount, failureCount, pendingCount] = await Promise.all([
-          tx.campaignRolloutTarget.count({
-            where: { rolloutId: rollout.id, status: 'success' },
-          }),
-          tx.campaignRolloutTarget.count({
-            where: { rolloutId: rollout.id, status: 'failed' },
-          }),
-          tx.campaignRolloutTarget.count({
-            where: { rolloutId: rollout.id, status: 'pending' },
-          }),
-        ]);
+        const [successCount, failureCount, pendingCount, windowFailureCount] =
+          await Promise.all([
+            tx.campaignRolloutTarget.count({
+              where: { rolloutId: rollout.id, status: 'success' },
+            }),
+            tx.campaignRolloutTarget.count({
+              where: { rolloutId: rollout.id, status: 'failed' },
+            }),
+            tx.campaignRolloutTarget.count({
+              where: { rolloutId: rollout.id, status: 'pending' },
+            }),
+            // #235 review รอบ 3 ข้อ 1 — failure เฉพาะ "รอบปัจจุบัน" (ตั้งแต่
+            // approve()/resume() ล่าสุด) แยกจาก failureCount สะสมทั้งประวัติ
+            // ด้านบน (ที่ยังต้องคงไว้ตรงๆ ให้ผู้ใช้เห็นค่าจริง) — ไม่งั้นทุก
+            // ครั้งที่ resume() แล้วมีผลใหม่เข้ามา failure ที่เคยทำให้ pause
+            // ไปแล้วรอบก่อนจะยังถูกนับรวมอยู่ดี ทำให้ resume แล้ว apply ได้
+            // แค่เครื่องเดียวก็โดน pause ซ้ำทันทีเกือบทุกครั้ง — ถ้าไม่มี
+            // `activeWindowStartedAt` (ไม่ควรเกิดจริงกับ rollout ที่ active
+            // อยู่ เพราะ approve()/resume() ตั้งเสมอ) fallback เป็นสะสมทั้งหมด
+            rollout.activeWindowStartedAt
+              ? tx.campaignRolloutTarget.count({
+                  where: {
+                    rolloutId: rollout.id,
+                    status: 'failed',
+                    updatedAt: { gte: rollout.activeWindowStartedAt },
+                  },
+                })
+              : tx.campaignRolloutTarget.count({
+                  where: { rolloutId: rollout.id, status: 'failed' },
+                }),
+          ]);
 
         // Auto Pause (Incident & Rollback #28, มติ 2026-09-24 — mirror
         // GPS_Config_Firmware_Center_Design.pdf §11.2/หลักการข้อ 22: "ต้อง
@@ -860,9 +1009,12 @@ export class CampaignRolloutService {
         // เท่านั้น (ถ้า `paused` อยู่แล้วไม่ต้องเช็คซ้ำ, `completed` ชนะเสมอ
         // เมื่อ pending หมดไม่ว่า failure rate เท่าไหร่ — ดูค่าผ่าน
         // successCount/failureCount ได้อยู่แล้วตอนจบ ไม่มีประโยชน์ต้อง pause
-        // งานที่จบไปแล้ว)
+        // งานที่จบไปแล้ว) — ใช้ windowFailureCount (รอบปัจจุบัน) ไม่ใช่
+        // failureCount (สะสมทั้งหมด) เป็นตัวตั้งคำนวณ rate
         const failureRate =
-          rollout.targetCount > 0 ? failureCount / rollout.targetCount : 0;
+          rollout.targetCount > 0
+            ? windowFailureCount / rollout.targetCount
+            : 0;
         const shouldAutoPause =
           rollout.status === 'active' &&
           pendingCount > 0 &&
