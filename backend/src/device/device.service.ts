@@ -18,6 +18,7 @@ import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
 
 /** Device + ลูกค้าแบบย่อ (ถ้าผูกไว้) — docs/12_CustomerScope_Proposal.md เฟส B
@@ -240,7 +241,8 @@ export class DeviceService {
 
     // Per-device Config Override (issue #223/#226) — ใช้ค่าที่ ST override
     // แล้วผ่านอนุมัติจริง ไม่ใช่ base Config เดิมเฉยๆ
-    const { fields } = await this.mergeApprovedOverride(
+    const { fields } = await mergeApprovedOverride(
+      this.prisma,
       device.deviceId,
       config.id,
       config.fields,
@@ -492,7 +494,8 @@ export class DeviceService {
 
     // Per-device Config Override (issue #223/#226) — dry-run readiness check
     // ต้องตรวจค่าที่ override แล้ว ไม่ใช่ base Config เดิม
-    const { fields } = await this.mergeApprovedOverride(
+    const { fields } = await mergeApprovedOverride(
+      this.prisma,
       device.deviceId,
       config.id,
       config.fields,
@@ -598,7 +601,12 @@ export class DeviceService {
     // ร่วมกับ filter configId นี้ทำให้ได้แถว pending ล่าสุดของ Config ปัจจุบัน
     // เท่านั้นเสมอ
     const [{ fields, approvedOverride }, pendingOverride] = await Promise.all([
-      this.mergeApprovedOverride(deviceId, baseConfig.id, baseConfig.fields),
+      mergeApprovedOverride(
+        this.prisma,
+        deviceId,
+        baseConfig.id,
+        baseConfig.fields,
+      ),
       this.prisma.deviceConfigOverride.findFirst({
         where: { deviceId, configId: baseConfig.id, status: 'pending' },
         orderBy: { versionNumber: 'desc' },
@@ -614,36 +622,6 @@ export class DeviceService {
       fields: fields as Prisma.JsonValue,
       hasDeviceOverride: true,
       pendingOverride,
-    };
-  }
-
-  /**
-   * merge แถว `DeviceConfigOverride` สถานะ `approved` ล่าสุด (`versionNumber`
-   * มากสุด) ของ (deviceId, configId) ทับ base fields — ใช้ร่วมกันโดย
-   * `applyConfig()`/`simulateConfig()`/`getCurrentConfig()` เพื่อให้ทั้งสามจุด
-   * ได้ค่าเดียวกันเสมอ (issue #223/#226) · pending/rejected ไม่มีผล ·
-   * `approvedOverride` เป็น `null` เมื่อไม่มีแถว approved (fields = base เดิม)
-   */
-  private async mergeApprovedOverride(
-    deviceId: string,
-    configId: string,
-    baseFields: Prisma.JsonValue,
-  ): Promise<{
-    fields: Record<string, unknown>;
-    approvedOverride: DeviceConfigOverride | null;
-  }> {
-    const approvedOverride = await this.prisma.deviceConfigOverride.findFirst({
-      where: { deviceId, configId, status: 'approved' },
-      orderBy: { versionNumber: 'desc' },
-    });
-    return {
-      fields: {
-        ...(baseFields as Record<string, unknown>),
-        ...(approvedOverride
-          ? (approvedOverride.fields as Record<string, unknown>)
-          : {}),
-      },
-      approvedOverride,
     };
   }
 

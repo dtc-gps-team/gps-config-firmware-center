@@ -118,6 +118,7 @@ describe('CampaignRolloutService', () => {
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock };
   let device: { findMany: jest.Mock; update: jest.Mock };
+  let deviceConfigOverride: { findFirst: jest.Mock };
   let auditLog: { create: jest.Mock };
   let firmwareRollbackExecutor: { switchPartition: jest.Mock };
   let configApplier: { applyConfig: jest.Mock };
@@ -150,6 +151,9 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
       update: jest.fn(),
     };
+    // ไม่มี per-device override ที่ approved ค้างอยู่ (default) — เทสที่
+    // ต้องการ override ค่อยตั้ง mockResolvedValueOnce เฉพาะเทสนั้น
+    deviceConfigOverride = { findFirst: jest.fn().mockResolvedValue(null) };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     firmwareRollbackExecutor = { switchPartition: jest.fn() };
     configApplier = {
@@ -171,6 +175,7 @@ describe('CampaignRolloutService', () => {
       config,
       firmware,
       device,
+      deviceConfigOverride,
       auditLog,
       $transaction: transactionMock,
     };
@@ -641,7 +646,9 @@ describe('CampaignRolloutService', () => {
         deviceId: 'DEV-0001',
         deviceModel: 'GT06N',
         protocol: 'TCP',
-        fields: undefined,
+        // approvedConfig.fields เป็น undefined ในเทสนี้ — mergeApprovedOverride
+        // spread เข้า object ใหม่เสมอ (ไม่มี override ค้างอยู่ -> {})
+        fields: {},
       });
       expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
         where: { id: 'rt-1' },
@@ -649,6 +656,79 @@ describe('CampaignRolloutService', () => {
       });
       expect(result.status).toBe('completed');
       expect(result.successCount).toBe(2);
+      // #235 review comment ข้อ 2 — AuditLog รายเครื่อง ไม่ใช่แค่ audit ของ
+      // approve() รอบเดียว ต้องเห็นร่องรอยว่าเครื่องไหนถูก apply-config บ้าง
+      expect(auditLog.create).toHaveBeenCalledTimes(3); // 1 ของ approve() + 2 ต่อเครื่อง
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'apply-config',
+          metadata: {
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            fieldNames: [],
+          },
+        },
+      });
+    });
+
+    it('มี DeviceConfigOverride approved ของเครื่องนั้น -> merge ทับ base fields ก่อนส่งเข้า applier (#235 review comment ข้อ 1)', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+      deviceConfigOverride.findFirst.mockResolvedValueOnce({
+        id: 'override-1',
+        deviceId: 'DEV-0001',
+        configId: approvedConfig.id,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DEV-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
     });
 
     it('Auto Pause ยังทำงานได้แม้ auto-apply หลายเครื่องในคำเรียกเดียว -> หยุดก่อนแตะเครื่องที่เหลือ', async () => {
@@ -785,6 +865,99 @@ describe('CampaignRolloutService', () => {
         },
       });
       expect(result.status).toBe('completed');
+      // #235 review comment ข้อ 2 — AuditLog รายเครื่อง mirror
+      // confirmFirmwareInstall() ของ DeviceService
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DEV-0001',
+            firmwareId: storedFirmware.id,
+            firmwareVersion: storedFirmware.version,
+          },
+        },
+      });
+    });
+
+    it('Firmware auto-apply เขียน Dual Partition bookkeeping ไม่สำเร็จ -> นับเป็น failed ไม่ใช่ success เงียบๆ (#235 review comment ข้อ 4)', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'paused',
+          successCount: 0,
+          failureCount: 1,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([
+        {
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: null,
+          partitionBFirmwareId: null,
+        },
+      ]);
+      device.update.mockRejectedValueOnce(new Error('DB timeout (mock)'));
+
+      const result = await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+        where: { id: 'rt-1' },
+        data: {
+          status: 'failed',
+          resultDetail:
+            'เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ',
+        },
+      });
+      // ต้อง log AuditLog ไว้ด้วยแม้ partition write ล้มเหลว — เห็นร่องรอยว่า
+      // auto-apply เคยพยายามแตะเครื่องนี้
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DEV-0001',
+            firmwareId: storedFirmware.id,
+            firmwareVersion: storedFirmware.version,
+          },
+        },
+      });
+      expect(result.status).toBe('paused');
     });
   });
 

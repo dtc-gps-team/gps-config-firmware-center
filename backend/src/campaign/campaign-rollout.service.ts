@@ -22,11 +22,13 @@ import {
   RESUMABLE_CAMPAIGN_ROLLOUT_STATUS,
   ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES,
 } from './campaign-rollout-status';
+import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import {
   APPLICABLE_CONFIG_STATUSES,
   CONFIG_APPLIER,
   type ConfigApplier,
 } from '../device/config-applier';
+import { mergeApprovedOverride } from '../device/config-override-merge';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
@@ -544,7 +546,9 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
-    const fields = config.fields as Record<string, unknown>;
+    // Rollout ผ่าน approve() มาเสมอก่อนเรียกฟังก์ชันนี้ — approvedBy ถูกตั้ง
+    // ในทรานแซกชันเดียวกัน (ดู approve()) จึงไม่มีทางเป็น null ตรงนี้จริง
+    const actorId = rollout.approvedBy as string;
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
@@ -563,6 +567,19 @@ export class CampaignRolloutService {
         continue;
       }
 
+      // merge per-device override ที่ approved แล้วทับ base ก่อนส่งเข้า
+      // applier — ต้องทำ**ต่อเครื่อง**ในลูป ไม่ใช่คำนวณครั้งเดียวนอกลูปจาก
+      // base config เฉยๆ ไม่งั้น Campaign จะเขียนทับค่าที่ Operation เพิ่ง
+      // อนุมัติให้เครื่องนั้นไว้แบบเงียบๆ (#235 review comment ข้อ 1 — mirror
+      // `DeviceService.applyConfig()` ทุกประการผ่าน `mergeApprovedOverride()`
+      // ร่วมกัน)
+      const { fields } = await mergeApprovedOverride(
+        this.prisma,
+        device.deviceId,
+        config.id,
+        config.fields,
+      );
+
       const result = await this.configApplier.applyConfig({
         deviceId: device.deviceId,
         deviceModel: device.deviceModel,
@@ -575,6 +592,18 @@ export class CampaignRolloutService {
         result.applied,
         result.details.join(' · '),
       );
+
+      // AuditLog รายเครื่อง (#235 review comment ข้อ 2 — CLAUDE.md Audit
+      // Pattern: "นำ Config ไปใช้" ต้องลง log ทุกครั้ง) mirror
+      // `DeviceService.applyConfig()` ทุกประการ (action/metadata shape
+      // เดียวกัน) ต่างกันแค่ userId เป็นผู้ที่กด approve Rollout แทนที่จะเป็น
+      // ผู้กด apply-config เอง — log ไม่ว่าผล applied จะ true/false เพื่อน
+      // ให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
+      await this.logAudit('apply-config', actorId, {
+        deviceId: device.deviceId,
+        configId: config.id,
+        fieldNames: Object.keys(fields),
+      });
     }
 
     return this.prisma.campaignRollout.findUniqueOrThrow({
@@ -592,8 +621,9 @@ export class CampaignRolloutService {
    * `executeFirmwarePartitionRollback()` ที่ใช้ `FirmwareRollbackExecutor`
    * (fast-path เพราะของเก่ายังอยู่บนพาร์ทิชันเดิมอยู่แล้ว) ตัวนี้เป็น
    * Firmware ใหม่ที่ไม่เคยอยู่บนพาร์ทิชันไหนมาก่อน จึงเขียนตรงๆ ไม่ผ่าน
-   * executor · เหมือน `confirmFirmwareInstall()` เดิม — ไม่มี mock ฝั่ง
-   * validate ให้ fail (เป็นแค่ attestation) จึงสำเร็จเสมอ ไม่ใช่ regression
+   * executor · นับ target ว่า failed ถ้าเขียน Dual Partition bookkeeping ไม่
+   * สำเร็จ (#235 review comment ข้อ 4 — เดิมรายงาน success เสมอแม้
+   * bookkeeping ล้มเหลว หลบ Auto Pause ไปเงียบๆ)
    */
   private async autoApplyFirmware(
     rollout: CampaignRollout,
@@ -612,6 +642,9 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
+    // Rollout ผ่าน approve() มาเสมอก่อนเรียกฟังก์ชันนี้ — approvedBy ถูกตั้ง
+    // ในทรานแซกชันเดียวกัน (ดู approve()) จึงไม่มีทางเป็น null ตรงนี้จริง
+    const actorId = rollout.approvedBy as string;
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
@@ -631,6 +664,11 @@ export class CampaignRolloutService {
       }
 
       const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
+      // #235 review comment ข้อ 4 — เดิม catch แค่ log warn แล้วยังรายงาน
+      // success เสมอทั้งที่ bookkeeping เขียนไม่สำเร็จจริง กลายเป็นหลบ Auto
+      // Pause ไปเงียบๆ (เครื่องนับว่า apply สำเร็จทั้งที่ activePartition ยัง
+      // เป็นค่าเดิม) เปลี่ยนให้ partition write ล้มเหลว = target นับ failed จริง
+      let partitionWriteSucceeded = true;
       try {
         await this.prisma.device.update({
           where: { deviceId: device.deviceId },
@@ -642,6 +680,7 @@ export class CampaignRolloutService {
           },
         });
       } catch (err) {
+        partitionWriteSucceeded = false;
         this.logger.warn(
           `อัปเดต Dual Partition ไม่สำเร็จ (deviceId ${device.deviceId}): ${(err as Error).message}`,
         );
@@ -650,9 +689,20 @@ export class CampaignRolloutService {
       await this.recordTargetResult(
         device.deviceId,
         { firmwareId: firmware.id },
-        true,
-        `ติดตั้ง Firmware ${firmware.version} สำเร็จ (auto, mock)`,
+        partitionWriteSucceeded,
+        partitionWriteSucceeded
+          ? `ติดตั้ง Firmware ${firmware.version} สำเร็จ (auto, mock)`
+          : `เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ`,
       );
+
+      // AuditLog รายเครื่อง (#235 review comment ข้อ 2) mirror
+      // `DeviceService.confirmFirmwareInstall()` — log ไม่ว่า partition write
+      // จะสำเร็จหรือไม่ เพื่อให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
+      await this.logAudit('confirm-firmware-install', actorId, {
+        deviceId: device.deviceId,
+        firmwareId: firmware.id,
+        firmwareVersion: firmware.version,
+      });
     }
 
     return this.prisma.campaignRollout.findUniqueOrThrow({
@@ -916,10 +966,19 @@ export class CampaignRolloutService {
     return problems;
   }
 
-  private async logAudit(action: string, userId: string): Promise<void> {
+  private async logAudit(
+    action: string,
+    userId: string,
+    metadata?: AuditLogMetadata,
+  ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
-        data: { userId, auditModule: AUDIT_MODULE, action },
+        data: {
+          userId,
+          auditModule: AUDIT_MODULE,
+          action,
+          ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
+        },
       });
     } catch (err) {
       this.logger.warn(
