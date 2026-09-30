@@ -163,6 +163,18 @@ class _NotificationTile extends StatelessWidget {
                         color: AppTheme.textPrimary,
                       ),
                     ),
+                    for (final line in NotificationTypeStyle.details(
+                      notification,
+                    )) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        line,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       _formatDate(notification.createdAt),

@@ -2,10 +2,37 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
 
-/// Thai labels + icons for [NotificationType]. Phase 1 does not read into
-/// `payload`, so the list shows only the type label + timestamp.
+/// Thai labels + icons for [NotificationType]. Only the three Config Override
+/// types read into `payload` (see [details]); every other type shows just the
+/// type label + timestamp.
 class NotificationTypeStyle {
   const NotificationTypeStyle._();
+
+  /// Extra lines under the label for the Config Override types (issue #226):
+  /// `deviceId`, plus `rejectReason` on a rejection. Missing/blank fields are
+  /// skipped — the payload is free-form JSON, so never assume a key exists.
+  static List<String> details(AppNotification n) {
+    String? text(String key) {
+      final v = n.payload[key];
+      return v is String && v.trim().isNotEmpty ? v.trim() : null;
+    }
+
+    switch (n.type) {
+      case NotificationType.configOverridePending:
+      case NotificationType.configOverrideApproved:
+        final deviceId = text('deviceId');
+        return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
+      case NotificationType.configOverrideRejected:
+        final deviceId = text('deviceId');
+        final reason = text('rejectReason');
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          if (reason != null) 'เหตุผล: $reason',
+        ];
+      default:
+        return const [];
+    }
+  }
 
   static String label(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => 'มอบหมายงานใหม่',
