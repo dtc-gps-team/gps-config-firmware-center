@@ -731,6 +731,76 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    it('configApplier.applyConfig() throw กลางเครื่อง -> จับไว้ นับเครื่องนั้นเป็น failed ไม่ throw ทั้ง request (#235 review รอบ 2, ข้อ 3)', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      const pausedRollout: CampaignRollout = {
+        ...activeRollout,
+        status: 'paused',
+        successCount: 0,
+        failureCount: 1,
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1
+        .mockResolvedValueOnce(pausedRollout) // เช็คก่อนเครื่อง 2 -> หยุด (Auto Pause จาก failure เครื่อง 1)
+        .mockResolvedValueOnce(pausedRollout); // return สุดท้าย
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0) // success
+        .mockResolvedValueOnce(1) // failed -> failureRate 1/2 = 0.5 > 5%
+        .mockResolvedValueOnce(1); // pending เหลือ 1
+      configApplier.applyConfig.mockRejectedValueOnce(
+        new Error('ConfigApplier จริงล่ม (mock เทสจำลอง network error)'),
+      );
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      // ต้องไม่ throw ออกมาจาก approve() เลย แม้ applyConfig() throw กลางลูป
+      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+        where: { id: 'rt-1' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining(
+            'ConfigApplier จริงล่ม',
+          ) as string,
+        },
+      });
+      // เครื่องที่ 2 ไม่ถูกแตะเลย เพราะ Auto Pause หยุดก่อน (เหมือนกรณี
+      // applied:false ปกติ — error ที่ throw ไม่ได้ทำให้ loop ทำงานผิดไปจากเดิม)
+      expect(configApplier.applyConfig).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('paused');
+    });
+
     it('Auto Pause ยังทำงานได้แม้ auto-apply หลายเครื่องในคำเรียกเดียว -> หยุดก่อนแตะเครื่องที่เหลือ', async () => {
       const twoDeviceRollout: CampaignRollout = {
         ...pendingRollout,
@@ -1008,11 +1078,15 @@ describe('CampaignRolloutService', () => {
         ...sampleRollout,
         status: 'paused',
       };
-      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
-      campaignRollout.update.mockResolvedValue({
+      const activeRollout: CampaignRollout = {
         ...pausedRollout,
         status: 'active',
-      });
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.update.mockResolvedValue(activeRollout);
+      // dispatchAutoApply() -> autoApplyConfig() ไม่มี target pending ค้างอยู่
+      // เลย (mock default) loop จบทันที คืนค่าจาก findUniqueOrThrow นี้
+      campaignRollout.findUniqueOrThrow.mockResolvedValue(activeRollout);
 
       const result = await service.resume(pausedRollout.id, operation);
 
@@ -1029,15 +1103,65 @@ describe('CampaignRolloutService', () => {
         status: 'paused',
         createdBy: operation.id,
       };
-      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
-      campaignRollout.update.mockResolvedValue({
+      const activeRollout: CampaignRollout = {
         ...pausedRollout,
         status: 'active',
-      });
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.update.mockResolvedValue(activeRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue(activeRollout);
 
       await expect(
         service.resume(pausedRollout.id, operation),
       ).resolves.toMatchObject({ status: 'active' });
+    });
+
+    it('มี target pending ค้างอยู่ -> เรียก auto-apply ต่อทันที (#235 review รอบ 2)', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...pausedRollout,
+        status: 'active',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.update.mockResolvedValue(activeRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 1
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+        }); // return สุดท้ายหลัง loop จบ
+
+      const pendingTarget = {
+        id: 'rt-1',
+        rolloutId: pausedRollout.id,
+        deviceId: 'DEV-0001',
+        status: 'pending',
+      };
+      campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTarget,
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+
+      const result = await service.resume(pausedRollout.id, operation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0001' }) as Record<
+          string,
+          unknown
+        >,
+      );
+      expect(result.status).toBe('completed');
     });
 
     it('สถานะปัจจุบันไม่ใช่ paused -> ConflictException', async () => {

@@ -263,13 +263,30 @@ export class CampaignRolloutService {
     // ใหม่) ส่วน Config (ทั้งปกติและ Rollback) กับ Firmware ปกติ ใช้ loop
     // auto-apply ใหม่ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/
     // `autoApplyFirmware` เรื่องการรักษา Auto Pause ให้ยังมีความหมายอยู่
-    if (updated.isRollback && updated.payloadType === 'Firmware') {
-      return this.executeFirmwarePartitionRollback(updated);
+    return this.dispatchAutoApply(updated);
+  }
+
+  /**
+   * เลือก auto-apply path ตาม payload — ใช้ร่วมกันโดย `approve()` (เริ่ม
+   * apply ครั้งแรก) และ `resume()` (#235 review รอบ 2 — apply ต่อให้ target
+   * ที่ยังค้าง `pending` หลัง Auto Pause ปลด เดิม `resume()` แค่เปลี่ยน status
+   * เป็น `active` เฉยๆ ไม่เคยเรียก auto-apply ต่อเลย ทำให้เครื่องที่เหลือค้าง
+   * `pending` ตลอดไปเพราะไม่มีช่างกด Mobile ยืนยันอีกต่อไปตั้งแต่เปลี่ยนมาเป็น
+   * PULL model) — `isRollback && payloadType === 'Firmware'` แทบไม่เกิดขึ้น
+   * จริงตอนเรียกจาก `resume()` เพราะ `executeFirmwarePartitionRollback()` ไม่
+   * เคยพา Rollout ไป `paused` เลย (ไม่ผ่าน `recordTargetResult()`) แต่เช็คไว้
+   * เพื่อความสมมาตรกับ `approve()` เผื่อกรณีข้อมูลผิดปกติ
+   */
+  private dispatchAutoApply(
+    rollout: CampaignRollout,
+  ): Promise<CampaignRollout> {
+    if (rollout.isRollback && rollout.payloadType === 'Firmware') {
+      return this.executeFirmwarePartitionRollback(rollout);
     }
-    if (updated.payloadType === 'Config') {
-      return this.autoApplyConfig(updated);
+    if (rollout.payloadType === 'Config') {
+      return this.autoApplyConfig(rollout);
     }
-    return this.autoApplyFirmware(updated);
+    return this.autoApplyFirmware(rollout);
   }
 
   /**
@@ -307,6 +324,15 @@ export class CampaignRolloutService {
    * เท่านั้น (409 ถ้าไม่ใช่) **ไม่เช็ค Separation of Duty** ต่างจาก
    * approve/reject โดยตั้งใจ — resume ไม่ใช่การ "ตัดสินใจอนุมัติ" งานใหม่
    * แค่บอกว่า "ดูแล้ว ให้ไปต่อ" ผู้สร้าง rollout เองก็ทำได้
+   *
+   * **เรียก `dispatchAutoApply()` ต่อทันที (#235 review รอบ 2)** — เดิมแค่
+   * เปลี่ยน status เป็น `active` เฉยๆ ไม่เคย apply target ที่ยัง `pending`
+   * ต่อเลย กลายเป็นทางตัน (Auto Pause หยุดแล้ว resume ก็ไม่ได้ไปต่อจริง) ตั้งแต่
+   * เปลี่ยนมาเป็น PULL model ที่ไม่มีช่างกด Mobile ยืนยันทีละเครื่องอีกต่อไป —
+   * `dispatchAutoApply()`/`autoApplyConfig()`/`autoApplyFirmware()` query
+   * target สถานะ `pending` สดจาก DB เองอยู่แล้ว (ไม่ผูกกับ target ชุดเดิมตอน
+   * approve() ครั้งแรก) จึงหยิบเฉพาะเครื่องที่ยังไม่ถูกแตะมาทำต่อได้ถูกต้องเลย
+   * โดยไม่ต้องเปลี่ยนโค้ดใน 2 ฟังก์ชันนั้นแม้แต่บรรทัดเดียว
    */
   async resume(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const rollout = await this.findOne(id);
@@ -322,7 +348,7 @@ export class CampaignRolloutService {
     });
 
     await this.logAudit('resume', actor.id);
-    return updated;
+    return this.dispatchAutoApply(updated);
   }
 
   /**
@@ -528,6 +554,12 @@ export class CampaignRolloutService {
    *
    * reuse `recordTargetResult()` ทำ update/count/Auto Pause/completed ให้
    * ทั้งหมด — ไม่เขียนตรรกะซ้ำ
+   *
+   * **Known limitation (#235 review รอบ 2, ข้อ 5 — ยังไม่แก้รอบนี้):** ทำงาน
+   * ทั้งหมดในคำเรียก HTTP เดียว วนทีละเครื่องแบบ sequential + query
+   * `campaignRollout.findUniqueOrThrow` ซ้ำทุกรอบ (N+1) กลุ่มอุปกรณ์ขนาดใหญ่
+   * เสี่ยง timeout — ควรย้ายเป็น background job ในอนาคต (มี job runner ของ
+   * `config-sync-writer` อยู่แล้วที่พอจะ reuse pattern ได้)
    */
   private async autoApplyConfig(
     rollout: CampaignRollout,
@@ -567,43 +599,61 @@ export class CampaignRolloutService {
         continue;
       }
 
-      // merge per-device override ที่ approved แล้วทับ base ก่อนส่งเข้า
-      // applier — ต้องทำ**ต่อเครื่อง**ในลูป ไม่ใช่คำนวณครั้งเดียวนอกลูปจาก
-      // base config เฉยๆ ไม่งั้น Campaign จะเขียนทับค่าที่ Operation เพิ่ง
-      // อนุมัติให้เครื่องนั้นไว้แบบเงียบๆ (#235 review comment ข้อ 1 — mirror
-      // `DeviceService.applyConfig()` ทุกประการผ่าน `mergeApprovedOverride()`
-      // ร่วมกัน)
-      const { fields } = await mergeApprovedOverride(
-        this.prisma,
-        device.deviceId,
-        config.id,
-        config.fields,
-      );
+      // #235 review รอบ 2 ข้อ error กลางลูป — ครอบทั้งช่วง merge/apply/log
+      // ด้วย try/catch กันไม่ให้ error ที่ยังไม่คาดคิดจาก ConfigApplier จริง
+      // ในอนาคต (ตอนนี้ MockConfigApplier ไม่ throw แต่ interface เปิดไว้ให้
+      // implementation จริงทำได้) โยนขึ้นไปจน request 500 กลางทาง ปล่อย
+      // Rollout ค้าง `active` พร้อม target ที่เหลือเป็น `pending` ตลอดไป (ไม่มี
+      // ทาง resume ต่อเพราะสถานะไม่ใช่ `paused`) — เครื่องที่ throw นับเป็น
+      // failed แทน ได้ Auto Pause ต่อโดยธรรมชาติผ่าน `recordTargetResult()`
+      // เหมือนกรณี applied:false ปกติ ส่วนเครื่องถัดไปยังทำต่อได้ (ไม่ throw
+      // ซ้ำทั้งลูป)
+      try {
+        // merge per-device override ที่ approved แล้วทับ base ก่อนส่งเข้า
+        // applier — ต้องทำ**ต่อเครื่อง**ในลูป ไม่ใช่คำนวณครั้งเดียวนอกลูปจาก
+        // base config เฉยๆ ไม่งั้น Campaign จะเขียนทับค่าที่ Operation เพิ่ง
+        // อนุมัติให้เครื่องนั้นไว้แบบเงียบๆ (#235 review comment ข้อ 1 — mirror
+        // `DeviceService.applyConfig()` ทุกประการผ่าน `mergeApprovedOverride()`
+        // ร่วมกัน)
+        const { fields } = await mergeApprovedOverride(
+          this.prisma,
+          device.deviceId,
+          config.id,
+          config.fields,
+        );
 
-      const result = await this.configApplier.applyConfig({
-        deviceId: device.deviceId,
-        deviceModel: device.deviceModel,
-        protocol: device.protocol,
-        fields,
-      });
-      await this.recordTargetResult(
-        device.deviceId,
-        { configId: config.id },
-        result.applied,
-        result.details.join(' · '),
-      );
+        const result = await this.configApplier.applyConfig({
+          deviceId: device.deviceId,
+          deviceModel: device.deviceModel,
+          protocol: device.protocol,
+          fields,
+        });
+        await this.recordTargetResult(
+          device.deviceId,
+          { configId: config.id },
+          result.applied,
+          result.details.join(' · '),
+        );
 
-      // AuditLog รายเครื่อง (#235 review comment ข้อ 2 — CLAUDE.md Audit
-      // Pattern: "นำ Config ไปใช้" ต้องลง log ทุกครั้ง) mirror
-      // `DeviceService.applyConfig()` ทุกประการ (action/metadata shape
-      // เดียวกัน) ต่างกันแค่ userId เป็นผู้ที่กด approve Rollout แทนที่จะเป็น
-      // ผู้กด apply-config เอง — log ไม่ว่าผล applied จะ true/false เพื่อน
-      // ให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
-      await this.logAudit('apply-config', actorId, {
-        deviceId: device.deviceId,
-        configId: config.id,
-        fieldNames: Object.keys(fields),
-      });
+        // AuditLog รายเครื่อง (#235 review comment ข้อ 2 — CLAUDE.md Audit
+        // Pattern: "นำ Config ไปใช้" ต้องลง log ทุกครั้ง) mirror
+        // `DeviceService.applyConfig()` ทุกประการ (action/metadata shape
+        // เดียวกัน) ต่างกันแค่ userId เป็นผู้ที่กด approve Rollout แทนที่จะเป็น
+        // ผู้กด apply-config เอง — log ไม่ว่าผล applied จะ true/false เพื่อน
+        // ให้เห็นร่องรอยครบทุกเครื่องที่ auto-apply แตะถึง
+        await this.logAudit('apply-config', actorId, {
+          deviceId: device.deviceId,
+          configId: config.id,
+          fieldNames: Object.keys(fields),
+        });
+      } catch (err) {
+        await this.recordTargetResult(
+          device.deviceId,
+          { configId: config.id },
+          false,
+          `auto-apply ล้มเหลว: ${(err as Error).message}`,
+        );
+      }
     }
 
     return this.prisma.campaignRollout.findUniqueOrThrow({
