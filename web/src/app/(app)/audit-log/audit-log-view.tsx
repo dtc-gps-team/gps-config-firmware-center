@@ -148,9 +148,7 @@ export function AuditLogView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>เวลา</TableHead>
-                    <TableHead>
-                      ผู้ทำรายการ (user id)
-                    </TableHead>
+                    <TableHead>ผู้ทำรายการ</TableHead>
                     <TableHead>โมดูล</TableHead>
                     <TableHead>Action</TableHead>
                     {/* ipAddress เป็น null เสมอตอนนี้ — openapi.yaml AuditLogEntry
@@ -164,7 +162,7 @@ export function AuditLogView() {
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {new Date(row.createdAt).toLocaleString("th-TH")}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="text-xs">
                         {row.actorName}
                       </TableCell>
                       <TableCell className="font-mono text-xs">
