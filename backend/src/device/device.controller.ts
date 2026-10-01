@@ -45,6 +45,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //                                 Admin/SuperAdmin เท่านั้น (staff ลงทะเบียน
 //                                 ไม่ใช่อุปกรณ์เรียกเอง — endpoint ที่อุปกรณ์
 //                                 เรียกเองผ่าน DeviceApiKeyGuard มาใน PR 2/3)
+//   POST /devices/:deviceId/rotate-key — ออก/หมุนเวียน key ให้เครื่องที่มี
+//                                 อยู่แล้ว (เครื่องเก่าก่อนฟีเจอร์นี้ หรือ
+//                                 หมุนเวียน key ที่สงสัยว่ารั่ว) · Admin/
+//                                 SuperAdmin เท่านั้นเหมือนกัน
 //   GET  /devices                 — Device Search (list + filter)  · ทุก Role
 //   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
@@ -82,6 +86,19 @@ export class DeviceController {
     @Req() req: AuthenticatedRequest,
   ): Promise<RegisterDeviceResult> {
     return this.deviceService.register(dto, toActor(req));
+  }
+
+  // issue #157 PR 1 (เพิ่มระหว่างทำ) — ออก/หมุนเวียน key ให้เครื่องที่มีอยู่
+  // แล้ว (เครื่องเก่าที่ลงทะเบียนก่อนฟีเจอร์นี้ หรือหมุนเวียน key ที่สงสัยว่ารั่ว)
+  // resource เดียวกับ register แต่ action Update (แก้ไข ไม่ใช่สร้างใหม่)
+  @Post(':deviceId/rotate-key')
+  @RequirePermission('device-registration', ActionType.Update)
+  @HttpCode(HttpStatus.OK)
+  rotateKey(
+    @Param('deviceId') deviceId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<RegisterDeviceResult> {
+    return this.deviceService.rotateKey(deviceId, toActor(req));
   }
 
   // Device Search / Device Detail (Sprint 2 #11) — resource `devices` action

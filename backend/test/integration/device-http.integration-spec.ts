@@ -440,6 +440,113 @@ describe('DeviceController test-connection (integration — real postgres + guar
     });
   });
 
+  describe('POST /devices/:deviceId/rotate-key (issue #157 PR 1 — เพิ่มระหว่างทำ)', () => {
+    async function adminToken(): Promise<string> {
+      const adminUser = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Update, 'device-registration');
+      return tokenFor(adminUser.id, 'Admin');
+    }
+
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      await makeDevice('ROT-401', 'installed');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-401/rotate-key')
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ device-registration.Update (ST) -> 403', async () => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'devices');
+      const token = tokenFor(stUser.id, 'ST');
+      await makeDevice('ROT-403', 'installed');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-403/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('ไม่พบ deviceId -> 404', async () => {
+      const token = await adminToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/DOES-NOT-EXIST/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('เครื่องเก่าที่ไม่เคยมี apiKeyHash (สร้างก่อนฟีเจอร์นี้) -> ออก key ให้ครั้งแรกได้, 200, DB เก็บ hash คู่กับ apiKey จริง', async () => {
+      const token = await adminToken();
+      await makeDevice('ROT-OLD', 'installed'); // ไม่มี apiKeyHash ตั้งแต่สร้าง
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-OLD/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { deviceId: string; apiKey: string };
+      expect(body.deviceId).toBe('ROT-OLD');
+      expect(typeof body.apiKey).toBe('string');
+      expect(JSON.stringify(res.body)).not.toContain('apiKeyHash');
+
+      const row = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'ROT-OLD' },
+      });
+      expect(row.apiKeyHash).not.toBeNull();
+      await expect(
+        bcrypt.compare(body.apiKey, row.apiKeyHash ?? ''),
+      ).resolves.toBe(true);
+    });
+
+    it('เครื่องที่มี apiKeyHash เดิมอยู่แล้ว -> key เดิมใช้ต่อไม่ได้ทันที (hash เปลี่ยน)', async () => {
+      const token = await adminToken();
+      await makeDevice('ROT-EXIST', 'installed');
+      const firstRes = await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-EXIST/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const firstBody = firstRes.body as { apiKey: string };
+      const firstRow = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'ROT-EXIST' },
+      });
+
+      const secondRes = await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-EXIST/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const secondBody = secondRes.body as { apiKey: string };
+      const secondRow = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'ROT-EXIST' },
+      });
+
+      expect(secondBody.apiKey).not.toBe(firstBody.apiKey);
+      expect(secondRow.apiKeyHash).not.toBe(firstRow.apiKeyHash);
+      // key รอบแรก compare กับ hash ปัจจุบัน (รอบสอง) ต้องไม่ผ่านแล้ว
+      await expect(
+        bcrypt.compare(firstBody.apiKey, secondRow.apiKeyHash ?? ''),
+      ).resolves.toBe(false);
+    });
+
+    it('เขียน AuditLog action rotate-key', async () => {
+      const token = await adminToken();
+      await makeDevice('ROT-AUDIT', 'installed');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/ROT-AUDIT/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const logRow = await prisma.auditLog.findFirst({
+        where: { auditModule: 'device', action: 'rotate-key' },
+      });
+      expect(logRow).not.toBeNull();
+      expect(JSON.stringify(logRow?.metadata ?? {})).not.toContain(
+        'apiKeyHash',
+      );
+    });
+  });
+
   describe('POST /devices/:deviceId/apply-config', () => {
     async function stToken(): Promise<string> {
       const stUser = await makeUser(prisma, { role: 'ST' });
