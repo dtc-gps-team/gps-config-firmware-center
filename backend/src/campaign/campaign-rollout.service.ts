@@ -714,6 +714,13 @@ export class CampaignRolloutService {
           config.fields,
         );
 
+        // Known limitation (#235 review รอบ 5 ข้อ 2): claim target
+        // (recordTargetResult) เกิดหลัง apply จริง (applyConfig) ไม่ใช่ก่อน
+        // ถ้า approve() และ resume() ทำงานชนกันบน rollout เดียว ทั้งสอง loop
+        // อาจเรียก apply ซ้ำบนอุปกรณ์เดียวกันก่อนที่ claim จะไปแพ้ที่หลัง
+        // ตอนนี้ไม่กระทบเพราะ ConfigApplier ยังเป็น mock แต่ก่อนเปลี่ยนเป็น
+        // implementation จริง (docker/production) ต้องย้าย claim ไปก่อน apply
+        // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
         const result = await this.configApplier.applyConfig({
           deviceId: device.deviceId,
           deviceModel: device.deviceModel,
@@ -887,6 +894,13 @@ export class CampaignRolloutService {
       // success เสมอทั้งที่ bookkeeping เขียนไม่สำเร็จจริง กลายเป็นหลบ Auto
       // Pause ไปเงียบๆ (เครื่องนับว่า apply สำเร็จทั้งที่ activePartition ยัง
       // เป็นค่าเดิม) เปลี่ยนให้ partition write ล้มเหลว = target นับ failed จริง
+      // Known limitation (#235 review รอบ 5 ข้อ 2): claim target
+      // (recordTargetResult) เกิดหลัง apply จริง (เขียน partition) ไม่ใช่ก่อน
+      // ถ้า approve() และ resume() ทำงานชนกันบน rollout เดียว ทั้งสอง loop
+      // อาจเขียน partition ซ้ำบนอุปกรณ์เดียวกันก่อนที่ claim จะไปแพ้ที่หลัง
+      // ตอนนี้ไม่กระทบเพราะ Dual Partition ยังเป็น mock แต่ก่อนเปลี่ยนเป็น
+      // implementation จริง (docker/production) ต้องย้าย claim ไปก่อน apply
+      // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
       let partitionWriteSucceeded = true;
       try {
         await this.prisma.device.update({
