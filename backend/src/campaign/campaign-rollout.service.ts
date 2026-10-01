@@ -475,6 +475,23 @@ export class CampaignRolloutService {
             `Rollout นี้ถูกเปลี่ยนสถานะไปแล้วระหว่างทำรายการ (ไม่ใช่ ${badRollout.status} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
           );
         }
+        // target ที่ยัง pending ของรอบเดิม = fail พร้อมเหตุผล (pattern เดียวกับ
+        // branch "still invalid" ใน autoApply* — ไม่ปล่อยค้าง pending ใต้
+        // rollout ที่ปิดแล้ว) · recordTargetResult() match เฉพาะ rollout
+        // active/paused ผลที่ Mobile ส่งมาทีหลังจึงไม่เขียนทับ
+        const failedTargets = await tx.campaignRolloutTarget.updateMany({
+          where: { rolloutId, status: 'pending' },
+          data: {
+            status: 'failed',
+            resultDetail: 'rollout cancelled by rollback',
+          },
+        });
+        if (failedTargets.count > 0) {
+          await tx.campaignRollout.update({
+            where: { id: rolloutId },
+            data: { failureCount: { increment: failedTargets.count } },
+          });
+        }
       }
 
       const created = await tx.campaignRollout.create({

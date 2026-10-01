@@ -2068,6 +2068,54 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    it('cancel รอบเดิม -> target ที่ยัง pending ถูก fail พร้อมเหตุผลและบวก failureCount', async () => {
+      campaignRolloutTarget.updateMany.mockResolvedValue({ count: 3 });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { rolloutId: badRollout.id, status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: 'rollout cancelled by rollback',
+        },
+      });
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: badRollout.id },
+        data: { failureCount: { increment: 3 } },
+      });
+    });
+
+    it('รอบเดิม completed -> ไม่ fail target', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'completed',
+      });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('หลัง rollback แล้ว resume() กับรอบเดิม (cancelled) -> ConflictException ไม่กลับมา active', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'cancelled',
+      });
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.resume(badRollout.id, operation)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: badRollout.id, status: 'paused' },
+        data: expect.objectContaining({
+          status: 'active',
+        }) as Partial<CampaignRollout>,
+      });
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
     it('รอบเดิม status completed -> ไม่ต้อง cancel (จบแล้วจริง ไม่มีอะไรค้าง)', async () => {
       campaignRollout.findUnique.mockResolvedValue({
         ...badRollout,
