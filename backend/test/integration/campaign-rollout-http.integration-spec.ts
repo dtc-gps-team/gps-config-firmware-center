@@ -341,6 +341,45 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       expect(body.approvedBy).toBe(approver.id);
     });
 
+    it('มี payload/target จริง -> อนุมัติแล้ว auto-apply ให้ทุกเครื่องทันที ไม่ต้องรอ apply-config (มติ 2026-09-29 — PULL model)', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const config = await seedApprovedConfig();
+      const deviceA = await seedInstalledDevice();
+      const deviceB = await seedInstalledDevice();
+      const campaign = await seedGroup(creator.id, [
+        deviceA.deviceId,
+        deviceB.deviceId,
+      ]);
+      await grant('Operation', ActionType.Create);
+      await grant('Operation', ActionType.Approve);
+      const createRes = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+        .set('Authorization', `Bearer ${tokenFor(creator.id, 'Operation')}`)
+        .send({ payloadType: 'Config', configId: config.id })
+        .expect(201);
+      const rolloutId = (createRes.body as { id: string }).id;
+      const approver = await makeUser(prisma, { role: 'Operation' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rolloutId}/approve`)
+        .set('Authorization', `Bearer ${tokenFor(approver.id, 'Operation')}`)
+        .expect(200);
+
+      const body = res.body as {
+        status: string;
+        successCount: number;
+        failureCount: number;
+      };
+      expect(body.status).toBe('completed');
+      expect(body.successCount).toBe(2);
+      expect(body.failureCount).toBe(0);
+
+      const targets = await prisma.campaignRolloutTarget.findMany({
+        where: { rolloutId },
+      });
+      expect(targets.every((t) => t.status === 'success')).toBe(true);
+    });
+
     it('ผู้สร้าง Rollout พยายามอนุมัติเอง -> 403 (Separation of Duty)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const campaign = await seedGroup(creator.id, []);

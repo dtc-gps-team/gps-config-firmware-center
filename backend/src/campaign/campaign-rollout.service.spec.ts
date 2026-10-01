@@ -11,6 +11,7 @@ import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
+import { CONFIG_APPLIER } from '../device/config-applier';
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 const campaignId = 'campaign-1';
@@ -30,6 +31,7 @@ const approvedConfig = {
   deviceModel: 'GT06N',
   protocol: 'TCP',
   status: 'approved' as const,
+  deletedAt: null as Date | null,
 };
 
 const installedDeviceA = {
@@ -112,13 +114,16 @@ describe('CampaignRolloutService', () => {
     findFirst: jest.Mock;
     findMany: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     count: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock };
   let device: { findMany: jest.Mock; update: jest.Mock };
+  let deviceConfigOverride: { findFirst: jest.Mock };
   let auditLog: { create: jest.Mock };
   let firmwareRollbackExecutor: { switchPartition: jest.Mock };
+  let configApplier: { applyConfig: jest.Mock };
 
   beforeEach(async () => {
     campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
@@ -138,6 +143,11 @@ describe('CampaignRolloutService', () => {
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
+      // #235 review รอบ 4 ข้อ 2 — recordTargetResult() claim target ผ่าน
+      // updateMany({where:{id,status:'pending'}}) แทน update() เปล่าๆ แล้ว
+      // default ชนะการ claim เสมอ (count:1) เทสที่ต้องการจำลอง race (แพ้
+      // การ claim) ค่อย mockResolvedValueOnce({count:0}) เฉพาะเทสนั้น
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       count: jest.fn(),
     };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
@@ -148,8 +158,18 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
       update: jest.fn(),
     };
+    // ไม่มี per-device override ที่ approved ค้างอยู่ (default) — เทสที่
+    // ต้องการ override ค่อยตั้ง mockResolvedValueOnce เฉพาะเทสนั้น
+    deviceConfigOverride = { findFirst: jest.fn().mockResolvedValue(null) };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     firmwareRollbackExecutor = { switchPartition: jest.fn() };
+    configApplier = {
+      applyConfig: jest.fn().mockResolvedValue({
+        applied: true,
+        details: ['ส่ง Config แล้ว (mock)'],
+        appliedAt: '2026-01-02T00:00:00.000Z',
+      }),
+    };
 
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
       cb({ campaignRollout, campaignRolloutTarget }),
@@ -162,6 +182,7 @@ describe('CampaignRolloutService', () => {
       config,
       firmware,
       device,
+      deviceConfigOverride,
       auditLog,
       $transaction: transactionMock,
     };
@@ -174,6 +195,7 @@ describe('CampaignRolloutService', () => {
           provide: FIRMWARE_ROLLBACK_EXECUTOR,
           useValue: firmwareRollbackExecutor,
         },
+        { provide: CONFIG_APPLIER, useValue: configApplier },
       ],
     }).compile();
 
@@ -570,6 +592,1027 @@ describe('CampaignRolloutService', () => {
       ).rejects.toThrow(ConflictException);
       expect(campaignRollout.findUniqueOrThrow).not.toHaveBeenCalled();
     });
+
+    it('Rollout Config ปกติ -> auto-apply ให้ทุกเครื่องทันทีตอน active ไม่ต้องรอช่างกด apply-config (มติ 2026-09-29 — PULL model)', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน approve()
+        .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 1
+        .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 2
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 2,
+          failureCount: 0,
+        }); // return สุดท้ายหลัง loop จบ
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ ...pendingTargets[0], rollout: activeRollout })
+        .mockResolvedValueOnce({
+          ...pendingTargets[1],
+          rollout: activeRollout,
+        });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1) // หลังเครื่อง 1: success 1, failed 0, pending 1
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0); // หลังเครื่อง 2: success 2, failed 0, pending 0
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledTimes(2);
+      expect(configApplier.applyConfig).toHaveBeenNthCalledWith(1, {
+        deviceId: 'DEV-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        // approvedConfig.fields เป็น undefined ในเทสนี้ — mergeApprovedOverride
+        // spread เข้า object ใหม่เสมอ (ไม่มี override ค้างอยู่ -> {})
+        fields: {},
+      });
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: { status: 'success', resultDetail: 'ส่ง Config แล้ว (mock)' },
+      });
+      expect(result.status).toBe('completed');
+      expect(result.successCount).toBe(2);
+      // #235 review comment ข้อ 2 — AuditLog รายเครื่อง ไม่ใช่แค่ audit ของ
+      // approve() รอบเดียว ต้องเห็นร่องรอยว่าเครื่องไหนถูก apply-config บ้าง
+      expect(auditLog.create).toHaveBeenCalledTimes(3); // 1 ของ approve() + 2 ต่อเครื่อง
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'apply-config',
+          metadata: {
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            fieldNames: [],
+          },
+        },
+      });
+    });
+
+    it('มี DeviceConfigOverride approved ของเครื่องนั้น -> merge ทับ base fields ก่อนส่งเข้า applier (#235 review comment ข้อ 1)', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+      deviceConfigOverride.findFirst.mockResolvedValueOnce({
+        id: 'override-1',
+        deviceId: 'DEV-0001',
+        configId: approvedConfig.id,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith({
+        deviceId: 'DEV-0001',
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN: 'override-internet' },
+      });
+    });
+
+    it('autoApplyConfig ส่ง rollout.id เข้า recordTargetResult() ด้วยเสมอ (#235 review รอบ 4 ข้อ 1 — end-to-end ผ่าน approve())', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            rolloutId: oneDeviceRollout.id,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+    });
+
+    it('claim target แพ้ race กลางลูป -> ไม่ log audit ซ้ำสำหรับเครื่องนั้น แต่เครื่องถัดไปยัง apply ต่อได้ปกติ (#235 review รอบ 4 ข้อ 2 — end-to-end ผ่าน approve())', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 2
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ ...pendingTargets[0], rollout: activeRollout })
+        .mockResolvedValueOnce({
+          ...pendingTargets[1],
+          rollout: activeRollout,
+        });
+      // เครื่อง 1 แพ้ race (มีคำขออื่น claim target นี้ไปแล้ว) — เครื่อง 2
+      // claim สำเร็จตามปกติ (default mock count:1 จาก beforeEach)
+      campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      await service.approve(twoDeviceRollout.id, otherOperation);
+
+      // เครื่อง 1 แพ้ race -> ไม่ log audit ของ apply-config สำหรับ DEV-0001
+      expect(auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0001',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+      // เครื่อง 2 ยัง apply + log audit ตามปกติ ไม่ได้หยุดทั้ง loop เพราะ
+      // เครื่อง 1 แพ้ race
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0002' }) as Record<
+          string,
+          unknown
+        >,
+      );
+      expect(auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0002',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+    });
+
+    it('Config ถูกลบไปแล้ว (soft-delete) ระหว่างรอ resume -> fail ทุกเครื่องที่ pending พร้อมเหตุผล ไม่เรียก applier เลย (#235 review รอบ 3 ข้อ 3)', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน approve()
+        .mockResolvedValueOnce(activeRollout); // return สุดท้าย (ไม่มีการเช็คสถานะต่อเครื่องเพราะ fail ทั้งหมดตั้งแต่ต้นทาง)
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-01-03T00:00:00.000Z'),
+      });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ ...pendingTargets[0], rollout: activeRollout })
+        .mockResolvedValueOnce({
+          ...pendingTargets[1],
+          rollout: activeRollout,
+        });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(2);
+
+      await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining('ถูกลบไปแล้ว') as string,
+        },
+      });
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-2', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining('ถูกลบไปแล้ว') as string,
+        },
+      });
+    });
+
+    it('Config สถานะไม่ใช่ approved/synced อีกต่อไป (เช่น rejected) ระหว่างรอ resume -> fail ทุกเครื่องเช่นกัน', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        status: 'rejected' as const,
+      });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining('rejected') as string,
+        },
+      });
+    });
+
+    it('Config หายไปเลย (ไม่พบ id เลย, แทบไม่เกิดจริง) -> fail ทุกเครื่องที่ pending พร้อม audit row แทนที่จะค้าง active เงียบๆ (#235 review รอบ 4 ข้อ 4/5)', async () => {
+      const oneDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...oneDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(oneDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
+      config.findUnique.mockResolvedValue(null); // ไม่พบ Config เลย
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: oneDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+
+      await service.approve(oneDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining(approvedConfig.id) as string,
+        },
+      });
+      // #235 review รอบ 4 ข้อ 5 — branch นี้ต้องมี audit row ด้วย ไม่ใช่แค่
+      // recordTargetResult เฉยๆ (ก่อนแก้ ไม่มี audit เลยสำหรับ branch นี้)
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'apply-config',
+          metadata: {
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            fieldNames: [],
+          },
+        },
+      });
+    });
+
+    it('เครื่องหนึ่งถูก decommission ไประหว่างรอ resume -> fail เฉพาะเครื่องนั้น ข้ามไป apply เครื่องถัดไปได้ตามปกติ (#235 review รอบ 3 ข้อ 3)', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 2
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 1,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ ...pendingTargets[0], rollout: activeRollout })
+        .mockResolvedValueOnce({
+          ...pendingTargets[1],
+          rollout: activeRollout,
+        });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+      // DEV-0001 ถูก decommission ไปแล้ว (status ไม่ใช่ installed อีกต่อไป)
+      device.findMany.mockResolvedValue([
+        { ...installedDeviceA, status: 'decommissioned' as const },
+        installedDeviceB,
+      ]);
+
+      await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining('installed') as string,
+        },
+      });
+      // เครื่อง 2 ยัง apply ตามปกติ ไม่ได้หยุดทั้ง loop เพราะเครื่อง 1 มีปัญหา
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0002' }) as Record<
+          string,
+          unknown
+        >,
+      );
+    });
+
+    it('configApplier.applyConfig() throw กลางเครื่อง -> จับไว้ นับเครื่องนั้นเป็น failed ไม่ throw ทั้ง request (#235 review รอบ 2, ข้อ 3)', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      const pausedRollout: CampaignRollout = {
+        ...activeRollout,
+        status: 'paused',
+        successCount: 0,
+        failureCount: 1,
+      };
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1
+        .mockResolvedValueOnce(pausedRollout) // เช็คก่อนเครื่อง 2 -> หยุด (Auto Pause จาก failure เครื่อง 1)
+        .mockResolvedValueOnce(pausedRollout); // return สุดท้าย
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0) // success
+        .mockResolvedValueOnce(1) // failed -> failureRate 1/2 = 0.5 > 5%
+        .mockResolvedValueOnce(1); // pending เหลือ 1
+      configApplier.applyConfig.mockRejectedValueOnce(
+        new Error('ConfigApplier จริงล่ม (mock เทสจำลอง network error)'),
+      );
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      // ต้องไม่ throw ออกมาจาก approve() เลย แม้ applyConfig() throw กลางลูป
+      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining(
+            'ConfigApplier จริงล่ม',
+          ) as string,
+        },
+      });
+      // เครื่องที่ 2 ไม่ถูกแตะเลย เพราะ Auto Pause หยุดก่อน (เหมือนกรณี
+      // applied:false ปกติ — error ที่ throw ไม่ได้ทำให้ loop ทำงานผิดไปจากเดิม)
+      expect(configApplier.applyConfig).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('paused');
+    });
+
+    it('Auto Pause ยังทำงานได้แม้ auto-apply หลายเครื่องในคำเรียกเดียว -> หยุดก่อนแตะเครื่องที่เหลือ', async () => {
+      const twoDeviceRollout: CampaignRollout = {
+        ...pendingRollout,
+        targetCount: 2,
+      };
+      const activeRollout: CampaignRollout = {
+        ...twoDeviceRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      const pausedRollout: CampaignRollout = {
+        ...activeRollout,
+        status: 'paused',
+        successCount: 0,
+        failureCount: 1,
+      };
+
+      campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany
+        .mockResolvedValueOnce(activeRollout) // เช็คก่อนเครื่อง 1 (ยัง active)
+        .mockResolvedValueOnce(pausedRollout) // เช็คก่อนเครื่อง 2 -> ไม่ active แล้ว หยุด loop
+        .mockResolvedValueOnce(pausedRollout); // return สุดท้ายหลัง loop จบ
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+        {
+          id: 'rt-2',
+          rolloutId: twoDeviceRollout.id,
+          deviceId: 'DEV-0002',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0) // success
+        .mockResolvedValueOnce(1) // failed -> failureRate 1/2 = 0.5 > 5%
+        .mockResolvedValueOnce(1); // pending เหลือ 1 (DEV-0002 ยังไม่โดนแตะ)
+      configApplier.applyConfig.mockResolvedValueOnce({
+        applied: false,
+        details: ['field ผิดพลาด (mock)'],
+        appliedAt: '2026-01-02T00:00:00.000Z',
+      });
+      device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
+
+      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledTimes(1); // ไม่แตะ DEV-0002 เลย
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0001' }) as Record<
+          string,
+          unknown
+        >,
+      );
+      expect(result.status).toBe('paused');
+    });
+
+    it('Rollout Firmware ปกติ (ไม่ใช่ Rollback) -> auto-apply + Dual Partition bookkeeping ทันทีตอน active', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+          failureCount: 0,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([
+        {
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: null,
+          partitionBFirmwareId: null,
+        },
+      ]);
+
+      const result = await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: 'DEV-0001' },
+        data: { activePartition: 'B', partitionBFirmwareId: storedFirmware.id },
+      });
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'success',
+          resultDetail: expect.stringContaining(
+            storedFirmware.version,
+          ) as string,
+        },
+      });
+      expect(result.status).toBe('completed');
+      // #235 review comment ข้อ 2 — AuditLog รายเครื่อง mirror
+      // confirmFirmwareInstall() ของ DeviceService
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DEV-0001',
+            firmwareId: storedFirmware.id,
+            firmwareVersion: storedFirmware.version,
+          },
+        },
+      });
+    });
+
+    it('Firmware auto-apply เขียน Dual Partition bookkeeping ไม่สำเร็จ -> นับเป็น failed ไม่ใช่ success เงียบๆ (#235 review comment ข้อ 4)', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'paused',
+          successCount: 0,
+          failureCount: 1,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([
+        {
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: null,
+          partitionBFirmwareId: null,
+        },
+      ]);
+      device.update.mockRejectedValueOnce(new Error('DB timeout (mock)'));
+
+      const result = await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail:
+            'เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ',
+        },
+      });
+      // ต้อง log AuditLog ไว้ด้วยแม้ partition write ล้มเหลว — เห็นร่องรอยว่า
+      // auto-apply เคยพยายามแตะเครื่องนี้
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DEV-0001',
+            firmwareId: storedFirmware.id,
+            firmwareVersion: storedFirmware.version,
+          },
+        },
+      });
+      expect(result.status).toBe('paused');
+    });
+
+    it('Firmware ถูกถอนอนุมัติคุณภาพไประหว่างรอ resume -> fail ทุกเครื่องที่ pending ไม่เขียน partition เลย (#235 review รอบ 3 ข้อ 4)', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
+      firmware.findUnique.mockResolvedValue({
+        ...storedFirmware,
+        approvalStatus: 'rejected' as const,
+      });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+
+      await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(device.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining('rejected') as string,
+        },
+      });
+    });
+
+    it('Firmware หายไปเลย (ไม่พบ id เลย, แทบไม่เกิดจริง) -> fail ทุกเครื่องที่ pending พร้อม audit row (#235 review รอบ 4 ข้อ 4/5)', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
+      firmware.findUnique.mockResolvedValue(null); // ไม่พบ Firmware เลย
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0001',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+
+      await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(device.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining(storedFirmware.id) as string,
+        },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: otherOperation.id,
+          auditModule: 'campaign',
+          action: 'confirm-firmware-install',
+          metadata: {
+            deviceId: 'DEV-0001',
+            firmwareId: storedFirmware.id,
+          },
+        },
+      });
+    });
+
+    it('อุปกรณ์รุ่นไม่ตรงกับ deviceModelCompatibility ของ Firmware -> fail เฉพาะเครื่องนั้น (#235 review รอบ 3 ข้อ 4)', async () => {
+      const firmwareRollout: CampaignRollout = {
+        ...pendingRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...firmwareRollout,
+        status: 'active',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 0,
+          failureCount: 1,
+        });
+
+      const pendingTargets = [
+        {
+          id: 'rt-1',
+          rolloutId: firmwareRollout.id,
+          deviceId: 'DEV-0003',
+          status: 'pending',
+        },
+      ];
+      campaignRolloutTarget.findMany.mockResolvedValue(pendingTargets);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTargets[0],
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1);
+      // storedFirmware.deviceModelCompatibility = ['GT06N'] เท่านั้น
+      device.findMany.mockResolvedValue([
+        { ...installedDeviceB, deviceId: 'DEV-0003', deviceModel: 'GT06L' },
+      ]);
+
+      await service.approve(firmwareRollout.id, otherOperation);
+
+      expect(device.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-1', status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: expect.stringContaining(
+            'ไม่รองรับรุ่นอุปกรณ์',
+          ) as string,
+        },
+      });
+    });
   });
 
   describe('reject', () => {
@@ -619,18 +1662,26 @@ describe('CampaignRolloutService', () => {
         ...sampleRollout,
         status: 'paused',
       };
-      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
-      campaignRollout.update.mockResolvedValue({
+      const activeRollout: CampaignRollout = {
         ...pausedRollout,
         status: 'active',
-      });
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      // #235 review รอบ 3 ข้อ 2 — resume() ใช้ updateMany+transaction แบบ
+      // เดียวกับ approve() แล้ว (mock default updateMany คืน {count:1} ชนะ
+      // การแข่งอยู่แล้วจาก beforeEach) ผลลัพธ์มาจาก findUniqueOrThrow แทน
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน resume()
+        .mockResolvedValueOnce(activeRollout); // return สุดท้ายจาก autoApplyConfig (ไม่มี target pending)
 
       const result = await service.resume(pausedRollout.id, operation);
 
       expect(result.status).toBe('active');
-      expect(campaignRollout.update).toHaveBeenCalledWith({
-        where: { id: pausedRollout.id },
-        data: { status: 'active' },
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: pausedRollout.id, status: 'paused' },
+        data: expect.objectContaining({
+          status: 'active',
+        }) as Partial<CampaignRollout>,
       });
     });
 
@@ -640,15 +1691,67 @@ describe('CampaignRolloutService', () => {
         status: 'paused',
         createdBy: operation.id,
       };
-      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
-      campaignRollout.update.mockResolvedValue({
+      const activeRollout: CampaignRollout = {
         ...pausedRollout,
         status: 'active',
-      });
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
 
       await expect(
         service.resume(pausedRollout.id, operation),
       ).resolves.toMatchObject({ status: 'active' });
+    });
+
+    it('มี target pending ค้างอยู่ -> เรียก auto-apply ต่อทันที (#235 review รอบ 2)', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+        targetCount: 1,
+      };
+      const activeRollout: CampaignRollout = {
+        ...pausedRollout,
+        status: 'active',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน resume()
+        .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 1
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+        }); // return สุดท้ายหลัง loop จบ
+
+      const pendingTarget = {
+        id: 'rt-1',
+        rolloutId: pausedRollout.id,
+        deviceId: 'DEV-0001',
+        status: 'pending',
+      };
+      campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTarget,
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0); // windowFailureCount (#235 review รอบ 3 ข้อ 1)
+      device.findMany.mockResolvedValue([installedDeviceA]);
+
+      const result = await service.resume(pausedRollout.id, operation);
+
+      expect(configApplier.applyConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'DEV-0001' }) as Record<
+          string,
+          unknown
+        >,
+      );
+      expect(result.status).toBe('completed');
     });
 
     it('สถานะปัจจุบันไม่ใช่ paused -> ConflictException', async () => {
@@ -656,10 +1759,105 @@ describe('CampaignRolloutService', () => {
         ...sampleRollout,
         status: 'active',
       });
+      // #235 review รอบ 3 ข้อ 2 — ไม่ใช่ paused จริง where ของ updateMany ไม่
+      // match แถวไหนเลย (count 0) แทนที่จะเช็คนอก transaction เหมือนเดิม
+      campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(service.resume(sampleRollout.id, operation)).rejects.toThrow(
         ConflictException,
       );
+    });
+
+    it('Operation คนละคนกับผู้ approve เดิมเป็นคนกด resume -> audit row ของเครื่องที่ apply ต่อ ระบุชื่อคนกด resume จริง ไม่ใช่ผู้ approve เดิม (#235 review รอบ 4 ข้อ 3)', async () => {
+      const originalApprover: ActingUser = { id: 'op-1', role: 'Operation' };
+      const resumingOperator: ActingUser = { id: 'op-3', role: 'Operation' };
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+        targetCount: 1,
+        approvedBy: originalApprover.id, // คนละคนกับ resumingOperator ที่จะกด resume
+      };
+      const activeRollout: CampaignRollout = {
+        ...pausedRollout,
+        status: 'active',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce({
+          ...activeRollout,
+          status: 'completed',
+          successCount: 1,
+        });
+
+      const pendingTarget = {
+        id: 'rt-1',
+        rolloutId: pausedRollout.id,
+        deviceId: 'DEV-0001',
+        status: 'pending',
+      };
+      campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+      campaignRolloutTarget.findFirst.mockResolvedValueOnce({
+        ...pendingTarget,
+        rollout: activeRollout,
+      });
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+
+      await service.resume(pausedRollout.id, resumingOperator);
+
+      // audit ของ resume() เอง (ไม่เปลี่ยนพฤติกรรม — ระบุคนกด resume อยู่แล้ว)
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: resumingOperator.id,
+          auditModule: 'campaign',
+          action: 'resume',
+        },
+      });
+      // audit ของ apply-config รายเครื่องที่ auto-apply ทำต่อ — ต้องระบุ
+      // resumingOperator (คนกด resume จริง) ไม่ใช่ originalApprover (คนที่
+      // approve รอบแรกไปนานแล้ว)
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: resumingOperator.id,
+          auditModule: 'campaign',
+          action: 'apply-config',
+          metadata: {
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            fieldNames: [],
+          },
+        },
+      });
+      expect(auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: originalApprover.id,
+            action: 'apply-config',
+          }) as Record<string, unknown>,
+        }) as Record<string, unknown>,
+      );
+    });
+
+    it('กด resume ซ้ำพร้อมกัน (retry/double-click) -> คำขอที่สองได้ ConflictException (#235 review รอบ 3 ข้อ 2)', async () => {
+      const pausedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedRollout);
+      // คำขอแรกชนะ (count 1) คำขอที่สองมาทีหลังตอน status ไม่ใช่ paused แล้ว
+      campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.resume(pausedRollout.id, operation)).rejects.toThrow(
+        ConflictException,
+      );
+      // ไม่ควรเรียก auto-apply เลยถ้า updateMany ไม่ชนะการแข่ง
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
   });
 
@@ -924,7 +2122,8 @@ describe('CampaignRolloutService', () => {
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1) // success
         .mockResolvedValueOnce(0) // failed
-        .mockResolvedValueOnce(1); // pending (ยังเหลือ DEV-0002)
+        .mockResolvedValueOnce(1) // pending (ยังเหลือ DEV-0002)
+        .mockResolvedValueOnce(0); // windowFailureCount (#235 review รอบ 3 ข้อ 1)
 
       await service.recordTargetResult(
         installedDeviceA.deviceId,
@@ -948,8 +2147,8 @@ describe('CampaignRolloutService', () => {
         },
         include: { rollout: true },
       });
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: pendingTarget.id },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: pendingTarget.id, status: 'pending' },
         data: { status: 'success', resultDetail: 'ok' },
       });
       expect(campaignRollout.update).toHaveBeenCalledWith({
@@ -958,12 +2157,92 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    it('ส่ง rolloutId เข้ามา -> query findFirst กรองด้วย rolloutId ตรงๆ ด้วย ตัดความกำกวมข้าม rollout (#235 review รอบ 4 ข้อ 1)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+        activeRollout.id, // rolloutId ใหม่ — จาก autoApplyConfig/autoApplyFirmware
+      );
+
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rolloutId: activeRollout.id,
+          rollout: {
+            status: { in: ['active', 'paused'] },
+            configId: approvedConfig.id,
+          },
+        },
+        include: { rollout: true },
+      });
+    });
+
+    it('ไม่ส่ง rolloutId (path เดิมจาก Mobile) -> query findFirst ไม่มี rolloutId ในเงื่อนไข เหมือนเดิมทุกประการ', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      // ไม่มี rolloutId ปนอยู่ใน where เลย (query เดิมทุกประการ, ไม่ใช่แค่ไม่
+      // เท่ากับ undefined — key ต้องไม่ถูกใส่เข้าไปเลย)
+      expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+        where: {
+          deviceId: installedDeviceA.deviceId,
+          status: 'pending',
+          rollout: {
+            status: { in: ['active', 'paused'] },
+            configId: approvedConfig.id,
+          },
+        },
+        include: { rollout: true },
+      });
+    });
+
+    it('claim target ไม่สำเร็จ (มีคำขออื่น claim ไปก่อนแล้วระหว่างที่เรากำลังประมวลผล, race) -> คืน false ไม่ recompute count/pause ซ้ำ (#235 review รอบ 4 ข้อ 2)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      // แพ้ race — target ถูกคำขออื่น claim (status ไม่ใช่ pending แล้ว) ไปก่อน
+      campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      const result = await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(result).toBe(false);
+      // ไม่ควร recompute count หรือ trigger pause/complete ซ้ำ — คำขอที่ชนะ
+      // การ claim ไปแล้วจะเป็นคนจัดการส่วนนี้เอง
+      expect(campaignRolloutTarget.count).not.toHaveBeenCalled();
+      expect(campaignRollout.update).not.toHaveBeenCalled();
+    });
+
     it('ครบทุกเครื่องแล้ว (pending เหลือ 0) -> ปิด rollout เป็น completed', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(1)
-        .mockResolvedValueOnce(0);
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(1); // windowFailureCount (#235 review รอบ 3 ข้อ 1)
 
       await service.recordTargetResult(
         installedDeviceA.deviceId,
@@ -991,7 +2270,8 @@ describe('CampaignRolloutService', () => {
       campaignRolloutTarget.count
         .mockResolvedValueOnce(1)
         .mockResolvedValueOnce(0)
-        .mockResolvedValueOnce(0);
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0); // windowFailureCount (#235 review รอบ 3 ข้อ 1)
 
       await service.recordTargetResult(
         installedDeviceA.deviceId,
@@ -1000,8 +2280,8 @@ describe('CampaignRolloutService', () => {
         'ok',
       );
 
-      expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
-        where: { id: targetOfSecondGroup.id },
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { id: targetOfSecondGroup.id, status: 'pending' },
         data: { status: 'success', resultDetail: 'ok' },
       });
       // ต้องคำนวณ/ปิดรอบของ otherActiveRollout (กลุ่มที่เครื่องเป็นสมาชิกจริง)
@@ -1022,9 +2302,9 @@ describe('CampaignRolloutService', () => {
           true,
           'ok',
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(false);
 
-      expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
       expect(campaignRollout.update).not.toHaveBeenCalled();
     });
 
@@ -1038,7 +2318,7 @@ describe('CampaignRolloutService', () => {
           true,
           'ok',
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(false);
     });
 
     it('failure rate เกิน 5% ระหว่างยังมี pending เหลือ (rollout ยัง active) -> Auto Pause', async () => {
@@ -1046,7 +2326,11 @@ describe('CampaignRolloutService', () => {
       campaignRolloutTarget.count
         .mockResolvedValueOnce(0) // success
         .mockResolvedValueOnce(1) // failed -> failureRate 1/2 = 0.5 > 5%
-        .mockResolvedValueOnce(1); // pending (ยังเหลือ DEV-0002)
+        .mockResolvedValueOnce(1) // pending (ยังเหลือ DEV-0002)
+        // windowFailureCount (#235 review รอบ 3 ข้อ 1) — activeRollout ไม่มี
+        // activeWindowStartedAt (fixture เดิมไม่ได้ตั้งไว้) เข้า fallback
+        // branch คิวรีเดียวกับ failureCount ด้านบน ค่าจึงต้องเท่ากัน (1)
+        .mockResolvedValueOnce(1);
 
       await service.recordTargetResult(
         installedDeviceA.deviceId,
@@ -1058,6 +2342,120 @@ describe('CampaignRolloutService', () => {
       expect(campaignRollout.update).toHaveBeenCalledWith({
         where: { id: activeRollout.id },
         data: { successCount: 0, failureCount: 1, status: 'paused' },
+      });
+    });
+
+    it('มี activeWindowStartedAt (resume แล้ว) -> คำนวณ failure rate เฉพาะ target ที่ updatedAt ใหม่กว่าหน้าต่างนี้เท่านั้น (#235 review รอบ 3 ข้อ 1)', async () => {
+      const resumedRollout: CampaignRollout = {
+        ...activeRollout,
+        // สมมติ resume() เพิ่งเกิดเมื่อครู่ — failure ก่อนหน้านี้ (ที่เคยทำให้
+        // pause รอบก่อน) ไม่ควรถูกนับรวมในรอบใหม่นี้อีก
+        activeWindowStartedAt: new Date('2026-01-05T00:00:00.000Z'),
+      };
+      const targetOfResumedRollout = {
+        ...pendingTarget,
+        rollout: resumedRollout,
+      };
+      campaignRolloutTarget.findFirst.mockResolvedValue(targetOfResumedRollout);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1) // success สะสม
+        .mockResolvedValueOnce(3) // failed สะสมทั้งประวัติ (สูงจากรอบก่อน pause)
+        .mockResolvedValueOnce(1) // pending เหลือ
+        // windowFailureCount รอบปัจจุบัน (ตั้งแต่ resume) — เครื่องนี้เพิ่ง
+        // fail ไปแค่ตัวเดียวในรอบนี้ ไม่ใช่ 3 เหมือนค่าสะสม
+        .mockResolvedValueOnce(1);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      // count call ตัวที่ 4 (windowFailureCount) ต้องกรอง updatedAt ด้วย
+      // activeWindowStartedAt ต่างจาก 3 ตัวแรกที่นับสะสมทั้งหมด
+      expect(campaignRolloutTarget.count).toHaveBeenNthCalledWith(4, {
+        where: {
+          rolloutId: resumedRollout.id,
+          status: 'failed',
+          updatedAt: { gte: resumedRollout.activeWindowStartedAt },
+        },
+      });
+      // failureRate ที่ใช้ตัดสินใจ pause คือ windowFailureCount/targetCount
+      // = 1/2 = 0.5 > 5% -> ยัง pause อยู่ (เคสนี้จงใจให้ยัง fail ในรอบใหม่
+      // ด้วย) แต่ failureCount ที่โชว์ผู้ใช้ยังเป็นค่าสะสมจริง (3) ไม่ใช่ 1
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: resumedRollout.id },
+        data: { successCount: 1, failureCount: 3, status: 'paused' },
+      });
+    });
+
+    it('มี activeWindowStartedAt แต่ยังไม่มี failure ใหม่ในรอบนี้เลย -> ไม่ pause ซ้ำ แม้ failureCount สะสมจะสูง (แก้บั๊กหลัก #235 review รอบ 3 ข้อ 1)', async () => {
+      const resumedRollout: CampaignRollout = {
+        ...activeRollout,
+        activeWindowStartedAt: new Date('2026-01-05T00:00:00.000Z'),
+      };
+      const targetOfResumedRollout = {
+        ...pendingTarget,
+        rollout: resumedRollout,
+      };
+      campaignRolloutTarget.findFirst.mockResolvedValue(targetOfResumedRollout);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(2) // success สะสม (รวมเครื่องที่เพิ่งสำเร็จ)
+        .mockResolvedValueOnce(3) // failed สะสมทั้งประวัติ — สูงมาก (จากรอบก่อน pause)
+        .mockResolvedValueOnce(0) // pending เหลือ 0 -> ครบแล้ว
+        // windowFailureCount รอบปัจจุบัน = 0 (เครื่องเดียวที่ทำในรอบนี้สำเร็จ
+        // ไม่ใช่ fail) — เดิมก่อนแก้ ใช้ failureCount สะสม (3) มาคำนวณ rate
+        // จะ pause ซ้ำทันที ทั้งที่รอบนี้ไม่มีอะไรผิดพลาดเลย
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      // pendingCount = 0 -> completed ชนะเสมอไม่ว่า failure rate เท่าไหร่
+      // (ไม่ใช่ตัวอย่างที่ดีที่สุดของ "ไม่ pause ซ้ำ" เพราะ completed ชนะอยู่
+      // แล้ว — ดูเทสถัดไปสำหรับเคส pending > 0 ที่ต้องพึ่ง windowFailureCount
+      // จริงๆ)
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: resumedRollout.id },
+        data: { successCount: 2, failureCount: 3, status: 'completed' },
+      });
+    });
+
+    it('มี activeWindowStartedAt, ยัง pending เหลือ, ไม่มี failure ใหม่ในรอบนี้ -> ไม่ pause ซ้ำแม้ failureCount สะสมสูง', async () => {
+      const resumedRollout: CampaignRollout = {
+        ...activeRollout,
+        targetCount: 4,
+        activeWindowStartedAt: new Date('2026-01-05T00:00:00.000Z'),
+      };
+      const targetOfResumedRollout = {
+        ...pendingTarget,
+        rollout: resumedRollout,
+      };
+      campaignRolloutTarget.findFirst.mockResolvedValue(targetOfResumedRollout);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(2) // success สะสม
+        .mockResolvedValueOnce(1) // failed สะสม (เคยทำให้ pause รอบก่อน)
+        .mockResolvedValueOnce(1) // pending ยังเหลืออีก 1
+        // windowFailureCount รอบนี้ = 0 — เครื่องที่เพิ่งทำสำเร็จ ไม่มี fail
+        // ใหม่เลยตั้งแต่ resume — ถ้าใช้ failureCount สะสม (1) จะได้ rate
+        // 1/4 = 25% > 5% pause ซ้ำทันที ทั้งที่รอบนี้ไปได้สวย
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: resumedRollout.id },
+        data: { successCount: 2, failureCount: 1, status: 'active' },
       });
     });
 
@@ -1075,7 +2473,8 @@ describe('CampaignRolloutService', () => {
       campaignRolloutTarget.count
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1)
-        .mockResolvedValueOnce(1);
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(1); // windowFailureCount (#235 review รอบ 3 ข้อ 1) — ไม่มีผลเพราะ rollout.status !== 'active' ทำให้ shouldAutoPause เป็น false อยู่แล้ว
 
       await service.recordTargetResult(
         installedDeviceA.deviceId,
