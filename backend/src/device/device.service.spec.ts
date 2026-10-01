@@ -1,6 +1,11 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Config, Device, Firmware } from '@prisma/client';
+import { Config, Device, DeviceModel, Firmware } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +17,8 @@ import {
   DEVICE_CONNECTION_TESTER,
   DeviceConnectionTester,
 } from './device-connection-tester';
+import { DeviceModelService } from '../device-model/device-model.service';
+import { RegisterDeviceDto } from './dto/register-device.dto';
 import { ActingUser, DeviceService } from './device.service';
 
 /** `include` ที่ `findAll`/`findByDeviceId` แนบไปทุกครั้ง (docs/12 เฟส B —
@@ -93,6 +100,47 @@ const readyFirmware: Firmware = {
 
 const st: ActingUser = { id: 'st-1', role: 'ST' };
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
+const admin: ActingUser = { id: 'admin-1', role: 'Admin' };
+
+const gt06nModel: DeviceModel = {
+  id: 'dm-1',
+  name: 'GT06N',
+  manufacturer: null,
+  supportedProtocols: ['TCP'],
+  status: 'active',
+  warrantyMonths: null,
+  endOfSupportDate: null,
+  notes: null,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
+const registerDto: RegisterDeviceDto = {
+  deviceId: 'DTC-9001',
+  simNumber: '0812345678',
+  modelId: gt06nModel.id,
+  protocol: 'TCP',
+};
+
+// `apiKeyHash` ไม่อยู่ใน fixture นี้โดยตั้งใจ — mimic ของจริงที่
+// `PrismaService` ตั้ง `omit` default ไว้ (ดู prisma.service.ts) แล้ว
+// `prisma.device.create()` จริงจะไม่คืนค่านี้กลับมาเลย
+const createdDevice: Omit<Device, 'apiKeyHash'> = {
+  id: '44444444-4444-4444-4444-444444444444',
+  deviceId: registerDto.deviceId,
+  simNumber: registerDto.simNumber,
+  deviceModel: gt06nModel.name,
+  protocol: registerDto.protocol,
+  hardwareRevisionCode: null,
+  status: 'registered',
+  registeredAt: new Date('2026-10-01T00:00:00.000Z'),
+  installedAt: null,
+  customerId: null,
+  modelId: gt06nModel.id,
+  activePartition: 'A',
+  partitionAFirmwareId: null,
+  partitionBFirmwareId: null,
+};
 
 const simPass = { passed: true, details: ['config ok (mock)'] };
 const connPass = {
@@ -104,7 +152,12 @@ const connPass = {
 
 describe('DeviceService', () => {
   let service: DeviceService;
-  let device: { findUnique: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  let device: {
+    findUnique: jest.Mock;
+    findMany: jest.Mock;
+    update: jest.Mock;
+    create: jest.Mock;
+  };
   let config: { findUnique: jest.Mock };
   let task: { findFirst: jest.Mock };
   let firmware: { findUnique: jest.Mock };
@@ -124,12 +177,14 @@ describe('DeviceService', () => {
   let validateOverridableFields: jest.Mock;
   let user: { findMany: jest.Mock };
   let notificationService: { send: jest.Mock };
+  let deviceModelService: { findOne: jest.Mock };
 
   beforeEach(async () => {
     device = {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn().mockResolvedValue(undefined),
+      create: jest.fn(),
     };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
@@ -154,6 +209,7 @@ describe('DeviceService', () => {
     // Operation ให้แจ้ง (เทสส่วนใหญ่ไม่สนใจ notification เลย)
     user = { findMany: jest.fn().mockResolvedValue([]) };
     notificationService = { send: jest.fn().mockResolvedValue(undefined) };
+    deviceModelService = { findOne: jest.fn() };
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
     // `rejectDeviceConfigOverride()` (issue #223) เขียนผ่าน `$transaction` —
@@ -195,6 +251,7 @@ describe('DeviceService', () => {
           useValue: { validateOverridableFields },
         },
         { provide: NotificationService, useValue: notificationService },
+        { provide: DeviceModelService, useValue: deviceModelService },
       ],
     }).compile();
 
@@ -300,6 +357,105 @@ describe('DeviceService', () => {
 
       await expect(service.findByDeviceId('NOPE')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('register (issue #157 PR 1)', () => {
+    beforeEach(() => {
+      deviceModelService.findOne.mockResolvedValue(gt06nModel);
+      device.create.mockResolvedValue(createdDevice);
+    });
+
+    it('สำเร็จ -> สร้าง Device, deviceModel มาจาก model.name เสมอ (ไม่รับจาก client), คืน apiKey จริงไม่มี apiKeyHash', async () => {
+      const result = await service.register(registerDto, admin);
+
+      expect(deviceModelService.findOne).toHaveBeenCalledWith(
+        registerDto.modelId,
+      );
+      expect(device.create).toHaveBeenCalledWith({
+        data: {
+          deviceId: registerDto.deviceId,
+          simNumber: registerDto.simNumber,
+          deviceModel: gt06nModel.name,
+          protocol: registerDto.protocol,
+          hardwareRevisionCode: undefined,
+          customerId: undefined,
+          modelId: gt06nModel.id,
+          apiKeyHash: expect.any(String) as string,
+        },
+      });
+      expect(result).toMatchObject(createdDevice);
+      expect(typeof result.apiKey).toBe('string');
+      expect(result.apiKey.length).toBeGreaterThan(0);
+      expect(result).not.toHaveProperty('apiKeyHash');
+    });
+
+    it('apiKey ที่คืนให้ client กับ apiKeyHash ที่เก็บ DB ต้องเป็นคู่ bcrypt ที่ compare ผ่านจริง', async () => {
+      let capturedHash = '';
+      device.create.mockImplementationOnce(
+        (args: { data: { apiKeyHash: string } }) => {
+          capturedHash = args.data.apiKeyHash;
+          return Promise.resolve(createdDevice);
+        },
+      );
+
+      const result = await service.register(registerDto, admin);
+
+      await expect(bcrypt.compare(result.apiKey, capturedHash)).resolves.toBe(
+        true,
+      );
+    });
+
+    it('เขียน AuditLog action register พร้อม deviceId เท่านั้น ไม่มี apiKey หลุดไป', async () => {
+      await service.register(registerDto, admin);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: admin.id,
+          auditModule: 'device',
+          action: 'register',
+          metadata: { deviceId: registerDto.deviceId },
+        },
+      });
+    });
+
+    it('modelId ไม่พบในทะเบียน -> โยน error ของ DeviceModelService ต่อตรงๆ ไม่เรียก device.create', async () => {
+      deviceModelService.findOne.mockRejectedValue(
+        new NotFoundException('ไม่พบรุ่นอุปกรณ์ id dm-999'),
+      );
+
+      await expect(
+        service.register({ ...registerDto, modelId: 'dm-999' }, admin),
+      ).rejects.toThrow(NotFoundException);
+      expect(device.create).not.toHaveBeenCalled();
+    });
+
+    it('protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> BadRequestException ไม่เรียก device.create', async () => {
+      await expect(
+        service.register({ ...registerDto, protocol: 'UDP' }, admin),
+      ).rejects.toThrow(BadRequestException);
+      expect(device.create).not.toHaveBeenCalled();
+    });
+
+    it('deviceId ซ้ำ (Prisma P2002) -> ConflictException', async () => {
+      device.create.mockRejectedValue(
+        new PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(service.register(registerDto, admin)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('error อื่นที่ไม่ใช่ P2002 ตอนสร้าง -> โยนต่อตรงๆ', async () => {
+      device.create.mockRejectedValue(new Error('db down'));
+
+      await expect(service.register(registerDto, admin)).rejects.toThrow(
+        'db down',
       );
     });
   });

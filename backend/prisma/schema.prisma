@@ -387,6 +387,17 @@ model Device {
   partitionBFirmwareId String?
   partitionAFirmware   Firmware?           @relation("DevicePartitionA", fields: [partitionAFirmwareId], references: [id])
   partitionBFirmware   Firmware?           @relation("DevicePartitionB", fields: [partitionBFirmwareId], references: [id])
+
+  // issue #157 PR 1 (docs/14_Device_Sync_Proposal.md §3.2) — hash ของ API key
+  // ต่อเครื่อง 1 ตัว (bcrypt เหมือน `User.passwordHash`) ที่อุปกรณ์จะแนบผ่าน
+  // header `X-Device-Api-Key` ตอนคุยกับ endpoint pull ของ PR 2/3 (`DeviceApiKeyGuard`
+  // — ดู common/guards/device-api-key.guard.ts) — nullable โดยตั้งใจ เพราะ
+  // Device ที่สร้างผ่านช่องทางอื่น (test fixture, ของเดิมก่อนฟีเจอร์นี้) ไม่
+  // บังคับต้องมี key จนกว่าจะลงทะเบียนผ่าน `POST /devices` จริง **ไม่ select
+  // ออกมาเองเด็ดขาด** — `PrismaService` ตั้ง `omit` เป็น default ไว้ให้ทั้งระบบ
+  // (ดู prisma.service.ts) กัน `GET /devices`/`GET /devices/{id}` ที่ทุก Role
+  // อ่านได้รั่ว hash ออกไปโดยไม่ตั้งใจ
+  apiKeyHash           String?
 }
 
 enum DevicePartitionSlot {

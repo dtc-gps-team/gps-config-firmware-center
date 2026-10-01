@@ -3,6 +3,7 @@ import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
+import * as bcrypt from 'bcrypt';
 import {
   ActionType,
   DeviceLifecycleStatus,
@@ -241,6 +242,202 @@ describe('DeviceController test-connection (integration — real postgres + guar
     expect(body.signalStrength).toBe(-65);
     expect(body.details.length).toBeGreaterThan(0);
     expect(Number.isNaN(Date.parse(body.testedAt))).toBe(false);
+  });
+
+  describe('POST /devices (issue #157 PR 1 — ลงทะเบียนอุปกรณ์ใหม่)', () => {
+    async function adminToken(): Promise<string> {
+      const adminUser = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Create, 'device-registration');
+      return tokenFor(adminUser.id, 'Admin');
+    }
+
+    it('ไม่ส่ง Authorization header -> 401', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .send({
+          deviceId: 'NEW-401',
+          simNumber: '0899999999',
+          modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
+          protocol: 'TCP',
+        })
+        .expect(401);
+    });
+
+    it('role ไม่มีสิทธิ์ device-registration.Create (ST) -> 403', async () => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'devices');
+      const token = tokenFor(stUser.id, 'ST');
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-403',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+        })
+        .expect(403);
+    });
+
+    it('ขาด field บังคับ (ไม่ส่ง modelId) -> 400', async () => {
+      const token = await adminToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ deviceId: 'NEW-400', simNumber: '0899999999', protocol: 'TCP' })
+        .expect(400);
+    });
+
+    it('modelId ไม่พบในทะเบียน -> 404', async () => {
+      const token = await adminToken();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-404',
+          simNumber: '0899999999',
+          modelId: randomUUID(),
+          protocol: 'TCP',
+        })
+        .expect(404);
+    });
+
+    it('protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น -> 400', async () => {
+      const token = await adminToken();
+      const model = await prisma.deviceModel.upsert({
+        where: { name: 'TCP-ONLY-MODEL' },
+        update: {},
+        create: { name: 'TCP-ONLY-MODEL', supportedProtocols: ['TCP'] },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-400B',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'UDP',
+        })
+        .expect(400);
+    });
+
+    it('deviceId ซ้ำ -> 409', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      await makeDevice('NEW-409', 'registered');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-409',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+        })
+        .expect(409);
+    });
+
+    it('สำเร็จ -> 201, คืน apiKey จริง ไม่มี apiKeyHash, DB เก็บ hash ที่ compare กับ apiKey ผ่านจริง', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-201',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+          hardwareRevisionCode: 'RevA',
+        })
+        .expect(201);
+
+      const body = res.body as {
+        deviceId: string;
+        deviceModel: string;
+        protocol: string;
+        status: string;
+        apiKey: string;
+        apiKeyHash?: string;
+      };
+      expect(body.deviceId).toBe('NEW-201');
+      expect(body.deviceModel).toBe('GT06N'); // มาจาก model.name เสมอ
+      expect(body.status).toBe('registered');
+      expect(typeof body.apiKey).toBe('string');
+      expect(body.apiKey.length).toBeGreaterThan(0);
+      expect(body.apiKeyHash).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain('apiKeyHash');
+
+      const row = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'NEW-201' },
+      });
+      expect(row.apiKeyHash).not.toBeNull();
+      await expect(
+        bcrypt.compare(body.apiKey, row.apiKeyHash ?? ''),
+      ).resolves.toBe(true);
+    });
+
+    it('เขียน AuditLog action register', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-AUDIT',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+        })
+        .expect(201);
+
+      const logRow = await prisma.auditLog.findFirst({
+        where: { auditModule: 'device', action: 'register' },
+      });
+      expect(logRow).not.toBeNull();
+      expect(JSON.stringify(logRow?.metadata ?? {})).not.toContain(
+        'apiKeyHash',
+      );
+    });
+
+    it('apiKeyHash ไม่หลุดออกมาทาง GET /devices หรือ GET /devices/{id} หลังลงทะเบียน', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-NOLEAK',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+        })
+        .expect(201);
+
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'devices');
+      const stToken = tokenFor(stUser.id, 'ST');
+
+      const listRes = await request(app.getHttpServer())
+        .get('/api/v1/devices')
+        .set('Authorization', `Bearer ${stToken}`)
+        .expect(200);
+      expect(JSON.stringify(listRes.body)).not.toContain('apiKeyHash');
+
+      const detailRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/NEW-NOLEAK')
+        .set('Authorization', `Bearer ${stToken}`)
+        .expect(200);
+      expect(JSON.stringify(detailRes.body)).not.toContain('apiKeyHash');
+    });
   });
 
   describe('POST /devices/:deviceId/apply-config', () => {
