@@ -1,6 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import {
+  CONFIG_APPLIER,
+  type ConfigApplier,
+  MockConfigApplier,
+} from '../device/config-applier';
 import { CampaignController } from './campaign.controller';
 import { CampaignRolloutController } from './campaign-rollout.controller';
 import { CampaignRolloutService } from './campaign-rollout.service';
@@ -48,6 +53,27 @@ import {
           );
         }
         return new MockFirmwareRollbackExecutor();
+      },
+      inject: [NestConfigService],
+    },
+    // CONFIG_APPLIER: มติ 2026-09-29 — ระบบเป็น PULL model จริง (กล่องดึง
+    // Config เองอัตโนมัติ) `CampaignRolloutService.approve()` จึง auto-apply
+    // ให้ทุกเครื่องทันทีแทนที่จะรอช่างกดผ่าน Mobile เหมือนเดิม — provider
+    // เดียวกับใน `device.module.ts` ทุกประการ (env `DEVICE_CONFIG_APPLY_MODE`
+    // เดียวกัน) ประกาศซ้ำที่นี่แทนการ import `DeviceModule` เพราะ
+    // `DeviceModule` import `CampaignModule` อยู่แล้ว (กัน circular
+    // dependency เหตุผลเดียวกับ `FIRMWARE_ROLLBACK_EXECUTOR` ด้านบน) —
+    // `MockConfigApplier` ไม่มี state จึงมี 2 instance คนละโมดูลได้โดยไม่มีผล
+    {
+      provide: CONFIG_APPLIER,
+      useFactory: (nestConfig: NestConfigService): ConfigApplier => {
+        const mode = nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE', 'mock');
+        if (mode === 'real') {
+          throw new Error(
+            'DEVICE_CONFIG_APPLY_MODE=real ยังไม่รองรับ (ยังไม่มีช่องทางเขียน Config เข้าอุปกรณ์จริง — ดู config-sync-writer #32)',
+          );
+        }
+        return new MockConfigApplier();
       },
       inject: [NestConfigService],
     },

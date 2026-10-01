@@ -917,6 +917,16 @@ model CampaignRollout {
   // ไม่นับเป็น "อนุมัติ" (mirror Config/Firmware ที่ reject ไม่ตั้ง approvedBy)
   approvedBy   String?
   approvedAt   DateTime?
+  // Auto Pause failure-rate window (แก้ไข 2026-09-30, #235 review รอบ 3 ข้อ 1)
+  // — ตั้งใหม่ทุกครั้งที่ rollout เข้าสถานะ active (approve() ครั้งแรก หรือ
+  // resume() หลังโดน Auto Pause) `recordTargetResult()` ใช้ค่านี้กรองว่า
+  // failure ไหน "เกิดในรอบปัจจุบัน" (นับเฉพาะ CampaignRolloutTarget ที่
+  // updatedAt >= ค่านี้) แยกจาก failureCount สะสมทั้งประวัติที่โชว์ผู้ใช้ —
+  // ไม่งั้น resume() หลัง pause จะ apply ได้แค่เครื่องเดียวแล้วโดน pause ซ้ำ
+  // ทันทีเสมอ เพราะ failure rate เดิมคำนวณจาก failureCount สะสมทั้งหมดตั้งแต่
+  // ต้น rollout ไม่เคยรีเซ็ต (ไม่แก้ failureCount ที่โชว์ผู้ใช้เอง —ยังสะสม
+  // ตามจริงเหมือนเดิม)
+  activeWindowStartedAt DateTime?
   // Rollback (แก้ไข 2026-09-24, Incident & Rollback #28) — mirror
   // `POST /api/campaigns/{id}/rollback` ของ GPS_Config_Firmware_Center_Design.pdf
   // §15.1 แต่ implement เป็น "สร้าง CampaignRollout รอบใหม่ที่ payload เป็น
