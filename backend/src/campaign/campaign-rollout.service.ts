@@ -456,6 +456,44 @@ export class CampaignRolloutService {
     }
 
     const rollback = await this.prisma.$transaction(async (tx) => {
+      // ปิดรอบเดิมที่ยังค้าง 'active'/'paused' ก่อนสร้างรอบ rollback ใหม่
+      // (#238 review B รอบ 2 ข้อ 2) — เดิมไม่ cancel รอบเก่าเลย ทำให้: การ์ด
+      // "Rollout หยุดชั่วคราว (Auto Pause)" ยังนับรอบนี้ต่อ, Campaign Monitor
+      // โชว์ปุ่มแค่ของ `rollouts[0]` เลยบังรอบเก่าไว้, และกด Resume จากหน้า
+      // Rollout Detail ของรอบเก่าได้ จะเกิด rollout `active` 2 รอบพร้อมกันใน
+      // กลุ่มเดียว — `completed` ไม่ต้อง cancel เพราะจบแล้วจริง ไม่ค้างอะไร
+      // ใช้ updateMany + เช็ค status เดิม (atomic, mirror approve()/resume())
+      // กันแข่งกับ resume()/recordTargetResult() ที่อาจเปลี่ยนสถานะรอบเก่า
+      // พร้อมกันพอดี
+      if (badRollout.status === 'active' || badRollout.status === 'paused') {
+        const cancelled = await tx.campaignRollout.updateMany({
+          where: { id: rolloutId, status: badRollout.status },
+          data: { status: 'cancelled' },
+        });
+        if (cancelled.count === 0) {
+          throw new ConflictException(
+            `Rollout นี้ถูกเปลี่ยนสถานะไปแล้วระหว่างทำรายการ (ไม่ใช่ ${badRollout.status} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
+          );
+        }
+        // target ที่ยัง pending ของรอบเดิม = fail พร้อมเหตุผล (pattern เดียวกับ
+        // branch "still invalid" ใน autoApply* — ไม่ปล่อยค้าง pending ใต้
+        // rollout ที่ปิดแล้ว) · recordTargetResult() match เฉพาะ rollout
+        // active/paused ผลที่ Mobile ส่งมาทีหลังจึงไม่เขียนทับ
+        const failedTargets = await tx.campaignRolloutTarget.updateMany({
+          where: { rolloutId, status: 'pending' },
+          data: {
+            status: 'failed',
+            resultDetail: 'rollout cancelled by rollback',
+          },
+        });
+        if (failedTargets.count > 0) {
+          await tx.campaignRollout.update({
+            where: { id: rolloutId },
+            data: { failureCount: { increment: failedTargets.count } },
+          });
+        }
+      }
+
       const created = await tx.campaignRollout.create({
         data: {
           campaignId,

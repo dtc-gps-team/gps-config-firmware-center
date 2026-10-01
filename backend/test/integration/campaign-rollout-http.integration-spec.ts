@@ -644,6 +644,95 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         where: { rolloutId: body.id },
       });
       expect(newTargets.map((t) => t.deviceId)).toEqual([device.deviceId]);
+
+      // #238 review B รอบ 2 ข้อ 2 — รอบเดิมที่ active ต้องถูก cancel ไม่งั้น
+      // จะค้างเป็น 2 รอบ active พร้อมกัน + การ์ด "Rollout หยุดชั่วคราว" นับผิด
+      const reloadedBadRollout = await prisma.campaignRollout.findUniqueOrThrow(
+        { where: { id: badRollout.id } },
+      );
+      expect(reloadedBadRollout.status).toBe('cancelled');
+    });
+
+    it('รอบเดิม status paused (Auto Pause) -> cancel รอบเดิมด้วยเหมือนกันหลัง rollback สำเร็จ', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const config = await seedApprovedConfig();
+      const device = await seedInstalledDevice();
+      const campaign = await seedGroup(opUser.id, [device.deviceId]);
+      await seedCompletedRollout(campaign.id, opUser.id, config.id, 60_000);
+      const badRollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          configId: config.id,
+          status: 'paused',
+          createdBy: opUser.id,
+          targetCount: 1,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: {
+          rolloutId: badRollout.id,
+          deviceId: device.deviceId,
+          status: 'success',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(
+          `/api/v1/campaigns/${campaign.id}/rollouts/${badRollout.id}/rollback`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(201);
+
+      const reloadedBadRollout = await prisma.campaignRollout.findUniqueOrThrow(
+        { where: { id: badRollout.id } },
+      );
+      expect(reloadedBadRollout.status).toBe('cancelled');
+    });
+
+    it('รอบเดิม status completed -> ไม่แตะสถานะ (ไม่มีอะไรค้างให้ cancel)', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const config = await seedApprovedConfig();
+      const device = await seedInstalledDevice();
+      const campaign = await seedGroup(opUser.id, [device.deviceId]);
+      await seedCompletedRollout(campaign.id, opUser.id, config.id, 120_000);
+      const badRollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          configId: config.id,
+          status: 'completed',
+          createdBy: opUser.id,
+          targetCount: 1,
+          successCount: 1,
+          createdAt: new Date(Date.now() - 60_000),
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: {
+          rolloutId: badRollout.id,
+          deviceId: device.deviceId,
+          status: 'success',
+        },
+      });
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(
+          `/api/v1/campaigns/${campaign.id}/rollouts/${badRollout.id}/rollback`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(201);
+
+      const reloadedBadRollout = await prisma.campaignRollout.findUniqueOrThrow(
+        { where: { id: badRollout.id } },
+      );
+      expect(reloadedBadRollout.status).toBe('completed');
     });
 
     it('สถานะยังไม่เคยส่ง payload จริง (pending_approval) -> 409', async () => {

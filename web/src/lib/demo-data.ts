@@ -24,7 +24,6 @@ import {
   GitCompareIcon,
   HistoryIcon,
   RotateCcwIcon,
-  TriangleAlertIcon,
   Undo2Icon,
   WifiIcon,
   WifiOffIcon,
@@ -81,8 +80,13 @@ export const DEMO_DEPLOYMENT_OVERVIEW: DashboardMetric[] = [
 
 /** Risk Dashboard — ทั้งหมดรอ device-sync module (docs/14 proposal) ยังไม่มี
  * metric ไหนต่อจริงได้เลยตอนนี้ */
+/** "Rollout หยุดชั่วคราว (Auto Pause)" ย้ายออกจาก demo แล้ว — ต่อ API จริงแล้ว
+ * ใน `dashboard-summary.tsx` (`usePausedCampaignRollouts`, นับ "จำนวน Rollout
+ * ที่ paused" ข้ามทุกกลุ่ม — คนละ metric กับ "จำนวนเครื่องที่ Failure" ที่
+ * PDF §12.1 "Risk Dashboard: Failure สูง" ตั้งใจสื่อ จึงตั้งชื่อการ์ดใหม่ให้
+ * ตรงกับสิ่งที่วัดได้จริงแทน — #238 review comment ข้อ 6) ที่เหลือยังเป็น
+ * demo เพราะยังไม่มีกลไกตรวจ Reboot Loop/Offline/Firmware Suspended ในระบบนี้เลย */
 export const DEMO_RISK_DASHBOARD: DashboardMetric[] = [
-  { label: "Failure สูง", value: "6", icon: TriangleAlertIcon, tone: "danger" },
   { label: "Firmware Suspended", value: "2", icon: CpuIcon, tone: "danger" },
   { label: "Reboot Loop", value: "3", icon: RotateCcwIcon, tone: "danger" },
   { label: "Offline หลังอัปเดต", value: "5", icon: WifiOffIcon, tone: "danger" },

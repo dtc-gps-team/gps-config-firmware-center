@@ -7,6 +7,7 @@ import {
   ClockIcon,
   RocketIcon,
   SlidersHorizontalIcon,
+  TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ import {
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useCampaigns } from "@/hooks/use-campaigns";
+import { usePausedCampaignRollouts } from "@/hooks/use-paused-campaign-rollouts";
 import {
   DEMO_DEPLOYMENT_OVERVIEW,
   DEMO_DEVICE_OVERVIEW,
@@ -151,6 +153,7 @@ export function DashboardSummary() {
   const devices = useDevices();
   const configs = useConfigs();
   const campaigns = useCampaigns();
+  const pausedRollouts = usePausedCampaignRollouts();
 
   const deviceCount: number | null = devices.data ? devices.data.length : null;
   const modelCount: number | null = useMemo(
@@ -174,6 +177,12 @@ export function DashboardSummary() {
   // ให้นับแบบเดิมได้ จึงเหลือแค่จำนวนกลุ่มทั้งหมดไปก่อน
   const campaignCount: number | null = campaigns.data
     ? campaigns.data.length
+    : null;
+  // #238 review comment ข้อ 6 — นับจำนวน "Rollout ที่ paused" (นับเป็นกลุ่ม
+  // ไม่ใช่รายเครื่อง) ไม่ใช่ "จำนวนเครื่องที่ Failure" คนละ metric กับที่
+  // label เดิม ("Failure สูง") สื่อ — ดู label การ์ดด้านล่างที่แก้ตาม
+  const pausedRolloutCount: number | null = pausedRollouts.data
+    ? pausedRollouts.data.length
     : null;
 
   return (
@@ -240,6 +249,14 @@ export function DashboardSummary() {
 
       <DashboardSection title="ความเสี่ยง" description="Risk Dashboard">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <LiveSummaryCard
+            label="Rollout หยุดชั่วคราว (Auto Pause)"
+            href="/campaigns"
+            value={pausedRolloutCount}
+            error={pausedRollouts.error}
+            icon={TriangleAlertIcon}
+            tone="danger"
+          />
           {DEMO_RISK_DASHBOARD.map((card) => (
             <DemoSummaryCard
               key={card.label}

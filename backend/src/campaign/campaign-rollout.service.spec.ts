@@ -2041,6 +2041,100 @@ describe('CampaignRolloutService', () => {
         },
       });
     });
+
+    // #238 review B รอบ 2 ข้อ 2 — เดิม rollback() ไม่ cancel รอบเก่าที่ยัง
+    // active/paused เลย ทำให้ค้างเป็น 2 รอบ active พร้อมกัน + การ์ด "Rollout
+    // หยุดชั่วคราว" นับรอบเก่าไม่เลิก
+    it('รอบเดิม status active -> cancel รอบเดิมใน transaction เดียวกับสร้างรอบใหม่', async () => {
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: badRollout.id, status: 'active' },
+        data: { status: 'cancelled' },
+      });
+    });
+
+    it('รอบเดิม status paused -> cancel รอบเดิมด้วยเหมือนกัน', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'paused',
+      });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: badRollout.id, status: 'paused' },
+        data: { status: 'cancelled' },
+      });
+    });
+
+    it('cancel รอบเดิม -> target ที่ยัง pending ถูก fail พร้อมเหตุผลและบวก failureCount', async () => {
+      campaignRolloutTarget.updateMany.mockResolvedValue({ count: 3 });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+        where: { rolloutId: badRollout.id, status: 'pending' },
+        data: {
+          status: 'failed',
+          resultDetail: 'rollout cancelled by rollback',
+        },
+      });
+      expect(campaignRollout.update).toHaveBeenCalledWith({
+        where: { id: badRollout.id },
+        data: { failureCount: { increment: 3 } },
+      });
+    });
+
+    it('รอบเดิม completed -> ไม่ fail target', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'completed',
+      });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('หลัง rollback แล้ว resume() กับรอบเดิม (cancelled) -> ConflictException ไม่กลับมา active', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'cancelled',
+      });
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.resume(badRollout.id, operation)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: badRollout.id, status: 'paused' },
+        data: expect.objectContaining({
+          status: 'active',
+        }) as Partial<CampaignRollout>,
+      });
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
+    it('รอบเดิม status completed -> ไม่ต้อง cancel (จบแล้วจริง ไม่มีอะไรค้าง)', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        status: 'completed',
+      });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRollout.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('แข่งกับคำขออื่นที่เปลี่ยนสถานะรอบเดิมไปแล้ว (count:0) -> ConflictException ไม่สร้างรอบใหม่', async () => {
+      campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.rollback(campaignId, badRollout.id, {}, operation),
+      ).rejects.toThrow(ConflictException);
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('findAll / findOne / findTargets', () => {

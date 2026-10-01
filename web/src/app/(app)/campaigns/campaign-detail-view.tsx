@@ -21,6 +21,7 @@ import {
 import {
   CAMPAIGN_ROLLOUT_STATUS_TONE,
   StatusPill,
+  getRolloutStatusExplanation,
   statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
@@ -28,10 +29,12 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useCampaignRollouts } from "@/hooks/use-campaign-rollouts";
+import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets";
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
 import { canCreateCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 
 /**
  * รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — ต่อ `GET /campaigns/{id}` +
@@ -49,6 +52,16 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const { data, isLoading, error, refetch } = useCampaign(campaignId);
   const targetsQuery = useCampaignTargets(campaignId);
   const rolloutsQuery = useCampaignRollouts(campaignId);
+  // Rollout ล่าสุดของกลุ่ม (เรียง createdAt desc จาก backend อยู่แล้ว) — ใช้
+  // เช็ค Resume/Rollback (§12.2 PDF: "Campaign Monitor" มี Pause/Resume/
+  // Rollback ในตัว ไม่ต้องเปิดหน้า Rollout Detail แยกไปกดอีกที) —
+  // `CampaignRolloutIncidentPanel` เองคืน `null` ถ้าสถานะ/สิทธิ์ไม่เข้าเงื่อนไข
+  // จึงเรียกได้เสมอโดยไม่ต้องเช็คซ้ำที่นี่
+  const latestRollout = (rolloutsQuery.data ?? [])[0] ?? null;
+  const latestRolloutTargetsQuery = useCampaignRolloutTargets(
+    campaignId,
+    latestRollout?.id ?? null,
+  );
 
   if (isLoading && !data) {
     return <DetailSkeleton />;
@@ -93,6 +106,47 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           <p className="text-sm text-muted-foreground">{data.description}</p>
         )}
       </div>
+
+      {latestRollout && (
+        <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">
+              สถานะล่าสุด — {latestRollout.payloadType}
+            </p>
+            <StatusPill
+              tone={CAMPAIGN_ROLLOUT_STATUS_TONE[latestRollout.status] ?? "neutral"}
+            >
+              {statusLabel(latestRollout.status)}
+            </StatusPill>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {getRolloutStatusExplanation(latestRollout.status)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            สำเร็จ{" "}
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">
+              {latestRollout.successCount}
+            </span>{" "}
+            / ล้มเหลว{" "}
+            <span className="font-medium text-rose-700 dark:text-rose-400">
+              {latestRollout.failureCount}
+            </span>{" "}
+            / ทั้งหมด {latestRollout.targetCount}
+          </p>
+
+          <CampaignRolloutIncidentPanel
+            campaignId={campaignId}
+            rollout={latestRollout}
+            targets={latestRolloutTargetsQuery.data ?? []}
+            targetsLoading={
+              latestRolloutTargetsQuery.isLoading &&
+              !latestRolloutTargetsQuery.data
+            }
+            targetsError={latestRolloutTargetsQuery.error}
+            onResumed={() => void rolloutsQuery.refetch()}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -185,7 +239,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>สถานะ</TableHead>
                   <TableHead>Payload</TableHead>
-                  <TableHead className="text-right">สำเร็จ / ล้มเหลว</TableHead>
+                  <TableHead className="text-right">
+                    สำเร็จ / ล้มเหลว / ทั้งหมด
+                  </TableHead>
                   <TableHead className="text-right">สร้างเมื่อ</TableHead>
                 </TableRow>
               </TableHeader>
@@ -211,9 +267,18 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                       </StatusPill>
                     </TableCell>
                     <TableCell>{rollout.payloadType}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {rollout.successCount} / {rollout.failureCount} /{" "}
-                      {rollout.targetCount}
+                    <TableCell className="text-right tabular-nums">
+                      <span className="text-emerald-700 dark:text-emerald-400">
+                        {rollout.successCount}
+                      </span>
+                      <span className="text-muted-foreground"> / </span>
+                      <span className="text-rose-700 dark:text-rose-400">
+                        {rollout.failureCount}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        / {rollout.targetCount}
+                      </span>
                     </TableCell>
                     <TableCell
                       className="text-right text-muted-foreground"
