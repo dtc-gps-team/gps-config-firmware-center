@@ -1,21 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'incident_repository.dart';
 import 'incident_ui.dart';
 
-String _formatDate(DateTime dt) {
-  final d = dt.toLocal();
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
-}
-
-/// "Incident" — read-only list from `GET /incidents` (every role may read it).
-/// Opened from the Home shortcut. **No create / edit** — field staff have no
+/// "รายการ Incident" — read-only list from `GET /incidents` (every role may read
+/// it). Tapping a card opens [IncidentDetailPage]. Opened from the Home
+/// shortcut. **No create / edit** — field staff have no
 /// Create permission (RBAC_Matrix.md "Incident & Rollback"); the Home label is
 /// "ดู Incident" for the same reason.
 class IncidentListPage extends ConsumerWidget {
@@ -31,7 +28,7 @@ class IncidentListPage extends ConsumerWidget {
         backgroundColor: AppTheme.navy,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Incident'),
+        title: const Text('รายการ Incident'),
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(incidentListProvider.future),
@@ -69,41 +66,65 @@ class _IncidentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
+    final description = incident.description;
+    return Material(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.fieldBorder, width: 1),
+        side: const BorderSide(color: AppTheme.fieldBorder, width: 1),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            incident.title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push(AppRoutes.incidentDetail(incident.id)),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  incident.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                if (description != null && description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IncidentSeverityPill(severity: incident.severity),
+                    IncidentStatusPill(status: incident.status),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  formatIncidentDate(incident.createdAt),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              IncidentSeverityPill(severity: incident.severity),
-              IncidentStatusPill(status: incident.status),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _formatDate(incident.createdAt),
-            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-          ),
-        ],
+        ),
       ),
     );
   }

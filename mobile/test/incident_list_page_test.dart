@@ -36,6 +36,10 @@ class _FakeIncidentRepository implements IncidentRepository {
     if (listError != null) throw listError!;
     return _incidents;
   }
+
+  @override
+  Future<Incident> getIncident(String id) async =>
+      _incidents.firstWhere((i) => i.id == id);
 }
 
 Future<void> _pump(
