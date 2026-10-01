@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CampaignRolloutTargetStatus,
   Config,
   Device,
   DeviceConfigOverride,
@@ -92,6 +93,36 @@ export interface ActingUser {
   role: string;
 }
 
+/** ค่าที่ `GET /devices/{deviceId}/status` คืนให้ต่อ Config/Firmware แยกกัน
+ * (issue #245) — `unknown` = ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย (ไม่ใช่
+ * error เป็นค่าปกติที่ต้องรองรับ ตามที่ตอบ B ไว้) */
+export type DevicePayloadStatus =
+  'up_to_date' | 'pending' | 'failed' | 'unknown';
+
+export interface DeviceStatusResult {
+  deviceId: string;
+  configStatus: DevicePayloadStatus;
+  firmwareStatus: DevicePayloadStatus;
+  /** placeholder เสมอเป็น `null` ตอนนี้ — รอผลคำถาม online/offline/check-in
+   * แยกต่างหากกับ B (ดู comment เหนือ `getStatus()`) */
+  lastCheckInMessage: string | null;
+}
+
+/** rollout สถานะเหล่านี้ไม่เคยส่ง payload ไปอุปกรณ์จริง (ถูกปฏิเสธ/ยกเลิกก่อน
+ * ได้ apply) — `CampaignRolloutTarget` ของรอบพวกนี้ไม่เคยถูกอัปเดตเลยตั้งแต่
+ * สร้าง (ค้าง `pending` ตลอดไป เพราะ `reject()`/cancel ไม่แตะ target) ต้อง
+ * กรองออกตอนดู "สถานะปัจจุบัน" ของอุปกรณ์ ไม่งั้นจะเห็น pending ผิดๆ */
+const STATUS_IGNORED_ROLLOUT_STATUSES = ['rejected', 'cancelled'] as const;
+
+function toDevicePayloadStatus(
+  targetStatus: CampaignRolloutTargetStatus | undefined,
+): DevicePayloadStatus {
+  if (!targetStatus) return 'unknown';
+  if (targetStatus === 'success') return 'up_to_date';
+  if (targetStatus === 'failed') return 'failed';
+  return 'pending';
+}
+
 @Injectable()
 export class DeviceService {
   private readonly logger = new Logger(DeviceService.name);
@@ -164,6 +195,59 @@ export class DeviceService {
       throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
     }
     return device;
+  }
+
+  /**
+   * `GET /devices/{deviceId}/status` (issue #245) — เวอร์ชันย่อ มีแค่
+   * `configStatus`/`firmwareStatus` คำนวณจาก `CampaignRolloutTarget` ล่าสุด
+   * ของอุปกรณ์นี้แยกตาม `payloadType` — ไม่ต้องมี schema/migration ใหม่เลย
+   *
+   * **ไม่มี online/offline หรือ lastCheckIn เวลาจริง** — ระบบไม่มี concept
+   * "อุปกรณ์ check-in บอกว่ายังออนไลน์อยู่" เลยสักจุด (ไม่ใช่แค่ยังไม่
+   * implement แต่ยังไม่เคยถูกออกแบบมาก่อน แม้แต่ #157 ครบ 3 PR ก็ไม่มี เพราะ
+   * pull config/firmware + report ผล apply คนละเรื่องกับ "ping บอกว่ายังอยู่")
+   * — เปิดเป็นคำถามแยกต่างหากกับ B ไว้แล้ว ไม่บล็อกเวอร์ชันย่อนี้
+   * `lastCheckInMessage` จึงเป็น `null` เสมอตอนนี้ (placeholder รอผลคำถามนั้น)
+   *
+   * เลือก `CampaignRolloutTarget` ที่ `updatedAt` ล่าสุดของ deviceId นี้ ข้าม
+   * เฉพาะ rollout ที่ `payloadType` ตรงกัน — กรอง rollout สถานะ `rejected`/
+   * `cancelled` ออกเสมอ (targets ของรอบที่ไม่เคยส่ง payload จริง ไม่ควรนับเป็น
+   * สถานะปัจจุบันของอุปกรณ์ — `reject()`/ไม่มีการอัปเดต target เลยตอน cancel
+   * เก่า ปล่อย row ค้างเป็น `pending` ตลอดไป ถ้าไม่กรองจะเห็นเป็น "pending"
+   * ผิดๆ ทั้งที่ไม่มีอะไรถูกส่งไปจริง)
+   */
+  async getStatus(deviceId: string): Promise<DeviceStatusResult> {
+    const device = await this.findByDeviceId(deviceId); // 404 ถ้าไม่พบ
+
+    const [configTarget, firmwareTarget] = await Promise.all([
+      this.prisma.campaignRolloutTarget.findFirst({
+        where: {
+          deviceId: device.deviceId,
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.campaignRolloutTarget.findFirst({
+        where: {
+          deviceId: device.deviceId,
+          rollout: {
+            payloadType: 'Firmware',
+            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      deviceId: device.deviceId,
+      configStatus: toDevicePayloadStatus(configTarget?.status),
+      firmwareStatus: toDevicePayloadStatus(firmwareTarget?.status),
+      lastCheckInMessage: null,
+    };
   }
 
   /**
