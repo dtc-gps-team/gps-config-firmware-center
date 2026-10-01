@@ -491,6 +491,87 @@ describe('DeviceService', () => {
     });
   });
 
+  describe('rotateKey (issue #157 PR 1 — เพิ่มระหว่างทำ)', () => {
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(createdDevice);
+      device.update.mockResolvedValue(createdDevice);
+    });
+
+    it('สำเร็จ -> update apiKeyHash ใหม่ คืน apiKey จริงไม่มี apiKeyHash', async () => {
+      const result = await service.rotateKey(createdDevice.deviceId, admin);
+
+      expect(device.findUnique).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+      });
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+        data: { apiKeyHash: expect.any(String) as string },
+      });
+      expect(typeof result.apiKey).toBe('string');
+      expect(result.apiKey.length).toBeGreaterThan(0);
+      expect(result).not.toHaveProperty('apiKeyHash');
+    });
+
+    it('apiKey ที่คืนให้ client กับ apiKeyHash ใหม่ที่เก็บ DB ต้องเป็นคู่ bcrypt ที่ compare ผ่านจริง', async () => {
+      let capturedHash = '';
+      device.update.mockImplementationOnce(
+        (args: { data: { apiKeyHash: string } }) => {
+          capturedHash = args.data.apiKeyHash;
+          return Promise.resolve(createdDevice);
+        },
+      );
+
+      const result = await service.rotateKey(createdDevice.deviceId, admin);
+
+      await expect(bcrypt.compare(result.apiKey, capturedHash)).resolves.toBe(
+        true,
+      );
+    });
+
+    it('เขียน AuditLog action rotate-key พร้อม deviceId เท่านั้น', async () => {
+      await service.rotateKey(createdDevice.deviceId, admin);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: admin.id,
+          auditModule: 'device',
+          action: 'rotate-key',
+          metadata: { deviceId: createdDevice.deviceId },
+        },
+      });
+    });
+
+    it('ไม่พบ deviceId -> NotFoundException ไม่เรียก device.update', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.rotateKey('NOPE', admin)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(device.update).not.toHaveBeenCalled();
+    });
+
+    it('แข่งกับการลบเครื่องพอดี (Prisma P2025) -> NotFoundException', async () => {
+      device.update.mockRejectedValue(
+        new PrismaClientKnownRequestError('Record not found', {
+          code: 'P2025',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('error อื่นที่ไม่ใช่ P2025 ตอน update -> โยนต่อตรงๆ', async () => {
+      device.update.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow('db down');
+    });
+  });
+
   describe('testConnection', () => {
     it('status installed -> เรียก tester ด้วย deviceId/model/protocol จาก DB', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
