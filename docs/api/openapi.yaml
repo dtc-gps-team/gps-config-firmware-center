@@ -1281,9 +1281,15 @@ paths:
     get:
       tags: [device-status]
       operationId: getDeviceStatus
-      summary: >
-        ดูสถานะกล่อง (Config + Firmware) — ครอบคลุมทั้งสถานะ Config
-        และสถานะอัปเดตเวอร์ชัน Firmware ของตัวกล่อง (v3.7)
+      summary: ดูสถานะ Config/Firmware ของอุปกรณ์ — เวอร์ชันย่อ (v3.39, issue #245)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (resource `devices` action `Read`
+        เดียวกับ Device Detail) — `configStatus`/`firmwareStatus` คำนวณจาก
+        `CampaignRolloutTarget` ล่าสุดของอุปกรณ์นี้แยกตาม payload type
+        (`unknown` = ไม่เคยอยู่ใน rollout ไหนเลย เป็นค่าปกติ ไม่ใช่ error) —
+        **ยังไม่มี online/offline หรือเวลา check-in จริง** (ระบบยังไม่มี
+        concept ให้อุปกรณ์ check-in เลย — เปิดเป็นคำถามแยกต่างหากอยู่)
+        `lastCheckInMessage` จึงเป็น `null` เสมอตอนนี้
       parameters:
         - in: path
           name: deviceId
@@ -3955,16 +3961,32 @@ components:
 
     DeviceStatus:
       type: object
+      description: >-
+        เวอร์ชันย่อ (v3.39, issue #245) — มีแค่ configStatus/firmwareStatus
+        ยังไม่มี online/offline หรือเวลา check-in จริง (ดู description ของ
+        `getDeviceStatus`)
+      required: [deviceId, configStatus, firmwareStatus, lastCheckInMessage]
       properties:
         deviceId:
           type: string
+          description: "Device.deviceId (เลขเครื่องจริง)"
         configStatus:
           type: string
+          enum: [up_to_date, pending, failed, unknown]
+          description: >-
+            คำนวณจาก CampaignRolloutTarget ล่าสุดของอุปกรณ์นี้ที่ payloadType
+            เป็น Config — `unknown` = ไม่เคยอยู่ใน rollout ไหนเลย (ปกติ)
         firmwareStatus:
           type: string
+          enum: [up_to_date, pending, failed, unknown]
+          description: เหมือน configStatus แต่ของ payloadType Firmware
         lastCheckInMessage:
           type: string
-          example: "จะได้รับการอัปเดตในการเปิดเครื่องครั้งถัดไปของกล่อง"
+          nullable: true
+          description: >-
+            placeholder — เป็น null เสมอตอนนี้ รอผลคำถาม online/offline/
+            check-in ที่เปิดแยกไว้ต่างหาก (ยังไม่มี concept นี้ในระบบเลย)
+          example: null
 
     Notification:
       type: object
