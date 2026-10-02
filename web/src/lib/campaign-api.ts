@@ -18,6 +18,7 @@ export type CampaignPayloadType = (typeof CAMPAIGN_PAYLOAD_TYPES)[number];
 export const CAMPAIGN_ROLLOUT_STATUSES = [
   "pending_approval",
   "active",
+  "paused",
   "rejected",
   "completed",
   "cancelled",
@@ -27,9 +28,19 @@ export type CampaignRolloutStatus = (typeof CAMPAIGN_ROLLOUT_STATUSES)[number];
 
 /** ค่ายังไม่จบของ Rollout หนึ่งรอบ — กลุ่มที่มี Rollout สถานะเหล่านี้ค้างอยู่
  * สร้างรอบใหม่ไม่ได้ (409) — mirror `OPEN_CAMPAIGN_ROLLOUT_STATUSES` ฝั่ง
- * backend */
+ * backend · รวม `paused` ด้วย (Incident & Rollback #28 — Auto Pause) */
 export const OPEN_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
-  ["pending_approval", "active"];
+  ["pending_approval", "active", "paused"];
+
+/** สถานะที่ `resumeCampaignRollout` ทำได้ — mirror
+ * `RESUMABLE_CAMPAIGN_ROLLOUT_STATUS` ฝั่ง backend */
+export const RESUMABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
+  "paused";
+
+/** สถานะที่ `rollbackCampaignRollout` ทำได้ — mirror
+ * `ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES` ฝั่ง backend */
+export const ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
+  ["active", "paused", "completed"];
 
 export const CAMPAIGN_ROLLOUT_TARGET_STATUSES = [
   "pending",
@@ -90,6 +101,13 @@ export type CampaignRollout = {
    * อนุมัติ (`rejectCampaignRollout` ไม่ตั้งค่านี้ คงเป็น null) */
   approvedBy: string | null;
   approvedAt: string | null;
+  /** true = รอบนี้เป็น Rollback ที่สร้างจาก `rollbackCampaignRollout` —
+   * payload คัดลอกมาจากรอบก่อนหน้าที่ `completed` ล่าสุดของ payloadType
+   * เดียวกันโดยระบบเอง (Incident & Rollback #28) */
+  isRollback: boolean;
+  /** id ของ Rollout รอบที่มีปัญหาซึ่งรอบนี้ถูกสร้างมาเพื่อย้อนกลับ — null ถ้า
+   * `isRollback` เป็น false */
+  rollbackOfId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -245,5 +263,48 @@ export function listCampaignRolloutTargets(
   return apiJson<CampaignRolloutTarget[]>(
     `/campaigns/${campaignId}/rollouts/${rolloutId}/targets`,
     { token },
+  );
+}
+
+/**
+ * `POST /campaigns/{id}/rollouts/{rolloutId}/resume` — Operation เท่านั้น
+ * (resource เดียวกับ approve/reject) · `paused` → `active` เท่านั้น (409 ถ้า
+ * ไม่ใช่) **ไม่เช็ค Separation of Duty** ต่างจาก approve/reject โดยตั้งใจ —
+ * ผู้สร้าง Rollout เองก็ resume ได้ (Incident & Rollback #28 — Auto Pause)
+ */
+export function resumeCampaignRollout(
+  token: string,
+  campaignId: string,
+  rolloutId: string,
+): Promise<CampaignRollout> {
+  return apiJson<CampaignRollout>(
+    `/campaigns/${campaignId}/rollouts/${rolloutId}/resume`,
+    { method: "POST", token },
+  );
+}
+
+export type CreateCampaignRollbackInput = {
+  /** `Device.deviceId` ที่ต้องการเอาออกจากรอบ rollback นี้ — ทุกตัวต้องเป็น
+   * เครื่องที่ได้รับ payload ของรอบที่มีปัญหาสำเร็จจริงแล้ว ไม่งั้น 400 —
+   * ไม่ส่งมา = rollback ทุกเครื่องที่เคยได้รับสำเร็จ */
+  excludeDeviceIds?: string[];
+};
+
+/**
+ * `POST /campaigns/{id}/rollouts/{rolloutId}/rollback` — Operation เท่านั้น
+ * (resource `campaign` action `Create` เดียวกับ `createCampaignRollout` —
+ * เป็นการสร้าง Rollout ใหม่ในทางปฏิบัติ) · **คืน Rollout ใหม่ ไม่ใช่ตัวเดิม**
+ * (`isRollback: true`, `rollbackOfId` ชี้กลับไปรอบที่มีปัญหา) ต้องผ่าน
+ * approve อีกครั้งตามปกติก่อนเริ่มทำงานจริง (Incident & Rollback #28)
+ */
+export function rollbackCampaignRollout(
+  token: string,
+  campaignId: string,
+  rolloutId: string,
+  input: CreateCampaignRollbackInput,
+): Promise<CampaignRollout> {
+  return apiJson<CampaignRollout>(
+    `/campaigns/${campaignId}/rollouts/${rolloutId}/rollback`,
+    { method: "POST", token, body: JSON.stringify(input) },
   );
 }

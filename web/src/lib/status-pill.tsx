@@ -177,9 +177,9 @@ export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
 export function getRolloutStatusExplanation(status: string): string {
   switch (status) {
     case "pending_approval":
-      return "รอ Operation อีกคนอนุมัติก่อน ถึงจะเริ่มให้ช่างไปทำที่เครื่องได้";
+      return "รอ Operation อีกคนอนุมัติก่อน";
     case "active":
-      return "อนุมัติแล้ว — รอช่างหน้างาน (ST/OT) ไปกดใส่ Config หรือยืนยันติดตั้ง Firmware ทีละเครื่องผ่าน Mobile";
+      return "อนุมัติแล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติทันที (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
     case "paused":
       return "หยุดอัตโนมัติ (Auto Pause) — Failure Rate เกิน 5% ระหว่างรอบ ต้องกด Resume ถึงจะไปต่อได้";
     case "rejected":

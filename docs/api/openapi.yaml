@@ -2426,7 +2426,11 @@ paths:
         เลยไม่ต้องรอช่างยืนยันที่เครื่องเหมือน Config Rollback (ยังต้องผ่าน
         apply-config ปกติทุกประการ) · **ไม่เช็ค "มีรอบเปิดอยู่ไหม"** เหมือน
         createCampaignRollout เพราะ rollback คือวิธีแก้ปัญหารอบที่ค้างอยู่นี้
-        เอง ไม่ใช่การเริ่มงานใหม่
+        เอง ไม่ใช่การเริ่มงานใหม่ · **ปิดรอบเดิมให้ด้วย**: ถ้ารอบที่มีปัญหายัง
+        `active`/`paused` จะถูกเปลี่ยนเป็น `cancelled` ในธุรกรรมเดียวกับที่สร้าง
+        รอบ rollback และ target ที่ยัง `pending` ของรอบนั้นเป็น `failed` (เหตุผล
+        "rollout cancelled by rollback") — resume รอบเดิมหลังนี้ได้ 409 (ไม่ใช่
+        `paused` แล้ว) · รอบที่ `completed` ไม่ถูกแตะ
       parameters:
         - in: path
           name: id
