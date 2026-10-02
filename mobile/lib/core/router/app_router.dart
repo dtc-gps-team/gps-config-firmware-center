@@ -10,6 +10,7 @@ import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/device_search/device_detail_page.dart';
 import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/incident/incident_detail_page.dart';
 import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
@@ -36,6 +37,10 @@ class AppRoutes {
 
   /// Incident list (read-only) — `/incidents`.
   static const incidents = '/incidents';
+
+  /// Incident detail — `/incidents/:id`. Use [incidentDetail] to build a path.
+  static const incidentDetailPattern = '/incidents/:id';
+  static String incidentDetail(String id) => '/incidents/$id';
 
   /// Device Search — `/devices`.
   static const deviceSearch = '/devices';
@@ -125,6 +130,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.incidents,
         builder: (context, state) => const IncidentListPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.incidentDetailPattern,
+        builder: (context, state) =>
+            IncidentDetailPage(incidentId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: AppRoutes.deviceSearch,

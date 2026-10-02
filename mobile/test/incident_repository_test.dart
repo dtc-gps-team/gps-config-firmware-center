@@ -12,6 +12,9 @@ class _RecordingIncidentRepository implements IncidentRepository {
     listCalls++;
     return const [];
   }
+
+  @override
+  Future<Incident> getIncident(String id) => throw UnimplementedError();
 }
 
 void main() {
