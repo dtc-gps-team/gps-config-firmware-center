@@ -201,6 +201,16 @@ class ApiClient {
     );
   }
 
+  /// `GET /devices/{deviceId}/status` — สถานะ Config/Firmware ของอุปกรณ์
+  /// (เวอร์ชันย่อ, issue #245 / PR #247). Every logged-in role may call it;
+  /// 404 when the device is not found.
+  Future<DeviceStatus> getDeviceStatus(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/devices/$deviceId/status'),
+      DeviceStatus.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/config` — Config ปัจจุบันของอุปกรณ์ (Config
   /// Override Phase 2, issue #211). 404 ถ้าอุปกรณ์ไม่มี Task สถานะ `completed`
   /// ที่ผูก `configId` ไว้เลย (ยังไม่เคย confirm install).

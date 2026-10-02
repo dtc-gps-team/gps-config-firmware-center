@@ -728,6 +728,44 @@ void main() {
     });
   });
 
+  group('device status endpoint', () {
+    test('getDeviceStatus -> GET /devices/{deviceId}/status', () async {
+      final (:client, :adapter) = _clientReturning({
+        'deviceId': 'DEV-0117',
+        'configStatus': 'up_to_date',
+        'firmwareStatus': 'failed',
+        'lastCheckInMessage': null,
+      });
+
+      final status = await client.getDeviceStatus('DEV-0117');
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/devices/DEV-0117/status');
+      expect(status.deviceId, 'DEV-0117');
+      expect(status.configStatus, DevicePayloadStatus.upToDate);
+      expect(status.firmwareStatus, DevicePayloadStatus.failed);
+      expect(status.lastCheckInMessage, isNull);
+    });
+
+    test('getDeviceStatus -> 404 maps to ApiException', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {'message': 'ไม่พบ Device นี้'}),
+        ),
+      );
+
+      await expectLater(
+        client.getDeviceStatus('missing'),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having((e) => e.message, 'message', 'ไม่พบ Device นี้'),
+        ),
+      );
+    });
+  });
+
   group('customer endpoints', () {
     test('listCustomers -> GET /customers, maps the JSON array', () async {
       final (:client, :adapter) = _clientReturning([
