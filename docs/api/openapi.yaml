@@ -1112,6 +1112,47 @@ paths:
           description: approvalStatus ของ Firmware ปัจจุบันไม่ใช่ pending_review จึงปฏิเสธไม่ได้
 
   /devices:
+    post:
+      tags: [device]
+      operationId: registerDevice
+      summary: ลงทะเบียนอุปกรณ์ใหม่เข้าระบบ (v3.38, issue #157 PR 1)
+      description: >-
+        **endpoint ฝั่ง staff** (RBAC_Matrix.md §4.1 — resource ใหม่
+        `device-registration` action `Create`, Admin/SuperAdmin เท่านั้น)
+        **ไม่ใช่ endpoint ที่อุปกรณ์เรียกเอง** — อุปกรณ์ยังไม่มี API key จนกว่า
+        การลงทะเบียนนี้จะสำเร็จ (endpoint ที่อุปกรณ์เรียกเองด้วย key นี้ผ่าน
+        guard แยกมาใน PR ถัดไป ดู docs/14_Device_Sync_Proposal.md) · รับ
+        `modelId` ไม่รับ `deviceModel` string ตรงๆ — server resolve
+        `deviceModel` เองจาก `DeviceModel.name` เสมอ (issue #209) · `protocol`
+        ต้องอยู่ใน `DeviceModel.supportedProtocols` ของรุ่นนั้น · `apiKey` ใน
+        response เป็นค่าจริง (ไม่ hash) โชว์ได้**ครั้งเดียว**ตอนนี้เท่านั้น —
+        ไม่มีทาง GET กลับมาดูซ้ำได้อีก (เก็บเฉพาะ hash ไว้ฝั่ง backend)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceRequest"
+      responses:
+        "201":
+          description: ลงทะเบียนสำเร็จ — เก็บ apiKey ที่ได้รับไว้ให้ดี ดูซ้ำไม่ได้แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterDeviceResponse"
+        "400":
+          description: >-
+            field บังคับขาด/ผิดรูปแบบ หรือ protocol ที่ระบุไม่อยู่ใน
+            supportedProtocols ของ modelId นั้น
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ลงทะเบียนอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ DeviceModel (modelId) นี้ในทะเบียน
+        "409":
+          description: มี Device deviceId นี้อยู่แล้วในระบบ
+
     get:
       tags: [device]
       operationId: listDevices
@@ -3722,6 +3763,53 @@ components:
           allOf:
             - $ref: "#/components/schemas/DeviceConnectionTestResult"
           description: สัญญาณของกล่องเครื่องนั้น (ผลจาก Device Connection Tester)
+
+    RegisterDeviceRequest:
+      type: object
+      description: Request body สำหรับ registerDevice (issue #157 PR 1)
+      required: [deviceId, simNumber, modelId, protocol]
+      properties:
+        deviceId:
+          type: string
+          maxLength: 50
+          description: เลขเครื่องจริงที่จะลงทะเบียน (unique ทั้งระบบ)
+          example: DEV-0099
+        simNumber:
+          type: string
+          maxLength: 50
+        modelId:
+          type: string
+          format: uuid
+          description: >-
+            id ของ DeviceModel ที่ลงทะเบียนไว้แล้ว (ดู GET /device-models) —
+            `deviceModel` (string) ของ Device ที่สร้างจะ resolve จาก
+            `model.name` เสมอ ไม่รับแยกจาก client
+        protocol:
+          type: string
+          maxLength: 50
+          description: ต้องอยู่ใน DeviceModel.supportedProtocols ของ modelId ที่ระบุ
+          example: TCP
+        hardwareRevisionCode:
+          type: string
+          maxLength: 50
+          nullable: true
+        customerId:
+          type: string
+          format: uuid
+          nullable: true
+
+    RegisterDeviceResponse:
+      allOf:
+        - $ref: "#/components/schemas/Device"
+        - type: object
+          required: [apiKey]
+          properties:
+            apiKey:
+              type: string
+              description: >-
+                API key จริง (ไม่ hash) — โชว์ได้ครั้งเดียวตอนลงทะเบียนสำเร็จ
+                เท่านั้น backend เก็บแค่ bcrypt hash ไว้ ไม่มีทาง GET
+                กลับมาดูค่านี้ซ้ำได้อีก
 
     Device:
       type: object
