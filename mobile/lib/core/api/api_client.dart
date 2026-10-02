@@ -143,6 +143,15 @@ class ApiClient {
     );
   }
 
+  /// `GET /incidents/{id}` — read-only, every logged-in role (RBAC "R").
+  /// 404 if the incident doesn't exist.
+  Future<Incident> getIncident(String id) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/incidents/$id'),
+      Incident.fromJson,
+    );
+  }
+
   /// `GET /notifications` — always scoped to the caller by the backend (every
   /// role). Pass `unread: true` for `?unread=true`. **Lenient** on purpose
   /// (see [_wrapListLenient]) — notifications are best-effort/non-critical,

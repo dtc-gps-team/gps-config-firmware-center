@@ -21,12 +21,14 @@ import { ApplyConfigDto } from './dto/apply-config.dto';
 import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
 import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
+import { RegisterDeviceDto } from './dto/register-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import type {
   ActingUser,
   ConfigWithDeviceOverride,
   ConfirmFirmwareInstallResult,
   DeviceWithCustomer,
+  RegisterDeviceResult,
 } from './device.service';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
@@ -39,6 +41,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 }
 
 // Device module:
+//   POST /devices                 — ลงทะเบียนอุปกรณ์ใหม่ (issue #157 PR 1) ·
+//                                 Admin/SuperAdmin เท่านั้น (staff ลงทะเบียน
+//                                 ไม่ใช่อุปกรณ์เรียกเอง — endpoint ที่อุปกรณ์
+//                                 เรียกเองผ่าน DeviceApiKeyGuard มาใน PR 2/3)
 //   GET  /devices                 — Device Search (list + filter)  · ทุก Role
 //   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
@@ -65,6 +71,18 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 @Controller('devices')
 export class DeviceController {
   constructor(private readonly deviceService: DeviceService) {}
+
+  // issue #157 PR 1 — ลงทะเบียนอุปกรณ์ใหม่ resource `device-registration`
+  // action Create · grant ให้ Admin เท่านั้น (SuperAdmin inherit อัตโนมัติผ่าน
+  // loop ใน prisma/seed.ts) — mirror ขอบเขตเดียวกับ `device-model` Create/Update
+  @Post()
+  @RequirePermission('device-registration', ActionType.Create)
+  register(
+    @Body() dto: RegisterDeviceDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<RegisterDeviceResult> {
+    return this.deviceService.register(dto, toActor(req));
+  }
 
   // Device Search / Device Detail (Sprint 2 #11) — resource `devices` action
   // Read · RBAC_Matrix.md §2 แถว "Device Search / Device Detail" = R ทุก Role

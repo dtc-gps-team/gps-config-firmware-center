@@ -402,6 +402,13 @@ async function main() {
     // (เปิดกว้างให้ทุก role ที่ login แล้วอ่านได้ mirror `GET /users`)
     grant('Admin', 'device-model', 'Create'),
     grant('Admin', 'device-model', 'Update'),
+
+    // ---- device-registration (issue #157 PR 1) ----
+    // ลงทะเบียนอุปกรณ์ใหม่ (ออก API key) เป็นงาน fleet management เดียวกับ
+    // device-model registry ด้านบน — Admin/SuperAdmin เท่านั้น ไม่ใช่
+    // ConfigEngineer/FirmwareEngineer/Operation/ST/OT (คนละหน้าที่กับงาน
+    // per-device ปกติที่ role พวกนี้ทำหลังอุปกรณ์ลงทะเบียนแล้ว)
+    grant('Admin', 'device-registration', 'Create'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----

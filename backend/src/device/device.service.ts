@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -13,13 +14,17 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'node:crypto';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
+import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
+import { RegisterDeviceDto } from './dto/register-device.dto';
 
 /** Device + ลูกค้าแบบย่อ (ถ้าผูกไว้) — docs/12_CustomerScope_Proposal.md เฟส B
  * (PR #127) · ใช้ `CustomerSummary` เดียวกับ `GET /customers` (id +
@@ -92,6 +97,16 @@ export interface ActingUser {
   role: string;
 }
 
+/** ผลลัพธ์ของ `register()` (issue #157 PR 1) — `Device` ปกติ **ไม่มี**
+ * `apiKeyHash` (ไม่มีทางหลุดออกมาอยู่แล้วเพราะ `PrismaService` ตั้ง
+ * `omit` default ไว้ — แต่ประกาศ type แยกให้ชัดเจนอีกชั้น mirror
+ * `UserSummary`/`ManagedUser` ที่ user.service.ts ตัด `passwordHash`) บวก
+ * `apiKey` ค่าจริง (ไม่ hash) ที่โชว์ได้**ครั้งเดียว**ตอนลงทะเบียนเท่านั้น —
+ * ไม่ persist ที่ไหนอีก ไม่มีทาง GET กลับมาดูซ้ำได้ */
+export type RegisterDeviceResult = Omit<Device, 'apiKeyHash'> & {
+  apiKey: string;
+};
+
 @Injectable()
 export class DeviceService {
   private readonly logger = new Logger(DeviceService.name);
@@ -107,6 +122,7 @@ export class DeviceService {
     private readonly campaignRolloutService: CampaignRolloutService,
     private readonly configDefinitionService: ConfigDefinitionService,
     private readonly notificationService: NotificationService,
+    private readonly deviceModelService: DeviceModelService,
   ) {}
 
   /**
@@ -164,6 +180,91 @@ export class DeviceService {
       throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
     }
     return device;
+  }
+
+  /**
+   * `POST /devices` (issue #157 PR 1, docs/14_Device_Sync_Proposal.md §3.2) —
+   * ลงทะเบียนอุปกรณ์ใหม่เข้าระบบ **endpoint ฝั่ง staff** (Admin/SuperAdmin
+   * เท่านั้น ดู `device.controller.ts`) ไม่ใช่ endpoint ที่อุปกรณ์เรียกเอง —
+   * อุปกรณ์ยังไม่มี API key จนกว่าการลงทะเบียนนี้จะสำเร็จ (ใช้ key นี้กับ
+   * `DeviceApiKeyGuard` บน endpoint pull ของ PR 2/3 แทน)
+   *
+   * `deviceModel` คำนวณเองจาก `model.name` เสมอ ไม่รับจาก client ตรงๆ (issue
+   * #209 ข้อ 5) · `protocol` ต้องอยู่ใน `model.supportedProtocols` (mirror
+   * `ConfigService.validateDeviceModelProtocol` — issue #209 ข้อ 4)
+   *
+   * API key: random 32 byte ผ่าน `crypto.randomBytes` (ไม่ใช่ UUID — ไม่มี
+   * ทางเดาได้จาก timestamp) hash ด้วย bcrypt เหมือน `User.passwordHash` คืน
+   * ค่าจริง (`apiKey`) ใน response **ครั้งเดียว** เท่านั้น ไม่ log/persist ที่
+   * ไหนอีกเลย (ดู `RegisterDeviceResult`)
+   */
+  async register(
+    dto: RegisterDeviceDto,
+    actor: ActingUser,
+  ): Promise<RegisterDeviceResult> {
+    const model = await this.deviceModelService.findOne(dto.modelId); // 404 ถ้าไม่พบ
+
+    if (!model.supportedProtocols.includes(dto.protocol)) {
+      throw new BadRequestException(
+        `รุ่น "${model.name}" ไม่รองรับ protocol "${dto.protocol}" (รองรับ: ${model.supportedProtocols.join(', ')})`,
+      );
+    }
+
+    // #246 review B — customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง เดิมปล่อยให้
+    // Prisma โยน P2003 (FK violation) ตอน create ซึ่งไม่ได้ catch ไว้ กลายเป็น
+    // 500 แทนที่จะเป็น error ที่สื่อความหมาย — เช็คก่อนเหมือน modelId ด้านบน
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: dto.customerId },
+      });
+      if (!customer) {
+        throw new NotFoundException(`ไม่พบ Customer id ${dto.customerId}`);
+      }
+    }
+
+    const apiKey = randomBytes(32).toString('hex');
+    const apiKeyHash = await bcrypt.hash(apiKey, 10);
+
+    let device: Omit<Device, 'apiKeyHash'>;
+    try {
+      // apiKeyHash ไม่ถูกคืนกลับมาเอง — `PrismaService` ตั้ง omit default ไว้
+      // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
+      // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
+      device = await this.prisma.device.create({
+        data: {
+          deviceId: dto.deviceId,
+          simNumber: dto.simNumber,
+          deviceModel: model.name,
+          protocol: dto.protocol,
+          hardwareRevisionCode: dto.hardwareRevisionCode,
+          customerId: dto.customerId,
+          modelId: model.id,
+          apiKeyHash,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `มี Device deviceId "${dto.deviceId}" อยู่แล้ว`,
+        );
+      }
+      throw err;
+    }
+
+    const metadata: AuditLogMetadata = { deviceId: device.deviceId };
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action: 'register',
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    return { ...device, apiKey };
   }
 
   /**
