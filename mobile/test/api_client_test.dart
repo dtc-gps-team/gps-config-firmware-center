@@ -831,6 +831,40 @@ void main() {
         ),
       );
     });
+
+    test('getIncident -> GET /incidents/{id}, maps the object', () async {
+      final (:client, :adapter) = _clientReturning(
+        incidentJson(
+          id: 'inc-9',
+          severity: 'critical',
+          status: 'investigating',
+        ),
+      );
+
+      final incident = await client.getIncident('inc-9');
+
+      expect(adapter.lastRequest?.method, 'GET');
+      expect(adapter.lastRequest?.path, '/incidents/inc-9');
+      expect(incident.id, 'inc-9');
+      expect(incident.severity, IncidentSeverity.critical);
+      expect(incident.status, IncidentStatus.investigating);
+    });
+
+    test('getIncident -> 404 maps to ApiException(404)', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 404, {'message': 'Not Found'}),
+        ),
+      );
+
+      await expectLater(
+        client.getIncident('missing'),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
+        ),
+      );
+    });
   });
 
   group('notification endpoints', () {
