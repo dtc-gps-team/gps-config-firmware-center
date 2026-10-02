@@ -1530,6 +1530,142 @@ describe('DeviceController test-connection (integration — real postgres + guar
     });
   });
 
+  describe('GET /devices/:deviceId/status (issue #245 เวอร์ชันย่อ)', () => {
+    async function auditorToken(): Promise<string> {
+      const user = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read, 'devices');
+      return tokenFor(user.id, 'Auditor');
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('STAT-401', 'installed');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-401/status')
+        .expect(401);
+    });
+
+    it('role ไม่มี devices.Read -> 403', async () => {
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Read, 'config');
+      const token = tokenFor(user.id, 'ConfigEngineer');
+      await makeDevice('STAT-403', 'installed');
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-403/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('ไม่พบ deviceId -> 404', async () => {
+      const token = await auditorToken();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/NOPE-STAT/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย -> unknown ทั้งคู่, lastCheckInMessage เป็น null', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-UNKNOWN', 'installed');
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-UNKNOWN/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        deviceId: 'STAT-UNKNOWN',
+        configStatus: 'unknown',
+        firmwareStatus: 'unknown',
+        lastCheckInMessage: null,
+      });
+    });
+
+    it('Config success + Firmware pending -> up_to_date / pending แยกกันถูกต้อง', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-MIX', 'installed');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มทดสอบ status', createdBy: opUser.id },
+      });
+      const configId = await makeConfig('approved');
+      const configRollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          configId,
+          status: 'completed',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: {
+          rolloutId: configRollout.id,
+          deviceId: 'STAT-MIX',
+          status: 'success',
+        },
+      });
+      const firmwareId = await makeFirmware();
+      const firmwareRollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Firmware',
+          firmwareId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: firmwareRollout.id, deviceId: 'STAT-MIX' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-MIX/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        deviceId: 'STAT-MIX',
+        configStatus: 'up_to_date',
+        firmwareStatus: 'pending',
+      });
+    });
+
+    it('rollout ที่ rejected ไม่นับ — target ค้าง pending ของรอบที่ reject แล้วไม่ทำให้เห็นเป็น pending ผิดๆ', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-REJECTED', 'installed');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await prisma.campaign.create({
+        data: { name: 'กลุ่มทดสอบ status rejected', createdBy: opUser.id },
+      });
+      const configId = await makeConfig('approved');
+      const rejectedRollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          configId,
+          status: 'rejected',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rejectedRollout.id, deviceId: 'STAT-REJECTED' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-REJECTED/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ configStatus: 'unknown' });
+    });
+  });
+
   describe('GET /devices/:deviceId/config (Config Override Phase 2, Mobile — issue #211)', () => {
     async function stToken(): Promise<string> {
       const stUser = await makeUser(prisma, { role: 'ST' });

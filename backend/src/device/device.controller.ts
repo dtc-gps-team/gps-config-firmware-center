@@ -27,6 +27,7 @@ import type {
   ActingUser,
   ConfigWithDeviceOverride,
   ConfirmFirmwareInstallResult,
+  DeviceStatusResult,
   DeviceWithCustomer,
   RegisterDeviceResult,
 } from './device.service';
@@ -47,6 +48,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //                                 เรียกเองผ่าน DeviceApiKeyGuard มาใน PR 2/3)
 //   GET  /devices                 — Device Search (list + filter)  · ทุก Role
 //   GET  /devices/:deviceId        — Device Detail (1 เครื่อง)      · ทุก Role
+//   GET  /devices/:deviceId/status — สถานะย่อ configStatus/firmwareStatus
+//                                 (issue #245) · ทุก Role — ยังไม่มี online/
+//                                 offline (ไม่มี concept check-in ในระบบเลย)
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
 //                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
 //   GET  /devices/:deviceId/config — Config ปัจจุบันของอุปกรณ์ (issue #211,
@@ -101,6 +105,17 @@ export class DeviceController {
   @RequirePermission('devices', ActionType.Read)
   findOne(@Param('deviceId') deviceId: string): Promise<DeviceWithCustomer> {
     return this.deviceService.findByDeviceId(deviceId);
+  }
+
+  // issue #245 — เวอร์ชันย่อ: มีแค่ configStatus/firmwareStatus (คำนวณจาก
+  // CampaignRolloutTarget ล่าสุด) ยังไม่มี online/offline/lastCheckIn เวลาจริง
+  // (ยังไม่มี concept check-in ในระบบเลย — เปิดเป็นคำถามแยกต่างหาก ไม่บล็อก
+  // ส่วนนี้) resource/action เดียวกับ Device Detail (ทุก Role ที่ login แล้ว
+  // ตามที่ยืนยันกับ B แล้ว) ไม่ต้อง seed grant เพิ่ม
+  @Get(':deviceId/status')
+  @RequirePermission('devices', ActionType.Read)
+  getStatus(@Param('deviceId') deviceId: string): Promise<DeviceStatusResult> {
+    return this.deviceService.getStatus(deviceId);
   }
 
   // resource `device-connection-test` action Read — grant ให้ ST/OT เท่านั้น

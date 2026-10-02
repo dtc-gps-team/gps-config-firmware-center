@@ -177,6 +177,7 @@ describe('DeviceService', () => {
   let validateOverridableFields: jest.Mock;
   let user: { findMany: jest.Mock };
   let notificationService: { send: jest.Mock };
+  let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
   let customer: { findUnique: jest.Mock };
 
@@ -187,6 +188,7 @@ describe('DeviceService', () => {
       update: jest.fn().mockResolvedValue(undefined),
       create: jest.fn(),
     };
+    campaignRolloutTarget = { findFirst: jest.fn().mockResolvedValue(null) };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
     firmware = { findUnique: jest.fn() };
@@ -242,6 +244,7 @@ describe('DeviceService', () => {
             user,
             customer,
             auditLog,
+            campaignRolloutTarget,
             $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
           },
         },
@@ -361,6 +364,90 @@ describe('DeviceService', () => {
       await expect(service.findByDeviceId('NOPE')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getStatus (issue #245 เวอร์ชันย่อ)', () => {
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(installedDevice);
+    });
+
+    it('ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย -> unknown ทั้งคู่ lastCheckInMessage เป็น null', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result).toEqual({
+        deviceId: installedDevice.deviceId,
+        configStatus: 'unknown',
+        firmwareStatus: 'unknown',
+        lastCheckInMessage: null,
+      });
+    });
+
+    it('target ล่าสุดเป็น success -> up_to_date', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'success' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('up_to_date');
+      expect(result.firmwareStatus).toBe('up_to_date');
+    });
+
+    it('target ล่าสุดเป็น failed -> failed', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'failed' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('failed');
+    });
+
+    it('target ล่าสุดเป็น pending -> pending', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'pending' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('pending');
+    });
+
+    it('configStatus/firmwareStatus แยกอิสระกัน (query คนละ payloadType)', async () => {
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ status: 'success' }) // Config
+        .mockResolvedValueOnce({ status: 'failed' }); // Firmware
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('up_to_date');
+      expect(result.firmwareStatus).toBe('failed');
+      expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          deviceId: installedDevice.deviceId,
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: ['rejected', 'cancelled'] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          deviceId: installedDevice.deviceId,
+          rollout: {
+            payloadType: 'Firmware',
+            status: { notIn: ['rejected', 'cancelled'] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+    });
+
+    it('ไม่พบ Device -> NotFoundException ไม่เรียก campaignRolloutTarget.findFirst', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.getStatus('NOPE')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(campaignRolloutTarget.findFirst).not.toHaveBeenCalled();
     });
   });
 
