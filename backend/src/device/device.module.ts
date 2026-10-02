@@ -3,6 +3,7 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignModule } from '../campaign/campaign.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
+import { DeviceModelModule } from '../device-model/device-model.module';
 import { NotificationModule } from '../notification/notification.module';
 import {
   DEVICE_SIMULATOR,
@@ -31,11 +32,15 @@ import { DeviceService } from './device.service';
 // imports NotificationModule (issue #226) — แจ้ง Operation ตอนมีคำขอ
 // override pending ใหม่ + แจ้ง ST ผู้ request ตอน Operation ตัดสินใจแล้ว
 // mirror pattern เดียวกับ config-deletion.module.ts
+// imports DeviceModelModule (issue #157 PR 1) — `DeviceService.register()`
+// reuse `DeviceModelService.findOne()` validate `modelId` + supportedProtocols
+// เดียวกับที่ ConfigService ใช้อยู่แล้ว (issue #209 ข้อ 4) ไม่เขียนตรรกะซ้ำ
 @Module({
   imports: [
     AuthModule,
     CampaignModule,
     ConfigDefinitionModule,
+    DeviceModelModule,
     NotificationModule,
   ],
   controllers: [DeviceController, DeviceConfigOverrideController],

@@ -12,6 +12,9 @@ import '../../core/config/app_config.dart';
 /// update: field staff (ST/OT) have no Create permission (see RBAC_Matrix.md).
 abstract class IncidentRepository {
   Future<List<Incident>> listIncidents();
+
+  /// `GET /incidents/{id}` — throws [ApiException] (404) if not found.
+  Future<Incident> getIncident(String id);
 }
 
 /// Talks to the real backend. Default outside `API_MOCK_MODE` — the Incident
@@ -23,6 +26,9 @@ class ApiIncidentRepository implements IncidentRepository {
 
   @override
   Future<List<Incident>> listIncidents() => _api.listIncidents();
+
+  @override
+  Future<Incident> getIncident(String id) => _api.getIncident(id);
 }
 
 /// In-memory fake for `API_MOCK_MODE` (dev/demo without a backend). Same
@@ -58,6 +64,15 @@ class MockIncidentRepository implements IncidentRepository {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     return List.unmodifiable(_incidents);
   }
+
+  @override
+  Future<Incident> getIncident(String id) async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    return _incidents.firstWhere(
+      (i) => i.id == id,
+      orElse: () => throw ApiException('ไม่พบ Incident นี้', statusCode: 404),
+    );
+  }
 }
 
 final incidentRepositoryProvider = Provider<IncidentRepository>((ref) {
@@ -70,3 +85,9 @@ final incidentRepositoryProvider = Provider<IncidentRepository>((ref) {
 final incidentListProvider = FutureProvider.autoDispose<List<Incident>>((ref) {
   return ref.watch(incidentRepositoryProvider).listIncidents();
 });
+
+/// One incident for the detail screen (`GET /incidents/{id}`).
+final incidentDetailProvider = FutureProvider.autoDispose
+    .family<Incident, String>(
+      (ref, id) => ref.watch(incidentRepositoryProvider).getIncident(id),
+    );
