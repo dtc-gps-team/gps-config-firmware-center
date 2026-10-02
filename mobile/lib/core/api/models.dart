@@ -625,10 +625,10 @@ class Device {
 
 /// `DeviceStatus.configStatus` / `.firmwareStatus` — `GET /devices/{deviceId}/status`
 /// (issue #245, PR #247). The spec enum is `[up_to_date, pending, failed,
-/// unknown]`; `pending_update` is also accepted as an alias (same meaning —
-/// it is the name `Device.firmwareStatus` uses). `unknown` is a normal value
-/// (device never appeared in any rollout), so an unrecognised string also
-/// falls back to it instead of throwing.
+/// unknown]`. (`pending_update` belongs to `Firmware.deviceUpdateStatus`, a
+/// different endpoint/field, and is never sent here.) `unknown` is a normal
+/// value (device never appeared in any rollout), so an unrecognised string
+/// also falls back to it instead of throwing.
 enum DevicePayloadStatus {
   upToDate('up_to_date'),
   pending('pending'),
@@ -640,7 +640,6 @@ enum DevicePayloadStatus {
   final String wireName;
 
   static DevicePayloadStatus fromWire(String? value) {
-    if (value == 'pending_update') return DevicePayloadStatus.pending;
     for (final s in DevicePayloadStatus.values) {
       if (s.wireName == value) return s;
     }

@@ -656,16 +656,14 @@ void _deviceStatusTests() {
       },
     );
 
-    test('pending_update is accepted as an alias of pending', () {
-      expect(
-        DevicePayloadStatus.fromWire('pending_update'),
-        DevicePayloadStatus.pending,
-      );
-    });
-
     test('unrecognised / missing value falls back to unknown', () {
       expect(
         DevicePayloadStatus.fromWire('weird'),
+        DevicePayloadStatus.unknown,
+      );
+      // pending_update is Firmware.deviceUpdateStatus's value, not this enum's
+      expect(
+        DevicePayloadStatus.fromWire('pending_update'),
         DevicePayloadStatus.unknown,
       );
       expect(DevicePayloadStatus.fromWire(null), DevicePayloadStatus.unknown);
