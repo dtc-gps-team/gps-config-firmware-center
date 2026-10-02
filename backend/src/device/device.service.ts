@@ -210,6 +210,18 @@ export class DeviceService {
       );
     }
 
+    // #246 review B — customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง เดิมปล่อยให้
+    // Prisma โยน P2003 (FK violation) ตอน create ซึ่งไม่ได้ catch ไว้ กลายเป็น
+    // 500 แทนที่จะเป็น error ที่สื่อความหมาย — เช็คก่อนเหมือน modelId ด้านบน
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: dto.customerId },
+      });
+      if (!customer) {
+        throw new NotFoundException(`ไม่พบ Customer id ${dto.customerId}`);
+      }
+    }
+
     const apiKey = randomBytes(32).toString('hex');
     const apiKeyHash = await bcrypt.hash(apiKey, 10);
 

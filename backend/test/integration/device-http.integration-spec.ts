@@ -343,6 +343,52 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(409);
     });
 
+    // #246 review B — customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง เดิมปล่อยให้
+    // Prisma โยน P2003 (FK violation) กลายเป็น 500 แทน error ที่สื่อความหมาย
+    it('customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง -> 404 ไม่ใช่ 500', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-NOCUSTOMER',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+          customerId: randomUUID(),
+        })
+        .expect(404);
+    });
+
+    it('customerId มีอยู่จริง -> 201, Device ผูกกับ customer นั้น', async () => {
+      const token = await adminToken();
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const customer = await prisma.customer.create({
+        data: { companyName: `Cus-${randomUUID()}` },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'NEW-CUSTOMER',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+          customerId: customer.id,
+        })
+        .expect(201);
+
+      const body = res.body as { deviceId: string };
+      expect(body.deviceId).toBe('NEW-CUSTOMER');
+      const row = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'NEW-CUSTOMER' },
+      });
+      expect(row.customerId).toBe(customer.id);
+    });
+
     it('สำเร็จ -> 201, คืน apiKey จริง ไม่มี apiKeyHash, DB เก็บ hash ที่ compare กับ apiKey ผ่านจริง', async () => {
       const token = await adminToken();
       const model = await getOrCreateDeviceModel(prisma, 'GT06N');

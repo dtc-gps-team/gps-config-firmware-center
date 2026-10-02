@@ -178,6 +178,7 @@ describe('DeviceService', () => {
   let user: { findMany: jest.Mock };
   let notificationService: { send: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
+  let customer: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     device = {
@@ -210,6 +211,7 @@ describe('DeviceService', () => {
     user = { findMany: jest.fn().mockResolvedValue([]) };
     notificationService = { send: jest.fn().mockResolvedValue(undefined) };
     deviceModelService = { findOne: jest.fn() };
+    customer = { findUnique: jest.fn() };
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
     // `rejectDeviceConfigOverride()` (issue #223) เขียนผ่าน `$transaction` —
@@ -238,6 +240,7 @@ describe('DeviceService', () => {
             firmware,
             deviceConfigOverride,
             user,
+            customer,
             auditLog,
             $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
           },
@@ -436,6 +439,34 @@ describe('DeviceService', () => {
         service.register({ ...registerDto, protocol: 'UDP' }, admin),
       ).rejects.toThrow(BadRequestException);
       expect(device.create).not.toHaveBeenCalled();
+    });
+
+    // #246 review B — customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง เดิมปล่อยให้
+    // Prisma โยน P2003 (FK violation) ตอน create กลายเป็น 500 แทน error ที่
+    // สื่อความหมาย
+    it('customerId ไม่พบในระบบ -> NotFoundException ไม่เรียก device.create', async () => {
+      customer.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.register({ ...registerDto, customerId: 'cust-missing' }, admin),
+      ).rejects.toThrow(NotFoundException);
+      expect(customer.findUnique).toHaveBeenCalledWith({
+        where: { id: 'cust-missing' },
+      });
+      expect(device.create).not.toHaveBeenCalled();
+    });
+
+    it('customerId มีอยู่จริง -> ผ่านปกติ ส่ง customerId เข้า device.create', async () => {
+      customer.findUnique.mockResolvedValue({
+        id: 'cust-1',
+        companyName: 'บริษัททดสอบ',
+      });
+
+      await service.register({ ...registerDto, customerId: 'cust-1' }, admin);
+
+      expect(device.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ customerId: 'cust-1' }) as unknown,
+      });
     });
 
     it('deviceId ซ้ำ (Prisma P2002) -> ConflictException', async () => {
