@@ -1,9 +1,15 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
+// TaskRow and TasksCompanion are drift-generated into app_database.g.dart,
+// which app_database.dart re-exports via its `part` directive.
+import '../../core/db/app_database.dart' show TaskRow, TasksCompanion;
+import '../../core/db/daos/task_dao.dart';
+import '../../core/db/providers/database_provider.dart';
 
 /// Reads and updates field-staff tasks.
 ///
@@ -16,8 +22,9 @@ abstract class TaskRepository {
   Future<Task> updateStatus(String id, TaskStatus status);
 }
 
-/// Talks to the real backend. Default outside `API_MOCK_MODE` — the Task
-/// endpoints are live on `main`.
+/// Talks to the real backend only, no local cache. Kept for tests that want
+/// to exercise the network path in isolation; the app itself is wired to
+/// [CachedApiTaskRepository] below (see `taskRepositoryProvider`).
 class ApiTaskRepository implements TaskRepository {
   ApiTaskRepository(this._api);
 
@@ -34,8 +41,84 @@ class ApiTaskRepository implements TaskRepository {
       _api.updateTaskStatus(id, status);
 }
 
+/// Reads through the local `Tasks` cache: a successful API call replaces
+/// the cache and is returned as-is; a failed one (offline, timeout, 5xx)
+/// falls back to whatever is cached so the list/detail screens still show
+/// the last-known data instead of an error state.
+///
+/// Sprint 2 scope only — "เริ่มโครง Offline-first ยังไม่ต้อง sync จริง": there is
+/// no local write queue yet, so [updateStatus] still requires the network;
+/// it just refreshes the cache once the API confirms the change.
+class CachedApiTaskRepository implements TaskRepository {
+  CachedApiTaskRepository(this._api, this._dao);
+
+  final ApiClient _api;
+  final TaskDao _dao;
+
+  @override
+  Future<List<Task>> listTasks() async {
+    try {
+      final tasks = await _api.listTasks();
+      await _dao.upsertTasks(tasks.map(_toCompanion).toList());
+      return tasks;
+    } on Object {
+      final cached = await _dao.getAllTasks();
+      if (cached.isEmpty) rethrow;
+      return cached.map(_fromRow).toList();
+    }
+  }
+
+  @override
+  Future<Task> getTask(String id) async {
+    try {
+      final task = await _api.getTask(id);
+      await _dao.upsertTask(_toCompanion(task));
+      return task;
+    } on Object {
+      final cached = await _dao.getTaskById(id);
+      if (cached == null) rethrow;
+      return _fromRow(cached);
+    }
+  }
+
+  @override
+  Future<Task> updateStatus(String id, TaskStatus status) async {
+    final task = await _api.updateTaskStatus(id, status);
+    await _dao.upsertTask(_toCompanion(task));
+    return task;
+  }
+}
+
+TasksCompanion _toCompanion(Task task) => TasksCompanion.insert(
+  id: task.id,
+  title: task.title,
+  assignedTo: task.assignedTo,
+  status: task.status.wireName,
+  createdAt: task.createdAt,
+  updatedAt: task.updatedAt,
+  description: Value(task.description),
+  deviceId: Value(task.deviceId),
+  configId: Value(task.configId),
+  dueDate: Value(task.dueDate),
+);
+
+Task _fromRow(TaskRow row) => Task(
+  id: row.id,
+  title: row.title,
+  assignedTo: row.assignedTo,
+  status: TaskStatus.fromWire(row.status),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  description: row.description,
+  deviceId: row.deviceId,
+  configId: row.configId,
+  dueDate: row.dueDate,
+);
+
 /// In-memory fake for `API_MOCK_MODE` (dev without a backend). Mirrors the
-/// same-file pattern used by `MockAuthRepository`.
+/// same-file pattern used by `MockAuthRepository`. Deliberately NOT routed
+/// through the local DB — mock mode should stay disposable/stateless across
+/// hot restarts, same as before.
 class MockTaskRepository implements TaskRepository {
   final List<Task> _tasks = [
     Task(
@@ -111,7 +194,10 @@ class MockTaskRepository implements TaskRepository {
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   if (AppConfig.apiMockMode) return MockTaskRepository();
-  return ApiTaskRepository(ref.watch(apiClientProvider));
+  return CachedApiTaskRepository(
+    ref.watch(apiClientProvider),
+    ref.watch(taskDaoProvider),
+  );
 });
 
 /// The signed-in user's task list.

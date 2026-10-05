@@ -1,9 +1,12 @@
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/config/app_config.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -35,14 +38,22 @@ class _RecordingTaskRepository implements TaskRepository {
 void main() {
   group('taskRepositoryProvider', () {
     test('picks the implementation from API_MOCK_MODE', () {
-      final container = ProviderContainer();
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.forTesting(NativeDatabase.memory());
+            ref.onDispose(db.close);
+            return db;
+          }),
+        ],
+      );
       addTearDown(container.dispose);
 
       final repo = container.read(taskRepositoryProvider);
       if (AppConfig.apiMockMode) {
         expect(repo, isA<MockTaskRepository>());
       } else {
-        expect(repo, isA<ApiTaskRepository>());
+        expect(repo, isA<CachedApiTaskRepository>());
       }
     });
   });
