@@ -1221,12 +1221,13 @@ describe('DeviceService', () => {
             deviceId: 'DTC-0001',
             firmwareId: otherFirmware.id,
             status: 'approved',
+            consumedAt: null,
           },
         });
         expect(auditLog.create).not.toHaveBeenCalled();
       });
 
-      it('firmwareId ไม่ตรงกับ assignment แต่มี approved override ตรงกัน -> ผ่าน', async () => {
+      it('firmwareId ไม่ตรงกับ assignment แต่มี approved override ที่ยังไม่ถูกใช้ -> ผ่าน และ mark consumedAt', async () => {
         device.findUnique.mockResolvedValue(installedDevice);
         firmware.findUnique.mockResolvedValue(otherFirmware);
         campaignRolloutTarget.findFirst.mockResolvedValue({
@@ -1237,7 +1238,9 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           firmwareId: otherFirmware.id,
           status: 'approved',
+          consumedAt: null,
         });
+        deviceFirmwareOverride.updateMany.mockResolvedValue({ count: 1 });
 
         await expect(
           service.confirmFirmwareInstall(
@@ -1246,6 +1249,56 @@ describe('DeviceService', () => {
             st,
           ),
         ).resolves.toMatchObject({ firmwareId: otherFirmware.id });
+
+        expect(deviceFirmwareOverride.updateMany).toHaveBeenCalledWith({
+          where: { id: 'fov-1', status: 'approved', consumedAt: null },
+          data: { consumedAt: expect.any(Date) as Date },
+        });
+      });
+
+      it('override เคยถูกใช้ไปแล้ว (consumedAt ไม่ใช่ null) -> ไม่นับเป็น override ที่ใช้ได้ -> ConflictException (single-use, แก้ตามรีวิว B PR #257)', async () => {
+        device.findUnique.mockResolvedValue(installedDevice);
+        firmware.findUnique.mockResolvedValue(otherFirmware);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          rollout: { firmwareId: readyFirmware.id },
+        });
+        // query filter ด้วย consumedAt: null เอง — mock แบบ findFirst จริง
+        // (ไม่เจอแถวที่ consumedAt ไม่ใช่ null) แทนที่จะ return แถวที่ใช้ไปแล้ว
+        deviceFirmwareOverride.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.confirmFirmwareInstall(
+            'DTC-0001',
+            { firmwareId: otherFirmware.id },
+            st,
+          ),
+        ).rejects.toThrow(ConflictException);
+        expect(deviceFirmwareOverride.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('race condition: สองคำขอ confirm พร้อมกันแย่งใช้ override เดียวกัน (updateMany count 0) -> ConflictException ไม่เขียน AuditLog', async () => {
+        device.findUnique.mockResolvedValue(installedDevice);
+        firmware.findUnique.mockResolvedValue(otherFirmware);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          rollout: { firmwareId: readyFirmware.id },
+        });
+        deviceFirmwareOverride.findFirst.mockResolvedValue({
+          id: 'fov-1',
+          deviceId: 'DTC-0001',
+          firmwareId: otherFirmware.id,
+          status: 'approved',
+          consumedAt: null,
+        });
+        deviceFirmwareOverride.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.confirmFirmwareInstall(
+            'DTC-0001',
+            { firmwareId: otherFirmware.id },
+            st,
+          ),
+        ).rejects.toThrow(ConflictException);
+        expect(auditLog.create).not.toHaveBeenCalled();
       });
     });
   });

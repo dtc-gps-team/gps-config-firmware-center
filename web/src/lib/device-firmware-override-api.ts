@@ -34,6 +34,10 @@ export type DeviceFirmwareOverride = {
   decidedBy: string | null;
   decidedAt: string | null;
   rejectReason: string | null;
+  /** เวลาที่ override นี้ถูกใช้จริงผ่าน confirmFirmwareInstall แล้ว
+   * (single-use, v3.44) — null = ยังไม่เคยถูกใช้ ไม่มีความหมายถ้า status
+   * ไม่ใช่ approved */
+  consumedAt: string | null;
 };
 
 /** `GET /device-firmware-overrides` — คิวของ Operation เรียงใหม่สุดก่อน

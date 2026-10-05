@@ -1431,8 +1431,10 @@ paths:
             Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้ / **(v3.43, Sprint 3 แถวที่
             24)** firmwareId ที่ขอไม่ตรงกับ Campaign Rollout (Firmware) ที่
             `active` กำหนดไว้ให้อุปกรณ์เครื่องนี้ และไม่มี
-            `DeviceFirmwareOverride` สถานะ `approved` รองรับ — ต้องขอ Firmware
-            Override ก่อน (ดู `overrideDeviceFirmware`)
+            `DeviceFirmwareOverride` สถานะ `approved` ที่ยังไม่เคยถูกใช้
+            (`consumedAt: null`) รองรับ — ต้องขอ Firmware Override ใหม่ (ดู
+            `overrideDeviceFirmware`) **override เป็น single-use** ใช้ผ่าน
+            endpoint นี้ได้ครั้งเดียวแล้วหมดสภาพ (v3.44)
 
   /devices/{deviceId}/firmware-override:
     post:
@@ -3473,7 +3475,10 @@ components:
         Rollout ที่กำหนดไว้ ต้องผ่าน Operation อนุมัติก่อนถึงมีผล mirror
         `DeviceConfigOverride` ต่างกันที่ไม่มี `fields`/`configId` เพราะ
         Firmware เป็นเวอร์ชันเดียวทั้งก้อน ไม่ใช่ key-value (ดู comment เหนือ
-        `model DeviceFirmwareOverride` ใน schema.prisma)
+        `model DeviceFirmwareOverride` ใน schema.prisma) — **single-use
+        (v3.44)** (`consumedAt`): แถวที่ `approved` ใช้ผ่าน
+        `confirmFirmwareInstall` ได้แค่ครั้งเดียว ติดตั้ง firmware เดิมซ้ำ
+        ต้องขอ override ใหม่
       required:
         [
           id,
@@ -3522,6 +3527,14 @@ components:
           type: string
           nullable: true
           description: เหตุผลที่ปฏิเสธ — optional แม้สถานะเป็น rejected
+        consumedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            เวลาที่ override นี้ถูกใช้จริงผ่าน `confirmFirmwareInstall` แล้ว
+            (single-use) — null = ยังไม่เคยถูกใช้ ไม่มีความหมายถ้า status
+            ไม่ใช่ approved
 
     ConfigVersion:
       type: object

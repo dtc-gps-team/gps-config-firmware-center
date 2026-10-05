@@ -660,11 +660,20 @@ export class DeviceService {
 
     // Firmware Override (Sprint 3 แถวที่ 24) — ถ้าอุปกรณ์มี Campaign Rollout
     // (Firmware) ที่ active กำหนด firmware ตัวอื่นไว้อยู่ ต้องมี
-    // DeviceFirmwareOverride ที่ approved ตรงกับ firmware ตัวนี้ก่อนถึงจะ
-    // confirm ได้ — ถ้าไม่มี assignment เลย (ติดตั้งเดี่ยวๆ ไม่ผ่าน Campaign)
-    // หรือ firmware ตรงกับ assignment อยู่แล้ว ผ่านปกติไม่ต้องขอ override (ดู
-    // comment เหนือ `findActiveFirmwareAssignment()` สำหรับเหตุผลเต็มๆ)
+    // DeviceFirmwareOverride ที่ approved **และยังไม่เคยถูกใช้** (`consumedAt:
+    // null`) ตรงกับ firmware ตัวนี้ก่อนถึงจะ confirm ได้ — ถ้าไม่มี assignment
+    // เลย (ติดตั้งเดี่ยวๆ ไม่ผ่าน Campaign) หรือ firmware ตรงกับ assignment
+    // อยู่แล้ว ผ่านปกติไม่ต้องขอ override (ดู comment เหนือ
+    // `findActiveFirmwareAssignment()` สำหรับเหตุผลเต็มๆ)
+    //
+    // **single-use (แก้ตามรีวิว B บน PR #257 ข้อ 1):** เดิม override ที่
+    // approved แล้วไม่เคย "ใช้แล้วหมด" เลย ทำให้ใช้ข้ามแผน Campaign ใหม่ได้ไม่
+    // รู้จบ — mark `consumedAt` ในทรานแซกชันเดียวกับการเขียน AuditLog ด้านล่าง
+    // (`updateMany` guard ด้วย `consumedAt: null` เดิม กัน race สองคำขอ confirm
+    // พร้อมกันใช้ override เดียวกันซ้ำ — ปิด TOCTOU ที่ B ชี้ไว้ไปในตัว) —
+    // ติดตั้ง firmware เดิมซ้ำอีกครั้ง (เช่น reset เครื่อง) ต้องขอ override ใหม่
     const assignment = await this.findActiveFirmwareAssignment(device.deviceId);
+    let overrideToConsumeId: string | null = null;
     if (assignment && assignment.firmwareId !== firmware.id) {
       const approvedOverride =
         await this.prisma.deviceFirmwareOverride.findFirst({
@@ -672,13 +681,15 @@ export class DeviceService {
             deviceId: device.deviceId,
             firmwareId: firmware.id,
             status: 'approved',
+            consumedAt: null,
           },
         });
       if (!approvedOverride) {
         throw new ConflictException(
-          `Firmware นี้ไม่ตรงกับแผนที่ Campaign กำหนดไว้ (${assignment.firmwareId}) — ต้องขอ Firmware Override ก่อน`,
+          `Firmware นี้ไม่ตรงกับแผนที่ Campaign กำหนดไว้ (${assignment.firmwareId}) — ต้องขอ Firmware Override ก่อน (หรือ override เดิมถูกใช้ไปแล้ว)`,
         );
       }
+      overrideToConsumeId = approvedOverride.id;
     }
 
     const confirmedAt = new Date();
@@ -687,13 +698,30 @@ export class DeviceService {
       firmwareId: firmware.id,
       firmwareVersion: firmware.version,
     };
-    await this.prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        auditModule: AUDIT_MODULE,
-        action: 'confirm-firmware-install',
-        metadata: metadata as Prisma.InputJsonValue,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      if (overrideToConsumeId) {
+        const result = await tx.deviceFirmwareOverride.updateMany({
+          where: {
+            id: overrideToConsumeId,
+            status: 'approved',
+            consumedAt: null,
+          },
+          data: { consumedAt: confirmedAt },
+        });
+        if (result.count === 0) {
+          throw new ConflictException(
+            'คำขอ Override นี้ถูกใช้ไปแล้วโดยการยืนยันติดตั้งอื่นที่เกิดขึ้นพร้อมกัน — กรุณาขอ Firmware Override ใหม่',
+          );
+        }
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'confirm-firmware-install',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
     });
 
     // Campaign Monitor (#22, แก้ไข 2026-09-24) — ช่างยืนยันติดตั้งสำเร็จ = success

@@ -130,6 +130,7 @@ function makeFirmwareOverride(
     decidedBy: null,
     decidedAt: null,
     rejectReason: null,
+    consumedAt: null,
     ...overrides,
   };
 }

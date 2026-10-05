@@ -670,6 +670,14 @@ model DeviceFirmwareOverride {
   decidedAt     DateTime?
   // เหตุผลตอนปฏิเสธ — optional ไม่มีความหมายถ้า status ไม่ใช่ rejected
   rejectReason  String?
+  // เพิ่มใหม่ (แก้ตามรีวิว B บน PR #257 ข้อ 1) — override ที่ approved แล้วเดิม
+  // ไม่เคย "ใช้แล้วหมด" เลย ทำให้ใช้ข้าม Campaign แผนใหม่ได้ไม่รู้จบ (ตรงข้าม
+  // กับเจตนาของ gate ที่ตั้งใจให้เป็นข้อยกเว้นเฉพาะครั้ง) — null = ยังไม่เคยถูก
+  // ใช้ยืนยันติดตั้งจริง `confirmFirmwareInstall()` ต้องเจอแถวนี้เป็น
+  // `status: approved` + `consumedAt: null` เท่านั้นถึงจะผ่าน gate ได้ แล้ว mark
+  // ค่านี้ในทรานแซกชันเดียวกับการเขียน AuditLog (ปิด TOCTOU ที่ B ชี้ไว้ด้วย) —
+  // ติดตั้ง firmware เดิมซ้ำอีกครั้ง (เช่น reset เครื่อง) ต้องขอ override ใหม่
+  consumedAt    DateTime?
 
   // onDelete: Restrict ทั้ง Device และ Firmware — ประวัติคำขอ/override เป็น
   // ข้อมูลเชิง audit ไม่ควรหายไปเงียบๆ ตอนลบอุปกรณ์หรือ Firmware (mirror

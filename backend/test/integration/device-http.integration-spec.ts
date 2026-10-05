@@ -1268,6 +1268,49 @@ describe('DeviceController test-connection (integration — real postgres + guar
           .send({ firmwareId: overrideFirmwareId })
           .expect(200);
       });
+
+      it('override single-use (แก้ตามรีวิว B PR #257 ข้อ 1): ใช้ override แล้ว consumedAt ถูก mark จริง และใช้ซ้ำครั้งที่ 2 ไม่ได้ -> 409', async () => {
+        await makeDevice('FOV-GATE-ONCE', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const overrideFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout('FOV-GATE-ONCE', assignedFirmwareId);
+
+        const stUser = await makeUser(prisma, { role: 'ST' });
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        const override = await prisma.deviceFirmwareOverride.create({
+          data: {
+            deviceId: 'FOV-GATE-ONCE',
+            firmwareId: overrideFirmwareId,
+            versionNumber: 1,
+            reason: 'ทดสอบ single-use',
+            status: 'approved',
+            overriddenBy: stUser.id,
+            decidedBy: opUser.id,
+            decidedAt: new Date(),
+          },
+        });
+
+        // ครั้งแรก — ผ่านปกติ
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-ONCE/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: overrideFirmwareId })
+          .expect(200);
+
+        const reloaded = await prisma.deviceFirmwareOverride.findUniqueOrThrow(
+          { where: { id: override.id } },
+        );
+        expect(reloaded.consumedAt).not.toBeNull();
+
+        // ครั้งที่สอง — override เดิมถูกใช้ไปแล้ว ไม่มีแถว approved+ยังไม่ใช้
+        // เหลือให้ gate ผ่านได้อีก
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-ONCE/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: overrideFirmwareId })
+          .expect(409);
+      });
     });
   });
 
