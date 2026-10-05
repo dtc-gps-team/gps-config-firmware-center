@@ -177,6 +177,7 @@ describe('DeviceService', () => {
   let validateOverridableFields: jest.Mock;
   let user: { findMany: jest.Mock };
   let notificationService: { send: jest.Mock };
+  let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
   let customer: { findUnique: jest.Mock };
 
@@ -187,6 +188,7 @@ describe('DeviceService', () => {
       update: jest.fn().mockResolvedValue(undefined),
       create: jest.fn(),
     };
+    campaignRolloutTarget = { findFirst: jest.fn().mockResolvedValue(null) };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
     firmware = { findUnique: jest.fn() };
@@ -242,6 +244,7 @@ describe('DeviceService', () => {
             user,
             customer,
             auditLog,
+            campaignRolloutTarget,
             $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
           },
         },
@@ -361,6 +364,90 @@ describe('DeviceService', () => {
       await expect(service.findByDeviceId('NOPE')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getStatus (issue #245 เวอร์ชันย่อ)', () => {
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(installedDevice);
+    });
+
+    it('ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย -> unknown ทั้งคู่ lastCheckInMessage เป็น null', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result).toEqual({
+        deviceId: installedDevice.deviceId,
+        configStatus: 'unknown',
+        firmwareStatus: 'unknown',
+        lastCheckInMessage: null,
+      });
+    });
+
+    it('target ล่าสุดเป็น success -> up_to_date', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'success' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('up_to_date');
+      expect(result.firmwareStatus).toBe('up_to_date');
+    });
+
+    it('target ล่าสุดเป็น failed -> failed', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'failed' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('failed');
+    });
+
+    it('target ล่าสุดเป็น pending -> pending', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue({ status: 'pending' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('pending');
+    });
+
+    it('configStatus/firmwareStatus แยกอิสระกัน (query คนละ payloadType)', async () => {
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({ status: 'success' }) // Config
+        .mockResolvedValueOnce({ status: 'failed' }); // Firmware
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configStatus).toBe('up_to_date');
+      expect(result.firmwareStatus).toBe('failed');
+      expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          deviceId: installedDevice.deviceId,
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: ['rejected', 'cancelled'] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          deviceId: installedDevice.deviceId,
+          rollout: {
+            payloadType: 'Firmware',
+            status: { notIn: ['rejected', 'cancelled'] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+    });
+
+    it('ไม่พบ Device -> NotFoundException ไม่เรียก campaignRolloutTarget.findFirst', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.getStatus('NOPE')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(campaignRolloutTarget.findFirst).not.toHaveBeenCalled();
     });
   });
 
@@ -488,6 +575,87 @@ describe('DeviceService', () => {
       await expect(service.register(registerDto, admin)).rejects.toThrow(
         'db down',
       );
+    });
+  });
+
+  describe('rotateKey (issue #157 PR 1 — เพิ่มระหว่างทำ)', () => {
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(createdDevice);
+      device.update.mockResolvedValue(createdDevice);
+    });
+
+    it('สำเร็จ -> update apiKeyHash ใหม่ คืน apiKey จริงไม่มี apiKeyHash', async () => {
+      const result = await service.rotateKey(createdDevice.deviceId, admin);
+
+      expect(device.findUnique).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+      });
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+        data: { apiKeyHash: expect.any(String) as string },
+      });
+      expect(typeof result.apiKey).toBe('string');
+      expect(result.apiKey.length).toBeGreaterThan(0);
+      expect(result).not.toHaveProperty('apiKeyHash');
+    });
+
+    it('apiKey ที่คืนให้ client กับ apiKeyHash ใหม่ที่เก็บ DB ต้องเป็นคู่ bcrypt ที่ compare ผ่านจริง', async () => {
+      let capturedHash = '';
+      device.update.mockImplementationOnce(
+        (args: { data: { apiKeyHash: string } }) => {
+          capturedHash = args.data.apiKeyHash;
+          return Promise.resolve(createdDevice);
+        },
+      );
+
+      const result = await service.rotateKey(createdDevice.deviceId, admin);
+
+      await expect(bcrypt.compare(result.apiKey, capturedHash)).resolves.toBe(
+        true,
+      );
+    });
+
+    it('เขียน AuditLog action rotate-key พร้อม deviceId เท่านั้น', async () => {
+      await service.rotateKey(createdDevice.deviceId, admin);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: admin.id,
+          auditModule: 'device',
+          action: 'rotate-key',
+          metadata: { deviceId: createdDevice.deviceId },
+        },
+      });
+    });
+
+    it('ไม่พบ deviceId -> NotFoundException ไม่เรียก device.update', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.rotateKey('NOPE', admin)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(device.update).not.toHaveBeenCalled();
+    });
+
+    it('แข่งกับการลบเครื่องพอดี (Prisma P2025) -> NotFoundException', async () => {
+      device.update.mockRejectedValue(
+        new PrismaClientKnownRequestError('Record not found', {
+          code: 'P2025',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('error อื่นที่ไม่ใช่ P2025 ตอน update -> โยนต่อตรงๆ', async () => {
+      device.update.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow('db down');
     });
   });
 

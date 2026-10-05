@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CampaignRolloutTargetStatus,
   Config,
   Device,
   DeviceConfigOverride,
@@ -97,6 +98,36 @@ export interface ActingUser {
   role: string;
 }
 
+/** ค่าที่ `GET /devices/{deviceId}/status` คืนให้ต่อ Config/Firmware แยกกัน
+ * (issue #245) — `unknown` = ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย (ไม่ใช่
+ * error เป็นค่าปกติที่ต้องรองรับ ตามที่ตอบ B ไว้) */
+export type DevicePayloadStatus =
+  'up_to_date' | 'pending' | 'failed' | 'unknown';
+
+export interface DeviceStatusResult {
+  deviceId: string;
+  configStatus: DevicePayloadStatus;
+  firmwareStatus: DevicePayloadStatus;
+  /** placeholder เสมอเป็น `null` ตอนนี้ — รอผลคำถาม online/offline/check-in
+   * แยกต่างหากกับ B (ดู comment เหนือ `getStatus()`) */
+  lastCheckInMessage: string | null;
+}
+
+/** rollout สถานะเหล่านี้ไม่เคยส่ง payload ไปอุปกรณ์จริง (ถูกปฏิเสธ/ยกเลิกก่อน
+ * ได้ apply) — `CampaignRolloutTarget` ของรอบพวกนี้ไม่เคยถูกอัปเดตเลยตั้งแต่
+ * สร้าง (ค้าง `pending` ตลอดไป เพราะ `reject()`/cancel ไม่แตะ target) ต้อง
+ * กรองออกตอนดู "สถานะปัจจุบัน" ของอุปกรณ์ ไม่งั้นจะเห็น pending ผิดๆ */
+const STATUS_IGNORED_ROLLOUT_STATUSES = ['rejected', 'cancelled'] as const;
+
+function toDevicePayloadStatus(
+  targetStatus: CampaignRolloutTargetStatus | undefined,
+): DevicePayloadStatus {
+  if (!targetStatus) return 'unknown';
+  if (targetStatus === 'success') return 'up_to_date';
+  if (targetStatus === 'failed') return 'failed';
+  return 'pending';
+}
+
 /** ผลลัพธ์ของ `register()` (issue #157 PR 1) — `Device` ปกติ **ไม่มี**
  * `apiKeyHash` (ไม่มีทางหลุดออกมาอยู่แล้วเพราะ `PrismaService` ตั้ง
  * `omit` default ไว้ — แต่ประกาศ type แยกให้ชัดเจนอีกชั้น mirror
@@ -183,6 +214,59 @@ export class DeviceService {
   }
 
   /**
+   * `GET /devices/{deviceId}/status` (issue #245) — เวอร์ชันย่อ มีแค่
+   * `configStatus`/`firmwareStatus` คำนวณจาก `CampaignRolloutTarget` ล่าสุด
+   * ของอุปกรณ์นี้แยกตาม `payloadType` — ไม่ต้องมี schema/migration ใหม่เลย
+   *
+   * **ไม่มี online/offline หรือ lastCheckIn เวลาจริง** — ระบบไม่มี concept
+   * "อุปกรณ์ check-in บอกว่ายังออนไลน์อยู่" เลยสักจุด (ไม่ใช่แค่ยังไม่
+   * implement แต่ยังไม่เคยถูกออกแบบมาก่อน แม้แต่ #157 ครบ 3 PR ก็ไม่มี เพราะ
+   * pull config/firmware + report ผล apply คนละเรื่องกับ "ping บอกว่ายังอยู่")
+   * — เปิดเป็นคำถามแยกต่างหากกับ B ไว้แล้ว ไม่บล็อกเวอร์ชันย่อนี้
+   * `lastCheckInMessage` จึงเป็น `null` เสมอตอนนี้ (placeholder รอผลคำถามนั้น)
+   *
+   * เลือก `CampaignRolloutTarget` ที่ `updatedAt` ล่าสุดของ deviceId นี้ ข้าม
+   * เฉพาะ rollout ที่ `payloadType` ตรงกัน — กรอง rollout สถานะ `rejected`/
+   * `cancelled` ออกเสมอ (targets ของรอบที่ไม่เคยส่ง payload จริง ไม่ควรนับเป็น
+   * สถานะปัจจุบันของอุปกรณ์ — `reject()`/ไม่มีการอัปเดต target เลยตอน cancel
+   * เก่า ปล่อย row ค้างเป็น `pending` ตลอดไป ถ้าไม่กรองจะเห็นเป็น "pending"
+   * ผิดๆ ทั้งที่ไม่มีอะไรถูกส่งไปจริง)
+   */
+  async getStatus(deviceId: string): Promise<DeviceStatusResult> {
+    const device = await this.findByDeviceId(deviceId); // 404 ถ้าไม่พบ
+
+    const [configTarget, firmwareTarget] = await Promise.all([
+      this.prisma.campaignRolloutTarget.findFirst({
+        where: {
+          deviceId: device.deviceId,
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.campaignRolloutTarget.findFirst({
+        where: {
+          deviceId: device.deviceId,
+          rollout: {
+            payloadType: 'Firmware',
+            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      deviceId: device.deviceId,
+      configStatus: toDevicePayloadStatus(configTarget?.status),
+      firmwareStatus: toDevicePayloadStatus(firmwareTarget?.status),
+      lastCheckInMessage: null,
+    };
+  }
+
+  /**
    * `POST /devices` (issue #157 PR 1, docs/14_Device_Sync_Proposal.md §3.2) —
    * ลงทะเบียนอุปกรณ์ใหม่เข้าระบบ **endpoint ฝั่ง staff** (Admin/SuperAdmin
    * เท่านั้น ดู `device.controller.ts`) ไม่ใช่ endpoint ที่อุปกรณ์เรียกเอง —
@@ -260,6 +344,70 @@ export class DeviceService {
         userId: actor.id,
         auditModule: AUDIT_MODULE,
         action: 'register',
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    return { ...device, apiKey };
+  }
+
+  /**
+   * `POST /devices/{deviceId}/rotate-key` (issue #157 — แยกเป็น PR เดี่ยว
+   * ตามคำขอ B บนรีวิว PR #246/PR 1 เดิม หลังพบว่า `register()` รองรับแค่
+   * เครื่องใหม่ สร้างเครื่องซ้ำไม่ได้ เครื่องเก่าที่มีอยู่ก่อนฟีเจอร์นี้เลย
+   * ไม่มีทางได้ key เลย) ใช้ได้ 2 กรณี:
+   *   1. ออก key ครั้งแรกให้เครื่องเก่าที่ลงทะเบียนไว้ก่อนฟีเจอร์นี้ (`apiKeyHash`
+   *      เดิมเป็น `null`) — ทำให้ migrate ไปใช้ flow ใหม่ได้ทีละเครื่องตามจังหวะ
+   *      จริง ไม่ต้องรอ migrate ครบทุกเครื่องมาพร้อมกัน (ดู comment เหนือ
+   *      `ConfigService.enqueueConfigSync` — เช็ค `apiKeyHash` ตัดสินใจว่ายัง
+   *      ต้องเขียนเข้า Legacy System อยู่ไหม)
+   *   2. หมุนเวียน key เดิมถ้าสงสัยว่ารั่ว — overwrite ของเก่าทิ้งไปเลย ใช้
+   *      ต่อไม่ได้ทันที ไม่มี grace period
+   *
+   * **การแจกจ่าย key ใหม่ให้กล่องจริงที่ติดตั้งอยู่แล้ว** (ระบบนี้เป็น PULL
+   * model ล้วนๆ ไม่มีช่องทาง push อะไรเข้าไปหากล่องได้เลย) **เป็นขอบเขตของ
+   * พี่เลี้ยง** เหมือนที่ตกลงกันไว้เรื่อง distribution ใน
+   * docs/14_Device_Sync_Proposal.md §3.2 — endpoint นี้แค่รับประกันว่า "มี key
+   * ที่ถูกต้องรออยู่ให้ไปติดตั้ง" เท่านั้น
+   */
+  async rotateKey(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<RegisterDeviceResult> {
+    const existing = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+    }
+
+    const apiKey = randomBytes(32).toString('hex');
+    const apiKeyHash = await bcrypt.hash(apiKey, 10);
+
+    let device: Omit<Device, 'apiKeyHash'>;
+    try {
+      device = await this.prisma.device.update({
+        where: { deviceId },
+        data: { apiKeyHash },
+      });
+    } catch (err) {
+      // race: เครื่องถูกลบไปพอดีระหว่าง findUnique กับ update นี้ (rare) —
+      // mirror DeviceModelService.update()
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+      }
+      throw err;
+    }
+
+    const metadata: AuditLogMetadata = { deviceId: device.deviceId };
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action: 'rotate-key',
         metadata: metadata as Prisma.InputJsonValue,
       },
     });

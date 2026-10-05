@@ -1241,13 +1241,55 @@ paths:
         "404":
           description: ไม่พบ Device (deviceId) นี้
 
+  /devices/{deviceId}/rotate-key:
+    post:
+      tags: [device]
+      operationId: rotateDeviceApiKey
+      summary: ออก/หมุนเวียน API key ให้เครื่องที่มีอยู่แล้ว (v3.40, issue #157)
+      description: >-
+        **endpoint ฝั่ง staff** (resource เดียวกับ `registerDevice` —
+        `device-registration` — action `Update` เพราะแก้ไขเครื่องที่มีอยู่แล้ว
+        Admin/SuperAdmin เท่านั้น) ใช้ได้ 2 กรณี: (1) ออก key ครั้งแรกให้เครื่อง
+        เก่าที่ลงทะเบียนไว้ก่อนฟีเจอร์นี้ (`apiKeyHash` เดิมเป็น `null`) (2)
+        หมุนเวียน key เดิมถ้าสงสัยว่ารั่ว — key เก่าใช้ต่อไม่ได้ทันทีที่เรียก
+        สำเร็จ ไม่มี grace period · `apiKey` ใน response เป็นค่าจริงโชว์ได้
+        **ครั้งเดียว** เหมือน `registerDevice` · **การแจกจ่าย key ใหม่ให้กล่อง
+        จริงที่ติดตั้งอยู่แล้วเป็นขอบเขตพี่เลี้ยง** (ระบบเป็น PULL model ไม่มี
+        ช่องทาง push เข้าไปหากล่องเลย) endpoint นี้แค่รับประกันว่ามี key ที่
+        ถูกต้องรออยู่ให้ไปติดตั้ง
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ออก/หมุนเวียน key สำเร็จ — เก็บ apiKey ที่ได้รับไว้ให้ดี ดูซ้ำไม่ได้แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterDeviceResponse"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ออก/หมุนเวียน API key ของอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+
   /devices/{deviceId}/status:
     get:
       tags: [device-status]
       operationId: getDeviceStatus
-      summary: >
-        ดูสถานะกล่อง (Config + Firmware) — ครอบคลุมทั้งสถานะ Config
-        และสถานะอัปเดตเวอร์ชัน Firmware ของตัวกล่อง (v3.7)
+      summary: ดูสถานะ Config/Firmware ของอุปกรณ์ — เวอร์ชันย่อ (v3.39, issue #245)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (resource `devices` action `Read`
+        เดียวกับ Device Detail) — `configStatus`/`firmwareStatus` คำนวณจาก
+        `CampaignRolloutTarget` ล่าสุดของอุปกรณ์นี้แยกตาม payload type
+        (`unknown` = ไม่เคยอยู่ใน rollout ไหนเลย เป็นค่าปกติ ไม่ใช่ error) —
+        **ยังไม่มี online/offline หรือเวลา check-in จริง** (ระบบยังไม่มี
+        concept ให้อุปกรณ์ check-in เลย — เปิดเป็นคำถามแยกต่างหากอยู่)
+        `lastCheckInMessage` จึงเป็น `null` เสมอตอนนี้
       parameters:
         - in: path
           name: deviceId
@@ -3919,16 +3961,32 @@ components:
 
     DeviceStatus:
       type: object
+      description: >-
+        เวอร์ชันย่อ (v3.39, issue #245) — มีแค่ configStatus/firmwareStatus
+        ยังไม่มี online/offline หรือเวลา check-in จริง (ดู description ของ
+        `getDeviceStatus`)
+      required: [deviceId, configStatus, firmwareStatus, lastCheckInMessage]
       properties:
         deviceId:
           type: string
+          description: "Device.deviceId (เลขเครื่องจริง)"
         configStatus:
           type: string
+          enum: [up_to_date, pending, failed, unknown]
+          description: >-
+            คำนวณจาก CampaignRolloutTarget ล่าสุดของอุปกรณ์นี้ที่ payloadType
+            เป็น Config — `unknown` = ไม่เคยอยู่ใน rollout ไหนเลย (ปกติ)
         firmwareStatus:
           type: string
+          enum: [up_to_date, pending, failed, unknown]
+          description: เหมือน configStatus แต่ของ payloadType Firmware
         lastCheckInMessage:
           type: string
-          example: "จะได้รับการอัปเดตในการเปิดเครื่องครั้งถัดไปของกล่อง"
+          nullable: true
+          description: >-
+            placeholder — เป็น null เสมอตอนนี้ รอผลคำถาม online/offline/
+            check-in ที่เปิดแยกไว้ต่างหาก (ยังไม่มี concept นี้ในระบบเลย)
+          example: null
 
     Notification:
       type: object
