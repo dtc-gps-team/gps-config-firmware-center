@@ -7,6 +7,7 @@ import { CampaignRolloutStatus } from '@prisma/client';
  * แล้วเป็น `pending_approval` ทันทีเสมอ */
 export const CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] = [
   'pending_approval',
+  'approved',
   'active',
   'paused',
   'rejected',
@@ -28,7 +29,7 @@ export const APPROVABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
  * เลย** (ดู comment เหนือ `CampaignRolloutService.resume`/`rollback`) เพราะ
  * สองอันนั้นคือวิธี "แก้ปัญหารอบที่ค้างอยู่" ไม่ใช่การเริ่มงานใหม่ */
 export const OPEN_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
-  ['pending_approval', 'active', 'paused'];
+  ['pending_approval', 'approved', 'active', 'paused'];
 
 /** เกณฑ์ Auto Pause (Incident & Rollback #28) — mirror
  * GPS_Config_Firmware_Center_Design.pdf §11.2/หลักการข้อ 22 ("ต้อง Auto
@@ -38,6 +39,13 @@ export const AUTO_PAUSE_FAILURE_RATE_THRESHOLD = 0.05;
 /** สถานะที่ `resume()` ทำได้ — ต้องเป็น `paused` เท่านั้น */
 export const RESUMABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
   'paused';
+
+/** สถานะที่ `release()` ทำได้ — ต้องเป็น `approved` เท่านั้น (แยก "อนุมัติ"
+ * ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน — เพิ่มทีหลัง ให้ Operation เลือก
+ * จังหวะปล่อยเองได้ ไม่ใช่ส่งทันทีตอนอนุมัติเหมือนเดิม) mirror
+ * `RESUMABLE_CAMPAIGN_ROLLOUT_STATUS` ทุกประการ */
+export const RELEASABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
+  'approved';
 
 /** สถานะที่ `rollback()` ทำได้ — ต้องเคย push จริงไปแล้วอย่างน้อยบางส่วน
  * (`active`/`paused`/`completed`) — `pending_approval`/`rejected`/`cancelled`

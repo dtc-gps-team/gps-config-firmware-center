@@ -17,6 +17,7 @@ export type CampaignPayloadType = (typeof CAMPAIGN_PAYLOAD_TYPES)[number];
 
 export const CAMPAIGN_ROLLOUT_STATUSES = [
   "pending_approval",
+  "approved",
   "active",
   "paused",
   "rejected",
@@ -28,9 +29,17 @@ export type CampaignRolloutStatus = (typeof CAMPAIGN_ROLLOUT_STATUSES)[number];
 
 /** ค่ายังไม่จบของ Rollout หนึ่งรอบ — กลุ่มที่มี Rollout สถานะเหล่านี้ค้างอยู่
  * สร้างรอบใหม่ไม่ได้ (409) — mirror `OPEN_CAMPAIGN_ROLLOUT_STATUSES` ฝั่ง
- * backend · รวม `paused` ด้วย (Incident & Rollback #28 — Auto Pause) */
+ * backend · รวม `paused` ด้วย (Incident & Rollback #28 — Auto Pause) ·
+ * รวม `approved` ด้วย (แก้ครั้งที่ 63 — อนุมัติแล้วแต่ยังไม่ปล่อยก็ยังถือว่า
+ * "ค้างอยู่") */
 export const OPEN_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
-  ["pending_approval", "active", "paused"];
+  ["pending_approval", "approved", "active", "paused"];
+
+/** สถานะที่ `releaseCampaignRollout` ทำได้ (แก้ครั้งที่ 63 — แยก "อนุมัติ"
+ * ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน) — mirror
+ * `RELEASABLE_CAMPAIGN_ROLLOUT_STATUS` ฝั่ง backend */
+export const RELEASABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
+  "approved";
 
 /** สถานะที่ `resumeCampaignRollout` ทำได้ — mirror
  * `RESUMABLE_CAMPAIGN_ROLLOUT_STATUS` ฝั่ง backend */
@@ -223,9 +232,11 @@ export function createCampaignRollout(
 
 /**
  * `POST /campaigns/{id}/rollouts/{rolloutId}/approve` — Operation เท่านั้น ·
- * `pending_approval` → `active` เท่านั้น (409 ถ้าไม่ใช่) · 403 ถ้าผู้กดเป็น
- * ผู้สร้าง Rollout เดียวกันเอง (Separation of Duty — backend เช็คจริง ฝั่งนี้
- * แค่ซ่อน/ปิดปุ่มไว้ล่วงหน้าด้วย `getTokenSubject`)
+ * `pending_approval` → `approved` เท่านั้น (409 ถ้าไม่ใช่) **ไม่แตะอุปกรณ์เลย**
+ * (แก้ครั้งที่ 63 — แยก "อนุมัติ" ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน
+ * ต้องเรียก `releaseCampaignRollout` ต่อถึงจะ auto-apply เข้าเครื่องจริง) ·
+ * 403 ถ้าผู้กดเป็นผู้สร้าง Rollout เดียวกันเอง (Separation of Duty — backend
+ * เช็คจริง ฝั่งนี้แค่ซ่อน/ปิดปุ่มไว้ล่วงหน้าด้วย `getTokenSubject`)
  */
 export function approveCampaignRollout(
   token: string,
@@ -234,6 +245,24 @@ export function approveCampaignRollout(
 ): Promise<CampaignRollout> {
   return apiJson<CampaignRollout>(
     `/campaigns/${campaignId}/rollouts/${rolloutId}/approve`,
+    { method: "POST", token },
+  );
+}
+
+/**
+ * `POST /campaigns/{id}/rollouts/{rolloutId}/release` — Operation เท่านั้น
+ * (resource เดียวกับ approve/reject/resume) · `approved` → `active` เท่านั้น
+ * (409 ถ้าไม่ใช่) แล้ว auto-apply Config/Firmware เข้าทุกเครื่องทันที **ไม่เช็ค
+ * Separation of Duty** mirror `resumeCampaignRollout` — การอนุมัติเช็ค SoD
+ * ไปแล้วก่อนหน้านี้ ผู้อนุมัติเดิมเป็นคนกด release เองก็ได้ (แก้ครั้งที่ 63)
+ */
+export function releaseCampaignRollout(
+  token: string,
+  campaignId: string,
+  rolloutId: string,
+): Promise<CampaignRollout> {
+  return apiJson<CampaignRollout>(
+    `/campaigns/${campaignId}/rollouts/${rolloutId}/release`,
     { method: "POST", token },
   );
 }

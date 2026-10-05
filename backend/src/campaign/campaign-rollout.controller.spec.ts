@@ -62,6 +62,7 @@ describe('CampaignRolloutController', () => {
     findOne: jest.Mock;
     findTargets: jest.Mock;
     approve: jest.Mock;
+    release: jest.Mock;
     reject: jest.Mock;
     resume: jest.Mock;
     rollback: jest.Mock;
@@ -74,6 +75,7 @@ describe('CampaignRolloutController', () => {
       findOne: jest.fn(),
       findTargets: jest.fn(),
       approve: jest.fn(),
+      release: jest.fn(),
       reject: jest.fn(),
       resume: jest.fn(),
       rollback: jest.fn(),
@@ -147,6 +149,19 @@ describe('CampaignRolloutController', () => {
 
     expect(result).toEqual(approved);
     expect(service.approve).toHaveBeenCalledWith(sampleRollout.id, {
+      id: 'op-1',
+      role: 'Operation',
+    });
+  });
+
+  it('POST .../release -> service.release พร้อม actor จาก JWT', async () => {
+    const released = { ...sampleRollout, status: 'active' as const };
+    service.release.mockResolvedValue(released);
+
+    const result = await controller.release(sampleRollout.id, opReq);
+
+    expect(result).toEqual(released);
+    expect(service.release).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
     });
