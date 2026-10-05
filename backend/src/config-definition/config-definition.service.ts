@@ -15,21 +15,81 @@ export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
 };
 
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** ตรวจแค่ "ชนิดข้อมูลของค่าที่ JSON.parse ให้มาตรงกับ dataType ที่ประกาศไหม"
- * — เจตนาเดียวกับ Phase 1 ข้อ 3 ("syntactic" อย่างน้อยที่สุด) `dataType` ที่
- * ไม่รู้จัก (สะกดผิด/พิมพ์อิสระตอนสร้าง) ไม่ block เพื่อไม่ปิดทางไว้ก่อนคุยกัน
- * เพิ่ม — ปล่อยผ่านเหมือนไม่มีนิยาม (เจตนาเดียวกับ Gap `syntactic_only` vs
- * `semantic` ที่ตกลงไว้ว่ายังไม่ทำรอบนี้) */
+ * — เจตนาเดียวกับ Phase 1 ข้อ 3 ("syntactic" อย่างน้อยที่สุด) ชุด dataType
+ * ที่รู้จักคือ `CONFIG_DATA_TYPES` (มติ issue #201, อัปเดต 2026-09-22) —
+ * `dataType` ที่ไม่อยู่ในชุดนี้ไม่ควรเกิดขึ้นแล้ว เพราะ DTO กรองด้วย `@IsIn()`
+ * ตอนสร้างไปแล้ว (เดิมปล่อยผ่านหมดไว้ "รอคุยกันเพิ่ม" — คุยจบแล้ว) แต่ยังคง
+ * fallback `true` ไว้เผื่อ field ที่มีอยู่ก่อน DTO เข้มงวดขึ้น ไม่ให้ค่าเก่าที่
+ * หลุดมาตก validate ย้อนหลังโดยไม่ตั้งใจ */
 function matchesDataType(value: unknown, dataType: string): boolean {
   switch (dataType) {
-    case 'number':
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value);
+    case 'decimal':
       return typeof value === 'number';
     case 'string':
+    case 'text':
       return typeof value === 'string';
     case 'boolean':
       return typeof value === 'boolean';
+    case 'date':
+      return (
+        typeof value === 'string' &&
+        DATE_ONLY_REGEX.test(value) &&
+        !Number.isNaN(Date.parse(value))
+      );
+    case 'datetime':
+      return (
+        typeof value === 'string' &&
+        DATETIME_REGEX.test(value) &&
+        !Number.isNaN(Date.parse(value))
+      );
+    case 'json':
+      return (
+        typeof value === 'object' && value !== null && !Array.isArray(value)
+      );
+    case 'array':
+      return Array.isArray(value);
+    case 'uuid':
+      return typeof value === 'string' && UUID_REGEX.test(value);
     default:
       return true;
+  }
+}
+
+/** เช็ค `ConfigFieldDefinition.defaultValue` (string ดิบเสมอ) เทียบกับ
+ * `dataType` ตอนสร้าง field definition — ปิด TODO(#201) เดิมใน
+ * `CreateConfigDefinitionDto` ที่ตั้งใจรอทำพร้อมรอบนี้ (จะได้ไม่ต้องเขียน
+ * type-check logic 2 รอบ) แปลง raw string ให้เป็น shape เดียวกับที่
+ * `matchesDataType()` คาดหวังก่อนส่งต่อ ไม่ validate ซ้ำเอง */
+function matchesDataTypeString(raw: string, dataType: string): boolean {
+  switch (dataType) {
+    case 'integer':
+    case 'decimal': {
+      const n = Number(raw);
+      return !Number.isNaN(n) && matchesDataType(n, dataType);
+    }
+    case 'boolean':
+      return raw === 'true' || raw === 'false';
+    case 'json':
+    case 'array': {
+      try {
+        return matchesDataType(JSON.parse(raw), dataType);
+      } catch {
+        return false;
+      }
+    }
+    default:
+      // string/text/date/datetime/uuid เก็บ/เช็คเป็น string อยู่แล้ว ส่ง raw
+      // ตรงเข้า matchesDataType ได้เลยไม่ต้องแปลงก่อน
+      return matchesDataType(raw, dataType);
   }
 }
 
@@ -79,6 +139,23 @@ export class ConfigDefinitionService {
     }
   }
 
+  /** เช็คว่า `defaultValue` (ถ้ามี) ตรงกับ `dataType` ที่ประกาศไหม — ปิด
+   * TODO(#201) เดิมที่ตั้งใจรอทำพร้อมงานขยายชุด dataType (กัน
+   * `dataType: "integer"` + `defaultValue: "abc"` หลุดผ่านไปได้เหมือนก่อนหน้านี้) */
+  private assertDefaultValueMatchesDataType(dto: {
+    dataType: string;
+    defaultValue?: string;
+  }): void {
+    if (
+      dto.defaultValue !== undefined &&
+      !matchesDataTypeString(dto.defaultValue, dto.dataType)
+    ) {
+      throw new BadRequestException(
+        `defaultValue "${dto.defaultValue}" ไม่ตรงกับ dataType "${dto.dataType}"`,
+      );
+    }
+  }
+
   /** สร้าง field definition ใหม่ — resource `config-definition` action
    * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role ConfigEngineer) `fieldName` ซ้ำ
    * -> 409 (มี `@unique` ที่ schema คุมไว้อีกชั้น กัน race condition) */
@@ -86,6 +163,7 @@ export class ConfigDefinitionService {
     dto: CreateConfigDefinitionDto,
   ): Promise<ConfigFieldDefinitionWithSupport> {
     this.assertNoSensitiveDefaultValue(dto);
+    this.assertDefaultValueMatchesDataType(dto);
     try {
       return await this.prisma.configFieldDefinition.create({
         data: {

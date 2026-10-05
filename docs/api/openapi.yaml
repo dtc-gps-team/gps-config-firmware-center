@@ -3391,7 +3391,12 @@ components:
           example: APN
         dataType:
           type: string
+          enum:
+            [integer, decimal, string, text, boolean, date, datetime, json, array, uuid]
           example: string
+          description: >-
+            ชุดชนิดข้อมูลที่ระบบรู้จัก (v3.42, มติ issue #201 อัปเดต
+            2026-09-22) — เทียบจุดร่วมของ MySQL/PostgreSQL/MongoDB
         allowedValues:
           type: array
           items:
@@ -3476,6 +3481,8 @@ components:
           example: APN1
         dataType:
           type: string
+          enum:
+            [integer, decimal, string, text, boolean, date, datetime, json, array, uuid]
           example: string
         allowedValues:
           type: array
@@ -3519,7 +3526,8 @@ components:
           type: string
           maxLength: 255
           description: >-
-            ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ (v3.26)
+            ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ (v3.26) ต้องตรงกับ
+            `dataType` ที่ประกาศ ไม่งั้น 400 (v3.42, มติ issue #201)
         supportedModels:
           type: array
           minItems: 1

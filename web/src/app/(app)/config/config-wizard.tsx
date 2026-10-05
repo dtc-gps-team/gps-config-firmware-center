@@ -40,6 +40,16 @@ function isEmpty(value: FieldValue | undefined): boolean {
   return value === undefined || value === "";
 }
 
+/** `integer`/`decimal` คือ 2 ชนิดเดียวในชุด dataType (มติ issue #201,
+ * อัปเดต 2026-09-22) ที่เก็บเป็นค่าตัวเลขจริง (`number`) ตอน submit — ชนิดอื่น
+ * ทั้งหมด (string/text/date/datetime/json/array/uuid) เก็บเป็น string ดิบ
+ * เสมอ ยังไม่มี input widget พิเศษให้ (date-picker/JSON editor ฯลฯ) ตั้งใจ
+ * เหลือไว้เป็นช่องว่างนอกขอบเขตรอบนี้ — validate ชนิดจริงฝั่ง backend ตอน
+ * submit */
+function isNumericDataType(dataType: string): boolean {
+  return dataType === "integer" || dataType === "decimal";
+}
+
 /** parse `ConfigFieldDefinition.defaultValue` (string ดิบ) ให้ตรงกับ shape ที่
  * `values` state ใช้เก็บอยู่แล้ว (`FieldValue = string | boolean`) — boolean
  * dataType เก็บเป็น boolean จริง ส่วนที่เหลือเก็บเป็น string เสมอแล้วค่อยแปลง
@@ -267,7 +277,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
         continue;
       }
       if (isEmpty(raw)) continue;
-      if (def.dataType === "number") {
+      if (isNumericDataType(def.dataType)) {
         const n = Number(raw);
         out[def.fieldName] = Number.isNaN(n) ? raw : n;
       } else {
@@ -694,7 +704,7 @@ function TemplateRow({
         <div className="flex items-center gap-2">
           <Input
             id={id}
-            type={def.dataType === "number" ? "number" : "text"}
+            type={isNumericDataType(def.dataType) ? "number" : "text"}
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={missing ? true : undefined}

@@ -29,9 +29,36 @@ import {
 } from "@/lib/config-definition-api";
 import type { DeviceModel } from "@/lib/device-model-api";
 
-/** ชนิดข้อมูลที่ backend `matchesDataType` รู้จัก (ค่าอื่นปล่อยผ่านเหมือนไม่มีนิยาม
- * — ดู config-definition.service.ts) จำกัดไว้ 3 ค่านี้เพื่อไม่ให้พิมพ์ผิด */
-const DATA_TYPES = ["string", "number", "boolean"] as const;
+/** ชนิดข้อมูลที่ backend `matchesDataType` รู้จัก — มติ issue #201 (อัปเดต
+ * 2026-09-22) ต้องตรงกับ `CONFIG_DATA_TYPES` ใน
+ * `backend/src/config-definition/config-data-types.ts` เสมอ (ไม่มี shared
+ * package ข้าม backend/web ตามกฎ monorepo ใน CLAUDE.md — แก้ชุดนี้ต้องแก้คู่กัน
+ * ทั้ง 2 ฝั่ง) */
+const DATA_TYPES = [
+  "integer",
+  "decimal",
+  "string",
+  "text",
+  "boolean",
+  "date",
+  "datetime",
+  "json",
+  "array",
+  "uuid",
+] as const;
+
+const DATA_TYPE_LABELS: Record<(typeof DATA_TYPES)[number], string> = {
+  integer: "integer — จำนวนเต็ม",
+  decimal: "decimal — จำนวนทศนิยม",
+  string: "string — ข้อความสั้น",
+  text: "text — ข้อความยาว",
+  boolean: "boolean — จริง/เท็จ",
+  date: "date — วันที่ (YYYY-MM-DD)",
+  datetime: "datetime — วันที่เวลา (ISO 8601)",
+  json: "json — ออบเจกต์ JSON",
+  array: "array — รายการค่า (JSON array)",
+  uuid: "uuid — รหัส UUID",
+};
 
 type Props = {
   /** ทะเบียนรุ่นอุปกรณ์ทั้งหมด (`GET /device-models`, issue #209) — เลือกเป็น
@@ -234,7 +261,7 @@ export function ParameterCreateForm({
                 <SelectContent>
                   {DATA_TYPES.map((t) => (
                     <SelectItem key={t} value={t}>
-                      {t}
+                      {DATA_TYPE_LABELS[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>

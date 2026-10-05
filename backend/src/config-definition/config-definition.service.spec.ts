@@ -387,6 +387,50 @@ describe('ConfigDefinitionService', () => {
       });
     });
 
+    it.each([
+      ['integer', '42'],
+      ['decimal', '3.14'],
+      ['boolean', 'true'],
+      ['boolean', 'false'],
+      ['date', '2026-10-05'],
+      ['datetime', '2026-10-05T12:00:00Z'],
+      ['json', '{"a":1}'],
+      ['array', '[1,2,3]'],
+      ['uuid', '11111111-1111-1111-1111-111111111111'],
+    ])(
+      'defaultValue ตรงกับ dataType %s (%s) -> ผ่านปกติ',
+      async (dataType, defaultValue) => {
+        create.mockResolvedValue(apnDef);
+
+        await expect(
+          service.create({ ...dto, dataType, defaultValue }),
+        ).resolves.toEqual(apnDef);
+      },
+    );
+
+    it.each([
+      ['integer', '3.14'],
+      ['integer', 'abc'],
+      ['decimal', 'abc'],
+      ['boolean', 'yes'],
+      ['date', '2026-13-99'],
+      ['date', '05/10/2026'],
+      ['datetime', '2026-10-05'],
+      ['json', '[1,2,3]'],
+      ['json', 'not-json'],
+      ['array', '{"a":1}'],
+      ['uuid', 'not-a-uuid'],
+    ])(
+      'defaultValue "%s" ไม่ตรงกับ dataType %s -> BadRequestException',
+      async (dataType, defaultValue) => {
+        await expect(
+          service.create({ ...dto, dataType, defaultValue }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(create).not.toHaveBeenCalled();
+      },
+    );
+
     it('fieldName ซ้ำ (P2002) -> ConflictException', async () => {
       create.mockRejectedValue(makeP2002());
 
@@ -495,6 +539,56 @@ describe('ConfigDefinitionService', () => {
       expect(response.errors.some((e) => e.includes('MODE'))).toBe(true);
       expect(response.errors.some((e) => e.includes('UNKNOWN'))).toBe(true);
     });
+  });
+
+  describe('matchesDataType — ชุด dataType ใหม่ (#201)', () => {
+    function defOf(dataType: string): typeof apnDef {
+      return { ...apnDef, fieldName: 'FIELD', dataType, allowedValues: [] };
+    }
+
+    it.each([
+      ['integer', 42],
+      ['decimal', 3.14],
+      ['decimal', 42],
+      ['string', 'hello'],
+      ['text', 'hello'],
+      ['boolean', true],
+      ['boolean', false],
+      ['date', '2026-10-05'],
+      ['datetime', '2026-10-05T12:00:00Z'],
+      ['json', { a: 1 }],
+      ['array', [1, 2, 3]],
+      ['uuid', '11111111-1111-1111-1111-111111111111'],
+    ])('ค่าตรงกับ dataType %s -> ผ่าน', async (dataType, value) => {
+      findMany.mockResolvedValue([defOf(dataType)]);
+
+      await expect(
+        service.validateFields('GT06N', 'TCP', { FIELD: value }),
+      ).resolves.toBeUndefined();
+    });
+
+    it.each([
+      ['integer', 3.14],
+      ['integer', '42'],
+      ['decimal', '3.14'],
+      ['boolean', 'true'],
+      ['date', '2026-10-05T12:00:00Z'],
+      ['date', 'not-a-date'],
+      ['datetime', '2026-10-05'],
+      ['json', [1, 2, 3]],
+      ['json', 'x'],
+      ['array', { a: 1 }],
+      ['uuid', 'not-a-uuid'],
+    ])(
+      'ค่าไม่ตรงกับ dataType %s -> BadRequestException',
+      async (dataType, value) => {
+        findMany.mockResolvedValue([defOf(dataType)]);
+
+        await expect(
+          service.validateFields('GT06N', 'TCP', { FIELD: value }),
+        ).rejects.toThrow(BadRequestException);
+      },
+    );
   });
 
   describe('validateOverridableFields', () => {
