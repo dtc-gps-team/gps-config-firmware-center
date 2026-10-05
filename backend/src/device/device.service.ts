@@ -352,6 +352,70 @@ export class DeviceService {
   }
 
   /**
+   * `POST /devices/{deviceId}/rotate-key` (issue #157 — แยกเป็น PR เดี่ยว
+   * ตามคำขอ B บนรีวิว PR #246/PR 1 เดิม หลังพบว่า `register()` รองรับแค่
+   * เครื่องใหม่ สร้างเครื่องซ้ำไม่ได้ เครื่องเก่าที่มีอยู่ก่อนฟีเจอร์นี้เลย
+   * ไม่มีทางได้ key เลย) ใช้ได้ 2 กรณี:
+   *   1. ออก key ครั้งแรกให้เครื่องเก่าที่ลงทะเบียนไว้ก่อนฟีเจอร์นี้ (`apiKeyHash`
+   *      เดิมเป็น `null`) — ทำให้ migrate ไปใช้ flow ใหม่ได้ทีละเครื่องตามจังหวะ
+   *      จริง ไม่ต้องรอ migrate ครบทุกเครื่องมาพร้อมกัน (ดู comment เหนือ
+   *      `ConfigService.enqueueConfigSync` — เช็ค `apiKeyHash` ตัดสินใจว่ายัง
+   *      ต้องเขียนเข้า Legacy System อยู่ไหม)
+   *   2. หมุนเวียน key เดิมถ้าสงสัยว่ารั่ว — overwrite ของเก่าทิ้งไปเลย ใช้
+   *      ต่อไม่ได้ทันที ไม่มี grace period
+   *
+   * **การแจกจ่าย key ใหม่ให้กล่องจริงที่ติดตั้งอยู่แล้ว** (ระบบนี้เป็น PULL
+   * model ล้วนๆ ไม่มีช่องทาง push อะไรเข้าไปหากล่องได้เลย) **เป็นขอบเขตของ
+   * พี่เลี้ยง** เหมือนที่ตกลงกันไว้เรื่อง distribution ใน
+   * docs/14_Device_Sync_Proposal.md §3.2 — endpoint นี้แค่รับประกันว่า "มี key
+   * ที่ถูกต้องรออยู่ให้ไปติดตั้ง" เท่านั้น
+   */
+  async rotateKey(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<RegisterDeviceResult> {
+    const existing = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+    }
+
+    const apiKey = randomBytes(32).toString('hex');
+    const apiKeyHash = await bcrypt.hash(apiKey, 10);
+
+    let device: Omit<Device, 'apiKeyHash'>;
+    try {
+      device = await this.prisma.device.update({
+        where: { deviceId },
+        data: { apiKeyHash },
+      });
+    } catch (err) {
+      // race: เครื่องถูกลบไปพอดีระหว่าง findUnique กับ update นี้ (rare) —
+      // mirror DeviceModelService.update()
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+      }
+      throw err;
+    }
+
+    const metadata: AuditLogMetadata = { deviceId: device.deviceId };
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action: 'rotate-key',
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    return { ...device, apiKey };
+  }
+
+  /**
    * ทดสอบการเชื่อมต่อ/สัญญาณของอุปกรณ์ที่ติดตั้งจริง — **ไม่แตะ status ของ
    * Device** คืนแค่ผลทดสอบ ณ ขณะนั้น
    *

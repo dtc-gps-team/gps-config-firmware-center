@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 
-import { formatDateTime } from "@/lib/format-date";
+import { Card } from "@/components/ui/card";
+import { EntityTypeTag, StalePendingBadge } from "@/lib/status-pill";
+import { formatDateTime, stalePendingLabel } from "@/lib/format-date";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { DeviceConfigOverride } from "@/lib/device-config-override-api";
 import { SensitiveValue } from "@/components/sensitive-value";
@@ -45,15 +47,23 @@ export function DeviceConfigOverrideApprovalCard({
     ? sensitiveFieldNames
     : new Set(Object.keys(item.fields));
 
+  const staleLabel = stalePendingLabel(item.overriddenAt);
+
   return (
-    <div className="rounded-xl border bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+    <Card
+      className={
+        staleLabel ? "border-l-4 border-l-amber-500" : undefined
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 px-4">
         <div className="min-w-0 flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
+            <EntityTypeTag type="Override" />
             <span className="font-mono font-medium">{item.deviceId}</span>
             <span className="text-xs text-muted-foreground">
               เวอร์ชัน #{item.versionNumber}
             </span>
+            {staleLabel && <StalePendingBadge label={staleLabel} />}
           </div>
           <p className="text-sm">{item.reason}</p>
           <p className="text-xs text-muted-foreground">
@@ -69,7 +79,7 @@ export function DeviceConfigOverrideApprovalCard({
         />
       </div>
 
-      <div className="border-t px-4 py-3">
+      <div data-slot="card-footer" className="border-t px-4 pt-3">
         <p className="mb-2 text-sm text-muted-foreground">
           ค่าที่ขอ override ({fieldEntries.length})
         </p>
@@ -97,6 +107,6 @@ export function DeviceConfigOverrideApprovalCard({
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

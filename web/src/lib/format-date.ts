@@ -37,3 +37,33 @@ export function formatRelativeTime(iso: string): string {
     year: "numeric",
   });
 }
+
+/** เกณฑ์ "ค้างคิวนาน" สำหรับการ์ดรออนุมัติ — ไม่มี field ความสำคัญ/priority
+ * จริงในระบบ (PDF มีแนวคิดนี้แต่ยังไม่ implement) จึงใช้เวลาที่ค้างคิวจริง
+ * แทน เป็นสัญญาณที่มีข้อมูลรองรับจริง ไม่ใช่ค่าสมมติ */
+const STALE_PENDING_HOURS = 24;
+
+/** true ถ้ารายการนี้เข้าคิวมานานเกินเกณฑ์ — ใช้เน้นการ์ดรออนุมัติที่ควรรีบดู
+ * ก่อน (ApprovalCard/CampaignRolloutApprovalCard/
+ * DeviceConfigOverrideApprovalCard) */
+export function isStalePending(
+  iso: string,
+  thresholdHours: number = STALE_PENDING_HOURS,
+): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return Date.now() - d.getTime() > thresholdHours * 3_600_000;
+}
+
+/** ข้อความ "ค้างมา X วัน/ชม." สำหรับ badge บนการ์ดที่ `isStalePending` — คืน
+ * `null` ถ้ายังไม่เข้าเกณฑ์ (ไม่ต้องโชว์ badge) */
+export function stalePendingLabel(
+  iso: string,
+  thresholdHours: number = STALE_PENDING_HOURS,
+): string | null {
+  if (!isStalePending(iso, thresholdHours)) return null;
+  const d = new Date(iso);
+  const hours = Math.floor((Date.now() - d.getTime()) / 3_600_000);
+  const days = Math.floor(hours / 24);
+  return days >= 1 ? `ค้างมา ${days} วัน` : `ค้างมา ${hours} ชม.`;
+}

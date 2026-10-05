@@ -75,6 +75,11 @@ const PILL_ICON: Record<PillTone, LucideIcon> = {
  * ทุกจุดที่ text ข้างในสื่อ "สถานะ" จริงๆ (Config/Campaign/Firmware/Device
  * status, ผลทดสอบผ่าน/ไม่ผ่าน ฯลฯ) เทียบกับ mockup UX/UI Design ต้นฉบับที่มี
  * ไอคอนกำกับสถานะเสมอ แต่ของจริงเป็น text ล้วนมาตลอด
+ *
+ * tone `progress` (pending/testing/active ฯลฯ — สถานะที่ "ยังไม่นิ่ง" กำลัง
+ * รอให้มีอะไรเกิดขึ้นต่อ) ไอคอนกระพริบจางๆ (`animate-pulse`) สื่อว่ายังไม่จบ
+ * ต่างจาก success/danger ที่เป็นผลสุดท้ายแล้วนิ่งปกติ — respect
+ * `prefers-reduced-motion` ผ่าน global override ใน globals.css
  */
 export function StatusPill({
   tone,
@@ -88,7 +93,7 @@ export function StatusPill({
   const Icon = PILL_ICON[tone];
   return (
     <span className={`${pillClass(tone)} gap-1${className ? ` ${className}` : ""}`}>
-      <Icon className="size-3" />
+      <Icon className={`size-3${tone === "progress" ? " animate-pulse" : ""}`} />
       {children}
     </span>
   );
@@ -156,11 +161,13 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
 /** CampaignRollout lifecycle (แก้ไข 2026-09-24, Campaign Monitor #22 — เดิม
  * ชื่อ `CAMPAIGN_STATUS_TONE` อยู่บน `Campaign` ตรงๆ ย้ายมาอยู่ที่
  * `CampaignRollout` แทน ไม่มี `draft` อีกต่อไป): สร้างแล้วเป็น
- * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `active`) หรือ
- * ปฏิเสธ (→ `rejected`) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อ
- * ทุกเครื่องมีผลครบ */
+ * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `approved`) หรือ
+ * ปฏิเสธ (→ `rejected`) · **`approved` (แก้ครั้งที่ 63)** อนุมัติแล้วแต่ยัง
+ * ไม่ปล่อยเข้าอุปกรณ์ ต้องกด release ต่อ (→ `active`) · `active` เปลี่ยนเป็น
+ * `completed` อัตโนมัติเมื่อทุกเครื่องมีผลครบ */
 export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   pending_approval: "progress",
+  approved: "progress",
   active: "success",
   paused: "danger",
   rejected: "danger",
@@ -178,8 +185,10 @@ export function getRolloutStatusExplanation(status: string): string {
   switch (status) {
     case "pending_approval":
       return "รอ Operation อีกคนอนุมัติก่อน";
+    case "approved":
+      return "อนุมัติแล้ว — ยังไม่แตะอุปกรณ์เลย กด \"ปล่อยเข้าอุปกรณ์\" เพื่อเริ่ม apply จริง หรือกด \"ปฏิเสธ\" ถ้าเปลี่ยนใจก่อนปล่อย";
     case "active":
-      return "อนุมัติแล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติทันที (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
+      return "ปล่อยเข้าอุปกรณ์แล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
     case "paused":
       return "หยุดอัตโนมัติ (Auto Pause) — Failure Rate เกิน 5% ระหว่างรอบ ต้องกด Resume ถึงจะไปต่อได้";
     case "rejected":
@@ -244,3 +253,54 @@ export const INCIDENT_SEVERITY_TONE: Record<string, PillTone> = {
   high: "progress",
   critical: "danger",
 };
+
+/**
+ * สีแยกตาม "ประเภทคำขอ" ใน Approval Center (Config/Firmware/Campaign/Device
+ * Override) — เทียบกับ mockup UX/UI Design ต้นฉบับที่ Approval Center มีแท็ก
+ * สีต่อประเภทให้สแกนสายตาเร็วเวลามีหลายประเภทปนกันในลิสต์เดียว ของจริงเดิม
+ * ทุกการ์ดหน้าตาเหมือนกันหมดไม่มีแยก — **คนละชุดสีกับ `PillTone`
+ * โดยตั้งใจ** เพราะ PillTone สื่อ "สถานะ" (success/danger/...) แต่อันนี้สื่อ
+ * "ประเภท" ซึ่งไม่มีความหมายดี/แย่ในตัวเอง ใช้สีจาก `--chart-*` tokens เดิม
+ * ใน globals.css (ไม่คิดชุดสีใหม่แยก)
+ */
+const ENTITY_TYPE_TAG_CLASS: Record<string, string> = {
+  Config:
+    "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+  Firmware:
+    "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
+  Campaign:
+    "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+  Override:
+    "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+};
+
+export function EntityTypeTag({
+  type,
+  className,
+}: {
+  type: keyof typeof ENTITY_TYPE_TAG_CLASS;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${ENTITY_TYPE_TAG_CLASS[type]}${className ? ` ${className}` : ""}`}
+    >
+      {type}
+    </span>
+  );
+}
+
+/**
+ * Badge "ค้างมา X วัน/ชม." บนการ์ดรออนุมัติที่ `isStalePending` (ดู
+ * `format-date.ts`) — มี `animate-device-glow` เรืองจางๆ เบาๆ (keyframe เดิม
+ * ที่เคยใช้แค่หน้า Login — เอามาใช้ต่อหลัง login จุดแรก เพราะเป็นจุดที่
+ * "ควรรีบดู" จริงๆ ไม่ใช่แค่ใส่ลวดลายเฉยๆ) respect
+ * `prefers-reduced-motion` ผ่าน global override เดิม
+ */
+export function StalePendingBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex animate-device-glow items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+      {label}
+    </span>
+  );
+}

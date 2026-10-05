@@ -12,6 +12,7 @@ import {
   type SimulationResult,
 } from "@/lib/firmware-api";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/lib/status-pill";
 
@@ -56,7 +57,7 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ Firmware</p>
       <p className="text-xs text-muted-foreground">
         ระบุรุ่นอุปกรณ์ที่จะทดสอบ (ลองรุ่นนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)
@@ -99,6 +100,6 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

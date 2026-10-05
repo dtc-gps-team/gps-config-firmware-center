@@ -196,8 +196,8 @@ export function ApprovalCenterView() {
                 item={item}
                 onDecided={(updated) => {
                   setNotice(
-                    updated.status === "active"
-                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว`
+                    updated.status === "approved"
+                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว — ไปที่หน้ากลุ่มหรือหน้า Rollout เพื่อกดปล่อยเข้าอุปกรณ์เมื่อพร้อม`
                       : `ปฏิเสธ Rollout ของ "${item.campaignName}" แล้ว`,
                   );
                   void rolloutsQuery.refetch();

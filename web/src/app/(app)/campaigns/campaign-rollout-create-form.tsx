@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -264,7 +265,7 @@ export function CampaignRolloutCreateForm({
 
   return (
     <div className="flex max-w-2xl flex-col gap-5">
-      <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
+      <Card className="gap-4 p-5">
         <div className="flex flex-col gap-1.5">
           <Label>ประเภท Payload</Label>
           <div className="flex gap-2">
@@ -344,9 +345,9 @@ export function CampaignRolloutCreateForm({
             )}
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div>
           <p className="text-sm font-medium">
             อุปกรณ์ในรอบนี้ ({includedDeviceIds.length}/{memberDeviceIds.length})
@@ -423,7 +424,7 @@ export function CampaignRolloutCreateForm({
             {payloadType === "Config" ? "Config" : "Firmware"}ก่อน
           </div>
         )}
-      </div>
+      </Card>
 
       {formError && <ErrorBanner message={formError} />}
 

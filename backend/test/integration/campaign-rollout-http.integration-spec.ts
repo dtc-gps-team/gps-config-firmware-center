@@ -323,7 +323,7 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .expect(403);
     });
 
-    it('Operation คนอื่น (ไม่ใช่ผู้สร้าง) อนุมัติ pending_approval -> 200, status active + approvedBy', async () => {
+    it('Operation คนอื่น (ไม่ใช่ผู้สร้าง) อนุมัติ pending_approval -> 200, status approved + approvedBy (ยังไม่แตะอุปกรณ์จนกว่าจะกด release)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const campaign = await seedGroup(creator.id, []);
       const rollout = await seedPendingRollout(campaign.id, creator.id);
@@ -337,11 +337,11 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .expect(200);
 
       const body = res.body as { status: string; approvedBy: string };
-      expect(body.status).toBe('active');
+      expect(body.status).toBe('approved');
       expect(body.approvedBy).toBe(approver.id);
     });
 
-    it('มี payload/target จริง -> อนุมัติแล้ว auto-apply ให้ทุกเครื่องทันที ไม่ต้องรอ apply-config (มติ 2026-09-29 — PULL model)', async () => {
+    it('มี payload/target จริง -> อนุมัติแล้วยังไม่แตะอุปกรณ์ ต้องกด release ต่อถึงจะ auto-apply ให้ทุกเครื่อง (แยก "อนุมัติ"/"ปล่อย" เป็น 2 ขั้นตอน)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const config = await seedApprovedConfig();
       const deviceA = await seedInstalledDevice();
@@ -360,12 +360,26 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       const rolloutId = (createRes.body as { id: string }).id;
       const approver = await makeUser(prisma, { role: 'Operation' });
 
-      const res = await request(app.getHttpServer())
+      const approveRes = await request(app.getHttpServer())
         .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rolloutId}/approve`)
         .set('Authorization', `Bearer ${tokenFor(approver.id, 'Operation')}`)
         .expect(200);
+      expect((approveRes.body as { status: string }).status).toBe('approved');
 
-      const body = res.body as {
+      // ยังไม่แตะอุปกรณ์เลยตอนอนุมัติ — target ต้องยังค้าง pending ทั้งคู่
+      const targetsAfterApprove = await prisma.campaignRolloutTarget.findMany({
+        where: { rolloutId },
+      });
+      expect(targetsAfterApprove.every((t) => t.status === 'pending')).toBe(
+        true,
+      );
+
+      const releaseRes = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rolloutId}/release`)
+        .set('Authorization', `Bearer ${tokenFor(approver.id, 'Operation')}`)
+        .expect(200);
+
+      const body = releaseRes.body as {
         status: string;
         successCount: number;
         failureCount: number;
@@ -442,6 +456,46 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .expect(201);
     });
 
+    // #250 review comment B — approved ที่ยังไม่ปล่อยเข้าอุปกรณ์ต้องมีทางถอย
+    // ได้ก่อนแตะอุปกรณ์จริง ไม่งั้นทางเดียวที่หลุดออกจากสถานะนี้คือกด release
+    // จริงแล้วค่อย rollback ซึ่งขัดเจตนาหลักของการแยกอนุมัติ/ปล่อย
+    it('Operation คนอื่นปฏิเสธ approved (อนุมัติไปแล้วแต่ยังไม่ปล่อย) -> 200, status rejected — เปิด rollout ใหม่ในกลุ่มเดิมได้ทันที', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const approver1 = await makeUser(prisma, { role: 'Operation' });
+      const config = await seedApprovedConfig();
+      const device = await seedInstalledDevice();
+      const campaign = await seedGroup(creator.id, [device.deviceId]);
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          status: 'approved',
+          createdBy: creator.id,
+          approvedBy: approver1.id,
+          approvedAt: new Date(),
+        },
+      });
+      const approver2 = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      await grant('Operation', ActionType.Create);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/reject`)
+        .set('Authorization', `Bearer ${tokenFor(approver2.id, 'Operation')}`)
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('rejected');
+
+      // rejected ไม่นับเป็น "ค้างอยู่" -> เปิดรอบใหม่ในกลุ่มเดิมได้ทันที
+      // (ก่อนแก้ครั้งที่ 63 ข้อนี้ทำไม่ได้เลย เพราะ approved ค้างอยู่ใน
+      // OPEN_CAMPAIGN_ROLLOUT_STATUSES แล้วไม่มีทางออกนอกจาก release)
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+        .set('Authorization', `Bearer ${tokenFor(creator.id, 'Operation')}`)
+        .send({ payloadType: 'Config', configId: config.id })
+        .expect(201);
+    });
+
     it('2 request approve/reject พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const campaign = await seedGroup(creator.id, []);
@@ -476,9 +530,79 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       const final = await prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
       });
-      expect(['active', 'rejected']).toContain(final.status);
-      const winner = res1.status === 200 ? 'active' : 'rejected';
+      expect(['approved', 'rejected']).toContain(final.status);
+      const winner = res1.status === 200 ? 'approved' : 'rejected';
       expect(final.status).toBe(winner);
+    });
+  });
+
+  describe('POST /campaigns/:campaignId/rollouts/:id/release (แยก "อนุมัติ"/"ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน)', () => {
+    async function seedApprovedRollout(campaignId: string, createdBy: string) {
+      return prisma.campaignRollout.create({
+        data: {
+          campaignId,
+          payloadType: 'Config',
+          status: 'approved',
+          createdBy,
+        },
+      });
+    }
+
+    it('role ไม่มีสิทธิ์ campaign.Approve (ST) -> 403', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(opUser.id, []);
+      const rollout = await seedApprovedRollout(campaign.id, opUser.id);
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/release`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('approved -> 200, status active — ผู้อนุมัติเดิมเป็นคนกด release เองก็ได้ (ไม่เช็ค Separation of Duty)', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(opUser.id, []);
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          status: 'approved',
+          createdBy: opUser.id,
+          approvedBy: opUser.id,
+          approvedAt: new Date(),
+        },
+      });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(opUser.id, 'Operation');
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/release`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { status: string };
+      expect(body.status).toBe('active');
+    });
+
+    it('สถานะปัจจุบันไม่ใช่ approved (pending_approval อยู่) -> 409', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(opUser.id, []);
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          createdBy: opUser.id,
+        },
+      });
+      await grant('Operation', ActionType.Approve);
+      const token = tokenFor(opUser.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/release`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
     });
   });
 

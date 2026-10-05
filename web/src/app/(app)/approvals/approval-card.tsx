@@ -8,8 +8,9 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { simulateConfig, type SimulationResult } from "@/lib/config-api";
 import { Button } from "@/components/ui/button";
-import { StatusPill } from "@/lib/status-pill";
-import { formatDateTime } from "@/lib/format-date";
+import { Card } from "@/components/ui/card";
+import { EntityTypeTag, StalePendingBadge, StatusPill } from "@/lib/status-pill";
+import { formatDateTime, stalePendingLabel } from "@/lib/format-date";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
@@ -32,16 +33,23 @@ export function ApprovalCard({
   onDecided: (action: "approve" | "reject") => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const staleLabel = stalePendingLabel(item.queuedAt);
 
   return (
-    <div className="rounded-xl border bg-card">
-      <div className="flex flex-wrap items-start justify-between gap-4 p-4">
+    <Card
+      className={
+        staleLabel ? "border-l-4 border-l-amber-500" : undefined
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 px-4">
         <div className="min-w-0 flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
+            <EntityTypeTag type="Config" />
             <span className="font-medium">{item.name}</span>
             <span className="text-xs text-muted-foreground">
               {item.deviceModel} · {item.protocol}
             </span>
+            {staleLabel && <StalePendingBadge label={staleLabel} />}
           </div>
           {item.description && (
             <p className="text-sm text-muted-foreground">{item.description}</p>
@@ -65,7 +73,7 @@ export function ApprovalCard({
         />
       </div>
 
-      <div className="border-t px-4 py-2">
+      <div data-slot="card-footer" className="border-t px-4 pt-2">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -80,7 +88,7 @@ export function ApprovalCard({
         </button>
         {expanded && <ApprovalDetail item={item} />}
       </div>
-    </div>
+    </Card>
   );
 }
 

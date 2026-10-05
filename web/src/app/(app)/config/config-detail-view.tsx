@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -304,7 +305,7 @@ function ConfigDetailContent({
             </p>
           )}
 
-          <div className="rounded-xl border bg-card p-4">
+          <Card className="p-4">
             <div className="divide-y">
               <InfoRow label="รุ่นอุปกรณ์" icon={SlidersHorizontalIcon}>
                 {config.deviceModel}
@@ -329,7 +330,7 @@ function ConfigDetailContent({
                 {formatDateTime(config.updatedAt)}
               </InfoRow>
             </div>
-          </div>
+          </Card>
 
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium">

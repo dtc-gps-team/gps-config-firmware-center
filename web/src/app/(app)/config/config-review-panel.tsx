@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatusPill } from "@/lib/status-pill";
+import { Card } from "@/components/ui/card";
 
 /**
  * แผง "ทดสอบ & ส่งอนุมัติ" ฝั่ง ConfigEngineer (Config Simulation Gate — #18) — โผล่บนหน้า
@@ -91,7 +92,7 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ &amp; ส่งอนุมัติ</p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -174,6 +175,6 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

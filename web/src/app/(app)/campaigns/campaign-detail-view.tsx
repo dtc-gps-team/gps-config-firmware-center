@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -34,6 +35,8 @@ import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
 import { canCreateCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
+import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 
 /**
@@ -52,11 +55,14 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const { data, isLoading, error, refetch } = useCampaign(campaignId);
   const targetsQuery = useCampaignTargets(campaignId);
   const rolloutsQuery = useCampaignRollouts(campaignId);
-  // Rollout ล่าสุดของกลุ่ม (เรียง createdAt desc จาก backend อยู่แล้ว) — ใช้
-  // เช็ค Resume/Rollback (§12.2 PDF: "Campaign Monitor" มี Pause/Resume/
-  // Rollback ในตัว ไม่ต้องเปิดหน้า Rollout Detail แยกไปกดอีกที) —
-  // `CampaignRolloutIncidentPanel` เองคืน `null` ถ้าสถานะ/สิทธิ์ไม่เข้าเงื่อนไข
-  // จึงเรียกได้เสมอโดยไม่ต้องเช็คซ้ำที่นี่
+  // Rollout ล่าสุดของกลุ่ม (เรียง createdAt desc จาก backend อยู่แล้ว — และ
+  // เป็นตัวเดียวที่ "ยังไม่จบ" ได้เสมอ เพราะกลุ่มหนึ่งรัน Rollout ได้ทีละรอบ
+  // เท่านั้น) ใช้เช็ค Approve/Release/Resume/Rollback ทั้งหมดตรงนี้เลย (§12.2
+  // PDF: "Campaign Monitor" มี Pause/Resume/Rollback ในตัว — ขยายให้ครอบคลุม
+  // Approve/Release ด้วย เพราะเดิมต้องกดเข้า Rollout Detail แยกไปอีกหน้า
+  // กว่าจะเจอปุ่ม ผู้ใช้จริงบ่นว่ากดหลายสเตปเกินไป) — panel แต่ละตัวคืน
+  // `null` เองถ้าสถานะ/สิทธิ์ไม่เข้าเงื่อนไข จึงเรียกได้เสมอโดยไม่ต้องเช็คซ้ำ
+  // ที่นี่ (มีแค่ panel เดียวที่ขึ้นจริงต่อสถานะหนึ่ง ไม่มีทางซ้อนกัน)
   const latestRollout = (rolloutsQuery.data ?? [])[0] ?? null;
   const latestRolloutTargetsQuery = useCampaignRolloutTargets(
     campaignId,
@@ -108,7 +114,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
       </div>
 
       {latestRollout && (
-        <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
+        <Card className="gap-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
               สถานะล่าสุด — {latestRollout.payloadType}
@@ -134,6 +140,19 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             / ทั้งหมด {latestRollout.targetCount}
           </p>
 
+          <CampaignRolloutApprovalPanel
+            campaignId={campaignId}
+            rollout={latestRollout}
+            onDecided={() => void rolloutsQuery.refetch()}
+          />
+
+          <CampaignRolloutReleasePanel
+            campaignId={campaignId}
+            rollout={latestRollout}
+            onReleased={() => void rolloutsQuery.refetch()}
+            onRejected={() => void rolloutsQuery.refetch()}
+          />
+
           <CampaignRolloutIncidentPanel
             campaignId={campaignId}
             rollout={latestRollout}
@@ -145,10 +164,10 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             targetsError={latestRolloutTargetsQuery.error}
             onResumed={() => void rolloutsQuery.refetch()}
           />
-        </div>
+        </Card>
       )}
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium">
             สมาชิกกลุ่ม ({(targetsQuery.data ?? []).length})
@@ -189,9 +208,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             </Table>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium">ประวัติ Rollout</p>
           {canStartRollout && (
@@ -292,9 +311,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             </Table>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="max-w-md rounded-xl border bg-card p-4">
+      <Card className="max-w-md p-4">
         <div className="divide-y">
           <div className="flex justify-between gap-4 py-1.5 text-sm">
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -309,7 +328,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             <span>{formatDateTime(data.updatedAt)}</span>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
