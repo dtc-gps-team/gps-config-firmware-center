@@ -4308,6 +4308,13 @@ components:
             - config_override_pending
             - config_override_approved
             - config_override_rejected
+            # เพิ่มใหม่ (v3.43 — Sprint 3 แถวที่ 24): Firmware Override
+            # รายเครื่อง — mirror config_override_pending/approved/rejected
+            # ทุกประการ (แจ้ง Operation ตอนมีคำขอ pending ใหม่ + แจ้ง ST
+            # ผู้ request ตอน Operation ตัดสินใจแล้ว)
+            - firmware_override_pending
+            - firmware_override_approved
+            - firmware_override_rejected
         payload:
           type: object
           additionalProperties: true
