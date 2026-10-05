@@ -409,6 +409,9 @@ async function main() {
     // ConfigEngineer/FirmwareEngineer/Operation/ST/OT (คนละหน้าที่กับงาน
     // per-device ปกติที่ role พวกนี้ทำหลังอุปกรณ์ลงทะเบียนแล้ว)
     grant('Admin', 'device-registration', 'Create'),
+    // Update = ออก/หมุนเวียน key ให้เครื่องที่มีอยู่แล้ว (rotate-key, เพิ่ม
+    // ระหว่างทำ PR 1 — เครื่องเก่าก่อนฟีเจอร์นี้ไม่งั้นไม่มีทางได้ key เลย)
+    grant('Admin', 'device-registration', 'Update'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----
