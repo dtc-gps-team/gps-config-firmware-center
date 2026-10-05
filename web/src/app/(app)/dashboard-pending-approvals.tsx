@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { EntityTypeTag } from "@/lib/status-pill";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
@@ -43,6 +44,39 @@ type Row =
  * เป็นทางลัดไม่ต้องเปิด Approval Center ก่อน — ของจริงเดิมมีแต่ "กิจกรรม
  * ล่าสุด" ซึ่ง read-only (ดู `dashboard-activity.tsx`)
  *
+ * **ไม่แสดง widget นี้เลยถ้า role ปัจจุบันอนุมัติอะไรไม่ได้สักอย่าง** (ทั้ง 3
+ * ประเภทเป็นสิทธิ์ Operation เท่านั้นในระบบนี้) กัน noise ข้อความ "เฉพาะ
+ * Operation เท่านั้น" เกะกะหน้า Dashboard ของ role อื่นที่ทำอะไรตรงนี้ไม่ได้
+ * อยู่แล้ว
+ *
+ * **แยก `PendingApprovalsCard` ออกเป็น component ย่อยโดยตั้งใจ (review
+ * comment B บน PR #251 ข้อ 1)** — เดิม hook ทั้ง 3 ตัวถูกเรียกใน component
+ * เดียวกับที่เช็ค `canAnyDecide` (ต้องเรียกก่อน early return ตาม rules of
+ * hooks) ทำให้ทุก role รวมถึง ST/OT/Auditor ที่เปิด Dashboard ยิง
+ * `GET /config?status=testing`, `GET /users?role=Operation`, list rollouts
+ * ทั้งระบบ + `listCampaigns`, list override ทุกครั้ง (ซ้ำตอน refocus ผ่าน
+ * `useRefetchOnFocus` ด้วย) ทั้งที่ผลถูกทิ้งเพราะ widget ไม่แสดงให้เห็นอยู่ดี
+ * — backend ยังคุมสิทธิ์จริงอยู่เสมอ (ไม่ใช่ช่องโหว่) แต่ผิดหลัก least
+ * privilege ฝั่ง client สำหรับ role ที่ไม่เกี่ยวกับฟีเจอร์นี้เลย แยก
+ * component แล้ว hook ทั้ง 3 จะถูกเรียกเฉพาะตอน render `PendingApprovalsCard`
+ * ซึ่งเกิดขึ้นเฉพาะ role ที่ `canAnyDecide` เท่านั้น
+ */
+export function DashboardPendingApprovals() {
+  const { session } = useAuth();
+  const role = session?.role;
+  const canAnyDecide =
+    canDecideConfigApproval(role) ||
+    canDecideCampaignApproval(role) ||
+    canDecideDeviceConfigOverride(role);
+
+  if (!canAnyDecide) {
+    return null;
+  }
+
+  return <PendingApprovalsCard role={role} />;
+}
+
+/**
  * **ไม่ได้เขียน logic อนุมัติ/ปฏิเสธใหม่เลย** — ยืม `ApprovalActions`/
  * `DeviceConfigOverrideApprovalActions` ตัวเดียวกับที่ Approval Center ใช้
  * ตรงๆ (ผ่านการทดสอบมาแล้วทั้งคู่) component นี้แค่รวม 3 คิวที่มีอยู่แล้ว
@@ -54,27 +88,11 @@ type Row =
  * เพราะ `CampaignRolloutApprovalPanel` เดิมมีข้อความอธิบาย SoD ยาวกว่ามาก
  * ใส่ในแถวสั้นๆ แล้วจะดูไม่สมดุลกับอีก 2 ประเภท — ลิงก์ตรงไปหน้า Rollout
  * แทน (ซึ่งมีปุ่มอนุมัติเต็มรูปแบบรออยู่แล้ว)
- *
- * **ไม่แสดง widget นี้เลยถ้า role ปัจจุบันอนุมัติอะไรไม่ได้สักอย่าง** (ทั้ง 3
- * ประเภทเป็นสิทธิ์ Operation เท่านั้นในระบบนี้) กัน noise ข้อความ "เฉพาะ
- * Operation เท่านั้น" เกะกะหน้า Dashboard ของ role อื่นที่ทำอะไรตรงนี้ไม่ได้
- * อยู่แล้ว
  */
-export function DashboardPendingApprovals() {
-  const { session } = useAuth();
-  const role = session?.role;
-  const canAnyDecide =
-    canDecideConfigApproval(role) ||
-    canDecideCampaignApproval(role) ||
-    canDecideDeviceConfigOverride(role);
-
+function PendingApprovalsCard({ role }: { role: string | undefined }) {
   const configs = usePendingApprovals();
   const rollouts = usePendingCampaignRollouts();
   const overrides = usePendingDeviceConfigOverrides();
-
-  if (!canAnyDecide) {
-    return null;
-  }
 
   const rows: Row[] = [
     ...(configs.data ?? []).map(
@@ -105,11 +123,28 @@ export function DashboardPendingApprovals() {
     (configs.data?.length ?? 0) +
     (rollouts.data?.length ?? 0) +
     (overrides.data?.length ?? 0);
+
+  // #251 review comment B ข้อ 2 — เดิมเป็น AND ทั้ง 3 ตัว ถ้าคิวหนึ่งโหลด
+  // เสร็จก่อน (ว่าง) อีกสองคิวยังโหลดอยู่ จะเห็น empty state โผล่มาชั่วขณะ
+  // ก่อนเด้งเป็นมีรายการ — เปลี่ยนเป็น OR: "ยังโหลดอยู่" ถ้ามีคิวไหนก็ตามที่
+  // ยังไม่เคยได้ข้อมูลรอบแรกเลย (data === null)
   const stillLoading =
-    configs.isLoading &&
-    rollouts.isLoading &&
-    overrides.isLoading &&
-    configs.data === null;
+    (configs.isLoading && configs.data === null) ||
+    (rollouts.isLoading && rollouts.data === null) ||
+    (overrides.isLoading && overrides.data === null);
+
+  // #251 review comment B ข้อ 2 — เดิมไม่อ่าน .error ของ 3 hook เลย ถ้าโหลด
+  // พัง widget จะโชว์ "ไม่มีรายการรออนุมัติ" ทำให้ Operation เข้าใจผิดว่าไม่มี
+  // งานค้าง — รวม error ที่มีจริงมาโชว์แทน (อาจมีได้มากกว่า 1 คิวพังพร้อมกัน)
+  const errors = [configs.error, rollouts.error, overrides.error].filter(
+    (e): e is string => e !== null,
+  );
+
+  function retryAll() {
+    void configs.refetch();
+    void rollouts.refetch();
+    void overrides.refetch();
+  }
 
   return (
     <Card>
@@ -118,7 +153,11 @@ export function DashboardPendingApprovals() {
           รายการรออนุมัติ{" "}
           <span className="text-muted-foreground">({totalCount})</span>
         </CardTitle>
-        <CardDescription>ทางลัดอนุมัติ/ปฏิเสธโดยไม่ต้องเปิด Approval Center</CardDescription>
+        <CardDescription>
+          ทางลัดดูสิ่งที่รออนุมัติโดยไม่ต้องเปิด Approval Center — Config/คำขอ
+          Override กดอนุมัติได้ตรงนี้เลย ส่วน Campaign Rollout ลิงก์ไปอนุมัติ
+          ต่อ
+        </CardDescription>
         <CardAction>
           <Link
             href="/approvals"
@@ -134,6 +173,17 @@ export function DashboardPendingApprovals() {
             {Array.from({ length: 2 }).map((_, i) => (
               <div key={i} className="h-10 animate-pulse rounded bg-muted" />
             ))}
+          </div>
+        ) : errors.length > 0 ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            {errors.map((e, i) => (
+              <p key={i} className="text-sm text-destructive">
+                {e}
+              </p>
+            ))}
+            <Button variant="outline" size="sm" onClick={retryAll}>
+              ลองใหม่
+            </Button>
           </div>
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
