@@ -19,6 +19,8 @@ import {
   APPROVABLE_CAMPAIGN_ROLLOUT_STATUS,
   AUTO_PAUSE_FAILURE_RATE_THRESHOLD,
   OPEN_CAMPAIGN_ROLLOUT_STATUSES,
+  REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES,
+  RELEASABLE_CAMPAIGN_ROLLOUT_STATUS,
   RESUMABLE_CAMPAIGN_ROLLOUT_STATUS,
   ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES,
 } from './campaign-rollout-status';
@@ -224,7 +226,7 @@ export class CampaignRolloutService {
    */
   async approve(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const rollout = await this.findOne(id);
-    this.assertDecidable(rollout, actor);
+    this.assertDecidable(rollout, actor, [APPROVABLE_CAMPAIGN_ROLLOUT_STATUS]);
 
     // race condition (mirror DeviceConfigOverride approve/reject, PR #225):
     // เดิม findOne() เช็คสถานะนอก transaction แล้ว update({ where: { id } })
@@ -236,12 +238,14 @@ export class CampaignRolloutService {
       const result = await tx.campaignRollout.updateMany({
         where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
         data: {
-          status: 'active',
+          // แยก "อนุมัติ" ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน (เพิ่ม
+          // ทีหลัง — ตัดสินใจ UX ของเว็บ) ไปแค่ `approved` เท่านั้น ยังไม่
+          // เป็น `active` — ไม่ตั้ง `activeWindowStartedAt` ด้วย เพราะ field
+          // นี้มีความหมายก็ต่อเมื่อ rollout เริ่ม active จริง (ย้ายไปตั้งใน
+          // `release()` แทน)
+          status: 'approved',
           approvedBy: actor.id,
           approvedAt: new Date(),
-          // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ (#235 review รอบ 3 ข้อ 1) — ดู
-          // comment เหนือ field นี้ใน schema.prisma
-          activeWindowStartedAt: new Date(),
         },
       });
       if (result.count === 0) {
@@ -253,19 +257,54 @@ export class CampaignRolloutService {
     });
 
     await this.logAudit('approve', actor.id);
+    return updated;
+  }
 
-    // Auto-apply ทันทีตอน active (มติ 2026-09-29 — ระบบเป็น PULL model จริง
-    // กล่องดึง Config/Firmware เองอัตโนมัติจาก data กลาง ไม่มีเหตุผลให้ต้องรอ
-    // ช่างกดยืนยันที่เครื่องผ่าน Mobile เหมือนเดิม (นั่นเป็นแค่ placeholder
-    // ที่คิดขึ้นเพื่อขอบเขตฝึกงาน — ดู comment เหนือ
-    // `DeviceService.confirmFirmwareInstall()`) ทำ**หลัง**อัปเดต status เป็น
-    // active แล้วเท่านั้น (ไม่ทำใน transaction เดียวกับด้านบน เพราะเป็นงานที่
-    // "อาจ fail บางเครื่อง" ต่างจากการอนุมัติเองที่ทำสำเร็จแน่นอน) —
-    // Firmware Rollback ยังคงเร็วกว่าปกติเหมือนเดิม (ของเก่ายังอยู่บนอีก
-    // พาร์ทิชันอยู่แล้ว ใช้ `FirmwareRollbackExecutor` แทนการเขียน Firmware
-    // ใหม่) ส่วน Config (ทั้งปกติและ Rollback) กับ Firmware ปกติ ใช้ loop
-    // auto-apply ใหม่ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/
-    // `autoApplyFirmware` เรื่องการรักษา Auto Pause ให้ยังมีความหมายอยู่
+  /**
+   * `POST /campaigns/{campaignId}/rollouts/{id}/release` — Operation สั่งปล่อย
+   * Rollout ที่อนุมัติแล้วเข้าอุปกรณ์จริง (เพิ่มทีหลัง — แยก "อนุมัติ" ออก
+   * จาก "ปล่อย" เป็น 2 ขั้นตอนบนเว็บ ให้ Operation เลือกจังหวะปล่อยเองได้
+   * เช่น ปล่อยนอกเวลาทำงาน แทนที่จะส่งทันทีตอนอนุมัติเหมือนเดิม) ต้องเป็น
+   * `approved` เท่านั้น (409 ถ้าไม่ใช่) **ไม่เช็ค Separation of Duty** mirror
+   * `resume()` ทุกประการ — การอนุมัติ (ที่เช็ค SoD ไปแล้ว) เกิดขึ้นไปก่อนหน้า
+   * นี้แล้ว การปล่อยคือ "ไปต่อได้เลย" ไม่ใช่การอนุมัติรอบที่สอง Operation คน
+   * ไหนก็กดปล่อยได้ รวมถึงคนเดิมที่อนุมัติเอง
+   *
+   * ย้ายโค้ด auto-apply ที่เคยอยู่ใน `approve()` มาไว้ที่นี่ทั้งหมด (มติ
+   * 2026-09-29 เดิม — ระบบเป็น PULL model จริง กล่องดึง Config/Firmware เอง
+   * อัตโนมัติจาก data กลาง ไม่มีเหตุผลให้ต้องรอช่างกดยืนยันที่เครื่องผ่าน
+   * Mobile เหมือนเดิม — นั่นเป็นแค่ placeholder ที่คิดขึ้นเพื่อขอบเขตฝึกงาน
+   * ดู comment เหนือ `DeviceService.confirmFirmwareInstall()`) — Firmware
+   * Rollback ยังคงเร็วกว่าปกติเหมือนเดิม (ของเก่ายังอยู่บนอีกพาร์ทิชันอยู่
+   * แล้ว ใช้ `FirmwareRollbackExecutor` แทนการเขียน Firmware ใหม่) ส่วน
+   * Config (ทั้งปกติและ Rollback) กับ Firmware ปกติ ใช้ loop auto-apply
+   * ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/`autoApplyFirmware`
+   */
+  async release(id: string, actor: ActingUser): Promise<CampaignRollout> {
+    await this.findOne(id); // 404 ถ้าไม่พบ
+
+    // race condition — mirror approve()/resume() ทุกประการ กดปล่อยซ้ำ (เช่น
+    // double-click หรือ client retry หลัง timeout) จะวน dispatchAutoApply()
+    // ซ้ำบน target ชุดเดียวกันได้ (apply ซ้ำ + audit row ซ้ำ)
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.campaignRollout.updateMany({
+        where: { id, status: RELEASABLE_CAMPAIGN_ROLLOUT_STATUS },
+        data: {
+          status: 'active',
+          // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ — ดู comment เหนือ field นี้
+          // ใน schema.prisma (ย้ายมาจาก approve() เดิม)
+          activeWindowStartedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          `Rollout นี้ถูกเปลี่ยนสถานะไปแล้วระหว่างทำรายการ (ไม่ใช่ ${RELEASABLE_CAMPAIGN_ROLLOUT_STATUS} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
+        );
+      }
+      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
+    });
+
+    await this.logAudit('release', actor.id);
     return this.dispatchAutoApply(updated, actor.id);
   }
 
@@ -295,19 +334,33 @@ export class CampaignRolloutService {
 
   /**
    * `POST /campaigns/{campaignId}/rollouts/{id}/reject` — mirror `approve()`
-   * แต่เปลี่ยนเป็น `rejected` แทน ไม่ตั้ง `approvedBy`/`approvedAt` (ไม่มีใคร
-   * "อนุมัติ" การ reject) — rollout รอบนี้จบเป็นประวัติ เปิดรอบใหม่ผ่าน
-   * `POST /campaigns/{campaignId}/rollouts` อีกครั้งได้ทันที (ไม่มี `draft`/
-   * PATCH แก้ rollout เดิม)
+   * แต่เปลี่ยนเป็น `rejected` แทน ไม่ตั้ง `approvedBy`/`approvedAt` ใหม่ (ไม่มี
+   * ใคร "อนุมัติ" การ reject — แต่ถ้า reject รอบที่เคยอนุมัติไปแล้ว ค่า
+   * `approvedBy`/`approvedAt` เดิมจะยังอยู่ เป็นร่องรอยว่าเคยอนุมัติจริงก่อน
+   * จะถูกยกเลิกทีหลัง ไม่ได้ลบทิ้ง) — rollout รอบนี้จบเป็นประวัติ เปิดรอบใหม่
+   * ผ่าน `POST /campaigns/{campaignId}/rollouts` อีกครั้งได้ทันที (ไม่มี
+   * `draft`/PATCH แก้ rollout เดิม)
+   *
+   * **รับทั้ง `pending_approval` และ `approved`** (แก้ครั้งที่ 63 review
+   * comment B บน PR #250 — ต่างจาก `approve()` ที่รับแค่ `pending_approval`
+   * เท่านั้นโดยตั้งใจ) เพราะ `approved` ที่ยังไม่ปล่อยต้องมีทางถอยได้ก่อนแตะ
+   * อุปกรณ์จริง — ถ้า reject() รับแค่ `pending_approval` เหมือน approve()
+   * รอบที่อนุมัติไปแล้วแต่เปลี่ยนใจ (เจอปัญหากับ Config/Firmware ทีหลัง หรือ
+   * ลืมกลับมากดปล่อย) จะไม่มีทางออกเลยนอกจากกด release จริงก่อนค่อย rollback
+   * — ขัดเจตนาหลักของการแยกอนุมัติ/ปล่อยเป็น 2 ขั้นตอน (ดู
+   * `REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES`)
    */
   async reject(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const rollout = await this.findOne(id);
-    this.assertDecidable(rollout, actor);
+    this.assertDecidable(rollout, actor, REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES);
 
     // race condition — เดียวกับ approve() ด้านบน
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.campaignRollout.updateMany({
-        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        where: {
+          id,
+          status: { in: [...REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES] },
+        },
         data: { status: 'rejected' },
       });
       if (result.count === 0) {
@@ -986,10 +1039,21 @@ export class CampaignRolloutService {
     });
   }
 
-  private assertDecidable(rollout: CampaignRollout, actor: ActingUser): void {
-    if (rollout.status !== APPROVABLE_CAMPAIGN_ROLLOUT_STATUS) {
+  /**
+   * ใช้ร่วมกันโดย `approve()` (ส่ง `[APPROVABLE_CAMPAIGN_ROLLOUT_STATUS]` —
+   * ยอมแค่ `pending_approval`) และ `reject()` (ส่ง
+   * `REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES` — ยอมทั้ง `pending_approval` และ
+   * `approved`, แก้ครั้งที่ 63 review comment B บน PR #250) — SoD เช็คเหมือน
+   * กันทั้งคู่ไม่ว่าจะยอมสถานะไหนบ้าง
+   */
+  private assertDecidable(
+    rollout: CampaignRollout,
+    actor: ActingUser,
+    allowedStatuses: readonly CampaignRolloutStatus[],
+  ): void {
+    if (!allowedStatuses.includes(rollout.status)) {
       throw new ConflictException(
-        `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${APPROVABLE_CAMPAIGN_ROLLOUT_STATUS} จึงตัดสินใจไม่ได้`,
+        `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${allowedStatuses.join('/')} จึงตัดสินใจไม่ได้`,
       );
     }
     if (rollout.createdBy === actor.id) {

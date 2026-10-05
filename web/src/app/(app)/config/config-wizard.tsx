@@ -6,6 +6,7 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -358,7 +359,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       <WizardStepIndicator steps={CONFIG_WIZARD_STEPS} step={step} />
 
       {step === 1 ? (
-        <div className="flex max-w-xl flex-col gap-5 rounded-xl border bg-card p-5">
+        <Card className="max-w-xl gap-5 p-5">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="config-name">ชื่อ Config</Label>
             <Input
@@ -458,7 +459,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             </Button>
             <Button onClick={goToStep2}>ถัดไป: เลือก Parameter →</Button>
           </div>
-        </div>
+        </Card>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -470,7 +471,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
           </div>
 
           <div className="grid gap-4 md:grid-cols-[300px_1fr]">
-            <section className="flex max-h-[32rem] flex-col overflow-hidden rounded-xl border bg-card">
+            <Card className="max-h-[32rem] gap-0 py-0">
               <div className="border-b px-4 py-3">
                 <p className="text-sm font-medium">คลัง Parameter</p>
                 <p className="text-xs text-muted-foreground">
@@ -520,9 +521,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   ))
                 )}
               </div>
-            </section>
+            </Card>
 
-            <section className="flex flex-col overflow-hidden rounded-xl border bg-card">
+            <Card className="gap-0 py-0">
               <div className="border-b px-4 py-3">
                 <p className="text-sm font-medium">
                   Config Template{" "}
@@ -556,7 +557,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   ))
                 )}
               </div>
-            </section>
+            </Card>
           </div>
 
           {formError && <ErrorBanner message={formError} list={formErrorList} />}

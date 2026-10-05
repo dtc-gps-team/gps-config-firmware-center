@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api";
 import { approveFirmware, rejectFirmware, type Firmware } from "@/lib/firmware-api";
 import { canDecideFirmwareApproval } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type Decision = "approve" | "reject";
 
@@ -36,13 +37,13 @@ export function FirmwareApprovalPanel({
 
   if (!canDecideFirmwareApproval(session?.role)) {
     return (
-      <div className="flex max-w-2xl flex-col gap-1 rounded-xl border bg-muted/30 p-4">
+      <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ QA Engineer ตรวจคุณภาพ</p>
         <p className="text-sm text-muted-foreground">
           Firmware เวอร์ชันนี้ยังไม่ได้รับการอนุมัติคุณภาพ — เฉพาะ QA Engineer
           เท่านั้นที่อนุมัติ/ปฏิเสธได้
         </p>
-      </div>
+      </Card>
     );
   }
 
@@ -76,7 +77,7 @@ export function FirmwareApprovalPanel({
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
+    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติคุณภาพ Firmware</p>
       <p className="text-sm text-muted-foreground">
         ดูผลทดสอบด้านบนก่อนตัดสินใจ — อนุมัติแล้วใช้สร้างแคมเปญได้ทันที
@@ -127,6 +128,6 @@ export function FirmwareApprovalPanel({
           </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
