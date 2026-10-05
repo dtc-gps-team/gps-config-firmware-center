@@ -9,6 +9,7 @@ import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'device_search_repository.dart';
+import 'device_status_repository.dart';
 import 'device_status_ui.dart';
 
 String _formatDate(DateTime dt) {
@@ -21,8 +22,9 @@ String _formatDate(DateTime dt) {
 /// a row on the search screen. Read-only aside from the "Override ค่า
 /// พารามิเตอร์" entry point (ST only — Config Override Phase 2, issue #211,
 /// via `GET /devices/{deviceId}/config`): shows the fields of the `Device`
-/// record itself, firmware sync status is still a separate, not-yet-built
-/// endpoint.
+/// record itself, plus a "สถานะ Config / Firmware" card from
+/// `GET /devices/{deviceId}/status` (issue #245, PR #247) that loads and fails
+/// independently of the device record.
 class DeviceDetailPage extends ConsumerWidget {
   const DeviceDetailPage({super.key, required this.deviceId});
 
@@ -69,7 +71,7 @@ class DeviceDetailPage extends ConsumerWidget {
   }
 }
 
-class _DeviceDetailView extends StatelessWidget {
+class _DeviceDetailView extends ConsumerWidget {
   const _DeviceDetailView({
     required this.device,
     required this.deviceId,
@@ -81,7 +83,7 @@ class _DeviceDetailView extends StatelessWidget {
   final bool isSt;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
@@ -114,6 +116,8 @@ class _DeviceDetailView extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 20),
+        _StatusSection(deviceId: deviceId),
         if (isSt) ...[
           const SizedBox(height: 20),
           OutlinedButton.icon(
@@ -131,6 +135,74 @@ class _DeviceDetailView extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+/// "สถานะ Config / Firmware" — `GET /devices/{deviceId}/status`. Has its own
+/// loading / error (with retry) state so a failing status call never hides the
+/// device record above it.
+class _StatusSection extends ConsumerWidget {
+  const _StatusSection({required this.deviceId});
+
+  final String deviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statusAsync = ref.watch(deviceStatusProvider(deviceId));
+    return statusAsync.when(
+      skipLoadingOnRefresh: true,
+      data: (status) {
+        final message = status.lastCheckInMessage;
+        return _InfoCard(
+          rows: [
+            (
+              'สถานะ Config',
+              DevicePayloadStatusStyle.label(status.configStatus),
+            ),
+            (
+              'สถานะ Firmware',
+              DevicePayloadStatusStyle.label(status.firmwareStatus),
+            ),
+            // Placeholder: there is no online/offline signal yet — the
+            // backend has no device check-in / `lastSeenAt` concept (issue
+            // #245; design is tracked separately). Static "ไม่ทราบ" until
+            // that design lands, then drive it from the response.
+            ('ออนไลน์/ออฟไลน์', 'ไม่ทราบ'),
+            (
+              'เช็คอินล่าสุด',
+              message == null || message.isEmpty ? '—' : message,
+            ),
+          ],
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: CircularProgressIndicator(key: Key('device_status_loading')),
+        ),
+      ),
+      error: (error, _) => AppErrorView(
+        compact: true,
+        message: _errorMessage(error),
+        onRetry: () => ref.invalidate(deviceStatusProvider(deviceId)),
+        messageKey: const Key('device_status_error'),
+        retryKey: const Key('device_status_retry'),
+      ),
+    );
+  }
+
+  static String _errorMessage(Object error) {
+    if (error is ApiException) {
+      switch (error.statusCode) {
+        case 404:
+          return 'ไม่พบสถานะอุปกรณ์นี้';
+        case 403:
+          return 'ไม่มีสิทธิ์ดูสถานะอุปกรณ์นี้';
+        default:
+          return error.message;
+      }
+    }
+    return 'โหลดสถานะอุปกรณ์ไม่สำเร็จ';
   }
 }
 

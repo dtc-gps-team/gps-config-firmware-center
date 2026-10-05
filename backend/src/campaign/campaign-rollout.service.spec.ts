@@ -431,25 +431,29 @@ describe('CampaignRolloutService', () => {
     };
     const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
 
-    it('pending_approval + ผู้อนุมัติไม่ใช่ผู้สร้าง -> active พร้อม approvedBy/approvedAt', async () => {
+    it('pending_approval + ผู้อนุมัติไม่ใช่ผู้สร้าง -> approved พร้อม approvedBy/approvedAt (ไม่แตะอุปกรณ์เลย)', async () => {
       campaignRollout.findUnique.mockResolvedValue(pendingRollout);
       campaignRollout.findUniqueOrThrow.mockResolvedValue({
         ...pendingRollout,
-        status: 'active',
+        status: 'approved',
         approvedBy: otherOperation.id,
         approvedAt: new Date('2026-01-02T00:00:00.000Z'),
       });
 
       const result = await service.approve(pendingRollout.id, otherOperation);
 
-      expect(result.status).toBe('active');
+      expect(result.status).toBe('approved');
       expect(campaignRollout.updateMany).toHaveBeenCalledWith({
         where: { id: pendingRollout.id, status: 'pending_approval' },
         data: expect.objectContaining({
-          status: 'active',
+          status: 'approved',
           approvedBy: otherOperation.id,
         }) as Partial<CampaignRollout>,
       });
+      // แยก "อนุมัติ" ออกจาก "ปล่อยเข้าอุปกรณ์" แล้ว — approve() ต้องไม่
+      // เรียก auto-apply/แตะอุปกรณ์ใดๆ เลย (ย้ายไปอยู่ที่ release() ทั้งหมด)
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
     });
 
     it('สถานะไม่ใช่ pending_approval -> ConflictException', async () => {
@@ -471,9 +475,89 @@ describe('CampaignRolloutService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('Firmware Rollback (isRollback=true) -> อนุมัติแล้วสั่งสลับพาร์ทิชันทันที ไม่รอช่างยืนยัน (Dual Partition mock)', async () => {
+    it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วระหว่างที่ทรานแซกชันกำลังจะ update (updateMany count 0) -> ConflictException (409), ไม่ throw P2025', async () => {
+      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.approve(pendingRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
+      expect(campaignRollout.findUniqueOrThrow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('release', () => {
+    const approvedRollout: CampaignRollout = {
+      ...sampleRollout,
+      status: 'approved',
+    };
+    const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
+
+    it('approved -> active แล้วสั่ง auto-apply ต่อทันที (ไม่มี target ค้าง)', async () => {
+      const activeRollout: CampaignRollout = {
+        ...approvedRollout,
+        status: 'active',
+      };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน release()
+        .mockResolvedValueOnce(activeRollout); // return สุดท้ายจาก autoApplyConfig (ไม่มี target pending)
+
+      const result = await service.release(approvedRollout.id, otherOperation);
+
+      expect(result.status).toBe('active');
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: { id: approvedRollout.id, status: 'approved' },
+        data: expect.objectContaining({
+          status: 'active',
+        }) as Partial<CampaignRollout>,
+      });
+    });
+
+    it('ผู้อนุมัติเดิมเป็นคนกด release เองก็ได้ (ไม่เช็ค Separation of Duty)', async () => {
+      const selfApproved: CampaignRollout = {
+        ...approvedRollout,
+        approvedBy: otherOperation.id,
+      };
+      const activeRollout: CampaignRollout = {
+        ...selfApproved,
+        status: 'active',
+      };
+      campaignRollout.findUnique.mockResolvedValue(selfApproved);
+      campaignRollout.findUniqueOrThrow
+        .mockResolvedValueOnce(activeRollout)
+        .mockResolvedValueOnce(activeRollout);
+
+      await expect(
+        service.release(selfApproved.id, otherOperation),
+      ).resolves.toMatchObject({ status: 'active' });
+    });
+
+    it('สถานะปัจจุบันไม่ใช่ approved -> ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...sampleRollout,
+        status: 'pending_approval',
+      });
+      campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.release(sampleRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('กด release ซ้ำพร้อมกัน (retry/double-click) -> คำขอที่สองได้ ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+      campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        service.release(approvedRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
+    it('Firmware Rollback (isRollback=true) -> ปล่อยแล้วสั่งสลับพาร์ทิชันทันที ไม่รอช่างยืนยัน (Dual Partition mock)', async () => {
       const firmwareRollback: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: 'fw-old',
@@ -513,7 +597,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(1) // success
         .mockResolvedValueOnce(0); // failed
 
-      const result = await service.approve(firmwareRollback.id, otherOperation);
+      const result = await service.release(firmwareRollback.id, otherOperation);
 
       expect(firmwareRollbackExecutor.switchPartition).toHaveBeenCalledWith({
         deviceId: 'DEV-0001',
@@ -534,7 +618,7 @@ describe('CampaignRolloutService', () => {
 
     it('Firmware Rollback แต่ของเก่าไม่อยู่บนพาร์ทิชันที่ไม่ active แล้ว -> target เป็น failed', async () => {
       const firmwareRollback: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: 'fw-old',
@@ -573,7 +657,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);
 
-      const result = await service.approve(firmwareRollback.id, otherOperation);
+      const result = await service.release(firmwareRollback.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
@@ -583,19 +667,9 @@ describe('CampaignRolloutService', () => {
       expect(result.status).toBe('completed');
     });
 
-    it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วระหว่างที่ทรานแซกชันกำลังจะ update (updateMany count 0) -> ConflictException (409), ไม่ throw P2025', async () => {
-      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
-      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
-
-      await expect(
-        service.approve(pendingRollout.id, otherOperation),
-      ).rejects.toThrow(ConflictException);
-      expect(campaignRollout.findUniqueOrThrow).not.toHaveBeenCalled();
-    });
-
     it('Rollout Config ปกติ -> auto-apply ให้ทุกเครื่องทันทีตอน active ไม่ต้องรอช่างกด apply-config (มติ 2026-09-29 — PULL model)', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -606,7 +680,7 @@ describe('CampaignRolloutService', () => {
       };
       campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
       campaignRollout.findUniqueOrThrow
-        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน approve()
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน release()
         .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 1
         .mockResolvedValueOnce(activeRollout) // เช็คสถานะก่อนแตะเครื่อง 2
         .mockResolvedValueOnce({
@@ -646,7 +720,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0); // หลังเครื่อง 2: success 2, failed 0, pending 0
       device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
 
-      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+      const result = await service.release(twoDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).toHaveBeenCalledTimes(2);
       expect(configApplier.applyConfig).toHaveBeenNthCalledWith(1, {
@@ -664,8 +738,8 @@ describe('CampaignRolloutService', () => {
       expect(result.status).toBe('completed');
       expect(result.successCount).toBe(2);
       // #235 review comment ข้อ 2 — AuditLog รายเครื่อง ไม่ใช่แค่ audit ของ
-      // approve() รอบเดียว ต้องเห็นร่องรอยว่าเครื่องไหนถูก apply-config บ้าง
-      expect(auditLog.create).toHaveBeenCalledTimes(3); // 1 ของ approve() + 2 ต่อเครื่อง
+      // release() รอบเดียว ต้องเห็นร่องรอยว่าเครื่องไหนถูก apply-config บ้าง
+      expect(auditLog.create).toHaveBeenCalledTimes(3); // 1 ของ release() + 2 ต่อเครื่อง
       expect(auditLog.create).toHaveBeenCalledWith({
         data: {
           userId: otherOperation.id,
@@ -682,7 +756,7 @@ describe('CampaignRolloutService', () => {
 
     it('มี DeviceConfigOverride approved ของเครื่องนั้น -> merge ทับ base fields ก่อนส่งเข้า applier (#235 review comment ข้อ 1)', async () => {
       const oneDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 1,
       };
       const activeRollout: CampaignRollout = {
@@ -728,7 +802,7 @@ describe('CampaignRolloutService', () => {
         status: 'approved',
       });
 
-      await service.approve(oneDeviceRollout.id, otherOperation);
+      await service.release(oneDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).toHaveBeenCalledWith({
         deviceId: 'DEV-0001',
@@ -738,9 +812,9 @@ describe('CampaignRolloutService', () => {
       });
     });
 
-    it('autoApplyConfig ส่ง rollout.id เข้า recordTargetResult() ด้วยเสมอ (#235 review รอบ 4 ข้อ 1 — end-to-end ผ่าน approve())', async () => {
+    it('autoApplyConfig ส่ง rollout.id เข้า recordTargetResult() ด้วยเสมอ (#235 review รอบ 4 ข้อ 1 — end-to-end ผ่าน release())', async () => {
       const oneDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 1,
       };
       const activeRollout: CampaignRollout = {
@@ -780,7 +854,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0);
       device.findMany.mockResolvedValue([installedDeviceA]);
 
-      await service.approve(oneDeviceRollout.id, otherOperation);
+      await service.release(oneDeviceRollout.id, otherOperation);
 
       expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -791,9 +865,9 @@ describe('CampaignRolloutService', () => {
       );
     });
 
-    it('claim target แพ้ race กลางลูป -> ไม่ log audit ซ้ำสำหรับเครื่องนั้น แต่เครื่องถัดไปยัง apply ต่อได้ปกติ (#235 review รอบ 4 ข้อ 2 — end-to-end ผ่าน approve())', async () => {
+    it('claim target แพ้ race กลางลูป -> ไม่ log audit ซ้ำสำหรับเครื่องนั้น แต่เครื่องถัดไปยัง apply ต่อได้ปกติ (#235 review รอบ 4 ข้อ 2 — end-to-end ผ่าน release())', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -844,7 +918,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0);
       device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
 
-      await service.approve(twoDeviceRollout.id, otherOperation);
+      await service.release(twoDeviceRollout.id, otherOperation);
 
       // เครื่อง 1 แพ้ race -> ไม่ log audit ของ apply-config สำหรับ DEV-0001
       expect(auditLog.create).not.toHaveBeenCalledWith(
@@ -877,9 +951,9 @@ describe('CampaignRolloutService', () => {
       );
     });
 
-    it('Config ถูกลบไปแล้ว (soft-delete) ระหว่างรอ resume -> fail ทุกเครื่องที่ pending พร้อมเหตุผล ไม่เรียก applier เลย (#235 review รอบ 3 ข้อ 3)', async () => {
+    it('Config ถูกลบไปแล้ว (soft-delete) ระหว่างรอปล่อย -> fail ทุกเครื่องที่ pending พร้อมเหตุผล ไม่เรียก applier เลย (#235 review รอบ 3 ข้อ 3)', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -890,7 +964,7 @@ describe('CampaignRolloutService', () => {
       };
       campaignRollout.findUnique.mockResolvedValue(twoDeviceRollout);
       campaignRollout.findUniqueOrThrow
-        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน approve()
+        .mockResolvedValueOnce(activeRollout) // หลัง updateMany ใน release()
         .mockResolvedValueOnce(activeRollout); // return สุดท้าย (ไม่มีการเช็คสถานะต่อเครื่องเพราะ fail ทั้งหมดตั้งแต่ต้นทาง)
       config.findUnique.mockResolvedValue({
         ...approvedConfig,
@@ -928,7 +1002,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(2);
 
-      await service.approve(twoDeviceRollout.id, otherOperation);
+      await service.release(twoDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -947,9 +1021,9 @@ describe('CampaignRolloutService', () => {
       });
     });
 
-    it('Config สถานะไม่ใช่ approved/synced อีกต่อไป (เช่น rejected) ระหว่างรอ resume -> fail ทุกเครื่องเช่นกัน', async () => {
+    it('Config สถานะไม่ใช่ approved/synced อีกต่อไป (เช่น rejected) ระหว่างรอปล่อย -> fail ทุกเครื่องเช่นกัน', async () => {
       const oneDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 1,
       };
       const activeRollout: CampaignRollout = {
@@ -986,7 +1060,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);
 
-      await service.approve(oneDeviceRollout.id, otherOperation);
+      await service.release(oneDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -1000,7 +1074,7 @@ describe('CampaignRolloutService', () => {
 
     it('Config หายไปเลย (ไม่พบ id เลย, แทบไม่เกิดจริง) -> fail ทุกเครื่องที่ pending พร้อม audit row แทนที่จะค้าง active เงียบๆ (#235 review รอบ 4 ข้อ 4/5)', async () => {
       const oneDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 1,
       };
       const activeRollout: CampaignRollout = {
@@ -1034,7 +1108,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);
 
-      await service.approve(oneDeviceRollout.id, otherOperation);
+      await service.release(oneDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -1060,9 +1134,9 @@ describe('CampaignRolloutService', () => {
       });
     });
 
-    it('เครื่องหนึ่งถูก decommission ไประหว่างรอ resume -> fail เฉพาะเครื่องนั้น ข้ามไป apply เครื่องถัดไปได้ตามปกติ (#235 review รอบ 3 ข้อ 3)', async () => {
+    it('เครื่องหนึ่งถูก decommission ไประหว่างรอปล่อย -> fail เฉพาะเครื่องนั้น ข้ามไป apply เครื่องถัดไปได้ตามปกติ (#235 review รอบ 3 ข้อ 3)', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -1119,7 +1193,7 @@ describe('CampaignRolloutService', () => {
         installedDeviceB,
       ]);
 
-      await service.approve(twoDeviceRollout.id, otherOperation);
+      await service.release(twoDeviceRollout.id, otherOperation);
 
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
         where: { id: 'rt-1', status: 'pending' },
@@ -1139,7 +1213,7 @@ describe('CampaignRolloutService', () => {
 
     it('configApplier.applyConfig() throw กลางเครื่อง -> จับไว้ นับเครื่องนั้นเป็น failed ไม่ throw ทั้ง request (#235 review รอบ 2, ข้อ 3)', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -1189,8 +1263,8 @@ describe('CampaignRolloutService', () => {
       );
       device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
 
-      // ต้องไม่ throw ออกมาจาก approve() เลย แม้ applyConfig() throw กลางลูป
-      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+      // ต้องไม่ throw ออกมาจาก release() เลย แม้ applyConfig() throw กลางลูป
+      const result = await service.release(twoDeviceRollout.id, otherOperation);
 
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
         where: { id: 'rt-1', status: 'pending' },
@@ -1209,7 +1283,7 @@ describe('CampaignRolloutService', () => {
 
     it('Auto Pause ยังทำงานได้แม้ auto-apply หลายเครื่องในคำเรียกเดียว -> หยุดก่อนแตะเครื่องที่เหลือ', async () => {
       const twoDeviceRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         targetCount: 2,
       };
       const activeRollout: CampaignRollout = {
@@ -1262,7 +1336,7 @@ describe('CampaignRolloutService', () => {
       });
       device.findMany.mockResolvedValue([installedDeviceA, installedDeviceB]);
 
-      const result = await service.approve(twoDeviceRollout.id, otherOperation);
+      const result = await service.release(twoDeviceRollout.id, otherOperation);
 
       expect(configApplier.applyConfig).toHaveBeenCalledTimes(1); // ไม่แตะ DEV-0002 เลย
       expect(configApplier.applyConfig).toHaveBeenCalledWith(
@@ -1276,7 +1350,7 @@ describe('CampaignRolloutService', () => {
 
     it('Rollout Firmware ปกติ (ไม่ใช่ Rollback) -> auto-apply + Dual Partition bookkeeping ทันทีตอน active', async () => {
       const firmwareRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: storedFirmware.id,
@@ -1325,7 +1399,7 @@ describe('CampaignRolloutService', () => {
         },
       ]);
 
-      const result = await service.approve(firmwareRollout.id, otherOperation);
+      const result = await service.release(firmwareRollout.id, otherOperation);
 
       expect(device.update).toHaveBeenCalledWith({
         where: { deviceId: 'DEV-0001' },
@@ -1359,7 +1433,7 @@ describe('CampaignRolloutService', () => {
 
     it('Firmware auto-apply เขียน Dual Partition bookkeeping ไม่สำเร็จ -> นับเป็น failed ไม่ใช่ success เงียบๆ (#235 review comment ข้อ 4)', async () => {
       const firmwareRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: storedFirmware.id,
@@ -1409,7 +1483,7 @@ describe('CampaignRolloutService', () => {
       ]);
       device.update.mockRejectedValueOnce(new Error('DB timeout (mock)'));
 
-      const result = await service.approve(firmwareRollout.id, otherOperation);
+      const result = await service.release(firmwareRollout.id, otherOperation);
 
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
         where: { id: 'rt-1', status: 'pending' },
@@ -1436,9 +1510,9 @@ describe('CampaignRolloutService', () => {
       expect(result.status).toBe('paused');
     });
 
-    it('Firmware ถูกถอนอนุมัติคุณภาพไประหว่างรอ resume -> fail ทุกเครื่องที่ pending ไม่เขียน partition เลย (#235 review รอบ 3 ข้อ 4)', async () => {
+    it('Firmware ถูกถอนอนุมัติคุณภาพไประหว่างรอปล่อย -> fail ทุกเครื่องที่ pending ไม่เขียน partition เลย (#235 review รอบ 3 ข้อ 4)', async () => {
       const firmwareRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: storedFirmware.id,
@@ -1478,7 +1552,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);
 
-      await service.approve(firmwareRollout.id, otherOperation);
+      await service.release(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -1492,7 +1566,7 @@ describe('CampaignRolloutService', () => {
 
     it('Firmware หายไปเลย (ไม่พบ id เลย, แทบไม่เกิดจริง) -> fail ทุกเครื่องที่ pending พร้อม audit row (#235 review รอบ 4 ข้อ 4/5)', async () => {
       const firmwareRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: storedFirmware.id,
@@ -1529,7 +1603,7 @@ describe('CampaignRolloutService', () => {
         .mockResolvedValueOnce(0)
         .mockResolvedValueOnce(1);
 
-      await service.approve(firmwareRollout.id, otherOperation);
+      await service.release(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -1554,7 +1628,7 @@ describe('CampaignRolloutService', () => {
 
     it('อุปกรณ์รุ่นไม่ตรงกับ deviceModelCompatibility ของ Firmware -> fail เฉพาะเครื่องนั้น (#235 review รอบ 3 ข้อ 4)', async () => {
       const firmwareRollout: CampaignRollout = {
-        ...pendingRollout,
+        ...approvedRollout,
         payloadType: CampaignPayloadType.Firmware,
         configId: null,
         firmwareId: storedFirmware.id,
@@ -1600,7 +1674,7 @@ describe('CampaignRolloutService', () => {
         { ...installedDeviceB, deviceId: 'DEV-0003', deviceModel: 'GT06L' },
       ]);
 
-      await service.approve(firmwareRollout.id, otherOperation);
+      await service.release(firmwareRollout.id, otherOperation);
 
       expect(device.update).not.toHaveBeenCalled();
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
@@ -1633,9 +1707,52 @@ describe('CampaignRolloutService', () => {
 
       expect(result.status).toBe('rejected');
       expect(campaignRollout.updateMany).toHaveBeenCalledWith({
-        where: { id: pendingRollout.id, status: 'pending_approval' },
+        where: {
+          id: pendingRollout.id,
+          status: { in: ['pending_approval', 'approved'] },
+        },
         data: { status: 'rejected' },
       });
+    });
+
+    // #250 review comment B — approved ที่ยังไม่ปล่อยเข้าอุปกรณ์ต้องมีทางถอย
+    // ได้ก่อนแตะอุปกรณ์จริง ไม่งั้นทางเดียวที่หลุดออกจากสถานะนี้คือกด release
+    // จริงแล้วค่อย rollback ซึ่งขัดเจตนาหลักของการแยกอนุมัติ/ปล่อย
+    it('approved (อนุมัติไปแล้วแต่ยังไม่ปล่อย) + ผู้ปฏิเสธไม่ใช่ผู้สร้าง -> rejected ได้เช่นกัน', async () => {
+      const approvedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'approved',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...approvedRollout,
+        status: 'rejected',
+      });
+
+      const result = await service.reject(approvedRollout.id, otherOperation);
+
+      expect(result.status).toBe('rejected');
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: approvedRollout.id,
+          status: { in: ['pending_approval', 'approved'] },
+        },
+        data: { status: 'rejected' },
+      });
+    });
+
+    it('สถานะไม่ใช่ pending_approval หรือ approved (เช่น active) -> ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...sampleRollout,
+        status: 'active',
+      });
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.reject(sampleRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ผู้ปฏิเสธเป็นผู้สร้าง Rollout เอง -> ForbiddenException', async () => {
@@ -1643,6 +1760,20 @@ describe('CampaignRolloutService', () => {
 
       await expect(
         service.reject(pendingRollout.id, operation),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('ผู้สร้าง Rollout เอง พยายามปฏิเสธรอบที่ตัวเองสร้างหลังถูกอนุมัติแล้ว -> ForbiddenException เหมือนกัน (SoD ไม่เปลี่ยนตามสถานะ)', async () => {
+      const approvedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'approved',
+        approvedBy: 'op-2',
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+
+      await expect(
+        service.reject(approvedRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
     });
 

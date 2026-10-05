@@ -113,7 +113,8 @@ export function CampaignRolloutApprovalPanel({
     <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติ Rollout</p>
       <p className="text-sm text-muted-foreground">
-        อนุมัติแล้ว Rollout เริ่มทำงานทันที ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้
+        อนุมัติแล้วยังไม่แตะอุปกรณ์ — ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
+        อีกขั้นถึงจะเริ่มทำงานจริง ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}
 

@@ -35,6 +35,7 @@ import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
+import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
 
 /**
@@ -111,6 +112,13 @@ export function CampaignRolloutDetailView({
         campaignId={campaignId}
         rollout={data}
         onDecided={() => void refetch()}
+      />
+
+      <CampaignRolloutReleasePanel
+        campaignId={campaignId}
+        rollout={data}
+        onReleased={() => void refetch()}
+        onRejected={() => void refetch()}
       />
 
       <CampaignRolloutIncidentPanel
