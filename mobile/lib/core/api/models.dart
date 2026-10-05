@@ -623,6 +623,61 @@ class Device {
   }
 }
 
+/// `DeviceStatus.configStatus` / `.firmwareStatus` — `GET /devices/{deviceId}/status`
+/// (issue #245, PR #247). The spec enum is `[up_to_date, pending, failed,
+/// unknown]`. (`pending_update` belongs to `Firmware.deviceUpdateStatus`, a
+/// different endpoint/field, and is never sent here.) `unknown` is a normal
+/// value (device never appeared in any rollout), so an unrecognised string
+/// also falls back to it instead of throwing.
+enum DevicePayloadStatus {
+  upToDate('up_to_date'),
+  pending('pending'),
+  failed('failed'),
+  unknown('unknown');
+
+  const DevicePayloadStatus(this.wireName);
+
+  final String wireName;
+
+  static DevicePayloadStatus fromWire(String? value) {
+    for (final s in DevicePayloadStatus.values) {
+      if (s.wireName == value) return s;
+    }
+    return DevicePayloadStatus.unknown;
+  }
+}
+
+/// `GET /devices/{deviceId}/status` — mirrors `DeviceStatus` in
+/// `docs/api/openapi.yaml` (v3.39). There is no online/offline or real
+/// check-in time yet (no `lastSeenAt` design), so [lastCheckInMessage] is
+/// `null` for now.
+class DeviceStatus {
+  const DeviceStatus({
+    required this.deviceId,
+    required this.configStatus,
+    required this.firmwareStatus,
+    this.lastCheckInMessage,
+  });
+
+  final String deviceId;
+  final DevicePayloadStatus configStatus;
+  final DevicePayloadStatus firmwareStatus;
+  final String? lastCheckInMessage;
+
+  factory DeviceStatus.fromJson(Map<String, dynamic> json) {
+    return DeviceStatus(
+      deviceId: json['deviceId'] as String? ?? '',
+      configStatus: DevicePayloadStatus.fromWire(
+        json['configStatus'] as String?,
+      ),
+      firmwareStatus: DevicePayloadStatus.fromWire(
+        json['firmwareStatus'] as String?,
+      ),
+      lastCheckInMessage: json['lastCheckInMessage'] as String?,
+    );
+  }
+}
+
 /// ลูกค้าแบบย่อ — mirrors `GET /customers` (`CustomerSummary` backend-side,
 /// issue #204) id + ชื่อบริษัทเท่านั้น ใช้เป็นรายการให้เลือกก่อนดูอุปกรณ์ของ
 /// บริษัทนั้นในหน้า "ทดสอบสัญญาณ" (เลือกบริษัท → เห็นอุปกรณ์ของบริษัทนั้น)
