@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CalendarIcon, FileIcon, HardDriveIcon, UserIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { type Firmware } from "@/lib/firmware-api";
 import {
   FIRMWARE_APPROVAL_STATUS_TONE,
@@ -98,7 +99,7 @@ function FirmwareDetailContent({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
         <div className="flex flex-col gap-6">
-          <div className="rounded-xl border bg-card p-4">
+          <Card className="p-4">
             <div className="divide-y">
               <InfoRow label="ไฟล์ต้นฉบับ" icon={FileIcon}>
                 <span className="font-mono text-xs">
@@ -126,7 +127,7 @@ function FirmwareDetailContent({
                 {formatDateTime(firmware.uploadedAt)}
               </InfoRow>
             </div>
-          </div>
+          </Card>
         </div>
 
         <div className="flex flex-col gap-2">

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -129,7 +130,7 @@ export function CampaignRolloutDetailView({
         onResumed={() => void refetch()}
       />
 
-      <div className="max-w-xl rounded-xl border bg-card p-4">
+      <Card className="max-w-xl p-4">
         <div className="divide-y">
           <InfoRow label="Payload" icon={PackageIcon}>
             {data.payloadType === "Config"
@@ -162,9 +163,9 @@ export function CampaignRolloutDetailView({
             {formatDateTime(data.updatedAt)}
           </InfoRow>
         </div>
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <p className="text-sm font-medium">ผลต่อเครื่อง ({targets.length})</p>
         {targetsQuery.isLoading && !targetsQuery.data ? (
           <p className="py-4 text-sm text-muted-foreground">กำลังโหลด…</p>
@@ -220,7 +221,7 @@ export function CampaignRolloutDetailView({
             </Table>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

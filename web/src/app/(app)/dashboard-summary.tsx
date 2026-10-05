@@ -75,7 +75,7 @@ function LiveSummaryCard({
       href={href}
       className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <Card className="h-full transition-colors hover:bg-muted/50">
+      <Card interactive className="h-full">
         <CardHeader>
           <CardDescription>{label}</CardDescription>
           <CardTitle className="text-3xl tabular-nums">
@@ -110,7 +110,7 @@ function DemoSummaryCard({
   tone: PillTone;
 }) {
   return (
-    <Card className="h-full">
+    <Card className="h-full border border-dashed border-amber-300/60 shadow-none dark:border-amber-800/50">
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
           {label}

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -113,7 +114,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
       </div>
 
       {latestRollout && (
-        <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
+        <Card className="gap-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
               สถานะล่าสุด — {latestRollout.payloadType}
@@ -163,10 +164,10 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             targetsError={latestRolloutTargetsQuery.error}
             onResumed={() => void rolloutsQuery.refetch()}
           />
-        </div>
+        </Card>
       )}
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium">
             สมาชิกกลุ่ม ({(targetsQuery.data ?? []).length})
@@ -207,9 +208,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             </Table>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium">ประวัติ Rollout</p>
           {canStartRollout && (
@@ -310,9 +311,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             </Table>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="max-w-md rounded-xl border bg-card p-4">
+      <Card className="max-w-md p-4">
         <div className="divide-y">
           <div className="flex justify-between gap-4 py-1.5 text-sm">
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -327,7 +328,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             <span>{formatDateTime(data.updatedAt)}</span>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
