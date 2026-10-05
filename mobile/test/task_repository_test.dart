@@ -35,6 +35,44 @@ class _RecordingTaskRepository implements TaskRepository {
       throw UnimplementedError();
 }
 
+/// Scriptable [ApiClient] — each call either returns the canned value or
+/// throws [error] (null = succeed). Same hand-written-fake style as
+/// [_RecordingTaskRepository] above; this file doesn't use a mocking package.
+class _FakeApiClient extends ApiClient {
+  _FakeApiClient({this.tasks = const [], this.error});
+
+  List<Task> tasks;
+  Object? error;
+
+  @override
+  Future<List<Task>> listTasks() async {
+    if (error != null) throw error!;
+    return tasks;
+  }
+
+  @override
+  Future<Task> getTask(String taskId) async {
+    if (error != null) throw error!;
+    return tasks.firstWhere((t) => t.id == taskId);
+  }
+
+  @override
+  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+    if (error != null) throw error!;
+    final old = tasks.firstWhere((t) => t.id == taskId);
+    return _task(old.id, status: status);
+  }
+}
+
+Task _task(String id, {TaskStatus status = TaskStatus.pending}) => Task(
+  id: id,
+  title: 'งาน $id',
+  assignedTo: 'user-1',
+  status: status,
+  createdAt: DateTime.utc(2026, 9, 1, 8),
+  updatedAt: DateTime.utc(2026, 9, 1, 9),
+);
+
 void main() {
   group('taskRepositoryProvider', () {
     test('picks the implementation from API_MOCK_MODE', () {
@@ -135,6 +173,89 @@ void main() {
         throwsA(
           isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
         ),
+      );
+    });
+  });
+
+  // CachedApiTaskRepository against a real in-memory Drift DB (not a mocked
+  // TaskDao) so the assertions check what actually landed in / came out of
+  // the cache table, not just that a DAO method was called.
+  group('CachedApiTaskRepository', () {
+    late AppDatabase db;
+
+    setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    CachedApiTaskRepository repoWith(_FakeApiClient api) =>
+        CachedApiTaskRepository(api, db.taskDao);
+
+    test('API สำเร็จ -> listTasks()/getTask() เขียนลง cache', () async {
+      final api = _FakeApiClient(tasks: [_task('a'), _task('b')]);
+      final repo = repoWith(api);
+
+      expect((await repo.listTasks()).map((t) => t.id), ['a', 'b']);
+      expect((await db.taskDao.getAllTasks()).map((r) => r.id).toSet(), {
+        'a',
+        'b',
+      });
+
+      api.tasks = [_task('c')];
+      expect((await repo.getTask('c')).id, 'c');
+      expect(await db.taskDao.getTaskById('c'), isNotNull);
+    });
+
+    test(
+      'API throw ApiException + มี cache -> คืนจาก cache ไม่ throw',
+      () async {
+        final api = _FakeApiClient(tasks: [_task('a'), _task('b')]);
+        final repo = repoWith(api);
+        await repo.listTasks(); // prime the cache
+
+        api.error = ApiException('timeout', statusCode: 503);
+
+        expect((await repo.listTasks()).map((t) => t.id).toSet(), {'a', 'b'});
+        expect((await repo.getTask('a')).title, 'งาน a');
+      },
+    );
+
+    test(
+      'API throw ApiException + cache ว่าง -> rethrow ApiException',
+      () async {
+        final repo = repoWith(
+          _FakeApiClient(error: ApiException('offline', statusCode: 503)),
+        );
+
+        await expectLater(repo.listTasks(), throwsA(isA<ApiException>()));
+        await expectLater(repo.getTask('a'), throwsA(isA<ApiException>()));
+      },
+    );
+
+    test(
+      'error ที่ไม่ใช่ ApiException (เช่น bug) -> ไม่ fallback cache',
+      () async {
+        final api = _FakeApiClient(tasks: [_task('a')]);
+        final repo = repoWith(api);
+        await repo.listTasks(); // cache is non-empty
+
+        api.error = StateError('mapping bug');
+
+        await expectLater(repo.listTasks(), throwsA(isA<StateError>()));
+        await expectLater(repo.getTask('a'), throwsA(isA<StateError>()));
+      },
+    );
+
+    test('updateStatus สำเร็จ -> cache ถูกอัปเดตด้วยค่าล่าสุด', () async {
+      final api = _FakeApiClient(tasks: [_task('a')]);
+      final repo = repoWith(api);
+      await repo.listTasks();
+      expect((await db.taskDao.getTaskById('a'))!.status, 'pending');
+
+      final updated = await repo.updateStatus('a', TaskStatus.inProgress);
+
+      expect(updated.status, TaskStatus.inProgress);
+      expect(
+        (await db.taskDao.getTaskById('a'))!.status,
+        TaskStatus.inProgress.wireName,
       );
     });
   });

@@ -61,7 +61,7 @@ class CachedApiTaskRepository implements TaskRepository {
       final tasks = await _api.listTasks();
       await _dao.upsertTasks(tasks.map(_toCompanion).toList());
       return tasks;
-    } on Object {
+    } on ApiException {
       final cached = await _dao.getAllTasks();
       if (cached.isEmpty) rethrow;
       return cached.map(_fromRow).toList();
@@ -74,7 +74,7 @@ class CachedApiTaskRepository implements TaskRepository {
       final task = await _api.getTask(id);
       await _dao.upsertTask(_toCompanion(task));
       return task;
-    } on Object {
+    } on ApiException {
       final cached = await _dao.getTaskById(id);
       if (cached == null) rethrow;
       return _fromRow(cached);
