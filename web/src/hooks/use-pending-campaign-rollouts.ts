@@ -27,7 +27,11 @@ type State = {
 /**
  * คิว Campaign Rollout ที่รอ Operation อนุมัติ —
  * `GET /campaigns/rollouts?status=pending_approval` (แก้ไข 2026-09-24 —
- * Approval Center รวม Campaign Rollout เข้ามาด้วย) · เรียงใหม่สุดก่อน
+ * Approval Center รวม Campaign Rollout เข้ามาด้วย) · เรียงใหม่สุดก่อน —
+ * เฉพาะคิว "รออนุมัติ" เท่านั้น การปล่อยเข้าอุปกรณ์ (`approved` → `active`)
+ * ทำที่หน้า Rollout Detail แทน ไม่ใช่ที่นี่ (แก้ครั้งที่ 63 — ปุ่มปล่อยคู่กับ
+ * ตารางมอนิเตอร์ผลต่อเครื่องควรอยู่หน้าเดียวกัน ไม่ใช่กดลอยๆ จาก Approval
+ * Center ที่ไม่เห็นบริบทกลุ่ม)
  */
 export function usePendingCampaignRollouts() {
   const { session } = useAuth();

@@ -156,11 +156,13 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
 /** CampaignRollout lifecycle (แก้ไข 2026-09-24, Campaign Monitor #22 — เดิม
  * ชื่อ `CAMPAIGN_STATUS_TONE` อยู่บน `Campaign` ตรงๆ ย้ายมาอยู่ที่
  * `CampaignRollout` แทน ไม่มี `draft` อีกต่อไป): สร้างแล้วเป็น
- * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `active`) หรือ
- * ปฏิเสธ (→ `rejected`) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อ
- * ทุกเครื่องมีผลครบ */
+ * `pending_approval` เสมอ ต้องรอ Operation อีกคนอนุมัติ (→ `approved`) หรือ
+ * ปฏิเสธ (→ `rejected`) · **`approved` (แก้ครั้งที่ 63)** อนุมัติแล้วแต่ยัง
+ * ไม่ปล่อยเข้าอุปกรณ์ ต้องกด release ต่อ (→ `active`) · `active` เปลี่ยนเป็น
+ * `completed` อัตโนมัติเมื่อทุกเครื่องมีผลครบ */
 export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
   pending_approval: "progress",
+  approved: "progress",
   active: "success",
   paused: "danger",
   rejected: "danger",
@@ -178,8 +180,10 @@ export function getRolloutStatusExplanation(status: string): string {
   switch (status) {
     case "pending_approval":
       return "รอ Operation อีกคนอนุมัติก่อน";
+    case "approved":
+      return "อนุมัติแล้ว — ยังไม่แตะอุปกรณ์เลย กด \"ปล่อยเข้าอุปกรณ์\" เพื่อเริ่ม apply จริง หรือกด \"ปฏิเสธ\" ถ้าเปลี่ยนใจก่อนปล่อย";
     case "active":
-      return "อนุมัติแล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติทันที (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
+      return "ปล่อยเข้าอุปกรณ์แล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
     case "paused":
       return "หยุดอัตโนมัติ (Auto Pause) — Failure Rate เกิน 5% ระหว่างรอบ ต้องกด Resume ถึงจะไปต่อได้";
     case "rejected":

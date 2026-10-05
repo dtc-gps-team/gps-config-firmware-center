@@ -2373,9 +2373,11 @@ paths:
       summary: Operation อนุมัติ Rollout (Campaign Approval) — v3.35
       description: >-
         resource `campaign` action `Approve` (Operation เท่านั้น) — สถานะ
-        `pending_approval` → `active` เท่านั้น พร้อมบันทึก `approvedBy`/
-        `approvedAt` · **Separation of Duty:** ผู้กดอนุมัติต้องไม่ใช่ผู้สร้าง
-        Rollout เดียวกัน (403)
+        `pending_approval` → `approved` เท่านั้น พร้อมบันทึก `approvedBy`/
+        `approvedAt` · **ไม่แตะอุปกรณ์เลย** (v3.40 — แยก "อนุมัติ" ออกจาก
+        "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน) ต้องเรียก `releaseCampaignRollout`
+        ต่อถึงจะ auto-apply เข้าเครื่องจริง · **Separation of Duty:**
+        ผู้กดอนุมัติต้องไม่ใช่ผู้สร้าง Rollout เดียวกัน (403)
       parameters:
         - in: path
           name: id
@@ -2391,7 +2393,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: อนุมัติสำเร็จ — status เป็น active พร้อม approvedBy/approvedAt
+          description: อนุมัติสำเร็จ — status เป็น approved พร้อม approvedBy/approvedAt
           content:
             application/json:
               schema:
@@ -2407,17 +2409,63 @@ paths:
         "409":
           description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงอนุมัติไม่ได้
 
+  /campaigns/{id}/rollouts/{rolloutId}/release:
+    post:
+      tags: [campaign]
+      operationId: releaseCampaignRollout
+      summary: Operation สั่งปล่อย Rollout ที่อนุมัติแล้วเข้าอุปกรณ์จริง — v3.40
+      description: >-
+        resource `campaign` action `Approve` เดียวกับ approve/reject/resume
+        (Operation เท่านั้น) — สถานะ `approved` → `active` เท่านั้น แล้ว
+        auto-apply Config/Firmware เข้าทุกเครื่องทันที (มติ 2026-09-29 — PULL
+        model) **ไม่เช็ค Separation of Duty** mirror `resumeCampaignRollout`
+        ทุกประการ — การอนุมัติ (ที่เช็ค SoD ไปแล้ว) เกิดขึ้นไปก่อนหน้านี้แล้ว
+        การปล่อยคือ "ไปต่อได้เลย" ไม่ใช่การอนุมัติรอบที่สอง Operation คนไหน
+        ก็กดปล่อยได้ รวมถึงคนเดิมที่อนุมัติเอง
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: rolloutId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: ปล่อยสำเร็จ — status เป็น active (หรือ completed/paused ถ้า auto-apply จบในคำเรียกเดียว)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignRollout"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปล่อย Rollout (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบ Rollout นี้
+        "409":
+          description: สถานะ Rollout ปัจจุบันไม่ใช่ approved จึงปล่อยไม่ได้
+
   /campaigns/{id}/rollouts/{rolloutId}/reject:
     post:
       tags: [campaign]
       operationId: rejectCampaignRollout
-      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35, v3.41
       description: >-
         resource เดียวกับ `approveCampaignRollout` (`campaign` action
-        `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
-        `approvedBy`/`approvedAt` (คงเป็น null) เช็ค Separation of Duty
-        เดียวกับ approve · Rollout ที่ rejected ค้างไว้เป็นประวัติ — เปิดรอบ
-        ใหม่ในกลุ่มเดิมได้ทันทีผ่าน `createCampaignRollout` (ไม่นับเป็น
+        `Approve`) — สถานะ `pending_approval` **หรือ** `approved` →
+        `rejected` (v3.41 — เดิมรับแค่ `pending_approval` ก่อนเพิ่มสถานะ
+        `approved`; ถ้ายังรับแค่เดิม Rollout ที่อนุมัติไปแล้วแต่ยังไม่ปล่อย
+        จะไม่มีทางถอยเลยนอกจากต้อง release จริงก่อนค่อย rollback) · ไม่ตั้ง
+        `approvedBy`/`approvedAt` ใหม่ (ถ้าเคยอนุมัติมาก่อนจะยังเก็บค่าเดิมไว้
+        เป็นประวัติ ไม่ลบทิ้ง) เช็ค Separation of Duty เดียวกับ approve ไม่
+        ว่าจะ reject จากสถานะไหน · Rollout ที่ rejected ค้างไว้เป็นประวัติ —
+        เปิดรอบใหม่ในกลุ่มเดิมได้ทันทีผ่าน `createCampaignRollout` (ไม่นับเป็น
         "ค้างอยู่")
       parameters:
         - in: path
@@ -2448,7 +2496,9 @@ paths:
         "404":
           description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
+          description: >-
+            สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval หรือ approved
+            จึงปฏิเสธไม่ได้
 
   /campaigns/{id}/rollouts/{rolloutId}/resume:
     post:
@@ -2900,18 +2950,36 @@ components:
 
     CampaignRolloutStatus:
       type: string
-      enum: [pending_approval, active, paused, rejected, completed, cancelled]
+      enum:
+        [
+          pending_approval,
+          approved,
+          active,
+          paused,
+          rejected,
+          completed,
+          cancelled,
+        ]
       description: >-
         Campaign Approval (แก้ครั้งที่ 39, ย้ายมาจาก `CampaignStatus` เดิม —
         แก้ไข 2026-09-24): `createCampaignRollout` สร้างแล้วเป็น
         `pending_approval` เสมอ (ไม่มี `draft` อีกต่อไป) ต้องผ่าน
-        `approveCampaignRollout` (→ `active`) หรือ `rejectCampaignRollout`
+        `approveCampaignRollout` (→ `approved`) หรือ `rejectCampaignRollout`
         (→ `rejected`) โดย Operation คนอื่นที่ไม่ใช่ผู้สร้าง (Separation of
         Duty) · `active` เปลี่ยนเป็น `completed` อัตโนมัติเมื่อทุกเครื่องใน
         รอบมีผล success/failed ครบแล้ว (ดู `CampaignRolloutTarget`) ·
         `rejected`/`completed`/`cancelled` ไม่นับเป็น "รอบที่ยังไม่จบ" —
         เปิดรอบใหม่ในกลุ่มเดิมได้ทันที (กลุ่มหนึ่งรัน Rollout ได้ทีละรอบ
-        เท่านั้น ขณะที่ยัง `pending_approval`/`active`/`paused`) ·
+        เท่านั้น ขณะที่ยัง `pending_approval`/`approved`/`active`/`paused`) ·
+        **`approved` (v3.40):** Operation อนุมัติแล้วแต่ยังไม่สั่งปล่อยเข้า
+        อุปกรณ์จริง — แยก "อนุมัติ" ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน
+        (เพิ่มทีหลัง ให้ Operation เลือกจังหวะปล่อยเองได้ เช่น ปล่อยนอกเวลา
+        ทำงาน แทนที่จะส่งทันทีตอนอนุมัติเหมือนเดิม) ต้องเรียก
+        `releaseCampaignRollout` ต่อ (→ `active`) ถึงจะ auto-apply เข้าเครื่อง
+        จริง · **ยกเลิกการอนุมัติกลับไป `rejected` ได้ (v3.41)** — ผ่าน
+        `rejectCampaignRollout` ตัวเดียวกับที่ `pending_approval` ใช้ (ไม่มี
+        endpoint แยก) กันไม่ให้รอบที่ `approved` ค้างบล็อกกลุ่มถาวรถ้า
+        Operation เปลี่ยนใจก่อนปล่อยจริง ·
         **`paused` (v3.37, Incident & Rollback #28):** Auto Pause อัตโนมัติ
         เมื่อ Failure Rate ระหว่างรอบ > 5% (GPS_Config_Firmware_Center_Design.pdf
         §11.2) กลับไป `active` ต่อผ่าน `resumeCampaignRollout` เท่านั้น
@@ -2982,7 +3050,10 @@ components:
           description: >-
             user id ของ Operation ที่กด `approveCampaignRollout` (ต้องไม่ใช่
             createdBy คนเดียวกัน) เป็น null จนกว่าจะอนุมัติ ·
-            `rejectCampaignRollout` ไม่ตั้งค่านี้ (คงเป็น null)
+            `rejectCampaignRollout` ไม่ตั้ง/ไม่ล้างค่านี้เลย — ถ้า reject จาก
+            `pending_approval` ยังเป็น null เหมือนเดิม แต่ถ้า reject จาก
+            `approved` (v3.41) ค่าเดิมที่เคยอนุมัติไว้จะยังอยู่ เป็นประวัติว่า
+            เคยอนุมัติจริงก่อนถูกยกเลิกทีหลัง
         approvedAt:
           type: string
           format: date-time

@@ -90,6 +90,20 @@ export class CampaignRolloutController {
     return this.rolloutService.approve(id, toActor(req));
   }
 
+  // แยก "อนุมัติ" ออกจาก "ปล่อยเข้าอุปกรณ์" เป็น 2 ขั้นตอน (เพิ่มทีหลัง —
+  // ตัดสินใจ UX ของเว็บ) ใช้ resource เดียวกับ approve/reject/resume เพราะ
+  // เป็นสิทธิ์ระดับเดียวกัน (Operation เท่านั้น) — ไม่เช็ค Separation of Duty
+  // เหมือน resume (ดู comment ใน service)
+  @Post(':id/release')
+  @RequirePermission('campaign', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  release(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<CampaignRollout> {
+    return this.rolloutService.release(id, toActor(req));
+  }
+
   @Post(':id/reject')
   @RequirePermission('campaign', ActionType.Approve)
   @HttpCode(HttpStatus.OK)
