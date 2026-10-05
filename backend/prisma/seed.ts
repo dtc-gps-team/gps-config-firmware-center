@@ -291,6 +291,20 @@ async function main() {
     // (`rejectConfigDeletionRequest` ก็ใช้ action Approve เดียวกับ approve)
     grant('Operation', 'device-config-override', 'Approve'),
 
+    // ---- device-firmware-override (Sprint 3 แถวที่ 24) ----
+    // Firmware Override รายเครื่อง — mirror device-config-override ทุกประการ
+    // (ST เท่านั้น ไม่ให้ OT แม้ RBAC_Matrix.md section 2 จะร่าง aspiration ไว้
+    // ว่า ST/OT เท่ากัน — แก้ไขแถวนั้นให้ตรงกับที่ implement จริงแล้ว ดู
+    // footnote ใหม่ใน RBAC_Matrix.md)
+    //
+    // POST /devices/{deviceId}/firmware-override — ST ส่งคำขอ (สถานะ pending)
+    grant('ST', 'device-firmware-override', 'Override'),
+    // GET /device-firmware-overrides — Operation ดูคิวคำขอรออนุมัติ
+    grant('Operation', 'device-firmware-override', 'Read'),
+    // POST /device-firmware-overrides/{id}/approve · .../reject — Operation
+    // ตัดสินใจ (Separation of Duty เดิม)
+    grant('Operation', 'device-firmware-override', 'Approve'),
+
     // ---- notifications (ทุก role อ่าน/mark read ได้ — เฉพาะของตัวเอง) ----
     ...ALL_ROLE_CODES.flatMap((roleCode) => [
       grant(roleCode, 'notifications', 'Read'),

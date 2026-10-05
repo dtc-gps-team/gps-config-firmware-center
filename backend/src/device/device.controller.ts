@@ -10,7 +10,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ActionType, DeviceConfigOverride } from '@prisma/client';
+import {
+  ActionType,
+  DeviceConfigOverride,
+  DeviceFirmwareOverride,
+} from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
@@ -20,6 +24,7 @@ import type { DeviceConnectionTestResult } from './device-connection-tester';
 import { ApplyConfigDto } from './dto/apply-config.dto';
 import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
 import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
+import { DeviceFirmwareOverrideDto } from './dto/device-firmware-override.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
@@ -224,6 +229,27 @@ export class DeviceController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfirmFirmwareInstallResult> {
     return this.deviceService.confirmFirmwareInstall(
+      deviceId,
+      dto,
+      toActor(req),
+    );
+  }
+
+  // resource ใหม่ `device-firmware-override` action `Override` — grant ST
+  // เท่านั้น (mirror `device-config-override` — OT ไม่มีสิทธิ์เลยเหมือนกัน)
+  // Firmware Override รายเครื่อง (Sprint 3 แถวที่ 24) — ดู comment เหนือ
+  // `DeviceService.overrideDeviceFirmware()` — คืนคำขอที่เพิ่งสร้าง (สถานะ
+  // `pending` เสมอ) ไม่มีผลกับ `confirmFirmwareInstall()` จนกว่า Operation
+  // จะอนุมัติ
+  @Post(':deviceId/firmware-override')
+  @RequirePermission('device-firmware-override', ActionType.Override)
+  @HttpCode(HttpStatus.OK)
+  overrideDeviceFirmware(
+    @Param('deviceId') deviceId: string,
+    @Body() dto: DeviceFirmwareOverrideDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceFirmwareOverride> {
+    return this.deviceService.overrideDeviceFirmware(
       deviceId,
       dto,
       toActor(req),

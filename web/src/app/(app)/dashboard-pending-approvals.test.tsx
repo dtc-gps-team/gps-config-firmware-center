@@ -6,6 +6,7 @@ import { DashboardPendingApprovals } from "./dashboard-pending-approvals";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
 import type { PendingCampaignRolloutApproval } from "@/hooks/use-pending-campaign-rollouts";
 import type { DeviceConfigOverride } from "@/lib/device-config-override-api";
+import type { DeviceFirmwareOverride } from "@/lib/device-firmware-override-api";
 
 const authState = vi.hoisted(() => ({ role: "Operation" }));
 vi.mock("@/components/auth/auth-provider", () => ({
@@ -32,6 +33,12 @@ const overridesState = vi.hoisted(() => ({
   error: null as string | null,
   refetch: vi.fn(),
 }));
+const firmwareOverridesState = vi.hoisted(() => ({
+  data: null as DeviceFirmwareOverride[] | null,
+  isLoading: true,
+  error: null as string | null,
+  refetch: vi.fn(),
+}));
 
 const usePendingApprovalsMock = vi.hoisted(() => vi.fn(() => configsState));
 const usePendingCampaignRolloutsMock = vi.hoisted(() =>
@@ -39,6 +46,9 @@ const usePendingCampaignRolloutsMock = vi.hoisted(() =>
 );
 const usePendingDeviceConfigOverridesMock = vi.hoisted(() =>
   vi.fn(() => overridesState),
+);
+const usePendingDeviceFirmwareOverridesMock = vi.hoisted(() =>
+  vi.fn(() => firmwareOverridesState),
 );
 
 vi.mock("@/hooks/use-pending-approvals", () => ({
@@ -49,6 +59,9 @@ vi.mock("@/hooks/use-pending-campaign-rollouts", () => ({
 }));
 vi.mock("@/hooks/use-pending-device-config-overrides", () => ({
   usePendingDeviceConfigOverrides: usePendingDeviceConfigOverridesMock,
+}));
+vi.mock("@/hooks/use-pending-device-firmware-overrides", () => ({
+  usePendingDeviceFirmwareOverrides: usePendingDeviceFirmwareOverridesMock,
 }));
 
 function resetState() {
@@ -61,6 +74,9 @@ function resetState() {
   overridesState.data = null;
   overridesState.isLoading = true;
   overridesState.error = null;
+  firmwareOverridesState.data = null;
+  firmwareOverridesState.isLoading = true;
+  firmwareOverridesState.error = null;
   vi.clearAllMocks();
 }
 
@@ -99,6 +115,25 @@ function makeOverride(
   };
 }
 
+function makeFirmwareOverride(
+  overrides: Partial<DeviceFirmwareOverride>,
+): DeviceFirmwareOverride {
+  return {
+    id: "fov-1",
+    deviceId: "DEV-0001",
+    firmwareId: "fw-1",
+    versionNumber: 1,
+    reason: "ทดสอบ",
+    status: "pending",
+    overriddenBy: "st-1",
+    overriddenAt: "2026-01-02T00:00:00Z",
+    decidedBy: null,
+    decidedAt: null,
+    rejectReason: null,
+    ...overrides,
+  };
+}
+
 describe("DashboardPendingApprovals — role gate (#251 review comment B ข้อ 1)", () => {
   it("role ไม่ใช่ Operation -> ไม่ render อะไรเลย และไม่เรียก hook คิวรออนุมัติสักตัว", () => {
     resetState();
@@ -110,9 +145,10 @@ describe("DashboardPendingApprovals — role gate (#251 review comment B ข้�
     expect(usePendingApprovalsMock).not.toHaveBeenCalled();
     expect(usePendingCampaignRolloutsMock).not.toHaveBeenCalled();
     expect(usePendingDeviceConfigOverridesMock).not.toHaveBeenCalled();
+    expect(usePendingDeviceFirmwareOverridesMock).not.toHaveBeenCalled();
   });
 
-  it("role Operation -> render widget และเรียกทั้ง 3 hook", () => {
+  it("role Operation -> render widget และเรียกทั้ง 4 hook", () => {
     resetState();
     authState.role = "Operation";
     configsState.data = [];
@@ -121,6 +157,8 @@ describe("DashboardPendingApprovals — role gate (#251 review comment B ข้�
     rolloutsState.isLoading = false;
     overridesState.data = [];
     overridesState.isLoading = false;
+    firmwareOverridesState.data = [];
+    firmwareOverridesState.isLoading = false;
 
     const { container } = render(<DashboardPendingApprovals />);
 
@@ -128,6 +166,7 @@ describe("DashboardPendingApprovals — role gate (#251 review comment B ข้�
     expect(usePendingApprovalsMock).toHaveBeenCalled();
     expect(usePendingCampaignRolloutsMock).toHaveBeenCalled();
     expect(usePendingDeviceConfigOverridesMock).toHaveBeenCalled();
+    expect(usePendingDeviceFirmwareOverridesMock).toHaveBeenCalled();
   });
 });
 
@@ -170,10 +209,12 @@ describe("DashboardPendingApprovals — รวม 3 คิว เรียงเ
       makeOverride({ id: "ov-3", deviceId: "DEV-0003", overriddenAt: "2026-01-06T00:00:00Z" }),
     ];
     overridesState.isLoading = false;
+    firmwareOverridesState.data = [];
+    firmwareOverridesState.isLoading = false;
 
     const { container } = render(<DashboardPendingApprovals />);
 
-    // รวม 6 รายการ (2+1+3) แต่ cap ไว้ที่ 5 -> ตัวที่เก่าสุด (Config เก่าสุด
+    // รวม 6 รายการ (2+1+3+0) แต่ cap ไว้ที่ 5 -> ตัวที่เก่าสุด (Config เก่าสุด
     // 2026-01-01) หลุดออกไป
     expect(container.textContent).toContain("รายการรออนุมัติ");
     expect(container.textContent).toContain("(6)");
@@ -181,6 +222,27 @@ describe("DashboardPendingApprovals — รวม 3 คิว เรียงเ
     expect(screen.getByText("Config ใหม่สุด")).toBeInTheDocument();
     expect(screen.getByText("กลุ่มทดสอบ")).toBeInTheDocument();
     expect(screen.getByText("DEV-0003")).toBeInTheDocument();
+  });
+});
+
+describe("DashboardPendingApprovals — Firmware Override รวมเข้า unified list (Sprint 3 แถวที่ 24)", () => {
+  it("มีคำขอ firmware-override -> ขึ้นในลิสต์พร้อมปุ่มอนุมัติ/ปฏิเสธ", () => {
+    resetState();
+    authState.role = "Operation";
+    configsState.data = [];
+    configsState.isLoading = false;
+    rolloutsState.data = [];
+    rolloutsState.isLoading = false;
+    overridesState.data = [];
+    overridesState.isLoading = false;
+    firmwareOverridesState.data = [makeFirmwareOverride({ id: "fov-1", deviceId: "DEV-0099" })];
+    firmwareOverridesState.isLoading = false;
+
+    const { container } = render(<DashboardPendingApprovals />);
+
+    expect(container.textContent).toContain("(1)");
+    expect(screen.getByText("DEV-0099")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "อนุมัติ" })).toBeInTheDocument();
   });
 });
 
@@ -210,6 +272,8 @@ describe("DashboardPendingApprovals — loading/error (#251 review comment B ข
     overridesState.data = null;
     overridesState.isLoading = false;
     overridesState.error = "โหลดคิว Override ไม่สำเร็จ";
+    firmwareOverridesState.data = [];
+    firmwareOverridesState.isLoading = false;
 
     const user = userEvent.setup();
     render(<DashboardPendingApprovals />);
@@ -224,6 +288,7 @@ describe("DashboardPendingApprovals — loading/error (#251 review comment B ข
     expect(configsState.refetch).toHaveBeenCalled();
     expect(rolloutsState.refetch).toHaveBeenCalled();
     expect(overridesState.refetch).toHaveBeenCalled();
+    expect(firmwareOverridesState.refetch).toHaveBeenCalled();
   });
 
   it("ทุกคิวโหลดเสร็จและว่างจริง -> โชว์ 'ไม่มีรายการรออนุมัติตอนนี้'", () => {
@@ -235,6 +300,8 @@ describe("DashboardPendingApprovals — loading/error (#251 review comment B ข
     rolloutsState.isLoading = false;
     overridesState.data = [];
     overridesState.isLoading = false;
+    firmwareOverridesState.data = [];
+    firmwareOverridesState.isLoading = false;
 
     render(<DashboardPendingApprovals />);
 

@@ -1428,7 +1428,171 @@ paths:
           description: >-
             ยืนยันไม่ได้ — Device ยังไม่ installed / Firmware ยังไม่ผ่านอัปโหลด
             (ต้อง stored) / Firmware ยังไม่ผ่านอนุมัติคุณภาพ (ต้อง approved) /
-            Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้
+            Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้ / **(v3.43, Sprint 3 แถวที่
+            24)** firmwareId ที่ขอไม่ตรงกับ Campaign Rollout (Firmware) ที่
+            `active` กำหนดไว้ให้อุปกรณ์เครื่องนี้ และไม่มี
+            `DeviceFirmwareOverride` สถานะ `approved` รองรับ — ต้องขอ Firmware
+            Override ก่อน (ดู `overrideDeviceFirmware`)
+
+  /devices/{deviceId}/firmware-override:
+    post:
+      tags: [device]
+      operationId: overrideDeviceFirmware
+      summary: ST ขอให้อุปกรณ์เครื่องนี้ติดตั้ง Firmware ที่ระบุได้ แม้ไม่ตรงกับ Campaign Rollout ที่กำหนดไว้ (Firmware Override รายเครื่อง — Sprint 3 แถวที่ 24, v3.43)
+      description: >-
+        mirror `overrideDeviceConfig` เกือบทั้งหมด ต่างกันที่ไม่มี `fields`
+        เพราะ Firmware เป็นเวอร์ชันเดียวทั้งก้อน ไม่ใช่ key-value ที่ override
+        บางส่วนได้ — มีแค่ "อยากได้ firmware ตัวไหน" สร้างคำขอสถานะ `pending`
+        เท่านั้น **ไม่มีผลทันที** ต้องรอ Operation อนุมัติผ่าน
+        `approveDeviceFirmwareOverride` ก่อน (Separation of Duty) ถึงจะใช้
+        `confirmFirmwareInstall` กับ firmware นี้ได้จริงถ้าขัดกับ Campaign
+        Rollout ที่ `active` กำหนดไว้ (ดู 409 ใหม่ของ `confirmFirmwareInstall`)
+        เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ (409 ถ้ามีอยู่แล้ว)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firmwareId, reason]
+              properties:
+                firmwareId:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลของการขอ override — บังคับกรอกเสมอ
+      responses:
+        "200":
+          description: >-
+            ส่งคำขอสำเร็จ — คืนคำขอที่เพิ่งสร้าง (สถานะ `pending` เสมอ)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceFirmwareOverride"
+        "400":
+          description: ไม่ส่ง reason มา หรือ firmwareId ไม่ใช่ uuid ที่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ override Firmware ของอุปกรณ์นี้ — เฉพาะ Role ST เท่านั้น (OT ไม่มีสิทธิ์เลย)
+        "404":
+          description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Firmware (firmwareId) นี้
+        "409":
+          description: >-
+            Firmware ยังติดตั้งไม่ได้ (ยังไม่ stored/approved/รองรับรุ่นอุปกรณ์
+            นี้) หรืออุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว
+
+  /device-firmware-overrides:
+    get:
+      tags: [device]
+      operationId: listDeviceFirmwareOverrides
+      summary: Operation ดูรายการคำขอ Firmware Override ทั้งหมด (Sprint 3 แถวที่ 24, v3.43)
+      description: >-
+        คิวอนุมัติของ Operation — filter ตาม `status` (optional, ไม่ส่ง = ทุก
+        สถานะ) เรียงคำขอใหม่สุดก่อน (`overriddenAt` desc) resource
+        `device-firmware-override` action `Read` — Operation เท่านั้น
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: รายการคำขอ (เรียงตาม overriddenAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceFirmwareOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
+
+  /device-firmware-overrides/{id}/approve:
+    post:
+      tags: [device]
+      operationId: approveDeviceFirmwareOverride
+      summary: Operation อนุมัติคำขอ Firmware Override (Sprint 3 แถวที่ 24, v3.43)
+      description: >-
+        เปลี่ยนสถานะคำขอเป็น `approved` เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้
+        อัตโนมัติ** ปลดล็อกแค่สิทธิ์ให้ `confirmFirmwareInstall` ยอมรับ
+        firmware นี้กับอุปกรณ์เครื่องนี้ได้ resource `device-firmware-override`
+        action `Approve` — Operation เท่านั้น (Separation of Duty — ST ผู้ส่ง
+        คำขอเองอนุมัติไม่ได้)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "อนุมัติสำเร็จ — คืนคำขอที่อัปเดตแล้ว (status: approved)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceFirmwareOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์อนุมัติ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
+        "409":
+          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
+
+  /device-firmware-overrides/{id}/reject:
+    post:
+      tags: [device]
+      operationId: rejectDeviceFirmwareOverride
+      summary: Operation ปฏิเสธคำขอ Firmware Override (Sprint 3 แถวที่ 24, v3.43)
+      description: >-
+        เปลี่ยนสถานะคำขอเป็น `rejected` — `rejectReason` ไม่บังคับ resource
+        เดียวกับ approve (action `Approve`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejectReason:
+                  type: string
+                  maxLength: 500
+                  description: เหตุผลที่ปฏิเสธ (optional)
+      responses:
+        "200":
+          description: "ปฏิเสธสำเร็จ — คืนคำขอที่อัปเดตแล้ว (status: rejected)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceFirmwareOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ปฏิเสธ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
 
   /devices/{deviceId}/simulate-config:
     post:
@@ -3275,6 +3439,64 @@ components:
           type: object
           additionalProperties: true
           description: สถานะ override สะสมของอุปกรณ์เครื่องนี้ ณ version นี้
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        overriddenBy:
+          type: string
+          format: uuid
+          description: userId ของ ST ที่ส่งคำขอ
+        overriddenAt:
+          type: string
+          format: date-time
+        decidedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: userId ของ Operation ที่อนุมัติ/ปฏิเสธ — null ถ้ายัง pending
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectReason:
+          type: string
+          nullable: true
+          description: เหตุผลที่ปฏิเสธ — optional แม้สถานะเป็น rejected
+
+    DeviceFirmwareOverride:
+      type: object
+      description: >-
+        Firmware Override รายเครื่อง (Sprint 3 แถวที่ 24) — คำขอให้อุปกรณ์
+        เครื่องเดียวติดตั้ง Firmware ตัวที่ระบุได้ แม้ไม่ตรงกับ Campaign
+        Rollout ที่กำหนดไว้ ต้องผ่าน Operation อนุมัติก่อนถึงมีผล mirror
+        `DeviceConfigOverride` ต่างกันที่ไม่มี `fields`/`configId` เพราะ
+        Firmware เป็นเวอร์ชันเดียวทั้งก้อน ไม่ใช่ key-value (ดู comment เหนือ
+        `model DeviceFirmwareOverride` ใน schema.prisma)
+      required:
+        [
+          id,
+          deviceId,
+          firmwareId,
+          versionNumber,
+          reason,
+          status,
+          overriddenBy,
+          overriddenAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+        firmwareId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+          description: นับจากทุกสถานะ (รวม rejected) เพิ่มทีละ 1 ต่ออุปกรณ์
         reason:
           type: string
         status:

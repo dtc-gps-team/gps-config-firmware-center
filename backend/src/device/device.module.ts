@@ -21,6 +21,7 @@ import {
   MockDeviceConnectionTester,
 } from './device-connection-tester';
 import { DeviceConfigOverrideController } from './device-config-override.controller';
+import { DeviceFirmwareOverrideController } from './device-firmware-override.controller';
 import { DeviceController } from './device.controller';
 import { DeviceService } from './device.service';
 
@@ -43,7 +44,11 @@ import { DeviceService } from './device.service';
     DeviceModelModule,
     NotificationModule,
   ],
-  controllers: [DeviceController, DeviceConfigOverrideController],
+  controllers: [
+    DeviceController,
+    DeviceConfigOverrideController,
+    DeviceFirmwareOverrideController,
+  ],
   providers: [
     DeviceService,
     // DEVICE_CONNECTION_TESTER: อ่านโหมดจาก env `DEVICE_CONNECTION_TEST_MODE`
