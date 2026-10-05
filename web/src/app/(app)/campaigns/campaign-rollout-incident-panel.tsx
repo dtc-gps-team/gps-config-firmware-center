@@ -16,6 +16,7 @@ import {
 } from "@/lib/campaign-api";
 import { canCreateCampaign, canDecideCampaignApproval } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -162,7 +163,7 @@ export function CampaignRolloutIncidentPanel({
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-card p-4">
+    <Card className="max-w-2xl gap-3 p-4">
       <p className="text-sm font-medium">Incident & Rollback</p>
       {error && <p className="text-xs text-destructive">{error}</p>}
 
@@ -279,6 +280,6 @@ export function CampaignRolloutIncidentPanel({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

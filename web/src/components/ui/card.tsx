@@ -5,14 +5,23 @@ import { cn } from "@/lib/utils"
 function Card({
   className,
   size = "default",
+  interactive = false,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & {
+  size?: "default" | "sm"
+  /** การ์ดที่คลิก/แตะได้ (ลิงก์ไปหน้าอื่น, แถวที่กด onClick ได้) — เพิ่ม
+   *  hover-lift + เงาเข้มขึ้นให้รู้สึกว่า "กดได้" ตั้งแต่เอาเมาส์ไปวาง ไม่ต้อง
+   *  คลิกลองก่อนถึงจะรู้ — การ์ดข้อมูลธรรมดา (ไม่ได้คลิกอะไร) ปล่อย false ไว้ */
+  interactive?: boolean
+}) {
   return (
     <div
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground shadow-md ring-1 ring-foreground/10 transition-[box-shadow,transform] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        interactive &&
+          "cursor-pointer hover:-translate-y-0.5 hover:shadow-xl",
         className
       )}
       {...props}

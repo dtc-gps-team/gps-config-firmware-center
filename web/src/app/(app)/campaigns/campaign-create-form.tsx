@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -214,7 +215,7 @@ export function CampaignCreateForm() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-4 rounded-xl border bg-card p-5 sm:grid-cols-2">
+      <Card className="grid gap-4 p-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="campaign-name">ชื่อกลุ่ม</Label>
           <Input
@@ -250,9 +251,9 @@ export function CampaignCreateForm() {
             className="min-h-16 resize-y rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           />
         </div>
-      </div>
+      </Card>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+      <Card className="gap-3 p-5">
         <div>
           <p className="text-sm font-medium">เลือกอุปกรณ์สมาชิก</p>
           <p className="text-xs text-muted-foreground">
@@ -280,7 +281,7 @@ export function CampaignCreateForm() {
             }
           />
         )}
-      </div>
+      </Card>
 
       {formError && <ErrorBanner message={formError} />}
 

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
@@ -77,7 +78,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
       {/* เนื้อหาเป็น label/value ล้วนเหมือน Campaign detail — จำกัด max-width
        * ไว้ที่การ์ดนี้ ไม่ปล่อยเต็มความกว้างหน้าจอ (mirror ปัญหาเดียวกับที่
        * แก้ไปแล้วในหน้า detail อื่น) */}
-      <div className="max-w-xl rounded-xl border bg-card p-4">
+      <Card className="max-w-xl p-4">
         <div className="divide-y">
           <InfoRow label="SIM Number" icon={CardSimIcon}>
             <span className="font-mono">{device.simNumber}</span>
@@ -102,7 +103,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
             {device.installedAt ? formatDateTime(device.installedAt) : "—"}
           </InfoRow>
         </div>
-      </div>
+      </Card>
 
       <p className="text-xs text-muted-foreground">
         สถานะ Config / Firmware ของกล่อง (เทียบเวอร์ชันกับ data กลาง)
