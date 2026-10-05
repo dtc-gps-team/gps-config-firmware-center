@@ -456,6 +456,46 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .expect(201);
     });
 
+    // #250 review comment B — approved ที่ยังไม่ปล่อยเข้าอุปกรณ์ต้องมีทางถอย
+    // ได้ก่อนแตะอุปกรณ์จริง ไม่งั้นทางเดียวที่หลุดออกจากสถานะนี้คือกด release
+    // จริงแล้วค่อย rollback ซึ่งขัดเจตนาหลักของการแยกอนุมัติ/ปล่อย
+    it('Operation คนอื่นปฏิเสธ approved (อนุมัติไปแล้วแต่ยังไม่ปล่อย) -> 200, status rejected — เปิด rollout ใหม่ในกลุ่มเดิมได้ทันที', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const approver1 = await makeUser(prisma, { role: 'Operation' });
+      const config = await seedApprovedConfig();
+      const device = await seedInstalledDevice();
+      const campaign = await seedGroup(creator.id, [device.deviceId]);
+      const rollout = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaign.id,
+          payloadType: 'Config',
+          status: 'approved',
+          createdBy: creator.id,
+          approvedBy: approver1.id,
+          approvedAt: new Date(),
+        },
+      });
+      const approver2 = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+      await grant('Operation', ActionType.Create);
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/reject`)
+        .set('Authorization', `Bearer ${tokenFor(approver2.id, 'Operation')}`)
+        .expect(200);
+
+      expect((res.body as { status: string }).status).toBe('rejected');
+
+      // rejected ไม่นับเป็น "ค้างอยู่" -> เปิดรอบใหม่ในกลุ่มเดิมได้ทันที
+      // (ก่อนแก้ครั้งที่ 63 ข้อนี้ทำไม่ได้เลย เพราะ approved ค้างอยู่ใน
+      // OPEN_CAMPAIGN_ROLLOUT_STATUSES แล้วไม่มีทางออกนอกจาก release)
+      await request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+        .set('Authorization', `Bearer ${tokenFor(creator.id, 'Operation')}`)
+        .send({ payloadType: 'Config', configId: config.id })
+        .expect(201);
+    });
+
     it('2 request approve/reject พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const campaign = await seedGroup(creator.id, []);

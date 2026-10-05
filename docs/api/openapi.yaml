@@ -2419,13 +2419,17 @@ paths:
     post:
       tags: [campaign]
       operationId: rejectCampaignRollout
-      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35
+      summary: Operation ปฏิเสธ Rollout (Campaign Approval) — v3.35, v3.41
       description: >-
         resource เดียวกับ `approveCampaignRollout` (`campaign` action
-        `Approve`) — สถานะ `pending_approval` → `rejected` เท่านั้น · ไม่ตั้ง
-        `approvedBy`/`approvedAt` (คงเป็น null) เช็ค Separation of Duty
-        เดียวกับ approve · Rollout ที่ rejected ค้างไว้เป็นประวัติ — เปิดรอบ
-        ใหม่ในกลุ่มเดิมได้ทันทีผ่าน `createCampaignRollout` (ไม่นับเป็น
+        `Approve`) — สถานะ `pending_approval` **หรือ** `approved` →
+        `rejected` (v3.41 — เดิมรับแค่ `pending_approval` ก่อนเพิ่มสถานะ
+        `approved`; ถ้ายังรับแค่เดิม Rollout ที่อนุมัติไปแล้วแต่ยังไม่ปล่อย
+        จะไม่มีทางถอยเลยนอกจากต้อง release จริงก่อนค่อย rollback) · ไม่ตั้ง
+        `approvedBy`/`approvedAt` ใหม่ (ถ้าเคยอนุมัติมาก่อนจะยังเก็บค่าเดิมไว้
+        เป็นประวัติ ไม่ลบทิ้ง) เช็ค Separation of Duty เดียวกับ approve ไม่
+        ว่าจะ reject จากสถานะไหน · Rollout ที่ rejected ค้างไว้เป็นประวัติ —
+        เปิดรอบใหม่ในกลุ่มเดิมได้ทันทีผ่าน `createCampaignRollout` (ไม่นับเป็น
         "ค้างอยู่")
       parameters:
         - in: path
@@ -2456,7 +2460,9 @@ paths:
         "404":
           description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval จึงปฏิเสธไม่ได้
+          description: >-
+            สถานะ Rollout ปัจจุบันไม่ใช่ pending_approval หรือ approved
+            จึงปฏิเสธไม่ได้
 
   /campaigns/{id}/rollouts/{rolloutId}/resume:
     post:
@@ -2934,8 +2940,10 @@ components:
         (เพิ่มทีหลัง ให้ Operation เลือกจังหวะปล่อยเองได้ เช่น ปล่อยนอกเวลา
         ทำงาน แทนที่จะส่งทันทีตอนอนุมัติเหมือนเดิม) ต้องเรียก
         `releaseCampaignRollout` ต่อ (→ `active`) ถึงจะ auto-apply เข้าเครื่อง
-        จริง — ยังไม่มีทางยกเลิกการอนุมัติกลับไป `pending_approval`/`rejected`
-        ในเวอร์ชันนี้ ·
+        จริง · **ยกเลิกการอนุมัติกลับไป `rejected` ได้ (v3.41)** — ผ่าน
+        `rejectCampaignRollout` ตัวเดียวกับที่ `pending_approval` ใช้ (ไม่มี
+        endpoint แยก) กันไม่ให้รอบที่ `approved` ค้างบล็อกกลุ่มถาวรถ้า
+        Operation เปลี่ยนใจก่อนปล่อยจริง ·
         **`paused` (v3.37, Incident & Rollback #28):** Auto Pause อัตโนมัติ
         เมื่อ Failure Rate ระหว่างรอบ > 5% (GPS_Config_Firmware_Center_Design.pdf
         §11.2) กลับไป `active` ต่อผ่าน `resumeCampaignRollout` เท่านั้น
@@ -3006,7 +3014,10 @@ components:
           description: >-
             user id ของ Operation ที่กด `approveCampaignRollout` (ต้องไม่ใช่
             createdBy คนเดียวกัน) เป็น null จนกว่าจะอนุมัติ ·
-            `rejectCampaignRollout` ไม่ตั้งค่านี้ (คงเป็น null)
+            `rejectCampaignRollout` ไม่ตั้ง/ไม่ล้างค่านี้เลย — ถ้า reject จาก
+            `pending_approval` ยังเป็น null เหมือนเดิม แต่ถ้า reject จาก
+            `approved` (v3.41) ค่าเดิมที่เคยอนุมัติไว้จะยังอยู่ เป็นประวัติว่า
+            เคยอนุมัติจริงก่อนถูกยกเลิกทีหลัง
         approvedAt:
           type: string
           format: date-time

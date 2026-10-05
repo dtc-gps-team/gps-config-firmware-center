@@ -19,6 +19,7 @@ import {
   APPROVABLE_CAMPAIGN_ROLLOUT_STATUS,
   AUTO_PAUSE_FAILURE_RATE_THRESHOLD,
   OPEN_CAMPAIGN_ROLLOUT_STATUSES,
+  REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES,
   RELEASABLE_CAMPAIGN_ROLLOUT_STATUS,
   RESUMABLE_CAMPAIGN_ROLLOUT_STATUS,
   ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES,
@@ -225,7 +226,7 @@ export class CampaignRolloutService {
    */
   async approve(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const rollout = await this.findOne(id);
-    this.assertDecidable(rollout, actor);
+    this.assertDecidable(rollout, actor, [APPROVABLE_CAMPAIGN_ROLLOUT_STATUS]);
 
     // race condition (mirror DeviceConfigOverride approve/reject, PR #225):
     // เดิม findOne() เช็คสถานะนอก transaction แล้ว update({ where: { id } })
@@ -333,19 +334,33 @@ export class CampaignRolloutService {
 
   /**
    * `POST /campaigns/{campaignId}/rollouts/{id}/reject` — mirror `approve()`
-   * แต่เปลี่ยนเป็น `rejected` แทน ไม่ตั้ง `approvedBy`/`approvedAt` (ไม่มีใคร
-   * "อนุมัติ" การ reject) — rollout รอบนี้จบเป็นประวัติ เปิดรอบใหม่ผ่าน
-   * `POST /campaigns/{campaignId}/rollouts` อีกครั้งได้ทันที (ไม่มี `draft`/
-   * PATCH แก้ rollout เดิม)
+   * แต่เปลี่ยนเป็น `rejected` แทน ไม่ตั้ง `approvedBy`/`approvedAt` ใหม่ (ไม่มี
+   * ใคร "อนุมัติ" การ reject — แต่ถ้า reject รอบที่เคยอนุมัติไปแล้ว ค่า
+   * `approvedBy`/`approvedAt` เดิมจะยังอยู่ เป็นร่องรอยว่าเคยอนุมัติจริงก่อน
+   * จะถูกยกเลิกทีหลัง ไม่ได้ลบทิ้ง) — rollout รอบนี้จบเป็นประวัติ เปิดรอบใหม่
+   * ผ่าน `POST /campaigns/{campaignId}/rollouts` อีกครั้งได้ทันที (ไม่มี
+   * `draft`/PATCH แก้ rollout เดิม)
+   *
+   * **รับทั้ง `pending_approval` และ `approved`** (แก้ครั้งที่ 63 review
+   * comment B บน PR #250 — ต่างจาก `approve()` ที่รับแค่ `pending_approval`
+   * เท่านั้นโดยตั้งใจ) เพราะ `approved` ที่ยังไม่ปล่อยต้องมีทางถอยได้ก่อนแตะ
+   * อุปกรณ์จริง — ถ้า reject() รับแค่ `pending_approval` เหมือน approve()
+   * รอบที่อนุมัติไปแล้วแต่เปลี่ยนใจ (เจอปัญหากับ Config/Firmware ทีหลัง หรือ
+   * ลืมกลับมากดปล่อย) จะไม่มีทางออกเลยนอกจากกด release จริงก่อนค่อย rollback
+   * — ขัดเจตนาหลักของการแยกอนุมัติ/ปล่อยเป็น 2 ขั้นตอน (ดู
+   * `REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES`)
    */
   async reject(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const rollout = await this.findOne(id);
-    this.assertDecidable(rollout, actor);
+    this.assertDecidable(rollout, actor, REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES);
 
     // race condition — เดียวกับ approve() ด้านบน
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.campaignRollout.updateMany({
-        where: { id, status: APPROVABLE_CAMPAIGN_ROLLOUT_STATUS },
+        where: {
+          id,
+          status: { in: [...REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES] },
+        },
         data: { status: 'rejected' },
       });
       if (result.count === 0) {
@@ -1024,10 +1039,21 @@ export class CampaignRolloutService {
     });
   }
 
-  private assertDecidable(rollout: CampaignRollout, actor: ActingUser): void {
-    if (rollout.status !== APPROVABLE_CAMPAIGN_ROLLOUT_STATUS) {
+  /**
+   * ใช้ร่วมกันโดย `approve()` (ส่ง `[APPROVABLE_CAMPAIGN_ROLLOUT_STATUS]` —
+   * ยอมแค่ `pending_approval`) และ `reject()` (ส่ง
+   * `REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES` — ยอมทั้ง `pending_approval` และ
+   * `approved`, แก้ครั้งที่ 63 review comment B บน PR #250) — SoD เช็คเหมือน
+   * กันทั้งคู่ไม่ว่าจะยอมสถานะไหนบ้าง
+   */
+  private assertDecidable(
+    rollout: CampaignRollout,
+    actor: ActingUser,
+    allowedStatuses: readonly CampaignRolloutStatus[],
+  ): void {
+    if (!allowedStatuses.includes(rollout.status)) {
       throw new ConflictException(
-        `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${APPROVABLE_CAMPAIGN_ROLLOUT_STATUS} จึงตัดสินใจไม่ได้`,
+        `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${allowedStatuses.join('/')} จึงตัดสินใจไม่ได้`,
       );
     }
     if (rollout.createdBy === actor.id) {

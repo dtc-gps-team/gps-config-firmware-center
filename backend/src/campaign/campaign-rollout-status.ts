@@ -22,6 +22,16 @@ export const CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] = [
 export const APPROVABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
   'pending_approval';
 
+/** สถานะที่ `reject()` ทำได้ — **กว้างกว่า approve()** ตั้งใจ (แก้ครั้งที่ 63
+ * review comment B บน PR #250) รับทั้ง `pending_approval` (ปฏิเสธตั้งแต่ต้น
+ * ตามปกติ) และ `approved` (ยกเลิกหลังอนุมัติไปแล้วแต่ยังไม่ปล่อยเข้าอุปกรณ์)
+ * — ถ้า reject() รับแค่ `pending_approval` เหมือน approve() รอบที่อนุมัติ
+ * แล้วเปลี่ยนใจ (เช่น เจอปัญหากับ Config/Firmware หลังอนุมัติ หรือลืมกลับมา
+ * กดปล่อย) จะไม่มีทางออกเลยนอกจากกด release จริง (ขัดเจตนาหลักของการแยก
+ * อนุมัติ/ปล่อย — ควรมีจุดถอยได้ก่อนแตะอุปกรณ์จริง) */
+export const REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
+  ['pending_approval', 'approved'];
+
 /** สถานะที่ยัง "ไม่จบ" ของกลุ่มหนึ่งกลุ่ม — กันสร้าง rollout ใหม่ซ้อนถ้ายังมี
  * รอบเดิมค้างอยู่ (มติ 2026-09-24: กลุ่มหนึ่งรัน rollout ได้ทีละรอบเท่านั้น)
  * `paused` นับรวมด้วย (แก้ไข 2026-09-24, Incident & Rollback #28 — Auto

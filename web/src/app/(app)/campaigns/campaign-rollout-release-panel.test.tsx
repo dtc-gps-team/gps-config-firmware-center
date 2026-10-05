@@ -13,6 +13,7 @@ vi.mock("@/components/auth/auth-provider", () => ({
 }));
 
 const releaseMock = vi.hoisted(() => vi.fn());
+const rejectMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/campaign-api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/campaign-api")>(
     "@/lib/campaign-api",
@@ -20,6 +21,7 @@ vi.mock("@/lib/campaign-api", async () => {
   return {
     ...actual,
     releaseCampaignRollout: releaseMock,
+    rejectCampaignRollout: rejectMock,
   };
 });
 
@@ -53,6 +55,7 @@ describe("CampaignRolloutReleasePanel — แสดงตาม status/role", ()
         campaignId="campaign-1"
         rollout={makeRollout({ status: "pending_approval" })}
         onReleased={vi.fn()}
+        onRejected={vi.fn()}
       />,
     );
 
@@ -66,6 +69,7 @@ describe("CampaignRolloutReleasePanel — แสดงตาม status/role", ()
         campaignId="campaign-1"
         rollout={makeRollout({ status: "approved" })}
         onReleased={vi.fn()}
+        onRejected={vi.fn()}
       />,
     );
 
@@ -73,25 +77,30 @@ describe("CampaignRolloutReleasePanel — แสดงตาม status/role", ()
     expect(
       screen.queryByRole("button", { name: "ปล่อยเข้าอุปกรณ์" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "ปฏิเสธ" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("status approved + role Operation (รวมถึงผู้อนุมัติเดิมเอง) -> เห็นปุ่มปล่อยเข้าอุปกรณ์", () => {
+  it("status approved + role Operation (รวมถึงผู้อนุมัติเดิมเอง) -> เห็นปุ่มปล่อยเข้าอุปกรณ์และปฏิเสธ", () => {
     authState.role = "Operation";
     render(
       <CampaignRolloutReleasePanel
         campaignId="campaign-1"
         rollout={makeRollout({ status: "approved", approvedBy: "op-1" })}
         onReleased={vi.fn()}
+        onRejected={vi.fn()}
       />,
     );
 
     expect(
       screen.getByRole("button", { name: "ปล่อยเข้าอุปกรณ์" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ปฏิเสธ" })).toBeInTheDocument();
   });
 });
 
-describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น", () => {
+describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น (ปล่อยเข้าอุปกรณ์)", () => {
   it("กดปล่อยเข้าอุปกรณ์ -> ขึ้นยืนยัน -> กดยืนยัน -> เรียก releaseCampaignRollout แล้วเรียก onReleased", async () => {
     const user = userEvent.setup();
     authState.role = "Operation";
@@ -104,6 +113,7 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
         campaignId="campaign-1"
         rollout={makeRollout({ status: "approved" })}
         onReleased={onReleased}
+        onRejected={vi.fn()}
       />,
     );
 
@@ -129,6 +139,7 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
         campaignId="campaign-1"
         rollout={makeRollout({ status: "approved" })}
         onReleased={vi.fn()}
+        onRejected={vi.fn()}
       />,
     );
 
@@ -151,6 +162,7 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
         campaignId="campaign-1"
         rollout={makeRollout({ status: "approved" })}
         onReleased={vi.fn()}
+        onRejected={vi.fn()}
       />,
     );
 
@@ -163,5 +175,54 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
     expect(
       screen.getByRole("button", { name: "ปล่อยเข้าอุปกรณ์" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น (ปฏิเสธ)", () => {
+  it("กดปฏิเสธ -> ขึ้นยืนยัน -> กดยืนยัน -> เรียก rejectCampaignRollout แล้วเรียก onRejected", async () => {
+    const user = userEvent.setup();
+    authState.role = "Operation";
+    const rejected = makeRollout({ status: "rejected" });
+    rejectMock.mockResolvedValueOnce(rejected);
+    const onRejected = vi.fn();
+
+    render(
+      <CampaignRolloutReleasePanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "approved" })}
+        onReleased={vi.fn()}
+        onRejected={onRejected}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "ปฏิเสธ" }));
+    expect(screen.getByText("ปฏิเสธ Rollout นี้?")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "ยืนยันปฏิเสธ" }));
+
+    expect(rejectMock).toHaveBeenCalledWith("tok", "campaign-1", "rollout-1");
+    expect(onRejected).toHaveBeenCalledWith(rejected);
+    expect(releaseMock).not.toHaveBeenCalled();
+  });
+
+  it("rejectCampaignRollout ล้มเหลว -> ขึ้น error กลับไปปุ่มเดิม", async () => {
+    const user = userEvent.setup();
+    authState.role = "Operation";
+    rejectMock.mockRejectedValueOnce(new Error("network error"));
+
+    render(
+      <CampaignRolloutReleasePanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "approved" })}
+        onReleased={vi.fn()}
+        onRejected={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "ปฏิเสธ" }));
+    await user.click(screen.getByRole("button", { name: "ยืนยันปฏิเสธ" }));
+
+    expect(await screen.findByText("ปฏิเสธไม่สำเร็จ")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ปฏิเสธ" })).toBeInTheDocument();
   });
 });

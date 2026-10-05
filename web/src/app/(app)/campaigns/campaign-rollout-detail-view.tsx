@@ -117,6 +117,7 @@ export function CampaignRolloutDetailView({
         campaignId={campaignId}
         rollout={data}
         onReleased={() => void refetch()}
+        onRejected={() => void refetch()}
       />
 
       <CampaignRolloutIncidentPanel

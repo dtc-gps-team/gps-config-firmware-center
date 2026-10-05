@@ -149,6 +149,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             campaignId={campaignId}
             rollout={latestRollout}
             onReleased={() => void rolloutsQuery.refetch()}
+            onRejected={() => void rolloutsQuery.refetch()}
           />
 
           <CampaignRolloutIncidentPanel

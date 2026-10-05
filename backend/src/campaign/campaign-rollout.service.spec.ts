@@ -1707,9 +1707,52 @@ describe('CampaignRolloutService', () => {
 
       expect(result.status).toBe('rejected');
       expect(campaignRollout.updateMany).toHaveBeenCalledWith({
-        where: { id: pendingRollout.id, status: 'pending_approval' },
+        where: {
+          id: pendingRollout.id,
+          status: { in: ['pending_approval', 'approved'] },
+        },
         data: { status: 'rejected' },
       });
+    });
+
+    // #250 review comment B — approved ที่ยังไม่ปล่อยเข้าอุปกรณ์ต้องมีทางถอย
+    // ได้ก่อนแตะอุปกรณ์จริง ไม่งั้นทางเดียวที่หลุดออกจากสถานะนี้คือกด release
+    // จริงแล้วค่อย rollback ซึ่งขัดเจตนาหลักของการแยกอนุมัติ/ปล่อย
+    it('approved (อนุมัติไปแล้วแต่ยังไม่ปล่อย) + ผู้ปฏิเสธไม่ใช่ผู้สร้าง -> rejected ได้เช่นกัน', async () => {
+      const approvedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'approved',
+        approvedBy: otherOperation.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...approvedRollout,
+        status: 'rejected',
+      });
+
+      const result = await service.reject(approvedRollout.id, otherOperation);
+
+      expect(result.status).toBe('rejected');
+      expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: approvedRollout.id,
+          status: { in: ['pending_approval', 'approved'] },
+        },
+        data: { status: 'rejected' },
+      });
+    });
+
+    it('สถานะไม่ใช่ pending_approval หรือ approved (เช่น active) -> ConflictException', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...sampleRollout,
+        status: 'active',
+      });
+      campaignRollout.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.reject(sampleRollout.id, otherOperation),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ผู้ปฏิเสธเป็นผู้สร้าง Rollout เอง -> ForbiddenException', async () => {
@@ -1717,6 +1760,20 @@ describe('CampaignRolloutService', () => {
 
       await expect(
         service.reject(pendingRollout.id, operation),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('ผู้สร้าง Rollout เอง พยายามปฏิเสธรอบที่ตัวเองสร้างหลังถูกอนุมัติแล้ว -> ForbiddenException เหมือนกัน (SoD ไม่เปลี่ยนตามสถานะ)', async () => {
+      const approvedRollout: CampaignRollout = {
+        ...sampleRollout,
+        status: 'approved',
+        approvedBy: 'op-2',
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+
+      await expect(
+        service.reject(approvedRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
     });
 

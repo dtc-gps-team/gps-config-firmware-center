@@ -181,7 +181,7 @@ export function getRolloutStatusExplanation(status: string): string {
     case "pending_approval":
       return "รอ Operation อีกคนอนุมัติก่อน";
     case "approved":
-      return "อนุมัติแล้ว — ยังไม่แตะอุปกรณ์เลย ต้องกด \"ปล่อยเข้าอุปกรณ์\" อีกขั้นถึงจะเริ่ม apply จริง";
+      return "อนุมัติแล้ว — ยังไม่แตะอุปกรณ์เลย กด \"ปล่อยเข้าอุปกรณ์\" เพื่อเริ่ม apply จริง หรือกด \"ปฏิเสธ\" ถ้าเปลี่ยนใจก่อนปล่อย";
     case "active":
       return "ปล่อยเข้าอุปกรณ์แล้ว — ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (จำลองว่ากล่องดึงค่าไปใช้เอง — PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
     case "paused":
