@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/models.dart';
 
 void main() {
+  _deviceStatusTests();
+
   group('UserRole', () {
     test('has exactly the 6 roles from openapi.yaml — no FieldTechnician', () {
       expect(UserRole.values.map((r) => r.wireName).toList(), [
@@ -625,6 +627,56 @@ void main() {
       });
 
       expect(def.allowedValues, ['TCP', 'UDP']);
+    });
+  });
+}
+
+void _deviceStatusTests() {
+  group('DeviceStatus.fromJson', () {
+    test(
+      'parses every enum value (spec: up_to_date/pending/failed/unknown)',
+      () {
+        const wire = {
+          'up_to_date': DevicePayloadStatus.upToDate,
+          'pending': DevicePayloadStatus.pending,
+          'failed': DevicePayloadStatus.failed,
+          'unknown': DevicePayloadStatus.unknown,
+        };
+        for (final entry in wire.entries) {
+          final status = DeviceStatus.fromJson({
+            'deviceId': 'DEV-1',
+            'configStatus': entry.key,
+            'firmwareStatus': entry.key,
+            'lastCheckInMessage': 'msg',
+          });
+          expect(status.configStatus, entry.value, reason: entry.key);
+          expect(status.firmwareStatus, entry.value, reason: entry.key);
+          expect(status.lastCheckInMessage, 'msg');
+        }
+      },
+    );
+
+    test('unrecognised / missing value falls back to unknown', () {
+      expect(
+        DevicePayloadStatus.fromWire('weird'),
+        DevicePayloadStatus.unknown,
+      );
+      // pending_update is Firmware.deviceUpdateStatus's value, not this enum's
+      expect(
+        DevicePayloadStatus.fromWire('pending_update'),
+        DevicePayloadStatus.unknown,
+      );
+      expect(DevicePayloadStatus.fromWire(null), DevicePayloadStatus.unknown);
+    });
+
+    test('lastCheckInMessage null stays null', () {
+      final status = DeviceStatus.fromJson({
+        'deviceId': 'DEV-1',
+        'configStatus': 'unknown',
+        'firmwareStatus': 'unknown',
+        'lastCheckInMessage': null,
+      });
+      expect(status.lastCheckInMessage, isNull);
     });
   });
 }

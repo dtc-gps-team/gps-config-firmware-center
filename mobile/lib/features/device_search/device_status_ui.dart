@@ -49,3 +49,16 @@ class DeviceStatusPill extends StatelessWidget {
     );
   }
 }
+
+/// Thai labels for [DevicePayloadStatus] (`configStatus` / `firmwareStatus`
+/// from `GET /devices/{deviceId}/status`).
+class DevicePayloadStatusStyle {
+  const DevicePayloadStatusStyle._();
+
+  static String label(DevicePayloadStatus status) => switch (status) {
+    DevicePayloadStatus.upToDate => 'อัปเดตล่าสุด',
+    DevicePayloadStatus.failed => 'ล้มเหลว',
+    DevicePayloadStatus.pending => 'รออัปเดต',
+    DevicePayloadStatus.unknown => 'ไม่ทราบ',
+  };
+}
