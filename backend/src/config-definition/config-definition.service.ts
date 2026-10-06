@@ -15,11 +15,34 @@ export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
 };
 
-const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DATETIME_REGEX =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/;
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** ตัวเลขดิบล้วน ไม่รับ hex (`0x10`), `Infinity`/`NaN`, scientific notation,
+ * หรือ whitespace — เพราะ `Number()` native แปลงค่าพวกนี้ให้ "ดูเหมือน"
+ * เป็นตัวเลขที่ถูกต้องทั้งที่ไม่ใช่ (แก้ตามรีวิว B บน PR #255 ข้อ 4) */
+const INTEGER_STRING_REGEX = /^-?\d+$/;
+const DECIMAL_STRING_REGEX = /^-?\d+(\.\d+)?$/;
+
+/** เช็ค y-m-d ว่าเป็นวันที่จริงบนปฏิทินไหม — ต่างจาก `Date.parse()` ตรงที่
+ * `Date.parse` "rollover" วันที่ผิดแบบเงียบๆ แทนที่จะ error (เช่น
+ * `2026-02-31` เลื่อนไปเป็น 3 มี.ค. 2026 โดยอัตโนมัติ) แก้ตามรีวิว B บน
+ * PR #255 ข้อ 4 — ใช้ `Date.UTC` แล้วอ่านค่ากลับมาเทียบ ถ้าไม่ตรงแปลว่า
+ * JS เพิ่ง rollover ให้ ซึ่งคือ input ที่ไม่ valid */
+function isValidCalendarDate(
+  year: number,
+  month: number,
+  day: number,
+): boolean {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
+}
 
 /** ตรวจแค่ "ชนิดข้อมูลของค่าที่ JSON.parse ให้มาตรงกับ dataType ที่ประกาศไหม"
  * — เจตนาเดียวกับ Phase 1 ข้อ 3 ("syntactic" อย่างน้อยที่สุด) ชุด dataType
@@ -45,24 +68,28 @@ function matchesDataType(value: unknown, dataType: string): boolean {
     case 'integer':
       return typeof value === 'number' && Number.isInteger(value);
     case 'decimal':
-      return typeof value === 'number';
+      // Number.isFinite กัน NaN/Infinity (แก้ตามรีวิว B บน PR #255 ข้อ 4) —
+      // typeof === 'number' เฉยๆ ปล่อยผ่านทั้งคู่เพราะมันก็เป็น "number" จริง
+      return typeof value === 'number' && Number.isFinite(value);
     case 'string':
     case 'text':
       return typeof value === 'string';
     case 'boolean':
       return typeof value === 'boolean';
-    case 'date':
-      return (
-        typeof value === 'string' &&
-        DATE_ONLY_REGEX.test(value) &&
-        !Number.isNaN(Date.parse(value))
-      );
-    case 'datetime':
-      return (
-        typeof value === 'string' &&
-        DATETIME_REGEX.test(value) &&
-        !Number.isNaN(Date.parse(value))
-      );
+    case 'date': {
+      if (typeof value !== 'string') return false;
+      const m = DATE_ONLY_REGEX.exec(value);
+      if (!m) return false;
+      return isValidCalendarDate(Number(m[1]), Number(m[2]), Number(m[3]));
+    }
+    case 'datetime': {
+      if (typeof value !== 'string') return false;
+      const m = DATETIME_REGEX.exec(value);
+      if (!m) return false;
+      const [, y, mo, d, h, mi, s] = m;
+      if (!isValidCalendarDate(Number(y), Number(mo), Number(d))) return false;
+      return Number(h) <= 23 && Number(mi) <= 59 && Number(s) <= 59;
+    }
     case 'json':
       return (
         typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -84,10 +111,16 @@ function matchesDataType(value: unknown, dataType: string): boolean {
 function matchesDataTypeString(raw: string, dataType: string): boolean {
   switch (dataType) {
     case 'integer':
-    case 'decimal': {
-      const n = Number(raw);
-      return !Number.isNaN(n) && matchesDataType(n, dataType);
-    }
+      // regex เช็คก่อนเพราะ Number('') === 0 และ Number('0x10') === 16 —
+      // ทั้งคู่ "ดูเหมือน" เลขที่ถูกต้องทั้งที่ควรถูกปฏิเสธ (แก้ตามรีวิว B
+      // บน PR #255 ข้อ 4)
+      return (
+        INTEGER_STRING_REGEX.test(raw) && matchesDataType(Number(raw), dataType)
+      );
+    case 'decimal':
+      return (
+        DECIMAL_STRING_REGEX.test(raw) && matchesDataType(Number(raw), dataType)
+      );
     case 'boolean':
       return raw === 'true' || raw === 'false';
     case 'json':

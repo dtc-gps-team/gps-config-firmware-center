@@ -420,6 +420,22 @@ describe('ConfigDefinitionService', () => {
       ['json', 'not-json'],
       ['array', '{"a":1}'],
       ['uuid', 'not-a-uuid'],
+      // แก้ตามรีวิว B บน PR #255 ข้อ 4 — edge case ที่ Number() native แปลงให้
+      // "ดูเหมือน" ผ่านได้ทั้งที่ไม่ควร
+      ['integer', ''],
+      ['decimal', ''],
+      ['integer', '0x10'],
+      ['decimal', '0x10'],
+      ['integer', 'Infinity'],
+      ['decimal', 'Infinity'],
+      ['integer', 'NaN'],
+      ['decimal', '1e10'],
+      // แก้ตามรีวิว B บน PR #255 ข้อ 4 — วันที่ไม่มีจริงบนปฏิทินที่
+      // Date.parse() เคย rollover ให้แบบเงียบๆ
+      ['date', '2026-02-31'],
+      ['datetime', '2026-02-31T12:00:00Z'],
+      ['datetime', '2026-10-05T25:00:00Z'],
+      ['datetime', '2026-10-05T12:60:00Z'],
     ])(
       'defaultValue "%s" ไม่ตรงกับ dataType %s -> BadRequestException',
       async (dataType, defaultValue) => {
@@ -579,6 +595,14 @@ describe('ConfigDefinitionService', () => {
       ['json', 'x'],
       ['array', { a: 1 }],
       ['uuid', 'not-a-uuid'],
+      // แก้ตามรีวิว B บน PR #255 ข้อ 4 — decimal ต้อง Number.isFinite จริง
+      // (NaN/Infinity ก็ typeof === 'number' เหมือนกัน แต่ไม่ใช่ค่าที่ valid)
+      ['decimal', Infinity],
+      ['decimal', -Infinity],
+      ['decimal', NaN],
+      // วันที่ไม่มีจริงบนปฏิทิน (rollover) และเวลาเกินช่วงที่ valid
+      ['date', '2026-02-31'],
+      ['datetime', '2026-10-05T25:00:00Z'],
     ])(
       'ค่าไม่ตรงกับ dataType %s -> BadRequestException',
       async (dataType, value) => {
