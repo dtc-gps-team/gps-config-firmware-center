@@ -6,7 +6,9 @@ import '../../core/api/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../device_search/device_search_repository.dart';
+import '../device_search/device_status_repository.dart';
 import 'firmware_override_repository.dart';
+import 'pending_firmware_override_banner.dart';
 
 /// Firmware Override — Phase 2 (Mobile, issue #256, PR #257). เข้าได้เฉพาะ
 /// role ST (เช็คที่ entry point ใน `device_detail_page.dart`) — ให้ ST
@@ -80,6 +82,8 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
         _submitting = false;
         _submitted = true;
       });
+      // รีเฟรชสถานะอุปกรณ์ให้ banner "รออนุมัติ" ขึ้นทั้งหน้านี้และ Device Detail
+      ref.invalidate(deviceStatusProvider(widget.deviceId));
       // ส่งคำขอสำเร็จเท่านั้น ยังไม่มีผล — ต้องรอ Operation อนุมัติ แล้วจึง
       // ยืนยันติดตั้ง Firmware ได้ (ใช้ได้ครั้งเดียว)
       ScaffoldMessenger.of(context).showSnackBar(
@@ -100,6 +104,12 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
   Widget build(BuildContext context) {
     final deviceAsync = ref.watch(deviceDetailProvider(widget.deviceId));
     final firmwareAsync = ref.watch(firmwareListProvider);
+    // โหลดสถานะไม่สำเร็จไม่ block ฟอร์ม — แค่ไม่มี banner (ถ้ามี pending อยู่
+    // จริง backend ยังตอบ 409 ตอนส่ง)
+    final pending = ref
+        .watch(deviceStatusProvider(widget.deviceId))
+        .valueOrNull
+        ?.pendingFirmwareOverride;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -132,13 +142,17 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
             retryKey: const Key('firmware_override_load_retry'),
             onRetry: () => ref.invalidate(firmwareListProvider),
           ),
-          data: (all) => _buildForm(device, all),
+          data: (all) => _buildForm(device, all, pending),
         ),
       ),
     );
   }
 
-  Widget _buildForm(Device device, List<Firmware> all) {
+  Widget _buildForm(
+    Device device,
+    List<Firmware> all,
+    DeviceFirmwareOverride? pending,
+  ) {
     // แสดงเฉพาะตัวที่ backend ยอมรับ (stored + approved + รองรับรุ่นเครื่องนี้)
     // — ตัวอื่นขอไปก็ได้ 409 อยู่ดี
     final options = all
@@ -164,6 +178,10 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
           '(ติดตั้งซ้ำต้องขอใหม่) · ต้องระบุเหตุผลและถูกบันทึกลง Audit Log',
           style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
         ),
+        if (pending != null) ...[
+          const SizedBox(height: 12),
+          PendingFirmwareOverrideBanner(pending: pending),
+        ],
         const SizedBox(height: 16),
         const Text(
           'Firmware ที่ต้องการติดตั้ง',
@@ -290,7 +308,8 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
         const SizedBox(height: 16),
         FilledButton(
           key: const Key('firmware_override_submit'),
-          onPressed: (_submitting || _submitted || options.isEmpty)
+          onPressed:
+              (_submitting || _submitted || options.isEmpty || pending != null)
               ? null
               : _submit,
           child: _submitting

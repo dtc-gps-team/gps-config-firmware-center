@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
+import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_override/firmware_override_page.dart';
 import 'package:mobile/features/firmware_override/firmware_override_repository.dart';
 
@@ -46,6 +47,35 @@ class _FakeDeviceSearchRepository implements DeviceSearchRepository {
   @override
   Future<Device> getDevice(String deviceId) async => _device;
 }
+
+class _FakeDeviceStatusRepository implements DeviceStatusRepository {
+  _FakeDeviceStatusRepository({this.pending, this.error});
+
+  final DeviceFirmwareOverride? pending;
+  final Object? error;
+
+  @override
+  Future<DeviceStatus> getDeviceStatus(String deviceId) async {
+    if (error != null) throw error!;
+    return DeviceStatus(
+      deviceId: deviceId,
+      configStatus: DevicePayloadStatus.unknown,
+      firmwareStatus: DevicePayloadStatus.unknown,
+      pendingFirmwareOverride: pending,
+    );
+  }
+}
+
+const _pendingOverride = DeviceFirmwareOverride(
+  id: 'fo-0',
+  deviceId: 'DEV-0117',
+  firmwareId: 'fw-ok',
+  versionNumber: 1,
+  reason: 'คำขอเดิมที่ยังรออยู่',
+  status: 'pending',
+  overriddenBy: 'st-1',
+  overriddenAt: '2026-10-06T00:00:00.000Z',
+);
 
 class _FakeFirmwareOverrideRepository implements FirmwareOverrideRepository {
   _FakeFirmwareOverrideRepository({
@@ -94,6 +124,7 @@ class _FakeFirmwareOverrideRepository implements FirmwareOverrideRepository {
 Future<_FakeFirmwareOverrideRepository> _pump(
   WidgetTester tester, {
   _FakeFirmwareOverrideRepository? repo,
+  _FakeDeviceStatusRepository? statusRepo,
 }) async {
   final fake = repo ?? _FakeFirmwareOverrideRepository();
   await tester.pumpWidget(
@@ -102,6 +133,9 @@ Future<_FakeFirmwareOverrideRepository> _pump(
         firmwareOverrideRepositoryProvider.overrideWithValue(fake),
         deviceSearchRepositoryProvider.overrideWithValue(
           _FakeDeviceSearchRepository(),
+        ),
+        deviceStatusRepositoryProvider.overrideWithValue(
+          statusRepo ?? _FakeDeviceStatusRepository(),
         ),
       ],
       child: const MaterialApp(
@@ -268,5 +302,52 @@ void main() {
       find.byKey(const Key('firmware_override_load_retry')),
       findsOneWidget,
     );
+  });
+
+  group('pendingFirmwareOverride banner (PR #257)', () {
+    testWidgets('มีคำขอ pending -> เห็น banner + ปุ่มส่งกดไม่ได้', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        statusRepo: _FakeDeviceStatusRepository(pending: _pendingOverride),
+      );
+
+      expect(
+        find.byKey(const Key('firmware_override_pending_banner')),
+        findsOneWidget,
+      );
+      expect(find.text('เหตุผล: คำขอเดิมที่ยังรออยู่'), findsOneWidget);
+      final button = tester.widget<FilledButton>(
+        find.byKey(const Key('firmware_override_submit')),
+      );
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('ไม่มีคำขอ pending -> ไม่เห็น banner', (tester) async {
+      await _pump(tester);
+
+      expect(
+        find.byKey(const Key('firmware_override_pending_banner')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('โหลดสถานะไม่สำเร็จ -> ไม่ block ฟอร์ม (ไม่มี banner)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        statusRepo: _FakeDeviceStatusRepository(
+          error: ApiException('ล้มเหลว', statusCode: 500),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('firmware_override_pending_banner')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('firmware_override_select')), findsOneWidget);
+    });
   });
 }

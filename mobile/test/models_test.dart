@@ -770,5 +770,46 @@ void _deviceStatusTests() {
       });
       expect(status.lastCheckInMessage, isNull);
     });
+
+    // issue #256 - pendingFirmwareOverride (PR #257, openapi v3.45)
+    test('pendingFirmwareOverride: null / ไม่มี field -> null', () {
+      final base = {
+        'deviceId': 'DEV-1',
+        'configStatus': 'unknown',
+        'firmwareStatus': 'unknown',
+      };
+      expect(
+        DeviceStatus.fromJson({
+          ...base,
+          'pendingFirmwareOverride': null,
+        }).pendingFirmwareOverride,
+        isNull,
+      );
+      expect(DeviceStatus.fromJson(base).pendingFirmwareOverride, isNull);
+    });
+
+    test('pendingFirmwareOverride: มีแถว pending -> parse เป็น model', () {
+      final status = DeviceStatus.fromJson({
+        'deviceId': 'DEV-1',
+        'configStatus': 'unknown',
+        'firmwareStatus': 'unknown',
+        'pendingFirmwareOverride': {
+          'id': 'fo-1',
+          'deviceId': 'DEV-1',
+          'firmwareId': 'fw-1',
+          'versionNumber': 1,
+          'reason': 'ลูกค้าขอ',
+          'status': 'pending',
+          'overriddenBy': 'st-1',
+          'overriddenAt': '2026-10-06T00:00:00.000Z',
+          'decidedBy': null,
+          'decidedAt': null,
+          'rejectReason': null,
+          'consumedAt': null,
+        },
+      });
+      expect(status.pendingFirmwareOverride?.isPending, isTrue);
+      expect(status.pendingFirmwareOverride?.reason, 'ลูกค้าขอ');
+    });
   });
 }

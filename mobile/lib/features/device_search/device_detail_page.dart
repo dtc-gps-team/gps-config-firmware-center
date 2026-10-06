@@ -8,6 +8,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../firmware_override/pending_firmware_override_banner.dart';
 import 'device_search_repository.dart';
 import 'device_status_repository.dart';
 import 'device_status_ui.dart';
@@ -168,7 +169,8 @@ class _StatusSection extends ConsumerWidget {
       skipLoadingOnRefresh: true,
       data: (status) {
         final message = status.lastCheckInMessage;
-        return _InfoCard(
+        final pendingFw = status.pendingFirmwareOverride;
+        final card = _InfoCard(
           rows: [
             (
               'สถานะ Config',
@@ -187,6 +189,15 @@ class _StatusSection extends ConsumerWidget {
               'เช็คอินล่าสุด',
               message == null || message.isEmpty ? '—' : message,
             ),
+          ],
+        );
+        if (pendingFw == null) return card;
+        // issue #256 — คำขอ Firmware Override ที่รอ Operation (PR #257)
+        return Column(
+          children: [
+            PendingFirmwareOverrideBanner(pending: pendingFw),
+            const SizedBox(height: 12),
+            card,
           ],
         );
       },

@@ -76,11 +76,13 @@ DeviceStatus _makeStatus({
   DevicePayloadStatus config = DevicePayloadStatus.unknown,
   DevicePayloadStatus firmware = DevicePayloadStatus.unknown,
   String? message,
+  DeviceFirmwareOverride? pendingFirmwareOverride,
 }) => DeviceStatus(
   deviceId: 'DEV-0117',
   configStatus: config,
   firmwareStatus: firmware,
   lastCheckInMessage: message,
+  pendingFirmwareOverride: pendingFirmwareOverride,
 );
 
 Future<void> _pump(
@@ -257,6 +259,58 @@ void main() {
 
 void _statusTests() {
   group('สถานะ Config / Firmware (GET /devices/{deviceId}/status)', () {
+    testWidgets(
+      'pendingFirmwareOverride ไม่ null -> เห็น banner รอ Operation อนุมัติ + เหตุผล',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          statusRepo: _FakeDeviceStatusRepository(
+            status: _makeStatus(
+              pendingFirmwareOverride: const DeviceFirmwareOverride(
+                id: 'fo-1',
+                deviceId: 'DEV-0117',
+                firmwareId: 'fw-1',
+                versionNumber: 1,
+                reason: 'ลูกค้าขอใช้รุ่นนี้',
+                status: 'pending',
+                overriddenBy: 'st-1',
+                overriddenAt: '2026-10-06T00:00:00.000Z',
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(
+            const Key('firmware_override_pending_banner'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('เหตุผล: ลูกค้าขอใช้รุ่นนี้', skipOffstage: false),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('pendingFirmwareOverride เป็น null -> ไม่เห็น banner', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository());
+      await tester.pump();
+
+      expect(
+        find.byKey(
+          const Key('firmware_override_pending_banner'),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('เรียก getDeviceStatus ด้วย deviceId ของหน้า', (tester) async {
       final statusRepo = _FakeDeviceStatusRepository();
       await _pump(

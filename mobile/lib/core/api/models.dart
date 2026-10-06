@@ -763,12 +763,19 @@ class DeviceStatus {
     required this.configStatus,
     required this.firmwareStatus,
     this.lastCheckInMessage,
+    this.pendingFirmwareOverride,
   });
 
   final String deviceId;
   final DevicePayloadStatus configStatus;
   final DevicePayloadStatus firmwareStatus;
   final String? lastCheckInMessage;
+
+  /// คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (PR #257,
+  /// openapi v3.45) — `null` ถ้าไม่มี · เป็นสถานะของ**อุปกรณ์** ไม่ filter ด้วย
+  /// ผู้ขอ (mirror `DeviceConfigDraft.pendingOverride`) · backend เก่าที่ยังไม่มี
+  /// field นี้ → `null`
+  final DeviceFirmwareOverride? pendingFirmwareOverride;
 
   factory DeviceStatus.fromJson(Map<String, dynamic> json) {
     return DeviceStatus(
@@ -780,6 +787,11 @@ class DeviceStatus {
         json['firmwareStatus'] as String?,
       ),
       lastCheckInMessage: json['lastCheckInMessage'] as String?,
+      pendingFirmwareOverride: json['pendingFirmwareOverride'] is Map
+          ? DeviceFirmwareOverride.fromJson(
+              (json['pendingFirmwareOverride'] as Map).cast<String, dynamic>(),
+            )
+          : null,
     );
   }
 }
