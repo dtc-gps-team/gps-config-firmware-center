@@ -13,7 +13,10 @@ import { INCIDENT_SEVERITIES } from '../incident-status';
  * แจ้งปัญหาที่เจอกับอุปกรณ์ผ่าน Mobile · `reportedBy`/`source`/`status` ไม่รับ
  * จาก client เลย (`reportedBy` มาจาก JWT, `source` fix เป็น `'field-report'`,
  * `status` fix เป็น `'open'` เสมอ — mirror `DeviceConfigOverrideDto` ที่ไม่รับ
- * `overriddenBy`/`status` จาก client เช่นกัน)
+ * `overriddenBy`/`status` จาก client เช่นกัน) `title`/`description` บังคับทั้งคู่
+ * (ตาม design ที่ตกลงกับ B ใน issue #236 — report ที่มีแต่หัวข้อทำให้ Operation
+ * ตัดสินใจ/ไล่ปัญหาลำบาก มิเรอร์เหตุผลเดียวกับที่ `note` ของ `DecideIncidentDto`
+ * บังคับเสมอ — แก้ตามรีวิว B บน PR #267)
  */
 export class CreateIncidentDto {
   @IsString()
@@ -21,10 +24,10 @@ export class CreateIncidentDto {
   @MaxLength(200)
   title!: string;
 
-  @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(2000)
-  description?: string;
+  description!: string;
 
   @IsIn(INCIDENT_SEVERITIES)
   severity!: IncidentSeverity;

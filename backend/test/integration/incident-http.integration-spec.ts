@@ -322,6 +322,15 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
           .expect(400);
       });
 
+      it('ไม่ส่ง description -> 400', async () => {
+        const token = await stToken();
+        await request(app.getHttpServer())
+          .post('/api/v1/incidents')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ title: 'สายชาร์จหลุด', severity: 'low' })
+          .expect(400);
+      });
+
       it('severity ไม่อยู่ใน enum -> 400', async () => {
         const token = await stToken();
         await request(app.getHttpServer())
@@ -388,7 +397,11 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
         await request(app.getHttpServer())
           .post('/api/v1/incidents')
           .set('Authorization', `Bearer ${token}`)
-          .send({ title: 'GPS ไม่ส่งสัญญาณ', severity: 'high' })
+          .send({
+            title: 'GPS ไม่ส่งสัญญาณ',
+            description: 'ตรวจสอบแล้วไม่มีสัญญาณมา 2 วัน',
+            severity: 'high',
+          })
           .expect(201);
 
         const notifications = await prisma.notification.findMany({

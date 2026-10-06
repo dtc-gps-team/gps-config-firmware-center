@@ -1941,7 +1941,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Incident"
         "400":
-          description: ไม่ส่ง title/severity หรือ severity ไม่อยู่ใน enum หรือยาวเกินกำหนด
+          description: ไม่ส่ง title/description/severity หรือ severity ไม่อยู่ใน enum หรือยาวเกินกำหนด
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -4457,7 +4457,7 @@ components:
         `reportedBy`/`source`/`status` จาก client เลย (ValidationPipe
         `forbidNonWhitelisted` ปฏิเสธ 400 ถ้าส่งมา) `status` fix เป็น `open`
         เสมอ `reportedBy` มาจาก JWT เท่านั้น
-      required: [title, severity]
+      required: [title, description, severity]
       properties:
         title:
           type: string
@@ -4465,6 +4465,7 @@ components:
           maxLength: 200
         description:
           type: string
+          minLength: 1
           maxLength: 2000
         severity:
           type: string
