@@ -1072,7 +1072,13 @@ async function main() {
     deviceModel: string;
     protocol: string;
     status: 'approved' | 'synced';
-    fields: Record<string, string>;
+    // แก้ไข (issue #201, dataType audit) — เดิม type นี้บังคับทุก field เป็น
+    // string ทำให้ SERVER_PORT ผิดเป็น '909' (string) ทั้งที่ควรเป็นเลข —
+    // ตอนนั้นผ่านได้เพราะ seed insert ตรงไม่เคยผ่าน validateFields() เลย พอ
+    // SERVER_PORT ถูก backfill เป็น dataType 'integer' จริง (PR #255) ค่า
+    // string เดิมจะ fail validate ทันทีถ้ามีคนแก้ Config นี้ต่อ — แก้ชนิดให้
+    // รองรับ number จริงด้วย
+    fields: Record<string, string | number>;
   }[] = [
     {
       name: 'GT06N/TCP มาตรฐาน',
@@ -1082,7 +1088,7 @@ async function main() {
       fields: {
         APN: 'internet',
         SERVER_HOST: 'config.dtc.co.th',
-        SERVER_PORT: '909',
+        SERVER_PORT: 909,
       },
     },
     {
@@ -1093,7 +1099,7 @@ async function main() {
       fields: {
         APN: 'internet',
         SERVER_HOST: 'config.dtc.co.th',
-        SERVER_PORT: '909',
+        SERVER_PORT: 909,
       },
     },
   ];
@@ -1101,7 +1107,11 @@ async function main() {
   for (const c of demoConfigs) {
     await prisma.config.upsert({
       where: { name: c.name },
-      update: {},
+      // เดิม insert-only (`update: {}`) — เพิ่ม `fields` เข้า update เฉพาะรอบ
+      // นี้ (issue #201) เพื่อ backfill ค่า SERVER_PORT ที่ผิดเป็น string ใน
+      // DB เดิมให้ถูกด้วย ไม่งั้นแก้แค่ source code เฉยๆ ไม่ช่วย dev DB ที่
+      // seedไปแล้วก่อนหน้านี้
+      update: { fields: c.fields },
       create: {
         name: c.name,
         deviceModel: c.deviceModel,

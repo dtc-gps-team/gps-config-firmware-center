@@ -27,9 +27,21 @@ const UUID_REGEX =
  * `dataType` ที่ไม่อยู่ในชุดนี้ไม่ควรเกิดขึ้นแล้ว เพราะ DTO กรองด้วย `@IsIn()`
  * ตอนสร้างไปแล้ว (เดิมปล่อยผ่านหมดไว้ "รอคุยกันเพิ่ม" — คุยจบแล้ว) แต่ยังคง
  * fallback `true` ไว้เผื่อ field ที่มีอยู่ก่อน DTO เข้มงวดขึ้น ไม่ให้ค่าเก่าที่
- * หลุดมาตก validate ย้อนหลังโดยไม่ตั้งใจ */
+ * หลุดมาตก validate ย้อนหลังโดยไม่ตั้งใจ
+ *
+ * **`case 'number'` (แก้ตามรีวิว B บน PR #255 ข้อ 3):** ชุด dataType ใหม่ตัด
+ * `number` ออกไปแล้ว (แยกเป็น `integer`/`decimal`) backfill ค่าจริงใน DB ทำผ่าน
+ * `seed.ts` (`update:` ใน upsert loop) ซึ่งเป็นคำสั่งแยกจาก `migrate deploy` —
+ * ถ้า deploy โค้ดใหม่แล้วยังไม่ได้รัน `db seed` ทันที field ที่ยังเป็น
+ * `'number'` เดิมอยู่ใน DB จะตกไปเข้า `default: return true` ด้านล่าง (ปล่อย
+ * ผ่านทุกค่า) ตรงข้ามกับเจตนาเดิมของ PR นี้ที่จะปิด gap "ชนิดไม่รู้จักผ่าน
+ * เฉยๆ" — คง case นี้ไว้ explicit ให้ validate เหมือนก่อนแก้ทุกประการ
+ * (`typeof value === 'number'`) จนกว่า backfill จะรันจริง ไม่ใช่ alias ของ
+ * `decimal` เพราะพฤติกรรมเดิมของ `number` ไม่เคยเข้มงวดเรื่อง integer/float */
 function matchesDataType(value: unknown, dataType: string): boolean {
   switch (dataType) {
+    case 'number':
+      return typeof value === 'number';
     case 'integer':
       return typeof value === 'number' && Number.isInteger(value);
     case 'decimal':

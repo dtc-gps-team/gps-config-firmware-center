@@ -589,6 +589,24 @@ describe('ConfigDefinitionService', () => {
         ).rejects.toThrow(BadRequestException);
       },
     );
+
+    describe('legacy "number" (แก้ตามรีวิว B บน PR #255 ข้อ 3)', () => {
+      it('ยังเหลือ field เดิมที่เป็น dataType "number" (ยังไม่ backfill) + ค่าเป็นตัวเลขจริง -> ผ่าน', async () => {
+        findMany.mockResolvedValue([defOf('number')]);
+
+        await expect(
+          service.validateFields('GT06N', 'TCP', { FIELD: 909 }),
+        ).resolves.toBeUndefined();
+      });
+
+      it('field "number" เดิม + ค่าเป็น string (เช่น seed data เก่าที่ผิดพลาด) -> BadRequestException ไม่ใช่ปล่อยผ่านเงียบๆ', async () => {
+        findMany.mockResolvedValue([defOf('number')]);
+
+        await expect(
+          service.validateFields('GT06N', 'TCP', { FIELD: '909' }),
+        ).rejects.toThrow(BadRequestException);
+      });
+    });
   });
 
   describe('validateOverridableFields', () => {

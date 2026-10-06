@@ -3396,7 +3396,12 @@ components:
           example: string
           description: >-
             ชุดชนิดข้อมูลที่ระบบรู้จัก (v3.42, มติ issue #201 อัปเดต
-            2026-09-22) — เทียบจุดร่วมของ MySQL/PostgreSQL/MongoDB
+            2026-09-22) — เทียบจุดร่วมของ MySQL/PostgreSQL/MongoDB **หมายเหตุ
+            (v3.45, แก้ตามรีวิว B บน PR #255 ข้อ 5):** ค่าเดิม `number` ถูก
+            แทนที่ด้วย `integer`/`decimal` แล้ว แต่ field ที่ยังไม่ผ่าน backfill
+            จริง (เช่น deploy โค้ดใหม่แล้วยังไม่ได้รัน `prisma db seed`) อาจยัง
+            ตอบ `number` อยู่ชั่วคราว — ไม่ใช่ค่าที่รองรับสำหรับสร้าง field ใหม่
+            อีกต่อไป (ดู `CreateConfigDefinitionInput`)
         allowedValues:
           type: array
           items:
