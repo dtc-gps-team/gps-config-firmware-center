@@ -402,6 +402,9 @@ describe('DeviceService', () => {
   describe('getStatus (issue #245 เวอร์ชันย่อ)', () => {
     beforeEach(() => {
       device.findUnique.mockResolvedValue(installedDevice);
+      // default ไม่มีคำขอ Firmware Override ค้างอยู่ (แก้ตามรีวิว B บน
+      // PR #257 — pendingFirmwareOverride) เทสส่วนใหญ่ไม่สนใจฟิลด์นี้
+      deviceFirmwareOverride.findFirst.mockResolvedValue(null);
     });
 
     it('ไม่เคยอยู่ใน CampaignRolloutTarget ไหนเลย -> unknown ทั้งคู่ lastCheckInMessage เป็น null', async () => {
@@ -414,6 +417,24 @@ describe('DeviceService', () => {
         configStatus: 'unknown',
         firmwareStatus: 'unknown',
         lastCheckInMessage: null,
+        pendingFirmwareOverride: null,
+      });
+    });
+
+    it('มีคำขอ Firmware Override pending ของเครื่องนี้ -> pendingFirmwareOverride คืนแถวนั้น', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(null);
+      const pendingRow = {
+        id: 'ov-1',
+        deviceId: installedDevice.deviceId,
+        status: 'pending',
+      };
+      deviceFirmwareOverride.findFirst.mockResolvedValue(pendingRow);
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.pendingFirmwareOverride).toEqual(pendingRow);
+      expect(deviceFirmwareOverride.findFirst).toHaveBeenCalledWith({
+        where: { deviceId: installedDevice.deviceId, status: 'pending' },
       });
     });
 

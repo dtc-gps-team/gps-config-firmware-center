@@ -2084,6 +2084,44 @@ describe('DeviceController test-connection (integration — real postgres + guar
         configStatus: 'unknown',
         firmwareStatus: 'unknown',
         lastCheckInMessage: null,
+        pendingFirmwareOverride: null,
+      });
+    });
+
+    it('มีคำขอ Firmware Override pending ของเครื่องนี้ -> pendingFirmwareOverride คืนแถวนั้น (แก้ตามรีวิว B บน PR #257)', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-PENDING-FO', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const firmwareId = await makeFirmware();
+      const override = await prisma.deviceFirmwareOverride.create({
+        data: {
+          deviceId: 'STAT-PENDING-FO',
+          firmwareId,
+          versionNumber: 1,
+          reason: 'ทดสอบ',
+          overriddenBy: stUser.id,
+          status: 'pending',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-PENDING-FO/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as {
+        pendingFirmwareOverride: {
+          id: string;
+          deviceId: string;
+          firmwareId: string;
+          status: string;
+        } | null;
+      };
+      expect(body.pendingFirmwareOverride).toMatchObject({
+        id: override.id,
+        deviceId: 'STAT-PENDING-FO',
+        firmwareId,
+        status: 'pending',
       });
     });
 

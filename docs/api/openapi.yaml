@@ -4273,7 +4273,14 @@ components:
         เวอร์ชันย่อ (v3.39, issue #245) — มีแค่ configStatus/firmwareStatus
         ยังไม่มี online/offline หรือเวลา check-in จริง (ดู description ของ
         `getDeviceStatus`)
-      required: [deviceId, configStatus, firmwareStatus, lastCheckInMessage]
+      required:
+        [
+          deviceId,
+          configStatus,
+          firmwareStatus,
+          lastCheckInMessage,
+          pendingFirmwareOverride,
+        ]
       properties:
         deviceId:
           type: string
@@ -4295,6 +4302,17 @@ components:
             placeholder — เป็น null เสมอตอนนี้ รอผลคำถาม online/offline/
             check-in ที่เปิดแยกไว้ต่างหาก (ยังไม่มี concept นี้ในระบบเลย)
           example: null
+        pendingFirmwareOverride:
+          type: object
+          nullable: true
+          description: >-
+            คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้
+            (v3.45, แก้ตามรีวิว B บน PR #257) — `null` ถ้าไม่มี mirror
+            `pendingOverride` ของ `Config` (`GET /devices/{deviceId}/config`)
+            — ไม่ filter ด้วยผู้ขอ เป็นสถานะของอุปกรณ์ที่ทุก role ที่อ่าน
+            อุปกรณ์เครื่องนี้ได้เห็นเหมือนกันหมด
+          allOf:
+            - $ref: "#/components/schemas/DeviceFirmwareOverride"
 
     Notification:
       type: object

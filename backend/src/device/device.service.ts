@@ -117,6 +117,20 @@ export interface DeviceStatusResult {
   /** placeholder เสมอเป็น `null` ตอนนี้ — รอผลคำถาม online/offline/check-in
    * แยกต่างหากกับ B (ดู comment เหนือ `getStatus()`) */
   lastCheckInMessage: string | null;
+  /** คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (ถ้ามี —
+   * เครื่องหนึ่งมีได้ทีละ 1 รายการ ดู `overrideDeviceFirmware()`) **เพิ่มตาม
+   * รีวิว B บน PR #257** — เดิม ST อ่านคำขอของตัวเองไม่ได้เลย
+   * (`GET /device-firmware-overrides` เป็น Operation เท่านั้น) ทำให้ Mobile
+   * โชว์ banner "รออนุมัติ" แบบที่ Config Override มี (`pendingOverride` ใน
+   * `GET /devices/{deviceId}/config`) ไม่ได้ ต้องรอโดน 409 ก่อนถึงจะรู้ —
+   * เกาะ endpoint นี้แทนที่จะเปิด endpoint ใหม่ เพราะ Mobile เรียกอยู่แล้ว
+   * (mirror ตำแหน่งของ `pendingOverride` ฝั่ง Config แนวคิดเดียวกัน แค่คนละ
+   * endpoint เพราะไม่มี "GET current firmware ของอุปกรณ์" แยกแบบ Config) —
+   * ไม่ filter ด้วย `overriddenBy`/user id เพราะเป็นสถานะของ**อุปกรณ์**ไม่ใช่
+   * ของผู้ใช้ (ไม่เข้าข่าย IDOR — Operation/ST/OT ที่อ่านอุปกรณ์เครื่องนี้ได้
+   * อยู่แล้วตาม RBAC เห็นเหมือนกันหมด mirror `pendingOverride` ของ Config ที่
+   * ก็ไม่ filter ด้วย user เช่นกัน) */
+  pendingFirmwareOverride: DeviceFirmwareOverride | null;
 }
 
 /** rollout สถานะเหล่านี้ไม่เคยส่ง payload ไปอุปกรณ์จริง (ถูกปฏิเสธ/ยกเลิกก่อน
@@ -237,38 +251,50 @@ export class DeviceService {
    * สถานะปัจจุบันของอุปกรณ์ — `reject()`/ไม่มีการอัปเดต target เลยตอน cancel
    * เก่า ปล่อย row ค้างเป็น `pending` ตลอดไป ถ้าไม่กรองจะเห็นเป็น "pending"
    * ผิดๆ ทั้งที่ไม่มีอะไรถูกส่งไปจริง)
+   *
+   * `pendingFirmwareOverride` (เพิ่มตามรีวิว B บน PR #257) — mirror
+   * `pendingOverride` ของ `getCurrentConfig()` เกาะ endpoint นี้แทนที่จะเปิด
+   * endpoint ใหม่ เพราะ Mobile เรียก `GET .../status` อยู่แล้ว (B ยืนยันแล้วว่า
+   * สะดวกกว่า) ไม่ filter ด้วย `overriddenBy` เพราะเป็นสถานะของอุปกรณ์ ไม่ใช่
+   * ของผู้ใช้คนที่ขอ — ไม่เข้าข่าย IDOR (Operation/ST/OT ที่อ่านอุปกรณ์เครื่องนี้
+   * ได้ตาม RBAC อยู่แล้วเห็นเหมือนกันหมด)
    */
   async getStatus(deviceId: string): Promise<DeviceStatusResult> {
     const device = await this.findByDeviceId(deviceId); // 404 ถ้าไม่พบ
 
-    const [configTarget, firmwareTarget] = await Promise.all([
-      this.prisma.campaignRolloutTarget.findFirst({
-        where: {
-          deviceId: device.deviceId,
-          rollout: {
-            payloadType: 'Config',
-            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+    const [configTarget, firmwareTarget, pendingFirmwareOverride] =
+      await Promise.all([
+        this.prisma.campaignRolloutTarget.findFirst({
+          where: {
+            deviceId: device.deviceId,
+            rollout: {
+              payloadType: 'Config',
+              status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+            },
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-      this.prisma.campaignRolloutTarget.findFirst({
-        where: {
-          deviceId: device.deviceId,
-          rollout: {
-            payloadType: 'Firmware',
-            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.campaignRolloutTarget.findFirst({
+          where: {
+            deviceId: device.deviceId,
+            rollout: {
+              payloadType: 'Firmware',
+              status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+            },
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-    ]);
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.deviceFirmwareOverride.findFirst({
+          where: { deviceId: device.deviceId, status: 'pending' },
+        }),
+      ]);
 
     return {
       deviceId: device.deviceId,
       configStatus: toDevicePayloadStatus(configTarget?.status),
       firmwareStatus: toDevicePayloadStatus(firmwareTarget?.status),
       lastCheckInMessage: null,
+      pendingFirmwareOverride,
     };
   }
 

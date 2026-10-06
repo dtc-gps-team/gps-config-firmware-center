@@ -60,6 +60,9 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //   GET  /devices/:deviceId/status — สถานะย่อ configStatus/firmwareStatus
 //                                 (issue #245) · ทุก Role — ยังไม่มี online/
 //                                 offline (ไม่มี concept check-in ในระบบเลย)
+//                                 + pendingFirmwareOverride ถ้ามีคำขอค้างอยู่
+//                                 (เพิ่มตามรีวิว B บน PR #257 — mirror
+//                                 pendingOverride ของ GET .../config)
 //   POST /devices/:deviceId/test-connection | apply-config | simulate-config
 //                                 — ช่างหน้างาน ST/OT ผ่าน Mobile
 //   GET  /devices/:deviceId/config — Config ปัจจุบันของอุปกรณ์ (issue #211,
