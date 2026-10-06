@@ -5,9 +5,9 @@
 > ตอนทบทวนงาน "เริ่มโครง Offline-first (Drift)" (PR #252) แล้วพบว่าความต้องการจริงคือ
 > อยากเห็น **ประวัติละเอียดของสิ่งที่ช่างทำกับอุปกรณ์แต่ละเครื่อง** ไม่ใช่แค่ cache
 > คิวงานปัจจุบัน
-> **สถานะ:** **ร่างเสนอ — รอ A + พี่เลี้ยงรีวิว** (ยังไม่เริ่ม implement)
+> **สถานะ:** **A approve แนวทางแล้ว (PR #253) · คำถามเปิดใน §9 ตอบครบ 4 ข้อแล้ว (A, issue #262, 2026-10-06)** — ยังไม่เริ่ม implement
 > **จังหวะ:** นอกขอบเขต Sprint 2 เดิม (การ์ด "เริ่มโครง Offline-first" ไม่รวมเรื่องนี้) —
-> เสนอให้เป็น backlog ใหม่ใน Sprint 3+ หลังตกลงขอบเขตกันแล้ว
+> **ตกลงแล้ว: เริ่มที่ Sprint 4** (ไม่ใช่ Sprint 3 — ดู §9 ข้อ 4)
 
 ---
 
@@ -53,8 +53,9 @@ model TaskEvent {
 
 เพิ่ม `events TaskEvent[]` เข้า model `Task` เดิม — ไม่แก้ field อื่นของ `Task`
 
-**คำถามเปิดสำหรับ A/Backend:** `changedBy` ควรเป็น FK ไป `User` เลยไหม หรือเก็บเป็น userId
-string เฉยๆ แบบ `Task.assignedTo` เดิม (เพื่อความสม่ำเสมอ)?
+**ตอบแล้ว (§9 ข้อ 1):** `changedBy` เป็น **FK ไป `User`** — `changedBy String` +
+`changer User @relation(fields: [changedBy], references: [id])` (ชนิดคอลัมน์เป็น `String`
+ตาม type ของ `User.id` เหมือน `Task.assignedTo` ที่ก็เป็น FK ไป `User` อยู่แล้ว)
 
 ## 4. API contract ใหม่ (`docs/api/openapi.yaml`)
 
@@ -87,7 +88,7 @@ dependency ใหม่ และขอ permission กล้อง/คลัง�
 ## 6. เอกสารที่ต้องแตะตอน implement
 
 - `docs/api/openapi.yaml` — เพิ่ม `GET /tasks/{taskId}/events`, `POST /tasks/{taskId}/notes`, แก้ response ของ `PATCH /tasks/{taskId}`
-- `docs/architecture/RBAC_Matrix.md` — ต้องเช็คว่าใครดู/เขียน `TaskEvent` ได้บ้าง (เดาว่า scope เดียวกับ `Task` คือ self-scoped สำหรับ ST/OT แต่ต้องยืนยัน)
+- `docs/architecture/RBAC_Matrix.md` — ต้องเช็คว่าใครดู/เขียน `TaskEvent` ได้บ้าง (ตอบแล้ว §9 ข้อ 3: ST/OT self-scoped เหมือน `Task` **และ Operation อ่านได้ด้วย**)
 - `docs/database/GPS_Data_Dictionary.xlsx` — เพิ่มตาราง `TaskEvent`
 - `prisma/schema.prisma` + migration ใหม่
 
@@ -102,16 +103,18 @@ dependency ใหม่ และขอ permission กล้อง/คลัง�
 1. A + พี่เลี้ยงรีวิวเอกสารนี้ — โดยเฉพาะ §3 (`changedBy` FK หรือ string) และ §4 (กลไกอัปโหลดรูป)
 2. ถ้าเห็นชอบ แตก backlog item แยกจาก Sprint 2 เดิม อย่างน้อย 3-4 ใบ:
    a. Backend: `TaskEvent` schema + migration + endpoints (§3, §4)
-   b. Backend: กลไกอัปโหลดรูป (ถ้ายังไม่มี)
+   b. Backend: endpoint อัปโหลดรูป (multipart ผ่าน backend, reuse pattern ของ `FirmwareStorageService` — ดู §9 ข้อ 2)
    c. Mobile: `TaskEvent` local cache + ต่อ API (§5)
    d. Mobile: Timeline UI + กล้อง/แนบรูป (§5.1)
-3. จัดเข้า Sprint 3 ตามความพร้อมของแต่ละใบ
+3. จัดเข้า **Sprint 4** ตามความพร้อมของแต่ละใบ (ตกลงแล้ว §9 ข้อ 4 — ไม่ใช่ Sprint 3)
 
 ## 9. คำถามเปิด
 
-| # | คำถาม | สถานะ |
+ตอบโดย A ใน issue #262 (2026-10-06):
+
+| # | คำถาม | คำตอบ / สถานะ |
 |---|---|---|
-| 1 | `changedBy` ควรเป็น FK ไป `User` หรือเก็บเป็น string เหมือน `Task.assignedTo` | รอ A/Backend ตอบ |
-| 2 | โปรเจกต์มีกลไกอัปโหลดรูปอยู่แล้วหรือยัง (ใช้ที่ไหนมาก่อน) | รอ A/Backend ตอบ — สำคัญที่สุด ตัดสินใจเรื่องนี้ก่อนถึงเริ่ม implement ได้ |
-| 3 | RBAC ของ `TaskEvent` ควรเหมือน `Task` เป๊ะ (self-scoped ST/OT) ไหม หรือมีบทบาทอื่นที่ต้องดูได้ (เช่น Operation ตรวจงาน) | รอ A/พี่เลี้ยงตอบ |
-| 4 | เริ่ม Sprint 3 เลย หรือรอให้งานค้างของ Sprint 2 (§ดู Sprint plan) ปิดก่อน | รอ A/พี่เลี้ยงตอบ |
+| 1 | `changedBy` ควรเป็น FK ไป `User` หรือเก็บเป็น string เหมือน `Task.assignedTo` | **ตอบแล้ว: FK ไป `User`** — `Task.assignedTo` ที่เดิมเข้าใจว่าเป็น string เฉยๆ จริงๆ เป็น FK ไป `User` อยู่แล้ว (`assignedUser User @relation(fields: [assignedTo], references: [id])`) แค่ชนิดคอลัมน์เป็น `String` ตาม `User.id` (uuid) `TaskEvent.changedBy` ทำแบบเดียวกันเป๊ะ |
+| 2 | โปรเจกต์มีกลไกอัปโหลดรูปอยู่แล้วหรือยัง (ใช้ที่ไหนมาก่อน) | **ตอบแล้ว: มีโครงอยู่ — multipart ผ่าน backend ตรงๆ ไม่ใช้ presigned URL** (คำตอบเดิมของ A ใน PR #253 — รอบ issue #262 ตอบคลาดเคลื่อนไปครั้งหนึ่ง แล้ว A ยกเลิกและยืนยันตามคำตอบเดิม) `FirmwareStorageService` (`backend/src/firmware/firmware-storage.service.ts`) ต่อ MinIO (S3-compatible, `@aws-sdk/client-s3`) รันผ่าน docker-compose ตั้งแต่ Sprint 0 — client อัปโหลด multipart เข้า backend (NestJS `FileInterceptor`) แล้ว backend relay เข้า MinIO เอง → TaskEvent photo ใช้ pattern เดียวกันในโมดูล `task` เพิ่ม bucket ใหม่ (เช่น `gps-task-photos`) ไม่ต้องออกแบบกลไกใหม่ ไม่ต้องมี presigned-URL flow |
+| 3 | RBAC ของ `TaskEvent` ควรเหมือน `Task` เป๊ะ (self-scoped ST/OT) ไหม หรือมีบทบาทอื่นที่ต้องดูได้ (เช่น Operation ตรวจงาน) | **ตอบแล้ว: ไม่ใช่ self-scoped เท่า `Task`** — **Operation อ่านได้ด้วย** เพราะจุดประสงค์ (§1) คือ "เครื่องนี้เคยมีปัญหาอะไรมาก่อน" Operation ต้องใช้ตรวจสอบ/วินิจฉัยอุปกรณ์ ไม่ใช่แค่ช่างดูงานตัวเองย้อนหลัง (ST/OT ยัง self-scoped เหมือน `Task`) |
+| 4 | เริ่ม Sprint 3 เลย หรือรอให้งานค้างของ Sprint 2 ปิดก่อน | **ตอบแล้ว: ปักไว้ที่ Sprint 4** — เหตุผล: ต้องเคลียร์ของเดิมที่ค้างอยู่ใน Sprint 3 ก่อน (ตรวจพบ 2026-10-06: Incident Reporting #236 ยังไม่เริ่มโค้ด, Confirm Install Mobile ยังไม่มี UI, After-sales Campaign ติดอาจารย์ที่ปรึกษา) งานนี้ไม่มีใครรออยู่และไม่ได้ติดขัดเอง (คำตอบเดิมใน PR #253 ที่ว่า "เริ่ม backend คู่ขนานได้" มองแค่ว่างานนี้มีคนรอไหม ไม่ได้ตอบผิด แต่ยังไม่เห็นภาพรวม Sprint 3) · **ข้อยกเว้น:** ถ้า Sprint 3 เสร็จหมดจริงก่อน checkpoint 11/10/2026 ค่อยขยับมาเริ่มก่อนได้ — ต้องยืนยันตอนนั้นว่าของ Sprint 3 เสร็จทั้งหมดแล้ว ไม่ใช่เงื่อนไข "มีเวลาว่าง" แบบหลวมๆ · เข้าเกณฑ์ "Backlog Scope Report" ที่ `docs/planning/02_GPS_Development_Plan.md` แถวที่ 33 |
