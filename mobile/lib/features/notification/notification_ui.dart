@@ -22,7 +22,12 @@ class NotificationTypeStyle {
       case NotificationType.configOverrideApproved:
         final deviceId = text('deviceId');
         return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
+      case NotificationType.firmwareOverridePending:
+      case NotificationType.firmwareOverrideApproved:
+        final deviceId = text('deviceId');
+        return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
       case NotificationType.configOverrideRejected:
+      case NotificationType.firmwareOverrideRejected:
         final deviceId = text('deviceId');
         final reason = text('rejectReason');
         return [
@@ -46,6 +51,12 @@ class NotificationTypeStyle {
     NotificationType.configOverridePending => 'มีคำขอ Override รออนุมัติ',
     NotificationType.configOverrideApproved => 'คำขอ Override ได้รับการอนุมัติ',
     NotificationType.configOverrideRejected => 'คำขอ Override ถูกปฏิเสธ',
+    NotificationType.firmwareOverridePending =>
+      'มีคำขอ Firmware Override รออนุมัติ',
+    NotificationType.firmwareOverrideApproved =>
+      'คำขอ Firmware Override ได้รับการอนุมัติ',
+    NotificationType.firmwareOverrideRejected =>
+      'คำขอ Firmware Override ถูกปฏิเสธ',
   };
 
   static IconData icon(NotificationType type) => switch (type) {
@@ -59,5 +70,8 @@ class NotificationTypeStyle {
     NotificationType.configOverridePending => Icons.edit_note_outlined,
     NotificationType.configOverrideApproved => Icons.check_circle_outline,
     NotificationType.configOverrideRejected => Icons.cancel_outlined,
+    NotificationType.firmwareOverridePending => Icons.system_update_alt,
+    NotificationType.firmwareOverrideApproved => Icons.check_circle_outline,
+    NotificationType.firmwareOverrideRejected => Icons.cancel_outlined,
   };
 }
