@@ -69,6 +69,8 @@ model User {
   configDeletionReviews         ConfigDeletionRequest[] @relation("ConfigDeletionReviewedBy")
   deviceConfigOverrides         DeviceConfigOverride[]  @relation("DeviceConfigOverrideBy")
   deviceConfigOverrideDecisions DeviceConfigOverride[]  @relation("DeviceConfigOverrideDecidedBy")
+  deviceFirmwareOverrides         DeviceFirmwareOverride[]  @relation("DeviceFirmwareOverrideBy")
+  deviceFirmwareOverrideDecisions DeviceFirmwareOverride[]  @relation("DeviceFirmwareOverrideDecidedBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -164,6 +166,11 @@ enum NotificationType {
   config_override_pending
   config_override_approved
   config_override_rejected
+  // เพิ่มใหม่ (Sprint 3 แถวที่ 24 — Firmware Override) mirror
+  // config_override_pending/approved/rejected ทุกประการ
+  firmware_override_pending
+  firmware_override_approved
+  firmware_override_rejected
 }
 
 model Notification {
@@ -373,6 +380,7 @@ model Device {
   modelId              String
   model                DeviceModel            @relation(fields: [modelId], references: [id])
   configOverrides      DeviceConfigOverride[]
+  firmwareOverrides    DeviceFirmwareOverride[]
 
   // Dual Partition (mock) — จำลอง concept จาก GPS_Config_Firmware_Center_Design.pdf
   // §11.3 ("Firmware ควรกำหนด Rollback Target ล่วงหน้า และใช้ Dual Partition
@@ -627,6 +635,63 @@ model DeviceConfigOverride {
   @@index([status])
 }
 
+enum DeviceFirmwareOverrideStatus {
+  pending
+  approved
+  rejected
+}
+
+// เพิ่มใหม่ (Sprint 3 แถวที่ 24 — Firmware Override รายเครื่อง, แยก scope ออกจาก
+// Device Config Override Phase 1 ตั้งแต่แก้ครั้งที่ 42 ตามที่ตกลงกับ B)
+// mirror `DeviceConfigOverride` เป็นแบบ: ST ส่งคำขอ (`status: pending`) →
+// Operation อนุมัติ/ปฏิเสธ — **ต่างจาก `DeviceConfigOverride` ตรงที่ไม่มี
+// `fields`/`configId`** เพราะ Firmware ไม่ใช่ key-value ที่ override บางส่วน
+// ได้เหมือน Config เป็น**เวอร์ชันเดียวทั้งก้อน** (atomic) — แถวนี้จึงเก็บแค่
+// "อยากได้ firmware ตัวไหน" ตรงๆ ไม่มี "base" ให้ denormalize/merge
+//
+// **ไม่ auto-apply เข้าอุปกรณ์** (เหมือน Config Override Phase 1 เดิม) —
+// อนุมัติแล้วแค่ปลดล็อกสิทธิ์ให้ `DeviceService.confirmFirmwareInstall()`
+// ยอมรับ firmware นี้กับอุปกรณ์เครื่องนี้ได้ (ดู comment เหนือ
+// `confirmFirmwareInstall()`) การติดตั้งจริงยังเป็น manual confirm ทั้งหมด
+model DeviceFirmwareOverride {
+  id            String                       @id @default(uuid())
+  deviceId      String
+  firmwareId    String
+  // running number ต่อ**อุปกรณ์** mirror DeviceConfigOverride.versionNumber
+  // ทุกประการ (นับรวมทุกสถานะ กัน versionNumber ชนกันหลัง reject แล้วส่งคำขอใหม่)
+  versionNumber Int
+  // เหตุผลของคำขอ override — บังคับกรอกเสมอ (mirror DeviceConfigOverride.reason)
+  reason        String
+  status        DeviceFirmwareOverrideStatus @default(pending)
+  overriddenBy  String
+  overriddenAt  DateTime                     @default(now())
+  // ผู้อนุมัติ/ปฏิเสธ — null จนกว่า Operation จะตัดสินใจ (status ยัง pending)
+  decidedBy     String?
+  decidedAt     DateTime?
+  // เหตุผลตอนปฏิเสธ — optional ไม่มีความหมายถ้า status ไม่ใช่ rejected
+  rejectReason  String?
+  // เพิ่มใหม่ (แก้ตามรีวิว B บน PR #257 ข้อ 1) — override ที่ approved แล้วเดิม
+  // ไม่เคย "ใช้แล้วหมด" เลย ทำให้ใช้ข้าม Campaign แผนใหม่ได้ไม่รู้จบ (ตรงข้าม
+  // กับเจตนาของ gate ที่ตั้งใจให้เป็นข้อยกเว้นเฉพาะครั้ง) — null = ยังไม่เคยถูก
+  // ใช้ยืนยันติดตั้งจริง `confirmFirmwareInstall()` ต้องเจอแถวนี้เป็น
+  // `status: approved` + `consumedAt: null` เท่านั้นถึงจะผ่าน gate ได้ แล้ว mark
+  // ค่านี้ในทรานแซกชันเดียวกับการเขียน AuditLog (ปิด TOCTOU ที่ B ชี้ไว้ด้วย) —
+  // ติดตั้ง firmware เดิมซ้ำอีกครั้ง (เช่น reset เครื่อง) ต้องขอ override ใหม่
+  consumedAt    DateTime?
+
+  // onDelete: Restrict ทั้ง Device และ Firmware — ประวัติคำขอ/override เป็น
+  // ข้อมูลเชิง audit ไม่ควรหายไปเงียบๆ ตอนลบอุปกรณ์หรือ Firmware (mirror
+  // เหตุผลเดียวกับ DeviceConfigOverride)
+  device    Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Restrict)
+  firmware  Firmware @relation(fields: [firmwareId], references: [id], onDelete: Restrict)
+  overrider User     @relation("DeviceFirmwareOverrideBy", fields: [overriddenBy], references: [id])
+  decider   User?    @relation("DeviceFirmwareOverrideDecidedBy", fields: [decidedBy], references: [id])
+
+  @@unique([deviceId, versionNumber])
+  @@index([deviceId])
+  @@index([status])
+}
+
 // เพิ่มใหม่ (docs/11 Part A — คำขอลบ Config อัตโนมัติ): scheduled job รายวัน
 // กวาดหา Config ที่เข้าเกณฑ์ §2 (draft/rejected · ไม่ผูก Task/Campaign/Incident
 // · updatedAt เก่ากว่า 90 วัน · ไม่มีคำขอ pending ค้าง · ไม่อยู่ใน cooldown 90
@@ -791,6 +856,7 @@ model Firmware {
   // `partitionBFirmware` ดู comment เหนือ field นั้น
   devicesOnPartitionA Device[]          @relation("DevicePartitionA")
   devicesOnPartitionB Device[]          @relation("DevicePartitionB")
+  deviceOverrides     DeviceFirmwareOverride[]
 }
 
 // ---------------------------------------------------------------------------

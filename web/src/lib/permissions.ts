@@ -182,6 +182,18 @@ export function canDecideDeviceConfigOverride(
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิว Firmware Override รายเครื่อง — RBAC_Matrix.md
+ * ตาราง 4.1 `POST /device-firmware-overrides/{id}/approve` / `.../reject`:
+ * resource `device-firmware-override` action `Approve` — Operation เท่านั้น
+ * (Sprint 3 แถวที่ 24) mirror `canDecideDeviceConfigOverride` ทุกประการ
+ */
+export function canDecideFirmwareOverride(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * หน้าคลัง Parameter (Config Definition Lookup) — RBAC_Matrix.md ตาราง 4.1
  * `GET /config-definitions`: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม
  * SW ก่อนแยก role — docs/13 §3.1 · FirmwareEngineer/QAEngineer ไม่ได้ เพราะ
