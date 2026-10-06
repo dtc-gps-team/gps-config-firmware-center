@@ -39,6 +39,18 @@ const _passwordDef = ConfigFieldDefinition(
   supportedModels: [],
 );
 
+ConfigFieldDefinition _defOf(String name, String dataType) =>
+    ConfigFieldDefinition(
+      id: 'def-$name',
+      fieldName: name,
+      dataType: dataType,
+      allowedValues: const [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: const [],
+    );
+
 const _defaultConfig = DeviceConfigDraft(
   id: 'cfg-1',
   name: 'GT06N · ตั้งค่ามาตรฐาน',
@@ -239,6 +251,196 @@ void main() {
       expect(find.text('• field "APN" ไม่อนุญาตให้ override'), findsOneWidget);
     },
   );
+
+  group('dataType ครบทุกชนิด (PR #255 / issue #258)', () {
+    Future<_FakeConfigOverrideRepository> pumpTyped(
+      WidgetTester tester, {
+      required String type,
+      required dynamic current,
+    }) {
+      return _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'cfg',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'F': current},
+          ),
+          definitions: [_defOf('F', type)],
+        ),
+      );
+    }
+
+    Future<void> submitWithReason(WidgetTester tester) async {
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ทดสอบ',
+      );
+      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> editAndSubmit(WidgetTester tester, String value) async {
+      await tester.enterText(
+        find.byKey(const Key('config_override_input_F')),
+        value,
+      );
+      await submitWithReason(tester);
+    }
+
+    // type: [ค่าปัจจุบัน, ค่าที่พิมพ์, ค่าที่ต้องถูกส่งไป backend]
+    final okCases = <String, List<Object?>>{
+      'integer': [1, '8080', 8080],
+      'decimal': [1.0, '12.5', 12.5],
+      'number': [1, '90', 90], // legacy alias
+      'string': ['a', 'b', 'b'],
+      'text': ['a', 'b c', 'b c'],
+      'date': ['2026-01-01', '2026-10-06', '2026-10-06'],
+      'datetime': [
+        '2026-01-01T00:00:00',
+        '2026-10-06T08:30:00',
+        '2026-10-06T08:30:00',
+      ],
+      'json': [
+        {'a': 1},
+        '{"b": 2}',
+        {'b': 2},
+      ],
+      'array': [
+        [1],
+        '[2, 3]',
+        [2, 3],
+      ],
+      'uuid': [
+        '123e4567-e89b-12d3-a456-426614174000',
+        '223e4567-e89b-12d3-a456-426614174000',
+        '223e4567-e89b-12d3-a456-426614174000',
+      ],
+    };
+
+    okCases.forEach((type, c) {
+      testWidgets('$type: ค่าถูกต้อง -> ส่งชนิดข้อมูลตรงตาม dataType', (
+        tester,
+      ) async {
+        final fake = await pumpTyped(tester, type: type, current: c[0]);
+        await editAndSubmit(tester, c[1] as String);
+
+        expect(fake.lastFields, {'F': c[2]});
+        expect(find.byKey(const Key('config_override_error')), findsNothing);
+      });
+    });
+
+    testWidgets('boolean: เลือกจาก dropdown -> ส่งเป็น bool จริง', (
+      tester,
+    ) async {
+      final fake = await pumpTyped(tester, type: 'boolean', current: 'false');
+      await tester.tap(find.byKey(const Key('config_override_input_F')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('true').last);
+      await tester.pumpAndSettle();
+      await submitWithReason(tester);
+
+      expect(fake.lastFields, {'F': true});
+    });
+
+    final badCases = <String, String>{
+      'integer': '1.5',
+      'decimal': 'abc',
+      'number': '0x10',
+      'date': '2026-02-31',
+      'datetime': '2026-10-06',
+      'json': '[1]',
+      'array': '{"a": 1}',
+      'uuid': 'nope',
+    };
+
+    badCases.forEach((type, bad) {
+      testWidgets('$type: ค่าผิด -> error ที่ฟอร์ม ไม่เรียก API ไม่ throw', (
+        tester,
+      ) async {
+        final fake = await pumpTyped(
+          tester,
+          type: type,
+          current: type == 'json'
+              ? {'a': 1}
+              : type == 'array'
+              ? [1]
+              : 'x',
+        );
+        await editAndSubmit(tester, bad);
+
+        expect(tester.takeException(), isNull);
+        expect(fake.lastDeviceId, isNull);
+        expect(find.byKey(const Key('config_override_error')), findsOneWidget);
+        expect(find.textContaining('F: '), findsOneWidget);
+      });
+    });
+
+    testWidgets('json เสีย (parse ไม่ได้) -> error ที่ฟอร์ม ไม่ throw', (
+      tester,
+    ) async {
+      final fake = await pumpTyped(tester, type: 'json', current: {'a': 1});
+      await editAndSubmit(tester, '{');
+
+      expect(tester.takeException(), isNull);
+      expect(fake.lastDeviceId, isNull);
+      expect(find.text('JSON ไม่ถูกต้อง'), findsWidgets);
+    });
+
+    testWidgets('error รายช่องหายเมื่อผู้ใช้แก้ค่าใหม่', (tester) async {
+      await pumpTyped(tester, type: 'integer', current: 1);
+      await editAndSubmit(tester, '1.5');
+      expect(find.text('ต้องเป็นจำนวนเต็ม'), findsWidgets);
+
+      await tester.enterText(
+        find.byKey(const Key('config_override_input_F')),
+        '2',
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('config_override_field_F')),
+          matching: find.text('ต้องเป็นจำนวนเต็ม'),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'json: ค่าเดิมแสดงเป็น JSON จริง และไม่แก้ = ไม่นับว่าเปลี่ยน',
+      (tester) async {
+        final fake = await pumpTyped(tester, type: 'json', current: {'a': 1});
+        final field = tester.widget<TextField>(
+          find.byKey(const Key('config_override_input_F')),
+        );
+        expect(field.controller!.text, '{"a":1}');
+        expect(field.maxLines, greaterThan(1)); // multiline
+
+        await submitWithReason(tester);
+        expect(find.text('ยังไม่ได้แก้ค่าไหนเลย'), findsOneWidget);
+        expect(fake.lastDeviceId, isNull);
+      },
+    );
+
+    testWidgets('keyboard: integer ไม่มีจุดทศนิยม / decimal มี', (
+      tester,
+    ) async {
+      await pumpTyped(tester, type: 'integer', current: 1);
+      var f = tester.widget<TextField>(
+        find.byKey(const Key('config_override_input_F')),
+      );
+      expect(f.keyboardType.decimal, isFalse);
+
+      await pumpTyped(tester, type: 'decimal', current: 1.5);
+      f = tester.widget<TextField>(
+        find.byKey(const Key('config_override_input_F')),
+      );
+      expect(f.keyboardType.decimal, isTrue);
+    });
+  });
 
   group('badge hasDeviceOverride (issue #223)', () {
     testWidgets('config.hasDeviceOverride:true -> เห็น badge', (tester) async {
