@@ -256,6 +256,36 @@ class ApiClient {
     );
   }
 
+  /// `GET /firmware` — ทุก Role อ่านได้ (resource `firmware` action `Read`)
+  /// ใช้เลือก Firmware ในหน้า Firmware Override (issue #256). **Strict**
+  /// เหมือน Task/Device — record ที่ parse ไม่ได้ต้องขึ้น error ไม่ใช่หายเงียบ
+  Future<List<Firmware>> listFirmware() async {
+    return _wrapListStrict(
+      () => _dio.get<List<dynamic>>('/firmware'),
+      Firmware.fromJson,
+    );
+  }
+
+  /// `POST /devices/{deviceId}/firmware-override` (issue #256, PR #257) — ST
+  /// เท่านั้น ขอให้อุปกรณ์เครื่องนี้ติดตั้ง Firmware ที่ไม่ตรงกับแผน Campaign
+  /// ได้ · คืนคำขอสถานะ `pending` เสมอ ยังไม่มีผลจนกว่า Operation อนุมัติ ·
+  /// 409 = Firmware ยังติดตั้งไม่ได้ (ยังไม่ stored/approved/ไม่รองรับรุ่น)
+  /// หรือเครื่องนี้มีคำขอ pending อยู่แล้ว (หน้าจอแสดง `ApiException.message`
+  /// ที่ backend ส่งมาตรงๆ)
+  Future<DeviceFirmwareOverride> overrideDeviceFirmware({
+    required String deviceId,
+    required String firmwareId,
+    required String reason,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/devices/$deviceId/firmware-override',
+        data: {'firmwareId': firmwareId, 'reason': reason},
+      ),
+      DeviceFirmwareOverride.fromJson,
+    );
+  }
+
   /// `GET /config-definitions` — คลัง field ที่ระบบรู้จัก ใช้เช็คว่า field ไหน
   /// `stOverridable: true` บ้างก่อนแสดงหน้า Config Override (issue #211).
   Future<List<ConfigFieldDefinition>> listConfigDefinitions() async {

@@ -132,6 +132,21 @@ class _DeviceDetailView extends ConsumerWidget {
               minimumSize: const Size.fromHeight(48),
             ),
           ),
+          const SizedBox(height: 12),
+          // issue #256 — ทางขอ Firmware Override เมื่อ Firmware ที่ต้องการติดตั้ง
+          // ไม่ตรงแผน Campaign (backend ตอบ 409 ที่ confirm-firmware-install)
+          OutlinedButton.icon(
+            key: const Key('device_detail_firmware_override'),
+            onPressed: () =>
+                context.push(AppRoutes.deviceFirmwareOverride(deviceId)),
+            icon: const Icon(Icons.system_update_alt),
+            label: const Text('ขอ Firmware Override'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppTheme.navy,
+              side: const BorderSide(color: AppTheme.navy),
+              minimumSize: const Size.fromHeight(48),
+            ),
+          ),
         ],
       ],
     );

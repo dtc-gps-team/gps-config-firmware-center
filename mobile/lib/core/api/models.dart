@@ -68,7 +68,12 @@ enum NotificationType {
   // เพิ่มใหม่ (issue #226) — Per-device Config Override (issue #223)
   configOverridePending('config_override_pending'),
   configOverrideApproved('config_override_approved'),
-  configOverrideRejected('config_override_rejected');
+  configOverrideRejected('config_override_rejected'),
+  // เพิ่มใหม่ (issue #256) — Per-device Firmware Override (Sprint 3 แถวที่ 24,
+  // PR #257) mirror config_override_* ทุกประการ
+  firmwareOverridePending('firmware_override_pending'),
+  firmwareOverrideApproved('firmware_override_approved'),
+  firmwareOverrideRejected('firmware_override_rejected');
 
   const NotificationType(this.wireName);
 
@@ -329,6 +334,107 @@ class DeviceConfigOverride {
       decidedBy: json['decidedBy'] as String?,
       decidedAt: json['decidedAt'] as String?,
       rejectReason: json['rejectReason'] as String?,
+    );
+  }
+}
+
+/// `Firmware` ใน `GET /firmware` (ทุก Role อ่านได้) — เก็บเฉพาะ field ที่หน้า
+/// Firmware Override ใช้เลือก/กรองตัวที่ติดตั้งได้ (ไม่ต้องใช้ objectKey ฯลฯ)
+class Firmware {
+  const Firmware({
+    required this.id,
+    required this.version,
+    required this.deviceModelCompatibility,
+    required this.uploadStatus,
+    required this.approvalStatus,
+    this.originalFilename = '',
+  });
+
+  final String id;
+  final String version;
+  final List<String> deviceModelCompatibility;
+
+  /// `pending` | `stored` | `failed`
+  final String uploadStatus;
+
+  /// `pending_review` | `approved` | `rejected`
+  final String approvalStatus;
+  final String originalFilename;
+
+  /// ตรงกับเงื่อนไข 409 ของ backend (`confirmFirmwareInstall`/
+  /// `overrideDeviceFirmware`): ต้อง stored + approved + รองรับรุ่นอุปกรณ์
+  bool isInstallableOn(String deviceModel) =>
+      uploadStatus == 'stored' &&
+      approvalStatus == 'approved' &&
+      (deviceModel.isEmpty || deviceModelCompatibility.contains(deviceModel));
+
+  factory Firmware.fromJson(Map<String, dynamic> json) {
+    return Firmware(
+      id: json['id'] as String,
+      version: json['version'] as String? ?? '',
+      deviceModelCompatibility:
+          (json['deviceModelCompatibility'] as List?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const [],
+      uploadStatus: json['uploadStatus'] as String? ?? 'pending',
+      approvalStatus: json['approvalStatus'] as String? ?? 'pending_review',
+      originalFilename: json['originalFilename'] as String? ?? '',
+    );
+  }
+}
+
+/// `DeviceFirmwareOverride` — คำขอ Firmware Override รายเครื่อง (issue #256,
+/// PR #257) mirror [DeviceConfigOverride] แต่ไม่มี `fields`/`configId` เพราะ
+/// Firmware เป็นเวอร์ชันเดียวทั้งก้อน · `consumedAt` = approved แล้วถูกใช้
+/// ยืนยันติดตั้งไปแล้ว (single-use)
+class DeviceFirmwareOverride {
+  const DeviceFirmwareOverride({
+    required this.id,
+    required this.deviceId,
+    required this.firmwareId,
+    required this.versionNumber,
+    required this.reason,
+    required this.status,
+    required this.overriddenBy,
+    required this.overriddenAt,
+    this.decidedBy,
+    this.decidedAt,
+    this.rejectReason,
+    this.consumedAt,
+  });
+
+  final String id;
+  final String deviceId;
+  final String firmwareId;
+  final int versionNumber;
+  final String reason;
+
+  /// `pending` | `approved` | `rejected`
+  final String status;
+  final String overriddenBy;
+  final String overriddenAt;
+  final String? decidedBy;
+  final String? decidedAt;
+  final String? rejectReason;
+  final String? consumedAt;
+
+  bool get isPending => status == 'pending';
+
+  factory DeviceFirmwareOverride.fromJson(Map<String, dynamic> json) {
+    return DeviceFirmwareOverride(
+      id: json['id'] as String,
+      deviceId: json['deviceId'] as String,
+      firmwareId: json['firmwareId'] as String,
+      versionNumber: json['versionNumber'] as int,
+      reason: json['reason'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
+      overriddenBy: json['overriddenBy'] as String? ?? '',
+      overriddenAt: json['overriddenAt'] as String? ?? '',
+      decidedBy: json['decidedBy'] as String?,
+      decidedAt: json['decidedAt'] as String?,
+      rejectReason: json['rejectReason'] as String?,
+      consumedAt: json['consumedAt'] as String?,
     );
   }
 }

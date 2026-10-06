@@ -226,6 +226,33 @@ void main() {
       );
     });
   });
+
+  group('ปุ่ม ขอ Firmware Override (issue #256, ST เท่านั้น)', () {
+    for (final entry in {
+      UserRole.st: true,
+      UserRole.ot: false,
+      UserRole.operation: false,
+    }.entries) {
+      testWidgets(
+        'role ${entry.key} -> ${entry.value ? 'เห็น' : 'ไม่เห็น'}ปุ่ม',
+        (tester) async {
+          await _pump(
+            tester,
+            repo: _FakeDeviceSearchRepository(),
+            role: entry.key,
+          );
+
+          expect(
+            find.byKey(
+              const Key('device_detail_firmware_override'),
+              skipOffstage: false,
+            ),
+            entry.value ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
+  });
 }
 
 void _statusTests() {

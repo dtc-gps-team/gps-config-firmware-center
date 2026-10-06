@@ -429,6 +429,58 @@ void main() {
     });
   });
 
+  group('Firmware / DeviceFirmwareOverride (issue #256)', () {
+    Map<String, dynamic> fwJson({
+      String upload = 'stored',
+      String approval = 'approved',
+      List<String> models = const ['GT06N'],
+    }) => {
+      'id': 'fw-1',
+      'version': '2.1.0',
+      'deviceModelCompatibility': models,
+      'uploadStatus': upload,
+      'approvalStatus': approval,
+      'originalFilename': 'fw.bin',
+    };
+
+    test('Firmware.fromJson + isInstallableOn ตรงเงื่อนไข 409 ของ backend', () {
+      final ok = Firmware.fromJson(fwJson());
+      expect(ok.version, '2.1.0');
+      expect(ok.isInstallableOn('GT06N'), isTrue);
+      expect(ok.isInstallableOn('TK103'), isFalse); // ไม่รองรับรุ่น
+      expect(
+        Firmware.fromJson(fwJson(upload: 'failed')).isInstallableOn('GT06N'),
+        isFalse,
+      );
+      expect(
+        Firmware.fromJson(
+          fwJson(approval: 'pending_review'),
+        ).isInstallableOn('GT06N'),
+        isFalse,
+      );
+    });
+
+    test('DeviceFirmwareOverride.fromJson — optional fields เป็น null ได้', () {
+      final o = DeviceFirmwareOverride.fromJson({
+        'id': 'fo-1',
+        'deviceId': 'DEV-1',
+        'firmwareId': 'fw-1',
+        'versionNumber': 2,
+        'reason': 'r',
+        'status': 'approved',
+        'overriddenBy': 'u1',
+        'overriddenAt': '2026-10-06T00:00:00.000Z',
+        'decidedBy': 'op-1',
+        'decidedAt': '2026-10-06T01:00:00.000Z',
+        'rejectReason': null,
+        'consumedAt': null,
+      });
+      expect(o.isPending, isFalse);
+      expect(o.decidedBy, 'op-1');
+      expect(o.consumedAt, isNull);
+    });
+  });
+
   group('NotificationType', () {
     test('wire names match openapi.yaml / Prisma enum', () {
       expect(NotificationType.values.map((t) => t.wireName).toList(), [
@@ -442,8 +494,48 @@ void main() {
         'config_override_pending',
         'config_override_approved',
         'config_override_rejected',
+        'firmware_override_pending',
+        'firmware_override_approved',
+        'firmware_override_rejected',
       ]);
     });
+
+    // issue #256 — Per-device Firmware Override (PR #257): ต้อง parse ได้จริง
+    // ไม่ให้ `_wrapListLenient` ข้ามเงียบๆ
+    test('fromWire maps firmware_override_* ใหม่ทั้ง 3 ค่า', () {
+      expect(
+        NotificationType.fromWire('firmware_override_pending'),
+        NotificationType.firmwareOverridePending,
+      );
+      expect(
+        NotificationType.fromWire('firmware_override_approved'),
+        NotificationType.firmwareOverrideApproved,
+      );
+      expect(
+        NotificationType.fromWire('firmware_override_rejected'),
+        NotificationType.firmwareOverrideRejected,
+      );
+    });
+
+    test(
+      'AppNotification.fromJson parse firmware_override_* ได้ ไม่ throw',
+      () {
+        final n = AppNotification.fromJson({
+          'id': 'n1',
+          'userId': 'u1',
+          'type': 'firmware_override_rejected',
+          'payload': {
+            'overrideId': 'o1',
+            'deviceId': 'DEV-1',
+            'firmwareId': 'fw-1',
+            'rejectReason': 'ไม่เหมาะ',
+          },
+          'read': false,
+          'createdAt': '2026-10-06T00:00:00.000Z',
+        });
+        expect(n.type, NotificationType.firmwareOverrideRejected);
+      },
+    );
 
     test('fromWire maps known values and rejects unknown', () {
       expect(
