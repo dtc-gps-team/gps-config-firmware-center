@@ -302,6 +302,61 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       expect((res.body as { sensitive: boolean }).sensitive).toBe(true);
     });
 
+    it('dataType ไม่อยู่ในชุดที่รู้จัก -> 400 (IsIn ที่ DTO, มติ issue #201)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, dataType: 'number' })
+        .expect(400);
+    });
+
+    it('ConfigEngineer สร้าง field dataType: integer พร้อม defaultValue ตรงชนิด -> 201 (มติ issue #201)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...validBody,
+          fieldName: 'PORT_NUM',
+          dataType: 'integer',
+          defaultValue: '8080',
+        })
+        .expect(201);
+
+      expect((res.body as { dataType: string }).dataType).toBe('integer');
+      expect((res.body as { defaultValue: string }).defaultValue).toBe('8080');
+    });
+
+    it('dataType: integer + defaultValue ไม่ตรงชนิด -> 400 (ปิด TODO defaultValue vs dataType เดิม)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...validBody,
+          fieldName: 'PORT_NUM',
+          dataType: 'integer',
+          defaultValue: 'abc',
+        })
+        .expect(400);
+    });
+
     it('unknownSpec ไม่ใช่ boolean -> 400 (IsBoolean ที่ DTO)', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',

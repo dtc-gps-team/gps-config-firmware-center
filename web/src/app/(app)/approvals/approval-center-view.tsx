@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import {
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
+  canDecideFirmwareOverride,
 } from "@/lib/permissions";
 import { getTokenSubject } from "@/lib/jwt";
 import { Button } from "@/components/ui/button";
@@ -20,16 +21,19 @@ import {
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
+import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ApprovalCard } from "./approval-card";
 import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 import { DeviceConfigOverrideApprovalCard } from "./device-config-override-approval-card";
+import { DeviceFirmwareOverrideApprovalCard } from "./device-firmware-override-approval-card";
 
 export function ApprovalCenterView() {
   const { session } = useAuth();
   const canDecide = canDecideConfigApproval(session?.role);
   const canDecideOverride = canDecideDeviceConfigOverride(session?.role);
+  const canDecideFirmwareOv = canDecideFirmwareOverride(session?.role);
   const myUserId = session?.accessToken
     ? getTokenSubject(session.accessToken)
     : null;
@@ -41,8 +45,17 @@ export function ApprovalCenterView() {
     error: overrideError,
     refetch: refetchOverrides,
   } = usePendingDeviceConfigOverrides();
+  const {
+    data: firmwareOverrideData,
+    isLoading: firmwareOverrideLoading,
+    error: firmwareOverrideError,
+    refetch: refetchFirmwareOverrides,
+  } = usePendingDeviceFirmwareOverrides();
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideNotice, setOverrideNotice] = useState<string | null>(null);
+  const [firmwareOverrideNotice, setFirmwareOverrideNotice] = useState<
+    string | null
+  >(null);
   const [tab, setTab] = useState<"all" | "mine">("all");
 
   const allItems = useMemo(() => data ?? [], [data]);
@@ -68,8 +81,9 @@ export function ApprovalCenterView() {
           {canDecide
             ? "คุณอนุมัติ/ปฏิเสธได้"
             : "เฉพาะ Operation ที่อนุมัติ/ปฏิเสธได้ — คุณดูได้อย่างเดียว"}{" "}
-          · รวมคิว Per-device Config Override ไว้เป็นอีก section แยกด้านล่าง
-          (คนละเรื่องกับ Config ทั้งชุดด้านบน — issue #223)
+          · รวมคิว Per-device Config Override และ Firmware Override ไว้เป็น
+          section แยกด้านล่าง (คนละเรื่องกับ Config ทั้งชุดด้านบน — issue #223,
+          Sprint 3 แถวที่ 24)
         </p>
       </div>
 
@@ -262,6 +276,70 @@ export function ApprovalCenterView() {
                       : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
                   );
                   void refetchOverrides();
+                }}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* section แยกจากทั้ง Config/Campaign Rollout/Config Override (Sprint 3
+       * แถวที่ 24) — คนละ resource/endpoint กันทั้งหมด mirror section
+       * Per-device Config Override ด้านบนเป๊ะ */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Firmware Override รออนุมัติ{" "}
+            <span className="text-muted-foreground">
+              ({firmwareOverrideData?.length ?? 0})
+            </span>
+          </CardTitle>
+          <CardDescription>
+            คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout
+            (ST ส่งจาก Mobile) — อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
+            firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {firmwareOverrideNotice && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+              {firmwareOverrideNotice}
+            </div>
+          )}
+
+          {firmwareOverrideLoading && firmwareOverrideData === null ? (
+            <CardListSkeleton />
+          ) : firmwareOverrideError ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">
+                {firmwareOverrideError}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchFirmwareOverrides()}
+              >
+                ลองใหม่
+              </Button>
+            </div>
+          ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
+            <EmptyState
+              icon={ClipboardCheckIcon}
+              message="ไม่มีคำขอ Firmware Override รออนุมัติ"
+            />
+          ) : (
+            firmwareOverrideData?.map((item) => (
+              <DeviceFirmwareOverrideApprovalCard
+                key={item.id}
+                item={item}
+                canDecide={canDecideFirmwareOv}
+                onDecided={(action) => {
+                  setFirmwareOverrideNotice(
+                    action === "approve"
+                      ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                      : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                  );
+                  void refetchFirmwareOverrides();
                 }}
               />
             ))

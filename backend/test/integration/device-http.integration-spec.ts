@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import {
   ActionType,
+  CampaignRolloutStatus,
   DeviceLifecycleStatus,
   PrismaClient,
 } from '@prisma/client';
@@ -1185,6 +1186,402 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(reloadedRollout.successCount).toBe(1);
       expect(reloadedRollout.status).toBe('completed');
     });
+
+    describe('Firmware Override deviation gate (Sprint 3 แถวที่ 24)', () => {
+      async function makeActiveFirmwareRollout(
+        deviceId: string,
+        firmwareId: string,
+        status: CampaignRolloutStatus = 'active',
+      ): Promise<void> {
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        const campaign = await prisma.campaign.create({
+          data: {
+            name: `กลุ่ม override gate ${randomUUID()}`,
+            createdBy: opUser.id,
+          },
+        });
+        const rollout = await prisma.campaignRollout.create({
+          data: {
+            campaignId: campaign.id,
+            payloadType: 'Firmware',
+            firmwareId,
+            status,
+            targetCount: 1,
+            createdBy: opUser.id,
+          },
+        });
+        await prisma.campaignRolloutTarget.create({
+          data: { rolloutId: rollout.id, deviceId },
+        });
+      }
+
+      it('มี Campaign Rollout active กำหนด firmware อื่นไว้ + ไม่มี override -> 409', async () => {
+        await makeDevice('FOV-GATE-409', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const otherFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout('FOV-GATE-409', assignedFirmwareId);
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-409/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: otherFirmwareId })
+          .expect(409);
+      });
+
+      it.each(['approved', 'paused'] as const)(
+        'rollout สถานะ %s (ยังเป็นแผนที่ Campaign ตั้งใจจริง — แก้ตามรีวิว B PR #257 ข้อ 4) กำหนด firmware อื่นไว้ + ไม่มี override -> 409 เหมือน active',
+        async (status) => {
+          const deviceId = `FOV-GATE-409-${status.toUpperCase()}`;
+          await makeDevice(deviceId, 'installed');
+          const token = await stToken();
+          const assignedFirmwareId = await makeFirmware();
+          const otherFirmwareId = await makeFirmware();
+          await makeActiveFirmwareRollout(deviceId, assignedFirmwareId, status);
+
+          await request(app.getHttpServer())
+            .post(`/api/v1/devices/${deviceId}/confirm-firmware-install`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ firmwareId: otherFirmwareId })
+            .expect(409);
+        },
+      );
+
+      it('rollout สถานะ pending_approval (ยังไม่ผ่านอนุมัติ ไม่ใช่แผนที่ยืนยันแล้ว) กำหนด firmware อื่นไว้ -> 200 ผ่านปกติ ไม่ gate', async () => {
+        await makeDevice('FOV-GATE-200-PENDING', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const otherFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout(
+          'FOV-GATE-200-PENDING',
+          assignedFirmwareId,
+          'pending_approval',
+        );
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-200-PENDING/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: otherFirmwareId })
+          .expect(200);
+      });
+
+      it('มี Campaign Rollout active กำหนด firmware ตรงกับที่ขอ confirm -> 200 ผ่านปกติ', async () => {
+        await makeDevice('FOV-GATE-200', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout('FOV-GATE-200', assignedFirmwareId);
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-200/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: assignedFirmwareId })
+          .expect(200);
+      });
+
+      it('มี Campaign Rollout active กำหนด firmware อื่นไว้ แต่มี DeviceFirmwareOverride approved ตรงกับ firmware ที่ขอ -> 200', async () => {
+        await makeDevice('FOV-GATE-OV200', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const overrideFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout('FOV-GATE-OV200', assignedFirmwareId);
+
+        const stUser = await makeUser(prisma, { role: 'ST' });
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        await prisma.deviceFirmwareOverride.create({
+          data: {
+            deviceId: 'FOV-GATE-OV200',
+            firmwareId: overrideFirmwareId,
+            versionNumber: 1,
+            reason: 'ทดสอบ gate',
+            status: 'approved',
+            overriddenBy: stUser.id,
+            decidedBy: opUser.id,
+            decidedAt: new Date(),
+          },
+        });
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-OV200/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: overrideFirmwareId })
+          .expect(200);
+      });
+
+      it('override single-use (แก้ตามรีวิว B PR #257 ข้อ 1): ใช้ override แล้ว consumedAt ถูก mark จริง และใช้ซ้ำครั้งที่ 2 ไม่ได้ -> 409', async () => {
+        await makeDevice('FOV-GATE-ONCE', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const overrideFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout('FOV-GATE-ONCE', assignedFirmwareId);
+
+        const stUser = await makeUser(prisma, { role: 'ST' });
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        const override = await prisma.deviceFirmwareOverride.create({
+          data: {
+            deviceId: 'FOV-GATE-ONCE',
+            firmwareId: overrideFirmwareId,
+            versionNumber: 1,
+            reason: 'ทดสอบ single-use',
+            status: 'approved',
+            overriddenBy: stUser.id,
+            decidedBy: opUser.id,
+            decidedAt: new Date(),
+          },
+        });
+
+        // ครั้งแรก — ผ่านปกติ
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-ONCE/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: overrideFirmwareId })
+          .expect(200);
+
+        const reloaded = await prisma.deviceFirmwareOverride.findUniqueOrThrow({
+          where: { id: override.id },
+        });
+        expect(reloaded.consumedAt).not.toBeNull();
+
+        // ครั้งที่สอง — override เดิมถูกใช้ไปแล้ว ไม่มีแถว approved+ยังไม่ใช้
+        // เหลือให้ gate ผ่านได้อีก
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-ONCE/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: overrideFirmwareId })
+          .expect(409);
+      });
+    });
+  });
+
+  describe('POST /devices/:deviceId/firmware-override, /device-firmware-overrides (Sprint 3 แถวที่ 24)', () => {
+    let stGranted = false;
+    let opGranted = false;
+    beforeEach(() => {
+      stGranted = false;
+      opGranted = false;
+    });
+
+    async function stToken(): Promise<string> {
+      if (!stGranted) {
+        await grant('ST', ActionType.Override, 'device-firmware-override');
+        stGranted = true;
+      }
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      return tokenFor(stUser.id, 'ST');
+    }
+
+    async function opToken(): Promise<string> {
+      if (!opGranted) {
+        await grant(
+          'Operation',
+          ActionType.Approve,
+          'device-firmware-override',
+        );
+        await grant('Operation', ActionType.Read, 'device-firmware-override');
+        opGranted = true;
+      }
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      return tokenFor(opUser.id, 'Operation');
+    }
+
+    describe('POST /devices/:deviceId/firmware-override', () => {
+      it('ไม่ส่ง Authorization -> 401', async () => {
+        await makeDevice('FOV-401', 'installed');
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-401/firmware-override')
+          .send({ firmwareId: randomUUID(), reason: 'x' })
+          .expect(401);
+      });
+
+      it('role OT (ไม่มี grant device-firmware-override เลย — mirror config override) -> 403', async () => {
+        await makeDevice('FOV-403', 'installed');
+        const otUser = await makeUser(prisma, { role: 'OT' });
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-403/firmware-override')
+          .set('Authorization', `Bearer ${tokenFor(otUser.id, 'OT')}`)
+          .send({ firmwareId: randomUUID(), reason: 'x' })
+          .expect(403);
+      });
+
+      it('deviceId ไม่พบ -> 404', async () => {
+        const token = await stToken();
+        const firmwareId = await makeFirmware();
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/NOPE/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'x' })
+          .expect(404);
+      });
+
+      it('firmwareId ไม่พบ -> 404', async () => {
+        await makeDevice('FOV-404', 'installed');
+        const token = await stToken();
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-404/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: randomUUID(), reason: 'x' })
+          .expect(404);
+      });
+
+      it('firmware ยังติดตั้งไม่ได้ (uploadStatus ยังไม่ stored) -> 409', async () => {
+        await makeDevice('FOV-409U', 'installed');
+        const token = await stToken();
+        const firmwareId = await makeFirmware({ uploadStatus: 'pending' });
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-409U/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'x' })
+          .expect(409);
+      });
+
+      it('ST ส่งคำขอสำเร็จ -> 200 สถานะ pending + AuditLog device-firmware-override-request', async () => {
+        await makeDevice('FOV-200', 'installed');
+        const token = await stToken();
+        const firmwareId = await makeFirmware();
+
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-200/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'ต้องใช้รุ่นเก่ากว่าเฉพาะเครื่องนี้' })
+          .expect(200);
+
+        const body = res.body as { status: string; versionNumber: number };
+        expect(body.status).toBe('pending');
+        expect(body.versionNumber).toBe(1);
+
+        const audit = await prisma.auditLog.findFirst({
+          where: {
+            auditModule: 'device',
+            action: 'device-firmware-override-request',
+          },
+        });
+        expect(audit).not.toBeNull();
+      });
+
+      it('มีคำขอ pending ของอุปกรณ์นี้อยู่แล้ว -> 409', async () => {
+        await makeDevice('FOV-409DUP', 'installed');
+        const token = await stToken();
+        const firmwareId = await makeFirmware();
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-409DUP/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'รอบแรก' })
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-409DUP/firmware-override')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'รอบสอง' })
+          .expect(409);
+      });
+    });
+
+    describe('POST /device-firmware-overrides/:id/approve, /reject, GET /device-firmware-overrides', () => {
+      async function setupPending(deviceId: string): Promise<{
+        overrideId: string;
+      }> {
+        await makeDevice(deviceId, 'installed');
+        const token = await stToken();
+        const firmwareId = await makeFirmware();
+        const res = await request(app.getHttpServer())
+          .post(`/api/v1/devices/${deviceId}/firmware-override`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId, reason: 'ทดสอบ' })
+          .expect(200);
+        return { overrideId: (res.body as { id: string }).id };
+      }
+
+      it('ไม่ส่ง Authorization -> 401 (approve)', async () => {
+        const { overrideId } = await setupPending('FOV-APR-401');
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/approve`)
+          .expect(401);
+      });
+
+      it('role ST (ไม่มีสิทธิ์อนุมัติ) -> 403', async () => {
+        const { overrideId } = await setupPending('FOV-APR-403');
+        const otUser = await makeUser(prisma, { role: 'OT' });
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/approve`)
+          .set('Authorization', `Bearer ${tokenFor(otUser.id, 'OT')}`)
+          .expect(403);
+      });
+
+      it('ไม่พบคำขอ -> 404', async () => {
+        const opTok = await opToken();
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${randomUUID()}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(404);
+      });
+
+      it('Operation approve คำขอ pending -> 200 สถานะ approved + AuditLog device-firmware-override-approve', async () => {
+        const { overrideId } = await setupPending('FOV-APR-200');
+        const opTok = await opToken();
+
+        const res = await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+        expect((res.body as { status: string }).status).toBe('approved');
+
+        const audit = await prisma.auditLog.findFirst({
+          where: {
+            auditModule: 'device',
+            action: 'device-firmware-override-approve',
+          },
+        });
+        expect(audit).not.toBeNull();
+      });
+
+      it('Operation reject คำขอ pending พร้อม rejectReason -> 200 สถานะ rejected', async () => {
+        const { overrideId } = await setupPending('FOV-REJ-200');
+        const opTok = await opToken();
+
+        const res = await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/reject`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .send({ rejectReason: 'ไม่มีเหตุผลเพียงพอ' })
+          .expect(200);
+
+        const body = res.body as { status: string; rejectReason: string };
+        expect(body.status).toBe('rejected');
+        expect(body.rejectReason).toBe('ไม่มีเหตุผลเพียงพอ');
+      });
+
+      it('approve ซ้ำคำขอที่ตัดสินใจไปแล้ว -> 409', async () => {
+        const { overrideId } = await setupPending('FOV-APR-409');
+        const opTok = await opToken();
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${overrideId}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(409);
+      });
+
+      it('GET /device-firmware-overrides?status=pending -> คืนเฉพาะคำขอ pending', async () => {
+        const { overrideId: pendingId } = await setupPending('FOV-LIST-1');
+        const { overrideId: toApproveId } = await setupPending('FOV-LIST-2');
+        const opTok = await opToken();
+        await request(app.getHttpServer())
+          .post(`/api/v1/device-firmware-overrides/${toApproveId}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/device-firmware-overrides?status=pending')
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        const ids = (res.body as { id: string }[]).map((o) => o.id);
+        expect(ids).toContain(pendingId);
+        expect(ids).not.toContain(toApproveId);
+      });
+    });
   });
 
   describe('POST /devices/:deviceId/simulate-config', () => {
@@ -1687,6 +2084,44 @@ describe('DeviceController test-connection (integration — real postgres + guar
         configStatus: 'unknown',
         firmwareStatus: 'unknown',
         lastCheckInMessage: null,
+        pendingFirmwareOverride: null,
+      });
+    });
+
+    it('มีคำขอ Firmware Override pending ของเครื่องนี้ -> pendingFirmwareOverride คืนแถวนั้น (แก้ตามรีวิว B บน PR #257)', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-PENDING-FO', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const firmwareId = await makeFirmware();
+      const override = await prisma.deviceFirmwareOverride.create({
+        data: {
+          deviceId: 'STAT-PENDING-FO',
+          firmwareId,
+          versionNumber: 1,
+          reason: 'ทดสอบ',
+          overriddenBy: stUser.id,
+          status: 'pending',
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-PENDING-FO/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as {
+        pendingFirmwareOverride: {
+          id: string;
+          deviceId: string;
+          firmwareId: string;
+          status: string;
+        } | null;
+      };
+      expect(body.pendingFirmwareOverride).toMatchObject({
+        id: override.id,
+        deviceId: 'STAT-PENDING-FO',
+        firmwareId,
+        status: 'pending',
       });
     });
 

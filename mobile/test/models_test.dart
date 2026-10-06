@@ -696,7 +696,7 @@ void main() {
         final def = ConfigFieldDefinition.fromJson({
           'id': 'def-2',
           'fieldName': 'REPORT_INTERVAL_MOVING',
-          'dataType': 'number',
+          'dataType': 'integer',
           'required': false,
           'supportedModels': <Map<String, dynamic>>[],
         });

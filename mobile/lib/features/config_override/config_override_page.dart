@@ -6,24 +6,7 @@ import '../../core/api/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'config_override_repository.dart';
-
-/// parse ค่าจาก input (string เสมอ) กลับเป็นชนิดข้อมูลตาม dataType ของ field —
-/// mirror `parseByDataType` ฝั่ง Web (`config-override-panel.tsx`).
-dynamic _parseByDataType(String raw, String dataType) {
-  if (dataType == 'number') {
-    final n = num.tryParse(raw);
-    return n ?? raw;
-  }
-  if (dataType == 'boolean') {
-    return raw == 'true';
-  }
-  return raw;
-}
-
-String _toInputValue(dynamic value) {
-  if (value == null) return '';
-  return value.toString();
-}
+import 'config_value_parser.dart';
 
 /// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
 /// เข้าได้เฉพาะ role ST (เช็คที่ entry point ใน `device_detail_page.dart`) —
@@ -54,6 +37,8 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
   bool _submitting = false;
   String? _error;
   List<String> _errorList = const [];
+  // error รายช่อง (fieldName -> ข้อความ) จากการ parse ตาม dataType ก่อนส่ง
+  final Map<String, String> _fieldErrors = {};
 
   @override
   void dispose() {
@@ -69,6 +54,7 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
     setState(() {
       _error = null;
       _errorList = const [];
+      _fieldErrors.clear();
     });
 
     final reason = _reasonController.text.trim();
@@ -78,13 +64,32 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
     }
 
     final changed = <String, dynamic>{};
+    final fieldErrors = <String, String>{};
     for (final entry in (config.fields ?? const {}).entries) {
       final def = defByName[entry.key];
       if (def == null || !def.stOverridable) continue;
       final rawEdit = _edits[entry.key];
       if (rawEdit == null) continue;
-      if (rawEdit == _toInputValue(entry.value)) continue;
-      changed[entry.key] = _parseByDataType(rawEdit, def.dataType);
+      if (rawEdit == configValueToInput(entry.value)) continue;
+      // parse ตาม dataType — ไม่ผ่านต้องขึ้น error ที่ฟอร์ม ไม่ throw และไม่
+      // ส่งค่าดิบ (string) ไปให้ backend ตีกลับ 400
+      final parsed = parseConfigValue(rawEdit, def.dataType);
+      if (parsed.isOk) {
+        changed[entry.key] = parsed.value;
+      } else {
+        fieldErrors[entry.key] = parsed.error!;
+      }
+    }
+
+    if (fieldErrors.isNotEmpty) {
+      setState(() {
+        _fieldErrors.addAll(fieldErrors);
+        _error = 'ค่าบางช่องไม่ถูกต้อง แก้ไขแล้วลองอีกครั้ง';
+        _errorList = [
+          for (final e in fieldErrors.entries) '${e.key}: ${e.value}',
+        ];
+      });
+      return;
     }
 
     if (changed.isEmpty) {
@@ -167,7 +172,11 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
               submitting: _submitting,
               error: _error,
               errorList: _errorList,
-              onEdit: (key, value) => setState(() => _edits[key] = value),
+              fieldErrors: _fieldErrors,
+              onEdit: (key, value) => setState(() {
+                _edits[key] = value;
+                _fieldErrors.remove(key);
+              }),
               onToggleReveal: (key) => setState(() {
                 if (!_revealed.remove(key)) _revealed.add(key);
               }),
@@ -203,6 +212,7 @@ class _OverrideForm extends StatelessWidget {
     required this.submitting,
     required this.error,
     required this.errorList,
+    required this.fieldErrors,
     required this.onEdit,
     required this.onToggleReveal,
     required this.onSubmit,
@@ -216,6 +226,7 @@ class _OverrideForm extends StatelessWidget {
   final bool submitting;
   final String? error;
   final List<String> errorList;
+  final Map<String, String> fieldErrors;
   final ValueChanged<String> onToggleReveal;
   final void Function(String key, String value) onEdit;
   final VoidCallback onSubmit;
@@ -282,6 +293,7 @@ class _OverrideForm extends StatelessWidget {
                   originalValue: entry.value,
                   def: defByName[entry.key],
                   editValue: edits[entry.key],
+                  errorText: fieldErrors[entry.key],
                   revealed: revealed.contains(entry.key),
                   onToggleReveal: () => onToggleReveal(entry.key),
                   onChanged: (v) => onEdit(entry.key, v),
@@ -362,6 +374,7 @@ class _FieldRow extends StatefulWidget {
     required this.originalValue,
     required this.def,
     required this.editValue,
+    required this.errorText,
     required this.revealed,
     required this.onToggleReveal,
     required this.onChanged,
@@ -371,6 +384,7 @@ class _FieldRow extends StatefulWidget {
   final dynamic originalValue;
   final ConfigFieldDefinition? def;
   final String? editValue;
+  final String? errorText;
   final bool revealed;
   final VoidCallback onToggleReveal;
   final ValueChanged<String> onChanged;
@@ -389,7 +403,7 @@ class _FieldRowState extends State<_FieldRow> {
   // keystroke (the previous, stateless version of this widget) reset the
   // cursor position and dropped focus after each character typed.
   late final TextEditingController _controller = TextEditingController(
-    text: widget.editValue ?? _toInputValue(widget.originalValue),
+    text: widget.editValue ?? configValueToInput(widget.originalValue),
   );
 
   @override
@@ -401,7 +415,7 @@ class _FieldRowState extends State<_FieldRow> {
   @override
   Widget build(BuildContext context) {
     final currentValue =
-        widget.editValue ?? _toInputValue(widget.originalValue);
+        widget.editValue ?? configValueToInput(widget.originalValue);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -510,16 +524,20 @@ class _FieldRowState extends State<_FieldRow> {
       );
     }
 
+    final dataType = def.dataType;
+    final multiline = isJsonDataType(dataType);
     return TextField(
       key: Key('config_override_input_$fieldKey'),
       controller: _controller,
       obscureText: def.sensitive && !revealed,
-      keyboardType: def.dataType == 'number'
-          ? const TextInputType.numberWithOptions(decimal: true)
-          : TextInputType.text,
+      keyboardType: _keyboardTypeFor(dataType),
+      minLines: multiline ? 3 : 1,
+      maxLines: multiline ? 6 : 1,
       decoration: InputDecoration(
         isDense: true,
         border: const OutlineInputBorder(),
+        hintText: _hintFor(dataType),
+        errorText: widget.errorText,
         suffixIcon: def.sensitive
             ? IconButton(
                 iconSize: 16,
@@ -534,6 +552,39 @@ class _FieldRowState extends State<_FieldRow> {
       ),
       onChanged: widget.onChanged,
     );
+  }
+
+  /// คีย์บอร์ดตาม dataType — integer ไม่ให้จุดทศนิยม, decimal ให้, json/array
+  /// เป็น multiline (`number` legacy นับเป็น decimal)
+  static TextInputType _keyboardTypeFor(String dataType) {
+    if (isIntegerDataType(dataType)) {
+      return const TextInputType.numberWithOptions(signed: true);
+    }
+    if (isDecimalDataType(dataType)) {
+      return const TextInputType.numberWithOptions(signed: true, decimal: true);
+    }
+    if (isJsonDataType(dataType)) return TextInputType.multiline;
+    if (dataType == 'date' || dataType == 'datetime') {
+      return TextInputType.datetime;
+    }
+    return TextInputType.text;
+  }
+
+  static String? _hintFor(String dataType) {
+    switch (dataType) {
+      case 'json':
+        return '{"key": "value"}';
+      case 'array':
+        return '[1, 2, 3]';
+      case 'date':
+        return 'YYYY-MM-DD';
+      case 'datetime':
+        return 'YYYY-MM-DDTHH:MM:SS';
+      case 'uuid':
+        return 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
+      default:
+        return null;
+    }
   }
 }
 
