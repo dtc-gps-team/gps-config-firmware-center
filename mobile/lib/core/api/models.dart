@@ -73,7 +73,16 @@ enum NotificationType {
   // PR #257) mirror config_override_* ทุกประการ
   firmwareOverridePending('firmware_override_pending'),
   firmwareOverrideApproved('firmware_override_approved'),
-  firmwareOverrideRejected('firmware_override_rejected');
+  firmwareOverrideRejected('firmware_override_rejected'),
+  // เพิ่มใหม่ (issue #236, PR #267) — Field Incident Report · ชื่อตามที่ backend
+  // implement จริง (prefix `incident_report_*` ไม่ใช่ `incident_*`) ไม่ชนกับ
+  // `incident_alert` (incident อัตโนมัติ) — `pending` ส่งให้ Operation ทุกคน
+  // ตอนมี report ใหม่ · `resolved/dismissed/promoted` ส่งให้ผู้แจ้ง (ST/OT)
+  // ตอน Operation ตัดสินใจ
+  incidentReportPending('incident_report_pending'),
+  incidentReportResolved('incident_report_resolved'),
+  incidentReportDismissed('incident_report_dismissed'),
+  incidentReportPromoted('incident_report_promoted');
 
   const NotificationType(this.wireName);
 
@@ -842,7 +851,6 @@ class Incident {
     this.reviewedBy,
     this.reviewedAt,
     this.reviewNote,
-    this.promotedCampaignId,
   });
 
   final String id;
@@ -871,8 +879,8 @@ class Incident {
   final DateTime? reviewedAt;
   final String? reviewNote;
 
-  /// Campaign ที่เกิดจาก report นี้ (ถ้า Operation เลือก promote)
-  final String? promotedCampaignId;
+  // ไม่มี `promotedCampaignId` — backend (PR #267) ไม่มี column นี้ ใช้ FK ฝั่ง
+  // `Campaign.sourceIncidentId @unique` แทน (ยังไม่มี endpoint query กลับทาง)
 
   bool get isFieldReport => source == 'field-report';
 
@@ -895,7 +903,6 @@ class Incident {
       reviewedBy: json['reviewedBy'] as String?,
       reviewedAt: parseDate(json['reviewedAt']),
       reviewNote: json['reviewNote'] as String?,
-      promotedCampaignId: json['promotedCampaignId'] as String?,
       // spec marks createdAt/updatedAt required, but decode defensively
       // so a slightly-off payload renders instead of throwing (same as Task).
       createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
