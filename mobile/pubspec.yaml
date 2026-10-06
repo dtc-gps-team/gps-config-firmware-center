@@ -46,6 +46,11 @@ dependencies:
   shimmer: ^4.0.0
   package_info_plus: ^10.2.1
 
+  # Offline-first local cache (Sprint 2 skeleton — core/db/).
+  drift: ^2.24.0
+  drift_flutter: ^0.3.0
+  path_provider: ^2.1.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -55,6 +60,12 @@ dev_dependencies:
   # both fake FlutterSecureStoragePlatform.instance to exercise
   # SecureSessionProfileStore without a real device keystore.
   flutter_secure_storage_platform_interface: ^2.0.3
+
+  # Generates core/db/app_database.g.dart + core/db/daos/task_dao.g.dart
+  # from the @DriftDatabase / @DriftAccessor annotations — run with:
+  #   dart run build_runner build --delete-conflicting-outputs
+  drift_dev: ^2.24.0
+  build_runner: ^2.4.13
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
