@@ -16,6 +16,11 @@ export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
 };
 
 const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** timezone (`Z`/`±hh:mm`) เป็น optional โดยตั้งใจ (ตอบรีวิว B บน PR #255
+ * ข้อ 4 ที่ถามว่ากำกวมไหม) — field ที่ใช้ `datetime` ในระบบนี้ตอนนี้ (เช่น
+ * เวลารีบูทที่ตั้งค่าไว้) เป็นเวลาท้องถิ่นของอุปกรณ์ ไม่ใช่ timestamp ที่ต้อง
+ * แปลงข้าม timezone จึงไม่บังคับ — `isValidCalendarDate` เช็คแค่ตัวเลข
+ * y/m/d/h/mi/s ว่า valid ตามปฏิทินเท่านั้น ไม่ตีความ/แปลง offset */
 const DATETIME_REGEX =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/;
 const UUID_REGEX =
