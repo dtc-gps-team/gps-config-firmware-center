@@ -40,6 +40,58 @@ function isEmpty(value: FieldValue | undefined): boolean {
   return value === undefined || value === "";
 }
 
+/** `integer`/`decimal` คือ 2 ชนิดเดียวในชุด dataType (มติ issue #201,
+ * อัปเดต 2026-09-22) ที่เก็บเป็นค่าตัวเลขจริง (`number`) ตอน submit — ชนิดอื่น
+ * ทั้งหมด (string/text/date/datetime/json/array/uuid) เก็บเป็น string ดิบ
+ * เสมอ ยังไม่มี input widget พิเศษให้ (date-picker/JSON editor ฯลฯ) ตั้งใจ
+ * เหลือไว้เป็นช่องว่างนอกขอบเขตรอบนี้ — validate ชนิดจริงฝั่ง backend ตอน
+ * submit
+ *
+ * **`'number'` (แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2):** field เก่าที่ยังไม่
+ * ผ่าน backfill (ช่วงหลัง deploy โค้ดใหม่แต่ยังไม่ได้รัน `db seed`) ยังมี
+ * `dataType` เดิมเป็น `'number'` อยู่ — ถ้าไม่รวมไว้ที่นี่ input จะ render เป็น
+ * `type="text"` แล้วส่งค่าเป็น **string** (`"8080"`) ไปให้ backend ซึ่ง
+ * `matchesDataType()` ฝั่งนั้นคง `case 'number'` ไว้แบบ explicit ด้วยเหตุผล
+ * เดียวกัน (เช็ค `typeof === 'number'`) ไม่ทำแบบนี้แล้ว string จะโดน 400 ทันที
+ * — mirror กันไว้ทั้งสองฝั่งจนกว่า backfill จะรันจริง ไม่ใช่ค่าที่เลือกสร้าง
+ * field ใหม่ได้แล้ว (ตัด `number` ออกจาก dropdown ใน `parameter-create-form.tsx`) */
+function isNumericDataType(dataType: string): boolean {
+  return (
+    dataType === "integer" || dataType === "decimal" || dataType === "number"
+  );
+}
+
+/** `json`/`array` คือ 2 ชนิดเดียวที่ backend (`matchesDataType`) ต้องการ
+ * object/array จริง ไม่ใช่ string — **แก้ตามรีวิว B บน PR #255 ข้อ 2**: เดิม
+ * `buildFields()` เก็บทุกชนิดที่ไม่ใช่ boolean/numeric เป็น `String(raw)` ดิบๆ
+ * ทำให้ field ชนิดนี้ 400 ทุกครั้งที่ backend เช็ค `typeof === 'object'`/
+ * `Array.isArray()` — parse ให้จริงก่อนส่ง (ยังไม่ validate ชนิดอื่นที่
+ * เหลือ — date/datetime/uuid ยังเป็น string ที่ backend เช็ครูปแบบเอง) */
+function isJsonDataType(dataType: string): boolean {
+  return dataType === "json" || dataType === "array";
+}
+
+/** parse ค่า raw เป็น JSON ตาม dataType — คืน `ok: false` ถ้า parse ไม่ขึ้นหรือ
+ * ได้ชนิดผิด (เช่น `json` ที่ parse ออกมาเป็น array ก็ไม่ผ่าน ตรงกับ
+ * `matchesDataType` ฝั่ง backend ที่แยก object ล้วนกับ array ออกจากกัน) */
+function parseJsonField(
+  raw: string,
+  dataType: "json" | "array",
+): { ok: true; value: unknown } | { ok: false } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false };
+  }
+  if (dataType === "array") {
+    return Array.isArray(parsed) ? { ok: true, value: parsed } : { ok: false };
+  }
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? { ok: true, value: parsed }
+    : { ok: false };
+}
+
 /** parse `ConfigFieldDefinition.defaultValue` (string ดิบ) ให้ตรงกับ shape ที่
  * `values` state ใช้เก็บอยู่แล้ว (`FieldValue = string | boolean`) — boolean
  * dataType เก็บเป็น boolean จริง ส่วนที่เหลือเก็บเป็น string เสมอแล้วค่อยแปลง
@@ -267,9 +319,18 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
         continue;
       }
       if (isEmpty(raw)) continue;
-      if (def.dataType === "number") {
+      if (isNumericDataType(def.dataType)) {
         const n = Number(raw);
         out[def.fieldName] = Number.isNaN(n) ? raw : n;
+      } else if (isJsonDataType(def.dataType)) {
+        // เรียกหลัง handleSubmit ตรวจ parseJsonField ผ่านมาแล้วเท่านั้น
+        // (ดู invalidJsonFields) — ถ้า parse ไม่ขึ้นจริงๆ fallback เป็น string
+        // ดิบไปก่อน (ไม่ควรเกิดขึ้นในทางปฏิบัติ แต่กัน throw กลางฟังก์ชัน)
+        const result = parseJsonField(
+          String(raw),
+          def.dataType as "json" | "array",
+        );
+        out[def.fieldName] = result.ok ? result.value : String(raw);
       } else {
         out[def.fieldName] = String(raw);
       }
@@ -294,6 +355,28 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     if (missing.length > 0) {
       setMissingRequired(missing);
       setFormError(`ยังไม่ได้กรอก field ที่บังคับ: ${missing.join(", ")}`);
+      return;
+    }
+
+    // แก้ตามรีวิว B บน PR #255 ข้อ 2 — เช็คก่อน submit ว่า field ชนิด
+    // json/array ที่กรอกไว้ parse เป็น JSON ที่ถูกต้องตามชนิดจริงไหม (ไม่เช่น
+    // นั้น buildFields() จะ fallback เป็น string ดิบแล้วโดน backend 400 โดยไม่
+    // มีข้อความอธิบายที่ชัดเจนว่าปัญหาคือ field ไหน) ฟิลด์ที่ว่างไว้ (ไม่
+    // required) ข้ามการเช็คนี้ได้ตามปกติ
+    const invalidJsonFields = chosenDefs.filter((d) => {
+      if (!isJsonDataType(d.dataType)) return false;
+      const raw = effectiveValue(d);
+      if (isEmpty(raw)) return false;
+      return !parseJsonField(String(raw), d.dataType as "json" | "array").ok;
+    });
+    if (invalidJsonFields.length > 0) {
+      setMissingRequired(invalidJsonFields.map((d) => d.fieldName));
+      const names = invalidJsonFields
+        .map((d) => `${d.fieldName} (${d.dataType})`)
+        .join(", ");
+      setFormError(
+        `ค่าของ field ต่อไปนี้ไม่ใช่ JSON ที่ถูกต้องตามชนิดข้อมูล: ${names}`,
+      );
       return;
     }
 
@@ -694,7 +777,7 @@ function TemplateRow({
         <div className="flex items-center gap-2">
           <Input
             id={id}
-            type={def.dataType === "number" ? "number" : "text"}
+            type={isNumericDataType(def.dataType) ? "number" : "text"}
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={missing ? true : undefined}

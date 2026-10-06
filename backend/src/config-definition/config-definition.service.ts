@@ -15,21 +15,131 @@ export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
 };
 
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** timezone (`Z`/`±hh:mm`) เป็น optional โดยตั้งใจ (ตอบรีวิว B บน PR #255
+ * ข้อ 4 ที่ถามว่ากำกวมไหม) — field ที่ใช้ `datetime` ในระบบนี้ตอนนี้ (เช่น
+ * เวลารีบูทที่ตั้งค่าไว้) เป็นเวลาท้องถิ่นของอุปกรณ์ ไม่ใช่ timestamp ที่ต้อง
+ * แปลงข้าม timezone จึงไม่บังคับ — `isValidCalendarDate` เช็คแค่ตัวเลข
+ * y/m/d/h/mi/s ว่า valid ตามปฏิทินเท่านั้น ไม่ตีความ/แปลง offset */
+const DATETIME_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** ตัวเลขดิบล้วน ไม่รับ hex (`0x10`), `Infinity`/`NaN`, scientific notation,
+ * หรือ whitespace — เพราะ `Number()` native แปลงค่าพวกนี้ให้ "ดูเหมือน"
+ * เป็นตัวเลขที่ถูกต้องทั้งที่ไม่ใช่ (แก้ตามรีวิว B บน PR #255 ข้อ 4) */
+const INTEGER_STRING_REGEX = /^-?\d+$/;
+const DECIMAL_STRING_REGEX = /^-?\d+(\.\d+)?$/;
+
+/** เช็ค y-m-d ว่าเป็นวันที่จริงบนปฏิทินไหม — ต่างจาก `Date.parse()` ตรงที่
+ * `Date.parse` "rollover" วันที่ผิดแบบเงียบๆ แทนที่จะ error (เช่น
+ * `2026-02-31` เลื่อนไปเป็น 3 มี.ค. 2026 โดยอัตโนมัติ) แก้ตามรีวิว B บน
+ * PR #255 ข้อ 4 — ใช้ `Date.UTC` แล้วอ่านค่ากลับมาเทียบ ถ้าไม่ตรงแปลว่า
+ * JS เพิ่ง rollover ให้ ซึ่งคือ input ที่ไม่ valid */
+function isValidCalendarDate(
+  year: number,
+  month: number,
+  day: number,
+): boolean {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
+}
+
 /** ตรวจแค่ "ชนิดข้อมูลของค่าที่ JSON.parse ให้มาตรงกับ dataType ที่ประกาศไหม"
- * — เจตนาเดียวกับ Phase 1 ข้อ 3 ("syntactic" อย่างน้อยที่สุด) `dataType` ที่
- * ไม่รู้จัก (สะกดผิด/พิมพ์อิสระตอนสร้าง) ไม่ block เพื่อไม่ปิดทางไว้ก่อนคุยกัน
- * เพิ่ม — ปล่อยผ่านเหมือนไม่มีนิยาม (เจตนาเดียวกับ Gap `syntactic_only` vs
- * `semantic` ที่ตกลงไว้ว่ายังไม่ทำรอบนี้) */
+ * — เจตนาเดียวกับ Phase 1 ข้อ 3 ("syntactic" อย่างน้อยที่สุด) ชุด dataType
+ * ที่รู้จักคือ `CONFIG_DATA_TYPES` (มติ issue #201, อัปเดต 2026-09-22) —
+ * `dataType` ที่ไม่อยู่ในชุดนี้ไม่ควรเกิดขึ้นแล้ว เพราะ DTO กรองด้วย `@IsIn()`
+ * ตอนสร้างไปแล้ว (เดิมปล่อยผ่านหมดไว้ "รอคุยกันเพิ่ม" — คุยจบแล้ว) แต่ยังคง
+ * fallback `true` ไว้เผื่อ field ที่มีอยู่ก่อน DTO เข้มงวดขึ้น ไม่ให้ค่าเก่าที่
+ * หลุดมาตก validate ย้อนหลังโดยไม่ตั้งใจ
+ *
+ * **`case 'number'` (แก้ตามรีวิว B บน PR #255 ข้อ 3):** ชุด dataType ใหม่ตัด
+ * `number` ออกไปแล้ว (แยกเป็น `integer`/`decimal`) backfill ค่าจริงใน DB ทำผ่าน
+ * `seed.ts` (`update:` ใน upsert loop) ซึ่งเป็นคำสั่งแยกจาก `migrate deploy` —
+ * ถ้า deploy โค้ดใหม่แล้วยังไม่ได้รัน `db seed` ทันที field ที่ยังเป็น
+ * `'number'` เดิมอยู่ใน DB จะตกไปเข้า `default: return true` ด้านล่าง (ปล่อย
+ * ผ่านทุกค่า) ตรงข้ามกับเจตนาเดิมของ PR นี้ที่จะปิด gap "ชนิดไม่รู้จักผ่าน
+ * เฉยๆ" — คง case นี้ไว้ explicit ให้ validate เหมือนก่อนแก้ทุกประการ
+ * (`typeof value === 'number'`) จนกว่า backfill จะรันจริง ไม่ใช่ alias ของ
+ * `decimal` เพราะพฤติกรรมเดิมของ `number` ไม่เคยเข้มงวดเรื่อง integer/float */
 function matchesDataType(value: unknown, dataType: string): boolean {
   switch (dataType) {
     case 'number':
       return typeof value === 'number';
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value);
+    case 'decimal':
+      // Number.isFinite กัน NaN/Infinity (แก้ตามรีวิว B บน PR #255 ข้อ 4) —
+      // typeof === 'number' เฉยๆ ปล่อยผ่านทั้งคู่เพราะมันก็เป็น "number" จริง
+      return typeof value === 'number' && Number.isFinite(value);
     case 'string':
+    case 'text':
       return typeof value === 'string';
     case 'boolean':
       return typeof value === 'boolean';
+    case 'date': {
+      if (typeof value !== 'string') return false;
+      const m = DATE_ONLY_REGEX.exec(value);
+      if (!m) return false;
+      return isValidCalendarDate(Number(m[1]), Number(m[2]), Number(m[3]));
+    }
+    case 'datetime': {
+      if (typeof value !== 'string') return false;
+      const m = DATETIME_REGEX.exec(value);
+      if (!m) return false;
+      const [, y, mo, d, h, mi, s] = m;
+      if (!isValidCalendarDate(Number(y), Number(mo), Number(d))) return false;
+      return Number(h) <= 23 && Number(mi) <= 59 && Number(s) <= 59;
+    }
+    case 'json':
+      return (
+        typeof value === 'object' && value !== null && !Array.isArray(value)
+      );
+    case 'array':
+      return Array.isArray(value);
+    case 'uuid':
+      return typeof value === 'string' && UUID_REGEX.test(value);
     default:
       return true;
+  }
+}
+
+/** เช็ค `ConfigFieldDefinition.defaultValue` (string ดิบเสมอ) เทียบกับ
+ * `dataType` ตอนสร้าง field definition — ปิด TODO(#201) เดิมใน
+ * `CreateConfigDefinitionDto` ที่ตั้งใจรอทำพร้อมรอบนี้ (จะได้ไม่ต้องเขียน
+ * type-check logic 2 รอบ) แปลง raw string ให้เป็น shape เดียวกับที่
+ * `matchesDataType()` คาดหวังก่อนส่งต่อ ไม่ validate ซ้ำเอง */
+function matchesDataTypeString(raw: string, dataType: string): boolean {
+  switch (dataType) {
+    case 'integer':
+      // regex เช็คก่อนเพราะ Number('') === 0 และ Number('0x10') === 16 —
+      // ทั้งคู่ "ดูเหมือน" เลขที่ถูกต้องทั้งที่ควรถูกปฏิเสธ (แก้ตามรีวิว B
+      // บน PR #255 ข้อ 4)
+      return (
+        INTEGER_STRING_REGEX.test(raw) && matchesDataType(Number(raw), dataType)
+      );
+    case 'decimal':
+      return (
+        DECIMAL_STRING_REGEX.test(raw) && matchesDataType(Number(raw), dataType)
+      );
+    case 'boolean':
+      return raw === 'true' || raw === 'false';
+    case 'json':
+    case 'array': {
+      try {
+        return matchesDataType(JSON.parse(raw), dataType);
+      } catch {
+        return false;
+      }
+    }
+    default:
+      // string/text/date/datetime/uuid เก็บ/เช็คเป็น string อยู่แล้ว ส่ง raw
+      // ตรงเข้า matchesDataType ได้เลยไม่ต้องแปลงก่อน
+      return matchesDataType(raw, dataType);
   }
 }
 
@@ -79,6 +189,23 @@ export class ConfigDefinitionService {
     }
   }
 
+  /** เช็คว่า `defaultValue` (ถ้ามี) ตรงกับ `dataType` ที่ประกาศไหม — ปิด
+   * TODO(#201) เดิมที่ตั้งใจรอทำพร้อมงานขยายชุด dataType (กัน
+   * `dataType: "integer"` + `defaultValue: "abc"` หลุดผ่านไปได้เหมือนก่อนหน้านี้) */
+  private assertDefaultValueMatchesDataType(dto: {
+    dataType: string;
+    defaultValue?: string;
+  }): void {
+    if (
+      dto.defaultValue !== undefined &&
+      !matchesDataTypeString(dto.defaultValue, dto.dataType)
+    ) {
+      throw new BadRequestException(
+        `defaultValue "${dto.defaultValue}" ไม่ตรงกับ dataType "${dto.dataType}"`,
+      );
+    }
+  }
+
   /** สร้าง field definition ใหม่ — resource `config-definition` action
    * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role ConfigEngineer) `fieldName` ซ้ำ
    * -> 409 (มี `@unique` ที่ schema คุมไว้อีกชั้น กัน race condition) */
@@ -86,6 +213,7 @@ export class ConfigDefinitionService {
     dto: CreateConfigDefinitionDto,
   ): Promise<ConfigFieldDefinitionWithSupport> {
     this.assertNoSensitiveDefaultValue(dto);
+    this.assertDefaultValueMatchesDataType(dto);
     try {
       return await this.prisma.configFieldDefinition.create({
         data: {

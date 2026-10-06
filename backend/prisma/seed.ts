@@ -583,7 +583,21 @@ async function main() {
   //    DB เดิมจะไม่เปลี่ยน — และปรับ `description` ออกจาก "(ชุดตัวแทน)"
   const REPRESENTATIVE_FIELDS: {
     fieldName: string;
-    dataType: 'string' | 'number' | 'boolean';
+    // ชุด dataType ที่ระบบรู้จัก — มติ issue #201 (อัปเดต 2026-09-22) ต้องตรง
+    // กับ `CONFIG_DATA_TYPES` ใน `backend/src/config-definition/config-data-types.ts`
+    // เสมอ (ไฟล์นี้ไม่ import จาก src/ ตามแบบเดิมของ seed.ts — คัดลอกชุดนี้ไว้
+    // เอง แก้คู่กันถ้าชุดเปลี่ยนอีก)
+    dataType:
+      | 'integer'
+      | 'decimal'
+      | 'string'
+      | 'text'
+      | 'boolean'
+      | 'date'
+      | 'datetime'
+      | 'json'
+      | 'array'
+      | 'uuid';
     allowedValues: string[];
     description: string;
     /** หน่วยของค่า (metadata แสดงผลข้าง input ตอนสร้าง Config — frame 08) */
@@ -629,7 +643,7 @@ async function main() {
     },
     {
       fieldName: 'SERVER_PORT',
-      dataType: 'number',
+      dataType: 'integer',
       allowedValues: [],
       description: 'พอร์ต TCP ของเซิร์ฟเวอร์รับข้อมูลหลัก',
       unit: 'พอร์ต',
@@ -658,7 +672,7 @@ async function main() {
     // ── การรายงานตำแหน่ง ──
     {
       fieldName: 'REPORT_INTERVAL_MOVING',
-      dataType: 'number',
+      dataType: 'integer',
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถเคลื่อนที่ (วินาที)',
       unit: 'วินาที',
@@ -667,7 +681,7 @@ async function main() {
     },
     {
       fieldName: 'REPORT_INTERVAL_IDLE',
-      dataType: 'number',
+      dataType: 'integer',
       allowedValues: [],
       description: 'ช่วงเวลารายงานตำแหน่งขณะรถจอด (วินาที)',
       unit: 'วินาที',
@@ -676,7 +690,7 @@ async function main() {
     },
     {
       fieldName: 'HEADING_CHANGE_REPORT',
-      dataType: 'number',
+      dataType: 'decimal',
       allowedValues: [],
       description: 'องศาการเปลี่ยนทิศที่กระตุ้นให้ส่งรายงานเพิ่ม (องศา)',
       unit: 'องศา',
@@ -728,7 +742,7 @@ async function main() {
     },
     {
       fieldName: 'LOW_BATTERY_THRESHOLD',
-      dataType: 'number',
+      dataType: 'integer',
       allowedValues: [],
       description: 'เปอร์เซ็นต์แบตเตอรี่สำรองที่จะแจ้งเตือน low battery',
       unit: '%',
@@ -865,8 +879,13 @@ async function main() {
       where: { fieldName: def.fieldName },
       // ปกติลูปนี้ insert-only (`update: {}`) — ยกเว้น field ที่เพิ่มเป็น
       // คอลัมน์ใหม่ทีหลัง (unit, stOverridable, category, sensitive,
-      // restartRequired) backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย
+      // restartRequired) backfill ให้ DB เดิมตอน re-seed ได้ปลอดภัย · เพิ่ม
+      // `dataType` เข้ามาอีกตัว (issue #201, 2026-10-05) เพื่อ backfill ชุด
+      // dataType ใหม่ (10 ชนิด) ทับ 5 field เดิมที่เคยเป็น `number` — ปลอดภัย
+      // สำหรับ field อื่นที่เหลือเพราะ `dataType` ในโค้ด (ชุดใหม่) เท่ากับใน DB
+      // (ชุดเดิม) อยู่แล้วสำหรับ field ที่ไม่ถูกแตะ (no-op upsert)
       update: {
+        dataType: fieldData.dataType,
         unit: fieldData.unit,
         stOverridable: fieldData.stOverridable ?? false,
         category: fieldData.category,
@@ -1053,7 +1072,13 @@ async function main() {
     deviceModel: string;
     protocol: string;
     status: 'approved' | 'synced';
-    fields: Record<string, string>;
+    // แก้ไข (issue #201, dataType audit) — เดิม type นี้บังคับทุก field เป็น
+    // string ทำให้ SERVER_PORT ผิดเป็น '909' (string) ทั้งที่ควรเป็นเลข —
+    // ตอนนั้นผ่านได้เพราะ seed insert ตรงไม่เคยผ่าน validateFields() เลย พอ
+    // SERVER_PORT ถูก backfill เป็น dataType 'integer' จริง (PR #255) ค่า
+    // string เดิมจะ fail validate ทันทีถ้ามีคนแก้ Config นี้ต่อ — แก้ชนิดให้
+    // รองรับ number จริงด้วย
+    fields: Record<string, string | number>;
   }[] = [
     {
       name: 'GT06N/TCP มาตรฐาน',
@@ -1063,7 +1088,7 @@ async function main() {
       fields: {
         APN: 'internet',
         SERVER_HOST: 'config.dtc.co.th',
-        SERVER_PORT: '909',
+        SERVER_PORT: 909,
       },
     },
     {
@@ -1074,7 +1099,7 @@ async function main() {
       fields: {
         APN: 'internet',
         SERVER_HOST: 'config.dtc.co.th',
-        SERVER_PORT: '909',
+        SERVER_PORT: 909,
       },
     },
   ];
@@ -1082,7 +1107,11 @@ async function main() {
   for (const c of demoConfigs) {
     await prisma.config.upsert({
       where: { name: c.name },
-      update: {},
+      // เดิม insert-only (`update: {}`) — เพิ่ม `fields` เข้า update เฉพาะรอบ
+      // นี้ (issue #201) เพื่อ backfill ค่า SERVER_PORT ที่ผิดเป็น string ใน
+      // DB เดิมให้ถูกด้วย ไม่งั้นแก้แค่ source code เฉยๆ ไม่ช่วย dev DB ที่
+      // seedไปแล้วก่อนหน้านี้
+      update: { fields: c.fields },
       create: {
         name: c.name,
         deviceModel: c.deviceModel,
