@@ -251,6 +251,116 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
         .send({ name: 'กลุ่มทดสอบ', targets: [] })
         .expect(400);
     });
+
+    /** promote field report (issue #236) -> Campaign ผ่าน `sourceIncidentId` */
+    describe('sourceIncidentId (issue #236)', () => {
+      async function makeIncident(status: string): Promise<string> {
+        const incident = await prisma.incident.create({
+          data: {
+            title: 'รายงานจากภาคสนาม',
+            severity: 'high',
+            status,
+            source: 'field-report',
+          },
+        });
+        return incident.id;
+      }
+
+      it('ไม่พบ Incident -> 404, ไม่มี Campaign ถูกสร้าง', async () => {
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        await grant('Operation', ActionType.Create);
+        const device = await seedInstalledDevice();
+        const token = tokenFor(opUser.id, 'Operation');
+
+        await request(app.getHttpServer())
+          .post('/api/v1/campaigns')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            name: 'กลุ่มทดสอบ',
+            targets: [{ deviceId: device.deviceId }],
+            sourceIncidentId: randomUUID(),
+          })
+          .expect(404);
+
+        expect(await prisma.campaign.count()).toBe(0);
+      });
+
+      it('Incident ยังไม่ถูก promote (status open) -> 409', async () => {
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        await grant('Operation', ActionType.Create);
+        const device = await seedInstalledDevice();
+        const token = tokenFor(opUser.id, 'Operation');
+        const incidentId = await makeIncident('open');
+
+        await request(app.getHttpServer())
+          .post('/api/v1/campaigns')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            name: 'กลุ่มทดสอบ',
+            targets: [{ deviceId: device.deviceId }],
+            sourceIncidentId: incidentId,
+          })
+          .expect(409);
+
+        expect(await prisma.campaign.count()).toBe(0);
+      });
+
+      it('Incident investigating (promote แล้ว) -> 201 Campaign ผูก sourceIncidentId', async () => {
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        await grant('Operation', ActionType.Create);
+        const device = await seedInstalledDevice();
+        const token = tokenFor(opUser.id, 'Operation');
+        const incidentId = await makeIncident('investigating');
+
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/campaigns')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            name: 'กลุ่มทดสอบ',
+            targets: [{ deviceId: device.deviceId }],
+            sourceIncidentId: incidentId,
+          })
+          .expect(201);
+
+        expect(
+          (res.body as { sourceIncidentId: string }).sourceIncidentId,
+        ).toBe(incidentId);
+      });
+
+      it('Incident เดิมถูกผูกกับ Campaign อื่นไปแล้ว (unique) -> 409 ครั้งที่สอง', async () => {
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+        await grant('Operation', ActionType.Create);
+        const deviceA = await seedInstalledDevice();
+        const deviceB = await seedInstalledDevice();
+        const token = tokenFor(opUser.id, 'Operation');
+        const incidentId = await makeIncident('investigating');
+
+        await request(app.getHttpServer())
+          .post('/api/v1/campaigns')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            name: 'กลุ่มแรก',
+            targets: [{ deviceId: deviceA.deviceId }],
+            sourceIncidentId: incidentId,
+          })
+          .expect(201);
+
+        // incident กลับไปสถานะ investigating ได้ (จำลองว่ายัง "promote แล้ว"
+        // อยู่ตามเดิม) — unique constraint บน Campaign.sourceIncidentId เป็น
+        // ตัวกันตัวจริงตรงนี้ ไม่ใช่เช็ค status
+        await request(app.getHttpServer())
+          .post('/api/v1/campaigns')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            name: 'กลุ่มที่สอง',
+            targets: [{ deviceId: deviceB.deviceId }],
+            sourceIncidentId: incidentId,
+          })
+          .expect(409);
+
+        expect(await prisma.campaign.count()).toBe(1);
+      });
+    });
   });
 
   describe('GET /campaigns', () => {
