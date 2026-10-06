@@ -4031,6 +4031,17 @@ components:
           type: string
           format: uuid
           description: id ของ Config ที่จะใส่ (ต้องเป็นสถานะ approved หรือ synced)
+        rolloutId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.47, issue #243) `CampaignRollout.id` ที่คำขอนี้มาตอบสนอง —
+            มาจาก `configRolloutId` ของ `GET /devices/{deviceId}/status`
+            ระบุให้ชัดว่าตอบสนอง rollout ไหน กันเคส backend match ผิด
+            rollout ถ้าอุปกรณ์นี้เป็น pending target ของ 2 รอบพร้อมกันด้วย
+            configId เดียวกันเป๊ะ — ไม่ส่งมาได้ (optional, backward
+            compatible กับ client เก่า ใช้วิธี match แบบเดิม)
 
     SimulateConfigOnDeviceInput:
       type: object
@@ -4076,6 +4087,17 @@ components:
             id ของ Firmware ที่ช่างยืนยันว่าติดตั้งเสร็จแล้ว — ต้องเป็นสถานะ
             uploadStatus:stored และ approvalStatus:approved และรองรับรุ่น
             อุปกรณ์เครื่องนี้ (deviceModelCompatibility)
+        rolloutId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.47, issue #243) `CampaignRollout.id` ที่คำขอนี้มาตอบสนอง —
+            มาจาก `firmwareRolloutId` ของ `GET /devices/{deviceId}/status`
+            ระบุให้ชัดว่าตอบสนอง rollout ไหน กันเคส backend match ผิด
+            rollout ถ้าอุปกรณ์นี้เป็น pending target ของ 2 รอบพร้อมกันด้วย
+            firmwareId เดียวกันเป๊ะ — ไม่ส่งมาได้ (optional, backward
+            compatible กับ client เก่า ใช้วิธี match แบบเดิม)
 
     ConfirmFirmwareInstallResult:
       type: object
@@ -4292,6 +4314,8 @@ components:
           deviceId,
           configStatus,
           firmwareStatus,
+          configRolloutId,
+          firmwareRolloutId,
           lastCheckInMessage,
           pendingFirmwareOverride,
         ]
@@ -4309,6 +4333,22 @@ components:
           type: string
           enum: [up_to_date, pending, failed, unknown]
           description: เหมือน configStatus แต่ของ payloadType Firmware
+        configRolloutId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.47, issue #243) `CampaignRollout.id` ที่ `configStatus`
+            คำนวณมา — มีค่าเฉพาะตอน `configStatus` เป็น `pending` เท่านั้น
+            (ไม่งั้นไม่มี target ให้รายงานผลกลับ) client ส่งค่านี้กลับไปเป็น
+            `rolloutId` ตอน `POST /devices/{deviceId}/apply-config` เพื่อกัน
+            backend match ผิด rollout ถ้าอุปกรณ์นี้เป็น pending target ของ
+            2 รอบพร้อมกันด้วย configId เดียวกันเป๊ะ
+        firmwareRolloutId:
+          type: string
+          format: uuid
+          nullable: true
+          description: เหมือน configRolloutId แต่ของ firmwareStatus/confirm-firmware-install
         lastCheckInMessage:
           type: string
           nullable: true

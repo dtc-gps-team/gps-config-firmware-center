@@ -170,7 +170,12 @@ export class DeviceController {
     @Body() dto: ApplyConfigDto,
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyResult> {
-    return this.deviceService.applyConfig(deviceId, dto.configId, toActor(req));
+    return this.deviceService.applyConfig(
+      deviceId,
+      dto.configId,
+      toActor(req),
+      dto.rolloutId,
+    );
   }
 
   // resource `device-connection-test` action Read — reuse permission เดิม
