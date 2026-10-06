@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import * as bcrypt from 'bcrypt';
 import {
   ActionType,
+  CampaignRolloutStatus,
   DeviceLifecycleStatus,
   PrismaClient,
 } from '@prisma/client';
@@ -1190,6 +1191,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       async function makeActiveFirmwareRollout(
         deviceId: string,
         firmwareId: string,
+        status: CampaignRolloutStatus = 'active',
       ): Promise<void> {
         const opUser = await makeUser(prisma, { role: 'Operation' });
         const campaign = await prisma.campaign.create({
@@ -1203,7 +1205,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
             campaignId: campaign.id,
             payloadType: 'Firmware',
             firmwareId,
-            status: 'active',
+            status,
             targetCount: 1,
             createdBy: opUser.id,
           },
@@ -1225,6 +1227,42 @@ describe('DeviceController test-connection (integration — real postgres + guar
           .set('Authorization', `Bearer ${token}`)
           .send({ firmwareId: otherFirmwareId })
           .expect(409);
+      });
+
+      it.each(['approved', 'paused'] as const)(
+        'rollout สถานะ %s (ยังเป็นแผนที่ Campaign ตั้งใจจริง — แก้ตามรีวิว B PR #257 ข้อ 4) กำหนด firmware อื่นไว้ + ไม่มี override -> 409 เหมือน active',
+        async (status) => {
+          const deviceId = `FOV-GATE-409-${status.toUpperCase()}`;
+          await makeDevice(deviceId, 'installed');
+          const token = await stToken();
+          const assignedFirmwareId = await makeFirmware();
+          const otherFirmwareId = await makeFirmware();
+          await makeActiveFirmwareRollout(deviceId, assignedFirmwareId, status);
+
+          await request(app.getHttpServer())
+            .post(`/api/v1/devices/${deviceId}/confirm-firmware-install`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ firmwareId: otherFirmwareId })
+            .expect(409);
+        },
+      );
+
+      it('rollout สถานะ pending_approval (ยังไม่ผ่านอนุมัติ ไม่ใช่แผนที่ยืนยันแล้ว) กำหนด firmware อื่นไว้ -> 200 ผ่านปกติ ไม่ gate', async () => {
+        await makeDevice('FOV-GATE-200-PENDING', 'installed');
+        const token = await stToken();
+        const assignedFirmwareId = await makeFirmware();
+        const otherFirmwareId = await makeFirmware();
+        await makeActiveFirmwareRollout(
+          'FOV-GATE-200-PENDING',
+          assignedFirmwareId,
+          'pending_approval',
+        );
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices/FOV-GATE-200-PENDING/confirm-firmware-install')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ firmwareId: otherFirmwareId })
+          .expect(200);
       });
 
       it('มี Campaign Rollout active กำหนด firmware ตรงกับที่ขอ confirm -> 200 ผ่านปกติ', async () => {
@@ -1298,9 +1336,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
           .send({ firmwareId: overrideFirmwareId })
           .expect(200);
 
-        const reloaded = await prisma.deviceFirmwareOverride.findUniqueOrThrow(
-          { where: { id: override.id } },
-        );
+        const reloaded = await prisma.deviceFirmwareOverride.findUniqueOrThrow({
+          where: { id: override.id },
+        });
         expect(reloaded.consumedAt).not.toBeNull();
 
         // ครั้งที่สอง — override เดิมถูกใช้ไปแล้ว ไม่มีแถว approved+ยังไม่ใช้

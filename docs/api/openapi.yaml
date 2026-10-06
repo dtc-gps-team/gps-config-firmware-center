@@ -1430,7 +1430,9 @@ paths:
             (ต้อง stored) / Firmware ยังไม่ผ่านอนุมัติคุณภาพ (ต้อง approved) /
             Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้ / **(v3.43, Sprint 3 แถวที่
             24)** firmwareId ที่ขอไม่ตรงกับ Campaign Rollout (Firmware) ที่
-            `active` กำหนดไว้ให้อุปกรณ์เครื่องนี้ และไม่มี
+            สถานะ `active`/`approved`/`paused` (v3.44 — นับเป็น "แผนที่
+            Campaign ตั้งใจจริง" ทั้งหมด ไม่ใช่แค่ active) กำหนดไว้ให้อุปกรณ์
+            เครื่องนี้ และไม่มี
             `DeviceFirmwareOverride` สถานะ `approved` ที่ยังไม่เคยถูกใช้
             (`consumedAt: null`) รองรับ — ต้องขอ Firmware Override ใหม่ (ดู
             `overrideDeviceFirmware`) **override เป็น single-use** ใช้ผ่าน

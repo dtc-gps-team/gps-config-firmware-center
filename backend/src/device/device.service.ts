@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CampaignRolloutStatus,
   CampaignRolloutTargetStatus,
   Config,
   Device,
@@ -610,16 +611,28 @@ export class DeviceService {
     }
   }
 
-  /** หา Campaign Rollout (Firmware) ที่ `active` อยู่ตอนนี้ที่กำหนดอุปกรณ์เครื่อง
-   * นี้ไว้ — คือ "แผนที่ Campaign ต้องการให้เกิดขึ้นตอนนี้" ใช้เป็นเกณฑ์ตัดสิน
-   * ว่า `confirmFirmwareInstall()` ต้องขอ Firmware Override ก่อนไหม (ดู comment
-   * เหนือ `confirmFirmwareInstall()`) — **จงใจไม่กรองด้วย `CampaignRolloutTarget.status`
-   * เลย** (ต่างจาก `getStatus()` ด้านบนที่กรอง) เพราะที่นี่สนใจแค่ "Campaign ตั้งใจ
-   * ให้เครื่องนี้ได้ firmware ตัวไหน" ไม่สนใจว่าผลรอบก่อนจะ pending/success/failed
-   * — ยืนยัน firmware ตัวเดิมซ้ำ (เช่น retry หลัง fail) ไม่ควรนับเป็น override เลย
+  /** สถานะ Campaign Rollout ที่นับเป็น "แผนที่ Campaign ตั้งใจจริง" สำหรับ
+   * `findActiveFirmwareAssignment()` — แก้ตามรีวิว B บน PR #257 ข้อ 4: เดิมเช็ค
+   * แค่ `active` เฉยๆ ไม่ครอบ `approved` (Operation อนุมัติแผนแล้วแค่ยังไม่กด
+   * ปล่อย — เจตนาชัดเจนแล้วว่าจะใช้ firmware ตัวนี้) และ `paused` (Auto Pause
+   * เพราะ failure rate เกิน threshold — เป็นการพักชั่วคราว ไม่ใช่ Operation
+   * ยกเลิกแผน) ทั้งสองสถานะนี้ยังถือเป็นแผนที่ต้องเคารพเหมือน `active` —
+   * **ไม่รวม** `pending_approval` (ยังไม่ผ่านอนุมัติ ไม่ใช่แผนที่ยืนยันแล้ว) และ
+   * `rejected`/`cancelled`/`completed` (จบไปแล้วหรือไม่เคยถูกอนุมัติ) */
+  private static readonly RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
+    ['active', 'approved', 'paused'];
+
+  /** หา Campaign Rollout (Firmware) ที่ยังเป็น "แผนที่ Campaign ตั้งใจจริง" อยู่
+   * ตอนนี้ (ดู `RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES`) ที่กำหนดอุปกรณ์
+   * เครื่องนี้ไว้ — ใช้เป็นเกณฑ์ตัดสินว่า `confirmFirmwareInstall()` ต้องขอ
+   * Firmware Override ก่อนไหม (ดู comment เหนือ `confirmFirmwareInstall()`) —
+   * **จงใจไม่กรองด้วย `CampaignRolloutTarget.status` เลย** (ต่างจาก
+   * `getStatus()` ด้านบนที่กรอง) เพราะที่นี่สนใจแค่ "Campaign ตั้งใจให้เครื่องนี้
+   * ได้ firmware ตัวไหน" ไม่สนใจว่าผลรอบก่อนจะ pending/success/failed —
+   * ยืนยัน firmware ตัวเดิมซ้ำ (เช่น retry หลัง fail) ไม่ควรนับเป็น override เลย
    *
    * **ข้อจำกัดที่รู้อยู่แล้ว ไม่ได้แก้รอบนี้:** ถ้าอุปกรณ์เครื่องเดียวอยู่ 2 กลุ่ม
-   * (Campaign) พร้อมกันและทั้งคู่มี Firmware Rollout `active` ขัดกันเอง จะได้
+   * (Campaign) พร้อมกันและทั้งคู่มี Firmware Rollout ที่เกี่ยวข้องขัดกันเอง จะได้
    * assignment แค่ตัวแรกที่เจอ (ไม่ได้ตรวจ/เตือน conflict ระหว่าง 2 Campaign) —
    * ไม่ใช่ use case ที่ตั้งใจรองรับใน MVP นี้ */
   private async findActiveFirmwareAssignment(
@@ -628,7 +641,14 @@ export class DeviceService {
     const target = await this.prisma.campaignRolloutTarget.findFirst({
       where: {
         deviceId,
-        rollout: { payloadType: 'Firmware', status: 'active' },
+        rollout: {
+          payloadType: 'Firmware',
+          status: {
+            in: [
+              ...DeviceService.RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES,
+            ],
+          },
+        },
       },
       include: { rollout: { select: { firmwareId: true } } },
     });
