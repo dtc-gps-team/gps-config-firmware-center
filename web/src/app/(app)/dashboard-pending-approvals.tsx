@@ -8,6 +8,7 @@ import {
   canDecideCampaignApproval,
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
+  canDecideFirmwareOverride,
 } from "@/lib/permissions";
 import {
   Card,
@@ -22,8 +23,10 @@ import { EntityTypeTag } from "@/lib/status-pill";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
+import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
 import { ApprovalActions } from "./approvals/approval-actions";
 import { DeviceConfigOverrideApprovalActions } from "./approvals/device-config-override-approval-actions";
+import { DeviceFirmwareOverrideApprovalActions } from "./approvals/device-firmware-override-approval-actions";
 
 const MAX_ITEMS = 5;
 
@@ -36,7 +39,13 @@ type Row =
       rolloutId: string;
       campaignName: string;
     }
-  | { kind: "override"; queuedAt: string; id: string; deviceId: string };
+  | { kind: "override"; queuedAt: string; id: string; deviceId: string }
+  | {
+      kind: "firmware-override";
+      queuedAt: string;
+      id: string;
+      deviceId: string;
+    };
 
 /**
  * Widget "รายการรออนุมัติ" บน Dashboard — ตามเอกสาร UX/UI Design ต้นฉบับ
@@ -67,7 +76,8 @@ export function DashboardPendingApprovals() {
   const canAnyDecide =
     canDecideConfigApproval(role) ||
     canDecideCampaignApproval(role) ||
-    canDecideDeviceConfigOverride(role);
+    canDecideDeviceConfigOverride(role) ||
+    canDecideFirmwareOverride(role);
 
   if (!canAnyDecide) {
     return null;
@@ -93,6 +103,7 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
   const configs = usePendingApprovals();
   const rollouts = usePendingCampaignRollouts();
   const overrides = usePendingDeviceConfigOverrides();
+  const firmwareOverrides = usePendingDeviceFirmwareOverrides();
 
   const rows: Row[] = [
     ...(configs.data ?? []).map(
@@ -115,6 +126,14 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
         deviceId: o.deviceId,
       }),
     ),
+    ...(firmwareOverrides.data ?? []).map(
+      (o): Row => ({
+        kind: "firmware-override",
+        queuedAt: o.overriddenAt,
+        id: o.id,
+        deviceId: o.deviceId,
+      }),
+    ),
   ]
     .sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
     .slice(0, MAX_ITEMS);
@@ -122,7 +141,8 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
   const totalCount =
     (configs.data?.length ?? 0) +
     (rollouts.data?.length ?? 0) +
-    (overrides.data?.length ?? 0);
+    (overrides.data?.length ?? 0) +
+    (firmwareOverrides.data?.length ?? 0);
 
   // #251 review comment B ข้อ 2 — เดิมเป็น AND ทั้ง 3 ตัว ถ้าคิวหนึ่งโหลด
   // เสร็จก่อน (ว่าง) อีกสองคิวยังโหลดอยู่ จะเห็น empty state โผล่มาชั่วขณะ
@@ -131,19 +151,24 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
   const stillLoading =
     (configs.isLoading && configs.data === null) ||
     (rollouts.isLoading && rollouts.data === null) ||
-    (overrides.isLoading && overrides.data === null);
+    (overrides.isLoading && overrides.data === null) ||
+    (firmwareOverrides.isLoading && firmwareOverrides.data === null);
 
   // #251 review comment B ข้อ 2 — เดิมไม่อ่าน .error ของ 3 hook เลย ถ้าโหลด
   // พัง widget จะโชว์ "ไม่มีรายการรออนุมัติ" ทำให้ Operation เข้าใจผิดว่าไม่มี
   // งานค้าง — รวม error ที่มีจริงมาโชว์แทน (อาจมีได้มากกว่า 1 คิวพังพร้อมกัน)
-  const errors = [configs.error, rollouts.error, overrides.error].filter(
-    (e): e is string => e !== null,
-  );
+  const errors = [
+    configs.error,
+    rollouts.error,
+    overrides.error,
+    firmwareOverrides.error,
+  ].filter((e): e is string => e !== null);
 
   function retryAll() {
     void configs.refetch();
     void rollouts.refetch();
     void overrides.refetch();
+    void firmwareOverrides.refetch();
   }
 
   return (
@@ -244,6 +269,22 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
                       deviceId={row.deviceId}
                       canDecide={canDecideDeviceConfigOverride(role)}
                       onDecided={() => void overrides.refetch()}
+                    />
+                  </>
+                )}
+                {row.kind === "firmware-override" && (
+                  <>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <EntityTypeTag type="Override" />
+                      <span className="truncate font-mono text-sm font-medium">
+                        {row.deviceId}
+                      </span>
+                    </div>
+                    <DeviceFirmwareOverrideApprovalActions
+                      id={row.id}
+                      deviceId={row.deviceId}
+                      canDecide={canDecideFirmwareOverride(role)}
+                      onDecided={() => void firmwareOverrides.refetch()}
                     />
                   </>
                 )}

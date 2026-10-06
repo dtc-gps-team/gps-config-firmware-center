@@ -3,12 +3,14 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { CONFIG_DATA_TYPES } from '../config-data-types';
 
 /** รุ่นอุปกรณ์ + โปรโตคอลคู่หนึ่งที่ field นี้ใช้ได้ — field เดียวระบุได้
  * หลายคู่ (เช่น APN ใช้กับทั้ง GT06N/TCP และ GT06N/UDP) */
@@ -33,8 +35,11 @@ export class CreateConfigDefinitionDto {
   @MinLength(1)
   fieldName!: string;
 
+  /** ชุดชนิดข้อมูลที่ระบบรู้จัก — มติ issue #201 (อัปเดต 2026-09-22) ดู
+   * `CONFIG_DATA_TYPES` สำหรับที่มา/เหตุผลของชุดนี้ */
   @IsString()
   @MinLength(1)
+  @IsIn(CONFIG_DATA_TYPES)
   dataType!: string;
 
   @IsOptional()
@@ -103,10 +108,10 @@ export class CreateConfigDefinitionDto {
    * dataType ตอนใช้งานจริงฝั่ง Web (ConfigWizard auto-fill ตอนสร้าง Config
    * ใหม่เท่านั้น ไม่ใช่ตอน Clone) ไม่บังคับ, ไม่ผูกกับ validateFields
    *
-   * TODO(#201): ยังไม่เช็คว่า `defaultValue` ตรงกับ `dataType` ตอนสร้าง
-   * (เช่น dataType="number" + defaultValue="abc" ผ่านได้ตอนนี้) — ตั้งใจรอทำ
-   * พร้อมกับงาน #201 ที่กำลังปรับชุด dataType ทั้งระบบอยู่แล้ว (จะได้ไม่ต้อง
-   * เขียน type-check logic 2 รอบ) */
+   * เช็คว่าตรงกับ `dataType` ที่ประกาศไหมแล้วที่
+   * `ConfigDefinitionService.assertDefaultValueMatchesDataType()` (ปิด
+   * TODO(#201) เดิม — ไม่เช็คที่ DTO นี้ตรงๆ เพราะต้องรู้ค่า `dataType` ของ
+   * field เดียวกันประกอบด้วย ทำที่ service เลยทีเดียวพร้อมกับ logic อื่น) */
   @IsOptional()
   @IsString()
   @MaxLength(255)

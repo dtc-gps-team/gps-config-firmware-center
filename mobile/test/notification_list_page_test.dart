@@ -108,6 +108,53 @@ void main() {
     },
   );
 
+  testWidgets(
+    'render — 3 notification type ใหม่ของ Firmware Override (issue #256) '
+    'พร้อม deviceId/rejectReason',
+    (tester) async {
+      AppNotification n(
+        String id,
+        NotificationType type,
+        Map<String, dynamic> payload,
+      ) => AppNotification(
+        id: id,
+        userId: 'u1',
+        type: type,
+        payload: payload,
+        read: true,
+        createdAt: DateTime(2026, 10, 6, 9, 15),
+      );
+
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [
+            n('n1', NotificationType.firmwareOverridePending, {
+              'deviceId': 'DTC-0001',
+            }),
+            n('n2', NotificationType.firmwareOverrideApproved, {
+              'deviceId': 'DTC-0002',
+            }),
+            n('n3', NotificationType.firmwareOverrideRejected, {
+              'deviceId': 'DTC-0003',
+              'rejectReason': 'Firmware ไม่เหมาะกับลูกค้า',
+            }),
+          ],
+        ),
+      );
+
+      expect(find.text('มีคำขอ Firmware Override รออนุมัติ'), findsOneWidget);
+      expect(
+        find.text('คำขอ Firmware Override ได้รับการอนุมัติ'),
+        findsOneWidget,
+      );
+      expect(find.text('คำขอ Firmware Override ถูกปฏิเสธ'), findsOneWidget);
+      expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
+      expect(find.text('อุปกรณ์: DTC-0003'), findsOneWidget);
+      expect(find.text('เหตุผล: Firmware ไม่เหมาะกับลูกค้า'), findsOneWidget);
+    },
+  );
+
   testWidgets('Config Override — แสดง deviceId + rejectReason จาก payload', (
     tester,
   ) async {
