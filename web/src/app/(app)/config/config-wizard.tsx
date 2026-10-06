@@ -45,9 +45,20 @@ function isEmpty(value: FieldValue | undefined): boolean {
  * ทั้งหมด (string/text/date/datetime/json/array/uuid) เก็บเป็น string ดิบ
  * เสมอ ยังไม่มี input widget พิเศษให้ (date-picker/JSON editor ฯลฯ) ตั้งใจ
  * เหลือไว้เป็นช่องว่างนอกขอบเขตรอบนี้ — validate ชนิดจริงฝั่ง backend ตอน
- * submit */
+ * submit
+ *
+ * **`'number'` (แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2):** field เก่าที่ยังไม่
+ * ผ่าน backfill (ช่วงหลัง deploy โค้ดใหม่แต่ยังไม่ได้รัน `db seed`) ยังมี
+ * `dataType` เดิมเป็น `'number'` อยู่ — ถ้าไม่รวมไว้ที่นี่ input จะ render เป็น
+ * `type="text"` แล้วส่งค่าเป็น **string** (`"8080"`) ไปให้ backend ซึ่ง
+ * `matchesDataType()` ฝั่งนั้นคง `case 'number'` ไว้แบบ explicit ด้วยเหตุผล
+ * เดียวกัน (เช็ค `typeof === 'number'`) ไม่ทำแบบนี้แล้ว string จะโดน 400 ทันที
+ * — mirror กันไว้ทั้งสองฝั่งจนกว่า backfill จะรันจริง ไม่ใช่ค่าที่เลือกสร้าง
+ * field ใหม่ได้แล้ว (ตัด `number` ออกจาก dropdown ใน `parameter-create-form.tsx`) */
 function isNumericDataType(dataType: string): boolean {
-  return dataType === "integer" || dataType === "decimal";
+  return (
+    dataType === "integer" || dataType === "decimal" || dataType === "number"
+  );
 }
 
 /** `json`/`array` คือ 2 ชนิดเดียวที่ backend (`matchesDataType`) ต้องการ

@@ -321,7 +321,16 @@ export function ParameterCreateForm({
             ) : (
               <Input
                 id="param-default-value"
-                type={dataType === "number" ? "number" : "text"}
+                // แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2 — เดิมเช็ค
+                // dataType === "number" ซึ่งเป็น dead code มาตั้งแต่ก่อน
+                // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
+                // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
+                // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
+                type={
+                  dataType === "integer" || dataType === "decimal"
+                    ? "number"
+                    : "text"
+                }
                 value={defaultValue}
                 onChange={(e) => setDefaultValue(e.target.value)}
                 placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"

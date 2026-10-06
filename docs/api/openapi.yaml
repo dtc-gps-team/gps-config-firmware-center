@@ -3392,16 +3392,17 @@ components:
         dataType:
           type: string
           enum:
-            [integer, decimal, string, text, boolean, date, datetime, json, array, uuid]
+            [integer, decimal, string, text, boolean, date, datetime, json, array, uuid, number]
           example: string
           description: >-
             ชุดชนิดข้อมูลที่ระบบรู้จัก (v3.42, มติ issue #201 อัปเดต
-            2026-09-22) — เทียบจุดร่วมของ MySQL/PostgreSQL/MongoDB **หมายเหตุ
-            (v3.45, แก้ตามรีวิว B บน PR #255 ข้อ 5):** ค่าเดิม `number` ถูก
-            แทนที่ด้วย `integer`/`decimal` แล้ว แต่ field ที่ยังไม่ผ่าน backfill
-            จริง (เช่น deploy โค้ดใหม่แล้วยังไม่ได้รัน `prisma db seed`) อาจยัง
-            ตอบ `number` อยู่ชั่วคราว — ไม่ใช่ค่าที่รองรับสำหรับสร้าง field ใหม่
-            อีกต่อไป (ดู `CreateConfigDefinitionInput`)
+            2026-09-22) — เทียบจุดร่วมของ MySQL/PostgreSQL/MongoDB **`number`
+            (deprecated, v3.46, แก้ตามรีวิว B บน PR #255 ข้อ 5 รอบ 2):** ค่า
+            เดิมที่ถูกแทนที่ด้วย `integer`/`decimal` แล้ว — คงไว้ใน enum นี้
+            เฉพาะเพื่อให้ client ที่ validate จาก spec ไม่ปฏิเสธ record เก่าที่
+            ยังไม่ผ่าน backfill จริง (เช่น deploy โค้ดใหม่แล้วยังไม่ได้รัน
+            `prisma db seed`) **ห้ามใช้สร้าง field ใหม่อีก** — ดู
+            `CreateConfigDefinitionInput.dataType` ที่ตัด `number` ออกแล้ว
         allowedValues:
           type: array
           items:
