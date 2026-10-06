@@ -864,6 +864,70 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(reloadedRolloutA.status).toBe('active');
     });
 
+    it('ambiguous case — อุปกรณ์เดียวกันเป็น pending target ของ 2 rollout พร้อมกันด้วย configId เดียวกันเป๊ะ -> ส่ง rolloutId มาระบุให้ชัด แก้เฉพาะ rollout ที่ตั้งใจ ไม่แตะอีกอัน (issue #243)', async () => {
+      await makeDevice('AC-AMBIGUOUS', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const token = tokenFor(stUser.id, 'ST');
+      const configId = await makeConfig('approved');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      // 2 รอบคนละแคมเปญ แต่ใช้ configId เดียวกัน และอุปกรณ์เครื่องนี้เป็น
+      // pending target ของทั้งคู่พร้อมกัน — เดิม recordTargetResult() ไม่มีทาง
+      // แยกว่าควรอัปเดตรอบไหน (match ได้ทั้งคู่ด้วย deviceId+configId)
+      const campaignX = await prisma.campaign.create({
+        data: { name: 'กลุ่ม X', createdBy: opUser.id },
+      });
+      const rolloutX = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignX.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutX.id, deviceId: 'AC-AMBIGUOUS' },
+      });
+
+      const campaignY = await prisma.campaign.create({
+        data: { name: 'กลุ่ม Y', createdBy: opUser.id },
+      });
+      const rolloutY = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignY.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutY.id, deviceId: 'AC-AMBIGUOUS' },
+      });
+
+      // ระบุ rolloutId ของ Y ตรงๆ — ต้องแก้แค่ target ของ Y เท่านั้น
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-AMBIGUOUS/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId, rolloutId: rolloutY.id })
+        .expect(200);
+
+      const targetY = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutY.id, deviceId: 'AC-AMBIGUOUS' },
+      });
+      expect(targetY.status).toBe('success');
+
+      // target ของ X ต้องยังเป็น pending — ไม่ถูกแตะเลย
+      const targetX = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutX.id, deviceId: 'AC-AMBIGUOUS' },
+      });
+      expect(targetX.status).toBe('pending');
+    });
+
     it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> ใช้ค่าที่ override แล้วจริง ไม่ใช่ base เดิม (issue #223/#226)', async () => {
       await makeDevice('AC-OVERRIDE-APPROVED', 'installed');
       const token = await stToken();
@@ -1185,6 +1249,63 @@ describe('DeviceController test-connection (integration — real postgres + guar
       });
       expect(reloadedRollout.successCount).toBe(1);
       expect(reloadedRollout.status).toBe('completed');
+    });
+
+    it('ambiguous case — อุปกรณ์เดียวกันเป็น pending target ของ 2 rollout พร้อมกันด้วย firmwareId เดียวกันเป๊ะ -> ส่ง rolloutId มาระบุให้ชัด แก้เฉพาะ rollout ที่ตั้งใจ ไม่แตะอีกอัน (issue #243)', async () => {
+      await makeDevice('CF-AMBIGUOUS', 'installed');
+      const token = await stToken();
+      const firmwareId = await makeFirmware();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      const campaignX = await prisma.campaign.create({
+        data: { name: 'กลุ่ม X', createdBy: opUser.id },
+      });
+      const rolloutX = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignX.id,
+          payloadType: 'Firmware',
+          firmwareId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutX.id, deviceId: 'CF-AMBIGUOUS' },
+      });
+
+      const campaignY = await prisma.campaign.create({
+        data: { name: 'กลุ่ม Y', createdBy: opUser.id },
+      });
+      const rolloutY = await prisma.campaignRollout.create({
+        data: {
+          campaignId: campaignY.id,
+          payloadType: 'Firmware',
+          firmwareId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: opUser.id,
+        },
+      });
+      await prisma.campaignRolloutTarget.create({
+        data: { rolloutId: rolloutY.id, deviceId: 'CF-AMBIGUOUS' },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/CF-AMBIGUOUS/confirm-firmware-install')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firmwareId, rolloutId: rolloutY.id })
+        .expect(200);
+
+      const targetY = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutY.id, deviceId: 'CF-AMBIGUOUS' },
+      });
+      expect(targetY.status).toBe('success');
+
+      const targetX = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutX.id, deviceId: 'CF-AMBIGUOUS' },
+      });
+      expect(targetX.status).toBe('pending');
     });
 
     describe('Firmware Override deviation gate (Sprint 3 แถวที่ 24)', () => {
@@ -2083,6 +2204,8 @@ describe('DeviceController test-connection (integration — real postgres + guar
         deviceId: 'STAT-UNKNOWN',
         configStatus: 'unknown',
         firmwareStatus: 'unknown',
+        configRolloutId: null,
+        firmwareRolloutId: null,
         lastCheckInMessage: null,
         pendingFirmwareOverride: null,
       });
@@ -2174,6 +2297,11 @@ describe('DeviceController test-connection (integration — real postgres + guar
         deviceId: 'STAT-MIX',
         configStatus: 'up_to_date',
         firmwareStatus: 'pending',
+        // issue #243 — configRolloutId เป็น null เพราะ status ไม่ใช่ pending
+        // (success แล้ว ไม่มี target ให้รายงานผลกลับอีก) ส่วน firmwareRolloutId
+        // ต้องตรงกับ rollout ที่ยังรอผลจริง ให้ client ส่งกลับมาตอน confirm
+        configRolloutId: null,
+        firmwareRolloutId: firmwareRollout.id,
       });
     });
 
