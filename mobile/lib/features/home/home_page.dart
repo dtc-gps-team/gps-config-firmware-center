@@ -8,6 +8,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../incident/incident_repository.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 
@@ -108,6 +109,17 @@ class HomePage extends ConsumerWidget {
                   label: 'ค้นหาอุปกรณ์',
                   onTap: () => context.push(AppRoutes.deviceSearch),
                 ),
+                // แจ้งปัญหาหน้างาน (Field Incident Report, design issue #236) —
+                // ST/OT เท่านั้น และ**เปิดเฉพาะเมื่อ fieldReportEnabledProvider**
+                // (ตอนนี้ = API_MOCK_MODE เพราะ POST /incidents ยังไม่มี backend)
+                if ((role == UserRole.st || role == UserRole.ot) &&
+                    ref.watch(fieldReportEnabledProvider))
+                  _Shortcut(
+                    key: const Key('shortcut_field_report'),
+                    icon: Icons.add_alert_outlined,
+                    label: 'แจ้งปัญหา',
+                    onTap: () => context.push(AppRoutes.incidentReport),
+                  ),
                 // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
                 // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
                 // (ST/OT) ไม่มีสิทธิ์ Create Incident

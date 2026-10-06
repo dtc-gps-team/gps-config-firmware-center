@@ -132,7 +132,11 @@ enum IncidentStatus {
   open('open'),
   investigating('investigating'),
   rolledBack('rolled_back'),
-  resolved('resolved');
+  resolved('resolved'),
+  // เพิ่มใหม่ (design issue #236) — Operation ตัดสินใจ "ไม่ใช่ปัญหา/ซ้ำ" กับ
+  // field report · ยังไม่มี backend ส่งค่านี้ แต่ต้องรู้จักไว้ก่อน ไม่งั้น
+  // `listIncidents` (strict) จะ error ทั้งรายการทันทีที่ backend เริ่มส่ง
+  dismissed('dismissed');
 
   const IncidentStatus(this.wireName);
 
@@ -833,6 +837,12 @@ class Incident {
     this.relatedFirmwareId,
     this.source,
     this.metadata,
+    this.reportedBy,
+    this.deviceId,
+    this.reviewedBy,
+    this.reviewedAt,
+    this.reviewNote,
+    this.promotedCampaignId,
   });
 
   final String id;
@@ -846,6 +856,25 @@ class Incident {
   final Map<String, dynamic>? metadata;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Field report (design issue #236 — ยังไม่มีใน backend/openapi ตอนนี้ ทุกตัว
+  // nullable: incident อัตโนมัติเดิมไม่มี) — `source == 'field-report'` คือ
+  // report ที่ ST/OT แจ้งเอง
+  /// `User.id` ของผู้แจ้ง — null สำหรับ incident auto-detect
+  final String? reportedBy;
+
+  /// `Device.deviceId` ที่ report ผูกไว้
+  final String? deviceId;
+
+  /// Operation ที่ตัดสินใจ + เวลา + เหตุผล/บริบท
+  final String? reviewedBy;
+  final DateTime? reviewedAt;
+  final String? reviewNote;
+
+  /// Campaign ที่เกิดจาก report นี้ (ถ้า Operation เลือก promote)
+  final String? promotedCampaignId;
+
+  bool get isFieldReport => source == 'field-report';
 
   factory Incident.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
@@ -861,6 +890,12 @@ class Incident {
       relatedFirmwareId: json['relatedFirmwareId'] as String?,
       source: json['source'] as String?,
       metadata: (json['metadata'] as Map?)?.cast<String, dynamic>(),
+      reportedBy: json['reportedBy'] as String?,
+      deviceId: json['deviceId'] as String?,
+      reviewedBy: json['reviewedBy'] as String?,
+      reviewedAt: parseDate(json['reviewedAt']),
+      reviewNote: json['reviewNote'] as String?,
+      promotedCampaignId: json['promotedCampaignId'] as String?,
       // spec marks createdAt/updatedAt required, but decode defensively
       // so a slightly-off payload renders instead of throwing (same as Task).
       createdAt: parseDate(json['createdAt']) ?? DateTime.now(),

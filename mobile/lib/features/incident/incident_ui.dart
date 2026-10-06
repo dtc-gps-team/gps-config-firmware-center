@@ -27,6 +27,7 @@ class IncidentStyle {
     IncidentStatus.investigating => 'กำลังตรวจสอบ',
     IncidentStatus.rolledBack => 'Rollback แล้ว',
     IncidentStatus.resolved => 'แก้ไขแล้ว',
+    IncidentStatus.dismissed => 'ไม่ใช่ปัญหา/ยกเลิก',
   };
 
   static (Color, Color) statusColors(IncidentStatus s) => switch (s) {
@@ -34,6 +35,7 @@ class IncidentStyle {
     IncidentStatus.investigating => (Color(0xFFE3F0FB), Color(0xFF1F6FB2)),
     IncidentStatus.rolledBack => (Color(0xFFFDF0E3), Color(0xFFB9770E)),
     IncidentStatus.resolved => (Color(0xFFE6F4EA), Color(0xFF1E7E34)),
+    IncidentStatus.dismissed => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
   };
 }
 

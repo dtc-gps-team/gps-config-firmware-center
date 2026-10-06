@@ -5,13 +5,25 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
 
-/// Reads the incident list for the "Incident" screen (read-only).
+/// Reads the incident list for the "Incident" screen, and (design issue #236)
+/// lets ST/OT file a field report.
 ///
 /// `GET /incidents` is open to every logged-in role (RBAC "R" for all), so —
-/// unlike [TaskRepository] — there is no client-side role gate. No create /
-/// update: field staff (ST/OT) have no Create permission (see RBAC_Matrix.md).
+/// unlike [TaskRepository] — there is no client-side role gate. **Create**
+/// (`createFieldReport`) is ST/OT-only per the #236 design, but that backend
+/// permission/endpoint is **not on `main` yet** — until then it only works
+/// against [MockIncidentRepository] (see [fieldReportEnabledProvider]).
 abstract class IncidentRepository {
   Future<List<Incident>> listIncidents();
+
+  /// `POST /incidents` (design issue #236 — **backend ยังไม่มี**). ไม่
+  /// auto-pause/rollback — Operation เป็นคนตัดสินใจ throws [ApiException].
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  });
 
   /// `GET /incidents/{id}` — throws [ApiException] (404) if not found.
   Future<Incident> getIncident(String id);
@@ -29,6 +41,19 @@ class ApiIncidentRepository implements IncidentRepository {
 
   @override
   Future<Incident> getIncident(String id) => _api.getIncident(id);
+
+  @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) => _api.createIncident(
+    title: title,
+    description: description,
+    severity: severity,
+    deviceId: deviceId,
+  );
 }
 
 /// In-memory fake for `API_MOCK_MODE` (dev/demo without a backend). Same
@@ -65,6 +90,41 @@ class MockIncidentRepository implements IncidentRepository {
     return List.unmodifiable(_incidents);
   }
 
+  /// mirror ที่ design #236 ให้ backend ทำ: `status: open`,
+  /// `source: 'field-report'`, `reportedBy` จาก JWT (mock ใช้ค่าคงที่) ·
+  /// title/description บังคับ (backend คืน 400)
+  @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (title.trim().isEmpty || description.trim().isEmpty) {
+      throw ApiException(
+        'ต้องกรอกหัวข้อและรายละเอียดปัญหา',
+        statusCode: 400,
+        details: const ['title/description ห้ามว่าง'],
+      );
+    }
+    final now = DateTime.now();
+    final incident = Incident(
+      id: 'mock-field-report-${_incidents.length + 1}',
+      title: title.trim(),
+      description: description.trim(),
+      severity: severity,
+      status: IncidentStatus.open,
+      source: 'field-report',
+      reportedBy: 'mock-st-user',
+      deviceId: deviceId,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _incidents.insert(0, incident);
+    return incident;
+  }
+
   @override
   Future<Incident> getIncident(String id) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -79,6 +139,15 @@ final incidentRepositoryProvider = Provider<IncidentRepository>((ref) {
   if (AppConfig.apiMockMode) return MockIncidentRepository();
   return ApiIncidentRepository(ref.watch(apiClientProvider));
 });
+
+/// เปิดทางเข้าฟอร์มแจ้งปัญหา (Field Incident Report, design #236) ไหม —
+/// **ตอนนี้เปิดเฉพาะ `API_MOCK_MODE`** เพราะ `POST /incidents` ยังไม่มีบน
+/// backend จริง (เปิดให้ ST/OT ในแอปจริงตอนนี้ = ยิง endpoint ที่ไม่มี) ·
+/// หลัง backend merge ให้เปลี่ยนเป็น `true` (ลบ gate นี้) — เป็น provider เพื่อให้
+/// เทส override ได้ (`AppConfig.apiMockMode` เป็น compile-time const)
+final fieldReportEnabledProvider = Provider<bool>(
+  (ref) => AppConfig.apiMockMode,
+);
 
 /// The incident list. Every role may call `GET /incidents` (no role gate,
 /// unlike `taskListProvider`).

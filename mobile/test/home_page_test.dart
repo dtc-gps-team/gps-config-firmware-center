@@ -9,6 +9,7 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -116,6 +117,7 @@ Future<void> _pumpHome(
   UserRole? role, {
   TaskRepository? taskRepo,
   NotificationRepository? notiRepo,
+  bool? fieldReportEnabled,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -131,6 +133,8 @@ Future<void> _pumpHome(
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
         ),
+        if (fieldReportEnabled != null)
+          fieldReportEnabledProvider.overrideWithValue(fieldReportEnabled),
       ],
       child: const MaterialApp(home: HomePage()),
     ),
@@ -435,6 +439,37 @@ void main() {
       );
     },
   );
+
+  group('ทางลัด "แจ้งปัญหา" (Field Incident Report, design issue #236)', () {
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('${role.wireName} + เปิด flag -> เห็นทางลัด', (tester) async {
+        await _pumpHome(tester, role, fieldReportEnabled: true);
+        expect(find.byKey(const Key('shortcut_field_report')), findsOneWidget);
+      });
+
+      testWidgets(
+        '${role.wireName} + ปิด flag (backend ยังไม่มี endpoint) -> ไม่เห็น',
+        (tester) async {
+          await _pumpHome(tester, role, fieldReportEnabled: false);
+          expect(find.byKey(const Key('shortcut_field_report')), findsNothing);
+        },
+      );
+    }
+
+    for (final role in [
+      UserRole.operation,
+      UserRole.auditor,
+      UserRole.admin,
+      UserRole.superAdmin,
+    ]) {
+      testWidgets('${role.wireName} แม้เปิด flag -> ไม่เห็น (ST/OT เท่านั้น)', (
+        tester,
+      ) async {
+        await _pumpHome(tester, role, fieldReportEnabled: true);
+        expect(find.byKey(const Key('shortcut_field_report')), findsNothing);
+      });
+    }
+  });
 
   group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
     for (final role in [

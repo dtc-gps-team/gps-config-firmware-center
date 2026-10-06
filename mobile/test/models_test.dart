@@ -308,6 +308,7 @@ void main() {
         'investigating',
         'rolled_back',
         'resolved',
+        'dismissed',
       ]);
     });
 
@@ -478,6 +479,69 @@ void main() {
       expect(o.isPending, isFalse);
       expect(o.decidedBy, 'op-1');
       expect(o.consumedAt, isNull);
+    });
+  });
+
+  group('Incident field report (design issue #236)', () {
+    Map<String, dynamic> base() => {
+      'id': 'inc-1',
+      'title': 't',
+      'severity': 'medium',
+      'status': 'open',
+      'createdAt': '2026-10-06T00:00:00.000Z',
+      'updatedAt': '2026-10-06T00:00:00.000Z',
+    };
+
+    test(
+      'incident อัตโนมัติเดิม (ไม่มี field ใหม่) -> field report fields เป็น null',
+      () {
+        final i = Incident.fromJson(base());
+        expect(i.isFieldReport, isFalse);
+        expect(i.reportedBy, isNull);
+        expect(i.deviceId, isNull);
+        expect(i.reviewedBy, isNull);
+        expect(i.reviewedAt, isNull);
+        expect(i.reviewNote, isNull);
+        expect(i.promotedCampaignId, isNull);
+      },
+    );
+
+    test(
+      'field report ที่ Operation ตัดสินใจแล้ว -> parse ครบ + dismissed',
+      () {
+        final i = Incident.fromJson({
+          ...base(),
+          'source': 'field-report',
+          'status': 'dismissed',
+          'reportedBy': 'st-1',
+          'deviceId': 'DEV-0001',
+          'reviewedBy': 'op-1',
+          'reviewedAt': '2026-10-06T03:00:00.000Z',
+          'reviewNote': 'ซ้ำกับรายการเดิม',
+          'promotedCampaignId': null,
+        });
+        expect(i.isFieldReport, isTrue);
+        expect(i.status, IncidentStatus.dismissed);
+        expect(i.reportedBy, 'st-1');
+        expect(i.deviceId, 'DEV-0001');
+        expect(i.reviewedBy, 'op-1');
+        expect(i.reviewedAt, DateTime.utc(2026, 10, 6, 3));
+        expect(i.reviewNote, 'ซ้ำกับรายการเดิม');
+        expect(i.promotedCampaignId, isNull);
+      },
+    );
+
+    test('promote -> promotedCampaignId + investigating', () {
+      final i = Incident.fromJson({
+        ...base(),
+        'status': 'investigating',
+        'promotedCampaignId': 'camp-1',
+      });
+      expect(i.promotedCampaignId, 'camp-1');
+    });
+
+    test('IncidentStatus.fromWire รู้จัก dismissed', () {
+      expect(IncidentStatus.fromWire('dismissed'), IncidentStatus.dismissed);
     });
   });
 
