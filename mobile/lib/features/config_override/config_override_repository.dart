@@ -96,7 +96,7 @@ class MockConfigOverrideRepository implements ConfigOverrideRepository {
     ConfigFieldDefinition(
       id: 'mock-def-interval',
       fieldName: 'REPORT_INTERVAL_MOVING',
-      dataType: 'number',
+      dataType: 'integer',
       allowedValues: [],
       required: false,
       stOverridable: true,

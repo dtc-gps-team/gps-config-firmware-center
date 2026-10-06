@@ -7,11 +7,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CampaignRolloutStatus,
   CampaignRolloutTargetStatus,
   Config,
   Device,
   DeviceConfigOverride,
   DeviceConfigOverrideStatus,
+  DeviceFirmwareOverride,
+  DeviceFirmwareOverrideStatus,
+  Firmware,
   Prisma,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
@@ -60,6 +64,8 @@ import {
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
 import { RejectDeviceConfigOverrideDto } from './dto/reject-device-config-override.dto';
+import { DeviceFirmwareOverrideDto } from './dto/device-firmware-override.dto';
+import { RejectDeviceFirmwareOverrideDto } from './dto/reject-device-firmware-override.dto';
 
 /** `GET /devices/{deviceId}/config` response — `Config` (base) + สถานะ
  * override เฉพาะเครื่องนี้ (issue #223, มติ 2026-09-24 ผ่านอนุมัติแล้วเท่านั้น
@@ -119,6 +125,20 @@ export interface DeviceStatusResult {
    * นี้เป็น pending target ของ 2 รอบพร้อมกันด้วย payload เดียวกันเป๊ะ) */
   configRolloutId: string | null;
   firmwareRolloutId: string | null;
+  /** คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (ถ้ามี —
+   * เครื่องหนึ่งมีได้ทีละ 1 รายการ ดู `overrideDeviceFirmware()`) **เพิ่มตาม
+   * รีวิว B บน PR #257** — เดิม ST อ่านคำขอของตัวเองไม่ได้เลย
+   * (`GET /device-firmware-overrides` เป็น Operation เท่านั้น) ทำให้ Mobile
+   * โชว์ banner "รออนุมัติ" แบบที่ Config Override มี (`pendingOverride` ใน
+   * `GET /devices/{deviceId}/config`) ไม่ได้ ต้องรอโดน 409 ก่อนถึงจะรู้ —
+   * เกาะ endpoint นี้แทนที่จะเปิด endpoint ใหม่ เพราะ Mobile เรียกอยู่แล้ว
+   * (mirror ตำแหน่งของ `pendingOverride` ฝั่ง Config แนวคิดเดียวกัน แค่คนละ
+   * endpoint เพราะไม่มี "GET current firmware ของอุปกรณ์" แยกแบบ Config) —
+   * ไม่ filter ด้วย `overriddenBy`/user id เพราะเป็นสถานะของ**อุปกรณ์**ไม่ใช่
+   * ของผู้ใช้ (ไม่เข้าข่าย IDOR — Operation/ST/OT ที่อ่านอุปกรณ์เครื่องนี้ได้
+   * อยู่แล้วตาม RBAC เห็นเหมือนกันหมด mirror `pendingOverride` ของ Config ที่
+   * ก็ไม่ filter ด้วย user เช่นกัน) */
+  pendingFirmwareOverride: DeviceFirmwareOverride | null;
 }
 
 /** rollout สถานะเหล่านี้ไม่เคยส่ง payload ไปอุปกรณ์จริง (ถูกปฏิเสธ/ยกเลิกก่อน
@@ -246,32 +266,43 @@ export class DeviceService {
    * เดิม match ด้วย deviceId+payload เท่านั้นจึงเลือกผิด target ได้ — Mobile
    * ต้องส่ง rolloutId ที่ได้จากตรงนี้กลับไปตอน apply-config/
    * confirm-firmware-install เพื่อระบุให้ชัดว่าตอบสนอง rollout ไหน
+   *
+   * `pendingFirmwareOverride` (เพิ่มตามรีวิว B บน PR #257) — mirror
+   * `pendingOverride` ของ `getCurrentConfig()` เกาะ endpoint นี้แทนที่จะเปิด
+   * endpoint ใหม่ เพราะ Mobile เรียก `GET .../status` อยู่แล้ว (B ยืนยันแล้วว่า
+   * สะดวกกว่า) ไม่ filter ด้วย `overriddenBy` เพราะเป็นสถานะของอุปกรณ์ ไม่ใช่
+   * ของผู้ใช้คนที่ขอ — ไม่เข้าข่าย IDOR (Operation/ST/OT ที่อ่านอุปกรณ์เครื่องนี้
+   * ได้ตาม RBAC อยู่แล้วเห็นเหมือนกันหมด)
    */
   async getStatus(deviceId: string): Promise<DeviceStatusResult> {
     const device = await this.findByDeviceId(deviceId); // 404 ถ้าไม่พบ
 
-    const [configTarget, firmwareTarget] = await Promise.all([
-      this.prisma.campaignRolloutTarget.findFirst({
-        where: {
-          deviceId: device.deviceId,
-          rollout: {
-            payloadType: 'Config',
-            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+    const [configTarget, firmwareTarget, pendingFirmwareOverride] =
+      await Promise.all([
+        this.prisma.campaignRolloutTarget.findFirst({
+          where: {
+            deviceId: device.deviceId,
+            rollout: {
+              payloadType: 'Config',
+              status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+            },
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-      this.prisma.campaignRolloutTarget.findFirst({
-        where: {
-          deviceId: device.deviceId,
-          rollout: {
-            payloadType: 'Firmware',
-            status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.campaignRolloutTarget.findFirst({
+          where: {
+            deviceId: device.deviceId,
+            rollout: {
+              payloadType: 'Firmware',
+              status: { notIn: [...STATUS_IGNORED_ROLLOUT_STATUSES] },
+            },
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-    ]);
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.deviceFirmwareOverride.findFirst({
+          where: { deviceId: device.deviceId, status: 'pending' },
+        }),
+      ]);
 
     return {
       deviceId: device.deviceId,
@@ -282,6 +313,7 @@ export class DeviceService {
       firmwareRolloutId:
         firmwareTarget?.status === 'pending' ? firmwareTarget.rolloutId : null,
       lastCheckInMessage: null,
+      pendingFirmwareOverride,
     };
   }
 
@@ -602,6 +634,78 @@ export class DeviceService {
    * ถ้าเขียนไม่สำเร็จต้อง throw 500 ให้ช่างรู้ว่าต้องกดยืนยันใหม่ ไม่ใช่คืน
    * 200 ทั้งที่ไม่มีอะไรถูกบันทึกจริง
    */
+  /** เช็ค 3 เงื่อนไขที่ Firmware ต้องผ่านก่อนใช้กับอุปกรณ์ได้ (upload/approval
+   * status + compatibility) — ใช้ร่วมกันโดย `confirmFirmwareInstall()` (เช็ค
+   * ตอนติดตั้งจริง) และ `overrideDeviceFirmware()` (เช็คตอนส่งคำขอ override —
+   * ไม่มีประโยชน์ที่จะให้ขอ override เป็น firmware ที่ยังติดตั้งไม่ได้อยู่ดี)
+   * extract ออกมาเพื่อไม่ให้เขียนเงื่อนไขเดียวกันซ้ำ 2 จุด (mirror
+   * `mergeApprovedOverride` ที่ extract ออกมาด้วยเหตุผลเดียวกัน) */
+  private assertFirmwareInstallable(firmware: Firmware, device: Device): void {
+    if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {
+      throw new ConflictException(
+        `Firmware สถานะอัปโหลดปัจจุบัน (${firmware.uploadStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${SIMULATABLE_FIRMWARE_STATUS}" (จัดเก็บสำเร็จแล้ว) เท่านั้น`,
+      );
+    }
+    if (
+      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
+    ) {
+      throw new ConflictException(
+        `Firmware สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS}" (QAEngineer อนุมัติคุณภาพแล้ว) เท่านั้น`,
+      );
+    }
+    if (!firmware.deviceModelCompatibility.includes(device.deviceModel)) {
+      throw new ConflictException(
+        `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+      );
+    }
+  }
+
+  /** สถานะ Campaign Rollout ที่นับเป็น "แผนที่ Campaign ตั้งใจจริง" สำหรับ
+   * `findActiveFirmwareAssignment()` — แก้ตามรีวิว B บน PR #257 ข้อ 4: เดิมเช็ค
+   * แค่ `active` เฉยๆ ไม่ครอบ `approved` (Operation อนุมัติแผนแล้วแค่ยังไม่กด
+   * ปล่อย — เจตนาชัดเจนแล้วว่าจะใช้ firmware ตัวนี้) และ `paused` (Auto Pause
+   * เพราะ failure rate เกิน threshold — เป็นการพักชั่วคราว ไม่ใช่ Operation
+   * ยกเลิกแผน) ทั้งสองสถานะนี้ยังถือเป็นแผนที่ต้องเคารพเหมือน `active` —
+   * **ไม่รวม** `pending_approval` (ยังไม่ผ่านอนุมัติ ไม่ใช่แผนที่ยืนยันแล้ว) และ
+   * `rejected`/`cancelled`/`completed` (จบไปแล้วหรือไม่เคยถูกอนุมัติ) */
+  private static readonly RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
+    ['active', 'approved', 'paused'];
+
+  /** หา Campaign Rollout (Firmware) ที่ยังเป็น "แผนที่ Campaign ตั้งใจจริง" อยู่
+   * ตอนนี้ (ดู `RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES`) ที่กำหนดอุปกรณ์
+   * เครื่องนี้ไว้ — ใช้เป็นเกณฑ์ตัดสินว่า `confirmFirmwareInstall()` ต้องขอ
+   * Firmware Override ก่อนไหม (ดู comment เหนือ `confirmFirmwareInstall()`) —
+   * **จงใจไม่กรองด้วย `CampaignRolloutTarget.status` เลย** (ต่างจาก
+   * `getStatus()` ด้านบนที่กรอง) เพราะที่นี่สนใจแค่ "Campaign ตั้งใจให้เครื่องนี้
+   * ได้ firmware ตัวไหน" ไม่สนใจว่าผลรอบก่อนจะ pending/success/failed —
+   * ยืนยัน firmware ตัวเดิมซ้ำ (เช่น retry หลัง fail) ไม่ควรนับเป็น override เลย
+   *
+   * **ข้อจำกัดที่รู้อยู่แล้ว ไม่ได้แก้รอบนี้:** ถ้าอุปกรณ์เครื่องเดียวอยู่ 2 กลุ่ม
+   * (Campaign) พร้อมกันและทั้งคู่มี Firmware Rollout ที่เกี่ยวข้องขัดกันเอง จะได้
+   * assignment แค่ตัวแรกที่เจอ (ไม่ได้ตรวจ/เตือน conflict ระหว่าง 2 Campaign) —
+   * ไม่ใช่ use case ที่ตั้งใจรองรับใน MVP นี้ */
+  private async findActiveFirmwareAssignment(
+    deviceId: string,
+  ): Promise<{ firmwareId: string } | null> {
+    const target = await this.prisma.campaignRolloutTarget.findFirst({
+      where: {
+        deviceId,
+        rollout: {
+          payloadType: 'Firmware',
+          status: {
+            in: [
+              ...DeviceService.RELEVANT_FIRMWARE_ASSIGNMENT_ROLLOUT_STATUSES,
+            ],
+          },
+        },
+      },
+      include: { rollout: { select: { firmwareId: true } } },
+    });
+    return target?.rollout.firmwareId
+      ? { firmwareId: target.rollout.firmwareId }
+      : null;
+  }
+
   async confirmFirmwareInstall(
     deviceId: string,
     dto: ConfirmFirmwareInstallDto,
@@ -621,22 +725,40 @@ export class DeviceService {
     if (!firmware) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
-    if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {
-      throw new ConflictException(
-        `Firmware สถานะอัปโหลดปัจจุบัน (${firmware.uploadStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${SIMULATABLE_FIRMWARE_STATUS}" (จัดเก็บสำเร็จแล้ว) เท่านั้น`,
-      );
-    }
-    if (
-      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
-    ) {
-      throw new ConflictException(
-        `Firmware สถานะอนุมัติคุณภาพปัจจุบัน (${firmware.approvalStatus}) ยังยืนยันติดตั้งไม่ได้ — ต้องเป็น "${CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS}" (QAEngineer อนุมัติคุณภาพแล้ว) เท่านั้น`,
-      );
-    }
-    if (!firmware.deviceModelCompatibility.includes(device.deviceModel)) {
-      throw new ConflictException(
-        `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
-      );
+    this.assertFirmwareInstallable(firmware, device);
+
+    // Firmware Override (Sprint 3 แถวที่ 24) — ถ้าอุปกรณ์มี Campaign Rollout
+    // (Firmware) ที่ active กำหนด firmware ตัวอื่นไว้อยู่ ต้องมี
+    // DeviceFirmwareOverride ที่ approved **และยังไม่เคยถูกใช้** (`consumedAt:
+    // null`) ตรงกับ firmware ตัวนี้ก่อนถึงจะ confirm ได้ — ถ้าไม่มี assignment
+    // เลย (ติดตั้งเดี่ยวๆ ไม่ผ่าน Campaign) หรือ firmware ตรงกับ assignment
+    // อยู่แล้ว ผ่านปกติไม่ต้องขอ override (ดู comment เหนือ
+    // `findActiveFirmwareAssignment()` สำหรับเหตุผลเต็มๆ)
+    //
+    // **single-use (แก้ตามรีวิว B บน PR #257 ข้อ 1):** เดิม override ที่
+    // approved แล้วไม่เคย "ใช้แล้วหมด" เลย ทำให้ใช้ข้ามแผน Campaign ใหม่ได้ไม่
+    // รู้จบ — mark `consumedAt` ในทรานแซกชันเดียวกับการเขียน AuditLog ด้านล่าง
+    // (`updateMany` guard ด้วย `consumedAt: null` เดิม กัน race สองคำขอ confirm
+    // พร้อมกันใช้ override เดียวกันซ้ำ — ปิด TOCTOU ที่ B ชี้ไว้ไปในตัว) —
+    // ติดตั้ง firmware เดิมซ้ำอีกครั้ง (เช่น reset เครื่อง) ต้องขอ override ใหม่
+    const assignment = await this.findActiveFirmwareAssignment(device.deviceId);
+    let overrideToConsumeId: string | null = null;
+    if (assignment && assignment.firmwareId !== firmware.id) {
+      const approvedOverride =
+        await this.prisma.deviceFirmwareOverride.findFirst({
+          where: {
+            deviceId: device.deviceId,
+            firmwareId: firmware.id,
+            status: 'approved',
+            consumedAt: null,
+          },
+        });
+      if (!approvedOverride) {
+        throw new ConflictException(
+          `Firmware นี้ไม่ตรงกับแผนที่ Campaign กำหนดไว้ (${assignment.firmwareId}) — ต้องขอ Firmware Override ก่อน (หรือ override เดิมถูกใช้ไปแล้ว)`,
+        );
+      }
+      overrideToConsumeId = approvedOverride.id;
     }
 
     const confirmedAt = new Date();
@@ -645,13 +767,30 @@ export class DeviceService {
       firmwareId: firmware.id,
       firmwareVersion: firmware.version,
     };
-    await this.prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        auditModule: AUDIT_MODULE,
-        action: 'confirm-firmware-install',
-        metadata: metadata as Prisma.InputJsonValue,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      if (overrideToConsumeId) {
+        const result = await tx.deviceFirmwareOverride.updateMany({
+          where: {
+            id: overrideToConsumeId,
+            status: 'approved',
+            consumedAt: null,
+          },
+          data: { consumedAt: confirmedAt },
+        });
+        if (result.count === 0) {
+          throw new ConflictException(
+            'คำขอ Override นี้ถูกใช้ไปแล้วโดยการยืนยันติดตั้งอื่นที่เกิดขึ้นพร้อมกัน — กรุณาขอ Firmware Override ใหม่',
+          );
+        }
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'confirm-firmware-install',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
     });
 
     // Campaign Monitor (#22, แก้ไข 2026-09-24) — ช่างยืนยันติดตั้งสำเร็จ = success
@@ -1273,6 +1412,308 @@ export class DeviceService {
     status?: DeviceConfigOverrideStatus,
   ): Promise<DeviceConfigOverride[]> {
     return this.prisma.deviceConfigOverride.findMany({
+      where: status ? { status } : undefined,
+      orderBy: { overriddenAt: 'desc' },
+    });
+  }
+
+  /**
+   * ST ขอให้อุปกรณ์เครื่องนี้ติดตั้ง `dto.firmwareId` ได้ แม้จะไม่ตรงกับ
+   * Campaign Rollout (Firmware) ที่ `active` กำหนดไว้ (Sprint 3 แถวที่ 24) —
+   * mirror `overrideDeviceConfig()` เกือบทั้งหมด ต่างกันที่ไม่มี `fields`/
+   * `configId` ให้ merge/denormalize เพราะ Firmware เป็นเวอร์ชันเดียวทั้งก้อน
+   * ไม่ใช่ key-value (ดู comment เหนือ `model DeviceFirmwareOverride` ใน
+   * schema.prisma) สร้างแถวสถานะ `pending` เท่านั้น — **ไม่มีผลทันที** ต้องรอ
+   * Operation อนุมัติผ่าน `approveDeviceFirmwareOverride()` ก่อน (Separation
+   * of Duty เดิม) ถึงจะใช้ `confirmFirmwareInstall()` กับ firmware นี้ได้จริง
+   *
+   * เช็ค firmware ด้วยเงื่อนไขเดียวกับ `confirmFirmwareInstall()`
+   * (`assertFirmwareInstallable()`) — ไม่มีประโยชน์ที่จะอนุมัติ override เป็น
+   * firmware ที่ยังติดตั้งไม่ได้อยู่ดี
+   *
+   * **เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ** (mirror
+   * `overrideDeviceConfig()`) scope แค่ `deviceId` พอ ไม่ต้อง scope ซ้อนด้วย
+   * `firmwareId` เหมือน Config Override ที่ scope ด้วย `configId` เพิ่ม
+   * เพราะ Config มี "configId เปลี่ยนแล้วทำให้คำขอเก่า stale" ได้ (base Config
+   * เปลี่ยนได้จาก Confirm Install ใหม่) แต่ Firmware Override ไม่มี "base"
+   * ให้เปลี่ยนแบบนั้นเลย — คำขอ pending ที่มีอยู่ไม่มีทาง stale ไปเอง
+   *
+   * `versionNumber` คำนวณในทรานแซกชันเดียวกับ `create` เสมอ (race-safe, mirror
+   * `overrideDeviceConfig()`) นับจากทุกสถานะกัน versionNumber ชนกับแถวที่เคย
+   * ถูก reject ไปแล้ว + catch P2002 → 409 เป็น backstop
+   */
+  async overrideDeviceFirmware(
+    deviceId: string,
+    dto: DeviceFirmwareOverrideDto,
+    actor: ActingUser,
+  ): Promise<DeviceFirmwareOverride> {
+    const device = await this.findByDeviceId(deviceId);
+
+    const firmware = await this.prisma.firmware.findUnique({
+      where: { id: dto.firmwareId },
+    });
+    if (!firmware) {
+      throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
+    }
+    this.assertFirmwareInstallable(firmware, device);
+
+    try {
+      const override = await this.prisma.$transaction(async (tx) => {
+        const existingPending = await tx.deviceFirmwareOverride.findFirst({
+          where: { deviceId: device.deviceId, status: 'pending' },
+        });
+        if (existingPending) {
+          throw new ConflictException(
+            'อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อนส่งคำขอใหม่',
+          );
+        }
+
+        const latestVersion = await tx.deviceFirmwareOverride.findFirst({
+          where: { deviceId: device.deviceId },
+          orderBy: { versionNumber: 'desc' },
+        });
+
+        const override = await tx.deviceFirmwareOverride.create({
+          data: {
+            deviceId: device.deviceId,
+            firmwareId: firmware.id,
+            versionNumber: (latestVersion?.versionNumber ?? 0) + 1,
+            reason: dto.reason,
+            overriddenBy: actor.id,
+            status: 'pending',
+          },
+        });
+
+        const metadata: AuditLogMetadata = {
+          deviceId: device.deviceId,
+          firmwareId: firmware.id,
+          firmwareVersion: firmware.version,
+        };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'device-firmware-override-request',
+            metadata: metadata as Prisma.InputJsonValue,
+          },
+        });
+
+        return override;
+      });
+
+      await this.notifyOperationOfPendingFirmwareOverride(override);
+
+      return override;
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'ส่งคำขอ override ไม่สำเร็จเพราะมีคำขออื่นเข้ามาพร้อมกัน — กรุณาลองใหม่อีกครั้ง',
+        );
+      }
+      throw err;
+    }
+  }
+
+  /** หาแถว `DeviceFirmwareOverride` ที่ยัง `pending` — ใช้ร่วมกันโดย
+   * `approveDeviceFirmwareOverride()`/`rejectDeviceFirmwareOverride()` — ไม่พบ
+   * → 404, ตัดสินใจไปแล้ว (approved/rejected) → 409 กันตัดสินใจซ้ำ mirror
+   * `getPendingOverrideOrThrow()` ของ Config Override ทุกประการ */
+  private async getPendingFirmwareOverrideOrThrow(
+    id: string,
+  ): Promise<DeviceFirmwareOverride> {
+    const existing = await this.prisma.deviceFirmwareOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบคำขอ override id ${id}`);
+    }
+    if (existing.status !== 'pending') {
+      throw new ConflictException(
+        `คำขอนี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+      );
+    }
+    return existing;
+  }
+
+  /** แจ้ง Operation ทุกคนที่ active ว่ามีคำขอ Firmware Override ใหม่รอตัดสินใจ
+   * — mirror `notifyOperationOfPendingOverride()` ของ Config Override
+   * ทุกประการ **never-throw** เป็นแค่ side-effect ติดตาม ไม่ใช่ core contract
+   * ของ `overrideDeviceFirmware()` เอง */
+  private async notifyOperationOfPendingFirmwareOverride(
+    override: DeviceFirmwareOverride,
+  ): Promise<void> {
+    try {
+      const operations = await this.prisma.user.findMany({
+        where: { role: { code: 'Operation' }, isActive: true },
+        select: { id: true },
+      });
+      for (const operation of operations) {
+        await this.notificationService.send({
+          userId: operation.id,
+          type: 'firmware_override_pending',
+          payload: {
+            overrideId: override.id,
+            deviceId: override.deviceId,
+            firmwareId: override.firmwareId,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน firmware_override_pending ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** แจ้ง ST ผู้ส่งคำขอ (`overriddenBy`) ว่า Operation ตัดสินใจแล้ว
+   * (approve/reject) — mirror `notifyRequesterOfDecision()` ของ Config
+   * Override ทุกประการ **never-throw** เดียวกัน */
+  private async notifyRequesterOfFirmwareOverrideDecision(
+    override: DeviceFirmwareOverride,
+    outcome: 'approved' | 'rejected',
+  ): Promise<void> {
+    try {
+      await this.notificationService.send({
+        userId: override.overriddenBy,
+        type:
+          outcome === 'approved'
+            ? 'firmware_override_approved'
+            : 'firmware_override_rejected',
+        payload: {
+          overrideId: override.id,
+          deviceId: override.deviceId,
+          firmwareId: override.firmwareId,
+          ...(outcome === 'rejected'
+            ? { rejectReason: override.rejectReason }
+            : {}),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `แจ้งเตือน firmware_override_${outcome} ไม่สำเร็จ (override ${override.id}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Operation อนุมัติคำขอ Firmware Override — เปลี่ยนสถานะเป็น `approved`
+   * เท่านั้น **ไม่ apply เข้าอุปกรณ์ให้อัตโนมัติ** ปลดล็อกแค่สิทธิ์ให้
+   * `confirmFirmwareInstall()` ยอมรับ firmware นี้กับอุปกรณ์เครื่องนี้ได้ (ดู
+   * comment เหนือ `confirmFirmwareInstall()`) resource
+   * `device-firmware-override` action `Approve` — Operation เท่านั้น
+   *
+   * **ไม่มีการเช็ค staleness เหมือน `approveDeviceConfigOverride()`** —
+   * Config Override ต้องเช็คว่า `configId` ยังตรงกับ Config ปัจจุบันไหม เพราะ
+   * base Config เปลี่ยนได้เองจาก Confirm Install ใหม่ แต่ Firmware Override
+   * ไม่มี "base" ให้เปลี่ยนแบบนั้น — `firmwareId` ที่ ST เลือกตอนขอยังเป็นค่า
+   * เดิมเสมอจนกว่าจะถูกตัดสินใจ ไม่มีอะไรทำให้คำขอนี้ล้าสมัยไปเอง
+   *
+   * race condition: ใช้ `updateMany({ where: { id, status: 'pending' } })`
+   * ในทรานแซกชันเดียวกัน mirror `approveDeviceConfigOverride()` ทุกประการ
+   * กัน Operation 2 คนตัดสินใจคำขอเดียวกันพร้อมกัน
+   */
+  async approveDeviceFirmwareOverride(
+    id: string,
+    actor: ActingUser,
+  ): Promise<DeviceFirmwareOverride> {
+    const existing = await this.getPendingFirmwareOverrideOrThrow(id);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.deviceFirmwareOverride.updateMany({
+        where: { id, status: 'pending' },
+        data: {
+          status: 'approved',
+          decidedBy: actor.id,
+          decidedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const row = await tx.deviceFirmwareOverride.findUniqueOrThrow({
+        where: { id },
+      });
+      const metadata: AuditLogMetadata = {
+        deviceId: existing.deviceId,
+        firmwareId: existing.firmwareId,
+      };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'device-firmware-override-approve',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return row;
+    });
+
+    await this.notifyRequesterOfFirmwareOverrideDecision(updated, 'approved');
+
+    return updated;
+  }
+
+  /** Operation ปฏิเสธคำขอ Firmware Override — `rejectReason` ไม่บังคับ
+   * resource เดียวกับ approve (action `Approve`) mirror
+   * `rejectDeviceConfigOverride()` ทุกประการ — ไม่เช็ค staleness (เหตุผล
+   * เดียวกับ approve ด้านบน: ไม่มี "base" ให้ล้าสมัย) */
+  async rejectDeviceFirmwareOverride(
+    id: string,
+    dto: RejectDeviceFirmwareOverrideDto,
+    actor: ActingUser,
+  ): Promise<DeviceFirmwareOverride> {
+    const existing = await this.getPendingFirmwareOverrideOrThrow(id);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.deviceFirmwareOverride.updateMany({
+        where: { id, status: 'pending' },
+        data: {
+          status: 'rejected',
+          decidedBy: actor.id,
+          decidedAt: new Date(),
+          rejectReason: dto.rejectReason ?? null,
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกตัดสินใจไปแล้ว (มีคำขออนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const row = await tx.deviceFirmwareOverride.findUniqueOrThrow({
+        where: { id },
+      });
+      const metadata: AuditLogMetadata = {
+        deviceId: existing.deviceId,
+        firmwareId: existing.firmwareId,
+      };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'device-firmware-override-reject',
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return row;
+    });
+
+    await this.notifyRequesterOfFirmwareOverrideDecision(updated, 'rejected');
+
+    return updated;
+  }
+
+  /** Operation ดูรายการคำขอ Firmware Override ทั้งหมด — filter ตาม `status`
+   * (optional, ไม่ส่ง = ทุกสถานะ) เรียงคำขอใหม่ขึ้นก่อน mirror
+   * `listDeviceConfigOverrides()` ทุกประการ */
+  listDeviceFirmwareOverrides(
+    status?: DeviceFirmwareOverrideStatus,
+  ): Promise<DeviceFirmwareOverride[]> {
+    return this.prisma.deviceFirmwareOverride.findMany({
       where: status ? { status } : undefined,
       orderBy: { overriddenAt: 'desc' },
     });

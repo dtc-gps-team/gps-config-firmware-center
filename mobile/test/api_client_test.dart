@@ -582,6 +582,69 @@ void main() {
       );
     });
 
+    test(
+      'overrideDeviceFirmware -> POST /devices/{deviceId}/firmware-override '
+      'with {firmwareId, reason} คืนคำขอ status pending (issue #256)',
+      () async {
+        final (:client, :adapter) = _clientReturning({
+          'id': 'fo-1',
+          'deviceId': 'DEV-0117',
+          'firmwareId': 'fw-1',
+          'versionNumber': 1,
+          'reason': 'ลูกค้าขอ',
+          'status': 'pending',
+          'overriddenBy': 'st-1',
+          'overriddenAt': '2026-10-06T00:00:00.000Z',
+          'consumedAt': null,
+        });
+
+        final override = await client.overrideDeviceFirmware(
+          deviceId: 'DEV-0117',
+          firmwareId: 'fw-1',
+          reason: 'ลูกค้าขอ',
+        );
+
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(
+          adapter.lastRequest?.path,
+          '/devices/DEV-0117/firmware-override',
+        );
+        expect(adapter.lastRequest?.data, {
+          'firmwareId': 'fw-1',
+          'reason': 'ลูกค้าขอ',
+        });
+        expect(override.id, 'fo-1');
+        expect(override.isPending, isTrue);
+        expect(override.firmwareId, 'fw-1');
+      },
+    );
+
+    test('overrideDeviceFirmware -> 409 maps to ApiException พร้อมข้อความจาก '
+        'backend', () async {
+      final client = _clientFailingWith(
+        (o) => DioException(
+          requestOptions: o,
+          response: _response(o, 409, {
+            'message':
+                'อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อนส่งคำขอใหม่',
+          }),
+        ),
+      );
+
+      await expectLater(
+        client.overrideDeviceFirmware(
+          deviceId: 'DEV-0117',
+          firmwareId: 'fw-1',
+          reason: 'x',
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.statusCode, 'statusCode', 409)
+              .having((e) => e.message, 'message', contains('รอ Operation')),
+        ),
+      );
+    });
+
     Map<String, dynamic> definitionJson({
       String id = 'def-1',
       String fieldName = 'APN',
