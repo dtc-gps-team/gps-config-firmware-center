@@ -117,6 +117,14 @@ export interface DeviceStatusResult {
   /** placeholder เสมอเป็น `null` ตอนนี้ — รอผลคำถาม online/offline/check-in
    * แยกต่างหากกับ B (ดู comment เหนือ `getStatus()`) */
   lastCheckInMessage: string | null;
+  /** `CampaignRollout.id` ที่ `configStatus`/`firmwareStatus` ข้างบนคำนวณมา —
+   * มีค่าเฉพาะตอนสถานะเป็น `pending` เท่านั้น (ไม่งั้นไม่มี target ให้รายงาน
+   * ผลกลับ) `null` ถ้าไม่มี (เพิ่มตาม issue #243 — ให้ client ส่งกลับมาใน
+   * `POST /devices/{deviceId}/apply-config`/`confirm-firmware-install` เป็น
+   * `rolloutId` เพื่อกัน `recordTargetResult()` match ผิด rollout ถ้าอุปกรณ์
+   * นี้เป็น pending target ของ 2 รอบพร้อมกันด้วย payload เดียวกันเป๊ะ) */
+  configRolloutId: string | null;
+  firmwareRolloutId: string | null;
   /** คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (ถ้ามี —
    * เครื่องหนึ่งมีได้ทีละ 1 รายการ ดู `overrideDeviceFirmware()`) **เพิ่มตาม
    * รีวิว B บน PR #257** — เดิม ST อ่านคำขอของตัวเองไม่ได้เลย
@@ -252,6 +260,13 @@ export class DeviceService {
    * เก่า ปล่อย row ค้างเป็น `pending` ตลอดไป ถ้าไม่กรองจะเห็นเป็น "pending"
    * ผิดๆ ทั้งที่ไม่มีอะไรถูกส่งไปจริง)
    *
+   * `configRolloutId`/`firmwareRolloutId` (issue #243) — เครื่องเดียวกัน
+   * อาจเป็น pending target ของ 2+ rollout พร้อมกันด้วย payload เดียวกันเป๊ะ
+   * (เช่น 2 แคมเปญคนละกลุ่มแต่สั่ง Config เดียวกัน) `recordTargetResult()`
+   * เดิม match ด้วย deviceId+payload เท่านั้นจึงเลือกผิด target ได้ — Mobile
+   * ต้องส่ง rolloutId ที่ได้จากตรงนี้กลับไปตอน apply-config/
+   * confirm-firmware-install เพื่อระบุให้ชัดว่าตอบสนอง rollout ไหน
+   *
    * `pendingFirmwareOverride` (เพิ่มตามรีวิว B บน PR #257) — mirror
    * `pendingOverride` ของ `getCurrentConfig()` เกาะ endpoint นี้แทนที่จะเปิด
    * endpoint ใหม่ เพราะ Mobile เรียก `GET .../status` อยู่แล้ว (B ยืนยันแล้วว่า
@@ -293,6 +308,10 @@ export class DeviceService {
       deviceId: device.deviceId,
       configStatus: toDevicePayloadStatus(configTarget?.status),
       firmwareStatus: toDevicePayloadStatus(firmwareTarget?.status),
+      configRolloutId:
+        configTarget?.status === 'pending' ? configTarget.rolloutId : null,
+      firmwareRolloutId:
+        firmwareTarget?.status === 'pending' ? firmwareTarget.rolloutId : null,
       lastCheckInMessage: null,
       pendingFirmwareOverride,
     };
@@ -488,6 +507,7 @@ export class DeviceService {
     deviceId: string,
     configId: string,
     actor: ActingUser,
+    rolloutId?: string,
   ): Promise<ConfigApplyResult> {
     const device = await this.findByDeviceId(deviceId);
 
@@ -571,12 +591,15 @@ export class DeviceService {
 
     // Campaign Monitor (#22, แก้ไข 2026-09-24) — รายงานผลให้ Rollout ที่ active
     // อยู่ (ถ้ามี) รู้ว่าเครื่องนี้สำเร็จ/ล้มเหลว — never-throw อยู่แล้วใน
-    // ตัว recordTargetResult เอง (ดู comment ที่นั่น)
+    // ตัว recordTargetResult เอง (ดู comment ที่นั่น) · ส่ง `rolloutId` ต่อถ้า
+    // client ระบุมา (issue #243 — กัน match ผิด rollout ถ้าเครื่องนี้เป็น
+    // pending target ของ 2 รอบพร้อมกันด้วย payload เดียวกันเป๊ะ)
     await this.campaignRolloutService.recordTargetResult(
       device.deviceId,
       { configId: config.id },
       result.applied,
       result.details.join(' · '),
+      rolloutId,
     );
 
     return result;
@@ -774,12 +797,14 @@ export class DeviceService {
     // เสมอ (endpoint นี้เป็นแค่ attestation ไม่มีทาง fail อยู่แล้ว — ดู comment
     // หัวเมธอดนี้) never-throw อยู่แล้วในตัว recordTargetResult เอง จึงไม่กระทบ
     // ความหมาย "audit เขียนไม่สำเร็จต้อง throw 500" ข้างบน (เกิดขึ้นก่อนหน้านี้
-    // ไปแล้ว)
+    // ไปแล้ว) · ส่ง `dto.rolloutId` ต่อถ้า client ระบุมา (issue #243 — เหตุผล
+    // เดียวกับ `applyConfig()` ด้านบน)
     await this.campaignRolloutService.recordTargetResult(
       device.deviceId,
       { firmwareId: firmware.id },
       true,
       `ยืนยันติดตั้ง Firmware ${firmware.version} สำเร็จ (confirm-firmware-install)`,
+      dto.rolloutId,
     );
 
     // Dual Partition (mock, Incident & Rollback #28, แก้ไข 2026-09-24) —

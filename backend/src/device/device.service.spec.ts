@@ -416,6 +416,8 @@ describe('DeviceService', () => {
         deviceId: installedDevice.deviceId,
         configStatus: 'unknown',
         firmwareStatus: 'unknown',
+        configRolloutId: null,
+        firmwareRolloutId: null,
         lastCheckInMessage: null,
         pendingFirmwareOverride: null,
       });
@@ -436,6 +438,37 @@ describe('DeviceService', () => {
       expect(deviceFirmwareOverride.findFirst).toHaveBeenCalledWith({
         where: { deviceId: installedDevice.deviceId, status: 'pending' },
       });
+    });
+
+    it('target ล่าสุดเป็น pending -> configRolloutId/firmwareRolloutId คืนค่า rolloutId ของ target นั้น (issue #243)', async () => {
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({
+          status: 'pending',
+          rolloutId: 'rollout-cfg-1',
+        })
+        .mockResolvedValueOnce({
+          status: 'pending',
+          rolloutId: 'rollout-fw-1',
+        });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configRolloutId).toBe('rollout-cfg-1');
+      expect(result.firmwareRolloutId).toBe('rollout-fw-1');
+    });
+
+    it('target ล่าสุดเป็น success/failed (ไม่ใช่ pending) -> configRolloutId/firmwareRolloutId เป็น null (ไม่มี target ให้รายงานผลกลับแล้ว)', async () => {
+      campaignRolloutTarget.findFirst
+        .mockResolvedValueOnce({
+          status: 'success',
+          rolloutId: 'rollout-cfg-1',
+        })
+        .mockResolvedValueOnce({ status: 'failed', rolloutId: 'rollout-fw-1' });
+
+      const result = await service.getStatus(installedDevice.deviceId);
+
+      expect(result.configRolloutId).toBeNull();
+      expect(result.firmwareRolloutId).toBeNull();
     });
 
     it('target ล่าสุดเป็น success -> up_to_date', async () => {
@@ -839,6 +872,28 @@ describe('DeviceService', () => {
         { configId: approvedConfig.id },
         true,
         applyResult.details.join(' · '),
+        undefined,
+      );
+    });
+
+    it('ส่ง rolloutId มาด้วย -> ส่งต่อให้ recordTargetResult (issue #243)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      configApplier.applyConfig.mockResolvedValue(applyResult);
+
+      await service.applyConfig(
+        'DTC-0001',
+        approvedConfig.id,
+        st,
+        'rollout-123',
+      );
+
+      expect(campaignRolloutService.recordTargetResult).toHaveBeenCalledWith(
+        'DTC-0001',
+        { configId: approvedConfig.id },
+        true,
+        applyResult.details.join(' · '),
+        'rollout-123',
       );
     });
 
@@ -1031,6 +1086,26 @@ describe('DeviceService', () => {
         { firmwareId: readyFirmware.id },
         true,
         expect.any(String) as string,
+        undefined,
+      );
+    });
+
+    it('ส่ง rolloutId มาด้วย -> ส่งต่อให้ recordTargetResult (issue #243)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.confirmFirmwareInstall(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id, rolloutId: 'rollout-456' },
+        st,
+      );
+
+      expect(campaignRolloutService.recordTargetResult).toHaveBeenCalledWith(
+        'DTC-0001',
+        { firmwareId: readyFirmware.id },
+        true,
+        expect.any(String) as string,
+        'rollout-456',
       );
     });
 
