@@ -24,4 +24,8 @@ export interface AuditLogMetadata {
   /** `Firmware.version` ณ ตอนยืนยัน — ไม่มีข้อมูลอ่อนไหว ใส่ไว้เพื่อดูง่ายบน
    * `GET /audit-logs` โดยไม่ต้อง join เพิ่ม */
   firmwareVersion?: string;
+  /** `Incident.id` ที่ถูกสร้าง/ตัดสินใจ (issue #236 — Field Incident Report) */
+  incidentId?: string;
+  /** `resolve`/`dismiss`/`promote` — ผลตัดสินใจของ Operation บน field report */
+  outcome?: string;
 }
