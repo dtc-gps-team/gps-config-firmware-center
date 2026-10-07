@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
@@ -506,44 +510,122 @@ void main() {
     });
   });
 
-  testWidgets('ปุ่ม logout เรียก logout ของ controller', (tester) async {
-    final container = ProviderContainer(
-      overrides: [
-        authControllerProvider.overrideWith(
-          () => _FakeAuthController(UserRole.st),
+  group('logout', () {
+    Future<ProviderContainer> pumpHome(
+      WidgetTester tester,
+      AppDatabase db,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => _FakeAuthController(UserRole.st),
+          ),
+          tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+          sessionProfileStoreProvider.overrideWithValue(
+            InMemorySessionProfileStore(),
+          ),
+          taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
+          notificationRepositoryProvider.overrideWithValue(
+            _FakeNotificationRepository(),
+          ),
+          // logout() clears this too (issue #204) — without an override it
+          // falls through to the real SharedPreferences-backed store, which
+          // throws (no plugin binding in this test) before logout() reaches
+          // `state = ...unauthenticated`.
+          appDatabaseProvider.overrideWithValue(db),
+          recentDeviceIdStoreProvider.overrideWithValue(
+            InMemoryRecentDeviceIdStore(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: HomePage()),
         ),
-        tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
-        sessionProfileStoreProvider.overrideWithValue(
-          InMemorySessionProfileStore(),
-        ),
-        taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
-        notificationRepositoryProvider.overrideWithValue(
-          _FakeNotificationRepository(),
-        ),
-        // logout() clears this too (issue #204) — without an override it
-        // falls through to the real SharedPreferences-backed store, which
-        // throws (no plugin binding in this test) before logout() reaches
-        // `state = ...unauthenticated`.
-        recentDeviceIdStoreProvider.overrideWithValue(
-          InMemoryRecentDeviceIdStore(),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: HomePage()),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
+      return container;
+    }
 
-    await tester.tap(find.byKey(const Key('home_logout')));
-    await tester.pumpAndSettle();
+    Future<void> queueAction(AppDatabase db, String id, String status) =>
+        db.pendingActionDao.insertAction(
+          PendingActionsCompanion.insert(
+            id: id,
+            userId: 'u1',
+            type: 'task_status',
+            entityId: 't-$id',
+            payload: '{"status":"completed"}',
+            status: Value(status),
+            createdAt: DateTime.utc(2026, 10, 7),
+          ),
+        );
 
-    expect(
-      container.read(authControllerProvider).status,
-      AuthStatus.unauthenticated,
-    );
+    testWidgets('ไม่มีรายการค้างในคิว -> logout ทันที ไม่มี dialog', (
+      tester,
+    ) async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final container = await pumpHome(tester, db);
+
+      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+      expect(
+        container.read(authControllerProvider).status,
+        AuthStatus.unauthenticated,
+      );
+    });
+
+    testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
+        'ยกเลิก = ยังไม่ logout และข้อมูลในคิวอยู่ครบ', (tester) async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await queueAction(db, 'p', 'pending');
+      await queueAction(db, 'f', 'failed');
+      final container = await pumpHome(tester, db);
+
+      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
+      expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('logout_unsynced_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+      expect(
+        container.read(authControllerProvider).status,
+        AuthStatus.authenticated,
+      );
+      expect(await db.pendingActionDao.countUnsynced(), 2);
+    });
+
+    testWidgets('มีรายการค้าง + ยืนยัน -> logout และล้างคิว', (tester) async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      await queueAction(db, 'p', 'pending');
+      final container = await pumpHome(tester, db);
+
+      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(authControllerProvider).status,
+        AuthStatus.unauthenticated,
+      );
+      expect(await db.pendingActionDao.countUnsynced(), 0);
+    });
   });
+}
+
+AppDatabase inMemoryAppDatabase(Ref ref) {
+  final db = AppDatabase.forTesting(NativeDatabase.memory());
+  ref.onDispose(db.close);
+  return db;
 }

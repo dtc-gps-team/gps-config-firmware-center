@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/device_connection_test/recent_device_id_store.dart';
@@ -7,6 +8,7 @@ import '../../features/push_notification/push_notification_service.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 import '../config/app_config.dart';
+import '../db/providers/database_provider.dart';
 import 'auth_repository.dart';
 import 'token_store.dart';
 
@@ -180,6 +182,14 @@ class AuthController extends Notifier<AuthState> {
     // ล้างประวัติเลขเครื่องที่เคยทดสอบสัญญาณ (issue #204) — กันช่างคนถัดไปที่
     // login เข้าเครื่องเดียวกันเห็นประวัติของคนก่อนหน้า
     await ref.read(recentDeviceIdStoreProvider).clear();
+    // ล้าง Drift cache (Task ที่เก็บไว้ออฟไลน์ + คิว sync ที่ยังค้าง) — กัน
+    // user คนถัดไปบนเครื่องเดียวกันเห็น/ส่งข้อมูลของคนก่อนหน้า. ห้ามให้ความ
+    // ล้มเหลวตรงนี้บล็อก logout (เหมือน step อื่นด้านบน)
+    try {
+      await ref.read(appDatabaseProvider).clearAllUserData();
+    } catch (e) {
+      debugPrint('logout: clearing local database failed: $e');
+    }
     ref.read(apiClientProvider).setAuthToken(null);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }

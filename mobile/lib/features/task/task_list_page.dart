@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
+import '../../core/sync/sync_providers.dart';
+import '../../core/widgets/sync_status_widgets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/skeleton_card.dart';
@@ -21,6 +23,8 @@ class TaskListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasksAsync = ref.watch(taskListProvider);
+    final pendingIds = ref.watch(pendingTaskIdsProvider).value ?? const {};
+    final failedCount = ref.watch(failedSyncActionsProvider).value?.length ?? 0;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -38,15 +42,23 @@ class TaskListPage extends ConsumerWidget {
           skipLoadingOnRefresh: true,
           data: (tasks) {
             if (tasks.isEmpty) return const _TasksEmpty();
+            final offset = failedCount > 0 ? 1 : 0;
             return ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: tasks.length,
+              itemCount: tasks.length + offset,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, i) => _TaskCard(
-                key: Key('my_task_card_$i'),
-                task: tasks[i],
-                onTap: () => context.push(AppRoutes.taskDetail(tasks[i].id)),
-              ),
+              itemBuilder: (context, i) {
+                if (offset == 1 && i == 0) {
+                  return SyncFailedBanner(count: failedCount);
+                }
+                final task = tasks[i - offset];
+                return _TaskCard(
+                  key: Key('my_task_card_${i - offset}'),
+                  task: task,
+                  pendingSync: pendingIds.contains(task.id),
+                  onTap: () => context.push(AppRoutes.taskDetail(task.id)),
+                );
+              },
             );
           },
           loading: () => ListView.separated(
@@ -66,9 +78,15 @@ class TaskListPage extends ConsumerWidget {
 }
 
 class _TaskCard extends StatelessWidget {
-  const _TaskCard({super.key, required this.task, required this.onTap});
+  const _TaskCard({
+    super.key,
+    required this.task,
+    required this.onTap,
+    this.pendingSync = false,
+  });
 
   final Task task;
+  final bool pendingSync;
   final VoidCallback onTap;
 
   @override
@@ -107,7 +125,16 @@ class _TaskCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              TaskStatusPill(status: task.status),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  TaskStatusPill(status: task.status),
+                  if (pendingSync) ...[
+                    const SizedBox(height: 6),
+                    const PendingSyncBadge(),
+                  ],
+                ],
+              ),
             ],
           ),
         ),

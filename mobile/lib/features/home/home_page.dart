@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
+import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
@@ -185,11 +187,52 @@ class _HeaderRow extends ConsumerWidget {
           key: const Key('home_logout'),
           icon: const Icon(Icons.logout, color: AppTheme.mockTextSecondary),
           tooltip: 'ออกจากระบบ',
-          onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+          onPressed: () => _confirmAndLogout(context, ref),
         ),
       ],
     );
   }
+}
+
+/// Logout, with a warning first when queued changes would be lost: logout
+/// wipes the local DB, including `PendingActions` that never reached the
+/// server. No queued changes -> logs out straight away, no dialog.
+Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
+  var unsynced = 0;
+  if (!AppConfig.apiMockMode) {
+    try {
+      unsynced = await ref.read(pendingActionDaoProvider).countUnsynced();
+    } catch (_) {
+      // Can't read the queue -> don't trap the user on this screen.
+    }
+  }
+  if (unsynced > 0 && context.mounted) {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        key: const Key('logout_unsynced_dialog'),
+        title: const Text('ออกจากระบบ?'),
+        content: Text(
+          'มี $unsynced รายการยังไม่ซิงค์ ถ้าออกจากระบบตอนนี้'
+          'การแก้ไขที่ยังไม่ซิงค์จะหายไป ยืนยันออกจากระบบ?',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('logout_unsynced_cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            key: const Key('logout_unsynced_confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('ยืนยัน'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+  }
+  await ref.read(authControllerProvider.notifier).logout();
 }
 
 /// Home header bell. Badge shows the real unread count from
