@@ -1,5 +1,6 @@
 import { DashboardSummary } from "./dashboard-summary";
 import { DashboardPendingApprovals } from "./dashboard-pending-approvals";
+import { DashboardConfigStatusChart } from "./dashboard-config-status-chart";
 import { DashboardActivity } from "./dashboard-activity";
 import { DashboardLoadedAt } from "./dashboard-loaded-at";
 
@@ -37,6 +38,7 @@ export default function DashboardPage() {
 
       <DashboardPendingApprovals />
       <DashboardSummary />
+      <DashboardConfigStatusChart />
       <DashboardActivity />
     </div>
   );
