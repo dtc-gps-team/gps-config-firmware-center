@@ -137,6 +137,19 @@ export function canAccessUserManagement(
   return role === "Admin" || role === "SuperAdmin";
 }
 
+/**
+ * หน้า DeviceModel Management (`/device-models`) + ปุ่ม "+ เพิ่มรุ่นอุปกรณ์" —
+ * RBAC_Matrix.md ตาราง 4.1 `createDeviceModel`/`updateDeviceModel`: resource
+ * `device-model` action Create/Update เป็น Admin เท่านั้น (SuperAdmin ได้
+ * อัตโนมัติจาก seed.ts ที่ copy สิทธิ์ Admin ทั้งหมดให้ — RBAC_Matrix.md §1)
+ * `GET /device-models` เปิดกว้างทุก Role อยู่แล้ว (ไม่ต้อง gate การดู)
+ */
+export function canManageDeviceModels(
+  role: string | null | undefined,
+): boolean {
+  return role === "Admin" || role === "SuperAdmin";
+}
+
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation";

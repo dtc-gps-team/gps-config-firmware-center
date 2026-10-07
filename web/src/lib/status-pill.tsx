@@ -158,6 +158,14 @@ export const DEVICE_STATUS_TONE: Record<string, PillTone> = {
   decommissioned: "danger",
 };
 
+/** DeviceModel.status (issue #209) — active = ยังผลิต/สั่งซื้อได้ปกติ,
+ * discontinued = เลิกผลิตแล้วแต่เครื่องที่ใช้งานอยู่ยังทำงานได้ปกติ (ไม่ใช่
+ * danger — ไม่ใช่สถานะ "แย่" แค่สื่อว่าซื้อเพิ่มไม่ได้แล้ว) */
+export const DEVICE_MODEL_STATUS_TONE: Record<string, PillTone> = {
+  active: "success",
+  discontinued: "neutral",
+};
+
 /** CampaignRollout lifecycle (แก้ไข 2026-09-24, Campaign Monitor #22 — เดิม
  * ชื่อ `CAMPAIGN_STATUS_TONE` อยู่บน `Campaign` ตรงๆ ย้ายมาอยู่ที่
  * `CampaignRollout` แทน ไม่มี `draft` อีกต่อไป): สร้างแล้วเป็น
