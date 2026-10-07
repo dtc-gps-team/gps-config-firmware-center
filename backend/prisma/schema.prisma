@@ -71,6 +71,8 @@ model User {
   deviceConfigOverrideDecisions DeviceConfigOverride[]  @relation("DeviceConfigOverrideDecidedBy")
   deviceFirmwareOverrides         DeviceFirmwareOverride[]  @relation("DeviceFirmwareOverrideBy")
   deviceFirmwareOverrideDecisions DeviceFirmwareOverride[]  @relation("DeviceFirmwareOverrideDecidedBy")
+  incidentsReported               Incident[]                @relation("IncidentReportedBy")
+  incidentsReviewed               Incident[]                @relation("IncidentReviewedBy")
 }
 
 // ต่างจากดีไซน์เดิมใน GPS_Data_Dictionary.xlsx (source of truth) ที่วางไว้ 3 ตาราง:
@@ -171,6 +173,14 @@ enum NotificationType {
   firmware_override_pending
   firmware_override_approved
   firmware_override_rejected
+  // เพิ่มใหม่ (issue #236 — Field Incident Report) แจ้ง Operation เมื่อมี
+  // report ใหม่ + แจ้ง ST/OT ผู้รายงานเมื่อ Operation ตัดสินใจ (3 ผลลัพธ์
+  // ของ `decide` — resolve/dismiss/promote คนละ type กัน ต่างจาก
+  // config/firmware override ที่มีแค่ approved/rejected)
+  incident_report_pending
+  incident_report_resolved
+  incident_report_dismissed
+  incident_report_promoted
 }
 
 model Notification {
@@ -902,15 +912,21 @@ model Campaign {
   name        String
   description String?
   createdBy   String
+  // Incident (field report, issue #236) ที่ Campaign นี้ถูกสร้างมาตอบสนอง —
+  // optional, ส่งมาใน POST /campaigns ตอน Operation "promote" report เป็น
+  // Campaign จริง · @unique ทำให้เป็น 1:1 กับ Incident (promote ซ้ำไม่ได้ —
+  // P2002 ถ้าพยายามผูก incident เดิมกับ Campaign อีกตัว)
+  sourceIncidentId String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  creator  User              @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
-  targets  CampaignTarget[]
-  rollouts CampaignRollout[]
+  creator        User              @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
+  sourceIncident Incident?         @relation("IncidentPromotedCampaign", fields: [sourceIncidentId], references: [id])
+  targets        CampaignTarget[]
+  rollouts       CampaignRollout[]
   // เปล่า ไม่มีอะไรเขียนเข้าจาก module นี้ (ดู comment เหนือ `Task.campaignId`)
   // — เหลือไว้เพราะ Prisma บังคับประกาศทั้ง 2 ฝั่งของ relation
-  tasks    Task[]
+  tasks          Task[]
 }
 
 // CampaignTarget — สมาชิกกลุ่ม (deviceId เฉยๆ ไม่มี status) แยกจากผลของแต่ละ
@@ -1082,6 +1098,11 @@ enum IncidentStatus {
   investigating
   rolled_back
   resolved
+  // ใหม่ (issue #236, Field Incident Report) — Operation ตัดสินใจว่าไม่ใช่
+  // ปัญหาจริง/ซ้ำ ต่างจาก `resolved` (ปัญหาจริง แก้แล้วนอกเหนือ Campaign เช่น
+  // เปลี่ยนฮาร์ดแวร์หน้างาน) — แยกกันเพื่อให้ ST/OT เห็นผลตรงความหมายจริง
+  // ไม่ใช่ "ปิดแล้ว" เหมือนกันหมดทั้งที่ความหมายต่างกัน
+  dismissed
 }
 
 model Incident {
@@ -1101,9 +1122,33 @@ model Incident {
   // รายละเอียดเชิงโครงสร้างเฉพาะ source นั้น (IncidentMetadata — ทุก key optional)
   // FK ที่ schema มีอยู่แล้ว (relatedConfigId/relatedFirmwareId) ไม่ต้องซ้ำที่นี่
   metadata          Json?
+  // ต่อไปนี้เพิ่มใหม่ (issue #236, Field Incident Report) — รองรับ
+  // source: 'field-report' (ST/OT แจ้งปัญหาจากมือถือ) ทุก field เป็น
+  // optional เพราะ incident auto-detect เดิม (config-sync-writer/
+  // mobile-simulator-test) ไม่มีค่าพวกนี้เลย — additive ล้วน ไม่กระทบ
+  // record เก่า
+  //
+  // reportedBy: ST/OT ผู้แจ้ง (null = auto-detect เดิม)
+  reportedBy        String?
+  // deviceId: อุปกรณ์ที่แจ้งปัญหาถึง — string หลวมๆ (Device.deviceId) mirror
+  // Task.deviceId/CampaignTarget.deviceId ไม่ผูก relation ตรงไป Device
+  deviceId          String?
+  // reviewedBy/reviewedAt/reviewNote: Operation ตัดสินใจ (resolve/dismiss/
+  // promote) ผ่าน `POST /incidents/:id/decide` — null จนกว่าจะมีการตัดสินใจ
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  reviewNote        String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  relatedConfig   Config?   @relation(fields: [relatedConfigId], references: [id])
-  relatedFirmware Firmware? @relation(fields: [relatedFirmwareId], references: [id])
+  relatedConfig    Config?   @relation(fields: [relatedConfigId], references: [id])
+  relatedFirmware  Firmware? @relation(fields: [relatedFirmwareId], references: [id])
+  reporter         User?     @relation("IncidentReportedBy", fields: [reportedBy], references: [id])
+  reviewer         User?     @relation("IncidentReviewedBy", fields: [reviewedBy], references: [id])
+  // Campaign ที่เกิดจากการ "promote" รายงานนี้ (ถ้ามี) — FK ตัวจริงอยู่ที่
+  // `Campaign.sourceIncidentId` (ฝั่งนั้นเป็นคน insert ตอนสร้าง Campaign)
+  // ใช้ back-relation แทนการมี scalar column ซ้ำสองฝั่ง — `@unique` บน
+  // `Campaign.sourceIncidentId` ทำให้เป็น 1:1 โดยอัตโนมัติ (incident หนึ่ง
+  // promote ได้ Campaign เดียว กันคำขอ promote ซ้ำสร้าง Campaign คนละตัว)
+  promotedCampaign Campaign? @relation("IncidentPromotedCampaign")
 }

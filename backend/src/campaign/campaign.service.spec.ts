@@ -1,9 +1,21 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Campaign } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, CampaignService } from './campaign.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+
+function makeP2002(): PrismaClientKnownRequestError {
+  return new PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: '6.19.3',
+  });
+}
 
 type CampaignDelegateMock = {
   create: jest.Mock;
@@ -51,6 +63,7 @@ describe('CampaignService', () => {
   let campaign: CampaignDelegateMock;
   let campaignTarget: { createMany: jest.Mock; findMany: jest.Mock };
   let device: { findMany: jest.Mock };
+  let incident: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
 
   beforeEach(async () => {
@@ -68,12 +81,14 @@ describe('CampaignService', () => {
         .fn()
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
     };
+    incident = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
 
     const prismaMock = {
       campaign,
       campaignTarget,
       device,
+      incident,
       auditLog,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
         cb({ campaign, campaignTarget }),
@@ -165,6 +180,84 @@ describe('CampaignService', () => {
       await expect(service.create(baseDto(), operation)).rejects.toThrow(
         ConflictException,
       );
+    });
+
+    describe('sourceIncidentId (issue #236 — promote field report เป็น Campaign)', () => {
+      it('ไม่พบ Incident -> NotFoundException', async () => {
+        incident.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.create(
+            { ...baseDto(), sourceIncidentId: 'inc-1' },
+            operation,
+          ),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('Incident ยังไม่ถูก promote (status ไม่ใช่ investigating) -> ConflictException', async () => {
+        incident.findUnique.mockResolvedValue({
+          id: 'inc-1',
+          status: 'open',
+        });
+
+        await expect(
+          service.create(
+            { ...baseDto(), sourceIncidentId: 'inc-1' },
+            operation,
+          ),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('Incident investigating -> สร้าง Campaign พร้อม sourceIncidentId', async () => {
+        incident.findUnique.mockResolvedValue({
+          id: 'inc-1',
+          status: 'investigating',
+        });
+
+        await service.create(
+          { ...baseDto(), sourceIncidentId: 'inc-1' },
+          operation,
+        );
+
+        expect(campaign.create).toHaveBeenCalledWith({
+          data: {
+            name: 'กลุ่มทดสอบ',
+            description: undefined,
+            createdBy: operation.id,
+            sourceIncidentId: 'inc-1',
+          },
+        });
+      });
+
+      it('race condition — incident ถูก promote เป็น Campaign อื่นไปแล้วพร้อมกัน (P2002) -> ConflictException', async () => {
+        incident.findUnique.mockResolvedValue({
+          id: 'inc-1',
+          status: 'investigating',
+        });
+        campaign.create.mockRejectedValue(makeP2002());
+
+        await expect(
+          service.create(
+            { ...baseDto(), sourceIncidentId: 'inc-1' },
+            operation,
+          ),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('error อื่นที่ไม่ใช่ P2002 -> โยนต่อตรงๆ', async () => {
+        incident.findUnique.mockResolvedValue({
+          id: 'inc-1',
+          status: 'investigating',
+        });
+        campaign.create.mockRejectedValue(new Error('db down'));
+
+        await expect(
+          service.create(
+            { ...baseDto(), sourceIncidentId: 'inc-1' },
+            operation,
+          ),
+        ).rejects.toThrow('db down');
+      });
     });
   });
 
