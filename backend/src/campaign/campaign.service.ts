@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Campaign, CampaignTarget, Device } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 
@@ -79,24 +80,60 @@ export class CampaignService {
       throw new ConflictException(problems.join(' · '));
     }
 
-    const campaign = await this.prisma.$transaction(async (tx) => {
-      const createdCampaign = await tx.campaign.create({
-        data: {
-          name: dto.name,
-          description: dto.description,
-          createdBy: actor.id,
-        },
+    // Field Incident Report (issue #236) — ตรวจก่อนว่า incident ที่อ้างถึง
+    // มีจริง + อยู่ในสถานะที่เพิ่งถูก promote (investigating) เท่านั้น
+    // ป้องกันผูก sourceIncidentId มั่วกับ incident ที่ยังไม่ผ่าน decide เลย
+    // หรือ auto-detect เดิม (ไม่มี flow promote) · `@unique` บน
+    // `Campaign.sourceIncidentId` เป็น backstop กัน race (เช็คตรงนี้ผ่านแล้ว
+    // แต่มีอีกคำขอมาผูก incident เดิมพร้อมกัน) → P2002 ด้านล่าง
+    if (dto.sourceIncidentId) {
+      const incident = await this.prisma.incident.findUnique({
+        where: { id: dto.sourceIncidentId },
       });
+      if (!incident) {
+        throw new NotFoundException(
+          `ไม่พบ Incident id ${dto.sourceIncidentId}`,
+        );
+      }
+      if (incident.status !== 'investigating') {
+        throw new ConflictException(
+          `Incident นี้ยังไม่ได้ถูก promote เป็น Campaign (สถานะปัจจุบัน: ${incident.status})`,
+        );
+      }
+    }
 
-      await tx.campaignTarget.createMany({
-        data: dto.targets.map((target) => ({
-          campaignId: createdCampaign.id,
-          deviceId: target.deviceId,
-        })),
+    let campaign: Campaign;
+    try {
+      campaign = await this.prisma.$transaction(async (tx) => {
+        const createdCampaign = await tx.campaign.create({
+          data: {
+            name: dto.name,
+            description: dto.description,
+            createdBy: actor.id,
+            sourceIncidentId: dto.sourceIncidentId,
+          },
+        });
+
+        await tx.campaignTarget.createMany({
+          data: dto.targets.map((target) => ({
+            campaignId: createdCampaign.id,
+            deviceId: target.deviceId,
+          })),
+        });
+
+        return createdCampaign;
       });
-
-      return createdCampaign;
-    });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          `Incident id ${dto.sourceIncidentId} ถูก promote เป็น Campaign อื่นไปแล้วโดยคำขอที่เกิดขึ้นพร้อมกัน`,
+        );
+      }
+      throw err;
+    }
 
     // AuditLog (CLAUDE.md Audit Pattern) — never-throw เหมือนโมดูล config/device
     await this.logAudit('create', actor.id);

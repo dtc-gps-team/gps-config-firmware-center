@@ -1880,14 +1880,17 @@ paths:
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (RBAC_Matrix.md §2 แถว "Incident &
         Rollback" = R ทุก Role) · filter ทุกตัว optional — ไม่ส่งอะไรมา = คืน
-        ทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน)
+        ทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน) · **v3.47 (Field
+        Incident Report, issue #236):** ST/OT เห็นเฉพาะ field report
+        (`source: field-report`) ของตัวเอง — incident แบบอื่น (auto-detect)
+        ทุก Role ยังเห็นเหมือนเดิมไม่เปลี่ยน (self-scope, mirror `listTasks`)
       parameters:
         - in: query
           name: status
           required: false
           schema:
             type: string
-            enum: [open, investigating, rolled_back, resolved]
+            enum: [open, investigating, rolled_back, resolved, dismissed]
         - in: query
           name: relatedConfigId
           required: false
@@ -1913,12 +1916,47 @@ paths:
           description: ค่า status ไม่อยู่ใน enum หรือ query param ยาวเกินกำหนด
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+    post:
+      tags: [incident]
+      operationId: createFieldIncidentReport
+      summary: ST/OT แจ้งปัญหาที่เจอกับอุปกรณ์หน้างานผ่าน Mobile (Field Incident Report — issue #236, v3.47)
+      description: >-
+        resource `incidents` action `Create` (ใหม่ — เดิมมีแค่ `Read`) · สร้าง
+        Incident สถานะ `open` เสมอ (`source: field-report`, `reportedBy`
+        มาจาก JWT ของผู้แจ้งเอง — client ส่งเองไม่ได้) `deviceId` เป็นเลข
+        เครื่องจริง (`Device.deviceId`) optional เพราะบางครั้งผู้แจ้งอาจยังไม่
+        ทราบ/ไม่ได้ผูกกับอุปกรณ์เครื่องใดเครื่องหนึ่งชัดเจน — แจ้งเตือน
+        Operation ที่ active ทุกคน (`incident_report_pending`, never-throw)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncidentInput"
+      responses:
+        "201":
+          description: แจ้งสำเร็จ — คืน Incident ที่เพิ่งสร้าง (สถานะ `open` เสมอ)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          description: ไม่ส่ง title/description/severity หรือ severity ไม่อยู่ใน enum หรือยาวเกินกำหนด
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แจ้งปัญหา — เฉพาะ Role ST, OT
 
   /incidents/{id}:
     get:
       tags: [incident]
       operationId: getIncident
       summary: ดูรายละเอียด Incident 1 รายการ — v3.18
+      description: >-
+        **v3.47 (issue #236):** ST/OT เปิดดู field report ของคนอื่น (ไม่ใช่
+        ของตัวเอง) ได้ **404** เหมือนไม่มี record นี้อยู่เลย (ไม่ใช่ 403 —
+        IDOR Prevention Pattern กันเปิดเผยว่ามี record นี้จริง) — incident
+        แบบอื่น (auto-detect) ทุก Role เห็นเหมือนเดิม
       parameters:
         - in: path
           name: id
@@ -1936,7 +1974,61 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
-          description: ไม่พบ Incident นี้
+          description: ไม่พบ Incident นี้ หรือเป็น field report ของคนอื่น (self-scope)
+
+  /incidents/{id}/decide:
+    post:
+      tags: [incident]
+      operationId: decideFieldIncidentReport
+      summary: Operation ตัดสินใจ field report ที่ยัง open (Field Incident Report — issue #236, v3.47)
+      description: >-
+        resource `incidents` action `Approve` (ไม่สร้าง action ใหม่ —
+        `ActionType` เป็น Prisma enum จริง ทุกจุดที่ Operation ตัดสินใจใน
+        ระบบนี้ใช้ `Approve` ตัวเดียวกันเสมอไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ
+        mirror `approveDeviceConfigOverride`) ใช้ได้เฉพาะ Incident ที่
+        `source: field-report` และยังเป็น `status: open` เท่านั้น — `outcome`
+        มี 3 แบบ: `resolve` (แก้ปัญหาจริงแล้วนอกเหนือ Campaign →
+        `status: resolved`), `dismiss` (ไม่ใช่ปัญหาจริง/ซ้ำ →
+        `status: dismissed`), `promote` (ต้องแก้ด้วย Campaign →
+        `status: investigating` คืน `device.deviceModel`/`device.protocol`
+        ให้เอาไปกรอกต่อใน `POST /campaigns` พร้อม `sourceIncidentId` — **ไม่
+        เดา Config/Firmware ให้** เพราะ report มีแค่คำอธิบายอิสระ) `note`
+        บังคับกรอกเสมอไม่ว่า outcome ไหน · แจ้งเตือนผู้รายงาน
+        (`incident_report_resolved`/`_dismissed`/`_promoted`, never-throw)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideIncidentInput"
+      responses:
+        "200":
+          description: >-
+            ตัดสินใจสำเร็จ — คืน Incident ที่อัปเดตแล้วพร้อม `device`
+            (ไม่ null เฉพาะ outcome `promote` ที่มี `deviceId` ผูกอยู่และ
+            อุปกรณ์เครื่องนั้นยังมีอยู่จริง)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentDecisionResult"
+        "400":
+          description: ไม่ส่ง note มา หรือ outcome ไม่อยู่ใน enum (resolve/dismiss/promote)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ตัดสินใจ field report — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Incident นี้ หรือไม่ใช่ field report (`source` อื่น ใช้ Rollback แทน)
+        "409":
+          description: >-
+            Incident นี้ถูกตัดสินใจไปแล้ว (ไม่ใช่ `status: open` อีกต่อไป)
 
   /audit-logs:
     get:
@@ -2286,7 +2378,11 @@ paths:
         แทน เพราะกลุ่มหนึ่ง push payload ได้หลายรอบตลอดอายุการใช้งาน) **ไม่สร้าง
         Task/มอบหมายงานให้ช่างหน้างาน** (แก้ไข 2026-09-14 — การมอบหมายงานเป็น
         หน้าที่ของระบบแยกที่บริษัทมีอยู่แล้ว) · **MVP:** สมาชิกกลุ่ม fix ตอน
-        สร้างเท่านั้น ยังไม่มี endpoint เพิ่ม/ลบทีหลัง
+        สร้างเท่านั้น ยังไม่มี endpoint เพิ่ม/ลบทีหลัง · **v3.47 (promote
+        field report, issue #236):** รับ `sourceIncidentId` optional — ผูก
+        Campaign นี้กับ Incident ที่เพิ่งถูก `decide(outcome: promote)` (ต้อง
+        เป็น `status: investigating` เท่านั้น ไม่งั้น 409) ผูกซ้ำ incident
+        เดิมกับ Campaign อื่นไม่ได้ (unique — 409 ถ้าชนกัน)
       requestBody:
         required: true
         content:
@@ -2306,10 +2402,14 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
+        "404":
+          description: "ส่ง sourceIncidentId มาแต่ไม่พบ Incident นี้ (v3.47)"
         "409":
           description: >-
             อุปกรณ์เป้าหมายบางเครื่องไม่พบ หรือยังไม่ installed (รวมทุกปัญหา
-            ไว้ในข้อความเดียว)
+            ไว้ในข้อความเดียว) · หรือ sourceIncidentId ที่ส่งมายังไม่ได้ถูก
+            promote (ไม่ใช่ status investigating) หรือถูกผูกกับ Campaign อื่น
+            ไปแล้ว (v3.47)
 
   /campaigns/rollouts:
     get:
@@ -3060,6 +3160,14 @@ components:
         updatedAt:
           type: string
           format: date-time
+        sourceIncidentId:
+          type: string
+          nullable: true
+          format: uuid
+          description: >-
+            Incident ที่ถูก promote มาเป็น Campaign นี้ (v3.47, issue #236) —
+            `null` ถ้าสร้างปกติไม่ได้มาจากการ promote field report · unique
+            (1 incident ผูกกับ Campaign เดียวเท่านั้น)
 
     CampaignTargetInput:
       type: object
@@ -3095,6 +3203,13 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/CampaignTargetInput"
+        sourceIncidentId:
+          type: string
+          format: uuid
+          description: >-
+            optional (v3.47, issue #236) — ผูก Campaign นี้กับ Incident ที่
+            เพิ่งถูก `decide(outcome: promote)` ดู response 404/409 ของ
+            `createCampaign`
 
     CampaignTarget:
       type: object
@@ -4263,9 +4378,10 @@ components:
     Incident:
       type: object
       description: >-
-        เหตุการณ์ผิดปกติ 1 รายการ (ตรงกับ Prisma model Incident) — รอบนี้
-        สร้างอัตโนมัติจาก config-sync-writer เท่านั้น (source =
-        'config-sync-writer') ช่องทางสร้างอื่นยังไม่เปิด
+        เหตุการณ์ผิดปกติ 1 รายการ (ตรงกับ Prisma model Incident) — เดิมสร้าง
+        อัตโนมัติจาก config-sync-writer เท่านั้น (source = 'config-sync-writer')
+        **v3.47 (Field Incident Report, issue #236):** เพิ่มช่องทางสร้างที่สอง
+        — ST/OT แจ้งเองผ่าน `POST /incidents` (source = 'field-report')
       required: [id, title, severity, status, createdAt, updatedAt]
       properties:
         id:
@@ -4281,17 +4397,48 @@ components:
           enum: [critical, high, medium, low]
         status:
           type: string
-          enum: [open, investigating, rolled_back, resolved]
+          enum: [open, investigating, rolled_back, resolved, dismissed]
+          description: >-
+            `dismissed` ใหม่ (v3.47) — เฉพาะ field report (`source:
+            field-report`) ที่ Operation ตัดสินว่าไม่ใช่ปัญหาจริง/ซ้ำ ต่างจาก
+            `resolved` (เป็นปัญหาจริงและแก้แล้ว) — incident auto-detect เดิม
+            ไม่มีทางได้สถานะนี้
         relatedConfigId:
           type: string
           nullable: true
         relatedFirmwareId:
           type: string
           nullable: true
+        deviceId:
+          type: string
+          nullable: true
+          description: >-
+            เลขเครื่องจริง (`Device.deviceId`, v3.47) — เป็น loose string ไม่มี
+            FK relation (mirror `Task.deviceId`) optional ทั้งสร้าง (ผู้แจ้ง
+            อาจไม่ได้ผูกกับอุปกรณ์เครื่องใดชัดเจน)
         source:
           type: string
           nullable: true
+          enum: [config-sync-writer, mobile-simulator-test, field-report]
           example: config-sync-writer
+        reportedBy:
+          type: string
+          nullable: true
+          description: >-
+            userId ของ ST/OT ที่แจ้ง (v3.47) — มีค่าเฉพาะ `source: field-report`
+            เท่านั้น มาจาก JWT เสมอ client กำหนดเองไม่ได้
+        reviewedBy:
+          type: string
+          nullable: true
+          description: userId ของ Operation ที่ตัดสินใจ field report นี้ (v3.47)
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reviewNote:
+          type: string
+          nullable: true
+          description: เหตุผล/บันทึกของ Operation ตอนตัดสินใจ (v3.47) — บังคับกรอกเสมอตอน decide
         metadata:
           type: object
           nullable: true
@@ -4302,6 +4449,75 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    CreateIncidentInput:
+      type: object
+      description: >-
+        Body ของ `POST /incidents` (issue #236, v3.47) — **ไม่รับ**
+        `reportedBy`/`source`/`status` จาก client เลย (ValidationPipe
+        `forbidNonWhitelisted` ปฏิเสธ 400 ถ้าส่งมา) `status` fix เป็น `open`
+        เสมอ `reportedBy` มาจาก JWT เท่านั้น
+      required: [title, description, severity]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        deviceId:
+          type: string
+          maxLength: 100
+          description: เลขเครื่องจริง (`Device.deviceId`) — optional
+
+    DecideIncidentInput:
+      type: object
+      description: >-
+        Body ของ `POST /incidents/{id}/decide` (issue #236, v3.47) — `note`
+        บังคับกรอกเสมอไม่ว่า outcome ไหน (mirror pattern "ทุก
+        override/decision ต้องมีเหตุผล")
+      required: [outcome, note]
+      properties:
+        outcome:
+          type: string
+          enum: [resolve, dismiss, promote]
+        note:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    IncidentDecisionResult:
+      type: object
+      description: >-
+        ผลของ `POST /incidents/{id}/decide` (v3.47) — `Incident` ที่อัปเดต
+        แล้ว + `device` เพิ่มเติม
+      allOf:
+        - $ref: "#/components/schemas/Incident"
+        - type: object
+          required: [device]
+          properties:
+            device:
+              type: object
+              nullable: true
+              description: >-
+                มีค่าเฉพาะ outcome `promote` ที่มี `deviceId` ผูกอยู่**และ**
+                อุปกรณ์เครื่องนั้นยังมีอยู่จริง (ไม่ถูกปลดระวาง/ลบ) — ให้
+                Operation เอา `deviceModel`/`protocol` ไปกรอกต่อใน
+                `POST /campaigns` ได้ทันที **ไม่มี field แนะนำ
+                Config/Firmware** เพราะระบบไม่รู้จริงว่าปัญหาคืออะไร
+              required: [deviceId, deviceModel, protocol]
+              properties:
+                deviceId:
+                  type: string
+                deviceModel:
+                  type: string
+                protocol:
+                  type: string
 
     DeviceStatus:
       type: object
@@ -4402,6 +4618,15 @@ components:
             - firmware_override_pending
             - firmware_override_approved
             - firmware_override_rejected
+            # เพิ่มใหม่ (v3.47 — Field Incident Report, issue #236): แจ้ง
+            # Operation ทุกคนตอนมี field report ใหม่ (_pending) + แจ้ง ST/OT
+            # ผู้แจ้งตอน Operation ตัดสินใจแล้ว (_resolved/_dismissed/_promoted
+            # ตาม outcome — ไม่ mirror pattern 3 ค่าเดิมตรงๆ เพราะ decide มี
+            # ผลลัพธ์ได้ 3 แบบ ไม่ใช่ 2 แบบเหมือน override)
+            - incident_report_pending
+            - incident_report_resolved
+            - incident_report_dismissed
+            - incident_report_promoted
         payload:
           type: object
           additionalProperties: true

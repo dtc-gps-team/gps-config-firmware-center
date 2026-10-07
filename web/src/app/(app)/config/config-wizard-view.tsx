@@ -93,7 +93,7 @@ function SourcedWizard({
   if (requireDraft && data.status !== "draft") {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Config นี้อยู่สถานะ <strong>{data.status}</strong> — แก้ไขได้เฉพาะสถานะ
+        Config นี้อยู่สถานะ <strong>{data.status}</strong> แก้ไขได้เฉพาะสถานะ
         draft เท่านั้น
       </div>
     );

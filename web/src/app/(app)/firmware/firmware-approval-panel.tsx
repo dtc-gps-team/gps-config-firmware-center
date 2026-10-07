@@ -40,7 +40,7 @@ export function FirmwareApprovalPanel({
       <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ QA Engineer ตรวจคุณภาพ</p>
         <p className="text-sm text-muted-foreground">
-          Firmware เวอร์ชันนี้ยังไม่ได้รับการอนุมัติคุณภาพ — เฉพาะ QA Engineer
+          Firmware เวอร์ชันนี้ยังไม่ได้รับการอนุมัติคุณภาพ เฉพาะ QA Engineer
           เท่านั้นที่อนุมัติ/ปฏิเสธได้
         </p>
       </Card>
@@ -80,8 +80,8 @@ export function FirmwareApprovalPanel({
     <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติคุณภาพ Firmware</p>
       <p className="text-sm text-muted-foreground">
-        ดูผลทดสอบด้านบนก่อนตัดสินใจ — อนุมัติแล้วใช้สร้างแคมเปญได้ทันที
-        ปฏิเสธแล้ว Firmware Engineer ต้องอัปโหลดเวอร์ชันใหม่แก้ไข
+        ดูผลทดสอบด้านบนก่อนตัดสินใจ อนุมัติแล้วใช้สร้างแคมเปญได้ทันที
+        ส่วนปฏิเสธแล้ว Firmware Engineer ต้องอัปโหลดเวอร์ชันใหม่แก้ไข
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}
 

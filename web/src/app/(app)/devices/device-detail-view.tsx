@@ -100,14 +100,13 @@ function DeviceDetailContent({ device }: { device: Device }) {
             {formatDateTime(device.registeredAt)}
           </InfoRow>
           <InfoRow label="ติดตั้งเมื่อ" icon={CalendarCheckIcon}>
-            {device.installedAt ? formatDateTime(device.installedAt) : "—"}
+            {device.installedAt ? formatDateTime(device.installedAt) : "-"}
           </InfoRow>
         </div>
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        สถานะ Config / Firmware ของกล่อง (เทียบเวอร์ชันกับ data กลาง)
-        ยังไม่รองรับ — รอ endpoint <code>GET /devices/{"{deviceId}"}/status</code>
+        สถานะ Config / Firmware ของกล่อง (เทียบเวอร์ชันกับ data กลาง) ยังไม่รองรับในตอนนี้
       </p>
     </div>
   );

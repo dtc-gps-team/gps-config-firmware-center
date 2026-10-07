@@ -117,7 +117,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         <Card className="gap-4 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">
-              สถานะล่าสุด — {latestRollout.payloadType}
+              สถานะล่าสุด: {latestRollout.payloadType}
             </p>
             <StatusPill
               tone={CAMPAIGN_ROLLOUT_STATUS_TONE[latestRollout.status] ?? "neutral"}
@@ -235,7 +235,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         </div>
         {hasOpenRollout && (
           <p className="text-xs text-muted-foreground">
-            กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว — ต้องรอให้จบก่อน
+            กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว ต้องรอให้จบก่อน
             (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้
           </p>
         )}

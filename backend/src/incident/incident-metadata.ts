@@ -34,6 +34,9 @@ export interface IncidentMetadata {
 export const INCIDENT_SOURCE = {
   configSyncWriter: 'config-sync-writer',
   mobileSimulatorTest: 'mobile-simulator-test',
+  // เพิ่มใหม่ (issue #236) — ST/OT แจ้งปัญหาที่เจอกับอุปกรณ์เองผ่าน Mobile
+  // (ไม่ใช่ auto-detect เหมือน 2 ค่าข้างบน) ดู `createFieldReport()`
+  fieldReport: 'field-report',
 } as const;
 
 export type IncidentSource =

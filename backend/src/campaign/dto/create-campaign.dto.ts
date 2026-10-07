@@ -44,4 +44,16 @@ export class CreateCampaignDto {
   @ValidateNested({ each: true })
   @Type(() => CreateCampaignTargetDto)
   targets!: CreateCampaignTargetDto[];
+
+  /** `Incident.id` ของ field report ที่ Operation "promote" มาเป็น Campaign
+   * นี้ (issue #236) — optional, ส่งมาเฉพาะตอนสร้างจาก flow promote เท่านั้น
+   * validate ว่า incident นั้นมีจริง + `status: investigating` (แปลว่าเพิ่ง
+   * ถูก decide ด้วย outcome `promote`) + ยังไม่เคยผูกกับ Campaign อื่นมาก่อน
+   * (`Campaign.sourceIncidentId` เป็น `@unique` — P2002 เป็น backstop กัน
+   * race condition) — ไม่บังคับว่าต้องส่ง deviceId ของ incident นั้นเข้า
+   * `targets` ด้วย (Operation อาจเลือกกลุ่มอุปกรณ์กว้างกว่าแค่เครื่องเดียว
+   * ที่รายงานปัญหาก็ได้ เป็นดุลยพินิจของ Operation) */
+  @IsOptional()
+  @IsString()
+  sourceIncidentId?: string;
 }
