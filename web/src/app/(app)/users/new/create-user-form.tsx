@@ -92,59 +92,63 @@ export function CreateUserForm() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-username">Username</Label>
-        <Input
-          id="user-username"
-          value={username}
-          disabled={submitting}
-          placeholder="เช่น config2.test"
-          onChange={(e) => setUsername(e.target.value)}
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-username">Username</Label>
+          <Input
+            id="user-username"
+            value={username}
+            disabled={submitting}
+            placeholder="เช่น config2.test"
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
+          <Input
+            id="user-fullname"
+            value={fullName}
+            disabled={submitting}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
-        <Input
-          id="user-fullname"
-          value={fullName}
-          disabled={submitting}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
+          <Input
+            id="user-password"
+            type="text"
+            value={password}
+            disabled={submitting}
+            placeholder="อย่างน้อย 8 ตัวอักษร"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
+          </p>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
-        <Input
-          id="user-password"
-          type="text"
-          value={password}
-          disabled={submitting}
-          placeholder="อย่างน้อย 8 ตัวอักษร"
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label>Role</Label>
-        <Select
-          value={role}
-          onValueChange={(value) => setRole(value ?? MANAGEABLE_ROLE_CODES[0])}
-        >
-          <SelectTrigger className="w-full" disabled={submitting}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MANAGEABLE_ROLE_CODES.map((code) => (
-              <SelectItem key={code} value={code}>
-                {code}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-1.5">
+          <Label>Role</Label>
+          <Select
+            value={role}
+            onValueChange={(value) => setRole(value ?? MANAGEABLE_ROLE_CODES[0])}
+          >
+            <SelectTrigger className="w-full" disabled={submitting}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MANAGEABLE_ROLE_CODES.map((code) => (
+                <SelectItem key={code} value={code}>
+                  {code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {formError && (

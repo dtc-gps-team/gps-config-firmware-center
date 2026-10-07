@@ -133,31 +133,33 @@ export function UploadFirmwareForm() {
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="firmware-version">เวอร์ชัน</Label>
-        <Input
-          id="firmware-version"
-          value={version}
-          disabled={submitting}
-          placeholder="เช่น 2.4.1"
-          onChange={(e) => setVersion(e.target.value)}
-        />
-      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="firmware-version">เวอร์ชัน</Label>
+          <Input
+            id="firmware-version"
+            value={version}
+            disabled={submitting}
+            placeholder="เช่น 2.4.1"
+            onChange={(e) => setVersion(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="firmware-device-model">
-          รุ่นอุปกรณ์ (compatibility tag เริ่มต้น)
-        </Label>
-        <Input
-          id="firmware-device-model"
-          value={deviceModel}
-          disabled={submitting}
-          placeholder="เช่น GT06N"
-          onChange={(e) => setDeviceModel(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          เพิ่มรุ่นอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="firmware-device-model">
+            รุ่นอุปกรณ์ (compatibility tag เริ่มต้น)
+          </Label>
+          <Input
+            id="firmware-device-model"
+            value={deviceModel}
+            disabled={submitting}
+            placeholder="เช่น GT06N"
+            onChange={(e) => setDeviceModel(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            เพิ่มรุ่นอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
+          </p>
+        </div>
       </div>
 
       {formError && (

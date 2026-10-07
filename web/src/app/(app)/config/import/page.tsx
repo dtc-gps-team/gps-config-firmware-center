@@ -20,7 +20,7 @@ export const metadata = {
  */
 export default function ConfigImportPage() {
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link
           href="/config"
