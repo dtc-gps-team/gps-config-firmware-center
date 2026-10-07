@@ -213,7 +213,7 @@ export function CampaignRolloutCreateForm({
             : {}),
         },
       );
-      toast.success("เริ่ม Rollout แล้ว — รอ Operation อีกคนอนุมัติ");
+      toast.success("เริ่ม Rollout แล้ว รอ Operation อีกคนอนุมัติ");
       router.push(`/campaigns/${campaignId}/rollouts/${created.id}`);
       router.refresh();
     } catch (err) {
@@ -301,7 +301,7 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-config" className="w-full">
-                <SelectValue placeholder="— เลือก —" />
+                <SelectValue placeholder="- เลือก -" />
               </SelectTrigger>
               <SelectContent>
                 {eligibleConfigs.map((c: Config) => (
@@ -328,12 +328,12 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-firmware" className="w-full">
-                <SelectValue placeholder="— เลือก —" />
+                <SelectValue placeholder="- เลือก -" />
               </SelectTrigger>
               <SelectContent>
                 {eligibleFirmware.map((f: Firmware) => (
                   <SelectItem key={f.id} value={f.id}>
-                    v{f.version} — รองรับ: {f.deviceModelCompatibility.join(", ")}
+                    v{f.version}: รองรับ {f.deviceModelCompatibility.join(", ")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -404,7 +404,7 @@ export function CampaignRolloutCreateForm({
                       <TableCell className="text-muted-foreground">
                         {device
                           ? `${device.deviceModel} / ${device.protocol}`
-                          : "—"}
+                          : "-"}
                       </TableCell>
                     </TableRow>
                   );
@@ -420,7 +420,7 @@ export function CampaignRolloutCreateForm({
             {payloadType === "Config"
               ? "รุ่น/โปรโตคอลไม่ตรงกับ Config นี้"
               : "รุ่นไม่อยู่ในรายการที่ Firmware นี้รองรับ"}{" "}
-            — ระบบจะปฏิเสธตอนยืนยัน เอาออกหรือเปลี่ยน
+            ระบบจะปฏิเสธตอนยืนยัน เอาออกหรือเปลี่ยน
             {payloadType === "Config" ? "Config" : "Firmware"}ก่อน
           </div>
         )}

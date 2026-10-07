@@ -155,7 +155,7 @@ export function FirmwareTableCard({
     <Card>
       {justUploaded && (
         <div className="mx-6 -mb-2 flex flex-wrap items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-          อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว —
+          อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว
           สถานะ{" "}
           <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ?? "neutral"}>
             {statusLabel(justUploaded.uploadStatus)}

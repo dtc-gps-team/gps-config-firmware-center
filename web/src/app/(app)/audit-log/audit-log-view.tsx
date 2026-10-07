@@ -67,7 +67,7 @@ export function AuditLogView() {
         <div>
           <h1 className="text-2xl font-semibold">Audit Log</h1>
           <p className="text-sm text-muted-foreground">
-            ดูได้อย่างเดียวทุก Role ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer (RBAC_Matrix.md Section 2)
+            ดูได้อย่างเดียวทุก Role ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer
           </p>
         </div>
 
@@ -78,7 +78,7 @@ export function AuditLogView() {
               <span className="text-muted-foreground">({rows.length})</span>
             </CardTitle>
             <CardDescription>
-              เรียงจากล่าสุด — เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
+              เรียงจากล่าสุด เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
               อนุมัติ/ปฏิเสธ/นำ Config ไปใช้) ไม่รวมการดูอย่างเดียว
             </CardDescription>
             {/* useAuditLogs ดึงล่าสุดให้เองแล้วตอนกลับมาโฟกัสแท็บ (useRefetchOnFocus)

@@ -80,8 +80,7 @@ export function IncidentsView() {
             <span className="text-muted-foreground">({rows.length})</span>
           </CardTitle>
           <CardDescription>
-            สร้างอัตโนมัติจากระบบ (ตอนนี้มาจาก config-sync-writer เท่านั้น) —
-            เรียงจากล่าสุด
+            สร้างอัตโนมัติจากระบบเมื่อตรวจพบปัญหา เรียงจากล่าสุด
           </CardDescription>
           <CardAction>
             <Button

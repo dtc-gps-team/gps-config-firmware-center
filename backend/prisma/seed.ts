@@ -386,6 +386,12 @@ async function main() {
     // RBAC_Matrix.md §2 แถว "Incident & Rollback" = R ทุกคอลัมน์ (SW/Operation/
     // ST/OT/Auditor/Admin/SuperAdmin) · Create/Update ยังไม่เปิดผ่าน API
     ...ALL_ROLE_CODES.map((roleCode) => grant(roleCode, 'incidents', 'Read')),
+    // Field Incident Report (issue #236) — ST/OT แจ้งปัญหาเองผ่าน Mobile,
+    // Operation ตัดสินใจ (resolve/dismiss/promote) — action `Approve` ไม่ใช่
+    // action ใหม่ (ดู comment เหนือ IncidentService.decide())
+    grant('ST', 'incidents', 'Create'),
+    grant('OT', 'incidents', 'Create'),
+    grant('Operation', 'incidents', 'Approve'),
 
     // ---- audit-logs (GET /audit-logs — Sprint 3 #27) ----
     // RBAC_Matrix.md §2 แถว "Audit Log" = R ทุก Role ยกเว้น ConfigEngineer/
