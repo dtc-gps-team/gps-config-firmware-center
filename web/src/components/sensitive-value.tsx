@@ -66,7 +66,7 @@ export function SensitiveValue({ value }: { value: unknown }) {
   const [show, setShow] = useState(false);
   const isEmpty = value === null || value === undefined || value === "";
   if (isEmpty) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="text-muted-foreground">-</span>;
   }
   const display = formatSensitiveValue(value);
   return (

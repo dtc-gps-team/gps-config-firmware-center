@@ -55,7 +55,7 @@ export function CampaignRolloutApprovalPanel({
       <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อนุมัติ</p>
         <p className="text-sm text-muted-foreground">
-          Rollout นี้ยังไม่ได้รับการอนุมัติ — เฉพาะ Operation
+          Rollout นี้ยังไม่ได้รับการอนุมัติ เฉพาะ Operation
           เท่านั้นที่อนุมัติ/ปฏิเสธได้
         </p>
       </Card>
@@ -67,7 +67,7 @@ export function CampaignRolloutApprovalPanel({
       <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อีกคนอนุมัติ</p>
         <p className="text-sm text-muted-foreground">
-          คุณเป็นผู้สร้าง Rollout นี้ — อนุมัติ/ปฏิเสธของตัวเองไม่ได้
+          คุณเป็นผู้สร้าง Rollout นี้ อนุมัติ/ปฏิเสธของตัวเองไม่ได้
           (Separation of Duty) ต้องรอ Operation คนอื่นตัดสินใจ
         </p>
       </Card>
@@ -113,7 +113,7 @@ export function CampaignRolloutApprovalPanel({
     <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติ Rollout</p>
       <p className="text-sm text-muted-foreground">
-        อนุมัติแล้วยังไม่แตะอุปกรณ์ — ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
+        อนุมัติแล้วยังไม่แตะอุปกรณ์ ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
         อีกขั้นถึงจะเริ่มทำงานจริง ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}

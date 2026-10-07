@@ -42,7 +42,7 @@ export function IncidentActions() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          ยังไม่รองรับ — รอ endpoint แก้ไขเชิงเทคนิค (ยังไม่มีใน spec)
+          ยังไม่รองรับ รอ endpoint แก้ไขเชิงเทคนิค (ยังไม่มีใน spec)
         </TooltipContent>
       </Tooltip>
     </div>

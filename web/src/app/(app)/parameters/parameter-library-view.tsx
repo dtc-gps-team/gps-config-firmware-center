@@ -91,7 +91,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
       row.original.unit ? (
         row.original.unit
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   },
   {
@@ -106,7 +106,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
           ST override ได้
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   },
   {
@@ -121,7 +121,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
           Sensitive
         </span>
       ) : (
-        <span className="text-muted-foreground">—</span>
+        <span className="text-muted-foreground">-</span>
       ),
   },
   {

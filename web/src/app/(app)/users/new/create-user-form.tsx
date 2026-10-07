@@ -124,7 +124,7 @@ export function CreateUserForm() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <p className="text-xs text-muted-foreground">
-          แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง — ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
+          แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
         </p>
       </div>
 

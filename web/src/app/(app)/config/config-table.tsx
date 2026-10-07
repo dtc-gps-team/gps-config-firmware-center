@@ -107,7 +107,7 @@ export function ConfigTableCard({
       {savedConfig && !dismissedBanner && (
         <div className="mx-6 -mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
           <span className="flex flex-wrap items-center gap-1">
-            บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว — สถานะ{" "}
+            บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว สถานะ{" "}
             <StatusPill tone={CONFIG_STATUS_TONE[savedConfig.status] ?? "neutral"}>
               {statusLabel(savedConfig.status)}
             </StatusPill>

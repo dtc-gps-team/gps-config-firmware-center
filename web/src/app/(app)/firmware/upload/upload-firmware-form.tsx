@@ -63,7 +63,7 @@ export function UploadFirmwareForm() {
     if (picked && picked.size > MAX_FILE_BYTES) {
       setFile(null);
       setFormError(
-        `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} — เกินขนาดที่ระบบรับ`,
+        `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} เกินขนาดที่ระบบรับ`,
       );
       return;
     }
@@ -98,7 +98,7 @@ export function UploadFirmwareForm() {
       setSubmitting(false);
       if (err instanceof ApiError) {
         if (err.statusCode === 413) {
-          const message = `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} — เกินขนาดที่ระบบรับ`;
+          const message = `ไฟล์ใหญ่เกิน ${formatFileSize(MAX_FILE_BYTES)} เกินขนาดที่ระบบรับ`;
           setFormError(message);
           toast.error(message);
           return;

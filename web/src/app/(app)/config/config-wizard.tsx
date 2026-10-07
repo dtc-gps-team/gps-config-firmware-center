@@ -469,7 +469,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
               onValueChange={(value) => changeDeviceModel(value ?? "")}
             >
               <SelectTrigger id="config-device-model" className="w-full">
-                <SelectValue placeholder="— เลือก —" />
+                <SelectValue placeholder="- เลือก -" />
               </SelectTrigger>
               <SelectContent>
                 {deviceModelOptions.map((m) => (
@@ -489,7 +489,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
               onValueChange={(value) => changeProtocol(value ?? "")}
             >
               <SelectTrigger id="config-protocol" className="w-full">
-                <SelectValue placeholder="— เลือก —" />
+                <SelectValue placeholder="- เลือก -" />
               </SelectTrigger>
               <SelectContent>
                 {protocolOptions.map((p) => (
@@ -503,7 +503,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           {editing && (
             <p className="text-xs text-muted-foreground">
-              แก้รุ่น/โปรโตคอลไม่ได้หลังสร้างแล้ว — ถ้าเลือกผิด ให้ลบ draft
+              แก้รุ่น/โปรโตคอลไม่ได้หลังสร้างแล้ว ถ้าเลือกผิด ให้ลบ draft
               แล้วสร้างใหม่
             </p>
           )}
@@ -751,7 +751,7 @@ function TemplateRow({
             onValueChange={(v) => onChange(v ?? "")}
           >
             <SelectTrigger id={id} className="w-full" aria-invalid={missing ? true : undefined}>
-              <SelectValue placeholder="— เลือก —" />
+              <SelectValue placeholder="- เลือก -" />
             </SelectTrigger>
             <SelectContent>
               {def.allowedValues.map((v) => (

@@ -44,7 +44,7 @@ const columns: ColumnDef<Campaign>[] = [
     enableGlobalFilter: false,
     cell: ({ row }) => (
       <span className="text-muted-foreground">
-        {row.original.description ?? "—"}
+        {row.original.description ?? "-"}
       </span>
     ),
   },

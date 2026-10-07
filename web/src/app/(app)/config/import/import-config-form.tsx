@@ -142,7 +142,7 @@ export function ImportConfigForm() {
     if (picked.size > MAX_FILE_BYTES) {
       setParse({
         ok: false,
-        error: "ไฟล์ใหญ่เกิน 1MB — เกินขนาดที่ระบบรับ",
+        error: "ไฟล์ใหญ่เกิน 1MB เกินขนาดที่ระบบรับ",
       });
       return;
     }
@@ -163,7 +163,7 @@ export function ImportConfigForm() {
       setSubmitting(false);
       if (err instanceof ApiError) {
         if (err.statusCode === 409) {
-          const message = `${err.message} — เปลี่ยนค่า "name" ในไฟล์แล้วลองใหม่`;
+          const message = `${err.message} เปลี่ยนค่า "name" ในไฟล์แล้วลองใหม่`;
           setFormError(message);
           toast.error(message);
           return;
@@ -213,19 +213,19 @@ export function ImportConfigForm() {
           <p className="font-medium">ตรวจไฟล์ก่อนนำเข้า</p>
           <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-muted-foreground">
             <dt>ชื่อ</dt>
-            <dd className="text-foreground">{preview.name ?? "—"}</dd>
+            <dd className="text-foreground">{preview.name ?? "-"}</dd>
             <dt>รุ่นอุปกรณ์</dt>
-            <dd className="text-foreground">{preview.deviceModel ?? "—"}</dd>
+            <dd className="text-foreground">{preview.deviceModel ?? "-"}</dd>
             <dt>โปรโตคอล</dt>
-            <dd className="text-foreground">{preview.protocol ?? "—"}</dd>
+            <dd className="text-foreground">{preview.protocol ?? "-"}</dd>
             <dt>จำนวน field</dt>
             <dd className="text-foreground">
-              {preview.fieldCount ?? "—"}
+              {preview.fieldCount ?? "-"}
             </dd>
           </dl>
           {preview.missing.length > 0 && (
             <p className="text-destructive">
-              ไฟล์ยังขาด: {preview.missing.join(", ")} — backend จะปฏิเสธถ้าไม่ครบ
+              ไฟล์ยังขาด: {preview.missing.join(", ")}, backend จะปฏิเสธถ้าไม่ครบ
             </p>
           )}
         </div>

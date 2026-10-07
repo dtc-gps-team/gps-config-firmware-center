@@ -96,7 +96,7 @@ export function CampaignRolloutDetailView({
           ← กลับไปหน้ากลุ่ม
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">Rollout — {data.payloadType}</h1>
+          <h1 className="text-2xl font-semibold">Rollout: {data.payloadType}</h1>
           <StatusPill
             tone={CAMPAIGN_ROLLOUT_STATUS_TONE[data.status] ?? "neutral"}
           >
@@ -134,10 +134,10 @@ export function CampaignRolloutDetailView({
         <div className="divide-y">
           <InfoRow label="Payload" icon={PackageIcon}>
             {data.payloadType === "Config"
-              ? (configQuery.data?.name ?? data.configId ?? "—")
+              ? (configQuery.data?.name ?? data.configId ?? "-")
               : firmwareQuery.data
                 ? `v${firmwareQuery.data.version}`
-                : (data.firmwareId ?? "—")}
+                : (data.firmwareId ?? "-")}
           </InfoRow>
           <InfoRow label="จำนวนเป้าหมาย" icon={TargetIcon}>
             {data.targetCount}
@@ -207,7 +207,7 @@ export function CampaignRolloutDetailView({
                       </StatusPill>
                     </TableCell>
                     <TableCell className="max-w-xs truncate text-muted-foreground">
-                      {target.resultDetail ?? "—"}
+                      {target.resultDetail ?? "-"}
                     </TableCell>
                     <TableCell
                       className="text-right text-muted-foreground"

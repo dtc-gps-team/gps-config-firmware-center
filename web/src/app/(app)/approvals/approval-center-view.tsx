@@ -76,14 +76,13 @@ export function ApprovalCenterView() {
       <div>
         <h1 className="text-2xl font-semibold">Approval Center</h1>
         <p className="text-sm text-muted-foreground">
-          Config ที่ผ่านการทดสอบแล้ว และ Campaign Rollout ที่เพิ่งเริ่ม — รอ
+          Config ที่ผ่านการทดสอบแล้ว และ Campaign Rollout ที่เพิ่งเริ่ม รอ
           Operation อนุมัติ ·{" "}
           {canDecide
             ? "คุณอนุมัติ/ปฏิเสธได้"
-            : "เฉพาะ Operation ที่อนุมัติ/ปฏิเสธได้ — คุณดูได้อย่างเดียว"}{" "}
+            : "เฉพาะ Operation ที่อนุมัติ/ปฏิเสธได้ คุณดูได้อย่างเดียว"}{" "}
           · รวมคิว Per-device Config Override และ Firmware Override ไว้เป็น
-          section แยกด้านล่าง (คนละเรื่องกับ Config ทั้งชุดด้านบน — issue #223,
-          Sprint 3 แถวที่ 24)
+          section แยกด้านล่าง (คนละเรื่องกับ Config ทั้งชุดด้านบน)
         </p>
       </div>
 
@@ -211,7 +210,7 @@ export function ApprovalCenterView() {
                 onDecided={(updated) => {
                   setNotice(
                     updated.status === "approved"
-                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว — ไปที่หน้ากลุ่มหรือหน้า Rollout เพื่อกดปล่อยเข้าอุปกรณ์เมื่อพร้อม`
+                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว ไปที่หน้ากลุ่มหรือหน้า Rollout เพื่อกดปล่อยเข้าอุปกรณ์เมื่อพร้อม`
                       : `ปฏิเสธ Rollout ของ "${item.campaignName}" แล้ว`,
                   );
                   void rolloutsQuery.refetch();
@@ -233,7 +232,7 @@ export function ApprovalCenterView() {
             </span>
           </CardTitle>
           <CardDescription>
-            คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) — อนุมัติแล้ว
+            คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
             ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
             อีกครั้งหลังอนุมัติ
           </CardDescription>
@@ -296,7 +295,7 @@ export function ApprovalCenterView() {
           </CardTitle>
           <CardDescription>
             คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout
-            (ST ส่งจาก Mobile) — อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
+            (ST ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
             firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
           </CardDescription>
         </CardHeader>

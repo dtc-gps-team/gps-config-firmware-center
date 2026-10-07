@@ -66,7 +66,7 @@ export function CampaignRolloutReleasePanel({
       <div className="flex max-w-2xl flex-col gap-1 rounded-xl border bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation ปล่อยเข้าอุปกรณ์</p>
         <p className="text-sm text-muted-foreground">
-          Rollout นี้อนุมัติแล้ว แต่ยังไม่ถูกปล่อยเข้าอุปกรณ์จริง — เฉพาะ
+          Rollout นี้อนุมัติแล้ว แต่ยังไม่ถูกปล่อยเข้าอุปกรณ์จริง เฉพาะ
           Operation เท่านั้นที่ปล่อย/ปฏิเสธได้
         </p>
       </div>
@@ -113,14 +113,14 @@ export function CampaignRolloutReleasePanel({
     <div className="flex max-w-2xl flex-col gap-3 rounded-xl border bg-muted/30 p-4">
       <p className="text-sm font-medium">ปล่อยเข้าอุปกรณ์</p>
       <p className="text-sm text-muted-foreground">
-        Rollout นี้อนุมัติแล้ว — กดปล่อยเมื่อพร้อมส่ง Config/Firmware เข้าทุก
+        Rollout นี้อนุมัติแล้ว กดปล่อยเมื่อพร้อมส่ง Config/Firmware เข้าทุก
         เครื่องในกลุ่มจริง (เลือกจังหวะปล่อยเองได้ ไม่บังคับต้องปล่อยทันที)
         {!isOwnRollout &&
           " หรือกดปฏิเสธถ้าเปลี่ยนใจก่อนปล่อยจริง"}
       </p>
       {isOwnRollout && (
         <p className="text-xs text-muted-foreground">
-          คุณเป็นผู้สร้าง Rollout นี้ — ปฏิเสธของตัวเองไม่ได้ (Separation of
+          คุณเป็นผู้สร้าง Rollout นี้ ปฏิเสธของตัวเองไม่ได้ (Separation of
           Duty) ปล่อยเข้าอุปกรณ์ได้ตามปกติ
         </p>
       )}

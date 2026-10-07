@@ -112,15 +112,14 @@ export function UserManagementView({
         <div>
           <h1 className="text-2xl font-semibold">User / Role Management</h1>
           <p className="text-sm text-muted-foreground">
-            จัดการได้แค่บัญชีทั่วไป — ไม่รวม Admin/SuperAdmin
-            (RBAC_Matrix.md §2)
+            จัดการได้แค่บัญชีทั่วไป ไม่รวม Admin/SuperAdmin
           </p>
         </div>
 
         <Card>
           {justCreated && (
             <div className="mx-6 -mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              เพิ่มผู้ใช้ &ldquo;{justCreated.username}&rdquo; แล้ว — role{" "}
+              เพิ่มผู้ใช้ &ldquo;{justCreated.username}&rdquo; แล้ว role{" "}
               <strong>{justCreated.role}</strong>
             </div>
           )}
