@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { LayersIcon } from "lucide-react";
 
@@ -17,13 +16,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill, DEVICE_MODEL_STATUS_TONE } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { DeviceModelRowActions } from "./device-model-row-actions";
+import { CreateDeviceModelForm } from "./create-device-model-form";
 
 function thTextSort(
   a: Row<DeviceModel>,
@@ -44,20 +51,22 @@ function thTextSort(
  * ปิด gap ที่เดิมมีแค่ backend (issue #209) แต่ไม่มี Web UI ให้ Admin ใช้เลย
  * — เพิ่ม/แก้รุ่นต้องยิง API ตรงๆ มาตลอด ตั้งแต่ #209 merge
  */
-export function DeviceModelManagementView({
-  justCreatedId = null,
-}: {
-  justCreatedId?: string | null;
-}) {
+export function DeviceModelManagementView() {
   const { data, isLoading, error, refetch } = useDeviceModels();
   const modelList = useMemo(() => data ?? [], [data]);
-
-  const justCreated =
-    justCreatedId != null
-      ? modelList.find((m) => m.id === justCreatedId) ?? null
-      : null;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [justCreated, setJustCreated] = useState<DeviceModel | null>(null);
 
   const handleUpdated = useCallback(() => void refetch(), [refetch]);
+
+  const handleCreated = useCallback(
+    (model: DeviceModel) => {
+      setDialogOpen(false);
+      setJustCreated(model);
+      void refetch();
+    },
+    [refetch],
+  );
 
   const columns: ColumnDef<DeviceModel>[] = useMemo(
     () => [
@@ -155,12 +164,9 @@ export function DeviceModelManagementView({
               >
                 รีเฟรช
               </Button>
-              <Link
-                href="/device-models/new"
-                className={buttonVariants({ size: "sm" })}
-              >
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
                 + เพิ่มรุ่นอุปกรณ์
-              </Link>
+              </Button>
             </CardAction>
           </CardHeader>
           <CardContent>
@@ -182,12 +188,9 @@ export function DeviceModelManagementView({
                 icon={LayersIcon}
                 message="ยังไม่มีรุ่นอุปกรณ์ในทะเบียน"
                 action={
-                  <Link
-                    href="/device-models/new"
-                    className={buttonVariants({ size: "sm" })}
-                  >
+                  <Button size="sm" onClick={() => setDialogOpen(true)}>
                     + เพิ่มรุ่นอุปกรณ์
-                  </Link>
+                  </Button>
                 }
               />
             ) : (
@@ -201,6 +204,19 @@ export function DeviceModelManagementView({
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>เพิ่มรุ่นอุปกรณ์ใหม่</DialogTitle>
+            <DialogDescription>
+              เฉพาะ Role Admin/SuperAdmin · ชื่อรุ่นต้องตรงกับที่ใช้อยู่แล้ว
+              เป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อทีหลังไม่ได้
+            </DialogDescription>
+          </DialogHeader>
+          <CreateDeviceModelForm onCreated={handleCreated} />
+        </DialogContent>
+      </Dialog>
     </RoleGuard>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { XIcon } from "lucide-react";
 
@@ -10,6 +9,7 @@ import { canManageDeviceModels } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import {
   createDeviceModel,
+  type DeviceModel,
   type DeviceModelStatus,
 } from "@/lib/device-model-api";
 import { pillClass } from "@/lib/status-pill";
@@ -29,11 +29,17 @@ import {
  * 4.1 `createDeviceModel`) · chip input ของ `supportedProtocols` mirror
  * `EditCompatibilityForm` (add/remove chip เดิมของ Firmware Compatibility Tag)
  *
+ * เดิมเป็นหน้าเต็ม `/device-models/new` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71)
+ * เรียก `onCreated` แทน `router.push` เดิม ให้ parent ปิด dialog + refetch เอง
+ *
  * gate นี้เป็น UX-level เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ
  */
-export function CreateDeviceModelForm() {
+export function CreateDeviceModelForm({
+  onCreated,
+}: {
+  onCreated: (model: DeviceModel) => void;
+}) {
   const { session } = useAuth();
-  const router = useRouter();
 
   const [name, setName] = useState("");
   const [manufacturer, setManufacturer] = useState("");
@@ -95,8 +101,7 @@ export function CreateDeviceModelForm() {
         notes: trimmedNotes || undefined,
       });
       toast.success(`เพิ่มรุ่นอุปกรณ์ "${created.name}" แล้ว`);
-      router.push(`/device-models?created=${encodeURIComponent(created.id)}`);
-      router.refresh();
+      onCreated(created);
     } catch (err) {
       setSubmitting(false);
       const message =
