@@ -111,28 +111,30 @@ export function CreateDeviceModelForm() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="model-name">ชื่อรุ่น</Label>
-        <Input
-          id="model-name"
-          value={name}
-          disabled={submitting}
-          placeholder="เช่น GT06N"
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="model-name">ชื่อรุ่น</Label>
+          <Input
+            id="model-name"
+            value={name}
+            disabled={submitting}
+            placeholder="เช่น GT06N"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="model-manufacturer">
-          ผู้ผลิต{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="model-manufacturer"
-          value={manufacturer}
-          disabled={submitting}
-          onChange={(e) => setManufacturer(e.target.value)}
-        />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="model-manufacturer">
+            ผู้ผลิต{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="model-manufacturer"
+            value={manufacturer}
+            disabled={submitting}
+            onChange={(e) => setManufacturer(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -184,55 +186,59 @@ export function CreateDeviceModelForm() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label>สถานะ</Label>
-        <Select
-          value={status}
-          onValueChange={(value) =>
-            setStatus((value as DeviceModelStatus) ?? "active")
-          }
-        >
-          <SelectTrigger className="w-full" disabled={submitting}>
-            <SelectValue>
-              {(value: string) =>
-                value === "discontinued" ? "เลิกผลิตแล้ว" : "ยังผลิตอยู่"
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">ยังผลิตอยู่</SelectItem>
-            <SelectItem value="discontinued">เลิกผลิตแล้ว</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label>สถานะ</Label>
+          <Select
+            value={status}
+            onValueChange={(value) =>
+              setStatus((value as DeviceModelStatus) ?? "active")
+            }
+          >
+            <SelectTrigger className="w-full" disabled={submitting}>
+              <SelectValue>
+                {(value: string) =>
+                  value === "discontinued" ? "เลิกผลิตแล้ว" : "ยังผลิตอยู่"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">ยังผลิตอยู่</SelectItem>
+              <SelectItem value="discontinued">เลิกผลิตแล้ว</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="model-warranty">
+            รับประกัน (เดือน){" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="model-warranty"
+            type="number"
+            min={0}
+            value={warrantyMonths}
+            disabled={submitting}
+            onChange={(e) => setWarrantyMonths(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="model-warranty">
-          รับประกัน (เดือน){" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="model-warranty"
-          type="number"
-          min={0}
-          value={warrantyMonths}
-          disabled={submitting}
-          onChange={(e) => setWarrantyMonths(e.target.value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="model-eos">
-          สิ้นสุดการซัพพอร์ต{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="model-eos"
-          type="date"
-          value={endOfSupportDate}
-          disabled={submitting}
-          onChange={(e) => setEndOfSupportDate(e.target.value)}
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="model-eos">
+            สิ้นสุดการซัพพอร์ต{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="model-eos"
+            type="date"
+            value={endOfSupportDate}
+            disabled={submitting}
+            onChange={(e) => setEndOfSupportDate(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
