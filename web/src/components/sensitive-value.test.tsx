@@ -25,14 +25,14 @@ describe("SensitiveValue", () => {
   it("ค่าว่างโชว์ — แทน ไม่ต้อง mask (ไม่มีอะไรให้ดู)", () => {
     render(<SensitiveValue value="" />);
 
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
     expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
   });
 
   it("รับ raw value เป็น null ตรงๆ — โชว์ — ไม่ mask (ไม่ใช่ placeholder \"-\" ที่แปลงมาก่อนแล้ว ซึ่งจะเป็น truthy string ทำให้โดน mask ผิดๆ)", () => {
     render(<SensitiveValue value={null} />);
 
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
     expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
@@ -40,7 +40,7 @@ describe("SensitiveValue", () => {
   it("รับ raw value เป็น undefined ตรงๆ — โชว์ — ไม่ mask", () => {
     render(<SensitiveValue value={undefined} />);
 
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
     expect(screen.queryByText("••••••••")).not.toBeInTheDocument();
   });
 

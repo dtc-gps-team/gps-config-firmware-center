@@ -48,16 +48,16 @@ const DATA_TYPES = [
 ] as const;
 
 const DATA_TYPE_LABELS: Record<(typeof DATA_TYPES)[number], string> = {
-  integer: "integer — จำนวนเต็ม",
-  decimal: "decimal — จำนวนทศนิยม",
-  string: "string — ข้อความสั้น",
-  text: "text — ข้อความยาว",
-  boolean: "boolean — จริง/เท็จ",
-  date: "date — วันที่ (YYYY-MM-DD)",
-  datetime: "datetime — วันที่เวลา (ISO 8601)",
-  json: "json — ออบเจกต์ JSON",
-  array: "array — รายการค่า (JSON array)",
-  uuid: "uuid — รหัส UUID",
+  integer: "integer: จำนวนเต็ม",
+  decimal: "decimal: จำนวนทศนิยม",
+  string: "string: ข้อความสั้น",
+  text: "text: ข้อความยาว",
+  boolean: "boolean: จริง/เท็จ",
+  date: "date: วันที่ (YYYY-MM-DD)",
+  datetime: "datetime: วันที่เวลา (ISO 8601)",
+  json: "json: ออบเจกต์ JSON",
+  array: "array: รายการค่า (JSON array)",
+  uuid: "uuid: รหัส UUID",
 };
 
 type Props = {
@@ -299,7 +299,7 @@ export function ParameterCreateForm({
             </Label>
             {sensitive ? (
               <p className="text-xs text-muted-foreground">
-                field ที่เป็น Sensitive ตั้งค่าเริ่มต้นไม่ได้ — ป้องกันค่าอ่อนไหวรั่วผ่าน
+                field ที่เป็น Sensitive ตั้งค่าเริ่มต้นไม่ได้ ป้องกันค่าอ่อนไหวรั่วผ่าน
                 คลัง Parameter ที่หลาย Role เข้าถึงได้
               </p>
             ) : dataType === "boolean" ? (
@@ -311,7 +311,7 @@ export function ParameterCreateForm({
                   id="param-default-value"
                   className="w-full sm:max-w-56"
                 >
-                  <SelectValue placeholder="— ไม่ตั้งค่าเริ่มต้น —" />
+                  <SelectValue placeholder="- ไม่ตั้งค่าเริ่มต้น -" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="true">true</SelectItem>
@@ -395,7 +395,7 @@ export function ParameterCreateForm({
             <legend className="text-sm font-medium">รุ่นอุปกรณ์ที่รองรับ</legend>
             {sortedModels.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                ยังไม่มีรุ่นอุปกรณ์ในระบบ (`DeviceModel`) — เพิ่มรุ่นอุปกรณ์ก่อน
+                ยังไม่มีรุ่นอุปกรณ์ในระบบ เพิ่มรุ่นอุปกรณ์ก่อน
               </p>
             ) : (
               <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -457,7 +457,7 @@ export function ParameterCreateForm({
                 checked={stOverridable}
                 onCheckedChange={(c) => setStOverridable(c === true)}
               />
-              ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้ — OT ไม่มีสิทธิ์นี้)
+              ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้, OT ไม่มีสิทธิ์นี้)
             </label>
             <label
               className="flex items-center gap-2 text-sm"
@@ -468,7 +468,7 @@ export function ParameterCreateForm({
                 checked={sensitive}
                 onCheckedChange={(c) => setSensitive(c === true)}
               />
-              ค่าอ่อนไหว (Sensitive — เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)
+              ค่าอ่อนไหว (Sensitive: เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)
             </label>
           </div>
 
