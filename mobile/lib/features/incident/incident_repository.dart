@@ -10,13 +10,13 @@ import '../../core/config/app_config.dart';
 ///
 /// `GET /incidents` is open to every logged-in role (RBAC "R" for all), so —
 /// unlike [TaskRepository] — there is no client-side role gate. **Create**
-/// (`createFieldReport`) is ST/OT-only per the #236 design, but that backend
-/// permission/endpoint is **not on `main` yet** — until then it only works
-/// against [MockIncidentRepository] (see [fieldReportEnabledProvider]).
+/// (`createFieldReport`, `POST /incidents`) is ST/OT-only (RBAC `incidents`
+/// `Create`, backend PR #267) — the server enforces it; the Home shortcut is
+/// just a UI hint.
 abstract class IncidentRepository {
   Future<List<Incident>> listIncidents();
 
-  /// `POST /incidents` (design issue #236 — **backend ยังไม่มี**). ไม่
+  /// `POST /incidents` (issue #236, backend PR #267). ไม่
   /// auto-pause/rollback — Operation เป็นคนตัดสินใจ throws [ApiException].
   Future<Incident> createFieldReport({
     required String title,
@@ -139,15 +139,6 @@ final incidentRepositoryProvider = Provider<IncidentRepository>((ref) {
   if (AppConfig.apiMockMode) return MockIncidentRepository();
   return ApiIncidentRepository(ref.watch(apiClientProvider));
 });
-
-/// เปิดทางเข้าฟอร์มแจ้งปัญหา (Field Incident Report, design #236) ไหม —
-/// **ตอนนี้เปิดเฉพาะ `API_MOCK_MODE`** เพราะ `POST /incidents` ยังไม่มีบน
-/// backend จริง (เปิดให้ ST/OT ในแอปจริงตอนนี้ = ยิง endpoint ที่ไม่มี) ·
-/// หลัง backend merge ให้เปลี่ยนเป็น `true` (ลบ gate นี้) — เป็น provider เพื่อให้
-/// เทส override ได้ (`AppConfig.apiMockMode` เป็น compile-time const)
-final fieldReportEnabledProvider = Provider<bool>(
-  (ref) => AppConfig.apiMockMode,
-);
 
 /// The incident list. Every role may call `GET /incidents` (no role gate,
 /// unlike `taskListProvider`).

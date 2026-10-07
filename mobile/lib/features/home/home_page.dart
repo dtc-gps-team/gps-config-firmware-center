@@ -8,7 +8,6 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
-import '../incident/incident_repository.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 
@@ -110,10 +109,9 @@ class HomePage extends ConsumerWidget {
                   onTap: () => context.push(AppRoutes.deviceSearch),
                 ),
                 // แจ้งปัญหาหน้างาน (Field Incident Report, design issue #236) —
-                // ST/OT เท่านั้น และ**เปิดเฉพาะเมื่อ fieldReportEnabledProvider**
-                // (ตอนนี้ = API_MOCK_MODE เพราะ POST /incidents ยังไม่มี backend)
-                if ((role == UserRole.st || role == UserRole.ot) &&
-                    ref.watch(fieldReportEnabledProvider))
+                // ST/OT เท่านั้น (backend `POST /incidents` ให้ Create เฉพาะ
+                // ST/OT — PR #267)
+                if (role == UserRole.st || role == UserRole.ot)
                   _Shortcut(
                     key: const Key('shortcut_field_report'),
                     icon: Icons.add_alert_outlined,

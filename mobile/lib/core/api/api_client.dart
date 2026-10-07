@@ -153,13 +153,13 @@ class ApiClient {
   }
 
   /// `POST /incidents` — ST/OT แจ้งปัญหาหน้างาน (Field Incident Report,
-  /// design issue #236). **ยังไม่มีบน backend** (รอ A implement — resource
-  /// `incidents` action `Create` ให้ ST/OT) signature ตาม design ที่ A ร่างไว้:
-  /// `title`/`description` บังคับ, `severity`, `deviceId` (optional) →
+  /// issue #236, backend PR #267 — resource `incidents` action `Create`
+  /// เฉพาะ ST/OT). `title`/`description` บังคับ, `severity`, `deviceId`
+  /// (optional) →
   /// backend ตั้ง `status: open`, `source: 'field-report'`, `reportedBy` จาก
   /// JWT เอง (ห้ามส่งจาก client) · **ไม่ auto-pause/rollback** — Operation
   /// เป็นคนตัดสินใจเสมอ (`POST /incidents/{id}/decide` ฝั่ง Web ไม่ใช่ Mobile)
-  /// ต้องตรวจ shape กับ openapi.yaml อีกรอบหลัง A อัปเดต spec
+  /// shape ตรง `CreateIncidentInput` ใน openapi.yaml (v3.47)
   Future<Incident> createIncident({
     required String title,
     required String description,

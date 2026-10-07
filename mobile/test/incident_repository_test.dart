@@ -113,13 +113,4 @@ void main() {
       expect((await repo.listIncidents()).length, before);
     });
   });
-
-  test(
-    'fieldReportEnabledProvider: เปิดเฉพาะ API_MOCK_MODE (backend ยังไม่มี)',
-    () {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      expect(container.read(fieldReportEnabledProvider), AppConfig.apiMockMode);
-    },
-  );
 }

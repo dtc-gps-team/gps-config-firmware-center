@@ -14,9 +14,9 @@ import 'incident_ui.dart';
 /// ตัดสินใจเองว่าจะปิด/ไม่ใช่ปัญหา/โปรโมทเป็น Campaign (ฝั่ง Web) · ช่างเห็น
 /// report ของตัวเองใน "ดู Incident" (backend กรอง `reportedBy` ให้)
 ///
-/// **Scaffolding — backend ยังไม่มี endpoint:** เปิดทางเข้าเฉพาะ
-/// `fieldReportEnabledProvider` (ตอนนี้ = `API_MOCK_MODE`) ใช้
-/// `MockIncidentRepository` จนกว่า A merge `POST /incidents`
+/// ทางเข้าคือทางลัด "แจ้งปัญหา" บน Home (ST/OT เท่านั้น) · backend
+/// `POST /incidents` อยู่บน `main` แล้ว (PR #267) · ใน `API_MOCK_MODE` ใช้
+/// `MockIncidentRepository`
 class FieldReportPage extends ConsumerStatefulWidget {
   const FieldReportPage({super.key, this.initialDeviceId});
 

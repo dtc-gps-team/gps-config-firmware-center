@@ -142,9 +142,9 @@ enum IncidentStatus {
   investigating('investigating'),
   rolledBack('rolled_back'),
   resolved('resolved'),
-  // เพิ่มใหม่ (design issue #236) — Operation ตัดสินใจ "ไม่ใช่ปัญหา/ซ้ำ" กับ
-  // field report · ยังไม่มี backend ส่งค่านี้ แต่ต้องรู้จักไว้ก่อน ไม่งั้น
-  // `listIncidents` (strict) จะ error ทั้งรายการทันทีที่ backend เริ่มส่ง
+  // เพิ่มใหม่ (issue #236, backend PR #267) — Operation ตัดสินใจ "ไม่ใช่ปัญหา/
+  // ซ้ำ" กับ field report · ต้องรู้จักไว้ ไม่งั้น `listIncidents` (strict)
+  // จะ error ทั้งรายการเมื่อ backend ส่งค่านี้
   dismissed('dismissed');
 
   const IncidentStatus(this.wireName);
@@ -865,7 +865,7 @@ class Incident {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  // Field report (design issue #236 — ยังไม่มีใน backend/openapi ตอนนี้ ทุกตัว
+  // Field report (issue #236, backend PR #267 / openapi v3.47 — ทุกตัว
   // nullable: incident อัตโนมัติเดิมไม่มี) — `source == 'field-report'` คือ
   // report ที่ ST/OT แจ้งเอง
   /// `User.id` ของผู้แจ้ง — null สำหรับ incident auto-detect
