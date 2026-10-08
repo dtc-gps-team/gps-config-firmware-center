@@ -645,6 +645,87 @@ void main() {
       );
     });
 
+    test(
+      'createIncident -> POST /incidents with {title, description, severity, '
+      'deviceId} (design issue #236)',
+      () async {
+        final (:client, :adapter) = _clientReturning({
+          'id': 'inc-1',
+          'title': 'ไม่ส่งสัญญาณ',
+          'description': 'หลังติดตั้ง',
+          'severity': 'high',
+          'status': 'open',
+          'source': 'field-report',
+          'reportedBy': 'st-1',
+          'deviceId': 'DEV-0001',
+          'createdAt': '2026-10-06T00:00:00.000Z',
+          'updatedAt': '2026-10-06T00:00:00.000Z',
+        });
+
+        final incident = await client.createIncident(
+          title: 'ไม่ส่งสัญญาณ',
+          description: 'หลังติดตั้ง',
+          severity: IncidentSeverity.high,
+          deviceId: 'DEV-0001',
+        );
+
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(adapter.lastRequest?.path, '/incidents');
+        expect(adapter.lastRequest?.data, {
+          'title': 'ไม่ส่งสัญญาณ',
+          'description': 'หลังติดตั้ง',
+          'severity': 'high',
+          'deviceId': 'DEV-0001',
+        });
+        expect(incident.isFieldReport, isTrue);
+        expect(incident.reportedBy, 'st-1');
+      },
+    );
+
+    test('createIncident ไม่ระบุอุปกรณ์ -> ไม่ส่ง deviceId ใน body', () async {
+      final (:client, :adapter) = _clientReturning({
+        'id': 'inc-2',
+        'title': 't',
+        'severity': 'low',
+        'status': 'open',
+        'createdAt': '2026-10-06T00:00:00.000Z',
+        'updatedAt': '2026-10-06T00:00:00.000Z',
+      });
+
+      await client.createIncident(
+        title: 't',
+        description: 'd',
+        severity: IncidentSeverity.low,
+      );
+
+      expect(adapter.lastRequest?.data, {
+        'title': 't',
+        'description': 'd',
+        'severity': 'low',
+      });
+    });
+
+    test(
+      'createIncident -> 403 (ยังไม่มีสิทธิ์/endpoint) maps to ApiException',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 403, {'message': 'Forbidden'}),
+          ),
+        );
+
+        await expectLater(
+          client.createIncident(
+            title: 't',
+            description: 'd',
+            severity: IncidentSeverity.low,
+          ),
+          throwsA(isA<ApiException>().having((e) => e.statusCode, 's', 403)),
+        );
+      },
+    );
+
     Map<String, dynamic> definitionJson({
       String id = 'def-1',
       String fieldName = 'APN',

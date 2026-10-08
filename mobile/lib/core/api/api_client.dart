@@ -152,6 +152,34 @@ class ApiClient {
     );
   }
 
+  /// `POST /incidents` — ST/OT แจ้งปัญหาหน้างาน (Field Incident Report,
+  /// issue #236, backend PR #267 — resource `incidents` action `Create`
+  /// เฉพาะ ST/OT). `title`/`description` บังคับ, `severity`, `deviceId`
+  /// (optional) →
+  /// backend ตั้ง `status: open`, `source: 'field-report'`, `reportedBy` จาก
+  /// JWT เอง (ห้ามส่งจาก client) · **ไม่ auto-pause/rollback** — Operation
+  /// เป็นคนตัดสินใจเสมอ (`POST /incidents/{id}/decide` ฝั่ง Web ไม่ใช่ Mobile)
+  /// shape ตรง `CreateIncidentInput` ใน openapi.yaml (v3.47)
+  Future<Incident> createIncident({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/incidents',
+        data: {
+          'title': title,
+          'description': description,
+          'severity': severity.wireName,
+          'deviceId': ?deviceId,
+        },
+      ),
+      Incident.fromJson,
+    );
+  }
+
   /// `GET /notifications` — always scoped to the caller by the backend (every
   /// role). Pass `unread: true` for `?unread=true`. **Lenient** on purpose
   /// (see [_wrapListLenient]) — notifications are best-effort/non-critical,

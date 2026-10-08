@@ -440,6 +440,29 @@ void main() {
     },
   );
 
+  group('ทางลัด "แจ้งปัญหา" (Field Incident Report, design issue #236)', () {
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('${role.wireName} -> เห็นทางลัด', (tester) async {
+        await _pumpHome(tester, role);
+        expect(find.byKey(const Key('shortcut_field_report')), findsOneWidget);
+      });
+    }
+
+    for (final role in [
+      UserRole.operation,
+      UserRole.auditor,
+      UserRole.admin,
+      UserRole.superAdmin,
+    ]) {
+      testWidgets('${role.wireName} -> ไม่เห็น (ST/OT เท่านั้น)', (
+        tester,
+      ) async {
+        await _pumpHome(tester, role);
+        expect(find.byKey(const Key('shortcut_field_report')), findsNothing);
+      });
+    }
+  });
+
   group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
     for (final role in [
       UserRole.st,
