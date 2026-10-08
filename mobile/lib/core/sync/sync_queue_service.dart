@@ -114,12 +114,18 @@ class SyncQueueService {
   }
 
   Future<void> _drain() async {
+    // Snapshot once per drain. Every send in this pass is judged against it, so
+    // an action that starts *after* stop() (e.g. while the loop awaits the DB
+    // between two actions) can't pick up the bumped counter as its own and
+    // write into a cache that logout already wiped.
+    final startGeneration = _generation;
     var changed = false;
     try {
       for (final action in await _queue.getPending()) {
+        if (startGeneration != _generation) return; // stop() ran mid-loop
         // A previous failure in this pass may have failed this action too.
         if (!await _stillPending(action.id)) continue;
-        final outcome = await _send(action);
+        final outcome = await _send(action, startGeneration);
         switch (outcome) {
           case _Outcome.sent:
             changed = true;
@@ -137,8 +143,7 @@ class SyncQueueService {
   Future<bool> _stillPending(String id) async =>
       (await _queue.getPending()).any((a) => a.id == id);
 
-  Future<_Outcome> _send(PendingActionRow action) async {
-    final generation = _generation;
+  Future<_Outcome> _send(PendingActionRow action, int generation) async {
     try {
       final task = await _dispatch(action);
       if (generation != _generation) return _Outcome.retryLater;
@@ -153,7 +158,7 @@ class SyncQueueService {
         await _queue.recordAttempt(action.id, e.message);
         return _Outcome.retryLater;
       }
-      await _reject(action, e);
+      await _reject(action, e, generation);
       return _Outcome.rejected;
     }
   }
@@ -177,7 +182,11 @@ class SyncQueueService {
     return code >= 500 || code == 401 || code == 408 || code == 429;
   }
 
-  Future<void> _reject(PendingActionRow action, ApiException e) async {
+  Future<void> _reject(
+    PendingActionRow action,
+    ApiException e,
+    int generation,
+  ) async {
     await _queue.markFailed(action.id, e.message);
     final followers = await _queue.getPendingForEntity(
       action.type,
@@ -188,7 +197,6 @@ class SyncQueueService {
     }
     // Server wins: pull the server's current value into the cache. Best
     // effort — if it also fails the cache keeps the last confirmed value.
-    final generation = _generation;
     try {
       if (action.type == PendingActionType.taskStatus.wireName) {
         final fresh = await _api.getTask(action.entityId);

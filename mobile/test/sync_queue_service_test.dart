@@ -167,6 +167,39 @@ void main() {
     );
 
     test(
+      'stop() คั่นระหว่าง 2 รายการ (หลังรายการแรกส่งสำเร็จ ก่อนเริ่มรายการที่สอง) '
+      '-> รายการที่สองไม่ถูกส่ง/ไม่เขียนทับ cache',
+      () async {
+        api.error = ApiException('offline'); // queue both while "offline"
+        await enqueue('a', TaskStatus.inProgress);
+        await enqueue('b', TaskStatus.completed);
+        await sync.flush();
+        expect(await db.pendingActionDao.getPending(), hasLength(2));
+
+        api.error = null;
+        api.updates.clear();
+        // onAuthExpired(false) fires right after the first action is sent and
+        // deleted, before the loop moves on — the exact gap between iterations.
+        var stopped = false;
+        Future<void>? stopping;
+        sync.onAuthExpired = (_) {
+          if (stopped) return;
+          stopped = true;
+          stopping = sync.stop();
+        };
+        await sync.flush();
+        await stopping;
+
+        expect(stopped, isTrue);
+        expect(api.updates, [('a', TaskStatus.inProgress)]); // b never sent
+        final cachedB = (await db.taskDao.getAllTasks()).firstWhere(
+          (t) => t.id == 'b',
+        );
+        expect(cachedB.status, TaskStatus.pending.wireName);
+      },
+    );
+
+    test(
       '4xx -> mark failed ไม่ retry, action ถัดไปของ task เดียวกันถูก fail ด้วย, task อื่นยังส่งต่อ, cache กลับเป็นค่า server',
       () async {
         api.error = ApiException('offline'); // queue all three together
