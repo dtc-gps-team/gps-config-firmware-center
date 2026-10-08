@@ -68,6 +68,7 @@ Future<void> _pump(
   required TaskRepository repo,
   UserRole? role = UserRole.st,
   Set<String> pendingIds = const {},
+  bool authExpired = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -76,6 +77,7 @@ Future<void> _pump(
         // no real Drift DB / live queries in widget tests (drift stream
         // timers outlive the tree) — the sync queue has its own tests
         pendingTaskIdsProvider.overrideWith((ref) => Stream.value(pendingIds)),
+        syncAuthExpiredProvider.overrideWith((ref) => authExpired),
         failedSyncActionsProvider.overrideWith(
           (ref) => Stream.value(const <PendingActionRow>[]),
         ),
@@ -215,6 +217,27 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('401 + มีรายการค้าง -> banner เตือนว่าออกจากระบบแล้วรายการหาย', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 't1')]),
+      pendingIds: {'t1'},
+      authExpired: true,
+    );
+    expect(find.byKey(const Key('sync_auth_expired_banner')), findsOneWidget);
+  });
+
+  testWidgets('401 แต่ไม่มีรายการค้าง -> ไม่มี banner', (tester) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 't1')]),
+      authExpired: true,
+    );
+    expect(find.byKey(const Key('sync_auth_expired_banner')), findsNothing);
   });
 
   testWidgets('ไม่มี pending -> ไม่มี badge', (tester) async {

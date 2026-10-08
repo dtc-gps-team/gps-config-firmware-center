@@ -22,9 +22,13 @@ class _FakeApiClient extends ApiClient {
   final List<(String, TaskStatus)> updates = [];
   final Map<String, Task> serverTasks = {};
 
+  /// When set, `updateTaskStatus` waits on it (request "on the wire").
+  Completer<void>? gate;
+
   @override
   Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
     updates.add((taskId, status));
+    if (gate != null) await gate!.future;
     final outcome = error ?? reject[taskId];
     if (outcome != null) throw outcome;
     final updated = _task(taskId, status: status);
@@ -126,6 +130,41 @@ void main() {
         expect(await db.pendingActionDao.getFailed(), isEmpty);
       });
     }
+
+    test(
+      '401 -> onAuthExpired(true), ส่งสำเร็จภายหลัง -> onAuthExpired(false)',
+      () async {
+        final seen = <bool>[];
+        sync.onAuthExpired = seen.add;
+        api.error = ApiException('หมดอายุ', statusCode: 401);
+        await enqueue('a', TaskStatus.inProgress);
+        await sync.flush();
+        expect(seen, isNotEmpty);
+        expect(seen.every((expired) => expired), isTrue);
+
+        api.error = null;
+        await sync.flush();
+        expect(seen.last, isFalse);
+      },
+    );
+
+    test(
+      'stop() ระหว่างรอ response (logout) -> คำตอบที่มาทีหลังไม่ถูกเขียนกลับ cache',
+      () async {
+        api.gate = Completer<void>();
+        await enqueue('a', TaskStatus.completed);
+        await Future<void>.delayed(Duration.zero); // request is on the wire
+        expect(api.updates, hasLength(1));
+
+        final stopping = sync.stop();
+        await db.clearAllUserData(); // what logout does right after
+        api.gate!.complete();
+        await stopping;
+
+        expect(await db.taskDao.getAllTasks(), isEmpty);
+        expect(await db.pendingActionDao.getPending(), isEmpty);
+      },
+    );
 
     test(
       '4xx -> mark failed ไม่ retry, action ถัดไปของ task เดียวกันถูก fail ด้วย, task อื่นยังส่งต่อ, cache กลับเป็นค่า server',

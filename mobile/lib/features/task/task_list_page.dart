@@ -25,6 +25,8 @@ class TaskListPage extends ConsumerWidget {
     final tasksAsync = ref.watch(taskListProvider);
     final pendingIds = ref.watch(pendingTaskIdsProvider).value ?? const {};
     final failedCount = ref.watch(failedSyncActionsProvider).value?.length ?? 0;
+    final authExpired =
+        ref.watch(syncAuthExpiredProvider) && pendingIds.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -42,13 +44,14 @@ class TaskListPage extends ConsumerWidget {
           skipLoadingOnRefresh: true,
           data: (tasks) {
             if (tasks.isEmpty) return const _TasksEmpty();
-            final offset = failedCount > 0 ? 1 : 0;
+            final offset = (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
             return ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: tasks.length + offset,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
-                if (offset == 1 && i == 0) {
+                if (authExpired && i == 0) return const SyncAuthExpiredBanner();
+                if (failedCount > 0 && i == (authExpired ? 1 : 0)) {
                   return SyncFailedBanner(count: failedCount);
                 }
                 final task = tasks[i - offset];

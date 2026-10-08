@@ -62,3 +62,34 @@ class SyncFailedBanner extends ConsumerWidget {
     );
   }
 }
+
+/// Queued changes can't be sent because the session expired (401). There is no
+/// re-login that keeps the queue, so say plainly that signing out drops them.
+class SyncAuthExpiredBanner extends StatelessWidget {
+  const SyncAuthExpiredBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('sync_auth_expired_banner'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.lock_clock_outlined, color: Color(0xFFB45309)),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'เซสชันหมดอายุ รายการที่รอซิงค์ยังส่งไม่ได้ — '
+              'ถ้าออกจากระบบ รายการที่ค้างอยู่จะหายไป',
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

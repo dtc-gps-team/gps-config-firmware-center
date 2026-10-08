@@ -20,6 +20,11 @@ final pendingActionDaoProvider = Provider(
 /// doesn't depend on any feature).
 final syncRevisionProvider = StateProvider<int>((ref) => 0);
 
+/// True while queued changes are stuck on an expired session (401). Mobile has
+/// no re-login that keeps the queue, so the UI warns that signing out drops
+/// them.
+final syncAuthExpiredProvider = StateProvider<bool>((ref) => false);
+
 final syncQueueServiceProvider = Provider<SyncQueueService>((ref) {
   final service = SyncQueueService(
     ref.watch(apiClientProvider),
@@ -29,7 +34,14 @@ final syncQueueServiceProvider = Provider<SyncQueueService>((ref) {
   // A flush changed the cache/queue → bump the revision so the providers
   // that watch it (task list / detail) re-read.
   service.onChanged = () => ref.read(syncRevisionProvider.notifier).state++;
-  ref.onDispose(() => service.onChanged = null);
+  service.onAuthExpired = (expired) {
+    final notifier = ref.read(syncAuthExpiredProvider.notifier);
+    if (notifier.state != expired) notifier.state = expired;
+  };
+  ref.onDispose(() {
+    service.onChanged = null;
+    service.onAuthExpired = null;
+  });
   return service;
 });
 

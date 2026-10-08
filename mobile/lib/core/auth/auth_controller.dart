@@ -9,6 +9,7 @@ import '../api/api_client.dart';
 import '../api/models.dart';
 import '../config/app_config.dart';
 import '../db/providers/database_provider.dart';
+import '../sync/sync_providers.dart';
 import 'auth_repository.dart';
 import 'token_store.dart';
 
@@ -186,7 +187,11 @@ class AuthController extends Notifier<AuthState> {
     // user คนถัดไปบนเครื่องเดียวกันเห็น/ส่งข้อมูลของคนก่อนหน้า. ห้ามให้ความ
     // ล้มเหลวตรงนี้บล็อก logout (เหมือน step อื่นด้านบน)
     try {
+      // Stop any in-flight sync first so a late response can't write the
+      // previous user's task back into the cache after the wipe.
+      await ref.read(syncQueueServiceProvider).stop();
       await ref.read(appDatabaseProvider).clearAllUserData();
+      ref.read(syncAuthExpiredProvider.notifier).state = false;
     } catch (e) {
       debugPrint('logout: clearing local database failed: $e');
     }

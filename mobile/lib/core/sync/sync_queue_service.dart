@@ -40,6 +40,15 @@ class SyncQueueService {
   Future<void>? _inFlight;
   bool _flushAgain = false;
 
+  /// Bumped by [stop]. A send that started under an older generation must not
+  /// write its answer back into the cache/queue: logout already wiped them,
+  /// and the next user would otherwise see the previous user's task.
+  int _generation = 0;
+
+  /// True while the last attempt got a 401 (session expired): queued changes
+  /// can't go out until the user signs in again. Set once by the provider.
+  void Function(bool expired)? onAuthExpired;
+
   /// Fired after a flush changed the queue or the cache, so providers
   /// backed by them can refresh. Set once by the provider.
   void Function()? onChanged;
@@ -61,6 +70,20 @@ class SyncQueueService {
       ),
     );
     unawaited(flush());
+  }
+
+  /// Called by logout *before* the local DB is wiped. Invalidates any send
+  /// still on the wire (its late answer is discarded) and waits briefly for
+  /// the running flush to notice, so nothing re-fills the cache afterwards.
+  Future<void> stop() async {
+    _generation++;
+    final running = _inFlight;
+    if (running == null) return;
+    try {
+      await running.timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Timed out: the generation check still discards the late answer.
+    }
   }
 
   /// Sends queued actions oldest-first. Safe to call from anywhere, any
@@ -115,13 +138,18 @@ class SyncQueueService {
       (await _queue.getPending()).any((a) => a.id == id);
 
   Future<_Outcome> _send(PendingActionRow action) async {
+    final generation = _generation;
     try {
       final task = await _dispatch(action);
+      if (generation != _generation) return _Outcome.retryLater;
       await _tasks.upsertTask(taskToCompanion(task));
       await _queue.deleteAction(action.id);
+      onAuthExpired?.call(false);
       return _Outcome.sent;
     } on ApiException catch (e) {
+      if (generation != _generation) return _Outcome.retryLater;
       if (_isTransient(e)) {
+        if (e.statusCode == 401) onAuthExpired?.call(true);
         await _queue.recordAttempt(action.id, e.message);
         return _Outcome.retryLater;
       }
@@ -160,9 +188,11 @@ class SyncQueueService {
     }
     // Server wins: pull the server's current value into the cache. Best
     // effort — if it also fails the cache keeps the last confirmed value.
+    final generation = _generation;
     try {
       if (action.type == PendingActionType.taskStatus.wireName) {
         final fresh = await _api.getTask(action.entityId);
+        if (generation != _generation) return;
         await _tasks.upsertTask(taskToCompanion(fresh));
       }
     } on ApiException {
