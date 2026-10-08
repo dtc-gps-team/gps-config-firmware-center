@@ -27,9 +27,13 @@ import 'push_token_repository.dart';
 /// (#95) before the Firebase project / native wiring existed. See
 /// `docs/05_Mobile_Notification_FCM.md`.
 class PushNotificationService {
-  PushNotificationService(this._tokenRepository);
+  PushNotificationService(
+    this._tokenRepository, {
+    FcmTokenGateway? tokenGateway,
+  }) : _tokenGateway = tokenGateway ?? const FirebaseTokenGateway();
 
   final PushTokenRepository _tokenRepository;
+  final FcmTokenGateway _tokenGateway;
 
   /// Android-only for this phase (team decision — see CLAUDE.md). Hardcoded
   /// rather than derived from `Platform.isAndroid` because iOS/Web
@@ -86,8 +90,8 @@ class PushNotificationService {
   }
 
   /// Call before clearing the session on logout. Stops listening for token
-  /// refresh and best-effort unregisters the current token — **never
-  /// throws**, so a network/Firebase failure here can't block logout.
+  /// refresh, best-effort unregisters the current token with the backend and
+  /// deletes it on the device — **never throws**, so a network/Firebase failure here can't block logout.
   Future<void> unregisterAndStop() async {
     if (!AppConfig.pushNotificationsEnabled) return;
 
@@ -95,7 +99,7 @@ class PushNotificationService {
     _tokenRefreshSubscription = null;
 
     try {
-      final token = await FirebaseMessaging.instance.getToken();
+      final token = await _tokenGateway.getToken();
       if (token != null) {
         await _tokenRepository.unregister(token);
       }
@@ -103,7 +107,34 @@ class PushNotificationService {
       // Best-effort cleanup — the user must be able to log out regardless of
       // network state or Firebase errors.
     }
+
+    // Separate from the unregister above so it still runs when that failed
+    // (e.g. offline): invalidating the FCM token on the device means a push
+    // aimed at the previous user's token can no longer reach this phone, and
+    // the next login gets a fresh token.
+    try {
+      await _tokenGateway.deleteToken();
+    } catch (_) {
+      // same best-effort rule
+    }
   }
+}
+
+/// The two FCM token calls logout needs, behind a seam so tests don't need a
+/// Firebase platform binding.
+abstract class FcmTokenGateway {
+  Future<String?> getToken();
+  Future<void> deleteToken();
+}
+
+class FirebaseTokenGateway implements FcmTokenGateway {
+  const FirebaseTokenGateway();
+
+  @override
+  Future<String?> getToken() => FirebaseMessaging.instance.getToken();
+
+  @override
+  Future<void> deleteToken() => FirebaseMessaging.instance.deleteToken();
 }
 
 final pushNotificationServiceProvider = Provider<PushNotificationService>((

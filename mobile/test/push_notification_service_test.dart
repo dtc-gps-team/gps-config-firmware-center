@@ -21,6 +21,34 @@ class _SpyPushTokenRepository implements PushTokenRepository {
   }
 }
 
+class _FakeTokenGateway implements FcmTokenGateway {
+  _FakeTokenGateway({this.token = 'fcm-token-1', this.deleteFails = false});
+
+  final String? token;
+  final bool deleteFails;
+  final List<String> calls = [];
+
+  @override
+  Future<String?> getToken() async {
+    calls.add('getToken');
+    return token;
+  }
+
+  @override
+  Future<void> deleteToken() async {
+    calls.add('deleteToken');
+    if (deleteFails) throw Exception('no network');
+  }
+}
+
+class _FailingUnregisterRepository extends _SpyPushTokenRepository {
+  @override
+  Future<void> unregister(String token) async {
+    unregisterCalls++;
+    throw Exception('offline');
+  }
+}
+
 void main() {
   // `AppConfig.pushNotificationsEnabled` is `true` now — the real Firebase
   // project exists and the native Android wiring (google-services.json, the
@@ -58,5 +86,57 @@ void main() {
 
     expect(repo.registerCalls, 0);
     expect(repo.unregisterCalls, 0);
+  });
+
+  group('unregisterAndStop() with a token', () {
+    test(
+      'unregisters with the backend first, then deletes the FCM token',
+      () async {
+        final repo = _SpyPushTokenRepository();
+        final gateway = _FakeTokenGateway();
+        final service = PushNotificationService(repo, tokenGateway: gateway);
+
+        await service.unregisterAndStop();
+
+        expect(repo.unregisterCalls, 1);
+        expect(gateway.calls, ['getToken', 'deleteToken']);
+      },
+    );
+
+    test(
+      'backend unregister fails (offline) -> deleteToken still runs',
+      () async {
+        final repo = _FailingUnregisterRepository();
+        final gateway = _FakeTokenGateway();
+        final service = PushNotificationService(repo, tokenGateway: gateway);
+
+        await expectLater(service.unregisterAndStop(), completes);
+
+        expect(repo.unregisterCalls, 1);
+        expect(gateway.calls, contains('deleteToken'));
+      },
+    );
+
+    test('deleteToken throws -> logout still completes', () async {
+      final service = PushNotificationService(
+        _SpyPushTokenRepository(),
+        tokenGateway: _FakeTokenGateway(deleteFails: true),
+      );
+      await expectLater(service.unregisterAndStop(), completes);
+    });
+
+    test(
+      'no token -> nothing to unregister but deleteToken still called',
+      () async {
+        final repo = _SpyPushTokenRepository();
+        final gateway = _FakeTokenGateway(token: null);
+        final service = PushNotificationService(repo, tokenGateway: gateway);
+
+        await service.unregisterAndStop();
+
+        expect(repo.unregisterCalls, 0);
+        expect(gateway.calls, contains('deleteToken'));
+      },
+    );
   });
 }
