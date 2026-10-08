@@ -234,7 +234,7 @@ export function ApprovalCenterView() {
        * canDecideOverride (= role Operation เท่านั้น ตรงกับ grant Read ของ
        * resource `device-config-override` ใน seed.ts เป๊ะ) — ไม่งั้น role อื่น
        * (Admin ฯลฯ) จะเห็น raw 403 message จาก backend ตรงๆ แทนที่จะไม่เห็น
-       * section นี้เลย (แก้ครั้งที่ 69 — พบจาก UX/UI audit) */}
+       * section นี้เลย (แก้ครั้งที่ 73 — พบจาก UX/UI audit) */}
       {canDecideOverride && (
         <Card>
           <CardHeader>
@@ -299,7 +299,7 @@ export function ApprovalCenterView() {
       {/* section แยกจากทั้ง Config/Campaign Rollout/Config Override (Sprint 3
        * แถวที่ 24) — คนละ resource/endpoint กันทั้งหมด mirror section
        * Per-device Config Override ด้านบนเป๊ะ รวมถึง gate ด้วย
-       * canDecideFirmwareOv เหมือนกัน (แก้ครั้งที่ 69) */}
+       * canDecideFirmwareOv เหมือนกัน (แก้ครั้งที่ 73) */}
       {canDecideFirmwareOv && (
         <Card>
           <CardHeader>
