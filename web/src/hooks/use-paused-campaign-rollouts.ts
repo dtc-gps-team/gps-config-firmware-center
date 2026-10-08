@@ -5,6 +5,10 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { listAllCampaignRollouts, type CampaignRollout } from "@/lib/campaign-api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
+import {
+  PENDING_QUEUE_POLL_INTERVAL_MS,
+  usePollInterval,
+} from "@/hooks/use-poll-interval";
 
 type PausedCampaignRolloutsState = {
   data: CampaignRollout[] | null;
@@ -52,6 +56,7 @@ export function usePausedCampaignRollouts() {
     void refetch();
   }, [refetch]);
   useRefetchOnFocus(refetch);
+  usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
   return { ...state, refetch };
 }
