@@ -308,6 +308,7 @@ void main() {
         'investigating',
         'rolled_back',
         'resolved',
+        'dismissed',
       ]);
     });
 
@@ -481,6 +482,73 @@ void main() {
     });
   });
 
+  group('Incident field report (design issue #236)', () {
+    Map<String, dynamic> base() => {
+      'id': 'inc-1',
+      'title': 't',
+      'severity': 'medium',
+      'status': 'open',
+      'createdAt': '2026-10-06T00:00:00.000Z',
+      'updatedAt': '2026-10-06T00:00:00.000Z',
+    };
+
+    test(
+      'incident อัตโนมัติเดิม (ไม่มี field ใหม่) -> field report fields เป็น null',
+      () {
+        final i = Incident.fromJson(base());
+        expect(i.isFieldReport, isFalse);
+        expect(i.reportedBy, isNull);
+        expect(i.deviceId, isNull);
+        expect(i.reviewedBy, isNull);
+        expect(i.reviewedAt, isNull);
+        expect(i.reviewNote, isNull);
+      },
+    );
+
+    test(
+      'field report ที่ Operation ตัดสินใจแล้ว -> parse ครบ + dismissed',
+      () {
+        final i = Incident.fromJson({
+          ...base(),
+          'source': 'field-report',
+          'status': 'dismissed',
+          'reportedBy': 'st-1',
+          'deviceId': 'DEV-0001',
+          'reviewedBy': 'op-1',
+          'reviewedAt': '2026-10-06T03:00:00.000Z',
+          'reviewNote': 'ซ้ำกับรายการเดิม',
+        });
+        expect(i.isFieldReport, isTrue);
+        expect(i.status, IncidentStatus.dismissed);
+        expect(i.reportedBy, 'st-1');
+        expect(i.deviceId, 'DEV-0001');
+        expect(i.reviewedBy, 'op-1');
+        expect(i.reviewedAt, DateTime.utc(2026, 10, 6, 3));
+        expect(i.reviewNote, 'ซ้ำกับรายการเดิม');
+      },
+    );
+
+    test(
+      'promote -> investigating (ไม่มี promotedCampaignId — ไม่มี column ฝั่ง backend)',
+      () {
+        final i = Incident.fromJson({
+          ...base(),
+          'source': 'field-report',
+          'status': 'investigating',
+          'reviewNote': 'ต้องแก้ด้วย Campaign',
+          // backend ไม่ส่ง field นี้ — ถ้ามีมาก็ต้องไม่ทำให้ parse พัง
+          'promotedCampaignId': 'camp-1',
+        });
+        expect(i.status, IncidentStatus.investigating);
+        expect(i.reviewNote, 'ต้องแก้ด้วย Campaign');
+      },
+    );
+
+    test('IncidentStatus.fromWire รู้จัก dismissed', () {
+      expect(IncidentStatus.fromWire('dismissed'), IncidentStatus.dismissed);
+    });
+  });
+
   group('NotificationType', () {
     test('wire names match openapi.yaml / Prisma enum', () {
       expect(NotificationType.values.map((t) => t.wireName).toList(), [
@@ -497,11 +565,66 @@ void main() {
         'firmware_override_pending',
         'firmware_override_approved',
         'firmware_override_rejected',
+        'incident_report_pending',
+        'incident_report_resolved',
+        'incident_report_dismissed',
+        'incident_report_promoted',
       ]);
     });
 
     // issue #256 — Per-device Firmware Override (PR #257): ต้อง parse ได้จริง
     // ไม่ให้ `_wrapListLenient` ข้ามเงียบๆ
+    // issue #236 (PR #267) — Field Incident Report: ชื่อตาม backend จริง
+    test(
+      'fromWire maps incident_report_* ใหม่ทั้ง 4 ค่า และไม่ชน incident_alert',
+      () {
+        expect(
+          NotificationType.fromWire('incident_report_pending'),
+          NotificationType.incidentReportPending,
+        );
+        expect(
+          NotificationType.fromWire('incident_report_resolved'),
+          NotificationType.incidentReportResolved,
+        );
+        expect(
+          NotificationType.fromWire('incident_report_dismissed'),
+          NotificationType.incidentReportDismissed,
+        );
+        expect(
+          NotificationType.fromWire('incident_report_promoted'),
+          NotificationType.incidentReportPromoted,
+        );
+        expect(
+          NotificationType.fromWire('incident_alert'),
+          NotificationType.incidentAlert,
+        );
+        // ชื่อที่เคยเสนอไว้ก่อนหน้า (ไม่ได้ใช้จริง) ต้องยังไม่รู้จัก
+        expect(
+          () => NotificationType.fromWire('incident_resolved'),
+          throwsArgumentError,
+        );
+      },
+    );
+
+    test(
+      'AppNotification.fromJson parse incident_report_* ได้ (deviceId null ได้)',
+      () {
+        final n = AppNotification.fromJson({
+          'id': 'n1',
+          'userId': 'u1',
+          'type': 'incident_report_resolved',
+          'payload': {
+            'incidentId': 'i1',
+            'deviceId': null,
+            'reviewNote': 'แก้แล้ว',
+          },
+          'read': false,
+          'createdAt': '2026-10-06T00:00:00.000Z',
+        });
+        expect(n.type, NotificationType.incidentReportResolved);
+      },
+    );
+
     test('fromWire maps firmware_override_* ใหม่ทั้ง 3 ค่า', () {
       expect(
         NotificationType.fromWire('firmware_override_pending'),
