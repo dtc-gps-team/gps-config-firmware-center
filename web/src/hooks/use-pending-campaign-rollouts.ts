@@ -9,6 +9,10 @@ import {
   type CampaignRollout,
 } from "@/lib/campaign-api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
+import {
+  PENDING_QUEUE_POLL_INTERVAL_MS,
+  usePollInterval,
+} from "@/hooks/use-poll-interval";
 
 /** view-model ของ 1 รายการ Rollout รออนุมัติใน Approval Center — resolve
  * ชื่อกลุ่มเองจาก `GET /campaigns` (backend ไม่ embed) mirror
@@ -78,6 +82,7 @@ export function usePendingCampaignRollouts() {
     void refetch();
   }, [refetch]);
   useRefetchOnFocus(refetch);
+  usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
   return { ...state, refetch };
 }
