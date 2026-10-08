@@ -43,6 +43,14 @@ class _FakeIncidentRepository implements IncidentRepository {
   Future<List<Incident>> listIncidents() async => _incidents;
 
   @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<Incident> getIncident(String id) async {
     detailCalls.add(id);
     if (detailError != null) throw detailError!;

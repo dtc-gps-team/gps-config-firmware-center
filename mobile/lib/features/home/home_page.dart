@@ -108,6 +108,16 @@ class HomePage extends ConsumerWidget {
                   label: 'ค้นหาอุปกรณ์',
                   onTap: () => context.push(AppRoutes.deviceSearch),
                 ),
+                // แจ้งปัญหาหน้างาน (Field Incident Report, design issue #236) —
+                // ST/OT เท่านั้น (backend `POST /incidents` ให้ Create เฉพาะ
+                // ST/OT — PR #267)
+                if (role == UserRole.st || role == UserRole.ot)
+                  _Shortcut(
+                    key: const Key('shortcut_field_report'),
+                    icon: Icons.add_alert_outlined,
+                    label: 'แจ้งปัญหา',
+                    onTap: () => context.push(AppRoutes.incidentReport),
+                  ),
                 // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
                 // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
                 // (ST/OT) ไม่มีสิทธิ์ Create Incident
