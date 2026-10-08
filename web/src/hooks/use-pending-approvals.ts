@@ -6,6 +6,10 @@ import { ApiError } from "@/lib/api";
 import { listConfigs, type Config } from "@/lib/config-api";
 import { listUsers } from "@/lib/users-api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
+import {
+  PENDING_QUEUE_POLL_INTERVAL_MS,
+  usePollInterval,
+} from "@/hooks/use-poll-interval";
 
 /**
  * View-model ของ 1 รายการในคิว Approval Center — ตั้งใจ decouple จาก `Config`
@@ -97,6 +101,7 @@ export function usePendingApprovals() {
     void refetch();
   }, [refetch]);
   useRefetchOnFocus(refetch);
+  usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
   return { ...state, refetch };
 }

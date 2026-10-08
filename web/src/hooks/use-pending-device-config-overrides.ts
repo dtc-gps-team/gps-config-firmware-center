@@ -8,6 +8,10 @@ import {
   type DeviceConfigOverride,
 } from "@/lib/device-config-override-api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
+import {
+  PENDING_QUEUE_POLL_INTERVAL_MS,
+  usePollInterval,
+} from "@/hooks/use-poll-interval";
 
 type State = {
   data: DeviceConfigOverride[] | null;
@@ -63,6 +67,7 @@ export function usePendingDeviceConfigOverrides(enabled: boolean = true) {
     void refetch();
   }, [refetch, enabled]);
   useRefetchOnFocus(refetch);
+  usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
   return { ...state, refetch };
 }
