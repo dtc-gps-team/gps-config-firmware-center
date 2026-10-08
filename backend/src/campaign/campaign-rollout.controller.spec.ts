@@ -38,6 +38,7 @@ const sampleRollout: CampaignRollout = {
   createdBy: 'op-1',
   approvedBy: null,
   approvedAt: null,
+  activeWindowStartedAt: null,
   isRollback: false,
   rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
