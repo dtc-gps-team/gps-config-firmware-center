@@ -50,7 +50,7 @@
 
 - **Android เท่านั้น** ในเฟสนี้ (ทีมตัดสินใจ) — iOS **ยังไม่มี** APNs key / `GoogleService-Info.plist`
   และ `_platform` ใน `PushNotificationService` ถูก hardcode เป็น `android`
-- Web ยังไม่ใช้ FCM (ใช้ polling ทุก 20 วินาที — PR #270)
+- Web ยังไม่ใช้ FCM (ฝั่ง Web ใช้วิธี polling ทุก 20 วินาทีสำหรับการแจ้งเตือนแทน push)
 - `google-services.json` **ไม่ commit** (อยู่ใน `.gitignore`) วางเองต่อเครื่องจาก Firebase Console
   ส่วน CI ใช้ไฟล์ placeholder (`.github/workflows/mobile-integration-test.yml`)
 
