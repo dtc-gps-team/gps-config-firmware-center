@@ -618,6 +618,7 @@ describe('DeviceService', () => {
           auditModule: 'device',
           action: 'register',
           metadata: { deviceId: registerDto.deviceId },
+          ipAddress: null,
         },
       });
     });
@@ -736,6 +737,7 @@ describe('DeviceService', () => {
           auditModule: 'device',
           action: 'rotate-key',
           metadata: { deviceId: createdDevice.deviceId },
+          ipAddress: null,
         },
       });
     });
@@ -855,6 +857,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -882,6 +885,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN', 'COMMAND_PASSWORD'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -1093,6 +1097,7 @@ describe('DeviceService', () => {
             firmwareId: readyFirmware.id,
             firmwareVersion: readyFirmware.version,
           },
+          ipAddress: null,
         },
       });
     });
@@ -2120,6 +2125,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -2287,6 +2293,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               configId: approvedConfig.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2417,6 +2424,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               configId: approvedConfig.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2591,6 +2599,7 @@ describe('DeviceService', () => {
             firmwareId: readyFirmware.id,
             firmwareVersion: readyFirmware.version,
           },
+          ipAddress: null,
         },
       });
     });
@@ -2737,6 +2746,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               firmwareId: readyFirmware.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2845,6 +2855,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               firmwareId: readyFirmware.id,
             },
+            ipAddress: null,
           },
         });
       });

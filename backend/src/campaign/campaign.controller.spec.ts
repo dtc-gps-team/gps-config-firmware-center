@@ -119,6 +119,7 @@ describe('CampaignController', () => {
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 

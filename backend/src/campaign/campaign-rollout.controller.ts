@@ -28,7 +28,7 @@ import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
 function toActor(req: AuthenticatedRequest): ActingUser {
-  return { id: req.user.sub, role: req.user.role };
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
 }
 
 // Campaign Monitor (#22, แก้ไข 2026-09-24) — nested ใต้ /campaigns/{campaignId}

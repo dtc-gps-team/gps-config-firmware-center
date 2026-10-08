@@ -275,6 +275,7 @@ describe('ConfigDeletionService', () => {
           userId: 'sa-1',
           auditModule: 'config-deletion',
           action: 'approve',
+          ipAddress: null,
         },
       });
     });
@@ -323,6 +324,7 @@ describe('ConfigDeletionService', () => {
           userId: 'sa-1',
           auditModule: 'config-deletion',
           action: 'reject',
+          ipAddress: null,
         },
       });
     });
@@ -363,6 +365,7 @@ describe('ConfigDeletionService', () => {
           userId: 'ce-1',
           auditModule: 'config-deletion',
           action: 'keep',
+          ipAddress: null,
         },
       });
     });

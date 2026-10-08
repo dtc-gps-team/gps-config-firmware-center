@@ -210,7 +210,7 @@ export class CampaignRolloutService {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
-    await this.logAudit('create', actor.id);
+    await this.logAudit('create', actor.id, undefined, actor.ipAddress ?? null);
     return rollout;
   }
 
@@ -256,7 +256,12 @@ export class CampaignRolloutService {
       return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
-    await this.logAudit('approve', actor.id);
+    await this.logAudit(
+      'approve',
+      actor.id,
+      undefined,
+      actor.ipAddress ?? null,
+    );
     return updated;
   }
 
@@ -304,7 +309,12 @@ export class CampaignRolloutService {
       return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
-    await this.logAudit('release', actor.id);
+    await this.logAudit(
+      'release',
+      actor.id,
+      undefined,
+      actor.ipAddress ?? null,
+    );
     return this.dispatchAutoApply(updated, actor.id);
   }
 
@@ -371,7 +381,7 @@ export class CampaignRolloutService {
       return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
-    await this.logAudit('reject', actor.id);
+    await this.logAudit('reject', actor.id, undefined, actor.ipAddress ?? null);
     return updated;
   }
 
@@ -425,7 +435,7 @@ export class CampaignRolloutService {
       return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
     });
 
-    await this.logAudit('resume', actor.id);
+    await this.logAudit('resume', actor.id, undefined, actor.ipAddress ?? null);
     return this.dispatchAutoApply(updated, actor.id);
   }
 
@@ -571,7 +581,12 @@ export class CampaignRolloutService {
       return created;
     });
 
-    await this.logAudit('rollback', actor.id);
+    await this.logAudit(
+      'rollback',
+      actor.id,
+      undefined,
+      actor.ipAddress ?? null,
+    );
     return rollback;
   }
 
@@ -1362,6 +1377,11 @@ export class CampaignRolloutService {
     action: string,
     userId: string,
     metadata?: AuditLogMetadata,
+    // null เสมอสำหรับ call site ที่มาจาก flow อัตโนมัติ (apply-config/
+    // confirm-firmware-install ที่ loop ข้ามหลายเครื่อง ไม่มี HTTP request
+    // จริงให้ดึง IP) — มีค่าจริงเฉพาะ call site ที่มาจาก actor ที่เพิ่งกด
+    // endpoint เอง (create/approve/release/reject/resume/rollback)
+    ipAddress: string | null = null,
   ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
@@ -1369,6 +1389,7 @@ export class CampaignRolloutService {
           userId,
           auditModule: AUDIT_MODULE,
           action,
+          ipAddress,
           ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
         },
       });

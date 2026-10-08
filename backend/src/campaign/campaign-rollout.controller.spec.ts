@@ -120,6 +120,7 @@ describe('CampaignRolloutController', () => {
     expect(service.create).toHaveBeenCalledWith(campaignId, dto, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -151,6 +152,7 @@ describe('CampaignRolloutController', () => {
     expect(service.approve).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -164,6 +166,7 @@ describe('CampaignRolloutController', () => {
     expect(service.release).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -177,6 +180,7 @@ describe('CampaignRolloutController', () => {
     expect(service.reject).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -190,6 +194,7 @@ describe('CampaignRolloutController', () => {
     expect(service.resume).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -217,7 +222,7 @@ describe('CampaignRolloutController', () => {
       campaignId,
       sampleRollout.id,
       dto,
-      { id: 'op-1', role: 'Operation' },
+      { id: 'op-1', role: 'Operation', ipAddress: null },
     );
   });
 });
