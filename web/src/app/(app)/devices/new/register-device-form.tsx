@@ -135,169 +135,174 @@ export function RegisterDeviceForm() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-id">Device ID</Label>
-        <Input
-          id="device-id"
-          value={deviceId}
-          disabled={submitting}
-          placeholder="เช่น DEV-0099"
-          onChange={(e) => setDeviceId(e.target.value)}
-        />
-      </div>
+      {/* 2 คอลัมน์ — mirror pattern "สร้างใหม่" หน้าอื่น (users/new,
+       * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
+       * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-id">Device ID</Label>
+          <Input
+            id="device-id"
+            value={deviceId}
+            disabled={submitting}
+            placeholder="เช่น DEV-0099"
+            onChange={(e) => setDeviceId(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-sim">SIM Number</Label>
-        <Input
-          id="device-sim"
-          value={simNumber}
-          disabled={submitting}
-          onChange={(e) => setSimNumber(e.target.value)}
-        />
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-sim">SIM Number</Label>
+          <Input
+            id="device-sim"
+            value={simNumber}
+            disabled={submitting}
+            onChange={(e) => setSimNumber(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-model">รุ่นอุปกรณ์</Label>
-        <Select
-          value={modelId}
-          onValueChange={(value) => changeModel(value ?? "")}
-        >
-          <SelectTrigger id="device-model" className="w-full" disabled={submitting}>
-            <SelectValue placeholder="- เลือก -">
-              {(value: string) =>
-                modelList.find((m) => m.id === value)?.name ?? value
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {modelList.map((m) => (
-              <SelectItem key={m.id} value={m.id}>
-                {m.name}
-                {m.status === "discontinued" ? " (เลิกผลิตแล้ว)" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-protocol">โปรโตคอล</Label>
-        <Select
-          value={protocol}
-          disabled={!selectedModel}
-          onValueChange={(value) => setProtocol(value ?? "")}
-        >
-          <SelectTrigger
-            id="device-protocol"
-            className="w-full"
-            disabled={submitting || !selectedModel}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-model">รุ่นอุปกรณ์</Label>
+          <Select
+            value={modelId}
+            onValueChange={(value) => changeModel(value ?? "")}
           >
-            <SelectValue placeholder="- เลือกรุ่นก่อน -" />
-          </SelectTrigger>
-          <SelectContent>
-            {(selectedModel?.supportedProtocols ?? []).map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <SelectTrigger id="device-model" className="w-full" disabled={submitting}>
+              <SelectValue placeholder="- เลือก -">
+                {(value: string) =>
+                  modelList.find((m) => m.id === value)?.name ?? value
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {modelList.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                  {m.status === "discontinued" ? " (เลิกผลิตแล้ว)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-hw-revision">
-          รหัสรุ่นย่อย (Hardware Revision){" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="device-hw-revision"
-          value={hardwareRevisionCode}
-          disabled={submitting}
-          placeholder="เช่น RevA"
-          onChange={(e) => setHardwareRevisionCode(e.target.value)}
-        />
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-protocol">โปรโตคอล</Label>
+          <Select
+            value={protocol}
+            disabled={!selectedModel}
+            onValueChange={(value) => setProtocol(value ?? "")}
+          >
+            <SelectTrigger
+              id="device-protocol"
+              className="w-full"
+              disabled={submitting || !selectedModel}
+            >
+              <SelectValue placeholder="- เลือกรุ่นก่อน -" />
+            </SelectTrigger>
+            <SelectContent>
+              {(selectedModel?.supportedProtocols ?? []).map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-customer">
-          ลูกค้า{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Select
-          value={customerId}
-          onValueChange={(value) => setCustomerId(value ?? NO_CUSTOMER)}
-        >
-          <SelectTrigger id="device-customer" className="w-full" disabled={submitting}>
-            <SelectValue>
-              {(value: string) =>
-                value === NO_CUSTOMER
-                  ? "ไม่ระบุ"
-                  : (customerList.find((c) => c.id === value)?.companyName ??
-                    "ไม่ระบุ")
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_CUSTOMER}>ไม่ระบุ</SelectItem>
-            {customerList.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.companyName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-hw-revision">
+            รหัสรุ่นย่อย (Hardware Revision){" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="device-hw-revision"
+            value={hardwareRevisionCode}
+            disabled={submitting}
+            placeholder="เช่น RevA"
+            onChange={(e) => setHardwareRevisionCode(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-imei">
-          IMEI{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="device-imei"
-          value={imei}
-          disabled={submitting}
-          onChange={(e) => setImei(e.target.value)}
-        />
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-customer">
+            ลูกค้า{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Select
+            value={customerId}
+            onValueChange={(value) => setCustomerId(value ?? NO_CUSTOMER)}
+          >
+            <SelectTrigger id="device-customer" className="w-full" disabled={submitting}>
+              <SelectValue>
+                {(value: string) =>
+                  value === NO_CUSTOMER
+                    ? "ไม่ระบุ"
+                    : (customerList.find((c) => c.id === value)?.companyName ??
+                      "ไม่ระบุ")
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_CUSTOMER}>ไม่ระบุ</SelectItem>
+              {customerList.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.companyName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-serial">
-          Serial Number{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="device-serial"
-          value={serialNumber}
-          disabled={submitting}
-          onChange={(e) => setSerialNumber(e.target.value)}
-        />
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-imei">
+            IMEI{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="device-imei"
+            value={imei}
+            disabled={submitting}
+            onChange={(e) => setImei(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-blackbox">
-          Blackbox ID{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="device-blackbox"
-          value={blackboxId}
-          disabled={submitting}
-          onChange={(e) => setBlackboxId(e.target.value)}
-        />
-      </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-serial">
+            Serial Number{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="device-serial"
+            value={serialNumber}
+            disabled={submitting}
+            onChange={(e) => setSerialNumber(e.target.value)}
+          />
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="device-bootloader">
-          Bootloader{" "}
-          <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-        </Label>
-        <Input
-          id="device-bootloader"
-          value={bootloader}
-          disabled={submitting}
-          onChange={(e) => setBootloader(e.target.value)}
-        />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-blackbox">
+            Blackbox ID{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="device-blackbox"
+            value={blackboxId}
+            disabled={submitting}
+            onChange={(e) => setBlackboxId(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-bootloader">
+            Bootloader{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          <Input
+            id="device-bootloader"
+            value={bootloader}
+            disabled={submitting}
+            onChange={(e) => setBootloader(e.target.value)}
+          />
+        </div>
       </div>
 
       {formError && (
