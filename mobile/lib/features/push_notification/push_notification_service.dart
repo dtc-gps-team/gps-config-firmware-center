@@ -113,9 +113,11 @@ class PushNotificationService {
     // aimed at the previous user's token can no longer reach this phone, and
     // the next login gets a fresh token.
     try {
-      await _tokenGateway.deleteToken();
+      // FirebaseMessaging.deleteToken() has no timeout of its own and can hang
+      // without a network — cap it so logout never waits on it.
+      await _tokenGateway.deleteToken().timeout(const Duration(seconds: 5));
     } catch (_) {
-      // same best-effort rule
+      // timeout / error: same best-effort rule — never blocks logout
     }
   }
 }

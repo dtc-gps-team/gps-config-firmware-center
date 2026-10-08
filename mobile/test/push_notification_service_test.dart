@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
@@ -38,6 +40,20 @@ class _FakeTokenGateway implements FcmTokenGateway {
   Future<void> deleteToken() async {
     calls.add('deleteToken');
     if (deleteFails) throw Exception('no network');
+  }
+}
+
+/// `deleteToken()` that never completes — simulates Firebase hanging offline.
+class _HangingTokenGateway implements FcmTokenGateway {
+  final List<String> calls = [];
+
+  @override
+  Future<String?> getToken() async => 'fcm-token-1';
+
+  @override
+  Future<void> deleteToken() {
+    calls.add('deleteToken');
+    return Completer<void>().future;
   }
 }
 
@@ -124,6 +140,28 @@ void main() {
       );
       await expectLater(service.unregisterAndStop(), completes);
     });
+
+    testWidgets(
+      'deleteToken ค้าง (ออฟไลน์) -> logout จบภายใน 5 วินาที ไม่ค้าง',
+      (tester) async {
+        final gateway = _HangingTokenGateway();
+        final service = PushNotificationService(
+          _SpyPushTokenRepository(),
+          tokenGateway: gateway,
+        );
+
+        var done = false;
+        final logout = service.unregisterAndStop().then((_) => done = true);
+
+        await tester.pump(const Duration(seconds: 4));
+        expect(gateway.calls, ['deleteToken']);
+        expect(done, isFalse); // ยังรอ deleteToken อยู่ (ยังไม่ครบ 5 วิ)
+
+        await tester.pump(const Duration(seconds: 2)); // เกิน 5 วิ
+        await logout;
+        expect(done, isTrue);
+      },
+    );
 
     test(
       'no token -> nothing to unregister but deleteToken still called',
