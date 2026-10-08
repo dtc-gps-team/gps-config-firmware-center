@@ -5,13 +5,25 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
 
-/// Reads the incident list for the "Incident" screen (read-only).
+/// Reads the incident list for the "Incident" screen, and (design issue #236)
+/// lets ST/OT file a field report.
 ///
 /// `GET /incidents` is open to every logged-in role (RBAC "R" for all), so —
-/// unlike [TaskRepository] — there is no client-side role gate. No create /
-/// update: field staff (ST/OT) have no Create permission (see RBAC_Matrix.md).
+/// unlike [TaskRepository] — there is no client-side role gate. **Create**
+/// (`createFieldReport`, `POST /incidents`) is ST/OT-only (RBAC `incidents`
+/// `Create`, backend PR #267) — the server enforces it; the Home shortcut is
+/// just a UI hint.
 abstract class IncidentRepository {
   Future<List<Incident>> listIncidents();
+
+  /// `POST /incidents` (issue #236, backend PR #267). ไม่
+  /// auto-pause/rollback — Operation เป็นคนตัดสินใจ throws [ApiException].
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  });
 
   /// `GET /incidents/{id}` — throws [ApiException] (404) if not found.
   Future<Incident> getIncident(String id);
@@ -29,6 +41,19 @@ class ApiIncidentRepository implements IncidentRepository {
 
   @override
   Future<Incident> getIncident(String id) => _api.getIncident(id);
+
+  @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) => _api.createIncident(
+    title: title,
+    description: description,
+    severity: severity,
+    deviceId: deviceId,
+  );
 }
 
 /// In-memory fake for `API_MOCK_MODE` (dev/demo without a backend). Same
@@ -63,6 +88,41 @@ class MockIncidentRepository implements IncidentRepository {
   Future<List<Incident>> listIncidents() async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     return List.unmodifiable(_incidents);
+  }
+
+  /// mirror ที่ design #236 ให้ backend ทำ: `status: open`,
+  /// `source: 'field-report'`, `reportedBy` จาก JWT (mock ใช้ค่าคงที่) ·
+  /// title/description บังคับ (backend คืน 400)
+  @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (title.trim().isEmpty || description.trim().isEmpty) {
+      throw ApiException(
+        'ต้องกรอกหัวข้อและรายละเอียดปัญหา',
+        statusCode: 400,
+        details: const ['title/description ห้ามว่าง'],
+      );
+    }
+    final now = DateTime.now();
+    final incident = Incident(
+      id: 'mock-field-report-${_incidents.length + 1}',
+      title: title.trim(),
+      description: description.trim(),
+      severity: severity,
+      status: IncidentStatus.open,
+      source: 'field-report',
+      reportedBy: 'mock-st-user',
+      deviceId: deviceId,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _incidents.insert(0, incident);
+    return incident;
   }
 
   @override

@@ -12,6 +12,7 @@ import '../../features/device_search/device_detail_page.dart';
 import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
 import '../../features/incident/incident_detail_page.dart';
+import '../../features/incident/field_report_page.dart';
 import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
@@ -38,6 +39,11 @@ class AppRoutes {
 
   /// Incident list (read-only) — `/incidents`.
   static const incidents = '/incidents';
+
+  /// Field Incident Report (ST/OT แจ้งปัญหา, design issue #236) —
+  /// `/incident-report` (ไม่ใช้ `/incidents/report` เพราะชนกับ
+  /// [incidentDetailPattern] `/incidents/:id`). รับ `?deviceId=` เพื่อ pre-fill.
+  static const incidentReport = '/incident-report';
 
   /// Incident detail — `/incidents/:id`. Use [incidentDetail] to build a path.
   static const incidentDetailPattern = '/incidents/:id';
@@ -138,6 +144,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.incidents,
         builder: (context, state) => const IncidentListPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.incidentReport,
+        builder: (context, state) => FieldReportPage(
+          initialDeviceId: state.uri.queryParameters['deviceId'],
+        ),
       ),
       GoRoute(
         path: AppRoutes.incidentDetailPattern,

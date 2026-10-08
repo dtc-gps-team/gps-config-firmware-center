@@ -73,7 +73,16 @@ enum NotificationType {
   // PR #257) mirror config_override_* ทุกประการ
   firmwareOverridePending('firmware_override_pending'),
   firmwareOverrideApproved('firmware_override_approved'),
-  firmwareOverrideRejected('firmware_override_rejected');
+  firmwareOverrideRejected('firmware_override_rejected'),
+  // เพิ่มใหม่ (issue #236, PR #267) — Field Incident Report · ชื่อตามที่ backend
+  // implement จริง (prefix `incident_report_*` ไม่ใช่ `incident_*`) ไม่ชนกับ
+  // `incident_alert` (incident อัตโนมัติ) — `pending` ส่งให้ Operation ทุกคน
+  // ตอนมี report ใหม่ · `resolved/dismissed/promoted` ส่งให้ผู้แจ้ง (ST/OT)
+  // ตอน Operation ตัดสินใจ
+  incidentReportPending('incident_report_pending'),
+  incidentReportResolved('incident_report_resolved'),
+  incidentReportDismissed('incident_report_dismissed'),
+  incidentReportPromoted('incident_report_promoted');
 
   const NotificationType(this.wireName);
 
@@ -132,7 +141,11 @@ enum IncidentStatus {
   open('open'),
   investigating('investigating'),
   rolledBack('rolled_back'),
-  resolved('resolved');
+  resolved('resolved'),
+  // เพิ่มใหม่ (issue #236, backend PR #267) — Operation ตัดสินใจ "ไม่ใช่ปัญหา/
+  // ซ้ำ" กับ field report · ต้องรู้จักไว้ ไม่งั้น `listIncidents` (strict)
+  // จะ error ทั้งรายการเมื่อ backend ส่งค่านี้
+  dismissed('dismissed');
 
   const IncidentStatus(this.wireName);
 
@@ -833,6 +846,11 @@ class Incident {
     this.relatedFirmwareId,
     this.source,
     this.metadata,
+    this.reportedBy,
+    this.deviceId,
+    this.reviewedBy,
+    this.reviewedAt,
+    this.reviewNote,
   });
 
   final String id;
@@ -846,6 +864,25 @@ class Incident {
   final Map<String, dynamic>? metadata;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Field report (issue #236, backend PR #267 / openapi v3.47 — ทุกตัว
+  // nullable: incident อัตโนมัติเดิมไม่มี) — `source == 'field-report'` คือ
+  // report ที่ ST/OT แจ้งเอง
+  /// `User.id` ของผู้แจ้ง — null สำหรับ incident auto-detect
+  final String? reportedBy;
+
+  /// `Device.deviceId` ที่ report ผูกไว้
+  final String? deviceId;
+
+  /// Operation ที่ตัดสินใจ + เวลา + เหตุผล/บริบท
+  final String? reviewedBy;
+  final DateTime? reviewedAt;
+  final String? reviewNote;
+
+  // ไม่มี `promotedCampaignId` — backend (PR #267) ไม่มี column นี้ ใช้ FK ฝั่ง
+  // `Campaign.sourceIncidentId @unique` แทน (ยังไม่มี endpoint query กลับทาง)
+
+  bool get isFieldReport => source == 'field-report';
 
   factory Incident.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
@@ -861,6 +898,11 @@ class Incident {
       relatedFirmwareId: json['relatedFirmwareId'] as String?,
       source: json['source'] as String?,
       metadata: (json['metadata'] as Map?)?.cast<String, dynamic>(),
+      reportedBy: json['reportedBy'] as String?,
+      deviceId: json['deviceId'] as String?,
+      reviewedBy: json['reviewedBy'] as String?,
+      reviewedAt: parseDate(json['reviewedAt']),
+      reviewNote: json['reviewNote'] as String?,
       // spec marks createdAt/updatedAt required, but decode defensively
       // so a slightly-off payload renders instead of throwing (same as Task).
       createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
