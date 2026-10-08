@@ -160,7 +160,7 @@ function MiniStackedBarCard({
   const total = segments.reduce((sum, s) => sum + s.value, 0);
 
   return (
-    <Card className="h-full border border-dashed border-amber-300/60 shadow-none sm:col-span-2 dark:border-amber-800/50">
+    <Card className="col-span-2 h-full border border-dashed border-amber-300/60 shadow-none dark:border-amber-800/50">
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
           {label}
@@ -298,26 +298,25 @@ export function DashboardSummary() {
 
   return (
     <div className="flex flex-col gap-8">
-      <DashboardSection title="ภาพรวมอุปกรณ์" description="Device Overview">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+      {/* ความเสี่ยงขึ้นก่อน Device/Deployment Overview โดยตั้งใจ (แก้ครั้งที่
+       * 73) — ของที่ต้อง action (risk/alert) ควรอยู่ในลำดับการกวาดสายตาแรกๆ
+       * (F-pattern) ไม่ใช่ตัวเลขนิ่งๆ อย่างจำนวนอุปกรณ์/รุ่นที่แทบไม่เปลี่ยน
+       * ที่เคยอยู่บนสุด */}
+      <DashboardSection title="ความเสี่ยง" description="Risk Dashboard">
+        {/* grid คงที่ 4 คอลัมน์ (2 คอลัมน์บนจอแคบ) แทน auto-fit เดิม — การ์ด
+         * ตัวเลขเดี่ยวกิน 1 ช่อง การ์ดมินิชาร์ตกิน 2 ช่องเสมอ ไม่ปล่อยให้
+         * เบราว์เซอร์คำนวณความกว้างจากพื้นที่เหลือแบบสุ่มอีกต่อไป (แก้ครั้งที่
+         * 73 — เดิมการ์ดจะกว้าง/แคบต่างกันตามพื้นที่เหลือ ไม่สื่อความสำคัญ) */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <LiveSummaryCard
-            label="อุปกรณ์ทั้งหมด"
-            href="/devices"
-            value={deviceCount}
-            error={devices.error}
-            icon={BoxIcon}
-            tone="neutral"
+            label="Rollout หยุดชั่วคราว (Auto Pause)"
+            href="/campaigns"
+            value={pausedRolloutCount}
+            error={pausedRollouts.error}
+            icon={TriangleAlertIcon}
+            tone="danger"
           />
-          <LiveSummaryCard
-            label="รุ่นอุปกรณ์"
-            href="/devices"
-            value={modelCount}
-            error={devices.error}
-            icon={SlidersHorizontalIcon}
-            tone="neutral"
-          />
-          <MiniStackedBarCard label="Online / Offline" segments={ONLINE_OFFLINE_SEGMENTS} />
-          {DEMO_DEVICE_OVERVIEW.map((card) => (
+          {DEMO_RISK_DASHBOARD.map((card) => (
             <DemoSummaryCard
               key={card.label}
               label={card.label}
@@ -330,7 +329,7 @@ export function DashboardSummary() {
       </DashboardSection>
 
       <DashboardSection title="ภาพรวมการ Deploy" description="Deployment Overview">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <LiveSummaryCard
             label="Config รออนุมัติ"
             href="/approvals"
@@ -351,17 +350,26 @@ export function DashboardSummary() {
         </div>
       </DashboardSection>
 
-      <DashboardSection title="ความเสี่ยง" description="Risk Dashboard">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+      <DashboardSection title="ภาพรวมอุปกรณ์" description="Device Overview">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <LiveSummaryCard
-            label="Rollout หยุดชั่วคราว (Auto Pause)"
-            href="/campaigns"
-            value={pausedRolloutCount}
-            error={pausedRollouts.error}
-            icon={TriangleAlertIcon}
-            tone="danger"
+            label="อุปกรณ์ทั้งหมด"
+            href="/devices"
+            value={deviceCount}
+            error={devices.error}
+            icon={BoxIcon}
+            tone="neutral"
           />
-          {DEMO_RISK_DASHBOARD.map((card) => (
+          <LiveSummaryCard
+            label="รุ่นอุปกรณ์"
+            href="/devices"
+            value={modelCount}
+            error={devices.error}
+            icon={SlidersHorizontalIcon}
+            tone="neutral"
+          />
+          <MiniStackedBarCard label="Online / Offline" segments={ONLINE_OFFLINE_SEGMENTS} />
+          {DEMO_DEVICE_OVERVIEW.map((card) => (
             <DemoSummaryCard
               key={card.label}
               label={card.label}
