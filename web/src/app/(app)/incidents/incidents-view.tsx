@@ -102,7 +102,12 @@ export function IncidentsView() {
             }
           >
             <SelectTrigger className="h-8 max-w-48">
-              <SelectValue placeholder="สถานะ: ทั้งหมด" />
+              <SelectValue placeholder="สถานะ: ทั้งหมด">
+                {(value: string) =>
+                  INCIDENT_STATUS_OPTIONS.find((s) => s.value === value)
+                    ?.label ?? "สถานะ: ทั้งหมด"
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">สถานะ: ทั้งหมด</SelectItem>
