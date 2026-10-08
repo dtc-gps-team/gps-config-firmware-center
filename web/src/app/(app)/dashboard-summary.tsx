@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   BoxIcon,
@@ -22,11 +22,7 @@ import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { usePausedCampaignRollouts } from "@/hooks/use-paused-campaign-rollouts";
-import {
-  DEMO_DEPLOYMENT_OVERVIEW,
-  DEMO_DEVICE_OVERVIEW,
-  DEMO_RISK_DASHBOARD,
-} from "@/lib/demo-data";
+import { DEMO_DEVICE_OVERVIEW, DEMO_RISK_DASHBOARD } from "@/lib/demo-data";
 import { toneColorClass, type PillTone } from "@/lib/status-pill";
 
 /**
@@ -129,6 +125,121 @@ function DemoSummaryCard({
   );
 }
 
+type MiniBarSegment = {
+  key: string;
+  label: string;
+  value: number;
+  /** สีที่ผ่าน dataviz skill validator แล้ว (ดู comment เหนือ
+   * `ONLINE_OFFLINE_SEGMENTS`/`DEPLOY_RESULT_SEGMENTS`) — คนละชุดกับ
+   * `PillTone` ที่ใช้ทั่วแอปโดยตั้งใจ เหมือนกับที่ `DashboardConfigStatusChart`
+   * ทำไว้ก่อนแล้ว */
+  colorClass: string;
+};
+
+/** ขนาดขั้นต่ำ (% ของความกว้างทั้งแท่ง) ที่ segment จะโชว์ตัวเลขในตัวเอง —
+ * แคบกว่านี้ให้พึ่ง legend/tooltip แทน (กันตัวเลขล้นออกนอก segment) mirror
+ * `DashboardConfigStatusChart` */
+const MINI_BAR_INLINE_LABEL_MIN_PERCENT = 12;
+
+/**
+ * การ์ดมินิชาร์ต stacked bar แนวนอน — ใช้แทนการ์ดตัวเลขเดี่ยวๆ หลายใบที่เป็น
+ * ข้อมูล part-to-whole เดียวกัน (Online/Offline, สำเร็จ/ล้มเหลว/Rollback)
+ * เพื่อลดจำนวนการ์ดสี่เหลี่ยมและใช้พื้นที่คุ้มขึ้น (feedback A 2026-10-07 —
+ * การ์ดเดี่ยวๆ เยอะเกินไปเมื่อเทียบกับการ์ด Config status chart ที่มีอยู่แล้ว)
+ * — ยังเป็นข้อมูลตัวอย่าง (badge "ตัวอย่าง" เหมือน `DemoSummaryCard`) ไม่ใช่
+ * ของจริง ต่างจาก `DashboardConfigStatusChart` ที่ต่อ API แล้ว
+ */
+function MiniStackedBarCard({
+  label,
+  segments,
+}: {
+  label: string;
+  segments: MiniBarSegment[];
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+
+  return (
+    <Card className="h-full border border-dashed border-amber-300/60 shadow-none sm:col-span-2 dark:border-amber-800/50">
+      <CardHeader>
+        <CardDescription className="flex items-center gap-1.5">
+          {label}
+          <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            ตัวอย่าง
+          </span>
+        </CardDescription>
+      </CardHeader>
+      <div className="flex flex-col gap-2 px-6 pb-5">
+        <div className="mt-1 flex h-5 w-full gap-0.5">
+          {segments.map((s, i) => {
+            const percent = total > 0 ? (s.value / total) * 100 : 0;
+            const isFirst = i === 0;
+            const isLast = i === segments.length - 1;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                className={[
+                  "group relative flex items-center justify-center transition-[filter] outline-none",
+                  s.colorClass,
+                  isFirst ? "rounded-l" : "",
+                  isLast ? "rounded-r" : "",
+                  hovered === s.key ? "brightness-110" : "",
+                ].join(" ")}
+                style={{ width: `${percent}%` }}
+                onMouseEnter={() => setHovered(s.key)}
+                onMouseLeave={() => setHovered(null)}
+                onFocus={() => setHovered(s.key)}
+                onBlur={() => setHovered(null)}
+              >
+                {percent >= MINI_BAR_INLINE_LABEL_MIN_PERCENT && (
+                  <span className="text-[#0b0b0b] text-xs font-medium tabular-nums">
+                    {s.value}
+                  </span>
+                )}
+                {hovered === s.key && (
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-md bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md ring-1 ring-foreground/10">
+                    <span className="font-semibold tabular-nums">{s.value}</span>{" "}
+                    <span className="text-muted-foreground">{s.label}</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <dl className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {segments.map((s) => (
+            <div key={s.key} className="flex items-center gap-1.5">
+              <span className={`size-2.5 shrink-0 rounded-sm ${s.colorClass}`} />
+              <dt className="text-muted-foreground">{s.label}</dt>
+              <dd className="font-medium tabular-nums">{s.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </Card>
+  );
+}
+
+/** สีผ่าน dataviz validator แล้ว (`node scripts/validate_palette.js`) —
+ * เลือก green/red/blue เพราะข้อมูลสื่อ "ดี/แย่/แก้ไขแล้ว" โดยธรรมชาติ ไม่ใช่
+ * สถานะ (status palette) เพราะเป็นแท่งหลายส่วนเทียบกัน (part-to-whole) ไม่ใช่
+ * badge เดี่ยว — status palette สงวนไว้สำหรับ badge+icon+label เท่านั้นตาม
+ * dataviz skill ไม่ใช่ fill ของแท่งที่ต้องแยกจากกันเอง: green vs red ผ่าน
+ * all-checks มี WARN เดียว (CVD 6-8 band, light mode) ซึ่งชดเชยด้วย legend +
+ * ตัวเลขในแท่ง (secondary encoding) ตามกฎของ skill
+ */
+const ONLINE_OFFLINE_SEGMENTS: MiniBarSegment[] = [
+  { key: "online", label: "Online", value: 142, colorClass: "bg-[#008300] dark:bg-[#008300]" },
+  { key: "offline", label: "Offline", value: 8, colorClass: "bg-[#e34948] dark:bg-[#e66767]" },
+];
+
+const DEPLOY_RESULT_SEGMENTS: MiniBarSegment[] = [
+  { key: "success", label: "สำเร็จ", value: 128, colorClass: "bg-[#008300] dark:bg-[#008300]" },
+  { key: "failed", label: "ล้มเหลว", value: 4, colorClass: "bg-[#e34948] dark:bg-[#e66767]" },
+  { key: "rollback", label: "Rollback", value: 1, colorClass: "bg-[#2a78d6] dark:bg-[#3987e5]" },
+];
+
 function DashboardSection({
   title,
   description,
@@ -188,7 +299,7 @@ export function DashboardSummary() {
   return (
     <div className="flex flex-col gap-8">
       <DashboardSection title="ภาพรวมอุปกรณ์" description="Device Overview">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
           <LiveSummaryCard
             label="อุปกรณ์ทั้งหมด"
             href="/devices"
@@ -205,6 +316,7 @@ export function DashboardSummary() {
             icon={SlidersHorizontalIcon}
             tone="neutral"
           />
+          <MiniStackedBarCard label="Online / Offline" segments={ONLINE_OFFLINE_SEGMENTS} />
           {DEMO_DEVICE_OVERVIEW.map((card) => (
             <DemoSummaryCard
               key={card.label}
@@ -218,7 +330,7 @@ export function DashboardSummary() {
       </DashboardSection>
 
       <DashboardSection title="ภาพรวมการ Deploy" description="Deployment Overview">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
           <LiveSummaryCard
             label="Config รออนุมัติ"
             href="/approvals"
@@ -235,20 +347,12 @@ export function DashboardSummary() {
             icon={RocketIcon}
             tone="progress"
           />
-          {DEMO_DEPLOYMENT_OVERVIEW.map((card) => (
-            <DemoSummaryCard
-              key={card.label}
-              label={card.label}
-              value={card.value}
-              icon={card.icon}
-              tone={card.tone}
-            />
-          ))}
+          <MiniStackedBarCard label="ผลการ Deploy" segments={DEPLOY_RESULT_SEGMENTS} />
         </div>
       </DashboardSection>
 
       <DashboardSection title="ความเสี่ยง" description="Risk Dashboard">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
           <LiveSummaryCard
             label="Rollout หยุดชั่วคราว (Auto Pause)"
             href="/campaigns"

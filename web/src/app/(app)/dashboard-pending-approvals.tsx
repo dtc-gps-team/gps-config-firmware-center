@@ -211,11 +211,12 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
             </Button>
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <ClipboardCheckIcon className="size-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              ไม่มีรายการรออนุมัติตอนนี้
-            </p>
+          // เดิม empty state สูง py-8 + icon ใหญ่ เปลืองพื้นที่มากเมื่อเทียบ
+          // กับ "ไม่มีอะไรต้องทำ" ที่ไม่ควรเด่น (feedback A 2026-10-07 — ย่อ
+          // ให้กระชับเหลือแถวเดียว ตรงข้ามกับตอนมีรายการจริงที่ยังเด่นเหมือนเดิม)
+          <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+            <ClipboardCheckIcon className="size-4 shrink-0" />
+            ไม่มีรายการรออนุมัติตอนนี้
           </div>
         ) : (
           <ul className="flex flex-col divide-y">
