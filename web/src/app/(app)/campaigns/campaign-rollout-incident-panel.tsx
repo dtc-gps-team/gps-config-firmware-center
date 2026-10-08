@@ -119,7 +119,7 @@ export function CampaignRolloutIncidentPanel({
         campaignId,
         rollout.id,
       );
-      toast.success("Resume แล้ว — status กลับเป็น active");
+      toast.success("Resume แล้ว status กลับเป็น active");
       onResumed(updated);
       // #238 review comment ข้อ 5 — เดิม reset เฉพาะใน catch ปกติแผงหายไปเอง
       // หลัง onResumed ทำให้ parent refetch/re-render (canResume กลาย false)
@@ -150,7 +150,7 @@ export function CampaignRolloutIncidentPanel({
           ? { excludeDeviceIds: [...excludedDeviceIds] }
           : {},
       );
-      toast.success("สร้าง Rollout สำหรับ Rollback แล้ว — รอ Operation อีกคนอนุมัติ");
+      toast.success("สร้าง Rollout สำหรับ Rollback แล้ว รอ Operation อีกคนอนุมัติ");
       router.push(`/campaigns/${campaignId}/rollouts/${created.id}`);
       router.refresh();
     } catch (err) {
@@ -169,7 +169,7 @@ export function CampaignRolloutIncidentPanel({
 
       {canResume && !rollbackOpen && (
         <p className="text-sm text-muted-foreground">
-          Rollout นี้หยุดอัตโนมัติเพราะ Failure Rate เกิน 5% — resume ให้ไปต่อ
+          Rollout นี้หยุดอัตโนมัติเพราะ Failure Rate เกิน 5%, resume ให้ไปต่อ
           หรือสั่ง rollback กลับไปใช้ payload รอบก่อนหน้าแทน
         </p>
       )}
@@ -177,7 +177,7 @@ export function CampaignRolloutIncidentPanel({
       {rollbackOpen ? (
         <div className="flex flex-col gap-3">
           <p className="text-sm">
-            สั่ง Rollback — สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่
+            สั่ง Rollback: สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่
             completed ล่าสุด เอาเครื่องที่ไม่ต้องการ rollback ออกได้
             ({includedCount}/{successTargets.length} เครื่อง)
           </p>

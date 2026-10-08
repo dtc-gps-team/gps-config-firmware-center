@@ -134,7 +134,7 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
         <div className="flex flex-col gap-2 rounded-lg border bg-card p-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">
-              เจาะจงผู้อนุมัติ (ไม่บังคับ — Operation คนอื่นก็อนุมัติได้)
+              เจาะจงผู้อนุมัติ (ไม่บังคับ, Operation คนอื่นก็อนุมัติได้)
             </span>
             <Select
               value={approverId}

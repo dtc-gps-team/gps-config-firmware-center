@@ -179,7 +179,7 @@ function PendingApprovalsCard({ role }: { role: string | undefined }) {
           <span className="text-muted-foreground">({totalCount})</span>
         </CardTitle>
         <CardDescription>
-          ทางลัดดูสิ่งที่รออนุมัติโดยไม่ต้องเปิด Approval Center — Config/คำขอ
+          ทางลัดดูสิ่งที่รออนุมัติโดยไม่ต้องเปิด Approval Center, Config/คำขอ
           Override กดอนุมัติได้ตรงนี้เลย ส่วน Campaign Rollout ลิงก์ไปอนุมัติ
           ต่อ
         </CardDescription>

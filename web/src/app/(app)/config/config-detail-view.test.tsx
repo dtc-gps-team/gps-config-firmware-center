@@ -135,6 +135,6 @@ describe("ConfigDetailView — mask ค่า sensitive", () => {
     expect(
       screen.queryByRole("button", { name: "แสดงค่า" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 });
