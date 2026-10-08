@@ -7,17 +7,12 @@ export const metadata = {
 /**
  * Firmware Repository — list Firmware จาก `GET /firmware` จริง + คลิกแถวไป
  * หน้ารายละเอียดเต็ม `/firmware/{id}` (แก้ Compatibility Tag + ทดสอบ) · ปุ่ม
- * "อัปโหลด Firmware" พาไปหน้า `/firmware/upload` — อัปโหลด/แก้ Compatibility
- * Tag ได้เฉพาะ Role FirmwareEngineer, ทดสอบได้
+ * "อัปโหลด Firmware" เป็น Dialog ในตัว (แก้ครั้งที่ 71 — ไม่มี route
+ * `/firmware/upload` แยกอีกต่อไป) — อัปโหลด/แก้ Compatibility Tag ได้เฉพาะ
+ * Role FirmwareEngineer, ทดสอบได้
  * FirmwareEngineer/QAEngineer/Operation/ST/OT, อ่านได้ทุก Role
  */
-export default async function FirmwarePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ uploaded?: string }>;
-}) {
-  const { uploaded } = await searchParams;
-
+export default function FirmwarePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -27,7 +22,7 @@ export default async function FirmwarePage({
         </p>
       </div>
 
-      <FirmwareTableCard justUploadedId={uploaded ?? null} />
+      <FirmwareTableCard />
     </div>
   );
 }

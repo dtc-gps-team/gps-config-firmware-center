@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canUploadFirmware } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
-import { uploadFirmware } from "@/lib/firmware-api";
+import { uploadFirmware, type Firmware } from "@/lib/firmware-api";
 import { formatFileSize } from "@/lib/format-bytes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,16 +22,21 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
  *
  * flow: เลือกไฟล์ + กรอกเวอร์ชัน/รุ่นอุปกรณ์เริ่มต้น (compatibility tag
  * เริ่มต้น 1 รุ่น) → กด "อัปโหลด" → `POST /firmware` (multipart, synchronous
- * ขึ้น Object Storage จริง) → สำเร็จเด้งไปหน้ารายการ พร้อม highlight แถวที่
- * เพิ่งอัปโหลด (เหมือน flow ของ Config Import) — `uploadStatus` อาจเป็น
- * `failed` ได้แม้ request คืน 201 (Object Storage ล่ม) ไม่ใช่ error ต้อง
- * แสดงผลแยก ไม่ใช่ throw
+ * ขึ้น Object Storage จริง) → สำเร็จเรียก `onUploaded` ให้ parent ปิด dialog +
+ * highlight แถวที่เพิ่งอัปโหลด (เหมือน flow ของ Config Import) — `uploadStatus`
+ * อาจเป็น `failed` ได้แม้ request คืน 201 (Object Storage ล่ม) ไม่ใช่ error
+ * ต้องแสดงผลแยก ไม่ใช่ throw
+ *
+ * เดิมเป็นหน้าเต็ม `/firmware/upload` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71)
  *
  * gate นี้เป็น UX-level เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ
  */
-export function UploadFirmwareForm() {
+export function UploadFirmwareForm({
+  onUploaded,
+}: {
+  onUploaded: (firmware: Firmware) => void;
+}) {
   const { session } = useAuth();
-  const router = useRouter();
 
   const [file, setFile] = useState<File | null>(null);
   const [version, setVersion] = useState("");
@@ -92,8 +96,7 @@ export function UploadFirmwareForm() {
         deviceModel: trimmedModel,
       });
       toast.success(`อัปโหลด Firmware "${created.version}" แล้ว`);
-      router.push(`/firmware?uploaded=${encodeURIComponent(created.id)}`);
-      router.refresh();
+      onUploaded(created);
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiError) {

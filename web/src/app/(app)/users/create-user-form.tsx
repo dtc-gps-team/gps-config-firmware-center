@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
-import { createUser, MANAGEABLE_ROLE_CODES } from "@/lib/users-api";
+import {
+  createUser,
+  MANAGEABLE_ROLE_CODES,
+  type ManagedUser,
+} from "@/lib/users-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,11 +28,18 @@ import {
  * ทั่วไป (`MANAGEABLE_ROLE_CODES`) ไม่มี Admin/SuperAdmin ให้เลือกเลย — กัน
  * ทั้งฝั่ง UI (ไม่โชว์) และฝั่ง backend (validate ปฏิเสธซ้ำ)
  *
+ * เดิมเป็นหน้าเต็ม `/users/new` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71) เพราะ
+ * เนื้อหาสั้นจบในตัว ไม่มี preview/error list ที่ต้องการพื้นที่เยอะ · เรียก
+ * `onCreated` แทน `router.push` เดิม ให้ parent ปิด dialog + refetch เอง
+ *
  * gate นี้เป็น UX-level เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ
  */
-export function CreateUserForm() {
+export function CreateUserForm({
+  onCreated,
+}: {
+  onCreated: (user: ManagedUser) => void;
+}) {
   const { session } = useAuth();
-  const router = useRouter();
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -73,8 +83,7 @@ export function CreateUserForm() {
         role,
       });
       toast.success(`เพิ่มผู้ใช้ "${created.username}" แล้ว`);
-      router.push(`/users?created=${encodeURIComponent(created.id)}`);
-      router.refresh();
+      onCreated(created);
     } catch (err) {
       setSubmitting(false);
       const message =
