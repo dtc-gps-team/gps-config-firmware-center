@@ -155,6 +155,74 @@ void main() {
     },
   );
 
+  testWidgets(
+    'render — 4 notification type ใหม่ของ Field Incident Report (issue #236) '
+    'แสดง deviceId/title/reviewNote และรับ deviceId เป็น null',
+    (tester) async {
+      AppNotification n(
+        String id,
+        NotificationType type,
+        Map<String, dynamic> payload,
+      ) => AppNotification(
+        id: id,
+        userId: 'u1',
+        type: type,
+        payload: payload,
+        read: true,
+        createdAt: DateTime(2026, 10, 6, 9, 15),
+      );
+
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [
+            n('n1', NotificationType.incidentReportPending, {
+              'incidentId': 'i1',
+              'deviceId': 'DTC-0001',
+              'title': 'ไม่ส่งสัญญาณ',
+            }),
+            n('n2', NotificationType.incidentReportResolved, {
+              'incidentId': 'i2',
+              'deviceId': 'DTC-0002',
+              'reviewNote': 'เปลี่ยนฮาร์ดแวร์แล้ว',
+            }),
+            n('n3', NotificationType.incidentReportDismissed, {
+              'incidentId': 'i3',
+              'deviceId': null, // report ไม่ผูกอุปกรณ์
+              'reviewNote': 'ซ้ำกับรายการเดิม',
+            }),
+            n('n4', NotificationType.incidentReportPromoted, {
+              'incidentId': 'i4',
+              'deviceId': 'DTC-0004',
+              'reviewNote': 'ต้องแก้ด้วย Campaign',
+            }),
+          ],
+        ),
+      );
+
+      expect(find.text('มีรายงานปัญหาหน้างานรอตัดสินใจ'), findsOneWidget);
+      expect(
+        find.text('รายงานปัญหาของคุณถูกปิดแล้ว (แก้ไขแล้ว)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('รายงานปัญหาของคุณไม่ถูกดำเนินการ (ไม่ใช่ปัญหา/ซ้ำ)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข'),
+        findsOneWidget,
+      );
+      expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
+      expect(find.text('หัวข้อ: ไม่ส่งสัญญาณ'), findsOneWidget);
+      expect(find.text('อุปกรณ์: DTC-0002'), findsOneWidget);
+      expect(find.text('หมายเหตุ: เปลี่ยนฮาร์ดแวร์แล้ว'), findsOneWidget);
+      // deviceId null -> ไม่มีบรรทัดอุปกรณ์ แต่ยังมีหมายเหตุ ไม่ throw
+      expect(find.text('หมายเหตุ: ซ้ำกับรายการเดิม'), findsOneWidget);
+      expect(find.text('หมายเหตุ: ต้องแก้ด้วย Campaign'), findsOneWidget);
+    },
+  );
+
   testWidgets('Config Override — แสดง deviceId + rejectReason จาก payload', (
     tester,
   ) async {

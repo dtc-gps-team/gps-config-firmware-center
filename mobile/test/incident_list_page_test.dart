@@ -38,6 +38,14 @@ class _FakeIncidentRepository implements IncidentRepository {
   }
 
   @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<Incident> getIncident(String id) async =>
       _incidents.firstWhere((i) => i.id == id);
 }

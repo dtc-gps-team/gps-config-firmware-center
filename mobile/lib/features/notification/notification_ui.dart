@@ -26,6 +26,26 @@ class NotificationTypeStyle {
       case NotificationType.firmwareOverrideApproved:
         final deviceId = text('deviceId');
         return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
+      // Field Incident Report (issue #236, PR #267) — payload
+      // `{incidentId, deviceId, title}` ตอน pending (ส่งให้ Operation) ·
+      // `{incidentId, deviceId, reviewNote}` ตอนตัดสินใจ · `deviceId` เป็น null
+      // ได้ (report ไม่ผูกอุปกรณ์) — `text()` ข้ามค่าที่ไม่ใช่ string/ว่างอยู่แล้ว
+      case NotificationType.incidentReportPending:
+        final deviceId = text('deviceId');
+        final title = text('title');
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          if (title != null) 'หัวข้อ: $title',
+        ];
+      case NotificationType.incidentReportResolved:
+      case NotificationType.incidentReportDismissed:
+      case NotificationType.incidentReportPromoted:
+        final deviceId = text('deviceId');
+        final note = text('reviewNote');
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          if (note != null) 'หมายเหตุ: $note',
+        ];
       case NotificationType.configOverrideRejected:
       case NotificationType.firmwareOverrideRejected:
         final deviceId = text('deviceId');
@@ -57,6 +77,13 @@ class NotificationTypeStyle {
       'คำขอ Firmware Override ได้รับการอนุมัติ',
     NotificationType.firmwareOverrideRejected =>
       'คำขอ Firmware Override ถูกปฏิเสธ',
+    NotificationType.incidentReportPending => 'มีรายงานปัญหาหน้างานรอตัดสินใจ',
+    NotificationType.incidentReportResolved =>
+      'รายงานปัญหาของคุณถูกปิดแล้ว (แก้ไขแล้ว)',
+    NotificationType.incidentReportDismissed =>
+      'รายงานปัญหาของคุณไม่ถูกดำเนินการ (ไม่ใช่ปัญหา/ซ้ำ)',
+    NotificationType.incidentReportPromoted =>
+      'รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข',
   };
 
   static IconData icon(NotificationType type) => switch (type) {
@@ -73,5 +100,9 @@ class NotificationTypeStyle {
     NotificationType.firmwareOverridePending => Icons.system_update_alt,
     NotificationType.firmwareOverrideApproved => Icons.check_circle_outline,
     NotificationType.firmwareOverrideRejected => Icons.cancel_outlined,
+    NotificationType.incidentReportPending => Icons.add_alert_outlined,
+    NotificationType.incidentReportResolved => Icons.check_circle_outline,
+    NotificationType.incidentReportDismissed => Icons.block_outlined,
+    NotificationType.incidentReportPromoted => Icons.campaign_outlined,
   };
 }
