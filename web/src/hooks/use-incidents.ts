@@ -5,6 +5,10 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { listIncidents, type Incident, type IncidentStatus } from "@/lib/incident-api";
 import { ApiError } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
+import {
+  PENDING_QUEUE_POLL_INTERVAL_MS,
+  usePollInterval,
+} from "@/hooks/use-poll-interval";
 
 export type IncidentFilters = {
   status?: IncidentStatus;
@@ -49,6 +53,7 @@ export function useIncidents(filters: IncidentFilters = {}) {
     void refetch();
   }, [refetch]);
   useRefetchOnFocus(refetch);
+  usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
   return { ...state, refetch };
 }
