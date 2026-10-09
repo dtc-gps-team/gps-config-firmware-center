@@ -1,20 +1,24 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { BoxIcon } from "lucide-react";
 
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
+import { useAuth } from "@/components/auth/auth-provider";
+import { canRegisterDevice } from "@/lib/permissions";
 import { useDevices } from "@/hooks/use-devices";
 import { type Device } from "@/lib/device-api";
 import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
@@ -87,6 +91,7 @@ const columns: ColumnDef<Device>[] = [
 
 export function DeviceSearchView() {
   const router = useRouter();
+  const { session } = useAuth();
   const { data, isLoading, error, refetch } = useDevices();
   const devices = useMemo(() => data ?? [], [data]);
 
@@ -95,7 +100,8 @@ export function DeviceSearchView() {
       <div>
         <h1 className="text-2xl font-semibold">Device Search</h1>
         <p className="text-sm text-muted-foreground">
-          ทุก Role เข้าถึงได้ (Read-only) · คลิกแถวเพื่อดูรายละเอียด
+          ทุก Role อ่านได้ · Admin/SuperAdmin ลงทะเบียนอุปกรณ์ใหม่ได้จากหน้านี้
+          · คลิกแถวเพื่อดูรายละเอียด
         </p>
       </div>
 
@@ -106,6 +112,16 @@ export function DeviceSearchView() {
             ค้นด้วย Device ID หรือ SIM · กรองตามรุ่น / โปรโตคอล / สถานะ
             {data ? ` · ${data.length} เครื่อง` : ""}
           </CardDescription>
+          {canRegisterDevice(session?.role) && (
+            <CardAction>
+              <Link
+                href="/devices/new"
+                className={buttonVariants({ size: "sm" })}
+              >
+                + ลงทะเบียนอุปกรณ์
+              </Link>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading && data === null ? (
@@ -118,7 +134,20 @@ export function DeviceSearchView() {
               </Button>
             </div>
           ) : devices.length === 0 ? (
-            <EmptyState icon={BoxIcon} message="ยังไม่มีอุปกรณ์ในระบบ" />
+            <EmptyState
+              icon={BoxIcon}
+              message="ยังไม่มีอุปกรณ์ในระบบ"
+              action={
+                canRegisterDevice(session?.role) ? (
+                  <Link
+                    href="/devices/new"
+                    className={buttonVariants({ size: "sm" })}
+                  >
+                    + ลงทะเบียนอุปกรณ์
+                  </Link>
+                ) : undefined
+              }
+            />
           ) : (
             <DataTable
               columns={columns}

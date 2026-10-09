@@ -44,4 +44,26 @@ export class RegisterDeviceDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  // Identity group เพิ่มเติม (PDF §4.1) — string อิสระ ไม่มี validation
+  // รูปแบบในรอบนี้ (ดู comment เหนือ field เดียวกันใน schema.prisma)
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  imei?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  serialNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  blackboxId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bootloader?: string;
 }

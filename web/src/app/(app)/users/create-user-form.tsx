@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
-import { createUser, MANAGEABLE_ROLE_CODES } from "@/lib/users-api";
+import {
+  createUser,
+  MANAGEABLE_ROLE_CODES,
+  type ManagedUser,
+} from "@/lib/users-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,11 +28,18 @@ import {
  * ทั่วไป (`MANAGEABLE_ROLE_CODES`) ไม่มี Admin/SuperAdmin ให้เลือกเลย — กัน
  * ทั้งฝั่ง UI (ไม่โชว์) และฝั่ง backend (validate ปฏิเสธซ้ำ)
  *
+ * เดิมเป็นหน้าเต็ม `/users/new` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71) เพราะ
+ * เนื้อหาสั้นจบในตัว ไม่มี preview/error list ที่ต้องการพื้นที่เยอะ · เรียก
+ * `onCreated` แทน `router.push` เดิม ให้ parent ปิด dialog + refetch เอง
+ *
  * gate นี้เป็น UX-level เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ
  */
-export function CreateUserForm() {
+export function CreateUserForm({
+  onCreated,
+}: {
+  onCreated: (user: ManagedUser) => void;
+}) {
   const { session } = useAuth();
-  const router = useRouter();
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -73,8 +83,7 @@ export function CreateUserForm() {
         role,
       });
       toast.success(`เพิ่มผู้ใช้ "${created.username}" แล้ว`);
-      router.push(`/users?created=${encodeURIComponent(created.id)}`);
-      router.refresh();
+      onCreated(created);
     } catch (err) {
       setSubmitting(false);
       const message =
@@ -92,59 +101,63 @@ export function CreateUserForm() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-username">Username</Label>
-        <Input
-          id="user-username"
-          value={username}
-          disabled={submitting}
-          placeholder="เช่น config2.test"
-          onChange={(e) => setUsername(e.target.value)}
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-username">Username</Label>
+          <Input
+            id="user-username"
+            value={username}
+            disabled={submitting}
+            placeholder="เช่น config2.test"
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
+          <Input
+            id="user-fullname"
+            value={fullName}
+            disabled={submitting}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
-        <Input
-          id="user-fullname"
-          value={fullName}
-          disabled={submitting}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
+          <Input
+            id="user-password"
+            type="text"
+            value={password}
+            disabled={submitting}
+            placeholder="อย่างน้อย 8 ตัวอักษร"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
+          </p>
+        </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
-        <Input
-          id="user-password"
-          type="text"
-          value={password}
-          disabled={submitting}
-          placeholder="อย่างน้อย 8 ตัวอักษร"
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label>Role</Label>
-        <Select
-          value={role}
-          onValueChange={(value) => setRole(value ?? MANAGEABLE_ROLE_CODES[0])}
-        >
-          <SelectTrigger className="w-full" disabled={submitting}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MANAGEABLE_ROLE_CODES.map((code) => (
-              <SelectItem key={code} value={code}>
-                {code}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col gap-1.5">
+          <Label>Role</Label>
+          <Select
+            value={role}
+            onValueChange={(value) => setRole(value ?? MANAGEABLE_ROLE_CODES[0])}
+          >
+            <SelectTrigger className="w-full" disabled={submitting}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MANAGEABLE_ROLE_CODES.map((code) => (
+                <SelectItem key={code} value={code}>
+                  {code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {formError && (
