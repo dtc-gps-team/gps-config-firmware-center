@@ -504,7 +504,11 @@ describe('TaskService', () => {
 
         expect(result.status).toBe('completed');
         expect(task.updateMany).toHaveBeenCalledWith({
-          where: { id: sampleTask.id, assignedTo: owner.id },
+          where: {
+            id: sampleTask.id,
+            assignedTo: owner.id,
+            status: { not: 'cancelled' },
+          },
           data: { status: 'completed' },
         });
       });
@@ -544,11 +548,55 @@ describe('TaskService', () => {
             service.update(sampleTask.id, { status }, owner),
           ).resolves.toMatchObject({ status });
           expect(task.updateMany).toHaveBeenCalledWith({
-            where: { id: sampleTask.id, assignedTo: owner.id },
+            where: {
+              id: sampleTask.id,
+              assignedTo: owner.id,
+              status: { not: 'cancelled' },
+            },
             data: { status },
           });
         },
       );
+    });
+
+    describe('ST/OT (งานถูกยกเลิกแล้ว)', () => {
+      it.each(['in_progress', 'completed'] as const)(
+        'เจ้าของงานตั้ง "%s" ทับงานที่ cancelled: 409 (ไม่ฟื้นงาน)',
+        async (status) => {
+          task.updateMany.mockResolvedValue({ count: 0 });
+          task.findUnique.mockResolvedValue({
+            ...sampleTask,
+            assignedTo: owner.id,
+            status: 'cancelled',
+          });
+
+          await expect(
+            service.update(sampleTask.id, { status }, owner),
+          ).rejects.toBeInstanceOf(ConflictException);
+        },
+      );
+
+      it('คนที่ไม่ใช่เจ้าของงานที่ cancelled: 404 ไม่ใช่ 409 (ไม่เปิดเผยสถานะงานคนอื่น)', async () => {
+        task.updateMany.mockResolvedValue({ count: 0 });
+        task.findUnique.mockResolvedValue({
+          ...sampleTask,
+          assignedTo: owner.id,
+          status: 'cancelled',
+        });
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, otherTech),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('งานไม่มีอยู่จริง: 404', async () => {
+        task.updateMany.mockResolvedValue({ count: 0 });
+        task.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, owner),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
     });
 
     describe('ST/OT (ไม่ใช่เจ้าของงาน)', () => {

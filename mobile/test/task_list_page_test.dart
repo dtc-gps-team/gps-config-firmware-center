@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
@@ -63,11 +67,25 @@ Future<void> _pump(
   WidgetTester tester, {
   required TaskRepository repo,
   UserRole? role = UserRole.st,
+  Set<String> pendingIds = const {},
+  bool authExpired = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(repo),
+        // no real Drift DB / live queries in widget tests (drift stream
+        // timers outlive the tree) — the sync queue has its own tests
+        pendingTaskIdsProvider.overrideWith((ref) => Stream.value(pendingIds)),
+        syncAuthExpiredProvider.overrideWith((ref) => authExpired),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
+        appDatabaseProvider.overrideWith((ref) {
+          final db = AppDatabase.forTesting(NativeDatabase.memory());
+          ref.onDispose(db.close);
+          return db;
+        }),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
         sessionProfileStoreProvider.overrideWithValue(
@@ -100,6 +118,19 @@ Future<void> _pumpRouted(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(repo),
+        // no real Drift DB / live queries in widget tests (drift stream
+        // timers outlive the tree) — the sync queue has its own tests
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
+        appDatabaseProvider.overrideWith((ref) {
+          final db = AppDatabase.forTesting(NativeDatabase.memory());
+          ref.onDispose(db.close);
+          return db;
+        }),
         authControllerProvider.overrideWith(
           () => _FakeAuthController(UserRole.st),
         ),
@@ -119,6 +150,12 @@ void main() {
         ProviderScope(
           overrides: [
             taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
+            pendingTaskIdsProvider.overrideWith(
+              (ref) => Stream.value(const <String>{}),
+            ),
+            failedSyncActionsProvider.overrideWith(
+              (ref) => Stream.value(const <PendingActionRow>[]),
+            ),
             authControllerProvider.overrideWith(
               () => _FakeAuthController(UserRole.st),
             ),
@@ -156,6 +193,60 @@ void main() {
     expect(find.text('อุปกรณ์: —'), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_1')), findsOneWidget);
+  });
+
+  testWidgets('task ที่ค้างในคิว -> badge "รอซิงค์" เฉพาะใบนั้น', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(
+        tasks: [
+          _task(id: 't1', title: 'งานหนึ่ง'),
+          _task(id: 't2', title: 'งานสอง'),
+        ],
+      ),
+      pendingIds: {'t2'},
+    );
+
+    expect(find.byKey(const Key('pending_sync_badge')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('my_task_card_1')),
+        matching: find.byKey(const Key('pending_sync_badge')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('401 + มีรายการค้าง -> banner เตือนว่าออกจากระบบแล้วรายการหาย', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 't1')]),
+      pendingIds: {'t1'},
+      authExpired: true,
+    );
+    expect(find.byKey(const Key('sync_auth_expired_banner')), findsOneWidget);
+  });
+
+  testWidgets('401 แต่ไม่มีรายการค้าง -> ไม่มี banner', (tester) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 't1')]),
+      authExpired: true,
+    );
+    expect(find.byKey(const Key('sync_auth_expired_banner')), findsNothing);
+  });
+
+  testWidgets('ไม่มี pending -> ไม่มี badge', (tester) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 't1')]),
+    );
+    expect(find.byKey(const Key('pending_sync_badge')), findsNothing);
+    expect(find.byKey(const Key('sync_failed_banner')), findsNothing);
   });
 
   testWidgets('ไม่มีงาน -> empty state', (tester) async {

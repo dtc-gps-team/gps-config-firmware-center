@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:drift/native.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
@@ -105,6 +108,7 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
       ),
       // logout() clears this too (issue #204) — override so no test in this
       // file accidentally touches the real SharedPreferences-backed store.
+      appDatabaseProvider.overrideWith(inMemoryAppDatabase),
       recentDeviceIdStoreProvider.overrideWithValue(
         InMemoryRecentDeviceIdStore(),
       ),
@@ -357,6 +361,7 @@ void main() {
           pushNotificationServiceProvider.overrideWithValue(
             _FakePushNotificationService(),
           ),
+          appDatabaseProvider.overrideWith(inMemoryAppDatabase),
           recentDeviceIdStoreProvider.overrideWithValue(
             InMemoryRecentDeviceIdStore(),
           ),
@@ -370,6 +375,47 @@ void main() {
       expect(await profileStore.read(), isNull);
     },
   );
+
+  test('logout wipes the local Drift cache so the next user on this device '
+      'does not see the previous user\'s tasks', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    await db.taskDao.upsertTask(
+      TasksCompanion.insert(
+        id: 't1',
+        title: 'งานของคนก่อนหน้า',
+        assignedTo: 'user-1',
+        status: 'pending',
+        createdAt: DateTime.utc(2026, 9, 1),
+        updatedAt: DateTime.utc(2026, 9, 1),
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore('saved-token')),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(
+            const SessionProfile('st.test', UserRole.st),
+          ),
+        ),
+        pushNotificationServiceProvider.overrideWithValue(
+          _FakePushNotificationService(),
+        ),
+        recentDeviceIdStoreProvider.overrideWithValue(
+          InMemoryRecentDeviceIdStore(),
+        ),
+        appDatabaseProvider.overrideWithValue(db),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(await db.taskDao.getAllTasks(), hasLength(1));
+
+    await container.read(authControllerProvider.notifier).logout();
+
+    expect(await db.taskDao.getAllTasks(), isEmpty);
+  });
 
   test('logout clears the recent-device-id history so the next tech to log in '
       'on this device does not see the previous one\'s (issue #204)', () async {
@@ -386,6 +432,7 @@ void main() {
         pushNotificationServiceProvider.overrideWithValue(
           _FakePushNotificationService(),
         ),
+        appDatabaseProvider.overrideWith(inMemoryAppDatabase),
         recentDeviceIdStoreProvider.overrideWithValue(recentStore),
       ],
     );
@@ -441,6 +488,7 @@ void main() {
               ),
             ),
             pushNotificationServiceProvider.overrideWithValue(fakePush),
+            appDatabaseProvider.overrideWith(inMemoryAppDatabase),
             recentDeviceIdStoreProvider.overrideWithValue(
               InMemoryRecentDeviceIdStore(),
             ),
@@ -515,4 +563,10 @@ class _FakeAuthRepository implements AuthRepository {
   @override
   Future<LoginResponse> login(String username, String password) async =>
       response;
+}
+
+AppDatabase inMemoryAppDatabase(Ref ref) {
+  final db = AppDatabase.forTesting(NativeDatabase.memory());
+  ref.onDispose(db.close);
+  return db;
 }

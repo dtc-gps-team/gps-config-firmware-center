@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
@@ -159,6 +163,19 @@ Future<void> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        // ไม่ใช้ Drift DB จริง/live query ใน widget test (timer ของ drift อยู่เกิน
+        // อายุ tree) — เหมือน task_detail_page_test.dart หลังรวม #276
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
+        appDatabaseProvider.overrideWith((ref) {
+          final db = AppDatabase.forTesting(NativeDatabase.memory());
+          ref.onDispose(db.close);
+          return db;
+        }),
         taskRepositoryProvider.overrideWithValue(_TaskRepo(task ?? _task())),
         authControllerProvider.overrideWith(() => _Auth(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
