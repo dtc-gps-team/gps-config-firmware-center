@@ -19,15 +19,11 @@
 /* ---------------------------------------------------------------- */
 
 import {
-  CheckCircle2Icon,
   CpuIcon,
   GitCompareIcon,
   HistoryIcon,
   RotateCcwIcon,
-  Undo2Icon,
-  WifiIcon,
   WifiOffIcon,
-  XCircleIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -61,22 +57,18 @@ type DashboardMetric = {
 /** Device Overview — Total/รุ่นอุปกรณ์ ต่อ `GET /devices` จริงแล้ว (ดู
  * dashboard-summary.tsx) ที่เหลือรอ device-sync module (docs/14 proposal —
  * ยังไม่ตัดสินใจ ไม่ใช่ตัดออกจาก scope) */
+// Online/Offline ย้ายไปรวมเป็นมินิชาร์ตเดียว (`DashboardOnlineOfflineChart` ใน
+// dashboard-summary.tsx — แก้ครั้งที่ 71) แทนการ์ดแยก 2 ใบ — ยังเป็นตัวอย่าง
+// เหมือนเดิม (ไม่มี device-sync module ให้ต่อจริง) แค่จัด layout ใหม่
 export const DEMO_DEVICE_OVERVIEW: DashboardMetric[] = [
-  { label: "Online", value: "142", icon: WifiIcon, tone: "success" },
-  { label: "Offline", value: "8", icon: WifiOffIcon, tone: "danger" },
   { label: "Firmware ไม่ตรงเวอร์ชันล่าสุด", value: "12", icon: CpuIcon, tone: "progress" },
   { label: "Config ไม่ตรงเวอร์ชันล่าสุด", value: "5", icon: HistoryIcon, tone: "progress" },
   { label: "Config/Firmware Drift", value: "3", icon: GitCompareIcon, tone: "danger" },
 ];
 
-/** Deployment Overview — Campaign กำลังทำงาน/รออนุมัติ + Config รออนุมัติ
- * ต่อ API จริงแล้ว (ดู dashboard-summary.tsx) ที่เหลือรอ Campaign Monitor
- * (#22 — วางคิวไว้แล้ว ไม่ใช่ตัดออกจาก scope) */
-export const DEMO_DEPLOYMENT_OVERVIEW: DashboardMetric[] = [
-  { label: "สำเร็จ", value: "128", icon: CheckCircle2Icon, tone: "success" },
-  { label: "ล้มเหลว", value: "4", icon: XCircleIcon, tone: "danger" },
-  { label: "Rollback", value: "1", icon: Undo2Icon, tone: "danger" },
-];
+// สำเร็จ/ล้มเหลว/Rollback ย้ายไปรวมเป็นมินิชาร์ตเดียว
+// (`DashboardDeployResultChart` ใน dashboard-summary.tsx — แก้ครั้งที่ 71)
+// แทนการ์ดแยก 3 ใบ — ยังเป็นตัวอย่างเหมือนเดิม (รอ Campaign Monitor #22)
 
 /** Risk Dashboard — ทั้งหมดรอ device-sync module (docs/14 proposal) ยังไม่มี
  * metric ไหนต่อจริงได้เลยตอนนี้ */
