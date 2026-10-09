@@ -23,6 +23,14 @@ export type Device = {
   simNumber: string;
   deviceModel: string;
   protocol: string;
+  /** รหัสรุ่นย่อย/hardware revision (เช่น "RevA") — มีมาตั้งแต่ issue #209
+   * แต่ไม่เคยถูกเพิ่มเข้า type นี้จนถึงตอนนี้ (แก้ครั้งที่ 69) */
+  hardwareRevisionCode: string | null;
+  /** Identity group เพิ่มเติม (PDF §4.1, แก้ครั้งที่ 69) */
+  imei: string | null;
+  serialNumber: string | null;
+  blackboxId: string | null;
+  bootloader: string | null;
   status: DeviceStatus;
   registeredAt: string;
   installedAt: string | null;
@@ -59,4 +67,36 @@ export function listDevices(
 /** `GET /devices/{deviceId}` — key ด้วยเลขเครื่องจริง · 404 ถ้าไม่พบ */
 export function getDevice(token: string, deviceId: string): Promise<Device> {
   return apiJson<Device>(`/devices/${encodeURIComponent(deviceId)}`, { token });
+}
+
+/** request body — `RegisterDeviceRequest` ใน openapi.yaml */
+export type RegisterDeviceInput = {
+  deviceId: string;
+  simNumber: string;
+  modelId: string;
+  protocol: string;
+  hardwareRevisionCode?: string;
+  customerId?: string;
+  imei?: string;
+  serialNumber?: string;
+  blackboxId?: string;
+  bootloader?: string;
+};
+
+/** response — `RegisterDeviceResponse` (`Device` + `apiKey` จริงที่โชว์ได้
+ * ครั้งเดียว ไม่มีทาง GET กลับมาดูซ้ำได้อีก) */
+export type RegisterDeviceResult = Device & { apiKey: string };
+
+/** `POST /devices` — Admin/SuperAdmin เท่านั้น (resource `device-registration`
+ * action `Create`, issue #157 PR 1) · 409 ถ้า deviceId ซ้ำ, 404 ถ้า modelId/
+ * customerId ไม่พบ, 400 ถ้า protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น */
+export function registerDevice(
+  token: string,
+  input: RegisterDeviceInput,
+): Promise<RegisterDeviceResult> {
+  return apiJson<RegisterDeviceResult>("/devices", {
+    method: "POST",
+    token,
+    body: JSON.stringify(input),
+  });
 }
