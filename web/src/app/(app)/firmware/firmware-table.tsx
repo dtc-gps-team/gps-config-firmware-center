@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { CpuIcon } from "lucide-react";
@@ -137,19 +137,19 @@ const columns: ColumnDef<Firmware>[] = [
   },
 ];
 
-export function FirmwareTableCard({
-  justUploadedId = null,
-}: {
-  justUploadedId?: string | null;
-}) {
+export function FirmwareTableCard() {
   const router = useRouter();
   const { data, isLoading, error, refetch } = useFirmwareList();
   const firmwareList = useMemo(() => data ?? [], [data]);
+  const [justUploaded, setJustUploaded] = useState<Firmware | null>(null);
 
-  const justUploaded =
-    justUploadedId != null
-      ? firmwareList.find((f) => f.id === justUploadedId) ?? null
-      : null;
+  const handleUploaded = useCallback(
+    (firmware: Firmware) => {
+      setJustUploaded(firmware);
+      void refetch();
+    },
+    [refetch],
+  );
 
   return (
     <Card>
@@ -169,7 +169,7 @@ export function FirmwareTableCard({
           Compatibility Tag/ทดสอบ
         </CardDescription>
         <CardAction>
-          <UploadFirmwareButton />
+          <UploadFirmwareButton onUploaded={handleUploaded} />
         </CardAction>
       </CardHeader>
       <CardContent>
@@ -186,7 +186,7 @@ export function FirmwareTableCard({
           <EmptyState
             icon={CpuIcon}
             message="ยังไม่มี Firmware ในระบบ"
-            action={<UploadFirmwareButton />}
+            action={<UploadFirmwareButton onUploaded={handleUploaded} />}
           />
         ) : (
           <DataTable

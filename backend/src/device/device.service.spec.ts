@@ -557,6 +557,10 @@ describe('DeviceService', () => {
           protocol: registerDto.protocol,
           hardwareRevisionCode: undefined,
           customerId: undefined,
+          imei: undefined,
+          serialNumber: undefined,
+          blackboxId: undefined,
+          bootloader: undefined,
           modelId: gt06nModel.id,
           apiKeyHash: expect.any(String) as string,
         },
@@ -565,6 +569,28 @@ describe('DeviceService', () => {
       expect(typeof result.apiKey).toBe('string');
       expect(result.apiKey.length).toBeGreaterThan(0);
       expect(result).not.toHaveProperty('apiKeyHash');
+    });
+
+    it('ส่ง Identity group มาครบ (imei/serialNumber/blackboxId/bootloader) -> ส่งต่อให้ device.create ครบทุก field (PDF §4.1)', async () => {
+      await service.register(
+        {
+          ...registerDto,
+          imei: '123456789012345',
+          serialNumber: 'SN-0001',
+          blackboxId: 'BB-0001',
+          bootloader: 'v1.2.0',
+        },
+        admin,
+      );
+
+      expect(device.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          imei: '123456789012345',
+          serialNumber: 'SN-0001',
+          blackboxId: 'BB-0001',
+          bootloader: 'v1.2.0',
+        }) as object,
+      });
     });
 
     it('apiKey ที่คืนให้ client กับ apiKeyHash ที่เก็บ DB ต้องเป็นคู่ bcrypt ที่ compare ผ่านจริง', async () => {

@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { UsersIcon } from "lucide-react";
 
@@ -17,13 +16,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { UserRowActions } from "./user-row-actions";
+import { CreateUserForm } from "./create-user-form";
 
 function thTextSort(
   a: Row<ManagedUser>,
@@ -44,20 +51,22 @@ function thTextSort(
  * จัดการได้แค่บัญชีทั่วไป ไม่รวม Admin/SuperAdmin (RBAC_Matrix.md §2 —
  * แก้ครั้งที่ 38) — `GET /users/managed` ตัด 2 role นี้ออกให้แล้วฝั่ง backend
  */
-export function UserManagementView({
-  justCreatedId = null,
-}: {
-  justCreatedId?: string | null;
-}) {
+export function UserManagementView() {
   const { data, isLoading, error, refetch } = useManagedUsers();
   const userList = useMemo(() => data ?? [], [data]);
-
-  const justCreated =
-    justCreatedId != null
-      ? userList.find((u) => u.id === justCreatedId) ?? null
-      : null;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [justCreated, setJustCreated] = useState<ManagedUser | null>(null);
 
   const handleUpdated = useCallback(() => void refetch(), [refetch]);
+
+  const handleCreated = useCallback(
+    (user: ManagedUser) => {
+      setDialogOpen(false);
+      setJustCreated(user);
+      void refetch();
+    },
+    [refetch],
+  );
 
   const columns: ColumnDef<ManagedUser>[] = useMemo(
     () => [
@@ -134,9 +143,9 @@ export function UserManagementView({
               >
                 รีเฟรช
               </Button>
-              <Link href="/users/new" className={buttonVariants({ size: "sm" })}>
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
                 + เพิ่มผู้ใช้
-              </Link>
+              </Button>
             </CardAction>
           </CardHeader>
           <CardContent>
@@ -158,12 +167,9 @@ export function UserManagementView({
                 icon={UsersIcon}
                 message="ยังไม่มีผู้ใช้ในระบบ"
                 action={
-                  <Link
-                    href="/users/new"
-                    className={buttonVariants({ size: "sm" })}
-                  >
+                  <Button size="sm" onClick={() => setDialogOpen(true)}>
                     + เพิ่มผู้ใช้
-                  </Link>
+                  </Button>
                 }
               />
             ) : (
@@ -177,6 +183,19 @@ export function UserManagementView({
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
+            <DialogDescription>
+              เฉพาะ Role Admin · เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม
+              Admin/SuperAdmin) · ตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่
+            </DialogDescription>
+          </DialogHeader>
+          <CreateUserForm onCreated={handleCreated} />
+        </DialogContent>
+      </Dialog>
     </RoleGuard>
   );
 }
