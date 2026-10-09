@@ -150,6 +150,16 @@ export function canManageDeviceModels(
   return role === "Admin" || role === "SuperAdmin";
 }
 
+/**
+ * ปุ่ม "+ ลงทะเบียนอุปกรณ์" บนหน้า Device Search (`/devices/new`) —
+ * RBAC_Matrix.md ตาราง 4.1 `registerDevice` (issue #157 PR 1, แก้ครั้งที่ 61):
+ * resource ใหม่ `device-registration` action `Create` — Admin, SuperAdmin
+ * เท่านั้น (endpoint ฝั่ง staff ไม่ใช่อุปกรณ์เรียกเอง)
+ */
+export function canRegisterDevice(role: string | null | undefined): boolean {
+  return role === "Admin" || role === "SuperAdmin";
+}
+
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation";
