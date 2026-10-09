@@ -44,13 +44,13 @@ export function ApprovalCenterView() {
     isLoading: overrideLoading,
     error: overrideError,
     refetch: refetchOverrides,
-  } = usePendingDeviceConfigOverrides();
+  } = usePendingDeviceConfigOverrides(canDecideOverride);
   const {
     data: firmwareOverrideData,
     isLoading: firmwareOverrideLoading,
     error: firmwareOverrideError,
     refetch: refetchFirmwareOverrides,
-  } = usePendingDeviceFirmwareOverrides();
+  } = usePendingDeviceFirmwareOverrides(canDecideFirmwareOv);
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideNotice, setOverrideNotice] = useState<string | null>(null);
   const [firmwareOverrideNotice, setFirmwareOverrideNotice] = useState<
@@ -93,7 +93,8 @@ export function ApprovalCenterView() {
             <span className="text-muted-foreground">({allItems.length})</span>
           </CardTitle>
           <CardDescription>
-            สถานะ Config = testing (ผ่าน simulation + ConfigEngineer ปักผลผ่านแล้ว)
+            สถานะ Config = testing (ผ่าน simulation + ConfigEngineer
+            ปักผลผ่านแล้ว)
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -137,7 +138,11 @@ export function ApprovalCenterView() {
           ) : error ? (
             <div className="flex flex-col items-center gap-3 py-8">
               <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetch()}
+              >
                 ลองใหม่
               </Button>
             </div>
@@ -201,7 +206,10 @@ export function ApprovalCenterView() {
               </Button>
             </div>
           ) : (rolloutsQuery.data ?? []).length === 0 ? (
-            <EmptyState icon={RocketIcon} message="ไม่มี Campaign Rollout รออนุมัติ" />
+            <EmptyState
+              icon={RocketIcon}
+              message="ไม่มี Campaign Rollout รออนุมัติ"
+            />
           ) : (
             (rolloutsQuery.data ?? []).map((item) => (
               <CampaignRolloutApprovalCard
@@ -222,129 +230,138 @@ export function ApprovalCenterView() {
       </Card>
 
       {/* section แยกจาก Config/Campaign Rollout ชัดเจนเช่นกัน (issue #223,
-       * มติ 2026-09-24) — คนละ resource/endpoint กันทั้งหมด */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Per-device Config Override รออนุมัติ{" "}
-            <span className="text-muted-foreground">
-              ({overrideData?.length ?? 0})
-            </span>
-          </CardTitle>
-          <CardDescription>
-            คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
-            ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
-            อีกครั้งหลังอนุมัติ
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {overrideNotice && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              {overrideNotice}
-            </div>
-          )}
+       * มติ 2026-09-24) — คนละ resource/endpoint กันทั้งหมด · gate ด้วย
+       * canDecideOverride (= role Operation เท่านั้น ตรงกับ grant Read ของ
+       * resource `device-config-override` ใน seed.ts เป๊ะ) — ไม่งั้น role อื่น
+       * (Admin ฯลฯ) จะเห็น raw 403 message จาก backend ตรงๆ แทนที่จะไม่เห็น
+       * section นี้เลย (แก้ครั้งที่ 73 — พบจาก UX/UI audit) */}
+      {canDecideOverride && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Per-device Config Override รออนุมัติ{" "}
+              <span className="text-muted-foreground">
+                ({overrideData?.length ?? 0})
+              </span>
+            </CardTitle>
+            <CardDescription>
+              คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
+              ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
+              อีกครั้งหลังอนุมัติ
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {overrideNotice && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                {overrideNotice}
+              </div>
+            )}
 
-          {overrideLoading && overrideData === null ? (
-            <CardListSkeleton />
-          ) : overrideError ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-sm text-destructive">{overrideError}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refetchOverrides()}
-              >
-                ลองใหม่
-              </Button>
-            </div>
-          ) : (overrideData?.length ?? 0) === 0 ? (
-            <EmptyState
-              icon={ClipboardCheckIcon}
-              message="ไม่มีคำขอ Override รออนุมัติ"
-            />
-          ) : (
-            overrideData?.map((item) => (
-              <DeviceConfigOverrideApprovalCard
-                key={item.id}
-                item={item}
-                canDecide={canDecideOverride}
-                onDecided={(action) => {
-                  setOverrideNotice(
-                    action === "approve"
-                      ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
-                      : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
-                  );
-                  void refetchOverrides();
-                }}
+            {overrideLoading && overrideData === null ? (
+              <CardListSkeleton />
+            ) : overrideError ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <p className="text-sm text-destructive">{overrideError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetchOverrides()}
+                >
+                  ลองใหม่
+                </Button>
+              </div>
+            ) : (overrideData?.length ?? 0) === 0 ? (
+              <EmptyState
+                icon={ClipboardCheckIcon}
+                message="ไม่มีคำขอ Override รออนุมัติ"
               />
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              overrideData?.map((item) => (
+                <DeviceConfigOverrideApprovalCard
+                  key={item.id}
+                  item={item}
+                  canDecide={canDecideOverride}
+                  onDecided={(action) => {
+                    setOverrideNotice(
+                      action === "approve"
+                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                    );
+                    void refetchOverrides();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* section แยกจากทั้ง Config/Campaign Rollout/Config Override (Sprint 3
        * แถวที่ 24) — คนละ resource/endpoint กันทั้งหมด mirror section
-       * Per-device Config Override ด้านบนเป๊ะ */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Firmware Override รออนุมัติ{" "}
-            <span className="text-muted-foreground">
-              ({firmwareOverrideData?.length ?? 0})
-            </span>
-          </CardTitle>
-          <CardDescription>
-            คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout
-            (ST ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
-            firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {firmwareOverrideNotice && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              {firmwareOverrideNotice}
-            </div>
-          )}
+       * Per-device Config Override ด้านบนเป๊ะ รวมถึง gate ด้วย
+       * canDecideFirmwareOv เหมือนกัน (แก้ครั้งที่ 73) */}
+      {canDecideFirmwareOv && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Firmware Override รออนุมัติ{" "}
+              <span className="text-muted-foreground">
+                ({firmwareOverrideData?.length ?? 0})
+              </span>
+            </CardTitle>
+            <CardDescription>
+              คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout (ST
+              ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
+              firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {firmwareOverrideNotice && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                {firmwareOverrideNotice}
+              </div>
+            )}
 
-          {firmwareOverrideLoading && firmwareOverrideData === null ? (
-            <CardListSkeleton />
-          ) : firmwareOverrideError ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-sm text-destructive">
-                {firmwareOverrideError}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refetchFirmwareOverrides()}
-              >
-                ลองใหม่
-              </Button>
-            </div>
-          ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
-            <EmptyState
-              icon={ClipboardCheckIcon}
-              message="ไม่มีคำขอ Firmware Override รออนุมัติ"
-            />
-          ) : (
-            firmwareOverrideData?.map((item) => (
-              <DeviceFirmwareOverrideApprovalCard
-                key={item.id}
-                item={item}
-                canDecide={canDecideFirmwareOv}
-                onDecided={(action) => {
-                  setFirmwareOverrideNotice(
-                    action === "approve"
-                      ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
-                      : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
-                  );
-                  void refetchFirmwareOverrides();
-                }}
+            {firmwareOverrideLoading && firmwareOverrideData === null ? (
+              <CardListSkeleton />
+            ) : firmwareOverrideError ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <p className="text-sm text-destructive">
+                  {firmwareOverrideError}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetchFirmwareOverrides()}
+                >
+                  ลองใหม่
+                </Button>
+              </div>
+            ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
+              <EmptyState
+                icon={ClipboardCheckIcon}
+                message="ไม่มีคำขอ Firmware Override รออนุมัติ"
               />
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              firmwareOverrideData?.map((item) => (
+                <DeviceFirmwareOverrideApprovalCard
+                  key={item.id}
+                  item={item}
+                  canDecide={canDecideFirmwareOv}
+                  onDecided={(action) => {
+                    setFirmwareOverrideNotice(
+                      action === "approve"
+                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                    );
+                    void refetchFirmwareOverrides();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
