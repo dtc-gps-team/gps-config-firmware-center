@@ -3,11 +3,16 @@
 import Link from "next/link";
 import {
   Building2Icon,
+  BoxIcon,
   CalendarCheckIcon,
   CalendarIcon,
   CardSimIcon,
+  CpuIcon,
+  HashIcon,
   RadioIcon,
   SlidersHorizontalIcon,
+  SmartphoneIcon,
+  TerminalIcon,
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -88,6 +93,29 @@ function DeviceDetailContent({ device }: { device: Device }) {
           </InfoRow>
           <InfoRow label="โปรโตคอล" icon={RadioIcon}>
             {device.protocol}
+          </InfoRow>
+          <InfoRow label="รหัสรุ่นย่อย (Hardware Revision)" icon={CpuIcon}>
+            {device.hardwareRevisionCode ?? (
+              <span className="text-muted-foreground">ไม่ระบุ</span>
+            )}
+          </InfoRow>
+          <InfoRow label="IMEI" icon={SmartphoneIcon}>
+            {device.imei ?? <span className="text-muted-foreground">ไม่ระบุ</span>}
+          </InfoRow>
+          <InfoRow label="Serial Number" icon={HashIcon}>
+            {device.serialNumber ?? (
+              <span className="text-muted-foreground">ไม่ระบุ</span>
+            )}
+          </InfoRow>
+          <InfoRow label="Blackbox ID" icon={BoxIcon}>
+            {device.blackboxId ?? (
+              <span className="text-muted-foreground">ไม่ระบุ</span>
+            )}
+          </InfoRow>
+          <InfoRow label="Bootloader" icon={TerminalIcon}>
+            {device.bootloader ?? (
+              <span className="text-muted-foreground">ไม่ระบุ</span>
+            )}
           </InfoRow>
           <InfoRow label="ลูกค้า" icon={Building2Icon}>
             {device.customer ? (

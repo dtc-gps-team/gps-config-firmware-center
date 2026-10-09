@@ -41,28 +41,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b px-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileNavOpen(true)}
-            aria-label="เปิดเมนู"
-          >
-            <Menu />
-          </Button>
-          <span className="text-sm font-semibold md:hidden">
-            GPS Config Center
-          </span>
-          <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
-            <span>{session?.role ?? "-"}</span>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              ออกจากระบบ
+        <header className="flex h-14 items-center border-b px-4">
+          <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="เปิดเมนู"
+            >
+              <Menu />
             </Button>
+            <span className="text-sm font-semibold md:hidden">
+              GPS Config Center
+            </span>
+            <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
+              <span>{session?.role ?? "-"}</span>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                ออกจากระบบ
+              </Button>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6">
+          {/* เพดานความกว้างเนื้อหา (ไม่ใช่แค่หน้าฟอร์ม) — เดิม flex-1 ยืดเต็ม
+           * พื้นที่ที่เหลือจาก sidebar เสมอไม่มีเพดาน จอกว้างมาก (เช่น 1920px+)
+           * เนื้อหาเลยยืดจนดูไม่ได้ตั้งใจออกแบบมา โดยเฉพาะหน้าฟอร์มสั้นๆ ที่
+           * ลอยอยู่กลางพื้นที่ว่างมหาศาล — จำกัดไว้ที่ 1400px แล้วจัดกึ่งกลาง
+           * แทน (เทียบกับ pattern ทั่วไปของเว็บแอป เช่น Stripe/Linear/GitHub) */}
+          <div className="mx-auto max-w-[1400px]">{children}</div>
+        </main>
       </div>
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { SlidersHorizontalIcon } from "lucide-react";
@@ -96,10 +96,26 @@ export function ConfigTableCard({
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
   const [dismissedBanner, setDismissedBanner] = useState(false);
+  // "สร้างจาก Config Wizard" มาจาก URL (?saved=id, navigate จริง) — "นำเข้า
+  // จากไฟล์" มาจาก Dialog (แก้ครั้งที่ 71) ไม่มีการ navigate เลยใช้ local
+  // state แทน · local state ชนะถ้ามีค่าใหม่กว่า (import ล่าสุดหลังเปิดหน้ามา)
+  const [localJustCreatedId, setLocalJustCreatedId] = useState<string | null>(
+    null,
+  );
+  const effectiveJustSavedId = localJustCreatedId ?? justSavedId;
+
+  const handleImported = useCallback(
+    (config: { id: string }) => {
+      setDismissedBanner(false);
+      setLocalJustCreatedId(config.id);
+      void refetch();
+    },
+    [refetch],
+  );
 
   const savedConfig =
-    justSavedId != null
-      ? configs.find((c) => c.id === justSavedId) ?? null
+    effectiveJustSavedId != null
+      ? configs.find((c) => c.id === effectiveJustSavedId) ?? null
       : null;
 
   return (
@@ -127,7 +143,7 @@ export function ConfigTableCard({
           ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
         <CardAction className="flex gap-2">
-          <ImportConfigButton />
+          <ImportConfigButton onImported={handleImported} />
           <CreateConfigButton />
         </CardAction>
       </CardHeader>
