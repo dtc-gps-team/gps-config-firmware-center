@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
-import { importConfig } from "@/lib/config-api";
+import { importConfig, type Config } from "@/lib/config-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,15 +95,24 @@ function downloadTemplate() {
  * แถว Config Import) role อื่นเห็นข้อความแทนฟอร์ม
  *
  * flow: เลือกไฟล์ → preview ฝั่ง client (parse + เช็ค field บังคับ) → กด "นำเข้า"
- * → `POST /config/import` (multipart) → สำเร็จเด้งไปหน้ารายการ Config พร้อม
- * highlight แถวที่เพิ่ง import (เหมือน flow สร้างผ่าน wizard) · Config ที่ได้
- * เป็นสถานะ `draft` ต้อง simulate + Operation approve เหมือนกันทุกประการ
+ * → `POST /config/import` (multipart) → สำเร็จเรียก `onImported` ให้ parent
+ * ปิด dialog + highlight แถวที่เพิ่ง import (เหมือน flow สร้างผ่าน wizard) ·
+ * Config ที่ได้เป็นสถานะ `draft` ต้อง simulate + Operation approve เหมือนกัน
+ * ทุกประการ
+ *
+ * เดิมเป็นหน้าเต็ม `/config/import` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71 —
+ * เดิม comment บอกว่า "ทำเป็นหน้าเต็มแทน Dialog เพราะต้องมีที่โชว์ preview +
+ * รายการ error" ซึ่ง Dialog ใหม่รองรับ scroll ภายในแล้ว พอแสดง preview/error
+ * ได้โดยไม่ต้องเป็นหน้าเต็ม)
  *
  * gate นี้เป็น UX-level เท่านั้น — backend PermissionGuard บังคับสิทธิ์จริงเสมอ
  */
-export function ImportConfigForm() {
+export function ImportConfigForm({
+  onImported,
+}: {
+  onImported: (config: Config) => void;
+}) {
   const { session } = useAuth();
-  const router = useRouter();
 
   const [file, setFile] = useState<File | null>(null);
   const [parse, setParse] = useState<ParseResult | null>(null);
@@ -157,8 +165,7 @@ export function ImportConfigForm() {
     try {
       const created = await importConfig(session.accessToken, file);
       toast.success(`นำเข้า "${created.name}" แล้ว`);
-      router.push(`/config?saved=${encodeURIComponent(created.id)}`);
-      router.refresh();
+      onImported(created);
     } catch (err) {
       setSubmitting(false);
       if (err instanceof ApiError) {
