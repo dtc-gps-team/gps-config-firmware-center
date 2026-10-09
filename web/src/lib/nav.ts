@@ -10,6 +10,7 @@ import {
   TriangleAlertIcon,
   ScrollTextIcon,
   UsersIcon,
+  LayersIcon,
 } from "lucide-react";
 
 import type { Role } from "@/lib/permissions";
@@ -123,6 +124,18 @@ export const NAV_ITEMS: NavItem[] = [
     icon: UsersIcon,
     // Section 2: Admin + SuperAdmin (SuperAdmin ทำได้ทุกอย่างที่ Admin ทำได้ +
     // จัดการบัญชี Admin/SuperAdmin) — Role อื่นเป็น "-" หมด
+    allowedRoles: ["Admin", "SuperAdmin"],
+  },
+  {
+    label: "Device Model",
+    href: "/device-models",
+    screenName: "DeviceModel Management (ไม่มีชื่อจอทางการใน RBAC_Matrix.md —"
+      + " เพิ่งเพิ่มหน้านี้ 2026-10-07 ปิด gap ที่เดิมมีแค่ backend"
+      + " (issue #209) ไม่มี Web UI ให้ Admin ใช้เลย)",
+    icon: LayersIcon,
+    // ตาราง 4.1 createDeviceModel/updateDeviceModel: Admin เท่านั้น
+    // (SuperAdmin ได้อัตโนมัติจาก seed.ts) — Role อื่นอ่านได้ผ่าน dropdown
+    // ตอนสร้าง Config/Parameter อยู่แล้ว ไม่ต้องมีเมนูเข้าหน้านี้ตรงๆ
     allowedRoles: ["Admin", "SuperAdmin"],
   },
 ];

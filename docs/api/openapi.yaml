@@ -4301,6 +4301,22 @@ components:
           type: string
           format: uuid
           nullable: true
+        imei:
+          type: string
+          maxLength: 50
+          nullable: true
+        serialNumber:
+          type: string
+          maxLength: 50
+          nullable: true
+        blackboxId:
+          type: string
+          maxLength: 50
+          nullable: true
+        bootloader:
+          type: string
+          maxLength: 50
+          nullable: true
 
     RegisterDeviceResponse:
       allOf:
@@ -4342,6 +4358,24 @@ components:
         protocol:
           type: string
           example: TCP
+        hardwareRevisionCode:
+          type: string
+          nullable: true
+          description: >-
+            รหัสรุ่นย่อย/hardware revision (เช่น "RevA") — มีมาตั้งแต่ issue
+            #209 แต่ไม่เคยถูกเพิ่มเข้า spec นี้จนถึงตอนนี้ (v3.48)
+        imei:
+          type: string
+          nullable: true
+        serialNumber:
+          type: string
+          nullable: true
+        blackboxId:
+          type: string
+          nullable: true
+        bootloader:
+          type: string
+          nullable: true
         status:
           type: string
           enum: [registered, installed, decommissioned]

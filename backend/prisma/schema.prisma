@@ -376,6 +376,15 @@ model Device {
   // requirement จริงทีหลัง ค่อยยกระดับเป็นตารางแยก mirror วิธีที่
   // deviceModel string เดิมกำลังถูกยกระดับเป็น DeviceModel ตอนนี้
   hardwareRevisionCode String?
+  // Identity group เพิ่มเติมจาก GPS_Config_Firmware_Center_Design.pdf §4.1
+  // (เดิมไม่เคยมี field เหล่านี้เลยตั้งแต่ PR #38 — ไม่ใช่ deviation ที่ตั้งใจ
+  // แค่ไม่เคย implement) — string อิสระทั้งหมด ไม่มี validation รูปแบบ (เช่น
+  // IMEI checksum) ในรอบนี้ ใส่ไว้ก่อนเพื่อให้กรอกตอนลงทะเบียนได้ครบตาม
+  // เอกสารต้นฉบับ เพิ่ม validation รูปแบบทีหลังได้โดยไม่กระทบ schema
+  imei                 String?
+  serialNumber         String?
+  blackboxId           String?
+  bootloader           String?
   status               DeviceLifecycleStatus @default(registered)
   registeredAt         DateTime              @default(now())
   installedAt          DateTime?
