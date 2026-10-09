@@ -62,8 +62,9 @@ const ACTION_LABEL: Record<string, string> = {
  * comment เหนือ `AuditLogRow` ใน `use-audit-logs.ts`)
  */
 export function DashboardActivity() {
-  const { data, isLoading, error, refetch } = useAuditLogs();
-  const rows = (data ?? []).slice(0, 5);
+  // ขอแค่ 5 แถวจาก backend ตรงๆ (เดิมดึงทุกแถวแล้ว slice ฝั่ง client)
+  const { data, isLoading, error, refetch } = useAuditLogs({ pageSize: 5 });
+  const rows = data ?? [];
 
   return (
     <Card>
