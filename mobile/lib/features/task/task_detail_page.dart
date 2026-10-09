@@ -4,8 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/db/tables/pending_actions_table.dart';
+import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../config_simulator/simulation_result_card.dart';
+import '../config_simulator/simulator_repository.dart';
+import '../incident/incident_repository.dart';
+import '../../core/widgets/sync_status_widgets.dart';
 import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
@@ -14,6 +20,47 @@ String _formatDate(DateTime dt) {
   final d = dt.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+/// Incident description for a failed simulator check. Prefix `[Simulator
+/// Check]` marks it as a test result, not a field-observed fault (there is no
+/// separate source field on `POST /incidents` yet). Capped at the backend's
+/// 2000-char limit.
+@visibleForTesting
+String simulationIncidentDescription(
+  String deviceId,
+  DeviceSimulateConfigResult result,
+) {
+  final conn = result.connectionCheck;
+  final buffer = StringBuffer()
+    ..writeln('[Simulator Check] ทดสอบ Config กับอุปกรณ์ $deviceId ไม่ผ่าน')
+    ..writeln(
+      _checkSummary(
+        'Config',
+        result.configCheck.passed,
+        result.configCheck.details,
+      ),
+    )
+    ..writeln(
+      _checkSummary(
+        'ความเข้ากันได้กับอุปกรณ์',
+        result.compatibilityCheck.passed,
+        result.compatibilityCheck.details,
+      ),
+    )
+    ..write(
+      _checkSummary('สัญญาณอุปกรณ์', conn.passed, [
+        'แรงสัญญาณ: ${conn.signalStrength} dBm',
+        ...conn.details,
+      ]),
+    );
+  final text = buffer.toString();
+  return text.length <= 2000 ? text : text.substring(0, 2000);
+}
+
+String _checkSummary(String label, bool passed, List<String> details) {
+  final head = '$label: ${passed ? 'ผ่าน' : 'ไม่ผ่าน'}';
+  return details.isEmpty ? head : '$head — ${details.join('; ')}';
 }
 
 /// Statuses a field tech (ST/OT) may set from Mobile. Cancelling a task is an
@@ -96,6 +143,18 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   bool _installConfirmed = false;
   String? _confirmInstallError;
 
+  // ทดสอบกับ Device Simulator ก่อนส่ง Config (แถว 26b, ไม่บังคับ) — แยก state
+  // จาก _confirmingInstall/_installConfirmed ข้างบน. ผลไม่ผ่าน (`passed ==
+  // false`) บล็อกปุ่ม "ส่ง Config เข้าเครื่อง" ฝั่ง client เท่านั้น (ไม่มี gate
+  // ฝั่ง server) ส่วน error ของการเรียก simulate เอง (ออฟไลน์ ฯลฯ) ไม่บล็อก
+  bool _simulating = false;
+  DeviceSimulateConfigResult? _simulationResult;
+  String? _simulationError;
+  String? _incidentNotice;
+  bool _incidentReported = false;
+
+  bool get _simulationBlocked => _simulationResult?.passed == false;
+
   bool get _dirty => _selected != widget.task.status;
 
   Future<void> _save() async {
@@ -109,15 +168,40 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           .updateStatus(widget.taskId, _selected);
       ref.invalidate(taskListProvider);
       ref.invalidate(taskDetailProvider(widget.taskId));
+      final queued = await _stillQueued();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('อัปเดตสถานะงานแล้ว')));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              queued
+                  ? 'บันทึกแล้ว จะซิงค์เมื่อมีอินเทอร์เน็ต'
+                  : 'อัปเดตสถานะงานแล้ว',
+            ),
+          ),
+        );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _saveError = _saveErrorMessage(e));
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// True when the just-saved change is still waiting in the sync queue
+  /// (offline / not yet confirmed) — only changes the snackbar wording.
+  Future<bool> _stillQueued() async {
+    try {
+      final rows = await ref
+          .read(pendingActionDaoProvider)
+          .getPendingForEntity(
+            PendingActionType.taskStatus.wireName,
+            widget.taskId,
+          );
+      return rows.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -134,6 +218,76 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     }
   }
 
+  /// `POST /devices/{deviceId}/simulate-config` ด้วย `task.deviceId` +
+  /// `task.configId` (ไม่ให้ช่างเลือกเอง) — dry-run ไม่เขียนอะไรในระบบ. ถ้า
+  /// ไม่ผ่านจะสร้าง Incident อัตโนมัติ 1 ครั้งต่อรอบที่ไม่ผ่าน (ทดสอบซ้ำแล้ว
+  /// ยังไม่ผ่านไม่สร้างซ้ำ จนกว่าจะเคยผ่านคั่น)
+  Future<void> _runSimulation() async {
+    final deviceId = widget.task.deviceId;
+    final configId = widget.task.configId;
+    if (deviceId == null || configId == null) return;
+
+    setState(() {
+      _simulating = true;
+      _simulationError = null;
+      // ผลของรอบก่อนไม่ใช่ผลของรอบนี้ — ล้างทุกครั้งที่กดทดสอบใหม่ ไม่งั้นถ้า
+      // รอบนี้ simulate ล้ม (ออฟไลน์) ปุ่มส่ง Config จะค้าง disable จากผลเก่า
+      _simulationResult = null;
+    });
+    try {
+      final result = await ref
+          .read(simulatorRepositoryProvider)
+          .simulate(deviceId: deviceId, configId: configId);
+      if (!mounted) return;
+      setState(() {
+        _simulating = false;
+        _simulationResult = result;
+        if (result.passed) {
+          _incidentReported = false;
+          _incidentNotice = null;
+        }
+      });
+      if (!result.passed && !_incidentReported) {
+        _incidentReported = true;
+        await _reportFailedSimulation(deviceId, result);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _simulating = false;
+        _simulationError = e.message;
+      });
+    }
+  }
+
+  /// สร้าง Incident อัตโนมัติจากผลที่ไม่ผ่าน — best effort: ล้มเหลว (รวมถึง
+  /// ออฟไลน์) ไม่ retry ไม่ throw ไม่กระทบการบล็อกปุ่ม (บล็อกจาก `passed` ตรงๆ)
+  Future<void> _reportFailedSimulation(
+    String deviceId,
+    DeviceSimulateConfigResult result,
+  ) async {
+    try {
+      await ref
+          .read(incidentRepositoryProvider)
+          .createFieldReport(
+            title: 'Simulator Check ไม่ผ่าน: $deviceId',
+            description: simulationIncidentDescription(deviceId, result),
+            severity: IncidentSeverity.low,
+            deviceId: deviceId,
+          );
+      if (!mounted) return;
+      setState(
+        () => _incidentNotice = 'บันทึกเป็น Incident ให้ Operation แล้ว',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _incidentNotice =
+            'สร้าง Incident อัตโนมัติไม่สำเร็จ (ไม่กระทบการทดสอบ)',
+      );
+    }
+  }
+
   /// เรียก `POST /devices/{deviceId}/apply-config` ด้วย `task.deviceId` +
   /// `task.configId` — fire-and-forget ฝั่ง backend จึงไม่มีสถานะอุปกรณ์ให้
   /// รีเฟรชหลังเรียกสำเร็จ (กล่องรับค่าตอนเปิดเครื่องครั้งถัดไป) แค่ mark
@@ -142,6 +296,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final deviceId = widget.task.deviceId;
     final configId = widget.task.configId;
     if (deviceId == null || configId == null) return;
+    if (_simulationBlocked) return;
 
     setState(() {
       _confirmingInstall = true;
@@ -215,9 +370,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             ),
           ),
           const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TaskStatusPill(status: task.status),
+          Row(
+            children: [
+              TaskStatusPill(status: task.status),
+              if (ref.watch(pendingTaskIdsProvider).value?.contains(task.id) ??
+                  false) ...[
+                const SizedBox(width: 10),
+                const PendingSyncBadge(),
+              ],
+            ],
           ),
           const SizedBox(height: 20),
           _InfoCard(
@@ -284,6 +445,51 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 color: AppTheme.textSecondary,
               ),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('simulate_test_button'),
+              onPressed: (_simulating || _confirmingInstall)
+                  ? null
+                  : _runSimulation,
+              icon: _simulating
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.fact_check_outlined),
+              label: Text(
+                _simulating
+                    ? 'กำลังทดสอบ...'
+                    : 'ทดสอบกับ Device Simulator (ไม่บังคับ)',
+              ),
+            ),
+            if (_simulationError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _simulationError!,
+                key: const Key('simulate_error'),
+                style: const TextStyle(color: AppTheme.error, fontSize: 13),
+              ),
+            ],
+            if (_simulationResult != null) ...[
+              const SizedBox(height: 12),
+              SimulationResultCard(
+                key: const Key('simulate_result'),
+                result: _simulationResult!,
+              ),
+            ],
+            if (_incidentNotice != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _incidentNotice!,
+                key: const Key('simulate_incident_notice'),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -311,7 +517,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                         error: _confirmInstallError,
                         confirming: _confirmingInstall,
                         confirmed: _installConfirmed,
-                        onPressed: (_confirmingInstall || _installConfirmed)
+                        blockedMessage: _simulationBlocked
+                            ? 'ผลทดสอบกับ Device Simulator ไม่ผ่าน — ส่ง Config '
+                                  'ไม่ได้จนกว่าจะทดสอบซ้ำแล้วผ่าน'
+                            : null,
+                        onPressed:
+                            (_confirmingInstall ||
+                                _installConfirmed ||
+                                _simulationBlocked)
                             ? null
                             : _confirmInstall,
                       ),
@@ -397,6 +610,7 @@ class _ConfirmInstallBar extends StatelessWidget {
     required this.confirming,
     required this.confirmed,
     required this.onPressed,
+    this.blockedMessage,
   });
 
   final String? error;
@@ -404,12 +618,33 @@ class _ConfirmInstallBar extends StatelessWidget {
   final bool confirmed;
   final VoidCallback? onPressed;
 
+  /// Why the button is disabled by a failed simulator check (null = not
+  /// blocked). Shown above the button.
+  final String? blockedMessage;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (blockedMessage != null) ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.block, size: 18, color: AppTheme.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  blockedMessage!,
+                  key: const Key('simulate_blocked_message'),
+                  style: const TextStyle(color: AppTheme.error, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         if (error != null) ...[
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
