@@ -391,6 +391,41 @@ void main() {
       );
     });
 
+    testWidgets('ไม่ผ่าน -> กดทดสอบใหม่ตอนออฟไลน์ (simulate ล้ม) -> ผลเก่าถูก '
+        'ล้าง ปุ่มส่ง Config ไม่ค้าง disable; กลับออนไลน์ทดสอบใหม่ -> ปุ่ม '
+        'ตามผลล่าสุด และไม่สร้าง Incident ซ้ำในรอบที่ยังไม่เคยผ่านคั่น', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        sim: _SimRepo([
+          _result(passed: false),
+          ApiException('เชื่อมต่อไม่ได้'),
+          _result(passed: false),
+          _result(passed: true),
+        ]),
+        incidents: incidents,
+        confirm: confirm,
+      );
+
+      await _runSimulation(tester);
+      expect(_applyEnabled(tester), isFalse);
+      expect(incidents.created, 1);
+
+      await _runSimulation(tester); // ออฟไลน์
+      expect(find.byKey(const Key('simulate_error')), findsOneWidget);
+      expect(find.byKey(const Key('simulate_result')), findsNothing);
+      expect(find.byKey(const Key('simulate_blocked_message')), findsNothing);
+      expect(_applyEnabled(tester), isTrue);
+
+      await _runSimulation(tester); // ออนไลน์ ยังไม่ผ่าน
+      expect(_applyEnabled(tester), isFalse);
+      expect(incidents.created, 1);
+
+      await _runSimulation(tester); // ผ่าน
+      expect(_applyEnabled(tester), isTrue);
+    });
+
     testWidgets('simulate ล้มแล้วกดทดสอบใหม่สำเร็จ -> error หาย แสดงผลปกติ', (
       tester,
     ) async {

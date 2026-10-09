@@ -202,6 +202,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     setState(() {
       _simulating = true;
       _simulationError = null;
+      // ผลของรอบก่อนไม่ใช่ผลของรอบนี้ — ล้างทุกครั้งที่กดทดสอบใหม่ ไม่งั้นถ้า
+      // รอบนี้ simulate ล้ม (ออฟไลน์) ปุ่มส่ง Config จะค้าง disable จากผลเก่า
+      _simulationResult = null;
     });
     try {
       final result = await ref
