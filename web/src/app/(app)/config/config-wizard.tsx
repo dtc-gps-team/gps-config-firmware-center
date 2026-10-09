@@ -442,7 +442,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       <WizardStepIndicator steps={CONFIG_WIZARD_STEPS} step={step} />
 
       {step === 1 ? (
-        <Card className="max-w-xl gap-5 p-5">
+        <Card className="mx-auto w-full max-w-2xl gap-5 p-5">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="config-name">ชื่อ Config</Label>
             <Input
@@ -461,44 +461,46 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="config-device-model">รุ่นอุปกรณ์</Label>
-            <Select
-              value={deviceModel}
-              disabled={!!editing}
-              onValueChange={(value) => changeDeviceModel(value ?? "")}
-            >
-              <SelectTrigger id="config-device-model" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
-              </SelectTrigger>
-              <SelectContent>
-                {deviceModelOptions.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="config-device-model">รุ่นอุปกรณ์</Label>
+              <Select
+                value={deviceModel}
+                disabled={!!editing}
+                onValueChange={(value) => changeDeviceModel(value ?? "")}
+              >
+                <SelectTrigger id="config-device-model" className="w-full">
+                  <SelectValue placeholder="- เลือก -" />
+                </SelectTrigger>
+                <SelectContent>
+                  {deviceModelOptions.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="config-protocol">โปรโตคอล</Label>
-            <Select
-              value={protocol}
-              disabled={!!editing || !deviceModel}
-              onValueChange={(value) => changeProtocol(value ?? "")}
-            >
-              <SelectTrigger id="config-protocol" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
-              </SelectTrigger>
-              <SelectContent>
-                {protocolOptions.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="config-protocol">โปรโตคอล</Label>
+              <Select
+                value={protocol}
+                disabled={!!editing || !deviceModel}
+                onValueChange={(value) => changeProtocol(value ?? "")}
+              >
+                <SelectTrigger id="config-protocol" className="w-full">
+                  <SelectValue placeholder="- เลือก -" />
+                </SelectTrigger>
+                <SelectContent>
+                  {protocolOptions.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {p}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {editing && (
