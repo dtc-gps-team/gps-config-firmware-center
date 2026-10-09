@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/push_notification/push_message_handler.dart';
@@ -252,6 +253,13 @@ void main() {
     Future<void> pumpApp(WidgetTester tester) =>
         tester.pumpWidget(MaterialApp.router(routerConfig: router));
 
+    Future<void> settle(WidgetTester tester) async {
+      // addPostFrameCallback doesn't request a frame by itself
+      WidgetsBinding.instance.scheduleFrame();
+      await tester.pump();
+      await tester.pump();
+    }
+
     String location() => router.routeInformationProvider.value.uri.toString();
 
     _MutableAuth auth() =>
@@ -299,6 +307,81 @@ void main() {
       expect(container.read(pendingPushRouteProvider), isNull);
       expect(location(), '/incidents/i2');
     });
+    AuthState signedIn(String user) => AuthState(
+      status: AuthStatus.authenticated,
+      role: UserRole.st,
+      username: user,
+    );
+
+    testWidgets(
+      'logout -> pending route ถูกล้าง (ค่าที่ค้างจาก session นั้นไม่ '
+      'ตกไปถึงคนถัดไป)',
+      (tester) async {
+        await pumpApp(tester);
+        container.read(pushMessageHandlerProvider);
+        auth().set(signedIn('st.a'));
+        await tester.pump();
+        container.read(pendingPushRouteProvider.notifier).state =
+            '/incidents/old';
+
+        auth().set(const AuthState(status: AuthStatus.unauthenticated));
+        await tester.pump();
+
+        expect(container.read(pendingPushRouteProvider), isNull);
+      },
+    );
+
+    testWidgets('A logout -> กด push ตอนอยู่หน้า login -> B login = ไม่พา B ไป '
+        'path ของ A และเคลียร์ pending', (tester) async {
+      await pumpApp(tester);
+      final handler = container.read(pushMessageHandlerProvider);
+      auth().set(signedIn('st.a'));
+      await tester.pump();
+      auth().set(const AuthState(status: AuthStatus.unauthenticated));
+      await tester.pump();
+
+      handler.openPath('/incidents/a-only');
+      expect(container.read(pendingPushRouteProvider), '/incidents/a-only');
+
+      auth().set(signedIn('st.b'));
+      await settle(tester);
+
+      expect(container.read(pendingPushRouteProvider), isNull);
+      expect(location(), '/');
+    });
+
+    testWidgets('A logout -> กด push -> A login กลับมา = ไปปลายทางตามปกติ', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      final handler = container.read(pushMessageHandlerProvider);
+      auth().set(signedIn('st.a'));
+      await tester.pump();
+      auth().set(const AuthState(status: AuthStatus.unauthenticated));
+      await tester.pump();
+
+      handler.openPath('/incidents/i1');
+      auth().set(signedIn('st.a'));
+      await settle(tester);
+
+      expect(location(), '/incidents/i1');
+      expect(container.read(pendingPushRouteProvider), isNull);
+    });
+
+    testWidgets(
+      'cold start (ยังไม่เคยมีใคร login ใน process นี้) -> ใครก็ตามที่ '
+      'login ก่อนได้ไปปลายทางที่กด',
+      (tester) async {
+        await pumpApp(tester);
+        container.read(pushMessageHandlerProvider).openPath('/incidents/i2');
+
+        auth().set(signedIn('st.b'));
+        await tester.pump();
+        await tester.pump();
+
+        expect(location(), '/incidents/i2');
+      },
+    );
   });
 }
 

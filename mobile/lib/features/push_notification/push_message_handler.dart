@@ -230,6 +230,16 @@ class PushMessageHandler {
   void _navigate(Map<String, dynamic> data) =>
       openPath(resolvePushDeepLink(data));
 
+  /// Username of the last signed-in user seen by this handler (survives
+  /// logout, reset only with the process). Used to tell "the same person came
+  /// back" from "someone else signs in on this device".
+  String? _lastUser;
+
+  /// [_lastUser] at the moment the pending path was parked. Null = nobody had
+  /// signed in during this process yet (cold start from a tap), so whoever
+  /// signs in first is the person who tapped.
+  String? _parkedAfterUser;
+
   /// Opens [path] now if signed in; otherwise parks it in
   /// [pendingPushRouteProvider] (the router would bounce to splash/login and
   /// lose the destination).
@@ -237,15 +247,27 @@ class PushMessageHandler {
     if (_ref.read(authControllerProvider).isAuthenticated) {
       _go(path);
     } else {
+      _parkedAfterUser = _lastUser;
       _ref.read(pendingPushRouteProvider.notifier).state = path;
     }
   }
 
   void onAuthChanged(AuthState? previous, AuthState next) {
-    if (!next.isAuthenticated) return;
+    final pendingNotifier = _ref.read(pendingPushRouteProvider.notifier);
+    if (!next.isAuthenticated) {
+      // Logout / session ended: whatever was waiting belonged to that session.
+      if (previous?.isAuthenticated ?? false) pendingNotifier.state = null;
+      return;
+    }
+    final user = next.username;
     final pending = _ref.read(pendingPushRouteProvider);
+    final parkedAfter = _parkedAfterUser;
+    if (user != null) _lastUser = user;
     if (pending == null) return;
-    _ref.read(pendingPushRouteProvider.notifier).state = null;
+    pendingNotifier.state = null;
+    // A tap parked after user A signed out must not drag a different user B to
+    // A's destination (the ids in the path are A's tasks/incidents).
+    if (parkedAfter != null && user != null && parkedAfter != user) return;
     _go(pending);
   }
 
