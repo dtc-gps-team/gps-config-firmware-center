@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
 import '../notification/notification_ui.dart';
@@ -22,26 +23,60 @@ const _androidChannelName = 'การแจ้งเตือน';
 const _androidChannelDescription =
     'แจ้งเตือนงานที่ได้รับมอบหมายและอัปเดตจากระบบ';
 
+/// Notification types whose payload carries an `incidentId` and deep-link to
+/// the incident detail page.
+const _incidentPushTypes = {
+  'incident_report_pending',
+  'incident_report_resolved',
+  'incident_report_dismissed',
+  'incident_report_promoted',
+};
+
 /// The route to open for an FCM `data` payload (`{'type': ..., 'payload': ...}`).
 ///
-/// Pure + total: never throws, never touches an SDK. Only `task_assigned` with
-/// a non-empty string `taskId` deep-links to the task; anything else (unknown
-/// type, malformed/missing payload, missing `taskId`) falls back to the
+/// Pure + total: never throws, never touches an SDK. `task_assigned` with a
+/// non-empty string `taskId` deep-links to the task, `incident_report_*` with a
+/// non-empty string `incidentId` deep-links to the incident; anything else
+/// (unknown type, malformed/missing payload, missing id) falls back to the
 /// notification list. `payload` is normally a JSON string (FCM `data` values
 /// are always strings) but an already-decoded map is accepted too.
 String resolvePushDeepLink(Map<String, dynamic> data) {
   final type = data['type'];
-  if (type != NotificationType.taskAssigned.wireName) {
-    return AppRoutes.notifications;
-  }
-
   final payload = _decodePayload(data['payload']);
-  final taskId = payload['taskId'];
-  if (taskId is! String || taskId.trim().isEmpty) {
-    return AppRoutes.notifications;
+
+  if (type == NotificationType.taskAssigned.wireName) {
+    final taskId = _nonEmptyString(payload['taskId']);
+    return taskId == null
+        ? AppRoutes.notifications
+        : AppRoutes.taskDetail(taskId);
   }
-  return AppRoutes.taskDetail(taskId.trim());
+  if (_incidentPushTypes.contains(type)) {
+    final incidentId = _nonEmptyString(payload['incidentId']);
+    return incidentId == null
+        ? AppRoutes.notifications
+        : AppRoutes.incidentDetail(incidentId);
+  }
+  return AppRoutes.notifications;
 }
+
+String? _nonEmptyString(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+/// Body text of a push: the incident `title` (sent to Operation on
+/// `incident_report_pending`) or the reviewer's `reviewNote` (sent to the
+/// reporter on a decision) when the payload has one, otherwise the generic
+/// prompt. Pure + total, same payload rules as [resolvePushDeepLink].
+String resolvePushBody(Map<String, dynamic> data) {
+  final payload = _decodePayload(data['payload']);
+  return _nonEmptyString(payload['title']) ??
+      _nonEmptyString(payload['reviewNote']) ??
+      _defaultPushBody;
+}
+
+const _defaultPushBody = 'แตะเพื่อดูรายละเอียด';
 
 Map<String, dynamic> _decodePayload(Object? raw) {
   if (raw is Map<String, dynamic>) return raw;
@@ -93,7 +128,7 @@ Future<void> showPushLocalNotification(
     // time-derived value; distinct pushes replace nothing.
     id: DateTime.now().millisecondsSinceEpoch ~/ 1000 & 0x7fffffff,
     title: _titleFor(data['type']),
-    body: 'แตะเพื่อดูรายละเอียด',
+    body: resolvePushBody(data),
     notificationDetails: details,
     payload: jsonEncode(data),
   );
@@ -192,8 +227,51 @@ class PushMessageHandler {
     }
   }
 
-  void _navigate(Map<String, dynamic> data) {
-    final path = resolvePushDeepLink(data);
+  void _navigate(Map<String, dynamic> data) =>
+      openPath(resolvePushDeepLink(data));
+
+  /// Username of the last signed-in user seen by this handler (survives
+  /// logout, reset only with the process). Used to tell "the same person came
+  /// back" from "someone else signs in on this device".
+  String? _lastUser;
+
+  /// [_lastUser] at the moment the pending path was parked. Null = nobody had
+  /// signed in during this process yet (cold start from a tap), so whoever
+  /// signs in first is the person who tapped.
+  String? _parkedAfterUser;
+
+  /// Opens [path] now if signed in; otherwise parks it in
+  /// [pendingPushRouteProvider] (the router would bounce to splash/login and
+  /// lose the destination).
+  void openPath(String path) {
+    if (_ref.read(authControllerProvider).isAuthenticated) {
+      _go(path);
+    } else {
+      _parkedAfterUser = _lastUser;
+      _ref.read(pendingPushRouteProvider.notifier).state = path;
+    }
+  }
+
+  void onAuthChanged(AuthState? previous, AuthState next) {
+    final pendingNotifier = _ref.read(pendingPushRouteProvider.notifier);
+    if (!next.isAuthenticated) {
+      // Logout / session ended: whatever was waiting belonged to that session.
+      if (previous?.isAuthenticated ?? false) pendingNotifier.state = null;
+      return;
+    }
+    final user = next.username;
+    final pending = _ref.read(pendingPushRouteProvider);
+    final parkedAfter = _parkedAfterUser;
+    if (user != null) _lastUser = user;
+    if (pending == null) return;
+    pendingNotifier.state = null;
+    // A tap parked after user A signed out must not drag a different user B to
+    // A's destination (the ids in the path are A's tasks/incidents).
+    if (parkedAfter != null && user != null && parkedAfter != user) return;
+    _go(pending);
+  }
+
+  void _go(String path) {
     // Defer so navigation runs after the current frame / app resume settles.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -206,5 +284,14 @@ class PushMessageHandler {
 }
 
 final pushMessageHandlerProvider = Provider<PushMessageHandler>((ref) {
-  return PushMessageHandler(ref);
+  final handler = PushMessageHandler(ref);
+  // A tap that arrived before the session was ready (terminated launch) is
+  // opened as soon as the user is authenticated.
+  ref.listen(authControllerProvider, handler.onAuthChanged);
+  return handler;
 });
+
+/// Route from a push tap that couldn't be opened yet because the session was
+/// still restoring or the user isn't logged in. Consumed (and cleared) by
+/// [PushMessageHandler.onAuthChanged] once authenticated.
+final pendingPushRouteProvider = StateProvider<String?>((ref) => null);
