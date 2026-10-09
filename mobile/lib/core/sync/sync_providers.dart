@@ -68,11 +68,35 @@ final failedSyncActionsProvider = StreamProvider<List<PendingActionRow>>((ref) {
 
 /// Starts the flush triggers: app resume and connectivity coming back.
 /// Read once from the app root; disposed with the container.
+/// Connectivity source for [syncTriggersProvider]; null = the platform stream.
+/// Exists so tests can run the provider without the plugin.
+final syncConnectivityProvider = Provider<Stream<List<ConnectivityResult>>?>(
+  (ref) => null,
+);
+
 final syncTriggersProvider = Provider<SyncTriggers>((ref) {
+  bool signedIn() => ref.read(authControllerProvider).isAuthenticated;
+  // Every trigger is gated on the session: before the token is restored (cold
+  // start) a send would go out unauthenticated, get a 401 and wrongly raise
+  // the "เซสชันหมดอายุ" banner while leaving the queue stuck until the next
+  // resume / connectivity event.
   final triggers = SyncTriggers(
-    onTrigger: () => ref.read(syncQueueServiceProvider).flush(),
+    onTrigger: () {
+      if (signedIn()) ref.read(syncQueueServiceProvider).flush();
+    },
+    connectivity: ref.read(syncConnectivityProvider),
   );
-  if (!AppConfig.apiMockMode) triggers.start();
+  if (!AppConfig.apiMockMode) {
+    // Leftovers from the previous run go out as soon as the session is ready:
+    // right away if it already is, otherwise when restore/login completes.
+    triggers.start(triggerOnStart: false);
+    if (signedIn()) triggers.onTrigger();
+    ref.listen(authControllerProvider, (previous, next) {
+      if (next.isAuthenticated && !(previous?.isAuthenticated ?? false)) {
+        triggers.onTrigger();
+      }
+    });
+  }
   ref.onDispose(triggers.stop);
   return triggers;
 });
@@ -87,7 +111,9 @@ class SyncTriggers with WidgetsBindingObserver {
   StreamSubscription<List<ConnectivityResult>>? _sub;
   bool _wasOffline = false;
 
-  void start() {
+  /// [triggerOnStart] false lets the owner decide when the first flush is safe
+  /// (the session may not be restored yet).
+  void start({bool triggerOnStart = true}) {
     WidgetsBinding.instance.addObserver(this);
     _sub = (connectivity ?? Connectivity().onConnectivityChanged).listen((
       results,
@@ -98,7 +124,7 @@ class SyncTriggers with WidgetsBindingObserver {
       _wasOffline = offline;
     });
     // Anything left over from the previous run goes out right away.
-    onTrigger();
+    if (triggerOnStart) onTrigger();
   }
 
   void stop() {
