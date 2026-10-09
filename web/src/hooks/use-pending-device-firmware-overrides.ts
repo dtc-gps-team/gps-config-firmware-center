@@ -24,18 +24,23 @@ type State = {
  * /device-firmware-overrides?status=pending` (Sprint 3 แถวที่ 24) mirror
  * `usePendingDeviceConfigOverrides` ทุกประการ — แยก hook ตั้งใจ เพราะเป็นคนละ
  * resource/endpoint กันคนละ section ใน Approval Center
+ *
+ * `enabled` (default true) — resource นี้ grant `Read` ให้เฉพาะ Operation
+ * (`backend/prisma/seed.ts`) role อื่นเรียกแล้วโดน 403 เสมอ ต้องส่ง
+ * `enabled: canDecideFirmwareOverride(role)` จากฝั่งเรียกเพื่อข้าม fetch
+ * ไปเลย mirror `usePendingDeviceConfigOverrides` ทุกประการ
  */
-export function usePendingDeviceFirmwareOverrides() {
+export function usePendingDeviceFirmwareOverrides(enabled: boolean = true) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
   const [state, setState] = useState<State>({
     data: null,
-    isLoading: true,
+    isLoading: enabled,
     error: null,
   });
 
   const refetch = useCallback(async () => {
-    if (!token) return;
+    if (!token || !enabled) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
       const data = await listDeviceFirmwareOverrides(token, {
@@ -52,11 +57,15 @@ export function usePendingDeviceFirmwareOverrides() {
             : "โหลดคิว Firmware Override ไม่สำเร็จ",
       }));
     }
-  }, [token]);
+  }, [token, enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ data: null, isLoading: false, error: null });
+      return;
+    }
     void refetch();
-  }, [refetch]);
+  }, [refetch, enabled]);
   useRefetchOnFocus(refetch);
   usePollInterval(refetch, PENDING_QUEUE_POLL_INTERVAL_MS);
 
