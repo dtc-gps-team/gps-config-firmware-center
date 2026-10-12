@@ -10,6 +10,24 @@ import { CreateDeviceModelDto } from './dto/create-device-model.dto';
 import { UpdateDeviceModelDto } from './dto/update-device-model.dto';
 
 /**
+ * แปลงค่าวันที่จาก DTO ให้เป็นรูปแบบที่ Prisma รับ — `@IsDateString()` ยอมรับ
+ * วันที่อย่างเดียว (`"2027-10-12"` จากช่องเลือกวันที่บนเว็บ) แต่คอลัมน์
+ * `DateTime` ของ Prisma ไม่รับ string แบบนั้น (ต้องเป็น ISO เต็มหรือ `Date`)
+ * เดิมส่ง string ตรงๆ เลยได้ `PrismaClientValidationError` กลายเป็น 500
+ * undefined = ไม่แตะค่าเดิม, null = ล้างค่า · คัดลอกจาก `toDbDate()` ใน
+ * `task.service.ts` (โมดูล B) แทนการ import ข้ามโมดูล
+ */
+function toDbDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  return new Date(value);
+}
+
+/**
  * DeviceModel registry (issue #209, docs/15) — canonical registry ของ
  * "รุ่นสินค้า" แทน string อิสระเดิมที่กระจายอยู่ใน `Device`/`Config`/
  * `Firmware`/`ConfigFieldDefinitionModelSupport` (ยังไม่ migrate 3 ตัวหลัง
@@ -52,7 +70,7 @@ export class DeviceModelService {
           supportedProtocols: dto.supportedProtocols,
           status: dto.status,
           warrantyMonths: dto.warrantyMonths,
-          endOfSupportDate: dto.endOfSupportDate,
+          endOfSupportDate: toDbDate(dto.endOfSupportDate),
           notes: dto.notes,
         },
       });
@@ -79,7 +97,7 @@ export class DeviceModelService {
           supportedProtocols: dto.supportedProtocols,
           status: dto.status,
           warrantyMonths: dto.warrantyMonths,
-          endOfSupportDate: dto.endOfSupportDate,
+          endOfSupportDate: toDbDate(dto.endOfSupportDate),
           notes: dto.notes,
         },
       });
