@@ -193,7 +193,7 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define
 | Operation ตัดสินใจ Field Report | เว็บ (A) | TC-04 จบแค่ "เว็บเห็นรายการ" | ยิง API ตรง `POST /incidents/{id}/decide` ด้วย token ของ Operation แล้วให้ B ดูว่าสถานะใน "ดู Incident" เปลี่ยน และมีแจ้งเตือน `incident_report_*` |
 | ช่างกด Confirm Install Firmware | มือถือ (B) | TC-03 จบแค่ "อนุมัติแล้ว" | ยิง API ตรง `POST /devices/{deviceId}/confirm-firmware-install` ด้วย token ของ ST แล้วให้ A ดูสถานะ Firmware บนเว็บ |
 
-ทั้งสองข้อควรเปิด issue แยกก่อนวันส่งงาน
+ติดตามใน issue #284 (ปุ่มตัดสินใจบนเว็บ) และ #261 (หน้า Confirm Install ในแอป)
 
 ### 7.2 PR ที่ยังไม่ merge (ทดสอบเพิ่มเมื่อ merge แล้ว หรือ checkout branch ของ PR)
 
