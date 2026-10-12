@@ -188,6 +188,41 @@ describe('NotificationService', () => {
       });
     });
 
+    it.each([
+      'incident_report_pending',
+      'incident_report_resolved',
+      'incident_report_dismissed',
+      'incident_report_promoted',
+    ] as const)(
+      'type %s → ยิงผ่าน fcmSender จริง (ไม่ fallback เป็น mock)',
+      async (type) => {
+        notification.create.mockResolvedValue({
+          ...sampleNotification,
+          type,
+        });
+        notification.update.mockResolvedValue({
+          ...sampleNotification,
+          type,
+        });
+        deviceToken.findMany.mockResolvedValue(sampleTokens);
+        const fcmSender: FcmSenderMock = {
+          sendToTokens: jest
+            .fn()
+            .mockResolvedValue({ invalidTokens: [] } satisfies FcmSendResult),
+        };
+        const service = await buildService(
+          'fcm',
+          notification,
+          deviceToken,
+          fcmSender,
+        );
+
+        await service.send({ userId: 'user-1', type });
+
+        expect(fcmSender.sendToTokens).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it('type ที่ไม่ใช่ task_assigned → ไม่เรียก fcmSender เลย (fallback เหมือน mock)', async () => {
       notification.create.mockResolvedValue({
         ...sampleNotification,
