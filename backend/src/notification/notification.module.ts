@@ -38,7 +38,11 @@ import { NotificationService } from './notification.service';
             'FCM_SERVICE_ACCOUNT_PATH',
             '',
           );
-          return new RealFcmSender(serviceAccountPath);
+          return new RealFcmSender(
+            serviceAccountPath,
+            nestConfig.get<string>('FCM_ALLOW_NON_DEV_PROJECT', 'false') ===
+              'true',
+          );
         }
         return new MockFcmSender();
       },

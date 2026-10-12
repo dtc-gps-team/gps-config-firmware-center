@@ -123,6 +123,22 @@ describe('DeviceModelService', () => {
       });
     });
 
+    it('endOfSupportDate แบบวันที่อย่างเดียว ("2027-10-12" จากช่องเลือกวันที่) -> แปลงเป็น Date ก่อนส่ง Prisma', async () => {
+      create.mockResolvedValue(gt06n);
+
+      await service.create({
+        name: 'GT06N',
+        supportedProtocols: ['TCP'],
+        endOfSupportDate: '2027-10-12',
+      });
+
+      expect(create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          endOfSupportDate: new Date('2027-10-12T00:00:00.000Z'),
+        }) as Partial<DeviceModel>,
+      });
+    });
+
     it('ชื่อรุ่นซ้ำ (P2002) -> ConflictException', async () => {
       create.mockRejectedValue(makeP2002());
 
@@ -160,6 +176,29 @@ describe('DeviceModelService', () => {
           endOfSupportDate: undefined,
           notes: undefined,
         },
+      });
+    });
+
+    it('endOfSupportDate เป็นวันที่ -> แปลงเป็น Date, เป็น null -> ล้างค่า (null)', async () => {
+      findUnique.mockResolvedValue(gt06n);
+      update.mockResolvedValue(gt06n);
+
+      await service.update(gt06n.id, { endOfSupportDate: '2027-10-12' });
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          endOfSupportDate: new Date('2027-10-12T00:00:00.000Z'),
+        }) as Partial<DeviceModel>,
+      });
+
+      await service.update(gt06n.id, {
+        endOfSupportDate: null as unknown as string,
+      });
+      expect(update).toHaveBeenLastCalledWith({
+        where: { id: gt06n.id },
+        data: expect.objectContaining({
+          endOfSupportDate: null,
+        }) as Partial<DeviceModel>,
       });
     });
 

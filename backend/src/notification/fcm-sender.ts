@@ -81,7 +81,7 @@ export class RealFcmSender implements FcmSender {
   private readonly logger = new Logger(RealFcmSender.name);
   private readonly messaging: Messaging;
 
-  constructor(serviceAccountPath: string) {
+  constructor(serviceAccountPath: string, allowNonDevProject = false) {
     const resolvedPath = RealFcmSender.resolvePath(serviceAccountPath);
 
     // Fail fast ตอน startup (provider factory รัน) ไม่ใช่ตอนส่งจริงครั้งแรก —
@@ -91,6 +91,8 @@ export class RealFcmSender implements FcmSender {
         `FCM_SERVICE_ACCOUNT_PATH ไม่พบไฟล์: ${serviceAccountPath} (resolve เป็น ${resolvedPath})`,
       );
     }
+
+    RealFcmSender.assertDevProject(resolvedPath, allowNonDevProject);
 
     const app =
       getApps().find((a) => a.name === FIREBASE_APP_NAME) ??
@@ -111,6 +113,39 @@ export class RealFcmSender implements FcmSender {
   static resolvePath(serviceAccountPath: string): string {
     if (path.isAbsolute(serviceAccountPath)) return serviceAccountPath;
     return path.resolve(process.cwd(), '..', serviceAccountPath);
+  }
+
+  /**
+   * กันยิง push เข้า production โดยไม่ตั้งใจตอนทดสอบ: `project_id` ในไฟล์ service
+   * account ต้องลงท้ายด้วย `-dev` ไม่งั้น throw (fail fast ตอน startup) —
+   * deployment จริงที่ตั้งใจใช้ project อื่นต้อง opt-in เองด้วย
+   * `FCM_ALLOW_NON_DEV_PROJECT=true` (default = ปิด) guard นี้อยู่ใน
+   * `RealFcmSender` จึงทำงานเฉพาะ `NOTIFICATION_MODE=fcm` (mock ไม่สร้าง class นี้)
+   */
+  static assertDevProject(resolvedPath: string, allowNonDevProject: boolean) {
+    let projectId: unknown;
+    try {
+      const raw = JSON.parse(fs.readFileSync(resolvedPath, 'utf8')) as {
+        project_id?: unknown;
+      };
+      projectId = raw.project_id;
+    } catch (err) {
+      throw new Error(
+        `โหลด FCM service account ไม่สำเร็จ (${resolvedPath}): ${
+          (err as Error).message
+        }`,
+      );
+    }
+    if (typeof projectId === 'string' && projectId.endsWith('-dev')) return;
+    if (allowNonDevProject) {
+      new Logger(RealFcmSender.name).warn(
+        `FCM project_id "${String(projectId)}" ไม่ลงท้าย -dev แต่ FCM_ALLOW_NON_DEV_PROJECT=true — push จะยิงเข้า project นี้จริง`,
+      );
+      return;
+    }
+    const message = `FCM service account project_id "${String(projectId)}" ไม่ลงท้ายด้วย "-dev" — อาจเป็น credentials ของ production หยุด startup เพื่อกันยิง push จริงโดยไม่ตั้งใจ (ทดสอบให้ชี้ไฟล์ของ Firebase project dev · ถ้าตั้งใจใช้ project นี้จริงให้ตั้ง FCM_ALLOW_NON_DEV_PROJECT=true)`;
+    new Logger(RealFcmSender.name).error(message);
+    throw new Error(message);
   }
 
   private initApp(resolvedPath: string): App {
