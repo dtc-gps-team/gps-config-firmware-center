@@ -207,11 +207,27 @@ export class TaskService {
 
     // IDOR Prevention Pattern (CLAUDE.md): filter ด้วย assignedTo ตอน update แล้ว
     // เช็ค count === 0 -> 404 แทนที่จะ update() เปล่าๆ ที่ filter แค่ id
+    // งานที่ Operation ยกเลิกแล้ว (cancelled) เป็นสถานะสุดท้ายสำหรับ ST/OT —
+    // ห้ามเขียนทับกลับเป็น in_progress/completed (Mobile offline queue อาจส่ง
+    // ค่าที่เก่าเป็นชั่วโมงมา ถ้าไม่กันงานที่ยกเลิกไปแล้วจะ "ฟื้น" เงียบๆ)
     const result = await this.prisma.task.updateMany({
-      where: { id, assignedTo: actor.id },
+      where: { id, assignedTo: actor.id, status: { not: 'cancelled' } },
       data: { status: dto.status },
     });
     if (result.count === 0) {
+      // แยก 409 (เป็นเจ้าของงาน แต่งานถูกยกเลิกแล้ว) ออกจาก 404 (ไม่ใช่งานของ
+      // ตัวเอง/ไม่มีงานนี้) — เช็ค assignedTo ก่อนเสมอ ไม่เปิดเผยสถานะงานของ
+      // คนอื่น (IDOR)
+      const existing = await this.prisma.task.findUnique({ where: { id } });
+      if (
+        existing &&
+        existing.assignedTo === actor.id &&
+        existing.status === 'cancelled'
+      ) {
+        throw new ConflictException(
+          'งานนี้ถูกยกเลิกแล้ว ไม่สามารถเปลี่ยนสถานะได้',
+        );
+      }
       throw new NotFoundException(`ไม่พบงาน id ${id}`);
     }
     await this.logAudit('update', actor);

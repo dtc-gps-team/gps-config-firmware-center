@@ -870,7 +870,10 @@ paths:
         "409":
           description: >-
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
-            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
+            หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือ ST/OT
+            (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
+            แล้ว — cancelled เป็นสถานะสุดท้ายสำหรับ ST/OT (กัน offline queue ของ
+            Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว)
 
   /firmware:
     get:
