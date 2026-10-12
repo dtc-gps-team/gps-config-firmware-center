@@ -129,6 +129,26 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
       expect(body.supportedProtocols).toEqual(['TCP', 'UDP']);
     });
 
+    it('endOfSupportDate แบบวันที่อย่างเดียว (จากช่องเลือกวันที่บนเว็บ) -> 201 ไม่ใช่ 500', async () => {
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Create, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: 'GT06Y',
+          supportedProtocols: ['TCP'],
+          endOfSupportDate: '2027-10-12',
+        })
+        .expect(201);
+
+      expect((res.body as { endOfSupportDate: string }).endOfSupportDate).toBe(
+        '2027-10-12T00:00:00.000Z',
+      );
+    });
+
     it('ไม่ส่ง supportedProtocols มาเลย -> 400 (บังคับอย่างน้อย 1 ค่า, issue #209 ข้อ 4)', async () => {
       const admin = await makeUser(prisma, { role: 'Admin' });
       await grant('Admin', ActionType.Create, 'device-model');
@@ -181,6 +201,23 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
         .expect(200);
 
       expect((res.body as { status: string }).status).toBe('discontinued');
+    });
+
+    it('แก้ endOfSupportDate แบบวันที่อย่างเดียว -> 200 ไม่ใช่ 500', async () => {
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Update, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/device-models/${model.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ endOfSupportDate: '2028-01-31' })
+        .expect(200);
+
+      expect((res.body as { endOfSupportDate: string }).endOfSupportDate).toBe(
+        '2028-01-31T00:00:00.000Z',
+      );
     });
 
     it('id ไม่มีอยู่จริง -> 404', async () => {
