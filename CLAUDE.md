@@ -134,6 +134,17 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 default ต้องเป็น mock เสมอ — โหมดที่ยิงระบบจริงต้องตั้ง env var ชัดเจนถึงจะทำงาน
 
+### `FCM_ALLOW_NON_DEV_PROJECT` (guard กันยิง push เข้า production)
+
+- ค่า default คือ **ปิด** (`false` / ไม่ตั้ง) — ถ้า `NOTIFICATION_MODE=fcm` และ
+  `project_id` ในไฟล์ service account (`FCM_SERVICE_ACCOUNT_PATH`) **ไม่ลงท้าย `-dev`**
+  backend จะ log error แล้ว throw หยุด startup ทันที (กัน push จริงเข้า production
+  โดยไม่ตั้งใจตอนทดสอบ) · `NOTIFICATION_MODE=mock` ไม่ถูก guard นี้กระทบ
+- deploy ไป production ที่ใช้ `fcm` ต้องตั้ง `FCM_ALLOW_NON_DEV_PROJECT=true` บน
+  environment ของ production **ก่อนเสมอ** ไม่งั้น backend จะ start ไม่ขึ้น
+- env var นี้ **ไม่ได้กำหนดไว้ที่ไหนใน repo** (repo นี้ไม่มี deploy pipeline /
+  infra-as-code) ต้องไปตั้งที่ระบบ hosting จริงโดยตรง
+
 ## Branch Sync (out-of-date branch)
 
 - ถ้า PR ขึ้นแจ้งว่า branch out-of-date กับ `main` **ห้ามกดปุ่ม "Update branch"**

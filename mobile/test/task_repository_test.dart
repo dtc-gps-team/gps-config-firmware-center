@@ -7,6 +7,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/sync/sync_queue_service.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -44,6 +45,10 @@ class _FakeApiClient extends ApiClient {
   List<Task> tasks;
   Object? error;
 
+  /// When true, `updateTaskStatus` throws a network error (server
+  /// unreachable for writes) while reads keep working.
+  bool holdUpdates = false;
+
   @override
   Future<List<Task>> listTasks() async {
     if (error != null) throw error!;
@@ -58,6 +63,7 @@ class _FakeApiClient extends ApiClient {
 
   @override
   Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+    if (holdUpdates) throw ApiException('offline');
     if (error != null) throw error!;
     final old = tasks.firstWhere((t) => t.id == taskId);
     return _task(old.id, status: status);
@@ -186,8 +192,17 @@ void main() {
     setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
     tearDown(() => db.close());
 
-    CachedApiTaskRepository repoWith(_FakeApiClient api) =>
-        CachedApiTaskRepository(api, db.taskDao);
+    late SyncQueueService sync;
+
+    CachedApiTaskRepository repoWith(_FakeApiClient api) {
+      sync = SyncQueueService(api, db.pendingActionDao, db.taskDao);
+      return CachedApiTaskRepository(
+        api,
+        db.taskDao,
+        db.pendingActionDao,
+        sync,
+      );
+    }
 
     test('API สำเร็จ -> listTasks()/getTask() เขียนลง cache', () async {
       final api = _FakeApiClient(tasks: [_task('a'), _task('b')]);
@@ -244,18 +259,68 @@ void main() {
       },
     );
 
-    test('updateStatus สำเร็จ -> cache ถูกอัปเดตด้วยค่าล่าสุด', () async {
+    test('updateStatus -> คืนค่า optimistic ทันที แล้ว flush ส่งขึ้น server '
+        'และ cache ถูกอัปเดต', () async {
       final api = _FakeApiClient(tasks: [_task('a')]);
       final repo = repoWith(api);
       await repo.listTasks();
       expect((await db.taskDao.getTaskById('a'))!.status, 'pending');
 
       final updated = await repo.updateStatus('a', TaskStatus.inProgress);
-
       expect(updated.status, TaskStatus.inProgress);
+
+      await sync.flush();
+
       expect(
         (await db.taskDao.getTaskById('a'))!.status,
         TaskStatus.inProgress.wireName,
+      );
+      expect(await db.pendingActionDao.getPending(), isEmpty);
+    });
+
+    test('ออฟไลน์: updateStatus ไม่ throw, listTasks/getTask เห็นค่าที่แก้ '
+        'และ refresh ไม่เด้งกลับเป็นค่า server', () async {
+      final api = _FakeApiClient(tasks: [_task('a')]);
+      final repo = repoWith(api);
+      await repo.listTasks();
+
+      api.error = ApiException('offline'); // no statusCode = no network
+      final updated = await repo.updateStatus('a', TaskStatus.inProgress);
+      await sync.flush(); // fails with network error, stays queued
+
+      expect(updated.status, TaskStatus.inProgress);
+      expect(await db.pendingActionDao.getPending(), hasLength(1));
+      // offline read (cache + overlay)
+      expect((await repo.listTasks()).single.status, TaskStatus.inProgress);
+      expect((await repo.getTask('a')).status, TaskStatus.inProgress);
+
+      // back online but the server still returns the OLD status for the list
+      // (the queue hasn't been flushed yet) — the overlay must win
+      api.error = null;
+      api.holdUpdates = true;
+      expect((await repo.listTasks()).single.status, TaskStatus.inProgress);
+      expect((await repo.getTask('a')).status, TaskStatus.inProgress);
+    });
+
+    test('หลาย update ซ้อนกัน -> overlay ใช้ค่าล่าสุด', () async {
+      final api = _FakeApiClient(tasks: [_task('a')])
+        ..error = ApiException('offline');
+      final repo = repoWith(api);
+      api.error = null;
+      await repo.listTasks();
+      api.error = ApiException('offline');
+
+      await repo.updateStatus('a', TaskStatus.inProgress);
+      await repo.updateStatus('a', TaskStatus.completed);
+
+      expect((await repo.getTask('a')).status, TaskStatus.completed);
+    });
+
+    test('updateStatus ของ task ที่ไม่เคย cache -> ApiException', () async {
+      final repo = repoWith(_FakeApiClient());
+      await expectLater(
+        repo.updateStatus('ghost', TaskStatus.completed),
+        throwsA(isA<ApiException>()),
       );
     });
   });
