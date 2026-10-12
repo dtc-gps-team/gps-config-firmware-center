@@ -9,6 +9,7 @@ import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/sync_status_widgets.dart';
+import '../device_search/device_status_repository.dart';
 import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
@@ -162,6 +163,23 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     }
   }
 
+  /// `configRolloutId` ล่าสุดของอุปกรณ์ (issue #265) — ส่งเป็น `rolloutId` ตอน
+  /// apply-config กัน backend match ผิดรอบ · มีค่าเฉพาะตอน `configStatus` เป็น
+  /// `pending` · โหลดสถานะไม่สำเร็จ → `null` (ไม่ block การส่ง Config —
+  /// backend ใช้วิธี match เดิม)
+  Future<String?> _currentConfigRolloutId(String deviceId) async {
+    try {
+      final status = await ref
+          .read(deviceStatusRepositoryProvider)
+          .getDeviceStatus(deviceId);
+      return status.configStatus == DevicePayloadStatus.pending
+          ? status.configRolloutId
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// เรียก `POST /devices/{deviceId}/apply-config` ด้วย `task.deviceId` +
   /// `task.configId` — fire-and-forget ฝั่ง backend จึงไม่มีสถานะอุปกรณ์ให้
   /// รีเฟรชหลังเรียกสำเร็จ (กล่องรับค่าตอนเปิดเครื่องครั้งถัดไป) แค่ mark
@@ -176,9 +194,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       _confirmInstallError = null;
     });
     try {
+      final rolloutId = await _currentConfigRolloutId(deviceId);
       final result = await ref
           .read(confirmInstallRepositoryProvider)
-          .applyConfig(deviceId: deviceId, configId: configId);
+          .applyConfig(
+            deviceId: deviceId,
+            configId: configId,
+            rolloutId: rolloutId,
+          );
       if (!mounted) return;
       setState(() {
         _confirmingInstall = false;
