@@ -21,6 +21,12 @@ export type NotificationMode = 'mock' | 'fcm';
  */
 export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
   'task_assigned',
+  // เปิดเพิ่มเพื่อทดสอบ deep link ไปหน้า Incident ของ Mobile (PR #279) —
+  // mobile รองรับ type `incident_report_*` แล้ว
+  'incident_report_pending',
+  'incident_report_resolved',
+  'incident_report_dismissed',
+  'incident_report_promoted',
 ];
 
 export interface SendNotificationInput {
