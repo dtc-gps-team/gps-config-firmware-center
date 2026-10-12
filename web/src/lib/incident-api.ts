@@ -8,7 +8,13 @@ import { apiJson } from "@/lib/api";
  */
 
 export type IncidentSeverity = "critical" | "high" | "medium" | "low";
-export type IncidentStatus = "open" | "investigating" | "rolled_back" | "resolved";
+export type IncidentStatus =
+  | "open"
+  | "investigating"
+  | "rolled_back"
+  | "resolved"
+  // Operation ตัดสินว่า Field Report ไม่ใช่ปัญหาจริง/แจ้งซ้ำ (issue #236)
+  | "dismissed";
 
 export type Incident = {
   id: string;

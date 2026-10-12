@@ -44,6 +44,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending_update: "รอการอัปเดต",
   up_to_date: "อัปเดตล่าสุดแล้ว",
   rolled_back: "Rollback แล้ว",
+  dismissed: "ไม่ใช่ปัญหา",
 };
 
 /** แปลง status enum ดิบเป็น label ที่แสดงผลได้ — คืนค่าเดิมถ้าไม่มีใน
@@ -90,9 +91,11 @@ export function StatusPill({
   children: React.ReactNode;
   className?: string;
 }) {
-  const Icon = PILL_ICON[tone];
+  // สถานะที่ยังไม่มีในตาราง *_STATUS_TONE จะได้ tone เป็น undefined — ใช้
+  // ไอคอน/สีกลางแทน ไม่ให้ทั้งหน้าพัง (เคยเกิดกับ Incident `dismissed`)
+  const Icon = PILL_ICON[tone] ?? CircleIcon;
   return (
-    <span className={`${pillClass(tone)} gap-1${className ? ` ${className}` : ""}`}>
+    <span className={`${pillClass(PILL_TONE[tone] ? tone : "neutral")} gap-1${className ? ` ${className}` : ""}`}>
       <Icon className={`size-3${tone === "progress" ? " animate-pulse" : ""}`} />
       {children}
     </span>
@@ -252,6 +255,7 @@ export const INCIDENT_STATUS_TONE: Record<string, PillTone> = {
   investigating: "progress",
   rolled_back: "info",
   resolved: "success",
+  dismissed: "neutral",
 };
 
 /** Incident.severity — ไล่ระดับความรุนแรง low → critical */

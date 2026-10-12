@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ClipboardCheckIcon, RocketIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  ClipboardCheckIcon,
+  RocketIcon,
+} from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import {
@@ -71,6 +75,27 @@ export function ApprovalCenterView() {
       ? allItems.filter((i) => i.suggestedApprover?.id === myUserId)
       : allItems;
 
+  // section ที่โหลดเสร็จแล้วและไม่มีรายการเลย ยุบเหลือแถบบรรทัดเดียว
+  // (รายการแก้ UI เว็บข้อ 14) — ยังโหลดอยู่/โหลดพัง/มีข้อความแจ้งผลค้างอยู่
+  // (เช่นเพิ่งอนุมัติรายการสุดท้ายไป) ยังโชว์การ์ดเต็มเหมือนเดิม · Config
+  // ดูจาก allItems ไม่ใช่ items — แท็บ "เจาะจงถึงฉัน" ว่างไม่ได้แปลว่าคิวว่าง
+  const configQueueEmpty =
+    data !== null && !error && allItems.length === 0 && !notice;
+  const rolloutQueueEmpty =
+    rolloutsQuery.data !== null &&
+    !rolloutsQuery.error &&
+    rolloutsQuery.data.length === 0;
+  const overrideQueueEmpty =
+    overrideData !== null &&
+    !overrideError &&
+    overrideData.length === 0 &&
+    !overrideNotice;
+  const firmwareOverrideQueueEmpty =
+    firmwareOverrideData !== null &&
+    !firmwareOverrideError &&
+    firmwareOverrideData.length === 0 &&
+    !firmwareOverrideNotice;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -86,148 +111,156 @@ export function ApprovalCenterView() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            รออนุมัติ{" "}
-            <span className="text-muted-foreground">({allItems.length})</span>
-          </CardTitle>
-          <CardDescription>
-            สถานะ Config = testing (ผ่าน simulation + ConfigEngineer
-            ปักผลผ่านแล้ว)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {canDecide && myUserId && (
-            <div className="flex gap-1 border-b pb-2 text-sm">
-              <button
-                type="button"
-                onClick={() => setTab("all")}
-                className={
-                  "rounded-md px-3 py-1 " +
-                  (tab === "all"
-                    ? "bg-muted font-medium"
-                    : "text-muted-foreground hover:text-foreground")
-                }
-              >
-                ทั้งหมด ({allItems.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab("mine")}
-                className={
-                  "rounded-md px-3 py-1 " +
-                  (tab === "mine"
-                    ? "bg-muted font-medium"
-                    : "text-muted-foreground hover:text-foreground")
-                }
-              >
-                เจาะจงถึงฉัน ({mineCount})
-              </button>
-            </div>
-          )}
+      {configQueueEmpty ? (
+        <EmptyQueueRow title="Config รออนุมัติ" />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              รออนุมัติ{" "}
+              <span className="text-muted-foreground">({allItems.length})</span>
+            </CardTitle>
+            <CardDescription>
+              สถานะ Config = testing (ผ่าน simulation + ConfigEngineer
+              ปักผลผ่านแล้ว)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {canDecide && myUserId && (
+              <div className="flex gap-1 border-b pb-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setTab("all")}
+                  className={
+                    "rounded-md px-3 py-1 " +
+                    (tab === "all"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  ทั้งหมด ({allItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab("mine")}
+                  className={
+                    "rounded-md px-3 py-1 " +
+                    (tab === "mine"
+                      ? "bg-muted font-medium"
+                      : "text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  เจาะจงถึงฉัน ({mineCount})
+                </button>
+              </div>
+            )}
 
-          {notice && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              {notice}
-            </div>
-          )}
+            {notice && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                {notice}
+              </div>
+            )}
 
-          {isLoading && data === null ? (
-            <CardListSkeleton />
-          ) : error ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-sm text-destructive">{error}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refetch()}
-              >
-                ลองใหม่
-              </Button>
-            </div>
-          ) : items.length === 0 ? (
-            <EmptyState
-              icon={ClipboardCheckIcon}
-              message={
-                tab === "mine"
-                  ? "ไม่มี Config ที่เจาะจงถึงคุณ"
-                  : "ไม่มี Config รออนุมัติ"
-              }
-            />
-          ) : (
-            items.map((item) => (
-              <ApprovalCard
-                key={item.id}
-                item={item}
-                canDecide={canDecide}
-                onDecided={(action) => {
-                  setNotice(
-                    action === "approve"
-                      ? `อนุมัติ "${item.name}" แล้ว`
-                      : `ปฏิเสธ "${item.name}" แล้ว`,
-                  );
-                  void refetch();
-                }}
+            {isLoading && data === null ? (
+              <CardListSkeleton />
+            ) : error ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <p className="text-sm text-destructive">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetch()}
+                >
+                  ลองใหม่
+                </Button>
+              </div>
+            ) : items.length === 0 ? (
+              <EmptyState
+                icon={ClipboardCheckIcon}
+                message={
+                  tab === "mine"
+                    ? "ไม่มี Config ที่เจาะจงถึงคุณ"
+                    : "ไม่มี Config รออนุมัติ"
+                }
               />
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              items.map((item) => (
+                <ApprovalCard
+                  key={item.id}
+                  item={item}
+                  canDecide={canDecide}
+                  onDecided={(action) => {
+                    setNotice(
+                      action === "approve"
+                        ? `อนุมัติ "${item.name}" แล้ว`
+                        : `ปฏิเสธ "${item.name}" แล้ว`,
+                    );
+                    void refetch();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* section แยกจาก Config ชัดเจน (แก้ไข 2026-09-24 — feedback: หาปุ่ม
        * อนุมัติ Rollout ยาก) — คนละ Card ไม่ผสมเป็น list เดียวกับ Config
        * เพราะ resource/flow คนละอย่างกัน (Firmware ยังไม่รวม — อยู่หน้า
        * Firmware Repository ของตัวเองต่อไป) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Campaign Rollout รออนุมัติ{" "}
-            <span className="text-muted-foreground">
-              ({(rolloutsQuery.data ?? []).length})
-            </span>
-          </CardTitle>
-          <CardDescription>
-            Rollout ที่เพิ่งเริ่มในกลุ่มอุปกรณ์ต่างๆ รอ Operation อีกคนอนุมัติ
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {rolloutsQuery.isLoading && rolloutsQuery.data === null ? (
-            <CardListSkeleton />
-          ) : rolloutsQuery.error ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-sm text-destructive">{rolloutsQuery.error}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void rolloutsQuery.refetch()}
-              >
-                ลองใหม่
-              </Button>
-            </div>
-          ) : (rolloutsQuery.data ?? []).length === 0 ? (
-            <EmptyState
-              icon={RocketIcon}
-              message="ไม่มี Campaign Rollout รออนุมัติ"
-            />
-          ) : (
-            (rolloutsQuery.data ?? []).map((item) => (
-              <CampaignRolloutApprovalCard
-                key={item.rollout.id}
-                item={item}
-                onDecided={(updated) => {
-                  setNotice(
-                    updated.status === "approved"
-                      ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว ไปที่หน้ากลุ่มหรือหน้า Rollout เพื่อกดปล่อยเข้าอุปกรณ์เมื่อพร้อม`
-                      : `ปฏิเสธ Rollout ของ "${item.campaignName}" แล้ว`,
-                  );
-                  void rolloutsQuery.refetch();
-                }}
+      {rolloutQueueEmpty ? (
+        <EmptyQueueRow title="Campaign Rollout รออนุมัติ" />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Campaign Rollout รออนุมัติ{" "}
+              <span className="text-muted-foreground">
+                ({(rolloutsQuery.data ?? []).length})
+              </span>
+            </CardTitle>
+            <CardDescription>
+              Rollout ที่เพิ่งเริ่มในกลุ่มอุปกรณ์ต่างๆ รอ Operation อีกคนอนุมัติ
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {rolloutsQuery.isLoading && rolloutsQuery.data === null ? (
+              <CardListSkeleton />
+            ) : rolloutsQuery.error ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <p className="text-sm text-destructive">{rolloutsQuery.error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void rolloutsQuery.refetch()}
+                >
+                  ลองใหม่
+                </Button>
+              </div>
+            ) : (rolloutsQuery.data ?? []).length === 0 ? (
+              <EmptyState
+                icon={RocketIcon}
+                message="ไม่มี Campaign Rollout รออนุมัติ"
               />
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              (rolloutsQuery.data ?? []).map((item) => (
+                <CampaignRolloutApprovalCard
+                  key={item.rollout.id}
+                  item={item}
+                  onDecided={(updated) => {
+                    setNotice(
+                      updated.status === "approved"
+                        ? `อนุมัติ Rollout ของ "${item.campaignName}" แล้ว ไปที่หน้ากลุ่มหรือหน้า Rollout เพื่อกดปล่อยเข้าอุปกรณ์เมื่อพร้อม`
+                        : `ปฏิเสธ Rollout ของ "${item.campaignName}" แล้ว`,
+                    );
+                    void rolloutsQuery.refetch();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* section แยกจาก Config/Campaign Rollout ชัดเจนเช่นกัน (issue #223,
        * มติ 2026-09-24) — คนละ resource/endpoint กันทั้งหมด · gate ด้วย
@@ -235,133 +268,158 @@ export function ApprovalCenterView() {
        * resource `device-config-override` ใน seed.ts เป๊ะ) — ไม่งั้น role อื่น
        * (Admin ฯลฯ) จะเห็น raw 403 message จาก backend ตรงๆ แทนที่จะไม่เห็น
        * section นี้เลย (แก้ครั้งที่ 73 — พบจาก UX/UI audit) */}
-      {canDecideOverride && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Per-device Config Override รออนุมัติ{" "}
-              <span className="text-muted-foreground">
-                ({overrideData?.length ?? 0})
-              </span>
-            </CardTitle>
-            <CardDescription>
-              คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
-              ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
-              อีกครั้งหลังอนุมัติ
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {overrideNotice && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-                {overrideNotice}
-              </div>
-            )}
+      {canDecideOverride &&
+        (overrideQueueEmpty ? (
+          <EmptyQueueRow title="Per-device Config Override รออนุมัติ" />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Per-device Config Override รออนุมัติ{" "}
+                <span className="text-muted-foreground">
+                  ({overrideData?.length ?? 0})
+                </span>
+              </CardTitle>
+              <CardDescription>
+                คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
+                ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
+                อีกครั้งหลังอนุมัติ
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {overrideNotice && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                  {overrideNotice}
+                </div>
+              )}
 
-            {overrideLoading && overrideData === null ? (
-              <CardListSkeleton />
-            ) : overrideError ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{overrideError}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetchOverrides()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : (overrideData?.length ?? 0) === 0 ? (
-              <EmptyState
-                icon={ClipboardCheckIcon}
-                message="ไม่มีคำขอ Override รออนุมัติ"
-              />
-            ) : (
-              overrideData?.map((item) => (
-                <DeviceConfigOverrideApprovalCard
-                  key={item.id}
-                  item={item}
-                  canDecide={canDecideOverride}
-                  onDecided={(action) => {
-                    setOverrideNotice(
-                      action === "approve"
-                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
-                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
-                    );
-                    void refetchOverrides();
-                  }}
+              {overrideLoading && overrideData === null ? (
+                <CardListSkeleton />
+              ) : overrideError ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <p className="text-sm text-destructive">{overrideError}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refetchOverrides()}
+                  >
+                    ลองใหม่
+                  </Button>
+                </div>
+              ) : (overrideData?.length ?? 0) === 0 ? (
+                <EmptyState
+                  icon={ClipboardCheckIcon}
+                  message="ไม่มีคำขอ Override รออนุมัติ"
                 />
-              ))
-            )}
-          </CardContent>
-        </Card>
-      )}
+              ) : (
+                overrideData?.map((item) => (
+                  <DeviceConfigOverrideApprovalCard
+                    key={item.id}
+                    item={item}
+                    canDecide={canDecideOverride}
+                    onDecided={(action) => {
+                      setOverrideNotice(
+                        action === "approve"
+                          ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                          : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                      );
+                      void refetchOverrides();
+                    }}
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        ))}
 
       {/* section แยกจากทั้ง Config/Campaign Rollout/Config Override (Sprint 3
        * แถวที่ 24) — คนละ resource/endpoint กันทั้งหมด mirror section
        * Per-device Config Override ด้านบนเป๊ะ รวมถึง gate ด้วย
        * canDecideFirmwareOv เหมือนกัน (แก้ครั้งที่ 73) */}
-      {canDecideFirmwareOv && (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Firmware Override รออนุมัติ{" "}
-              <span className="text-muted-foreground">
-                ({firmwareOverrideData?.length ?? 0})
-              </span>
-            </CardTitle>
-            <CardDescription>
-              คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout (ST
-              ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
-              firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {firmwareOverrideNotice && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-                {firmwareOverrideNotice}
-              </div>
-            )}
+      {canDecideFirmwareOv &&
+        (firmwareOverrideQueueEmpty ? (
+          <EmptyQueueRow title="Firmware Override รออนุมัติ" />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                Firmware Override รออนุมัติ{" "}
+                <span className="text-muted-foreground">
+                  ({firmwareOverrideData?.length ?? 0})
+                </span>
+              </CardTitle>
+              <CardDescription>
+                คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout (ST
+                ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
+                firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {firmwareOverrideNotice && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                  {firmwareOverrideNotice}
+                </div>
+              )}
 
-            {firmwareOverrideLoading && firmwareOverrideData === null ? (
-              <CardListSkeleton />
-            ) : firmwareOverrideError ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">
-                  {firmwareOverrideError}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetchFirmwareOverrides()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
-              <EmptyState
-                icon={ClipboardCheckIcon}
-                message="ไม่มีคำขอ Firmware Override รออนุมัติ"
-              />
-            ) : (
-              firmwareOverrideData?.map((item) => (
-                <DeviceFirmwareOverrideApprovalCard
-                  key={item.id}
-                  item={item}
-                  canDecide={canDecideFirmwareOv}
-                  onDecided={(action) => {
-                    setFirmwareOverrideNotice(
-                      action === "approve"
-                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
-                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
-                    );
-                    void refetchFirmwareOverrides();
-                  }}
+              {firmwareOverrideLoading && firmwareOverrideData === null ? (
+                <CardListSkeleton />
+              ) : firmwareOverrideError ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <p className="text-sm text-destructive">
+                    {firmwareOverrideError}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refetchFirmwareOverrides()}
+                  >
+                    ลองใหม่
+                  </Button>
+                </div>
+              ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
+                <EmptyState
+                  icon={ClipboardCheckIcon}
+                  message="ไม่มีคำขอ Firmware Override รออนุมัติ"
                 />
-              ))
-            )}
-          </CardContent>
-        </Card>
-      )}
+              ) : (
+                firmwareOverrideData?.map((item) => (
+                  <DeviceFirmwareOverrideApprovalCard
+                    key={item.id}
+                    item={item}
+                    canDecide={canDecideFirmwareOv}
+                    onDecided={(action) => {
+                      setFirmwareOverrideNotice(
+                        action === "approve"
+                          ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                          : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                      );
+                      void refetchFirmwareOverrides();
+                    }}
+                  />
+                ))
+              )}
+            </CardContent>
+          </Card>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * แถบบรรทัดเดียวแทนการ์ดเต็มของ section ที่คิวว่าง (รายการแก้ UI เว็บข้อ 14)
+ * — เดิมทุก section โชว์ EmptyState icon ใหญ่ + คำอธิบายเต็มแม้ไม่มีอะไรรอเลย
+ * หน้า Approval Center เลยยาวเกินจำเป็น ยังโชว์ชื่อ section ไว้ให้รู้ว่าเช็ค
+ * คิวนี้แล้ว ไม่ใช่หายไปเฉยๆ (mirror แถบแจ้งเตือนบรรทัดเดียวของ Dashboard ใน
+ * `dashboard-pending-approvals.tsx`)
+ */
+function EmptyQueueRow({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm ring-1 ring-foreground/10">
+      <CheckCircle2Icon className="size-4 shrink-0 text-muted-foreground/60" />
+      <span className="font-medium">
+        {title} <span className="text-muted-foreground">(0)</span>
+      </span>
+      <span className="text-muted-foreground">· ไม่มีรายการรออนุมัติ</span>
     </div>
   );
 }

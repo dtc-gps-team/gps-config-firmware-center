@@ -78,7 +78,7 @@ export function UserRowActions({
   return (
     <div className="flex items-center justify-end gap-2">
       <Select value={user.role} onValueChange={(value) => void changeRole(value)}>
-        <SelectTrigger className="h-8 w-[10rem]" disabled={pending}>
+        <SelectTrigger className="h-8 w-48" disabled={pending}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { ShieldAlertIcon } from "lucide-react";
+
 import { useAuth } from "./auth-provider";
 
 /**
@@ -27,9 +30,23 @@ export function RoleGuard({
   if (!isReady) return null;
 
   if (!allow(session?.role)) {
+    // จัดกลางทั้งแนวตั้ง/แนวนอนของพื้นที่เนื้อหา — เดิมเป็นกล่องเส้นประชิด
+    // ขอบบน ดูเหมือนหน้าโหลดไม่เสร็จมากกว่าหน้าแจ้ง "ไม่มีสิทธิ์"
     return (
-      <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-        คุณไม่มีสิทธิ์เข้าถึงหน้านี้
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <ShieldAlertIcon className="size-10 text-muted-foreground/40" />
+          <p className="font-medium">คุณไม่มีสิทธิ์เข้าถึงหน้านี้</p>
+          <p className="text-sm text-muted-foreground">
+            หากคิดว่าควรเข้าถึงได้ โปรดติดต่อผู้ดูแลระบบ
+          </p>
+          <Link
+            href="/"
+            className="text-sm text-primary underline-offset-2 hover:underline"
+          >
+            กลับไปหน้า Dashboard
+          </Link>
+        </div>
       </div>
     );
   }

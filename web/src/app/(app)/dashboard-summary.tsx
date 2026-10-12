@@ -94,6 +94,14 @@ function LiveSummaryCard({
   );
 }
 
+/**
+ * หน้าตาการ์ดตัวอย่าง — แบน (ไม่มีเงา) + พื้นจางกว่าการ์ดจริงเล็กน้อย พอให้แยก
+ * ออกจากการ์ดที่ต่อ API แล้วได้ โดยมี badge "ตัวอย่าง" เป็นตัวบอกหลัก · เดิมใช้
+ * เส้นประสีส้มรอบการ์ด พอการ์ดตัวอย่างมีหลายใบเรียงกันทั้งหน้า เส้นประเยอะจน
+ * หน้า Dashboard ดูรก (รายการแก้ UI เว็บข้อ 9)
+ */
+const DEMO_CARD_CLASS = "bg-muted/40 shadow-none";
+
 function DemoSummaryCard({
   label,
   value,
@@ -106,7 +114,7 @@ function DemoSummaryCard({
   tone: PillTone;
 }) {
   return (
-    <Card className="h-full border border-dashed border-amber-300/60 shadow-none dark:border-amber-800/50">
+    <Card className={`h-full ${DEMO_CARD_CLASS}`}>
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
           {label}
@@ -160,7 +168,7 @@ function MiniStackedBarCard({
   const total = segments.reduce((sum, s) => sum + s.value, 0);
 
   return (
-    <Card className="col-span-2 h-full border border-dashed border-amber-300/60 shadow-none dark:border-amber-800/50">
+    <Card className={`col-span-2 h-full ${DEMO_CARD_CLASS}`}>
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
           {label}
