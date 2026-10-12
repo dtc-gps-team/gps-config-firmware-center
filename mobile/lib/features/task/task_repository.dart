@@ -1,15 +1,18 @@
-import 'package:drift/drift.dart' show Value;
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart'; // apiClientProvider
 import '../../core/config/app_config.dart';
-// TaskRow and TasksCompanion are drift-generated into app_database.g.dart,
-// which app_database.dart re-exports via its `part` directive.
-import '../../core/db/app_database.dart' show TaskRow, TasksCompanion;
+import '../../core/db/daos/pending_action_dao.dart';
 import '../../core/db/daos/task_dao.dart';
 import '../../core/db/providers/database_provider.dart';
+import '../../core/db/tables/pending_actions_table.dart';
+import '../../core/db/task_mapping.dart';
+import '../../core/sync/sync_providers.dart';
+import '../../core/sync/sync_queue_service.dart';
 
 /// Reads and updates field-staff tasks.
 ///
@@ -41,79 +44,102 @@ class ApiTaskRepository implements TaskRepository {
       _api.updateTaskStatus(id, status);
 }
 
-/// Reads through the local `Tasks` cache: a successful API call replaces
-/// the cache and is returned as-is; a failed one (offline, timeout, 5xx)
-/// falls back to whatever is cached so the list/detail screens still show
-/// the last-known data instead of an error state.
+/// Reads through the local `Tasks` cache and writes through the sync queue.
 ///
-/// Sprint 2 scope only — "เริ่มโครง Offline-first ยังไม่ต้อง sync จริง": there is
-/// no local write queue yet, so [updateStatus] still requires the network;
-/// it just refreshes the cache once the API confirms the change.
+/// Reads: a successful API call replaces the cache; a failed one (offline,
+/// timeout, 5xx) falls back to whatever is cached, so the screens still show
+/// the last-known data. The cache always holds what the **server** last
+/// confirmed.
+///
+/// Writes ([updateStatus]): the change is queued locally (`PendingActions`) and
+/// sent by [SyncQueueService] as soon as the network allows — it never waits
+/// for, or fails because of, the network. Every read overlays the still-queued
+/// changes on top of the cached/server value, so the user sees their own change
+/// immediately and a refresh can't bounce it back. When the server rejects a
+/// queued change (4xx) it leaves the queue and the overlay disappears: server
+/// wins (see [SyncQueueService]).
 class CachedApiTaskRepository implements TaskRepository {
-  CachedApiTaskRepository(this._api, this._dao);
+  CachedApiTaskRepository(this._api, this._dao, this._queue, this._sync);
 
   final ApiClient _api;
   final TaskDao _dao;
+  final PendingActionDao _queue;
+  final SyncQueueService _sync;
 
   @override
   Future<List<Task>> listTasks() async {
+    List<Task> tasks;
     try {
-      final tasks = await _api.listTasks();
-      await _dao.upsertTasks(tasks.map(_toCompanion).toList());
-      return tasks;
+      tasks = await _api.listTasks();
+      await _dao.upsertTasks(tasks.map(taskToCompanion).toList());
     } on ApiException {
       final cached = await _dao.getAllTasks();
       if (cached.isEmpty) rethrow;
-      return cached.map(_fromRow).toList();
+      tasks = cached.map(taskFromRow).toList();
     }
+    final overlay = await _pendingStatuses();
+    return tasks.map((t) => _withPending(t, overlay)).toList();
   }
 
   @override
   Future<Task> getTask(String id) async {
+    Task task;
     try {
-      final task = await _api.getTask(id);
-      await _dao.upsertTask(_toCompanion(task));
-      return task;
+      task = await _api.getTask(id);
+      await _dao.upsertTask(taskToCompanion(task));
     } on ApiException {
       final cached = await _dao.getTaskById(id);
       if (cached == null) rethrow;
-      return _fromRow(cached);
+      task = taskFromRow(cached);
     }
+    return _withPending(task, await _pendingStatuses());
   }
 
   @override
   Future<Task> updateStatus(String id, TaskStatus status) async {
-    final task = await _api.updateTaskStatus(id, status);
-    await _dao.upsertTask(_toCompanion(task));
-    return task;
+    final cached = await _dao.getTaskById(id);
+    if (cached == null) {
+      // Never seen this task locally (so we can't show an optimistic copy or
+      // know its assignee) — only the server can answer.
+      throw ApiException('ไม่พบงานนี้ในเครื่อง กรุณาเปิดรายการงานก่อน');
+    }
+    await _sync.enqueueTaskStatus(
+      taskId: id,
+      userId: cached.assignedTo,
+      status: status,
+    );
+    return _withPending(taskFromRow(cached), {id: status});
+  }
+
+  /// taskId → status of the newest queued change for it.
+  Future<Map<String, TaskStatus>> _pendingStatuses() async {
+    final overlay = <String, TaskStatus>{};
+    for (final a in await _queue.getPending()) {
+      if (a.type != PendingActionType.taskStatus.wireName) continue;
+      final payload = jsonDecode(a.payload) as Map<String, dynamic>;
+      // getPending() is oldest-first, so later entries win.
+      overlay[a.entityId] = TaskStatus.fromWire(payload['status'] as String);
+    }
+    return overlay;
+  }
+
+  Task _withPending(Task task, Map<String, TaskStatus> overlay) {
+    final status = overlay[task.id];
+    if (status == null) return task;
+    return Task(
+      id: task.id,
+      title: task.title,
+      assignedTo: task.assignedTo,
+      status: status,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      description: task.description,
+      deviceId: task.deviceId,
+      configId: task.configId,
+      dueDate: task.dueDate,
+    );
   }
 }
-
-TasksCompanion _toCompanion(Task task) => TasksCompanion.insert(
-  id: task.id,
-  title: task.title,
-  assignedTo: task.assignedTo,
-  status: task.status.wireName,
-  createdAt: task.createdAt,
-  updatedAt: task.updatedAt,
-  description: Value(task.description),
-  deviceId: Value(task.deviceId),
-  configId: Value(task.configId),
-  dueDate: Value(task.dueDate),
-);
-
-Task _fromRow(TaskRow row) => Task(
-  id: row.id,
-  title: row.title,
-  assignedTo: row.assignedTo,
-  status: TaskStatus.fromWire(row.status),
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
-  description: row.description,
-  deviceId: row.deviceId,
-  configId: row.configId,
-  dueDate: row.dueDate,
-);
 
 /// In-memory fake for `API_MOCK_MODE` (dev without a backend). Mirrors the
 /// same-file pattern used by `MockAuthRepository`. Deliberately NOT routed
@@ -197,6 +223,8 @@ final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   return CachedApiTaskRepository(
     ref.watch(apiClientProvider),
     ref.watch(taskDaoProvider),
+    ref.watch(pendingActionDaoProvider),
+    ref.watch(syncQueueServiceProvider),
   );
 });
 
@@ -207,6 +235,7 @@ final taskRepositoryProvider = Provider<TaskRepository>((ref) {
 /// is a field-staff app, so for anyone else we return an empty list and never
 /// hit the network. The Home UI also hides the "งานวันนี้" section for them.
 final taskListProvider = FutureProvider.autoDispose<List<Task>>((ref) {
+  ref.watch(syncRevisionProvider); // re-read after a sync flush
   final role = ref.watch(authControllerProvider.select((s) => s.role));
   if (role != UserRole.st && role != UserRole.ot) {
     return const <Task>[];
@@ -219,5 +248,6 @@ final taskDetailProvider = FutureProvider.autoDispose.family<Task, String>((
   ref,
   id,
 ) {
+  ref.watch(syncRevisionProvider); // re-read after a sync flush
   return ref.watch(taskRepositoryProvider).getTask(id);
 });

@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/db/tables/pending_actions_table.dart';
+import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../../core/widgets/sync_status_widgets.dart';
 import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
@@ -109,15 +112,40 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           .updateStatus(widget.taskId, _selected);
       ref.invalidate(taskListProvider);
       ref.invalidate(taskDetailProvider(widget.taskId));
+      final queued = await _stillQueued();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('อัปเดตสถานะงานแล้ว')));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              queued
+                  ? 'บันทึกแล้ว จะซิงค์เมื่อมีอินเทอร์เน็ต'
+                  : 'อัปเดตสถานะงานแล้ว',
+            ),
+          ),
+        );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _saveError = _saveErrorMessage(e));
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// True when the just-saved change is still waiting in the sync queue
+  /// (offline / not yet confirmed) — only changes the snackbar wording.
+  Future<bool> _stillQueued() async {
+    try {
+      final rows = await ref
+          .read(pendingActionDaoProvider)
+          .getPendingForEntity(
+            PendingActionType.taskStatus.wireName,
+            widget.taskId,
+          );
+      return rows.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -215,9 +243,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             ),
           ),
           const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TaskStatusPill(status: task.status),
+          Row(
+            children: [
+              TaskStatusPill(status: task.status),
+              if (ref.watch(pendingTaskIdsProvider).value?.contains(task.id) ??
+                  false) ...[
+                const SizedBox(width: 10),
+                const PendingSyncBadge(),
+              ],
+            ],
           ),
           const SizedBox(height: 20),
           _InfoCard(
