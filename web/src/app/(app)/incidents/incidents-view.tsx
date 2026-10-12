@@ -44,6 +44,7 @@ const INCIDENT_STATUS_OPTIONS: { value: IncidentStatus; label: string }[] = [
   { value: "investigating", label: "Investigating" },
   { value: "rolled_back", label: "Rollback แล้ว" },
   { value: "resolved", label: "Resolved" },
+  { value: "dismissed", label: "ไม่ใช่ปัญหา" },
 ];
 
 /**
