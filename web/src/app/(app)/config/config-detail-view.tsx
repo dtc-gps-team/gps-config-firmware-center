@@ -47,6 +47,7 @@ import { formatDateTime } from "@/lib/format-date";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { useUserNames } from "@/hooks/use-user-names";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { SensitiveValue } from "@/components/sensitive-value";
@@ -144,6 +145,7 @@ function ConfigDetailContent({
   const router = useRouter();
   const { session } = useAuth();
   const definitions = useConfigDefinitions();
+  const { resolveName } = useUserNames();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -314,14 +316,10 @@ function ConfigDetailContent({
                 {config.protocol}
               </InfoRow>
               <InfoRow label="สร้างโดย" icon={UserIcon}>
-                <span className="font-mono text-xs">{config.createdBy}</span>
+                {resolveName(config.createdBy)}
               </InfoRow>
               <InfoRow label="ผู้อนุมัติ" icon={UserCheckIcon}>
-                {config.approvedBy ? (
-                  <span className="font-mono text-xs">{config.approvedBy}</span>
-                ) : (
-                  "-"
-                )}
+                {config.approvedBy ? resolveName(config.approvedBy) : "-"}
               </InfoRow>
               <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(config.createdAt)}

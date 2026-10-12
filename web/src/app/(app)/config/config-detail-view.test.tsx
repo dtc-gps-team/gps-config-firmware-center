@@ -38,6 +38,16 @@ vi.mock("@/hooks/use-config-versions", () => ({
   }),
 }));
 
+vi.mock("@/hooks/use-user-names", () => ({
+  useUserNames: () => ({
+    resolveName: (id: string) =>
+      ({ "user-1": "Config Engineer Tester", "op-1": "Operation Tester" })[
+        id
+      ] ?? id,
+    isLoading: false,
+  }),
+}));
+
 const definitionsState = vi.hoisted(() => ({
   data: null as ConfigFieldDefinition[] | null,
   isLoading: true,
@@ -136,5 +146,32 @@ describe("ConfigDetailView — mask ค่า sensitive", () => {
       screen.queryByRole("button", { name: "แสดงค่า" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("-")).toBeInTheDocument();
+  });
+});
+
+describe("ConfigDetailView — แก้ UUID ดิบที่ 'สร้างโดย'/'ผู้อนุมัติ' (พบจาก UX/UI audit)", () => {
+  beforeEach(() => {
+    configState.data = baseConfig;
+    configState.isLoading = false;
+    definitionsState.data = [];
+    definitionsState.isLoading = false;
+  });
+
+  it("โชว์ชื่อที่ resolve แล้ว ไม่ใช่ userId ดิบ", () => {
+    render(<ConfigDetailView configId="c1" />);
+
+    expect(screen.getByText("Config Engineer Tester")).toBeInTheDocument();
+    expect(screen.getByText("Operation Tester")).toBeInTheDocument();
+    expect(screen.queryByText("user-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("op-1")).not.toBeInTheDocument();
+  });
+
+  it("approvedBy เป็น null (ยังไม่อนุมัติ) -> โชว์ \"-\" ไม่เรียก resolveName", () => {
+    configState.data = { ...baseConfig, approvedBy: null };
+
+    render(<ConfigDetailView configId="c1" />);
+
+    expect(screen.getByText("Config Engineer Tester")).toBeInTheDocument();
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
   });
 });
