@@ -38,7 +38,7 @@ export function ApprovalCard({
     <ApprovalQueueCard
       tag="Config"
       title={item.name}
-      meta={`${item.deviceModel} · ${item.protocol}`}
+      meta={`${item.deviceModel} / ${item.protocol}`}
       queuedAt={item.queuedAt}
       detailHref={`/approvals/config/${item.id}`}
       description={item.description}

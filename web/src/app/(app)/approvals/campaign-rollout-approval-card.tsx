@@ -26,7 +26,7 @@ export function CampaignRolloutApprovalCard({
     <ApprovalQueueCard
       tag="Campaign"
       title={campaignName}
-      meta={`${rollout.payloadType} · ${rollout.targetCount} เครื่อง`}
+      meta={`${rollout.payloadType} จำนวน ${rollout.targetCount} เครื่อง`}
       queuedAt={rollout.createdAt}
       detailHref={`/campaigns/${rollout.campaignId}/rollouts/${rollout.id}`}
       requesterLabel="ผู้สร้าง"

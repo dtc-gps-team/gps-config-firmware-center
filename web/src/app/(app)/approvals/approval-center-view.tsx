@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   CheckCircle2Icon,
   ClipboardCheckIcon,
+  InfoIcon,
   RocketIcon,
 } from "lucide-react";
 
@@ -22,6 +23,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { useUserNames } from "@/hooks/use-user-names";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
@@ -103,13 +109,10 @@ export function ApprovalCenterView() {
       <div>
         <h1 className="text-2xl font-semibold">Approval Center</h1>
         <p className="text-sm text-muted-foreground">
-          Config ที่ผ่านการทดสอบแล้ว และ Campaign Rollout ที่เพิ่งเริ่ม รอ
-          Operation อนุมัติ ·{" "}
+          คำขอทุกประเภทที่รอ Operation อนุมัติ แยกเป็นส่วนตามประเภทคำขอ{" "}
           {canDecide
-            ? "คุณอนุมัติ/ปฏิเสธได้"
-            : "เฉพาะ Operation ที่อนุมัติ/ปฏิเสธได้ คุณดูได้อย่างเดียว"}{" "}
-          · รวมคิว Per-device Config Override และ Firmware Override ไว้เป็น
-          section แยกด้านล่าง (คนละเรื่องกับ Config ทั้งชุดด้านบน)
+            ? "คุณอนุมัติหรือปฏิเสธได้"
+            : "เฉพาะ Operation ที่อนุมัติหรือปฏิเสธได้ คุณดูได้อย่างเดียว"}
         </p>
       </div>
 
@@ -119,12 +122,11 @@ export function ApprovalCenterView() {
         <Card>
           <CardHeader>
             <CardTitle>
-              รออนุมัติ{" "}
+              Config รออนุมัติ{" "}
               <span className="text-muted-foreground">({allItems.length})</span>
             </CardTitle>
             <CardDescription>
-              สถานะ Config = testing (ผ่าน simulation + ConfigEngineer
-              ปักผลผ่านแล้ว)
+              Config ที่ทดสอบผ่านแล้ว รอ Operation อนุมัติก่อนนำไปใช้กับอุปกรณ์
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -154,6 +156,23 @@ export function ApprovalCenterView() {
                 >
                   เจาะจงถึงฉัน ({mineCount})
                 </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="เจาะจงถึงฉันคืออะไร"
+                        className="inline-flex items-center px-1 text-muted-foreground hover:text-foreground"
+                      />
+                    }
+                  >
+                    <InfoIcon className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Config ที่ผู้สร้างเลือกให้คุณดูเป็นพิเศษ Operation
+                    คนอื่นยังอนุมัติได้
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
 
@@ -209,8 +228,7 @@ export function ApprovalCenterView() {
 
       {/* section แยกจาก Config ชัดเจน (แก้ไข 2026-09-24 — feedback: หาปุ่ม
        * อนุมัติ Rollout ยาก) — คนละ Card ไม่ผสมเป็น list เดียวกับ Config
-       * เพราะ resource/flow คนละอย่างกัน (Firmware ยังไม่รวม — อยู่หน้า
-       * Firmware Repository ของตัวเองต่อไป) */}
+       * เพราะ resource/flow คนละอย่างกัน */}
       {rolloutQueueEmpty ? (
         <EmptyQueueRow title="Campaign Rollout รออนุมัติ" />
       ) : (
@@ -231,7 +249,9 @@ export function ApprovalCenterView() {
               <CardListSkeleton />
             ) : rolloutsQuery.error ? (
               <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{rolloutsQuery.error}</p>
+                <p className="text-sm text-destructive">
+                  {rolloutsQuery.error}
+                </p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -274,20 +294,20 @@ export function ApprovalCenterView() {
        * section นี้เลย (แก้ครั้งที่ 73 — พบจาก UX/UI audit) */}
       {canDecideOverride &&
         (overrideQueueEmpty ? (
-          <EmptyQueueRow title="Per-device Config Override รออนุมัติ" />
+          <EmptyQueueRow title="Config Override รออนุมัติ" />
         ) : (
           <Card>
             <CardHeader>
               <CardTitle>
-                Per-device Config Override รออนุมัติ{" "}
+                Config Override รออนุมัติ{" "}
                 <span className="text-muted-foreground">
                   ({overrideData?.length ?? 0})
                 </span>
               </CardTitle>
               <CardDescription>
                 คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง (ST ส่งจาก Mobile) อนุมัติแล้ว
-                ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config เข้าเครื่อง
-                อีกครั้งหลังอนุมัติ
+                ยังไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกดใส่ Config
+                เข้าเครื่อง อีกครั้งหลังอนุมัติ
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
@@ -313,7 +333,7 @@ export function ApprovalCenterView() {
               ) : (overrideData?.length ?? 0) === 0 ? (
                 <EmptyState
                   icon={ClipboardCheckIcon}
-                  message="ไม่มีคำขอ Override รออนุมัติ"
+                  message="ไม่มีคำขอ Config Override รออนุมัติ"
                 />
               ) : (
                 overrideData?.map((item) => (
@@ -354,8 +374,8 @@ export function ApprovalCenterView() {
                 </span>
               </CardTitle>
               <CardDescription>
-                คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout (ST
-                ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
+                คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ Campaign Rollout
+                (ST ส่งจาก Mobile) อนุมัติแล้วปลดล็อกให้ช่างกด Confirm Install
                 firmware นี้กับเครื่องนั้นได้ ไม่ได้สั่งติดตั้งอัตโนมัติ
               </CardDescription>
             </CardHeader>
@@ -425,7 +445,7 @@ function EmptyQueueRow({ title }: { title: string }) {
       <span className="font-medium">
         {title} <span className="text-muted-foreground">(0)</span>
       </span>
-      <span className="text-muted-foreground">· ไม่มีรายการรออนุมัติ</span>
+      <span className="text-muted-foreground">ไม่มีรายการรออนุมัติ</span>
     </div>
   );
 }

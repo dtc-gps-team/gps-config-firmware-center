@@ -61,7 +61,7 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     // เช็คจากชื่อ section ไม่ใช่ CardDescription — คิวว่างทุกคิวในเทสนี้ section
     // เลยยุบเหลือแถบบรรทัดเดียว (ข้อ 14) ซึ่งมีแค่ชื่อ ไม่มีคำอธิบาย
     expect(
-      screen.queryByText(/Per-device Config Override รออนุมัติ/),
+      screen.queryByText(/^Config Override รออนุมัติ/),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/^Firmware Override รออนุมัติ/),
@@ -72,9 +72,7 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
 
     // section ที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นตามปกติ
     expect(screen.getByText(/^Config รออนุมัติ/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/^Campaign Rollout รออนุมัติ/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/^Campaign Rollout รออนุมัติ/)).toBeInTheDocument();
   });
 
   it("role Operation: เห็นครบทั้ง 4 section เหมือนเดิม และ hook ถูกเรียกด้วย enabled=true", () => {
@@ -84,9 +82,7 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
 
     render(<ApprovalCenterView />);
 
-    expect(
-      screen.getByText(/Per-device Config Override รออนุมัติ/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/^Config Override รออนุมัติ/)).toBeInTheDocument();
     expect(
       screen.getByText(/^Firmware Override รออนุมัติ/),
     ).toBeInTheDocument();
@@ -107,7 +103,7 @@ describe("ApprovalCenterView — ยุบ section ที่คิวว่า�
 
     expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(4);
     expect(
-      screen.queryByText(/สถานะ Config = testing/),
+      screen.queryByText(/Config ที่ทดสอบผ่านแล้ว/),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
@@ -133,5 +129,22 @@ describe("ApprovalCenterView — ยุบ section ที่คิวว่า�
     expect(screen.getByRole("button", { name: "ลองใหม่" })).toBeInTheDocument();
     // อีก 3 section ที่คิวว่างจริงยังยุบตามปกติ
     expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(3);
+  });
+});
+
+describe("ApprovalCenterView — ข้อความหัวหน้าและหัวข้อ", () => {
+  it("คำอธิบายหัวหน้าบอกว่ารวมคำขอทุกประเภท และไม่มีจุดคั่นกลาง", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    const { container } = render(<ApprovalCenterView />);
+
+    expect(
+      screen.getByText(/คำขอทุกประเภทที่รอ Operation อนุมัติ/),
+    ).toBeInTheDocument();
+    expect(container.textContent).not.toContain("·");
+    // ชื่อเดิม "Per-device Config Override" เปลี่ยนให้ตรงกับป้ายบนการ์ด
+    expect(screen.queryByText(/Per-device/)).not.toBeInTheDocument();
   });
 });
