@@ -256,7 +256,11 @@ export function ParameterCreateForm({
                 onValueChange={(value) => value && setDataType(value)}
               >
                 <SelectTrigger id="param-datatype" className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value: (typeof DATA_TYPES)[number]) =>
+                      DATA_TYPE_LABELS[value]
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {DATA_TYPES.map((t) => (
