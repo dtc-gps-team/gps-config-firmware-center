@@ -250,6 +250,7 @@ export function ApprovalCenterView() {
                 <CampaignRolloutApprovalCard
                   key={item.rollout.id}
                   item={item}
+                  creatorName={resolveName(item.rollout.createdBy)}
                   onDecided={(updated) => {
                     setNotice(
                       updated.status === "approved"
@@ -319,6 +320,7 @@ export function ApprovalCenterView() {
                   <DeviceConfigOverrideApprovalCard
                     key={item.id}
                     item={item}
+                    requesterName={resolveName(item.overriddenBy)}
                     canDecide={canDecideOverride}
                     onDecided={(action) => {
                       setOverrideNotice(
@@ -389,6 +391,7 @@ export function ApprovalCenterView() {
                   <DeviceFirmwareOverrideApprovalCard
                     key={item.id}
                     item={item}
+                    requesterName={resolveName(item.overriddenBy)}
                     canDecide={canDecideFirmwareOv}
                     onDecided={(action) => {
                       setFirmwareOverrideNotice(

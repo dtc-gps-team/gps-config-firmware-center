@@ -284,6 +284,11 @@ const ENTITY_TYPE_TAG_CLASS: Record<string, string> = {
     "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
   Override:
     "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  // แยก Override 2 ชนิดในคิวอนุมัติให้ดูออกทันที (เดิมใช้ป้าย "Override" ร่วมกัน)
+  "Config Override":
+    "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  "Firmware Override":
+    "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
 };
 
 export function EntityTypeTag({
