@@ -123,13 +123,49 @@ class ApiClient {
 
   /// `PATCH /tasks/{taskId}` — partial update. Mobile only ever changes
   /// `status` (ST/OT are limited to that field by the backend).
-  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+  ///
+  /// [changedAt] is when the user actually made the change — the sync queue
+  /// passes the time it was queued, so the task's timeline (issue #296) shows
+  /// the tap time rather than the time the phone got back online. Omitted when
+  /// null (backend then uses its own clock).
+  Future<Task> updateTaskStatus(
+    String taskId,
+    TaskStatus status, {
+    DateTime? changedAt,
+  }) async {
     return _wrap(
       () => _dio.patch<Map<String, dynamic>>(
         '/tasks/$taskId',
-        data: {'status': status.wireName},
+        data: {
+          'status': status.wireName,
+          if (changedAt != null)
+            'changedAt': changedAt.toUtc().toIso8601String(),
+        },
       ),
       Task.fromJson,
+    );
+  }
+
+  /// `GET /tasks/{taskId}/events` — the task's timeline, oldest first
+  /// (issue #296). Same visibility as [getTask]. **Strict** like every other
+  /// work-data list (see [_wrapListStrict]).
+  Future<List<TaskEvent>> listTaskEvents(String taskId) async {
+    return _wrapListStrict(
+      () => _dio.get<List<dynamic>>('/tasks/$taskId/events'),
+      TaskEvent.fromJson,
+    );
+  }
+
+  /// `POST /tasks/{taskId}/notes` — adds a text note to the timeline without
+  /// changing the status (issue #296). Needs the network: notes are not queued
+  /// offline (docs/16 §7).
+  Future<TaskEvent> addTaskNote(String taskId, String note) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/tasks/$taskId/notes',
+        data: {'note': note},
+      ),
+      TaskEvent.fromJson,
     );
   }
 

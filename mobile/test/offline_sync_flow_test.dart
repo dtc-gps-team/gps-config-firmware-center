@@ -45,7 +45,11 @@ class _FakeApi extends ApiClient {
   Future<Task> getTask(String taskId) async => tasks[taskId]!;
 
   @override
-  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+  Future<Task> updateTaskStatus(
+    String taskId,
+    TaskStatus status, {
+    DateTime? changedAt,
+  }) async {
     updates.add((taskId, status));
     if (gate != null) await gate!.future;
     if (updateError != null) throw updateError!;
