@@ -17,6 +17,7 @@ import {
 import { formatDateTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
 import { useFirmware } from "@/hooks/use-firmware";
+import { useUserNames } from "@/hooks/use-user-names";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
@@ -65,6 +66,8 @@ function FirmwareDetailContent({
   firmware: Firmware;
   onUpdated: (updated: Firmware) => void;
 }) {
+  const { resolveName } = useUserNames();
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
@@ -121,7 +124,7 @@ function FirmwareDetailContent({
                 </StatusPill>
               </InfoRow>
               <InfoRow label="อัปโหลดโดย" icon={UserIcon}>
-                <span className="font-mono text-xs">{firmware.uploadedBy}</span>
+                {resolveName(firmware.uploadedBy)}
               </InfoRow>
               <InfoRow label="อัปโหลดเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(firmware.uploadedAt)}

@@ -44,6 +44,7 @@ const INCIDENT_STATUS_OPTIONS: { value: IncidentStatus; label: string }[] = [
   { value: "investigating", label: "Investigating" },
   { value: "rolled_back", label: "Rollback แล้ว" },
   { value: "resolved", label: "Resolved" },
+  { value: "dismissed", label: "ไม่ใช่ปัญหา" },
 ];
 
 /**
@@ -102,7 +103,12 @@ export function IncidentsView() {
             }
           >
             <SelectTrigger className="h-8 max-w-48">
-              <SelectValue placeholder="สถานะ: ทั้งหมด" />
+              <SelectValue placeholder="สถานะ: ทั้งหมด">
+                {(value: string) =>
+                  INCIDENT_STATUS_OPTIONS.find((s) => s.value === value)
+                    ?.label ?? "สถานะ: ทั้งหมด"
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="">สถานะ: ทั้งหมด</SelectItem>

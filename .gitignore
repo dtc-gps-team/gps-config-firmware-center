@@ -8,6 +8,8 @@
 secrets/
 *service-account*.json
 !*service-account*.example.json
+# ไฟล์ที่ Firebase Console ตั้งชื่อให้ตอนดาวน์โหลด (<project>-firebase-adminsdk-xxxxx.json)
+*firebase-adminsdk*.json
 
 # Firebase Android config (google-services.json) — ห้าม commit ของจริง
 # (มี API key ผูกกับ Firebase project จริง — devices/CI ต้องวางเองจาก Firebase Console)
