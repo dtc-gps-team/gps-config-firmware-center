@@ -22,17 +22,35 @@ export type AuditLogEntry = {
   createdAt: string;
 };
 
-/** filter ทุกตัว optional — ไม่ส่ง = ทุกรายการ เรียงตาม createdAt desc */
+/** `AuditLogPage` ใน openapi.yaml (v3.49) — `total` นับทุกแถวที่ตรง filter
+ * ไม่ใช่แค่ในหน้านี้ */
+export type AuditLogPage = {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** filter ทุกตัว optional — ไม่ส่ง = ทุกรายการ เรียงตาม createdAt desc ·
+ * ไม่ส่ง page/pageSize = backend ใช้ default (หน้า 1, 20 แถว) */
 export function listAuditLogs(
   token: string,
-  params?: { userId?: string; auditModule?: string; action?: string },
-): Promise<AuditLogEntry[]> {
+  params?: {
+    userId?: string;
+    auditModule?: string;
+    action?: string;
+    page?: number;
+    pageSize?: number;
+  },
+): Promise<AuditLogPage> {
   const query = new URLSearchParams();
   if (params?.userId) query.set("userId", params.userId);
   if (params?.auditModule) query.set("auditModule", params.auditModule);
   if (params?.action) query.set("action", params.action);
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.pageSize) query.set("pageSize", String(params.pageSize));
   const qs = query.toString();
-  return apiJson<AuditLogEntry[]>(`/audit-logs${qs ? `?${qs}` : ""}`, {
+  return apiJson<AuditLogPage>(`/audit-logs${qs ? `?${qs}` : ""}`, {
     token,
   });
 }

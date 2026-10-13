@@ -40,7 +40,7 @@ const IMPORT_FILE_SIZE_LIMIT_BYTES = 1 * 1024 * 1024;
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
 function toActor(req: AuthenticatedRequest): ActingUser {
-  return { id: req.user.sub, role: req.user.role };
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
 }
 
 // Stage 1-4 (issue #26) — CRUD พื้นฐาน (list/create/get/update/delete) +

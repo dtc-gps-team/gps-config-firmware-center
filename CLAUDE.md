@@ -145,6 +145,15 @@ default ต้องเป็น mock เสมอ — โหมดที่ย�
 - env var นี้ **ไม่ได้กำหนดไว้ที่ไหนใน repo** (repo นี้ไม่มี deploy pipeline /
   infra-as-code) ต้องไปตั้งที่ระบบ hosting จริงโดยตรง
 
+### `TRUST_PROXY` (IP ใน Audit Log เมื่อ deploy หลัง proxy)
+
+- ค่า default คือ **ปิด** (ไม่ตั้ง) ถูกต้องสำหรับ dev และ deploy ที่ไม่มี proxy
+- deploy หลัง reverse proxy / load balancer ต้องตั้ง `TRUST_PROXY` เป็นจำนวน proxy
+  ที่อยู่หน้า backend (เช่น `1`) บนระบบ hosting ไม่งั้น Audit Log ทุกแถวจะได้ IP ของ proxy
+- **ห้ามตั้งถ้าไม่มี proxy จริง** ผู้ใช้จะปลอม IP ผ่าน header `X-Forwarded-For` ได้ ค่าที่
+  ไม่ใช่จำนวนเต็มบวกจะทำให้ backend start ไม่ขึ้น (`common/trust-proxy.ts`)
+- หลัง deploy ให้เช็คหน้า Audit Log ว่า IP ของผู้ใช้ต่างคนต่างกัน ไม่ใช่ IP เดียวกันทุกแถว
+
 ## Branch Sync (out-of-date branch)
 
 - ถ้า PR ขึ้นแจ้งว่า branch out-of-date กับ `main` **ห้ามกดปุ่ม "Update branch"**

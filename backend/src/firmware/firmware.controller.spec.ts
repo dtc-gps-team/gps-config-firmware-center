@@ -96,6 +96,7 @@ describe('FirmwareController', () => {
     expect(service.upload).toHaveBeenCalledWith(file, 'v1', 'GT06N', {
       id: 'fe-1',
       role: 'FirmwareEngineer',
+      ipAddress: null,
     });
   });
 
@@ -121,7 +122,7 @@ describe('FirmwareController', () => {
     expect(service.updateCompatibility).toHaveBeenCalledWith(
       sampleFirmware.id,
       dto,
-      { id: 'fe-1', role: 'FirmwareEngineer' },
+      { id: 'fe-1', role: 'FirmwareEngineer', ipAddress: null },
     );
   });
 
@@ -146,6 +147,7 @@ describe('FirmwareController', () => {
     expect(service.approve).toHaveBeenCalledWith(sampleFirmware.id, {
       id: 'qa-1',
       role: 'QAEngineer',
+      ipAddress: null,
     });
   });
 
@@ -159,6 +161,7 @@ describe('FirmwareController', () => {
     expect(service.reject).toHaveBeenCalledWith(sampleFirmware.id, {
       id: 'qa-1',
       role: 'QAEngineer',
+      ipAddress: null,
     });
   });
 });

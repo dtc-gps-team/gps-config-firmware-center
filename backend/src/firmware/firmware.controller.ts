@@ -33,7 +33,7 @@ const UPLOAD_FILE_SIZE_LIMIT_BYTES = 50 * 1024 * 1024;
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
 function toActor(req: AuthenticatedRequest): ActingUser {
-  return { id: req.user.sub, role: req.user.role };
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
 }
 
 // Sprint 3 #23 (Firmware Repository) — RBAC_Matrix.md §2 แถว "Firmware

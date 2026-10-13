@@ -34,6 +34,11 @@ const installedDevice: Device = {
   deviceModel: 'GT06N',
   protocol: 'TCP',
   hardwareRevisionCode: null,
+  imei: null,
+  serialNumber: null,
+  blackboxId: null,
+  bootloader: null,
+  apiKeyHash: null,
   status: 'installed',
   registeredAt: new Date('2026-01-01T00:00:00.000Z'),
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
@@ -141,6 +146,10 @@ const createdDevice: Omit<Device, 'apiKeyHash'> = {
   deviceModel: gt06nModel.name,
   protocol: registerDto.protocol,
   hardwareRevisionCode: null,
+  imei: null,
+  serialNumber: null,
+  blackboxId: null,
+  bootloader: null,
   status: 'registered',
   registeredAt: new Date('2026-10-01T00:00:00.000Z'),
   installedAt: null,
@@ -159,8 +168,18 @@ const connPass = {
   testedAt: '2026-09-07T10:00:00.000Z',
 };
 
+function makePrismaError(code: string): PrismaClientKnownRequestError {
+  return new PrismaClientKnownRequestError('prisma error', {
+    code,
+    clientVersion: 'test',
+  });
+}
+const makeP2002 = () => makePrismaError('P2002');
+const makeP2025 = () => makePrismaError('P2025');
+
 describe('DeviceService', () => {
   let service: DeviceService;
+  let transaction: jest.Mock;
   let device: {
     findUnique: jest.Mock;
     findMany: jest.Mock;
@@ -259,7 +278,12 @@ describe('DeviceService', () => {
         updateMany: deviceFirmwareOverride.updateMany,
       },
       auditLog: { create: auditLog.create },
+      // `register()`/`rotateKey()` (issue #292) สร้าง/แก้ Device + เขียน AuditLog
+      // ใน tx เดียวกัน
+      device: { create: device.create, update: device.update },
     };
+
+    transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(tx));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -277,7 +301,7 @@ describe('DeviceService', () => {
             customer,
             auditLog,
             campaignRolloutTarget,
-            $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(tx)),
+            $transaction: transaction,
           },
         },
         { provide: DEVICE_CONNECTION_TESTER, useValue: connectionTester },
@@ -571,6 +595,31 @@ describe('DeviceService', () => {
       expect(result).not.toHaveProperty('apiKeyHash');
     });
 
+    it('เขียน AuditLog ใน tx เดียวกับการสร้างเครื่อง (issue #292)', async () => {
+      await service.register(registerDto, admin);
+
+      // create + audit ผ่าน $transaction ครั้งเดียว ไม่ใช่เรียกแยกกัน
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditLog.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('เขียน AuditLog ไม่สำเร็จ -> register ล้มทั้งหมด ไม่คืน apiKey (ไม่ใช่ 500 หลังเครื่องถูกสร้างแล้ว) (issue #292)', async () => {
+      auditLog.create.mockRejectedValueOnce(new Error('audit down'));
+
+      await expect(service.register(registerDto, admin)).rejects.toThrow(
+        'audit down',
+      );
+    });
+
+    it('deviceId ซ้ำ (P2002 จาก create ใน tx) -> ConflictException และไม่เขียน AuditLog (issue #292)', async () => {
+      device.create.mockRejectedValueOnce(makeP2002());
+
+      await expect(service.register(registerDto, admin)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
     it('ส่ง Identity group มาครบ (imei/serialNumber/blackboxId/bootloader) -> ส่งต่อให้ device.create ครบทุก field (PDF §4.1)', async () => {
       await service.register(
         {
@@ -618,6 +667,7 @@ describe('DeviceService', () => {
           auditModule: 'device',
           action: 'register',
           metadata: { deviceId: registerDto.deviceId },
+          ipAddress: null,
         },
       });
     });
@@ -736,8 +786,33 @@ describe('DeviceService', () => {
           auditModule: 'device',
           action: 'rotate-key',
           metadata: { deviceId: createdDevice.deviceId },
+          ipAddress: null,
         },
       });
+    });
+
+    it('เขียน AuditLog ใน tx เดียวกับการแทนที่ key (issue #292)', async () => {
+      await service.rotateKey(createdDevice.deviceId, admin);
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditLog.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('เขียน AuditLog ไม่สำเร็จ -> rotateKey ล้มทั้งหมด ไม่คืน key ใหม่ (key เดิมไม่ถูกแทนที่ใน DB จริงเพราะ tx ย้อนกลับ) (issue #292)', async () => {
+      auditLog.create.mockRejectedValueOnce(new Error('audit down'));
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow('audit down');
+    });
+
+    it('เครื่องถูกลบระหว่าง findUnique กับ update (P2025 ใน tx) -> NotFoundException และไม่เขียน AuditLog (issue #292)', async () => {
+      device.update.mockRejectedValueOnce(makeP2025());
+
+      await expect(
+        service.rotateKey(createdDevice.deviceId, admin),
+      ).rejects.toThrow(NotFoundException);
+      expect(auditLog.create).not.toHaveBeenCalled();
     });
 
     it('ไม่พบ deviceId -> NotFoundException ไม่เรียก device.update', async () => {
@@ -855,6 +930,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -882,6 +958,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN', 'COMMAND_PASSWORD'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -1095,6 +1172,7 @@ describe('DeviceService', () => {
             firmwareId: readyFirmware.id,
             firmwareVersion: readyFirmware.version,
           },
+          ipAddress: null,
         },
       });
     });
@@ -2124,6 +2202,7 @@ describe('DeviceService', () => {
             configId: approvedConfig.id,
             fieldNames: ['APN'],
           },
+          ipAddress: null,
         },
       });
     });
@@ -2291,6 +2370,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               configId: approvedConfig.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2421,6 +2501,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               configId: approvedConfig.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2595,6 +2676,7 @@ describe('DeviceService', () => {
             firmwareId: readyFirmware.id,
             firmwareVersion: readyFirmware.version,
           },
+          ipAddress: null,
         },
       });
     });
@@ -2741,6 +2823,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               firmwareId: readyFirmware.id,
             },
+            ipAddress: null,
           },
         });
       });
@@ -2849,6 +2932,7 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               firmwareId: readyFirmware.id,
             },
+            ipAddress: null,
           },
         });
       });
