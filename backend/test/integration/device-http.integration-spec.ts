@@ -264,6 +264,31 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(401);
     });
 
+    it('บันทึก AuditLog ไม่ได้ (ผู้ทำรายการไม่มีในระบบ) -> 500 และเครื่องที่เพิ่งสร้างถูกย้อนกลับ ไม่ค้างในระบบ (issue #292)', async () => {
+      await grant('Admin', ActionType.Create, 'device-registration');
+      // token ที่ผ่าน guard ได้ (role มีสิทธิ์) แต่ userId ไม่มีในตาราง User ->
+      // FK ของ AuditLog.userId ล้ม ต้องทำให้การสร้างเครื่องล้มตามด้วย (atomic)
+      // เดิมได้ 500 แต่เครื่องถูกสร้างไปแล้ว และ apiKey (แสดงครั้งเดียว) หาย
+      const token = tokenFor('00000000-0000-4000-8000-000000000099', 'Admin');
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          deviceId: 'ATOMIC-REG-1',
+          simNumber: '0899999999',
+          modelId: model.id,
+          protocol: 'TCP',
+        })
+        .expect(500);
+
+      expect(
+        await prisma.device.count({ where: { deviceId: 'ATOMIC-REG-1' } }),
+      ).toBe(0);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
     it('role ไม่มีสิทธิ์ device-registration.Create (ST) -> 403', async () => {
       const stUser = await makeUser(prisma, { role: 'ST' });
       await grant('ST', ActionType.Read, 'devices');
@@ -512,6 +537,35 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .post('/api/v1/devices/ROT-403/rotate-key')
         .set('Authorization', `Bearer ${token}`)
         .expect(403);
+    });
+
+    it('บันทึก AuditLog ไม่ได้ (ผู้ทำรายการไม่มีในระบบ) -> 500 และ key เดิมไม่ถูกแทนที่ ยังใช้ได้อยู่ (issue #292)', async () => {
+      await grant('Admin', ActionType.Update, 'device-registration');
+      // token ที่ผ่าน guard ได้ แต่ userId ไม่มีในตาราง User -> FK ของ AuditLog
+      // ล้ม ต้องย้อนกลับการแทนที่ key ด้วย เดิม key เดิมถูกแทนที่ไปแล้วแต่ key
+      // ใหม่ไม่ถูกส่งกลับ อุปกรณ์ติดต่อระบบไม่ได้จนกว่าจะออก key ซ้ำ
+      const token = tokenFor('00000000-0000-4000-8000-000000000099', 'Admin');
+      const oldHash = await bcrypt.hash('old-key', 10);
+      await makeDevice('ATOMIC-ROT-1', 'installed');
+      await prisma.device.update({
+        where: { deviceId: 'ATOMIC-ROT-1' },
+        data: { apiKeyHash: oldHash },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/ATOMIC-ROT-1/rotate-key')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(500);
+
+      const after = await prisma.device.findUniqueOrThrow({
+        where: { deviceId: 'ATOMIC-ROT-1' },
+        omit: { apiKeyHash: false },
+      });
+      expect(after.apiKeyHash).toBe(oldHash);
+      await expect(bcrypt.compare('old-key', after.apiKeyHash!)).resolves.toBe(
+        true,
+      );
+      expect(await prisma.auditLog.count()).toBe(0);
     });
 
     it('ไม่พบ deviceId -> 404', async () => {
