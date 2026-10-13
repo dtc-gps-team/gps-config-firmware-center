@@ -1080,20 +1080,31 @@ async function main() {
       // update ด้วย เพื่อ backfill modelId ให้แถวที่เคย seed ไว้ก่อนรอบนี้
       // (mirror pattern เดียวกับที่ configFieldDefinitions backfill unit/
       // stOverridable/category/sensitive/restartRequired ด้านบน)
-      // backfill IMEI/Serial/Blackbox ID ให้เครื่อง seed ที่สร้างไว้ก่อนมีกติกา
-      // บังคับกรอก (13 ต.ค. 2569) — ค่าของ seed เอง ไม่ใช่ข้อมูลที่ผู้ใช้กรอก
-      update: {
-        modelId: model.id,
-        imei: d.imei,
-        serialNumber: d.serialNumber,
-        blackboxId: d.blackboxId,
-      },
+      update: { modelId: model.id },
       create: {
         ...d,
         installedAt: d.status === 'installed' ? new Date() : null,
         customerId: customer?.id,
         modelId: model.id,
       },
+    });
+
+    // เติม IMEI/Serial/Blackbox ID ให้เครื่อง seed ที่สร้างไว้ก่อนมีกติกาบังคับ
+    // กรอก (13 ต.ค. 2569) **เฉพาะช่องที่ยังว่าง** ไม่ทับค่าที่มีอยู่ — ใส่ใน
+    // `upsert.update` ตรงๆ ไม่ได้เพราะจะทับทุกครั้งที่ `db seed` รัน (ค่าที่
+    // ผู้ใช้แก้เองระหว่างทดสอบจะหายเงียบๆ รีวิว B บน #304 ข้อ 1)
+    // `updateMany` ที่ where ช่องนั้นเป็น null เช็คและเขียนในคำสั่งเดียว
+    await prisma.device.updateMany({
+      where: { deviceId: d.deviceId, imei: null },
+      data: { imei: d.imei },
+    });
+    await prisma.device.updateMany({
+      where: { deviceId: d.deviceId, serialNumber: null },
+      data: { serialNumber: d.serialNumber },
+    });
+    await prisma.device.updateMany({
+      where: { deviceId: d.deviceId, blackboxId: null },
+      data: { blackboxId: d.blackboxId },
     });
   }
 
