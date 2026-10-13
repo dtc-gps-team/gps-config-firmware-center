@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/login_page.dart';
 import '../../features/config_override/config_override_page.dart';
+import '../../features/firmware_install/confirm_firmware_install_page.dart';
 import '../../features/firmware_override/firmware_override_page.dart';
 import '../../features/config_simulator/simulator_page.dart';
 import '../../features/device_connection_test/company_device_picker_page.dart';
@@ -72,6 +73,13 @@ class AppRoutes {
       '/devices/:deviceId/firmware-override';
   static String deviceFirmwareOverride(String deviceId) =>
       '/devices/$deviceId/firmware-override';
+
+  /// Confirm Firmware Install (issue #261). `/devices/:deviceId/confirm-firmware`
+  /// — ปุ่มเห็นเฉพาะ ST/OT (Device Detail)
+  static const deviceConfirmFirmwarePattern =
+      '/devices/:deviceId/confirm-firmware';
+  static String deviceConfirmFirmware(String deviceId) =>
+      '/devices/$deviceId/confirm-firmware';
 
   /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
   /// `/tasks/:id` by segment count, so go_router never confuses the two).
@@ -174,6 +182,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.deviceFirmwareOverridePattern,
         builder: (context, state) =>
             FirmwareOverridePage(deviceId: state.pathParameters['deviceId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceConfirmFirmwarePattern,
+        builder: (context, state) => ConfirmFirmwareInstallPage(
+          deviceId: state.pathParameters['deviceId']!,
+        ),
       ),
       GoRoute(
         path: AppRoutes.myTasks,

@@ -604,13 +604,16 @@ export class DeviceService {
     // อยู่ (ถ้ามี) รู้ว่าเครื่องนี้สำเร็จ/ล้มเหลว — never-throw อยู่แล้วใน
     // ตัว recordTargetResult เอง (ดู comment ที่นั่น) · ส่ง `rolloutId` ต่อถ้า
     // client ระบุมา (issue #243 — กัน match ผิด rollout ถ้าเครื่องนี้เป็น
-    // pending target ของ 2 รอบพร้อมกันด้วย payload เดียวกันเป๊ะ)
+    // pending target ของ 2 รอบพร้อมกันด้วย payload เดียวกันเป๊ะ) · `rolloutId`
+    // จาก client เป็นแค่คำใบ้ — ไม่ตรงกับ `configId` ที่ส่งมาก็ fallback ไป
+    // match ด้วย payload แทน ไม่ปล่อย target ค้าง pending เงียบๆ (issue #268)
     await this.campaignRolloutService.recordTargetResult(
       device.deviceId,
       { configId: config.id },
       result.applied,
       result.details.join(' · '),
       rolloutId,
+      { fallbackToPayload: true },
     );
 
     return result;
@@ -810,13 +813,15 @@ export class DeviceService {
     // หัวเมธอดนี้) never-throw อยู่แล้วในตัว recordTargetResult เอง จึงไม่กระทบ
     // ความหมาย "audit เขียนไม่สำเร็จต้อง throw 500" ข้างบน (เกิดขึ้นก่อนหน้านี้
     // ไปแล้ว) · ส่ง `dto.rolloutId` ต่อถ้า client ระบุมา (issue #243 — เหตุผล
-    // เดียวกับ `applyConfig()` ด้านบน)
+    // เดียวกับ `applyConfig()` ด้านบน รวมถึง fallback ไป match ด้วย payload
+    // เมื่อ `rolloutId` ไม่ตรงกับ `firmwareId` — issue #268)
     await this.campaignRolloutService.recordTargetResult(
       device.deviceId,
       { firmwareId: firmware.id },
       true,
       `ยืนยันติดตั้ง Firmware ${firmware.version} สำเร็จ (confirm-firmware-install)`,
       dto.rolloutId,
+      { fallbackToPayload: true },
     );
 
     // Dual Partition (mock, Incident & Rollback #28, แก้ไข 2026-09-24) —

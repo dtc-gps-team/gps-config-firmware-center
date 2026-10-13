@@ -2452,6 +2452,132 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    describe('rolloutId เป็นแค่คำใบ้จาก Mobile — fallbackToPayload (issue #268)', () => {
+      const otherRolloutId = 'rollout-latest-other-config';
+      const countsForSuccess = () =>
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0);
+
+      it('rolloutId ไม่ตรงกับ payload (คนละรอบ/คนละ configId) + fallbackToPayload -> หาด้วย rolloutId ไม่เจอ แล้ว match ด้วย payload แทน ไม่ปล่อย target ค้าง pending', async () => {
+        campaignRolloutTarget.findFirst
+          .mockResolvedValueOnce(null) // scope ด้วย rolloutId ของรอบอื่น -> ไม่เจอ
+          .mockResolvedValueOnce(pendingTarget); // fallback ด้วย payload -> เจอ
+        countsForSuccess();
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          otherRolloutId,
+          { fallbackToPayload: true },
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(2);
+        // ครั้งแรก scope ด้วย rolloutId ที่ client ส่งมา
+        expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(1, {
+          where: {
+            deviceId: installedDeviceA.deviceId,
+            status: 'pending',
+            rolloutId: otherRolloutId,
+            rollout: {
+              status: { in: ['active', 'paused'] },
+              configId: approvedConfig.id,
+            },
+          },
+          include: { rollout: true },
+        });
+        // ครั้งที่สอง (fallback) ไม่มี rolloutId — match ด้วย payload เหมือนก่อน #264
+        expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(2, {
+          where: {
+            deviceId: installedDeviceA.deviceId,
+            status: 'pending',
+            rollout: {
+              status: { in: ['active', 'paused'] },
+              configId: approvedConfig.id,
+            },
+          },
+          include: { rollout: true },
+        });
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: pendingTarget.id, status: 'pending' },
+          data: { status: 'success', resultDetail: 'ok' },
+        });
+      });
+
+      it('rolloutId ตรงกับ payload (เจอในการหาครั้งแรก) + fallbackToPayload -> ไม่ query ซ้ำ ใช้ตัวที่ระบุเท่านั้น (ไม่เสียผล #243)', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValueOnce(pendingTarget);
+        countsForSuccess();
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          activeRollout.id,
+          { fallbackToPayload: true },
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(1);
+      });
+
+      it('ไม่เปิด fallbackToPayload (path autoApply*/rollback ที่ส่ง rollout.id ของตัวเอง) -> หาด้วย rolloutId ไม่เจอก็คืน false ไม่ไปแย่ง target ของ rollout อื่น', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValueOnce(null);
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          otherRolloutId,
+        );
+
+        expect(result).toBe(false);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(1);
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('เปิด fallbackToPayload แต่ไม่ได้ส่ง rolloutId -> query ครั้งเดียวแบบเดิม (ไม่มีอะไรให้ fallback)', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValueOnce(null);
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          undefined,
+          { fallbackToPayload: true },
+        );
+
+        expect(result).toBe(false);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(1);
+      });
+
+      it('fallback ก็ไม่เจอ (ไม่มี target pending ที่ตรง payload เลย) -> คืน false ไม่ throw', async () => {
+        campaignRolloutTarget.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null);
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          otherRolloutId,
+          { fallbackToPayload: true },
+        );
+
+        expect(result).toBe(false);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(2);
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
     it('claim target ไม่สำเร็จ (มีคำขออื่น claim ไปก่อนแล้วระหว่างที่เรากำลังประมวลผล, race) -> คืน false ไม่ recompute count/pause ซ้ำ (#235 review รอบ 4 ข้อ 2)', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       // แพ้ race — target ถูกคำขออื่น claim (status ไม่ใช่ pending แล้ว) ไปก่อน

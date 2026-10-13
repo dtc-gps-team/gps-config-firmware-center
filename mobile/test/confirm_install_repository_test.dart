@@ -73,6 +73,29 @@ void main() {
       expect(result.appliedAt, DateTime.utc(2026, 9, 11, 10));
     });
 
+    test('applyConfig(rolloutId) -> ส่ง rolloutId ใน body ด้วย', () async {
+      final recorder = _RecordingDio();
+      final api = ApiClient(
+        dio: recorder.build({
+          'applied': true,
+          'details': ['ok'],
+          'appliedAt': '2026-09-11T10:00:00.000Z',
+        }),
+      );
+      final repo = ApiConfirmInstallRepository(api);
+
+      await repo.applyConfig(
+        deviceId: 'DVC-7',
+        configId: 'cfg-42',
+        rolloutId: 'ro-1',
+      );
+
+      expect(recorder.lastRequest?.data, {
+        'configId': 'cfg-42',
+        'rolloutId': 'ro-1',
+      });
+    });
+
     test('applied: false (200, ค่า field ไม่ผ่าน pre-flight check)', () async {
       final recorder = _RecordingDio();
       final api = ApiClient(
