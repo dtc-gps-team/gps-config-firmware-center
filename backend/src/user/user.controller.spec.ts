@@ -93,6 +93,7 @@ describe('UserController', () => {
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'admin-1',
       role: 'Admin',
+      ipAddress: null,
     });
   });
 
@@ -113,6 +114,7 @@ describe('UserController', () => {
     expect(service.update).toHaveBeenCalledWith('u1', dto, {
       id: 'admin-1',
       role: 'Admin',
+      ipAddress: null,
     });
   });
 });

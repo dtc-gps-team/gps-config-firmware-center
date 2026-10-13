@@ -475,6 +475,8 @@ describe('DeviceController test-connection (integration — real postgres + guar
         where: { auditModule: 'device', action: 'register' },
       });
       expect(logRow).not.toBeNull();
+      // IP ต้องติดมาด้วยแม้ audit จะเขียนในทรานแซกชัน (#299 + #301)
+      expect(logRow?.ipAddress).toBeTruthy();
       expect(JSON.stringify(logRow?.metadata ?? {})).not.toContain(
         'apiKeyHash',
       );
@@ -642,6 +644,8 @@ describe('DeviceController test-connection (integration — real postgres + guar
         where: { auditModule: 'device', action: 'rotate-key' },
       });
       expect(logRow).not.toBeNull();
+      // IP ต้องติดมาด้วยแม้ audit จะเขียนในทรานแซกชัน (#299 + #301)
+      expect(logRow?.ipAddress).toBeTruthy();
       expect(JSON.stringify(logRow?.metadata ?? {})).not.toContain(
         'apiKeyHash',
       );

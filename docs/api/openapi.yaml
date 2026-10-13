@@ -2042,8 +2042,12 @@ paths:
         ทุก Role ยกเว้น **ConfigEngineer/FirmwareEngineer/QAEngineer**
         (RBAC_Matrix.md §2 แถว "Audit Log" — เดิม SW ตัวเดียวก่อนแยก role
         เป็น "-" ทั้งแถว) resource `audit-logs` action Read · filter ทุกตัว optional —
-        ไม่ส่งอะไรมา = คืนทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน) · ไม่
-        join ชื่อผู้ใช้มาให้ (คืนแค่ userId ดิบ) — client resolve ชื่อเอง
+        ไม่ส่งอะไรมา = ทุกรายการ เรียงตาม createdAt desc (ใหม่สุดก่อน) · ไม่
+        join ชื่อผู้ใช้มาให้ (คืนแค่ userId ดิบ) — client resolve ชื่อเอง ·
+        **v3.49: แบ่งหน้าแบบ offset** (`page`/`pageSize`) response เปลี่ยนจาก
+        array เปล่าเป็น `AuditLogPage` (`items` + `total`) — breaking change
+        แต่ผู้เรียกมีแค่ Web (หน้า Audit Log + กิจกรรมล่าสุดบน Dashboard) แก้
+        พร้อมกันใน PR เดียว Mobile ไม่ได้เรียก endpoint นี้
       parameters:
         - in: query
           name: userId
@@ -2068,15 +2072,31 @@ paths:
             ค้นหาแบบ contains ไม่สนตัวพิมพ์เล็ก-ใหญ่ (ต่างจาก userId/auditModule
             ที่ match ตรงเป๊ะ) เช่น create, update, delete, decide, approve,
             reject, apply-config
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: หน้าที่ต้องการ (เริ่มที่ 1) เกินจำนวนหน้าที่มี = items ว่าง
+        - in: query
+          name: pageSize
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
       responses:
         "200":
-          description: รายการ AuditLog (เรียงตาม createdAt desc)
+          description: AuditLog หน้าที่ขอ (เรียงตาม createdAt desc) + จำนวนทั้งหมดที่ตรง filter
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/AuditLogEntry"
+                $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          description: page < 1, pageSize นอกช่วง 1-100 หรือไม่ใช่จำนวนเต็ม
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -2918,8 +2938,12 @@ components:
       description: >-
         แถวประวัติการทำงาน 1 รายการ (listAuditLogs — v3.19) — mutation-only
         ตาม CLAUDE.md Audit Pattern ไม่มี resourceId (ไม่ผูกกับ record ที่ถูก
-        แก้โดยตรง เก็บแค่ผู้ทำ/โมดูล/action) · ipAddress ยังไม่มี endpoint ไหน
-        ส่งมาจริงตอนนี้ (nullable ไว้รอ) · metadata เพิ่ม v3.27 (issue #205)
+        แก้โดยตรง เก็บแค่ผู้ทำ/โมดูล/action) · ipAddress บันทึกจริงแล้วทุก
+        endpoint ที่เขียน AuditLog (แก้ครั้งที่ 69 — เดิม schema มี field นี้
+        แต่ไม่เคย set ค่าเลย) ยังเป็น nullable เพราะแถวเก่าก่อนแก้ไม่มีค่า
+        และ flow อัตโนมัติบางจุด (เช่น apply-config/confirm-firmware-install
+        ที่ loop ข้ามหลายเครื่องใน campaign rollout) ไม่มี HTTP request จริง
+        ให้ดึง IP · metadata เพิ่ม v3.27 (issue #205)
       required: [id, userId, auditModule, action, createdAt]
       properties:
         id:
@@ -2949,6 +2973,28 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    AuditLogPage:
+      type: object
+      description: >-
+        response ของ listAuditLogs (v3.49) — `total` นับทุกแถวที่ตรง filter
+        (ไม่ใช่แค่ในหน้านี้) ใช้คำนวณจำนวนหน้าฝั่ง client
+      required: [items, total, page, pageSize]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 100
 
     UserSummary:
       type: object
