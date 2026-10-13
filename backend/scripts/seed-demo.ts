@@ -243,7 +243,10 @@ async function main(): Promise<void> {
   }[] = [
     {
       version: '2.4.2',
-      compat: ['GT06N', 'GT06L'],
+      // รวม GT08-4G เพราะ 2.4.2 เป็นเป้า Rollback ของ Rollout 2.5.0 บนเครื่อง
+      // GT08-4G และเป็น Firmware ที่ช่างขอ Override ถอยกลับ (DEV-0126) ถ้าไม่
+      // รองรับ API จริงจะปฏิเสธด้วย assertFirmwareInstallable (รีวิว B บน #304)
+      compat: ['GT06N', 'GT06L', 'GT08-4G'],
       approval: 'approved',
       up: ago(26),
     },
@@ -292,6 +295,18 @@ async function main(): Promise<void> {
           { version: f.version },
         );
       }
+    }
+    // แถวตัวอย่างที่ seed ไว้ก่อนแก้ compat: ปรับให้ตรง (เฉพาะแถวที่ผูกกับ
+    // objectKey ของสคริปต์นี้ ไม่แตะ Firmware ที่ผู้ใช้อัปโหลดเอง)
+    if (
+      row.objectKey.startsWith('firmware/demo-') &&
+      [...row.deviceModelCompatibility].sort().join(',') !==
+        [...f.compat].sort().join(',')
+    ) {
+      row = await prisma.firmware.update({
+        where: { id: row.id },
+        data: { deviceModelCompatibility: f.compat },
+      });
     }
     fw[f.version] = row;
   }
@@ -893,6 +908,32 @@ async function main(): Promise<void> {
     }
   }
 
+  // ซ่อมแถว Task ที่ seed ไว้ด้วยสคริปต์รุ่นแรก (Config คนละโปรโตคอลกับเครื่อง
+  // และ DEV-0124 ไม่มีงาน completed ที่ผูก Config ตรงกับคำขอ Override) ให้ตรง
+  // กับข้อมูลชุดใหม่ ใช้เงื่อนไขเจาะจงเฉพาะแถวตัวอย่าง รันซ้ำได้ ไม่แตะงานที่
+  // ผู้ใช้สร้างเอง ต้องรันก่อนสร้าง Task ตัวอย่างด้านล่าง ไม่งั้นแถวที่ย้าย
+  // เครื่องแล้วจะถูกสร้างซ้ำอีกชุด
+  const udpConfig = cfg['GT08-4G/UDP ประหยัดแบต'];
+  await prisma.task.updateMany({
+    where: {
+      title: 'ติดตั้ง Config ประหยัดแบต',
+      deviceId: 'DEV-0124',
+      configId: udpConfig.id,
+    },
+    data: { deviceId: 'DEV-0125' },
+  });
+  await prisma.task.updateMany({
+    where: {
+      title: 'ติดตั้ง Config มาตรฐาน GT08-4G',
+      deviceId: 'DEV-0124',
+      status: 'in_progress',
+    },
+    data: {
+      status: 'completed',
+      description: 'เครื่องใหม่ ติดตั้ง Config มาตรฐานเรียบร้อยแล้ว',
+    },
+  });
+
   // ---------------- Tasks ----------------
   const taskDefs: {
     title: string;
@@ -925,6 +966,46 @@ async function main(): Promise<void> {
       createdDays: 4,
     },
     {
+      title: 'ยืนยันติดตั้ง Config รายงานถี่',
+      description: 'ติดตั้งเสร็จ ตรวจรอบรายงานตำแหน่งแล้ว',
+      who: 'st',
+      status: 'completed',
+      deviceId: 'DEV-0105',
+      configName: 'GT06N/TCP รายงานถี่ (รถเย็น)',
+      dueInDays: -5,
+      createdDays: 7,
+    },
+    {
+      title: 'ยืนยันติดตั้ง Config รายงานถี่',
+      description: 'ติดตั้งเสร็จ ตรวจรอบรายงานตำแหน่งแล้ว',
+      who: 'st',
+      status: 'completed',
+      deviceId: 'DEV-0106',
+      configName: 'GT06N/TCP รายงานถี่ (รถเย็น)',
+      dueInDays: -5,
+      createdDays: 7,
+    },
+    {
+      title: 'ยืนยันติดตั้ง Config รายงานถี่',
+      description: 'ติดตั้งเสร็จ ตรวจรอบรายงานตำแหน่งแล้ว',
+      who: 'st',
+      status: 'completed',
+      deviceId: 'DEV-0107',
+      configName: 'GT06N/TCP รายงานถี่ (รถเย็น)',
+      dueInDays: -5,
+      createdDays: 7,
+    },
+    {
+      title: 'ยืนยันติดตั้ง Config รายงานถี่',
+      description: 'ติดตั้งเสร็จ ตรวจรอบรายงานตำแหน่งแล้ว',
+      who: 'st',
+      status: 'completed',
+      deviceId: 'DEV-0108',
+      configName: 'GT06N/TCP รายงานถี่ (รถเย็น)',
+      dueInDays: -5,
+      createdDays: 7,
+    },
+    {
       title: 'ตรวจสัญญาณ GPS ลานจอดใต้ดิน',
       description: 'ลูกค้าแจ้งว่าตำแหน่งหายในลานจอดใต้ดิน',
       who: 'st',
@@ -944,12 +1025,12 @@ async function main(): Promise<void> {
     },
     {
       title: 'ติดตั้ง Config มาตรฐาน GT08-4G',
-      description: 'เครื่องใหม่ยังไม่เคยลง Config',
+      description: 'เครื่องใหม่ ติดตั้ง Config มาตรฐานเรียบร้อยแล้ว',
       who: 'ot',
-      status: 'in_progress',
+      status: 'completed',
       deviceId: 'DEV-0124',
       configName: 'GT08-4G/TCP มาตรฐาน',
-      dueInDays: 1,
+      dueInDays: -2,
       createdDays: 5,
     },
     {
@@ -975,7 +1056,9 @@ async function main(): Promise<void> {
       description: 'รถจอดนาน แบตหมดบ่อย',
       who: 'st',
       status: 'completed',
-      deviceId: 'DEV-0124',
+      // DEV-0125 ใช้ UDP ส่วน DEV-0124 ใช้ TCP (assertConfigAssignable ของ API
+      // จริงต้องให้ Config ตรงโปรโตคอลของเครื่อง)
+      deviceId: 'DEV-0125',
       configName: 'GT08-4G/UDP ประหยัดแบต',
       dueInDays: -3,
       createdDays: 2,
