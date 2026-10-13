@@ -1,59 +1,47 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 
 import { ApprovalCard } from "./approval-card";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
-import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
+import type { ConfigVersion } from "@/lib/config-api";
+
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => <a href={href}>{children}</a>,
+}));
 
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
 }));
 
+const versionsState = vi.hoisted(() => ({
+  data: null as ConfigVersion[] | null,
+}));
 vi.mock("@/hooks/use-config-versions", () => ({
   useConfigVersions: () => ({
-    data: [],
-    isLoading: false,
+    data: versionsState.data,
+    isLoading: versionsState.data === null,
     error: null,
     refetch: vi.fn(),
   }),
 }));
 
-const definitionsState = vi.hoisted(() => ({
-  data: null as ConfigFieldDefinition[] | null,
-  isLoading: true,
-}));
-vi.mock("@/hooks/use-config-definitions", () => ({
-  useConfigDefinitions: () => ({
-    data: definitionsState.data,
-    isLoading: definitionsState.isLoading,
-    error: null,
-    refetch: vi.fn(),
-  }),
-}));
-
-function makeFieldDef(
-  overrides: Partial<ConfigFieldDefinition>,
-): ConfigFieldDefinition {
+function version(versionNumber: number, fields: Record<string, unknown>) {
   return {
-    id: "def-1",
-    fieldName: "FIELD",
-    dataType: "string",
-    allowedValues: [],
-    required: false,
-    unknownSpec: false,
-    description: null,
-    unit: null,
-    stOverridable: false,
-    category: null,
-    sensitive: false,
-    restartRequired: false,
-    defaultValue: null,
-    supportedModels: [],
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    ...overrides,
-  };
+    id: `v${versionNumber}`,
+    configId: "cfg-1",
+    versionNumber,
+    deviceModel: "GT06N",
+    protocol: "TCP",
+    fields,
+    approvedBy: "op-1",
+    approvedAt: "2026-01-01T00:00:00Z",
+  } satisfies ConfigVersion;
 }
 
 const item: PendingApproval = {
@@ -68,35 +56,68 @@ const item: PendingApproval = {
   suggestedApprover: null,
 };
 
-async function openDetail() {
-  const user = userEvent.setup();
-  render(<ApprovalCard item={item} canDecide={true} onDecided={vi.fn()} />);
-  await user.click(screen.getByRole("button", { name: /ดูค่า Config/ }));
+function renderCard() {
+  render(
+    <ApprovalCard
+      item={item}
+      creatorName="สมชาย ใจดี"
+      canDecide={true}
+      onDecided={vi.fn()}
+    />,
+  );
 }
 
-describe("ApprovalCard — mask ค่า sensitive ใน Approval Center", () => {
-  it("field ที่ ConfigFieldDefinition.sensitive === true ไม่ render plaintext — mirror config-detail-view.tsx", async () => {
-    definitionsState.data = [
-      makeFieldDef({ fieldName: "COMMAND_PASSWORD", sensitive: true }),
-      makeFieldDef({ fieldName: "SERVER_PORT", sensitive: false }),
-    ];
-    definitionsState.isLoading = false;
-
-    await openDetail();
-
-    expect(screen.queryByText("s3cr3t")).not.toBeInTheDocument();
-    expect(screen.getByText("••••••••")).toBeInTheDocument();
-    // field ที่ไม่ sensitive ยังคงโชว์ plaintext ปกติ
-    expect(screen.getByText("8080")).toBeInTheDocument();
+describe("ApprovalCard", () => {
+  beforeEach(() => {
+    versionsState.data = null;
   });
 
-  it("race condition — useConfigDefinitions() ยังโหลดไม่เสร็จ: ไม่ leak plaintext ของ field ไหนเลย แม้ยังไม่รู้ว่า sensitive จริงไหม", async () => {
-    definitionsState.data = null;
-    definitionsState.isLoading = true;
+  it("แสดงชื่อผู้สร้างแทน UUID", () => {
+    renderCard();
 
-    await openDetail();
+    expect(screen.getByText(/สมชาย ใจดี/)).toBeInTheDocument();
+    expect(screen.queryByText("user-1")).not.toBeInTheDocument();
+  });
 
+  it("มีลิงก์ไปหน้ารายละเอียดคำขออนุมัติของ Config นี้ และไม่โชว์ค่า Config บนการ์ดอีก", () => {
+    renderCard();
+
+    expect(
+      screen.getByRole("link", { name: /ดูรายละเอียดและส่วนที่เปลี่ยน/ }),
+    ).toHaveAttribute("href", "/approvals/config/cfg-1");
+    // ค่าทั้งหมด (รวมค่า sensitive) ย้ายไปอยู่หน้ารายละเอียดที่ mask เอง
     expect(screen.queryByText("s3cr3t")).not.toBeInTheDocument();
     expect(screen.queryByText("8080")).not.toBeInTheDocument();
+  });
+
+  it("ยังมีปุ่มอนุมัติและปฏิเสธบนการ์ดเหมือนเดิม", () => {
+    renderCard();
+
+    expect(screen.getByRole("button", { name: "อนุมัติ" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ปฏิเสธ" })).toBeInTheDocument();
+  });
+
+  it("เคยอนุมัติแล้ว: บอกจำนวนค่าที่เปลี่ยนเทียบเวอร์ชันล่าสุด (ใช้เวอร์ชันเลขมากสุด ไม่พึ่งลำดับที่ส่งมา)", () => {
+    versionsState.data = [
+      version(1, { SERVER_PORT: 1 }),
+      version(2, { COMMAND_PASSWORD: "s3cr3t", SERVER_PORT: 9000 }),
+    ];
+
+    renderCard();
+
+    // v2 -> ใหม่: SERVER_PORT แก้ 1 ค่า (COMMAND_PASSWORD เท่าเดิม)
+    expect(
+      screen.getByText("เปลี่ยนจากเวอร์ชัน 2 จำนวน 1 ค่า"),
+    ).toBeInTheDocument();
+  });
+
+  it("ยังไม่เคยอนุมัติ: บอกว่าเป็นเวอร์ชันแรก", () => {
+    versionsState.data = [];
+
+    renderCard();
+
+    expect(
+      screen.getByText("ยังไม่เคยอนุมัติ (เวอร์ชันแรก)"),
+    ).toBeInTheDocument();
   });
 });

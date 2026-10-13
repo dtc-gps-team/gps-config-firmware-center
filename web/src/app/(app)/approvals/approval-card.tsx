@@ -1,39 +1,43 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { toast } from "sonner";
+import Link from "next/link";
 
-import { useAuth } from "@/components/auth/auth-provider";
-import { ApiError } from "@/lib/api";
-import { simulateConfig, type SimulationResult } from "@/lib/config-api";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { EntityTypeTag, StalePendingBadge, StatusPill } from "@/lib/status-pill";
+import { EntityTypeTag, StalePendingBadge } from "@/lib/status-pill";
 import { formatDateTime, stalePendingLabel } from "@/lib/format-date";
 import { useConfigVersions } from "@/hooks/use-config-versions";
-import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
-import { SensitiveValue } from "@/components/sensitive-value";
+import { diffConfigFields } from "@/lib/config-diff";
 import { ApprovalActions } from "./approval-actions";
-
-function fieldValueText(value: unknown): string {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
-}
 
 export function ApprovalCard({
   item,
+  creatorName,
   canDecide,
   onDecided,
 }: {
   item: PendingApproval;
+  /** ชื่อผู้สร้างที่ resolve แล้ว (หน้าคิว resolve ครั้งเดียวแล้วส่งลงมา กันยิง
+   * GET /users ซ้ำต่อการ์ด) */
+  creatorName: string;
   canDecide: boolean;
   onDecided: (action: "approve" | "reject") => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const versions = useConfigVersions(item.id);
   const staleLabel = stalePendingLabel(item.queuedAt);
+  // เทียบกับเวอร์ชันที่อนุมัติล่าสุดเพื่อบอกจำนวนที่เปลี่ยนบนการ์ด · ยังโหลด
+  // ไม่เสร็จหรือโหลดพลาดก็แค่ไม่โชว์ตัวเลข ไม่กระทบปุ่มอนุมัติ
+  const latest = (versions.data ?? []).reduce<
+    NonNullable<typeof versions.data>[number] | null
+  >((best, v) => (best && best.versionNumber >= v.versionNumber ? best : v), null);
+  const changeSummary =
+    versions.data === null
+      ? null
+      : latest
+        ? `เปลี่ยนจากเวอร์ชัน ${latest.versionNumber} จำนวน ${
+            diffConfigFields(latest.fields, item.fields).changes.length
+          } ค่า`
+        : "ยังไม่เคยอนุมัติ (เวอร์ชันแรก)";
 
   return (
     <Card
@@ -55,9 +59,7 @@ export function ApprovalCard({
             <p className="text-sm text-muted-foreground">{item.description}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            ผู้สร้าง{" "}
-            <span className="font-mono">{item.createdBy}</span> · เข้าคิว{" "}
-            {formatDateTime(item.queuedAt)}
+            ผู้สร้าง {creatorName} เข้าคิว {formatDateTime(item.queuedAt)}
           </p>
           {item.suggestedApprover && (
             <span className="mt-1 inline-flex w-fit items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-300">
@@ -73,124 +75,20 @@ export function ApprovalCard({
         />
       </div>
 
-      <div data-slot="card-footer" className="border-t px-4 pt-2">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      <div
+        data-slot="card-footer"
+        className="flex flex-wrap items-center justify-between gap-2 border-t px-4 pt-2"
+      >
+        <span className="text-xs text-muted-foreground">
+          {changeSummary ?? `${Object.keys(item.fields).length} ค่า`}
+        </span>
+        <Link
+          href={`/approvals/config/${item.id}`}
+          className="text-sm text-primary underline-offset-2 hover:underline"
         >
-          {expanded ? (
-            <ChevronUpIcon className="size-4" />
-          ) : (
-            <ChevronDownIcon className="size-4" />
-          )}
-          ดูค่า Config ({Object.keys(item.fields).length}) · ทดสอบซ้ำ
-        </button>
-        {expanded && <ApprovalDetail item={item} />}
+          ดูรายละเอียดและส่วนที่เปลี่ยน →
+        </Link>
       </div>
     </Card>
-  );
-}
-
-function ApprovalDetail({ item }: { item: PendingApproval }) {
-  const { session } = useAuth();
-  const versions = useConfigVersions(item.id);
-  const definitions = useConfigDefinitions();
-  const [sim, setSim] = useState<SimulationResult | null>(null);
-  const [simError, setSimError] = useState<string | null>(null);
-  const [simRunning, setSimRunning] = useState(false);
-
-  const latestVersion = versions.data?.[0]?.versionNumber ?? null;
-  const fieldEntries = Object.entries(item.fields);
-  const definitionsReady = !definitions.isLoading;
-  const sensitiveFieldNames = useMemo(() => {
-    const set = new Set<string>();
-    for (const d of definitions.data ?? []) {
-      if (d.sensitive) set.add(d.fieldName);
-    }
-    return set;
-  }, [definitions.data]);
-  /** mirror config-detail-view.tsx — ก่อน definitions โหลดเสร็จ treat ทุก
-   * field เป็น sensitive ไว้ก่อน กัน plaintext หลุดช่วงสั้นๆ ระหว่างโหลด */
-  const effectiveSensitiveFieldNames = useMemo(() => {
-    if (!definitionsReady) {
-      return new Set(Object.keys(item.fields));
-    }
-    return sensitiveFieldNames;
-  }, [definitionsReady, sensitiveFieldNames, item.fields]);
-
-  async function reSimulate() {
-    if (!session?.accessToken) return;
-    setSimRunning(true);
-    setSimError(null);
-    setSim(null);
-    try {
-      setSim(await simulateConfig(session.accessToken, item.id));
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : "ทดสอบไม่สำเร็จ";
-      setSimError(message);
-      toast.error(message);
-    } finally {
-      setSimRunning(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 pt-3 pb-1">
-      <p className="text-xs text-muted-foreground">
-        {latestVersion != null
-          ? `อนุมัติแล้วจะเป็นเวอร์ชันที่ ${latestVersion + 1} (เวอร์ชันล่าสุด ${latestVersion})`
-          : "อนุมัติแล้วจะเป็นเวอร์ชันแรก"}
-      </p>
-
-      {fieldEntries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">ไม่มีพารามิเตอร์</p>
-      ) : (
-        <div className="max-h-64 divide-y overflow-y-auto rounded-lg border">
-          {fieldEntries.map(([key, value]) => (
-            <div
-              key={key}
-              className="flex justify-between gap-4 px-3 py-1.5 text-xs"
-            >
-              <span className="shrink-0 font-mono text-muted-foreground">
-                {key}
-              </span>
-              {effectiveSensitiveFieldNames.has(key) ? (
-                <SensitiveValue value={value} />
-              ) : (
-                <span className="min-w-0 font-mono break-words">
-                  {fieldValueText(value)}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={simRunning}
-          onClick={() => void reSimulate()}
-        >
-          {simRunning ? "กำลังทดสอบ…" : "ทดสอบซ้ำ"}
-        </Button>
-        {sim && (
-          <StatusPill tone={sim.passed ? "success" : "danger"}>
-            {sim.passed ? "ผ่าน" : "ไม่ผ่าน"}
-          </StatusPill>
-        )}
-        {simError && <span className="text-xs text-destructive">{simError}</span>}
-      </div>
-
-      {sim && sim.details.length > 0 && (
-        <ul className="list-disc pl-5 text-xs text-muted-foreground">
-          {sim.details.map((d, i) => (
-            <li key={i}>{d}</li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

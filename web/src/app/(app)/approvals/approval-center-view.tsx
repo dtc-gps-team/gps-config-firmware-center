@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
+import { useUserNames } from "@/hooks/use-user-names";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
 import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
@@ -42,6 +43,7 @@ export function ApprovalCenterView() {
     ? getTokenSubject(session.accessToken)
     : null;
   const { data, isLoading, error, refetch } = usePendingApprovals();
+  const { resolveName } = useUserNames();
   const rolloutsQuery = usePendingCampaignRollouts();
   const {
     data: overrideData,
@@ -188,6 +190,7 @@ export function ApprovalCenterView() {
                 <ApprovalCard
                   key={item.id}
                   item={item}
+                  creatorName={resolveName(item.createdBy)}
                   canDecide={canDecide}
                   onDecided={(action) => {
                     setNotice(
