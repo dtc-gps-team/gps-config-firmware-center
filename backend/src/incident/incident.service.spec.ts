@@ -328,6 +328,7 @@ describe('IncidentService', () => {
           auditModule: 'incident',
           action: 'report',
           metadata: { incidentId: 'inc-new', deviceId: 'DTC-0001' },
+          ipAddress: null,
         },
       });
     });
@@ -523,6 +524,7 @@ describe('IncidentService', () => {
           auditModule: 'incident',
           action: 'decide',
           metadata: { incidentId: 'inc-1', outcome: 'resolve' },
+          ipAddress: null,
         },
       });
     });

@@ -25,7 +25,7 @@ import { DeviceService } from './device.service';
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
 function toActor(req: AuthenticatedRequest): ActingUser {
-  return { id: req.user.sub, role: req.user.role };
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
 }
 
 // Firmware Override รายเครื่อง — คิวอนุมัติของ Operation (Sprint 3 แถวที่ 24)

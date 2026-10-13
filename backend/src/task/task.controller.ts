@@ -23,7 +23,7 @@ import { ActingUser, TaskEventView, TaskService } from './task.service';
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
 function toActor(req: AuthenticatedRequest): ActingUser {
-  return { id: req.user.sub, role: req.user.role };
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
 }
 
 @UseGuards(JwtAuthGuard)
