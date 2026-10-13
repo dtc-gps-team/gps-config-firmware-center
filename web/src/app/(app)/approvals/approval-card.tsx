@@ -39,10 +39,12 @@ export function ApprovalCard({
           } ค่า`
         : "ยังไม่เคยอนุมัติ (เวอร์ชันแรก)";
 
+  // โครงเดียวกับ CampaignRolloutApprovalCard: ลิงก์ "ดูรายละเอียด" บนขวา
+  // ปุ่มตัดสินใจอยู่ใต้ข้อมูล การ์ดในคิวเดียวกันจะได้หน้าตาไปทางเดียวกัน
   return (
     <Card
       className={
-        staleLabel ? "border-l-4 border-l-amber-500" : undefined
+        staleLabel ? "gap-3 border-l-4 border-l-amber-500" : "gap-3"
       }
     >
       <div className="flex flex-wrap items-start justify-between gap-4 px-4">
@@ -61,33 +63,30 @@ export function ApprovalCard({
           <p className="text-xs text-muted-foreground">
             ผู้สร้าง {creatorName} เข้าคิว {formatDateTime(item.queuedAt)}
           </p>
+          <p className="text-xs text-muted-foreground">
+            {changeSummary ?? `${Object.keys(item.fields).length} ค่า`}
+          </p>
           {item.suggestedApprover && (
             <span className="mt-1 inline-flex w-fit items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950 dark:text-sky-300">
               เจาะจงถึง: {item.suggestedApprover.fullName}
             </span>
           )}
         </div>
+        <Link
+          href={`/approvals/config/${item.id}`}
+          className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          ดูรายละเอียด →
+        </Link>
+      </div>
+
+      <div className="px-4">
         <ApprovalActions
           configId={item.id}
           configName={item.name}
           canDecide={canDecide}
           onDecided={onDecided}
         />
-      </div>
-
-      <div
-        data-slot="card-footer"
-        className="flex flex-wrap items-center justify-between gap-2 border-t px-4 pt-2"
-      >
-        <span className="text-xs text-muted-foreground">
-          {changeSummary ?? `${Object.keys(item.fields).length} ค่า`}
-        </span>
-        <Link
-          href={`/approvals/config/${item.id}`}
-          className="text-sm text-primary underline-offset-2 hover:underline"
-        >
-          ดูรายละเอียดและส่วนที่เปลี่ยน →
-        </Link>
       </div>
     </Card>
   );

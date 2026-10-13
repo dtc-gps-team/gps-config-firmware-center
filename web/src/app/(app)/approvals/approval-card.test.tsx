@@ -83,7 +83,7 @@ describe("ApprovalCard", () => {
     renderCard();
 
     expect(
-      screen.getByRole("link", { name: /ดูรายละเอียดและส่วนที่เปลี่ยน/ }),
+      screen.getByRole("link", { name: "ดูรายละเอียด →" }),
     ).toHaveAttribute("href", "/approvals/config/cfg-1");
     // ค่าทั้งหมด (รวมค่า sensitive) ย้ายไปอยู่หน้ารายละเอียดที่ mask เอง
     expect(screen.queryByText("s3cr3t")).not.toBeInTheDocument();
