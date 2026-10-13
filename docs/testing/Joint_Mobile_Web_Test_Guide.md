@@ -33,6 +33,7 @@
   (ถ้าเพิ่งสลับ branch มา ต้อง `prisma generate` ใหม่เสมอ ไม่งั้น backend จะ build ไม่ผ่านเพราะ Prisma Client ไม่ตรงกับ schema)
 - [ ] มี user ทดสอบครบ (`npx prisma db seed` ถ้ายังไม่เคยรัน)
 - [ ] มีข้อมูลพอให้ทดสอบ อย่างน้อย: อุปกรณ์ที่ติดตั้งแล้ว, Config ที่ approved สำหรับรุ่นของอุปกรณ์นั้น, Firmware ที่ approved, งาน (Task) ที่มอบให้ `st.test` อย่างน้อย 1 งานที่ผูก Config ไว้
+  (รัน `cd backend && npm run seed:demo` หลัง `prisma db seed` จะได้ข้อมูลตัวอย่างชุดเดียวกันทั้งสองเครื่อง: อุปกรณ์ DEV-0101 ถึง DEV-0140 ที่มี IMEI, Serial และ Blackbox ID ครบ, Config, Campaign, Rollout, Incident, Task และคำขอ Override รันซ้ำได้ไม่สร้างซ้ำ)
 - [ ] `cd backend && npm run start:dev` เห็นข้อความ `Nest application successfully started`
 
 ### 2.3 เครื่องที่รันเว็บ (A)

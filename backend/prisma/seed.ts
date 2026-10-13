@@ -948,6 +948,12 @@ async function main() {
     deviceModel: string;
     protocol: string;
     status: 'registered' | 'installed';
+    // IMEI / Serial / Blackbox ID — บังคับกรอกตอนลงทะเบียนตามมติ A กับ B
+    // (13 ต.ค. 2569) seed ให้ครบด้วย ไม่งั้นหน้า Device Detail ของเครื่อง seed
+    // จะขึ้นว่างทั้งสามช่อง ทำให้ดูเหมือนข้อมูลหาย ค่าสมมติล้วน ไม่ใช่เครื่องจริง
+    imei: string;
+    serialNumber: string;
+    blackboxId: string;
     // ชื่อบริษัทสมมติ (ดู demoCustomers ด้านล่าง) — undefined = ยังไม่ผูกลูกค้า
     // (docs/12_CustomerScope_Proposal.md เฟส B, PR #127) ตั้งชื่อเองล้วนๆ
     // **ห้ามใช้ชื่อ/ข้อมูลจริงจาก schema DMS เดิมที่พี่เลี้ยงให้มาเด็ดขาด**
@@ -957,6 +963,9 @@ async function main() {
     {
       deviceId: 'DEV-0001',
       simNumber: '0810000001',
+      imei: '860000000000001',
+      serialNumber: 'SNSEED0001',
+      blackboxId: '7000000001',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
@@ -965,6 +974,9 @@ async function main() {
     {
       deviceId: 'DEV-0002',
       simNumber: '0810000002',
+      imei: '860000000000002',
+      serialNumber: 'SNSEED0002',
+      blackboxId: '7000000002',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
@@ -973,6 +985,9 @@ async function main() {
     {
       deviceId: 'DEV-0003',
       simNumber: '0810000003',
+      imei: '860000000000003',
+      serialNumber: 'SNSEED0003',
+      blackboxId: '7000000003',
       deviceModel: 'GT06L',
       protocol: 'TCP',
       status: 'installed',
@@ -981,6 +996,9 @@ async function main() {
     {
       deviceId: 'DEV-0004',
       simNumber: '0810000004',
+      imei: '860000000000004',
+      serialNumber: 'SNSEED0004',
+      blackboxId: '7000000004',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'installed',
@@ -990,6 +1008,9 @@ async function main() {
     {
       deviceId: 'DEV-0009',
       simNumber: '0810000009',
+      imei: '860000000000009',
+      serialNumber: 'SNSEED0009',
+      blackboxId: '7000000009',
       deviceModel: 'GT06N',
       protocol: 'TCP',
       status: 'registered',
@@ -1059,7 +1080,14 @@ async function main() {
       // update ด้วย เพื่อ backfill modelId ให้แถวที่เคย seed ไว้ก่อนรอบนี้
       // (mirror pattern เดียวกับที่ configFieldDefinitions backfill unit/
       // stOverridable/category/sensitive/restartRequired ด้านบน)
-      update: { modelId: model.id },
+      // backfill IMEI/Serial/Blackbox ID ให้เครื่อง seed ที่สร้างไว้ก่อนมีกติกา
+      // บังคับกรอก (13 ต.ค. 2569) — ค่าของ seed เอง ไม่ใช่ข้อมูลที่ผู้ใช้กรอก
+      update: {
+        modelId: model.id,
+        imei: d.imei,
+        serialNumber: d.serialNumber,
+        blackboxId: d.blackboxId,
+      },
       create: {
         ...d,
         installedAt: d.status === 'installed' ? new Date() : null,
