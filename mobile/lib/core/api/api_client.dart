@@ -341,16 +341,46 @@ class ApiClient {
   /// validation (`applied: false` ใน response ไม่ใช่ HTTP error — ดู
   /// [ConfigApplyResult]) ส่วน 404/409 คือ error จริง (ไม่พบ device/config,
   /// device ยังไม่ installed, config ยังไม่อนุมัติ, หรือรุ่น/โปรโตคอลไม่ตรง).
+  ///
+  /// [rolloutId] (issue #265 / backend #243) = `DeviceStatus.configRolloutId` —
+  /// ระบุว่าคำขอนี้ตอบสนอง `CampaignRollout` ไหน กัน backend match ผิดรอบ
+  /// เมื่ออุปกรณ์เป็น pending target ของ 2 รอบพร้อมกัน · ส่งเฉพาะตอนมีค่า
+  /// (ไม่ส่ง key นี้เลยตอนเป็น `null` — backend ใช้วิธี match แบบเดิม)
   Future<ConfigApplyResult> applyConfigToDevice({
     required String deviceId,
     required String configId,
+    String? rolloutId,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/devices/$deviceId/apply-config',
-        data: {'configId': configId},
+        data: {'configId': configId, 'rolloutId': ?rolloutId},
       ),
       ConfigApplyResult.fromJson,
+    );
+  }
+
+  /// `POST /devices/{deviceId}/confirm-firmware-install` (issue #261) — ST/OT
+  /// ยืนยันว่าติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · **ไม่ได้ส่งอะไรไปที่
+  /// อุปกรณ์** แค่บันทึก AuditLog (ไม่คำนวณ `Firmware.deviceUpdateStatus`) ·
+  /// 409 หลายกรณี: Device ยังไม่ installed / Firmware ยังไม่ stored หรือ
+  /// approved / ไม่รองรับรุ่น / ไม่ตรงแผน Campaign Rollout และไม่มี Firmware
+  /// Override ที่ approved และยังไม่ถูกใช้ (override ใช้ได้ครั้งเดียว) — ดู
+  /// `ApiException.message` ที่ backend ส่งมา
+  ///
+  /// [rolloutId] = `DeviceStatus.firmwareRolloutId` (issue #265) — ส่งเฉพาะ
+  /// ตอนมีค่า เหมือน [applyConfigToDevice]
+  Future<ConfirmFirmwareInstallResult> confirmFirmwareInstall({
+    required String deviceId,
+    required String firmwareId,
+    String? rolloutId,
+  }) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/devices/$deviceId/confirm-firmware-install',
+        data: {'firmwareId': firmwareId, 'rolloutId': ?rolloutId},
+      ),
+      ConfirmFirmwareInstallResult.fromJson,
     );
   }
 

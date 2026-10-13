@@ -928,6 +928,67 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(targetX.status).toBe('pending');
     });
 
+    it('issue #268 — เครื่องค้าง pending ใน 2 rollout คนละ configId: rolloutId จาก GET /status เป็นของรอบล่าสุด (B) แต่ช่างส่ง configId ของรอบเก่า (A) -> target ของ A ถูกบันทึกผลจริง (fallback match ด้วย payload) ไม่ค้าง pending เงียบๆ และ target ของ B ไม่ถูกแตะ', async () => {
+      await makeDevice('AC-MISMATCH-268', 'installed');
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      await grant('ST', ActionType.Read, 'devices');
+      const token = tokenFor(stUser.id, 'ST');
+      const configA = await makeConfig('approved');
+      const configB = await makeConfig('approved');
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+
+      // รอบ A (เก่ากว่า) ใช้ configA · รอบ B (ใหม่กว่า) ใช้ configB — เครื่องเดียวกัน
+      // เป็น pending target ของทั้งคู่ GET /status คืน target ล่าสุดแค่รายการเดียว
+      const makeRollout = async (configId: string, name: string) => {
+        const campaign = await prisma.campaign.create({
+          data: { name, createdBy: opUser.id },
+        });
+        const rollout = await prisma.campaignRollout.create({
+          data: {
+            campaignId: campaign.id,
+            payloadType: 'Config',
+            configId,
+            status: 'active',
+            targetCount: 1,
+            createdBy: opUser.id,
+          },
+        });
+        await prisma.campaignRolloutTarget.create({
+          data: { rolloutId: rollout.id, deviceId: 'AC-MISMATCH-268' },
+        });
+        return rollout;
+      };
+      const rolloutA = await makeRollout(configA, 'รอบ A (เก่า)');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const rolloutB = await makeRollout(configB, 'รอบ B (ล่าสุด)');
+
+      // เงื่อนไขของบั๊ก: status ชี้รอบ B
+      const status = await request(app.getHttpServer())
+        .get('/api/v1/devices/AC-MISMATCH-268/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((status.body as { configRolloutId: string }).configRolloutId).toBe(
+        rolloutB.id,
+      );
+
+      // Mobile ส่ง rolloutId ของรอบ B คู่กับ configId ของรอบ A (Task ผูก Config A)
+      await request(app.getHttpServer())
+        .post('/api/v1/devices/AC-MISMATCH-268/apply-config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ configId: configA, rolloutId: rolloutB.id })
+        .expect(200);
+
+      const targetA = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutA.id, deviceId: 'AC-MISMATCH-268' },
+      });
+      expect(targetA.status).toBe('success');
+      const targetB = await prisma.campaignRolloutTarget.findFirstOrThrow({
+        where: { rolloutId: rolloutB.id, deviceId: 'AC-MISMATCH-268' },
+      });
+      expect(targetB.status).toBe('pending');
+    });
+
     it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> ใช้ค่าที่ override แล้วจริง ไม่ใช่ base เดิม (issue #223/#226)', async () => {
       await makeDevice('AC-OVERRIDE-APPROVED', 'installed');
       const token = await stToken();

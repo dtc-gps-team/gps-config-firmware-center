@@ -14,6 +14,7 @@ abstract class ConfirmInstallRepository {
   Future<ConfigApplyResult> applyConfig({
     required String deviceId,
     required String configId,
+    String? rolloutId,
   });
 }
 
@@ -31,7 +32,12 @@ class ApiConfirmInstallRepository implements ConfirmInstallRepository {
   Future<ConfigApplyResult> applyConfig({
     required String deviceId,
     required String configId,
-  }) => _api.applyConfigToDevice(deviceId: deviceId, configId: configId);
+    String? rolloutId,
+  }) => _api.applyConfigToDevice(
+    deviceId: deviceId,
+    configId: configId,
+    rolloutId: rolloutId,
+  );
 }
 
 final confirmInstallRepositoryProvider = Provider<ConfirmInstallRepository>(
