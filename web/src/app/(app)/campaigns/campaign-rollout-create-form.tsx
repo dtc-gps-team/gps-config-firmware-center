@@ -305,7 +305,13 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-config" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
+                <SelectValue placeholder="- เลือก -">
+                  {() =>
+                    selectedConfig
+                      ? `${selectedConfig.name} (${selectedConfig.deviceModel}/${selectedConfig.protocol})`
+                      : "- เลือก -"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {eligibleConfigs.map((c: Config) => (
@@ -332,7 +338,13 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-firmware" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
+                <SelectValue placeholder="- เลือก -">
+                  {() =>
+                    selectedFirmware
+                      ? `v${selectedFirmware.version}: รองรับ ${selectedFirmware.deviceModelCompatibility.join(", ")}`
+                      : "- เลือก -"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {eligibleFirmware.map((f: Firmware) => (

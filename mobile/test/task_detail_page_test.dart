@@ -9,6 +9,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -88,15 +89,18 @@ class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
   int calls = 0;
   String? lastDeviceId;
   String? lastConfigId;
+  String? lastRolloutId;
 
   @override
   Future<ConfigApplyResult> applyConfig({
     required String deviceId,
     required String configId,
+    String? rolloutId,
   }) async {
     calls++;
     lastDeviceId = deviceId;
     lastConfigId = configId;
+    lastRolloutId = rolloutId;
     if (error != null) throw error!;
     return result ??
         ConfigApplyResult(
@@ -107,12 +111,36 @@ class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
   }
 }
 
+class _FakeDeviceStatusRepository implements DeviceStatusRepository {
+  _FakeDeviceStatusRepository({
+    this.configStatus = DevicePayloadStatus.unknown,
+    this.configRolloutId,
+    this.error,
+  });
+
+  final DevicePayloadStatus configStatus;
+  final String? configRolloutId;
+  final Object? error;
+
+  @override
+  Future<DeviceStatus> getDeviceStatus(String deviceId) async {
+    if (error != null) throw error!;
+    return DeviceStatus(
+      deviceId: deviceId,
+      configStatus: configStatus,
+      firmwareStatus: DevicePayloadStatus.unknown,
+      configRolloutId: configRolloutId,
+    );
+  }
+}
+
 Future<void> _pump(
   WidgetTester tester, {
   required TaskRepository repo,
   UserRole? role = UserRole.st,
   String taskId = 't1',
   ConfirmInstallRepository? confirmInstallRepo,
+  DeviceStatusRepository? statusRepo,
   Set<String> pendingIds = const {},
 }) async {
   await tester.pumpWidget(
@@ -137,6 +165,9 @@ Future<void> _pump(
         ),
         confirmInstallRepositoryProvider.overrideWithValue(
           confirmInstallRepo ?? _FakeConfirmInstallRepository(),
+        ),
+        deviceStatusRepositoryProvider.overrideWithValue(
+          statusRepo ?? _FakeDeviceStatusRepository(),
         ),
       ],
       child: MaterialApp(home: TaskDetailPage(taskId: taskId)),
@@ -546,6 +577,71 @@ void main() {
         );
       },
     );
+  });
+
+  group('Confirm Install — rolloutId (issue #265)', () {
+    Future<_FakeConfirmInstallRepository> pressConfirm(
+      WidgetTester tester,
+      DeviceStatusRepository statusRepo,
+    ) async {
+      final confirmRepo = _FakeConfirmInstallRepository();
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(
+            status: TaskStatus.inProgress,
+            configId: 'cfg-1',
+            deviceId: 'DVC-1',
+          ),
+        ),
+        role: UserRole.st,
+        confirmInstallRepo: confirmRepo,
+        statusRepo: statusRepo,
+      );
+      await tester.tap(_confirmInstallButton);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      return confirmRepo;
+    }
+
+    testWidgets('configStatus pending + มี configRolloutId -> ส่ง rolloutId', (
+      tester,
+    ) async {
+      final repo = await pressConfirm(
+        tester,
+        _FakeDeviceStatusRepository(
+          configStatus: DevicePayloadStatus.pending,
+          configRolloutId: 'rollout-9',
+        ),
+      );
+      expect(repo.calls, 1);
+      expect(repo.lastRolloutId, 'rollout-9');
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('ไม่ pending (ไม่มี rollout) -> ไม่ส่ง rolloutId', (
+      tester,
+    ) async {
+      final repo = await pressConfirm(tester, _FakeDeviceStatusRepository());
+      expect(repo.calls, 1);
+      expect(repo.lastRolloutId, isNull);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('โหลดสถานะไม่สำเร็จ -> ยังส่ง Config ได้ โดยไม่มี rolloutId', (
+      tester,
+    ) async {
+      final repo = await pressConfirm(
+        tester,
+        _FakeDeviceStatusRepository(
+          error: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
+        ),
+      );
+      expect(repo.calls, 1);
+      expect(repo.lastRolloutId, isNull);
+      await tester.pump(const Duration(seconds: 5));
+    });
   });
 
   group('Bottom action bar', () {
