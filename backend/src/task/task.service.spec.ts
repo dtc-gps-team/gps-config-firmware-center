@@ -69,7 +69,11 @@ describe('TaskService', () => {
   let device: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
   let notification: { send: jest.Mock };
-  let taskEvent: { create: jest.Mock; findMany: jest.Mock };
+  let taskEvent: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    findFirst: jest.Mock;
+  };
   // `SELECT ... FOR UPDATE` ของ lockTask() — default คืนแถวของ sampleTask
   // (สถานะ pending) เทสไหนต้องการสถานะก่อนหน้าอื่นค่อย mock ทับ
   let queryRaw: jest.Mock;
@@ -90,6 +94,8 @@ describe('TaskService', () => {
     taskEvent = {
       create: jest.fn().mockResolvedValue(undefined),
       findMany: jest.fn(),
+      // event เปลี่ยนสถานะล่าสุด (ขอบล่างของ changedAt) — default ไม่มี
+      findFirst: jest.fn().mockResolvedValue(null),
     };
     queryRaw = jest
       .fn()
@@ -969,6 +975,74 @@ describe('TaskService', () => {
           ),
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(task.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('ST: changedAt ย้อนไปก่อน event เปลี่ยนสถานะล่าสุด -> ปัดขึ้นเป็นเวลาของ event นั้น (Operation เปลี่ยนคั่นระหว่างช่างออฟไลน์ — รีวิว A บน #302)', async () => {
+        ownerUpdates('completed');
+        queryRaw.mockResolvedValue([
+          { status: 'in_progress', createdAt: sampleTask.createdAt },
+        ]);
+        const operationChangedAt = new Date('2026-01-05T11:00:00.000Z');
+        taskEvent.findFirst.mockResolvedValue({
+          changedAt: operationChangedAt,
+        });
+
+        await service.update(
+          sampleTask.id,
+          { status: 'completed', changedAt: '2026-01-05T10:30:00.000Z' },
+          owner,
+        );
+
+        expect(taskEvent.findFirst).toHaveBeenCalledWith({
+          where: { taskId: sampleTask.id, toStatus: { not: null } },
+          orderBy: { changedAt: 'desc' },
+          select: { changedAt: true },
+        });
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            fromStatus: 'in_progress',
+            toStatus: 'completed',
+            changedAt: operationChangedAt,
+          }) as unknown,
+        });
+      });
+
+      it('ST: changedAt หลัง event ล่าสุด -> ใช้เวลาที่ client ส่งมาตามเดิม', async () => {
+        ownerUpdates('in_progress');
+        taskEvent.findFirst.mockResolvedValue({
+          changedAt: new Date('2026-01-02T00:00:00.000Z'),
+        });
+
+        await service.update(
+          sampleTask.id,
+          { status: 'in_progress', changedAt: '2026-01-03T00:00:00.000Z' },
+          owner,
+        );
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            changedAt: new Date('2026-01-03T00:00:00.000Z'),
+          }) as unknown,
+        });
+      });
+
+      it('Operation ส่ง changedAt ย้อนหลังมา -> ไม่ใช้ ใช้เวลา server เสมอ (Web ไม่มีคิว offline — รีวิว A บน #302)', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+        const before = Date.now();
+
+        await service.update(
+          sampleTask.id,
+          { status: 'cancelled', changedAt: '2026-01-01T00:00:01.000Z' },
+          operation,
+        );
+
+        const data = (
+          taskEvent.create.mock.calls[0] as [{ data: { changedAt: Date } }]
+        )[0].data;
+        expect(data.changedAt.getTime()).toBeGreaterThanOrEqual(before);
+        expect(data.changedAt.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(taskEvent.findFirst).not.toHaveBeenCalled();
       });
     });
 

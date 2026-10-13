@@ -715,6 +715,74 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       ]);
     });
 
+    // รีวิว A บน #302 (thread task.service.ts:137) — เคสที่ยกมาเป๊ะๆ: ช่าง
+    // กด in_progress แล้ว completed ตอนออฟไลน์ ระหว่างนั้น Operation เปลี่ยน
+    // pending -> in_progress บน Web แล้วคิวของช่างค่อย sync ทีหลัง
+    it('ช่างออฟไลน์ + Operation เปลี่ยนสถานะคั่นกลาง -> event ของช่างที่ sync ทีหลังไม่ย้อนไปอยู่ก่อน event ของ Operation (from→to ต่อกันเสมอ)', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const hour = 60 * 60 * 1000;
+      const tappedInProgress = new Date(Date.now() - 2 * hour).toISOString();
+      const tappedCompleted = new Date(Date.now() - 1.5 * hour).toISOString();
+
+      // 11:00 — Operation เปลี่ยน pending -> in_progress บน Web
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .send({ status: 'in_progress' })
+        .expect(200);
+      // 12:00 — คิวของช่าง sync: action แรกสถานะเท่าเดิม (ไม่เกิด event)
+      // action ที่สองเกิด event in_progress -> completed เวลาที่กดจริงเก่ากว่า
+      const stToken = `Bearer ${tokenFor(stUser.id, 'ST')}`;
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', stToken)
+        .send({ status: 'in_progress', changedAt: tappedInProgress })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', stToken)
+        .send({ status: 'completed', changedAt: tappedCompleted })
+        .expect(200);
+
+      const events = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(events.map((e) => [e.fromStatus, e.toStatus])).toEqual([
+        ['pending', 'in_progress'],
+        ['in_progress', 'completed'],
+      ]);
+      expect(events[0].changedBy).toBe(opUser.id);
+      expect(events[1].changedBy).toBe(stUser.id);
+      // ปัดขึ้นเป็นเวลาของ event Operation — ไม่ใช่เวลาที่ช่างกด (1.5 ชม.ก่อน)
+      expect(events[1].changedAt).toBe(events[0].changedAt);
+      expect(new Date(events[1].changedAt).getTime()).toBeGreaterThan(
+        new Date(tappedCompleted).getTime(),
+      );
+    });
+
+    // รีวิว A บน #302 (thread task.service.ts:429)
+    it('Operation ส่ง changedAt ย้อนหลังมา -> ไม่ใช้ event ได้เวลา server เสมอ', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const before = Date.now();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .send({
+          status: 'cancelled',
+          changedAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        })
+        .expect(200);
+
+      const [event] = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(event.toStatus).toBe('cancelled');
+      expect(new Date(event.changedAt).getTime()).toBeGreaterThanOrEqual(
+        before - 1000,
+      );
+    });
+
     describe('GET /tasks/:id/events สิทธิ์ (กฎเดียวกับ GET /tasks/:id)', () => {
       it('ไม่ส่ง token -> 401', async () => {
         const { task } = await seedOwnTask();

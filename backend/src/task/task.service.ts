@@ -119,8 +119,9 @@ function toDbDate(value: string | null | undefined): Date | null | undefined {
  * `TaskEvent.changedAt` ของการเปลี่ยนสถานะ — ใช้เวลาที่ client ส่งมา (เวลาที่
  * ช่างกดจริงตอนเข้าคิว offline, issue #296) ถ้ามี · เวลาในอนาคต (นาฬิกาเครื่อง
  * เดินเร็ว) ปัดลงเป็นเวลา server แทนการตอบ 400 เพื่อไม่ให้คิว offline ของ
- * Mobile ถูกปฏิเสธถาวรเพราะนาฬิกาเพี้ยน · เวลาก่อนงานถูกสร้างปัดขึ้นเป็น
- * `Task.createdAt` กัน timeline เรียงผิดว่าเปลี่ยนสถานะก่อนมีงาน
+ * Mobile ถูกปฏิเสธถาวรเพราะนาฬิกาเพี้ยน · เวลาก่อน `notBefore` ปัดขึ้นเป็น
+ * `notBefore` (ผู้เรียกส่ง `max(Task.createdAt, event เปลี่ยนสถานะล่าสุด)` —
+ * ดู `TaskService.statusChangeLowerBound`) กัน timeline เรียงผิด
  */
 export function resolveChangedAt(
   requested: string | undefined,
@@ -409,6 +410,10 @@ export class TaskService {
   /**
    * เขียน event เปลี่ยนสถานะ — เฉพาะเมื่อ PATCH นี้ส่ง status มาและเปลี่ยนจริง
    * (ส่งสถานะเดิมซ้ำ เช่น offline queue ส่งซ้ำ ไม่เกิด event)
+   *
+   * `changedAt` จาก client ใช้เฉพาะ ST/OT (มาจากคิว offline ของ Mobile) —
+   * Operation ใช้เวลา server เสมอแม้ส่งมา เพราะ Web ไม่มีคิว offline ไม่มี
+   * เหตุผลต้องส่งเวลาเอง (รีวิว A บน PR #302)
    */
   private async recordStatusChange(
     tx: Prisma.TransactionClient,
@@ -420,15 +425,45 @@ export class TaskService {
     if (dto.status === undefined || task.status === previous.status) {
       return;
     }
+    const changedAt = SELF_SCOPED_ROLES.includes(actor.role)
+      ? resolveChangedAt(
+          dto.changedAt,
+          await this.statusChangeLowerBound(tx, task.id, previous.createdAt),
+        )
+      : new Date();
     await tx.taskEvent.create({
       data: {
         taskId: task.id,
         fromStatus: previous.status,
         toStatus: task.status,
         changedBy: actor.id,
-        changedAt: resolveChangedAt(dto.changedAt, previous.createdAt),
+        changedAt,
       },
     });
+  }
+
+  /**
+   * ขอบล่างของ `changedAt` ที่ client ส่งมา = `max(Task.createdAt, changedAt
+   * ของ event เปลี่ยนสถานะล่าสุดของงานนี้)` (รีวิว A บน PR #302) — ถ้ามีคน
+   * เปลี่ยนสถานะคั่นระหว่างที่ช่างออฟไลน์ event ของช่างที่ sync ขึ้นทีหลังต้อง
+   * ไม่ย้อนไปอยู่ก่อน event นั้น ไม่งั้น timeline จะเรียง from→to ต่อกันไม่ติด
+   * (เวลาอาจคลาดจากเวลากดจริงบ้าง แต่ลำดับถูกเสมอ) · เรียกหลัง `lockTask`
+   * ในทรานแซกชันเดียวกัน แถวงานถูกล็อกอยู่ จึงไม่มี event ใหม่แทรกระหว่างนี้
+   */
+  private async statusChangeLowerBound(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+    taskCreatedAt: Date,
+  ): Promise<Date> {
+    const latest = await tx.taskEvent.findFirst({
+      where: { taskId, toStatus: { not: null } },
+      orderBy: { changedAt: 'desc' },
+      select: { changedAt: true },
+    });
+    if (!latest || latest.changedAt.getTime() < taskCreatedAt.getTime()) {
+      return taskCreatedAt;
+    }
+    return latest.changedAt;
   }
 
   // issue #73 ข้อ 3 — เดิมเช็คแค่ "ST/OT ที่ไม่ใช่เจ้าของงาน" ซ่อน ที่เหลือ

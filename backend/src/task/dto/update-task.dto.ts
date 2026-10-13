@@ -50,8 +50,9 @@ export class UpdateTaskDto {
    * `TaskEvent.changedAt` ของ event ที่ PATCH นี้สร้าง ไม่ใช่ field ของ Task
    * เอง · Mobile ส่งเวลาที่ช่างกดตอนเข้าคิว offline มาด้วย ไม่งั้นเวลาใน
    * timeline จะเป็นเวลาที่ sync ขึ้นแทน · ไม่ส่ง = เวลา server · ส่งได้เฉพาะคู่กับ
-   * `status` (ไม่งั้น 400) · เวลาในอนาคตถูกปัดลงเป็นเวลา server (ดู
-   * `TaskService.resolveChangedAt`)
+   * `status` (ไม่งั้น 400) · **ใช้เฉพาะ ST/OT** — Operation ใช้เวลา server
+   * เสมอแม้ส่งมา · เวลาในอนาคตปัดลงเป็นเวลา server และไม่ย้อนไปก่อนงานถูกสร้าง
+   * หรือก่อน event เปลี่ยนสถานะล่าสุด (ดู `TaskService.statusChangeLowerBound`)
    */
   @IsOptional()
   @IsISO8601()

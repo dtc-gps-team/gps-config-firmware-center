@@ -130,7 +130,7 @@ endpoint อัปโหลด, ไม่เพิ่ม `image_picker`/`camera`
 
 | เรื่อง | เอกสาร | ที่ทำจริง | เหตุผล |
 |---|---|---|---|
-| เวลาของ event เปลี่ยนสถานะ | เวลา server (`changedAt @default(now())`) · §7 "ไม่ทำ offline-write สำหรับ event เหมือน `updateStatus` เดิม" | `PATCH /tasks/{id}` รับ `changedAt` (optional) — Mobile ส่งเวลาที่ช่างกดจริงจากคิว offline · อนาคตปัดลงเป็นเวลา server, ก่อนสร้างงานปัดขึ้นเป็น `Task.createdAt` | เอกสารเขียนก่อนมี offline queue (#276) ตอนนี้ `updateStatus` เข้าคิวได้แล้ว ถ้าใช้เวลา server timeline จะเพี้ยนเท่ากับช่วงที่ไม่มีเน็ต ซึ่งเป็นเคสหลักที่ feature นี้ต้องรับมือ |
+| เวลาของ event เปลี่ยนสถานะ | เวลา server (`changedAt @default(now())`) · §7 "ไม่ทำ offline-write สำหรับ event เหมือน `updateStatus` เดิม" | `PATCH /tasks/{id}` รับ `changedAt` (optional) — Mobile ส่งเวลาที่ช่างกดจริงจากคิว offline · **ใช้เฉพาะ ST/OT** (Operation ใช้เวลา server เสมอ) · อนาคตปัดลงเป็นเวลา server, ย้อนไปก่อน `max(Task.createdAt, event เปลี่ยนสถานะล่าสุด)` ไม่ได้ (ตามรีวิว A บน #302) | เอกสารเขียนก่อนมี offline queue (#276) ตอนนี้ `updateStatus` เข้าคิวได้แล้ว ถ้าใช้เวลา server timeline จะเพี้ยนเท่ากับช่วงที่ไม่มีเน็ต ซึ่งเป็นเคสหลักที่ feature นี้ต้องรับมือ |
 | `toStatus` | required | nullable | §4 บอกเองว่า note "ไม่มี fromStatus/toStatus" — แถว note มีทั้งคู่เป็น null |
 | `changedBy` | required FK | nullable FK | event "สร้างงาน" ที่ backfill ให้งานเก่าไม่รู้ผู้สร้าง (Task ไม่มี createdBy, AuditLog ไม่เก็บ id ของ Task) |
 | `id` | `cuid()` | `uuid()` | ทุก model ใน schema ใช้ uuid |
