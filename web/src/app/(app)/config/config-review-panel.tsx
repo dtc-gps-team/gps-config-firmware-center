@@ -141,7 +141,12 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
               onValueChange={(value) => setApproverId(value ?? "")}
             >
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) =>
+                    operators.find((u) => u.id === value)?.fullName ??
+                    "ไม่เจาะจง"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">ไม่เจาะจง</SelectItem>

@@ -126,7 +126,12 @@ export function AuditLogView() {
                 }}
               >
                 <SelectTrigger className="h-8 max-w-48">
-                  <SelectValue placeholder="โมดูล: ทั้งหมด" />
+                  <SelectValue placeholder="โมดูล: ทั้งหมด">
+                    {(value: string) =>
+                      AUDIT_MODULE_OPTIONS.find((m) => m.value === value)
+                        ?.label ?? "โมดูล: ทั้งหมด"
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">โมดูล: ทั้งหมด</SelectItem>
