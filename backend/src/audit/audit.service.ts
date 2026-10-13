@@ -51,7 +51,10 @@ export class AuditService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.auditLog.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        // id เป็นตัวตัดสินเมื่อ createdAt เท่ากัน (เช่น audit หลายแถวที่เขียนใน
+        // transaction เดียวกัน) Postgres ไม่การันตีลำดับแถวที่ค่าเรียงเท่ากัน
+        // ถ้าไม่มีตัวตัดสิน แถวอาจซ้ำหรือหายระหว่างหน้า (รีวิว B บน #301 ข้อ 2)
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

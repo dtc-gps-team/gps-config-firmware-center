@@ -52,7 +52,7 @@ describe('AuditService', () => {
       };
       expect(auditLog.findMany).toHaveBeenCalledWith({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: 0,
         take: 20,
       });
@@ -87,7 +87,7 @@ describe('AuditService', () => {
           auditModule: 'config',
           action: { contains: 'crea', mode: 'insensitive' },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: 0,
         take: 20,
       });
