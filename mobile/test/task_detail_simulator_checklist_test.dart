@@ -12,6 +12,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
@@ -64,6 +65,7 @@ class _ConfirmRepo implements ConfirmInstallRepository {
   Future<ConfigApplyResult> applyConfig({
     required String deviceId,
     required String configId,
+    String? rolloutId,
   }) async {
     calls.add((deviceId, configId));
     return ConfigApplyResult(
@@ -95,6 +97,17 @@ DeviceSimulateConfigResult _result({required bool passed}) =>
 
 /// Pops scripted outcomes (result | Exception); the last one repeats. If
 /// [gate] is set, each call waits for it (request in flight).
+/// ไม่มี rollout ที่ pending — `_confirmInstall` อ่านสถานะก่อนส่ง Config (#265)
+/// ต้อง override ไม่งั้นจะยิง API จริงตอนเทส
+class _NoRolloutStatusRepo implements DeviceStatusRepository {
+  @override
+  Future<DeviceStatus> getDeviceStatus(String deviceId) async => DeviceStatus(
+    deviceId: deviceId,
+    configStatus: DevicePayloadStatus.unknown,
+    firmwareStatus: DevicePayloadStatus.unknown,
+  );
+}
+
 class _SimRepo implements SimulatorRepository {
   _SimRepo(this._outcomes);
   final List<Object> _outcomes;
@@ -183,6 +196,9 @@ Future<void> _pump(
           InMemorySessionProfileStore(),
         ),
         confirmInstallRepositoryProvider.overrideWithValue(confirm),
+        deviceStatusRepositoryProvider.overrideWithValue(
+          _NoRolloutStatusRepo(),
+        ),
         simulatorRepositoryProvider.overrideWithValue(sim),
         incidentRepositoryProvider.overrideWithValue(incidents),
       ],
