@@ -23,6 +23,7 @@ import { useDevice } from "@/hooks/use-device";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { type Device } from "@/lib/device-api";
+import { DeviceStatusCard } from "./device-status-card";
 
 export function DeviceDetailView({ deviceId }: { deviceId: string }) {
   const { data, isLoading, notFound, error, refetch } = useDevice(deviceId);
@@ -133,9 +134,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
         </div>
       </Card>
 
-      <p className="text-xs text-muted-foreground">
-        สถานะ Config / Firmware ของกล่อง (เทียบเวอร์ชันกับ data กลาง) ยังไม่รองรับในตอนนี้
-      </p>
+      <DeviceStatusCard deviceId={device.deviceId} />
     </div>
   );
 }
