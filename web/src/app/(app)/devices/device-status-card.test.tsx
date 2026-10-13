@@ -134,6 +134,9 @@ describe("DeviceStatusCard", () => {
     expect(
       screen.getByText(/มีคำขอ Firmware Override รออนุมัติ/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "ไปที่ Approval Center" }),
+    ).toHaveAttribute("href", "/approvals");
   });
 
   it("ไม่มีคำขอ Override ที่ค้าง: ไม่แสดงแจ้งเตือน", () => {
