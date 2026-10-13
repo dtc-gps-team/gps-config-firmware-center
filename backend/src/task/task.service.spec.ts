@@ -507,7 +507,7 @@ describe('TaskService', () => {
           where: {
             id: sampleTask.id,
             assignedTo: owner.id,
-            status: { not: 'cancelled' },
+            status: { notIn: ['cancelled', 'completed'] },
           },
           data: { status: 'completed' },
         });
@@ -551,12 +551,58 @@ describe('TaskService', () => {
             where: {
               id: sampleTask.id,
               assignedTo: owner.id,
-              status: { not: 'cancelled' },
+              status: { notIn: ['cancelled', 'completed'] },
             },
             data: { status },
           });
         },
       );
+    });
+
+    // คำตอบ A ใน #303 ข้อ 1 — งานที่เสร็จแล้ว (completed) เป็นสถานะสุดท้าย
+    // สำหรับ ST/OT เหมือน cancelled ห้ามย้อนกลับ ต้องได้ 409
+    describe('ST/OT (งานเสร็จแล้ว)', () => {
+      it.each(['in_progress', 'completed'] as const)(
+        'เจ้าของงานตั้ง "%s" ทับงานที่ completed: 409 (ไม่ย้อนสถานะ)',
+        async (status) => {
+          task.updateMany.mockResolvedValue({ count: 0 });
+          task.findUnique.mockResolvedValue({
+            ...sampleTask,
+            assignedTo: owner.id,
+            status: 'completed',
+          });
+
+          await expect(
+            service.update(sampleTask.id, { status }, owner),
+          ).rejects.toBeInstanceOf(ConflictException);
+          expect(task.findUniqueOrThrow).not.toHaveBeenCalled();
+        },
+      );
+
+      it('คนที่ไม่ใช่เจ้าของงานที่ completed: 404 ไม่ใช่ 409 (ไม่เปิดเผยสถานะงานคนอื่น)', async () => {
+        task.updateMany.mockResolvedValue({ count: 0 });
+        task.findUnique.mockResolvedValue({
+          ...sampleTask,
+          assignedTo: owner.id,
+          status: 'completed',
+        });
+
+        await expect(
+          service.update(sampleTask.id, { status: 'in_progress' }, otherTech),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it('งานที่ยังไม่เสร็จ (in_progress -> completed) ยังเปลี่ยนได้ตามปกติ', async () => {
+        task.updateMany.mockResolvedValue({ count: 1 });
+        task.findUniqueOrThrow.mockResolvedValue({
+          ...sampleTask,
+          status: 'completed',
+        });
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, owner),
+        ).resolves.toMatchObject({ status: 'completed' });
+      });
     });
 
     describe('ST/OT (งานถูกยกเลิกแล้ว)', () => {

@@ -224,6 +224,43 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       .expect(403);
   });
 
+  // คำตอบ A ใน #303 ข้อ 1 — งาน completed ห้ามย้อนสถานะ (เดิมกันแค่ cancelled)
+  it.each(['in_progress', 'completed'] as const)(
+    'PATCH /tasks/:id role ST ตั้ง "%s" ทับงานตัวเองที่ completed แล้ว -> 409 สถานะไม่เปลี่ยน',
+    async (status) => {
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      const task = await prisma.task.create({
+        data: { title: 'done', assignedTo: stUser.id, status: 'completed' },
+      });
+      const token = tokenFor(stUser.id, 'ST');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status })
+        .expect(409);
+
+      const after = await prisma.task.findUniqueOrThrow({
+        where: { id: task.id },
+      });
+      expect(after.status).toBe('completed');
+    },
+  );
+
+  it('PATCH /tasks/:id role OT งานตัวเองที่ in_progress -> completed ยังได้ 200 ตามเดิม', async () => {
+    const otUser = await makeUser(prisma, { role: 'OT' });
+    const task = await prisma.task.create({
+      data: { title: 'doing', assignedTo: otUser.id, status: 'in_progress' },
+    });
+    const token = tokenFor(otUser.id, 'OT');
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/tasks/${task.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'completed' })
+      .expect(200);
+  });
+
   it('PATCH /tasks/:id role Auditor (ไม่มีสิทธิ์แก้เลย) -> 403', async () => {
     const auditorUser = await makeUser(prisma, { role: 'Auditor' });
     const otUser = await makeUser(prisma, { role: 'OT' });

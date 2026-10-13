@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigStatus, Task } from '@prisma/client';
+import { ConfigStatus, Task, TaskStatus } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -53,6 +53,11 @@ const UNSCOPED_TASK_ROLES: readonly string[] = [
 // enforce ให้ตรงกัน ไม่ใช่พึ่ง UI ฝั่งเดียว (client อื่นที่มี token ST/OT ยิง
 // ตรงได้ถ้าไม่เช็คที่นี่)
 const ST_OT_ALLOWED_STATUSES: readonly string[] = ['in_progress', 'completed'];
+
+// สถานะสุดท้ายสำหรับ ST/OT — งานที่อยู่ในสถานะเหล่านี้แล้วเปลี่ยนต่อไม่ได้อีก
+// (409) · `cancelled` = Operation ยกเลิกงาน, `completed` = งานเสร็จแล้ว ห้าม
+// ย้อนกลับ (คำตอบ A ใน #303 ข้อ 1) · Operation ยังแก้ได้ตามเดิม
+const ST_OT_FINAL_STATUSES: TaskStatus[] = ['cancelled', 'completed'];
 
 // สถานะ Config ที่ Operation ผูกกับงานติดตั้งได้ — ต้องผ่าน Operation อนุมัติ
 // มาแล้วเท่านั้น (`approved` = อนุมัติแล้ว, `synced` = เขียนเข้าระบบเดิมแล้ว)
@@ -207,26 +212,35 @@ export class TaskService {
 
     // IDOR Prevention Pattern (CLAUDE.md): filter ด้วย assignedTo ตอน update แล้ว
     // เช็ค count === 0 -> 404 แทนที่จะ update() เปล่าๆ ที่ filter แค่ id
-    // งานที่ Operation ยกเลิกแล้ว (cancelled) เป็นสถานะสุดท้ายสำหรับ ST/OT —
-    // ห้ามเขียนทับกลับเป็น in_progress/completed (Mobile offline queue อาจส่ง
-    // ค่าที่เก่าเป็นชั่วโมงมา ถ้าไม่กันงานที่ยกเลิกไปแล้วจะ "ฟื้น" เงียบๆ)
+    // งานที่ Operation ยกเลิกแล้ว (cancelled) และงานที่เสร็จแล้ว (completed —
+    // คำตอบ A ใน #303 ข้อ 1) เป็นสถานะสุดท้ายสำหรับ ST/OT — ห้ามเขียนทับกลับ
+    // (Mobile offline queue อาจส่งค่าที่เก่าเป็นชั่วโมงมา ถ้าไม่กันงานที่จบไป
+    // แล้วจะ "ฟื้น" เงียบๆ) · กันใน where ของ updateMany เลย ไม่ใช่อ่านสถานะก่อน
+    // แล้วค่อย update เพื่อไม่ให้มีช่องว่างระหว่างอ่านกับเขียน (race)
     const result = await this.prisma.task.updateMany({
-      where: { id, assignedTo: actor.id, status: { not: 'cancelled' } },
+      where: {
+        id,
+        assignedTo: actor.id,
+        status: { notIn: ST_OT_FINAL_STATUSES },
+      },
       data: { status: dto.status },
     });
     if (result.count === 0) {
-      // แยก 409 (เป็นเจ้าของงาน แต่งานถูกยกเลิกแล้ว) ออกจาก 404 (ไม่ใช่งานของ
+      // แยก 409 (เป็นเจ้าของงาน แต่งานจบไปแล้ว) ออกจาก 404 (ไม่ใช่งานของ
       // ตัวเอง/ไม่มีงานนี้) — เช็ค assignedTo ก่อนเสมอ ไม่เปิดเผยสถานะงานของ
       // คนอื่น (IDOR)
       const existing = await this.prisma.task.findUnique({ where: { id } });
-      if (
-        existing &&
-        existing.assignedTo === actor.id &&
-        existing.status === 'cancelled'
-      ) {
-        throw new ConflictException(
-          'งานนี้ถูกยกเลิกแล้ว ไม่สามารถเปลี่ยนสถานะได้',
-        );
+      if (existing && existing.assignedTo === actor.id) {
+        if (existing.status === 'cancelled') {
+          throw new ConflictException(
+            'งานนี้ถูกยกเลิกแล้ว ไม่สามารถเปลี่ยนสถานะได้',
+          );
+        }
+        if (existing.status === 'completed') {
+          throw new ConflictException(
+            'งานนี้เสร็จแล้ว ไม่สามารถเปลี่ยนสถานะได้',
+          );
+        }
       }
       throw new NotFoundException(`ไม่พบงาน id ${id}`);
     }
