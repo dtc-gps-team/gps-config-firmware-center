@@ -6,14 +6,27 @@ import {
 import {
   ConfigFieldDefinition,
   ConfigFieldDefinitionModelSupport,
+  Prisma,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
 
 export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
 };
+
+/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload เสมอ (แต่ละ module ประกาศเอง
+ * ไม่ import ข้าม module เหมือน config.service.ts / device.service.ts) */
+export interface ActingUser {
+  id: string;
+  role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย */
+  ipAddress?: string | null;
+}
+
+const AUDIT_MODULE = 'config-definition';
 
 const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 /** timezone (`Z`/`±hh:mm`) เป็น optional โดยตั้งใจ (ตอบรีวิว B บน PR #255
@@ -209,34 +222,55 @@ export class ConfigDefinitionService {
   /** สร้าง field definition ใหม่ — resource `config-definition` action
    * `Create` เช็คแล้วที่ PermissionGuard (เฉพาะ Role ConfigEngineer) `fieldName` ซ้ำ
    * -> 409 (มี `@unique` ที่ schema คุมไว้อีกชั้น กัน race condition) */
+  /**
+   * สร้างนิยามพารามิเตอร์ใหม่ในคลัง เขียน AuditLog ในทรานแซกชันเดียวกับการสร้าง
+   * เสมอ (ไม่ใช่ never-throw): บันทึกไม่สำเร็จ = การสร้างล้มตามไปด้วย ไม่มีทางที่
+   * นิยามถูกเพิ่มโดยไม่มีร่องรอยให้ตรวจสอบย้อนหลัง เก็บแค่ชื่อ field ไม่เก็บ
+   * `defaultValue` (อาจมีค่าที่ไม่ควรไปอยู่ใน log)
+   */
   async create(
     dto: CreateConfigDefinitionDto,
+    actor: ActingUser,
   ): Promise<ConfigFieldDefinitionWithSupport> {
     this.assertNoSensitiveDefaultValue(dto);
     this.assertDefaultValueMatchesDataType(dto);
+
     try {
-      return await this.prisma.configFieldDefinition.create({
-        data: {
-          fieldName: dto.fieldName,
-          dataType: dto.dataType,
-          allowedValues: dto.allowedValues ?? [],
-          required: dto.required,
-          unknownSpec: dto.unknownSpec ?? false,
-          description: dto.description,
-          unit: dto.unit,
-          stOverridable: dto.stOverridable ?? false,
-          category: dto.category,
-          sensitive: dto.sensitive ?? false,
-          restartRequired: dto.restartRequired ?? false,
-          defaultValue: dto.defaultValue,
-          supportedModels: {
-            create: dto.supportedModels.map((m) => ({
-              deviceModel: m.deviceModel,
-              protocol: m.protocol,
-            })),
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await tx.configFieldDefinition.create({
+          data: {
+            fieldName: dto.fieldName,
+            dataType: dto.dataType,
+            allowedValues: dto.allowedValues ?? [],
+            required: dto.required,
+            unknownSpec: dto.unknownSpec ?? false,
+            description: dto.description,
+            unit: dto.unit,
+            stOverridable: dto.stOverridable ?? false,
+            category: dto.category,
+            sensitive: dto.sensitive ?? false,
+            restartRequired: dto.restartRequired ?? false,
+            defaultValue: dto.defaultValue,
+            supportedModels: {
+              create: dto.supportedModels.map((m) => ({
+                deviceModel: m.deviceModel,
+                protocol: m.protocol,
+              })),
+            },
           },
-        },
-        include: { supportedModels: true },
+          include: { supportedModels: true },
+        });
+        const metadata: AuditLogMetadata = { fieldNames: [created.fieldName] };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'create',
+            ipAddress: actor.ipAddress ?? null,
+            metadata: metadata as Prisma.InputJsonValue,
+          },
+        });
+        return created;
       });
     } catch (err) {
       if (

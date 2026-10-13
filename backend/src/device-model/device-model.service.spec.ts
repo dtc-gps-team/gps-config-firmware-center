@@ -3,7 +3,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeviceModel } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
-import { DeviceModelService } from './device-model.service';
+import { ActingUser, DeviceModelService } from './device-model.service';
+import { CreateDeviceModelDto } from './dto/create-device-model.dto';
+import { UpdateDeviceModelDto } from './dto/update-device-model.dto';
+
+const actor: ActingUser = {
+  id: 'admin-1',
+  role: 'Admin',
+  ipAddress: '10.0.0.7',
+};
 
 const gt06n: DeviceModel = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -38,19 +46,36 @@ describe('DeviceModelService', () => {
   let findUnique: jest.Mock;
   let create: jest.Mock;
   let update: jest.Mock;
+  let auditCreate: jest.Mock;
+  let transaction: jest.Mock;
+
+  const createModel = (dto: CreateDeviceModelDto) => service.create(dto, actor);
+  const updateModel = (id: string, dto: UpdateDeviceModelDto) =>
+    service.update(id, dto, actor);
 
   beforeEach(async () => {
     findMany = jest.fn();
     findUnique = jest.fn();
     create = jest.fn();
     update = jest.fn();
+    auditCreate = jest.fn().mockResolvedValue({});
+    // $transaction แบบ interactive — ส่ง tx client ที่มี deviceModel + auditLog
+    // ชุดเดียวกับ prisma หลัก เพื่อเช็คว่าทั้งสองถูกเรียกผ่าน tx เดียวกัน
+    const tx = {
+      deviceModel: { create, update },
+      auditLog: { create: auditCreate },
+    };
+    transaction = jest.fn((cb: (client: typeof tx) => unknown) => cb(tx));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DeviceModelService,
         {
           provide: PrismaService,
-          useValue: { deviceModel: { findMany, findUnique, create, update } },
+          useValue: {
+            deviceModel: { findMany, findUnique, create, update },
+            $transaction: transaction,
+          },
         },
       ],
     }).compile();
@@ -104,7 +129,7 @@ describe('DeviceModelService', () => {
     it('สร้างรุ่นใหม่พร้อม field ที่ระบุ', async () => {
       create.mockResolvedValue(gt06n);
 
-      const result = await service.create({
+      const result = await createModel({
         name: 'GT06N',
         supportedProtocols: ['TCP'],
       });
@@ -126,7 +151,7 @@ describe('DeviceModelService', () => {
     it('endOfSupportDate แบบวันที่อย่างเดียว ("2027-10-12" จากช่องเลือกวันที่) -> แปลงเป็น Date ก่อนส่ง Prisma', async () => {
       create.mockResolvedValue(gt06n);
 
-      await service.create({
+      await createModel({
         name: 'GT06N',
         supportedProtocols: ['TCP'],
         endOfSupportDate: '2027-10-12',
@@ -139,11 +164,46 @@ describe('DeviceModelService', () => {
       });
     });
 
+    it('เขียน AuditLog ใน tx เดียวกับการสร้าง พร้อม IP และชื่อรุ่น (ไม่เก็บค่า)', async () => {
+      create.mockResolvedValue(gt06n);
+
+      await createModel({ name: 'GT06N', supportedProtocols: ['TCP'] });
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditCreate).toHaveBeenCalledWith({
+        data: {
+          userId: 'admin-1',
+          auditModule: 'device-model',
+          action: 'create',
+          ipAddress: '10.0.0.7',
+          metadata: { deviceModelId: gt06n.id, modelName: 'GT06N' },
+        },
+      });
+    });
+
+    it('เขียน AuditLog ไม่สำเร็จ -> การสร้างล้มตามไปด้วย (ไม่ใช่ never-throw)', async () => {
+      create.mockResolvedValue(gt06n);
+      auditCreate.mockRejectedValue(new Error('audit down'));
+
+      await expect(
+        createModel({ name: 'GT06N', supportedProtocols: ['TCP'] }),
+      ).rejects.toThrow('audit down');
+    });
+
+    it('ชื่อรุ่นซ้ำ (P2002) -> ConflictException และไม่เขียน AuditLog', async () => {
+      create.mockRejectedValue(makeP2002());
+
+      await expect(
+        createModel({ name: 'GT06N', supportedProtocols: ['TCP'] }),
+      ).rejects.toThrow(ConflictException);
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
     it('ชื่อรุ่นซ้ำ (P2002) -> ConflictException', async () => {
       create.mockRejectedValue(makeP2002());
 
       await expect(
-        service.create({ name: 'GT06N', supportedProtocols: ['TCP'] }),
+        createModel({ name: 'GT06N', supportedProtocols: ['TCP'] }),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -151,7 +211,7 @@ describe('DeviceModelService', () => {
       create.mockRejectedValue(new Error('db down'));
 
       await expect(
-        service.create({ name: 'GT06N', supportedProtocols: ['TCP'] }),
+        createModel({ name: 'GT06N', supportedProtocols: ['TCP'] }),
       ).rejects.toThrow('db down');
     });
   });
@@ -161,7 +221,7 @@ describe('DeviceModelService', () => {
       findUnique.mockResolvedValue(gt06n);
       update.mockResolvedValue({ ...gt06n, status: 'discontinued' });
 
-      const result = await service.update(gt06n.id, {
+      const result = await updateModel(gt06n.id, {
         status: 'discontinued',
       });
 
@@ -183,7 +243,7 @@ describe('DeviceModelService', () => {
       findUnique.mockResolvedValue(gt06n);
       update.mockResolvedValue(gt06n);
 
-      await service.update(gt06n.id, { endOfSupportDate: '2027-10-12' });
+      await updateModel(gt06n.id, { endOfSupportDate: '2027-10-12' });
       expect(update).toHaveBeenLastCalledWith({
         where: { id: gt06n.id },
         data: expect.objectContaining({
@@ -191,7 +251,7 @@ describe('DeviceModelService', () => {
         }) as Partial<DeviceModel>,
       });
 
-      await service.update(gt06n.id, {
+      await updateModel(gt06n.id, {
         endOfSupportDate: null as unknown as string,
       });
       expect(update).toHaveBeenLastCalledWith({
@@ -202,13 +262,46 @@ describe('DeviceModelService', () => {
       });
     });
 
+    it('เขียน AuditLog ใน tx เดียวกับการแก้ บันทึกเฉพาะชื่อ field ที่ส่งมาจริง', async () => {
+      findUnique.mockResolvedValue(gt06n);
+      update.mockResolvedValue({ ...gt06n, status: 'discontinued' });
+
+      await updateModel(gt06n.id, { status: 'discontinued', notes: undefined });
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditCreate).toHaveBeenCalledWith({
+        data: {
+          userId: 'admin-1',
+          auditModule: 'device-model',
+          action: 'update',
+          ipAddress: '10.0.0.7',
+          metadata: {
+            deviceModelId: gt06n.id,
+            modelName: 'GT06N',
+            fieldNames: ['status'],
+          },
+        },
+      });
+    });
+
+    it('เขียน AuditLog ไม่สำเร็จ -> การแก้ล้มตามไปด้วย', async () => {
+      findUnique.mockResolvedValue(gt06n);
+      update.mockResolvedValue(gt06n);
+      auditCreate.mockRejectedValue(new Error('audit down'));
+
+      await expect(
+        updateModel(gt06n.id, { status: 'discontinued' }),
+      ).rejects.toThrow('audit down');
+    });
+
     it('ไม่เจอ (findOne ก่อน) -> NotFoundException ไม่เรียก update เลย', async () => {
       findUnique.mockResolvedValue(null);
 
       await expect(
-        service.update('missing-id', { status: 'discontinued' }),
+        updateModel('missing-id', { status: 'discontinued' }),
       ).rejects.toThrow(NotFoundException);
       expect(update).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
     });
 
     it('race condition: ถูกลบไปพอดีระหว่าง findOne กับ update (P2025) -> NotFoundException', async () => {
@@ -216,7 +309,7 @@ describe('DeviceModelService', () => {
       update.mockRejectedValue(makeP2025());
 
       await expect(
-        service.update(gt06n.id, { status: 'discontinued' }),
+        updateModel(gt06n.id, { status: 'discontinued' }),
       ).rejects.toThrow(NotFoundException);
     });
   });

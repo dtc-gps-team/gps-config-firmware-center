@@ -14,6 +14,9 @@ import { QueryConfigDeletionDto } from './dto/query-config-deletion.dto';
 export interface ActingUser {
   id: string;
   role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log ระบุ IP
+   * Address เป็น field ที่ต้องเก็บ) — optional mirror `config.service.ts` */
+  ipAddress?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -143,6 +146,7 @@ export class ConfigDeletionService {
           userId: actor.id,
           auditModule: AUDIT_MODULE,
           action: 'approve',
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return updated;
@@ -176,6 +180,7 @@ export class ConfigDeletionService {
           userId: actor.id,
           auditModule: AUDIT_MODULE,
           action: 'reject',
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return updated;
@@ -219,6 +224,7 @@ export class ConfigDeletionService {
           userId: actor.id,
           auditModule: AUDIT_MODULE,
           action: 'keep',
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return updated;

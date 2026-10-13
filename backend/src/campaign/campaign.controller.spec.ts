@@ -25,6 +25,7 @@ const sampleCampaign: Campaign = {
   name: 'กลุ่มทดสอบ',
   description: null,
   createdBy: 'op-1',
+  sourceIncidentId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -49,6 +50,7 @@ const sampleRollout: CampaignRollout = {
   createdBy: 'op-1',
   approvedBy: null,
   approvedAt: null,
+  activeWindowStartedAt: null,
   isRollback: false,
   rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -119,6 +121,7 @@ describe('CampaignController', () => {
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 

@@ -27,6 +27,9 @@ import {
 export interface ActingUser {
   id: string;
   role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log ระบุ IP
+   * Address เป็น field ที่ต้องเก็บ) — optional mirror `config.service.ts` */
+  ipAddress?: string | null;
 }
 
 const AUDIT_MODULE = 'firmware';
@@ -118,7 +121,7 @@ export class FirmwareService {
 
     // AuditLog (CLAUDE.md Audit Pattern) — never-throw เหมือนโมดูล
     // config/device/campaign
-    await this.logAudit('create', actor.id);
+    await this.logAudit('create', actor);
     return created;
   }
 
@@ -136,7 +139,7 @@ export class FirmwareService {
       data: { deviceModelCompatibility: dto.deviceModelCompatibility },
     });
 
-    await this.logAudit('update', actor.id);
+    await this.logAudit('update', actor);
     return updated;
   }
 
@@ -182,7 +185,7 @@ export class FirmwareService {
       data: { approvalStatus: 'approved', approvedBy: actor.id },
     });
 
-    await this.logAudit('approve', actor.id);
+    await this.logAudit('approve', actor);
     return updated;
   }
 
@@ -206,18 +209,23 @@ export class FirmwareService {
       data: { approvalStatus: 'rejected' },
     });
 
-    await this.logAudit('reject', actor.id);
+    await this.logAudit('reject', actor);
     return updated;
   }
 
-  private async logAudit(action: string, userId: string): Promise<void> {
+  private async logAudit(action: string, actor: ActingUser): Promise<void> {
     try {
       await this.prisma.auditLog.create({
-        data: { userId, auditModule: AUDIT_MODULE, action },
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action,
+          ipAddress: actor.ipAddress,
+        },
       });
     } catch (err) {
       this.logger.warn(
-        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${userId}): ${(err as Error).message}`,
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${actor.id}): ${(err as Error).message}`,
       );
     }
   }

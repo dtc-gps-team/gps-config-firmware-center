@@ -2,7 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ActionType, PrismaClient } from '@prisma/client';
+import { ActionType, IncidentStatus, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -254,7 +254,7 @@ describe('CampaignController (integration — real postgres + guard chain)', () 
 
     /** promote field report (issue #236) -> Campaign ผ่าน `sourceIncidentId` */
     describe('sourceIncidentId (issue #236)', () => {
-      async function makeIncident(status: string): Promise<string> {
+      async function makeIncident(status: IncidentStatus): Promise<string> {
         const incident = await prisma.incident.create({
           data: {
             title: 'รายงานจากภาคสนาม',

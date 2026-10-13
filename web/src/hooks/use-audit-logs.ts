@@ -26,24 +26,30 @@ export type AuditLogRow = {
 export type AuditLogFilters = {
   auditModule?: string;
   action?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 type State = {
   data: AuditLogRow[] | null;
+  /** จำนวนแถวทั้งหมดที่ตรง filter (ทุกหน้ารวมกัน) — null = ยังไม่เคยโหลดสำเร็จ */
+  total: number | null;
   isLoading: boolean;
   error: string | null;
 };
 
 /**
  * `GET /audit-logs` (Sprint 3 #27) — เรียง createdAt desc มาจาก backend
- * อยู่แล้ว · filter (auditModule/action) ส่งตรงไป backend ผ่าน query params
+ * อยู่แล้ว · filter (auditModule/action) และ page/pageSize ส่งตรงไป backend
+ * ผ่าน query params (แบ่งหน้าที่ backend ไม่ได้ slice ฝั่ง client)
  */
 export function useAuditLogs(filters: AuditLogFilters = {}) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
-  const { auditModule, action } = filters;
+  const { auditModule, action, page, pageSize } = filters;
   const [state, setState] = useState<State>({
     data: null,
+    total: null,
     isLoading: true,
     error: null,
   });
@@ -52,34 +58,33 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
     if (!token) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const [logs, users] = await Promise.all([
-        listAuditLogs(token, { auditModule, action }),
+      const [result, users] = await Promise.all([
+        listAuditLogs(token, { auditModule, action, page, pageSize }),
         // resolve ชื่อผู้ทำรายการ — พังไม่ block ตาราง audit log (fallback
         // เป็น userId ดิบด้านล่าง)
         listUsers(token).catch(() => []),
       ]);
       const nameById = new Map(users.map((u) => [u.id, u.fullName]));
-      const data = logs.map(
-        (log): AuditLogRow => ({
-          id: log.id,
-          actorId: log.userId,
-          actorName: nameById.get(log.userId) ?? log.userId,
-          auditModule: log.auditModule,
-          action: log.action,
-          ipAddress: log.ipAddress,
-          createdAt: log.createdAt,
-        }),
-      );
-      setState({ data, isLoading: false, error: null });
+      const data = result.items.map((log): AuditLogRow => ({
+        id: log.id,
+        actorId: log.userId,
+        actorName: nameById.get(log.userId) ?? log.userId,
+        auditModule: log.auditModule,
+        action: log.action,
+        ipAddress: log.ipAddress,
+        createdAt: log.createdAt,
+      }));
+      setState({ data, total: result.total, isLoading: false, error: null });
     } catch (err) {
       setState((prev) => ({
         data: prev.data,
+        total: prev.total,
         isLoading: false,
         error:
           err instanceof ApiError ? err.message : "โหลด Audit Log ไม่สำเร็จ",
       }));
     }
-  }, [token, auditModule, action]);
+  }, [token, auditModule, action, page, pageSize]);
 
   useEffect(() => {
     void refetch();
