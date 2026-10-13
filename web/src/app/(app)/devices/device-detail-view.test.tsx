@@ -71,6 +71,31 @@ describe("DeviceDetailView", () => {
     expect(screen.queryByText(/ยังไม่รองรับในตอนนี้/)).not.toBeInTheDocument();
   });
 
+  it("การ์ดสถานะอยู่ก่อนข้อมูลเครื่อง (ไม่ต้องเลื่อนลงไปหา)", () => {
+    statusHook.value = {
+      data: {
+        deviceId: "DEV-0001",
+        configStatus: "up_to_date",
+        firmwareStatus: "unknown",
+        configRolloutId: null,
+        firmwareRolloutId: null,
+        lastCheckInMessage: null,
+        pendingFirmwareOverride: null,
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    const statusTitle = screen.getByText("สถานะ Config และ Firmware");
+    const simLabel = screen.getByText("SIM Number");
+    expect(
+      statusTitle.compareDocumentPosition(simLabel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("โหลดสถานะไม่สำเร็จ: ข้อมูลหลักของอุปกรณ์ยังแสดงครบ มี error เฉพาะในการ์ดสถานะ", () => {
     statusHook.value = {
       data: null,

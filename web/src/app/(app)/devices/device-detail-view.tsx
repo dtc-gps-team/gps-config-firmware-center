@@ -81,6 +81,10 @@ function DeviceDetailContent({ device }: { device: Device }) {
         </p>
       </div>
 
+      {/* สถานะไว้บนสุด — คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
+       * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}
+      <DeviceStatusCard deviceId={device.deviceId} />
+
       {/* เนื้อหาเป็น label/value ล้วนเหมือน Campaign detail — จำกัด max-width
        * ไว้ที่การ์ดนี้ ไม่ปล่อยเต็มความกว้างหน้าจอ (mirror ปัญหาเดียวกับที่
        * แก้ไปแล้วในหน้า detail อื่น) */}
@@ -133,8 +137,6 @@ function DeviceDetailContent({ device }: { device: Device }) {
           </InfoRow>
         </div>
       </Card>
-
-      <DeviceStatusCard deviceId={device.deviceId} />
     </div>
   );
 }

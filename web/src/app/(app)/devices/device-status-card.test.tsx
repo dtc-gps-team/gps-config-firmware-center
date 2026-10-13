@@ -56,7 +56,7 @@ describe("DeviceStatusCard", () => {
     expect(screen.queryByText("Config")).not.toBeInTheDocument();
   });
 
-  it("แสดงสถานะของ Config และ Firmware แยกกัน พร้อมคำอธิบาย", () => {
+  it("แสดงสถานะของ Config และ Firmware แยกกัน คำอธิบายเฉพาะสถานะที่ต้องตามต่อ", () => {
     setHook({
       data: status({ configStatus: "up_to_date", firmwareStatus: "failed" }),
     });
@@ -64,9 +64,10 @@ describe("DeviceStatusCard", () => {
     render(<DeviceStatusCard deviceId="DEV-0001" />);
 
     expect(screen.getByText("เป็นปัจจุบัน")).toBeInTheDocument();
+    // สถานะปกติ: มีแค่ป้าย ไม่มีคำอธิบายให้รก
     expect(
-      screen.getByText("Rollout Config ล่าสุดของเครื่องนี้สำเร็จแล้ว"),
-    ).toBeInTheDocument();
+      screen.queryByText("Rollout Config ล่าสุดของเครื่องนี้สำเร็จแล้ว"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("ล้มเหลว")).toBeInTheDocument();
     expect(
       screen.getByText("Rollout Firmware ล่าสุดของเครื่องนี้ไม่สำเร็จ"),
@@ -93,13 +94,18 @@ describe("DeviceStatusCard", () => {
     expect(screen.queryByText("ล้มเหลว")).not.toBeInTheDocument();
   });
 
-  it("มีข้อความกำกับเสมอว่าสถานะคำนวณจากผล Rollout ไม่ได้อ่านจากกล่องจริง", () => {
+  it("ไอคอน ⓘ ข้างหัวการ์ด: ชี้แล้วบอกว่าสถานะคำนวณจากผล Rollout ไม่ได้อ่านจากกล่องจริง", async () => {
     setHook({ data: status() });
+    const user = userEvent.setup();
 
     render(<DeviceStatusCard deviceId="DEV-0001" />);
 
+    await user.hover(screen.getByRole("button", { name: "ที่มาของสถานะ" }));
+    // ข้อความต่อกันไม่มีช่องว่างเกินก่อน "โดยตรง" (บั๊กเดิมจาก JSX ขึ้นบรรทัดใหม่)
     expect(
-      screen.getByText(/ไม่ได้อ่านค่าจากกล่องจริง\s*โดยตรง/),
+      await screen.findByText(
+        "สถานะคำนวณจากผล Rollout ล่าสุดของเครื่องนี้ ไม่ได้อ่านค่าจากกล่องจริงโดยตรง",
+      ),
     ).toBeInTheDocument();
   });
 
