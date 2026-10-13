@@ -77,12 +77,17 @@ class HomePage extends ConsumerWidget {
             _ShortcutGrid(
               items: [
                 // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
-                _Shortcut(
-                  key: const Key('shortcut_simulator'),
-                  icon: Icons.tune,
-                  label: 'ทดสอบการตั้งค่า',
-                  onTap: () => context.push(AppRoutes.simulator),
-                ),
+                // ทดสอบการตั้งค่า — ST/OT เท่านั้น: `POST /devices/{id}/
+                // simulate-config` ใช้สิทธิ์ `device-connection-test` ที่ grant
+                // ให้แค่ ST/OT และรายการอุปกรณ์ในหน้านี้มาจากงานของตัวเอง
+                // (role อื่นได้รายการว่างเสมอ) — คำตอบ A ใน #303 ข้อ 2
+                if (isFieldStaff)
+                  _Shortcut(
+                    key: const Key('shortcut_simulator'),
+                    icon: Icons.tune,
+                    label: 'ทดสอบการตั้งค่า',
+                    onTap: () => context.push(AppRoutes.simulator),
+                  ),
                 // ทดสอบสัญญาณ — ช่างหน้างานเท่านั้น (backend บังคับ RBAC 403 ให้
                 // เฉพาะ ST/OT อยู่แล้ว — ซ่อนจาก UI เพื่อ UX ที่ดีกว่า)
                 if (role == UserRole.st || role == UserRole.ot) ...[
