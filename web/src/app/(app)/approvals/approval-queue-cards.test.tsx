@@ -110,6 +110,34 @@ describe("ApprovalQueueCard (โครงกลาง)", () => {
 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it("การ์ดค้างนานและการ์ดปกติมีขอบซ้ายกว้างเท่ากัน เนื้อหาจึงตรงแนว ต่างกันแค่สีขอบ", () => {
+    const { container: fresh } = render(
+      <ApprovalQueueCard
+        tag="Campaign"
+        title="ใหม่"
+        queuedAt={new Date().toISOString()}
+        requesterName="สมชาย"
+        actions={null}
+      />,
+    );
+    const { container: stale } = render(
+      <ApprovalQueueCard
+        tag="Campaign"
+        title="ค้าง"
+        queuedAt="2020-01-01T00:00:00Z"
+        requesterName="สมชาย"
+        actions={null}
+      />,
+    );
+
+    const freshCard = fresh.firstElementChild as HTMLElement;
+    const staleCard = stale.firstElementChild as HTMLElement;
+    expect(freshCard.className).toContain("border-l-4");
+    expect(staleCard.className).toContain("border-l-4");
+    expect(freshCard.className).toContain("border-l-transparent");
+    expect(staleCard.className).toContain("border-l-amber-500");
+  });
 });
 
 describe("CampaignRolloutApprovalCard", () => {

@@ -48,8 +48,10 @@ export function ApprovalQueueCard({
   const staleLabel = stalePendingLabel(queuedAt);
 
   return (
+    // ทุกการ์ดมีขอบซ้าย 4px เท่ากัน (การ์ดปกติขอบโปร่งใส) เนื้อหาจะตรงแนวกัน
+    // ทั้งคิว เดิมเฉพาะการ์ดที่ค้างมีขอบ ทำให้เนื้อหาเยื้องไปขวา 4px
     <Card
-      className={staleLabel ? "gap-3 border-l-4 border-l-amber-500" : "gap-3"}
+      className={`gap-3 border-l-4 ${staleLabel ? "border-l-amber-500" : "border-l-transparent"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4 px-4">
         <div className="flex min-w-0 flex-col gap-1">
