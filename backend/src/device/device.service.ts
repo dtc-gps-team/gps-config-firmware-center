@@ -366,24 +366,42 @@ export class DeviceService {
 
     let device: Omit<Device, 'apiKeyHash'>;
     try {
+      // สร้างเครื่อง + เขียน AuditLog ในทรานแซกชันเดียวกัน (issue #292) — เดิม
+      // เขียน Audit หลัง create โดยไม่ดัก ถ้าบันทึกล้ม endpoint ตอบ 500 ทั้งที่
+      // เครื่องถูกสร้างแล้ว และ API key (แสดงได้ครั้งเดียว) หายไปกับ response ·
+      // ตอนนี้บันทึกไม่ได้ = ทั้งหมดย้อนกลับ ไม่มีเครื่องค้าง ผู้ใช้ลงทะเบียนซ้ำได้
+      //
       // apiKeyHash ไม่ถูกคืนกลับมาเอง — `PrismaService` ตั้ง omit default ไว้
       // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
       // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
-      device = await this.prisma.device.create({
-        data: {
-          deviceId: dto.deviceId,
-          simNumber: dto.simNumber,
-          deviceModel: model.name,
-          protocol: dto.protocol,
-          hardwareRevisionCode: dto.hardwareRevisionCode,
-          customerId: dto.customerId,
-          imei: dto.imei,
-          serialNumber: dto.serialNumber,
-          blackboxId: dto.blackboxId,
-          bootloader: dto.bootloader,
-          modelId: model.id,
-          apiKeyHash,
-        },
+      device = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.device.create({
+          data: {
+            deviceId: dto.deviceId,
+            simNumber: dto.simNumber,
+            deviceModel: model.name,
+            protocol: dto.protocol,
+            hardwareRevisionCode: dto.hardwareRevisionCode,
+            customerId: dto.customerId,
+            imei: dto.imei,
+            serialNumber: dto.serialNumber,
+            blackboxId: dto.blackboxId,
+            bootloader: dto.bootloader,
+            modelId: model.id,
+            apiKeyHash,
+          },
+        });
+        const metadata: AuditLogMetadata = { deviceId: created.deviceId };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'register',
+            metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
+          },
+        });
+        return created;
       });
     } catch (err) {
       if (
@@ -396,17 +414,6 @@ export class DeviceService {
       }
       throw err;
     }
-
-    const metadata: AuditLogMetadata = { deviceId: device.deviceId };
-    await this.prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        auditModule: AUDIT_MODULE,
-        action: 'register',
-        metadata: metadata as Prisma.InputJsonValue,
-        ipAddress: actor.ipAddress ?? null,
-      },
-    });
 
     return { ...device, apiKey };
   }
@@ -446,9 +453,26 @@ export class DeviceService {
 
     let device: Omit<Device, 'apiKeyHash'>;
     try {
-      device = await this.prisma.device.update({
-        where: { deviceId },
-        data: { apiKeyHash },
+      // แทนที่ key + เขียน AuditLog ในทรานแซกชันเดียวกัน (issue #292) — เดิม
+      // เขียน Audit หลัง update โดยไม่ดัก ถ้าบันทึกล้ม key เดิมถูกแทนที่ไปแล้ว
+      // (ใช้ไม่ได้) แต่ key ใหม่ไม่ถูกส่งกลับ อุปกรณ์ติดต่อระบบไม่ได้จนกว่าจะออก
+      // key ซ้ำ · ตอนนี้บันทึกไม่ได้ = ย้อนกลับ key เดิมยังใช้ได้อยู่
+      device = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.device.update({
+          where: { deviceId },
+          data: { apiKeyHash },
+        });
+        const metadata: AuditLogMetadata = { deviceId: updated.deviceId };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'rotate-key',
+            metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
+          },
+        });
+        return updated;
       });
     } catch (err) {
       // race: เครื่องถูกลบไปพอดีระหว่าง findUnique กับ update นี้ (rare) —
@@ -461,17 +485,6 @@ export class DeviceService {
       }
       throw err;
     }
-
-    const metadata: AuditLogMetadata = { deviceId: device.deviceId };
-    await this.prisma.auditLog.create({
-      data: {
-        userId: actor.id,
-        auditModule: AUDIT_MODULE,
-        action: 'rotate-key',
-        metadata: metadata as Prisma.InputJsonValue,
-        ipAddress: actor.ipAddress ?? null,
-      },
-    });
 
     return { ...device, apiKey };
   }
