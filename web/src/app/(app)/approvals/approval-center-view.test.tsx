@@ -58,24 +58,22 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
 
     render(<ApprovalCenterView />);
 
-    // ใช้ CardDescription (ข้อความเดี่ยวๆ ไม่มี element ซ้อน) แทน CardTitle
-    // กัน getByText match ซ้ำกับ ancestor ที่ textContent รวมลูกเข้าไปด้วย
+    // เช็คจากชื่อ section ไม่ใช่ CardDescription — คิวว่างทุกคิวในเทสนี้ section
+    // เลยยุบเหลือแถบบรรทัดเดียว (ข้อ 14) ซึ่งมีแค่ชื่อ ไม่มีคำอธิบาย
     expect(
-      screen.queryByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
+      screen.queryByText(/Per-device Config Override รออนุมัติ/),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText(/คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ/),
+      screen.queryByText(/^Firmware Override รออนุมัติ/),
     ).not.toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(false);
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(false);
 
     // section ที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นตามปกติ
+    expect(screen.getByText(/^Config รออนุมัติ/)).toBeInTheDocument();
     expect(
-      screen.getByText(/สถานะ Config = testing/),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Rollout ที่เพิ่งเริ่มในกลุ่มอุปกรณ์ต่างๆ/),
+      screen.getByText(/^Campaign Rollout รออนุมัติ/),
     ).toBeInTheDocument();
   });
 
@@ -87,13 +85,53 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     render(<ApprovalCenterView />);
 
     expect(
-      screen.getByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
+      screen.getByText(/Per-device Config Override รออนุมัติ/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/คำขอติดตั้ง Firmware เฉพาะเครื่องที่ไม่ตรงกับ/),
+      screen.getByText(/^Firmware Override รออนุมัติ/),
     ).toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(true);
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(true);
+  });
+});
+
+/** รายการแก้ UI เว็บข้อ 14 — section ที่คิวว่างยุบเหลือแถบบรรทัดเดียว */
+describe("ApprovalCenterView — ยุบ section ที่คิวว่าง", () => {
+  it("คิวว่างทั้งหมด: ทุก section เป็นแถบบรรทัดเดียว ไม่มีคำอธิบาย/EmptyState เต็ม", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(4);
+    expect(
+      screen.queryByText(/สถานะ Config = testing/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("คิวโหลดพัง: ไม่ยุบ ยังโชว์การ์ดเต็มพร้อม error + ปุ่มลองใหม่", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: "โหลดไม่สำเร็จ",
+      refetch: vi.fn(),
+    });
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    expect(
+      screen.getByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("โหลดไม่สำเร็จ")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ลองใหม่" })).toBeInTheDocument();
+    // อีก 3 section ที่คิวว่างจริงยังยุบตามปกติ
+    expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(3);
   });
 });

@@ -496,7 +496,22 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
         .expect(201);
     });
 
-    it('2 request approve/reject พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
+    /**
+     * ส่งคำขอ approve/reject เข้า rollout เดียวกันพร้อมกัน — helper ของ 3 เคส
+     * race ด้านล่าง
+     */
+    function decide(
+      campaignId: string,
+      rolloutId: string,
+      action: 'approve' | 'reject',
+      userId: string,
+    ) {
+      return request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaignId}/rollouts/${rolloutId}/${action}`)
+        .set('Authorization', `Bearer ${tokenFor(userId, 'Operation')}`);
+    }
+
+    it('2 request approve พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
       const creator = await makeUser(prisma, { role: 'Operation' });
       const campaign = await seedGroup(creator.id, []);
       const rollout = await seedPendingRollout(campaign.id, creator.id);
@@ -505,34 +520,70 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       await grant('Operation', ActionType.Approve);
 
       const [res1, res2] = await Promise.all([
-        request(app.getHttpServer())
-          .post(
-            `/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/approve`,
-          )
-          .set(
-            'Authorization',
-            `Bearer ${tokenFor(approver1.id, 'Operation')}`,
-          ),
-        request(app.getHttpServer())
-          .post(
-            `/api/v1/campaigns/${campaign.id}/rollouts/${rollout.id}/reject`,
-          )
-          .set(
-            'Authorization',
-            `Bearer ${tokenFor(approver2.id, 'Operation')}`,
-          ),
+        decide(campaign.id, rollout.id, 'approve', approver1.id),
+        decide(campaign.id, rollout.id, 'approve', approver2.id),
       ]);
 
-      const statuses = [res1.status, res2.status].sort((a, b) => a - b);
-      expect(statuses).toEqual([200, 409]);
-
-      // ผลลัพธ์สุดท้ายใน DB ต้องตรงกับคำขอที่ชนะจริง ไม่ใช่ทั้งคู่ผสมกัน
+      expect([res1.status, res2.status].sort((a, b) => a - b)).toEqual([
+        200, 409,
+      ]);
+      // ผู้อนุมัติใน DB ต้องเป็นคนที่ชนะจริง ไม่ใช่ทั้งคู่ทับกัน
       const final = await prisma.campaignRollout.findUniqueOrThrow({
         where: { id: rollout.id },
       });
-      expect(['approved', 'rejected']).toContain(final.status);
-      const winner = res1.status === 200 ? 'approved' : 'rejected';
-      expect(final.status).toBe(winner);
+      expect(final.status).toBe('approved');
+      expect(final.approvedBy).toBe(
+        res1.status === 200 ? approver1.id : approver2.id,
+      );
+    });
+
+    it('2 request reject พร้อมกันบน rollout เดียวกัน -> ผ่านได้แค่ 1 อีกอันได้ 409 (race condition)', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(creator.id, []);
+      const rollout = await seedPendingRollout(campaign.id, creator.id);
+      const rejecter1 = await makeUser(prisma, { role: 'Operation' });
+      const rejecter2 = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+
+      const [res1, res2] = await Promise.all([
+        decide(campaign.id, rollout.id, 'reject', rejecter1.id),
+        decide(campaign.id, rollout.id, 'reject', rejecter2.id),
+      ]);
+
+      expect([res1.status, res2.status].sort((a, b) => a - b)).toEqual([
+        200, 409,
+      ]);
+      const final = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      expect(final.status).toBe('rejected');
+    });
+
+    // approve + reject พร้อมกัน **ผลไม่ตายตัวโดยออกแบบ** (แก้ครั้งที่ 63,
+    // PR #250): reject() รับทั้ง pending_approval และ approved (ถอยก่อนปล่อย
+    // เข้าอุปกรณ์) เดิมเคสนี้คาดว่าต้องได้ [200, 409] เสมอ ซึ่งผิดตั้งแต่ #250
+    // — ถ้า approve commit ก่อน reject จะเห็น approved แล้วปฏิเสธต่อได้ 200
+    // ทั้งคู่ (ล้ม ~2 ใน 3 รอบ) · สิ่งที่ต้องเป็นจริงเสมอไม่ว่าลำดับไหน: reject
+    // ผ่านเสมอ, approve ผ่านหรือได้ 409, และผลสุดท้ายเป็น rejected
+    it('approve กับ reject พร้อมกัน -> reject ผ่านเสมอ, approve ผ่านหรือ 409, ผลสุดท้ายต้องเป็น rejected', async () => {
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const campaign = await seedGroup(creator.id, []);
+      const rollout = await seedPendingRollout(campaign.id, creator.id);
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      const rejecter = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Approve);
+
+      const [approveRes, rejectRes] = await Promise.all([
+        decide(campaign.id, rollout.id, 'approve', approver.id),
+        decide(campaign.id, rollout.id, 'reject', rejecter.id),
+      ]);
+
+      expect(rejectRes.status).toBe(200);
+      expect([200, 409]).toContain(approveRes.status);
+      const final = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rollout.id },
+      });
+      expect(final.status).toBe('rejected');
     });
   });
 

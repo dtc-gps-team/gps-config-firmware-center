@@ -37,6 +37,7 @@ import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { describeIncompatibility } from "./rollout-compatibility";
 
 /** Config สถานะที่ใช้ push ได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES` ฝั่ง
  * backend (mirror device.service.ts/campaign-rollout.service.ts) */
@@ -136,40 +137,35 @@ export function CampaignRolloutCreateForm({
   const selectedFirmware =
     eligibleFirmware.find((f) => f.id === firmwareId) ?? null;
 
-  const includedDeviceIds = memberDeviceIds.filter(
-    (id) => !excludedDeviceIds.has(id),
-  );
-
-  /** เครื่องที่ยังเลือกอยู่แต่ไม่เข้ากันกับ payload ที่เลือก — เตือนไว้ก่อน
-   * ล่วงหน้า (backend เช็คซ้ำอยู่ดีตอน submit เป็น 409) mirror
-   * campaign-rollout.service.ts ฝั่ง backend */
-  const incompatibleDeviceIds = useMemo(() => {
-    if (payloadType === "Config") {
-      if (!selectedConfig) return [] as string[];
-      return includedDeviceIds.filter((deviceId) => {
-        const device = deviceByDeviceId.get(deviceId);
-        if (!device) return false;
-        return (
-          device.deviceModel !== selectedConfig.deviceModel ||
-          device.protocol !== selectedConfig.protocol
-        );
-      });
-    }
-    if (!selectedFirmware) return [] as string[];
-    return includedDeviceIds.filter((deviceId) => {
+  /** เครื่องในกลุ่มที่รับ payload ที่เลือกไม่ได้ -> เหตุผล (คำนวณจากสมาชิก
+   * ทุกเครื่อง ไม่ใช่แค่เครื่องที่ยังติ๊กอยู่ เพราะเครื่องพวกนี้ติ๊กเองไม่ได้
+   * อยู่แล้ว) mirror เงื่อนไข 409 ของ campaign-rollout.service.ts ฝั่ง backend */
+  const incompatibleReasons = useMemo(() => {
+    const reasons = new Map<string, string>();
+    for (const deviceId of memberDeviceIds) {
       const device = deviceByDeviceId.get(deviceId);
-      if (!device) return false;
-      return !selectedFirmware.deviceModelCompatibility.includes(
-        device.deviceModel,
-      );
-    });
+      if (!device) continue;
+      const reason = describeIncompatibility({
+        payloadType,
+        device,
+        config: selectedConfig,
+        firmware: selectedFirmware,
+      });
+      if (reason) reasons.set(deviceId, reason);
+    }
+    return reasons;
   }, [
+    memberDeviceIds,
+    deviceByDeviceId,
     payloadType,
-    includedDeviceIds,
     selectedConfig,
     selectedFirmware,
-    deviceByDeviceId,
   ]);
+
+  /** เครื่องที่จะได้รับ payload จริง = ไม่ถูกเอาออกเอง และเข้ากันได้ */
+  const includedDeviceIds = memberDeviceIds.filter(
+    (id) => !excludedDeviceIds.has(id) && !incompatibleReasons.has(id),
+  );
 
   function toggleExcluded(deviceId: string, included: boolean) {
     setExcludedDeviceIds((prev) => {
@@ -196,9 +192,19 @@ export function CampaignRolloutCreateForm({
       return;
     }
     if (includedDeviceIds.length === 0) {
-      setFormError("ต้องเหลืออุปกรณ์อย่างน้อย 1 เครื่องใน Rollout นี้");
+      setFormError(
+        incompatibleReasons.size > 0
+          ? "ไม่มีเครื่องไหนในกลุ่มที่เข้ากันกับ payload นี้ เลือก payload อื่น"
+          : "ต้องเหลืออุปกรณ์อย่างน้อย 1 เครื่องใน Rollout นี้",
+      );
       return;
     }
+
+    // เครื่องที่ไม่เข้ากันถูกปิดไม่ให้ติ๊กไว้แล้ว แต่ backend ยังต้องได้รับ
+    // ใน excludeDeviceIds (ไม่งั้นตอบ 409 เพราะเครื่องพวกนี้ยังเป็นสมาชิก)
+    const excludeDeviceIds = [
+      ...new Set([...excludedDeviceIds, ...incompatibleReasons.keys()]),
+    ];
 
     setSubmitting(true);
     try {
@@ -208,9 +214,7 @@ export function CampaignRolloutCreateForm({
         {
           payloadType,
           ...(payloadType === "Config" ? { configId } : { firmwareId }),
-          ...(excludedDeviceIds.size > 0
-            ? { excludeDeviceIds: [...excludedDeviceIds] }
-            : {}),
+          ...(excludeDeviceIds.length > 0 ? { excludeDeviceIds } : {}),
         },
       );
       toast.success("เริ่ม Rollout แล้ว รอ Operation อีกคนอนุมัติ");
@@ -301,7 +305,13 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-config" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
+                <SelectValue placeholder="- เลือก -">
+                  {() =>
+                    selectedConfig
+                      ? `${selectedConfig.name} (${selectedConfig.deviceModel}/${selectedConfig.protocol})`
+                      : "- เลือก -"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {eligibleConfigs.map((c: Config) => (
@@ -328,7 +338,13 @@ export function CampaignRolloutCreateForm({
               }}
             >
               <SelectTrigger id="rollout-firmware" className="w-full">
-                <SelectValue placeholder="- เลือก -" />
+                <SelectValue placeholder="- เลือก -">
+                  {() =>
+                    selectedFirmware
+                      ? `v${selectedFirmware.version}: รองรับ ${selectedFirmware.deviceModelCompatibility.join(", ")}`
+                      : "- เลือก -"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {eligibleFirmware.map((f: Firmware) => (
@@ -354,6 +370,7 @@ export function CampaignRolloutCreateForm({
           </p>
           <p className="text-xs text-muted-foreground">
             default = สมาชิกทั้งกลุ่ม เอาเครื่องที่ไม่พร้อมออกได้โดยเอาเครื่องหมายถูกออก
+            เครื่องที่ไม่เข้ากันกับ payload ที่เลือกจะถูกเอาออกให้อัตโนมัติ
           </p>
         </div>
 
@@ -368,37 +385,44 @@ export function CampaignRolloutCreateForm({
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-10"></TableHead>
                   <TableHead>เลขเครื่อง</TableHead>
-                  <TableHead>รุ่น/โปรโตคอล</TableHead>
+                  <TableHead>โมเดล/โปรโตคอล</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {memberDeviceIds.map((deviceId) => {
                   const device: Device | undefined =
                     deviceByDeviceId.get(deviceId);
-                  const included = !excludedDeviceIds.has(deviceId);
-                  const incompatible =
-                    included && incompatibleDeviceIds.includes(deviceId);
+                  const incompatibleReason = incompatibleReasons.get(deviceId);
+                  const incompatible = incompatibleReason !== undefined;
+                  const included =
+                    !incompatible && !excludedDeviceIds.has(deviceId);
                   return (
-                    <TableRow key={deviceId}>
+                    <TableRow
+                      key={deviceId}
+                      className={incompatible ? "opacity-60" : undefined}
+                    >
                       <TableCell>
                         <Checkbox
                           checked={included}
+                          disabled={incompatible}
                           onCheckedChange={(c) =>
                             toggleExcluded(deviceId, c === true)
                           }
                           aria-label={
-                            included
-                              ? "เอาเครื่องนี้ออกจาก Rollout"
-                              : "เอาเครื่องนี้กลับเข้า Rollout"
+                            incompatible
+                              ? "เครื่องนี้ไม่เข้ากันกับ payload จึงเลือกไม่ได้"
+                              : included
+                                ? "เอาเครื่องนี้ออกจาก Rollout"
+                                : "เอาเครื่องนี้กลับเข้า Rollout"
                           }
                         />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {deviceId}
                         {incompatible && (
-                          <span className="ml-2 text-amber-600 dark:text-amber-400">
-                            ไม่เข้ากันกับ payload นี้
-                          </span>
+                          <p className="mt-0.5 font-sans text-amber-700 dark:text-amber-400">
+                            {incompatibleReason}
+                          </p>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -414,14 +438,13 @@ export function CampaignRolloutCreateForm({
           </div>
         )}
 
-        {incompatibleDeviceIds.length > 0 && (
+        {incompatibleReasons.size > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-            มีอุปกรณ์ {incompatibleDeviceIds.length} เครื่องที่
-            {payloadType === "Config"
-              ? "รุ่น/โปรโตคอลไม่ตรงกับ Config นี้"
-              : "รุ่นไม่อยู่ในรายการที่ Firmware นี้รองรับ"}{" "}
-            ระบบจะปฏิเสธตอนยืนยัน เอาออกหรือเปลี่ยน
-            {payloadType === "Config" ? "Config" : "Firmware"}ก่อน
+            จะส่งให้ {includedDeviceIds.length} จาก {memberDeviceIds.length}{" "}
+            เครื่อง ส่วนอีก {incompatibleReasons.size} เครื่องไม่เข้ากันกับ{" "}
+            {payloadType === "Config" ? "Config" : "Firmware"} ที่เลือก
+            ระบบเอาออกจากรอบนี้ให้อัตโนมัติ เครื่องเหล่านั้นต้องส่งในรอบอื่นด้วย{" "}
+            {payloadType === "Config" ? "Config" : "Firmware"} ที่ตรงกับโมเดลของเครื่อง
           </div>
         )}
       </Card>
