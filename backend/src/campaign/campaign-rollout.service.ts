@@ -1109,6 +1109,20 @@ export class CampaignRolloutService {
    * (ไม่ควร log audit ซ้ำ) — `DeviceService.applyConfig()`/
    * `confirmFirmwareInstall()` (path เดิม) ไม่ได้ใช้ return value นี้ ไม่กระทบ
    *
+   * **`options.fallbackToPayload` — `rolloutId` เป็นแค่ "คำใบ้" จาก client
+   * (issue #268)** — Mobile ได้ `rolloutId` จาก `GET /devices/{id}/status`
+   * ซึ่งคืน target ล่าสุดแค่รายการเดียวต่อประเภท ถ้าอุปกรณ์ค้าง pending ใน 2
+   * rollout ที่ `configId`/`firmwareId` ต่างกัน `rolloutId` ที่ได้อาจเป็นของ
+   * รอบหนึ่งแต่ payload ที่ช่างส่งเป็นของอีกรอบ (เช่น Task ผูก Config ของรอบเก่า)
+   * query ที่บังคับให้ตรงทั้ง 2 อย่างจะไม่เจอ target เลยแล้วปล่อยให้ค้าง
+   * `pending` เงียบๆ (หลัง #264 ที่เพิ่ม `rolloutId`) — ถ้าเปิด option นี้
+   * และ query ที่ scope ด้วย `rolloutId` ไม่เจอ ให้ลอง match ด้วย payload
+   * อย่างเดียวอีกครั้ง (พฤติกรรมเดียวกับก่อน #264) · **เปิดเฉพาะ path ของ
+   * Mobile** (`DeviceService.applyConfig()`/`confirmFirmwareInstall()`) ส่วน
+   * `autoApply*()`/rollback ไม่เปิด เพราะ `rollout.id` ที่ส่งมาเป็นของตัวเอง
+   * "แน่นอน" (#235 review รอบ 4 ข้อ 1) ถ้า target ของรอบตัวเองไม่ใช่ pending
+   * แล้ว (เช่นถูก claim ไปก่อน) ต้องไม่ไปแย่ง target ของ rollout อื่น
+   *
    * **never-throw** — เป็นแค่ side-effect ติดตามผล ไม่ใช่ core contract ของ
    * apply-config/confirm-firmware-install เอง (mirror pattern `logAudit` ใน
    * ไฟล์นี้/`device.service.ts`) ถ้าไม่เจอ target ที่ match (เช่น apply
@@ -1120,22 +1134,34 @@ export class CampaignRolloutService {
     success: boolean,
     detail: string,
     rolloutId?: string,
+    options?: { fallbackToPayload?: boolean },
   ): Promise<boolean> {
     try {
-      const target = await this.prisma.campaignRolloutTarget.findFirst({
-        where: {
-          deviceId,
-          status: 'pending',
-          ...(rolloutId ? { rolloutId } : {}),
-          rollout: {
-            status: { in: ['active', 'paused'] },
-            ...('configId' in payload
-              ? { configId: payload.configId }
-              : { firmwareId: payload.firmwareId }),
+      const findPendingTarget = (scopeToRollout: boolean) =>
+        this.prisma.campaignRolloutTarget.findFirst({
+          where: {
+            deviceId,
+            status: 'pending',
+            ...(scopeToRollout && rolloutId ? { rolloutId } : {}),
+            rollout: {
+              status: { in: ['active', 'paused'] },
+              ...('configId' in payload
+                ? { configId: payload.configId }
+                : { firmwareId: payload.firmwareId }),
+            },
           },
-        },
-        include: { rollout: true },
-      });
+          include: { rollout: true },
+        });
+
+      let target = await findPendingTarget(true);
+      if (!target && rolloutId && options?.fallbackToPayload) {
+        target = await findPendingTarget(false);
+        if (target) {
+          this.logger.log(
+            `recordTargetResult: rolloutId ${rolloutId} ไม่ตรงกับ payload ของ deviceId ${deviceId} — match ด้วย payload แทน (target ${target.id}, rollout ${target.rolloutId})`,
+          );
+        }
+      }
       if (!target) {
         this.logger.warn(
           `recordTargetResult: ไม่พบ CampaignRolloutTarget ที่ pending ตรงกับ deviceId ${deviceId} + payload ${JSON.stringify(payload)} (ไม่มี Rollout active/paused ที่เครื่องนี้เป็นสมาชิกจริง หรือถูกบันทึกผลไปแล้ว) — ข้ามการอัปเดต Campaign Monitor`,

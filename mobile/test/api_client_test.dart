@@ -910,6 +910,147 @@ void main() {
     });
   });
 
+  group('rolloutId (issue #265) + confirm-firmware-install (issue #261)', () {
+    const applyOk = {
+      'applied': true,
+      'details': ['ok'],
+      'appliedAt': '2026-10-12T00:00:00.000Z',
+    };
+    const confirmOk = {
+      'deviceId': 'DEV-0117',
+      'firmwareId': 'fw-1',
+      'confirmedAt': '2026-10-12T03:00:00.000Z',
+    };
+
+    test('DeviceStatus.fromJson อ่าน configRolloutId/firmwareRolloutId', () {
+      final status = DeviceStatus.fromJson({
+        'deviceId': 'DEV-0117',
+        'configStatus': 'pending',
+        'firmwareStatus': 'pending',
+        'configRolloutId': 'ro-config',
+        'firmwareRolloutId': 'ro-fw',
+      });
+      expect(status.configRolloutId, 'ro-config');
+      expect(status.firmwareRolloutId, 'ro-fw');
+    });
+
+    test('DeviceStatus.fromJson: null / ไม่มี field -> null', () {
+      final withNull = DeviceStatus.fromJson({
+        'deviceId': 'DEV-0117',
+        'configStatus': 'up_to_date',
+        'firmwareStatus': 'unknown',
+        'configRolloutId': null,
+        'firmwareRolloutId': null,
+      });
+      final missing = DeviceStatus.fromJson({
+        'deviceId': 'DEV-0117',
+        'configStatus': 'unknown',
+        'firmwareStatus': 'unknown',
+      });
+      expect(withNull.configRolloutId, isNull);
+      expect(withNull.firmwareRolloutId, isNull);
+      expect(missing.configRolloutId, isNull);
+      expect(missing.firmwareRolloutId, isNull);
+    });
+
+    test('applyConfigToDevice มี rolloutId -> ส่งใน body', () async {
+      final (:client, :adapter) = _clientReturning(applyOk);
+      await client.applyConfigToDevice(
+        deviceId: 'DEV-0117',
+        configId: 'cfg-1',
+        rolloutId: 'ro-config',
+      );
+      expect(adapter.lastRequest?.method, 'POST');
+      expect(adapter.lastRequest?.path, '/devices/DEV-0117/apply-config');
+      expect(adapter.lastRequest?.data, {
+        'configId': 'cfg-1',
+        'rolloutId': 'ro-config',
+      });
+    });
+
+    test(
+      'applyConfigToDevice rolloutId เป็น null -> ไม่มี key นี้เลย',
+      () async {
+        final (:client, :adapter) = _clientReturning(applyOk);
+        await client.applyConfigToDevice(
+          deviceId: 'DEV-0117',
+          configId: 'cfg-1',
+        );
+        final body = adapter.lastRequest?.data as Map<String, dynamic>;
+        expect(body, {'configId': 'cfg-1'});
+        expect(body.containsKey('rolloutId'), isFalse);
+      },
+    );
+
+    test(
+      'confirmFirmwareInstall มี rolloutId -> ส่งใน body + parse result',
+      () async {
+        final (:client, :adapter) = _clientReturning(confirmOk);
+        final result = await client.confirmFirmwareInstall(
+          deviceId: 'DEV-0117',
+          firmwareId: 'fw-1',
+          rolloutId: 'ro-fw',
+        );
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(
+          adapter.lastRequest?.path,
+          '/devices/DEV-0117/confirm-firmware-install',
+        );
+        expect(adapter.lastRequest?.data, {
+          'firmwareId': 'fw-1',
+          'rolloutId': 'ro-fw',
+        });
+        expect(result.deviceId, 'DEV-0117');
+        expect(result.firmwareId, 'fw-1');
+        expect(result.confirmedAt, DateTime.utc(2026, 10, 12, 3));
+      },
+    );
+
+    test(
+      'confirmFirmwareInstall rolloutId เป็น null -> ไม่มี key นี้เลย',
+      () async {
+        final (:client, :adapter) = _clientReturning(confirmOk);
+        await client.confirmFirmwareInstall(
+          deviceId: 'DEV-0117',
+          firmwareId: 'fw-1',
+        );
+        final body = adapter.lastRequest?.data as Map<String, dynamic>;
+        expect(body, {'firmwareId': 'fw-1'});
+        expect(body.containsKey('rolloutId'), isFalse);
+      },
+    );
+
+    test(
+      'confirmFirmwareInstall 409 -> ApiException(409, ข้อความ backend)',
+      () async {
+        final client = _clientFailingWith(
+          (o) => DioException(
+            requestOptions: o,
+            response: _response(o, 409, {
+              'message':
+                  'Firmware นี้ไม่ตรงกับแผนที่ Campaign กำหนดไว้ — ต้องขอ Firmware Override ก่อน',
+            }),
+          ),
+        );
+        await expectLater(
+          client.confirmFirmwareInstall(
+            deviceId: 'DEV-0117',
+            firmwareId: 'fw-1',
+          ),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('Firmware Override'),
+                ),
+          ),
+        );
+      },
+    );
+  });
+
   group('customer endpoints', () {
     test('listCustomers -> GET /customers, maps the JSON array', () async {
       final (:client, :adapter) = _clientReturning([

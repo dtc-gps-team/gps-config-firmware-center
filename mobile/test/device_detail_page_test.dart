@@ -195,7 +195,10 @@ void main() {
       );
 
       expect(
-        find.byKey(const Key('device_detail_config_override')),
+        find.byKey(
+          const Key('device_detail_config_override'),
+          skipOffstage: false,
+        ),
         findsOneWidget,
       );
     });
@@ -210,7 +213,10 @@ void main() {
       );
 
       expect(
-        find.byKey(const Key('device_detail_config_override')),
+        find.byKey(
+          const Key('device_detail_config_override'),
+          skipOffstage: false,
+        ),
         findsNothing,
       );
     });
@@ -223,7 +229,10 @@ void main() {
       );
 
       expect(
-        find.byKey(const Key('device_detail_config_override')),
+        find.byKey(
+          const Key('device_detail_config_override'),
+          skipOffstage: false,
+        ),
         findsNothing,
       );
     });
@@ -247,6 +256,33 @@ void main() {
           expect(
             find.byKey(
               const Key('device_detail_firmware_override'),
+              skipOffstage: false,
+            ),
+            entry.value ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
+  });
+
+  group('ปุ่ม ยืนยันติดตั้ง Firmware (issue #261, ST + OT)', () {
+    for (final entry in {
+      UserRole.st: true,
+      UserRole.ot: true,
+      UserRole.operation: false,
+    }.entries) {
+      testWidgets(
+        'role ${entry.key} -> ${entry.value ? 'เห็น' : 'ไม่เห็น'}ปุ่ม',
+        (tester) async {
+          await _pump(
+            tester,
+            repo: _FakeDeviceSearchRepository(),
+            role: entry.key,
+          );
+
+          expect(
+            find.byKey(
+              const Key('device_detail_confirm_firmware'),
               skipOffstage: false,
             ),
             entry.value ? findsOneWidget : findsNothing,

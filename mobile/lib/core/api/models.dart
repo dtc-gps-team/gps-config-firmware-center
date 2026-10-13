@@ -643,6 +643,33 @@ class ConfigApplyResult {
   }
 }
 
+/// Result of `POST /devices/{deviceId}/confirm-firmware-install`
+/// (`ConfirmFirmwareInstallResult`, issue #261). Only records that the
+/// confirmation happened (AuditLog) — nothing is sent to the device and no
+/// device update status is computed.
+class ConfirmFirmwareInstallResult {
+  const ConfirmFirmwareInstallResult({
+    required this.deviceId,
+    required this.firmwareId,
+    required this.confirmedAt,
+  });
+
+  /// `Device.deviceId` (เลขเครื่องจริง)
+  final String deviceId;
+  final String firmwareId;
+  final DateTime confirmedAt;
+
+  factory ConfirmFirmwareInstallResult.fromJson(Map<String, dynamic> json) {
+    return ConfirmFirmwareInstallResult(
+      deviceId: json['deviceId'] as String? ?? '',
+      firmwareId: json['firmwareId'] as String? ?? '',
+      confirmedAt:
+          DateTime.tryParse(json['confirmedAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+}
+
 /// A job assigned to field staff — mirrors `docs/api/openapi.yaml` `Task`
 /// (and the Prisma model `Task`). `GET /tasks` / `GET /tasks/{taskId}` /
 /// `PATCH /tasks/{taskId}` all return this shape.
@@ -777,6 +804,8 @@ class DeviceStatus {
     required this.firmwareStatus,
     this.lastCheckInMessage,
     this.pendingFirmwareOverride,
+    this.configRolloutId,
+    this.firmwareRolloutId,
   });
 
   final String deviceId;
@@ -789,6 +818,13 @@ class DeviceStatus {
   /// ผู้ขอ (mirror `DeviceConfigDraft.pendingOverride`) · backend เก่าที่ยังไม่มี
   /// field นี้ → `null`
   final DeviceFirmwareOverride? pendingFirmwareOverride;
+
+  /// `CampaignRollout.id` ที่ [configStatus] / [firmwareStatus] คำนวณมา (openapi
+  /// v3.47, issue #243/#265) — มีค่าเฉพาะตอนสถานะเป็น `pending` ไม่งั้น `null`
+  /// ส่งกลับเป็น `rolloutId` ตอน apply-config / confirm-firmware-install เพื่อกัน
+  /// backend match ผิดรอบ · backend เก่าที่ไม่มี field นี้ → `null`
+  final String? configRolloutId;
+  final String? firmwareRolloutId;
 
   factory DeviceStatus.fromJson(Map<String, dynamic> json) {
     return DeviceStatus(
@@ -805,6 +841,8 @@ class DeviceStatus {
               (json['pendingFirmwareOverride'] as Map).cast<String, dynamic>(),
             )
           : null,
+      configRolloutId: json['configRolloutId'] as String?,
+      firmwareRolloutId: json['firmwareRolloutId'] as String?,
     );
   }
 }

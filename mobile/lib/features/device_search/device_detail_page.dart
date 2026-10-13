@@ -34,7 +34,10 @@ class DeviceDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceAsync = ref.watch(deviceDetailProvider(deviceId));
-    final isSt = ref.watch(authControllerProvider).role == UserRole.st;
+    final role = ref.watch(authControllerProvider).role;
+    final isSt = role == UserRole.st;
+    // ยืนยันติดตั้ง Firmware (issue #261): backend เปิดให้ ST และ OT
+    final canConfirmFirmware = isSt || role == UserRole.ot;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -46,8 +49,12 @@ class DeviceDetailPage extends ConsumerWidget {
       ),
       body: deviceAsync.when(
         skipLoadingOnRefresh: true,
-        data: (device) =>
-            _DeviceDetailView(device: device, deviceId: deviceId, isSt: isSt),
+        data: (device) => _DeviceDetailView(
+          device: device,
+          deviceId: deviceId,
+          isSt: isSt,
+          canConfirmFirmware: canConfirmFirmware,
+        ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _DetailError(
           message: _errorMessage(error),
@@ -77,11 +84,13 @@ class _DeviceDetailView extends ConsumerWidget {
     required this.device,
     required this.deviceId,
     required this.isSt,
+    required this.canConfirmFirmware,
   });
 
   final Device device;
   final String deviceId;
   final bool isSt;
+  final bool canConfirmFirmware;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -119,6 +128,21 @@ class _DeviceDetailView extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         _StatusSection(deviceId: deviceId),
+        if (canConfirmFirmware) ...[
+          const SizedBox(height: 20),
+          // issue #261 — ยืนยันว่าติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว (ST/OT)
+          FilledButton.icon(
+            key: const Key('device_detail_confirm_firmware'),
+            onPressed: () =>
+                context.push(AppRoutes.deviceConfirmFirmware(deviceId)),
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('ยืนยันติดตั้ง Firmware'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.navy,
+              minimumSize: const Size.fromHeight(48),
+            ),
+          ),
+        ],
         if (isSt) ...[
           const SizedBox(height: 20),
           OutlinedButton.icon(

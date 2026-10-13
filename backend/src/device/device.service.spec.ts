@@ -963,6 +963,7 @@ describe('DeviceService', () => {
         true,
         applyResult.details.join(' · '),
         undefined,
+        { fallbackToPayload: true },
       );
     });
 
@@ -984,6 +985,7 @@ describe('DeviceService', () => {
         true,
         applyResult.details.join(' · '),
         'rollout-123',
+        { fallbackToPayload: true },
       );
     });
 
@@ -1177,6 +1179,7 @@ describe('DeviceService', () => {
         true,
         expect.any(String) as string,
         undefined,
+        { fallbackToPayload: true },
       );
     });
 
@@ -1196,6 +1199,7 @@ describe('DeviceService', () => {
         true,
         expect.any(String) as string,
         'rollout-456',
+        { fallbackToPayload: true },
       );
     });
 
