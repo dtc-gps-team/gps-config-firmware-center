@@ -40,6 +40,7 @@ const draftConfig: Config = {
   approvedBy: null,
   suggestedApproverId: null,
   deletedAt: null,
+  clonedFromId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -361,6 +362,78 @@ describe('ConfigService', () => {
           configEngineer,
         ),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('create: clonedFromId (ต้นทางของการโคลน)', () => {
+    const base = {
+      name: 'โคลนจาก SOS',
+      deviceModel: 'GT06N',
+      protocol: 'TCP',
+      fields: { APN1: 'internet' },
+    };
+
+    it('ส่ง clonedFromId ของ Config ที่มีอยู่ -> บันทึกต้นทางลง Config ใหม่', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      config.create.mockResolvedValue({
+        ...draftConfig,
+        clonedFromId: approvedConfig.id,
+      });
+
+      const result = await service.create(
+        { ...base, clonedFromId: approvedConfig.id },
+        configEngineer,
+      );
+
+      expect(config.findUnique).toHaveBeenCalledWith({
+        where: { id: approvedConfig.id },
+      });
+      expect(config.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          clonedFromId: approvedConfig.id,
+        }) as Record<string, unknown>,
+      });
+      expect(result.clonedFromId).toBe(approvedConfig.id);
+    });
+
+    it('ต้นทางไม่พบ -> 404 และไม่สร้าง Config', async () => {
+      config.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          { ...base, clonedFromId: '99999999-9999-4999-8999-999999999999' },
+          configEngineer,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('ต้นทางถูก soft-delete แล้ว -> 404 (ไม่ผูกกับ Config ที่ถูกถอดออกจากระบบ)', async () => {
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date('2026-02-01T00:00:00.000Z'),
+      });
+
+      await expect(
+        service.create(
+          { ...base, clonedFromId: approvedConfig.id },
+          configEngineer,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่ง clonedFromId (สร้างใหม่ตั้งแต่ต้น) -> ไม่ค้นหาต้นทาง และบันทึกเป็น undefined', async () => {
+      config.create.mockResolvedValue(draftConfig);
+
+      await service.create(base, configEngineer);
+
+      expect(config.findUnique).not.toHaveBeenCalled();
+      expect(config.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          clonedFromId: undefined,
+        }) as Record<string, unknown>,
+      });
     });
   });
 

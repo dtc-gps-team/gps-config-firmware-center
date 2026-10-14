@@ -25,15 +25,21 @@ type Decision = "approve" | "reject";
  * approval ย้ายไปอยู่ที่นั่นแล้ว) ตรรกะ SoD เหมือนเดิมทุกประการ — เทียบ
  * user id ผ่าน `getTokenSubject` มิเรอร์ `approval-center-view.tsx` เพราะ
  * `AuthSession` ไม่เก็บ user id ตรงๆ
+ *
+ * `variant="inline"` ใช้ในการ์ดคิว Approval Center: ไม่มีกล่องเทาและหัวข้อ
+ * ให้ปุ่มและข้อความหน้าตาเดียวกับการ์ดคำขอประเภทอื่นในคิว ส่วนหน้ารายละเอียด
+ * Rollout ใช้ค่าเริ่มต้น `"panel"` (กล่องเทาเหมือนเดิม)
  */
 export function CampaignRolloutApprovalPanel({
   campaignId,
   rollout,
   onDecided,
+  variant = "panel",
 }: {
   campaignId: string;
   rollout: CampaignRollout;
   onDecided: (updated: CampaignRollout) => void;
+  variant?: "panel" | "inline";
 }) {
   const { session } = useAuth();
   const [confirming, setConfirming] = useState<Decision | null>(null);
@@ -50,7 +56,16 @@ export function CampaignRolloutApprovalPanel({
     : null;
   const isOwnRollout = myUserId !== null && myUserId === rollout.createdBy;
 
+  const inline = variant === "inline";
+
   if (!canDecide) {
+    if (inline) {
+      return (
+        <span className="text-sm text-muted-foreground">
+          เฉพาะ Operation เท่านั้นที่อนุมัติ/ปฏิเสธได้
+        </span>
+      );
+    }
     return (
       <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อนุมัติ</p>
@@ -63,6 +78,14 @@ export function CampaignRolloutApprovalPanel({
   }
 
   if (isOwnRollout) {
+    if (inline) {
+      return (
+        <span className="text-sm text-muted-foreground">
+          คุณเป็นผู้สร้าง Rollout นี้ อนุมัติ/ปฏิเสธของตัวเองไม่ได้ ต้องรอ
+          Operation คนอื่นตัดสินใจ
+        </span>
+      );
+    }
     return (
       <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ Operation อีกคนอนุมัติ</p>
@@ -109,13 +132,8 @@ export function CampaignRolloutApprovalPanel({
     }
   }
 
-  return (
-    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
-      <p className="text-sm font-medium">อนุมัติ Rollout</p>
-      <p className="text-sm text-muted-foreground">
-        อนุมัติแล้วยังไม่แตะอุปกรณ์ ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
-        อีกขั้นถึงจะเริ่มทำงานจริง ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้
-      </p>
+  const controls = (
+    <>
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       {confirming ? (
@@ -160,6 +178,21 @@ export function CampaignRolloutApprovalPanel({
           </Button>
         </div>
       )}
+    </>
+  );
+
+  if (inline) {
+    return <div className="flex flex-col items-start gap-1">{controls}</div>;
+  }
+
+  return (
+    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
+      <p className="text-sm font-medium">อนุมัติ Rollout</p>
+      <p className="text-sm text-muted-foreground">
+        อนุมัติแล้วยังไม่แตะอุปกรณ์ ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
+        อีกขั้นถึงจะเริ่มทำงานจริง ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้
+      </p>
+      {controls}
     </Card>
   );
 }

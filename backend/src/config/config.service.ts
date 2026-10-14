@@ -171,6 +171,15 @@ export class ConfigService {
     await this.validateDeviceModelProtocol(dto.deviceModel, dto.protocol);
     await this.validateFields(dto.deviceModel, dto.protocol, dto.fields);
 
+    // ต้นทางของการโคลน (ถ้าส่งมา) ต้องมีอยู่จริงและยังไม่ถูกลบ — soft-deleted
+    // ถือว่า "ไม่พบ" เหมือน findOne() เพื่อไม่ผูกกับ Config ที่ถูกถอดออกจากระบบ
+    // ไปแล้ว (mirror เหตุผลเดียวกับ deletedAt ของทุก query อ่าน) · ใช้ 404 ตาม
+    // convention เดียวกับ id อ้างอิงอื่นใน body (modelId, customerId,
+    // sourceIncidentId)
+    if (dto.clonedFromId) {
+      await this.findOne(dto.clonedFromId);
+    }
+
     let created: Config;
     try {
       created = await this.prisma.config.create({
@@ -178,6 +187,7 @@ export class ConfigService {
           name: dto.name,
           deviceModel: dto.deviceModel,
           protocol: dto.protocol,
+          clonedFromId: dto.clonedFromId,
           // cast เป็น Prisma.InputJsonValue — DTO ใช้ Record<string, unknown>
           // ตรงๆ (class-validator @IsObject() ไม่รู้จัก type ของ Prisma) แต่
           // Prisma.JsonValue ปฏิเสธ Record ธรรมดาเพราะ type ของมันรวม array
@@ -250,6 +260,15 @@ export class ConfigService {
     ) {
       throw new BadRequestException(
         'เนื้อหา JSON ต้องเป็น object เดียว (ไม่ใช่ null / array / ค่าเดี่ยว)',
+      );
+    }
+
+    // `clonedFromId` ใช้ได้เฉพาะตอนสร้างจากฟอร์มโคลน (POST /config) ไม่รับผ่าน
+    // import — DTO ตัวเดียวกันกับ createConfig จึง whitelist field นี้ไว้ ต้องดัก
+    // เองตรงนี้ ไม่งั้นไฟล์ import จะอ้างต้นทางได้ทั้งที่ไม่ได้ผ่านฟอร์มโคลน
+    if ('clonedFromId' in parsed) {
+      throw new BadRequestException(
+        'ไฟล์ import ใส่ clonedFromId ไม่ได้ (ระบุต้นทางได้เฉพาะตอนโคลน Config จากหน้าเว็บ)',
       );
     }
 

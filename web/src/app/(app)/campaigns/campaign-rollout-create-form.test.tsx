@@ -82,6 +82,7 @@ const gt06nConfig: Config = {
   createdBy: "u1",
   approvedBy: "u2",
   suggestedApproverId: null,
+  clonedFromId: null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 };
