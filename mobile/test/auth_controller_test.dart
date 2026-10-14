@@ -260,14 +260,67 @@ void main() {
 
     final state = container.read(authControllerProvider);
     expect(state.status, AuthStatus.unauthenticated);
-    expect(state.error, 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ');
+    expect(state.error, 'บัญชีนี้ใช้ได้เฉพาะหน้าเว็บ');
     expect(await tokenStore.read(), isNull);
     expect(await profileStore.read(), isNull);
   });
 
-  test('login succeeds normally for every role other than SuperAdmin — the '
-      'SuperAdmin guard must not catch any of these', () async {
-    for (final role in UserRole.values.where((r) => r != UserRole.superAdmin)) {
+  // คำตอบ A ใน #303 ข้อ 2 — Auditor/Admin ใช้ได้เฉพาะ Web เหมือน SuperAdmin
+  for (final role in [UserRole.auditor, UserRole.admin]) {
+    test('login blocks ${role.wireName} (Web-only) — token never reaches the '
+        'token store', () async {
+      final tokenStore = InMemoryTokenStore();
+      final profileStore = InMemorySessionProfileStore();
+      final container = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(
+            _FakeAuthRepository(
+              LoginResponse(accessToken: 'web-only-token', role: role),
+            ),
+          ),
+          tokenStoreProvider.overrideWithValue(tokenStore),
+          sessionProfileStoreProvider.overrideWithValue(profileStore),
+          pushNotificationServiceProvider.overrideWithValue(
+            _FakePushNotificationService(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login('${role.wireName}.test', 'password123');
+
+      final state = container.read(authControllerProvider);
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(state.error, 'บัญชีนี้ใช้ได้เฉพาะหน้าเว็บ');
+      expect(await tokenStore.read(), isNull);
+      expect(await profileStore.read(), isNull);
+    });
+
+    test('restoring a saved ${role.wireName} session (logged in before the '
+        'block) signs out instead of restoring it', () async {
+      final container = _container(
+        token: 'old-token',
+        profile: SessionProfile('${role.wireName}.test', role),
+      );
+
+      container.read(authControllerProvider);
+      await pumpEventQueue();
+
+      final state = container.read(authControllerProvider);
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(state.error, 'บัญชีนี้ใช้ได้เฉพาะหน้าเว็บ');
+      expect(await container.read(tokenStoreProvider).read(), isNull);
+      expect(await container.read(sessionProfileStoreProvider).read(), isNull);
+    });
+  }
+
+  test('login succeeds normally for every role that is not Web-only (ST, OT, '
+      'Operation) — the Web-only guard must not catch any of these', () async {
+    for (final role in UserRole.values.where(
+      (r) => !webOnlyRoles.contains(r),
+    )) {
       final fakeRepo = _FakeAuthRepository(
         LoginResponse(accessToken: 'token-${role.wireName}', role: role),
       );
