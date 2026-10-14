@@ -163,7 +163,7 @@ export function RegisterDeviceForm() {
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">ระบุตัวเครื่อง</h2>
+        <h2 className="text-sm font-medium">ข้อมูลตัวเครื่อง</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-blackbox">
@@ -208,10 +208,31 @@ export function RegisterDeviceForm() {
               onChange={(e) => setSerialNumber(e.target.value)}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-sim">SIM Number</Label>
+            <Input
+              id="device-sim"
+              value={simNumber}
+              disabled={submitting}
+              onChange={(e) => setSimNumber(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-bootloader">
+              Bootloader{" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            </Label>
+            <Input
+              id="device-bootloader"
+              value={bootloader}
+              disabled={submitting}
+              onChange={(e) => setBootloader(e.target.value)}
+            />
+          </div>
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">โมเดลและรุ่นย่อย</h2>
+        <h2 className="text-sm font-medium">โมเดล</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-model">โมเดล</Label>
@@ -259,7 +280,7 @@ export function RegisterDeviceForm() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="col-span-2 flex flex-col gap-1.5">
             <Label htmlFor="device-hw-revision">
               รหัสรุ่นย่อย (Hardware Revision){" "}
               <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
@@ -272,33 +293,12 @@ export function RegisterDeviceForm() {
               onChange={(e) => setHardwareRevisionCode(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-bootloader">
-              Bootloader{" "}
-              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-            </Label>
-            <Input
-              id="device-bootloader"
-              value={bootloader}
-              disabled={submitting}
-              onChange={(e) => setBootloader(e.target.value)}
-            />
-          </div>
         </div>
       </section>
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium">การใช้งาน</h2>
         <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-sim">SIM Number</Label>
-            <Input
-              id="device-sim"
-              value={simNumber}
-              disabled={submitting}
-              onChange={(e) => setSimNumber(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="col-span-2 flex flex-col gap-1.5">
             <Label htmlFor="device-customer">
               ลูกค้า{" "}
               <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
