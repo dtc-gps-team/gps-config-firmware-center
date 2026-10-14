@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AuditLog, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -38,15 +38,30 @@ export class AuditService {
       userId,
       auditModule,
       action,
+      actorName,
+      from,
+      to,
       page = 1,
       pageSize = AUDIT_LOG_DEFAULT_PAGE_SIZE,
     } = query;
+    const fromDate = from ? new Date(from) : undefined;
+    const toDate = to ? new Date(to) : undefined;
+    if (fromDate && toDate && fromDate > toDate) {
+      throw new BadRequestException('from ต้องไม่มากกว่า to');
+    }
     const where: Prisma.AuditLogWhereInput = {
       userId: userId || undefined,
       auditModule: auditModule || undefined,
       // action เป็นช่องค้นหา (ไม่ใช่ dropdown ค่าคงที่แบบ auditModule) —
       // ใช้ contains แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ ให้พิมพ์บางส่วนของคำแล้วเจอได้เลย
       action: action ? { contains: action, mode: 'insensitive' } : undefined,
+      // ค้นชื่อผ่าน relation `user` — ไม่กรอง isActive ตั้งใจ ให้สืบประวัติของ
+      // บัญชีที่ปิดไปแล้วได้
+      user: actorName
+        ? { fullName: { contains: actorName, mode: 'insensitive' } }
+        : undefined,
+      createdAt:
+        fromDate || toDate ? { gte: fromDate, lte: toDate } : undefined,
     };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.auditLog.findMany({

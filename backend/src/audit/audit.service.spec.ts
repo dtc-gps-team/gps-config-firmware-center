@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuditLog } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -91,6 +92,68 @@ describe('AuditService', () => {
         skip: 0,
         take: 20,
       });
+    });
+
+    it('from/to -> createdAt gte/lte (รวมขอบทั้งสองด้าน)', async () => {
+      auditLog.findMany.mockResolvedValue([]);
+      auditLog.count.mockResolvedValue(0);
+
+      await service.findAll({
+        from: '2026-10-13T17:00:00.000Z',
+        to: '2026-10-14T16:59:59.999Z',
+      });
+
+      expect(auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            createdAt: {
+              gte: new Date('2026-10-13T17:00:00.000Z'),
+              lte: new Date('2026-10-14T16:59:59.999Z'),
+            },
+          },
+        }),
+      );
+    });
+
+    it('ส่งแค่ from -> กรองด้านเดียว', async () => {
+      auditLog.findMany.mockResolvedValue([]);
+      auditLog.count.mockResolvedValue(0);
+
+      await service.findAll({ from: '2026-10-01T00:00:00.000Z' });
+
+      expect(auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            createdAt: { gte: new Date('2026-10-01T00:00:00.000Z') },
+          },
+        }),
+      );
+    });
+
+    it('from มากกว่า to -> BadRequestException และไม่ query DB', async () => {
+      await expect(
+        service.findAll({
+          from: '2026-10-14T00:00:00.000Z',
+          to: '2026-10-13T00:00:00.000Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(auditLog.findMany).not.toHaveBeenCalled();
+    });
+
+    it('actorName -> contains บน user.fullName ไม่สนตัวพิมพ์ ไม่กรอง isActive', async () => {
+      auditLog.findMany.mockResolvedValue([]);
+      auditLog.count.mockResolvedValue(0);
+
+      await service.findAll({ actorName: 'สมชาย' });
+
+      expect(auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            user: { fullName: { contains: 'สมชาย', mode: 'insensitive' } },
+          },
+        }),
+      );
     });
   });
 });
