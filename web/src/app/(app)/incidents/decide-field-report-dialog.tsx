@@ -174,7 +174,7 @@ export function DecideFieldReportDialog({
             }}
             maxLength={NOTE_MAX_LENGTH}
             rows={3}
-            placeholder="เหตุผลของการตัดสินใจ ช่างผู้แจ้งจะเห็นข้อความนี้"
+            placeholder="เหตุผลของการตัดสินใจ ถ้าไม่ตรงกับตัวเลือกด้านบนให้อธิบายเพิ่ม ช่างผู้แจ้งจะเห็นข้อความนี้"
             className="min-h-20 resize-y rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           />
           <p className="text-right text-xs text-muted-foreground">
