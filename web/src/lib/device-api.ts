@@ -126,6 +126,18 @@ export type RegisterDeviceInput = {
  * ครั้งเดียว ไม่มีทาง GET กลับมาดูซ้ำได้อีก) */
 export type RegisterDeviceResult = Device & { apiKey: string };
 
+/** `POST /devices/{deviceId}/rotate-key` — Admin/SuperAdmin เท่านั้น ออก
+ * API key ใหม่ (key เก่าใช้ไม่ได้ทันที) · apiKey ใน response โชว์ได้ครั้งเดียว */
+export function rotateDeviceKey(
+  token: string,
+  deviceId: string,
+): Promise<RegisterDeviceResult> {
+  return apiJson<RegisterDeviceResult>(
+    `/devices/${encodeURIComponent(deviceId)}/rotate-key`,
+    { method: "POST", token },
+  );
+}
+
 /** `POST /devices` — Admin/SuperAdmin เท่านั้น (resource `device-registration`
  * action `Create`, issue #157 PR 1) · 409 ถ้า deviceId ซ้ำ, 404 ถ้า modelId/
  * customerId ไม่พบ, 400 ถ้า protocol ไม่อยู่ใน supportedProtocols ของรุ่นนั้น */

@@ -244,6 +244,9 @@ export function RegisterDeviceForm() {
             placeholder="เช่น RevA"
             onChange={(e) => setHardwareRevisionCode(e.target.value)}
           />
+          <p className="text-xs text-muted-foreground">
+            เว้นว่างถ้าเครื่องนี้ไม่มีรุ่นย่อย
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
