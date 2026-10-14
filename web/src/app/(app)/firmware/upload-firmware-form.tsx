@@ -83,7 +83,7 @@ export function UploadFirmwareForm({
       return;
     }
     if (!trimmedModel) {
-      setFormError("ต้องระบุรุ่นอุปกรณ์อย่างน้อย 1 รุ่น");
+      setFormError("ต้องระบุโมเดลอย่างน้อย 1 โมเดล");
       return;
     }
 
@@ -131,7 +131,7 @@ export function UploadFirmwareForm({
         />
         {file && (
           <p className="text-xs text-muted-foreground">
-            {file.name} · {formatFileSize(file.size)}
+            {file.name}, {formatFileSize(file.size)}
           </p>
         )}
       </div>
@@ -150,7 +150,7 @@ export function UploadFirmwareForm({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="firmware-device-model">
-            รุ่นอุปกรณ์ (compatibility tag เริ่มต้น)
+            โมเดล (compatibility tag เริ่มต้น)
           </Label>
           <Input
             id="firmware-device-model"
@@ -160,7 +160,7 @@ export function UploadFirmwareForm({
             onChange={(e) => setDeviceModel(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            เพิ่มรุ่นอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
+            เพิ่มโมเดลอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
           </p>
         </div>
       </div>

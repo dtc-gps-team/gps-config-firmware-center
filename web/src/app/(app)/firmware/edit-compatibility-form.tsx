@@ -57,7 +57,7 @@ export function EditCompatibilityForm({
   async function save() {
     if (!session?.accessToken) return;
     if (models.length === 0) {
-      setError("ต้องมีรุ่นอุปกรณ์ที่รองรับอย่างน้อย 1 รุ่น");
+      setError("ต้องมีโมเดลที่รองรับอย่างน้อย 1 โมเดล");
       return;
     }
     setSubmitting(true);
@@ -102,7 +102,7 @@ export function EditCompatibilityForm({
               type="button"
               onClick={() => removeModel(m)}
               disabled={submitting}
-              aria-label={`ลบรุ่น ${m}`}
+              aria-label={`ลบโมเดล ${m}`}
               className="rounded-full hover:bg-black/10 dark:hover:bg-white/10"
             >
               <XIcon className="size-3" />
@@ -111,7 +111,7 @@ export function EditCompatibilityForm({
         ))}
         {models.length === 0 && (
           <span className="text-xs text-muted-foreground">
-            ยังไม่มีรุ่นที่รองรับ
+            ยังไม่มีโมเดลที่รองรับ
           </span>
         )}
       </div>
@@ -120,7 +120,7 @@ export function EditCompatibilityForm({
         <Input
           value={draft}
           disabled={submitting}
-          placeholder="เพิ่มรุ่นอุปกรณ์ เช่น GT06L"
+          placeholder="เพิ่มโมเดล เช่น GT06L"
           className="h-8"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

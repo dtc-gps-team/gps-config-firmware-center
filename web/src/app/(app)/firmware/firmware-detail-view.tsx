@@ -135,7 +135,7 @@ function FirmwareDetailContent({
 
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">
-            รุ่นอุปกรณ์ที่รองรับ{" "}
+            โมเดลที่รองรับ{" "}
             <span className="text-muted-foreground">
               ({firmware.deviceModelCompatibility.length})
             </span>

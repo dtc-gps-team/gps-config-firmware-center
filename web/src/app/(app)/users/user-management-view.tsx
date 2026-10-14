@@ -189,8 +189,8 @@ export function UserManagementView() {
           <DialogHeader>
             <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
             <DialogDescription>
-              เฉพาะ Role Admin · เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม
-              Admin/SuperAdmin) · ตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่
+              เฉพาะ Role Admin เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม
+              Admin/SuperAdmin) และตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่
             </DialogDescription>
           </DialogHeader>
           <CreateUserForm onCreated={handleCreated} />

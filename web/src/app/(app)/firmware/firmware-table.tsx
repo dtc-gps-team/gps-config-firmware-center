@@ -54,8 +54,8 @@ const columns: ColumnDef<Firmware>[] = [
   {
     id: "compatibility",
     accessorFn: (row) => row.deviceModelCompatibility.join(", "),
-    header: "รุ่นอุปกรณ์ที่รองรับ",
-    meta: { filterVariant: "text", label: "รุ่นที่รองรับ" },
+    header: "โมเดลที่รองรับ",
+    meta: { filterVariant: "text", label: "โมเดลที่รองรับ" },
     cell: ({ row }) => (
       <div className="flex flex-wrap gap-1">
         {row.original.deviceModelCompatibility.map((m) => (
@@ -165,7 +165,7 @@ export function FirmwareTableCard() {
       <CardHeader>
         <CardTitle>รายการ Firmware</CardTitle>
         <CardDescription>
-          ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด/แก้
+          ทุก Role ที่ login แล้วดูได้ คลิกแถวเพื่อดูรายละเอียด/แก้
           Compatibility Tag/ทดสอบ
         </CardDescription>
         <CardAction>
@@ -192,7 +192,7 @@ export function FirmwareTableCard() {
           <DataTable
             columns={columns}
             data={firmwareList}
-            searchPlaceholder="ค้นหาเวอร์ชัน / รุ่นอุปกรณ์…"
+            searchPlaceholder="ค้นหาเวอร์ชัน / โมเดล…"
             emptyMessage="ไม่พบ Firmware ที่ตรงกับเงื่อนไข"
             onRowClick={(fw) => router.push(`/firmware/${fw.id}`)}
           />
