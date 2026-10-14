@@ -16,7 +16,7 @@ export default function CampaignsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Campaign</h1>
         <p className="text-sm text-muted-foreground">
-          สร้าง/ติดตามกลุ่มอุปกรณ์ · สร้างได้เฉพาะ Role Operation
+          สร้าง/ติดตามกลุ่มอุปกรณ์ สร้างได้เฉพาะ Role Operation
         </p>
       </div>
 

@@ -18,7 +18,7 @@ export default function FirmwarePage() {
       <div>
         <h1 className="text-2xl font-semibold">Firmware Repository</h1>
         <p className="text-sm text-muted-foreground">
-          อัปโหลด + Compatibility Tag · อัปโหลด/แก้ได้เฉพาะ Role FirmwareEngineer
+          อัปโหลด + Compatibility Tag อัปโหลด/แก้ได้เฉพาะ Role FirmwareEngineer
         </p>
       </div>
 

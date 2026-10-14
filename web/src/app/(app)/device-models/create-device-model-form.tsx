@@ -55,7 +55,7 @@ export function CreateDeviceModelForm({
   if (!canManageDeviceModels(session?.role)) {
     return (
       <p className="text-sm text-muted-foreground">
-        เฉพาะ Role Admin/SuperAdmin เท่านั้นที่เพิ่มรุ่นอุปกรณ์ได้
+        เฉพาะ Role Admin/SuperAdmin เท่านั้นที่เพิ่มโมเดลได้
       </p>
     );
   }
@@ -80,7 +80,7 @@ export function CreateDeviceModelForm({
     const trimmedManufacturer = manufacturer.trim();
     const trimmedNotes = notes.trim();
     if (!trimmedName) {
-      setFormError("ต้องระบุชื่อรุ่น");
+      setFormError("ต้องระบุชื่อโมเดล");
       return;
     }
     if (protocols.length === 0) {
@@ -100,12 +100,12 @@ export function CreateDeviceModelForm({
         endOfSupportDate: endOfSupportDate || undefined,
         notes: trimmedNotes || undefined,
       });
-      toast.success(`เพิ่มรุ่นอุปกรณ์ "${created.name}" แล้ว`);
+      toast.success(`เพิ่มโมเดล "${created.name}" แล้ว`);
       onCreated(created);
     } catch (err) {
       setSubmitting(false);
       const message =
-        err instanceof ApiError ? err.message : "เพิ่มรุ่นอุปกรณ์ไม่สำเร็จ";
+        err instanceof ApiError ? err.message : "เพิ่มโมเดลไม่สำเร็จ";
       setFormError(message);
       toast.error(message);
     }
@@ -118,7 +118,7 @@ export function CreateDeviceModelForm({
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="model-name">ชื่อรุ่น</Label>
+          <Label htmlFor="model-name">ชื่อโมเดล</Label>
           <Input
             id="model-name"
             value={name}
@@ -269,7 +269,7 @@ export function CreateDeviceModelForm({
       )}
 
       <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
-        {submitting ? "กำลังเพิ่ม…" : "เพิ่มรุ่นอุปกรณ์"}
+        {submitting ? "กำลังเพิ่ม…" : "เพิ่มโมเดล"}
       </Button>
     </div>
   );

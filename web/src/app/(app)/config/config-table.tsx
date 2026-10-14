@@ -60,9 +60,9 @@ const columns: ColumnDef<Config>[] = [
   },
   {
     accessorKey: "deviceModel",
-    header: "รุ่นอุปกรณ์",
+    header: "โมเดล",
     filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "รุ่น" },
+    meta: { filterVariant: "multi-select", label: "โมเดล" },
   },
   {
     accessorKey: "protocol",
@@ -140,7 +140,7 @@ export function ConfigTableCard({
       <CardHeader>
         <CardTitle>รายการ Config</CardTitle>
         <CardDescription>
-          ทุก Role ที่ login แล้วดูได้ · คลิกแถวเพื่อดูรายละเอียด
+          ทุก Role ที่ login แล้วดูได้ คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
         <CardAction className="flex gap-2">
           <ImportConfigButton onImported={handleImported} />
@@ -167,7 +167,7 @@ export function ConfigTableCard({
           <DataTable
             columns={columns}
             data={configs}
-            searchPlaceholder="ค้นหาชื่อ / รุ่น / โปรโตคอล…"
+            searchPlaceholder="ค้นหาชื่อ / โมเดล / โปรโตคอล…"
             emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
             onRowClick={(config) => router.push(`/config/${config.id}`)}
           />
