@@ -76,6 +76,13 @@ final authControllerProvider = NotifierProvider<AuthController, AuthState>(
   AuthController.new,
 );
 
+/// Role ที่ใช้ได้เฉพาะ Web — แอปบล็อกตั้งแต่ login (และตอนคืน session)
+/// SuperAdmin ตาม RBAC_Matrix.md Section 1 · Auditor/Admin ตามคำตอบ A ใน #303
+/// ข้อ 2 (สองบทบาทนี้ก็เป็น "Web" ใน Section 1 เช่นกัน)
+const webOnlyRoles = {UserRole.superAdmin, UserRole.auditor, UserRole.admin};
+
+const webOnlyRoleError = 'บัญชีนี้ใช้ได้เฉพาะหน้าเว็บ';
+
 class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
@@ -98,6 +105,16 @@ class AuthController extends Notifier<AuthState> {
       }
       ref.read(apiClientProvider).setAuthToken(token);
       final profile = await _profileStore.read();
+      // session ที่ login ไว้ก่อน Role นี้ถูกบล็อก (เช่น Admin/Auditor ที่เคย
+      // ใช้แอปได้) — ออกจากระบบแทนที่จะคืน session ให้
+      if (webOnlyRoles.contains(profile?.role)) {
+        await logout();
+        state = const AuthState(
+          status: AuthStatus.unauthenticated,
+          error: webOnlyRoleError,
+        );
+        return;
+      }
       state = state.copyWith(
         status: AuthStatus.authenticated,
         username: profile?.username,
@@ -129,15 +146,14 @@ class AuthController extends Notifier<AuthState> {
         throw ApiException('เข้าสู่ระบบไม่สำเร็จ: ไม่ได้รับ token');
       }
       final role = response.role;
-      // SuperAdmin เป็น Web-only ตาม RBAC_Matrix.md Section 1 — บล็อกที่นี่
-      // แทนที่จะพึ่ง ArgumentError จาก UserRole.fromWire() (enum รู้จักค่านี้
-      // แล้วตั้งแต่เพิ่ม SuperAdmin เข้า UserRole จึงไม่ throw ให้อีกต่อไป)
-      // ต้องเช็คก่อน save token ลง token store เสมอ — ห้าม persist token ของ
-      // บัญชีนี้แม้ชั่วคราว
-      if (role == UserRole.superAdmin) {
+      // Role ที่ใช้ได้เฉพาะ Web (ดู [webOnlyRoles]) — บล็อกที่นี่แทนที่จะพึ่ง
+      // ArgumentError จาก UserRole.fromWire() (enum รู้จักค่าเหล่านี้อยู่แล้ว
+      // จึงไม่ throw) ต้องเช็คก่อน save token ลง token store เสมอ — ห้าม
+      // persist token ของบัญชีเหล่านี้แม้ชั่วคราว
+      if (webOnlyRoles.contains(role)) {
         state = const AuthState(
           status: AuthStatus.unauthenticated,
-          error: 'บัญชีนี้ไม่รองรับการใช้งานผ่านแอปมือถือ',
+          error: webOnlyRoleError,
         );
         return;
       }
