@@ -2159,6 +2159,34 @@ paths:
             ที่ match ตรงเป๊ะ) เช่น create, update, delete, decide, approve,
             reject, apply-config
         - in: query
+          name: actorName
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: >-
+            (v3.53) ค้นชื่อผู้ทำรายการแบบ contains ไม่สนตัวพิมพ์เล็ก-ใหญ่ ใช้ร่วมกับ
+            userId ได้ (AND) ครอบคลุมบัญชีที่ปิดใช้งานแล้วด้วย เพราะ Audit Log มี
+            ไว้สืบย้อนหลัง
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: >-
+            (v3.53) เวลาเริ่มต้น (ISO 8601) กรอง createdAt มากกว่าหรือเท่ากับค่านี้
+            ส่งแค่ด้านเดียวได้ · เว็บแปลงวันที่ที่ผู้ใช้เลือกเป็นช่วง 00:00:00 ถึง
+            23:59:59.999 ตามเวลาไทยแล้วส่งมาเป็น from/to
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: >-
+            (v3.53) เวลาสิ้นสุด (ISO 8601) กรอง createdAt น้อยกว่าหรือเท่ากับค่านี้
+        - in: query
           name: page
           required: false
           schema:
@@ -2182,7 +2210,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuditLogPage"
         "400":
-          description: page < 1, pageSize นอกช่วง 1-100 หรือไม่ใช่จำนวนเต็ม
+          description: >-
+            page < 1, pageSize นอกช่วง 1-100 หรือไม่ใช่จำนวนเต็ม, from/to ไม่ใช่
+            ISO 8601, หรือ from มากกว่า to
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
