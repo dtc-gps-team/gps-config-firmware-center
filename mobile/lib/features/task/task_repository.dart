@@ -146,6 +146,9 @@ class CachedApiTaskRepository implements TaskRepository {
 /// through the local DB — mock mode should stay disposable/stateless across
 /// hot restarts, same as before.
 class MockTaskRepository implements TaskRepository {
+  // deviceId ทุกตัวตรงกับ deviceId จริงใน MockDeviceSearchRepository (เดิม
+  // ใช้ prefix "DVC-" ที่ไม่มีอยู่จริงในชุด Device mock เลย — แก้ orphan
+  // reference นี้ไปด้วยตอนขยายข้อมูล)
   final List<Task> _tasks = [
     Task(
       id: 'mock-task-1',
@@ -155,7 +158,8 @@ class MockTaskRepository implements TaskRepository {
       createdAt: DateTime(2026, 9, 1, 8),
       updatedAt: DateTime(2026, 9, 1, 8),
       description: 'ติดตั้งและตั้งค่ากล่องใหม่ที่ศูนย์กระจายสินค้า',
-      deviceId: 'DVC-40271',
+      deviceId: 'DEV-0117',
+      dueDate: DateTime(2026, 9, 5),
     ),
     Task(
       id: 'mock-task-2',
@@ -164,7 +168,8 @@ class MockTaskRepository implements TaskRepository {
       status: TaskStatus.inProgress,
       createdAt: DateTime(2026, 9, 2, 9),
       updatedAt: DateTime(2026, 9, 2, 9),
-      deviceId: 'DVC-39118',
+      deviceId: 'DEV-0092',
+      // dueDate ว่างในทางปฏิบัติ (มติ docs/18 ข้อ 2) — ไม่ใส่
     ),
     Task(
       id: 'mock-task-3',
@@ -173,7 +178,39 @@ class MockTaskRepository implements TaskRepository {
       status: TaskStatus.completed,
       createdAt: DateTime(2026, 8, 30, 14),
       updatedAt: DateTime(2026, 8, 31, 10),
-      deviceId: 'DVC-38004',
+      deviceId: 'DEV-0231',
+    ),
+    Task(
+      id: 'mock-task-4',
+      title: 'ติดตั้ง Config ใหม่ให้ลูกค้า ABC',
+      assignedTo: 'mock-user',
+      status: TaskStatus.pending,
+      createdAt: DateTime(2026, 9, 3, 10),
+      updatedAt: DateTime(2026, 9, 3, 10),
+      description: 'Rollout Config เวอร์ชันใหม่ตามคำขอลูกค้า',
+      deviceId: 'DEV-0410',
+      configId: 'mock-cfg-1',
+      dueDate: DateTime(2026, 9, 6),
+    ),
+    Task(
+      id: 'mock-task-5',
+      title: 'ตรวจสอบเสาอากาศ GPS',
+      assignedTo: 'mock-user',
+      status: TaskStatus.cancelled,
+      createdAt: DateTime(2026, 8, 25, 8),
+      updatedAt: DateTime(2026, 8, 26, 9),
+      deviceId: 'DEV-0305',
+    ),
+    Task(
+      id: 'mock-task-6',
+      title: 'ติดตั้งกล่องสำรองหลังเครื่องเสีย',
+      assignedTo: 'mock-user',
+      status: TaskStatus.inProgress,
+      createdAt: DateTime(2026, 9, 4, 11),
+      updatedAt: DateTime(2026, 9, 4, 11),
+      description: 'เครื่องเดิม DEV-0512 ถูก decommission — เปลี่ยนกล่องใหม่',
+      deviceId: 'DEV-0512',
+      dueDate: DateTime(2026, 9, 7),
     ),
   ];
 
