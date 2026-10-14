@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_database.dart';
 import '../daos/task_dao.dart';
+import '../daos/task_event_dao.dart';
 
 /// One [AppDatabase] for the app's lifetime — same "live for the whole
 /// provider container" lifetime as `apiClientProvider`
@@ -15,4 +16,8 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 
 final taskDaoProvider = Provider<TaskDao>((ref) {
   return ref.watch(appDatabaseProvider).taskDao;
+});
+
+final taskEventDaoProvider = Provider<TaskEventDao>((ref) {
+  return ref.watch(appDatabaseProvider).taskEventDao;
 });

@@ -54,6 +54,7 @@ model User {
 
   role                          Role                    @relation(fields: [roleId], references: [id])
   tasks                         Task[]
+  taskEvents                    TaskEvent[]             @relation("TaskEventChangedBy")
   notifications                 Notification[]
   deviceTokens                  DeviceToken[]
   auditLogs                     AuditLog[]
@@ -148,6 +149,44 @@ model Task {
   assignedUser User      @relation(fields: [assignedTo], references: [id])
   config       Config?   @relation(fields: [configId], references: [id])
   campaign     Campaign? @relation(fields: [campaignId], references: [id])
+  events       TaskEvent[]
+}
+
+// Task Event History (issue #296, docs/16_Task_Event_History_Proposal.md) —
+// timeline ต่อ 1 Task แบบ append-only (ไม่มี endpoint แก้/ลบ) แยกจาก Task ที่
+// ยังเป็น "สถานะปัจจุบัน" เหมือนเดิม · แถวหนึ่งเป็นได้ 2 แบบ:
+// - เปลี่ยนสถานะ: toStatus มีค่า (fromStatus = null เฉพาะ event "สร้างงาน")
+// - บันทึก (note): fromStatus/toStatus เป็น null ทั้งคู่ และ note มีค่า
+//
+// **เบี่ยงจาก docs/16 §3 (และ Data Dictionary ที่เพิ่มตาม) โดยตั้งใจ:**
+// - id ใช้ uuid ไม่ใช่ cuid — ทุก model ใน schema นี้ใช้ uuid
+// - toStatus เป็น nullable — docs/16 §4 บอกเองว่า note "ไม่มี fromStatus/
+//   toStatus" แต่ §3 ประกาศ toStatus เป็น required ซึ่งขัดกัน
+// - changedBy เป็น nullable — มีค่าเสมอสำหรับ event ที่เกิดหลัง feature นี้
+//   แต่ event "สร้างงาน" ที่ backfill ให้งานเก่าใน migration ไม่รู้ว่าใครสร้าง
+//   (Task ไม่มี createdBy และ AuditLog ไม่เก็บ id ของ Task) จึงเป็น null
+// - ไม่มี photoUrl — ส่วนแนบรูปตัดออกจากสโคปรอบนี้ (issue #296) เพิ่มทีหลัง
+//   แบบ additive ได้
+// - changedAt ของการเปลี่ยนสถานะรับเวลาที่ช่างกดจริงจาก client ได้ (PATCH
+//   /tasks/{id} field `changedAt`) เพราะ Mobile ส่งผ่าน offline queue — ถ้าใช้
+//   เวลา server จะเพี้ยนเท่ากับช่วงที่เครื่องไม่มีเน็ต
+//
+// onDelete: Restrict (default) ทั้งสอง FK — เป็นหลักฐานประวัติ ไม่ควรหายตาม
+// การลบ Task/User (ระบบไม่มี endpoint ลบ Task อยู่แล้ว)
+model TaskEvent {
+  id         String      @id @default(uuid())
+  taskId     String
+  fromStatus TaskStatus?
+  toStatus   TaskStatus?
+  changedBy  String?
+  changedAt  DateTime    @default(now())
+  note       String?
+  createdAt  DateTime    @default(now())
+
+  task    Task  @relation(fields: [taskId], references: [id])
+  changer User? @relation("TaskEventChangedBy", fields: [changedBy], references: [id], onDelete: Restrict)
+
+  @@index([taskId, changedAt])
 }
 
 // ---------------------------------------------------------------------------

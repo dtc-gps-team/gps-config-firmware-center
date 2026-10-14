@@ -856,7 +856,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Task"
         "400":
-          description: ข้อมูลไม่ถูกต้อง (รวมถึง configId ไม่ใช่ uuid)
+          description: >-
+            ข้อมูลไม่ถูกต้อง (รวมถึง configId ไม่ใช่ uuid, changedAt ไม่ใช่ ISO 8601
+            หรือส่ง changedAt มาโดยไม่ส่ง status)
         "403":
           description: >-
             ไม่มีสิทธิ์แก้ไขงานนี้ — Operation แก้ได้ทุก field, ST/OT แก้ได้เฉพาะ
@@ -874,6 +876,89 @@ paths:
             (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
             แล้ว — cancelled เป็นสถานะสุดท้ายสำหรับ ST/OT (กัน offline queue ของ
             Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว)
+
+  /tasks/{taskId}/events:
+    get:
+      tags: [task]
+      operationId: listTaskEvents
+      summary: Timeline ของงาน — การเปลี่ยนสถานะและบันทึกทั้งหมด เรียงตามเวลาที่เกิดจริง (v3.50)
+      description: >-
+        Task Event History (issue #296, docs/16_Task_Event_History_Proposal.md) —
+        เรียง `changedAt` เก่าไปใหม่ · สิทธิ์เดียวกับ `GET /tasks/{taskId}` ทุกประการ
+        (Operation/Auditor/Admin/SuperAdmin เห็นทุกงาน, ST/OT เฉพาะงานที่ตัวเองถูก
+        assign, role อื่น 404) · event เกิดจาก backend เอง: ตอน `POST /tasks`
+        (สร้างงาน), ตอน `PATCH /tasks/{taskId}` ที่เปลี่ยน status จริง และตอน
+        `POST /tasks/{taskId}/notes` — append-only ไม่มี endpoint แก้/ลบ
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Timeline ของงาน
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskEvent"
+        "400":
+          description: taskId ไม่ใช่ uuid ที่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: >-
+            ไม่พบงานนี้ (รวมถึงกรณีที่ผู้เรียกไม่มีสิทธิ์เห็นงานนี้ — ตอบ 404 แทน
+            403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่ เหมือน GET /tasks/{taskId})
+
+  /tasks/{taskId}/notes:
+    post:
+      tags: [task]
+      operationId: createTaskNote
+      summary: เพิ่มบันทึกบน timeline ของงาน โดยไม่เปลี่ยนสถานะ (v3.50)
+      description: >-
+        Task Event History (issue #296) — ข้อความอย่างเดียว **ไม่มีแนบรูป** (ตัดออก
+        จากสโคปรอบนี้) · Operation เพิ่มได้ทุกงาน · ST/OT เฉพาะงานที่ตัวเองถูก
+        assign · role อื่น (รวม Auditor/Admin/SuperAdmin ที่อ่าน timeline ได้)
+        เพิ่มไม่ได้ · ต้องมีเน็ตตอนบันทึก (Mobile ไม่เข้าคิว offline — docs/16 §7) ·
+        เขียน AuditLog action `add_note`
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskNoteCreateRequest"
+      responses:
+        "201":
+          description: บันทึกสำเร็จ — คืน event ที่เพิ่งสร้าง (fromStatus/toStatus เป็น null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskEvent"
+        "400":
+          description: >-
+            ข้อมูลไม่ถูกต้อง — taskId ไม่ใช่ uuid, ไม่ส่ง note, note ว่าง/ช่องว่างล้วน,
+            ยาวเกิน 2000 ตัวอักษร หรือส่ง field อื่นที่ไม่รู้จักมาด้วย
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้เพิ่มบันทึกไม่ได้ (เฉพาะ Operation และ ST/OT)
+        "404":
+          description: >-
+            ไม่พบงานนี้ (รวมถึงกรณี ST/OT พยายามเพิ่มบันทึกในงานที่ไม่ใช่ของตัวเอง —
+            ตอบ 404 แทน 403 เพื่อไม่เปิดเผยว่ามี record นี้อยู่)
+        "409":
+          description: งานถูกยกเลิก (`cancelled`) แล้ว — เพิ่มบันทึกไม่ได้
 
   /firmware:
     get:
@@ -4079,6 +4164,75 @@ components:
           type: string
           format: date-time
           nullable: true
+        changedAt:
+          type: string
+          format: date-time
+          description: >-
+            (v3.50, issue #296) เวลาที่ผู้ใช้เปลี่ยนสถานะจริง — ใช้เป็น `TaskEvent.changedAt`
+            ของ event ที่ PATCH นี้สร้าง ไม่ใช่ field ของ Task · ส่งได้เฉพาะคู่กับ `status`
+            (ไม่งั้น 400) · ไม่ส่ง = เวลา server · **มีผลเฉพาะ ST/OT** (Operation ใช้เวลา
+            server เสมอแม้ส่งมา — Web ไม่มีคิว offline) · Mobile ส่งเวลาที่ช่างกดตอนเข้าคิว
+            offline มาด้วย ไม่งั้น timeline จะเป็นเวลาที่ sync ขึ้นแทน · **เบี่ยงจาก
+            docs/16 §4/§7 โดยตั้งใจ** (เอกสารเขียนก่อนมี offline queue ของ #276) ·
+            เวลาในอนาคตถูกปัดลงเป็นเวลา server และเวลาที่เก่ากว่า `max(Task.createdAt,
+            changedAt ของ event เปลี่ยนสถานะล่าสุด)` ถูกปัดขึ้นเป็นค่านั้น ให้ timeline เรียง
+            from→to ต่อกันเสมอแม้มีคนเปลี่ยนสถานะคั่นระหว่างช่างออฟไลน์ (ไม่ตอบ 400 เพื่อไม่ให้
+            คิว offline ถูกปฏิเสธถาวรเพราะนาฬิกาเครื่องเพี้ยน)
+
+    TaskEvent:
+      type: object
+      description: >-
+        1 รายการบน timeline ของงาน (v3.50, issue #296 — Prisma model `TaskEvent`) ·
+        เปลี่ยนสถานะ: `toStatus` มีค่า (`fromStatus` เป็น null เฉพาะ event "สร้างงาน")
+        · บันทึก: `fromStatus`/`toStatus` เป็น null และ `note` มีค่า · ไม่มีแนบรูป
+        (ตัดออกจากสโคปรอบนี้)
+      required:
+        [id, taskId, fromStatus, toStatus, changedBy, changedByName, changedAt, note]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        fromStatus:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+          nullable: true
+        toStatus:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+          nullable: true
+        changedBy:
+          type: string
+          nullable: true
+          description: >-
+            user id ของผู้ทำรายการ · null เฉพาะ event "สร้างงาน" ที่ backfill ให้งานที่มี
+            อยู่ก่อน feature นี้ (ระบบไม่เคยบันทึกว่าใครสร้างงาน)
+        changedByName:
+          type: string
+          nullable: true
+          description: >-
+            `User.fullName` ของผู้ทำรายการ — join มาให้เพราะ ST/OT บน Mobile ไม่มีสิทธิ์
+            อ่านรายชื่อผู้ใช้เอง · null เมื่อ changedBy เป็น null
+        changedAt:
+          type: string
+          format: date-time
+          description: เวลาที่เกิดจริง (ใช้เรียง timeline)
+        note:
+          type: string
+          nullable: true
+
+    TaskNoteCreateRequest:
+      type: object
+      required: [note]
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: ตัดช่องว่างหัวท้ายก่อนบันทึก · ช่องว่างล้วน = 400
 
     Firmware:
       type: object
