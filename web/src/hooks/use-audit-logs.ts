@@ -26,6 +26,11 @@ export type AuditLogRow = {
 export type AuditLogFilters = {
   auditModule?: string;
   action?: string;
+  actorName?: string;
+  from?: string;
+  to?: string;
+  /** false = ไม่ยิง request (เช่น ช่วงวันที่ไม่ถูกต้อง) · default true */
+  enabled?: boolean;
   page?: number;
   pageSize?: number;
 };
@@ -46,7 +51,16 @@ type State = {
 export function useAuditLogs(filters: AuditLogFilters = {}) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
-  const { auditModule, action, page, pageSize } = filters;
+  const {
+    auditModule,
+    action,
+    actorName,
+    from,
+    to,
+    enabled = true,
+    page,
+    pageSize,
+  } = filters;
   const [state, setState] = useState<State>({
     data: null,
     total: null,
@@ -55,11 +69,19 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
   });
 
   const refetch = useCallback(async () => {
-    if (!token) return;
+    if (!token || !enabled) return;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
       const [result, users] = await Promise.all([
-        listAuditLogs(token, { auditModule, action, page, pageSize }),
+        listAuditLogs(token, {
+          auditModule,
+          action,
+          actorName,
+          from,
+          to,
+          page,
+          pageSize,
+        }),
         // resolve ชื่อผู้ทำรายการ — พังไม่ block ตาราง audit log (fallback
         // เป็น userId ดิบด้านล่าง)
         listUsers(token).catch(() => []),
@@ -84,7 +106,7 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
           err instanceof ApiError ? err.message : "โหลด Audit Log ไม่สำเร็จ",
       }));
     }
-  }, [token, auditModule, action, page, pageSize]);
+  }, [token, enabled, auditModule, action, actorName, from, to, page, pageSize]);
 
   useEffect(() => {
     void refetch();

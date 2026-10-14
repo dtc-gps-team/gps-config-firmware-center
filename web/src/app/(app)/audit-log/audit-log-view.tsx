@@ -13,6 +13,7 @@ import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessAuditLog } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardAction,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { dayRangeToIso } from "@/lib/audit-date-range";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 
@@ -63,13 +65,27 @@ const PAGE_SIZE = 20;
 export function AuditLogView() {
   const [auditModule, setAuditModule] = useState("");
   const [action, setAction] = useState("");
+  const [actorName, setActorName] = useState("");
+  // YYYY-MM-DD จาก <input type="date"> — แปลงเป็นช่วงเวลาไทยตอนส่ง backend
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   // ไม่ต้องกันกรณีหน้าปัจจุบันเกินจำนวนหน้าจริง — AuditLog เพิ่มอย่างเดียว
   // ไม่มีการลบแถว และเปลี่ยน filter แล้วกลับไปหน้า 1 เสมอ
   const [page, setPage] = useState(1);
   const debouncedAction = useDebouncedValue(action.trim(), 300);
+  const debouncedActor = useDebouncedValue(actorName.trim(), 300);
+  const range = dayRangeToIso(dateFrom, dateTo);
+  const hasFilter = Boolean(
+    auditModule || debouncedAction || debouncedActor || dateFrom || dateTo,
+  );
   const { data, total, isLoading, error, refetch } = useAuditLogs({
     auditModule: auditModule || undefined,
     action: debouncedAction || undefined,
+    actorName: debouncedActor || undefined,
+    from: range.from,
+    to: range.to,
+    // ช่วงวันที่ไม่ถูกต้อง: ไม่ยิง request (จะได้ 400) แสดงข้อความแทนตาราง
+    enabled: !range.error,
     page,
     pageSize: PAGE_SIZE,
   });
@@ -117,7 +133,54 @@ export function AuditLogView() {
             </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="audit-date-from" className="text-xs">
+                  ตั้งแต่วันที่
+                </Label>
+                <Input
+                  id="audit-date-from"
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-8 w-40"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="audit-date-to" className="text-xs">
+                  ถึงวันที่
+                </Label>
+                <Input
+                  id="audit-date-to"
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-8 w-40"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="audit-actor" className="text-xs">
+                  ผู้ทำรายการ
+                </Label>
+                <Input
+                  id="audit-actor"
+                  value={actorName}
+                  onChange={(e) => {
+                    setActorName(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="พิมพ์ชื่อผู้ทำรายการ"
+                  className="h-8 w-48"
+                />
+              </div>
               <Select
                 value={auditModule}
                 onValueChange={(value) => {
@@ -151,9 +214,29 @@ export function AuditLogView() {
                 placeholder="ค้นหา action เช่น create, approve, reject…"
                 className="h-8 max-w-64"
               />
+              {(auditModule || action || actorName || dateFrom || dateTo) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAuditModule("");
+                    setAction("");
+                    setActorName("");
+                    setDateFrom("");
+                    setDateTo("");
+                    setPage(1);
+                  }}
+                >
+                  ล้างตัวกรอง
+                </Button>
+              )}
             </div>
 
-            {isLoading && data === null ? (
+            {range.error && (
+              <p className="text-sm text-destructive">{range.error}</p>
+            )}
+
+            {range.error ? null : isLoading && data === null ? (
               <TableSkeleton columns={4} />
             ) : error ? (
               <div className="flex flex-col items-center gap-3 py-8">
@@ -168,11 +251,9 @@ export function AuditLogView() {
               </div>
             ) : rows.length === 0 ? (
               <EmptyState
-                icon={
-                  auditModule || debouncedAction ? SearchXIcon : HistoryIcon
-                }
+                icon={hasFilter ? SearchXIcon : HistoryIcon}
                 message={
-                  auditModule || debouncedAction
+                  hasFilter
                     ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
                     : "ยังไม่มีประวัติการทำงาน"
                 }
@@ -212,7 +293,7 @@ export function AuditLogView() {
               </Table>
             )}
 
-            {totalPages > 1 && rows.length > 0 && (
+            {!range.error && totalPages > 1 && rows.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm text-muted-foreground">
                 <span className="tabular-nums">
                   แสดง {firstRow.toLocaleString("th-TH")}-
