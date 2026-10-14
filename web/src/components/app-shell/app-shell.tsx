@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import { useAuth } from "@/components/auth/auth-provider";
 import { NavLinks } from "./nav-links";
+import { NotificationBell } from "./notification-bell";
 
 /**
  * โครง layout หลักของทุกหน้าที่ต้อง login (ทุกหน้ายกเว้น /login) — sidebar
@@ -56,6 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               GPS Config Center
             </span>
             <div className="ml-auto flex items-center gap-3 text-sm text-muted-foreground">
+              <NotificationBell />
               <span>{session?.role ?? "-"}</span>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 ออกจากระบบ
