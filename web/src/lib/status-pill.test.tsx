@@ -14,12 +14,12 @@ import {
  * เกิดซ้ำทั้งตอนมีสถานะใหม่ฝั่ง backend และตอนลืมเพิ่มลงตาราง
  */
 describe("StatusPill", () => {
-  it("Incident สถานะ dismissed: render ได้และแสดงป้าย 'ไม่ใช่ปัญหา'", () => {
+  it("Incident สถานะ dismissed: render ได้และแสดงป้าย 'ไม่ต้องดำเนินการ'", () => {
     const tone = INCIDENT_STATUS_TONE["dismissed"];
 
     render(<StatusPill tone={tone}>{statusLabel("dismissed")}</StatusPill>);
 
-    expect(screen.getByText("ไม่ใช่ปัญหา")).toBeInTheDocument();
+    expect(screen.getByText("ไม่ต้องดำเนินการ")).toBeInTheDocument();
   });
 
   it("สถานะที่ยังไม่อยู่ในตาราง tone (tone เป็น undefined): ไม่พัง แสดงข้อความด้วยสีและไอคอนกลาง", () => {

@@ -89,6 +89,9 @@ export type CreateCampaignInput = {
   name: string;
   description?: string;
   targets: CampaignTargetInput[];
+  /** `Incident.id` ของ Field Report ที่ Operation promote มาเป็นกลุ่มนี้
+   * (issue #236) ส่งเฉพาะ flow "ส่งต่อเป็น Campaign" เท่านั้น */
+  sourceIncidentId?: string;
 };
 
 /** response shape — `CampaignRollout` ใน openapi.yaml */

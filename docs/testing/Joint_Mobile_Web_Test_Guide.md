@@ -33,6 +33,13 @@
   (ถ้าเพิ่งสลับ branch มา ต้อง `prisma generate` ใหม่เสมอ ไม่งั้น backend จะ build ไม่ผ่านเพราะ Prisma Client ไม่ตรงกับ schema)
 - [ ] มี user ทดสอบครบ (`npx prisma db seed` ถ้ายังไม่เคยรัน)
 - [ ] มีข้อมูลพอให้ทดสอบ อย่างน้อย: อุปกรณ์ที่ติดตั้งแล้ว, Config ที่ approved สำหรับรุ่นของอุปกรณ์นั้น, Firmware ที่ approved, งาน (Task) ที่มอบให้ `st.test` อย่างน้อย 1 งานที่ผูก Config ไว้
+  (รัน `cd backend && npm run seed:demo` หลัง `prisma db seed` จะได้ข้อมูลตัวอย่างชุดเดียวกันทั้งสองเครื่อง: อุปกรณ์ DEV-0101 ถึง DEV-0140 ที่มี IMEI, Serial และ Blackbox ID ครบ, Config, Campaign, Rollout, Incident, Task และคำขอ Override รันซ้ำได้ไม่สร้างซ้ำ)
+
+  **ข้อควรระวังของข้อมูลตัวอย่าง (`seed:demo`):**
+  - หลังรัน `st.test` จะมีงานเพิ่ม 10 งาน และ `ot.test` เพิ่ม 4 งาน ทดสอบ Mobile ที่นับจำนวนงานหรือดูงานล่าสุดจะได้ผลต่างจากเดิม (เช่น TC ที่คาดว่างานล่าสุดของ `st.test` เป็นงานจาก fixture)
+  - `npm run seed:ci-fixtures` ลบงานของ `st.test` ทั้งหมดก่อนสร้างใหม่ ถ้ารันหลัง `seed:demo` งานตัวอย่างของ `st.test` จะหาย ให้รัน `seed:demo` ซ้ำเพื่อสร้างคืน
+  - ถ้าในเครื่องมีอุปกรณ์ที่ใช้ ID ชนกับ DEV-0101 ถึง DEV-0140 อยู่แล้ว สคริปต์จะถือว่าเป็นเครื่องตัวอย่างและเติมเฉพาะช่องที่ว่าง ข้อมูล Rollout อาจดูแปลกถ้าโมเดลไม่ตรง
+  - `prisma db seed` และ `seed:demo` เติม IMEI, Serial, Blackbox ID เฉพาะช่องที่ว่าง ค่าที่แก้ไว้เองไม่ถูกทับ
 - [ ] `cd backend && npm run start:dev` เห็นข้อความ `Nest application successfully started`
 
 ### 2.3 เครื่องที่รันเว็บ (A)
@@ -169,7 +176,18 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define
 | 4 | B | logout แล้ว login ด้วย `ot.test` แจ้งอีก 1 รายการ แล้วเปิด "ดู Incident" | OT แจ้งได้ และเห็น **เฉพาะ** ของตัวเอง ไม่เห็นของ `st.test` |
 | 5 | A | เว็บ Audit Log | มีรายการ `report` ของ incident ทั้งสองรายการ |
 
-**ยังทดสอบต่อไม่ได้:** ขั้น Operation ตัดสินใจ (แก้แล้ว / ไม่ใช่ปัญหา / ส่งต่อเป็น Campaign) backend มีแล้ว (`POST /incidents/{id}/decide`) แต่เว็บยังไม่มีปุ่ม ดูหัวข้อ 7
+### TC-04b Operation ตัดสินใจ Field Report (ปุ่มบนเว็บ ตาม issue #284)
+
+| # | ผู้ทำ | ขั้นตอน | ผลที่ต้องเห็น |
+|---|---|---|---|
+| 1 | A | login `operation.test` เมนู Incident & Rollback | แถว Field Report ที่ยัง open มีปุ่ม "ตัดสินใจ" และเห็นชื่อช่างผู้แจ้งกับเลขอุปกรณ์ |
+| 2 | A | กด "ตัดสินใจ" เลือก "แก้แล้ว" โดยไม่กรอกหมายเหตุ | ปุ่ม "ยืนยัน" กดไม่ได้ |
+| 3 | A | กรอกหมายเหตุแล้วกด "ยืนยัน" | แถวเปลี่ยนเป็นสถานะ resolved ปุ่มหาย เห็นหมายเหตุใต้เรื่อง |
+| 4 | B | เปิด "ดู Incident" และการแจ้งเตือนบนมือถือ | สถานะเปลี่ยนเป็นแก้แล้ว และมีแจ้งเตือน `incident_report_resolved` |
+| 5 | A | Field Report อีกรายการ เลือก "ไม่ต้องดำเนินการ" พร้อมหมายเหตุ | สถานะเป็น "ไม่ต้องดำเนินการ" B เห็นแจ้งเตือน `incident_report_dismissed` |
+| 6 | A | Field Report อีกรายการ เลือก "ส่งต่อเป็น Campaign" พร้อมหมายเหตุ | พาไปหน้าสร้างกลุ่มอุปกรณ์ ชื่อเริ่มต้น "แก้ไขปัญหา: หัวข้อ" และเลือกอุปกรณ์ที่รายงานไว้ให้ (ถ้า installed) |
+| 7 | A | กด "สร้างกลุ่ม" | สร้างสำเร็จ Incident ต้นทางผูกกับกลุ่มนี้ และ B เห็นแจ้งเตือน `incident_report_promoted` |
+| 8 | A+B | เปิดรายการเดียวกันสองหน้าต่าง ให้หน้าต่างแรกตัดสินใจก่อน แล้วให้หน้าต่างที่สองกดยืนยัน | หน้าต่างที่สองแจ้งว่าถูกตัดสินใจไปแล้ว และรายการรีเฟรชเอง |
 
 ### TC-05 Rollout จากเว็บ แล้วดูผลบนมือถือ
 
@@ -192,10 +210,9 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define
 
 | ช่องว่าง | ฝั่งที่ขาด | ผลต่อการทดสอบ | ทางเลี่ยงชั่วคราว |
 |---|---|---|---|
-| Operation ตัดสินใจ Field Report | เว็บ (A) | TC-04 จบแค่ "เว็บเห็นรายการ" | ยิง API ตรง `POST /incidents/{id}/decide` ด้วย token ของ Operation แล้วให้ B ดูว่าสถานะใน "ดู Incident" เปลี่ยน และมีแจ้งเตือน `incident_report_*` |
 | ช่างกด Confirm Install Firmware | มือถือ (B) | TC-03 จบแค่ "อนุมัติแล้ว" | ยิง API ตรง `POST /devices/{deviceId}/confirm-firmware-install` ด้วย token ของ ST แล้วให้ A ดูสถานะ Firmware บนเว็บ |
 
-ติดตามใน issue #284 (ปุ่มตัดสินใจบนเว็บ) และ #261 (หน้า Confirm Install ในแอป)
+ติดตามใน issue #261 (หน้า Confirm Install ในแอป)
 
 ### 7.2 PR ที่ยังไม่ merge (ทดสอบเพิ่มเมื่อ merge แล้ว หรือ checkout branch ของ PR)
 

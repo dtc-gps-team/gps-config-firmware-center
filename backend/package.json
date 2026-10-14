@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "seed:ci-fixtures": "ts-node scripts/seed-ci-fixtures.ts",
+    "seed:demo": "ts-node scripts/seed-demo.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
