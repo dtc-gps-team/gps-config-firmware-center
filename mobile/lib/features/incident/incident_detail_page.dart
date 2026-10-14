@@ -2,9 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'incident_repository.dart';
@@ -68,6 +70,12 @@ class _IncidentDetailView extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = incident.description;
     final metadata = incident.metadata;
+    final reviewedAt = incident.reviewedAt;
+    final reviewNote = incident.reviewNote;
+    final hasReview =
+        incident.reviewedBy != null ||
+        reviewedAt != null ||
+        (reviewNote != null && reviewNote.isNotEmpty);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -118,6 +126,13 @@ class _IncidentDetailView extends StatelessWidget {
                 valueKey: const Key('incident_detail_source'),
                 value: incident.source,
               ),
+              _DeviceField(deviceId: incident.deviceId),
+              _Field(
+                label: 'ผู้แจ้ง',
+                valueKey: const Key('incident_detail_reported_by'),
+                value: incident.reportedBy,
+                selectable: true,
+              ),
               _Field(
                 label: 'Config ที่เกี่ยวข้อง',
                 valueKey: const Key('incident_detail_config'),
@@ -141,6 +156,54 @@ class _IncidentDetailView extends StatelessWidget {
             ],
           ),
         ),
+        // ผลการตรวจสอบของ Operation (`POST /incidents/{id}/decide`) — แสดงเมื่อ
+        // มีข้อมูลตรวจสอบอย่างน้อยหนึ่งตัว incident ที่ยังไม่ถูกตัดสินใจไม่มี
+        // section นี้เลย (ไม่ใช่การ์ดว่างที่เต็มไปด้วย "-")
+        if (hasReview) ...[
+          const SizedBox(height: 12),
+          Container(
+            key: const Key('incident_detail_review'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.fieldBorder, width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ผลการตรวจสอบ',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _Field(
+                  label: 'ผู้ตรวจสอบ',
+                  valueKey: const Key('incident_detail_reviewed_by'),
+                  value: incident.reviewedBy,
+                  selectable: true,
+                ),
+                _Field(
+                  label: 'ตรวจสอบเมื่อ',
+                  valueKey: const Key('incident_detail_reviewed_at'),
+                  value: reviewedAt == null
+                      ? null
+                      : formatIncidentDate(reviewedAt),
+                ),
+                _Field(
+                  label: 'หมายเหตุ',
+                  valueKey: const Key('incident_detail_review_note'),
+                  value: incident.reviewNote,
+                ),
+              ],
+            ),
+          ),
+        ],
         if (metadata != null && metadata.isNotEmpty) ...[
           const SizedBox(height: 12),
           Container(
@@ -169,6 +232,48 @@ class _IncidentDetailView extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// อุปกรณ์ที่ report ผูกไว้ — แตะแล้วไปหน้า Device Detail ของเครื่องนั้น
+/// ไม่มี deviceId (incident อัตโนมัติ) แสดง "-" แบบ [_Field]
+class _DeviceField extends StatelessWidget {
+  const _DeviceField({required this.deviceId});
+
+  final String? deviceId;
+
+  @override
+  Widget build(BuildContext context) {
+    final id = deviceId;
+    if (id == null || id.isEmpty) {
+      return const _Field(
+        label: 'อุปกรณ์',
+        valueKey: Key('incident_detail_device'),
+        value: null,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Label('อุปกรณ์'),
+          InkWell(
+            onTap: () => context.push(AppRoutes.deviceDetail(id)),
+            child: Text(
+              id,
+              key: const Key('incident_detail_device'),
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppTheme.navy,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

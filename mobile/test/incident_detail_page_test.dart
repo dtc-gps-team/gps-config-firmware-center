@@ -17,7 +17,17 @@ Incident _incident({
   String? relatedConfigId = 'cfg-123',
   String? relatedFirmwareId,
   Map<String, dynamic>? metadata,
+  String? deviceId,
+  String? reportedBy,
+  String? reviewedBy,
+  DateTime? reviewedAt,
+  String? reviewNote,
 }) => Incident(
+  deviceId: deviceId,
+  reportedBy: reportedBy,
+  reviewedBy: reviewedBy,
+  reviewedAt: reviewedAt,
+  reviewNote: reviewNote,
   id: id,
   title: title,
   description: description,
@@ -63,6 +73,11 @@ Future<void> _pumpDetail(
   IncidentRepository repo, {
   String id = 'inc-1',
 }) async {
+  // การ์ดหลักยาวขึ้นหลังเพิ่มแถวอุปกรณ์/ผู้แจ้ง — ใช้จอสูงพอให้ ListView สร้าง
+  // section ด้านล่าง (ผลการตรวจสอบ, ข้อมูลเพิ่มเติม) ได้ในเทสต์
+  tester.view.physicalSize = const Size(1080, 4000);
+  tester.view.devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [incidentRepositoryProvider.overrideWithValue(repo)],
@@ -73,6 +88,8 @@ Future<void> _pumpDetail(
 }
 
 void main() {
+  _fieldReportTests();
+
   group('IncidentDetailPage', () {
     testWidgets('loading -> แสดงข้อมูลจาก response', (tester) async {
       final repo = _FakeIncidentRepository(
@@ -83,6 +100,10 @@ void main() {
           ),
         ],
       );
+      // จอสูงพอให้การ์ด metadata ด้านล่างถูกสร้าง (ดู _pumpDetail)
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         ProviderScope(
           overrides: [incidentRepositoryProvider.overrideWithValue(repo)],
@@ -247,6 +268,109 @@ void main() {
       final text = tester.widget<Text>(find.text('รายละเอียดของ B'));
       expect(text.maxLines, 2);
       expect(text.overflow, TextOverflow.ellipsis);
+    });
+  });
+}
+
+// ผลตรวจ #304 — model parse field ของ field report ไว้แล้ว แต่หน้าไม่ render
+void _fieldReportTests() {
+  group('IncidentDetailPage — field report', () {
+    testWidgets('แสดงอุปกรณ์และผู้แจ้ง', (tester) async {
+      final repo = _FakeIncidentRepository(
+        incidents: [
+          _incident(
+            source: 'field-report',
+            deviceId: 'DEV-0101',
+            reportedBy: 'user-st-1',
+          ),
+        ],
+      );
+      await _pumpDetail(tester, repo);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('incident_detail_device')))
+            .data,
+        'DEV-0101',
+      );
+      expect(find.text('user-st-1'), findsOneWidget);
+    });
+
+    testWidgets('แตะเลขอุปกรณ์ -> ไปหน้า Device Detail ของเครื่องนั้น', (
+      tester,
+    ) async {
+      final repo = _FakeIncidentRepository(
+        incidents: [_incident(deviceId: 'DEV-0101')],
+      );
+      final router = GoRouter(
+        initialLocation: AppRoutes.incidentDetail('inc-1'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.incidentDetailPattern,
+            builder: (_, state) =>
+                IncidentDetailPage(incidentId: state.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: AppRoutes.deviceDetailPattern,
+            builder: (_, state) =>
+                Text('DEVICE_PAGE ${state.pathParameters['deviceId']}'),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [incidentRepositoryProvider.overrideWithValue(repo)],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('incident_detail_device')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEVICE_PAGE DEV-0101'), findsOneWidget);
+    });
+
+    testWidgets('มีผลการตรวจสอบ -> แสดง section "ผลการตรวจสอบ" ครบ', (
+      tester,
+    ) async {
+      final repo = _FakeIncidentRepository(
+        incidents: [
+          _incident(
+            reviewedBy: 'user-op-1',
+            reviewedAt: DateTime(2026, 10, 12, 16, 45),
+            reviewNote: 'ช่างเข้าไปขันสายใหม่แล้ว ใช้งานปกติ',
+          ),
+        ],
+      );
+      await _pumpDetail(tester, repo);
+
+      expect(find.byKey(const Key('incident_detail_review')), findsOneWidget);
+      expect(find.text('ผลการตรวจสอบ'), findsOneWidget);
+      expect(find.text('user-op-1'), findsOneWidget);
+      expect(find.text('12/10/2026 16:45'), findsOneWidget);
+      expect(find.text('ช่างเข้าไปขันสายใหม่แล้ว ใช้งานปกติ'), findsOneWidget);
+    });
+
+    testWidgets('มีแค่ reviewNote ตัวเดียว -> ยังแสดง section', (tester) async {
+      final repo = _FakeIncidentRepository(
+        incidents: [_incident(reviewNote: 'ซ้ำกับรายการก่อนหน้า')],
+      );
+      await _pumpDetail(tester, repo);
+
+      expect(find.byKey(const Key('incident_detail_review')), findsOneWidget);
+      expect(find.text('ซ้ำกับรายการก่อนหน้า'), findsOneWidget);
+    });
+
+    testWidgets('ไม่มีข้อมูลตรวจสอบเลย -> ไม่มี section "ผลการตรวจสอบ"', (
+      tester,
+    ) async {
+      final repo = _FakeIncidentRepository(incidents: [_incident()]);
+      await _pumpDetail(tester, repo);
+
+      expect(find.byKey(const Key('incident_detail_review')), findsNothing);
+      expect(find.text('ผลการตรวจสอบ'), findsNothing);
     });
   });
 }
