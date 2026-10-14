@@ -14,6 +14,7 @@ import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
+import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 // แถว 26b — ปุ่ม "ทดสอบกับ Device Simulator" ก่อนส่ง Config เข้าเครื่อง
@@ -182,6 +183,9 @@ Future<void> _pump(
           ref.onDispose(db.close);
           return db;
         }),
+        taskEventRepositoryProvider.overrideWithValue(
+          _EmptyTaskEventRepository(),
+        ),
         taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
         authControllerProvider.overrideWith(() => _FakeAuthController()),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
@@ -211,6 +215,17 @@ Future<void> _runSimulation(WidgetTester tester) async {
   await tester.tap(_simulateButton);
   await tester.pump();
   await tester.pump();
+}
+
+/// Timeline section (issue #296) is not what this file tests — an empty
+/// timeline keeps it off the network.
+class _EmptyTaskEventRepository implements TaskEventRepository {
+  @override
+  Future<List<TaskEvent>> getEvents(String taskId) async => const [];
+
+  @override
+  Future<TaskEvent> addNote(String taskId, String note) =>
+      throw UnimplementedError();
 }
 
 void main() {

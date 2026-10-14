@@ -12,6 +12,7 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
+import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 class _FakeAuthController extends AuthController {
@@ -80,6 +81,42 @@ class _FakeTaskRepository implements TaskRepository {
   }
 }
 
+class _FakeTaskEventRepository implements TaskEventRepository {
+  _FakeTaskEventRepository({List<TaskEvent>? events, this.getError})
+    : events = events ?? [];
+
+  final List<TaskEvent> events;
+  Object? getError;
+
+  /// Thrown by [addNote] while set.
+  Object? addError;
+  final List<String> addedNotes = [];
+  int getCalls = 0;
+
+  @override
+  Future<List<TaskEvent>> getEvents(String taskId) async {
+    getCalls++;
+    if (getError != null) throw getError!;
+    return List.of(events);
+  }
+
+  @override
+  Future<TaskEvent> addNote(String taskId, String note) async {
+    if (addError != null) throw addError!;
+    addedNotes.add(note);
+    final event = TaskEvent(
+      id: 'n${addedNotes.length}',
+      taskId: taskId,
+      changedBy: 'u1',
+      changedByName: 'ช่างสมชาย',
+      changedAt: DateTime(2026, 9, 3, 10),
+      note: note,
+    );
+    events.add(event);
+    return event;
+  }
+}
+
 class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
   _FakeConfirmInstallRepository({this.result, this.error});
 
@@ -142,11 +179,15 @@ Future<void> _pump(
   ConfirmInstallRepository? confirmInstallRepo,
   DeviceStatusRepository? statusRepo,
   Set<String> pendingIds = const {},
+  TaskEventRepository? eventRepo,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         taskRepositoryProvider.overrideWithValue(repo),
+        taskEventRepositoryProvider.overrideWithValue(
+          eventRepo ?? _FakeTaskEventRepository(),
+        ),
         // no real Drift DB / live queries in widget tests (drift stream
         // timers outlive the tree) — the sync queue has its own tests
         pendingTaskIdsProvider.overrideWith((ref) => Stream.value(pendingIds)),
@@ -714,5 +755,208 @@ void main() {
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).last);
       expect(scaffold.bottomNavigationBar, isNull);
     });
+  });
+
+  group('ประวัติงาน (Task Event History, issue #296)', () {
+    final timeline = [
+      TaskEvent(
+        id: 'e1',
+        taskId: 't1',
+        toStatus: TaskStatus.pending,
+        changedBy: 'op1',
+        changedByName: 'คุณสั่งงาน',
+        changedAt: DateTime(2026, 9, 1, 8),
+      ),
+      TaskEvent(
+        id: 'e2',
+        taskId: 't1',
+        fromStatus: TaskStatus.pending,
+        toStatus: TaskStatus.inProgress,
+        changedBy: 'u1',
+        changedByName: 'ช่างสมชาย',
+        changedAt: DateTime(2026, 9, 2, 9, 15),
+      ),
+      TaskEvent(
+        id: 'e3',
+        taskId: 't1',
+        changedBy: 'u1',
+        changedByName: 'ช่างสมชาย',
+        changedAt: DateTime(2026, 9, 2, 9, 40),
+        note: 'ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้',
+      ),
+    ];
+
+    // the timeline is the last section — scroll the detail list to its end
+    // so nothing in it sits under the bottom action bar
+    Future<void> scrollToTimeline(WidgetTester tester) async {
+      await tester.pump(); // resolve getEvents
+      await tester.drag(find.byType(ListView).first, const Offset(0, -3000));
+      await tester.pump();
+    }
+
+    testWidgets(
+      'แสดง สร้างงาน → เปลี่ยนสถานะ → บันทึก ตามลำดับเวลา พร้อมชื่อผู้ทำ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+          eventRepo: _FakeTaskEventRepository(events: timeline),
+        );
+        await scrollToTimeline(tester);
+
+        final created = tester.getTopLeft(find.text('สร้างงาน')).dy;
+        final changed = tester
+            .getTopLeft(find.text('เปลี่ยนสถานะ: รอดำเนินการ → กำลังทำ'))
+            .dy;
+        final note = tester
+            .getTopLeft(find.text('ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้'))
+            .dy;
+        expect(created < changed && changed < note, isTrue);
+        expect(find.text('คุณสั่งงาน · 01/09/2026 08:00'), findsOneWidget);
+        expect(find.text('ช่างสมชาย · 02/09/2026 09:15'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'event ที่ไม่รู้ผู้ทำ (backfill งานเก่า) แสดง "ไม่ทราบผู้ทำรายการ"',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(),
+          eventRepo: _FakeTaskEventRepository(
+            events: [
+              TaskEvent(
+                id: 'e1',
+                taskId: 't1',
+                toStatus: TaskStatus.pending,
+                changedAt: DateTime(2026, 9, 1, 8),
+              ),
+            ],
+          ),
+        );
+        await scrollToTimeline(tester);
+
+        expect(
+          find.text('ไม่ทราบผู้ทำรายการ · 01/09/2026 08:00'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('โหลดไม่สำเร็จ -> ข้อความ + ปุ่มลองใหม่ที่โหลดซ้ำได้', (
+      tester,
+    ) async {
+      final events = _FakeTaskEventRepository(
+        getError: ApiException('offline'),
+      );
+      await _pump(tester, repo: _FakeTaskRepository(), eventRepo: events);
+      await scrollToTimeline(tester);
+
+      expect(find.byKey(const Key('task_timeline_error')), findsOneWidget);
+
+      events
+        ..getError = null
+        ..events.addAll(timeline);
+      await tester.tap(find.byKey(const Key('task_timeline_retry')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('สร้างงาน'), findsOneWidget);
+    });
+
+    for (final (label, role, status, visible) in [
+      ('ST งานที่ยังไม่ยกเลิก', UserRole.st, TaskStatus.pending, true),
+      ('OT งานที่ยังไม่ยกเลิก', UserRole.ot, TaskStatus.inProgress, true),
+      ('Operation', UserRole.operation, TaskStatus.completed, true),
+      ('ST งานที่ถูกยกเลิกแล้ว', UserRole.st, TaskStatus.cancelled, false),
+      ('role อื่น (Auditor)', UserRole.auditor, TaskStatus.pending, false),
+    ]) {
+      testWidgets(
+        'ปุ่มเพิ่มบันทึก: $label -> ${visible ? 'เห็น' : 'ไม่เห็น'}',
+        (tester) async {
+          await _pump(
+            tester,
+            role: role,
+            repo: _FakeTaskRepository(task: _makeTask(status: status)),
+          );
+          await scrollToTimeline(tester);
+
+          expect(
+            find.byKey(const Key('task_add_note_button')),
+            visible ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
+
+    testWidgets(
+      'เพิ่มบันทึก: กดบันทึกไม่ได้จนกว่าจะพิมพ์, ส่งข้อความที่ตัดช่องว่างแล้ว, ปิด sheet และ timeline โหลดใหม่',
+      (tester) async {
+        final events = _FakeTaskEventRepository(events: [timeline.first]);
+        await _pump(tester, repo: _FakeTaskRepository(), eventRepo: events);
+        await scrollToTimeline(tester);
+        final callsBefore = events.getCalls;
+
+        await tester.tap(find.byKey(const Key('task_add_note_button')));
+        await tester.pumpAndSettle();
+
+        FilledButton save() => tester.widget<FilledButton>(
+          find.byKey(const Key('task_note_save')),
+        );
+        expect(save().onPressed, isNull);
+        await tester.enterText(find.byKey(const Key('task_note_field')), '   ');
+        await tester.pump();
+        expect(save().onPressed, isNull);
+
+        await tester.enterText(
+          find.byKey(const Key('task_note_field')),
+          '  ถึงหน้างานแล้ว  ',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('task_note_save')));
+        await tester.pumpAndSettle();
+
+        expect(events.addedNotes, ['ถึงหน้างานแล้ว']);
+        expect(find.byKey(const Key('task_note_field')), findsNothing);
+        expect(find.text('เพิ่มบันทึกแล้ว'), findsOneWidget);
+        expect(events.getCalls, greaterThan(callsBefore));
+        expect(find.text('ถึงหน้างานแล้ว'), findsOneWidget);
+      },
+    );
+
+    for (final (label, error, message) in [
+      (
+        'offline (ไม่มี statusCode) -> บอกว่าต้องใช้อินเทอร์เน็ต ไม่เข้าคิว',
+        ApiException('offline'),
+        'เพิ่มบันทึกต้องใช้อินเทอร์เน็ต กรุณาลองใหม่เมื่อเชื่อมต่อได้',
+      ),
+      (
+        '409 งานถูกยกเลิกระหว่างนั้น',
+        ApiException('cancelled', statusCode: 409),
+        'งานนี้ถูกยกเลิกแล้ว เพิ่มบันทึกไม่ได้',
+      ),
+    ]) {
+      testWidgets(
+        'เพิ่มบันทึกไม่สำเร็จ: $label (sheet ยังเปิดอยู่ ข้อความไม่หาย)',
+        (tester) async {
+          final events = _FakeTaskEventRepository()..addError = error;
+          await _pump(tester, repo: _FakeTaskRepository(), eventRepo: events);
+          await scrollToTimeline(tester);
+
+          await tester.tap(find.byKey(const Key('task_add_note_button')));
+          await tester.pumpAndSettle();
+          await tester.enterText(find.byKey(const Key('task_note_field')), 'x');
+          await tester.pump();
+          await tester.tap(find.byKey(const Key('task_note_save')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('task_note_error')), findsOneWidget);
+          expect(find.text(message), findsOneWidget);
+          expect(find.byKey(const Key('task_note_field')), findsOneWidget);
+        },
+      );
+    }
   });
 }

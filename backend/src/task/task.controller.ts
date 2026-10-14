@@ -13,10 +13,11 @@ import {
 import { Task } from '@prisma/client';
 import { Request } from 'express';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
+import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { ActingUser, TaskService } from './task.service';
+import { ActingUser, TaskEventView, TaskService } from './task.service';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -52,6 +53,25 @@ export class TaskController {
     @Req() req: AuthenticatedRequest,
   ): Promise<Task> {
     return this.taskService.findOne(id, toActor(req));
+  }
+
+  /** Task Event History (issue #296) — timeline เรียงเวลาเก่าไปใหม่ */
+  @Get(':id/events')
+  findEvents(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<TaskEventView[]> {
+    return this.taskService.findEvents(id, toActor(req));
+  }
+
+  /** Task Event History (issue #296) — เพิ่มบันทึกที่ไม่เปลี่ยนสถานะ */
+  @Post(':id/notes')
+  addNote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateTaskNoteDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<TaskEventView> {
+    return this.taskService.addNote(id, dto, toActor(req));
   }
 
   @Patch(':id')

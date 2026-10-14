@@ -166,9 +166,12 @@ class SyncQueueService {
   Future<Task> _dispatch(PendingActionRow action) {
     final payload = jsonDecode(action.payload) as Map<String, dynamic>;
     if (action.type == PendingActionType.taskStatus.wireName) {
+      // createdAt = when the user tapped it, not when it finally syncs — the
+      // backend stores it on the task's timeline (issue #296).
       return _api.updateTaskStatus(
         action.entityId,
         TaskStatus.fromWire(payload['status'] as String),
+        changedAt: action.createdAt,
       );
     }
     throw ApiException('ไม่รู้จักประเภทรายการ ${action.type}', statusCode: 400);
