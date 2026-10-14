@@ -16,6 +16,7 @@ import '../device_search/device_status_repository.dart';
 import 'confirm_install_repository.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
+import 'task_timeline_section.dart';
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -378,6 +379,12 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         task.configId != null &&
         task.deviceId != null &&
         task.status == TaskStatus.inProgress;
+    // เพิ่มบันทึกบน timeline (issue #296): Operation หรือ ST/OT (หน้านี้ ST/OT
+    // เห็นเฉพาะงานตัวเองอยู่แล้ว) และงานต้องยังไม่ถูกยกเลิก — ตรงกับเงื่อนไขของ
+    // POST /tasks/{id}/notes ที่ backend บังคับอีกชั้น
+    final canAddNote =
+        (canEditStatus || role == UserRole.operation) &&
+        task.status != TaskStatus.cancelled;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -514,6 +521,8 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
               ),
             ],
           ],
+          const SizedBox(height: 24),
+          TaskTimelineSection(taskId: task.id, canAddNote: canAddNote),
         ],
       ),
       // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)

@@ -1,14 +1,16 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigStatus, Task } from '@prisma/client';
+import { ConfigStatus, Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -20,6 +22,44 @@ export interface ActingUser {
   /** มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log ระบุ IP
    * Address เป็น field ที่ต้องเก็บ) — optional mirror `config.service.ts` */
   ipAddress?: string | null;
+}
+
+/**
+ * 1 รายการบน timeline ของ Task (`GET /tasks/{id}/events`, issue #296) —
+ * mirror `TaskEvent` ใน openapi.yaml · `changedByName` คือ `User.fullName`
+ * ของผู้ทำรายการ (join มาให้เลย เพราะ ST/OT บน Mobile ไม่มีสิทธิ์อ่านรายชื่อ
+ * ผู้ใช้เอง) — `null` เมื่อไม่รู้ผู้ทำ (event "สร้างงาน" ที่ backfill ให้งานเก่า)
+ */
+export interface TaskEventView {
+  id: string;
+  taskId: string;
+  fromStatus: TaskStatus | null;
+  toStatus: TaskStatus | null;
+  changedBy: string | null;
+  changedByName: string | null;
+  changedAt: Date;
+  note: string | null;
+}
+
+const TASK_EVENT_INCLUDE = {
+  changer: { select: { fullName: true } },
+} satisfies Prisma.TaskEventInclude;
+
+type TaskEventWithChanger = Prisma.TaskEventGetPayload<{
+  include: typeof TASK_EVENT_INCLUDE;
+}>;
+
+function toEventView(event: TaskEventWithChanger): TaskEventView {
+  return {
+    id: event.id,
+    taskId: event.taskId,
+    fromStatus: event.fromStatus,
+    toStatus: event.toStatus,
+    changedBy: event.changedBy,
+    changedByName: event.changer?.fullName ?? null,
+    changedAt: event.changedAt,
+    note: event.note,
+  };
 }
 
 /** AuditLog.auditModule ของทุกแถวที่โมดูลนี้เขียน (Sprint 3 #27 follow-up —
@@ -78,6 +118,32 @@ function toDbDate(value: string | null | undefined): Date | null | undefined {
   return new Date(value);
 }
 
+/**
+ * `TaskEvent.changedAt` ของการเปลี่ยนสถานะ — ใช้เวลาที่ client ส่งมา (เวลาที่
+ * ช่างกดจริงตอนเข้าคิว offline, issue #296) ถ้ามี · เวลาในอนาคต (นาฬิกาเครื่อง
+ * เดินเร็ว) ปัดลงเป็นเวลา server แทนการตอบ 400 เพื่อไม่ให้คิว offline ของ
+ * Mobile ถูกปฏิเสธถาวรเพราะนาฬิกาเพี้ยน · เวลาก่อน `notBefore` ปัดขึ้นเป็น
+ * `notBefore` (ผู้เรียกส่ง `max(Task.createdAt, event เปลี่ยนสถานะล่าสุด)` —
+ * ดู `TaskService.statusChangeLowerBound`) กัน timeline เรียงผิด
+ */
+export function resolveChangedAt(
+  requested: string | undefined,
+  notBefore: Date,
+  now: Date = new Date(),
+): Date {
+  if (requested === undefined) {
+    return now;
+  }
+  const at = new Date(requested);
+  if (at.getTime() > now.getTime()) {
+    return now;
+  }
+  if (at.getTime() < notBefore.getTime()) {
+    return notBefore;
+  }
+  return at;
+}
+
 @Injectable()
 export class TaskService {
   private readonly logger = new Logger(TaskService.name);
@@ -94,15 +160,29 @@ export class TaskService {
     if (dto.configId != null) {
       await this.assertConfigAssignable(dto.configId, dto.deviceId);
     }
-    const created = await this.prisma.task.create({
-      data: {
-        title: dto.title,
-        description: dto.description,
-        assignedTo: dto.assignedTo,
-        deviceId: dto.deviceId,
-        configId: dto.configId,
-        dueDate: toDbDate(dto.dueDate),
-      },
+    // Task + event "สร้างงาน" (null -> pending) ในทรานแซกชันเดียวกัน
+    // (docs/16 §2) — timeline ของทุกงานเริ่มจาก event นี้เสมอ
+    const created = await this.prisma.$transaction(async (tx) => {
+      const task = await tx.task.create({
+        data: {
+          title: dto.title,
+          description: dto.description,
+          assignedTo: dto.assignedTo,
+          deviceId: dto.deviceId,
+          configId: dto.configId,
+          dueDate: toDbDate(dto.dueDate),
+        },
+      });
+      await tx.taskEvent.create({
+        data: {
+          taskId: task.id,
+          fromStatus: null,
+          toStatus: task.status,
+          changedBy: actor.id,
+          changedAt: task.createdAt,
+        },
+      });
+      return task;
     });
     // งานใหม่ทุกงานมีคนถูก assign เสมอ (assignedTo required ใน CreateTaskDto)
     await this.notifyTaskAssigned(created);
@@ -141,6 +221,12 @@ export class TaskService {
     dto: UpdateTaskDto,
     actor: ActingUser,
   ): Promise<Task> {
+    if (dto.changedAt !== undefined && dto.status === undefined) {
+      throw new BadRequestException(
+        'changedAt ใช้ได้เฉพาะตอนเปลี่ยน status เท่านั้น',
+      );
+    }
+
     if (actor.role === OPERATION_ROLE) {
       const existing = await this.findOne(id, actor);
       if (dto.configId != null) {
@@ -156,17 +242,26 @@ export class TaskService {
       // ConfigService.update/updateStatus)
       let updated: Task;
       try {
-        updated = await this.prisma.task.update({
-          where: { id },
-          data: {
-            title: dto.title,
-            description: dto.description,
-            assignedTo: dto.assignedTo,
-            deviceId: dto.deviceId,
-            configId: dto.configId,
-            status: dto.status,
-            dueDate: toDbDate(dto.dueDate),
-          },
+        // Task + TaskEvent ในทรานแซกชันเดียวกัน (docs/16 §2)
+        updated = await this.prisma.$transaction(async (tx) => {
+          const previous = await this.lockTask(tx, id);
+          if (!previous) {
+            throw new NotFoundException(`ไม่พบงาน id ${id}`);
+          }
+          const task = await tx.task.update({
+            where: { id },
+            data: {
+              title: dto.title,
+              description: dto.description,
+              assignedTo: dto.assignedTo,
+              deviceId: dto.deviceId,
+              configId: dto.configId,
+              status: dto.status,
+              dueDate: toDbDate(dto.dueDate),
+            },
+          });
+          await this.recordStatusChange(tx, previous, task, dto, actor);
+          return task;
         });
       } catch (err) {
         if (
@@ -213,11 +308,23 @@ export class TaskService {
     // งานที่ Operation ยกเลิกแล้ว (cancelled) เป็นสถานะสุดท้ายสำหรับ ST/OT —
     // ห้ามเขียนทับกลับเป็น in_progress/completed (Mobile offline queue อาจส่ง
     // ค่าที่เก่าเป็นชั่วโมงมา ถ้าไม่กันงานที่ยกเลิกไปแล้วจะ "ฟื้น" เงียบๆ)
-    const result = await this.prisma.task.updateMany({
-      where: { id, assignedTo: actor.id, status: { not: 'cancelled' } },
-      data: { status: dto.status },
+    //
+    // TaskEvent เขียนในทรานแซกชันเดียวกับ updateMany (docs/16 §2) — lockTask
+    // ล็อกแถวไว้ก่อน fromStatus จึงเป็นค่าก่อนหน้าจริงเสมอแม้มีคำขอซ้อนกัน
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const previous = await this.lockTask(tx, id);
+      const result = await tx.task.updateMany({
+        where: { id, assignedTo: actor.id, status: { not: 'cancelled' } },
+        data: { status: dto.status },
+      });
+      if (result.count === 0 || !previous) {
+        return null;
+      }
+      const task = await tx.task.findUniqueOrThrow({ where: { id } });
+      await this.recordStatusChange(tx, previous, task, dto, actor);
+      return task;
     });
-    if (result.count === 0) {
+    if (!updated) {
       // แยก 409 (เป็นเจ้าของงาน แต่งานถูกยกเลิกแล้ว) ออกจาก 404 (ไม่ใช่งานของ
       // ตัวเอง/ไม่มีงานนี้) — เช็ค assignedTo ก่อนเสมอ ไม่เปิดเผยสถานะงานของ
       // คนอื่น (IDOR)
@@ -234,7 +341,132 @@ export class TaskService {
       throw new NotFoundException(`ไม่พบงาน id ${id}`);
     }
     await this.logAudit('update', actor);
-    return this.prisma.task.findUniqueOrThrow({ where: { id } });
+    return updated;
+  }
+
+  /**
+   * `GET /tasks/{id}/events` — timeline ของงาน เรียงตามเวลาที่เกิดจริง
+   * (`changedAt`) เก่าไปใหม่ · ใครเห็น Task ได้ก็เห็น timeline ได้ ใช้กฎเดียว
+   * กับ `findOne()` ทุกประการ (404 ถ้าไม่เห็นงาน) ไม่มีกฎสิทธิ์ชุดที่สอง
+   */
+  async findEvents(id: string, actor: ActingUser): Promise<TaskEventView[]> {
+    await this.findOne(id, actor);
+    const events = await this.prisma.taskEvent.findMany({
+      where: { taskId: id },
+      orderBy: [{ changedAt: 'asc' }, { createdAt: 'asc' }],
+      include: TASK_EVENT_INCLUDE,
+    });
+    return events.map(toEventView);
+  }
+
+  /**
+   * `POST /tasks/{id}/notes` — เพิ่มบันทึกบน timeline (ไม่เปลี่ยนสถานะ) ·
+   * Operation เพิ่มได้ทุกงาน · ST/OT เฉพาะงานที่ตัวเองถูก assign (404 ถ้าไม่ใช่
+   * ไม่เปิดเผยว่ามีงานนี้ — IDOR) · role อื่น 403 · งาน `cancelled` แล้ว 409
+   */
+  async addNote(
+    id: string,
+    dto: CreateTaskNoteDto,
+    actor: ActingUser,
+  ): Promise<TaskEventView> {
+    const isOperation = actor.role === OPERATION_ROLE;
+    if (!isOperation && !SELF_SCOPED_ROLES.includes(actor.role)) {
+      throw new ForbiddenException('ไม่มีสิทธิ์เพิ่มบันทึกในงานนี้');
+    }
+    const note = dto.note.trim();
+    if (note.length === 0) {
+      throw new BadRequestException('บันทึกต้องไม่เป็นช่องว่างล้วน');
+    }
+
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task || (!isOperation && task.assignedTo !== actor.id)) {
+      throw new NotFoundException(`ไม่พบงาน id ${id}`);
+    }
+    if (task.status === 'cancelled') {
+      throw new ConflictException(
+        'งานนี้ถูกยกเลิกแล้ว ไม่สามารถเพิ่มบันทึกได้',
+      );
+    }
+
+    const event = await this.prisma.taskEvent.create({
+      data: { taskId: id, changedBy: actor.id, note },
+      include: TASK_EVENT_INCLUDE,
+    });
+    await this.logAudit('add_note', actor);
+    return toEventView(event);
+  }
+
+  /**
+   * ล็อกแถว Task ไว้จนจบทรานแซกชัน (`SELECT ... FOR UPDATE`) แล้วคืนสถานะก่อน
+   * แก้ — ใช้เป็น `fromStatus` ของ event · `null` ถ้าไม่มีงานนี้
+   */
+  private async lockTask(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<{ status: TaskStatus; createdAt: Date } | null> {
+    const rows = await tx.$queryRaw<{ status: TaskStatus; createdAt: Date }[]>`
+      SELECT "status", "createdAt" FROM "Task" WHERE "id" = ${id} FOR UPDATE
+    `;
+    return rows[0] ?? null;
+  }
+
+  /**
+   * เขียน event เปลี่ยนสถานะ — เฉพาะเมื่อ PATCH นี้ส่ง status มาและเปลี่ยนจริง
+   * (ส่งสถานะเดิมซ้ำ เช่น offline queue ส่งซ้ำ ไม่เกิด event)
+   *
+   * `changedAt` จาก client ใช้เฉพาะ ST/OT (มาจากคิว offline ของ Mobile) —
+   * Operation ใช้เวลา server เสมอแม้ส่งมา เพราะ Web ไม่มีคิว offline ไม่มี
+   * เหตุผลต้องส่งเวลาเอง (รีวิว A บน PR #302)
+   */
+  private async recordStatusChange(
+    tx: Prisma.TransactionClient,
+    previous: { status: TaskStatus; createdAt: Date },
+    task: Task,
+    dto: UpdateTaskDto,
+    actor: ActingUser,
+  ): Promise<void> {
+    if (dto.status === undefined || task.status === previous.status) {
+      return;
+    }
+    const changedAt = SELF_SCOPED_ROLES.includes(actor.role)
+      ? resolveChangedAt(
+          dto.changedAt,
+          await this.statusChangeLowerBound(tx, task.id, previous.createdAt),
+        )
+      : new Date();
+    await tx.taskEvent.create({
+      data: {
+        taskId: task.id,
+        fromStatus: previous.status,
+        toStatus: task.status,
+        changedBy: actor.id,
+        changedAt,
+      },
+    });
+  }
+
+  /**
+   * ขอบล่างของ `changedAt` ที่ client ส่งมา = `max(Task.createdAt, changedAt
+   * ของ event เปลี่ยนสถานะล่าสุดของงานนี้)` (รีวิว A บน PR #302) — ถ้ามีคน
+   * เปลี่ยนสถานะคั่นระหว่างที่ช่างออฟไลน์ event ของช่างที่ sync ขึ้นทีหลังต้อง
+   * ไม่ย้อนไปอยู่ก่อน event นั้น ไม่งั้น timeline จะเรียง from→to ต่อกันไม่ติด
+   * (เวลาอาจคลาดจากเวลากดจริงบ้าง แต่ลำดับถูกเสมอ) · เรียกหลัง `lockTask`
+   * ในทรานแซกชันเดียวกัน แถวงานถูกล็อกอยู่ จึงไม่มี event ใหม่แทรกระหว่างนี้
+   */
+  private async statusChangeLowerBound(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+    taskCreatedAt: Date,
+  ): Promise<Date> {
+    const latest = await tx.taskEvent.findFirst({
+      where: { taskId, toStatus: { not: null } },
+      orderBy: { changedAt: 'desc' },
+      select: { changedAt: true },
+    });
+    if (!latest || latest.changedAt.getTime() < taskCreatedAt.getTime()) {
+      return taskCreatedAt;
+    }
+    return latest.changedAt;
   }
 
   // issue #73 ข้อ 3 — เดิมเช็คแค่ "ST/OT ที่ไม่ใช่เจ้าของงาน" ซ่อน ที่เหลือ

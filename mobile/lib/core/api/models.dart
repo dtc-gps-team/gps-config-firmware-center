@@ -725,6 +725,60 @@ class Task {
   }
 }
 
+/// One entry on a task's timeline — mirrors `docs/api/openapi.yaml`
+/// `TaskEvent` (Task Event History, issue #296). Either a status change
+/// ([toStatus] set; [fromStatus] is null only for the "task created" event) or
+/// a note ([fromStatus]/[toStatus] both null, [note] set). No photo — cut from
+/// this round's scope.
+class TaskEvent {
+  const TaskEvent({
+    required this.id,
+    required this.taskId,
+    required this.changedAt,
+    this.fromStatus,
+    this.toStatus,
+    this.changedBy,
+    this.changedByName,
+    this.note,
+  });
+
+  final String id;
+  final String taskId;
+  final TaskStatus? fromStatus;
+  final TaskStatus? toStatus;
+
+  /// user id of whoever made the change — null only for the "task created"
+  /// event backfilled onto tasks that existed before this feature.
+  final String? changedBy;
+
+  /// `User.fullName` of [changedBy], joined by the backend (ST/OT can't read
+  /// the user list themselves).
+  final String? changedByName;
+
+  /// When it actually happened — for a status change made offline this is the
+  /// tap time sent from the sync queue, not the time it synced.
+  final DateTime changedAt;
+  final String? note;
+
+  bool get isNote => toStatus == null;
+
+  factory TaskEvent.fromJson(Map<String, dynamic> json) {
+    TaskStatus? status(Object? value) =>
+        value is String ? TaskStatus.fromWire(value) : null;
+
+    return TaskEvent(
+      id: json['id'] as String,
+      taskId: json['taskId'] as String,
+      fromStatus: status(json['fromStatus']),
+      toStatus: status(json['toStatus']),
+      changedBy: json['changedBy'] as String?,
+      changedByName: json['changedByName'] as String?,
+      changedAt: DateTime.parse(json['changedAt'] as String),
+      note: json['note'] as String?,
+    );
+  }
+}
+
 /// Device Search / Device Detail — mirrors `docs/api/openapi.yaml` `Device`
 /// (Prisma model `Device`). `GET /devices` / `GET /devices/{deviceId}` both
 /// return this shape. `deviceId` (ไม่ใช่ `id`) คือเลขเครื่องจริงที่ใช้อ้างอิงใน
