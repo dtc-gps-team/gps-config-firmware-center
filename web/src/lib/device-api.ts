@@ -116,9 +116,9 @@ export type RegisterDeviceInput = {
   protocol: string;
   hardwareRevisionCode?: string;
   customerId?: string;
-  imei?: string;
-  serialNumber?: string;
-  blackboxId?: string;
+  imei: string;
+  serialNumber: string;
+  blackboxId: string;
   bootloader?: string;
 };
 

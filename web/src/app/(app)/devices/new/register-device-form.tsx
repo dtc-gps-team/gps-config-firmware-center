@@ -30,7 +30,7 @@ const NO_CUSTOMER = "__none__";
 /**
  * ฟอร์มลงทะเบียนอุปกรณ์ใหม่ — Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md ตาราง
  * 4.1 `registerDevice`, issue #157 PR 1) · `modelId`/`protocol` cascade กัน
- * (เลือกรุ่นก่อนถึงจะเลือก protocol ได้ — ตัวเลือก protocol มาจาก
+ * (เลือกโมเดลก่อนถึงจะเลือก protocol ได้ — ตัวเลือก protocol มาจาก
  * `DeviceModel.supportedProtocols` ของรุ่นนั้นตรงๆ ไม่ใช่รายการตายตัว)
  *
  * หลังสร้างสำเร็จสลับไปโชว์ apiKey จริง (`RegisterDeviceSuccess` ด้านล่าง)
@@ -76,7 +76,13 @@ export function RegisterDeviceForm() {
 
   function changeModel(nextModelId: string) {
     setModelId(nextModelId);
-    setProtocol("");
+    // โมเดลที่รองรับโปรโตคอลเดียวเลือกให้เลย ไม่ต้องให้ผู้ใช้กดซ้ำ
+    const next = modelList.find((m) => m.id === nextModelId);
+    const only =
+      next && next.supportedProtocols.length === 1
+        ? next.supportedProtocols[0]
+        : "";
+    setProtocol(only);
   }
 
   async function onSubmit() {
@@ -91,8 +97,23 @@ export function RegisterDeviceForm() {
       setFormError("ต้องระบุ SIM Number");
       return;
     }
+    const trimmedImei = imei.trim();
+    const trimmedSerial = serialNumber.trim();
+    const trimmedBlackbox = blackboxId.trim();
+    if (!trimmedImei) {
+      setFormError("ต้องระบุ IMEI");
+      return;
+    }
+    if (!trimmedSerial) {
+      setFormError("ต้องระบุ Serial Number");
+      return;
+    }
+    if (!trimmedBlackbox) {
+      setFormError("ต้องระบุ Blackbox ID");
+      return;
+    }
     if (!modelId) {
-      setFormError("ต้องเลือกรุ่นอุปกรณ์");
+      setFormError("ต้องเลือกโมเดล");
       return;
     }
     if (!protocol) {
@@ -110,9 +131,9 @@ export function RegisterDeviceForm() {
         protocol,
         hardwareRevisionCode: hardwareRevisionCode.trim() || undefined,
         customerId: customerId !== NO_CUSTOMER ? customerId : undefined,
-        imei: imei.trim() || undefined,
-        serialNumber: serialNumber.trim() || undefined,
-        blackboxId: blackboxId.trim() || undefined,
+        imei: trimmedImei,
+        serialNumber: trimmedSerial,
+        blackboxId: trimmedBlackbox,
         bootloader: bootloader.trim() || undefined,
       });
       toast.success(`ลงทะเบียน "${registered.deviceId}" แล้ว`);
@@ -131,6 +152,9 @@ export function RegisterDeviceForm() {
     simNumber.trim() !== "" &&
     modelId !== "" &&
     protocol !== "" &&
+    imei.trim() !== "" &&
+    serialNumber.trim() !== "" &&
+    blackboxId.trim() !== "" &&
     !submitting;
 
   return (
@@ -161,7 +185,7 @@ export function RegisterDeviceForm() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-model">รุ่นอุปกรณ์</Label>
+          <Label htmlFor="device-model">โมเดล</Label>
           <Select
             value={modelId}
             onValueChange={(value) => changeModel(value ?? "")}
@@ -196,7 +220,7 @@ export function RegisterDeviceForm() {
               className="w-full"
               disabled={submitting || !selectedModel}
             >
-              <SelectValue placeholder="- เลือกรุ่นก่อน -" />
+              <SelectValue placeholder="- เลือกโมเดลก่อน -" />
             </SelectTrigger>
             <SelectContent>
               {(selectedModel?.supportedProtocols ?? []).map((p) => (
@@ -254,8 +278,7 @@ export function RegisterDeviceForm() {
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="device-imei">
-            IMEI{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            IMEI
           </Label>
           <Input
             id="device-imei"
@@ -267,8 +290,7 @@ export function RegisterDeviceForm() {
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="device-serial">
-            Serial Number{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            Serial Number
           </Label>
           <Input
             id="device-serial"
@@ -280,8 +302,7 @@ export function RegisterDeviceForm() {
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="device-blackbox">
-            Blackbox ID{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            Blackbox ID
           </Label>
           <Input
             id="device-blackbox"
