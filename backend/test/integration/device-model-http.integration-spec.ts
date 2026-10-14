@@ -129,6 +129,71 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
       expect(body.supportedProtocols).toEqual(['TCP', 'UDP']);
     });
 
+    it('สร้างสำเร็จ -> มีแถว AuditLog 1 แถว พร้อม IP และชื่อรุ่น', async () => {
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Create, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'GT06A', supportedProtocols: ['TCP'] })
+        .expect(201);
+
+      const created = res.body as { id: string };
+      const logs = await prisma.auditLog.findMany({
+        where: { auditModule: 'device-model' },
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0].userId).toBe(admin.id);
+      expect(logs[0].action).toBe('create');
+      expect(logs[0].ipAddress).toBeTruthy();
+      expect(logs[0].metadata).toEqual({
+        deviceModelId: created.id,
+        modelName: 'GT06A',
+      });
+    });
+
+    it('ชื่อรุ่นซ้ำ -> 409 และไม่มีแถว AuditLog เพิ่ม', async () => {
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Create, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+      const body = { name: 'GT06D', supportedProtocols: ['TCP'] };
+
+      await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(409);
+
+      expect(
+        await prisma.auditLog.count({ where: { auditModule: 'device-model' } }),
+      ).toBe(1);
+    });
+
+    it('บันทึก AuditLog ไม่ได้ (ผู้ทำรายการไม่มีในระบบ) -> 500 และรุ่นที่เพิ่งสร้างถูกย้อนกลับ ไม่ค้างในทะเบียน', async () => {
+      await grant('Admin', ActionType.Create, 'device-model');
+      // token ที่ผ่าน guard ได้ (role มีสิทธิ์) แต่ userId ไม่มีในตาราง User
+      // -> FK ของ AuditLog.userId ล้ม ต้องทำให้การสร้างล้มตามด้วย (atomic)
+      const token = tokenFor('00000000-0000-4000-8000-000000000099', 'Admin');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'GT06G', supportedProtocols: ['TCP'] })
+        .expect(500);
+
+      expect(await prisma.deviceModel.count({ where: { name: 'GT06G' } })).toBe(
+        0,
+      );
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
     it('endOfSupportDate แบบวันที่อย่างเดียว (จากช่องเลือกวันที่บนเว็บ) -> 201 ไม่ใช่ 500', async () => {
       const admin = await makeUser(prisma, { role: 'Admin' });
       await grant('Admin', ActionType.Create, 'device-model');
@@ -220,7 +285,35 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
       );
     });
 
-    it('id ไม่มีอยู่จริง -> 404', async () => {
+    it('แก้สำเร็จ -> มีแถว AuditLog พร้อมชื่อ field ที่แก้ (ไม่เก็บค่า)', async () => {
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Update, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/device-models/${model.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: 'discontinued', notes: 'เลิกผลิต' })
+        .expect(200);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { auditModule: 'device-model', action: 'update' },
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0].userId).toBe(admin.id);
+      expect(logs[0].ipAddress).toBeTruthy();
+      const meta = logs[0].metadata as {
+        deviceModelId: string;
+        modelName: string;
+        fieldNames: string[];
+      };
+      expect(meta.deviceModelId).toBe(model.id);
+      expect(meta.modelName).toBe('GT06N');
+      expect([...meta.fieldNames].sort()).toEqual(['notes', 'status']);
+    });
+
+    it('id ไม่มีอยู่จริง -> 404 และไม่มีแถว AuditLog', async () => {
       const admin = await makeUser(prisma, { role: 'Admin' });
       await grant('Admin', ActionType.Update, 'device-model');
       const token = tokenFor(admin.id, 'Admin');
@@ -230,6 +323,8 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'discontinued' })
         .expect(404);
+
+      expect(await prisma.auditLog.count()).toBe(0);
     });
   });
 });

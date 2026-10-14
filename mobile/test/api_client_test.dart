@@ -400,6 +400,87 @@ void main() {
       },
     );
 
+    test(
+      'updateTaskStatus ส่ง changedAt (UTC ISO 8601) เมื่อระบุ — issue #296',
+      () async {
+        final (:client, :adapter) = _clientReturning(
+          _taskJson(id: 'abc', status: 'in_progress'),
+        );
+
+        await client.updateTaskStatus(
+          'abc',
+          TaskStatus.inProgress,
+          changedAt: DateTime.utc(2026, 10, 13, 8, 30),
+        );
+
+        expect(adapter.lastRequest?.data, {
+          'status': 'in_progress',
+          'changedAt': '2026-10-13T08:30:00.000Z',
+        });
+      },
+    );
+
+    test(
+      'listTaskEvents -> GET /tasks/{id}/events แปลงทั้ง event สถานะและบันทึก',
+      () async {
+        final (:client, :adapter) = _clientReturning([
+          {
+            'id': 'e1',
+            'taskId': 'abc',
+            'fromStatus': null,
+            'toStatus': 'pending',
+            'changedBy': null,
+            'changedByName': null,
+            'changedAt': '2026-09-01T00:00:00.000Z',
+            'note': null,
+          },
+          {
+            'id': 'e2',
+            'taskId': 'abc',
+            'fromStatus': null,
+            'toStatus': null,
+            'changedBy': 'u1',
+            'changedByName': 'ช่างสมชาย',
+            'changedAt': '2026-09-02T00:00:00.000Z',
+            'note': 'ลูกค้าไม่อยู่',
+          },
+        ]);
+
+        final events = await client.listTaskEvents('abc');
+
+        expect(adapter.lastRequest?.method, 'GET');
+        expect(adapter.lastRequest?.path, '/tasks/abc/events');
+        expect(events, hasLength(2));
+        expect(events[0].toStatus, TaskStatus.pending);
+        expect(events[0].fromStatus, isNull);
+        expect(events[0].changedByName, isNull);
+        expect(events[0].isNote, isFalse);
+        expect(events[1].isNote, isTrue);
+        expect(events[1].note, 'ลูกค้าไม่อยู่');
+        expect(events[1].changedAt, DateTime.utc(2026, 9, 2));
+      },
+    );
+
+    test('addTaskNote -> POST /tasks/{id}/notes ด้วย body note', () async {
+      final (:client, :adapter) = _clientReturning({
+        'id': 'n1',
+        'taskId': 'abc',
+        'fromStatus': null,
+        'toStatus': null,
+        'changedBy': 'u1',
+        'changedByName': 'ช่างสมชาย',
+        'changedAt': '2026-09-02T00:00:00.000Z',
+        'note': 'ถึงหน้างานแล้ว',
+      }, statusCode: 201);
+
+      final event = await client.addTaskNote('abc', 'ถึงหน้างานแล้ว');
+
+      expect(adapter.lastRequest?.method, 'POST');
+      expect(adapter.lastRequest?.path, '/tasks/abc/notes');
+      expect(adapter.lastRequest?.data, {'note': 'ถึงหน้างานแล้ว'});
+      expect(event.note, 'ถึงหน้างานแล้ว');
+    });
+
     test('getTask -> 404 maps to ApiException', () async {
       final client = _clientFailingWith(
         (o) => DioException(

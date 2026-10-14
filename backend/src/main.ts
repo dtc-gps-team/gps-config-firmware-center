@@ -1,9 +1,18 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { resolveTrustProxy } from './common/trust-proxy';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // ให้ req.ip (ที่ลง Audit Log) เป็น IP ของผู้ใช้จริงเมื่อ deploy หลัง reverse
+  // proxy — ปิดเป็นค่าเริ่มต้น ตั้ง TRUST_PROXY เป็นจำนวน proxy บนระบบ hosting
+  // เท่านั้น ดูเหตุผลและความเสี่ยงที่ common/trust-proxy.ts
+  const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY);
+  if (trustProxy !== false) {
+    app.set('trust proxy', trustProxy);
+  }
   app.setGlobalPrefix('api/v1');
   // เพิ่มใหม่: web (localhost:3000) กับ backend (localhost:3001) อยู่คนละ
   // origin กัน ถ้าไม่เปิด CORS ตรงนี้ browser จะบล็อก response ตอน web เรียก

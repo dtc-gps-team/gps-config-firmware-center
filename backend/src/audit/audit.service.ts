@@ -1,7 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { AuditLog } from '@prisma/client';
+import { AuditLog, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { QueryAuditLogDto } from './dto/query-audit-log.dto';
+import {
+  AUDIT_LOG_DEFAULT_PAGE_SIZE,
+  QueryAuditLogDto,
+} from './dto/query-audit-log.dto';
+
+/** response ของ `GET /audit-logs` — `AuditLogPage` ใน openapi.yaml */
+export type AuditLogPage = {
+  items: AuditLog[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 
 /**
  * audit module (ฝั่ง A) — read-only endpoint `GET /audit-logs` (Sprint 3 #27)
@@ -22,17 +33,33 @@ import { QueryAuditLogDto } from './dto/query-audit-log.dto';
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: QueryAuditLogDto): Promise<AuditLog[]> {
-    const { userId, auditModule, action } = query;
-    return this.prisma.auditLog.findMany({
-      where: {
-        userId: userId || undefined,
-        auditModule: auditModule || undefined,
-        // action เป็นช่องค้นหา (ไม่ใช่ dropdown ค่าคงที่แบบ auditModule) —
-        // ใช้ contains แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ ให้พิมพ์บางส่วนของคำแล้วเจอได้เลย
-        action: action ? { contains: action, mode: 'insensitive' } : undefined,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll(query: QueryAuditLogDto): Promise<AuditLogPage> {
+    const {
+      userId,
+      auditModule,
+      action,
+      page = 1,
+      pageSize = AUDIT_LOG_DEFAULT_PAGE_SIZE,
+    } = query;
+    const where: Prisma.AuditLogWhereInput = {
+      userId: userId || undefined,
+      auditModule: auditModule || undefined,
+      // action เป็นช่องค้นหา (ไม่ใช่ dropdown ค่าคงที่แบบ auditModule) —
+      // ใช้ contains แบบไม่สนตัวพิมพ์เล็ก-ใหญ่ ให้พิมพ์บางส่วนของคำแล้วเจอได้เลย
+      action: action ? { contains: action, mode: 'insensitive' } : undefined,
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        // id เป็นตัวตัดสินเมื่อ createdAt เท่ากัน (เช่น audit หลายแถวที่เขียนใน
+        // transaction เดียวกัน) Postgres ไม่การันตีลำดับแถวที่ค่าเรียงเท่ากัน
+        // ถ้าไม่มีตัวตัดสิน แถวอาจซ้ำหรือหายระหว่างหน้า (รีวิว B บน #301 ข้อ 2)
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
   }
 }
