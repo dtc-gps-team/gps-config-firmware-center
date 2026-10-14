@@ -158,12 +158,12 @@ export function RegisterDeviceForm() {
     !submitting;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       {/* 2 คอลัมน์ — mirror pattern "สร้างใหม่" หน้าอื่น (users/new,
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">ข้อมูลตัวเครื่อง</h2>
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลตัวเครื่อง</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-blackbox">
@@ -231,8 +231,8 @@ export function RegisterDeviceForm() {
           </div>
         </div>
       </section>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">โมเดล</h2>
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลโมเดล</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-model">โมเดล</Label>
@@ -295,8 +295,8 @@ export function RegisterDeviceForm() {
           </div>
         </div>
       </section>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">การใช้งาน</h2>
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">การใช้งาน</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2 flex flex-col gap-1.5">
             <Label htmlFor="device-customer">
