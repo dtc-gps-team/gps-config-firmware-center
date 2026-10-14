@@ -102,6 +102,10 @@ export interface ConfirmFirmwareInstallResult {
 export interface ActingUser {
   id: string;
   role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log ระบุ IP
+   * Address เป็น field ที่ต้องเก็บ) — optional กัน spec ทุกไฟล์ที่ประกาศ
+   * `ActingUser` literal ตรงๆ ต้องแก้พร้อมกันหมด mirror `config.service.ts` */
+  ipAddress?: string | null;
 }
 
 /** ค่าที่ `GET /devices/{deviceId}/status` คืนให้ต่อ Config/Firmware แยกกัน
@@ -394,6 +398,7 @@ export class DeviceService {
             auditModule: AUDIT_MODULE,
             action: 'register',
             metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
           },
         });
         return created;
@@ -464,6 +469,7 @@ export class DeviceService {
             auditModule: AUDIT_MODULE,
             action: 'rotate-key',
             metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
           },
         });
         return updated;
@@ -598,6 +604,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'apply-config',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
     } catch (err) {
@@ -809,6 +816,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'confirm-firmware-install',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
     });
@@ -1192,6 +1200,7 @@ export class DeviceService {
             auditModule: AUDIT_MODULE,
             action: 'device-config-override-request',
             metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
           },
         });
 
@@ -1359,6 +1368,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'device-config-override-approve',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return row;
@@ -1416,6 +1426,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'device-config-override-reject',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return row;
@@ -1517,6 +1528,7 @@ export class DeviceService {
             auditModule: AUDIT_MODULE,
             action: 'device-firmware-override-request',
             metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
           },
         });
 
@@ -1670,6 +1682,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'device-firmware-override-approve',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return row;
@@ -1719,6 +1732,7 @@ export class DeviceService {
           auditModule: AUDIT_MODULE,
           action: 'device-firmware-override-reject',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
       return row;

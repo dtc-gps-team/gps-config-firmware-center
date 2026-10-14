@@ -28,4 +28,7 @@ export interface AuditLogMetadata {
   incidentId?: string;
   /** `resolve`/`dismiss`/`promote` — ผลตัดสินใจของ Operation บน field report */
   outcome?: string;
+  /** device-model: id + ชื่อรุ่น (ไม่ใช่ค่าที่เปลี่ยน) */
+  deviceModelId?: string;
+  modelName?: string;
 }

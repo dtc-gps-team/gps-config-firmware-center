@@ -35,10 +35,19 @@ import {
   type SimulationResult,
 } from './device-simulator';
 
-/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
+/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ ·
+ * `ipAddress` มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log
+ * ระบุ IP Address เป็น field ที่ต้องเก็บ — schema มี `AuditLog.ipAddress`
+ * มาตั้งแต่แรกแต่ไม่เคยมีจุดไหน set ค่าจริงเลย จนตรวจเจอจาก UX/UI audit) ·
+ * optional (ไม่ required) ตั้งใจ — กัน spec ทุกไฟล์ทั่ว backend ที่ประกาศ
+ * `ActingUser` literal ตรงๆ (ไม่ผ่าน `toActor()`) ต้องแก้พร้อมกันหมดเพราะเรื่อง
+ * นี้ไม่ใช่ประเด็นของเทสพวกนั้นเลย — undefined ที่ Prisma รับก็เท่ากับ "ไม่ส่ง
+ * ค่า" อยู่ดี (เก็บเป็น NULL เหมือนที่ผ่านมา) ไม่กระทบ runtime จริงที่มาจาก
+ * controller ซึ่ง set ให้เสมอ */
 export interface ActingUser {
   id: string;
   role: string;
+  ipAddress?: string | null;
 }
 
 /** เฉพาะ format ที่รองรับตอนนี้ (v3.2 — ดู openapi.yaml importConfig summary) */
@@ -122,14 +131,19 @@ export class ConfigService {
    * (ยกเว้นใน `approve()` ที่ join กับ transaction เดิมอยู่แล้ว — wrap
    * try/catch ตรงนั้นแยกเพราะใช้ `tx` ไม่ใช่ `this.prisma`)
    */
-  private async logAudit(action: string, userId: string): Promise<void> {
+  private async logAudit(action: string, actor: ActingUser): Promise<void> {
     try {
       await this.prisma.auditLog.create({
-        data: { userId, auditModule: AUDIT_MODULE, action },
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action,
+          ipAddress: actor.ipAddress,
+        },
       });
     } catch (err) {
       this.logger.warn(
-        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${userId}): ${(err as Error).message}`,
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action ${action}, user ${actor.id}): ${(err as Error).message}`,
       );
     }
   }
@@ -180,7 +194,7 @@ export class ConfigService {
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "สร้าง") — importFromJson()
     // เรียกผ่าน create() นี้อยู่แล้ว ไม่ต้องเขียนซ้ำอีกจุด
-    await this.logAudit('create', actor.id);
+    await this.logAudit('create', actor);
     return created;
   }
 
@@ -360,7 +374,7 @@ export class ConfigService {
 
     // AuditLog (#27) — เขียนเฉพาะตอน passed:true ที่มีการ UPDATE ลง DB จริง
     // (passed:false คืน config เดิมโดยไม่แตะ DB เลย ไม่มี mutation ให้ log)
-    await this.logAudit('decide', actor.id);
+    await this.logAudit('decide', actor);
     return updated;
   }
 
@@ -425,6 +439,7 @@ export class ConfigService {
               userId: actor.id,
               auditModule: AUDIT_MODULE,
               action: 'approve',
+              ipAddress: actor.ipAddress,
             },
           });
         } catch (err) {
@@ -542,7 +557,7 @@ export class ConfigService {
     const updated = await this.updateStatus(id, 'draft');
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "ปฏิเสธ")
-    await this.logAudit('reject', actor.id);
+    await this.logAudit('reject', actor);
     return updated;
   }
 
@@ -654,7 +669,7 @@ export class ConfigService {
     }
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "แก้ไข")
-    await this.logAudit('update', actor.id);
+    await this.logAudit('update', actor);
     return updated;
   }
 
@@ -682,6 +697,6 @@ export class ConfigService {
     // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
     // เหมือนกัน แม้ CLAUDE.md จะยกตัวอย่างไม่ครบทุก verb (การลบ Config เปลี่ยน
     // ข้อมูลจริงเหมือนกัน compliance/Auditor ต้องเห็นร่องรอย)
-    await this.logAudit('delete', actor.id);
+    await this.logAudit('delete', actor);
   }
 }

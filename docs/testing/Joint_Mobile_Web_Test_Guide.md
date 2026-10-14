@@ -33,6 +33,13 @@
   (ถ้าเพิ่งสลับ branch มา ต้อง `prisma generate` ใหม่เสมอ ไม่งั้น backend จะ build ไม่ผ่านเพราะ Prisma Client ไม่ตรงกับ schema)
 - [ ] มี user ทดสอบครบ (`npx prisma db seed` ถ้ายังไม่เคยรัน)
 - [ ] มีข้อมูลพอให้ทดสอบ อย่างน้อย: อุปกรณ์ที่ติดตั้งแล้ว, Config ที่ approved สำหรับรุ่นของอุปกรณ์นั้น, Firmware ที่ approved, งาน (Task) ที่มอบให้ `st.test` อย่างน้อย 1 งานที่ผูก Config ไว้
+  (รัน `cd backend && npm run seed:demo` หลัง `prisma db seed` จะได้ข้อมูลตัวอย่างชุดเดียวกันทั้งสองเครื่อง: อุปกรณ์ DEV-0101 ถึง DEV-0140 ที่มี IMEI, Serial และ Blackbox ID ครบ, Config, Campaign, Rollout, Incident, Task และคำขอ Override รันซ้ำได้ไม่สร้างซ้ำ)
+
+  **ข้อควรระวังของข้อมูลตัวอย่าง (`seed:demo`):**
+  - หลังรัน `st.test` จะมีงานเพิ่ม 10 งาน และ `ot.test` เพิ่ม 4 งาน ทดสอบ Mobile ที่นับจำนวนงานหรือดูงานล่าสุดจะได้ผลต่างจากเดิม (เช่น TC ที่คาดว่างานล่าสุดของ `st.test` เป็นงานจาก fixture)
+  - `npm run seed:ci-fixtures` ลบงานของ `st.test` ทั้งหมดก่อนสร้างใหม่ ถ้ารันหลัง `seed:demo` งานตัวอย่างของ `st.test` จะหาย ให้รัน `seed:demo` ซ้ำเพื่อสร้างคืน
+  - ถ้าในเครื่องมีอุปกรณ์ที่ใช้ ID ชนกับ DEV-0101 ถึง DEV-0140 อยู่แล้ว สคริปต์จะถือว่าเป็นเครื่องตัวอย่างและเติมเฉพาะช่องที่ว่าง ข้อมูล Rollout อาจดูแปลกถ้าโมเดลไม่ตรง
+  - `prisma db seed` และ `seed:demo` เติม IMEI, Serial, Blackbox ID เฉพาะช่องที่ว่าง ค่าที่แก้ไว้เองไม่ถูกทับ
 - [ ] `cd backend && npm run start:dev` เห็นข้อความ `Nest application successfully started`
 
 ### 2.3 เครื่องที่รันเว็บ (A)

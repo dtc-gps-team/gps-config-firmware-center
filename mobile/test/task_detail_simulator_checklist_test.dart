@@ -16,6 +16,7 @@ import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
+import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 // ส่วนเสริมของ task_detail_simulator_test.dart ให้ครบ checklist ของ PR #281:
@@ -189,6 +190,9 @@ Future<void> _pump(
           ref.onDispose(db.close);
           return db;
         }),
+        taskEventRepositoryProvider.overrideWithValue(
+          _EmptyTaskEventRepository(),
+        ),
         taskRepositoryProvider.overrideWithValue(_TaskRepo(task ?? _task())),
         authControllerProvider.overrideWith(() => _Auth(role)),
         tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
@@ -218,6 +222,17 @@ Future<void> _runSimulation(WidgetTester tester) async {
   await tester.tap(_simulateButton);
   await tester.pump();
   await tester.pump();
+}
+
+/// Timeline section (issue #296) is not what this file tests — an empty
+/// timeline keeps it off the network.
+class _EmptyTaskEventRepository implements TaskEventRepository {
+  @override
+  Future<List<TaskEvent>> getEvents(String taskId) async => const [];
+
+  @override
+  Future<TaskEvent> addNote(String taskId, String note) =>
+      throw UnimplementedError();
 }
 
 void main() {

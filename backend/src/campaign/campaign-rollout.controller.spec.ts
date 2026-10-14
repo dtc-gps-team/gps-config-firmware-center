@@ -38,6 +38,7 @@ const sampleRollout: CampaignRollout = {
   createdBy: 'op-1',
   approvedBy: null,
   approvedAt: null,
+  activeWindowStartedAt: null,
   isRollback: false,
   rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -120,6 +121,7 @@ describe('CampaignRolloutController', () => {
     expect(service.create).toHaveBeenCalledWith(campaignId, dto, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -151,6 +153,7 @@ describe('CampaignRolloutController', () => {
     expect(service.approve).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -164,6 +167,7 @@ describe('CampaignRolloutController', () => {
     expect(service.release).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -177,6 +181,7 @@ describe('CampaignRolloutController', () => {
     expect(service.reject).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -190,6 +195,7 @@ describe('CampaignRolloutController', () => {
     expect(service.resume).toHaveBeenCalledWith(sampleRollout.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -217,7 +223,7 @@ describe('CampaignRolloutController', () => {
       campaignId,
       sampleRollout.id,
       dto,
-      { id: 'op-1', role: 'Operation' },
+      { id: 'op-1', role: 'Operation', ipAddress: null },
     );
   });
 });
