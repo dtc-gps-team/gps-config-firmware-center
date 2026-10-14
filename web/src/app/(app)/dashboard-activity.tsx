@@ -70,7 +70,7 @@ export function DashboardActivity() {
     <Card>
       <CardHeader>
         <CardTitle>กิจกรรมล่าสุด</CardTitle>
-        <CardDescription>เรียงจากล่าสุด · 5 รายการ</CardDescription>
+        <CardDescription>5 รายการล่าสุด</CardDescription>
         <CardAction>
           <Link
             href="/audit-log"

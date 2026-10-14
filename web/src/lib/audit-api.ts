@@ -39,6 +39,11 @@ export function listAuditLogs(
     userId?: string;
     auditModule?: string;
     action?: string;
+    /** ค้นชื่อผู้ทำรายการ (contains ไม่สนตัวพิมพ์ รวมบัญชีที่ปิดแล้ว) */
+    actorName?: string;
+    /** ช่วงเวลา ISO 8601 รวมขอบ — แปลงจากวันที่ด้วย `dayRangeToIso` */
+    from?: string;
+    to?: string;
     page?: number;
     pageSize?: number;
   },
@@ -47,6 +52,9 @@ export function listAuditLogs(
   if (params?.userId) query.set("userId", params.userId);
   if (params?.auditModule) query.set("auditModule", params.auditModule);
   if (params?.action) query.set("action", params.action);
+  if (params?.actorName) query.set("actorName", params.actorName);
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
   if (params?.page) query.set("page", String(params.page));
   if (params?.pageSize) query.set("pageSize", String(params.pageSize));
   const qs = query.toString();

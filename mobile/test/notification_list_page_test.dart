@@ -7,6 +7,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/features/notification/notification_list_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 
@@ -223,6 +224,75 @@ void main() {
 
       expect(find.byType(NotificationListPage), findsOneWidget);
     });
+  });
+
+  group('ไอคอนเด่นกว่าสำหรับ type ที่เกี่ยวกับ incident ใหม่/ยังไม่จบ '
+      '(Mobile UI Roadmap Phase 1)', () {
+    Color iconBgOf(WidgetTester tester, int index) {
+      final container = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(Key('notification_tile_$index')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (container.decoration! as BoxDecoration).color!;
+    }
+
+    testWidgets('incidentReportPending -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [_n('n1', type: NotificationType.incidentReportPending)],
+        ),
+      );
+
+      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+    });
+
+    testWidgets('incidentAlert -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [_n('n1', type: NotificationType.incidentAlert)],
+        ),
+      );
+
+      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+    });
+
+    testWidgets(
+      'configOverrideApproved (เรื่องทั่วไป) -> พื้นหลังไอคอนปกติเหมือนเดิม',
+      (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [_n('n1', type: NotificationType.configOverrideApproved)],
+          ),
+        );
+
+        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+      },
+    );
+
+    testWidgets(
+      'incidentReportResolved (ปิดเรื่องแล้ว ไม่ใช่เรื่องใหม่) -> พื้นหลังไอคอนปกติ',
+      (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [_n('n1', type: NotificationType.incidentReportResolved)],
+          ),
+        );
+
+        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+      },
+    );
   });
 
   testWidgets('render — item + label ตาม type + unread dot', (tester) async {

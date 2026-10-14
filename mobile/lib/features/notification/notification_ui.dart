@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_theme.dart';
 
 /// Thai labels + icons for [NotificationType]. [details] reads extra fields
 /// out of `payload` for the types listed there (Config/Firmware Override,
@@ -126,6 +127,24 @@ class NotificationTypeStyle {
     NotificationType.incidentReportPromoted =>
       'รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข',
   };
+
+  /// เรื่องด่วน (Mobile UI Roadmap Phase 1) — incident ใหม่ที่ยังไม่มีใครจัดการ
+  /// (`incidentReportPending` ส่งให้ Operation ตอนมี report ใหม่) หรือ
+  /// auto-detect alert (`incidentAlert`) เท่านั้น ที่ถือว่าด่วน — type อื่นที่
+  /// เกี่ยวกับ incident แต่เป็นการปิดเรื่องที่จัดการไปแล้ว
+  /// (`incidentReportResolved`/`Dismissed`/`Promoted`) หรือเรื่องทั่วไป
+  /// (override, task) ไม่ถือว่าด่วน
+  static bool isUrgent(NotificationType type) => switch (type) {
+    NotificationType.incidentReportPending => true,
+    NotificationType.incidentAlert => true,
+    _ => false,
+  };
+
+  /// `(background, foreground)` ของวงไอคอน — เด่นกว่าปกติเฉพาะ type ที่
+  /// [isUrgent] (โทนเดียวกับ `IncidentSeverityPill` วิกฤต/สูง)
+  static (Color, Color) iconColors(NotificationType type) => isUrgent(type)
+      ? (Color(0xFFFCE8E6), Color(0xFFC0392B))
+      : (AppTheme.iconBg, AppTheme.navy);
 
   static IconData icon(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => Icons.assignment_outlined,

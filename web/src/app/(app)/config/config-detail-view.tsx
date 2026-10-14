@@ -309,7 +309,7 @@ function ConfigDetailContent({
 
           <Card className="p-4">
             <div className="divide-y">
-              <InfoRow label="รุ่นอุปกรณ์" icon={SlidersHorizontalIcon}>
+              <InfoRow label="โมเดล" icon={SlidersHorizontalIcon}>
                 {config.deviceModel}
               </InfoRow>
               <InfoRow label="โปรโตคอล" icon={RadioIcon}>

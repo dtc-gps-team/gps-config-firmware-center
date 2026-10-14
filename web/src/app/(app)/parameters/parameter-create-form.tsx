@@ -160,7 +160,7 @@ export function ParameterCreateForm({
       return;
     }
     if (selectedModelNames.size === 0) {
-      setFormError("เลือกรุ่นอุปกรณ์ที่รองรับอย่างน้อย 1 รุ่น");
+      setFormError("เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล");
       return;
     }
     if (unit.trim().length > 20) {
@@ -347,7 +347,7 @@ export function ParameterCreateForm({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="param-option-draft">
-              ค่าที่ยอมรับ (ไม่บังคับ · ว่าง = ไม่จำกัดค่า)
+              ค่าที่ยอมรับ (ไม่บังคับ ถ้าว่างคือไม่จำกัดค่า)
             </Label>
             {allowedValues.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -396,10 +396,10 @@ export function ParameterCreateForm({
           </div>
 
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">รุ่นอุปกรณ์ที่รองรับ</legend>
+            <legend className="text-sm font-medium">โมเดลที่รองรับ</legend>
             {sortedModels.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                ยังไม่มีรุ่นอุปกรณ์ในระบบ เพิ่มรุ่นอุปกรณ์ก่อน
+                ยังไม่มีโมเดลในระบบ เพิ่มโมเดลก่อน
               </p>
             ) : (
               <div className="flex flex-wrap gap-x-4 gap-y-2">
