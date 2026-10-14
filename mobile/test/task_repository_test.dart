@@ -62,7 +62,11 @@ class _FakeApiClient extends ApiClient {
   }
 
   @override
-  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+  Future<Task> updateTaskStatus(
+    String taskId,
+    TaskStatus status, {
+    DateTime? changedAt,
+  }) async {
     if (holdUpdates) throw ApiException('offline');
     if (error != null) throw error!;
     final old = tasks.firstWhere((t) => t.id == taskId);

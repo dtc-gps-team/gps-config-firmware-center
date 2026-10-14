@@ -68,6 +68,9 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   // ลบ Firmware ทั้งที่ยังมี override อยู่ไม่ได้
   await prisma.deviceFirmwareOverride.deleteMany();
   await prisma.firmware.deleteMany();
+  // TaskEvent ก่อน Task และก่อน User (issue #296) — FK ทั้งสองเป็น onDelete:
+  // Restrict (append-only ไม่ให้หายตามการลบ) ต้องลบลูกก่อนเสมอ
+  await prisma.taskEvent.deleteMany();
   await prisma.task.deleteMany();
   await prisma.notification.deleteMany();
   // DeviceToken มี FK onDelete: Cascade ไป User อยู่แล้ว แต่ลบตรงนี้ให้ชัด
