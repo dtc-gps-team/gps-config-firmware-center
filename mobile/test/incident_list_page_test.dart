@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/incident/incident_list_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 
@@ -11,12 +13,15 @@ Incident _incident({
   String title = 'เขียน Config ไม่สำเร็จ',
   IncidentSeverity severity = IncidentSeverity.high,
   IncidentStatus status = IncidentStatus.open,
+  String? source = 'config-sync-writer',
+  String? deviceId,
 }) => Incident(
   id: id,
   title: title,
   severity: severity,
   status: status,
-  source: 'config-sync-writer',
+  source: source,
+  deviceId: deviceId,
   createdAt: DateTime(2026, 9, 9, 14, 30),
   updatedAt: DateTime(2026, 9, 9, 14, 30),
 );
@@ -61,6 +66,40 @@ Future<void> _pump(
     ),
   );
   await tester.pump(); // resolve listIncidents
+}
+
+Future<void> _pumpRouted(
+  WidgetTester tester, {
+  required IncidentRepository repo,
+}) async {
+  final router = GoRouter(
+    initialLocation: AppRoutes.incidents,
+    routes: [
+      GoRoute(
+        path: AppRoutes.incidents,
+        builder: (_, _) => const IncidentListPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.incidentDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('INCIDENT_DETAIL_STUB ${state.pathParameters['id']}'),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('DEVICE_DETAIL_STUB ${state.pathParameters['deviceId']}'),
+        ),
+      ),
+    ],
+  );
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [incidentRepositoryProvider.overrideWithValue(repo)],
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
+  await tester.pump();
 }
 
 void main() {
@@ -163,5 +202,95 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repo.listCalls, 2);
+  });
+
+  group('deviceId + source บนการ์ด (gap จาก Mobile UX/UI audit report)', () {
+    testWidgets('มี deviceId -> แสดงเลขอุปกรณ์', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [_incident(deviceId: 'DEV-0103')],
+        ),
+      );
+
+      expect(find.text('DEV-0103'), findsOneWidget);
+    });
+
+    testWidgets('ไม่มี deviceId -> ไม่แสดงแถวอุปกรณ์เลย', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(incidents: [_incident(deviceId: null)]),
+      );
+
+      expect(find.byKey(const Key('incident_card_device_0')), findsNothing);
+    });
+
+    testWidgets('source field-report -> แสดง "แจ้งจากหน้างาน"', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [_incident(source: 'field-report')],
+        ),
+      );
+
+      expect(find.text('แจ้งจากหน้างาน'), findsOneWidget);
+    });
+
+    testWidgets('source config-sync-writer -> แสดง "ตรวจพบอัตโนมัติ"', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [_incident(source: 'config-sync-writer')],
+        ),
+      );
+
+      expect(find.text('ตรวจพบอัตโนมัติ'), findsOneWidget);
+    });
+
+    testWidgets('source ว่าง (null) -> ไม่แสดงแถว source', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(incidents: [_incident(source: null)]),
+      );
+
+      expect(find.text('แจ้งจากหน้างาน'), findsNothing);
+      expect(find.text('ตรวจพบอัตโนมัติ'), findsNothing);
+    });
+
+    testWidgets(
+      'แตะเลขอุปกรณ์ -> ไปหน้า Device Detail (ไม่ไป Incident Detail)',
+      (tester) async {
+        await _pumpRouted(
+          tester,
+          repo: _FakeIncidentRepository(
+            incidents: [_incident(id: 'inc-9', deviceId: 'DEV-0103')],
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('incident_card_device_0')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('DEVICE_DETAIL_STUB DEV-0103'), findsOneWidget);
+        expect(find.text('INCIDENT_DETAIL_STUB inc-9'), findsNothing);
+      },
+    );
+
+    testWidgets('แตะส่วนอื่นของการ์ด -> ยังไป Incident Detail ตามเดิม', (
+      tester,
+    ) async {
+      await _pumpRouted(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [_incident(id: 'inc-9', deviceId: 'DEV-0103')],
+        ),
+      );
+
+      await tester.tap(find.text('เขียน Config ไม่สำเร็จ'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('INCIDENT_DETAIL_STUB inc-9'), findsOneWidget);
+    });
   });
 }

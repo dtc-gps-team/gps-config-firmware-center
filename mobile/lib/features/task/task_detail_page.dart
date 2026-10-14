@@ -418,6 +418,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           _InfoCard(
             rows: [
               ('อุปกรณ์', task.deviceId ?? '—'),
+              // raw user id — ยังไม่มี GET /users resolve ชื่อฝั่ง Mobile
+              // (gap เดียวกับ reportedBy/reviewedBy ใน Incident Detail, #306)
+              ('ผู้รับผิดชอบ', task.assignedTo),
               (
                 'กำหนดส่ง',
                 task.dueDate == null ? '—' : _formatDate(task.dueDate!),
