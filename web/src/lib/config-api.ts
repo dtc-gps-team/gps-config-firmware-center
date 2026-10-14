@@ -32,6 +32,9 @@ export type Config = {
    *  null = ไม่เจาะจง · ไม่ผูกมัด — Operation คนอื่นก็ approve ได้ · Web
    *  resolve ชื่อจาก `listUsers("Operation")` เอง */
   suggestedApproverId: string | null;
+  /** Config ต้นทางที่โคลนมา (v3.51) — null = สร้างใหม่ตั้งแต่ต้น หรือต้นทาง
+   *  (draft) ถูกลบไปแล้ว · ตั้งได้ครั้งเดียวตอนสร้าง */
+  clonedFromId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,6 +60,9 @@ export type ConfigWriteInput = {
   fields: Record<string, unknown>;
   /** ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update */
   description?: string;
+  /** ต้นทางของการโคลน (v3.51) — ใช้เฉพาะ createConfig ตอนสร้างจาก flow โคลน
+   *  updateConfig ไม่รับ field นี้ (400) */
+  clonedFromId?: string;
 };
 
 export function listConfigs(

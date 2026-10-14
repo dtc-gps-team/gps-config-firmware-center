@@ -399,6 +399,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             protocol,
             fields,
             ...(trimmedDesc ? { description: trimmedDesc } : {}),
+            // โหมดโคลน: บอก backend ว่าต้นทางคือตัวไหน เพื่อให้หน้าอนุมัติเทียบ
+            // ค่าเก่ากับค่าใหม่ได้ (ตั้งได้ครั้งเดียวตอนสร้าง ไม่ส่งตอนแก้)
+            ...(cloneFrom ? { clonedFromId: cloneFrom.id } : {}),
           });
       toast.success(editing ? `บันทึก "${saved.name}" แล้ว` : `สร้าง "${saved.name}" แล้ว`);
       router.push(`/config?saved=${encodeURIComponent(saved.id)}`);

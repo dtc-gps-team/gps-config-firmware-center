@@ -161,6 +161,176 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     expect(body.status).toBe('draft');
   });
 
+  describe('clonedFromId (ต้นทางของการโคลน)', () => {
+    async function setup() {
+      const ce = await makeUser(prisma, { role: 'ConfigEngineer' });
+      await grant('ConfigEngineer', ActionType.Create);
+      await grant('ConfigEngineer', ActionType.Update);
+      await seedApn1();
+      const source = await prisma.config.create({
+        data: {
+          name: `src-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          status: 'approved',
+          createdBy: ce.id,
+        },
+      });
+      return { ce, token: tokenFor(ce.id, 'ConfigEngineer'), source };
+    }
+
+    function cloneBody(clonedFromId: string | undefined) {
+      return {
+        name: `clone-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet.new' },
+        ...(clonedFromId ? { clonedFromId } : {}),
+      };
+    }
+
+    it('POST /config ส่ง clonedFromId ของ Config ที่มีอยู่ -> 201 และบันทึกต้นทางไว้ทั้งใน response และ DB', async () => {
+      const { token, source } = await setup();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send(cloneBody(source.id))
+        .expect(201);
+
+      const body = res.body as { id: string; clonedFromId: string | null };
+      expect(body.clonedFromId).toBe(source.id);
+      const row = await prisma.config.findUniqueOrThrow({
+        where: { id: body.id },
+      });
+      expect(row.clonedFromId).toBe(source.id);
+    });
+
+    it('POST /config ไม่ส่ง clonedFromId -> 201 และเป็น null', async () => {
+      const { token } = await setup();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send(cloneBody(undefined))
+        .expect(201);
+
+      expect(
+        (res.body as { clonedFromId: string | null }).clonedFromId,
+      ).toBeNull();
+    });
+
+    it('POST /config clonedFromId ไม่ใช่ UUID -> 400', async () => {
+      const { token } = await setup();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...cloneBody(undefined), clonedFromId: 'not-a-uuid' })
+        .expect(400);
+    });
+
+    it('POST /config clonedFromId เป็น UUID ที่ไม่มีอยู่จริง -> 404 และไม่สร้าง Config', async () => {
+      const { token } = await setup();
+      const before = await prisma.config.count();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send(cloneBody(randomUUID()))
+        .expect(404);
+
+      expect(await prisma.config.count()).toBe(before);
+    });
+
+    it('POST /config ต้นทางถูก soft-delete แล้ว -> 404', async () => {
+      const { token, source } = await setup();
+      await prisma.config.update({
+        where: { id: source.id },
+        data: { deletedAt: new Date() },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config')
+        .set('Authorization', `Bearer ${token}`)
+        .send(cloneBody(source.id))
+        .expect(404);
+    });
+
+    it('PUT /config/:id ส่ง clonedFromId มาแก้ภายหลัง -> 400 (ตั้งได้ครั้งเดียวตอนสร้าง)', async () => {
+      const { ce, token, source } = await setup();
+      const draft = await prisma.config.create({
+        data: {
+          name: `draft-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: ce.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .put(`/api/v1/config/${draft.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ clonedFromId: source.id })
+        .expect(400);
+
+      const row = await prisma.config.findUniqueOrThrow({
+        where: { id: draft.id },
+      });
+      expect(row.clonedFromId).toBeNull();
+    });
+
+    it('POST /config/import ไฟล์ที่มี clonedFromId -> 400 ไม่รับต้นทางผ่าน import', async () => {
+      const { token, source } = await setup();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config/import')
+        .set('Authorization', `Bearer ${token}`)
+        .field('format', 'json')
+        .attach(
+          'file',
+          Buffer.from(JSON.stringify(cloneBody(source.id))),
+          'config.json',
+        )
+        .expect(400);
+    });
+
+    it('DELETE /config/:id ลบ draft ต้นทางที่มีตัวโคลนอยู่ได้ (204) และตัวโคลนกลายเป็น null ไม่ถูกลบตาม', async () => {
+      const { ce, token } = await setup();
+      const draftSource = await prisma.config.create({
+        data: {
+          name: `draft-src-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: ce.id,
+        },
+      });
+      const clone = await prisma.config.create({
+        data: {
+          name: `clone-of-draft-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          createdBy: ce.id,
+          clonedFromId: draftSource.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/v1/config/${draftSource.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      const after = await prisma.config.findUniqueOrThrow({
+        where: { id: clone.id },
+      });
+      expect(after.clonedFromId).toBeNull();
+    });
+  });
+
   it('POST /config deviceModel ไม่มีในทะเบียน DeviceModel -> 400 (issue #209)', async () => {
     const configEngineerUser = await makeUser(prisma, {
       role: 'ConfigEngineer',

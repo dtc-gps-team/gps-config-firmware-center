@@ -2,6 +2,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -35,4 +36,13 @@ export class CreateConfigDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  // Config ต้นทางที่ตัวนี้โคลนมา — ส่งเฉพาะตอนสร้างจาก flow "โคลน" บนเว็บ
+  // (`/config/new?from=`) เพื่อให้หน้าอนุมัติเทียบค่าเก่ากับค่าใหม่ได้ · ต้องเป็น
+  // Config ที่มีอยู่จริงและยังไม่ถูกลบ (404 ที่ ConfigService.create) · ตั้งได้
+  // ครั้งเดียวตอนสร้าง: PUT /config/{id} (UpdateConfigDto) และ import JSON ไม่รับ
+  // field นี้ (ถูกปฏิเสธ 400 เหมือน field แปลกปลอมอื่น)
+  @IsOptional()
+  @IsUUID()
+  clonedFromId?: string;
 }
