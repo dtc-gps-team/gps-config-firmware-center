@@ -304,7 +304,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       return;
     }
     if (!deviceModel || !protocol) {
-      setFormError("เลือกรุ่นอุปกรณ์ / โปรโตคอลก่อน");
+      setFormError("เลือกโมเดล / โปรโตคอลก่อน");
       return;
     }
     setStep(2);
@@ -399,6 +399,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             protocol,
             fields,
             ...(trimmedDesc ? { description: trimmedDesc } : {}),
+            // โหมดโคลน: บอก backend ว่าต้นทางคือตัวไหน เพื่อให้หน้าอนุมัติเทียบ
+            // ค่าเก่ากับค่าใหม่ได้ (ตั้งได้ครั้งเดียวตอนสร้าง ไม่ส่งตอนแก้)
+            ...(cloneFrom ? { clonedFromId: cloneFrom.id } : {}),
           });
       toast.success(editing ? `บันทึก "${saved.name}" แล้ว` : `สร้าง "${saved.name}" แล้ว`);
       router.push(`/config?saved=${encodeURIComponent(saved.id)}`);
@@ -453,7 +456,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                 clearErrors();
               }}
               maxLength={120}
-              placeholder="เช่น GT06N · ตั้งค่ามาตรฐานภาคกลาง"
+              placeholder="เช่น GT06N ตั้งค่ามาตรฐานภาคกลาง"
               aria-invalid={nameError ? true : undefined}
             />
             {nameError && (
@@ -463,7 +466,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="config-device-model">รุ่นอุปกรณ์</Label>
+              <Label htmlFor="config-device-model">โมเดล</Label>
               <Select
                 value={deviceModel}
                 disabled={!!editing}
@@ -505,7 +508,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           {editing && (
             <p className="text-xs text-muted-foreground">
-              แก้รุ่น/โปรโตคอลไม่ได้หลังสร้างแล้ว ถ้าเลือกผิด ให้ลบ draft
+              แก้โมเดล/โปรโตคอลไม่ได้หลังสร้างแล้ว ถ้าเลือกผิด ให้ลบ draft
               แล้วสร้างใหม่
             </p>
           )}
@@ -549,9 +552,8 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{name.trim()}</span>
-            <span>·</span>
             <span>
-              {deviceModel} · {protocol}
+              {deviceModel} / {protocol}
             </span>
           </div>
 
@@ -575,7 +577,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                 {libraryDefs.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted-foreground">
                     {applicableDefs.length === 0
-                      ? "ยังไม่มี field definition สำหรับรุ่นนี้"
+                      ? "ยังไม่มี field definition สำหรับโมเดลนี้"
                       : "เพิ่มครบทุก parameter แล้ว"}
                   </p>
                 ) : (
@@ -617,7 +619,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   </span>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {deviceModel} · {protocol} · field ที่บังคับถอดไม่ได้
+                  {deviceModel} / {protocol}, field ที่บังคับถอดไม่ได้
                 </p>
               </div>
               <div className="flex flex-col gap-2.5 p-4">

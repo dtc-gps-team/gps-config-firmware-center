@@ -369,7 +369,7 @@ export function DashboardSummary() {
             tone="neutral"
           />
           <LiveSummaryCard
-            label="รุ่นอุปกรณ์"
+            label="โมเดล"
             href="/devices"
             value={modelCount}
             error={devices.error}

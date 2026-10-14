@@ -135,6 +135,8 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role ConfigEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Config ต้นทางตาม `clonedFromId` (หรือถูกลบไปแล้ว) — v3.51
         "409":
           description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
 
@@ -2159,6 +2161,34 @@ paths:
             ที่ match ตรงเป๊ะ) เช่น create, update, delete, decide, approve,
             reject, apply-config
         - in: query
+          name: actorName
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          description: >-
+            (v3.52) ค้นชื่อผู้ทำรายการแบบ contains ไม่สนตัวพิมพ์เล็ก-ใหญ่ ใช้ร่วมกับ
+            userId ได้ (AND) ครอบคลุมบัญชีที่ปิดใช้งานแล้วด้วย เพราะ Audit Log มี
+            ไว้สืบย้อนหลัง
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: >-
+            (v3.52) เวลาเริ่มต้น (ISO 8601) กรอง createdAt มากกว่าหรือเท่ากับค่านี้
+            ส่งแค่ด้านเดียวได้ · เว็บแปลงวันที่ที่ผู้ใช้เลือกเป็นช่วง 00:00:00 ถึง
+            23:59:59.999 ตามเวลาไทยแล้วส่งมาเป็น from/to
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: >-
+            (v3.52) เวลาสิ้นสุด (ISO 8601) กรอง createdAt น้อยกว่าหรือเท่ากับค่านี้
+        - in: query
           name: page
           required: false
           schema:
@@ -2182,7 +2212,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuditLogPage"
         "400":
-          description: page < 1, pageSize นอกช่วง 1-100 หรือไม่ใช่จำนวนเต็ม
+          description: >-
+            page < 1, pageSize นอกช่วง 1-100 หรือไม่ใช่จำนวนเต็ม, from/to ไม่ใช่
+            ISO 8601, หรือ from มากกว่า to
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -3622,6 +3654,15 @@ components:
             Approval Center #19) · null = ไม่เจาะจง · ไม่ผูกมัด Operation คนอื่น
             ก็ approve ได้ · ตั้งค่าตอน decideConfig(passed:true) · Web resolve
             ชื่อจาก GET /users?role=Operation เอง
+        clonedFromId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.51) id ของ Config ต้นทางที่ Config นี้โคลนมา — ตั้งตอนสร้างจาก
+            flow "โคลน" บนเว็บเท่านั้น (createConfig) · null = สร้างใหม่ตั้งแต่ต้น
+            หรือสร้างก่อนมี field นี้ หรือต้นทาง (draft) ถูกลบจริงไปแล้ว · ใช้ให้หน้า
+            อนุมัติเทียบค่าเก่ากับค่าใหม่ ไม่เปลี่ยนค่าได้หลังสร้าง
         createdAt:
           type: string
           format: date-time
@@ -4058,6 +4099,14 @@ components:
           type: string
           maxLength: 500
           description: คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update)
+        clonedFromId:
+          type: string
+          format: uuid
+          description: >-
+            (v3.51) id ของ Config ต้นทางที่โคลนมา — **ใช้ได้เฉพาะ createConfig**
+            (ไม่บังคับ) ต้องเป็น Config ที่มีอยู่และยังไม่ถูกลบ ไม่พบ -> 404 ·
+            updateConfig และ importConfig ไม่รับ field นี้ (400) เพราะตั้งได้
+            ครั้งเดียวตอนสร้าง
 
     Task:
       type: object
@@ -4472,7 +4521,7 @@ components:
     RegisterDeviceRequest:
       type: object
       description: >-
-        Request body สำหรับ registerDevice (issue #157 PR 1) — v3.52: `imei`,
+        Request body สำหรับ registerDevice (issue #157 PR 1) — v3.53: `imei`,
         `serialNumber` และ `blackboxId` เป็นช่องบังคับ (ไม่ว่าง ตัดช่องว่าง
         หัวท้ายก่อน) ตามมติ A กับ B 13 ต.ค. 2569 · ค่าใน response ของ `Device`
         ยัง nullable เพราะอุปกรณ์ที่ลงทะเบียนก่อนกติกานี้ไม่มีค่า

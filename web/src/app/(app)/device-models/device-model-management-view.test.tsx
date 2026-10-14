@@ -51,14 +51,14 @@ describe("DeviceModelManagementView — RoleGuard", () => {
     expect(screen.queryByText("GT06N")).not.toBeInTheDocument();
   });
 
-  it("Admin เห็นหน้าปกติ (ตาราง + ปุ่มเพิ่มรุ่นอุปกรณ์)", () => {
+  it("Admin เห็นหน้าปกติ (ตาราง + ปุ่มเพิ่มโมเดล)", () => {
     authState.role = "Admin";
     render(<DeviceModelManagementView />);
 
     expect(screen.getByText("Device Model Management")).toBeInTheDocument();
     expect(screen.getByText("GT06N")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "+ เพิ่มรุ่นอุปกรณ์" }),
+      screen.getByRole("button", { name: "+ เพิ่มโมเดล" }),
     ).toBeInTheDocument();
   });
 

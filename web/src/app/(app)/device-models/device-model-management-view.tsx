@@ -72,9 +72,9 @@ export function DeviceModelManagementView() {
     () => [
       {
         accessorKey: "name",
-        header: "รุ่นอุปกรณ์",
+        header: "โมเดล",
         sortingFn: thTextSort,
-        meta: { filterVariant: "text", label: "รุ่นอุปกรณ์" },
+        meta: { filterVariant: "text", label: "โมเดล" },
         cell: ({ row }) => (
           <span className="font-mono text-sm">{row.original.name}</span>
         ),
@@ -84,7 +84,7 @@ export function DeviceModelManagementView() {
         header: "ผู้ผลิต",
         sortingFn: thTextSort,
         meta: { filterVariant: "text", label: "ผู้ผลิต" },
-        cell: ({ row }) => row.original.manufacturer ?? "—",
+        cell: ({ row }) => row.original.manufacturer ?? "-",
       },
       {
         id: "supportedProtocols",
@@ -118,7 +118,7 @@ export function DeviceModelManagementView() {
       {
         accessorKey: "warrantyMonths",
         header: "รับประกัน (เดือน)",
-        cell: ({ row }) => row.original.warrantyMonths ?? "—",
+        cell: ({ row }) => row.original.warrantyMonths ?? "-",
       },
       {
         id: "actions",
@@ -142,7 +142,7 @@ export function DeviceModelManagementView() {
         <div>
           <h1 className="text-2xl font-semibold">Device Model Management</h1>
           <p className="text-sm text-muted-foreground">
-            ทะเบียนรุ่นอุปกรณ์ + protocol ที่รองรับ — ใช้ทำ dropdown ตอนสร้าง
+            ทะเบียนโมเดล + protocol ที่รองรับ ใช้ทำ dropdown ตอนสร้าง
             Config/Parameter/ลงทะเบียนอุปกรณ์ทั่วทั้งระบบ
           </p>
         </div>
@@ -150,12 +150,12 @@ export function DeviceModelManagementView() {
         <Card>
           {justCreated && (
             <div className="mx-6 -mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              เพิ่มรุ่นอุปกรณ์ &ldquo;{justCreated.name}&rdquo; แล้ว
+              เพิ่มโมเดล &ldquo;{justCreated.name}&rdquo; แล้ว
             </div>
           )}
           <CardHeader>
-            <CardTitle>รุ่นอุปกรณ์ทั้งหมด</CardTitle>
-            <CardDescription>รวมรุ่นที่เลิกผลิตแล้ว</CardDescription>
+            <CardTitle>โมเดลทั้งหมด</CardTitle>
+            <CardDescription>รวมโมเดลที่เลิกผลิตแล้ว</CardDescription>
             <CardAction className="flex gap-2">
               <Button
                 variant="outline"
@@ -165,7 +165,7 @@ export function DeviceModelManagementView() {
                 รีเฟรช
               </Button>
               <Button size="sm" onClick={() => setDialogOpen(true)}>
-                + เพิ่มรุ่นอุปกรณ์
+                + เพิ่มโมเดล
               </Button>
             </CardAction>
           </CardHeader>
@@ -186,10 +186,10 @@ export function DeviceModelManagementView() {
             ) : modelList.length === 0 ? (
               <EmptyState
                 icon={LayersIcon}
-                message="ยังไม่มีรุ่นอุปกรณ์ในทะเบียน"
+                message="ยังไม่มีโมเดลในทะเบียน"
                 action={
                   <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    + เพิ่มรุ่นอุปกรณ์
+                    + เพิ่มโมเดล
                   </Button>
                 }
               />
@@ -197,8 +197,8 @@ export function DeviceModelManagementView() {
               <DataTable
                 columns={columns}
                 data={modelList}
-                searchPlaceholder="ค้นหารุ่น / ผู้ผลิต…"
-                emptyMessage="ไม่พบรุ่นอุปกรณ์ที่ตรงกับเงื่อนไข"
+                searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
+                emptyMessage="ไม่พบโมเดลที่ตรงกับเงื่อนไข"
               />
             )}
           </CardContent>
@@ -208,9 +208,9 @@ export function DeviceModelManagementView() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>เพิ่มรุ่นอุปกรณ์ใหม่</DialogTitle>
+            <DialogTitle>เพิ่มโมเดลใหม่</DialogTitle>
             <DialogDescription>
-              เฉพาะ Role Admin/SuperAdmin · ชื่อรุ่นต้องตรงกับที่ใช้อยู่แล้ว
+              เฉพาะ Role Admin/SuperAdmin ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้ว
               เป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อทีหลังไม่ได้
             </DialogDescription>
           </DialogHeader>

@@ -30,7 +30,7 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          ภาพรวมระบบ · ทุก Role เข้าถึงได้ · Operation อนุมัติรายการด้านล่างได้
+          ภาพรวมระบบ ทุก Role เข้าถึงได้ และ Operation อนุมัติรายการด้านล่างได้
           โดยตรงจากหน้านี้
         </p>
         <DashboardLoadedAt />

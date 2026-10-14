@@ -29,6 +29,7 @@ Task _task({
   String title = 'ติดตั้งกล่อง GPS',
   TaskStatus status = TaskStatus.pending,
   String? deviceId = 'DVC-1',
+  DateTime? dueDate,
 }) => Task(
   id: id,
   title: title,
@@ -37,6 +38,7 @@ Task _task({
   createdAt: DateTime(2026, 9, 1),
   updatedAt: DateTime(2026, 9, 2),
   deviceId: deviceId,
+  dueDate: dueDate,
 );
 
 class _FakeTaskRepository implements TaskRepository {
@@ -194,6 +196,100 @@ void main() {
     expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_1')), findsOneWidget);
   });
+
+  testWidgets('การ์ดงานแสดง dueDate เมื่อมีค่า, "—" เมื่อไม่มี', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(
+        tasks: [
+          _task(id: 't1', dueDate: DateTime(2026, 9, 10)),
+          _task(id: 't2', dueDate: null),
+        ],
+      ),
+    );
+
+    expect(find.text('กำหนดส่ง: 10/09/2026'), findsOneWidget);
+    expect(find.text('กำหนดส่ง: —'), findsOneWidget);
+  });
+
+  testWidgets(
+    'เรียงงานเลยกำหนด/ใกล้ถึงกำหนดไว้บนสุด (Mobile UI Roadmap Phase 1)',
+    (tester) async {
+      final now = DateTime.now();
+      final normalTask = _task(id: 't1', title: 'งานปกติ ยังอีกนาน');
+      final overdueTask = _task(
+        id: 't2',
+        title: 'งานเลยกำหนดแล้ว',
+        dueDate: now.subtract(const Duration(days: 2)),
+      );
+      final dueSoonTask = _task(
+        id: 't3',
+        title: 'งานใกล้ถึงกำหนด',
+        status: TaskStatus.inProgress,
+        dueDate: now.add(const Duration(hours: 3)),
+      );
+
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          tasks: [normalTask, overdueTask, dueSoonTask],
+        ),
+      );
+
+      // ลำดับการ์ดต้องเป็น overdue -> dueSoon -> ปกติ ไม่ใช่ลำดับที่ backend ส่งมา
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('my_task_card_0')),
+          matching: find.text('งานเลยกำหนดแล้ว'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('my_task_card_1')),
+          matching: find.text('งานใกล้ถึงกำหนด'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('my_task_card_2')),
+          matching: find.text('งานปกติ ยังอีกนาน'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'งานเลยกำหนด/ใกล้ถึงกำหนด -> มี indicator ป้าย "เลยกำหนด"/"ใกล้ถึงกำหนด"',
+    (tester) async {
+      final now = DateTime.now();
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          tasks: [
+            _task(
+              id: 't1',
+              title: 'งานเลยกำหนด',
+              dueDate: now.subtract(const Duration(days: 1)),
+            ),
+            _task(
+              id: 't2',
+              title: 'งานปกติ',
+              dueDate: now.add(const Duration(days: 30)),
+            ),
+          ],
+        ),
+      );
+
+      expect(find.text('เลยกำหนด'), findsOneWidget);
+      // งานปกติไม่มีป้ายเร่งด่วนติดมาด้วย
+      expect(find.text('ใกล้ถึงกำหนด'), findsNothing);
+    },
+  );
 
   testWidgets('task ที่ค้างในคิว -> badge "รอซิงค์" เฉพาะใบนั้น', (
     tester,

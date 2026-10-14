@@ -37,6 +37,16 @@ class IncidentStyle {
     IncidentStatus.resolved => (Color(0xFFE6F4EA), Color(0xFF1E7E34)),
     IncidentStatus.dismissed => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
   };
+
+  /// ข้อความอ่านง่ายของ `Incident.source` — backend เขียนแค่ 2 ค่านี้จริง
+  /// (`'field-report'` issue #236, `'config-sync-writer'` auto-detect) ค่า
+  /// อื่น/null คืน null ให้ผู้เรียกซ่อนแถวไปเลย (ไม่ fabricate คำอธิบาย
+  /// ให้ค่าที่ไม่รู้จัก)
+  static String? sourceLabel(String? source) => switch (source) {
+    'field-report' => 'แจ้งจากหน้างาน',
+    'config-sync-writer' => 'ตรวจพบอัตโนมัติ',
+    _ => null,
+  };
 }
 
 /// `dd/MM/yyyy HH:mm` in local time — shared by the list card and detail page.

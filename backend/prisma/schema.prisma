@@ -565,6 +565,22 @@ model Config {
   // `where: { deletedAt: null }` · คนละเรื่องกับ ConfigService.remove() (hard
   // delete ของ SW ลบ draft ตัวเอง) ที่ยังทำงานเหมือนเดิม
   deletedAt           DateTime?
+  // Config ต้นทางที่ตัวนี้โคลนมา (กด "โคลน" ในหน้า Config -> `/config/new?from=`)
+  // ใช้ให้หน้าอนุมัติเทียบ "ค่าเก่ากับค่าใหม่" ได้จริง: Config ที่อนุมัติแล้ว
+  // แก้ไม่ได้ (EDITABLE_CONFIG_STATUS = draft) การเปลี่ยนค่าจึงต้องโคลนเป็นตัว
+  // ใหม่ ซึ่ง id ใหม่และยังไม่มี ConfigVersion จึงไม่มีเวอร์ชันให้เทียบ ถ้าไม่เก็บ
+  // ต้นทางไว้ (ตกลง A กับ B 13 ต.ค. 2569)
+  //
+  // **Deviation จาก Data Dictionary โดยตั้งใจ:** ใน DD เวอร์ชันของ template
+  // เป็นแถวใน CONFIG_TEMPLATE_VERSION ของ template เดียวกัน (แก้แล้วได้เวอร์ชัน
+  // ใหม่) แต่ระบบนี้ย่อให้ Config หนึ่งตัวมีเวอร์ชันได้ตอนอนุมัติเท่านั้นและแก้
+  // หลังอนุมัติไม่ได้ จึงใช้ "ลูกโซ่การโคลน" บอกว่าตัวไหนสืบจากตัวไหนแทน
+  //
+  // ตั้งได้ครั้งเดียวตอนสร้าง (POST /config) ไม่รับใน PUT และ import JSON ·
+  // nullable: Config เดิมและ Config ที่สร้างใหม่ตั้งแต่ต้นเป็น null · FK
+  // onDelete SetNull: hard delete ของ draft ต้นทาง (ConfigService.remove)
+  // ต้องไม่ถูกบล็อกด้วยตัวที่โคลนไปแล้ว
+  clonedFromId        String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -577,6 +593,8 @@ model Config {
   tasks             Task[]
   deletionRequests  ConfigDeletionRequest[]
   deviceOverrides   DeviceConfigOverride[]
+  clonedFrom        Config?                 @relation("ConfigClone", fields: [clonedFromId], references: [id], onDelete: SetNull)
+  clones            Config[]                @relation("ConfigClone")
 }
 
 // เพิ่มใหม่: เก็บ snapshot ของ Config แบบ append-only ทุกครั้งที่ approve

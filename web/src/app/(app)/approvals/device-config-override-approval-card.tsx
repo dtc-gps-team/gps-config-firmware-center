@@ -2,12 +2,10 @@
 
 import { useMemo } from "react";
 
-import { Card } from "@/components/ui/card";
-import { EntityTypeTag, StalePendingBadge } from "@/lib/status-pill";
-import { formatDateTime, stalePendingLabel } from "@/lib/format-date";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { DeviceConfigOverride } from "@/lib/device-config-override-api";
 import { SensitiveValue } from "@/components/sensitive-value";
+import { ApprovalQueueCard } from "./approval-queue-card";
 import { DeviceConfigOverrideApprovalActions } from "./device-config-override-approval-actions";
 
 function fieldValueText(value: unknown): string {
@@ -18,16 +16,18 @@ function fieldValueText(value: unknown): string {
 
 /**
  * คำขอ Per-device Config Override 1 รายการในคิว Approval Center (issue #223,
- * มติ 2026-09-24) — mirror `approval-card.tsx` แต่ตัดส่วน re-simulate/version
- * history ออก เพราะ override รายเครื่องไม่มี concept นั้น (`fields` คือค่า
- * สะสมของอุปกรณ์เครื่องนี้เอง ไม่ใช่ทั้งชุด Config)
+ * มติ 2026-09-24) — ยังไม่มีหน้ารายละเอียดของคำขอนี้ และค่าที่ขอแก้มักมีไม่กี่
+ * ค่า จึงแสดงรายการค่าไว้บนการ์ดในส่วนสรุป (`fields` คือค่าสะสมของเครื่องนี้
+ * เอง ไม่ใช่ทั้งชุด Config)
  */
 export function DeviceConfigOverrideApprovalCard({
   item,
+  requesterName,
   canDecide,
   onDecided,
 }: {
   item: DeviceConfigOverride;
+  requesterName: string;
   canDecide: boolean;
   onDecided: (action: "approve" | "reject") => void;
 }) {
@@ -42,71 +42,57 @@ export function DeviceConfigOverrideApprovalCard({
     return set;
   }, [definitions.data]);
   /** ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน — mirror
-   * `approval-card.tsx`/`config-detail-view.tsx` กัน plaintext หลุดช่วงสั้นๆ */
+   * `config-approval-detail-view.tsx`/`config-detail-view.tsx` กัน plaintext หลุด */
   const effectiveSensitiveFieldNames = definitionsReady
     ? sensitiveFieldNames
     : new Set(Object.keys(item.fields));
 
-  const staleLabel = stalePendingLabel(item.overriddenAt);
-
   return (
-    <Card
-      className={
-        staleLabel ? "border-l-4 border-l-amber-500" : undefined
-      }
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4 px-4">
-        <div className="min-w-0 flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <EntityTypeTag type="Override" />
-            <span className="font-mono font-medium">{item.deviceId}</span>
-            <span className="text-xs text-muted-foreground">
-              เวอร์ชัน #{item.versionNumber}
-            </span>
-            {staleLabel && <StalePendingBadge label={staleLabel} />}
-          </div>
-          <p className="text-sm">{item.reason}</p>
-          <p className="text-xs text-muted-foreground">
-            ผู้ส่งคำขอ (ST) <span className="font-mono">{item.overriddenBy}</span>{" "}
-            · ส่งเมื่อ {formatDateTime(item.overriddenAt)}
-          </p>
+    <ApprovalQueueCard
+      tag="Config Override"
+      title={<span className="font-mono">{item.deviceId}</span>}
+      meta={`เวอร์ชัน #${item.versionNumber}`}
+      queuedAt={item.overriddenAt}
+      description={item.reason}
+      requesterName={requesterName}
+      summary={
+        <div className="flex flex-col gap-1">
+          <span className="text-muted-foreground">
+            ค่าที่ขอแก้ ({fieldEntries.length})
+          </span>
+          {fieldEntries.length === 0 ? (
+            <span className="text-muted-foreground">ไม่มีพารามิเตอร์</span>
+          ) : (
+            <div className="max-h-48 divide-y overflow-y-auto rounded-lg border">
+              {fieldEntries.map(([key, value]) => (
+                <div
+                  key={key}
+                  className="flex justify-between gap-4 px-3 py-1.5"
+                >
+                  <span className="shrink-0 font-mono text-muted-foreground">
+                    {key}
+                  </span>
+                  {effectiveSensitiveFieldNames.has(key) ? (
+                    <SensitiveValue value={value} />
+                  ) : (
+                    <span className="min-w-0 font-mono break-words">
+                      {fieldValueText(value)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+      }
+      actions={
         <DeviceConfigOverrideApprovalActions
           id={item.id}
           deviceId={item.deviceId}
           canDecide={canDecide}
           onDecided={onDecided}
         />
-      </div>
-
-      <div data-slot="card-footer" className="border-t px-4 pt-3">
-        <p className="mb-2 text-sm text-muted-foreground">
-          ค่าที่ขอ override ({fieldEntries.length})
-        </p>
-        {fieldEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">ไม่มีพารามิเตอร์</p>
-        ) : (
-          <div className="max-h-64 divide-y overflow-y-auto rounded-lg border">
-            {fieldEntries.map(([key, value]) => (
-              <div
-                key={key}
-                className="flex justify-between gap-4 px-3 py-1.5 text-xs"
-              >
-                <span className="shrink-0 font-mono text-muted-foreground">
-                  {key}
-                </span>
-                {effectiveSensitiveFieldNames.has(key) ? (
-                  <SensitiveValue value={value} />
-                ) : (
-                  <span className="min-w-0 font-mono break-words">
-                    {fieldValueText(value)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </Card>
+      }
+    />
   );
 }

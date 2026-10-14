@@ -228,4 +228,128 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
   });
+
+  describe('filter วันที่ (from/to) และชื่อผู้ทำรายการ (actorName)', () => {
+    async function seed() {
+      const actor = await makeUser(prisma, { role: 'ConfigEngineer' });
+      const times = [
+        // ขอบเขตวันที่ 14 ต.ค. เวลาไทย = 13 ต.ค. 17:00Z ถึง 14 ต.ค. 16:59:59.999Z
+        ['before', '2026-10-13T16:59:59.999Z'],
+        ['start', '2026-10-13T17:00:00.000Z'],
+        ['end', '2026-10-14T16:59:59.999Z'],
+        ['after', '2026-10-14T17:00:00.000Z'],
+      ] as const;
+      for (const [action, at] of times) {
+        await prisma.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: 'config',
+            action,
+            createdAt: new Date(at),
+          },
+        });
+      }
+      const caller = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read, 'audit-logs');
+      return { token: tokenFor(caller.id, 'Auditor') };
+    }
+
+    async function actions(token: string, qs: string): Promise<string[]> {
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/audit-logs?${qs}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      return (res.body as { items: { action: string }[] }).items
+        .map((r) => r.action)
+        .sort();
+    }
+
+    it('from + to รวมแถวที่เวลาตรงขอบทั้งสองด้าน ไม่รวมนอกช่วง', async () => {
+      const { token } = await seed();
+
+      const got = await actions(
+        token,
+        'from=2026-10-13T17:00:00.000Z&to=2026-10-14T16:59:59.999Z',
+      );
+
+      expect(got).toEqual(['end', 'start']);
+    });
+
+    it('ส่งแค่ from -> ตั้งแต่เวลานั้นเป็นต้นไป', async () => {
+      const { token } = await seed();
+
+      expect(await actions(token, 'from=2026-10-14T16:59:59.999Z')).toEqual([
+        'after',
+        'end',
+      ]);
+    });
+
+    it('from มากกว่า to -> 400', async () => {
+      const { token } = await seed();
+
+      await request(app.getHttpServer())
+        .get(
+          '/api/v1/audit-logs?from=2026-10-14T00:00:00.000Z&to=2026-10-13T00:00:00.000Z',
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('from ไม่ใช่วันที่ -> 400', async () => {
+      const { token } = await seed();
+
+      await request(app.getHttpServer())
+        .get('/api/v1/audit-logs?from=not-a-date')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('actorName ค้นบางส่วนไม่สนตัวพิมพ์ และเจอบัญชีที่ปิดใช้งานแล้ว', async () => {
+      const active = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+        fullName: 'Somchai Active',
+      });
+      const inactive = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+        fullName: 'Somsri Resigned',
+        isActive: false,
+      });
+      const other = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+        fullName: 'Wichai Other',
+      });
+      for (const [u, action] of [
+        [active, 'by-active'],
+        [inactive, 'by-inactive'],
+        [other, 'by-other'],
+      ] as const) {
+        await prisma.auditLog.create({
+          data: { userId: u.id, auditModule: 'config', action },
+        });
+      }
+      const caller = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read, 'audit-logs');
+      const token = tokenFor(caller.id, 'Auditor');
+
+      expect(await actions(token, 'actorName=SOM')).toEqual([
+        'by-active',
+        'by-inactive',
+      ]);
+      expect(await actions(token, 'actorName=resigned')).toEqual([
+        'by-inactive',
+      ]);
+    });
+
+    it('actorName ใช้ร่วมกับช่วงวันที่ (AND)', async () => {
+      const { token } = await seed();
+
+      expect(
+        await actions(
+          token,
+          'actorName=Integration&from=2026-10-13T17:00:00.000Z&to=2026-10-13T17:00:00.000Z',
+        ),
+      ).toEqual(['start']);
+      expect(await actions(token, 'actorName=NoSuchPerson')).toEqual([]);
+    });
+  });
 });

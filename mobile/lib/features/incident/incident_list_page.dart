@@ -43,6 +43,7 @@ class IncidentListPage extends ConsumerWidget {
               itemBuilder: (context, i) => _IncidentCard(
                 key: Key('incident_card_$i'),
                 incident: incidents[i],
+                index: i,
               ),
             );
           },
@@ -60,9 +61,10 @@ class IncidentListPage extends ConsumerWidget {
 }
 
 class _IncidentCard extends StatelessWidget {
-  const _IncidentCard({super.key, required this.incident});
+  const _IncidentCard({super.key, required this.incident, required this.index});
 
   final Incident incident;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +103,43 @@ class _IncidentCard extends StatelessWidget {
                       fontSize: 13,
                       color: AppTheme.textSecondary,
                     ),
+                  ),
+                ],
+                if (incident.deviceId != null ||
+                    IncidentStyle.sourceLabel(incident.source) != null) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (incident.deviceId != null)
+                        // แยก tap target ของตัวเองออกจาก InkWell ของการ์ด —
+                        // แตะเลขอุปกรณ์ไป Device Detail ไม่ใช่ Incident Detail
+                        InkWell(
+                          onTap: () => context.push(
+                            AppRoutes.deviceDetail(incident.deviceId!),
+                          ),
+                          child: Text(
+                            incident.deviceId!,
+                            key: Key('incident_card_device_$index'),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.navy,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      if (IncidentStyle.sourceLabel(incident.source) != null)
+                        Text(
+                          IncidentStyle.sourceLabel(incident.source)!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
                 const SizedBox(height: 8),

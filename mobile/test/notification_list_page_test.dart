@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/features/notification/notification_list_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 
@@ -70,7 +73,228 @@ Future<void> _pump(
   await tester.pump(); // resolve list future
 }
 
+Future<void> _pumpRouted(
+  WidgetTester tester,
+  _FakeNotificationRepository repo,
+) async {
+  final router = GoRouter(
+    initialLocation: AppRoutes.notifications,
+    routes: [
+      GoRoute(
+        path: AppRoutes.notifications,
+        builder: (_, _) => const NotificationListPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.taskDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('TASK_DETAIL_STUB ${state.pathParameters['id']}'),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('DEVICE_DETAIL_STUB ${state.pathParameters['deviceId']}'),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.incidentDetailPattern,
+        builder: (_, state) => Scaffold(
+          body: Text('INCIDENT_DETAIL_STUB ${state.pathParameters['id']}'),
+        ),
+      ),
+    ],
+  );
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        authControllerProvider.overrideWith(_FakeAuthController.new),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
+        notificationRepositoryProvider.overrideWithValue(repo),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
+  await tester.pump();
+}
+
 void main() {
+  group('แตะการ์ด -> navigate ตาม type (Mobile UX/UI audit report)', () {
+    AppNotification withPayload(
+      NotificationType type,
+      Map<String, dynamic> payload, {
+      String id = 'n1',
+    }) => AppNotification(
+      id: id,
+      userId: 'u1',
+      type: type,
+      payload: payload,
+      read: false,
+      createdAt: DateTime(2026, 9, 4, 9, 15),
+    );
+
+    testWidgets('taskAssigned -> Task Detail ของ taskId นั้น', (tester) async {
+      final repo = _FakeNotificationRepository(
+        items: [
+          withPayload(NotificationType.taskAssigned, {
+            'taskId': 't9',
+            'title': 'งานทดสอบ',
+          }),
+        ],
+      );
+      await _pumpRouted(tester, repo);
+
+      await tester.tap(find.byKey(const Key('notification_tile_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('TASK_DETAIL_STUB t9'), findsOneWidget);
+      // ยังต้อง mark-as-read คู่กับ navigate (ไม่ใช่แทนที่)
+      expect(repo.markReadCalls, ['n1']);
+    });
+
+    testWidgets('configOverrideApproved -> Device Detail ของ deviceId นั้น', (
+      tester,
+    ) async {
+      final repo = _FakeNotificationRepository(
+        items: [
+          withPayload(NotificationType.configOverrideApproved, {
+            'deviceId': 'DVC-7',
+          }),
+        ],
+      );
+      await _pumpRouted(tester, repo);
+
+      await tester.tap(find.byKey(const Key('notification_tile_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEVICE_DETAIL_STUB DVC-7'), findsOneWidget);
+    });
+
+    testWidgets(
+      'incidentReportPending -> Incident Detail ของ incidentId นั้น',
+      (tester) async {
+        final repo = _FakeNotificationRepository(
+          items: [
+            withPayload(NotificationType.incidentReportPending, {
+              'incidentId': 'inc-5',
+              'deviceId': 'DVC-1',
+              'title': 'x',
+            }),
+          ],
+        );
+        await _pumpRouted(tester, repo);
+
+        await tester.tap(find.byKey(const Key('notification_tile_0')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('INCIDENT_DETAIL_STUB inc-5'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'incidentAlert (ไม่มี incidentId ใน payload) -> ไม่ navigate ไปไหน แค่ mark-read',
+      (tester) async {
+        final repo = _FakeNotificationRepository(
+          items: [
+            withPayload(NotificationType.incidentAlert, {'configId': 'cfg-1'}),
+          ],
+        );
+        await _pumpRouted(tester, repo);
+
+        await tester.tap(find.byKey(const Key('notification_tile_0')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(NotificationListPage), findsOneWidget);
+        expect(repo.markReadCalls, ['n1']);
+      },
+    );
+
+    testWidgets('taskAssigned ไม่มี taskId ใน payload -> ไม่ navigate', (
+      tester,
+    ) async {
+      final repo = _FakeNotificationRepository(
+        items: [withPayload(NotificationType.taskAssigned, const {})],
+      );
+      await _pumpRouted(tester, repo);
+
+      await tester.tap(find.byKey(const Key('notification_tile_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotificationListPage), findsOneWidget);
+    });
+  });
+
+  group('ไอคอนเด่นกว่าสำหรับ type ที่เกี่ยวกับ incident ใหม่/ยังไม่จบ '
+      '(Mobile UI Roadmap Phase 1)', () {
+    Color iconBgOf(WidgetTester tester, int index) {
+      final container = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(Key('notification_tile_$index')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (container.decoration! as BoxDecoration).color!;
+    }
+
+    testWidgets('incidentReportPending -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [_n('n1', type: NotificationType.incidentReportPending)],
+        ),
+      );
+
+      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+    });
+
+    testWidgets('incidentAlert -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _FakeNotificationRepository(
+          items: [_n('n1', type: NotificationType.incidentAlert)],
+        ),
+      );
+
+      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+    });
+
+    testWidgets(
+      'configOverrideApproved (เรื่องทั่วไป) -> พื้นหลังไอคอนปกติเหมือนเดิม',
+      (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [_n('n1', type: NotificationType.configOverrideApproved)],
+          ),
+        );
+
+        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+      },
+    );
+
+    testWidgets(
+      'incidentReportResolved (ปิดเรื่องแล้ว ไม่ใช่เรื่องใหม่) -> พื้นหลังไอคอนปกติ',
+      (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [_n('n1', type: NotificationType.incidentReportResolved)],
+          ),
+        );
+
+        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+      },
+    );
+  });
+
   testWidgets('render — item + label ตาม type + unread dot', (tester) async {
     await _pump(
       tester,
@@ -292,6 +516,48 @@ void main() {
       expect(find.textContaining('เหตุผล:'), findsNothing);
     },
   );
+
+  testWidgets('taskAssigned — แสดงชื่องานจาก payload.title', (tester) async {
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          AppNotification(
+            id: 'n1',
+            userId: 'u1',
+            type: NotificationType.taskAssigned,
+            payload: const {'taskId': 't1', 'title': 'ติดตั้งกล่อง GPS'},
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('งาน: ติดตั้งกล่อง GPS'), findsOneWidget);
+  });
+
+  testWidgets('taskAssigned — title ว่าง/ไม่มี -> ไม่แสดงบรรทัดนี้', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          AppNotification(
+            id: 'n1',
+            userId: 'u1',
+            type: NotificationType.taskAssigned,
+            payload: const {'taskId': 't1'},
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.textContaining('งาน:'), findsNothing);
+  });
 
   testWidgets('type อื่น — ไม่แสดง detail แม้ payload มี deviceId', (
     tester,

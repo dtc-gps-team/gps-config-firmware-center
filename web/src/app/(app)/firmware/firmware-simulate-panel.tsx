@@ -60,7 +60,7 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
     <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ Firmware</p>
       <p className="text-xs text-muted-foreground">
-        ระบุรุ่นอุปกรณ์ที่จะทดสอบ (ลองรุ่นนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)
+        ระบุโมเดลที่จะทดสอบ (ลองโมเดลนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)
       </p>
 
       <div className="flex flex-wrap items-center gap-2">

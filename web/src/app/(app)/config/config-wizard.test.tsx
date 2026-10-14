@@ -68,7 +68,7 @@ function makeFieldDef(
 async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("ชื่อ Config"), "Test Config");
 
-  await user.click(screen.getByRole("combobox", { name: "รุ่นอุปกรณ์" }));
+  await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
   await user.click(await screen.findByRole("option", { name: "GT06N" }));
 
   await user.click(screen.getByRole("combobox", { name: "โปรโตคอล" }));
@@ -76,6 +76,54 @@ async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
 
   await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
 }
+
+describe("ConfigWizard — โหมดโคลนบันทึกต้นทาง (clonedFromId)", () => {
+  const source = {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "GT06N มาตรฐาน",
+    deviceModel: "GT06N",
+    protocol: "TCP",
+    description: null,
+    status: "approved" as const,
+    fields: { APN1: "internet" },
+    createdBy: "u1",
+    approvedBy: "op1",
+    suggestedApproverId: null,
+    clonedFromId: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  beforeEach(() => {
+    createConfig.mockReset();
+    routerPush.mockReset();
+    createConfig.mockResolvedValue({ id: "c2", name: "GT06N มาตรฐาน (สำเนา)" });
+    definitionsState.data = [makeFieldDef({ fieldName: "APN1" })];
+  });
+
+  it("โคลนจาก Config ต้นทาง: ส่ง clonedFromId เป็น id ของต้นทางตอนบันทึก", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create", cloneFrom: source }} />);
+
+    await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    expect(createConfig.mock.calls[0][1].clonedFromId).toBe(source.id);
+  });
+
+  it("สร้างใหม่ตั้งแต่ต้น (ไม่ได้โคลน): ไม่ส่ง clonedFromId", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+    await user.click(screen.getByRole("button", { name: /APN1/ }));
+    await user.type(document.getElementById("field-APN1")!, "internet");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    expect(createConfig.mock.calls[0][1]).not.toHaveProperty("clonedFromId");
+  });
+});
 
 describe("ConfigWizard — json/array dataType (แก้ตามรีวิว B PR #255 ข้อ 2, รอบ 2)", () => {
   beforeEach(() => {
