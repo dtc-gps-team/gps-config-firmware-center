@@ -266,6 +266,29 @@ void main() {
     expect(_saveButton(tester).onPressed, isNotNull);
   });
 
+  // คำตอบ A ใน #303 ข้อ 1 — งานที่เสร็จแล้วห้ามเปลี่ยนสถานะย้อนกลับ (backend
+  // ตอบ 409) ต้องซ่อนทั้งแถวเปลี่ยนสถานะและปุ่มบันทึก ไม่ใช่แค่ disable
+  for (final role in [UserRole.st, UserRole.ot]) {
+    testWidgets('${role.wireName} งานที่ completed -> ไม่เห็นแถวเปลี่ยนสถานะ '
+        'และไม่มีปุ่มบันทึก', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.completed),
+        ),
+        role: role,
+      );
+
+      expect(find.text('เปลี่ยนสถานะงาน'), findsNothing);
+      expect(find.byKey(const Key('status_choice_in_progress')), findsNothing);
+      expect(find.byKey(const Key('status_choice_completed')), findsNothing);
+      expect(find.byKey(const Key('task_status_save')), findsNothing);
+      // Scaffold ตัวใน (_TaskDetailView) เป็นตัวที่มี bottomNavigationBar
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).last);
+      expect(scaffold.bottomNavigationBar, isNull);
+    });
+  }
+
   testWidgets('Operation ไม่เห็นตัวเลือกเปลี่ยนสถานะ', (tester) async {
     await _pump(
       tester,
