@@ -163,10 +163,7 @@ export function RegisterDeviceForm() {
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
       <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-medium">ระบุตัวเครื่อง</h2>
-          <p className="text-xs text-muted-foreground">รหัสที่ใช้แยกเครื่องนี้ออกจากเครื่องอื่น</p>
-        </div>
+        <h2 className="text-sm font-medium">ระบุตัวเครื่อง</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-blackbox">
@@ -192,10 +189,7 @@ export function RegisterDeviceForm() {
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-medium">โมเดลและโปรโตคอล</h2>
-          <p className="text-xs text-muted-foreground">เลือกโมเดลก่อน โปรโตคอลจะเลือกให้ตามที่โมเดลรองรับ</p>
-        </div>
+        <h2 className="text-sm font-medium">โมเดลและโปรโตคอล</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-model">โมเดล</Label>
@@ -246,10 +240,7 @@ export function RegisterDeviceForm() {
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-medium">รหัสฮาร์ดแวร์และซิม</h2>
-          <p className="text-xs text-muted-foreground">อ่านได้จากตัวเครื่องหรือกล่องบรรจุ</p>
-        </div>
+        <h2 className="text-sm font-medium">รหัสฮาร์ดแวร์และซิม</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-imei">
@@ -282,13 +273,22 @@ export function RegisterDeviceForm() {
               onChange={(e) => setSimNumber(e.target.value)}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-bootloader">
+              Bootloader{" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            </Label>
+            <Input
+              id="device-bootloader"
+              value={bootloader}
+              disabled={submitting}
+              onChange={(e) => setBootloader(e.target.value)}
+            />
+          </div>
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-medium">ข้อมูลเพิ่มเติม (ไม่บังคับ)</h2>
-          <p className="text-xs text-muted-foreground">เว้นว่างได้ เพิ่มภายหลังได้</p>
-        </div>
+        <h2 className="text-sm font-medium">ข้อมูลเพิ่มเติม (ไม่บังคับ)</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-hw-revision">
@@ -298,22 +298,8 @@ export function RegisterDeviceForm() {
               id="device-hw-revision"
               value={hardwareRevisionCode}
               disabled={submitting}
-              placeholder="เช่น RevA"
+              placeholder="เว้นว่างถ้าไม่มี เช่น RevA"
               onChange={(e) => setHardwareRevisionCode(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              เว้นว่างถ้าเครื่องนี้ไม่มีรุ่นย่อย
-            </p>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-bootloader">
-              Bootloader
-            </Label>
-            <Input
-              id="device-bootloader"
-              value={bootloader}
-              disabled={submitting}
-              onChange={(e) => setBootloader(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
