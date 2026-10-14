@@ -72,6 +72,7 @@ describe("DeviceConfigOverrideApprovalCard — mask ค่า sensitive ใน A
     render(
       <DeviceConfigOverrideApprovalCard
         item={item}
+        requesterName="ช่างสมศรี"
         canDecide={true}
         onDecided={vi.fn()}
       />,
@@ -89,6 +90,7 @@ describe("DeviceConfigOverrideApprovalCard — mask ค่า sensitive ใน A
     render(
       <DeviceConfigOverrideApprovalCard
         item={item}
+        requesterName="ช่างสมศรี"
         canDecide={true}
         onDecided={vi.fn()}
       />,
@@ -98,13 +100,14 @@ describe("DeviceConfigOverrideApprovalCard — mask ค่า sensitive ใน A
     expect(screen.queryByText("8080")).not.toBeInTheDocument();
   });
 
-  it("แสดง deviceId/reason/ผู้ส่งคำขอ", () => {
+  it("แสดง deviceId/reason และชื่อผู้ส่งคำขอแทน UUID พร้อมป้ายประเภทที่แยกจาก Firmware Override", () => {
     definitionsState.data = [];
     definitionsState.isLoading = false;
 
     render(
       <DeviceConfigOverrideApprovalCard
         item={item}
+        requesterName="ช่างสมศรี"
         canDecide={true}
         onDecided={vi.fn()}
       />,
@@ -112,7 +115,9 @@ describe("DeviceConfigOverrideApprovalCard — mask ค่า sensitive ใน A
 
     expect(screen.getByText("DTC-0001")).toBeInTheDocument();
     expect(screen.getByText("ลูกค้าขอเปลี่ยนค่าหน้างาน")).toBeInTheDocument();
-    expect(screen.getByText("user-st-1")).toBeInTheDocument();
+    expect(screen.getByText(/ช่างสมศรี/)).toBeInTheDocument();
+    expect(screen.queryByText(/user-st-1/)).not.toBeInTheDocument();
+    expect(screen.getByText("Config Override")).toBeInTheDocument();
   });
 
   it("canDecide=false -> ไม่เห็นปุ่มอนุมัติ/ปฏิเสธ", () => {
@@ -122,6 +127,7 @@ describe("DeviceConfigOverrideApprovalCard — mask ค่า sensitive ใน A
     render(
       <DeviceConfigOverrideApprovalCard
         item={item}
+        requesterName="ช่างสมศรี"
         canDecide={false}
         onDecided={vi.fn()}
       />,
