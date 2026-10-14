@@ -135,6 +135,9 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (iconBg, iconFg) = NotificationTypeStyle.iconColors(
+      notification.type,
+    );
     return Material(
       color: read ? AppTheme.surface : AppTheme.unreadTint,
       borderRadius: BorderRadius.circular(12),
@@ -149,13 +152,13 @@ class _NotificationTile extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
-                decoration: const BoxDecoration(
-                  color: AppTheme.iconBg,
+                decoration: BoxDecoration(
+                  color: iconBg,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   NotificationTypeStyle.icon(notification.type),
-                  color: AppTheme.navy,
+                  color: iconFg,
                   size: 20,
                 ),
               ),
