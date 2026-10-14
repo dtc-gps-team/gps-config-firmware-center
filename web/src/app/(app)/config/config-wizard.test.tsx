@@ -68,7 +68,7 @@ function makeFieldDef(
 async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("ชื่อ Config"), "Test Config");
 
-  await user.click(screen.getByRole("combobox", { name: "รุ่นอุปกรณ์" }));
+  await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
   await user.click(await screen.findByRole("option", { name: "GT06N" }));
 
   await user.click(screen.getByRole("combobox", { name: "โปรโตคอล" }));
