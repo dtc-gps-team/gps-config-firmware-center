@@ -12,6 +12,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
+import '../task/task_status_ui.dart';
 
 /// Human-readable role label shown in the greeting badge.
 String _roleLabel(UserRole? role) {
@@ -69,7 +70,8 @@ class HomePage extends ConsumerWidget {
             _HeaderRow(username: auth.username, role: role),
             const SizedBox(height: 20),
             if (isFieldStaff) ...[
-              _HistorySection(tasksAsync: tasksAsync!),
+              _UrgentTasksSection(tasksAsync: tasksAsync!),
+              _HistorySection(tasksAsync: tasksAsync),
               const SizedBox(height: 24),
             ],
             const _SectionLabel('ทางลัด'),
@@ -321,11 +323,151 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+/// "งานค้างวันนี้" — Mobile UI Roadmap Phase 1: งานที่ยังไม่เสร็จและเร่งด่วน
+/// (ดูเกณฑ์ที่ [TaskUrgencyStyle.of]) วางไว้เหนือสถิติ/ประวัติเสมอ เพราะ
+/// "มีงานไหนต้องรีบทำ" คือสิ่งที่ช่างต้องรู้ก่อนสุดตอนเปิดแอป — ไม่มีงาน
+/// เร่งด่วนเลยก็ไม่ render อะไรออกมาทั้งก้อน (ไม่ใช่กล่องเปล่า "ไม่มีงานเร่งด่วน")
+class _UrgentTasksSection extends StatelessWidget {
+  const _UrgentTasksSection({required this.tasksAsync});
+
+  final AsyncValue<List<Task>> tasksAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    // `.value` rethrows on AsyncError (Riverpod semantics) — this section
+    // never shows its own error UI (that's `_HistorySection`'s job for the
+    // same provider), so just render nothing until data is actually in.
+    final tasks = tasksAsync.valueOrNull;
+    if (tasks == null) return const SizedBox.shrink();
+
+    final urgent = TaskUrgencyStyle.sorted(
+      tasks.where(TaskUrgencyStyle.isUrgent).toList(),
+    );
+    if (urgent.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        key: const Key('urgent_tasks_section'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionLabel('งานค้างวันนี้'),
+          const SizedBox(height: 12),
+          for (final (i, task) in urgent.indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _UrgentTaskCard(
+                key: Key('urgent_task_card_$i'),
+                task: task,
+                onTap: () => context.push(AppRoutes.taskDetail(task.id)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UrgentTaskCard extends StatelessWidget {
+  const _UrgentTaskCard({super.key, required this.task, required this.onTap});
+
+  final Task task;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final urgency = TaskUrgencyStyle.of(task);
+    final (bg, fg) = TaskUrgencyStyle.colors(urgency);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppTheme.mockShadowRow,
+        border: Border(left: BorderSide(color: fg, width: 4)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    TaskUrgencyStyle.icon(urgency),
+                    color: fg,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.mockTextPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        task.deviceId ?? '—',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppTheme.mockTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    TaskUrgencyStyle.label(urgency),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "ประวัติงานล่าสุด" — real completed-task history, derived client-side
 /// from `GET /tasks` (self-scoped to the caller by the backend for ST/OT).
-/// Replaces the old "งานวันนี้" pending-task list: a field technician
-/// already knows their own assignments, so Home's job is to record what
-/// was finished, not to re-list what is still outstanding.
+/// Replaces the old "งานวันนี้" pending-task list with a history view —
+/// Phase 1 ([_UrgentTasksSection] above) brought outstanding/urgent work
+/// back onto Home, so this section's job stays narrow: what got finished.
 class _HistorySection extends ConsumerWidget {
   const _HistorySection({required this.tasksAsync});
 
