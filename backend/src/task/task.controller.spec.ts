@@ -68,7 +68,7 @@ describe('TaskController', () => {
     expect(result).toEqual([sampleTask]);
     expect(service.findAll).toHaveBeenCalledWith(
       { status: 'pending' },
-      { id: 'op-1', role: 'Operation' },
+      { id: 'op-1', role: 'Operation', ipAddress: null },
     );
   });
 
@@ -79,6 +79,7 @@ describe('TaskController', () => {
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -88,6 +89,7 @@ describe('TaskController', () => {
     expect(service.findOne).toHaveBeenCalledWith(sampleTask.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -101,7 +103,7 @@ describe('TaskController', () => {
     expect(service.update).toHaveBeenCalledWith(
       sampleTask.id,
       { status: 'completed' },
-      { id: 'op-1', role: 'Operation' },
+      { id: 'op-1', role: 'Operation', ipAddress: null },
     );
   });
 });

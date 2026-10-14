@@ -22,6 +22,9 @@ import { INCIDENT_SOURCE, IncidentMetadata } from './incident-metadata';
 export interface ActingUser {
   id: string;
   role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย (docs §13.3 Audit Log ระบุ IP
+   * Address เป็น field ที่ต้องเก็บ) — optional mirror `config.service.ts` */
+  ipAddress?: string | null;
 }
 
 /** ผลของ `decide()` — `device` มีค่าเฉพาะตอน outcome `promote` **และ**
@@ -223,6 +226,7 @@ export class IncidentService implements OnModuleInit {
           auditModule: AUDIT_MODULE,
           action: 'report',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
     } catch (err) {
@@ -290,6 +294,7 @@ export class IncidentService implements OnModuleInit {
           auditModule: AUDIT_MODULE,
           action: 'decide',
           metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
         },
       });
     } catch (err) {

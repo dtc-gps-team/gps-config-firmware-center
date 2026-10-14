@@ -106,6 +106,7 @@ describe('ConfigController', () => {
     expect(service.create).toHaveBeenCalledWith(dto, {
       id: 'ce-1',
       role: 'ConfigEngineer',
+      ipAddress: null,
     });
   });
 
@@ -116,6 +117,7 @@ describe('ConfigController', () => {
     expect(service.importFromJson).toHaveBeenCalledWith(file, 'json', {
       id: 'ce-1',
       role: 'ConfigEngineer',
+      ipAddress: null,
     });
   });
 
@@ -135,6 +137,7 @@ describe('ConfigController', () => {
     expect(service.update).toHaveBeenCalledWith(sampleConfig.id, dto, {
       id: 'ce-1',
       role: 'ConfigEngineer',
+      ipAddress: null,
     });
   });
 
@@ -144,6 +147,7 @@ describe('ConfigController', () => {
     expect(service.remove).toHaveBeenCalledWith(sampleConfig.id, {
       id: 'ce-1',
       role: 'ConfigEngineer',
+      ipAddress: null,
     });
   });
 
@@ -166,7 +170,7 @@ describe('ConfigController', () => {
     expect(service.decide).toHaveBeenCalledWith(
       sampleConfig.id,
       true,
-      { id: 'ce-1', role: 'ConfigEngineer' },
+      { id: 'ce-1', role: 'ConfigEngineer', ipAddress: null },
       undefined,
     );
   });
@@ -184,7 +188,7 @@ describe('ConfigController', () => {
     expect(service.decide).toHaveBeenCalledWith(
       sampleConfig.id,
       true,
-      { id: 'ce-1', role: 'ConfigEngineer' },
+      { id: 'ce-1', role: 'ConfigEngineer', ipAddress: null },
       'op-1',
     );
   });
@@ -201,6 +205,7 @@ describe('ConfigController', () => {
     expect(service.approve).toHaveBeenCalledWith(sampleConfig.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 
@@ -211,6 +216,7 @@ describe('ConfigController', () => {
     expect(service.reject).toHaveBeenCalledWith(sampleConfig.id, {
       id: 'op-1',
       role: 'Operation',
+      ipAddress: null,
     });
   });
 });

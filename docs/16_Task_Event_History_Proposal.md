@@ -5,7 +5,7 @@
 > ตอนทบทวนงาน "เริ่มโครง Offline-first (Drift)" (PR #252) แล้วพบว่าความต้องการจริงคือ
 > อยากเห็น **ประวัติละเอียดของสิ่งที่ช่างทำกับอุปกรณ์แต่ละเครื่อง** ไม่ใช่แค่ cache
 > คิวงานปัจจุบัน
-> **สถานะ:** **A approve แนวทางแล้ว (PR #253) · คำถามเปิดใน §9 ตอบครบ 4 ข้อแล้ว (A, issue #262, 2026-10-06)** — ยังไม่เริ่ม implement
+> **สถานะ:** **A approve แนวทางแล้ว (PR #253) · คำถามเปิดใน §9 ตอบครบ 4 ข้อแล้ว (A, issue #262, 2026-10-06)** · **implement แล้วเฉพาะ timeline + note (issue #296, 2026-10-13) — ตัดส่วนแนบรูปออกจากสโคปทั้งหมด** ดูสิ่งที่ทำจริงและจุดที่ต่างจากเอกสารนี้ใน §10
 > **จังหวะ:** นอกขอบเขต Sprint 2 เดิม (การ์ด "เริ่มโครง Offline-first" ไม่รวมเรื่องนี้) —
 > **ตกลงแล้ว: เริ่มที่ Sprint 4** (ไม่ใช่ Sprint 3 — ดู §9 ข้อ 4)
 
@@ -118,3 +118,28 @@ dependency ใหม่ และขอ permission กล้อง/คลัง�
 | 2 | โปรเจกต์มีกลไกอัปโหลดรูปอยู่แล้วหรือยัง (ใช้ที่ไหนมาก่อน) | **ตอบแล้ว: มีโครงอยู่ — multipart ผ่าน backend ตรงๆ ไม่ใช้ presigned URL** (คำตอบเดิมของ A ใน PR #253 — รอบ issue #262 ตอบคลาดเคลื่อนไปครั้งหนึ่ง แล้ว A ยกเลิกและยืนยันตามคำตอบเดิม) `FirmwareStorageService` (`backend/src/firmware/firmware-storage.service.ts`) ต่อ MinIO (S3-compatible, `@aws-sdk/client-s3`) รันผ่าน docker-compose ตั้งแต่ Sprint 0 — client อัปโหลด multipart เข้า backend (NestJS `FileInterceptor`) แล้ว backend relay เข้า MinIO เอง → TaskEvent photo ใช้ pattern เดียวกันในโมดูล `task` เพิ่ม bucket ใหม่ (เช่น `gps-task-photos`) ไม่ต้องออกแบบกลไกใหม่ ไม่ต้องมี presigned-URL flow |
 | 3 | RBAC ของ `TaskEvent` ควรเหมือน `Task` เป๊ะ (self-scoped ST/OT) ไหม หรือมีบทบาทอื่นที่ต้องดูได้ (เช่น Operation ตรวจงาน) | **ตอบแล้ว: ไม่ใช่ self-scoped เท่า `Task`** — **Operation อ่านได้ด้วย** เพราะจุดประสงค์ (§1) คือ "เครื่องนี้เคยมีปัญหาอะไรมาก่อน" Operation ต้องใช้ตรวจสอบ/วินิจฉัยอุปกรณ์ ไม่ใช่แค่ช่างดูงานตัวเองย้อนหลัง (ST/OT ยัง self-scoped เหมือน `Task`) |
 | 4 | เริ่ม Sprint 3 เลย หรือรอให้งานค้างของ Sprint 2 ปิดก่อน | **ตอบแล้ว: ปักไว้ที่ Sprint 4** — เหตุผล: ต้องเคลียร์ของเดิมที่ค้างอยู่ใน Sprint 3 ก่อน (ตรวจพบ 2026-10-06: Incident Reporting #236 ยังไม่เริ่มโค้ด, Confirm Install Mobile ยังไม่มี UI, After-sales Campaign ติดอาจารย์ที่ปรึกษา) งานนี้ไม่มีใครรออยู่และไม่ได้ติดขัดเอง (คำตอบเดิมใน PR #253 ที่ว่า "เริ่ม backend คู่ขนานได้" มองแค่ว่างานนี้มีคนรอไหม ไม่ได้ตอบผิด แต่ยังไม่เห็นภาพรวม Sprint 3) · **ข้อยกเว้น:** ถ้า Sprint 3 เสร็จหมดจริงก่อน checkpoint 11/10/2026 ค่อยขยับมาเริ่มก่อนได้ — ต้องยืนยันตอนนั้นว่าของ Sprint 3 เสร็จทั้งหมดแล้ว ไม่ใช่เงื่อนไข "มีเวลาว่าง" แบบหลวมๆ · เข้าเกณฑ์ "Backlog Scope Report" ที่ `docs/planning/02_GPS_Development_Plan.md` แถวที่ 33 |
+
+## 10. สิ่งที่ implement จริง (issue #296, 2026-10-13)
+
+ทำเฉพาะ **timeline + note** — **ตัดส่วนแนบรูปออกจากสโคปรอบนี้ทั้งหมด** (ไม่มี `photoUrl`, ไม่มี
+endpoint อัปโหลด, ไม่เพิ่ม `image_picker`/`camera`, ไม่ขอ permission กล้อง/คลังรูป) ไม่มี issue
+แยกสำหรับส่วนนี้ — ถ้าจะทำทีหลัง เพิ่มคอลัมน์ `photoUrl` แบบ additive ตาม §3/§5.1 และ §9 ข้อ 2 ได้เลย
+หัวข้อ §4 (กลไกอัปโหลด), §5.1 (กล้อง) และ §8 ข้อ 2b/2d (ส่วนรูป) จึงยังไม่ถูกทำ
+
+จุดที่ต่างจากเอกสารนี้ (ตกลงกับ B แล้วก่อนเริ่ม implement):
+
+| เรื่อง | เอกสาร | ที่ทำจริง | เหตุผล |
+|---|---|---|---|
+| เวลาของ event เปลี่ยนสถานะ | เวลา server (`changedAt @default(now())`) · §7 "ไม่ทำ offline-write สำหรับ event เหมือน `updateStatus` เดิม" | `PATCH /tasks/{id}` รับ `changedAt` (optional) — Mobile ส่งเวลาที่ช่างกดจริงจากคิว offline · **ใช้เฉพาะ ST/OT** (Operation ใช้เวลา server เสมอ) · อนาคตปัดลงเป็นเวลา server, ย้อนไปก่อน `max(Task.createdAt, event เปลี่ยนสถานะล่าสุด)` ไม่ได้ (ตามรีวิว A บน #302) | เอกสารเขียนก่อนมี offline queue (#276) ตอนนี้ `updateStatus` เข้าคิวได้แล้ว ถ้าใช้เวลา server timeline จะเพี้ยนเท่ากับช่วงที่ไม่มีเน็ต ซึ่งเป็นเคสหลักที่ feature นี้ต้องรับมือ |
+| `toStatus` | required | nullable | §4 บอกเองว่า note "ไม่มี fromStatus/toStatus" — แถว note มีทั้งคู่เป็น null |
+| `changedBy` | required FK | nullable FK | event "สร้างงาน" ที่ backfill ให้งานเก่าไม่รู้ผู้สร้าง (Task ไม่มี createdBy, AuditLog ไม่เก็บ id ของ Task) |
+| `id` | `cuid()` | `uuid()` | ทุก model ใน schema ใช้ uuid |
+| event "สร้างงาน" | ไม่ได้กำหนด | เขียน `null -> pending` ตอน `POST /tasks` + **backfill 1 แถวต่องานเก่า** ที่ `Task.createdAt` ใน migration | timeline ทุกงานเริ่มจากจุดเดียวกัน · เวลาสร้างงานรู้แน่นอน (ต่างจากการเปลี่ยนสถานะเก่าที่ไม่มีบันทึกเวลา จึงไม่ backfill) |
+| การแก้ field อื่น (title, ผู้รับงาน, config) | ไม่ได้กำหนด | ไม่ลง timeline | `TaskEvent` ไม่มีคอลัมน์เก็บ และ `AuditLog` บันทึกไว้แล้ว |
+| สิทธิ์อ่าน (§9 ข้อ 3) | ST/OT self-scoped + Operation | กฎเดียวกับ `GET /tasks/{id}` (รวม Auditor/Admin/SuperAdmin) | ใครเห็น Task ได้ควรเห็นประวัติด้วย ไม่มีกฎสองชุด (RBAC_Matrix แก้ครั้งที่ 81) |
+| สิทธิ์เพิ่ม note | ไม่ได้กำหนด | Operation (ทุกงาน) + ST/OT เจ้าของงาน · งาน `cancelled` = 409 | |
+| Response | ไม่ได้กำหนด shape | `TaskEvent` + `changedByName` (`User.fullName`) | ST/OT บน Mobile อ่านรายชื่อผู้ใช้เองไม่ได้ |
+| Mobile repository | เพิ่มเมธอดใน `TaskRepository` | `TaskEventRepository` แยก (`features/task/task_event_repository.dart`) | ไม่ต้องแก้ fake ของ `TaskRepository` ในเทสเดิมทุกตัว · pattern เดียวกับ `ConfirmInstallRepository` |
+
+`PATCH /tasks/{id}` ยังคืน `Task` เหมือนเดิม · `POST /tasks/{id}/notes` เขียน `AuditLog` action
+`add_note` (การเพิ่มบันทึกเป็น mutation ตาม Audit Pattern ใน CLAUDE.md)

@@ -3,11 +3,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DeviceModel } from '@prisma/client';
+import { DeviceModel, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDeviceModelDto } from './dto/create-device-model.dto';
 import { UpdateDeviceModelDto } from './dto/update-device-model.dto';
+
+/** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload เสมอ (แต่ละ module ประกาศเอง
+ * ไม่ import ข้าม module เหมือน config.service.ts / device.service.ts) */
+export interface ActingUser {
+  id: string;
+  role: string;
+  /** มาจาก `req.ip` ที่ controller แนบมาด้วย */
+  ipAddress?: string | null;
+}
+
+const AUDIT_MODULE = 'device-model';
 
 /**
  * แปลงค่าวันที่จาก DTO ให้เป็นรูปแบบที่ Prisma รับ — `@IsDateString()` ยอมรับ
@@ -61,18 +73,51 @@ export class DeviceModelService {
     return this.prisma.deviceModel.findUnique({ where: { name } });
   }
 
-  async create(dto: CreateDeviceModelDto): Promise<DeviceModel> {
+  /**
+   * เขียน AuditLog ในทรานแซกชันเดียวกับการเปลี่ยนข้อมูลเสมอ (ไม่ใช่ never-throw)
+   * — บันทึกไม่สำเร็จ = การสร้าง/แก้ล้มตามไปด้วย ไม่มีทางที่ข้อมูลเปลี่ยนโดยไม่มี
+   * ร่องรอยให้ตรวจสอบย้อนหลัง (เหมือน `overrideDeviceConfig()` ใน device.service.ts)
+   * เก็บแค่ id/ชื่อรุ่น/ชื่อ field ที่เปลี่ยน ไม่เก็บค่า
+   */
+  private async logAudit(
+    tx: Prisma.TransactionClient,
+    action: 'create' | 'update',
+    actor: ActingUser,
+    metadata: AuditLogMetadata,
+  ): Promise<void> {
+    await tx.auditLog.create({
+      data: {
+        userId: actor.id,
+        auditModule: AUDIT_MODULE,
+        action,
+        ipAddress: actor.ipAddress ?? null,
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async create(
+    dto: CreateDeviceModelDto,
+    actor: ActingUser,
+  ): Promise<DeviceModel> {
     try {
-      return await this.prisma.deviceModel.create({
-        data: {
-          name: dto.name,
-          manufacturer: dto.manufacturer,
-          supportedProtocols: dto.supportedProtocols,
-          status: dto.status,
-          warrantyMonths: dto.warrantyMonths,
-          endOfSupportDate: toDbDate(dto.endOfSupportDate),
-          notes: dto.notes,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await tx.deviceModel.create({
+          data: {
+            name: dto.name,
+            manufacturer: dto.manufacturer,
+            supportedProtocols: dto.supportedProtocols,
+            status: dto.status,
+            warrantyMonths: dto.warrantyMonths,
+            endOfSupportDate: toDbDate(dto.endOfSupportDate),
+            notes: dto.notes,
+          },
+        });
+        await this.logAudit(tx, 'create', actor, {
+          deviceModelId: created.id,
+          modelName: created.name,
+        });
+        return created;
       });
     } catch (err) {
       if (
@@ -85,21 +130,38 @@ export class DeviceModelService {
     }
   }
 
-  async update(id: string, dto: UpdateDeviceModelDto): Promise<DeviceModel> {
+  async update(
+    id: string,
+    dto: UpdateDeviceModelDto,
+    actor: ActingUser,
+  ): Promise<DeviceModel> {
     // เช็คก่อนเพื่อคืน 404 ที่ตรงเจตนา (ไม่ใช่ปล่อยให้ P2025 หลุดเป็น 500)
     await this.findOne(id);
 
+    // ชื่อ field ที่ผู้เรียกส่งมาจริง (ไม่นับที่ undefined) — บันทึกเฉพาะชื่อ
+    const fieldNames = Object.entries(dto)
+      .filter(([, value]) => value !== undefined)
+      .map(([name]) => name);
+
     try {
-      return await this.prisma.deviceModel.update({
-        where: { id },
-        data: {
-          manufacturer: dto.manufacturer,
-          supportedProtocols: dto.supportedProtocols,
-          status: dto.status,
-          warrantyMonths: dto.warrantyMonths,
-          endOfSupportDate: toDbDate(dto.endOfSupportDate),
-          notes: dto.notes,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.deviceModel.update({
+          where: { id },
+          data: {
+            manufacturer: dto.manufacturer,
+            supportedProtocols: dto.supportedProtocols,
+            status: dto.status,
+            warrantyMonths: dto.warrantyMonths,
+            endOfSupportDate: toDbDate(dto.endOfSupportDate),
+            notes: dto.notes,
+          },
+        });
+        await this.logAudit(tx, 'update', actor, {
+          deviceModelId: updated.id,
+          modelName: updated.name,
+          fieldNames,
+        });
+        return updated;
       });
     } catch (err) {
       // race condition: row ถูกลบไปพอดีระหว่าง findOne กับ update นี้ (rare)

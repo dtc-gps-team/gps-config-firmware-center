@@ -209,6 +209,52 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       });
     });
 
+    it('สร้างสำเร็จ -> มีแถว AuditLog 1 แถว พร้อม IP และชื่อ field (ไม่เก็บค่า)', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, defaultValue: 'internet' })
+        .expect(201);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { auditModule: 'config-definition' },
+      });
+      expect(logs).toHaveLength(1);
+      expect(logs[0].userId).toBe(configEngineerUser.id);
+      expect(logs[0].action).toBe('create');
+      expect(logs[0].ipAddress).toBeTruthy();
+      expect(logs[0].metadata).toEqual({ fieldNames: ['MTYP'] });
+    });
+
+    it('บันทึก AuditLog ไม่ได้ (ผู้ทำรายการไม่มีในระบบ) -> 500 และนิยามที่เพิ่งสร้างถูกย้อนกลับ ไม่ค้างในคลัง', async () => {
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      // token ที่ผ่าน guard ได้ (role มีสิทธิ์) แต่ userId ไม่มีในตาราง User
+      // -> FK ของ AuditLog.userId ล้ม ต้องทำให้การสร้างล้มตามด้วย (atomic)
+      const token = tokenFor(
+        '00000000-0000-4000-8000-000000000099',
+        'ConfigEngineer',
+      );
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validBody)
+        .expect(500);
+
+      expect(
+        await prisma.configFieldDefinition.count({
+          where: { fieldName: 'MTYP' },
+        }),
+      ).toBe(0);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
     it('ConfigEngineer สร้าง field พร้อม unknownSpec: true -> 201 เก็บ flag ตามที่ส่ง', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',

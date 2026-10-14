@@ -1,13 +1,22 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { ActionType } from '@prisma/client';
+import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import {
+  ActingUser,
   ConfigDefinitionService,
   ConfigFieldDefinitionWithSupport,
 } from './config-definition.service';
 import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
+
+/** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ — mirror campaign.controller.ts */
+type AuthenticatedRequest = Request & { user: JwtPayload };
+
+function toActor(req: AuthenticatedRequest): ActingUser {
+  return { id: req.user.sub, role: req.user.role, ipAddress: req.ip ?? null };
+}
 
 // Config Definition Lookup (task #12, แผน Agile แถว 12) — module แยกตามแพทเทิร์น
 // `config` module (controller + service + module)
@@ -38,7 +47,8 @@ export class ConfigDefinitionController {
   @RequirePermission('config-definition', ActionType.Create)
   create(
     @Body() dto: CreateConfigDefinitionDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<ConfigFieldDefinitionWithSupport> {
-    return this.configDefinitionService.create(dto);
+    return this.configDefinitionService.create(dto, toActor(req));
   }
 }

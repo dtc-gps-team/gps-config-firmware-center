@@ -3,7 +3,9 @@ import 'package:drift_flutter/drift_flutter.dart';
 
 import 'daos/pending_action_dao.dart';
 import 'daos/task_dao.dart';
+import 'daos/task_event_dao.dart';
 import 'tables/pending_actions_table.dart';
+import 'tables/task_events_table.dart';
 import 'tables/tasks_table.dart';
 
 part 'app_database.g.dart';
@@ -15,9 +17,11 @@ part 'app_database.g.dart';
 ///   holds the last value the **server** confirmed.
 /// - `PendingActions` (v2) — local write queue of changes not yet confirmed
 ///   by the server, drained by `SyncQueueService` (`core/sync/`).
+/// - `TaskEvents` (v3) — cached task timelines (issue #296), filled API → here
+///   by `CachedApiTaskEventRepository`. Read-only cache like `Tasks`.
 @DriftDatabase(
-  tables: [Tasks, PendingActions],
-  daos: [TaskDao, PendingActionDao],
+  tables: [Tasks, PendingActions, TaskEvents],
+  daos: [TaskDao, PendingActionDao, TaskEventDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -31,8 +35,11 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// v1 → v2 (Sprint 3 Offline-first Sync): adds `PendingActions`, the local
   /// write queue. Additive only — `Tasks` is untouched.
+  ///
+  /// v2 → v3 (Task Event History, issue #296): adds `TaskEvents`, the cached
+  /// task timelines. Additive only.
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -41,12 +48,16 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.createTable(pendingActions);
       }
+      if (from < 3) {
+        await m.createTable(taskEvents);
+      }
     },
   );
 
   /// Wipes every row of every table — called on logout so the next person to
   /// sign in on this device never sees the previous user's cached tasks (or,
-  /// from schema v2, their still-unsynced pending actions).
+  /// from schema v2, their still-unsynced pending actions; from v3, their
+  /// cached task timelines).
   Future<void> clearAllUserData() => transaction(() async {
     for (final table in allTables) {
       await delete(table).go();
