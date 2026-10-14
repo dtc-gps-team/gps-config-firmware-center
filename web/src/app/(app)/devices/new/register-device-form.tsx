@@ -186,10 +186,32 @@ export function RegisterDeviceForm() {
               onChange={(e) => setDeviceId(e.target.value)}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-imei">
+              IMEI
+            </Label>
+            <Input
+              id="device-imei"
+              value={imei}
+              disabled={submitting}
+              onChange={(e) => setImei(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-serial">
+              Serial Number
+            </Label>
+            <Input
+              id="device-serial"
+              value={serialNumber}
+              disabled={submitting}
+              onChange={(e) => setSerialNumber(e.target.value)}
+            />
+          </div>
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">โมเดลและโปรโตคอล</h2>
+        <h2 className="text-sm font-medium">โมเดลและรุ่นย่อย</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-model">โมเดล</Label>
@@ -237,40 +259,17 @@ export function RegisterDeviceForm() {
               </SelectContent>
             </Select>
           </div>
-        </div>
-      </section>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">รหัสฮาร์ดแวร์และซิม</h2>
-        <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-imei">
-              IMEI
+            <Label htmlFor="device-hw-revision">
+              รหัสรุ่นย่อย (Hardware Revision){" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
             </Label>
             <Input
-              id="device-imei"
-              value={imei}
+              id="device-hw-revision"
+              value={hardwareRevisionCode}
               disabled={submitting}
-              onChange={(e) => setImei(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-serial">
-              Serial Number
-            </Label>
-            <Input
-              id="device-serial"
-              value={serialNumber}
-              disabled={submitting}
-              onChange={(e) => setSerialNumber(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-sim">SIM Number</Label>
-            <Input
-              id="device-sim"
-              value={simNumber}
-              disabled={submitting}
-              onChange={(e) => setSimNumber(e.target.value)}
+              placeholder="เว้นว่างถ้าไม่มี เช่น RevA"
+              onChange={(e) => setHardwareRevisionCode(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -288,23 +287,21 @@ export function RegisterDeviceForm() {
         </div>
       </section>
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">ข้อมูลเพิ่มเติม (ไม่บังคับ)</h2>
+        <h2 className="text-sm font-medium">การใช้งาน</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-hw-revision">
-              รหัสรุ่นย่อย (Hardware Revision)
-            </Label>
+            <Label htmlFor="device-sim">SIM Number</Label>
             <Input
-              id="device-hw-revision"
-              value={hardwareRevisionCode}
+              id="device-sim"
+              value={simNumber}
               disabled={submitting}
-              placeholder="เว้นว่างถ้าไม่มี เช่น RevA"
-              onChange={(e) => setHardwareRevisionCode(e.target.value)}
+              onChange={(e) => setSimNumber(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-customer">
-              ลูกค้า
+              ลูกค้า{" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
             </Label>
             <Select
               value={customerId}
