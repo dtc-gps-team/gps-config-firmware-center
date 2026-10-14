@@ -13,11 +13,21 @@ const _dropdownBorder = OutlineInputBorder(
   borderSide: BorderSide(color: AppTheme.fieldBorder),
 );
 
+/// Mobile UI Roadmap Phase 2 (เคยเสนอทางแก้ไว้ใน docs/18 ข้อ 4 แต่ไม่เคย
+/// implement จริง) — `Config.name` ตั้งโดยผู้ใช้และ unique ทั้งระบบ (ดู
+/// `DeviceConfigDraft.name`) จึงเป็น label ที่แยก Config รุ่น/โปรโตคอลเดียวกัน
+/// ได้จริง ต่างจาก `$model/$protocol` ที่ Config 2 ตัวรุ่นเดียวกันแยกไม่ออก
+/// เลยในดรอปดาวน์ — `name` null/ว่าง (response เก่า/mock) fallback กลับไปใช้
+/// รูปแบบเดิมเป๊ะ ไม่โชว์ค่าว่าง
 String _configLabel(DeviceConfigDraft c) {
   final model = c.deviceModel ?? '?';
   final protocol = c.protocol ?? '?';
   final status = c.status == null ? '?' : _configStatusLabel(c.status!);
-  return '$model/$protocol · $status';
+  final name = c.name;
+  if (name == null || name.trim().isEmpty) {
+    return '$model/$protocol · $status';
+  }
+  return '$name · $status';
 }
 
 String _configStatusLabel(ConfigStatus status) => switch (status) {

@@ -48,8 +48,12 @@ class TaskListPage extends ConsumerWidget {
         onRefresh: () => ref.refresh(taskListProvider.future),
         child: tasksAsync.when(
           skipLoadingOnRefresh: true,
-          data: (tasks) {
-            if (tasks.isEmpty) return const _TasksEmpty();
+          data: (rawTasks) {
+            if (rawTasks.isEmpty) return const _TasksEmpty();
+            // เรียงงานเลยกำหนด/ใกล้ถึงกำหนดไว้บนสุด (Mobile UI Roadmap Phase 1
+            // — เกณฑ์เดียวกับ Home "งานค้างวันนี้" ใช้ shared helper ตัวเดียวกัน
+            // กันไม่ให้สองหน้าตัดสิน "เร่งด่วน" ต่างกัน)
+            final tasks = TaskUrgencyStyle.sorted(rawTasks);
             final offset = (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
             return ListView.separated(
               padding: const EdgeInsets.all(16),
@@ -100,13 +104,21 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final urgency = TaskUrgencyStyle.of(task);
+    final (urgencyBg, urgencyFg) = TaskUrgencyStyle.colors(urgency);
     return Material(
       color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
+        child: Container(
+          decoration: urgency == TaskUrgency.none
+              ? null
+              : BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border(left: BorderSide(color: urgencyFg, width: 4)),
+                ),
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
@@ -139,6 +151,38 @@ class _TaskCard extends StatelessWidget {
                         color: AppTheme.textSecondary,
                       ),
                     ),
+                    if (urgency != TaskUrgency.none) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: urgencyBg,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              TaskUrgencyStyle.icon(urgency),
+                              size: 13,
+                              color: urgencyFg,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              TaskUrgencyStyle.label(urgency),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: urgencyFg,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

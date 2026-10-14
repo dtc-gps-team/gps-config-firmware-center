@@ -38,14 +38,14 @@ const createdModel: DeviceModel = {
  * (ชื่อรุ่น + protocol อย่างน้อย 1 รายการบังคับ, field ที่เหลือ optional)
  */
 describe("CreateDeviceModelForm", () => {
-  it("ปุ่ม 'เพิ่มรุ่นอุปกรณ์' disabled จนกว่าจะกรอกชื่อ + เพิ่ม protocol อย่างน้อย 1 รายการ", async () => {
+  it("ปุ่ม 'เพิ่มโมเดล' disabled จนกว่าจะกรอกชื่อ + เพิ่ม protocol อย่างน้อย 1 รายการ", async () => {
     const user = userEvent.setup();
     render(<CreateDeviceModelForm onCreated={vi.fn()} />);
 
-    const submitBtn = screen.getByRole("button", { name: "เพิ่มรุ่นอุปกรณ์" });
+    const submitBtn = screen.getByRole("button", { name: "เพิ่มโมเดล" });
     expect(submitBtn).toBeDisabled();
 
-    await user.type(screen.getByLabelText("ชื่อรุ่น"), "GT06N");
+    await user.type(screen.getByLabelText("ชื่อโมเดล"), "GT06N");
     expect(submitBtn).toBeDisabled(); // ยังไม่มี protocol
 
     await user.type(screen.getByPlaceholderText("เช่น TCP"), "TCP");
@@ -59,10 +59,10 @@ describe("CreateDeviceModelForm", () => {
     const user = userEvent.setup();
     render(<CreateDeviceModelForm onCreated={onCreated} />);
 
-    await user.type(screen.getByLabelText("ชื่อรุ่น"), "GT06N");
+    await user.type(screen.getByLabelText("ชื่อโมเดล"), "GT06N");
     await user.type(screen.getByPlaceholderText("เช่น TCP"), "TCP");
     await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
-    await user.click(screen.getByRole("button", { name: "เพิ่มรุ่นอุปกรณ์" }));
+    await user.click(screen.getByRole("button", { name: "เพิ่มโมเดล" }));
 
     await waitFor(() => expect(createDeviceModel).toHaveBeenCalledTimes(1));
     expect(createDeviceModel).toHaveBeenCalledWith("tok", {

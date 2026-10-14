@@ -82,8 +82,10 @@ DeviceConfigDraft _config({
   required String id,
   ConfigStatus status = ConfigStatus.approved,
   String deviceModel = 'GT06N',
+  String? name,
 }) => DeviceConfigDraft(
   id: id,
+  name: name,
   deviceModel: deviceModel,
   protocol: 'TCP',
   status: status,
@@ -249,6 +251,62 @@ void main() {
       expect(find.text('GT06N/TCP · approved'), findsOneWidget);
       expect(find.text('GT06N/TCP · synced'), findsOneWidget);
       expect(find.text('GT06N/TCP · draft'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'render — Config รุ่น/โปรโตคอลเดียวกัน แต่ name ต่างกัน -> dropdown แยกด้วย '
+    'name จริง ไม่ใช่รูปแบบเดิมที่แยกไม่ออก (Mobile UI Roadmap Phase 2)',
+    (tester) async {
+      await _pump(
+        tester,
+        tasks: twoDevices,
+        configs: [
+          _config(id: 'cfg-a', name: 'Config โหมดประหยัดแบต'),
+          _config(id: 'cfg-b', name: 'Config รายงานถี่'),
+        ],
+      );
+
+      await tester.tap(find.byKey(const Key('simulator_config_dropdown')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Config โหมดประหยัดแบต'), findsOneWidget);
+      expect(find.textContaining('Config รายงานถี่'), findsOneWidget);
+      // ต้องไม่เหลือ label แบบเดิมที่แยกสองตัวนี้ไม่ออก (bug เดิมที่ docs/18
+      // เคยเสนอทางแก้ไว้แต่ไม่เคย implement จริง)
+      expect(find.text('GT06N/TCP · approved'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'render — Config name เป็น null -> fallback เป็นรูปแบบเดิม ไม่ error ไม่โชว์ค่าว่าง',
+    (tester) async {
+      await _pump(
+        tester,
+        tasks: twoDevices,
+        configs: [_config(id: 'cfg-no-name', name: null)],
+      );
+
+      await tester.tap(find.byKey(const Key('simulator_config_dropdown')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('GT06N/TCP · approved'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'render — Config name เป็นสตริงว่าง -> fallback เป็นรูปแบบเดิมเหมือน null',
+    (tester) async {
+      await _pump(
+        tester,
+        tasks: twoDevices,
+        configs: [_config(id: 'cfg-empty-name', name: '')],
+      );
+
+      await tester.tap(find.byKey(const Key('simulator_config_dropdown')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('GT06N/TCP · approved'), findsOneWidget);
     },
   );
 

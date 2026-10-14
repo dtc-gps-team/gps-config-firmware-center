@@ -40,7 +40,7 @@ export function useDeviceModels() {
         error:
           err instanceof ApiError
             ? err.message
-            : "โหลดทะเบียนรุ่นอุปกรณ์ไม่สำเร็จ",
+            : "โหลดทะเบียนโมเดลไม่สำเร็จ",
       }));
     }
   }, [token]);

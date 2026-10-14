@@ -204,9 +204,9 @@ export function CampaignCreateForm({
       },
       {
         accessorKey: "deviceModel",
-        header: "รุ่นอุปกรณ์",
+        header: "โมเดล",
         filterFn: multiSelectFilterFn,
-        meta: { filterVariant: "multi-select", label: "รุ่น" },
+        meta: { filterVariant: "multi-select", label: "โมเดล" },
       },
       {
         accessorKey: "protocol",
@@ -308,8 +308,8 @@ export function CampaignCreateForm({
         <div>
           <p className="text-sm font-medium">เลือกอุปกรณ์สมาชิก</p>
           <p className="text-xs text-muted-foreground">
-            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์ สถานะ
-            installed เท่านั้น · เลือกแล้ว {selectedDeviceIds.length} เครื่อง
+            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก เฉพาะอุปกรณ์สถานะ
+            installed เท่านั้น (เลือกแล้ว {selectedDeviceIds.length} เครื่อง)
           </p>
         </div>
 
@@ -321,7 +321,7 @@ export function CampaignCreateForm({
           <DataTable
             columns={columns}
             data={installedDevices}
-            searchPlaceholder="ค้นหาเลขเครื่อง/รุ่น…"
+            searchPlaceholder="ค้นหาเลขเครื่อง/โมเดล…"
             emptyMessage="ไม่พบอุปกรณ์ที่ตรงกับเงื่อนไข"
             onRowClick={(device) =>
               toggleDevice(

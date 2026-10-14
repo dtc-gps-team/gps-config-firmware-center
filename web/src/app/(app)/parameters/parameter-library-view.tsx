@@ -127,9 +127,9 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
   {
     id: "supportedModels",
     accessorFn: (row) => formatModelSupport(row.supportedModels),
-    header: "รุ่น/โปรโตคอลที่รองรับ",
+    header: "โมเดล/โปรโตคอลที่รองรับ",
     enableSorting: false,
-    meta: { filterVariant: "text", label: "รุ่น/โปรโตคอล" },
+    meta: { filterVariant: "text", label: "โมเดล/โปรโตคอล" },
     cell: ({ getValue }) => (
       <span className="text-muted-foreground">{getValue<string>()}</span>
     ),
@@ -151,8 +151,8 @@ function ParameterTableCard({
       <CardHeader>
         <CardTitle>รายการ Parameter ทั้งหมด</CardTitle>
         <CardDescription>
-          นิยาม field ที่ระบบรู้จัก · ใช้อ้างอิงตอนกรอก/ตรวจ Config
-          {data ? ` · ${data.length} field` : ""}
+          นิยาม field ที่ระบบรู้จัก ใช้อ้างอิงตอนกรอก/ตรวจ Config
+          {data ? ` (${data.length} field)` : ""}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -175,7 +175,7 @@ function ParameterTableCard({
           <DataTable
             columns={columns}
             data={rows}
-            searchPlaceholder="ค้นหาชื่อ field / รุ่น…"
+            searchPlaceholder="ค้นหาชื่อ field / โมเดล…"
             emptyMessage="ไม่พบ Parameter ที่ตรงกับเงื่อนไข"
           />
         )}
@@ -211,7 +211,7 @@ function ParameterLibraryContent() {
         <div>
           <h1 className="text-2xl font-semibold">คลัง Parameter</h1>
           <p className="text-sm text-muted-foreground">
-            นิยาม field ที่ใช้กรอก Config · สร้างได้เฉพาะ Role ConfigEngineer
+            นิยาม field ที่ใช้กรอก Config สร้างได้เฉพาะ Role ConfigEngineer
           </p>
         </div>
         {canCreate && !showForm ? (

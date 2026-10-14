@@ -45,8 +45,8 @@ export function UploadFirmwareButton({
         <DialogHeader>
           <DialogTitle>อัปโหลด Firmware</DialogTitle>
           <DialogDescription>
-            ไฟล์จะถูกอัปโหลดขึ้น Object Storage ทันที · เพิ่ม/แก้
-            รุ่นอุปกรณ์ที่รองรับเพิ่มเติมได้ทีหลังในหน้ารายละเอียด
+            ไฟล์จะถูกอัปโหลดขึ้น Object Storage ทันที และเพิ่ม/แก้
+            โมเดลที่รองรับเพิ่มเติมได้ทีหลังในหน้ารายละเอียด
           </DialogDescription>
         </DialogHeader>
         <UploadFirmwareForm
