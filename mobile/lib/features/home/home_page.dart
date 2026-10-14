@@ -521,6 +521,12 @@ class _HistoryEmpty extends StatelessWidget {
   }
 }
 
+String _formatDate(DateTime dt) {
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
 class _HistoryCard extends StatelessWidget {
   const _HistoryCard({super.key, required this.task, required this.onTap});
 
@@ -575,8 +581,13 @@ class _HistoryCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 5),
+                      // วันที่เสร็จงาน ต่อท้ายในบรรทัดเดียวกับ deviceId (ไม่
+                      // เพิ่มความสูงการ์ด) — ใช้ updatedAt (Task.completed
+                      // เขียน updatedAt ตอนเปลี่ยนสถานะ ไม่มี completedAt แยก)
                       Text(
-                        task.deviceId ?? '—',
+                        '${task.deviceId ?? '—'} · ${_formatDate(task.updatedAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12.5,
                           color: AppTheme.mockTextSecondary,
