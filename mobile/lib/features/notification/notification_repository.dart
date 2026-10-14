@@ -31,30 +31,110 @@ class ApiNotificationRepository implements NotificationRepository {
 
 /// In-memory fake for `API_MOCK_MODE` (dev without a backend).
 class MockNotificationRepository implements NotificationRepository {
+  // `configApproved`/`configRejected`/`firmwareReady` ไม่มี mock เลยโดย
+  // ตั้งใจ — ตรวจไว้ใน PR #310 ว่า backend ไม่มีจุดส่ง 3 type นี้จริงใน
+  // ระบบปัจจุบัน (legacy enum ไม่มี producer) ใส่ mock ให้จะไม่สะท้อนของจริง
+  // · taskId/deviceId/incidentId ทุกตัวตรงกับ mock-task-1/DEV-xxxx/
+  // mock-incident-x จริงใน repository อื่น ไม่ orphan
   final List<AppNotification> _items = [
     AppNotification(
       id: 'mock-noti-1',
       userId: 'mock-user',
       type: NotificationType.taskAssigned,
-      payload: const {'taskId': 'mock-task-1'},
+      payload: const {
+        'taskId': 'mock-task-1',
+        'title': 'ติดตั้งกล่อง GPS รถบรรทุก',
+      },
       read: false,
-      createdAt: DateTime(2026, 9, 4, 8, 30),
+      createdAt: DateTime(2026, 9, 9, 8, 30),
     ),
     AppNotification(
       id: 'mock-noti-2',
       userId: 'mock-user',
-      type: NotificationType.firmwareReady,
-      payload: const {},
+      type: NotificationType.incidentReportPending,
+      payload: const {
+        'incidentId': 'mock-incident-3',
+        'deviceId': 'DEV-0231',
+        'title': 'ปุ่ม SOS กดแล้วไม่ส่งแจ้งเตือน',
+      },
       read: false,
-      createdAt: DateTime(2026, 9, 3, 17),
+      createdAt: DateTime(2026, 9, 8, 13, 1),
     ),
     AppNotification(
       id: 'mock-noti-3',
       userId: 'mock-user',
-      type: NotificationType.configApproved,
-      payload: const {},
+      type: NotificationType.configOverridePending,
+      payload: const {
+        'overrideId': 'mock-override-1',
+        'deviceId': 'DEV-0410',
+        'configId': 'mock-cfg-1',
+      },
+      read: false,
+      createdAt: DateTime(2026, 9, 7, 10, 0),
+    ),
+    AppNotification(
+      id: 'mock-noti-4',
+      userId: 'mock-user',
+      type: NotificationType.incidentReportPromoted,
+      payload: const {
+        'incidentId': 'mock-incident-2',
+        'deviceId': 'DEV-0092',
+        'reviewNote': 'ต้องอัปเดต Firmware — ส่งต่อเป็น Campaign แล้ว',
+      },
       read: true,
-      createdAt: DateTime(2026, 9, 2, 11),
+      createdAt: DateTime(2026, 9, 6, 10, 1),
+    ),
+    AppNotification(
+      id: 'mock-noti-5',
+      userId: 'mock-user',
+      type: NotificationType.firmwareOverrideRejected,
+      payload: const {
+        'overrideId': 'mock-override-2',
+        'deviceId': 'DEV-0117',
+        'firmwareId': 'mock-fw-1',
+        'rejectReason': 'เวอร์ชันนี้ยังไม่ผ่านการทดสอบกับรุ่นเครื่องนี้',
+      },
+      read: true,
+      createdAt: DateTime(2026, 9, 5, 14, 20),
+    ),
+    AppNotification(
+      id: 'mock-noti-6',
+      userId: 'mock-user',
+      type: NotificationType.incidentReportResolved,
+      payload: const {
+        'incidentId': 'mock-incident-4',
+        'deviceId': 'DEV-0305',
+        'reviewNote': 'ช่างเข้าไปขันสายใหม่แล้ว ใช้งานปกติ',
+      },
+      read: true,
+      createdAt: DateTime(2026, 9, 4, 16, 46),
+    ),
+    AppNotification(
+      id: 'mock-noti-7',
+      userId: 'mock-user',
+      type: NotificationType.incidentReportDismissed,
+      payload: const {
+        'incidentId': 'mock-incident-5',
+        'deviceId': 'DEV-0410',
+        'reviewNote': 'ซ้ำกับรายการเดิม',
+      },
+      read: true,
+      createdAt: DateTime(2026, 9, 2, 11, 31),
+    ),
+    AppNotification(
+      id: 'mock-noti-8',
+      userId: 'mock-user',
+      type: NotificationType.incidentAlert,
+      payload: const {
+        'configId': 'mock-cfg-2',
+        'versionNumber': 3,
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+        'attempts': 3,
+        'lastError': 'connection timeout',
+      },
+      read: true,
+      createdAt: DateTime(2026, 8, 29, 9, 1),
     ),
   ];
 
