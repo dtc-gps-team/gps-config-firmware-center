@@ -366,7 +366,7 @@ function RegisterDeviceSuccess({ result }: { result: RegisterDeviceResult }) {
         <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
         <p>
           ลงทะเบียน <strong className="font-mono">{result.deviceId}</strong>{" "}
-          สำเร็จแล้ว — เก็บ API key ด้านล่างไว้ให้ดี{" "}
+          สำเร็จแล้ว เก็บ API key ด้านล่างไว้ให้ดี{" "}
           <strong>ดูซ้ำไม่ได้อีกแล้ว</strong> หลังออกจากหน้านี้
         </p>
       </div>
