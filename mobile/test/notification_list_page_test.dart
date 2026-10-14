@@ -293,6 +293,48 @@ void main() {
     },
   );
 
+  testWidgets('taskAssigned — แสดงชื่องานจาก payload.title', (tester) async {
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          AppNotification(
+            id: 'n1',
+            userId: 'u1',
+            type: NotificationType.taskAssigned,
+            payload: const {'taskId': 't1', 'title': 'ติดตั้งกล่อง GPS'},
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('งาน: ติดตั้งกล่อง GPS'), findsOneWidget);
+  });
+
+  testWidgets('taskAssigned — title ว่าง/ไม่มี -> ไม่แสดงบรรทัดนี้', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      _FakeNotificationRepository(
+        items: [
+          AppNotification(
+            id: 'n1',
+            userId: 'u1',
+            type: NotificationType.taskAssigned,
+            payload: const {'taskId': 't1'},
+            read: true,
+            createdAt: DateTime(2026, 9, 4, 9, 15),
+          ),
+        ],
+      ),
+    );
+
+    expect(find.textContaining('งาน:'), findsNothing);
+  });
+
   testWidgets('type อื่น — ไม่แสดง detail แม้ payload มี deviceId', (
     tester,
   ) async {

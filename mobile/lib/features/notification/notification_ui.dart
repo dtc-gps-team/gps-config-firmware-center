@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
 
-/// Thai labels + icons for [NotificationType]. Only the three Config Override
-/// types read into `payload` (see [details]); every other type shows just the
+/// Thai labels + icons for [NotificationType]. [details] reads extra fields
+/// out of `payload` for the types listed there (Config/Firmware Override,
+/// Field Incident Report, `taskAssigned`); every other type shows just the
 /// type label + timestamp.
 class NotificationTypeStyle {
   const NotificationTypeStyle._();
@@ -18,6 +19,11 @@ class NotificationTypeStyle {
     }
 
     switch (n.type) {
+      // issue #296 (Mobile UX/UI audit) — payload จริงคือ `{taskId, title}`
+      // (`task.service.ts` ส่งมาเสมอ) แค่ไม่เคย render title ตรงนี้มาก่อน
+      case NotificationType.taskAssigned:
+        final title = text('title');
+        return [if (title != null) 'งาน: $title'];
       case NotificationType.configOverridePending:
       case NotificationType.configOverrideApproved:
         final deviceId = text('deviceId');
