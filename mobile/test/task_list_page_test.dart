@@ -29,6 +29,7 @@ Task _task({
   String title = 'ติดตั้งกล่อง GPS',
   TaskStatus status = TaskStatus.pending,
   String? deviceId = 'DVC-1',
+  DateTime? dueDate,
 }) => Task(
   id: id,
   title: title,
@@ -37,6 +38,7 @@ Task _task({
   createdAt: DateTime(2026, 9, 1),
   updatedAt: DateTime(2026, 9, 2),
   deviceId: deviceId,
+  dueDate: dueDate,
 );
 
 class _FakeTaskRepository implements TaskRepository {
@@ -193,6 +195,23 @@ void main() {
     expect(find.text('อุปกรณ์: —'), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_1')), findsOneWidget);
+  });
+
+  testWidgets('การ์ดงานแสดง dueDate เมื่อมีค่า, "—" เมื่อไม่มี', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(
+        tasks: [
+          _task(id: 't1', dueDate: DateTime(2026, 9, 10)),
+          _task(id: 't2', dueDate: null),
+        ],
+      ),
+    );
+
+    expect(find.text('กำหนดส่ง: 10/09/2026'), findsOneWidget);
+    expect(find.text('กำหนดส่ง: —'), findsOneWidget);
   });
 
   testWidgets('task ที่ค้างในคิว -> badge "รอซิงค์" เฉพาะใบนั้น', (

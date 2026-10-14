@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
@@ -33,6 +34,14 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
   final Set<String> _marking = {};
 
   bool _isRead(AppNotification n) => n.read || _readOverlay.contains(n.id);
+
+  /// แตะการ์ด — mark-as-read เหมือนเดิม (fire-and-forget, ไม่รอผล) + navigate
+  /// ไปหน้าที่เกี่ยวข้องถ้า type นี้มี id นำทางได้ (Mobile UX/UI audit report)
+  void _handleTap(BuildContext context, AppNotification n) {
+    _markRead(n);
+    final route = NotificationTypeStyle.route(n);
+    if (route != null) context.push(route);
+  }
 
   Future<void> _markRead(AppNotification n) async {
     if (_isRead(n) || _marking.contains(n.id)) return;
@@ -92,7 +101,7 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
                   key: Key('notification_tile_$i'),
                   notification: n,
                   read: _isRead(n),
-                  onTap: () => _markRead(n),
+                  onTap: () => _handleTap(context, n),
                 );
               },
             ),

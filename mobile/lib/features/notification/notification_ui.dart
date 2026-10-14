@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
 
-/// Thai labels + icons for [NotificationType]. Only the three Config Override
-/// types read into `payload` (see [details]); every other type shows just the
+/// Thai labels + icons for [NotificationType]. [details] reads extra fields
+/// out of `payload` for the types listed there (Config/Firmware Override,
+/// Field Incident Report, `taskAssigned`); every other type shows just the
 /// type label + timestamp.
 class NotificationTypeStyle {
   const NotificationTypeStyle._();
@@ -18,6 +20,11 @@ class NotificationTypeStyle {
     }
 
     switch (n.type) {
+      // issue #296 (Mobile UX/UI audit) — payload จริงคือ `{taskId, title}`
+      // (`task.service.ts` ส่งมาเสมอ) แค่ไม่เคย render title ตรงนี้มาก่อน
+      case NotificationType.taskAssigned:
+        final title = text('title');
+        return [if (title != null) 'งาน: $title'];
       case NotificationType.configOverridePending:
       case NotificationType.configOverrideApproved:
         final deviceId = text('deviceId');
@@ -56,6 +63,40 @@ class NotificationTypeStyle {
         ];
       default:
         return const [];
+    }
+  }
+
+  /// หน้าที่ควร navigate ไปเมื่อแตะการ์ด (Mobile UX/UI audit report) — คืน
+  /// `null` เมื่อ type ไม่มี id ที่นำทางได้แน่นอน (เช่น `configApproved`/
+  /// `firmwareReady`/`incidentAlert` ที่ backend ไม่ได้ส่ง id มาด้วย หรือ
+  /// `configDeletion*` ที่ Mobile ไม่มีหน้า Config ให้ไปอยู่แล้ว) — กรณีนั้น
+  /// ผู้เรียกคง behavior เดิม (แค่ mark-as-read)
+  static String? route(AppNotification n) {
+    String? idOf(String key) {
+      final v = n.payload[key];
+      return v is String && v.trim().isNotEmpty ? v.trim() : null;
+    }
+
+    switch (n.type) {
+      case NotificationType.taskAssigned:
+        final taskId = idOf('taskId');
+        return taskId == null ? null : AppRoutes.taskDetail(taskId);
+      case NotificationType.configOverridePending:
+      case NotificationType.configOverrideApproved:
+      case NotificationType.configOverrideRejected:
+      case NotificationType.firmwareOverridePending:
+      case NotificationType.firmwareOverrideApproved:
+      case NotificationType.firmwareOverrideRejected:
+        final deviceId = idOf('deviceId');
+        return deviceId == null ? null : AppRoutes.deviceDetail(deviceId);
+      case NotificationType.incidentReportPending:
+      case NotificationType.incidentReportResolved:
+      case NotificationType.incidentReportDismissed:
+      case NotificationType.incidentReportPromoted:
+        final incidentId = idOf('incidentId');
+        return incidentId == null ? null : AppRoutes.incidentDetail(incidentId);
+      default:
+        return null;
     }
   }
 

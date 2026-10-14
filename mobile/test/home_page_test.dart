@@ -255,6 +255,20 @@ void main() {
       expect(find.text('2 รายการ'), findsOneWidget);
     });
 
+    testWidgets('การ์ดประวัติแสดงวันที่เสร็จงาน (updatedAt) ต่อกับ deviceId', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+
+      // t1.updatedAt = DateTime(year, month, 2) — รูปแบบเดียวกับ
+      // _formatDate ใน task_detail_page.dart (dd/mm/yyyy HH:mm)
+      final two = _now.month.toString().padLeft(2, '0');
+      expect(
+        find.text('DVC-40271 · 02/$two/${_now.year} 00:00'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('empty state เมื่อไม่มีงานที่เสร็จแล้ว', (tester) async {
       await _pumpHome(
         tester,
