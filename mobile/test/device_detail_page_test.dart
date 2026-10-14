@@ -92,6 +92,11 @@ Future<void> _pump(
   String deviceId = 'DEV-0117',
   UserRole? role,
 }) async {
+  // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
+  // ListView สร้างทุก section (สถานะ Config/Firmware, ปุ่มด้านล่าง) ได้ในเทสต์
+  tester.view.physicalSize = const Size(1080, 4000);
+  tester.view.devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -107,8 +112,60 @@ Future<void> _pump(
   await tester.pump(); // resolve getDevice
 }
 
+/// แถวในการ์ดข้อมูลที่มี [label] — ใช้หาค่าของแถวนั้นโดยไม่ชนกับ "—" ของแถวอื่น
+Finder _rowValue(String label, String value) => find.descendant(
+  of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first,
+  matching: find.text(value),
+);
+
 void main() {
   _statusTests();
+
+  // ผลตรวจ #304 — backend ส่ง imei/serialNumber/blackboxId/customer มาแล้ว และ
+  // Web แสดงแล้ว แต่ Mobile ยังไม่แสดง
+  group('ข้อมูลอุปกรณ์ + ลูกค้า', () {
+    testWidgets('มีค่าครบ -> แสดง IMEI, Serial, Blackbox ID และชื่อลูกค้า', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          device: Device(
+            id: 'uuid-1',
+            deviceId: 'DEV-0117',
+            simNumber: '0812345678',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: DeviceLifecycleStatus.installed,
+            registeredAt: DateTime(2026, 6, 1, 9),
+            imei: '860000000000117',
+            serialNumber: 'SNGT06N000117',
+            blackboxId: '7100000117',
+            customer: const Customer(id: 'c1', companyName: 'ขนส่งสมมติ จำกัด'),
+          ),
+        ),
+      );
+
+      expect(find.text('ข้อมูลอุปกรณ์'), findsOneWidget);
+      expect(find.text('ลูกค้า'), findsOneWidget);
+      expect(_rowValue('IMEI', '860000000000117'), findsOneWidget);
+      expect(_rowValue('Serial Number', 'SNGT06N000117'), findsOneWidget);
+      expect(_rowValue('Blackbox ID', '7100000117'), findsOneWidget);
+      expect(_rowValue('ชื่อบริษัท', 'ขนส่งสมมติ จำกัด'), findsOneWidget);
+    });
+
+    testWidgets('เป็น null ทั้งหมด -> แสดง "—" ทุกแถว ไม่ซ่อนแถว ไม่ crash', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository());
+
+      expect(tester.takeException(), isNull);
+      expect(_rowValue('IMEI', '—'), findsOneWidget);
+      expect(_rowValue('Serial Number', '—'), findsOneWidget);
+      expect(_rowValue('Blackbox ID', '—'), findsOneWidget);
+      expect(_rowValue('ชื่อบริษัท', '—'), findsOneWidget);
+    });
+  });
 
   testWidgets('โหลดสำเร็จ -> แสดง field ครบ', (tester) async {
     await _pump(
@@ -147,7 +204,7 @@ void main() {
 
     expect(find.text('DEV-0092'), findsOneWidget);
     expect(find.text('ลงทะเบียนแล้ว'), findsWidgets);
-    expect(find.text('—'), findsOneWidget); // installedAt row
+    expect(_rowValue('ติดตั้งเมื่อ', '—'), findsOneWidget);
   });
 
   testWidgets('404 -> "ไม่พบอุปกรณ์นี้" + ปุ่มลองอีกครั้ง', (tester) async {
@@ -424,8 +481,7 @@ void _statusTests() {
       await tester.pump();
 
       expect(find.text('เช็คอินล่าสุด'), findsOneWidget);
-      // device ที่ติดตั้งแล้วมีค่าครบ ดังนั้น "—" ที่เจอมาจากแถวเช็คอินล่าสุดเท่านั้น
-      expect(find.text('—'), findsOneWidget);
+      expect(_rowValue('เช็คอินล่าสุด', '—'), findsOneWidget);
     });
 
     testWidgets('ออนไลน์/ออฟไลน์ เป็น "ไม่ทราบ" คงที่ (placeholder)', (

@@ -111,11 +111,16 @@ class _DeviceDetailView extends ConsumerWidget {
           child: DeviceStatusPill(status: device.status),
         ),
         const SizedBox(height: 20),
+        const _SectionTitle('ข้อมูลอุปกรณ์'),
+        const SizedBox(height: 8),
         _InfoCard(
           rows: [
             ('เบอร์ซิม', device.simNumber.isEmpty ? '—' : device.simNumber),
             ('รุ่น', device.deviceModel.isEmpty ? '—' : device.deviceModel),
             ('โปรโตคอล', device.protocol.isEmpty ? '—' : device.protocol),
+            ('IMEI', _orDash(device.imei)),
+            ('Serial Number', _orDash(device.serialNumber)),
+            ('Blackbox ID', _orDash(device.blackboxId)),
             ('สถานะ', DeviceStatusStyle.label(device.status)),
             ('ลงทะเบียนเมื่อ', _formatDate(device.registeredAt)),
             (
@@ -125,6 +130,12 @@ class _DeviceDetailView extends ConsumerWidget {
                   : _formatDate(device.installedAt!),
             ),
           ],
+        ),
+        const SizedBox(height: 20),
+        const _SectionTitle('ลูกค้า'),
+        const SizedBox(height: 8),
+        _InfoCard(
+          rows: [('ชื่อบริษัท', _orDash(device.customer?.companyName))],
         ),
         const SizedBox(height: 20),
         _StatusSection(deviceId: deviceId),
@@ -253,6 +264,27 @@ class _StatusSection extends ConsumerWidget {
       }
     }
     return 'โหลดสถานะอุปกรณ์ไม่สำเร็จ';
+  }
+}
+
+/// ค่าที่เป็น null/ว่างแสดง "—" — แถวยังอยู่เสมอ ไม่ซ่อน
+String _orDash(String? value) => (value == null || value.isEmpty) ? '—' : value;
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        color: AppTheme.textPrimary,
+      ),
+    );
   }
 }
 
