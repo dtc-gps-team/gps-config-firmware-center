@@ -45,6 +45,14 @@ class TaskUrgencyStyle {
   /// หรือเหลือ ≤ 1 วัน (`dueSoon`, ขอบเขต inclusive) ถือว่าเร่งด่วน งานที่
   /// `completed`/`cancelled` หรือไม่มี `dueDate` เลย ไม่ถือว่าเร่งด่วนเลยไม่ว่า
   /// วันที่จะเป็นอย่างไร (งานจบไปแล้วไม่มีอะไรต้องเร่ง)
+  ///
+  /// **เทียบระดับ "วันปฏิทิน" ไม่ใช่ exact datetime** (แก้ตามรีวิว A บน PR
+  /// #313) — `Task.dueDate` เป็น timestamp เต็ม (openapi `date-time`) และ
+  /// backend/Web ไม่ normalize เป็นเที่ยงคืนเสมอไป (Web ยังไม่มีฟอร์มสร้างงาน
+  /// เลยด้วยซ้ำ) ถ้าเทียบแบบ exact datetime งานที่กำหนดส่ง "วันนี้" แต่
+  /// `dueDate` เป็นเที่ยงคืนจะขึ้น "เลยกำหนด" ทันทีตั้งแต่ 00:01 ทั้งที่ช่างยัง
+  /// มีเวลาทั้งวัน — เทียบวันปฏิทินแทนให้ "วันนี้" นับเป็น `dueSoon` เสมอ
+  /// ไม่ใช่ `overdue` จนกว่าจะข้ามวันไปแล้วจริง
   static TaskUrgency of(Task task, {DateTime? now}) {
     if (task.status == TaskStatus.completed ||
         task.status == TaskStatus.cancelled) {
@@ -53,10 +61,21 @@ class TaskUrgencyStyle {
     final due = task.dueDate;
     if (due == null) return TaskUrgency.none;
     final current = now ?? DateTime.now();
-    if (due.isBefore(current)) return TaskUrgency.overdue;
-    if (due.difference(current) <= const Duration(days: 1)) {
-      return TaskUrgency.dueSoon;
-    }
+    // `.toLocal()` ก่อนตัดเหลือแค่วัน — `dueDate` จาก backend มักเป็น UTC
+    // (suffix `Z`) เทียบ year/month/day ตรงๆ แบบ UTC จะได้ "วันปฏิทิน" ผิดได้
+    // ใกล้เที่ยงคืนสำหรับ timezone ที่ไม่ใช่ UTC — ต้องตรงกับวันที่ที่ผู้ใช้
+    // เห็นจริงบนจอ (เดียวกับที่ `_formatDate` ในหน้า Task List/Detail ใช้)
+    final dueLocal = due.toLocal();
+    final currentLocal = current.toLocal();
+    final dueDay = DateTime(dueLocal.year, dueLocal.month, dueLocal.day);
+    final today = DateTime(
+      currentLocal.year,
+      currentLocal.month,
+      currentLocal.day,
+    );
+    final dayDiff = dueDay.difference(today).inDays;
+    if (dayDiff < 0) return TaskUrgency.overdue;
+    if (dayDiff <= 1) return TaskUrgency.dueSoon;
     return TaskUrgency.none;
   }
 

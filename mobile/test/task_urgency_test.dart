@@ -23,10 +23,27 @@ void main() {
       );
     });
 
-    test('dueDate เลยมาแล้ว + status pending -> overdue', () {
-      final task = _task(dueDate: now.subtract(const Duration(hours: 1)));
-      expect(TaskUrgencyStyle.of(task, now: now), TaskUrgency.overdue);
-    });
+    test(
+      'dueDate เป็นเมื่อวาน (คนละวันปฏิทินกับวันนี้) + status pending -> overdue',
+      () {
+        final task = _task(dueDate: now.subtract(const Duration(days: 1)));
+        expect(TaskUrgencyStyle.of(task, now: now), TaskUrgency.overdue);
+      },
+    );
+
+    // พบจากรีวิว A บน PR #313 — เดิมเทียบ exact datetime ทำให้งาน "กำหนดส่ง
+    // วันนี้" ที่ dueDate เป็นเที่ยงคืนขึ้น "เลยกำหนด" ทันทีตั้งแต่ 00:01 ทั้งที่
+    // ช่างยังมีเวลาทั้งวัน — ต้องเทียบระดับ "วันปฏิทิน" ไม่ใช่เวลานาที/วินาที
+    test(
+      'กำหนดส่ง "วันนี้" แต่เวลาที่ตั้งไว้ผ่านมาแล้ว -> dueSoon ไม่ใช่ overdue',
+      () {
+        // dueDate เที่ยงคืนของวันนี้ (00:00) — ผ่านมาแล้วเมื่อเทียบ exact
+        // datetime กับ `now` เที่ยงวัน แต่ยังเป็น "วันนี้" ในปฏิทินเดียวกัน
+        final todayMidnight = DateTime(now.year, now.month, now.day);
+        final task = _task(dueDate: todayMidnight);
+        expect(TaskUrgencyStyle.of(task, now: now), TaskUrgency.dueSoon);
+      },
+    );
 
     test('dueDate เลยมาแล้ว + status inProgress -> overdue เหมือนกัน', () {
       final task = _task(
@@ -46,8 +63,8 @@ void main() {
       expect(TaskUrgencyStyle.of(task, now: now), TaskUrgency.dueSoon);
     });
 
-    test('dueDate เหลือมากกว่า 1 วัน -> none', () {
-      final task = _task(dueDate: now.add(const Duration(days: 1, minutes: 1)));
+    test('dueDate เหลือมากกว่า 1 วันปฏิทิน (มะรืนนี้) -> none', () {
+      final task = _task(dueDate: now.add(const Duration(days: 2)));
       expect(TaskUrgencyStyle.of(task, now: now), TaskUrgency.none);
     });
 
@@ -72,7 +89,7 @@ void main() {
     test('overdue/dueSoon -> true, none -> false', () {
       expect(
         TaskUrgencyStyle.isUrgent(
-          _task(dueDate: now.subtract(const Duration(hours: 1))),
+          _task(dueDate: now.subtract(const Duration(days: 1))),
           now: now,
         ),
         isTrue,
@@ -96,7 +113,7 @@ void main() {
       'overdue มาก่อน dueSoon มาก่อน none เสมอ และคงลำดับเดิมในกลุ่มเดียวกัน',
       () {
         final overdue1 = _task(dueDate: now.subtract(const Duration(days: 2)));
-        final overdue2 = _task(dueDate: now.subtract(const Duration(hours: 1)));
+        final overdue2 = _task(dueDate: now.subtract(const Duration(days: 1)));
         final dueSoon = _task(dueDate: now.add(const Duration(hours: 2)));
         final none1 = _task(dueDate: now.add(const Duration(days: 10)));
         final none2 = _task(dueDate: null);
