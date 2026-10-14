@@ -13,7 +13,11 @@ import { CampaignCreateForm } from "./campaign-create-form";
  * เพราะเป็น wizard 4 ขั้น ตอนนี้สร้างกลุ่มเปล่าๆ ขั้นตอนเดียว (เปลี่ยนชื่อให้
  * ตรงกับรูปแบบปัจจุบัน)
  */
-export function CampaignCreateView() {
+export function CampaignCreateView({
+  sourceIncidentId,
+}: {
+  sourceIncidentId?: string;
+}) {
   return (
     <RoleGuard allow={canCreateCampaign}>
       <div className="flex flex-col gap-6">
@@ -27,7 +31,7 @@ export function CampaignCreateView() {
           <h1 className="text-2xl font-semibold">สร้างกลุ่มอุปกรณ์ใหม่</h1>
         </div>
 
-        <CampaignCreateForm />
+        <CampaignCreateForm sourceIncidentId={sourceIncidentId} />
       </div>
     </RoleGuard>
   );
