@@ -239,6 +239,106 @@ void main() {
     });
   });
 
+  group('"งานค้างวันนี้" — Mobile UI Roadmap Phase 1 (เร่งด่วน)', () {
+    testWidgets('ไม่มีงานเร่งด่วนเลย -> section ไม่โผล่มาทั้งก้อน', (
+      tester,
+    ) async {
+      // _fakeTasks ปกติ: t3 (pending) ไม่มี dueDate เลย = ไม่เร่งด่วนตามเกณฑ์
+      await _pumpHome(tester, UserRole.st);
+
+      expect(find.byKey(const Key('urgent_tasks_section')), findsNothing);
+      expect(find.text('งานค้างวันนี้'), findsNothing);
+    });
+
+    testWidgets(
+      'มีงานเลยกำหนด + ใกล้ถึงกำหนด -> section โผล่ เรียง overdue ก่อน dueSoon',
+      (tester) async {
+        final now = DateTime.now();
+        final overdueTask = Task(
+          id: 'u1',
+          title: 'งานเลยกำหนดแล้ว',
+          assignedTo: 'u1',
+          status: TaskStatus.pending,
+          createdAt: now,
+          updatedAt: now,
+          deviceId: 'DVC-001',
+          dueDate: now.subtract(const Duration(days: 1)),
+        );
+        final dueSoonTask = Task(
+          id: 'u2',
+          title: 'งานใกล้ถึงกำหนด',
+          assignedTo: 'u1',
+          status: TaskStatus.inProgress,
+          createdAt: now,
+          updatedAt: now,
+          deviceId: 'DVC-002',
+          dueDate: now.add(const Duration(hours: 6)),
+        );
+        // งานเสร็จแล้วแม้ dueDate เลยกำหนดก็ต้องไม่ถูกนับเป็นเร่งด่วน
+        final completedOverdueLooking = Task(
+          id: 'u3',
+          title: 'งานเสร็จแล้ว (ไม่ควรนับเร่งด่วน)',
+          assignedTo: 'u1',
+          status: TaskStatus.completed,
+          createdAt: now,
+          updatedAt: now,
+          dueDate: now.subtract(const Duration(days: 10)),
+        );
+
+        await _pumpHome(
+          tester,
+          UserRole.st,
+          taskRepo: _FakeTaskRepository(
+            tasks: [dueSoonTask, overdueTask, completedOverdueLooking],
+          ),
+        );
+
+        expect(find.byKey(const Key('urgent_tasks_section')), findsOneWidget);
+        expect(find.text('งานค้างวันนี้'), findsOneWidget);
+        // งานเสร็จแล้วอาจโผล่ใน "ประวัติงานล่าสุด" ได้ตามปกติ แต่ต้องไม่ถูกนับ
+        // เป็นการ์ดเร่งด่วน — section เร่งด่วนต้องมีแค่ 2 การ์ด (overdue+dueSoon)
+        expect(find.byKey(const Key('urgent_task_card_0')), findsOneWidget);
+        expect(find.byKey(const Key('urgent_task_card_1')), findsOneWidget);
+        expect(find.byKey(const Key('urgent_task_card_2')), findsNothing);
+
+        // overdue ต้องมาก่อน dueSoon ในลำดับการ์ด
+        final overdueFinder = find.text('งานเลยกำหนดแล้ว');
+        final dueSoonFinder = find.text('งานใกล้ถึงกำหนด');
+        expect(overdueFinder, findsOneWidget);
+        expect(dueSoonFinder, findsOneWidget);
+        final overdueY = tester.getTopLeft(overdueFinder).dy;
+        final dueSoonY = tester.getTopLeft(dueSoonFinder).dy;
+        expect(overdueY, lessThan(dueSoonY));
+      },
+    );
+
+    testWidgets('แตะการ์ดงานเร่งด่วน -> navigate ไป Task Detail ของงานนั้น', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      final overdueTask = Task(
+        id: 'u9',
+        title: 'งานเลยกำหนดแล้ว',
+        assignedTo: 'u1',
+        status: TaskStatus.pending,
+        createdAt: now,
+        updatedAt: now,
+        dueDate: now.subtract(const Duration(days: 1)),
+      );
+
+      await _pumpHomeRouted(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(tasks: [overdueTask]),
+      );
+
+      await tester.tap(find.byKey(const Key('urgent_task_card_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('TASK_DETAIL_STUB u9'), findsOneWidget);
+    });
+  });
+
   group('"ประวัติงานล่าสุด" — ประวัติงานที่เสร็จแล้วจริงจาก GET /tasks', () {
     testWidgets('แสดงเฉพาะงานที่เสร็จแล้ว + สถิติงานเดือนนี้', (tester) async {
       await _pumpHome(tester, UserRole.st);
