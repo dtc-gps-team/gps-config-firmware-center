@@ -589,4 +589,354 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
       expect(body[0].assignedTo).toBe(stUser.id);
     });
   });
+
+  describe('Task Event History (issue #296 — timeline + note)', () => {
+    type EventBody = {
+      fromStatus: string | null;
+      toStatus: string | null;
+      changedBy: string | null;
+      changedByName: string | null;
+      changedAt: string;
+      note: string | null;
+    };
+
+    function getEvents(taskId: string, userId: string, role: string) {
+      return request(app.getHttpServer())
+        .get(`/api/v1/tasks/${taskId}/events`)
+        .set('Authorization', `Bearer ${tokenFor(userId, role)}`);
+    }
+
+    async function seedOwnTask() {
+      const stUser = await makeUser(prisma, {
+        role: 'ST',
+        fullName: 'ช่างสมชาย',
+      });
+      // สร้างย้อนหลัง 1 วัน — changedAt ที่ก่อน Task.createdAt ถูกปัดขึ้น
+      // (resolveChangedAt) เทสเวลาย้อนหลังต้องมีงานที่เก่ากว่านั้น
+      const task = await prisma.task.create({
+        data: {
+          title: 'mine',
+          assignedTo: stUser.id,
+          createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        },
+      });
+      return { stUser, task };
+    }
+
+    it('POST /tasks -> timeline เริ่มด้วย event "สร้างงาน" (null -> pending) ของผู้สร้าง', async () => {
+      const opUser = await makeUser(prisma, {
+        role: 'Operation',
+        fullName: 'คุณสั่งงาน',
+      });
+      const otUser = await makeUser(prisma, { role: 'OT' });
+
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/tasks')
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .send({ title: 'x', assignedTo: otUser.id })
+        .expect(201);
+      const task = created.body as { id: string; createdAt: string };
+
+      const res = await getEvents(task.id, otUser.id, 'OT').expect(200);
+      const events = res.body as EventBody[];
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        fromStatus: null,
+        toStatus: 'pending',
+        changedBy: opUser.id,
+        changedByName: 'คุณสั่งงาน',
+        changedAt: task.createdAt,
+        note: null,
+      });
+    });
+
+    it('PATCH status ด้วย changedAt (คิว offline) -> event ใช้เวลาที่กดจริง ไม่ใช่เวลา sync', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const tappedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .send({ status: 'in_progress', changedAt: tappedAt })
+        .expect(200);
+
+      const events = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(events).toEqual([
+        expect.objectContaining({
+          fromStatus: 'pending',
+          toStatus: 'in_progress',
+          changedBy: stUser.id,
+          changedByName: 'ช่างสมชาย',
+          changedAt: tappedAt,
+        }),
+      ]);
+    });
+
+    it('PATCH status ด้วย changedAt ในอนาคต -> ปัดลงเป็นเวลา server (ไม่ 400 — คิว offline ไม่ค้าง)', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const before = Date.now();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .send({ status: 'in_progress', changedAt: '2099-01-01T00:00:00.000Z' })
+        .expect(200);
+
+      const [event] = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      const at = new Date(event.changedAt).getTime();
+      expect(at).toBeGreaterThanOrEqual(before - 1000);
+      expect(at).toBeLessThanOrEqual(Date.now() + 1000);
+    });
+
+    it('PATCH changedAt ที่ไม่ใช่ ISO 8601 -> 400', async () => {
+      const { stUser, task } = await seedOwnTask();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .send({ status: 'in_progress', changedAt: 'yesterday' })
+        .expect(400);
+    });
+
+    it('PATCH changedAt โดยไม่ส่ง status -> 400 ไม่เกิด event', async () => {
+      const { stUser, task } = await seedOwnTask();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .send({ changedAt: new Date().toISOString() })
+        .expect(400);
+      expect(await prisma.taskEvent.count()).toBe(0);
+    });
+
+    it('PATCH ที่ถูกปฏิเสธ (งาน cancelled -> 409) ไม่ทิ้ง event ไว้ (rollback ทั้งทรานแซกชัน)', async () => {
+      const { stUser, task } = await seedOwnTask();
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { status: 'cancelled' },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(stUser.id, 'ST')}`)
+        .send({ status: 'completed' })
+        .expect(409);
+      expect(await prisma.taskEvent.count()).toBe(0);
+    });
+
+    it('timeline เรียงตาม changedAt จริง ไม่ใช่ลำดับที่ส่งเข้ามา (คิว offline ส่งช้ากว่าบันทึกที่เพิ่มทีหลัง)', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const token = `Bearer ${tokenFor(stUser.id, 'ST')}`;
+      // เริ่มงานตอน offline (เวลาเก่ากว่า) แต่ sync ขึ้นหลังบันทึก
+      await request(app.getHttpServer())
+        .post(`/api/v1/tasks/${task.id}/notes`)
+        .set('Authorization', token)
+        .send({ note: 'ถึงหน้างานแล้ว' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', token)
+        .send({
+          status: 'in_progress',
+          changedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        })
+        .expect(200);
+
+      const events = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(events.map((e) => e.toStatus ?? e.note)).toEqual([
+        'in_progress',
+        'ถึงหน้างานแล้ว',
+      ]);
+    });
+
+    // รีวิว A บน #302 (thread task.service.ts:137) — เคสที่ยกมาเป๊ะๆ: ช่าง
+    // กด in_progress แล้ว completed ตอนออฟไลน์ ระหว่างนั้น Operation เปลี่ยน
+    // pending -> in_progress บน Web แล้วคิวของช่างค่อย sync ทีหลัง
+    it('ช่างออฟไลน์ + Operation เปลี่ยนสถานะคั่นกลาง -> event ของช่างที่ sync ทีหลังไม่ย้อนไปอยู่ก่อน event ของ Operation (from→to ต่อกันเสมอ)', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const hour = 60 * 60 * 1000;
+      const tappedInProgress = new Date(Date.now() - 2 * hour).toISOString();
+      const tappedCompleted = new Date(Date.now() - 1.5 * hour).toISOString();
+
+      // 11:00 — Operation เปลี่ยน pending -> in_progress บน Web
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .send({ status: 'in_progress' })
+        .expect(200);
+      // 12:00 — คิวของช่าง sync: action แรกสถานะเท่าเดิม (ไม่เกิด event)
+      // action ที่สองเกิด event in_progress -> completed เวลาที่กดจริงเก่ากว่า
+      const stToken = `Bearer ${tokenFor(stUser.id, 'ST')}`;
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', stToken)
+        .send({ status: 'in_progress', changedAt: tappedInProgress })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', stToken)
+        .send({ status: 'completed', changedAt: tappedCompleted })
+        .expect(200);
+
+      const events = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(events.map((e) => [e.fromStatus, e.toStatus])).toEqual([
+        ['pending', 'in_progress'],
+        ['in_progress', 'completed'],
+      ]);
+      expect(events[0].changedBy).toBe(opUser.id);
+      expect(events[1].changedBy).toBe(stUser.id);
+      // ปัดขึ้นเป็นเวลาของ event Operation — ไม่ใช่เวลาที่ช่างกด (1.5 ชม.ก่อน)
+      expect(events[1].changedAt).toBe(events[0].changedAt);
+      expect(new Date(events[1].changedAt).getTime()).toBeGreaterThan(
+        new Date(tappedCompleted).getTime(),
+      );
+    });
+
+    // รีวิว A บน #302 (thread task.service.ts:429)
+    it('Operation ส่ง changedAt ย้อนหลังมา -> ไม่ใช้ event ได้เวลา server เสมอ', async () => {
+      const { stUser, task } = await seedOwnTask();
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      const before = Date.now();
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/tasks/${task.id}`)
+        .set('Authorization', `Bearer ${tokenFor(opUser.id, 'Operation')}`)
+        .send({
+          status: 'cancelled',
+          changedAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+        })
+        .expect(200);
+
+      const [event] = (await getEvents(task.id, stUser.id, 'ST').expect(200))
+        .body as EventBody[];
+      expect(event.toStatus).toBe('cancelled');
+      expect(new Date(event.changedAt).getTime()).toBeGreaterThanOrEqual(
+        before - 1000,
+      );
+    });
+
+    describe('GET /tasks/:id/events สิทธิ์ (กฎเดียวกับ GET /tasks/:id)', () => {
+      it('ไม่ส่ง token -> 401', async () => {
+        const { task } = await seedOwnTask();
+        await request(app.getHttpServer())
+          .get(`/api/v1/tasks/${task.id}/events`)
+          .expect(401);
+      });
+
+      it('taskId ไม่ใช่ uuid -> 400', async () => {
+        const { stUser } = await seedOwnTask();
+        await getEvents('not-a-uuid', stUser.id, 'ST').expect(400);
+      });
+
+      it.each(['Operation', 'Auditor', 'Admin', 'SuperAdmin'])(
+        '%s เห็น timeline ของงานคนอื่น -> 200',
+        async (role) => {
+          const { task } = await seedOwnTask();
+          const viewer = await makeUser(prisma, {
+            role: role as 'Operation',
+          });
+          await getEvents(task.id, viewer.id, role).expect(200);
+        },
+      );
+
+      it.each([
+        ['OT ที่ไม่ใช่เจ้าของงาน', 'OT'],
+        ['ConfigEngineer (นอก allowlist)', 'ConfigEngineer'],
+      ])('%s -> 404', async (_label, role) => {
+        const { task } = await seedOwnTask();
+        const viewer = await makeUser(prisma, { role: role as 'OT' });
+        await getEvents(task.id, viewer.id, role).expect(404);
+      });
+    });
+
+    describe('POST /tasks/:id/notes', () => {
+      function postNote(
+        taskId: string,
+        userId: string,
+        role: string,
+        body: object,
+      ) {
+        return request(app.getHttpServer())
+          .post(`/api/v1/tasks/${taskId}/notes`)
+          .set('Authorization', `Bearer ${tokenFor(userId, role)}`)
+          .send(body);
+      }
+
+      it('เจ้าของงาน (ST) -> 201 ได้ event ที่เป็นบันทึก (ไม่มี from/toStatus) + AuditLog add_note', async () => {
+        const { stUser, task } = await seedOwnTask();
+
+        const res = await postNote(task.id, stUser.id, 'ST', {
+          note: 'ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้',
+        }).expect(201);
+
+        expect(res.body).toMatchObject({
+          taskId: task.id,
+          fromStatus: null,
+          toStatus: null,
+          changedBy: stUser.id,
+          changedByName: 'ช่างสมชาย',
+          note: 'ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้',
+        });
+        const audit = await prisma.auditLog.findMany({
+          where: { userId: stUser.id, auditModule: 'task' },
+        });
+        expect(audit.map((a) => a.action)).toEqual(['add_note']);
+      });
+
+      it('Operation เพิ่มในงานของคนอื่น -> 201', async () => {
+        const { task } = await seedOwnTask();
+        const opUser = await makeUser(prisma, { role: 'Operation' });
+
+        await postNote(task.id, opUser.id, 'Operation', {
+          note: 'ตรวจแล้ว',
+        }).expect(201);
+      });
+
+      it('OT ที่ไม่ใช่เจ้าของงาน -> 404', async () => {
+        const { task } = await seedOwnTask();
+        const otUser = await makeUser(prisma, { role: 'OT' });
+
+        await postNote(task.id, otUser.id, 'OT', { note: 'x' }).expect(404);
+        expect(await prisma.taskEvent.count()).toBe(0);
+      });
+
+      it('Auditor (อ่านได้แต่เพิ่มไม่ได้) -> 403', async () => {
+        const { task } = await seedOwnTask();
+        const auditorUser = await makeUser(prisma, { role: 'Auditor' });
+
+        await postNote(task.id, auditorUser.id, 'Auditor', {
+          note: 'x',
+        }).expect(403);
+      });
+
+      it('งาน cancelled -> 409', async () => {
+        const { stUser, task } = await seedOwnTask();
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: 'cancelled' },
+        });
+
+        await postNote(task.id, stUser.id, 'ST', { note: 'x' }).expect(409);
+      });
+
+      it.each([
+        ['ไม่ส่ง note', {}],
+        ['note ว่าง', { note: '' }],
+        ['note ช่องว่างล้วน', { note: '   ' }],
+        ['note ยาวเกิน 2000', { note: 'ก'.repeat(2001) }],
+        [
+          'ส่ง field อื่นปน (photoUrl — ตัดออกจากสโคป)',
+          { note: 'x', photoUrl: 'a' },
+        ],
+      ])('%s -> 400', async (_label, body) => {
+        const { stUser, task } = await seedOwnTask();
+        await postNote(task.id, stUser.id, 'ST', body).expect(400);
+      });
+    });
+  });
 });

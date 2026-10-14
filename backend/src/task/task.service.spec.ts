@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -8,7 +9,7 @@ import { Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ActingUser, TaskService } from './task.service';
+import { ActingUser, resolveChangedAt, TaskService } from './task.service';
 
 /** จำลอง Prisma error ให้ตรงกับ shape จริงของ PrismaClientKnownRequestError
  * (ต้องมี code + clientVersion) — default เป็น P2025 ("Record to update not
@@ -68,6 +69,14 @@ describe('TaskService', () => {
   let device: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
   let notification: { send: jest.Mock };
+  let taskEvent: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    findFirst: jest.Mock;
+  };
+  // `SELECT ... FOR UPDATE` ของ lockTask() — default คืนแถวของ sampleTask
+  // (สถานะ pending) เทสไหนต้องการสถานะก่อนหน้าอื่นค่อย mock ทับ
+  let queryRaw: jest.Mock;
 
   beforeEach(async () => {
     task = {
@@ -82,13 +91,35 @@ describe('TaskService', () => {
     device = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     notification = { send: jest.fn().mockResolvedValue(undefined) };
+    taskEvent = {
+      create: jest.fn().mockResolvedValue(undefined),
+      findMany: jest.fn(),
+      // event เปลี่ยนสถานะล่าสุด (ขอบล่างของ changedAt) — default ไม่มี
+      findFirst: jest.fn().mockResolvedValue(null),
+    };
+    queryRaw = jest
+      .fn()
+      .mockResolvedValue([
+        { status: sampleTask.status, createdAt: sampleTask.createdAt },
+      ]);
+    // $transaction (interactive form) เรียก callback ด้วย prisma mock ตัวเดียวกัน
+    // เป็น tx — pattern เดียวกับ config.service.spec.ts
+    const prisma: Record<string, unknown> = {
+      task,
+      config,
+      device,
+      auditLog,
+      taskEvent,
+      $queryRaw: queryRaw,
+    };
+    prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         {
           provide: PrismaService,
-          useValue: { task, config, device, auditLog },
+          useValue: prisma,
         },
         { provide: NotificationService, useValue: notification },
       ],
@@ -853,6 +884,422 @@ describe('TaskService', () => {
       await expect(
         service.update(sampleTask.id, { status: 'completed' }, owner),
       ).resolves.toEqual({ ...sampleTask, status: 'completed' });
+    });
+  });
+
+  describe('Task Event History (issue #296)', () => {
+    describe('create() เขียน event "สร้างงาน"', () => {
+      it('null -> pending ในทรานแซกชันเดียวกับ Task · changedBy = ผู้สร้าง · changedAt = Task.createdAt', async () => {
+        task.create.mockResolvedValue(sampleTask);
+
+        await service.create(
+          { title: sampleTask.title, assignedTo: 'tech-1' },
+          operation,
+        );
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: {
+            taskId: sampleTask.id,
+            fromStatus: null,
+            toStatus: 'pending',
+            changedBy: operation.id,
+            changedAt: sampleTask.createdAt,
+          },
+        });
+      });
+    });
+
+    describe('update() เขียน event เปลี่ยนสถานะ', () => {
+      function ownerUpdates(nextStatus: Task['status']) {
+        task.updateMany.mockResolvedValue({ count: 1 });
+        task.findUniqueOrThrow.mockResolvedValue({
+          ...sampleTask,
+          status: nextStatus,
+        });
+      }
+
+      it('ST เปลี่ยน pending -> in_progress: fromStatus มาจากแถวที่ล็อกไว้ในทรานแซกชัน', async () => {
+        ownerUpdates('in_progress');
+
+        await service.update(sampleTask.id, { status: 'in_progress' }, owner);
+
+        expect(queryRaw).toHaveBeenCalled();
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            taskId: sampleTask.id,
+            fromStatus: 'pending',
+            toStatus: 'in_progress',
+            changedBy: owner.id,
+          }) as unknown,
+        });
+      });
+
+      it('ใช้ changedAt จาก client (เวลาที่ช่างกดตอนเข้าคิว offline)', async () => {
+        ownerUpdates('in_progress');
+        const tappedAt = '2026-01-02T03:04:05.000Z';
+
+        await service.update(
+          sampleTask.id,
+          { status: 'in_progress', changedAt: tappedAt },
+          owner,
+        );
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            changedAt: new Date(tappedAt),
+          }) as unknown,
+        });
+      });
+
+      it('ส่งสถานะเดิมซ้ำ (เช่น คิว offline ส่งซ้ำ): ไม่เกิด event', async () => {
+        ownerUpdates('in_progress');
+        queryRaw.mockResolvedValue([
+          { status: 'in_progress', createdAt: sampleTask.createdAt },
+        ]);
+
+        await service.update(sampleTask.id, { status: 'in_progress' }, owner);
+
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('Operation แก้แค่ title (ไม่ส่ง status): ไม่เกิด event', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        task.update.mockResolvedValue({ ...sampleTask, title: 'ใหม่' });
+
+        await service.update(sampleTask.id, { title: 'ใหม่' }, operation);
+
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('Operation ยกเลิกงาน: event in_progress -> cancelled', async () => {
+        queryRaw.mockResolvedValue([
+          { status: 'in_progress', createdAt: sampleTask.createdAt },
+        ]);
+        task.findUnique.mockResolvedValue({
+          ...sampleTask,
+          status: 'in_progress',
+        });
+        task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+
+        await service.update(sampleTask.id, { status: 'cancelled' }, operation);
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            fromStatus: 'in_progress',
+            toStatus: 'cancelled',
+            changedBy: operation.id,
+          }) as unknown,
+        });
+      });
+
+      it('updateMany ไม่โดนแถวไหน (ไม่ใช่งานตัวเอง): 404 ไม่เกิด event', async () => {
+        task.updateMany.mockResolvedValue({ count: 0 });
+        task.findUnique.mockResolvedValue({ ...sampleTask, assignedTo: 'x' });
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, owner),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('Operation: แถวหายไประหว่าง findOne กับการล็อก -> 404 ไม่ update', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        queryRaw.mockResolvedValue([]);
+
+        await expect(
+          service.update(sampleTask.id, { status: 'completed' }, operation),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(task.update).not.toHaveBeenCalled();
+      });
+
+      it('ส่ง changedAt โดยไม่ส่ง status: 400 ไม่แตะ DB', async () => {
+        await expect(
+          service.update(
+            sampleTask.id,
+            { changedAt: '2026-01-02T00:00:00.000Z' },
+            owner,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(task.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('ST: changedAt ย้อนไปก่อน event เปลี่ยนสถานะล่าสุด -> ปัดขึ้นเป็นเวลาของ event นั้น (Operation เปลี่ยนคั่นระหว่างช่างออฟไลน์ — รีวิว A บน #302)', async () => {
+        ownerUpdates('completed');
+        queryRaw.mockResolvedValue([
+          { status: 'in_progress', createdAt: sampleTask.createdAt },
+        ]);
+        const operationChangedAt = new Date('2026-01-05T11:00:00.000Z');
+        taskEvent.findFirst.mockResolvedValue({
+          changedAt: operationChangedAt,
+        });
+
+        await service.update(
+          sampleTask.id,
+          { status: 'completed', changedAt: '2026-01-05T10:30:00.000Z' },
+          owner,
+        );
+
+        expect(taskEvent.findFirst).toHaveBeenCalledWith({
+          where: { taskId: sampleTask.id, toStatus: { not: null } },
+          orderBy: { changedAt: 'desc' },
+          select: { changedAt: true },
+        });
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            fromStatus: 'in_progress',
+            toStatus: 'completed',
+            changedAt: operationChangedAt,
+          }) as unknown,
+        });
+      });
+
+      it('ST: changedAt หลัง event ล่าสุด -> ใช้เวลาที่ client ส่งมาตามเดิม', async () => {
+        ownerUpdates('in_progress');
+        taskEvent.findFirst.mockResolvedValue({
+          changedAt: new Date('2026-01-02T00:00:00.000Z'),
+        });
+
+        await service.update(
+          sampleTask.id,
+          { status: 'in_progress', changedAt: '2026-01-03T00:00:00.000Z' },
+          owner,
+        );
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            changedAt: new Date('2026-01-03T00:00:00.000Z'),
+          }) as unknown,
+        });
+      });
+
+      it('Operation ส่ง changedAt ย้อนหลังมา -> ไม่ใช้ ใช้เวลา server เสมอ (Web ไม่มีคิว offline — รีวิว A บน #302)', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+        const before = Date.now();
+
+        await service.update(
+          sampleTask.id,
+          { status: 'cancelled', changedAt: '2026-01-01T00:00:01.000Z' },
+          operation,
+        );
+
+        const data = (
+          taskEvent.create.mock.calls[0] as [{ data: { changedAt: Date } }]
+        )[0].data;
+        expect(data.changedAt.getTime()).toBeGreaterThanOrEqual(before);
+        expect(data.changedAt.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(taskEvent.findFirst).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('resolveChangedAt', () => {
+      const createdAt = new Date('2026-01-01T00:00:00.000Z');
+      const now = new Date('2026-01-10T00:00:00.000Z');
+
+      it('ไม่ส่งมา: ใช้เวลา server', () => {
+        expect(resolveChangedAt(undefined, createdAt, now)).toEqual(now);
+      });
+
+      it('อยู่ระหว่างสร้างงานกับตอนนี้: ใช้ค่าที่ส่งมา', () => {
+        expect(
+          resolveChangedAt('2026-01-05T12:00:00.000Z', createdAt, now),
+        ).toEqual(new Date('2026-01-05T12:00:00.000Z'));
+      });
+
+      it('อยู่ในอนาคต (นาฬิกาเครื่องเดินเร็ว): ปัดลงเป็นเวลา server', () => {
+        expect(
+          resolveChangedAt('2026-02-01T00:00:00.000Z', createdAt, now),
+        ).toEqual(now);
+      });
+
+      it('ก่อนงานถูกสร้าง: ปัดขึ้นเป็น Task.createdAt', () => {
+        expect(
+          resolveChangedAt('2025-12-01T00:00:00.000Z', createdAt, now),
+        ).toEqual(createdAt);
+      });
+    });
+
+    describe('findEvents()', () => {
+      const event = {
+        id: 'e1',
+        taskId: sampleTask.id,
+        fromStatus: null,
+        toStatus: 'pending',
+        changedBy: 'op-1',
+        changedAt: sampleTask.createdAt,
+        note: null,
+        createdAt: sampleTask.createdAt,
+        changer: { fullName: 'คุณ Operation' },
+      };
+
+      it('เจ้าของงาน (ST): คืน timeline เรียง changedAt เก่าไปใหม่ พร้อมชื่อผู้ทำ', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        taskEvent.findMany.mockResolvedValue([event]);
+
+        const result = await service.findEvents(sampleTask.id, owner);
+
+        expect(taskEvent.findMany).toHaveBeenCalledWith({
+          where: { taskId: sampleTask.id },
+          orderBy: [{ changedAt: 'asc' }, { createdAt: 'asc' }],
+          include: { changer: { select: { fullName: true } } },
+        });
+        expect(result).toEqual([
+          {
+            id: 'e1',
+            taskId: sampleTask.id,
+            fromStatus: null,
+            toStatus: 'pending',
+            changedBy: 'op-1',
+            changedByName: 'คุณ Operation',
+            changedAt: sampleTask.createdAt,
+            note: null,
+          },
+        ]);
+      });
+
+      it('event ที่ backfill (ไม่รู้ผู้สร้าง): changedBy/changedByName เป็น null', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        taskEvent.findMany.mockResolvedValue([
+          { ...event, changedBy: null, changer: null },
+        ]);
+
+        const [result] = await service.findEvents(sampleTask.id, operation);
+
+        expect(result.changedBy).toBeNull();
+        expect(result.changedByName).toBeNull();
+      });
+
+      it.each([
+        ['Operation', operation],
+        ['Auditor', auditor],
+        ['Admin', admin],
+        ['SuperAdmin', superAdmin],
+      ])(
+        '%s เห็น timeline ของงานคนอื่นได้ (กฎเดียวกับ findOne)',
+        async (_label, actor) => {
+          task.findUnique.mockResolvedValue(sampleTask);
+          taskEvent.findMany.mockResolvedValue([]);
+
+          await expect(
+            service.findEvents(sampleTask.id, actor),
+          ).resolves.toEqual([]);
+        },
+      );
+
+      it.each([
+        ['ST/OT ที่ไม่ใช่เจ้าของงาน', otherTech],
+        ['role นอก allowlist (ConfigEngineer)', configEngineer],
+      ])('%s: 404 ไม่อ่าน event เลย', async (_label, actor) => {
+        task.findUnique.mockResolvedValue(sampleTask);
+
+        await expect(
+          service.findEvents(sampleTask.id, actor),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(taskEvent.findMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('addNote()', () => {
+      const noteEvent = {
+        id: 'n1',
+        taskId: sampleTask.id,
+        fromStatus: null,
+        toStatus: null,
+        changedBy: owner.id,
+        changedAt: new Date('2026-01-03T00:00:00.000Z'),
+        note: 'ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้',
+        createdAt: new Date('2026-01-03T00:00:00.000Z'),
+        changer: { fullName: 'ช่าง ST' },
+      };
+
+      it('เจ้าของงาน (ST): เพิ่มได้ ตัดช่องว่างหัวท้าย เขียน AuditLog add_note', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        taskEvent.create.mockResolvedValue(noteEvent);
+
+        const result = await service.addNote(
+          sampleTask.id,
+          { note: '  ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้  ' },
+          owner,
+        );
+
+        expect(taskEvent.create).toHaveBeenCalledWith({
+          data: {
+            taskId: sampleTask.id,
+            changedBy: owner.id,
+            note: 'ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้',
+          },
+          include: { changer: { select: { fullName: true } } },
+        });
+        expect(result.note).toBe('ลูกค้าไม่อยู่ นัดใหม่พรุ่งนี้');
+        expect(result.toStatus).toBeNull();
+        expect(result.changedByName).toBe('ช่าง ST');
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: { userId: owner.id, auditModule: 'task', action: 'add_note' },
+        });
+      });
+
+      it('Operation: เพิ่มในงานของคนอื่นได้', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+        taskEvent.create.mockResolvedValue({
+          ...noteEvent,
+          changedBy: operation.id,
+        });
+
+        await expect(
+          service.addNote(sampleTask.id, { note: 'ตรวจแล้ว' }, operation),
+        ).resolves.toMatchObject({ changedBy: operation.id });
+      });
+
+      it('ST/OT ที่ไม่ใช่เจ้าของงาน: 404 (IDOR) ไม่เขียนอะไร', async () => {
+        task.findUnique.mockResolvedValue(sampleTask);
+
+        await expect(
+          service.addNote(sampleTask.id, { note: 'x' }, otherTech),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('ไม่มีงานนี้: 404', async () => {
+        task.findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.addNote(sampleTask.id, { note: 'x' }, operation),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it.each([
+        ['Auditor', auditor],
+        ['Admin', admin],
+        ['SuperAdmin', superAdmin],
+        ['ConfigEngineer', configEngineer],
+      ])(
+        '%s: 403 (อ่าน timeline ได้แต่เพิ่มบันทึกไม่ได้)',
+        async (_label, actor) => {
+          await expect(
+            service.addNote(sampleTask.id, { note: 'x' }, actor),
+          ).rejects.toBeInstanceOf(ForbiddenException);
+          expect(task.findUnique).not.toHaveBeenCalled();
+        },
+      );
+
+      it('งานที่ถูกยกเลิกแล้ว: 409', async () => {
+        task.findUnique.mockResolvedValue({
+          ...sampleTask,
+          status: 'cancelled',
+        });
+
+        await expect(
+          service.addNote(sampleTask.id, { note: 'x' }, owner),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('ช่องว่างล้วน: 400', async () => {
+        await expect(
+          service.addNote(sampleTask.id, { note: '   ' }, owner),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(taskEvent.create).not.toHaveBeenCalled();
+      });
     });
   });
 });

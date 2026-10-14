@@ -118,8 +118,16 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
       .set('Authorization', `Bearer ${tokenFor(caller.id, 'Auditor')}`)
       .expect(200);
 
-    const body = res.body as { action: string }[];
-    expect(body.map((r) => r.action)).toEqual(['approve', 'create']);
+    const body = res.body as {
+      items: { action: string }[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    expect(body.items.map((r) => r.action)).toEqual(['approve', 'create']);
+    expect(body.total).toBe(2);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(20);
   });
 
   it('filter auditModule + action', async () => {
@@ -142,7 +150,11 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
       .set('Authorization', `Bearer ${tokenFor(caller.id, 'Admin')}`)
       .expect(200);
 
-    const body = res.body as { auditModule: string; action: string }[];
+    const body = (
+      res.body as {
+        items: { auditModule: string; action: string }[];
+      }
+    ).items;
     expect(body).toHaveLength(1);
     expect(body[0].auditModule).toBe('config-deletion');
     expect(body[0].action).toBe('approve');
@@ -165,8 +177,55 @@ describe('AuditController (integration — real postgres + guard chain)', () => 
       .set('Authorization', `Bearer ${tokenFor(caller.id, 'Operation')}`)
       .expect(200);
 
-    const body = res.body as { userId: string }[];
+    const body = (res.body as { items: { userId: string }[] }).items;
     expect(body).toHaveLength(1);
     expect(body[0].userId).toBe(actorA.id);
+  });
+
+  it('page/pageSize -> ได้เฉพาะหน้าที่ขอ + total ยังนับทุกแถวที่ตรง filter', async () => {
+    const actor = await makeUser(prisma, { role: 'ConfigEngineer' });
+    for (let i = 1; i <= 5; i++) {
+      await prisma.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: 'config',
+          action: `action-${i}`,
+          createdAt: new Date(`2026-01-0${i}T00:00:00.000Z`),
+        },
+      });
+    }
+    const caller = await makeUser(prisma, { role: 'Auditor' });
+    await grant('Auditor', ActionType.Read, 'audit-logs');
+
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/audit-logs?page=2&pageSize=2')
+      .set('Authorization', `Bearer ${tokenFor(caller.id, 'Auditor')}`)
+      .expect(200);
+
+    const body = res.body as {
+      items: { action: string }[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
+    expect(body.items.map((r) => r.action)).toEqual(['action-3', 'action-2']);
+    expect(body.total).toBe(5);
+    expect(body.page).toBe(2);
+    expect(body.pageSize).toBe(2);
+  });
+
+  it('pageSize เกิน 100 หรือ page < 1 -> 400', async () => {
+    const caller = await makeUser(prisma, { role: 'Auditor' });
+    await grant('Auditor', ActionType.Read, 'audit-logs');
+    const token = tokenFor(caller.id, 'Auditor');
+
+    await request(app.getHttpServer())
+      .get('/api/v1/audit-logs?pageSize=101')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/audit-logs?page=0')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
   });
 });

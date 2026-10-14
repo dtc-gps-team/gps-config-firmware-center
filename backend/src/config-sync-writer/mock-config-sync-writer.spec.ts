@@ -4,7 +4,7 @@ import { LegacyConfigWrite } from './config-sync-writer.interface';
 
 describe('MockConfigSyncWriter', () => {
   let writer: MockConfigSyncWriter;
-  let logSpy: jest.SpyInstance<void, [message: unknown]>;
+  let logSpy: jest.SpyInstance<void, [message: any, ...optionalParams: any[]]>;
 
   const lastLog = (): string => String(logSpy.mock.calls[0]?.[0]);
 

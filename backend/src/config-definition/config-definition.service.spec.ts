@@ -6,7 +6,10 @@ import {
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConfigDefinitionService } from './config-definition.service';
+import {
+  ActingUser,
+  ConfigDefinitionService,
+} from './config-definition.service';
 import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
 
 const gt06nTcp: ConfigFieldDefinitionModelSupport = {
@@ -72,21 +75,42 @@ function makeP2002(): PrismaClientKnownRequestError {
   });
 }
 
+const actor: ActingUser = {
+  id: 'admin-1',
+  role: 'Admin',
+  ipAddress: '10.0.0.7',
+};
+
 describe('ConfigDefinitionService', () => {
   let service: ConfigDefinitionService;
   let findMany: jest.Mock;
   let create: jest.Mock;
+  let auditCreate: jest.Mock;
+  let transaction: jest.Mock;
+
+  const createDefinition = (dto: CreateConfigDefinitionDto) =>
+    service.create(dto, actor);
 
   beforeEach(async () => {
     findMany = jest.fn();
     create = jest.fn();
+    auditCreate = jest.fn().mockResolvedValue({});
+    // $transaction แบบ interactive — tx client มี configFieldDefinition + auditLog
+    const tx = {
+      configFieldDefinition: { create },
+      auditLog: { create: auditCreate },
+    };
+    transaction = jest.fn((cb: (client: typeof tx) => unknown) => cb(tx));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConfigDefinitionService,
         {
           provide: PrismaService,
-          useValue: { configFieldDefinition: { findMany, create } },
+          useValue: {
+            configFieldDefinition: { findMany, create },
+            $transaction: transaction,
+          },
         },
       ],
     }).compile();
@@ -122,10 +146,54 @@ describe('ConfigDefinitionService', () => {
       supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
     };
 
+    it('เขียน AuditLog ใน tx เดียวกับการสร้าง พร้อม IP และชื่อ field (ไม่เก็บค่า)', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await createDefinition({ ...dto, defaultValue: 'internet' });
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditCreate).toHaveBeenCalledWith({
+        data: {
+          userId: 'admin-1',
+          auditModule: 'config-definition',
+          action: 'create',
+          ipAddress: '10.0.0.7',
+          metadata: { fieldNames: [apnDef.fieldName] },
+        },
+      });
+    });
+
+    it('เขียน AuditLog ไม่สำเร็จ -> การสร้างล้มตามไปด้วย (ไม่ใช่ never-throw)', async () => {
+      create.mockResolvedValue(apnDef);
+      auditCreate.mockRejectedValue(new Error('audit down'));
+
+      await expect(createDefinition(dto)).rejects.toThrow('audit down');
+    });
+
+    it('ชื่อซ้ำ (P2002) -> ConflictException และไม่เขียน AuditLog', async () => {
+      create.mockRejectedValue(
+        new PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(createDefinition(dto)).rejects.toThrow(ConflictException);
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
+    it('validate ไม่ผ่านก่อนสร้าง -> ไม่เปิดทรานแซกชันและไม่เขียน AuditLog', async () => {
+      await expect(
+        createDefinition({ ...dto, sensitive: true, defaultValue: 'secret' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(transaction).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
     it('สร้าง field definition ใหม่พร้อม supportedModels ที่ระบุ', async () => {
       create.mockResolvedValue(apnDef);
 
-      const result = await service.create(dto);
+      const result = await createDefinition(dto);
 
       expect(result).toEqual(apnDef);
       expect(create).toHaveBeenCalledWith({
@@ -153,7 +221,7 @@ describe('ConfigDefinitionService', () => {
     it('ส่ง description + unit มา -> เขียนลง DB ตามนั้น', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({
+      await createDefinition({
         ...dto,
         description: 'ช่วงเวลารายงาน',
         unit: 'วินาที',
@@ -184,7 +252,7 @@ describe('ConfigDefinitionService', () => {
     it('ส่ง unknownSpec: true มา -> เขียนลง DB ตามนั้น (ไม่ default เป็น false)', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({ ...dto, unknownSpec: true });
+      await createDefinition({ ...dto, unknownSpec: true });
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -211,7 +279,7 @@ describe('ConfigDefinitionService', () => {
     it('ส่ง stOverridable: true มา -> เขียนลง DB ตามนั้น', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({ ...dto, stOverridable: true });
+      await createDefinition({ ...dto, stOverridable: true });
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -238,7 +306,7 @@ describe('ConfigDefinitionService', () => {
     it('ส่ง category/sensitive/restartRequired มา -> เขียนลง DB ตามนั้น', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({
+      await createDefinition({
         ...dto,
         category: 'Network',
         sensitive: true,
@@ -270,7 +338,7 @@ describe('ConfigDefinitionService', () => {
     it('ส่ง defaultValue มา -> เขียนลง DB ตามนั้น (issue #202)', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({ ...dto, defaultValue: 'internet' });
+      await createDefinition({ ...dto, defaultValue: 'internet' });
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -297,7 +365,7 @@ describe('ConfigDefinitionService', () => {
     it('ไม่ส่ง defaultValue มา -> ยังสร้างได้ตามปกติ (undefined, ไม่ error)', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create(dto);
+      await createDefinition(dto);
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -323,7 +391,7 @@ describe('ConfigDefinitionService', () => {
 
     it('sensitive: true + defaultValue มีค่า -> BadRequestException กันค่ารั่วผ่าน GET /config-definitions', async () => {
       await expect(
-        service.create({
+        createDefinition({
           ...dto,
           sensitive: true,
           defaultValue: 'super-secret-password',
@@ -336,7 +404,7 @@ describe('ConfigDefinitionService', () => {
     it('sensitive: true + ไม่ส่ง defaultValue มา -> ผ่านปกติ', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({ ...dto, sensitive: true });
+      await createDefinition({ ...dto, sensitive: true });
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -363,7 +431,7 @@ describe('ConfigDefinitionService', () => {
     it('sensitive: true + defaultValue เป็น "" (ว่างเปล่า) -> ผ่านปกติ (ไม่ถือว่ามีค่า)', async () => {
       create.mockResolvedValue(apnDef);
 
-      await service.create({ ...dto, sensitive: true, defaultValue: '' });
+      await createDefinition({ ...dto, sensitive: true, defaultValue: '' });
 
       expect(create).toHaveBeenCalledWith({
         data: {
@@ -403,7 +471,7 @@ describe('ConfigDefinitionService', () => {
         create.mockResolvedValue(apnDef);
 
         await expect(
-          service.create({ ...dto, dataType, defaultValue }),
+          createDefinition({ ...dto, dataType, defaultValue }),
         ).resolves.toEqual(apnDef);
       },
     );
@@ -440,7 +508,7 @@ describe('ConfigDefinitionService', () => {
       'defaultValue "%s" ไม่ตรงกับ dataType %s -> BadRequestException',
       async (dataType, defaultValue) => {
         await expect(
-          service.create({ ...dto, dataType, defaultValue }),
+          createDefinition({ ...dto, dataType, defaultValue }),
         ).rejects.toThrow(BadRequestException);
 
         expect(create).not.toHaveBeenCalled();
@@ -450,13 +518,13 @@ describe('ConfigDefinitionService', () => {
     it('fieldName ซ้ำ (P2002) -> ConflictException', async () => {
       create.mockRejectedValue(makeP2002());
 
-      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+      await expect(createDefinition(dto)).rejects.toThrow(ConflictException);
     });
 
     it('error อื่นที่ไม่ใช่ P2002 -> โยนต่อตรงๆ', async () => {
       create.mockRejectedValue(new Error('db down'));
 
-      await expect(service.create(dto)).rejects.toThrow('db down');
+      await expect(createDefinition(dto)).rejects.toThrow('db down');
     });
   });
 

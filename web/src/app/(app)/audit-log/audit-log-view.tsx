@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { HistoryIcon, RefreshCwIcon, SearchXIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  HistoryIcon,
+  RefreshCwIcon,
+  SearchXIcon,
+} from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessAuditLog } from "@/lib/permissions";
@@ -46,6 +52,9 @@ const AUDIT_MODULE_OPTIONS = [
   { value: "device", label: "Device" },
 ];
 
+/** แถวต่อหน้า — ตรงกับ default `pageSize` ของ backend (`GET /audit-logs`) */
+const PAGE_SIZE = 20;
+
 /**
  * เนื้อหาจริงของหน้า Audit Log — แยกเป็น client component ต่างหากจาก
  * page.tsx (server component ที่ export metadata) เพราะ RoleGuard ต้องใช้
@@ -54,12 +63,21 @@ const AUDIT_MODULE_OPTIONS = [
 export function AuditLogView() {
   const [auditModule, setAuditModule] = useState("");
   const [action, setAction] = useState("");
+  // ไม่ต้องกันกรณีหน้าปัจจุบันเกินจำนวนหน้าจริง — AuditLog เพิ่มอย่างเดียว
+  // ไม่มีการลบแถว และเปลี่ยน filter แล้วกลับไปหน้า 1 เสมอ
+  const [page, setPage] = useState(1);
   const debouncedAction = useDebouncedValue(action.trim(), 300);
-  const { data, isLoading, error, refetch } = useAuditLogs({
+  const { data, total, isLoading, error, refetch } = useAuditLogs({
     auditModule: auditModule || undefined,
     action: debouncedAction || undefined,
+    page,
+    pageSize: PAGE_SIZE,
   });
   const rows = data ?? [];
+  const totalPages = total ? Math.ceil(total / PAGE_SIZE) : 0;
+
+  const firstRow = (page - 1) * PAGE_SIZE + 1;
+  const lastRow = firstRow + rows.length - 1;
 
   return (
     <RoleGuard allow={canAccessAuditLog}>
@@ -67,7 +85,8 @@ export function AuditLogView() {
         <div>
           <h1 className="text-2xl font-semibold">Audit Log</h1>
           <p className="text-sm text-muted-foreground">
-            ดูได้อย่างเดียวทุก Role ยกเว้น ConfigEngineer/FirmwareEngineer/QAEngineer
+            ดูได้อย่างเดียวทุก Role ยกเว้น
+            ConfigEngineer/FirmwareEngineer/QAEngineer
           </p>
         </div>
 
@@ -75,7 +94,9 @@ export function AuditLogView() {
           <CardHeader>
             <CardTitle>
               ประวัติการทำงาน{" "}
-              <span className="text-muted-foreground">({rows.length})</span>
+              <span className="text-muted-foreground">
+                ({(total ?? 0).toLocaleString("th-TH")})
+              </span>
             </CardTitle>
             <CardDescription>
               เรียงจากล่าสุด เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
@@ -99,7 +120,10 @@ export function AuditLogView() {
             <div className="flex flex-wrap gap-2">
               <Select
                 value={auditModule}
-                onValueChange={(value) => setAuditModule(value ?? "")}
+                onValueChange={(value) => {
+                  setAuditModule(value ?? "");
+                  setPage(1);
+                }}
               >
                 <SelectTrigger className="h-8 max-w-48">
                   <SelectValue placeholder="โมดูล: ทั้งหมด">
@@ -120,7 +144,10 @@ export function AuditLogView() {
               </Select>
               <Input
                 value={action}
-                onChange={(e) => setAction(e.target.value)}
+                onChange={(e) => {
+                  setAction(e.target.value);
+                  setPage(1);
+                }}
                 placeholder="ค้นหา action เช่น create, approve, reject…"
                 className="h-8 max-w-64"
               />
@@ -141,7 +168,9 @@ export function AuditLogView() {
               </div>
             ) : rows.length === 0 ? (
               <EmptyState
-                icon={auditModule || debouncedAction ? SearchXIcon : HistoryIcon}
+                icon={
+                  auditModule || debouncedAction ? SearchXIcon : HistoryIcon
+                }
                 message={
                   auditModule || debouncedAction
                     ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
@@ -167,9 +196,7 @@ export function AuditLogView() {
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {new Date(row.createdAt).toLocaleString("th-TH")}
                       </TableCell>
-                      <TableCell className="text-xs">
-                        {row.actorName}
-                      </TableCell>
+                      <TableCell className="text-xs">{row.actorName}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {row.auditModule}
                       </TableCell>
@@ -183,6 +210,39 @@ export function AuditLogView() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+
+            {totalPages > 1 && rows.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm text-muted-foreground">
+                <span className="tabular-nums">
+                  แสดง {firstRow.toLocaleString("th-TH")}-
+                  {lastRow.toLocaleString("th-TH")} จาก{" "}
+                  {(total ?? 0).toLocaleString("th-TH")} รายการ
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => p - 1)}
+                    disabled={isLoading || page <= 1}
+                  >
+                    <ChevronLeftIcon />
+                    ก่อนหน้า
+                  </Button>
+                  <span className="tabular-nums">
+                    หน้า {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={isLoading || page >= totalPages}
+                  >
+                    ถัดไป
+                    <ChevronRightIcon />
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

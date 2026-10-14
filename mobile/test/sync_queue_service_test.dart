@@ -20,14 +20,22 @@ class _FakeApiClient extends ApiClient {
   /// Per-task rejection (e.g. a 403 for one task only).
   final Map<String, ApiException> reject = {};
   final List<(String, TaskStatus)> updates = [];
+
+  /// `changedAt` sent with each update, same order as [updates].
+  final List<DateTime?> changedAts = [];
   final Map<String, Task> serverTasks = {};
 
   /// When set, `updateTaskStatus` waits on it (request "on the wire").
   Completer<void>? gate;
 
   @override
-  Future<Task> updateTaskStatus(String taskId, TaskStatus status) async {
+  Future<Task> updateTaskStatus(
+    String taskId,
+    TaskStatus status, {
+    DateTime? changedAt,
+  }) async {
     updates.add((taskId, status));
+    changedAts.add(changedAt);
     if (gate != null) await gate!.future;
     final outcome = error ?? reject[taskId];
     if (outcome != null) throw outcome;
@@ -93,6 +101,26 @@ void main() {
         expect(await db.pendingActionDao.getFailed(), isEmpty);
         expect((await db.taskDao.getTaskById('a'))!.status, 'completed');
         expect((await db.taskDao.getTaskById('b'))!.status, 'completed');
+      },
+    );
+
+    test(
+      'ส่ง changedAt = เวลาที่เข้าคิว (เวลาที่ช่างกดจริง) ไม่ใช่เวลาที่ sync ได้ — issue #296',
+      () async {
+        api.error = ApiException('offline');
+        await enqueue('a', TaskStatus.inProgress);
+        await sync.flush();
+        final queuedAt =
+            (await db.pendingActionDao.getPending()).single.createdAt;
+
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        api.error = null;
+        api.updates.clear();
+        api.changedAts.clear();
+        await sync.flush();
+
+        expect(api.updates, [('a', TaskStatus.inProgress)]);
+        expect(api.changedAts, [queuedAt]);
       },
     );
 

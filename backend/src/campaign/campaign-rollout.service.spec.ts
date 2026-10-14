@@ -74,6 +74,7 @@ const sampleRollout: CampaignRollout = {
   createdBy: operation.id,
   approvedBy: null,
   approvedAt: null,
+  activeWindowStartedAt: null,
   isRollback: false,
   rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -317,6 +318,7 @@ describe('CampaignRolloutService', () => {
           userId: operation.id,
           auditModule: 'campaign',
           action: 'create',
+          ipAddress: null,
         },
       });
     });
@@ -750,6 +752,7 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
             fieldNames: [],
           },
+          ipAddress: null,
         },
       });
     });
@@ -1130,6 +1133,7 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
             fieldNames: [],
           },
+          ipAddress: null,
         },
       });
     });
@@ -1427,6 +1431,7 @@ describe('CampaignRolloutService', () => {
             firmwareId: storedFirmware.id,
             firmwareVersion: storedFirmware.version,
           },
+          ipAddress: null,
         },
       });
     });
@@ -1505,6 +1510,7 @@ describe('CampaignRolloutService', () => {
             firmwareId: storedFirmware.id,
             firmwareVersion: storedFirmware.version,
           },
+          ipAddress: null,
         },
       });
       expect(result.status).toBe('paused');
@@ -1622,6 +1628,7 @@ describe('CampaignRolloutService', () => {
             deviceId: 'DEV-0001',
             firmwareId: storedFirmware.id,
           },
+          ipAddress: null,
         },
       });
     });
@@ -1948,6 +1955,7 @@ describe('CampaignRolloutService', () => {
           userId: resumingOperator.id,
           auditModule: 'campaign',
           action: 'resume',
+          ipAddress: null,
         },
       });
       // audit ของ apply-config รายเครื่องที่ auto-apply ทำต่อ — ต้องระบุ
@@ -1963,6 +1971,7 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
             fieldNames: [],
           },
+          ipAddress: null,
         },
       });
       expect(auditLog.create).not.toHaveBeenCalledWith(
@@ -2169,6 +2178,7 @@ describe('CampaignRolloutService', () => {
           userId: operation.id,
           auditModule: 'campaign',
           action: 'rollback',
+          ipAddress: null,
         },
       });
     });
