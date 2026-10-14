@@ -793,6 +793,10 @@ class Device {
     required this.status,
     required this.registeredAt,
     this.installedAt,
+    this.imei,
+    this.serialNumber,
+    this.blackboxId,
+    this.customer,
   });
 
   final String id;
@@ -803,6 +807,15 @@ class Device {
   final DeviceLifecycleStatus status;
   final DateTime registeredAt;
   final DateTime? installedAt;
+
+  /// ตัวระบุตัวเครื่อง — nullable ตาม spec (เครื่องที่ลงทะเบียนก่อนมีกติกา
+  /// บังคับกรอกอาจยังเป็น null) Web แสดงที่หน้า Device Detail แล้ว
+  final String? imei;
+  final String? serialNumber;
+  final String? blackboxId;
+
+  /// ลูกค้าเจ้าของอุปกรณ์ (`customer: {id, companyName}`) — null = ยังไม่ผูก
+  final Customer? customer;
 
   factory Device.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
@@ -819,6 +832,12 @@ class Device {
       // slightly-off payload renders instead of throwing (same as Task).
       registeredAt: parseDate(json['registeredAt']) ?? DateTime.now(),
       installedAt: parseDate(json['installedAt']),
+      imei: json['imei'] as String?,
+      serialNumber: json['serialNumber'] as String?,
+      blackboxId: json['blackboxId'] as String?,
+      customer: json['customer'] is Map<String, dynamic>
+          ? Customer.fromJson(json['customer'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

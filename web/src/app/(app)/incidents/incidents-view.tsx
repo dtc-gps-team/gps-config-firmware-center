@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCwIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useIncidents } from "@/hooks/use-incidents";
+import { useUserNames } from "@/hooks/use-user-names";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -36,7 +38,12 @@ import {
   StatusPill,
   statusLabel,
 } from "@/lib/status-pill";
-import type { IncidentStatus } from "@/lib/incident-api";
+import {
+  FIELD_REPORT_SOURCE,
+  type IncidentDecisionOutcome,
+  type IncidentDecisionResult,
+  type IncidentStatus,
+} from "@/lib/incident-api";
 import { IncidentActions } from "./incident-actions";
 
 const INCIDENT_STATUS_OPTIONS: { value: IncidentStatus; label: string }[] = [
@@ -44,7 +51,7 @@ const INCIDENT_STATUS_OPTIONS: { value: IncidentStatus; label: string }[] = [
   { value: "investigating", label: "Investigating" },
   { value: "rolled_back", label: "Rollback แล้ว" },
   { value: "resolved", label: "Resolved" },
-  { value: "dismissed", label: "ไม่ใช่ปัญหา" },
+  { value: "dismissed", label: "ไม่ต้องดำเนินการ" },
 ];
 
 /**
@@ -64,6 +71,23 @@ export function IncidentsView() {
     status: status || undefined,
   });
   const rows = data ?? [];
+  const router = useRouter();
+  const { resolveName } = useUserNames();
+
+  function handleDecided(
+    result: IncidentDecisionResult,
+    outcome: IncidentDecisionOutcome,
+  ) {
+    if (outcome === "promote") {
+      // ส่งต่อเป็น Campaign: ไปสร้างกลุ่มอุปกรณ์ต่อทันที โดยผูก Incident นี้
+      // (หน้านั้นดึงข้อมูล Incident เองด้วย id จึงไม่ต้องแนบอย่างอื่นมา)
+      router.push(
+        `/campaigns/new?sourceIncidentId=${encodeURIComponent(result.id)}`,
+      );
+      return;
+    }
+    void refetch();
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -158,6 +182,27 @@ export function IncidentsView() {
                             {incident.description}
                           </span>
                         )}
+                        {incident.source === FIELD_REPORT_SOURCE && (
+                          <span className="text-xs text-muted-foreground">
+                            แจ้งจากหน้างาน
+                            {incident.deviceId && (
+                              <>
+                                {" "}
+                                อุปกรณ์{" "}
+                                <span className="font-mono">
+                                  {incident.deviceId}
+                                </span>
+                              </>
+                            )}
+                            {incident.reportedBy &&
+                              ` โดย ${resolveName(incident.reportedBy)}`}
+                          </span>
+                        )}
+                        {incident.reviewNote && (
+                          <span className="text-xs text-muted-foreground">
+                            หมายเหตุจาก Operation: {incident.reviewNote}
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -174,7 +219,11 @@ export function IncidentsView() {
                       {new Date(incident.createdAt).toLocaleString("th-TH")}
                     </TableCell>
                     <TableCell className="text-right">
-                      <IncidentActions />
+                      <IncidentActions
+                        incident={incident}
+                        onDecided={handleDecided}
+                        onStale={() => void refetch()}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

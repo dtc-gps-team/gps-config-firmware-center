@@ -191,6 +191,17 @@ export function canEditIncidentTechnical(
 }
 
 /**
+ * ปุ่มตัดสินใจ Field Report ในหน้า Incident & Rollback — resource `incidents`
+ * action `Approve` (issue #236, seed.ts: Operation เท่านั้น) · การบังคับสิทธิ์จริง
+ * อยู่ที่ backend PermissionGuard
+ */
+export function canDecideFieldReport(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิว Per-device Config Override — RBAC_Matrix.md
  * ตาราง 4.1 `POST /device-config-overrides/{id}/approve` / `.../reject`:
  * resource `device-config-override` action `Approve` — Operation เท่านั้น
