@@ -238,6 +238,7 @@ void main() {
     expect(find.text('ติดตั้งกล่อง GPS'), findsOneWidget);
     expect(find.text('กำลังทำ'), findsWidgets); // pill + choice chip
     expect(find.text('DVC-1'), findsOneWidget);
+    expect(find.text('u1'), findsOneWidget); // assignedTo
     expect(find.text('โน้ตงานติดตั้งหน้างาน'), findsOneWidget);
   });
 
