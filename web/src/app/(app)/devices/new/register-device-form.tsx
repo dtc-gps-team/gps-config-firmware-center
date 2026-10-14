@@ -164,6 +164,18 @@ export function RegisterDeviceForm() {
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-blackbox">
+            Blackbox ID
+          </Label>
+          <Input
+            id="device-blackbox"
+            value={blackboxId}
+            disabled={submitting}
+            onChange={(e) => setBlackboxId(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="device-id">Device ID</Label>
           <Input
             id="device-id"
@@ -171,16 +183,6 @@ export function RegisterDeviceForm() {
             disabled={submitting}
             placeholder="เช่น DEV-0099"
             onChange={(e) => setDeviceId(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-sim">SIM Number</Label>
-          <Input
-            id="device-sim"
-            value={simNumber}
-            disabled={submitting}
-            onChange={(e) => setSimNumber(e.target.value)}
           />
         </div>
 
@@ -250,6 +252,40 @@ export function RegisterDeviceForm() {
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-imei">
+            IMEI
+          </Label>
+          <Input
+            id="device-imei"
+            value={imei}
+            disabled={submitting}
+            onChange={(e) => setImei(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-sim">SIM Number</Label>
+          <Input
+            id="device-sim"
+            value={simNumber}
+            disabled={submitting}
+            onChange={(e) => setSimNumber(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="device-serial">
+            Serial Number
+          </Label>
+          <Input
+            id="device-serial"
+            value={serialNumber}
+            disabled={submitting}
+            onChange={(e) => setSerialNumber(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="device-customer">
             ลูกค้า{" "}
             <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
@@ -277,42 +313,6 @@ export function RegisterDeviceForm() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-imei">
-            IMEI
-          </Label>
-          <Input
-            id="device-imei"
-            value={imei}
-            disabled={submitting}
-            onChange={(e) => setImei(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-serial">
-            Serial Number
-          </Label>
-          <Input
-            id="device-serial"
-            value={serialNumber}
-            disabled={submitting}
-            onChange={(e) => setSerialNumber(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-blackbox">
-            Blackbox ID
-          </Label>
-          <Input
-            id="device-blackbox"
-            value={blackboxId}
-            disabled={submitting}
-            onChange={(e) => setBlackboxId(e.target.value)}
-          />
         </div>
 
         <div className="flex flex-col gap-1.5">
