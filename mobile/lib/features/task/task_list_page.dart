@@ -13,6 +13,12 @@ import '../../core/widgets/skeleton_card.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
 
+String _formatDate(DateTime dt) {
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.day)}/${two(d.month)}/${d.year}';
+}
+
 /// "งานของฉัน" — full-screen list of the tasks the backend self-scopes to the
 /// caller for ST/OT (`GET /tasks`, no date filter). Opened from the Home
 /// shortcut. Uses the **same** `taskListProvider` as the "งานวันนี้" preview on
@@ -119,6 +125,15 @@ class _TaskCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'อุปกรณ์: ${task.deviceId ?? '—'}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'กำหนดส่ง: '
+                      '${task.dueDate == null ? '—' : _formatDate(task.dueDate!)}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppTheme.textSecondary,

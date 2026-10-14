@@ -135,6 +135,8 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์สร้าง Config — เฉพาะ Role ConfigEngineer เท่านั้น
+        "404":
+          description: ไม่พบ Config ต้นทางตาม `clonedFromId` (หรือถูกลบไปแล้ว) — v3.51
         "409":
           description: มี Config ชื่อนี้อยู่แล้ว — ชื่อ Config ต้อง unique ทั้งระบบ
 
@@ -874,8 +876,9 @@ paths:
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
             หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน · หรือ ST/OT
             (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
-            แล้ว — cancelled เป็นสถานะสุดท้ายสำหรับ ST/OT (กัน offline queue ของ
-            Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว)
+            หรือเสร็จแล้ว (`completed`) — ทั้งสองเป็นสถานะสุดท้ายสำหรับ ST/OT
+            (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ
+            ย้อนงานที่เสร็จแล้วกลับเป็น in_progress — คำตอบ A ใน #303 ข้อ 1)
 
   /tasks/{taskId}/events:
     get:
@@ -3621,6 +3624,15 @@ components:
             Approval Center #19) · null = ไม่เจาะจง · ไม่ผูกมัด Operation คนอื่น
             ก็ approve ได้ · ตั้งค่าตอน decideConfig(passed:true) · Web resolve
             ชื่อจาก GET /users?role=Operation เอง
+        clonedFromId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.51) id ของ Config ต้นทางที่ Config นี้โคลนมา — ตั้งตอนสร้างจาก
+            flow "โคลน" บนเว็บเท่านั้น (createConfig) · null = สร้างใหม่ตั้งแต่ต้น
+            หรือสร้างก่อนมี field นี้ หรือต้นทาง (draft) ถูกลบจริงไปแล้ว · ใช้ให้หน้า
+            อนุมัติเทียบค่าเก่ากับค่าใหม่ ไม่เปลี่ยนค่าได้หลังสร้าง
         createdAt:
           type: string
           format: date-time
@@ -4057,6 +4069,14 @@ components:
           type: string
           maxLength: 500
           description: คำอธิบายสั้นๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ · ส่ง "" เพื่อล้างค่าตอน update)
+        clonedFromId:
+          type: string
+          format: uuid
+          description: >-
+            (v3.51) id ของ Config ต้นทางที่โคลนมา — **ใช้ได้เฉพาะ createConfig**
+            (ไม่บังคับ) ต้องเป็น Config ที่มีอยู่และยังไม่ถูกลบ ไม่พบ -> 404 ·
+            updateConfig และ importConfig ไม่รับ field นี้ (400) เพราะตั้งได้
+            ครั้งเดียวตอนสร้าง
 
     Task:
       type: object

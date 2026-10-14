@@ -363,7 +363,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   Widget build(BuildContext context) {
     final task = widget.task;
     final role = ref.watch(authControllerProvider).role;
-    final canEditStatus = role == UserRole.st || role == UserRole.ot;
+    final isFieldStaff = role == UserRole.st || role == UserRole.ot;
+    // งานที่เสร็จแล้ว (completed) ห้ามเปลี่ยนสถานะย้อนกลับ (คำตอบ A ใน #303
+    // ข้อ 1 — backend ตอบ 409 ด้วย) ซ่อนแถวเปลี่ยนสถานะกับปุ่มบันทึกทั้งหมด
+    // ไม่ใช่แค่ disable
+    final canEditStatus = isFieldStaff && task.status != TaskStatus.completed;
     // ส่ง Config เข้าเครื่อง (เดิมชื่อ Confirm Install, Sprint 3): เฉพาะ ST/OT
     // ที่กำลังทำงานติดตั้ง config อยู่จริง — ต้องมีทั้ง configId (Operation
     // ผูกไว้ตอนสร้างงาน) และ deviceId (จะส่งไปให้ endpoint ไหน) และงานต้อง
@@ -375,7 +379,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     // (ST/OT ที่งาน in_progress + มี configId/deviceId ครบ) — bottom bar ด้าน
     // ล่างจึงต้องรองรับโชว์ทั้งคู่พร้อมกันแบบเรียงต่อกัน ไม่ใช่แค่กรณีเดียว
     final canConfirmInstall =
-        canEditStatus &&
+        isFieldStaff &&
         task.configId != null &&
         task.deviceId != null &&
         task.status == TaskStatus.inProgress;
@@ -414,6 +418,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           _InfoCard(
             rows: [
               ('อุปกรณ์', task.deviceId ?? '—'),
+              // raw user id — ยังไม่มี GET /users resolve ชื่อฝั่ง Mobile
+              // (gap เดียวกับ reportedBy/reviewedBy ใน Incident Detail, #306)
+              ('ผู้รับผิดชอบ', task.assignedTo),
               (
                 'กำหนดส่ง',
                 task.dueDate == null ? '—' : _formatDate(task.dueDate!),

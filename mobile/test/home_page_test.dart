@@ -255,6 +255,20 @@ void main() {
       expect(find.text('2 รายการ'), findsOneWidget);
     });
 
+    testWidgets('การ์ดประวัติแสดงวันที่เสร็จงาน (updatedAt) ต่อกับ deviceId', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+
+      // t1.updatedAt = DateTime(year, month, 2) — รูปแบบเดียวกับ
+      // _formatDate ใน task_detail_page.dart (dd/mm/yyyy HH:mm)
+      final two = _now.month.toString().padLeft(2, '0');
+      expect(
+        find.text('DVC-40271 · 02/$two/${_now.year} 00:00'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('empty state เมื่อไม่มีงานที่เสร็จแล้ว', (tester) async {
       await _pumpHome(
         tester,
@@ -351,7 +365,7 @@ void main() {
     testWidgets('แตะ "ทดสอบการตั้งค่า" -> ไปหน้า Config Simulator', (
       tester,
     ) async {
-      await _pumpHomeRouted(tester, UserRole.operation);
+      await _pumpHomeRouted(tester, UserRole.st);
       await tester.tap(find.byKey(const Key('shortcut_simulator')));
       await tester.pumpAndSettle();
       expect(find.text('SIMULATOR_PAGE_STUB'), findsOneWidget);
@@ -376,6 +390,30 @@ void main() {
       expect(find.text('MY_TASKS_PAGE_STUB'), findsOneWidget);
       expect(find.textContaining('เร็ว'), findsNothing);
     });
+  });
+
+  // คำตอบ A ใน #303 ข้อ 2 — simulate-config ใช้สิทธิ์ device-connection-test
+  // (ST/OT เท่านั้น) role อื่นเห็นทางลัดแล้วใช้ไม่ได้
+  group('RBAC — ทางลัด "ทดสอบการตั้งค่า" เฉพาะ ST/OT', () {
+    final simulatorTile = find.byKey(const Key('shortcut_simulator'));
+
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('${role.wireName} เห็นทางลัด "ทดสอบการตั้งค่า"', (
+        tester,
+      ) async {
+        await _pumpHome(tester, role);
+        expect(simulatorTile, findsOneWidget);
+      });
+    }
+
+    for (final role in [UserRole.operation, UserRole.auditor, UserRole.admin]) {
+      testWidgets('${role.wireName} ไม่เห็นทางลัด "ทดสอบการตั้งค่า"', (
+        tester,
+      ) async {
+        await _pumpHome(tester, role);
+        expect(simulatorTile, findsNothing);
+      });
+    }
   });
 
   group('RBAC — ทางลัด "งานของฉัน" เฉพาะ ST/OT', () {

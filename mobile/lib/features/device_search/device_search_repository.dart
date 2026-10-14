@@ -32,6 +32,10 @@ class ApiDeviceSearchRepository implements DeviceSearchRepository {
 /// In-memory fake for `API_MOCK_MODE` (dev/demo without a backend). Mirrors the
 /// same pattern as [MockTaskRepository].
 class MockDeviceSearchRepository implements DeviceSearchRepository {
+  // ไม่มีแถว "ออนไลน์/ออฟไลน์" ใน model นี้เลย (ดู docs/18 ข้อ 6 — ค่านั้น
+  // ตายตัวเป็น "ไม่ทราบ" เสมอ รอ #245 ทำ telemetry จริง) จึงไม่ fabricate field
+  // นี้ในชุด mock — ความสมจริงที่เพิ่มในรอบนี้คือ imei/serialNumber/
+  // blackboxId/customer ครบบางเครื่อง ว่างบางเครื่อง (null-safe ของ #306)
   final List<Device> _devices = [
     Device(
       id: 'mock-device-1',
@@ -42,6 +46,13 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
       status: DeviceLifecycleStatus.installed,
       registeredAt: DateTime(2026, 6, 1),
       installedAt: DateTime(2026, 6, 3),
+      imei: '860000000000117',
+      serialNumber: 'SNGT06N000117',
+      blackboxId: '7100000117',
+      customer: const Customer(
+        id: 'mock-customer-1',
+        companyName: 'ขนส่งสมมติ จำกัด',
+      ),
     ),
     Device(
       id: 'mock-device-2',
@@ -51,6 +62,64 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
       protocol: 'TCP',
       status: DeviceLifecycleStatus.registered,
       registeredAt: DateTime(2026, 8, 20),
+      // ลงทะเบียนก่อนมีกติกาบังคับกรอก — imei/serial/blackbox/customer ยังว่าง
+    ),
+    Device(
+      id: 'mock-device-3',
+      deviceId: 'DEV-0231',
+      simNumber: '0865432109',
+      deviceModel: 'GT06N',
+      protocol: 'UDP',
+      status: DeviceLifecycleStatus.installed,
+      registeredAt: DateTime(2026, 7, 10),
+      installedAt: DateTime(2026, 7, 12),
+      imei: '860000000000231',
+      serialNumber: 'SNGT06N000231',
+      // blackboxId ยังไม่กรอก
+      customer: const Customer(
+        id: 'mock-customer-2',
+        companyName: 'โลจิสติกส์ไทย จำกัด',
+      ),
+    ),
+    Device(
+      id: 'mock-device-4',
+      deviceId: 'DEV-0305',
+      simNumber: '0823456789',
+      deviceModel: 'GT08',
+      protocol: 'TCP',
+      status: DeviceLifecycleStatus.installed,
+      registeredAt: DateTime(2026, 7, 25),
+      installedAt: DateTime(2026, 7, 27),
+      // ยังไม่ผูกลูกค้า — customer null
+    ),
+    Device(
+      id: 'mock-device-5',
+      deviceId: 'DEV-0410',
+      simNumber: '0834567890',
+      deviceModel: 'GT06L',
+      protocol: 'TCP',
+      status: DeviceLifecycleStatus.registered,
+      registeredAt: DateTime(2026, 9, 1),
+      imei: '860000000000410',
+      // serial/blackbox ยังไม่กรอก, ผูกลูกค้าไว้แล้วตั้งแต่ลงทะเบียน
+      customer: const Customer(id: 'mock-customer-3', companyName: 'ขนส่ง ABC'),
+    ),
+    Device(
+      id: 'mock-device-6',
+      deviceId: 'DEV-0512',
+      simNumber: '0845678901',
+      deviceModel: 'GT08',
+      protocol: 'UDP',
+      status: DeviceLifecycleStatus.decommissioned,
+      registeredAt: DateTime(2026, 3, 1),
+      installedAt: DateTime(2026, 3, 5),
+      imei: '860000000000512',
+      serialNumber: 'SNGT08000512',
+      blackboxId: '7100000512',
+      customer: const Customer(
+        id: 'mock-customer-1',
+        companyName: 'ขนส่งสมมติ จำกัด',
+      ),
     ),
   ];
 

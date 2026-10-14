@@ -59,6 +59,11 @@ class ApiIncidentRepository implements IncidentRepository {
 /// In-memory fake for `API_MOCK_MODE` (dev/demo without a backend). Same
 /// pattern as [MockTaskRepository] / [MockDeviceSearchRepository].
 class MockIncidentRepository implements IncidentRepository {
+  // `source` มีแค่ 2 ค่าจริงที่ backend เขียน — 'field-report' (#236) และ
+  // 'config-sync-writer' (auto-detect) ตามที่ตรวจไว้ใน PR #310 — ของเดิมมี
+  // 'mobile-simulator-test' ที่ไม่มีอยู่จริง แก้เป็นค่าจริงไปด้วยตอนขยาย ·
+  // deviceId ทุกตัวตรงกับ MockDeviceSearchRepository จริง (auto-detect ไม่มี
+  // deviceId ตาม design เดิม — ผูกกับ Config ไม่ใช่อุปกรณ์)
   final List<Incident> _incidents = [
     Incident(
       id: 'mock-incident-1',
@@ -75,12 +80,70 @@ class MockIncidentRepository implements IncidentRepository {
     ),
     Incident(
       id: 'mock-incident-2',
-      title: 'ทดสอบสัญญาณอุปกรณ์หน้างานไม่ผ่าน',
+      title: 'เครื่องรีบูตเองทุก 10 นาที',
+      description: 'ช่างแจ้งว่าเครื่องรีสตาร์ทเองหลังติดตั้งไม่ถึงวัน',
       severity: IncidentSeverity.medium,
-      status: IncidentStatus.resolved,
-      source: 'mobile-simulator-test',
+      status: IncidentStatus.investigating,
+      source: 'field-report',
+      deviceId: 'DEV-0092',
+      reportedBy: 'mock-st-user',
+      reviewedBy: 'mock-operation-user',
+      reviewedAt: DateTime(2026, 9, 6, 10, 0),
+      reviewNote: 'ต้องอัปเดต Firmware — ส่งต่อเป็น Campaign แล้ว',
       createdAt: DateTime(2026, 9, 5, 9, 12),
       updatedAt: DateTime(2026, 9, 6, 10, 0),
+    ),
+    Incident(
+      id: 'mock-incident-3',
+      title: 'ปุ่ม SOS กดแล้วไม่ส่งแจ้งเตือน',
+      severity: IncidentSeverity.critical,
+      status: IncidentStatus.open,
+      source: 'field-report',
+      deviceId: 'DEV-0231',
+      reportedBy: 'mock-ot-user',
+      // ยังไม่ถูกตัดสินใจ — reviewedBy/reviewedAt/reviewNote ว่างทั้งหมด
+      // (ทดสอบว่าไม่มีการ์ด "ผลการตรวจสอบ" โผล่มา)
+      createdAt: DateTime(2026, 9, 8, 13, 0),
+      updatedAt: DateTime(2026, 9, 8, 13, 0),
+    ),
+    Incident(
+      id: 'mock-incident-4',
+      title: 'สายไฟหลวม ไฟกระพริบเป็นระยะ',
+      severity: IncidentSeverity.high,
+      status: IncidentStatus.resolved,
+      source: 'field-report',
+      deviceId: 'DEV-0305',
+      reportedBy: 'mock-st-user',
+      reviewedBy: 'mock-operation-user',
+      reviewedAt: DateTime(2026, 9, 4, 16, 45),
+      reviewNote: 'ช่างเข้าไปขันสายใหม่แล้ว ใช้งานปกติ',
+      createdAt: DateTime(2026, 9, 3, 9, 0),
+      updatedAt: DateTime(2026, 9, 4, 16, 45),
+    ),
+    Incident(
+      id: 'mock-incident-5',
+      title: 'แจ้งซ้ำกับรายงานก่อนหน้า',
+      severity: IncidentSeverity.low,
+      status: IncidentStatus.dismissed,
+      source: 'field-report',
+      deviceId: 'DEV-0410',
+      reportedBy: 'mock-ot-user',
+      reviewedBy: 'mock-operation-user',
+      reviewedAt: DateTime(2026, 9, 2, 11, 30),
+      reviewNote: 'ซ้ำกับรายการเดิม',
+      createdAt: DateTime(2026, 9, 2, 8, 0),
+      updatedAt: DateTime(2026, 9, 2, 11, 30),
+    ),
+    Incident(
+      id: 'mock-incident-6',
+      title: 'Rollback Config หลัง Rollout ล้มเหลวเกิน 5%',
+      description: 'Auto Pause trigger แล้ว Operation สั่ง Rollback กลับ',
+      severity: IncidentSeverity.medium,
+      status: IncidentStatus.rolledBack,
+      source: 'config-sync-writer',
+      relatedConfigId: 'mock-cfg-2',
+      createdAt: DateTime(2026, 8, 28, 15, 0),
+      updatedAt: DateTime(2026, 8, 29, 9, 0),
     ),
   ];
 
