@@ -273,6 +273,44 @@ void main() {
       expect(device.status, DeviceLifecycleStatus.registered);
     });
 
+    test('parses imei/serialNumber/blackboxId + nested customer', () {
+      final device = Device.fromJson({
+        'id': 'uuid-4',
+        'deviceId': 'DEV-0101',
+        'simNumber': '0812345678',
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+        'status': 'installed',
+        'registeredAt': '2026-06-01T00:00:00.000Z',
+        'imei': '860000000000101',
+        'serialNumber': 'SNGT06N000101',
+        'blackboxId': '7100000101',
+        'customer': {'id': 'c1', 'companyName': 'ขนส่งสมมติ จำกัด'},
+      });
+      expect(device.imei, '860000000000101');
+      expect(device.serialNumber, 'SNGT06N000101');
+      expect(device.blackboxId, '7100000101');
+      expect(device.customer?.companyName, 'ขนส่งสมมติ จำกัด');
+    });
+
+    test('identity fields + customer null or missing -> null (no throw)', () {
+      final device = Device.fromJson({
+        'id': 'uuid-5',
+        'deviceId': 'DEV-0001',
+        'simNumber': '0810000001',
+        'deviceModel': 'GT06N',
+        'protocol': 'TCP',
+        'status': 'installed',
+        'registeredAt': '2026-06-01T00:00:00.000Z',
+        'imei': null,
+        'customer': null,
+      });
+      expect(device.imei, isNull);
+      expect(device.serialNumber, isNull);
+      expect(device.blackboxId, isNull);
+      expect(device.customer, isNull);
+    });
+
     test('unknown status -> throws (contract drift is loud)', () {
       expect(
         () => Device.fromJson({

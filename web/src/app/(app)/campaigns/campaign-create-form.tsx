@@ -15,8 +15,10 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { createCampaign, type CampaignTargetInput } from "@/lib/campaign-api";
+import { FIELD_REPORT_SOURCE, type Incident } from "@/lib/incident-api";
 import type { Device } from "@/lib/device-api";
 import { useDevices } from "@/hooks/use-devices";
+import { useIncident } from "@/hooks/use-incident";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 
@@ -43,16 +45,37 @@ function ErrorBanner({ message }: { message: string }) {
  *
  * **MVP (มติ 2026-09-24):** สมาชิกกลุ่ม fix ตอนสร้างเท่านั้น ยังไม่มี
  * endpoint เพิ่ม/ลบทีหลัง
+ *
+ * **มาจาก "ส่งต่อเป็น Campaign" (issue #284):** `sourceIncidentId` มาจาก query
+ * หน้า Incident หลัง Operation ตัดสินใจ promote Field Report ดึง Incident
+ * มาตั้งชื่อเริ่มต้นและเลือกอุปกรณ์ที่รายงานให้ (เฉพาะที่ installed เพราะ
+ * backend ปฏิเสธเครื่องที่ยังไม่ติดตั้ง) แล้วส่ง `sourceIncidentId` ไปกับคำขอ
+ * ให้ backend ผูกกลุ่มกับรายงานนี้ · ค่าเริ่มต้นเหล่านี้คำนวณตอน render
+ * (`ค่าที่ผู้ใช้แก้ ?? ค่าเริ่มต้น`) แก้ได้อิสระ ไม่เขียน state ใน effect
  */
-export function CampaignCreateForm() {
+export function CampaignCreateForm({
+  sourceIncidentId,
+}: {
+  sourceIncidentId?: string;
+}) {
   const router = useRouter();
   const { session } = useAuth();
 
   const devicesQuery = useDevices();
+  const sourceQuery = useIncident(sourceIncidentId ?? null);
+  const sourceIncident = sourceQuery.data;
+  // ผูกได้เมื่อเป็น Field Report ที่ถูก promote มาแล้วเท่านั้น (backend ตรวจ
+  // สถานะ investigating ซ้ำอีกชั้น) ไม่งั้นไม่ส่ง sourceIncidentId ไปเลย
+  const linkableSource =
+    sourceIncident &&
+    sourceIncident.source === FIELD_REPORT_SOURCE &&
+    sourceIncident.status === "investigating"
+      ? sourceIncident
+      : null;
 
-  const [name, setName] = useState("");
+  const [nameInput, setNameInput] = useState<string | null>(null);
   const [description, setDescription] = useState("");
-  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [selectedInput, setSelectedInput] = useState<string[] | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -63,23 +86,39 @@ export function CampaignCreateForm() {
     setFormError(null);
   }
 
+  const installedDevices = useMemo(
+    () => (devicesQuery.data ?? []).filter((d) => d.status === "installed"),
+    [devicesQuery.data],
+  );
+
+  const defaultName = linkableSource
+    ? `แก้ไขปัญหา: ${linkableSource.title}`
+    : "";
+  const reportedDeviceId = linkableSource?.deviceId ?? null;
+  const reportedDeviceInstalled =
+    reportedDeviceId !== null &&
+    installedDevices.some((d) => d.deviceId === reportedDeviceId);
+  const defaultSelected = useMemo(
+    () =>
+      reportedDeviceInstalled && reportedDeviceId ? [reportedDeviceId] : [],
+    [reportedDeviceInstalled, reportedDeviceId],
+  );
+  const name = nameInput ?? defaultName;
+  const selectedDeviceIds = selectedInput ?? defaultSelected;
+
   const isDirty =
     name.trim() !== "" ||
     description.trim() !== "" ||
     selectedDeviceIds.length > 0;
   const { confirmLeave } = useUnsavedChangesWarning(isDirty);
 
-  const installedDevices = useMemo(
-    () => (devicesQuery.data ?? []).filter((d) => d.status === "installed"),
-    [devicesQuery.data],
-  );
-
   function toggleDevice(deviceId: string, checked: boolean) {
-    setSelectedDeviceIds((prev) => {
+    setSelectedInput((prev) => {
+      const base = prev ?? defaultSelected;
       if (checked) {
-        return prev.includes(deviceId) ? prev : [...prev, deviceId];
+        return base.includes(deviceId) ? base : [...base, deviceId];
       }
-      return prev.filter((id) => id !== deviceId);
+      return base.filter((id) => id !== deviceId);
     });
     clearErrors();
   }
@@ -109,6 +148,7 @@ export function CampaignCreateForm() {
         name: trimmedName,
         targets: targetInputs,
         ...(trimmedDesc ? { description: trimmedDesc } : {}),
+        ...(linkableSource ? { sourceIncidentId: linkableSource.id } : {}),
       });
       toast.success(`สร้างกลุ่ม "${created.name}" แล้ว`);
       router.push(`/campaigns/${created.id}`);
@@ -215,6 +255,17 @@ export function CampaignCreateForm() {
 
   return (
     <div className="flex flex-col gap-5">
+      {sourceIncidentId && (
+        <SourceIncidentNotice
+          isLoading={sourceQuery.isLoading}
+          error={sourceQuery.error}
+          incident={sourceIncident}
+          linkable={linkableSource !== null}
+          deviceId={reportedDeviceId}
+          deviceInstalled={reportedDeviceInstalled}
+        />
+      )}
+
       <Card className="grid gap-4 p-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="campaign-name">ชื่อกลุ่ม</Label>
@@ -222,7 +273,7 @@ export function CampaignCreateForm() {
             id="campaign-name"
             value={name}
             onChange={(e) => {
-              setName(e.target.value);
+              setNameInput(e.target.value);
               clearErrors();
             }}
             maxLength={120}
@@ -257,9 +308,8 @@ export function CampaignCreateForm() {
         <div>
           <p className="text-sm font-medium">เลือกอุปกรณ์สมาชิก</p>
           <p className="text-xs text-muted-foreground">
-            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์
-            สถานะ installed เท่านั้น · เลือกแล้ว {selectedDeviceIds.length}{" "}
-            เครื่อง
+            ติ๊กช่องซ้ายมือหรือคลิกที่แถวเพื่อเลือก/ยกเลิก · เฉพาะอุปกรณ์ สถานะ
+            installed เท่านั้น · เลือกแล้ว {selectedDeviceIds.length} เครื่อง
           </p>
         </div>
 
@@ -299,6 +349,73 @@ export function CampaignCreateForm() {
           {submitting ? "กำลังสร้างกลุ่ม…" : "สร้างกลุ่ม"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * แถบแจ้งที่มาเมื่อสร้างกลุ่มจาก "ส่งต่อเป็น Campaign" บอกว่ากลุ่มนี้จะผูกกับ
+ * รายงานปัญหาไหน หรือเหตุผลที่ผูกไม่ได้ (โหลดไม่สำเร็จ หรือสถานะไม่ใช่ที่ส่งต่อ
+ * แล้ว) และอุปกรณ์ที่รายงานถูกเลือกให้หรือไม่
+ */
+function SourceIncidentNotice({
+  isLoading,
+  error,
+  incident,
+  linkable,
+  deviceId,
+  deviceInstalled,
+}: {
+  isLoading: boolean;
+  error: string | null;
+  incident: Incident | null;
+  linkable: boolean;
+  deviceId: string | null;
+  deviceInstalled: boolean;
+}) {
+  const info =
+    "rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200";
+  const warn =
+    "rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300";
+
+  if (isLoading) {
+    return <div className={info}>กำลังโหลดรายงานปัญหาที่ส่งต่อมา…</div>;
+  }
+  if (error || !incident) {
+    return (
+      <div className={warn}>
+        {error ?? "ไม่พบรายงานปัญหา"} กลุ่มนี้จะไม่ถูกผูกกับรายงานปัญหา
+        สร้างกลุ่มต่อได้ตามปกติ
+      </div>
+    );
+  }
+  if (!linkable) {
+    return (
+      <div className={warn}>
+        รายงานปัญหา &ldquo;{incident.title}&rdquo;
+        ไม่ได้อยู่ในสถานะที่ส่งต่อเป็น Campaign ได้แล้ว
+        กลุ่มนี้จะไม่ถูกผูกกับรายงานนี้
+      </div>
+    );
+  }
+  return (
+    <div className={info}>
+      <p>
+        สร้างจากรายงานปัญหา &ldquo;{incident.title}&rdquo; กลุ่มนี้จะถูกผูกกับ
+        รายงานนี้เมื่อสร้าง
+      </p>
+      {deviceId && deviceInstalled && (
+        <p className="mt-1 text-xs">
+          เลือกอุปกรณ์ที่รายงานไว้ให้แล้ว ({deviceId}) เพิ่มเครื่องอื่นได้ตาม
+          ดุลยพินิจ
+        </p>
+      )}
+      {deviceId && !deviceInstalled && (
+        <p className="mt-1 text-xs">
+          อุปกรณ์ที่รายงาน ({deviceId}) ยังไม่ติดตั้ง จึงเลือกให้ไม่ได้
+          เลือกอุปกรณ์เองจากรายการด้านล่าง
+        </p>
+      )}
     </div>
   );
 }

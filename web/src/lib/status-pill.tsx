@@ -44,7 +44,8 @@ const STATUS_LABEL: Record<string, string> = {
   pending_update: "รอการอัปเดต",
   up_to_date: "อัปเดตล่าสุดแล้ว",
   rolled_back: "Rollback แล้ว",
-  dismissed: "ไม่ใช่ปัญหา",
+  // ไม่ใช้ "ไม่ใช่ปัญหา" — ฟังเหมือนบอกว่าช่างแจ้งผิด และไม่ครอบคลุมกรณีแจ้งซ้ำ
+  dismissed: "ไม่ต้องดำเนินการ",
 };
 
 /** แปลง status enum ดิบเป็น label ที่แสดงผลได้ — คืนค่าเดิมถ้าไม่มีใน
