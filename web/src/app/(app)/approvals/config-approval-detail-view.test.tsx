@@ -472,3 +472,46 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     expect(screen.queryByText("โคลนจาก")).not.toBeInTheDocument();
   });
 });
+
+describe("ConfigApprovalDetailView: ตารางความต่างแบบคอลัมน์", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("มีหัวคอลัมน์ ชื่อฟิลด์ / เวอร์ชันฐาน / Config นี้ / ประเภท", () => {
+    setup({ versions: [version(3, { SERVER_PORT: 8080 })] });
+
+    expect(screen.getByText("ชื่อฟิลด์")).toBeInTheDocument();
+    expect(screen.getByText("เวอร์ชันที่ 3")).toBeInTheDocument();
+    expect(screen.getByText("Config นี้")).toBeInTheDocument();
+    expect(screen.getByText("ประเภท")).toBeInTheDocument();
+  });
+
+  it("สำเนา: หัวคอลัมน์ฐานบอกว่าเป็นเวอร์ชันของต้นทาง", () => {
+    setup({
+      config: config({ clonedFromId: "src-1" }),
+      versions: [],
+      source: config({
+        id: "src-1",
+        name: "Source Config",
+        status: "approved",
+        fields: { SERVER_PORT: 1 },
+      }),
+      sourceVersions: [version(2, { SERVER_PORT: 1 })],
+    });
+
+    expect(screen.getByText("ต้นทาง (เวอร์ชันที่ 2)")).toBeInTheDocument();
+  });
+
+  it("ค่าที่เพิ่ม: ฝั่งค่าเดิมเป็น - และมีป้ายประเภท เพิ่ม ค่าที่ลบ: ฝั่งค่าใหม่เป็น - และมีป้าย ลบ", () => {
+    setup({
+      versions: [version(1, { OLD_ONLY: true, APN: "internet" })],
+    });
+
+    // SERVER_PORT/COMMAND_PASSWORD/REPORT_INTERVAL เพิ่ม · OLD_ONLY ลบ
+    expect(screen.getAllByText("เพิ่ม").length).toBe(3);
+    expect(screen.getByText("ลบ")).toBeInTheDocument();
+    expect(screen.getAllByText("-").length).toBeGreaterThanOrEqual(4);
+  });
+});
