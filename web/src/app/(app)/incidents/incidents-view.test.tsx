@@ -73,6 +73,16 @@ describe("IncidentsView: Field Report", () => {
     expect(screen.queryByText(/user-st/)).not.toBeInTheDocument();
   });
 
+  it("ชื่อเรื่องเป็นลิงก์ไปหน้ารายละเอียด Incident", () => {
+    incidentsState.rows = [incident({ id: "inc-7" })];
+
+    render(<IncidentsView />);
+
+    expect(
+      screen.getByRole("link", { name: "ปุ่ม SOS กดแล้วไม่ส่งแจ้งเตือน" }),
+    ).toHaveAttribute("href", "/incidents/inc-7");
+  });
+
   it("Operation เห็นปุ่มตัดสินใจบน Field Report ที่ยัง open", () => {
     incidentsState.rows = [incident()];
 
