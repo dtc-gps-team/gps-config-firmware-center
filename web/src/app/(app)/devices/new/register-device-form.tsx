@@ -30,7 +30,7 @@ const NO_CUSTOMER = "__none__";
 /**
  * ฟอร์มลงทะเบียนอุปกรณ์ใหม่ — Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md ตาราง
  * 4.1 `registerDevice`, issue #157 PR 1) · `modelId`/`protocol` cascade กัน
- * (เลือกรุ่นก่อนถึงจะเลือก protocol ได้ — ตัวเลือก protocol มาจาก
+ * (เลือกโมเดลก่อนถึงจะเลือก protocol ได้ — ตัวเลือก protocol มาจาก
  * `DeviceModel.supportedProtocols` ของรุ่นนั้นตรงๆ ไม่ใช่รายการตายตัว)
  *
  * หลังสร้างสำเร็จสลับไปโชว์ apiKey จริง (`RegisterDeviceSuccess` ด้านล่าง)
@@ -76,7 +76,13 @@ export function RegisterDeviceForm() {
 
   function changeModel(nextModelId: string) {
     setModelId(nextModelId);
-    setProtocol("");
+    // โมเดลที่รองรับโปรโตคอลเดียวเลือกให้เลย ไม่ต้องให้ผู้ใช้กดซ้ำ
+    const next = modelList.find((m) => m.id === nextModelId);
+    const only =
+      next && next.supportedProtocols.length === 1
+        ? next.supportedProtocols[0]
+        : "";
+    setProtocol(only);
   }
 
   async function onSubmit() {
@@ -91,8 +97,23 @@ export function RegisterDeviceForm() {
       setFormError("ต้องระบุ SIM Number");
       return;
     }
+    const trimmedImei = imei.trim();
+    const trimmedSerial = serialNumber.trim();
+    const trimmedBlackbox = blackboxId.trim();
+    if (!trimmedImei) {
+      setFormError("ต้องระบุ IMEI");
+      return;
+    }
+    if (!trimmedSerial) {
+      setFormError("ต้องระบุ Serial Number");
+      return;
+    }
+    if (!trimmedBlackbox) {
+      setFormError("ต้องระบุ Blackbox ID");
+      return;
+    }
     if (!modelId) {
-      setFormError("ต้องเลือกรุ่นอุปกรณ์");
+      setFormError("ต้องเลือกโมเดล");
       return;
     }
     if (!protocol) {
@@ -110,9 +131,9 @@ export function RegisterDeviceForm() {
         protocol,
         hardwareRevisionCode: hardwareRevisionCode.trim() || undefined,
         customerId: customerId !== NO_CUSTOMER ? customerId : undefined,
-        imei: imei.trim() || undefined,
-        serialNumber: serialNumber.trim() || undefined,
-        blackboxId: blackboxId.trim() || undefined,
+        imei: trimmedImei,
+        serialNumber: trimmedSerial,
+        blackboxId: trimmedBlackbox,
         bootloader: bootloader.trim() || undefined,
       });
       toast.success(`ลงทะเบียน "${registered.deviceId}" แล้ว`);
@@ -131,179 +152,183 @@ export function RegisterDeviceForm() {
     simNumber.trim() !== "" &&
     modelId !== "" &&
     protocol !== "" &&
+    imei.trim() !== "" &&
+    serialNumber.trim() !== "" &&
+    blackboxId.trim() !== "" &&
     !submitting;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-8">
       {/* 2 คอลัมน์ — mirror pattern "สร้างใหม่" หน้าอื่น (users/new,
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-id">Device ID</Label>
-          <Input
-            id="device-id"
-            value={deviceId}
-            disabled={submitting}
-            placeholder="เช่น DEV-0099"
-            onChange={(e) => setDeviceId(e.target.value)}
-          />
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลตัวเครื่อง</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-blackbox">
+              Blackbox ID
+            </Label>
+            <Input
+              id="device-blackbox"
+              value={blackboxId}
+              disabled={submitting}
+              onChange={(e) => setBlackboxId(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-id">Device ID</Label>
+            <Input
+              id="device-id"
+              value={deviceId}
+              disabled={submitting}
+              placeholder="เช่น DEV-0099"
+              onChange={(e) => setDeviceId(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-imei">
+              IMEI
+            </Label>
+            <Input
+              id="device-imei"
+              value={imei}
+              disabled={submitting}
+              onChange={(e) => setImei(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-serial">
+              Serial Number
+            </Label>
+            <Input
+              id="device-serial"
+              value={serialNumber}
+              disabled={submitting}
+              onChange={(e) => setSerialNumber(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-sim">SIM Number</Label>
+            <Input
+              id="device-sim"
+              value={simNumber}
+              disabled={submitting}
+              onChange={(e) => setSimNumber(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-bootloader">
+              Bootloader{" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            </Label>
+            <Input
+              id="device-bootloader"
+              value={bootloader}
+              disabled={submitting}
+              onChange={(e) => setBootloader(e.target.value)}
+            />
+          </div>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-sim">SIM Number</Label>
-          <Input
-            id="device-sim"
-            value={simNumber}
-            disabled={submitting}
-            onChange={(e) => setSimNumber(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-model">รุ่นอุปกรณ์</Label>
-          <Select
-            value={modelId}
-            onValueChange={(value) => changeModel(value ?? "")}
-          >
-            <SelectTrigger id="device-model" className="w-full" disabled={submitting}>
-              <SelectValue placeholder="- เลือก -">
-                {(value: string) =>
-                  modelList.find((m) => m.id === value)?.name ?? value
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {modelList.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.name}
-                  {m.status === "discontinued" ? " (เลิกผลิตแล้ว)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-protocol">โปรโตคอล</Label>
-          <Select
-            value={protocol}
-            disabled={!selectedModel}
-            onValueChange={(value) => setProtocol(value ?? "")}
-          >
-            <SelectTrigger
-              id="device-protocol"
-              className="w-full"
-              disabled={submitting || !selectedModel}
+      </section>
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลโมเดล</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-model">โมเดล</Label>
+            <Select
+              value={modelId}
+              onValueChange={(value) => changeModel(value ?? "")}
             >
-              <SelectValue placeholder="- เลือกรุ่นก่อน -" />
-            </SelectTrigger>
-            <SelectContent>
-              {(selectedModel?.supportedProtocols ?? []).map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <SelectTrigger id="device-model" className="w-full" disabled={submitting}>
+                <SelectValue placeholder="- เลือก -">
+                  {(value: string) =>
+                    modelList.find((m) => m.id === value)?.name ?? value
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {modelList.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.name}
+                    {m.status === "discontinued" ? " (เลิกผลิตแล้ว)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-protocol">โปรโตคอล</Label>
+            <Select
+              value={protocol}
+              disabled={!selectedModel}
+              onValueChange={(value) => setProtocol(value ?? "")}
+            >
+              <SelectTrigger
+                id="device-protocol"
+                className="w-full"
+                disabled={submitting || !selectedModel}
+              >
+                <SelectValue placeholder="- เลือกโมเดลก่อน -" />
+              </SelectTrigger>
+              <SelectContent>
+                {(selectedModel?.supportedProtocols ?? []).map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <Label htmlFor="device-hw-revision">
+              รหัสรุ่นย่อย (Hardware Revision){" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            </Label>
+            <Input
+              id="device-hw-revision"
+              value={hardwareRevisionCode}
+              disabled={submitting}
+              placeholder="เว้นว่างถ้าไม่มี เช่น RevA"
+              onChange={(e) => setHardwareRevisionCode(e.target.value)}
+            />
+          </div>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-hw-revision">
-            รหัสรุ่นย่อย (Hardware Revision){" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Input
-            id="device-hw-revision"
-            value={hardwareRevisionCode}
-            disabled={submitting}
-            placeholder="เช่น RevA"
-            onChange={(e) => setHardwareRevisionCode(e.target.value)}
-          />
+      </section>
+      <section className="flex flex-col gap-4">
+        <h2 className="border-b pb-2 text-base font-semibold">การใช้งาน</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <Label htmlFor="device-customer">
+              ลูกค้า{" "}
+              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            </Label>
+            <Select
+              value={customerId}
+              onValueChange={(value) => setCustomerId(value ?? NO_CUSTOMER)}
+            >
+              <SelectTrigger id="device-customer" className="w-full" disabled={submitting}>
+                <SelectValue>
+                  {(value: string) =>
+                    value === NO_CUSTOMER
+                      ? "ไม่ระบุ"
+                      : (customerList.find((c) => c.id === value)?.companyName ??
+                        "ไม่ระบุ")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CUSTOMER}>ไม่ระบุ</SelectItem>
+                {customerList.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.companyName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-customer">
-            ลูกค้า{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Select
-            value={customerId}
-            onValueChange={(value) => setCustomerId(value ?? NO_CUSTOMER)}
-          >
-            <SelectTrigger id="device-customer" className="w-full" disabled={submitting}>
-              <SelectValue>
-                {(value: string) =>
-                  value === NO_CUSTOMER
-                    ? "ไม่ระบุ"
-                    : (customerList.find((c) => c.id === value)?.companyName ??
-                      "ไม่ระบุ")
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_CUSTOMER}>ไม่ระบุ</SelectItem>
-              {customerList.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.companyName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-imei">
-            IMEI{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Input
-            id="device-imei"
-            value={imei}
-            disabled={submitting}
-            onChange={(e) => setImei(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-serial">
-            Serial Number{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Input
-            id="device-serial"
-            value={serialNumber}
-            disabled={submitting}
-            onChange={(e) => setSerialNumber(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-blackbox">
-            Blackbox ID{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Input
-            id="device-blackbox"
-            value={blackboxId}
-            disabled={submitting}
-            onChange={(e) => setBlackboxId(e.target.value)}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="device-bootloader">
-            Bootloader{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
-          <Input
-            id="device-bootloader"
-            value={bootloader}
-            disabled={submitting}
-            onChange={(e) => setBootloader(e.target.value)}
-          />
-        </div>
-      </div>
+      </section>
 
       {formError && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
@@ -341,7 +366,7 @@ function RegisterDeviceSuccess({ result }: { result: RegisterDeviceResult }) {
         <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
         <p>
           ลงทะเบียน <strong className="font-mono">{result.deviceId}</strong>{" "}
-          สำเร็จแล้ว — เก็บ API key ด้านล่างไว้ให้ดี{" "}
+          สำเร็จแล้ว เก็บ API key ด้านล่างไว้ให้ดี{" "}
           <strong>ดูซ้ำไม่ได้อีกแล้ว</strong> หลังออกจากหน้านี้
         </p>
       </div>

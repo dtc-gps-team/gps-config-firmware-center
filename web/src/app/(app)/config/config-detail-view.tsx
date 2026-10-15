@@ -50,6 +50,7 @@ import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { useUserNames } from "@/hooks/use-user-names";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { CloneSourceLinkLoader } from "@/components/config/clone-source-link";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { ConfigReviewPanel } from "./config-review-panel";
 
@@ -318,6 +319,11 @@ function ConfigDetailContent({
               <InfoRow label="สร้างโดย" icon={UserIcon}>
                 {resolveName(config.createdBy)}
               </InfoRow>
+              {config.clonedFromId && (
+                <InfoRow label="โคลนจาก" icon={CopyIcon}>
+                  <CloneSourceLinkLoader sourceId={config.clonedFromId} />
+                </InfoRow>
+              )}
               <InfoRow label="ผู้อนุมัติ" icon={UserCheckIcon}>
                 {config.approvedBy ? resolveName(config.approvedBy) : "-"}
               </InfoRow>

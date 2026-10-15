@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsOptional,
   IsString,
@@ -5,6 +6,11 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+
+/** ตัดช่องว่างหัวท้ายก่อน validate — ช่องที่บังคับกรอกจึงไม่ผ่านด้วยช่องว่างล้วน
+ * (MinLength(1) อย่างเดียวรับ "   " ได้) และค่าที่บันทึกเป็นค่าที่ตัดแล้วเสมอ */
+const trimString = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
 
 /**
  * `POST /devices` (issue #157 PR 1) — ลงทะเบียนอุปกรณ์เข้าระบบครั้งแรก เป็น
@@ -47,20 +53,23 @@ export class RegisterDeviceDto {
 
   // Identity group เพิ่มเติม (PDF §4.1) — string อิสระ ไม่มี validation
   // รูปแบบในรอบนี้ (ดู comment เหนือ field เดียวกันใน schema.prisma)
-  @IsOptional()
+  @Transform(trimString)
   @IsString()
+  @MinLength(1)
   @MaxLength(50)
-  imei?: string;
+  imei!: string;
 
-  @IsOptional()
+  @Transform(trimString)
   @IsString()
+  @MinLength(1)
   @MaxLength(50)
-  serialNumber?: string;
+  serialNumber!: string;
 
-  @IsOptional()
+  @Transform(trimString)
   @IsString()
+  @MinLength(1)
   @MaxLength(50)
-  blackboxId?: string;
+  blackboxId!: string;
 
   @IsOptional()
   @IsString()

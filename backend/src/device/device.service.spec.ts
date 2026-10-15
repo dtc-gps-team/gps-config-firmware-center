@@ -135,6 +135,10 @@ const registerDto: RegisterDeviceDto = {
   simNumber: '0812345678',
   modelId: gt06nModel.id,
   protocol: 'TCP',
+  // บังคับกรอกตอนลงทะเบียน (มติ A กับ B 13 ต.ค. 2569)
+  imei: '860000000000001',
+  serialNumber: 'SN-9001',
+  blackboxId: 'BB-9001',
 };
 
 // `apiKeyHash` ไม่อยู่ใน fixture นี้โดยตั้งใจ — mimic ของจริงที่
@@ -582,9 +586,9 @@ describe('DeviceService', () => {
           protocol: registerDto.protocol,
           hardwareRevisionCode: undefined,
           customerId: undefined,
-          imei: undefined,
-          serialNumber: undefined,
-          blackboxId: undefined,
+          imei: registerDto.imei,
+          serialNumber: registerDto.serialNumber,
+          blackboxId: registerDto.blackboxId,
           bootloader: undefined,
           modelId: gt06nModel.id,
           apiKeyHash: expect.any(String) as string,

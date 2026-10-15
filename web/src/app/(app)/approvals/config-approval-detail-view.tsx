@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { CloneSourceLink } from "@/components/config/clone-source-link";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -17,11 +18,8 @@ import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { useUserNames } from "@/hooks/use-user-names";
 import { ApiError } from "@/lib/api";
-import {
-  simulateConfig,
-  type ConfigVersion,
-  type SimulationResult,
-} from "@/lib/config-api";
+import { simulateConfig, type SimulationResult } from "@/lib/config-api";
+import { resolveDiffBase } from "@/lib/config-diff-base";
 import {
   diffConfigFields,
   type FieldChange,
@@ -57,14 +55,6 @@ function ValueCell({ value, masked }: { value: unknown; masked: boolean }) {
     <span className="min-w-0 font-mono text-xs break-words">
       {valueText(value)}
     </span>
-  );
-}
-
-/** เวอร์ชันที่อนุมัติล่าสุด — ไม่พึ่งลำดับที่ backend ส่งมา */
-function latestVersion(versions: ConfigVersion[]): ConfigVersion | null {
-  return versions.reduce<ConfigVersion | null>(
-    (best, v) => (best && best.versionNumber >= v.versionNumber ? best : v),
-    null,
   );
 }
 
@@ -123,7 +113,10 @@ function Content({
 
   const inQueue = config.status === "testing";
   const definitionsReady = !definitions.isLoading && definitions.data !== null;
-  const versionsReady = !versions.isLoading && versions.data !== null;
+  // ต้นฉบับของสำเนา (clonedFromId) — ใช้เทียบเมื่อ Config นี้ยังไม่เคยอนุมัติ
+  // (id เป็น null = ไม่ใช่สำเนา ผลของ hook ทั้งสองไม่ถูกใช้)
+  const source = useConfig(config.clonedFromId);
+  const sourceVersions = useConfigVersions(config.clonedFromId);
 
   const metaByField = useMemo(() => {
     const map = new Map<string, FieldMeta>();
@@ -146,14 +139,30 @@ function Content({
     return !!m && (m.sensitive || m.restartRequired);
   };
 
-  const base = useMemo(
-    () => latestVersion(versions.data ?? []),
-    [versions.data],
-  );
+  const resolved = resolveDiffBase({
+    config,
+    ownVersions: versions,
+    source,
+    sourceVersions,
+  });
+  const baseFields =
+    resolved.kind === "own" ||
+    resolved.kind === "source-version" ||
+    resolved.kind === "source-current"
+      ? resolved.fields
+      : null;
   const diff = useMemo(
-    () => (base ? diffConfigFields(base.fields, config.fields) : null),
-    [base, config.fields],
+    () => (baseFields ? diffConfigFields(baseFields, config.fields) : null),
+    [baseFields, config.fields],
   );
+  const baseColumnLabel =
+    resolved.kind === "own"
+      ? `เวอร์ชันที่ ${resolved.versionNumber}`
+      : resolved.kind === "source-version"
+        ? `ต้นฉบับ (เวอร์ชันที่ ${resolved.versionNumber})`
+        : resolved.kind === "source-current"
+          ? "ต้นฉบับ (ค่าปัจจุบัน)"
+          : "ค่าเดิม";
   const changedNames = useMemo(
     () => new Set(diff?.changes.map((c) => c.fieldName) ?? []),
     [diff],
@@ -241,6 +250,18 @@ function Content({
                 <dt className="text-muted-foreground">ผู้สร้าง</dt>
                 <dd>{resolveName(config.createdBy)}</dd>
               </div>
+              {config.clonedFromId && (
+                <div className="flex gap-1.5">
+                  <dt className="text-muted-foreground">โคลนจาก</dt>
+                  <dd>
+                    <CloneSourceLink
+                      sourceId={config.clonedFromId}
+                      sourceName={source.data?.name ?? null}
+                      unavailable={source.error !== null && source.data === null}
+                    />
+                  </dd>
+                </div>
+              )}
               <div className="flex gap-1.5">
                 <dt className="text-muted-foreground">เข้าคิวเมื่อ</dt>
                 <dd>{formatDateTime(config.updatedAt)}</dd>
@@ -273,26 +294,56 @@ function Content({
 
       <Card className="gap-3 p-4">
         <p className="text-sm font-medium">
-          สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด
+          {resolved.kind === "source-version" ||
+          resolved.kind === "source-current"
+            ? `สิ่งที่ต่างจาก Config ต้นฉบับ: ${resolved.sourceName}`
+            : "สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด"}
         </p>
 
-        {versions.error && !versionsReady ? (
-          <p className="text-sm text-destructive">{versions.error}</p>
-        ) : !versionsReady ? (
+        {resolved.kind === "own-error" ? (
+          <p className="text-sm text-destructive">{resolved.message}</p>
+        ) : resolved.kind === "loading" ? (
           <p className="text-sm text-muted-foreground">
             กำลังโหลดประวัติเวอร์ชัน
           </p>
-        ) : !base || !diff ? (
+        ) : resolved.kind === "source-unavailable" ? (
+          <p className="text-sm text-muted-foreground">
+            {resolved.message} ทุกค่าด้านล่างเป็นค่าใหม่ทั้งหมด ({fieldCount}{" "}
+            ค่า)
+          </p>
+        ) : resolved.kind === "none" || !diff ? (
           <p className="text-sm text-muted-foreground">
             Config นี้ยังไม่เคยถูกอนุมัติ จึงไม่มีเวอร์ชันให้เทียบ
             ทุกค่าด้านล่างเป็นค่าใหม่ทั้งหมด ({fieldCount} ค่า)
           </p>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              เทียบกับเวอร์ชันที่ {base.versionNumber}{" "}
-              อนุมัติแล้วจะเป็นเวอร์ชันที่ {base.versionNumber + 1}
-            </p>
+            {resolved.kind === "own" ? (
+              <p className="text-sm text-muted-foreground">
+                เทียบกับเวอร์ชันที่ {resolved.versionNumber}{" "}
+                อนุมัติแล้วจะเป็นเวอร์ชันที่ {resolved.versionNumber + 1}
+              </p>
+            ) : resolved.kind === "source-version" ? (
+              <p className="text-sm text-muted-foreground">
+                เทียบกับเวอร์ชันที่ {resolved.versionNumber} ของต้นฉบับ
+                Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                ต้นฉบับยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นฉบับ
+                Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
+              </p>
+            )}
+            {(resolved.kind === "source-version" ||
+              resolved.kind === "source-current") &&
+              resolved.crossModel && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                  ต้นฉบับเป็น {resolved.crossModel.deviceModel} /{" "}
+                  {resolved.crossModel.protocol} ต่างจาก Config นี้ (
+                  {config.deviceModel} / {config.protocol}) ค่าที่ไม่มีในโมเดลนี้
+                  จะขึ้นเป็น ลบ
+                </div>
+              )}
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                 เพิ่ม {diff.counts.added}
@@ -313,46 +364,82 @@ function Content({
                 ค่าทุกตัวเหมือนเวอร์ชันที่อนุมัติล่าสุด
               </p>
             ) : (
-              <div className="divide-y rounded-lg border">
-                {orderedChanges.map((c) => (
-                  <div
-                    key={c.fieldName}
-                    className="grid grid-cols-[minmax(0,1fr)] gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,14rem)_4rem_minmax(0,1fr)] sm:items-start sm:gap-3"
-                  >
-                    <span className="flex items-center gap-1 font-mono text-muted-foreground">
-                      {c.fieldName}
-                      {needsAttention(c.fieldName) && (
-                        <span
-                          title={
-                            metaByField.get(c.fieldName)?.restartRequired
-                              ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
-                              : "ค่าอ่อนไหว"
-                          }
-                        >
-                          <TriangleAlertIcon className="size-3.5 text-amber-600" />
+              <div className="overflow-hidden rounded-lg border">
+                {/* ส่วนหัวคอลัมน์ (เฉพาะจอ sm ขึ้นไป) — ค่าเดิมกับค่าใหม่แยก
+                    คอลัมน์ให้สายตาไล่ลงมาเทียบได้ ไม่ต้องอ่านทีละบรรทัด */}
+                <div
+                  className="hidden gap-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem]"
+                  role="row"
+                >
+                  <span>ชื่อฟิลด์</span>
+                  <span>{baseColumnLabel}</span>
+                  <span>Config นี้</span>
+                  <span>ประเภท</span>
+                </div>
+                <div className="divide-y">
+                  {orderedChanges.map((c) => (
+                    <div
+                      key={c.fieldName}
+                      className="grid grid-cols-[minmax(0,1fr)] gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem] sm:items-start sm:gap-3"
+                    >
+                      <span className="flex items-center gap-1 font-mono text-muted-foreground">
+                        {c.fieldName}
+                        {needsAttention(c.fieldName) && (
+                          <span
+                            title={
+                              metaByField.get(c.fieldName)?.restartRequired
+                                ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
+                                : "ค่าอ่อนไหว"
+                            }
+                          >
+                            <TriangleAlertIcon className="size-3.5 text-amber-600" />
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={
+                          c.kind === "added"
+                            ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
+                            : "min-w-0 rounded bg-rose-50 px-1.5 py-0.5 dark:bg-rose-950/40"
+                        }
+                      >
+                        <span className="text-muted-foreground sm:hidden">
+                          {baseColumnLabel}:{" "}
                         </span>
-                      )}
-                    </span>
-                    <span className="font-medium">{CHANGE_LABEL[c.kind]}</span>
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      {c.kind !== "added" && (
-                        <span className="flex items-center gap-1 text-muted-foreground line-through">
+                        {c.kind === "added" ? (
+                          "-"
+                        ) : (
                           <ValueCell
                             value={c.before}
                             masked={isMasked(c.fieldName)}
                           />
+                        )}
+                      </span>
+                      <span
+                        className={
+                          c.kind === "removed"
+                            ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
+                            : "min-w-0 rounded bg-emerald-50 px-1.5 py-0.5 dark:bg-emerald-950/40"
+                        }
+                      >
+                        <span className="text-muted-foreground sm:hidden">
+                          Config นี้:{" "}
                         </span>
-                      )}
-                      {c.kind === "changed" && <span>→</span>}
-                      {c.kind !== "removed" && (
-                        <ValueCell
-                          value={c.after}
-                          masked={isMasked(c.fieldName)}
-                        />
-                      )}
-                    </span>
-                  </div>
-                ))}
+                        {c.kind === "removed" ? (
+                          "-"
+                        ) : (
+                          <ValueCell
+                            value={c.after}
+                            masked={isMasked(c.fieldName)}
+                          />
+                        )}
+                      </span>
+                      <span className="font-medium">
+                        {CHANGE_LABEL[c.kind]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <p className="text-xs text-muted-foreground">

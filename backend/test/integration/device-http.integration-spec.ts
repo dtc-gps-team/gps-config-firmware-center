@@ -258,6 +258,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-401',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: (await getOrCreateDeviceModel(prisma, 'GT06N')).id,
           protocol: 'TCP',
         })
@@ -278,6 +281,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'ATOMIC-REG-1',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -301,6 +307,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-403',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -317,6 +326,94 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(400);
     });
 
+    describe('IMEI / Serial Number / Blackbox ID บังคับกรอก (มติ A กับ B 13 ต.ค. 2569)', () => {
+      async function body(overrides: Record<string, unknown>) {
+        const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+        return {
+          deviceId: `REQ-${randomUUID().slice(0, 8)}`,
+          simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
+          modelId: model.id,
+          protocol: 'TCP',
+          ...overrides,
+        };
+      }
+
+      it.each(['imei', 'serialNumber', 'blackboxId'])(
+        'ไม่ส่ง %s -> 400 และไม่สร้างเครื่อง',
+        async (field) => {
+          const token = await adminToken();
+          const payload = await body({});
+          delete (payload as Record<string, unknown>)[field];
+          const before = await prisma.device.count();
+
+          await request(app.getHttpServer())
+            .post('/api/v1/devices')
+            .set('Authorization', `Bearer ${token}`)
+            .send(payload)
+            .expect(400);
+
+          expect(await prisma.device.count()).toBe(before);
+        },
+      );
+
+      it.each(['imei', 'serialNumber', 'blackboxId'])(
+        '%s เป็นช่องว่างล้วน -> 400 (ไม่นับว่ากรอกแล้ว)',
+        async (field) => {
+          const token = await adminToken();
+
+          await request(app.getHttpServer())
+            .post('/api/v1/devices')
+            .set('Authorization', `Bearer ${token}`)
+            .send(await body({ [field]: '   ' }))
+            .expect(400);
+        },
+      );
+
+      it('ช่องว่างหัวท้ายถูกตัดก่อนบันทึก', async () => {
+        const token = await adminToken();
+        const payload = await body({
+          imei: '  860000000000009  ',
+          blackboxId: ' BB-TRIM ',
+        });
+
+        await request(app.getHttpServer())
+          .post('/api/v1/devices')
+          .set('Authorization', `Bearer ${token}`)
+          .send(payload)
+          .expect(201);
+
+        const row = await prisma.device.findUniqueOrThrow({
+          where: { deviceId: payload.deviceId },
+        });
+        expect(row.imei).toBe('860000000000009');
+        expect(row.blackboxId).toBe('BB-TRIM');
+      });
+
+      it('อุปกรณ์เก่าที่ไม่มีค่าทั้งสามช่องยังอ่านได้ปกติ (คอลัมน์ยัง nullable)', async () => {
+        const adminUser = await makeUser(prisma, { role: 'Admin' });
+        await grant('Admin', ActionType.Read, 'devices');
+        const token = tokenFor(adminUser.id, 'Admin');
+        await makeDevice('LEGACY-NOID', 'installed');
+
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/devices/LEGACY-NOID')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        const row = res.body as {
+          imei: string | null;
+          serialNumber: string | null;
+          blackboxId: string | null;
+        };
+        expect(row.imei).toBeNull();
+        expect(row.serialNumber).toBeNull();
+        expect(row.blackboxId).toBeNull();
+      });
+    });
+
     it('modelId ไม่พบในทะเบียน -> 404', async () => {
       const token = await adminToken();
 
@@ -326,6 +423,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-404',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: randomUUID(),
           protocol: 'TCP',
         })
@@ -346,6 +446,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-400B',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'UDP',
         })
@@ -363,6 +466,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-409',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -381,6 +487,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-NOCUSTOMER',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
           customerId: randomUUID(),
@@ -401,6 +510,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-CUSTOMER',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
           customerId: customer.id,
@@ -425,6 +537,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-201',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
           hardwareRevisionCode: 'RevA',
@@ -466,6 +581,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-AUDIT',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
         })
@@ -491,6 +609,9 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .send({
           deviceId: 'NEW-NOLEAK',
           simNumber: '0899999999',
+          imei: '860000000000001',
+          serialNumber: 'SN-INT-0001',
+          blackboxId: 'BB-INT-0001',
           modelId: model.id,
           protocol: 'TCP',
         })

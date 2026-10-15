@@ -1843,7 +1843,7 @@ paths:
         "400":
           description: >-
             ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้
-            และไม่อยู่ใน Config ของเครื่อง (v3.55 field นอกชุดของรุ่นที่อยู่ใน
+            และไม่อยู่ใน Config ของเครื่อง (v3.54 field นอกชุดของรุ่นที่อยู่ใน
             Config template แล้วขอแก้ได้)/stOverridable: false/ชนิดข้อมูลไม่ตรง/
             ค่าไม่อยู่ใน allowedValues
         "401":
@@ -3985,7 +3985,7 @@ components:
           description: >-
             รุ่นอุปกรณ์/โปรโตคอลที่ field นี้เป็นค่าเริ่มต้น (Semantic
             Validation v3.11) ใช้กรองคลังพารามิเตอร์ตอนสร้าง Config และหา
-            required field ของรุ่น · ตั้งแต่ v3.55 (รีวิวพี่เลี้ยง 12 ต.ค.
+            required field ของรุ่น · ตั้งแต่ v3.54 (รีวิวพี่เลี้ยง 12 ต.ค.
             2569) **ไม่ใช่ข้อห้ามแล้ว** Config ใส่ field นอกชุดของรุ่นได้
             (ยังตรวจชนิดข้อมูลและ allowedValues ตามนิยาม)
           items:
@@ -4524,8 +4524,13 @@ components:
 
     RegisterDeviceRequest:
       type: object
-      description: Request body สำหรับ registerDevice (issue #157 PR 1)
-      required: [deviceId, simNumber, modelId, protocol]
+      description: >-
+        Request body สำหรับ registerDevice (issue #157 PR 1) — v3.53: `imei`,
+        `serialNumber` และ `blackboxId` เป็นช่องบังคับ (ไม่ว่าง ตัดช่องว่าง
+        หัวท้ายก่อน) ตามมติ A กับ B 13 ต.ค. 2569 · ค่าใน response ของ `Device`
+        ยัง nullable เพราะอุปกรณ์ที่ลงทะเบียนก่อนกติกานี้ไม่มีค่า
+      required:
+        [deviceId, simNumber, modelId, protocol, imei, serialNumber, blackboxId]
       properties:
         deviceId:
           type: string
@@ -4557,16 +4562,19 @@ components:
           nullable: true
         imei:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
         serialNumber:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
         blackboxId:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
+          description: >-
+            เลขที่มากับตัวอุปกรณ์เอง (คนละอย่างกับ `deviceId` ที่เป็นเลขเครื่อง
+            ของระบบ)
         bootloader:
           type: string
           maxLength: 50
