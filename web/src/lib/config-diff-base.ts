@@ -8,10 +8,10 @@ import type { Config, ConfigVersion } from "@/lib/config-api";
  *  1. Config นี้เคยอนุมัติแล้ว: เทียบกับเวอร์ชันล่าสุดของตัวเอง (รอบอนุมัติ
  *     ถัดไปคือการเปลี่ยนจากเวอร์ชันของตัวเอง ไม่ใช่จากต้นฉบับ)
  *  2. ยังไม่เคยอนุมัติและเป็นสำเนา (`clonedFromId`): เทียบกับเวอร์ชันที่อนุมัติ
- *     ล่าสุดของต้นทาง — เลือกเวอร์ชันที่อนุมัติแล้วเพราะเป็นสิ่งที่ผ่านการ
+ *     ล่าสุดของต้นฉบับ — เลือกเวอร์ชันที่อนุมัติแล้วเพราะเป็นสิ่งที่ผ่านการ
  *     ตัดสินใจจริง และไม่เปลี่ยนตามร่างที่ยังถูกแก้อยู่
- *  3. ต้นทางไม่เคยอนุมัติ: ถอยไปเทียบกับค่าปัจจุบันของต้นทาง (บอกในหน้าจอ)
- *  4. ต้นทางเปิดไม่ได้ (ถูกลบ/โหลดล้มเหลว): ไม่เทียบ
+ *  3. ต้นฉบับไม่เคยอนุมัติ: ถอยไปเทียบกับค่าปัจจุบันของต้นฉบับ (บอกในหน้าจอ)
+ *  4. ต้นฉบับเปิดไม่ได้ (ถูกลบ/โหลดล้มเหลว): ไม่เทียบ
  *  5. ไม่ใช่สำเนา: ไม่มีฐานเทียบ
  */
 
@@ -29,7 +29,7 @@ export type DiffBaseInput = {
   sourceVersions: LoadState<ConfigVersion[]>;
 };
 
-/** โมเดล/โปรโตคอลของต้นทาง เมื่อต่างจาก Config นี้ (wizard อนุญาตให้เปลี่ยน
+/** โมเดล/โปรโตคอลของต้นฉบับ เมื่อต่างจาก Config นี้ (wizard อนุญาตให้เปลี่ยน
  * ตอนโคลน) — ใช้แสดงคำเตือนว่าค่าที่ไม่มีในโมเดลใหม่จะขึ้นเป็น "ลบ" */
 export type CrossModel = { deviceModel: string; protocol: string } | null;
 
@@ -83,7 +83,7 @@ export function resolveDiffBase(input: DiffBaseInput): DiffBase {
   if (source.error && source.data === null) {
     return {
       kind: "source-unavailable",
-      message: "ไม่พบ Config ต้นทางหรือโหลดไม่สำเร็จ จึงเทียบไม่ได้",
+      message: "ไม่พบ Config ต้นฉบับหรือโหลดไม่สำเร็จ จึงเทียบไม่ได้",
     };
   }
   if (source.isLoading || source.data === null) return { kind: "loading" };
@@ -97,7 +97,7 @@ export function resolveDiffBase(input: DiffBaseInput): DiffBase {
   if (sourceVersions.error && sourceVersions.data === null) {
     return {
       kind: "source-unavailable",
-      message: "โหลดเวอร์ชันของ Config ต้นทางไม่สำเร็จ จึงเทียบไม่ได้",
+      message: "โหลดเวอร์ชันของ Config ต้นฉบับไม่สำเร็จ จึงเทียบไม่ได้",
     };
   }
   if (sourceVersions.isLoading || sourceVersions.data === null) {

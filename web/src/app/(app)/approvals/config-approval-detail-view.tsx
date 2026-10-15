@@ -113,7 +113,7 @@ function Content({
 
   const inQueue = config.status === "testing";
   const definitionsReady = !definitions.isLoading && definitions.data !== null;
-  // ต้นทางของสำเนา (clonedFromId) — ใช้เทียบเมื่อ Config นี้ยังไม่เคยอนุมัติ
+  // ต้นฉบับของสำเนา (clonedFromId) — ใช้เทียบเมื่อ Config นี้ยังไม่เคยอนุมัติ
   // (id เป็น null = ไม่ใช่สำเนา ผลของ hook ทั้งสองไม่ถูกใช้)
   const source = useConfig(config.clonedFromId);
   const sourceVersions = useConfigVersions(config.clonedFromId);
@@ -159,9 +159,9 @@ function Content({
     resolved.kind === "own"
       ? `เวอร์ชันที่ ${resolved.versionNumber}`
       : resolved.kind === "source-version"
-        ? `ต้นทาง (เวอร์ชันที่ ${resolved.versionNumber})`
+        ? `ต้นฉบับ (เวอร์ชันที่ ${resolved.versionNumber})`
         : resolved.kind === "source-current"
-          ? "ต้นทาง (ค่าปัจจุบัน)"
+          ? "ต้นฉบับ (ค่าปัจจุบัน)"
           : "ค่าเดิม";
   const changedNames = useMemo(
     () => new Set(diff?.changes.map((c) => c.fieldName) ?? []),
@@ -296,7 +296,7 @@ function Content({
         <p className="text-sm font-medium">
           {resolved.kind === "source-version" ||
           resolved.kind === "source-current"
-            ? `สิ่งที่ต่างจาก Config ต้นทาง: ${resolved.sourceName}`
+            ? `สิ่งที่ต่างจาก Config ต้นฉบับ: ${resolved.sourceName}`
             : "สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด"}
         </p>
 
@@ -325,12 +325,12 @@ function Content({
               </p>
             ) : resolved.kind === "source-version" ? (
               <p className="text-sm text-muted-foreground">
-                เทียบกับเวอร์ชันที่ {resolved.versionNumber} ของต้นทาง
+                เทียบกับเวอร์ชันที่ {resolved.versionNumber} ของต้นฉบับ
                 Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                ต้นทางยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นทาง
+                ต้นฉบับยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นฉบับ
                 Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
               </p>
             )}
@@ -338,7 +338,7 @@ function Content({
               resolved.kind === "source-current") &&
               resolved.crossModel && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                  ต้นทางเป็น {resolved.crossModel.deviceModel} /{" "}
+                  ต้นฉบับเป็น {resolved.crossModel.deviceModel} /{" "}
                   {resolved.crossModel.protocol} ต่างจาก Config นี้ (
                   {config.deviceModel} / {config.protocol}) ค่าที่ไม่มีในโมเดลนี้
                   จะขึ้นเป็น ลบ

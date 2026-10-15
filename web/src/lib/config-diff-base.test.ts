@@ -22,7 +22,7 @@ function version(n: number, fields: Record<string, unknown>): ConfigVersion {
 function source(overrides: Partial<Config> = {}): Config {
   return {
     id: "src-1",
-    name: "ต้นทาง",
+    name: "ต้นฉบับ",
     deviceModel: "GT06N",
     protocol: "TCP",
     description: null,
@@ -89,7 +89,7 @@ describe("resolveDiffBase", () => {
     expect(resolveDiffBase(input())).toEqual({ kind: "none" });
   });
 
-  it("สำเนา: เทียบกับเวอร์ชันที่อนุมัติล่าสุดของต้นทาง ไม่ใช่ค่าปัจจุบัน", () => {
+  it("สำเนา: เทียบกับเวอร์ชันที่อนุมัติล่าสุดของต้นฉบับ ไม่ใช่ค่าปัจจุบัน", () => {
     const result = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06N", protocol: "TCP" },
@@ -111,12 +111,12 @@ describe("resolveDiffBase", () => {
       fields: { APN: "v2" },
       versionNumber: 2,
       sourceId: "src-1",
-      sourceName: "ต้นทาง",
+      sourceName: "ต้นฉบับ",
       crossModel: null,
     });
   });
 
-  it("ต้นทางไม่เคยอนุมัติ: ถอยไปเทียบกับค่าปัจจุบันของต้นทาง", () => {
+  it("ต้นฉบับไม่เคยอนุมัติ: ถอยไปเทียบกับค่าปัจจุบันของต้นฉบับ", () => {
     const result = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06N", protocol: "TCP" },
@@ -132,11 +132,11 @@ describe("resolveDiffBase", () => {
     expect(result).toMatchObject({
       kind: "source-current",
       fields: { APN: "current" },
-      sourceName: "ต้นทาง",
+      sourceName: "ต้นฉบับ",
     });
   });
 
-  it("ต้นทางต่างโมเดลหรือโปรโตคอล: ระบุ crossModel", () => {
+  it("ต้นฉบับต่างโมเดลหรือโปรโตคอล: ระบุ crossModel", () => {
     const result = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06L", protocol: "TCP" },
@@ -155,7 +155,7 @@ describe("resolveDiffBase", () => {
     });
   });
 
-  it("ต้นทางเปิดไม่ได้ (ถูกลบหรือโหลดล้มเหลว): source-unavailable ไม่ throw", () => {
+  it("ต้นฉบับเปิดไม่ได้ (ถูกลบหรือโหลดล้มเหลว): source-unavailable ไม่ throw", () => {
     const result = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06N", protocol: "TCP" },
@@ -166,7 +166,7 @@ describe("resolveDiffBase", () => {
     expect(result.kind).toBe("source-unavailable");
   });
 
-  it("โหลดเวอร์ชันของต้นทางล้มเหลว: source-unavailable", () => {
+  it("โหลดเวอร์ชันของต้นฉบับล้มเหลว: source-unavailable", () => {
     const result = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06N", protocol: "TCP" },
@@ -178,7 +178,7 @@ describe("resolveDiffBase", () => {
     expect(result.kind).toBe("source-unavailable");
   });
 
-  it("ต้นทางหรือเวอร์ชันของต้นทางยังโหลดอยู่: loading", () => {
+  it("ต้นฉบับหรือเวอร์ชันของต้นฉบับยังโหลดอยู่: loading", () => {
     const loadingSource = resolveDiffBase(
       input({
         config: { clonedFromId: "src-1", deviceModel: "GT06N", protocol: "TCP" },

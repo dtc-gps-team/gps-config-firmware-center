@@ -34,7 +34,7 @@ const state = vi.hoisted(() => ({
   config: null as unknown,
   versions: null as unknown,
   definitions: null as unknown,
-  // ต้นทางของสำเนา (clonedFromId) — id ที่ตรงกับ sourceId ได้ข้อมูลชุดนี้
+  // ต้นฉบับของสำเนา (clonedFromId) — id ที่ตรงกับ sourceId ได้ข้อมูลชุดนี้
   sourceId: null as string | null,
   source: null as unknown,
   sourceError: null as string | null,
@@ -361,7 +361,7 @@ describe("ConfigApprovalDetailView", () => {
   });
 });
 
-describe("ConfigApprovalDetailView: สำเนาที่ยังไม่เคยอนุมัติ เทียบกับต้นทาง", () => {
+describe("ConfigApprovalDetailView: สำเนาที่ยังไม่เคยอนุมัติ เทียบกับต้นฉบับ", () => {
   const cloned = () => config({ clonedFromId: "src-1" });
   const sourceConfig = (overrides: Partial<Config> = {}) =>
     config({
@@ -377,7 +377,7 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     router.push.mockReset();
   });
 
-  it("เทียบกับเวอร์ชันที่อนุมัติล่าสุดของต้นทาง (ไม่ใช่ค่าปัจจุบัน) และบอกชื่อต้นทาง", () => {
+  it("เทียบกับเวอร์ชันที่อนุมัติล่าสุดของต้นฉบับ (ไม่ใช่ค่าปัจจุบัน) และบอกชื่อต้นฉบับ", () => {
     setup({
       config: cloned(),
       versions: [],
@@ -389,17 +389,17 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     });
 
     expect(
-      screen.getByText("สิ่งที่ต่างจาก Config ต้นทาง: Source Config"),
+      screen.getByText("สิ่งที่ต่างจาก Config ต้นฉบับ: Source Config"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/เทียบกับเวอร์ชันที่ 2 ของต้นทาง/),
+      screen.getByText(/เทียบกับเวอร์ชันที่ 2 ของต้นฉบับ/),
     ).toBeInTheDocument();
-    // ต้นทาง v2 = { SERVER_PORT: 8080, APN } เทียบกับสำเนา { 9000, internet, ... }
+    // ต้นฉบับ v2 = { SERVER_PORT: 8080, APN } เทียบกับสำเนา { 9000, internet, ... }
     expect(screen.getByText("แก้ไข 1")).toBeInTheDocument(); // SERVER_PORT
     expect(screen.getByText("ไม่เปลี่ยน 1")).toBeInTheDocument(); // APN
   });
 
-  it("ส่วนหัวมีลิงก์ 'โคลนจาก' ไปหน้าต้นทาง", () => {
+  it("ส่วนหัวมีลิงก์ 'โคลนจาก' ไปหน้าต้นฉบับ", () => {
     setup({
       config: cloned(),
       source: sourceConfig(),
@@ -412,7 +412,7 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     ).toHaveAttribute("href", "/config/src-1");
   });
 
-  it("ต้นทางยังไม่เคยอนุมัติ: เทียบกับค่าปัจจุบันของต้นทางและบอกให้เห็น", () => {
+  it("ต้นฉบับยังไม่เคยอนุมัติ: เทียบกับค่าปัจจุบันของต้นฉบับและบอกให้เห็น", () => {
     setup({
       config: cloned(),
       source: sourceConfig({ status: "draft", fields: { SERVER_PORT: 1 } }),
@@ -420,11 +420,11 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     });
 
     expect(
-      screen.getByText(/ต้นทางยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นทาง/),
+      screen.getByText(/ต้นฉบับยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นฉบับ/),
     ).toBeInTheDocument();
   });
 
-  it("ต้นทางเปิดไม่ได้: บอกว่าเทียบไม่ได้ ไม่ error ทั้งหน้า และปุ่มอนุมัติยังอยู่", () => {
+  it("ต้นฉบับเปิดไม่ได้: บอกว่าเทียบไม่ได้ ไม่ error ทั้งหน้า และปุ่มอนุมัติยังอยู่", () => {
     setup({
       config: cloned(),
       source: null,
@@ -432,13 +432,13 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     });
 
     expect(
-      screen.getByText(/ไม่พบ Config ต้นทางหรือโหลดไม่สำเร็จ จึงเทียบไม่ได้/),
+      screen.getByText(/ไม่พบ Config ต้นฉบับหรือโหลดไม่สำเร็จ จึงเทียบไม่ได้/),
     ).toBeInTheDocument();
     expect(screen.getByText(/เปิดไม่ได้ อาจถูกลบแล้ว/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /อนุมัติ/ })).toBeInTheDocument();
   });
 
-  it("ต้นทางต่างโมเดล: แสดงคำเตือนว่าค่าที่ไม่มีจะขึ้นเป็น ลบ", () => {
+  it("ต้นฉบับต่างโมเดล: แสดงคำเตือนว่าค่าที่ไม่มีจะขึ้นเป็น ลบ", () => {
     setup({
       config: cloned(),
       source: sourceConfig({ deviceModel: "GT06L" }),
@@ -446,7 +446,7 @@ describe("ConfigApprovalDetailView: สำเนาที่ยังไม่�
     });
 
     expect(
-      screen.getByText(/ต้นทางเป็น GT06L \/ TCP ต่างจาก Config นี้/),
+      screen.getByText(/ต้นฉบับเป็น GT06L \/ TCP ต่างจาก Config นี้/),
     ).toBeInTheDocument();
   });
 
@@ -488,7 +488,7 @@ describe("ConfigApprovalDetailView: ตารางความต่างแ�
     expect(screen.getByText("ประเภท")).toBeInTheDocument();
   });
 
-  it("สำเนา: หัวคอลัมน์ฐานบอกว่าเป็นเวอร์ชันของต้นทาง", () => {
+  it("สำเนา: หัวคอลัมน์ฐานบอกว่าเป็นเวอร์ชันของต้นฉบับ", () => {
     setup({
       config: config({ clonedFromId: "src-1" }),
       versions: [],
@@ -501,7 +501,7 @@ describe("ConfigApprovalDetailView: ตารางความต่างแ�
       sourceVersions: [version(2, { SERVER_PORT: 1 })],
     });
 
-    expect(screen.getByText("ต้นทาง (เวอร์ชันที่ 2)")).toBeInTheDocument();
+    expect(screen.getByText("ต้นฉบับ (เวอร์ชันที่ 2)")).toBeInTheDocument();
   });
 
   it("ค่าที่เพิ่ม: ฝั่งค่าเดิมเป็น - และมีป้ายประเภท เพิ่ม ค่าที่ลบ: ฝั่งค่าใหม่เป็น - และมีป้าย ลบ", () => {
