@@ -31,6 +31,22 @@ android {
         versionName = flutter.versionName
     }
 
+    // flavor "prod" = พฤติกรรม build เดิมทุกอย่าง (applicationId com.example.mobile,
+    // google-services.json ที่ android/app/ ตามเดิม) · flavor "dev" = build ทดสอบที่ใช้
+    // Firebase project แยก (android/app/src/dev/google-services.json) กัน token/push
+    // ปนกับ production — pubspec.yaml ตั้ง default-flavor: prod ให้คำสั่งเดิมที่ไม่ใส่
+    // --flavor (เช่น CI flutter drive) ยังทำงานเหมือนเดิม
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+        }
+        create("dev") {
+            dimension = "env"
+            applicationIdSuffix = ".dev"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
