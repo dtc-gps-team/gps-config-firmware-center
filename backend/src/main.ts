@@ -1,10 +1,16 @@
+// ต้องเป็น import แรกเสมอ: โหลด .env ก่อน module อื่นอ่าน process.env (ดู load-env.ts)
+import './load-env';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { assertJwtSecret } from './common/jwt-secret';
 import { resolveTrustProxy } from './common/trust-proxy';
 
 async function bootstrap() {
+  // ตรวจก่อนสร้างแอป เพราะ JwtModule.register() ของแต่ละ module อ่าน JWT_SECRET
+  // ตอน import และ fallback เป็น 'changeme' แบบเงียบๆ ดูเหตุผลที่ common/jwt-secret.ts
+  assertJwtSecret(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   // ให้ req.ip (ที่ลง Audit Log) เป็น IP ของผู้ใช้จริงเมื่อ deploy หลัง reverse
   // proxy — ปิดเป็นค่าเริ่มต้น ตั้ง TRUST_PROXY เป็นจำนวน proxy บนระบบ hosting
