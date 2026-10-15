@@ -34,22 +34,43 @@ const state = vi.hoisted(() => ({
   config: null as unknown,
   versions: null as unknown,
   definitions: null as unknown,
+  // ต้นทางของสำเนา (clonedFromId) — id ที่ตรงกับ sourceId ได้ข้อมูลชุดนี้
+  sourceId: null as string | null,
+  source: null as unknown,
+  sourceError: null as string | null,
+  sourceVersions: null as unknown,
 }));
 vi.mock("@/hooks/use-config", () => ({
-  useConfig: () => ({
-    data: state.config,
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-  }),
+  useConfig: (id: string | null) =>
+    id !== null && id === state.sourceId
+      ? {
+          data: state.source,
+          isLoading: false,
+          error: state.sourceError,
+          refetch: vi.fn(),
+        }
+      : {
+          data: state.config,
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(),
+        },
 }));
 vi.mock("@/hooks/use-config-versions", () => ({
-  useConfigVersions: () => ({
-    data: state.versions,
-    isLoading: state.versions === null,
-    error: null,
-    refetch: vi.fn(),
-  }),
+  useConfigVersions: (id: string | null) =>
+    id !== null && id === state.sourceId
+      ? {
+          data: state.sourceVersions,
+          isLoading: state.sourceVersions === null,
+          error: null,
+          refetch: vi.fn(),
+        }
+      : {
+          data: state.versions,
+          isLoading: state.versions === null,
+          error: null,
+          refetch: vi.fn(),
+        },
 }));
 vi.mock("@/hooks/use-config-definitions", () => ({
   useConfigDefinitions: () => ({
@@ -143,8 +164,17 @@ function setup(opts: {
   config?: Config;
   versions?: ConfigVersion[] | null;
   definitions?: ConfigFieldDefinition[] | null;
+  source?: Config | null;
+  sourceError?: string | null;
+  sourceVersions?: ConfigVersion[] | null;
 }) {
-  state.config = opts.config ?? config();
+  const cfg = opts.config ?? config();
+  state.sourceId = cfg.clonedFromId;
+  state.source = opts.source ?? null;
+  state.sourceError = opts.sourceError ?? null;
+  state.sourceVersions =
+    opts.sourceVersions === undefined ? [] : opts.sourceVersions;
+  state.config = cfg;
   state.versions = opts.versions === undefined ? [] : opts.versions;
   state.definitions =
     opts.definitions === undefined ? definitions : opts.definitions;
@@ -328,5 +358,117 @@ describe("ConfigApprovalDetailView", () => {
     expect(details.getAllByRole("button", { name: "ทดสอบซ้ำ" })).toHaveLength(
       1,
     );
+  });
+});
+
+describe("ConfigApprovalDetailView: สำเนาที่ยังไม่เคยอนุมัติ เทียบกับต้นทาง", () => {
+  const cloned = () => config({ clonedFromId: "src-1" });
+  const sourceConfig = (overrides: Partial<Config> = {}) =>
+    config({
+      id: "src-1",
+      name: "Source Config",
+      status: "approved",
+      fields: { SERVER_PORT: 9000 },
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("เทียบกับเวอร์ชันที่อนุมัติล่าสุดของต้นทาง (ไม่ใช่ค่าปัจจุบัน) และบอกชื่อต้นทาง", () => {
+    setup({
+      config: cloned(),
+      versions: [],
+      source: sourceConfig({ fields: { SERVER_PORT: 1, APN: "draft-edit" } }),
+      sourceVersions: [
+        version(1, { SERVER_PORT: 1 }),
+        version(2, { SERVER_PORT: 8080, APN: "internet" }),
+      ],
+    });
+
+    expect(
+      screen.getByText("สิ่งที่ต่างจาก Config ต้นทาง: Source Config"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/เทียบกับเวอร์ชันที่ 2 ของต้นทาง/),
+    ).toBeInTheDocument();
+    // ต้นทาง v2 = { SERVER_PORT: 8080, APN } เทียบกับสำเนา { 9000, internet, ... }
+    expect(screen.getByText("แก้ไข 1")).toBeInTheDocument(); // SERVER_PORT
+    expect(screen.getByText("ไม่เปลี่ยน 1")).toBeInTheDocument(); // APN
+  });
+
+  it("ส่วนหัวมีลิงก์ 'โคลนจาก' ไปหน้าต้นทาง", () => {
+    setup({
+      config: cloned(),
+      source: sourceConfig(),
+      sourceVersions: [version(1, { SERVER_PORT: 1 })],
+    });
+
+    expect(screen.getByText("โคลนจาก")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Source Config" }),
+    ).toHaveAttribute("href", "/config/src-1");
+  });
+
+  it("ต้นทางยังไม่เคยอนุมัติ: เทียบกับค่าปัจจุบันของต้นทางและบอกให้เห็น", () => {
+    setup({
+      config: cloned(),
+      source: sourceConfig({ status: "draft", fields: { SERVER_PORT: 1 } }),
+      sourceVersions: [],
+    });
+
+    expect(
+      screen.getByText(/ต้นทางยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นทาง/),
+    ).toBeInTheDocument();
+  });
+
+  it("ต้นทางเปิดไม่ได้: บอกว่าเทียบไม่ได้ ไม่ error ทั้งหน้า และปุ่มอนุมัติยังอยู่", () => {
+    setup({
+      config: cloned(),
+      source: null,
+      sourceError: "ไม่พบ Config",
+    });
+
+    expect(
+      screen.getByText(/ไม่พบ Config ต้นทางหรือโหลดไม่สำเร็จ จึงเทียบไม่ได้/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/เปิดไม่ได้ อาจถูกลบแล้ว/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /อนุมัติ/ })).toBeInTheDocument();
+  });
+
+  it("ต้นทางต่างโมเดล: แสดงคำเตือนว่าค่าที่ไม่มีจะขึ้นเป็น ลบ", () => {
+    setup({
+      config: cloned(),
+      source: sourceConfig({ deviceModel: "GT06L" }),
+      sourceVersions: [version(1, { SERVER_PORT: 1 })],
+    });
+
+    expect(
+      screen.getByText(/ต้นทางเป็น GT06L \/ TCP ต่างจาก Config นี้/),
+    ).toBeInTheDocument();
+  });
+
+  it("เคยอนุมัติแล้ว: ใช้เวอร์ชันของตัวเองก่อน แม้เป็นสำเนา", () => {
+    setup({
+      config: cloned(),
+      versions: [version(4, { SERVER_PORT: 8080 })],
+      source: sourceConfig(),
+      sourceVersions: [version(1, { SERVER_PORT: 1 })],
+    });
+
+    expect(
+      screen.getByText("สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/เทียบกับเวอร์ชันที่ 4 อนุมัติแล้วจะเป็นเวอร์ชันที่ 5/),
+    ).toBeInTheDocument();
+  });
+
+  it("ไม่ใช่สำเนา: ไม่มีแถว 'โคลนจาก'", () => {
+    setup({});
+
+    expect(screen.queryByText("โคลนจาก")).not.toBeInTheDocument();
   });
 });

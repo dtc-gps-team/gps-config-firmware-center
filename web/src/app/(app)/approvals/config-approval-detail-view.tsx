@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { CloneSourceLink } from "@/components/config/clone-source-link";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -17,11 +18,8 @@ import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { useUserNames } from "@/hooks/use-user-names";
 import { ApiError } from "@/lib/api";
-import {
-  simulateConfig,
-  type ConfigVersion,
-  type SimulationResult,
-} from "@/lib/config-api";
+import { simulateConfig, type SimulationResult } from "@/lib/config-api";
+import { resolveDiffBase } from "@/lib/config-diff-base";
 import {
   diffConfigFields,
   type FieldChange,
@@ -57,14 +55,6 @@ function ValueCell({ value, masked }: { value: unknown; masked: boolean }) {
     <span className="min-w-0 font-mono text-xs break-words">
       {valueText(value)}
     </span>
-  );
-}
-
-/** เวอร์ชันที่อนุมัติล่าสุด — ไม่พึ่งลำดับที่ backend ส่งมา */
-function latestVersion(versions: ConfigVersion[]): ConfigVersion | null {
-  return versions.reduce<ConfigVersion | null>(
-    (best, v) => (best && best.versionNumber >= v.versionNumber ? best : v),
-    null,
   );
 }
 
@@ -123,7 +113,10 @@ function Content({
 
   const inQueue = config.status === "testing";
   const definitionsReady = !definitions.isLoading && definitions.data !== null;
-  const versionsReady = !versions.isLoading && versions.data !== null;
+  // ต้นทางของสำเนา (clonedFromId) — ใช้เทียบเมื่อ Config นี้ยังไม่เคยอนุมัติ
+  // (id เป็น null = ไม่ใช่สำเนา ผลของ hook ทั้งสองไม่ถูกใช้)
+  const source = useConfig(config.clonedFromId);
+  const sourceVersions = useConfigVersions(config.clonedFromId);
 
   const metaByField = useMemo(() => {
     const map = new Map<string, FieldMeta>();
@@ -146,13 +139,21 @@ function Content({
     return !!m && (m.sensitive || m.restartRequired);
   };
 
-  const base = useMemo(
-    () => latestVersion(versions.data ?? []),
-    [versions.data],
-  );
+  const resolved = resolveDiffBase({
+    config,
+    ownVersions: versions,
+    source,
+    sourceVersions,
+  });
+  const baseFields =
+    resolved.kind === "own" ||
+    resolved.kind === "source-version" ||
+    resolved.kind === "source-current"
+      ? resolved.fields
+      : null;
   const diff = useMemo(
-    () => (base ? diffConfigFields(base.fields, config.fields) : null),
-    [base, config.fields],
+    () => (baseFields ? diffConfigFields(baseFields, config.fields) : null),
+    [baseFields, config.fields],
   );
   const changedNames = useMemo(
     () => new Set(diff?.changes.map((c) => c.fieldName) ?? []),
@@ -241,6 +242,18 @@ function Content({
                 <dt className="text-muted-foreground">ผู้สร้าง</dt>
                 <dd>{resolveName(config.createdBy)}</dd>
               </div>
+              {config.clonedFromId && (
+                <div className="flex gap-1.5">
+                  <dt className="text-muted-foreground">โคลนจาก</dt>
+                  <dd>
+                    <CloneSourceLink
+                      sourceId={config.clonedFromId}
+                      sourceName={source.data?.name ?? null}
+                      unavailable={source.error !== null && source.data === null}
+                    />
+                  </dd>
+                </div>
+              )}
               <div className="flex gap-1.5">
                 <dt className="text-muted-foreground">เข้าคิวเมื่อ</dt>
                 <dd>{formatDateTime(config.updatedAt)}</dd>
@@ -273,26 +286,56 @@ function Content({
 
       <Card className="gap-3 p-4">
         <p className="text-sm font-medium">
-          สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด
+          {resolved.kind === "source-version" ||
+          resolved.kind === "source-current"
+            ? `สิ่งที่ต่างจาก Config ต้นทาง: ${resolved.sourceName}`
+            : "สิ่งที่เปลี่ยนจากเวอร์ชันที่อนุมัติล่าสุด"}
         </p>
 
-        {versions.error && !versionsReady ? (
-          <p className="text-sm text-destructive">{versions.error}</p>
-        ) : !versionsReady ? (
+        {resolved.kind === "own-error" ? (
+          <p className="text-sm text-destructive">{resolved.message}</p>
+        ) : resolved.kind === "loading" ? (
           <p className="text-sm text-muted-foreground">
             กำลังโหลดประวัติเวอร์ชัน
           </p>
-        ) : !base || !diff ? (
+        ) : resolved.kind === "source-unavailable" ? (
+          <p className="text-sm text-muted-foreground">
+            {resolved.message} ทุกค่าด้านล่างเป็นค่าใหม่ทั้งหมด ({fieldCount}{" "}
+            ค่า)
+          </p>
+        ) : resolved.kind === "none" || !diff ? (
           <p className="text-sm text-muted-foreground">
             Config นี้ยังไม่เคยถูกอนุมัติ จึงไม่มีเวอร์ชันให้เทียบ
             ทุกค่าด้านล่างเป็นค่าใหม่ทั้งหมด ({fieldCount} ค่า)
           </p>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              เทียบกับเวอร์ชันที่ {base.versionNumber}{" "}
-              อนุมัติแล้วจะเป็นเวอร์ชันที่ {base.versionNumber + 1}
-            </p>
+            {resolved.kind === "own" ? (
+              <p className="text-sm text-muted-foreground">
+                เทียบกับเวอร์ชันที่ {resolved.versionNumber}{" "}
+                อนุมัติแล้วจะเป็นเวอร์ชันที่ {resolved.versionNumber + 1}
+              </p>
+            ) : resolved.kind === "source-version" ? (
+              <p className="text-sm text-muted-foreground">
+                เทียบกับเวอร์ชันที่ {resolved.versionNumber} ของต้นทาง
+                Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                ต้นทางยังไม่เคยอนุมัติ จึงเทียบกับค่าปัจจุบันของต้นทาง
+                Config นี้ยังไม่เคยอนุมัติ อนุมัติแล้วจะเป็นเวอร์ชันที่ 1
+              </p>
+            )}
+            {(resolved.kind === "source-version" ||
+              resolved.kind === "source-current") &&
+              resolved.crossModel && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                  ต้นทางเป็น {resolved.crossModel.deviceModel} /{" "}
+                  {resolved.crossModel.protocol} ต่างจาก Config นี้ (
+                  {config.deviceModel} / {config.protocol}) ค่าที่ไม่มีในโมเดลนี้
+                  จะขึ้นเป็น ลบ
+                </div>
+              )}
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                 เพิ่ม {diff.counts.added}
