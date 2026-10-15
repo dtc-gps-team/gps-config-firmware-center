@@ -2,6 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/features/config_simulator/config_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 void main() {
   group('MockConfigRepository', () {
@@ -21,7 +27,7 @@ void main() {
   });
 
   test(
-    'configRepositoryProvider ให้ ApiConfigRepository เมื่อ API_MOCK_MODE=false (default ตอนรันเทส)',
+    'configRepositoryProvider ให้ ApiConfigRepository เมื่อ API_MOCK_MODE=false',
     () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -30,6 +36,20 @@ void main() {
         isA<ApiConfigRepository>(),
       );
     },
+    skip: AppConfig.apiMockMode ? _realModeOnly : false,
+  );
+
+  test(
+    'configRepositoryProvider ให้ MockConfigRepository เมื่อ API_MOCK_MODE=true (default)',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(configRepositoryProvider),
+        isA<MockConfigRepository>(),
+      );
+    },
+    skip: AppConfig.apiMockMode ? false : 'mock-mode only',
   );
 
   group('deployableConfigListProvider', () {

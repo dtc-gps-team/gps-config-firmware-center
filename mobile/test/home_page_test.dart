@@ -15,6 +15,12 @@ import 'package:mobile/features/device_connection_test/recent_device_id_store.da
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -740,48 +746,52 @@ void main() {
       );
     });
 
-    testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
-        'ยกเลิก = ยังไม่ logout และข้อมูลในคิวอยู่ครบ', (tester) async {
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      await queueAction(db, 'p', 'pending');
-      await queueAction(db, 'f', 'failed');
-      final container = await pumpHome(tester, db);
+    // dialog เตือนคิวค้างอ่าน PendingActions เฉพาะโหมดจริง (home_page.dart
+    // `_confirmAndLogout`)
+    group('โหมดจริง', () {
+      testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
+          'ยกเลิก = ยังไม่ logout และข้อมูลในคิวอยู่ครบ', (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        await queueAction(db, 'p', 'pending');
+        await queueAction(db, 'f', 'failed');
+        final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
-      expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
+        expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('logout_unsynced_cancel')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('logout_unsynced_cancel')));
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
-      expect(
-        container.read(authControllerProvider).status,
-        AuthStatus.authenticated,
-      );
-      expect(await db.pendingActionDao.countUnsynced(), 2);
-    });
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.authenticated,
+        );
+        expect(await db.pendingActionDao.countUnsynced(), 2);
+      });
 
-    testWidgets('มีรายการค้าง + ยืนยัน -> logout และล้างคิว', (tester) async {
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      await queueAction(db, 'p', 'pending');
-      final container = await pumpHome(tester, db);
+      testWidgets('มีรายการค้าง + ยืนยัน -> logout และล้างคิว', (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        await queueAction(db, 'p', 'pending');
+        final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
+        await tester.pumpAndSettle();
 
-      expect(
-        container.read(authControllerProvider).status,
-        AuthStatus.unauthenticated,
-      );
-      expect(await db.pendingActionDao.countUnsynced(), 0);
-    });
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.unauthenticated,
+        );
+        expect(await db.pendingActionDao.countUnsynced(), 0);
+      });
+    }, skip: AppConfig.apiMockMode ? _realModeOnly : false);
   });
 }
 
