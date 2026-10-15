@@ -434,4 +434,68 @@ export class ConfigDefinitionService {
       });
     }
   }
+
+  /**
+   * ตรวจ `fields` ค่าเฉพาะเครื่องที่ **Operation** เสนอตอนสร้าง Rollout
+   * (docs/17 ข้อ 3.4 ทางเลือก ข — มติ B 13 ต.ค. 2569) เทียบคลัง Parameter
+   *
+   * **ต่างจาก `validateOverridableFields()` ของช่างที่จุดเดียว:** ไม่เช็ค
+   * `stOverridable` — Operation แก้ได้ทุก field ที่โมเดล/โปรโตคอลนั้นรองรับ
+   * (ธง `stOverridable` ตั้งไว้สำหรับช่างหน้างานเท่านั้น) · ที่เหลือเหมือน
+   * กัน: ต้องมีนิยามในคลัง, รองรับโมเดล/โปรโตคอล, ชนิดข้อมูลถูก, อยู่ใน
+   * `allowedValues` · เป็น partial update จึงไม่เช็ค required
+   *
+   * แยกเป็นฟังก์ชันใหม่ ไม่แก้ `validateOverridableFields()` ที่ช่างใช้อยู่
+   * ตามที่ตกลงใน docs/17 (กันคนอ่านทีหลังสับสนว่าเป็นตัวเดียวกับของช่าง)
+   *
+   * คืนรายการ error ต่อ field (ไม่ throw) ให้ผู้เรียกที่ตรวจหลายเครื่อง
+   * รวมข้อความพร้อมชื่อเครื่องเอง
+   */
+  async validateOperationOverridableFields(
+    deviceModel: string,
+    protocol: string,
+    fields: Record<string, unknown>,
+  ): Promise<string[]> {
+    const defs = await this.prisma.configFieldDefinition.findMany({
+      include: { supportedModels: true },
+    });
+    const defByName = new Map(defs.map((d) => [d.fieldName, d]));
+    const errors: string[] = [];
+
+    for (const [name, value] of Object.entries(fields)) {
+      const def = defByName.get(name);
+      if (!def) {
+        errors.push(
+          `ไม่รู้จัก field "${name}" ต้องสร้างนิยามในคลัง Parameter ก่อน`,
+        );
+        continue;
+      }
+
+      const supportsModel = def.supportedModels.some(
+        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+      );
+      if (!supportsModel) {
+        errors.push(
+          `field "${name}" ไม่รองรับโมเดล ${deviceModel}/${protocol}`,
+        );
+        continue;
+      }
+
+      if (!matchesDataType(value, def.dataType)) {
+        errors.push(`field "${name}" ต้องเป็นชนิดข้อมูล ${def.dataType}`);
+        continue;
+      }
+
+      if (
+        def.allowedValues.length > 0 &&
+        !def.allowedValues.includes(String(value))
+      ) {
+        errors.push(
+          `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
+        );
+      }
+    }
+
+    return errors;
+  }
 }

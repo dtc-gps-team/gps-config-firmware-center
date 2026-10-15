@@ -618,6 +618,9 @@ async function main(): Promise<void> {
       days: number;
       isRollback?: boolean;
       rollbackOfId?: string;
+      /** ค่าเฉพาะเครื่องของ Rollout (docs/17) — deviceId -> fields */
+      deviceValues?: Record<string, Record<string, unknown>>;
+      deviceValuesReason?: string;
     },
   ) {
     const { status, days, results, deviceIds } = opts;
@@ -639,6 +642,7 @@ async function main(): Promise<void> {
         approvedBy: decided && status !== 'rejected' ? U.op2 : null,
         approvedAt: decided && status !== 'rejected' ? ago(days, -2) : null,
         activeWindowStartedAt: released ? ago(days, -3) : null,
+        deviceValuesReason: opts.deviceValuesReason ?? null,
         createdAt: ago(days),
         updatedAt: ago(Math.max(days - 1, 0)),
       },
@@ -655,6 +659,13 @@ async function main(): Promise<void> {
         status: results[i] ?? 'pending',
         resultDetail:
           results[i] === 'failed' ? failReasons[i % failReasons.length] : null,
+        ...(opts.deviceValues?.[deviceId]
+          ? {
+              proposedFields: opts.deviceValues[
+                deviceId
+              ] as Prisma.InputJsonObject,
+            }
+          : {}),
       })),
     });
     log(
@@ -751,6 +762,9 @@ async function main(): Promise<void> {
       2,
     );
     if (c) {
+      // ตัวอย่างค่าเฉพาะเครื่อง (docs/17): 2 เครื่องมีค่าที่เสนอไว้ตอนสร้าง
+      // Rollout (ยังไม่มีผลจนกว่าปล่อย) และเครื่องที่ 3 มี "ค่าพิเศษเดิม"
+      // ที่ช่างขอไว้แล้วอนุมัติ ให้หน้าสร้าง Rollout รอบถัดไปมีของให้ยืนยัน
       await rollout(c, {
         payloadType: 'Config',
         configId: cfg['GT06N/TCP ลดรอบรายงานกลางคืน'].id,
@@ -758,7 +772,33 @@ async function main(): Promise<void> {
         deviceIds: list,
         results: [],
         days: 1,
+        deviceValues: {
+          [list[0]]: { REPORT_INTERVAL_IDLE: 900 },
+          [list[1]]: { REPORT_INTERVAL_IDLE: 1200 },
+        },
+        deviceValuesReason: 'รถสองคันนี้จอดนานกว่ารถคันอื่นในกลุ่ม',
       });
+      const holder = list[2];
+      if (holder) {
+        const latest = await prisma.deviceConfigOverride.findFirst({
+          where: { deviceId: holder },
+          orderBy: { versionNumber: 'desc' },
+        });
+        await prisma.deviceConfigOverride.create({
+          data: {
+            deviceId: holder,
+            configId: cfg['GT06N/TCP รายงานถี่ (รถเย็น)'].id,
+            versionNumber: (latest?.versionNumber ?? 0) + 1,
+            fields: { REPORT_INTERVAL_IDLE: 1800 },
+            reason: 'ลูกค้าขอให้รถคันนี้รายงานห่างกว่าปกติ',
+            status: 'approved',
+            overriddenBy: U.st,
+            overriddenAt: ago(12),
+            decidedBy: U.op,
+            decidedAt: ago(11),
+          },
+        });
+      }
     }
   }
   {

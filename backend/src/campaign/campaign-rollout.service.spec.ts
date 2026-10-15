@@ -12,6 +12,7 @@ import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 import { CONFIG_APPLIER } from '../device/config-applier';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
 const campaignId = 'campaign-1';
@@ -77,6 +78,7 @@ const sampleRollout: CampaignRollout = {
   activeWindowStartedAt: null,
   isRollback: false,
   rollbackOfId: null,
+  deviceValuesReason: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -121,7 +123,15 @@ describe('CampaignRolloutService', () => {
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock };
   let device: { findMany: jest.Mock; update: jest.Mock };
-  let deviceConfigOverride: { findFirst: jest.Mock };
+  let deviceConfigOverride: {
+    findFirst: jest.Mock;
+    findMany: jest.Mock;
+    create: jest.Mock;
+  };
+  let configFieldDefinition: { findMany: jest.Mock };
+  let configDefinitionService: {
+    validateOperationOverridableFields: jest.Mock;
+  };
   let auditLog: { create: jest.Mock };
   let firmwareRollbackExecutor: { switchPartition: jest.Mock };
   let configApplier: { applyConfig: jest.Mock };
@@ -161,7 +171,15 @@ describe('CampaignRolloutService', () => {
     };
     // ไม่มี per-device override ที่ approved ค้างอยู่ (default) — เทสที่
     // ต้องการ override ค่อยตั้ง mockResolvedValueOnce เฉพาะเทสนั้น
-    deviceConfigOverride = { findFirst: jest.fn().mockResolvedValue(null) };
+    deviceConfigOverride = {
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({}),
+    };
+    configFieldDefinition = { findMany: jest.fn().mockResolvedValue([]) };
+    configDefinitionService = {
+      validateOperationOverridableFields: jest.fn().mockResolvedValue([]),
+    };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     firmwareRollbackExecutor = { switchPartition: jest.fn() };
     configApplier = {
@@ -173,7 +191,7 @@ describe('CampaignRolloutService', () => {
     };
 
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
-      cb({ campaignRollout, campaignRolloutTarget }),
+      cb({ campaignRollout, campaignRolloutTarget, deviceConfigOverride }),
     );
     const prismaMock = {
       campaign,
@@ -184,6 +202,7 @@ describe('CampaignRolloutService', () => {
       firmware,
       device,
       deviceConfigOverride,
+      configFieldDefinition,
       auditLog,
       $transaction: transactionMock,
     };
@@ -197,6 +216,10 @@ describe('CampaignRolloutService', () => {
           useValue: firmwareRollbackExecutor,
         },
         { provide: CONFIG_APPLIER, useValue: configApplier },
+        {
+          provide: ConfigDefinitionService,
+          useValue: configDefinitionService,
+        },
       ],
     }).compile();
 
@@ -2349,6 +2372,7 @@ describe('CampaignRolloutService', () => {
       deviceId: installedDeviceA.deviceId,
       status: 'pending' as const,
       resultDetail: null,
+      proposedFields: null,
       rollout: activeRollout,
     };
 
@@ -2848,6 +2872,386 @@ describe('CampaignRolloutService', () => {
         where: { id: pausedRollout.id },
         data: { successCount: 0, failureCount: 1, status: 'paused' },
       });
+    });
+  });
+
+  describe('ค่าเฉพาะเครื่องตอนสร้าง Rollout (docs/17)', () => {
+    const valuesDto = (
+      deviceValues: CreateCampaignRolloutDto['deviceValues'],
+    ): CreateCampaignRolloutDto => ({
+      ...baseDto(),
+      deviceValues,
+      deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+    });
+
+    it('บันทึก proposedFields ต่อ target และเหตุผลที่ Rollout และ Audit เก็บแค่ชื่อ field ไม่เก็บค่า', async () => {
+      await service.create(
+        campaignId,
+        valuesDto([{ deviceId: 'DEV-0001', fields: { SPEED_LIMIT: 180 } }]),
+        operation,
+      );
+
+      expect(campaignRollout.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+        }) as Partial<CampaignRollout>,
+      });
+      expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            deviceId: 'DEV-0001',
+            proposedFields: { SPEED_LIMIT: 180 },
+          }),
+          { rolloutId: sampleRollout.id, deviceId: 'DEV-0002' },
+        ],
+      });
+      const auditCalls = auditLog.create.mock.calls as {
+        data: { metadata?: unknown };
+      }[][];
+      const audit = auditCalls[0][0];
+      expect(audit.data.metadata).toEqual({
+        deviceValues: [{ deviceId: 'DEV-0001', fieldNames: ['SPEED_LIMIT'] }],
+      });
+      expect(JSON.stringify(audit.data.metadata)).not.toContain('180');
+    });
+
+    it('ไม่ส่ง deviceValues: ไม่มี proposedFields และไม่ตั้ง deviceValuesReason', async () => {
+      await service.create(campaignId, baseDto(), operation);
+
+      const createCalls = campaignRollout.create.mock.calls as {
+        data: Record<string, unknown>;
+      }[][];
+      const created = createCalls[0][0];
+      expect(created.data).not.toHaveProperty('deviceValuesReason');
+      expect(
+        configDefinitionService.validateOperationOverridableFields,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('Rollout ของ Firmware ส่ง deviceValues ไม่ได้ (400)', async () => {
+      await expect(
+        service.create(
+          campaignId,
+          {
+            ...firmwareDto(),
+            deviceValues: [{ deviceId: 'DEV-0001', fields: { A: 1 } }],
+            deviceValuesReason: 'x',
+          },
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
+
+    it('deviceId ที่ไม่อยู่ใน Rollout (ถูกเอาออก) / ซ้ำ / ไม่มีค่า -> 400 พร้อมรายการ', async () => {
+      await expect(
+        service.create(
+          campaignId,
+          {
+            ...valuesDto([
+              { deviceId: 'DEV-0002', fields: { A: 1 } },
+              { deviceId: 'DEV-0002', fields: { A: 2 } },
+              { deviceId: 'DEV-0001', fields: {} },
+              { deviceId: 'DEV-0001', fields: { A: 1 } },
+            ]),
+            excludeDeviceIds: ['DEV-0002'],
+          },
+          operation,
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          errors: expect.arrayContaining([
+            expect.stringContaining('DEV-0002: ไม่ได้อยู่ใน Rollout นี้'),
+            expect.stringContaining('DEV-0001: ไม่มีค่าที่ต้องการตั้ง'),
+          ]) as string[],
+        },
+      });
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
+
+    it('เกิน 200 เครื่อง -> 400', async () => {
+      const many = Array.from({ length: 201 }, (_, i) => ({
+        deviceId: `DEV-${i}`,
+        fields: { A: 1 },
+      }));
+
+      await expect(
+        service.create(campaignId, valuesDto(many), operation),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('field ไม่ผ่านการตรวจเทียบคลัง Parameter -> 400 ต่อเครื่อง และไม่สร้าง Rollout', async () => {
+      configDefinitionService.validateOperationOverridableFields.mockResolvedValue(
+        ['field "SPEED_LIMIT" ต้องเป็นชนิดข้อมูล integer'],
+      );
+
+      await expect(
+        service.create(
+          campaignId,
+          valuesDto([
+            { deviceId: 'DEV-0001', fields: { SPEED_LIMIT: 'เร็ว' } },
+          ]),
+          operation,
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          errors: ['DEV-0001: field "SPEED_LIMIT" ต้องเป็นชนิดข้อมูล integer'],
+        },
+      });
+      expect(
+        configDefinitionService.validateOperationOverridableFields,
+      ).toHaveBeenCalledWith('GT06N', 'TCP', { SPEED_LIMIT: 'เร็ว' });
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
+
+    it('เครื่องที่มีคำขอ override ของช่างรออนุมัติ -> 409 ระบุเครื่อง และไม่สร้าง target', async () => {
+      deviceConfigOverride.findMany.mockResolvedValue([
+        { deviceId: 'DEV-0001' },
+      ]);
+
+      await expect(
+        service.create(
+          campaignId,
+          valuesDto([{ deviceId: 'DEV-0001', fields: { SPEED_LIMIT: 180 } }]),
+          operation,
+        ),
+      ).rejects.toThrow(/DEV-0001/);
+      expect(campaignRolloutTarget.createMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('release: บันทึกค่าเฉพาะเครื่องเป็น DeviceConfigOverride (docs/17 ข้อ 3.3)', () => {
+    const approvedAt = new Date('2026-01-02T00:00:00.000Z');
+    const approvedRollout: CampaignRollout = {
+      ...sampleRollout,
+      status: 'approved',
+      approvedBy: 'op-2',
+      approvedAt,
+      deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+    };
+    const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
+
+    beforeEach(() => {
+      const active: CampaignRollout = { ...approvedRollout, status: 'active' };
+      campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue(active);
+    });
+
+    it('target ที่มี proposedFields -> สร้าง override approved รวมค่า approved เดิมของ (เครื่อง, Config นี้) และ versionNumber = ล่าสุด + 1', async () => {
+      campaignRolloutTarget.findMany.mockResolvedValueOnce([
+        {
+          id: 'rt-1',
+          rolloutId: approvedRollout.id,
+          deviceId: 'DEV-0001',
+          proposedFields: { SPEED_LIMIT: 180 },
+        },
+      ]);
+      // ค่า approved เดิมของ (DEV-0001, cfg-1) แล้วเครื่องมี version ล่าสุด 4
+      deviceConfigOverride.findFirst
+        .mockResolvedValueOnce({
+          fields: { APN: 'internet', SPEED_LIMIT: 120 },
+        })
+        .mockResolvedValueOnce({ versionNumber: 4 });
+
+      await service.release(approvedRollout.id, otherOperation);
+
+      expect(deviceConfigOverride.create).toHaveBeenCalledWith({
+        data: {
+          deviceId: 'DEV-0001',
+          configId: approvedConfig.id,
+          versionNumber: 5,
+          fields: { APN: 'internet', SPEED_LIMIT: 180 },
+          reason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+          status: 'approved',
+          overriddenBy: operation.id,
+          overriddenAt: approvedRollout.createdAt,
+          decidedBy: 'op-2',
+          decidedAt: approvedAt,
+        },
+      });
+      const calls = auditLog.create.mock.calls as {
+        data: { action: string; metadata?: unknown };
+      }[][];
+      const releaseAudit = calls
+        .map((call) => call[0])
+        .find((arg) => arg.data.action === 'release');
+      expect(releaseAudit?.data.metadata).toEqual({
+        deviceValues: [{ deviceId: 'DEV-0001', fieldNames: ['SPEED_LIMIT'] }],
+      });
+    });
+
+    it('ไม่มี target ที่มีค่าเฉพาะเครื่อง -> ไม่สร้าง override', async () => {
+      campaignRolloutTarget.findMany.mockResolvedValueOnce([]);
+
+      await service.release(approvedRollout.id, otherOperation);
+
+      expect(deviceConfigOverride.create).not.toHaveBeenCalled();
+    });
+
+    it('ชน unique ของ (deviceId, versionNumber) -> 409 ให้ลองใหม่', async () => {
+      campaignRolloutTarget.findMany.mockResolvedValueOnce([
+        {
+          id: 'rt-1',
+          rolloutId: approvedRollout.id,
+          deviceId: 'DEV-0001',
+          proposedFields: { SPEED_LIMIT: 180 },
+        },
+      ]);
+      deviceConfigOverride.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.release(approvedRollout.id, otherOperation),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('getDeviceValues (docs/17 ข้อ 3.5)', () => {
+    beforeEach(() => {
+      configFieldDefinition.findMany.mockResolvedValue([
+        {
+          fieldName: 'SPEED_LIMIT',
+          supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+        },
+        {
+          fieldName: 'ONLY_OTHER_MODEL',
+          supportedModels: [{ deviceModel: 'VT300', protocol: 'TCP' }],
+        },
+      ]);
+    });
+
+    it('คืนค่าพิเศษเดิมที่ใช้ต่อได้ แยก field ที่ใช้ไม่ได้พร้อมเหตุผล และข้ามเครื่องที่ไม่มีอะไร', async () => {
+      deviceConfigOverride.findMany
+        // approved ล่าสุดต่อเครื่อง (เรียงจากใหม่ไปเก่า)
+        .mockResolvedValueOnce([
+          {
+            deviceId: 'DEV-0001',
+            configId: 'cfg-old',
+            versionNumber: 3,
+            overriddenBy: 'st-1',
+            overriddenAt: new Date('2026-01-01T00:00:00.000Z'),
+            fields: {
+              SPEED_LIMIT: 180,
+              ONLY_OTHER_MODEL: 1,
+              GHOST_FIELD: 2,
+            },
+          },
+          {
+            deviceId: 'DEV-0001',
+            configId: 'cfg-old',
+            versionNumber: 1,
+            overriddenBy: 'st-1',
+            overriddenAt: new Date('2025-12-01T00:00:00.000Z'),
+            fields: { SPEED_LIMIT: 100 },
+          },
+        ])
+        // pending ของ (เครื่อง, Config นี้)
+        .mockResolvedValueOnce([{ deviceId: 'DEV-0002' }]);
+
+      const items = await service.getDeviceValues(
+        campaignId,
+        approvedConfig.id,
+      );
+
+      expect(items).toEqual([
+        {
+          deviceId: 'DEV-0001',
+          hasPendingRequest: false,
+          previous: {
+            fields: { SPEED_LIMIT: 180 },
+            dropped: [
+              {
+                fieldName: 'ONLY_OTHER_MODEL',
+                reason: 'ไม่รองรับโมเดล/โปรโตคอลของ Config นี้',
+              },
+              {
+                fieldName: 'GHOST_FIELD',
+                reason: 'ไม่มีนิยามในคลัง Parameter',
+              },
+            ],
+            fromConfigId: 'cfg-old',
+            overriddenBy: 'st-1',
+            overriddenAt: new Date('2026-01-01T00:00:00.000Z'),
+            versionNumber: 3,
+          },
+        },
+        { deviceId: 'DEV-0002', hasPendingRequest: true, previous: null },
+      ]);
+    });
+
+    it('เครื่องที่โมเดล/โปรโตคอลไม่ตรงกับ Config ไม่อยู่ในผลลัพธ์', async () => {
+      device.findMany.mockResolvedValue([
+        { ...installedDeviceA, deviceModel: 'VT300' },
+      ]);
+
+      const items = await service.getDeviceValues(
+        campaignId,
+        approvedConfig.id,
+      );
+
+      expect(items).toEqual([]);
+    });
+
+    it('ไม่พบ Campaign หรือ Config -> 404', async () => {
+      campaign.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.getDeviceValues(campaignId, approvedConfig.id),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      config.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.getDeviceValues(campaignId, approvedConfig.id),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('findTargets: mask ค่า sensitive ของ proposedFields ตาม role', () => {
+    const targets = [
+      {
+        id: 'rt-1',
+        rolloutId: sampleRollout.id,
+        deviceId: 'DEV-0001',
+        proposedFields: { SPEED_LIMIT: 180, COMMAND_PASSWORD: 'secret' },
+      },
+      {
+        id: 'rt-2',
+        rolloutId: sampleRollout.id,
+        deviceId: 'DEV-0002',
+        proposedFields: null,
+      },
+    ];
+
+    beforeEach(() => {
+      campaignRolloutTarget.findMany.mockResolvedValue(targets);
+      configFieldDefinition.findMany.mockResolvedValue([
+        { fieldName: 'COMMAND_PASSWORD' },
+      ]);
+    });
+
+    it('Operation เห็นค่าจริง', async () => {
+      const result = await service.findTargets(sampleRollout.id, operation);
+
+      expect(result[0].proposedFields).toEqual({
+        SPEED_LIMIT: 180,
+        COMMAND_PASSWORD: 'secret',
+      });
+    });
+
+    it('role อื่นเห็น sensitive เป็น mask ส่วนที่ไม่ sensitive และ null คงเดิม', async () => {
+      const result = await service.findTargets(sampleRollout.id, {
+        id: 'au-1',
+        role: 'Auditor',
+      });
+
+      expect(result[0].proposedFields).toEqual({
+        SPEED_LIMIT: 180,
+        COMMAND_PASSWORD: '********',
+      });
+      expect(result[1].proposedFields).toBeNull();
     });
   });
 });
