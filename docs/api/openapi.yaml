@@ -1842,8 +1842,10 @@ paths:
                 $ref: "#/components/schemas/DeviceConfigOverride"
         "400":
           description: >-
-            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
-            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
+            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้
+            และไม่อยู่ใน Config ของเครื่อง (v3.55 field นอกชุดของรุ่นที่อยู่ใน
+            Config template แล้วขอแก้ได้)/stOverridable: false/ชนิดข้อมูลไม่ตรง/
+            ค่าไม่อยู่ใน allowedValues
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -3981,9 +3983,11 @@ components:
         supportedModels:
           type: array
           description: >-
-            รุ่นอุปกรณ์/โปรโตคอลที่ field นี้ใช้ได้ (Semantic Validation
-            v3.11) — Config ที่ deviceModel/protocol ไม่อยู่ในรายการนี้
-            จะถูก block ตอน create/update Config
+            รุ่นอุปกรณ์/โปรโตคอลที่ field นี้เป็นค่าเริ่มต้น (Semantic
+            Validation v3.11) ใช้กรองคลังพารามิเตอร์ตอนสร้าง Config และหา
+            required field ของรุ่น · ตั้งแต่ v3.55 (รีวิวพี่เลี้ยง 12 ต.ค.
+            2569) **ไม่ใช่ข้อห้ามแล้ว** Config ใส่ field นอกชุดของรุ่นได้
+            (ยังตรวจชนิดข้อมูลและ allowedValues ตามนิยาม)
           items:
             $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
         createdAt:

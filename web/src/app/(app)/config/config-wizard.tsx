@@ -115,7 +115,10 @@ function defaultFieldValue(def: ConfigFieldDefinition): FieldValue | undefined {
  *   ขั้น 1 — ข้อมูลพื้นฐาน (ชื่อ / รุ่น / โปรโตคอล)
  *   ขั้น 2 — เลือก Parameter จากคลังด้านซ้าย มาใส่ค่าใน Template ด้านขวา
  *
- * required field ถูกใส่ให้อัตโนมัติและถอดไม่ได้ · รุ่น/โปรโตคอล **ล็อกตอนแก้**
+ * คลังแสดงชุดค่าเริ่มต้นของรุ่นก่อน ติ๊ก "แสดงพารามิเตอร์ทั้งหมด" แล้วเพิ่ม
+ * พารามิเตอร์นอกชุดได้ (รีวิวพี่เลี้ยง 12 ต.ค. 2569) ตัวนอกชุดมีป้ายบอก
+ *
+ * required field ของรุ่นถูกใส่ให้อัตโนมัติและถอดไม่ได้ · รุ่น/โปรโตคอล **ล็อกตอนแก้**
  * (แก้ได้แค่ตอนสร้าง — มติ PR 3b) · validate ฝั่ง client แบบเบา (required +
  * allowedValues) ที่เหลือพึ่ง 400 จาก backend (`validateFields`)
  *
@@ -142,6 +145,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const [deviceModel, setDeviceModel] = useState(source?.deviceModel ?? "");
   const [protocol, setProtocol] = useState(source?.protocol ?? "");
   const [search, setSearch] = useState("");
+  const [showAllParams, setShowAllParams] = useState(false);
   const [values, setValues] = useState<Record<string, FieldValue>>(() => {
     if (!source) return {};
     const out: Record<string, FieldValue> = {};
@@ -201,7 +205,20 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [defs, deviceModel]);
 
-  /** field ทั้งหมดที่ใช้กับรุ่น/โปรโตคอลที่เลือก */
+  /** field เป็นชุดค่าเริ่มต้นของรุ่น/โปรโตคอลที่เลือกไหม (`supportedModels`) */
+  function isInModelSet(d: ConfigFieldDefinition): boolean {
+    return d.supportedModels.some(
+      (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+    );
+  }
+
+  /** required บังคับเฉพาะ field ในชุดของรุ่นนี้ field นอกชุดที่ required ของ
+   * รุ่นอื่นถือเป็น optional ที่นี่ (ตรงกับ backend `validateFields()`) */
+  function isRequiredHere(d: ConfigFieldDefinition): boolean {
+    return d.required && isInModelSet(d);
+  }
+
+  /** field ในชุดค่าเริ่มต้นของรุ่น/โปรโตคอลที่เลือก */
   const applicableDefs = useMemo(() => {
     if (!deviceModel || !protocol) return [] as ConfigFieldDefinition[];
     return (defs ?? []).filter((d) =>
@@ -211,17 +228,25 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     );
   }, [defs, deviceModel, protocol]);
 
-  /** field ที่อยู่ใน Template ตอนนี้ — required เข้าเสมอ + optional ที่ผู้ใช้เพิ่ม */
+  /** field ที่อยู่ใน Template ตอนนี้ — required ของรุ่นเข้าเสมอ + ที่ผู้ใช้เพิ่ม
+   * (รวม field นอกชุดของรุ่น ตามรีวิวพี่เลี้ยง 12 ต.ค. 2569: ผู้สร้าง template
+   * เพิ่มพารามิเตอร์นอกชุดได้) */
   const chosenDefs = useMemo(() => {
+    if (!deviceModel || !protocol) return [] as ConfigFieldDefinition[];
     const picked = new Set(selected);
-    return applicableDefs
-      .filter((d) => d.required || picked.has(d.fieldName))
+    const requiredHere = (d: ConfigFieldDefinition) =>
+      d.required &&
+      d.supportedModels.some(
+        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+      );
+    return (defs ?? [])
+      .filter((d) => requiredHere(d) || picked.has(d.fieldName))
       .sort(
         (a, b) =>
-          Number(b.required) - Number(a.required) ||
+          Number(requiredHere(b)) - Number(requiredHere(a)) ||
           a.fieldName.localeCompare(b.fieldName),
       );
-  }, [applicableDefs, selected]);
+  }, [defs, deviceModel, protocol, selected]);
 
   /** ค่าที่ใช้แสดง/บันทึกจริงของ field หนึ่งตัว — ถ้าผู้ใช้ยังไม่เคยแก้ (`values`
    * ไม่มี key นี้) และเป็นการสร้าง Config **ใหม่จริงๆ** (`!source` — ไม่ใช่
@@ -236,20 +261,44 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     return source ? undefined : defaultFieldValue(def);
   }
 
-  /** field ในคลังด้านซ้ายที่ยังไม่ได้เพิ่ม (optional เท่านั้น) + กรองด้วยคำค้น */
+  /** field ในคลังด้านซ้ายที่ยังไม่ได้เพิ่ม + กรองด้วยคำค้น ค่าเริ่มต้นแสดงเฉพาะ
+   * ชุดของรุ่นนี้ ติ๊ก "แสดงพารามิเตอร์ทั้งหมด" แล้วเห็นทั้งคลัง */
   const libraryDefs = useMemo(() => {
+    if (!deviceModel || !protocol) return [] as ConfigFieldDefinition[];
     const picked = new Set(selected);
+    const applicable = new Set(applicableDefs.map((d) => d.fieldName));
     const q = search.trim().toLowerCase();
-    return applicableDefs
-      .filter((d) => !d.required && !picked.has(d.fieldName))
+    const base = showAllParams ? (defs ?? []) : applicableDefs;
+    return base
+      .filter(
+        (d) =>
+          !(d.required && applicable.has(d.fieldName)) &&
+          !picked.has(d.fieldName),
+      )
       .filter(
         (d) =>
           !q ||
           d.fieldName.toLowerCase().includes(q) ||
           (d.description ?? "").toLowerCase().includes(q),
       )
-      .sort((a, b) => a.fieldName.localeCompare(b.fieldName));
-  }, [applicableDefs, selected, search]);
+      .sort(
+        (a, b) =>
+          Number(applicable.has(b.fieldName)) -
+            Number(applicable.has(a.fieldName)) ||
+          a.fieldName.localeCompare(b.fieldName),
+      );
+  }, [
+    defs,
+    deviceModel,
+    protocol,
+    applicableDefs,
+    selected,
+    search,
+    showAllParams,
+  ]);
+
+  /** จำนวน field ในคลังที่อยู่นอกชุดของรุ่นนี้ (โชว์ข้างตัวเลือกแสดงทั้งหมด) */
+  const outsideSetCount = (defs ?? []).length - applicableDefs.length;
 
   function changeDeviceModel(next: string) {
     if (editing) return;
@@ -349,7 +398,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     }
 
     const missing = chosenDefs
-      .filter((d) => d.required && d.dataType !== "boolean")
+      .filter((d) => isRequiredHere(d) && d.dataType !== "boolean")
       .filter((d) => isEmpty(effectiveValue(d)))
       .map((d) => d.fieldName);
     if (missing.length > 0) {
@@ -565,20 +614,32 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   คลิกเพื่อเพิ่มเข้า Template
                 </p>
               </div>
-              <div className="px-3 py-2">
+              <div className="flex flex-col gap-2 px-3 py-2">
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="ค้นหา parameter…"
                   className="h-8"
                 />
+                {outsideSetCount > 0 && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={showAllParams}
+                      onCheckedChange={(c) => setShowAllParams(c === true)}
+                    />
+                    แสดงพารามิเตอร์ทั้งหมด (นอกชุดของโมเดลนี้ {outsideSetCount}{" "}
+                    ตัว)
+                  </label>
+                )}
               </div>
               <div className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3">
                 {libraryDefs.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    {applicableDefs.length === 0
-                      ? "ยังไม่มี field definition สำหรับโมเดลนี้"
-                      : "เพิ่มครบทุก parameter แล้ว"}
+                    {search.trim()
+                      ? "ไม่พบ parameter ที่ค้นหา"
+                      : !showAllParams && applicableDefs.length === 0
+                        ? "ยังไม่มี parameter ในชุดของโมเดลนี้ ติ๊กแสดงพารามิเตอร์ทั้งหมดเพื่อเลือกจากทั้งคลัง"
+                        : "เพิ่มครบทุก parameter แล้ว"}
                   </p>
                 ) : (
                   libraryDefs.map((def) => (
@@ -597,6 +658,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                           <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
                             {def.dataType}
                           </span>
+                          {!isInModelSet(def) && <OutsideSetBadge />}
                         </span>
                         {def.description && (
                           <span className="text-xs text-muted-foreground">
@@ -632,11 +694,13 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                     <TemplateRow
                       key={def.id}
                       def={def}
+                      required={isRequiredHere(def)}
+                      outsideSet={!isInModelSet(def)}
                       value={effectiveValue(def)}
                       missing={missingRequired.includes(def.fieldName)}
                       onChange={(v) => setValue(def.fieldName, v)}
                       onRemove={
-                        def.required
+                        isRequiredHere(def)
                           ? undefined
                           : () => removeField(def.fieldName)
                       }
@@ -699,14 +763,28 @@ function ErrorBanner({
   );
 }
 
+/** ป้ายบอกว่าพารามิเตอร์อยู่นอกชุดค่าเริ่มต้นของโมเดลนี้ (ใส่ได้ แต่ให้ผู้สร้าง
+ * template รู้ตัวว่าไม่ใช่ชุดปกติของโมเดล) */
+function OutsideSetBadge() {
+  return (
+    <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 text-[0.65rem] text-amber-700 dark:text-amber-400">
+      นอกชุดของโมเดลนี้
+    </span>
+  );
+}
+
 function TemplateRow({
   def,
+  required,
+  outsideSet,
   value,
   missing,
   onChange,
   onRemove,
 }: {
   def: ConfigFieldDefinition;
+  required: boolean;
+  outsideSet: boolean;
   value: FieldValue | undefined;
   missing: boolean;
   onChange: (value: FieldValue) => void;
@@ -718,12 +796,13 @@ function TemplateRow({
   return (
     <div className="flex flex-col gap-1.5 rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2">
-        <Label htmlFor={id} className="font-mono text-xs">
-          {def.fieldName}
-          {def.required ? (
-            <span className="text-destructive"> *</span>
-          ) : null}
-        </Label>
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Label htmlFor={id} className="font-mono text-xs">
+            {def.fieldName}
+            {required ? <span className="text-destructive"> *</span> : null}
+          </Label>
+          {outsideSet && <OutsideSetBadge />}
+        </span>
         {onRemove ? (
           <button
             type="button"
