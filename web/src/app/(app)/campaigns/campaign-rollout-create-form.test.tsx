@@ -91,6 +91,20 @@ const hookState = vi.hoisted(() => ({
   targets: [] as { deviceId: string }[],
   devices: [] as unknown[],
   configs: [] as unknown[],
+  valueItems: [] as unknown[],
+  definitions: [] as unknown[],
+}));
+
+vi.mock("@/hooks/use-rollout-device-values", () => ({
+  useRolloutDeviceValues: () => queryState(hookState.valueItems),
+}));
+vi.mock("@/hooks/use-config-definitions", () => ({
+  useConfigDefinitions: () => queryState(hookState.definitions),
+}));
+vi.mock("@/hooks/use-user-names", () => ({
+  useUserNames: () => ({
+    resolveName: (id: string) => (id === "st-1" ? "ช่างสมศรี" : id),
+  }),
 }));
 
 vi.mock("@/hooks/use-campaign-targets", () => ({
@@ -140,6 +154,8 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     hookState.targets = members;
     hookState.devices = devices;
     hookState.configs = [gt06nConfig];
+    hookState.valueItems = [];
+    hookState.definitions = [];
   });
 
   it("ยังไม่เลือก Config: ทุกเครื่องติ๊กได้ ไม่มีเหตุผลไม่เข้ากัน", () => {
@@ -211,5 +227,210 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     expect(
       await screen.findByText(/ไม่มีเครื่องไหนในกลุ่มที่เข้ากัน/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CampaignRolloutCreateForm: ค่าเฉพาะเครื่อง (docs/17)", () => {
+  const configWithFields: Config = {
+    ...gt06nConfig,
+    fields: { SPEED_LIMIT: 120, APN: "internet" },
+  };
+  const previousFromOtherConfig = {
+    deviceId: "DEV-0001",
+    hasPendingRequest: false,
+    previous: {
+      fields: { SPEED_LIMIT: 180 },
+      dropped: [{ fieldName: "OLD_FIELD", reason: "ไม่รองรับโมเดลนี้" }],
+      fromConfigId: "cfg-old",
+      overriddenBy: "st-1",
+      overriddenAt: "2026-01-01T00:00:00Z",
+      versionNumber: 2,
+    },
+  };
+
+  beforeEach(() => {
+    createCampaignRollout.mockReset();
+    createCampaignRollout.mockResolvedValue({ id: "roll-1" });
+    push.mockReset();
+    hookState.targets = members;
+    hookState.devices = devices;
+    hookState.configs = [configWithFields];
+    hookState.valueItems = [];
+    hookState.definitions = [
+      {
+        id: "d1",
+        fieldName: "SPEED_LIMIT",
+        dataType: "integer",
+        allowedValues: [],
+        sensitive: false,
+        unit: null,
+      },
+    ];
+  });
+
+  async function submit(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+  }
+
+  it("เครื่องที่เคยมีค่าพิเศษจาก Config อื่น: ต้องเลือกก่อนเริ่ม ไม่เลือก = ไม่ยิง API", async () => {
+    hookState.valueItems = [previousFromOtherConfig];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    expect(
+      screen.getByText(/เคยมีค่าพิเศษ ตั้งโดย ช่างสมศรี/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/ใช้ค่าพิเศษเดิมต่อ: SPEED_LIMIT 180/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/OLD_FIELD/)).toBeInTheDocument();
+
+    await submit(user);
+
+    expect(createCampaignRollout).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(/เลือกวิธีจัดการค่าพิเศษเดิมให้ครบก่อน/),
+    ).toBeInTheDocument();
+  });
+
+  it("เลือกใช้ค่าพิเศษเดิมต่อ: ส่ง deviceValues พร้อมเหตุผลที่บังคับกรอก", async () => {
+    hookState.valueItems = [previousFromOtherConfig];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    await user.click(screen.getByLabelText(/ใช้ค่าพิเศษเดิมต่อ/));
+    await submit(user);
+    expect(createCampaignRollout).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("กรอกเหตุผลของค่าเฉพาะเครื่อง", {
+        selector: "div p",
+      }),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText(/เหตุผลของค่าเฉพาะเครื่อง/),
+      "ลูกค้าขอ",
+    );
+    await submit(user);
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    expect(createCampaignRollout).toHaveBeenCalledWith(
+      "tok",
+      "camp-1",
+      expect.objectContaining({
+        deviceValues: [{ deviceId: "DEV-0001", fields: { SPEED_LIMIT: 180 } }],
+        deviceValuesReason: "ลูกค้าขอ",
+      }),
+    );
+  });
+
+  it("เลือกใช้ตามแม่แบบใหม่ (ไม่แก้ค่า): ไม่ส่ง deviceValues และไม่ต้องกรอกเหตุผล", async () => {
+    hookState.valueItems = [previousFromOtherConfig];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    await user.click(screen.getByLabelText("ใช้ตามแม่แบบใหม่"));
+    await submit(user);
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    const body = createCampaignRollout.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >;
+    expect(body).not.toHaveProperty("deviceValues");
+    expect(body).not.toHaveProperty("deviceValuesReason");
+  });
+
+  it("แก้ค่าผ่านแผงต่อเครื่อง: แสดง แก้ 1 ค่า และส่งค่าไปพร้อมเหตุผล", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    await user.click(
+      screen.getByRole("button", { name: "แก้ค่าของ DEV-0001" }),
+    );
+    await user.type(await screen.findByLabelText("SPEED_LIMIT"), "180");
+    await user.click(
+      screen.getByRole("button", { name: "บันทึกค่าของเครื่องนี้" }),
+    );
+
+    expect(await screen.findByText("แก้ 1 ค่า")).toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText(/เหตุผลของค่าเฉพาะเครื่อง/),
+      "รถทางไกล",
+    );
+    await submit(user);
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    expect(createCampaignRollout).toHaveBeenCalledWith(
+      "tok",
+      "camp-1",
+      expect.objectContaining({
+        deviceValues: [{ deviceId: "DEV-0001", fields: { SPEED_LIMIT: 180 } }],
+      }),
+    );
+  });
+
+  it("เครื่องที่มีคำขอของช่างค้าง: แสดงข้อความและไม่มีปุ่มแก้ค่า", async () => {
+    hookState.valueItems = [
+      { deviceId: "DEV-0001", hasPendingRequest: true, previous: null },
+    ];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    expect(screen.getByText(/มีคำขอของช่างรออนุมัติอยู่/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "แก้ค่าของ DEV-0001" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "แก้ค่าของ DEV-0002" }),
+    ).toBeInTheDocument();
+  });
+
+  it("ค่าพิเศษเดิมผูกกับ Config เดียวกัน: ใช้ต่ออัตโนมัติ ไม่ต้องเลือก", async () => {
+    hookState.valueItems = [
+      {
+        ...previousFromOtherConfig,
+        previous: {
+          ...previousFromOtherConfig.previous,
+          fromConfigId: "cfg-gt06n",
+        },
+      },
+    ];
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+
+    expect(screen.getByText(/ยังมีผลต่อ/)).toBeInTheDocument();
+    await submit(user);
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+  });
+
+  it("เอาเครื่องที่มีค่าที่แก้ไว้ออกจาก Rollout: ไม่ส่งค่าของเครื่องนั้น", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await user.click(
+      screen.getByRole("button", { name: "แก้ค่าของ DEV-0001" }),
+    );
+    await user.type(await screen.findByLabelText("SPEED_LIMIT"), "180");
+    await user.click(
+      screen.getByRole("button", { name: "บันทึกค่าของเครื่องนี้" }),
+    );
+
+    await user.click(checkboxFor("DEV-0001"));
+    await submit(user);
+
+    await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
+    const body = createCampaignRollout.mock.calls[0][2] as Record<
+      string,
+      unknown
+    >;
+    expect(body).not.toHaveProperty("deviceValues");
   });
 });

@@ -120,6 +120,9 @@ export type CampaignRollout = {
   /** id ของ Rollout รอบที่มีปัญหาซึ่งรอบนี้ถูกสร้างมาเพื่อย้อนกลับ — null ถ้า
    * `isRollback` เป็น false */
   rollbackOfId: string | null;
+  /** เหตุผลของค่าเฉพาะเครื่องทั้งรอบ (docs/17) — null/ไม่มี = Rollout นี้ไม่มี
+   * ค่าเฉพาะเครื่อง */
+  deviceValuesReason?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -133,6 +136,37 @@ export type CreateCampaignRolloutInput = {
   /** `Device.deviceId` ของสมาชิกกลุ่มที่ต้องการเอาออกจาก rollout รอบนี้ —
    * ไม่ส่ง = push ทั้งกลุ่ม */
   excludeDeviceIds?: string[];
+  /** ค่าเฉพาะเครื่อง (docs/17, เฉพาะ Config) — ค่าสุดท้ายที่เลือกแล้ว
+   * (รวมค่าพิเศษเดิมที่ยืนยันให้ใช้ต่อ) ไม่เกิน 200 เครื่อง */
+  deviceValues?: RolloutDeviceValue[];
+  /** เหตุผลของค่าเฉพาะเครื่องทั้งรอบ — บังคับเมื่อมี `deviceValues` */
+  deviceValuesReason?: string;
+};
+
+/** ค่าเฉพาะเครื่อง 1 เครื่อง — `RolloutDeviceValue` ใน openapi.yaml */
+export type RolloutDeviceValue = {
+  deviceId: string;
+  fields: Record<string, unknown>;
+};
+
+/** 1 เครื่องใน `GET /campaigns/{id}/rollouts/device-values` (docs/17) —
+ * คืนเฉพาะเครื่องที่มีค่าพิเศษเดิมหรือมีคำขอของช่างค้าง */
+export type RolloutDeviceValuesItem = {
+  deviceId: string;
+  /** มีคำขอ override ของช่าง pending ของ (เครื่อง, Config นี้) — ตั้งค่า
+   * เฉพาะเครื่องของเครื่องนี้ไม่ได้ (409) */
+  hasPendingRequest: boolean;
+  previous: {
+    /** ค่าพิเศษเดิมที่ใช้ต่อกับ Config นี้ได้ */
+    fields: Record<string, unknown>;
+    /** field ที่ Config นี้ใช้ไม่ได้ (ถูกตัดทิ้ง) พร้อมเหตุผล */
+    dropped: { fieldName: string; reason: string }[];
+    fromConfigId: string;
+    /** user id ของผู้ตั้งค่า (ช่างหรือ Operation) */
+    overriddenBy: string;
+    overriddenAt: string;
+    versionNumber: number;
+  } | null;
 };
 
 /** ผลของ Rollout ต่อเครื่อง — `CampaignRolloutTarget` ใน openapi.yaml */
@@ -142,6 +176,9 @@ export type CampaignRolloutTarget = {
   deviceId: string;
   status: CampaignRolloutTargetStatus;
   resultDetail: string | null;
+  /** ค่าเฉพาะเครื่องที่เสนอไว้ตอนสร้าง Rollout (ยังไม่มีผลจนกว่าจะปล่อย) ·
+   * ค่า sensitive เป็น `********` สำหรับ role ที่ไม่ใช่ Operation */
+  proposedFields?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -221,6 +258,22 @@ export function getCampaignRollout(
  * เกณฑ์หรืออุปกรณ์ไม่เข้ากัน) · **409 เพิ่มเติม** ถ้ากลุ่มนี้มี Rollout
  * ที่ยังไม่จบค้างอยู่ (`pending_approval`/`active`) — รันได้ทีละรอบเท่านั้น
  */
+/**
+ * `GET /campaigns/{id}/rollouts/device-values?configId=` — Operation เท่านั้น
+ * (สิทธิ์ campaign.Create) อ่านอย่างเดียว · ค่าพิเศษเดิมของเครื่องในกลุ่มต่อ
+ * Config ที่จะใช้ + ธงคำขอของช่างที่ค้าง (docs/17)
+ */
+export function getRolloutDeviceValues(
+  token: string,
+  campaignId: string,
+  configId: string,
+): Promise<RolloutDeviceValuesItem[]> {
+  return apiJson<RolloutDeviceValuesItem[]>(
+    `/campaigns/${campaignId}/rollouts/device-values?configId=${encodeURIComponent(configId)}`,
+    { token },
+  );
+}
+
 export function createCampaignRollout(
   token: string,
   campaignId: string,

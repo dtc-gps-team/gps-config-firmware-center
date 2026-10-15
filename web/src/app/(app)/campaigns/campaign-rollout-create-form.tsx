@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -33,11 +34,23 @@ import type { Config } from "@/lib/config-api";
 import type { Device } from "@/lib/device-api";
 import type { Firmware } from "@/lib/firmware-api";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
+import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
+import { useRolloutDeviceValues } from "@/hooks/use-rollout-device-values";
+import { useUserNames } from "@/hooks/use-user-names";
+import {
+  MAX_DEVICE_VALUES,
+  buildDeviceValues,
+  continuesAutomatically,
+  needsCarryChoice,
+  valueToText,
+  type CarryChoice,
+} from "@/lib/rollout-device-values";
 import { useFirmwareList } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { describeIncompatibility } from "./rollout-compatibility";
+import { RolloutDeviceValuesEditor } from "./rollout-device-values-editor";
 
 /** Config สถานะที่ใช้ push ได้ — ตรงกับ `APPLICABLE_CONFIG_STATUSES` ฝั่ง
  * backend (mirror device.service.ts/campaign-rollout.service.ts) */
@@ -99,6 +112,8 @@ export function CampaignRolloutCreateForm({
   const devicesQuery = useDevices();
   const configsQuery = useConfigs();
   const firmwareQuery = useFirmwareList();
+  const definitionsQuery = useConfigDefinitions();
+  const { resolveName } = useUserNames();
 
   const [payloadType, setPayloadType] = useState<CampaignPayloadType>("Config");
   const [configId, setConfigId] = useState("");
@@ -106,6 +121,16 @@ export function CampaignRolloutCreateForm({
   const [excludedDeviceIds, setExcludedDeviceIds] = useState<Set<string>>(
     new Set(),
   );
+  // ค่าเฉพาะเครื่อง (docs/17) — ค่าที่แก้เอง (แปลงชนิดแล้ว) และการเลือก
+  // "ใช้ค่าพิเศษเดิมต่อ / ใช้ตามแม่แบบใหม่" ต่อเครื่อง
+  const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>(
+    {},
+  );
+  const [choices, setChoices] = useState<
+    Record<string, CarryChoice | undefined>
+  >({});
+  const [valuesReason, setValuesReason] = useState("");
+  const [editorDeviceId, setEditorDeviceId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -137,6 +162,20 @@ export function CampaignRolloutCreateForm({
   const selectedFirmware =
     eligibleFirmware.find((f) => f.id === firmwareId) ?? null;
 
+  const valuesEnabled = payloadType === "Config" && selectedConfig !== null;
+  const deviceValuesQuery = useRolloutDeviceValues(
+    campaignId,
+    valuesEnabled ? configId : null,
+  );
+  const valueItems = useMemo(
+    () => (valuesEnabled ? (deviceValuesQuery.data ?? []) : []),
+    [valuesEnabled, deviceValuesQuery.data],
+  );
+  const itemByDevice = useMemo(
+    () => new Map(valueItems.map((i) => [i.deviceId, i])),
+    [valueItems],
+  );
+
   /** เครื่องในกลุ่มที่รับ payload ที่เลือกไม่ได้ -> เหตุผล (คำนวณจากสมาชิก
    * ทุกเครื่อง ไม่ใช่แค่เครื่องที่ยังติ๊กอยู่ เพราะเครื่องพวกนี้ติ๊กเองไม่ได้
    * อยู่แล้ว) mirror เงื่อนไข 409 ของ campaign-rollout.service.ts ฝั่ง backend */
@@ -165,6 +204,56 @@ export function CampaignRolloutCreateForm({
   /** เครื่องที่จะได้รับ payload จริง = ไม่ถูกเอาออกเอง และเข้ากันได้ */
   const includedDeviceIds = memberDeviceIds.filter(
     (id) => !excludedDeviceIds.has(id) && !incompatibleReasons.has(id),
+  );
+
+  /** เปลี่ยน Config แม่แบบ: เก็บค่าที่แก้ไว้เฉพาะ field ที่ Config ใหม่ยังมี
+   * ส่วนการเลือกค่าพิเศษเดิมเริ่มใหม่ (ค่าพิเศษเดิมต่างกันตาม Config) */
+  function changeConfig(nextConfigId: string) {
+    const next = eligibleConfigs.find((c) => c.id === nextConfigId) ?? null;
+    setConfigId(nextConfigId);
+    setChoices({});
+    setEdits((prev) => {
+      if (!next) return {};
+      const kept: Record<string, Record<string, unknown>> = {};
+      for (const [deviceId, fields] of Object.entries(prev)) {
+        const stillValid = Object.fromEntries(
+          Object.entries(fields).filter(([name]) =>
+            Object.hasOwn(next.fields, name),
+          ),
+        );
+        if (Object.keys(stillValid).length > 0) kept[deviceId] = stillValid;
+      }
+      return kept;
+    });
+    setFormError(null);
+  }
+
+  function saveEdits(deviceId: string, fields: Record<string, unknown>) {
+    setEdits((prev) => {
+      const next = { ...prev };
+      if (Object.keys(fields).length === 0) {
+        delete next[deviceId];
+      } else {
+        next[deviceId] = fields;
+      }
+      return next;
+    });
+    setFormError(null);
+  }
+
+  /** ค่าสุดท้ายต่อเครื่องที่จะส่ง (เฉพาะเครื่องที่ยังอยู่ใน Rollout) */
+  const valuesResult = useMemo(
+    () =>
+      valuesEnabled
+        ? buildDeviceValues({
+            configId,
+            includedDeviceIds,
+            items: valueItems,
+            edits,
+            choices,
+          })
+        : { values: [], missingChoices: [], blocked: [] },
+    [valuesEnabled, configId, includedDeviceIds, valueItems, edits, choices],
   );
 
   function toggleExcluded(deviceId: string, included: boolean) {
@@ -200,6 +289,29 @@ export function CampaignRolloutCreateForm({
       return;
     }
 
+    if (valuesResult.missingChoices.length > 0) {
+      setFormError(
+        `เลือกวิธีจัดการค่าพิเศษเดิมให้ครบก่อน ยังไม่ได้เลือก: ${valuesResult.missingChoices.join(", ")}`,
+      );
+      return;
+    }
+    if (valuesResult.blocked.length > 0) {
+      setFormError(
+        `เครื่องต่อไปนี้มีคำขอของช่างรออนุมัติอยู่ ตั้งค่าเฉพาะเครื่องไม่ได้จนกว่าจะตัดสินใจคำขอนั้น: ${valuesResult.blocked.join(", ")}`,
+      );
+      return;
+    }
+    if (valuesResult.values.length > MAX_DEVICE_VALUES) {
+      setFormError(
+        `ตั้งค่าเฉพาะเครื่องได้ไม่เกิน ${MAX_DEVICE_VALUES} เครื่องต่อ Rollout`,
+      );
+      return;
+    }
+    if (valuesResult.values.length > 0 && valuesReason.trim() === "") {
+      setFormError("กรอกเหตุผลของค่าเฉพาะเครื่อง");
+      return;
+    }
+
     // เครื่องที่ไม่เข้ากันถูกปิดไม่ให้ติ๊กไว้แล้ว แต่ backend ยังต้องได้รับ
     // ใน excludeDeviceIds (ไม่งั้นตอบ 409 เพราะเครื่องพวกนี้ยังเป็นสมาชิก)
     const excludeDeviceIds = [
@@ -215,6 +327,12 @@ export function CampaignRolloutCreateForm({
           payloadType,
           ...(payloadType === "Config" ? { configId } : { firmwareId }),
           ...(excludeDeviceIds.length > 0 ? { excludeDeviceIds } : {}),
+          ...(valuesResult.values.length > 0
+            ? {
+                deviceValues: valuesResult.values,
+                deviceValuesReason: valuesReason.trim(),
+              }
+            : {}),
         },
       );
       toast.success("เริ่ม Rollout แล้ว รอ Operation อีกคนอนุมัติ");
@@ -299,10 +417,7 @@ export function CampaignRolloutCreateForm({
             <Label htmlFor="rollout-config">Config</Label>
             <Select
               value={configId}
-              onValueChange={(value) => {
-                setConfigId(value ?? "");
-                setFormError(null);
-              }}
+              onValueChange={(value) => changeConfig(value ?? "")}
             >
               <SelectTrigger id="rollout-config" className="w-full">
                 <SelectValue placeholder="- เลือก -">
@@ -386,6 +501,7 @@ export function CampaignRolloutCreateForm({
                   <TableHead className="w-10"></TableHead>
                   <TableHead>เลขเครื่อง</TableHead>
                   <TableHead>โมเดล/โปรโตคอล</TableHead>
+                  {valuesEnabled && <TableHead>ค่าเฉพาะเครื่อง</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -430,12 +546,43 @@ export function CampaignRolloutCreateForm({
                           ? `${device.deviceModel} / ${device.protocol}`
                           : "-"}
                       </TableCell>
+                      {valuesEnabled && (
+                        <TableCell className="align-top text-xs">
+                          {included ? (
+                            <DeviceValuesCell
+                              deviceId={deviceId}
+                              configId={configId}
+                              item={itemByDevice.get(deviceId)}
+                              editedCount={
+                                Object.keys(edits[deviceId] ?? {}).length
+                              }
+                              choice={choices[deviceId]}
+                              loading={deviceValuesQuery.isLoading}
+                              resolveName={resolveName}
+                              onEdit={() => setEditorDeviceId(deviceId)}
+                              onChoose={(c) => {
+                                setChoices((prev) => ({
+                                  ...prev,
+                                  [deviceId]: c,
+                                }));
+                                setFormError(null);
+                              }}
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
           </div>
+        )}
+
+        {valuesEnabled && deviceValuesQuery.error && (
+          <ErrorBanner message={deviceValuesQuery.error} />
         )}
 
         {incompatibleReasons.size > 0 && (
@@ -449,7 +596,49 @@ export function CampaignRolloutCreateForm({
         )}
       </Card>
 
+      {valuesResult.values.length > 0 && (
+        <Card className="gap-2 p-5">
+          <Label htmlFor="rollout-values-reason">
+            เหตุผลของค่าเฉพาะเครื่อง ({valuesResult.values.length} เครื่อง)
+          </Label>
+          <Input
+            id="rollout-values-reason"
+            value={valuesReason}
+            maxLength={1000}
+            placeholder="เช่น ลูกค้าขอเพดานความเร็วสูงกว่าปกติสำหรับรถคันนี้"
+            onChange={(e) => {
+              setValuesReason(e.target.value);
+              setFormError(null);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            ใช้หนึ่งเหตุผลต่อทั้ง Rollout ผู้อนุมัติจะเห็นค่าเฉพาะเครื่องและ
+            เหตุผลนี้ก่อนตัดสินใจ ค่าจะมีผลเมื่อ Rollout ถูกปล่อยเข้าอุปกรณ์
+          </p>
+        </Card>
+      )}
+
       {formError && <ErrorBanner message={formError} />}
+
+      {editorDeviceId && selectedConfig && (
+        <RolloutDeviceValuesEditor
+          key={editorDeviceId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditorDeviceId(null);
+          }}
+          deviceId={editorDeviceId}
+          config={selectedConfig}
+          definitions={definitionsQuery.data ?? []}
+          baseFields={baseFieldsFor(
+            itemByDevice.get(editorDeviceId),
+            choices[editorDeviceId],
+            configId,
+          )}
+          edits={edits[editorDeviceId] ?? {}}
+          onSave={(fields) => saveEdits(editorDeviceId, fields)}
+        />
+      )}
 
       <div className="flex justify-end gap-2 border-t pt-4">
         <Button
@@ -463,6 +652,122 @@ export function CampaignRolloutCreateForm({
           {submitting ? "กำลังเริ่ม Rollout…" : "เริ่ม Rollout"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** ค่าพิเศษเดิมที่มีผลกับเครื่องนี้อยู่ตอนแก้ค่า: ที่ผู้ใช้เลือกใช้ต่อ หรือที่
+ * ผูกกับ Config เดียวกัน (ใช้ต่ออัตโนมัติ) */
+function baseFieldsFor(
+  item: Parameters<typeof needsCarryChoice>[0],
+  choice: CarryChoice | undefined,
+  configId: string,
+): Record<string, unknown> {
+  if (!item?.previous) return {};
+  if (continuesAutomatically(item, configId)) return item.previous.fields;
+  if (needsCarryChoice(item, configId) && choice === "keep") {
+    return item.previous.fields;
+  }
+  return {};
+}
+
+function DeviceValuesCell({
+  deviceId,
+  configId,
+  item,
+  editedCount,
+  choice,
+  loading,
+  resolveName,
+  onEdit,
+  onChoose,
+}: {
+  deviceId: string;
+  configId: string;
+  item: Parameters<typeof needsCarryChoice>[0];
+  editedCount: number;
+  choice: CarryChoice | undefined;
+  loading: boolean;
+  resolveName: (userId: string) => string;
+  onEdit: () => void;
+  onChoose: (choice: CarryChoice) => void;
+}) {
+  if (item?.hasPendingRequest) {
+    return (
+      <p className="text-amber-700 dark:text-amber-400">
+        มีคำขอของช่างรออนุมัติอยู่ ตั้งค่าเฉพาะเครื่องไม่ได้จนกว่า Operation
+        จะตัดสินใจคำขอนั้น
+      </p>
+    );
+  }
+
+  const previous = item?.previous ?? null;
+  const carryText = previous
+    ? Object.entries(previous.fields)
+        .map(([name, value]) => `${name} ${valueToText(value)}`)
+        .join(", ")
+    : "";
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <span
+          className={editedCount > 0 ? "font-medium" : "text-muted-foreground"}
+        >
+          {editedCount > 0 ? `แก้ ${editedCount} ค่า` : "ตามแม่แบบ"}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          onClick={onEdit}
+          aria-label={`แก้ค่าของ ${deviceId}`}
+        >
+          แก้ค่า
+        </Button>
+      </div>
+
+      {needsCarryChoice(item, configId) && previous && (
+        <fieldset className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950">
+          <legend className="px-1 text-amber-800 dark:text-amber-300">
+            เครื่องนี้เคยมีค่าพิเศษ ตั้งโดย {resolveName(previous.overriddenBy)}
+          </legend>
+          <label className="flex items-start gap-1.5">
+            <input
+              type="radio"
+              name={`carry-${deviceId}`}
+              checked={choice === "keep"}
+              onChange={() => onChoose("keep")}
+            />
+            <span>ใช้ค่าพิเศษเดิมต่อ: {carryText}</span>
+          </label>
+          <label className="flex items-start gap-1.5">
+            <input
+              type="radio"
+              name={`carry-${deviceId}`}
+              checked={choice === "template"}
+              onChange={() => onChoose("template")}
+            />
+            <span>ใช้ตามแม่แบบใหม่</span>
+          </label>
+        </fieldset>
+      )}
+
+      {continuesAutomatically(item, configId) && (
+        <p className="text-muted-foreground">
+          ค่าพิเศษเดิมของ Config นี้ ({carryText}) ยังมีผลต่อ
+        </p>
+      )}
+
+      {previous && previous.dropped.length > 0 && (
+        <p className="text-muted-foreground">
+          ใช้กับ Config นี้ไม่ได้จึงไม่ถูกยกมา:{" "}
+          {previous.dropped
+            .map((d) => `${d.fieldName} (${d.reason})`)
+            .join(", ")}
+        </p>
+      )}
     </div>
   );
 }

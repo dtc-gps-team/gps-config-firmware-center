@@ -31,12 +31,14 @@ import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useCampaignRollout } from "@/hooks/use-campaign-rollout";
 import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets";
 import { useConfig } from "@/hooks/use-config";
+import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
+import { RolloutDeviceValuesSummary } from "./rollout-device-values-summary";
 
 /**
  * รายละเอียด Rollout 1 รอบ — ต่อ `GET /campaigns/{id}/rollouts/{rolloutId}`
@@ -60,6 +62,11 @@ export function CampaignRolloutDetailView({
   // campaign-detail-view.tsx เดิม
   const configQuery = useConfig(data?.configId ?? null);
   const firmwareQuery = useFirmware(data?.firmwareId ?? null);
+  // ชื่อ field ที่ sensitive — ใช้ซ่อนค่าในตารางค่าเฉพาะเครื่อง (docs/17)
+  const definitionsQuery = useConfigDefinitions();
+  const sensitiveFieldNames = new Set(
+    (definitionsQuery.data ?? []).filter((d) => d.sensitive).map((d) => d.fieldName),
+  );
 
   if (isLoading && !data) {
     return <DetailSkeleton />;
@@ -107,6 +114,15 @@ export function CampaignRolloutDetailView({
           {getRolloutStatusExplanation(data.status)}
         </p>
       </div>
+
+      {/* ค่าเฉพาะเครื่อง (docs/17) — ผู้อนุมัติต้องเห็นก่อนตัดสินใจ จึงวาง
+          ไว้เหนือปุ่มอนุมัติ แสดงเฉพาะ Rollout ที่มีค่าเฉพาะเครื่อง */}
+      <RolloutDeviceValuesSummary
+        targets={targets}
+        templateFields={configQuery.data?.fields ?? null}
+        sensitiveFieldNames={sensitiveFieldNames}
+        reason={data.deviceValuesReason}
+      />
 
       <CampaignRolloutApprovalPanel
         campaignId={campaignId}
