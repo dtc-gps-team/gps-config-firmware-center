@@ -30,8 +30,8 @@ export default function NewDevicePage() {
         </Link>
         <h1 className="text-2xl font-semibold">ลงทะเบียนอุปกรณ์ใหม่</h1>
         <p className="text-sm text-muted-foreground">
-          เฉพาะ Role Admin/SuperAdmin · ระบบจะออก API key ให้อุปกรณ์ใช้เชื่อมต่อ
-          — โชว์ได้ครั้งเดียวตอนลงทะเบียนสำเร็จเท่านั้น
+          เฉพาะ Role Admin/SuperAdmin ระบบจะออก API key ให้อุปกรณ์ใช้เชื่อมต่อ
+          และโชว์ได้ครั้งเดียวตอนลงทะเบียนสำเร็จเท่านั้น
         </p>
       </div>
 
