@@ -1,5 +1,7 @@
 import { PrismaClient, ActionType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { planInitialAdmin } from '../src/common/initial-admin';
+import { planTestUsersSeed } from '../src/common/test-users';
 
 const prisma = new PrismaClient();
 
@@ -162,21 +164,54 @@ async function main() {
       },
     ];
 
-  const passwordHash = await bcrypt.hash('password123', 10);
+  // อัปเดต 2026-10-15: บัญชีทดสอบสร้างตามกติกาใน src/common/test-users.ts
+  // ตอนพัฒนาในเครื่องเหมือนเดิมทุกอย่าง (รหัส password123 ถ้าไม่ได้ตั้ง
+  // TEST_USERS_PASSWORD) แต่ถ้าเปิดสู่ภายนอก (NODE_ENV=production หรือตั้ง
+  // TRUST_PROXY) ไม่สร้าง เว้นแต่ SEED_TEST_USERS=true พร้อมรหัสที่ตั้งเอง
+  // upsert ยัง `update: {}` เหมือนเดิม: ไม่เปลี่ยนรหัสของบัญชีที่มีอยู่แล้ว
+  // (เปลี่ยนด้วย npm run test-users:set-password)
+  const testUsersPlan = planTestUsersSeed(process.env);
+  if (testUsersPlan.create) {
+    const passwordHash = await bcrypt.hash(testUsersPlan.password, 10);
+    for (const u of testUsers) {
+      const roleId = roleIdByCode.get(u.roleCode);
+      if (!roleId) throw new Error(`Role code not seeded yet: ${u.roleCode}`);
+      await prisma.user.upsert({
+        where: { username: u.username },
+        update: {},
+        create: {
+          username: u.username,
+          fullName: u.fullName,
+          passwordHash,
+          roleId,
+        },
+      });
+    }
+  } else {
+    console.log(`ข้ามการสร้างบัญชีทดสอบ: ${testUsersPlan.reason}`);
+  }
 
-  for (const u of testUsers) {
-    const roleId = roleIdByCode.get(u.roleCode);
-    if (!roleId) throw new Error(`Role code not seeded yet: ${u.roleCode}`);
-    await prisma.user.upsert({
-      where: { username: u.username },
-      update: {},
-      create: {
-        username: u.username,
-        fullName: u.fullName,
-        passwordHash,
-        roleId,
-      },
+  // SuperAdmin คนแรกของเครื่องใหม่ (src/common/initial-admin.ts) สร้างเฉพาะเมื่อ
+  // ตั้ง INITIAL_ADMIN_* และยังไม่มีผู้ใช้ role SuperAdmin เลย
+  const initialAdmin = planInitialAdmin(process.env);
+  if (initialAdmin) {
+    const superAdminRoleId = roleIdByCode.get('SuperAdmin');
+    if (!superAdminRoleId)
+      throw new Error('Role code not seeded yet: SuperAdmin');
+    const existingSuperAdmins = await prisma.user.count({
+      where: { roleId: superAdminRoleId },
     });
+    if (existingSuperAdmins === 0) {
+      await prisma.user.create({
+        data: {
+          username: initialAdmin.username,
+          fullName: initialAdmin.username,
+          passwordHash: await bcrypt.hash(initialAdmin.password, 10),
+          roleId: superAdminRoleId,
+        },
+      });
+      console.log(`สร้าง SuperAdmin คนแรก: ${initialAdmin.username}`);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -927,6 +962,16 @@ async function main() {
         create: { fieldDefinitionId: existing.id, ...support },
       });
     }
+  }
+
+  // ข้อมูลตัวอย่างข้อ 5 ถึง 7 (ลูกค้า อุปกรณ์ Config Firmware) ผูกกับบัญชีทดสอบ
+  // (createdBy / uploadedBy) และไม่ควรอยู่ในเครื่องที่เปิดสู่ภายนอก จึงไม่สร้าง
+  // เมื่อไม่ได้สร้างบัญชีทดสอบ (src/common/test-users.ts)
+  if (!testUsersPlan.create) {
+    console.log(
+      `Seeded ${INITIAL_ROLES.length} roles, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions (ไม่มีบัญชีทดสอบและข้อมูลตัวอย่าง)`,
+    );
+    return;
   }
 
   // ---------------------------------------------------------------------

@@ -1,3 +1,5 @@
+import { isExposedEnvironment } from './exposed-environment';
+
 /**
  * ตรวจ `JWT_SECRET` ตอน startup (เรียกจาก main.ts ก่อนสร้างแอป)
  *
@@ -7,9 +9,8 @@
  * sign token ปลอมเป็น Admin ได้ทันที ตรวจที่นี่จุดเดียวก่อนสร้างแอป จึงครอบคลุมทุก
  * module ที่อ่าน `JWT_SECRET` โดยไม่ต้องแก้ไฟล์ของ module นั้น
  *
- * **ตรวจเมื่อไร:** `NODE_ENV=production` (deploy จริง) หรือมีการตั้ง `TRUST_PROXY`
- * (แปลว่า backend อยู่หลัง proxy หรือ tunnel ที่คนภายนอกเข้าถึงได้ แม้จะรันด้วย dev
- * server) นอกเหนือจากนี้ถือเป็นการพัฒนาในเครื่อง ไม่บังคับ
+ * **ตรวจเมื่อไร:** เมื่อ `isExposedEnvironment()` (`NODE_ENV=production` หรือตั้ง
+ * `TRUST_PROXY`) นอกเหนือจากนี้ถือเป็นการพัฒนาในเครื่อง ไม่บังคับ
  *
  * **ถือว่าไม่ปลอดภัยเมื่อ:** ไม่ได้ตั้ง, เป็นค่าตัวอย่างที่รู้กันทั่วไป หรือสั้นกว่า
  * `MIN_JWT_SECRET_LENGTH` ตัวอักษร (HS256 ควรใช้ key ยาวอย่างน้อย 256 bit)
@@ -26,14 +27,8 @@ const KNOWN_PLACEHOLDER_SECRETS = new Set([
   'changeme-generate-a-real-secret',
 ]);
 
-export function shouldEnforceJwtSecret(env: NodeJS.ProcessEnv): boolean {
-  if (env.NODE_ENV === 'production') return true;
-  const trustProxy = env.TRUST_PROXY?.trim().toLowerCase() ?? '';
-  return trustProxy !== '' && trustProxy !== '0' && trustProxy !== 'false';
-}
-
 export function assertJwtSecret(env: NodeJS.ProcessEnv): void {
-  if (!shouldEnforceJwtSecret(env)) return;
+  if (!isExposedEnvironment(env)) return;
 
   const secret = env.JWT_SECRET?.trim() ?? '';
   const reason =
