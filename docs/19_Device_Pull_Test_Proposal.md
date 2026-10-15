@@ -166,7 +166,8 @@ staff (`getCurrentConfig` ที่ใช้ JWT) จึงเสนอ prefix �
 - กรอก URL ของ backend, Device ID และ API key
 - ดึงงานตาม `pollAfterSeconds` แสดง Config ที่ได้
 - ปุ่ม "สำเร็จ" / "ล้มเหลว" ให้กดเอง และโหมดอัตโนมัติที่ตั้งอัตราล้มเหลวได้ (ใช้ทดสอบ Auto Pause)
-- จะเป็นแอปแยก หรือเป็นโหมดหนึ่งในแอปเดิม B ตัดสินใจเอง
+- **เป็นโหมดหนึ่งในแอปเดิม ไม่แยกแอป** (B ตอบ 15 ต.ค.) แจกจ่ายให้ทดสอบง่ายกว่า กั้นด้วย flag ไม่ให้ UI โหมดจำลอง
+  ปนกับโหมดใช้งานจริง
 
 ---
 
@@ -233,7 +234,8 @@ backend รันบนคอมพิวเตอร์ของ A มือถ
 | backend: schema, endpoint 2 ตัว, โหมด `real`, Config ปัจจุบัน (หัวข้อ 5), openapi, RBAC, เทสต์ | A |
 | เว็บ: สถานะรายเครื่องใน Rollout, online/offline ในหน้าอุปกรณ์ | A |
 | Rollout ล้มเหลวแล้วสร้าง Incident: ส่ง event, สร้าง/อัปเดต Incident, ลิงก์จากหน้า Incident ไป Rollout (หัวข้อ 15) | A |
-| listener ส่งแจ้งเตือน `incident_alert` ให้ Operation เมื่อ Rollout ล้มเหลว (หัวข้อ 15) | B |
+| ชนิดแจ้งเตือนใหม่ `rollout_failed` (เพิ่มค่าใน enum `NotificationType` + migration) และ listener ส่งให้ Operation (หัวข้อ 15.5) | B |
+| เว็บ: แสดงแจ้งเตือน `rollout_failed` และลิงก์ไปหน้า Rollout (หัวข้อ 15.5) | A |
 | เวลารอเครื่องที่ไม่ตอบกลับ: งานตามเวลา, สถานะใหม่, ช่องในฟอร์มสร้าง Rollout (หัวข้อ 16) | A |
 | แอปจำลองกล่อง | B เริ่มได้ทันทีที่ contract ในหัวข้อ 4 ตกลงกันแล้ว |
 | Firmware ขั้นที่ 2 | ประเมินหลังขั้นที่ 1 เสร็จ |
@@ -253,6 +255,10 @@ backend รันบนคอมพิวเตอร์ของ A มือถ
 ---
 
 ## 14. คำถามให้ B ตอบ
+
+> **B ตอบแล้ว 15 ต.ค. (ข้อ 1 ถึง 6):** เห็นด้วยกับข้อ 1 ถึง 4 ตามที่เสนอ (ข้อ 3 โอเคสำหรับช่วงทดสอบและเดโม)
+> ข้อ 5 ทำเป็นโหมดในแอปเดิม (หัวข้อ 8) ข้อ 6 ทำได้ พร้อมขอปรับ event และชนิดแจ้งเตือน (ปรับแล้วในหัวข้อ 15.5)
+> ข้อ 7 ยังรอคำตอบ
 
 1. **Audit Log ของเครื่อง:** `AuditLog.userId` บังคับต้องเป็นผู้ใช้ เสนอว่า**ไม่ลง Audit Log** สำหรับการดึงงานและรายงานผล
    ของเครื่อง เพราะ Audit Log เป็นของการกระทำของคน ส่วนผลของเครื่องเก็บที่ target พร้อมเวลาอยู่แล้ว การกระทำของ
@@ -320,13 +326,37 @@ Operation ยังเปลี่ยนสถานะเองได้ตา�
 ใช้รูปแบบเดียวกับ `config-sync-writer` ที่มีอยู่: โมดูล campaign ส่ง event แล้วโมดูล incident (A) กับโมดูล
 notification (B) ต่างฟังเอง
 
-- **campaign (A):** ส่ง event `rollout-failed` ตอน Auto Pause และตอนจบแบบมีเครื่องล้ม
-  `{ rolloutId, campaignId, campaignName, kind: 'auto-pause' | 'completed-with-failures', failureCount, targetCount, failedDeviceIds }`
-  และส่ง event ตอน Resume / Rollback / จบ ให้ incident ปรับสถานะ
+- **campaign (A):** ส่ง event `rollout-failed` ตอน Auto Pause และตอนจบแบบมีเครื่องล้ม และส่ง event ตอน
+  Resume / Rollback / จบ ให้ incident ปรับสถานะ
+
+  ```ts
+  {
+    rolloutId: string;
+    campaignId: string;
+    campaignName: string;
+    configId: string | null;    // Rollout ของ Firmware ไม่มี configId
+    firmwareId: string | null;  // Rollout ของ Config ไม่มี firmwareId
+    kind: 'auto-pause' | 'completed-with-failures';
+    failureCount: number;
+    targetCount: number;
+    failedDeviceIds: string[];  // ไม่เกิน 20 เครื่อง
+    sampleErrors: string[];     // ไม่เกิน 3 รายการ จาก CampaignRolloutTarget.resultDetail
+  }
+  ```
+
+  ไม่ใส่ `deviceModel` / `protocol` เพราะหาได้จาก `configId` อยู่แล้ว (ตามที่ B ขอ)
 - **incident (A):** สร้างหรืออัปเดต Incident ตามหัวข้อ 15.2 ถึง 15.4
-- **notification (B):** ฟัง `rollout-failed` แล้วส่ง `incident_alert` ให้ Operation ทุกคนที่ active
-  (เหมือน `config-sync-failure-alert.listener.ts`)
-- **เว็บ (A):** หน้ารายละเอียด Incident มีลิงก์ไปหน้า Rollout ที่เกี่ยวข้อง
+- **notification (B):** เพิ่มชนิดแจ้งเตือนใหม่ **`rollout_failed`** (เพิ่มค่าใน enum `NotificationType` ต้องมี migration
+  แบบ additive) แล้วฟัง `rollout-failed` ส่งให้ Operation ทุกคนที่ active (เหมือน `config-sync-failure-alert.listener.ts`)
+  ข้อความประกอบจาก `campaignName`, `failureCount` / `targetCount` และ `kind`
+  - **ไม่ใช้ `incident_alert` ซ้ำ** เพราะเว็บ (#317) ตั้งหัวข้อของ `incident_alert` ไว้ตายตัวว่า "เขียน Config
+    ไม่สำเร็จ" และลิงก์ไปหน้า Config ซึ่งไม่ตรงกับเหตุการณ์นี้ (B ชี้ 15 ต.ค.)
+  - payload ของแจ้งเตือนมี `rolloutId` และ `campaignId` ไม่มี `incidentId` เพราะ incident กับ notification ฟัง event
+    เดียวกันพร้อมกัน listener ฝั่ง notification จึงไม่รู้ id ของ Incident
+- **เว็บ (A):**
+  - เพิ่ม case `rollout_failed` ใน `describeNotification` ลิงก์ไปหน้า Rollout ด้วย `campaignId` / `rolloutId`
+    จัดเป็นแจ้งเตือนด่วนแบบเดียวกับ `incident_alert`
+  - หน้ารายละเอียด Incident มีลิงก์ไปหน้า Rollout ที่เกี่ยวข้อง
 
 ใช้ได้ทั้งโหมด `mock` และ `real` เพราะทั้งสองโหมดผ่าน `recordTargetResult()` ตัวเดียวกัน
 
