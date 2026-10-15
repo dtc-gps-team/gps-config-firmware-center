@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RefreshCwIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react";
 
@@ -176,7 +177,12 @@ export function IncidentsView() {
                   <TableRow key={incident.id}>
                     <TableCell>
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-medium">{incident.title}</span>
+                        <Link
+                          href={`/incidents/${encodeURIComponent(incident.id)}`}
+                          className="font-medium underline-offset-2 hover:underline"
+                        >
+                          {incident.title}
+                        </Link>
                         {incident.description && (
                           <span className="text-xs text-muted-foreground">
                             {incident.description}
