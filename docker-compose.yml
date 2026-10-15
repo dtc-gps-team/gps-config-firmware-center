@@ -1,3 +1,10 @@
+# ค่า env ที่ migrate กับ backend ใช้ร่วมกัน (ค่าลับอ่านจาก .env ที่ root)
+# JWT_SECRET ไม่ได้ตั้งหรือยังเป็นค่าตัวอย่าง backend จะไม่ยอมเริ่ม (backend/src/common/jwt-secret.ts)
+x-backend-env: &backend-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-gps_user}:${POSTGRES_PASSWORD:-gps_password}@postgres:5432/${POSTGRES_DB:-gps_config_firmware}
+  JWT_SECRET: ${JWT_SECRET:-}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -50,7 +57,103 @@ services:
       timeout: 5s
       retries: 10
 
+  # ---------------------------------------------------------------------------
+  # ระบบเต็มชุด (profile `app`) ดูคู่มือ docs/deploy/docker-compose.md
+  #
+  #   docker compose up -d                  เฉพาะ postgres / redis / minio (ตอนพัฒนา เหมือนเดิม)
+  #   docker compose --profile app up -d    ทั้งระบบ เปิดที่ http://localhost:${APP_PORT:-8080}
+  #
+  # backend รันได้ 1 ตัวเท่านั้น: มีงานตามเวลา (@nestjs/schedule) อยู่ในตัว ถ้ารันหลายตัว
+  # งานจะรันซ้ำ
+  # ---------------------------------------------------------------------------
+  migrate:
+    profiles: [app]
+    build:
+      context: ./backend
+      target: migrator
+    image: gps-backend-migrator:local
+    environment:
+      <<: *backend-env
+      # seed: บัญชีทดสอบและ SuperAdmin คนแรก (backend/src/common/test-users.ts,
+      # initial-admin.ts) โหมดนี้เป็น NODE_ENV=production จึงไม่สร้างบัญชีทดสอบ
+      # เว้นแต่ตั้ง SEED_TEST_USERS=true พร้อม TEST_USERS_PASSWORD
+      SEED_TEST_USERS: ${SEED_TEST_USERS:-}
+      TEST_USERS_PASSWORD: ${TEST_USERS_PASSWORD:-}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    profiles: [app]
+    build:
+      context: ./backend
+      target: runtime
+    image: gps-backend:local
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+      PORT: "3001"
+      # จำนวน proxy หน้า backend: Caddy 1 ชั้น ถ้ามี tunnel อีกชั้นตั้ง APP_TRUST_PROXY=2
+      # (แยกชื่อจาก TRUST_PROXY ที่ใช้ตอนรัน dev server ใน .env เดียวกัน)
+      TRUST_PROXY: ${APP_TRUST_PROXY:-1}
+      DEVICE_CONFIG_APPLY_MODE: ${DEVICE_CONFIG_APPLY_MODE:-mock}
+      DEVICE_SIMULATOR_MODE: ${DEVICE_SIMULATOR_MODE:-mock}
+      LEGACY_SYNC_MODE: mock
+      NOTIFICATION_MODE: ${APP_NOTIFICATION_MODE:-mock}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-gps_minio_admin}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-gps_minio_password}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-gps-firmware}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3001/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    profiles: [app]
+    build:
+      context: ./web
+    image: gps-web:local
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  proxy:
+    profiles: [app]
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-127.0.0.1/32}
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+      web:
+        condition: service_started
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  caddy_data:
