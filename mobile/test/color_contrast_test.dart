@@ -102,6 +102,11 @@ Future<void> _pump(WidgetTester tester, Widget page, AuthState auth) async {
         pendingTaskIdsProvider.overrideWith(
           (ref) => Stream.value(const <String>{}),
         ),
+        // แถบสถานะบน Home (#338) อ่านตัวนี้ด้วย — ตัวจริงคือ drift
+        // `watchFailed()` ที่ทิ้ง Timer ค้างหลัง dispose (`!timersPending`)
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
         appDatabaseProvider.overrideWith((ref) {
           final db = AppDatabase.forTesting(NativeDatabase.memory());
           ref.onDispose(db.close);
