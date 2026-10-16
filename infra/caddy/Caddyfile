@@ -1,0 +1,35 @@
+# Reverse proxy หน้าระบบ (docker compose profile `app`, docs/deploy/docker-compose.md)
+#
+# ทุกอย่างผ่านพอร์ตเดียว origin เดียว: เบราว์เซอร์ แอปมือถือ กล่อง GPS และ tunnel
+# (docs/19 หัวข้อ 10) ใช้ URL เดียวกัน ไม่ต้องตั้ง CORS
+#
+#   /api/*     -> backend (รวม /api/v1/device-sync/* ของกล่อง GPS)
+#   /socket/*  -> backend (เตรียมไว้ให้แจ้งเตือน real-time ด้วย WebSocket ในอนาคต
+#                 Caddy ส่งต่อ WebSocket ให้เอง ตอนนี้ backend ยังไม่มี route นี้)
+#   อื่นๆ       -> web
+#
+# trusted_proxies: ค่าเริ่มต้นไม่เชื่อ proxy ใดที่อยู่หน้า Caddy Caddy จึงเขียน
+# X-Forwarded-For เป็น IP ที่ต่อเข้ามาจริง (backend ตั้ง TRUST_PROXY=1) ถ้ามี tunnel
+# หรือ proxy อีกชั้นอยู่หน้า Caddy ให้ตั้ง CADDY_TRUSTED_PROXIES=private_ranges และ
+# APP_TRUST_PROXY=2 ดูตารางในคู่มือ ห้ามเปิดถ้าไม่มี proxy จริง (ปลอม IP ได้)
+{
+	servers {
+		trusted_proxies static {$CADDY_TRUSTED_PROXIES:127.0.0.1/32}
+	}
+}
+
+:80 {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle /socket/* {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
