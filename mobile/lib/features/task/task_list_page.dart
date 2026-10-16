@@ -10,6 +10,7 @@ import '../../core/widgets/sync_status_widgets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/skeleton_card.dart';
+import '../../core/widgets/text_scale.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
 
@@ -106,6 +107,21 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final urgency = TaskUrgencyStyle.of(task);
     final (urgencyBg, urgencyFg) = TaskUrgencyStyle.colors(urgency);
+    // ตัวอักษรใหญ่: ป้ายสถานะย้ายจากด้านขวามาอยู่ใต้รายละเอียด (UX audit #9)
+    // ไม่งั้นป้ายกินความกว้างจนการ์ดล้นขอบและวันที่ขึ้นบรรทัดใหม่กลางตัวเลข
+    final largeText = isLargeTextScale(context);
+    final badges = Column(
+      crossAxisAlignment: largeText
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.end,
+      children: [
+        TaskStatusPill(status: task.status),
+        if (pendingSync) ...[
+          const SizedBox(height: 6),
+          const PendingSyncBadge(),
+        ],
+      ],
+    );
     return Material(
       color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
@@ -171,32 +187,28 @@ class _TaskCard extends StatelessWidget {
                               color: urgencyFg,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              TaskUrgencyStyle.label(urgency),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: urgencyFg,
+                            // Flexible: ตัวอักษรใหญ่ / จอแคบ ข้อความขึ้นบรรทัด
+                            // ใหม่แทนล้นขอบ (UX audit #9) ไม่ตัดด้วย ellipsis
+                            // เพราะเป็นข้อความสั้นที่ช่างใช้จัดลำดับงาน
+                            Flexible(
+                              child: Text(
+                                TaskUrgencyStyle.label(urgency),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: urgencyFg,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ],
+                    if (largeText) ...[const SizedBox(height: 8), badges],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  TaskStatusPill(status: task.status),
-                  if (pendingSync) ...[
-                    const SizedBox(height: 6),
-                    const PendingSyncBadge(),
-                  ],
-                ],
-              ),
+              if (!largeText) ...[const SizedBox(width: 12), badges],
             ],
           ),
         ),

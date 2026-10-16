@@ -3,8 +3,11 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import {
   CONFIG_APPLIER,
+  CONFIG_APPLY_MODE,
   type ConfigApplier,
+  type ConfigApplyMode,
   MockConfigApplier,
+  resolveConfigApplyMode,
 } from '../device/config-applier';
 import { CampaignController } from './campaign.controller';
 import { CampaignRolloutController } from './campaign-rollout.controller';
@@ -67,14 +70,24 @@ import {
     {
       provide: CONFIG_APPLIER,
       useFactory: (nestConfig: NestConfigService): ConfigApplier => {
-        const mode = nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE', 'mock');
-        if (mode === 'real') {
-          throw new Error(
-            'DEVICE_CONFIG_APPLY_MODE=real ยังไม่รองรับ (ยังไม่มีช่องทางเขียน Config เข้าอุปกรณ์จริง — ดู config-sync-writer #32)',
-          );
-        }
+        // ตรวจค่า env ตอน startup (ค่าที่ไม่รู้จัก throw) — `real` ไม่ throw อีก
+        // ต่อไป: หมายถึง "รอให้อุปกรณ์ดึงงานเอง" ไม่ได้เปลี่ยน applier ดู
+        // comment เหนือ `ConfigApplyMode` ใน device/config-applier.ts
+        resolveConfigApplyMode(
+          nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE'),
+        );
         return new MockConfigApplier();
       },
+      inject: [NestConfigService],
+    },
+    // CONFIG_APPLY_MODE: โหมดของ Rollout ที่กำลังจะถูกปล่อย (docs/19 §3)
+    // `release()` บันทึกค่านี้ลง `CampaignRollout.applyMode` ไม่อ่าน env ซ้ำ
+    {
+      provide: CONFIG_APPLY_MODE,
+      useFactory: (nestConfig: NestConfigService): ConfigApplyMode =>
+        resolveConfigApplyMode(
+          nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE'),
+        ),
       inject: [NestConfigService],
     },
   ],

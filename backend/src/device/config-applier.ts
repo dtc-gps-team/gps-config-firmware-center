@@ -52,6 +52,34 @@ export interface ConfigApplier {
 /** DI token — interface ล้วนเป็น token ไม่ได้ (erase ตอน compile) */
 export const CONFIG_APPLIER = Symbol('CONFIG_APPLIER');
 
+/**
+ * โหมดการส่ง Config ของ Campaign Rollout (env `DEVICE_CONFIG_APPLY_MODE`,
+ * docs/19 §3):
+ *   `mock` (ค่าเริ่มต้น) = ตอนปล่อย Rollout backend apply ให้ทุกเครื่องทันที
+ *   `real`               = ไม่ apply เอง รอให้อุปกรณ์ดึงงานแล้วรายงานผลกลับผ่าน
+ *                          `/device-sync/*`
+ *
+ * **`real` ไม่ได้เปลี่ยน `ConfigApplier`** — ปุ่ม "ยืนยันส่ง Config เข้าเครื่อง"
+ * ของช่าง (`DeviceService.applyConfig()`) ยังใช้ `MockConfigApplier` ตามเดิมทั้ง
+ * สองโหมด (ยังไม่มีช่องทางเขียน Config เข้ากล่องจากฝั่ง server) ที่ต่างกันคือ
+ * เส้นทางของ Campaign Rollout เท่านั้น
+ */
+export type ConfigApplyMode = 'mock' | 'real';
+
+export const CONFIG_APPLY_MODE = Symbol('CONFIG_APPLY_MODE');
+
+/** อ่านค่าจาก env — ค่าที่ไม่รู้จัก throw ตอน startup (ไม่เดาเอง) */
+export function resolveConfigApplyMode(
+  raw: string | undefined,
+): ConfigApplyMode {
+  const value = raw?.trim().toLowerCase() ?? '';
+  if (value === '' || value === 'mock') return 'mock';
+  if (value === 'real') return 'real';
+  throw new Error(
+    `DEVICE_CONFIG_APPLY_MODE ต้องเป็น "mock" หรือ "real" แต่ได้ "${raw}"`,
+  );
+}
+
 /** ชื่อฟิลด์ที่ต้องเป็นค่าบวกเสมอถ้ามีอยู่ (Timeout/Interval) — ชุดเดียวกับ
  * `MockDeviceSimulator` (config/device-simulator.ts) จับคู่แบบ case-insensitive
  * substring เพราะยังไม่มีสเปกฟิลด์จริงทั้ง ~262 ตัวมาอ้าง */

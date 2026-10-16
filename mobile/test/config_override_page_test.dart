@@ -556,4 +556,179 @@ void main() {
       );
     },
   );
+
+  /// เลื่อนจนเห็นปุ่ม "ยืนยัน Override" แล้วคืน finder ของปุ่ม — ปุ่มอยู่ท้าย
+  /// ListView ถ้าแถวด้านบนสูงขึ้น (เช่น #334 ย้ายป้าย "(override ไม่ได้)" ลง
+  /// บรรทัดล่าง) ปุ่มจะเลยพื้นที่จอของเทส (800x600) จน ListView ไม่สร้าง
+  Future<Finder> revealSubmit(WidgetTester tester) async {
+    final submit = find.byKey(const Key('config_override_submit'));
+    await tester.scrollUntilVisible(
+      submit,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    return submit;
+  }
+
+  // UX audit #16 — เดิมเช็คเหตุผลก่อนแล้ว return ทันที ค่าที่ผิดชนิดในช่องอื่น
+  // ไม่ขึ้น error จนกว่าจะกดส่งรอบสอง
+  group('ตรวจครบทุกช่องในการกดส่งครั้งเดียว (UX audit #16)', () {
+    String? errorTextOf(WidgetTester tester, String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).decoration?.errorText;
+
+    testWidgets(
+      'เหตุผลว่าง + ค่าผิดชนิด -> กดส่งครั้งเดียวเห็น errorText ทั้งสองช่อง',
+      (tester) async {
+        final fake = await _pump(
+          tester,
+          repo: _FakeConfigOverrideRepository(
+            config: const DeviceConfigDraft(
+              id: 'cfg-1',
+              name: 'cfg',
+              deviceModel: 'GT06N',
+              protocol: 'TCP',
+              status: ConfigStatus.approved,
+              fields: {'F': 30},
+            ),
+            definitions: [_defOf('F', 'integer')],
+          ),
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('config_override_input_F')),
+          'abc',
+        );
+        await tester.tap(await revealSubmit(tester));
+        await tester.pumpAndSettle();
+
+        expect(errorTextOf(tester, 'config_override_input_F'), isNotNull);
+        expect(
+          errorTextOf(tester, 'config_override_reason_input'),
+          'กรอกเหตุผลก่อน override',
+        );
+        expect(fake.lastDeviceId, isNull);
+      },
+    );
+
+    testWidgets('เหตุผลว่าง + ไม่ได้แก้ค่าไหน -> บอกทั้งสองเรื่องในรอบเดียว', (
+      tester,
+    ) async {
+      final fake = await _pump(tester);
+
+      await tester.tap(await revealSubmit(tester));
+      await tester.pumpAndSettle();
+
+      expect(
+        errorTextOf(tester, 'config_override_reason_input'),
+        'กรอกเหตุผลก่อน override',
+      );
+      expect(find.text('ยังไม่ได้แก้ค่าไหนเลย'), findsOneWidget);
+      expect(fake.lastDeviceId, isNull);
+    });
+
+    testWidgets('errorText ของเหตุผลหายเมื่อเริ่มพิมพ์เหตุผล', (tester) async {
+      await _pump(tester);
+      await tester.tap(await revealSubmit(tester));
+      await tester.pumpAndSettle();
+      expect(errorTextOf(tester, 'config_override_reason_input'), isNotNull);
+
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ล',
+      );
+      await tester.pump();
+
+      expect(errorTextOf(tester, 'config_override_reason_input'), isNull);
+    });
+  });
+
+  // UX audit #17 — ส่งตอนออฟไลน์ คำขอนี้ไม่เข้าคิว sync (ต่างจากการเปลี่ยน
+  // สถานะงาน) ข้อความต้องบอกว่าส่งไม่สำเร็จ ให้กดส่งเอง และค่าที่กรอกต้องอยู่
+  // ครบ · ไม่ยืนยันว่า "ยังไม่ได้ส่ง" เพราะ receive timeout คำขออาจถึง server
+  // แล้ว (รีวิว A บน #333) — ส่งซ้ำได้ 409 จึงปลอดภัย
+  group('ส่งตอนออฟไลน์ (UX audit #17)', () {
+    const offlineMessage =
+        'ส่งไม่สำเร็จ ต้องใช้อินเทอร์เน็ต ค่าที่กรอกไว้ยังอยู่ในฟอร์ม '
+        'ลองกดส่งอีกครั้ง';
+
+    Future<void> fillAndSubmit(WidgetTester tester) async {
+      await tester.enterText(
+        find.byKey(const Key('config_override_input_APN')),
+        'new-apn',
+      );
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+      );
+      await tester.tap(await revealSubmit(tester));
+      await tester.pumpAndSettle();
+    }
+
+    String fieldText(WidgetTester tester, String key) => tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .controller
+        .text;
+
+    testWidgets('ไม่มีเน็ต (ไม่มี HTTP response) -> บอกว่าส่งไม่สำเร็จ '
+        'ฟอร์มยังเปิด ค่าที่กรอกอยู่ครบ กดส่งใหม่ได้', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          overrideError: ApiException(
+            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+          ),
+        ),
+      );
+
+      await fillAndSubmit(tester);
+
+      expect(find.text(offlineMessage), findsOneWidget);
+      expect(find.byType(ConfigOverridePage), findsOneWidget);
+      expect(fieldText(tester, 'config_override_input_APN'), 'new-apn');
+      expect(
+        fieldText(tester, 'config_override_reason_input'),
+        'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+      );
+      expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsNothing);
+      final submit = await revealSubmit(tester);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+    });
+
+    testWidgets(
+      'ออนไลน์ส่งสำเร็จ -> พฤติกรรมเดิม (snackbar รออนุมัติ ล้างฟอร์ม)',
+      (tester) async {
+        final fake = await _pump(tester);
+
+        await fillAndSubmit(tester);
+
+        expect(fake.lastFields, {'APN': 'new-apn'});
+        expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsOneWidget);
+        expect(find.text(offlineMessage), findsNothing);
+        expect(fieldText(tester, 'config_override_reason_input'), '');
+      },
+    );
+
+    testWidgets('server ตอบ error (มี statusCode) -> ยังใช้ข้อความของ server '
+        'ไม่ใช่ข้อความออฟไลน์', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          overrideError: ApiException(
+            'มีคำขอ override รออนุมัติอยู่แล้ว',
+            statusCode: 409,
+          ),
+        ),
+      );
+
+      await fillAndSubmit(tester);
+
+      expect(find.text('มีคำขอ override รออนุมัติอยู่แล้ว'), findsOneWidget);
+      expect(find.text(offlineMessage), findsNothing);
+    });
+  });
 }
