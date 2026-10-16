@@ -39,6 +39,19 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
   List<String> _errorList = const [];
   // error รายช่อง (fieldName -> ข้อความ) จากการ parse ตาม dataType ก่อนส่ง
   final Map<String, String> _fieldErrors = {};
+  // error ใต้ช่องเหตุผล (UX audit #16 — แสดงพร้อม error ของช่องอื่นในรอบเดียว)
+  String? _reasonError;
+
+  static const _reasonRequired = 'กรอกเหตุผลก่อน override';
+
+  /// UX audit #17 — คำขอ override ไม่เข้าคิว sync (ต่างจากการเปลี่ยนสถานะงาน)
+  /// ไม่มี HTTP response ต้องบอกให้ชัดว่าส่งไม่สำเร็จและต้องกดส่งเอง ผู้ใช้
+  /// จะได้ไม่คิดว่าระบบจะส่งให้เองเมื่อเน็ตกลับมา · ค่าในฟอร์มไม่ถูกล้าง ·
+  /// ไม่ยืนยันว่า "ยังไม่ได้ส่ง" เพราะกรณี receive timeout คำขออาจถึง server
+  /// แล้ว (รีวิว A บน #333) กดส่งซ้ำจะได้ 409 จึงปลอดภัย
+  static const offlineMessage =
+      'ส่งไม่สำเร็จ ต้องใช้อินเทอร์เน็ต ค่าที่กรอกไว้ยังอยู่ในฟอร์ม '
+      'ลองกดส่งอีกครั้ง';
 
   @override
   void dispose() {
@@ -55,13 +68,13 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       _error = null;
       _errorList = const [];
       _fieldErrors.clear();
+      _reasonError = null;
     });
 
+    // ตรวจทุกช่องก่อนแล้วค่อยแสดง error ทั้งหมดพร้อมกัน (UX audit #16 — เดิม
+    // เหตุผลว่างแล้ว return ทันที error ของช่องค่าไม่ขึ้นจนกว่าจะกดส่งรอบสอง)
     final reason = _reasonController.text.trim();
-    if (reason.isEmpty) {
-      setState(() => _error = 'กรอกเหตุผลก่อน override');
-      return;
-    }
+    final reasonError = reason.isEmpty ? _reasonRequired : null;
 
     final changed = <String, dynamic>{};
     final fieldErrors = <String, String>{};
@@ -81,19 +94,22 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       }
     }
 
-    if (fieldErrors.isNotEmpty) {
+    if (reasonError != null || fieldErrors.isNotEmpty || changed.isEmpty) {
       setState(() {
+        _reasonError = reasonError;
         _fieldErrors.addAll(fieldErrors);
-        _error = 'ค่าบางช่องไม่ถูกต้อง แก้ไขแล้วลองอีกครั้ง';
-        _errorList = [
-          for (final e in fieldErrors.entries) '${e.key}: ${e.value}',
-        ];
+        if (fieldErrors.isNotEmpty) {
+          _error = 'ค่าบางช่องไม่ถูกต้อง แก้ไขแล้วลองอีกครั้ง';
+          _errorList = [
+            for (final e in fieldErrors.entries) '${e.key}: ${e.value}',
+          ];
+        } else if (changed.isEmpty) {
+          _error = 'ยังไม่ได้แก้ค่าไหนเลย';
+        } else {
+          // เหลือแค่เหตุผลว่าง — ข้อความจริงอยู่ใต้ช่องเหตุผลแล้ว
+          _error = 'กรอกข้อมูลไม่ครบ ดูช่องที่มีข้อความสีแดง';
+        }
       });
-      return;
-    }
-
-    if (changed.isEmpty) {
-      setState(() => _error = 'ยังไม่ได้แก้ค่าไหนเลย');
       return;
     }
 
@@ -121,10 +137,11 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      final offline = e.statusCode == null;
       setState(() {
         _submitting = false;
-        _error = e.message;
-        _errorList = e.details;
+        _error = offline ? offlineMessage : e.message;
+        _errorList = offline ? const [] : e.details;
       });
     }
   }
@@ -173,6 +190,10 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
               error: _error,
               errorList: _errorList,
               fieldErrors: _fieldErrors,
+              reasonError: _reasonError,
+              onReasonChanged: () {
+                if (_reasonError != null) setState(() => _reasonError = null);
+              },
               onEdit: (key, value) => setState(() {
                 _edits[key] = value;
                 _fieldErrors.remove(key);
@@ -213,6 +234,8 @@ class _OverrideForm extends StatelessWidget {
     required this.error,
     required this.errorList,
     required this.fieldErrors,
+    required this.reasonError,
+    required this.onReasonChanged,
     required this.onEdit,
     required this.onToggleReveal,
     required this.onSubmit,
@@ -227,6 +250,8 @@ class _OverrideForm extends StatelessWidget {
   final String? error;
   final List<String> errorList;
   final Map<String, String> fieldErrors;
+  final String? reasonError;
+  final VoidCallback onReasonChanged;
   final ValueChanged<String> onToggleReveal;
   final void Function(String key, String value) onEdit;
   final VoidCallback onSubmit;
@@ -311,11 +336,13 @@ class _OverrideForm extends StatelessWidget {
           key: const Key('config_override_reason_input'),
           controller: reasonController,
           maxLength: 500,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
+          onChanged: (_) => onReasonChanged(),
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
             hintText: 'เช่น ลูกค้าขอเปลี่ยนค่าหน้างาน / แก้ไขข้อผิดพลาดที่พบ',
             filled: true,
             fillColor: AppTheme.surface,
+            errorText: reasonError,
           ),
         ),
         if (error != null) ...[
