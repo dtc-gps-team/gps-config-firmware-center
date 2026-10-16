@@ -3,6 +3,12 @@ import { EventEmitter } from 'events';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigSyncFailure } from '../config-sync-writer/config-sync-writer-queue.service';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
+import {
+  ROLLOUT_FAILED_EVENT,
+  ROLLOUT_STATUS_CHANGED_EVENT,
+  RolloutEvents,
+  type RolloutFailedEvent,
+} from '../campaign/rollout-events';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { INCIDENT_SOURCE } from './incident-metadata';
@@ -33,6 +39,9 @@ describe('IncidentService', () => {
   let notificationSend: jest.Mock;
   /** EventEmitter จริง — เทส wiring ของ onModuleInit ครบเส้น */
   let queue: ConfigSyncWriterQueue;
+  let rolloutEvents: RolloutEvents;
+  let incidentFindFirst: jest.Mock;
+  let incidentUpdate: jest.Mock;
 
   beforeEach(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
@@ -47,6 +56,9 @@ describe('IncidentService', () => {
     auditLogCreate = jest.fn().mockResolvedValue(undefined);
     notificationSend = jest.fn().mockResolvedValue(undefined);
     queue = new EventEmitter() as unknown as ConfigSyncWriterQueue;
+    rolloutEvents = new RolloutEvents();
+    incidentFindFirst = jest.fn().mockResolvedValue(null);
+    incidentUpdate = jest.fn().mockResolvedValue({ id: 'inc-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -56,6 +68,8 @@ describe('IncidentService', () => {
           useValue: {
             incident: {
               create: incidentCreate,
+              findFirst: incidentFindFirst,
+              update: incidentUpdate,
               findMany: incidentFindMany,
               findUnique: incidentFindUnique,
               updateMany: incidentUpdateMany,
@@ -66,6 +80,7 @@ describe('IncidentService', () => {
           },
         },
         { provide: ConfigSyncWriterQueue, useValue: queue },
+        { provide: RolloutEvents, useValue: rolloutEvents },
         { provide: NotificationService, useValue: { send: notificationSend } },
       ],
     }).compile();
@@ -75,6 +90,206 @@ describe('IncidentService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  describe('Rollout ล้มเหลว (docs/19 §15)', () => {
+    const rolloutFailed: RolloutFailedEvent = {
+      rolloutId: 'rollout-1',
+      campaignId: 'camp-1',
+      campaignName: 'กลุ่มรถบรรทุก',
+      configId: 'cfg-1',
+      firmwareId: null,
+      kind: 'auto-pause',
+      severity: 'high',
+      failureCount: 2,
+      skippedCount: 0,
+      targetCount: 10,
+      failedDeviceIds: ['DEV-1', 'DEV-2'],
+      sampleErrors: ['ค่า APN ใช้ไม่ได้'],
+    };
+
+    it('ไม่มี Incident ของ Rollout นี้ -> สร้างใหม่ (source rollout-failure, severity ตาม event, FK config, metadata มี rolloutId)', async () => {
+      await service.handleRolloutFailed(rolloutFailed);
+
+      expect(incidentFindFirst).toHaveBeenCalledWith({
+        where: {
+          source: INCIDENT_SOURCE.rolloutFailure,
+          metadata: { path: ['rolloutId'], equals: 'rollout-1' },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(incidentCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          title: 'Rollout หยุดอัตโนมัติ: กลุ่มรถบรรทุก',
+          severity: 'high',
+          status: 'open',
+          relatedConfigId: 'cfg-1',
+          relatedFirmwareId: null,
+          source: INCIDENT_SOURCE.rolloutFailure,
+          metadata: expect.objectContaining({
+            rolloutId: 'rollout-1',
+            kind: 'auto-pause',
+            failedDeviceIds: ['DEV-1', 'DEV-2'],
+          }) as unknown,
+        }) as unknown,
+      });
+      expect(incidentUpdate).not.toHaveBeenCalled();
+    });
+
+    it('จบแต่มีเครื่องล้ม -> ใช้ชื่อเรื่อง "จบแต่มีเครื่องที่ไม่สำเร็จ"', async () => {
+      await service.handleRolloutFailed({
+        ...rolloutFailed,
+        kind: 'completed-with-failures',
+      });
+
+      expect(incidentCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          title: 'Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: กลุ่มรถบรรทุก',
+        }) as unknown,
+      });
+    });
+
+    it('มี Incident ของ Rollout นี้แล้ว -> อัปเดตตัวเดิม ไม่สร้างใหม่ severity เลือกค่าที่สูงกว่า และกลับเป็น open', async () => {
+      incidentFindFirst.mockResolvedValue({
+        id: 'inc-9',
+        severity: 'critical',
+        status: 'resolved',
+      });
+
+      await service.handleRolloutFailed({ ...rolloutFailed, severity: 'high' });
+
+      expect(incidentCreate).not.toHaveBeenCalled();
+      expect(incidentUpdate).toHaveBeenCalledWith({
+        where: { id: 'inc-9' },
+        data: expect.objectContaining({
+          severity: 'critical',
+          status: 'open',
+        }) as unknown,
+      });
+    });
+
+    it('prisma พัง -> ไม่ throw (never-throws)', async () => {
+      incidentFindFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.handleRolloutFailed(rolloutFailed),
+      ).resolves.toBeUndefined();
+    });
+
+    it('onModuleInit ผูก listener: emit rollout-failed แล้วสร้าง Incident', async () => {
+      service.onModuleInit();
+
+      rolloutEvents.emit(ROLLOUT_FAILED_EVENT, rolloutFailed);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(incidentCreate).toHaveBeenCalledTimes(1);
+    });
+
+    describe('rollout-status-changed', () => {
+      const existing = (status: string) => {
+        incidentFindFirst.mockResolvedValue({
+          id: 'inc-9',
+          status,
+          description: 'เดิม',
+        });
+      };
+
+      it('ไม่มี Incident ของ Rollout นี้ -> ไม่ทำอะไร', async () => {
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'resumed',
+        });
+
+        expect(incidentUpdate).not.toHaveBeenCalled();
+      });
+
+      it('resumed + open -> investigating', async () => {
+        existing('open');
+
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'resumed',
+        });
+
+        expect(incidentUpdate).toHaveBeenCalledWith({
+          where: { id: 'inc-9' },
+          data: { status: 'investigating' },
+        });
+      });
+
+      it('resumed แต่ Incident ถูกจัดการไปแล้ว (resolved) -> ไม่เปลี่ยน', async () => {
+        existing('resolved');
+
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'resumed',
+        });
+
+        expect(incidentUpdate).not.toHaveBeenCalled();
+      });
+
+      it('rolled-back -> rolled_back', async () => {
+        existing('investigating');
+
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'rolled-back',
+        });
+
+        expect(incidentUpdate).toHaveBeenCalledWith({
+          where: { id: 'inc-9' },
+          data: { status: 'rolled_back' },
+        });
+      });
+
+      it('completed-clean + investigating -> resolved พร้อมหมายเหตุปิดอัตโนมัติ', async () => {
+        existing('investigating');
+
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'completed-clean',
+        });
+
+        expect(incidentUpdate).toHaveBeenCalledWith({
+          where: { id: 'inc-9' },
+          data: {
+            status: 'resolved',
+            description: expect.stringContaining('ปิดอัตโนมัติ') as string,
+          },
+        });
+      });
+
+      it('completed-clean แต่ Operation ตัดสิน rolled_back ไปแล้ว -> ไม่ทับ', async () => {
+        existing('rolled_back');
+
+        await service.handleRolloutStatusChanged({
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'completed-clean',
+        });
+
+        expect(incidentUpdate).not.toHaveBeenCalled();
+      });
+
+      it('onModuleInit ผูก listener: emit rollout-status-changed แล้วปรับสถานะ', async () => {
+        existing('open');
+        service.onModuleInit();
+
+        rolloutEvents.emit(ROLLOUT_STATUS_CHANGED_EVENT, {
+          rolloutId: 'rollout-1',
+          campaignId: 'camp-1',
+          action: 'resumed',
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(incidentUpdate).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 
   it('createFromSyncFailure -> สร้าง Incident ตาม shape (source + relatedConfigId + metadata)', async () => {

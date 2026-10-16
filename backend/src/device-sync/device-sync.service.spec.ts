@@ -52,11 +52,24 @@ describe('DeviceSyncService', () => {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
     updateMany: jest.Mock;
+    count: jest.Mock;
   };
   let deviceModel: { findUnique: jest.Mock };
   let configModel: { findUnique: jest.Mock };
   let deviceConfigOverride: { findFirst: jest.Mock };
   let recordTargetResult: jest.Mock;
+  let recordLateTargetResult: jest.Mock;
+
+  /** `listJobs()` ยิง findMany 2 ครั้ง (pending กับ skipped_offline) จึง route
+   * ตาม `where.status` แทนการคืนค่าเดียวทุกครั้ง */
+  function mockTargets(pending: unknown[], skipped: unknown[] = []): void {
+    campaignRolloutTarget.findMany.mockImplementation(
+      (args: { where: { status: string } }) =>
+        Promise.resolve(
+          args.where.status === 'skipped_offline' ? skipped : pending,
+        ),
+    );
+  }
 
   beforeEach(async () => {
     campaignRolloutTarget = {
@@ -65,11 +78,14 @@ describe('DeviceSyncService', () => {
       // แถวล่าสุดที่ appendLateReport อ่านก่อนต่อข้อความ
       findUnique: jest.fn().mockResolvedValue({ resultDetail: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      // ไม่มีงานของ Rollout ที่ใหม่กว่า (ใช้ตอนเช็ค skipped_offline ที่กลับมา)
+      count: jest.fn().mockResolvedValue(0),
     };
     deviceModel = { findUnique: jest.fn().mockResolvedValue(device) };
     configModel = { findUnique: jest.fn().mockResolvedValue(config) };
     deviceConfigOverride = { findFirst: jest.fn().mockResolvedValue(null) };
     recordTargetResult = jest.fn().mockResolvedValue(true);
+    recordLateTargetResult = jest.fn().mockResolvedValue(true);
 
     const module = await Test.createTestingModule({
       providers: [
@@ -85,7 +101,7 @@ describe('DeviceSyncService', () => {
         },
         {
           provide: CampaignRolloutService,
-          useValue: { recordTargetResult },
+          useValue: { recordTargetResult, recordLateTargetResult },
         },
       ],
     }).compile();
@@ -105,7 +121,7 @@ describe('DeviceSyncService', () => {
     it('query เฉพาะ target pending ของเครื่องนี้ ใน Rollout active + real + Config เรียงตามเวลาสร้าง (paused ไม่แจกงาน)', async () => {
       await service.listJobs(DEVICE_ID);
 
-      expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith({
+      expect(campaignRolloutTarget.findMany).toHaveBeenNthCalledWith(1, {
         where: {
           deviceId: DEVICE_ID,
           status: 'pending',
@@ -122,7 +138,7 @@ describe('DeviceSyncService', () => {
     });
 
     it('มีงาน -> ส่ง Config พร้อมค่าหลังรวมค่าเฉพาะเครื่องที่อนุมัติแล้ว และบันทึก pulledAt ครั้งแรก', async () => {
-      campaignRolloutTarget.findMany.mockResolvedValue([makeTarget()]);
+      mockTargets([makeTarget()]);
       deviceConfigOverride.findFirst.mockResolvedValue({
         fields: { SPEED_LIMIT: 180 },
       });
@@ -145,14 +161,18 @@ describe('DeviceSyncService', () => {
         },
       ]);
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
-        where: { id: 'job-1', pulledAt: null, status: 'pending' },
+        where: {
+          id: 'job-1',
+          pulledAt: null,
+          status: { in: ['pending', 'skipped_offline'] },
+        },
         data: { pulledAt: expect.any(Date) as Date },
       });
       expect(recordTargetResult).not.toHaveBeenCalled();
     });
 
     it('หลายงาน -> ส่งตามลำดับที่ query มา (เก่าไปใหม่) และโหลด Config ซ้ำครั้งเดียว', async () => {
-      campaignRolloutTarget.findMany.mockResolvedValue([
+      mockTargets([
         makeTarget({ id: 'job-1' }),
         makeTarget({
           id: 'job-2',
@@ -189,7 +209,7 @@ describe('DeviceSyncService', () => {
     ])(
       '%s -> ไม่ส่งงาน และบันทึก failed พร้อมเหตุผลผ่าน recordTargetResult',
       async (_name, cfg, reason) => {
-        campaignRolloutTarget.findMany.mockResolvedValue([makeTarget()]);
+        mockTargets([makeTarget()]);
         configModel.findUnique.mockResolvedValue(cfg);
 
         const result = await service.listJobs(DEVICE_ID);
@@ -207,7 +227,7 @@ describe('DeviceSyncService', () => {
     );
 
     it('อุปกรณ์ไม่ใช่สถานะ installed แล้ว -> ไม่ส่งงาน บันทึก failed', async () => {
-      campaignRolloutTarget.findMany.mockResolvedValue([makeTarget()]);
+      mockTargets([makeTarget()]);
       deviceModel.findUnique.mockResolvedValue({
         ...device,
         status: 'decommissioned',
@@ -226,7 +246,7 @@ describe('DeviceSyncService', () => {
     });
 
     it('โมเดลหรือโปรโตคอลไม่ตรงกับ Config -> ไม่ส่งงาน บันทึก failed', async () => {
-      campaignRolloutTarget.findMany.mockResolvedValue([makeTarget()]);
+      mockTargets([makeTarget()]);
       deviceModel.findUnique.mockResolvedValue({
         ...device,
         deviceModel: 'GT06L',
@@ -245,7 +265,7 @@ describe('DeviceSyncService', () => {
     });
 
     it('งานที่ผิดไม่ขวางงานอื่น: งานแรก Config ถูกลบ งานสองยังส่งได้', async () => {
-      campaignRolloutTarget.findMany.mockResolvedValue([
+      mockTargets([
         makeTarget({
           id: 'job-bad',
           rollout: {
@@ -267,6 +287,65 @@ describe('DeviceSyncService', () => {
 
       expect(result.jobs.map((j) => j.jobId)).toEqual(['job-ok']);
       expect(recordTargetResult).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('listJobs: เครื่องที่ถูกข้ามเพราะออฟไลน์แล้วกลับมา (docs/19 §16.4)', () => {
+    const skippedTarget = (overrides: Record<string, unknown> = {}) =>
+      makeTarget({
+        status: 'skipped_offline',
+        rollout: {
+          id: 'rollout-1',
+          status: 'completed',
+          applyMode: 'real',
+          payloadType: 'Config',
+          configId: 'cfg-1',
+          createdAt: new Date('2026-10-20T00:00:00.000Z'),
+        },
+        ...overrides,
+      });
+
+    it('ได้งานเดิมต่อ แม้ Rollout จะ completed แล้ว และตั้ง pulledAt', async () => {
+      mockTargets([], [skippedTarget()]);
+
+      const result = await service.listJobs(DEVICE_ID);
+
+      expect(result.jobs.map((j) => j.jobId)).toEqual(['job-1']);
+      expect(campaignRolloutTarget.updateMany).toHaveBeenCalled();
+      expect(recordTargetResult).not.toHaveBeenCalled();
+    });
+
+    it('มี Rollout ที่ใหม่กว่าของเครื่องนี้แล้ว -> ไม่ส่งงานเก่าทับ', async () => {
+      mockTargets([], [skippedTarget()]);
+      campaignRolloutTarget.count.mockResolvedValue(1);
+
+      const result = await service.listJobs(DEVICE_ID);
+
+      expect(result.jobs).toEqual([]);
+      expect(campaignRolloutTarget.count).toHaveBeenCalledWith({
+        where: {
+          deviceId: DEVICE_ID,
+          id: { not: 'job-1' },
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: ['rejected', 'cancelled'] },
+            createdAt: { gt: new Date('2026-10-20T00:00:00.000Z') },
+          },
+        },
+      });
+    });
+
+    it('Config ใช้ไม่ได้แล้ว -> ไม่ส่ง และไม่บันทึก failed ทับ (ผลถูกตัดสินเป็นข้ามไปแล้ว)', async () => {
+      mockTargets([], [skippedTarget()]);
+      configModel.findUnique.mockResolvedValue({
+        ...config,
+        deletedAt: new Date(),
+      });
+
+      const result = await service.listJobs(DEVICE_ID);
+
+      expect(result.jobs).toEqual([]);
+      expect(recordTargetResult).not.toHaveBeenCalled();
     });
   });
 
@@ -502,6 +581,84 @@ describe('DeviceSyncService', () => {
       await expect(
         service.reportResult(DEVICE_ID, 'job-1', 'success'),
       ).resolves.toEqual({ accepted: true });
+    });
+
+    describe('ผลที่มาช้า (docs/19 §16.4)', () => {
+      const skipped = (rolloutStatus = 'completed') =>
+        makeTarget({
+          status: 'skipped_offline',
+          pulledAt: new Date(),
+          rollout: {
+            id: 'rollout-1',
+            status: rolloutStatus,
+            applyMode: 'real',
+            payloadType: 'Config',
+            configId: 'cfg-1',
+          },
+        });
+
+      it('skipped_offline + Rollout จบแล้ว -> บันทึกผลล่าช้า accepted true (ไม่ผ่าน recordTargetResult)', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(skipped());
+
+        const result = await service.reportResult(
+          DEVICE_ID,
+          'job-1',
+          'success',
+          'ใช้ค่าแล้ว',
+        );
+
+        expect(result).toEqual({ accepted: true });
+        expect(recordLateTargetResult).toHaveBeenCalledWith(
+          'job-1',
+          true,
+          'ใช้ค่าแล้ว',
+        );
+        expect(recordTargetResult).not.toHaveBeenCalled();
+      });
+
+      it('skipped_offline แต่ Rollout ถูก cancelled -> rollout-closed ไม่บันทึก', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(skipped('cancelled'));
+
+        await expect(
+          service.reportResult(DEVICE_ID, 'job-1', 'success'),
+        ).resolves.toEqual({ accepted: false, reason: 'rollout-closed' });
+        expect(recordLateTargetResult).not.toHaveBeenCalled();
+      });
+
+      it('ล้มเหลวเพราะดึงแล้วเงียบ แล้วรายงานทีหลัง -> ไม่เปลี่ยนผล แต่เก็บข้อความไว้ให้ Operation เห็น', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({
+            status: 'failed',
+            resultDetail: 'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
+          }),
+        );
+
+        const result = await service.reportResult(
+          DEVICE_ID,
+          'job-1',
+          'success',
+          'ใช้ค่าได้แล้ว',
+        );
+
+        expect(result).toEqual({ accepted: false, reason: 'already-reported' });
+        expect(recordTargetResult).not.toHaveBeenCalled();
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: 'job-1', status: 'failed' },
+          data: {
+            resultDetail: expect.stringContaining('รายงานล่าช้า') as string,
+          },
+        });
+      });
+
+      it('ล้มเหลวที่เครื่องรายงานเอง (ไม่ใช่หมดเวลา) แล้วส่งซ้ำ -> ไม่แก้ข้อความ', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ status: 'failed', resultDetail: 'ค่า APN ใช้ไม่ได้' }),
+        );
+
+        await service.reportResult(DEVICE_ID, 'job-1', 'failed');
+
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
     });
 
     it('รายงานโดยไม่เคยดึงงาน -> ตั้ง pulledAt ให้ก่อนบันทึกผล', async () => {

@@ -62,3 +62,24 @@ export const RELEASABLE_CAMPAIGN_ROLLOUT_STATUS: CampaignRolloutStatus =
  * ไม่เคยมีอะไรถูกส่งไปอุปกรณ์เลยจริงๆ จึงไม่มีอะไรให้ rollback */
 export const ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES: readonly CampaignRolloutStatus[] =
   ['active', 'paused', 'completed'];
+
+/** เวลารอเริ่มต้นของ Rollout โหมด real (docs/19 §16.3) — ใช้เมื่อ
+ * `CampaignRollout.pullTimeoutHours` / `applyTimeoutMinutes` เป็น null
+ * ค่าเหล่านี้เป็น**ค่าเริ่มต้นที่ยังต้องยืนยันกับพี่เลี้ยง** (PDF §9.1 ระบุแค่ว่า
+ * Campaign มี Timeout ไม่มีตัวเลข) แก้ที่นี่ที่เดียว */
+export const DEFAULT_PULL_TIMEOUT_HOURS = 72;
+export const DEFAULT_APPLY_TIMEOUT_MINUTES = 30;
+
+/** ขอบเขตที่ Operation ตั้งได้ตอนสร้าง Rollout */
+export const MAX_PULL_TIMEOUT_HOURS = 24 * 30;
+export const MAX_APPLY_TIMEOUT_MINUTES = 24 * 60;
+
+/** ข้อความขึ้นต้นของ `resultDetail` เมื่อเครื่อง "ดึงงานแล้วเงียบ" จนหมดเวลา —
+ * ใช้แยกความล้มเหลวชนิดนี้ (กล่องได้ Config ไปแล้วหายเงียบ อาจแปลว่า Config
+ * ทำให้กล่องใช้งานไม่ได้ ยกระดับ Incident เป็น `critical` ตาม PDF §11.2) ออก
+ * จากความล้มเหลวที่เครื่องรายงานเอง โดยไม่ต้องเพิ่มคอลัมน์ */
+export const APPLY_TIMEOUT_DETAIL_PREFIX = 'ดึงงานแล้วไม่รายงานผลภายใน';
+
+/** ข้อความของเครื่องที่ถูกข้ามเพราะไม่เคยมาดึงงาน (`skipped_offline`) */
+export const PULL_TIMEOUT_DETAIL_PREFIX =
+  'ข้าม: เครื่องออฟไลน์ ไม่มาดึงงานภายใน';

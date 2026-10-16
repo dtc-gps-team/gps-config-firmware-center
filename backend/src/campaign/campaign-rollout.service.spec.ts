@@ -12,6 +12,13 @@ import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 import {
+  ROLLOUT_FAILED_EVENT,
+  ROLLOUT_STATUS_CHANGED_EVENT,
+  RolloutEvents,
+  type RolloutFailedEvent,
+  type RolloutStatusChangedEvent,
+} from './rollout-events';
+import {
   CONFIG_APPLIER,
   CONFIG_APPLY_MODE,
   ConfigApplyMode,
@@ -80,6 +87,8 @@ const sampleRollout: CampaignRollout = {
   approvedAt: null,
   activeWindowStartedAt: null,
   applyMode: null,
+  pullTimeoutHours: null,
+  applyTimeoutMinutes: null,
   isRollback: false,
   rollbackOfId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -122,6 +131,7 @@ describe('CampaignRolloutService', () => {
     update: jest.Mock;
     updateMany: jest.Mock;
     count: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
   let firmware: { findUnique: jest.Mock };
@@ -133,6 +143,7 @@ describe('CampaignRolloutService', () => {
   // โหมดของ env ตอนปล่อย Rollout (docs/19 §3) — เทสที่ต้องการ `real` ตั้งก่อน
   // beforeEach ไม่ได้ จึงให้ provider อ่านจากตัวแปรนี้ตอนสร้าง service ใหม่
   let configApplyMode: ConfigApplyMode;
+  let rolloutEvents: RolloutEvents;
 
   async function buildService(): Promise<CampaignRolloutService> {
     const built = await Test.createTestingModule({
@@ -145,8 +156,10 @@ describe('CampaignRolloutService', () => {
         },
         { provide: CONFIG_APPLIER, useValue: configApplier },
         { provide: CONFIG_APPLY_MODE, useValue: configApplyMode },
+        RolloutEvents,
       ],
     }).compile();
+    rolloutEvents = built.get(RolloutEvents);
     return built.get(CampaignRolloutService);
   }
   let prismaMockRef: unknown;
@@ -176,6 +189,7 @@ describe('CampaignRolloutService', () => {
       // การ claim) ค่อย mockResolvedValueOnce({count:0}) เฉพาะเทสนั้น
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       count: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
     };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
     firmware = { findUnique: jest.fn().mockResolvedValue(storedFirmware) };
@@ -232,6 +246,9 @@ describe('CampaignRolloutService', () => {
           status: 'pending_approval',
           targetCount: 2,
           createdBy: operation.id,
+          // ไม่ส่งเวลารอมา -> null = ค่าเริ่มต้น (docs/19 §16)
+          pullTimeoutHours: null,
+          applyTimeoutMinutes: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
@@ -294,6 +311,8 @@ describe('CampaignRolloutService', () => {
           status: 'pending_approval',
           targetCount: 1,
           createdBy: operation.id,
+          pullTimeoutHours: null,
+          applyTimeoutMinutes: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
@@ -394,6 +413,8 @@ describe('CampaignRolloutService', () => {
           status: 'pending_approval',
           targetCount: 2,
           createdBy: operation.id,
+          pullTimeoutHours: null,
+          applyTimeoutMinutes: null,
         },
       });
       expect(config.findUnique).not.toHaveBeenCalled();
@@ -2213,8 +2234,10 @@ describe('CampaignRolloutService', () => {
           createdBy: operation.id,
           isRollback: true,
           rollbackOfId: badRollout.id,
-          // สืบทอดโหมดจากรอบต้นเรื่อง (null = Rollout เก่าก่อนมีคอลัมน์)
+          // สืบทอดโหมดและเวลารอจากรอบต้นเรื่อง (null = ค่าเริ่มต้น/Rollout เก่า)
           applyMode: null,
+          pullTimeoutHours: null,
+          applyTimeoutMinutes: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
@@ -2246,6 +2269,8 @@ describe('CampaignRolloutService', () => {
           isRollback: true,
           rollbackOfId: badRollout.id,
           applyMode: null,
+          pullTimeoutHours: null,
+          applyTimeoutMinutes: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
@@ -3019,6 +3044,439 @@ describe('CampaignRolloutService', () => {
         where: { id: pausedRollout.id },
         data: { successCount: 0, failureCount: 1, status: 'paused' },
       });
+    });
+  });
+
+  describe('event ของ Rollout (docs/19 §15) และเวลารอ (docs/19 §16)', () => {
+    const activeRollout: CampaignRollout = {
+      ...sampleRollout,
+      status: 'active',
+      activeWindowStartedAt: new Date('2026-01-05T00:00:00.000Z'),
+      targetCount: 10,
+    };
+    const pendingTarget = {
+      id: 'rt-1',
+      rolloutId: activeRollout.id,
+      deviceId: installedDeviceA.deviceId,
+      status: 'pending' as const,
+      resultDetail: null,
+      rollout: activeRollout,
+    };
+    let failedEvents: RolloutFailedEvent[];
+    let statusEvents: RolloutStatusChangedEvent[];
+
+    beforeEach(() => {
+      failedEvents = [];
+      statusEvents = [];
+      rolloutEvents.on(ROLLOUT_FAILED_EVENT, (e: RolloutFailedEvent) =>
+        failedEvents.push(e),
+      );
+      rolloutEvents.on(
+        ROLLOUT_STATUS_CHANGED_EVENT,
+        (e: RolloutStatusChangedEvent) => statusEvents.push(e),
+      );
+      // ข้อมูลที่อ่านหลัง commit เพื่อประกอบ event
+      campaignRollout.findUnique.mockResolvedValue({
+        ...activeRollout,
+        campaign: { name: 'กลุ่มรถบรรทุก' },
+      });
+    });
+
+    /** count ในทรานแซกชัน 4 ค่า (success, failed, pending, window) แล้วตามด้วย
+     * 3 ค่าตอนประกอบ event (windowFailure, skipped, timeoutFailure) */
+    function mockCounts(c: {
+      success: number;
+      failed: number;
+      pending: number;
+      window: number;
+      eventWindow: number;
+      skipped: number;
+      timeout: number;
+    }) {
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(c.success)
+        .mockResolvedValueOnce(c.failed)
+        .mockResolvedValueOnce(c.pending)
+        .mockResolvedValueOnce(c.window)
+        .mockResolvedValueOnce(c.eventWindow)
+        .mockResolvedValueOnce(c.skipped)
+        .mockResolvedValueOnce(c.timeout);
+    }
+
+    it('Auto Pause -> ส่ง rollout-failed kind auto-pause severity high พร้อมข้อมูลครบ', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 0,
+        failed: 2,
+        pending: 8,
+        window: 2,
+        eventWindow: 2,
+        skipped: 0,
+        timeout: 0,
+      });
+      // findMany ที่ใช้ประกอบ event (ครั้งเดียวในการเรียกนี้)
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        { deviceId: 'DEV-0001', resultDetail: 'ค่า APN ใช้ไม่ได้' },
+        { deviceId: 'DEV-0002', resultDetail: 'ค่า APN ใช้ไม่ได้' },
+      ]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      expect(failedEvents).toEqual([
+        {
+          rolloutId: activeRollout.id,
+          campaignId: activeRollout.campaignId,
+          campaignName: 'กลุ่มรถบรรทุก',
+          configId: activeRollout.configId,
+          firmwareId: activeRollout.firmwareId,
+          kind: 'auto-pause',
+          severity: 'high',
+          failureCount: activeRollout.failureCount,
+          skippedCount: 0,
+          targetCount: 10,
+          failedDeviceIds: ['DEV-0001', 'DEV-0002'],
+          // ข้อความซ้ำถูกรวมเหลือรายการเดียว
+          sampleErrors: ['ค่า APN ใช้ไม่ได้'],
+        },
+      ]);
+      expect(statusEvents).toEqual([]);
+    });
+
+    it('จบแล้ว มีเครื่องล้มเกิน 5% -> completed-with-failures severity high', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 8,
+        failed: 2,
+        pending: 0,
+        window: 2,
+        eventWindow: 2,
+        skipped: 0,
+        timeout: 0,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        { deviceId: 'DEV-0002', resultDetail: 'ล้ม' },
+      ]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]).toMatchObject({
+        kind: 'completed-with-failures',
+        severity: 'high',
+      });
+    });
+
+    it('จบแล้ว ล้มไม่เกิน 5% (1 จาก 100) -> severity medium', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...activeRollout,
+        targetCount: 100,
+        campaign: { name: 'กลุ่มใหญ่' },
+      });
+      campaignRolloutTarget.findFirst.mockResolvedValue({
+        ...pendingTarget,
+        rollout: { ...activeRollout, targetCount: 100 },
+      });
+      mockCounts({
+        success: 99,
+        failed: 1,
+        pending: 0,
+        window: 1,
+        eventWindow: 1,
+        skipped: 0,
+        timeout: 0,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        { deviceId: 'DEV-0001', resultDetail: 'ล้ม' },
+      ]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'fail',
+      );
+
+      expect(failedEvents[0]).toMatchObject({
+        kind: 'completed-with-failures',
+        severity: 'medium',
+      });
+    });
+
+    it('มีเครื่อง "ดึงงานแล้วเงียบ" จนหมดเวลา -> severity critical (PDF §11.2)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 9,
+        failed: 1,
+        pending: 0,
+        window: 1,
+        eventWindow: 1,
+        skipped: 0,
+        timeout: 1,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([
+        {
+          deviceId: 'DEV-0001',
+          resultDetail: 'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
+        },
+      ]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        false,
+        'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
+      );
+
+      expect(failedEvents[0].severity).toBe('critical');
+      // นับ timeout ด้วย startsWith ของข้อความมาตรฐาน
+      expect(campaignRolloutTarget.count).toHaveBeenCalledWith({
+        where: {
+          rolloutId: activeRollout.id,
+          status: 'failed',
+          resultDetail: { startsWith: 'ดึงงานแล้วไม่รายงานผลภายใน' },
+        },
+      });
+    });
+
+    it('จบแล้ว ไม่มีเครื่องล้มในรอบนี้และไม่มีเครื่องถูกข้าม (Resume แล้วจบสะอาด) -> ส่ง completed-clean ไม่ส่ง rollout-failed', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 9,
+        failed: 1, // ล้มสะสมจากรอบก่อน Resume
+        pending: 0,
+        window: 0,
+        eventWindow: 0,
+        skipped: 0,
+        timeout: 0,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(failedEvents).toEqual([]);
+      expect(statusEvents).toEqual([
+        {
+          rolloutId: activeRollout.id,
+          campaignId: activeRollout.campaignId,
+          action: 'completed-clean',
+        },
+      ]);
+    });
+
+    it('จบแล้ว มีแต่เครื่องที่ถูกข้ามเพราะออฟไลน์ -> completed-with-skipped severity low', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 9,
+        failed: 0,
+        pending: 0,
+        window: 0,
+        eventWindow: 0,
+        skipped: 1,
+        timeout: 0,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([]);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]).toMatchObject({
+        kind: 'completed-with-skipped',
+        severity: 'low',
+        skippedCount: 1,
+      });
+    });
+
+    it('ยังไม่ครบและไม่เข้า Auto Pause -> ไม่ส่ง event ใดๆ', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      campaignRolloutTarget.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(9)
+        .mockResolvedValueOnce(0);
+
+      await service.recordTargetResult(
+        installedDeviceA.deviceId,
+        { configId: approvedConfig.id },
+        true,
+        'ok',
+      );
+
+      expect(failedEvents).toEqual([]);
+      expect(statusEvents).toEqual([]);
+    });
+
+    it('listener ที่ throw แบบ sync -> ไม่ทำให้การบันทึกผลล้ม', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+      mockCounts({
+        success: 0,
+        failed: 2,
+        pending: 8,
+        window: 2,
+        eventWindow: 2,
+        skipped: 0,
+        timeout: 0,
+      });
+      campaignRolloutTarget.findMany.mockResolvedValue([]);
+      rolloutEvents.on(ROLLOUT_FAILED_EVENT, () => {
+        throw new Error('listener พัง');
+      });
+
+      await expect(
+        service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          false,
+          'fail',
+        ),
+      ).resolves.toBe(true);
+    });
+
+    describe('markTargetSkippedOffline', () => {
+      it('pending + ยังไม่เคยดึง -> skipped_offline (claim เงื่อนไขเดียว) ไม่แตะ failureCount', async () => {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
+          id: 'rt-1',
+          rolloutId: activeRollout.id,
+        });
+        campaignRolloutTarget.count.mockResolvedValueOnce(3); // ยังเหลือ pending
+
+        const result = await service.markTargetSkippedOffline(
+          'rt-1',
+          'ข้าม: เครื่องออฟไลน์ ไม่มาดึงงานภายใน 72 ชั่วโมง',
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: 'rt-1', status: 'pending', pulledAt: null },
+          data: {
+            status: 'skipped_offline',
+            resultDetail: 'ข้าม: เครื่องออฟไลน์ ไม่มาดึงงานภายใน 72 ชั่วโมง',
+          },
+        });
+        expect(campaignRollout.updateMany).not.toHaveBeenCalled();
+        expect(campaignRollout.update).not.toHaveBeenCalled();
+        expect(failedEvents).toEqual([]);
+      });
+
+      it('เป็นเครื่องสุดท้ายที่ค้าง -> Rollout จบเป็น completed และส่ง event ผล', async () => {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
+          id: 'rt-1',
+          rolloutId: activeRollout.id,
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(0) // pending ในทรานแซกชัน
+          .mockResolvedValueOnce(0) // window failure (ตอนประกอบ event)
+          .mockResolvedValueOnce(1) // skipped
+          .mockResolvedValueOnce(0); // timeout
+        campaignRolloutTarget.findMany.mockResolvedValue([]);
+
+        const result = await service.markTargetSkippedOffline('rt-1', 'ข้าม');
+
+        expect(result).toBe(true);
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: activeRollout.id, status: 'active' },
+          data: { status: 'completed' },
+        });
+        expect(failedEvents[0]).toMatchObject({
+          kind: 'completed-with-skipped',
+          severity: 'low',
+        });
+      });
+
+      it('claim ไม่ได้ (ถูกดึงงาน/มีผลไปแล้วพร้อมกัน) -> false ไม่ทำอะไรต่อ', async () => {
+        campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        const result = await service.markTargetSkippedOffline('rt-1', 'ข้าม');
+
+        expect(result).toBe(false);
+        expect(campaignRolloutTarget.count).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('recordLateTargetResult', () => {
+      it('skipped_offline -> success พร้อมหมายเหตุล่าช้า นับตัวเลขใหม่ ไม่เปลี่ยนสถานะ Rollout ที่ยังมี pending', async () => {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
+          id: 'rt-1',
+          rolloutId: activeRollout.id,
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(5) // success
+          .mockResolvedValueOnce(1) // failed
+          .mockResolvedValueOnce(2) // pending
+          // ตอนประกอบ event (ไม่ปิด Rollout -> ยังคำนวณ outcome)
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(0);
+        campaignRolloutTarget.findMany.mockResolvedValue([]);
+
+        const result = await service.recordLateTargetResult(
+          'rt-1',
+          true,
+          'ใช้ค่าแล้ว',
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: 'rt-1', status: 'skipped_offline' },
+          data: {
+            status: 'success',
+            resultDetail: 'ผลล่าช้า: ใช้ค่าแล้ว',
+          },
+        });
+        expect(campaignRollout.update).toHaveBeenCalledWith({
+          where: { id: activeRollout.id },
+          data: { successCount: 5, failureCount: 1 },
+        });
+        // ไม่เกิดการหยุดหรือปิดใหม่ และไม่ส่ง completed-clean (ให้ Operation ปิดเอง)
+        expect(statusEvents).toEqual([]);
+      });
+
+      it('ไม่ใช่ skipped_offline แล้ว -> false', async () => {
+        campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        await expect(
+          service.recordLateTargetResult('rt-1', true, 'x'),
+        ).resolves.toBe(false);
+      });
+    });
+
+    it('resume -> ส่ง rollout-status-changed action resumed', async () => {
+      const paused: CampaignRollout = { ...activeRollout, status: 'paused' };
+      campaignRollout.findUnique.mockResolvedValue(paused);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...paused,
+        status: 'active',
+        applyMode: 'real',
+      });
+
+      await service.resume(paused.id, operation);
+
+      expect(statusEvents).toEqual([
+        {
+          rolloutId: paused.id,
+          campaignId: paused.campaignId,
+          action: 'resumed',
+        },
+      ]);
     });
   });
 });
