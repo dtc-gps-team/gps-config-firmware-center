@@ -142,8 +142,10 @@ docker compose up -d
 cd backend && npm run start:dev
 
 # terminal 3 — mobile
-cd mobile && flutter run --dart-define=API_BASE_URL=http://localhost:3001/api/v1
+cd mobile && flutter run --dart-define=API_BASE_URL=http://localhost:3001/api/v1 --dart-define=API_MOCK_MODE=false
 ```
+
+> ต้องใส่ `--dart-define=API_MOCK_MODE=false` ทุกครั้งที่จะต่อ backend จริง เพราะค่าเริ่มต้นของแอปคือโหมด mock (ไม่ใส่ = ได้ข้อมูลจำลอง แม้จะตั้ง `API_BASE_URL` ไว้แล้ว) ดูข้อ 5
 
 ---
 
@@ -451,10 +453,18 @@ backend กลับมาแล้วกด retry → โหลดข้อม�
 
 ## 5. Mock Mode (รัน Mobile โดยไม่ต้องมี Backend จริง)
 
-โปรเจกต์มี pattern ให้ repository แต่ละตัวสลับระหว่างของจริง (`ApiXxxRepository`) กับของ mock (`MockXxxRepository`) ผ่านค่า config ตัวเดียว (`API_MOCK_MODE` / `AppConfig.apiMockMode`) ใช้ตอนอยากทดสอบ UI เร็วๆ โดยไม่ต้องเปิด Docker/Backend:
+โปรเจกต์มี pattern ให้ repository แต่ละตัวสลับระหว่างของจริง (`ApiXxxRepository`) กับของ mock (`MockXxxRepository`) ผ่านค่า config ตัวเดียว (`API_MOCK_MODE` / `AppConfig.apiMockMode`)
+
+**ค่าเริ่มต้นคือโหมด mock** (ตามกฎ Mock Mode Pattern ใน CLAUDE.md) รันเฉยๆ โดยไม่ส่ง flag ก็ได้ mock ทันที ไม่ต้องเปิด Docker/Backend เหมาะกับการทดสอบ UI เร็วๆ:
 
 ```bash
-flutter run --dart-define=API_MOCK_MODE=true
+flutter run
+```
+
+ถ้าต้องการต่อ backend จริง ต้องส่ง `API_MOCK_MODE=false` เองทุกครั้ง (รวมถึงตอน build release):
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1 --dart-define=API_MOCK_MODE=false
 ```
 
 ข้อควรระวัง: ฟีเจอร์ที่ยังไม่มี mock รองรับ (เช่นส่วนที่เพิ่งต่อ backend จริงใหม่ๆ) อาจ error หรือใช้ mock data เก่าที่ไม่ตรงกับ endpoint ปัจจุบัน — ถ้าจะ demo ให้พี่เลี้ยงดู แนะนำใช้ mode จริง (`API_MOCK_MODE=false`) ต่อ backend ที่รันจริงตามข้อ 3 จะตรงกับของจริงมากกว่า
