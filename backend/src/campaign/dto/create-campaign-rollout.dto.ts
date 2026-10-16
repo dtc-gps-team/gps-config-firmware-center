@@ -2,12 +2,19 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
+  Min,
   ValidateIf,
 } from 'class-validator';
 import { CampaignPayloadType } from '@prisma/client';
+import {
+  MAX_APPLY_TIMEOUT_MINUTES,
+  MAX_PULL_TIMEOUT_HOURS,
+} from '../campaign-rollout-status';
 
 /**
  * Body ของ `POST /campaigns/{id}/rollouts` — เลือก Config หรือ Firmware มา
@@ -42,4 +49,20 @@ export class CreateCampaignRolloutDto {
   @ArrayUnique()
   @IsString({ each: true })
   excludeDeviceIds?: string[];
+
+  /** เครื่องไม่มาดึงงานเลยภายในกี่ชั่วโมงหลังปล่อย -> ข้าม (`skipped_offline`)
+   * ใช้กับ Rollout โหมด real เท่านั้น ไม่ส่ง = ค่าเริ่มต้น 72 ชั่วโมง
+   * (docs/19 §16, PDF §9.1 Execution: Timeout) */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PULL_TIMEOUT_HOURS)
+  pullTimeoutHours?: number;
+
+  /** ดึงงานแล้วไม่รายงานผลภายในกี่นาที -> ล้มเหลว ไม่ส่ง = ค่าเริ่มต้น 30 นาที */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_APPLY_TIMEOUT_MINUTES)
+  applyTimeoutMinutes?: number;
 }
