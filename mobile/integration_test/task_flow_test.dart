@@ -13,8 +13,9 @@ import 'package:mobile/main.dart' as app;
 ///   -d <device> \
 ///   --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
 /// ```
-/// Needs seeded `st.test` / `sw.test` (`password123`) users; `st.test` with a
-/// few assigned tasks.
+/// Needs seeded `st.test` / `operation.test` (`password123`) users; `st.test`
+/// with a few assigned tasks (`backend/scripts/seed-ci-fixtures.ts`: no
+/// `dueDate`, newest = `pending`).
 Future<void> _ensureLoggedOut(WidgetTester tester) async {
   // A previous run can leave a persisted session (reinstalling the APK keeps
   // secure storage). If we land on Home, log out first.
@@ -39,7 +40,9 @@ Future<void> _login(WidgetTester tester, String username) async {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('ST vs SW: task list gated to field staff', (tester) async {
+  testWidgets('ST vs Operation: task list gated to field staff', (
+    tester,
+  ) async {
     app.main();
     await tester.pumpAndSettle();
     await binding.convertFlutterSurfaceToImage();
@@ -47,11 +50,24 @@ void main() {
     // === ST: sees own tasks, can open + change status ===
     await _login(tester, 'st.test');
 
-    expect(find.text('งานวันนี้'), findsOneWidget);
-    expect(find.byKey(const Key('task_card_0')), findsOneWidget);
-    await binding.takeScreenshot('01-home-task-list-st');
+    // Home ของ ST/OT (ตั้งแต่ #191 ไม่มี section "งานวันนี้" แล้ว): ประวัติงาน
+    // ล่าสุด + ทางลัด "งานของฉัน" ไปรายการงานเต็ม · "งานค้างวันนี้" โผล่เฉพาะงาน
+    // ที่เลย/ใกล้กำหนดส่ง ซึ่ง CI fixtures ไม่มี จึงไม่ใช้เป็นตัวเช็ค
+    expect(find.text('ประวัติงานล่าสุด'), findsOneWidget);
+    await binding.takeScreenshot('01-home-st');
 
-    await tester.tap(find.byKey(const Key('task_card_0')));
+    final myTasks = find.byKey(const Key('shortcut_my_tasks'));
+    await tester.scrollUntilVisible(
+      myTasks,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(myTasks);
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+    expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
+    await binding.takeScreenshot('01b-my-tasks-st');
+
+    await tester.tap(find.byKey(const Key('my_task_card_0')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
     expect(find.text('รายละเอียดงาน'), findsOneWidget);
     expect(find.byKey(const Key('task_status_save')), findsOneWidget);
@@ -68,18 +84,23 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 4));
     await binding.takeScreenshot('03-task-detail-updated-st');
 
-    // === switch to SW: "งานวันนี้" section must be gone ===
+    // === switch to Operation: งานของช่างต้องไม่โผล่ ===
+    // task detail -> งานของฉัน -> Home
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('home_logout')));
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
-    await _login(tester, 'sw.test');
+    // Operation แทน SW เดิม (role ถูกแยกตั้งแต่ #174 และ role ใหม่อย่าง
+    // ConfigEngineer ยัง login เข้า Mobile ไม่ได้ — UserRole ฝั่ง Mobile ไม่มี)
+    await _login(tester, 'operation.test');
 
     expect(find.text('ทางลัด'), findsOneWidget); // Home did render
-    expect(find.text('งานวันนี้'), findsNothing);
-    expect(find.byKey(const Key('task_card_0')), findsNothing);
-    expect(find.textContaining('งานที่ได้รับมอบหมาย'), findsNothing);
-    await binding.takeScreenshot('04-home-sw-no-tasks');
+    expect(find.text('ประวัติงานล่าสุด'), findsNothing);
+    expect(find.byKey(const Key('urgent_tasks_section')), findsNothing);
+    expect(find.byKey(const Key('shortcut_my_tasks')), findsNothing);
+    await binding.takeScreenshot('04-home-operation-no-tasks');
   });
 }
