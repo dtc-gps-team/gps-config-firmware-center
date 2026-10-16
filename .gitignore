@@ -14,6 +14,8 @@ secrets/
 # Firebase Android config (google-services.json) — ห้าม commit ของจริง
 # (มี API key ผูกกับ Firebase project จริง — devices/CI ต้องวางเองจาก Firebase Console)
 mobile/android/app/google-services.json
+# ของแต่ละ flavor (เช่น src/dev/ = Firebase project สำหรับ dev/test build)
+mobile/android/app/src/*/google-services.json
 
 # Firebase iOS config (GoogleService-Info.plist) — ห้าม commit ของจริง
 mobile/ios/Runner/GoogleService-Info.plist
