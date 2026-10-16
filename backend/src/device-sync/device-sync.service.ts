@@ -41,6 +41,10 @@ export type JobReportResponse =
 
 const ROLLOUT_OPEN_FOR_RESULT = ['active', 'paused'] as const;
 
+/** หัวข้อความที่ต่อท้าย `resultDetail` เมื่อเครื่องรายงานผลของงานที่ถูกตัดสิน
+ * ไปแล้ว (docs/19 §4.2) ใช้เป็นตัวกันต่อซ้ำเมื่อเครื่องส่งซ้ำด้วย */
+export const LATE_REPORT_MARKER = '[รายงานล่าช้าจากเครื่อง';
+
 /**
  * ฝั่ง "อุปกรณ์ดึงงานเอง" ของ Campaign Rollout (docs/19 §4) — Rollout ที่ปล่อย
  * ในโหมด `real` (`CampaignRollout.applyMode = 'real'`) จะไม่ถูก backend apply
@@ -181,13 +185,18 @@ export class DeviceSyncService {
       throw new NotFoundException('ไม่พบงานนี้ของอุปกรณ์เครื่องนี้');
     }
 
+    // ข้อความของเครื่องเก็บไว้เสมอแม้ไม่ถูกนับ (docs/19 §4.2) เพราะเครื่องที่ถูก
+    // Rollback ไปแล้วอาจได้ใช้ Config ตัวที่มีปัญหาไปจริงก่อนจะรู้ตัว Operation
+    // ต้องเห็นว่าเครื่องนั้นรายงานว่าอะไร
     if (target.status !== 'pending') {
+      await this.appendLateReport(target.id, result, detail);
       return { accepted: false, reason: 'already-reported' };
     }
     const rollout = target.rollout;
     if (
       !(ROLLOUT_OPEN_FOR_RESULT as readonly string[]).includes(rollout.status)
     ) {
+      await this.appendLateReport(target.id, result, detail);
       return { accepted: false, reason: 'rollout-closed' };
     }
 
@@ -215,9 +224,43 @@ export class DeviceSyncService {
       message,
       rollout.id,
     );
-    return claimed
-      ? { accepted: true }
-      : { accepted: false, reason: 'already-reported' };
+    if (claimed) return { accepted: true };
+    // แพ้การ claim (มีผลเข้ามาพร้อมกัน) ข้อความของเครื่องนี้ยังต้องไม่หาย
+    await this.appendLateReport(target.id, result, detail);
+    return { accepted: false, reason: 'already-reported' };
+  }
+
+  /**
+   * ต่อท้าย `resultDetail` ด้วยสิ่งที่เครื่องรายงานมาช้า โดย**ไม่เปลี่ยนสถานะ
+   * และตัวนับ** ใดๆ (ผลที่ตัดสินแล้วเป็นของเดิม) · อ่านแถวล่าสุดก่อนเสมอแล้ว
+   * เขียนแบบมีเงื่อนไขว่าข้อความยังไม่ถูกเปลี่ยน (optimistic) ชนกับการเขียน
+   * อื่นพร้อมกันก็ข้ามไป ไม่ทับ · ต่อได้ครั้งเดียวต่อแถว เครื่องส่งซ้ำไม่ทำให้
+   * ข้อความโตขึ้นเรื่อยๆ (เก็บรายงานแรกที่มาช้า)
+   */
+  private async appendLateReport(
+    targetId: string,
+    result: JobResult,
+    detail?: string,
+  ): Promise<void> {
+    const row = await this.prisma.campaignRolloutTarget.findUnique({
+      where: { id: targetId },
+      select: { resultDetail: true },
+    });
+    if (!row) return;
+    if (row.resultDetail?.includes(LATE_REPORT_MARKER)) return;
+
+    const outcome =
+      result === 'success' ? 'ใช้ Config สำเร็จ' : 'ใช้ Config ไม่สำเร็จ';
+    const note =
+      detail && detail.trim() !== ''
+        ? `${LATE_REPORT_MARKER}: ${outcome}] ${detail.trim()}`
+        : `${LATE_REPORT_MARKER}: ${outcome}]`;
+    await this.prisma.campaignRolloutTarget.updateMany({
+      where: { id: targetId, resultDetail: row.resultDetail },
+      data: {
+        resultDetail: row.resultDetail ? `${row.resultDetail} | ${note}` : note,
+      },
+    });
   }
 
   /** เหตุผลที่งานนี้ส่งให้อุปกรณ์ไม่ได้ (null = ส่งได้) — เงื่อนไขเดียวกับ

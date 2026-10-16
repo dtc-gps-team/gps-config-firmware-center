@@ -292,6 +292,23 @@ describe('DeviceSyncController (integration — real postgres + DeviceApiKeyGuar
     });
     expect(unchanged.successCount).toBe(1);
 
+    // รายงานซ้ำที่ไม่ถูกนับ (ข้างบน) ถูกเก็บไว้ให้ Operation เห็นโดยไม่เปลี่ยน
+    // สถานะ/ตัวนับ และเก็บเฉพาะรายงานแรกที่มาช้า รายงานถัดไปไม่ต่อซ้ำ
+    // ข้อความไม่โตขึ้น (docs/19 §4.2)
+    await resultRequest(
+      a.deviceId,
+      jobs[0].jobId,
+      { result: 'failed', detail: 'ค่า APN ใช้ไม่ได้จริง' },
+      key,
+    ).expect(200);
+    const withLate = await prisma.campaignRolloutTarget.findUniqueOrThrow({
+      where: { id: jobs[0].jobId },
+    });
+    expect(withLate.status).toBe('success');
+    expect(withLate.resultDetail).toBe(
+      'ใช้ค่าเรียบร้อย | [รายงานล่าช้าจากเครื่อง: ใช้ Config สำเร็จ]',
+    );
+
     // ครบแล้ว ไม่มีงานเหลือ
     const after = (await jobsRequest(a.deviceId, key).expect(200))
       .body as JobsBody;

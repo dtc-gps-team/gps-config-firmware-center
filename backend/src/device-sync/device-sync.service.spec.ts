@@ -50,6 +50,7 @@ describe('DeviceSyncService', () => {
   let campaignRolloutTarget: {
     findMany: jest.Mock;
     findFirst: jest.Mock;
+    findUnique: jest.Mock;
     updateMany: jest.Mock;
   };
   let deviceModel: { findUnique: jest.Mock };
@@ -61,6 +62,8 @@ describe('DeviceSyncService', () => {
     campaignRolloutTarget = {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),
+      // แถวล่าสุดที่ appendLateReport อ่านก่อนต่อข้อความ
+      findUnique: jest.fn().mockResolvedValue({ resultDetail: null }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
     deviceModel = { findUnique: jest.fn().mockResolvedValue(device) };
@@ -332,6 +335,121 @@ describe('DeviceSyncService', () => {
         service.reportResult(DEVICE_ID, 'job-1', 'success'),
       ).resolves.toEqual({ accepted: false, reason: 'already-reported' });
       expect(recordTargetResult).not.toHaveBeenCalled();
+    });
+
+    describe('รายงานที่ไม่ถูกนับ ต้องเก็บข้อความของเครื่องไว้ให้ Operation เห็น (docs/19 §4.2)', () => {
+      it('ส่งซ้ำหลังมีผลแล้ว -> ต่อท้าย resultDetail เดิม ไม่เปลี่ยนสถานะ', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ status: 'failed' }),
+        );
+        campaignRolloutTarget.findUnique.mockResolvedValue({
+          resultDetail: 'Rollout ถูก rollback',
+        });
+
+        await service.reportResult(
+          DEVICE_ID,
+          'job-1',
+          'success',
+          'ใช้ค่าไปแล้ว',
+        );
+
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          // เขียนแบบมีเงื่อนไขว่าข้อความยังเป็นค่าที่อ่านมา (ไม่ทับการเขียนอื่น)
+          where: { id: 'job-1', resultDetail: 'Rollout ถูก rollback' },
+          data: {
+            resultDetail:
+              'Rollout ถูก rollback | [รายงานล่าช้าจากเครื่อง: ใช้ Config สำเร็จ] ใช้ค่าไปแล้ว',
+          },
+        });
+        const call = (
+          campaignRolloutTarget.updateMany.mock.calls as {
+            data: Record<string, unknown>;
+          }[][]
+        )[0][0];
+        expect(call.data).not.toHaveProperty('status');
+        expect(recordTargetResult).not.toHaveBeenCalled();
+      });
+
+      it('resultDetail เดิมเป็น null และเครื่องไม่ส่ง detail -> บันทึกเฉพาะผลที่เครื่องรายงาน', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ status: 'success' }),
+        );
+
+        await service.reportResult(DEVICE_ID, 'job-1', 'failed');
+
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: 'job-1', resultDetail: null },
+          data: {
+            resultDetail: '[รายงานล่าช้าจากเครื่อง: ใช้ Config ไม่สำเร็จ]',
+          },
+        });
+      });
+
+      it('เครื่องส่งซ้ำอีกรอบ -> ไม่ต่อซ้ำ ข้อความไม่โตขึ้น', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ status: 'failed' }),
+        );
+        campaignRolloutTarget.findUnique.mockResolvedValue({
+          resultDetail: 'เดิม | [รายงานล่าช้าจากเครื่อง: ใช้ Config สำเร็จ] x',
+        });
+
+        await service.reportResult(DEVICE_ID, 'job-1', 'success', 'x');
+
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
+
+      it.each(['cancelled', 'completed', 'rejected'])(
+        'Rollout เป็น %s (rollout-closed) -> เก็บข้อความไว้เช่นกัน',
+        async (status) => {
+          campaignRolloutTarget.findFirst.mockResolvedValue(
+            makeTarget({
+              rollout: {
+                id: 'rollout-1',
+                status,
+                applyMode: 'real',
+                payloadType: 'Config',
+                configId: 'cfg-1',
+              },
+            }),
+          );
+
+          await service.reportResult(DEVICE_ID, 'job-1', 'success', 'ok');
+
+          expect(campaignRolloutTarget.updateMany).toHaveBeenCalledTimes(1);
+          expect(recordTargetResult).not.toHaveBeenCalled();
+        },
+      );
+
+      it('แพ้การ claim พร้อมกัน -> เก็บข้อความของเครื่องที่แพ้ไว้ด้วย', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ pulledAt: new Date() }),
+        );
+        recordTargetResult.mockResolvedValue(false);
+        campaignRolloutTarget.findUnique.mockResolvedValue({
+          resultDetail: 'ผลที่ชนะ',
+        });
+
+        await service.reportResult(DEVICE_ID, 'job-1', 'failed', 'ล้ม');
+
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: 'job-1', resultDetail: 'ผลที่ชนะ' },
+          data: {
+            resultDetail:
+              'ผลที่ชนะ | [รายงานล่าช้าจากเครื่อง: ใช้ Config ไม่สำเร็จ] ล้ม',
+          },
+        });
+      });
+
+      it('รายงานที่ถูกบันทึกปกติ -> ไม่ต่อข้อความ', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(
+          makeTarget({ pulledAt: new Date() }),
+        );
+
+        await service.reportResult(DEVICE_ID, 'job-1', 'success');
+
+        expect(campaignRolloutTarget.findUnique).not.toHaveBeenCalled();
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
     });
 
     it('recordTargetResult แพ้การ claim (race) -> accepted false already-reported', async () => {
