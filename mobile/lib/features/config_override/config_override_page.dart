@@ -44,6 +44,12 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
 
   static const _reasonRequired = 'กรอกเหตุผลก่อน override';
 
+  /// UX audit #17 — คำขอ override ไม่เข้าคิว sync (ต่างจากการเปลี่ยนสถานะงาน)
+  /// ส่งไม่ถึง server (ไม่มี HTTP response) ต้องบอกให้ชัดว่ายังไม่ได้ส่ง
+  /// ผู้ใช้จะได้ไม่คิดว่าระบบจะส่งให้เองเมื่อเน็ตกลับมา · ค่าในฟอร์มไม่ถูกล้าง
+  static const offlineMessage =
+      'ยังไม่ได้ส่ง ต้องใช้อินเทอร์เน็ต ค่าที่กรอกไว้ยังอยู่ในฟอร์ม';
+
   @override
   void dispose() {
     _reasonController.dispose();
@@ -128,10 +134,11 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      final offline = e.statusCode == null;
       setState(() {
         _submitting = false;
-        _error = e.message;
-        _errorList = e.details;
+        _error = offline ? offlineMessage : e.message;
+        _errorList = offline ? const [] : e.details;
       });
     }
   }

@@ -628,4 +628,97 @@ void main() {
       expect(errorTextOf(tester, 'config_override_reason_input'), isNull);
     });
   });
+
+  // UX audit #17 — ส่งตอนออฟไลน์ คำขอนี้ไม่เข้าคิว sync (ต่างจากการเปลี่ยน
+  // สถานะงาน) ข้อความต้องบอกว่ายังไม่ได้ส่ง และค่าที่กรอกต้องอยู่ครบ
+  group('ส่งตอนออฟไลน์ (UX audit #17)', () {
+    const offlineMessage =
+        'ยังไม่ได้ส่ง ต้องใช้อินเทอร์เน็ต ค่าที่กรอกไว้ยังอยู่ในฟอร์ม';
+
+    Future<void> fillAndSubmit(WidgetTester tester) async {
+      await tester.enterText(
+        find.byKey(const Key('config_override_input_APN')),
+        'new-apn',
+      );
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+      );
+      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.pumpAndSettle();
+    }
+
+    String fieldText(WidgetTester tester, String key) => tester
+        .widget<EditableText>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(EditableText),
+          ),
+        )
+        .controller
+        .text;
+
+    testWidgets('ไม่มีเน็ต (ไม่มี HTTP response) -> บอกว่ายังไม่ได้ส่ง '
+        'ฟอร์มยังเปิด ค่าที่กรอกอยู่ครบ กดส่งใหม่ได้', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          overrideError: ApiException(
+            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+          ),
+        ),
+      );
+
+      await fillAndSubmit(tester);
+
+      expect(find.text(offlineMessage), findsOneWidget);
+      expect(find.byType(ConfigOverridePage), findsOneWidget);
+      expect(fieldText(tester, 'config_override_input_APN'), 'new-apn');
+      expect(
+        fieldText(tester, 'config_override_reason_input'),
+        'ลูกค้าขอเปลี่ยนค่าหน้างาน',
+      );
+      expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('config_override_submit')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets(
+      'ออนไลน์ส่งสำเร็จ -> พฤติกรรมเดิม (snackbar รออนุมัติ ล้างฟอร์ม)',
+      (tester) async {
+        final fake = await _pump(tester);
+
+        await fillAndSubmit(tester);
+
+        expect(fake.lastFields, {'APN': 'new-apn'});
+        expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsOneWidget);
+        expect(find.text(offlineMessage), findsNothing);
+        expect(fieldText(tester, 'config_override_reason_input'), '');
+      },
+    );
+
+    testWidgets('server ตอบ error (มี statusCode) -> ยังใช้ข้อความของ server '
+        'ไม่ใช่ข้อความออฟไลน์', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          overrideError: ApiException(
+            'มีคำขอ override รออนุมัติอยู่แล้ว',
+            statusCode: 409,
+          ),
+        ),
+      );
+
+      await fillAndSubmit(tester);
+
+      expect(find.text('มีคำขอ override รออนุมัติอยู่แล้ว'), findsOneWidget);
+      expect(find.text(offlineMessage), findsNothing);
+    });
+  });
 }
