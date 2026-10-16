@@ -292,9 +292,15 @@ export class ConfigDefinitionService {
    * ConfigEngineer เห็นปัญหาทั้งหมดในครั้งเดียว ไม่ต้องแก้ทีละรอบ (แพทเทิร์นเดียวกับ
    * `importFromJson` ใน config.service.ts)
    *
-   * ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09: field ที่ไม่มีนิยามในคลังเลย หรือ
-   * มีนิยามแต่ไม่รองรับ deviceModel/protocol นี้ → block ทั้งคู่ (ไม่มีทางลัด
-   * ให้ field "พิเศษเฉพาะลูกค้า" ข้าม validation ไปได้)
+   * field ที่ไม่มีนิยามในคลังเลย → block (มติร่วมกับ B และพี่เลี้ยง 2569-09
+   * ยังใช้อยู่ ไม่มีทางลัดให้ field ที่ไม่มีนิยามข้าม validation ไปได้)
+   *
+   * field ที่มีนิยามแต่ไม่ได้ผูกกับ deviceModel/protocol นี้ → **ผ่าน**
+   * (เปลี่ยนจากมติเดิมตามคำแนะนำพี่เลี้ยงตอนรีวิว 12 ต.ค. 2569: ผู้สร้าง
+   * Config template เป็นผู้เชี่ยวชาญ ต้องเพิ่มพารามิเตอร์นอกชุดของรุ่นได้
+   * เช่นในแคมเปญที่ต้องการค่าพิเศษ) `supportedModels` จึงเป็นแค่ "ชุดค่าเริ่มต้น
+   * ของรุ่น" ใช้กรองคลังบนหน้าเว็บและหา required field ของรุ่น ไม่ใช่ข้อห้าม
+   * ส่วนชนิดข้อมูล/`allowedValues` ยังตรวจตามนิยามเหมือนเดิม
    */
   async validateFields(
     deviceModel: string,
@@ -312,16 +318,6 @@ export class ConfigDefinitionService {
       if (!def) {
         errors.push(
           `ไม่รู้จัก field "${name}" — ต้องสร้างนิยามในคลัง Parameter ก่อน`,
-        );
-        continue;
-      }
-
-      const supportsModel = def.supportedModels.some(
-        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-      );
-      if (!supportsModel) {
-        errors.push(
-          `field "${name}" ไม่รองรับรุ่นอุปกรณ์ ${deviceModel}/${protocol}`,
         );
         continue;
       }
@@ -376,12 +372,21 @@ export class ConfigDefinitionService {
    *    (แก้แค่บาง field ของ Config ที่มีอยู่แล้ว) ไม่ใช่การสร้าง/แทนที่ทั้งชุด
    *    เหมือน `validateFields()` — ถ้าเช็ค required ครบด้วยจะ false-positive
    *    ทุกครั้งที่ override แค่ 1-2 field จากทั้งหมด
+   *
+   * field ต้องรองรับรุ่นนี้ **หรือ** อยู่ใน Config template ของเครื่องอยู่แล้ว
+   * (`templateFieldNames`) — template มี field นอกชุดของรุ่นได้ตั้งแต่ผ่อนกฎใน
+   * `validateFields()` (รีวิวพี่เลี้ยง 12 ต.ค. 2569) และแอปช่างแสดงทุก field
+   * ของ template ที่ `stOverridable` โดยไม่กรองรุ่น ถ้าไม่รับ field ของ template
+   * ช่างจะเห็นช่องให้แก้แต่ส่งไม่ผ่าน · ช่างเพิ่ม field นอกชุดที่ template
+   * ไม่มีเองไม่ได้ (การเพิ่มเป็นสิทธิ์ของผู้สร้าง template)
    */
   async validateOverridableFields(
     deviceModel: string,
     protocol: string,
     fields: Record<string, unknown>,
+    templateFieldNames: readonly string[] = [],
   ): Promise<void> {
+    const inTemplate = new Set(templateFieldNames);
     const defs = await this.prisma.configFieldDefinition.findMany({
       include: { supportedModels: true },
     });
@@ -405,7 +410,7 @@ export class ConfigDefinitionService {
       const supportsModel = def.supportedModels.some(
         (m) => m.deviceModel === deviceModel && m.protocol === protocol,
       );
-      if (!supportsModel) {
+      if (!supportsModel && !inTemplate.has(name)) {
         errors.push(
           `field "${name}" ไม่รองรับรุ่นอุปกรณ์ ${deviceModel}/${protocol}`,
         );
