@@ -548,11 +548,29 @@ describe('ConfigDefinitionService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('field มีนิยามแต่ไม่รองรับ deviceModel/protocol นี้ -> BadRequestException', async () => {
+    // รีวิวพี่เลี้ยง 12 ต.ค. 2569: ผู้สร้าง template เพิ่มพารามิเตอร์นอกชุด
+    // ของรุ่นได้ (เดิมเคสนี้ถูก block)
+    it('field มีนิยามแต่ไม่ได้ผูกกับ deviceModel/protocol นี้ -> ผ่าน', async () => {
       findMany.mockResolvedValue([apnDef]);
 
       await expect(
         service.validateFields('GT06L', 'TCP', { APN1: 'internet' }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('field นอกชุดของรุ่น ยังตรวจชนิดข้อมูลตามนิยาม -> BadRequestException ถ้าผิดชนิด', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateFields('GT06L', 'TCP', { APN1: 12345 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('field นอกชุดของรุ่น ยังตรวจ allowedValues -> BadRequestException ถ้าไม่อยู่ในรายการ', async () => {
+      findMany.mockResolvedValue([modeDef]);
+
+      await expect(
+        service.validateFields('GT06L', 'TCP', { MODE: 'INVALID' }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -746,6 +764,34 @@ describe('ConfigDefinitionService', () => {
 
       await expect(
         service.validateOverridableFields('GT06N', 'TCP', { APN1: 12345 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('field ไม่รองรับรุ่นนี้และไม่อยู่ใน template -> BadRequestException (ช่างเพิ่ม field นอกชุดเองไม่ได้)', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06L', 'TCP', { APN1: 'x' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('field ไม่รองรับรุ่นนี้แต่อยู่ใน template แล้ว -> ผ่าน (ผู้สร้าง template เพิ่มไว้)', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06L', 'TCP', { APN1: 'x' }, [
+          'APN1',
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('field อยู่ใน template แต่ stOverridable: false -> ยัง BadRequestException', async () => {
+      findMany.mockResolvedValue([modeDef]);
+
+      await expect(
+        service.validateOverridableFields('GT06L', 'TCP', { MODE: 'GPRS' }, [
+          'MODE',
+        ]),
       ).rejects.toThrow(BadRequestException);
     });
   });

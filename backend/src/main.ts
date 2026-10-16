@@ -1,11 +1,27 @@
+// ต้องเป็น import แรกเสมอ: โหลด .env ก่อน module อื่นอ่าน process.env (ดู load-env.ts)
+import './load-env';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { assertJwtSecret } from './common/jwt-secret';
+import { assertNoDefaultTestPasswords } from './common/test-users';
 import { resolveTrustProxy } from './common/trust-proxy';
+import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
+  // ตรวจก่อนสร้างแอป เพราะ JwtModule.register() ของแต่ละ module อ่าน JWT_SECRET
+  // ตอน import และ fallback เป็น 'changeme' แบบเงียบๆ ดูเหตุผลที่ common/jwt-secret.ts
+  assertJwtSecret(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // ตรวจหลังต่อฐานข้อมูลได้ ก่อนรับคำขอ: เปิดสู่ภายนอกแล้วยังมีบัญชีทดสอบรหัส
+  // password123 อยู่ ไม่ให้รัน ดูเหตุผลที่ common/test-users.ts
+  try {
+    await assertNoDefaultTestPasswords(app.get(PrismaService), process.env);
+  } catch (err) {
+    await app.close();
+    throw err;
+  }
   // ให้ req.ip (ที่ลง Audit Log) เป็น IP ของผู้ใช้จริงเมื่อ deploy หลัง reverse
   // proxy — ปิดเป็นค่าเริ่มต้น ตั้ง TRUST_PROXY เป็นจำนวน proxy บนระบบ hosting
   // เท่านั้น ดูเหตุผลและความเสี่ยงที่ common/trust-proxy.ts
