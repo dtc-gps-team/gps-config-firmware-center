@@ -121,6 +121,12 @@ export interface DeviceStatusResult {
   /** placeholder เสมอเป็น `null` ตอนนี้ — รอผลคำถาม online/offline/check-in
    * แยกต่างหากกับ B (ดู comment เหนือ `getStatus()`) */
   lastCheckInMessage: string | null;
+  /** เวลาที่อุปกรณ์เรียก `/device-sync/*` สำเร็จล่าสุด (ISO 8601) — `null` =
+   * ไม่เคยติดต่อเข้ามา (docs/19 §4.3) */
+  lastSeenAt: string | null;
+  /** ติดต่อมาภายใน `DEVICE_ONLINE_WINDOW_MS` (5 นาที) ล่าสุดหรือไม่ — เครื่องที่
+   * ไม่เคยติดต่อเลยเป็น `false` */
+  online: boolean;
   /** `CampaignRollout.id` ที่ `configStatus`/`firmwareStatus` ข้างบนคำนวณมา —
    * มีค่าเฉพาะตอนสถานะเป็น `pending` เท่านั้น (ไม่งั้นไม่มี target ให้รายงาน
    * ผลกลับ) `null` ถ้าไม่มี (เพิ่มตาม issue #243 — ให้ client ส่งกลับมาใน
@@ -150,6 +156,10 @@ export interface DeviceStatusResult {
  * สร้าง (ค้าง `pending` ตลอดไป เพราะ `reject()`/cancel ไม่แตะ target) ต้อง
  * กรองออกตอนดู "สถานะปัจจุบัน" ของอุปกรณ์ ไม่งั้นจะเห็น pending ผิดๆ */
 const STATUS_IGNORED_ROLLOUT_STATUSES = ['rejected', 'cancelled'] as const;
+
+/** ถือว่าอุปกรณ์ online ถ้า `Device.lastSeenAt` อยู่ภายในช่วงนี้ (docs/19 §4.3) —
+ * รอบดึงงานปกติคือทุก 30 วินาที เผื่อพลาดได้ 10 รอบ */
+export const DEVICE_ONLINE_WINDOW_MS = 5 * 60_000;
 
 function toDevicePayloadStatus(
   targetStatus: CampaignRolloutTargetStatus | undefined,
@@ -317,6 +327,10 @@ export class DeviceService {
       firmwareRolloutId:
         firmwareTarget?.status === 'pending' ? firmwareTarget.rolloutId : null,
       lastCheckInMessage: null,
+      lastSeenAt: device.lastSeenAt ? device.lastSeenAt.toISOString() : null,
+      online:
+        device.lastSeenAt !== null &&
+        Date.now() - device.lastSeenAt.getTime() <= DEVICE_ONLINE_WINDOW_MS,
       pendingFirmwareOverride,
     };
   }
@@ -995,12 +1009,34 @@ export class DeviceService {
    * จนกว่าจะมี `completedAt` แยก
    */
   private async getBaseConfigForDevice(deviceId: string): Promise<Config> {
-    const task = await this.prisma.task.findFirst({
-      where: { deviceId, status: 'completed', configId: { not: null } },
-      orderBy: { updatedAt: 'desc' },
-    });
-    const config = task?.configId
-      ? await this.prisma.config.findUnique({ where: { id: task.configId } })
+    // เลือกอันที่ใหม่กว่าระหว่าง (1) Task ที่ช่างทำเสร็จล่าสุด กับ (2) Rollout
+    // target ของ Config ที่สำเร็จล่าสุด (docs/19 §5) — เดิมดูแค่ Task ทำให้
+    // Config ที่ Rollout ส่งสำเร็จไม่ถูกนับเป็น Config ปัจจุบันของเครื่อง
+    // (หน้ารายละเอียดอุปกรณ์/หน้าขอแก้ค่าในแอปจึงยังโชว์ค่าเก่า) ทั้งโหมด mock
+    // และ real · Rollback ที่สำเร็จมี `configId` ของรอบก่อนหน้า Config ปัจจุบัน
+    // จึงกลับเป็นค่าเก่าเองโดยอัตโนมัติ
+    const [task, rolloutTarget] = await Promise.all([
+      this.prisma.task.findFirst({
+        where: { deviceId, status: 'completed', configId: { not: null } },
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.campaignRolloutTarget.findFirst({
+        where: {
+          deviceId,
+          status: 'success',
+          rollout: { payloadType: 'Config', configId: { not: null } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        include: { rollout: { select: { configId: true } } },
+      }),
+    ]);
+    const rolloutConfigId = rolloutTarget?.rollout.configId ?? null;
+    const configId =
+      rolloutConfigId && (!task || rolloutTarget!.updatedAt > task.updatedAt)
+        ? rolloutConfigId
+        : (task?.configId ?? null);
+    const config = configId
+      ? await this.prisma.config.findUnique({ where: { id: configId } })
       : null;
     // soft-deleted Config (docs/11 Part A) ถือว่า "ไม่พบ" เช่นกัน — mirror
     // `ConfigService.findOne()` เป๊ะๆ (comment A บน PR #222: ไม่งั้น endpoint
