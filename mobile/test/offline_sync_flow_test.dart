@@ -284,81 +284,74 @@ void main() {
   });
 
   // SyncTriggers flush คิวตอน cold start เฉพาะโหมดจริง (sync_providers.dart)
-  group(
-    'cold start: flush รอจน session restore เสร็จ',
-    () {
-      // regression ที่เจอบน emulator: SyncTriggers.start() flush ทันทีใน initState
-      // ก่อน token ถูก restore -> 401 -> banner "เซสชันหมดอายุ" หลอก และคิวค้าง
-      // จนกว่าจะ resume/เน็ตกลับ
-      Future<ProviderContainer> boot(AuthState initial) async {
-        final queued = newSync();
-        api.updateError = ApiException('offline');
-        await queued.enqueueTaskStatus(
-          taskId: 'a',
-          userId: 'user-1',
-          status: TaskStatus.completed,
-        );
-        await queued.flush(); // previous run: left in the queue
-        api.updateError = null;
-        api.updates.clear();
-
-        final container = ProviderContainer(
-          overrides: [
-            authControllerProvider.overrideWith(() => _MutableAuth(initial)),
-            appDatabaseProvider.overrideWithValue(db),
-            apiClientProvider.overrideWithValue(api),
-            syncConnectivityProvider.overrideWithValue(const Stream.empty()),
-          ],
-        );
-        addTearDown(container.dispose);
-        return container;
-      }
-
-      test(
-        'session ยัง unknown -> ไม่ยิง request/ไม่ตั้ง flag session หมดอายุ, '
-        'พอ authenticated -> ส่งคิวเอง',
-        () async {
-          final container = await boot(const AuthState());
-          container.read(syncTriggersProvider);
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-
-          expect(api.updates, isEmpty);
-          expect(container.read(syncAuthExpiredProvider), isFalse);
-          expect(await db.pendingActionDao.getPending(), hasLength(1));
-
-          (container.read(authControllerProvider.notifier) as _MutableAuth).set(
-            const AuthState(status: AuthStatus.authenticated),
-          );
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-
-          expect(api.updates, [('a', TaskStatus.completed)]);
-          expect(await db.pendingActionDao.getPending(), isEmpty);
-          expect(container.read(syncAuthExpiredProvider), isFalse);
-        },
+  group('cold start: flush รอจน session restore เสร็จ', () {
+    // regression ที่เจอบน emulator: SyncTriggers.start() flush ทันทีใน initState
+    // ก่อน token ถูก restore -> 401 -> banner "เซสชันหมดอายุ" หลอก และคิวค้าง
+    // จนกว่าจะ resume/เน็ตกลับ
+    Future<ProviderContainer> boot(AuthState initial) async {
+      final queued = newSync();
+      api.updateError = ApiException('offline');
+      await queued.enqueueTaskStatus(
+        taskId: 'a',
+        userId: 'user-1',
+        status: TaskStatus.completed,
       );
+      await queued.flush(); // previous run: left in the queue
+      api.updateError = null;
+      api.updates.clear();
 
-      test('authenticated อยู่แล้วตอนสร้าง -> ส่งทันที', () async {
-        final container = await boot(
-          const AuthState(status: AuthStatus.authenticated),
-        );
-        container.read(syncTriggersProvider);
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(() => _MutableAuth(initial)),
+          appDatabaseProvider.overrideWithValue(db),
+          apiClientProvider.overrideWithValue(api),
+          syncConnectivityProvider.overrideWithValue(const Stream.empty()),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
 
-        expect(api.updates, [('a', TaskStatus.completed)]);
-        expect(await db.pendingActionDao.getPending(), isEmpty);
-      });
+    test('session ยัง unknown -> ไม่ยิง request/ไม่ตั้ง flag session หมดอายุ, '
+        'พอ authenticated -> ส่งคิวเอง', () async {
+      final container = await boot(const AuthState());
+      container.read(syncTriggersProvider);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      test('ยังไม่ login (unauthenticated) -> ไม่ flush', () async {
-        final container = await boot(
-          const AuthState(status: AuthStatus.unauthenticated),
-        );
-        container.read(syncTriggersProvider);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(api.updates, isEmpty);
-      });
-    },
-    skip: AppConfig.apiMockMode ? _realModeOnly : false,
-  );
+      expect(api.updates, isEmpty);
+      expect(container.read(syncAuthExpiredProvider), isFalse);
+      expect(await db.pendingActionDao.getPending(), hasLength(1));
+
+      (container.read(authControllerProvider.notifier) as _MutableAuth).set(
+        const AuthState(status: AuthStatus.authenticated),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(api.updates, [('a', TaskStatus.completed)]);
+      expect(await db.pendingActionDao.getPending(), isEmpty);
+      expect(container.read(syncAuthExpiredProvider), isFalse);
+    });
+
+    test('authenticated อยู่แล้วตอนสร้าง -> ส่งทันที', () async {
+      final container = await boot(
+        const AuthState(status: AuthStatus.authenticated),
+      );
+      container.read(syncTriggersProvider);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(api.updates, [('a', TaskStatus.completed)]);
+      expect(await db.pendingActionDao.getPending(), isEmpty);
+    });
+
+    test('ยังไม่ login (unauthenticated) -> ไม่ flush', () async {
+      final container = await boot(
+        const AuthState(status: AuthStatus.unauthenticated),
+      );
+      container.read(syncTriggersProvider);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(api.updates, isEmpty);
+    });
+  }, skip: AppConfig.apiMockMode ? _realModeOnly : false);
 
   group('checklist 4: logout ตอนมีคิวค้าง / request ค้างบนสาย', () {
     ProviderContainer containerWith(SyncQueueService sync) {
