@@ -66,8 +66,21 @@ class AppTheme {
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
       ),
+      // ปุ่มหลักทั้งแอปหน้าตาเดียวกับปุ่มหลักหน้า login (UX audit #12) — กรมท่า
+      // ตัวอักษรขาว มุม 12 สูง 48 เดิมตั้งแค่ความสูง ปุ่มที่ไม่ได้ใส่ style เอง
+      // จึงได้สีฟ้าจาก seed และทรงแคปซูล · ปุ่มที่ใส่ style เองค่าของปุ่มยังชนะ
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: navy.withValues(alpha: 0.4),
+          disabledForegroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
