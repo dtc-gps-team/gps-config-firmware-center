@@ -481,10 +481,7 @@ class ApiClient {
       final response = await send();
       final body = response.data;
       if (body == null) {
-        throw ApiException(
-          'Empty response body',
-          statusCode: response.statusCode,
-        );
+        throw ApiException(emptyBodyMessage, statusCode: response.statusCode);
       }
       return parse(body);
     } on DioException catch (e) {
@@ -553,8 +550,20 @@ class ApiClient {
     }
   }
 
+  /// UX audit #13 — 5xx (backend พัง / proxy ตอบ Bad Gateway) ข้อความใน body
+  /// เป็นข้อความเทคนิคภาษาอังกฤษ ("Internal server error", HTML ของ proxy)
+  /// ไม่ใช่ข้อความสำหรับช่าง จึงแทนด้วยข้อความไทยที่บอกว่าทำอะไรต่อเสมอ
+  /// (backend ไม่มี endpoint ที่ Mobile เรียกจงใจส่งข้อความ 5xx ให้ผู้ใช้อ่าน)
+  static const serverErrorMessage =
+      'เซิร์ฟเวอร์ขัดข้องชั่วคราว กรุณาลองใหม่อีกสักครู่';
+
+  /// Response 2xx ที่ไม่มี body ให้ parse — แทน "Empty response body" (UX audit #13)
+  static const emptyBodyMessage =
+      'เซิร์ฟเวอร์ตอบกลับไม่สมบูรณ์ กรุณาลองใหม่อีกสักครู่';
+
   static ApiException _toApiException(DioException e) => ApiException(
-    _messageFromResponse(e.response) ??
+    ((e.response?.statusCode ?? 0) >= 500 ? serverErrorMessage : null) ??
+        _messageFromResponse(e.response) ??
         e.response?.statusMessage ??
         _transportErrorMessage(e.type) ??
         'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
