@@ -2447,8 +2447,30 @@ describe('DeviceController test-connection (integration — real postgres + guar
         configRolloutId: null,
         firmwareRolloutId: null,
         lastCheckInMessage: null,
+        // docs/19 §4.3 — ไม่เคยติดต่อเข้ามาเลย
+        lastSeenAt: null,
+        online: false,
         pendingFirmwareOverride: null,
       });
+    });
+
+    it('เคยติดต่อมาเมื่อสักครู่ -> online true พร้อม lastSeenAt (docs/19 §4.3)', async () => {
+      const token = await auditorToken();
+      await makeDevice('STAT-ONLINE', 'installed');
+      const seen = new Date(Date.now() - 30_000);
+      await prisma.device.update({
+        where: { deviceId: 'STAT-ONLINE' },
+        data: { lastSeenAt: seen },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/STAT-ONLINE/status')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as { online: boolean; lastSeenAt: string };
+      expect(body.online).toBe(true);
+      expect(body.lastSeenAt).toBe(seen.toISOString());
     });
 
     it('มีคำขอ Firmware Override pending ของเครื่องนี้ -> pendingFirmwareOverride คืนแถวนั้น (แก้ตามรีวิว B บน PR #257)', async () => {
