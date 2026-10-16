@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/db/tables/pending_actions_table.dart';
+import '../../core/router/app_router.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
@@ -416,6 +418,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           ),
           const SizedBox(height: 20),
           _InfoCard(
+            // UX audit #1: เลขอุปกรณ์กดไปหน้ารายละเอียดอุปกรณ์ได้ (เดิมต้องกลับ
+            // Home แล้วค้นหาเอง ก่อนจะไปขอแก้ Config ของเครื่องนั้น)
+            links: {
+              if ((task.deviceId ?? '').isNotEmpty)
+                'อุปกรณ์': (
+                  const Key('task_detail_device_link'),
+                  () => context.push(AppRoutes.deviceDetail(task.deviceId!)),
+                ),
+            },
             rows: [
               ('อุปกรณ์', task.deviceId ?? '—'),
               // raw user id — ยังไม่มี GET /users resolve ชื่อฝั่ง Mobile
@@ -739,9 +750,13 @@ class _ConfirmInstallBar extends StatelessWidget {
 }
 
 class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.rows});
+  const _InfoCard({required this.rows, this.links = const {}});
 
   final List<(String, String)> rows;
+
+  /// แถวที่ค่ากดได้ (label -> key + action) แสดงเป็นลิงก์ขีดเส้นใต้ และกด
+  /// ได้ทั้งแถว สูงอย่างน้อย 48dp
+  final Map<String, (Key, VoidCallback)> links;
 
   @override
   Widget build(BuildContext context) {
@@ -755,35 +770,75 @@ class _InfoCard extends StatelessWidget {
       child: Column(
         children: [
           for (final (label, value) in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 96,
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 13,
+            if (links[label] case (final key, final onTap))
+              InkWell(
+                key: key,
+                onTap: onTap,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 96,
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.navy,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 20,
                         color: AppTheme.textSecondary,
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 96,
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
         ],
       ),
     );
