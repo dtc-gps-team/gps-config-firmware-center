@@ -2981,6 +2981,10 @@ describe('CampaignRolloutService', () => {
     });
 
     it('field ไม่ผ่านการตรวจเทียบคลัง Parameter -> 400 ต่อเครื่อง และไม่สร้าง Rollout', async () => {
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { SPEED_LIMIT: 120 },
+      });
       configDefinitionService.validateOperationOverridableFields.mockResolvedValue(
         ['field "SPEED_LIMIT" ต้องเป็นชนิดข้อมูล integer'],
       );
@@ -3000,7 +3004,13 @@ describe('CampaignRolloutService', () => {
       });
       expect(
         configDefinitionService.validateOperationOverridableFields,
-      ).toHaveBeenCalledWith('GT06N', 'TCP', { SPEED_LIMIT: 'เร็ว' });
+      ).toHaveBeenCalledWith(
+        'GT06N',
+        'TCP',
+        { SPEED_LIMIT: 'เร็ว' },
+        // ชื่อ field ใน template ของ Config (config.fields) ส่งไปด้วย
+        ['SPEED_LIMIT'],
+      );
       expect(campaignRollout.create).not.toHaveBeenCalled();
     });
 
@@ -3180,6 +3190,36 @@ describe('CampaignRolloutService', () => {
           },
         },
         { deviceId: 'DEV-0002', hasPendingRequest: true, previous: null },
+      ]);
+    });
+
+    it('field นอกชุดของรุ่นแต่อยู่ใน template ของ Config นี้ -> ใช้ต่อได้ ไม่ถูกทิ้ง', async () => {
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { SPEED_LIMIT: 120, ONLY_OTHER_MODEL: 5 },
+      });
+      deviceConfigOverride.findMany
+        .mockResolvedValueOnce([
+          {
+            deviceId: 'DEV-0001',
+            configId: 'cfg-old',
+            versionNumber: 1,
+            overriddenBy: 'st-1',
+            overriddenAt: new Date('2026-01-01T00:00:00.000Z'),
+            fields: { ONLY_OTHER_MODEL: 9, GHOST_FIELD: 2 },
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const items = await service.getDeviceValues(
+        campaignId,
+        approvedConfig.id,
+      );
+
+      expect(items[0].previous?.fields).toEqual({ ONLY_OTHER_MODEL: 9 });
+      // ไม่มีนิยามในคลังยังถูกทิ้งเสมอ แม้ชื่อบังเอิญอยู่ใน template
+      expect(items[0].previous?.dropped.map((d) => d.fieldName)).toEqual([
+        'GHOST_FIELD',
       ]);
     });
 

@@ -15,6 +15,7 @@ import { CustomerModule } from './customer/customer.module';
 import { DeviceModule } from './device/device.module';
 import { DeviceModelModule } from './device-model/device-model.module';
 import { FirmwareModule } from './firmware/firmware.module';
+import { HealthModule } from './health/health.module';
 import { IncidentModule } from './incident/incident.module';
 import { NotificationModule } from './notification/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -43,6 +44,7 @@ import { UserModule } from './user/user.module';
     DeviceModule,
     DeviceModelModule,
     FirmwareModule,
+    HealthModule,
     IncidentModule,
     TaskModule,
     NotificationModule,

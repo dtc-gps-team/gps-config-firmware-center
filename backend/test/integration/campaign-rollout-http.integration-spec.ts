@@ -1107,6 +1107,74 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       expect(await prisma.deviceConfigOverride.count()).toBe(0);
     });
 
+    describe('field นอกชุดของรุ่นที่ template ใส่ไว้ (รีวิวพี่เลี้ยง 12 ต.ค.)', () => {
+      /** field ที่ผูกกับรุ่นอื่นเท่านั้น (VT300) ไม่ใช่ GT06N ที่ Config นี้ใช้ */
+      async function seedOutsideModelScenario(inTemplate: boolean) {
+        const s = await seedScenario();
+        await prisma.configFieldDefinition.create({
+          data: {
+            fieldName: 'OUTSIDE_FIELD',
+            dataType: 'string',
+            allowedValues: [],
+            sensitive: false,
+            supportedModels: {
+              create: [{ deviceModel: 'VT300', protocol: 'TCP' }],
+            },
+          },
+        });
+        const config = await prisma.config.update({
+          where: { id: s.config.id },
+          data: {
+            fields: inTemplate
+              ? { APN: 'internet', OUTSIDE_FIELD: 'default' }
+              : { APN: 'internet' },
+          },
+        });
+        return { ...s, config };
+      }
+
+      it('field อยู่ใน template ของ Config -> ตั้งค่าเฉพาะเครื่องได้ (201)', async () => {
+        const s = await seedOutsideModelScenario(true);
+
+        await createWithValues(
+          s.campaign.id,
+          tokenFor(s.creator.id, 'Operation'),
+          {
+            payloadType: 'Config',
+            configId: s.config.id,
+            deviceValues: [
+              {
+                deviceId: s.device.deviceId,
+                fields: { OUTSIDE_FIELD: 'custom' },
+              },
+            ],
+            deviceValuesReason: 'ลูกค้าใช้ค่านอกชุดของรุ่น',
+          },
+        ).expect(201);
+      });
+
+      it('field ไม่อยู่ใน template -> 400 (เพิ่ม field นอกชุดเองไม่ได้)', async () => {
+        const s = await seedOutsideModelScenario(false);
+
+        await createWithValues(
+          s.campaign.id,
+          tokenFor(s.creator.id, 'Operation'),
+          {
+            payloadType: 'Config',
+            configId: s.config.id,
+            deviceValues: [
+              {
+                deviceId: s.device.deviceId,
+                fields: { OUTSIDE_FIELD: 'custom' },
+              },
+            ],
+            deviceValuesReason: 'x',
+          },
+        ).expect(400);
+        expect(await prisma.campaignRollout.count()).toBe(0);
+      });
+    });
+
     it('field ที่ไม่รู้จักหรือชนิดผิด -> 400 ไม่สร้าง Rollout', async () => {
       const s = await seedScenario();
 

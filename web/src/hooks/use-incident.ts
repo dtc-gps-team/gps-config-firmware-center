@@ -47,5 +47,5 @@ export function useIncident(id: string | null) {
   }, [load]);
   useRefetchOnFocus(load);
 
-  return state;
+  return { ...state, refetch: load };
 }

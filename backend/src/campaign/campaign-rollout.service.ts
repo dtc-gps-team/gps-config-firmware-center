@@ -373,17 +373,23 @@ export class CampaignRolloutService {
 
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
-      select: { deviceModel: true, protocol: true },
+      select: { deviceModel: true, protocol: true, fields: true },
     });
     if (!config) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
+    // field ใน template ตั้งค่าเฉพาะเครื่องได้แม้อยู่นอกชุดของรุ่น (กฎเดียวกับ
+    // ช่าง — validateOverridableFields)
+    const templateFieldNames = Object.keys(
+      (config.fields ?? {}) as Record<string, unknown>,
+    );
     for (const [deviceId, fields] of result) {
       const fieldErrors =
         await this.configDefinitionService.validateOperationOverridableFields(
           config.deviceModel,
           config.protocol,
           fields,
+          templateFieldNames,
         );
       errors.push(...fieldErrors.map((e) => `${deviceId}: ${e}`));
     }
@@ -634,11 +640,14 @@ export class CampaignRolloutService {
     }
     const config = await this.prisma.config.findUnique({
       where: { id: configId },
-      select: { id: true, deviceModel: true, protocol: true },
+      select: { id: true, deviceModel: true, protocol: true, fields: true },
     });
     if (!config) {
       throw new NotFoundException(`ไม่พบ Config id ${configId}`);
     }
+    const templateFieldNames = new Set(
+      Object.keys((config.fields ?? {}) as Record<string, unknown>),
+    );
 
     const members = await this.prisma.campaignTarget.findMany({
       where: { campaignId },
@@ -679,14 +688,20 @@ export class CampaignRolloutService {
     }
     const pendingDevices = new Set(pendingRows.map((p) => p.deviceId));
     const defByName = new Map(defs.map((d) => [d.fieldName, d]));
-    const supports = (fieldName: string): boolean =>
-      defByName
-        .get(fieldName)
-        ?.supportedModels.some(
+    // ใช้ได้ถ้ารุ่นรองรับ หรืออยู่ใน template ของ Config นี้ (นอกชุดของรุ่นที่
+    // template ใส่ไว้ — กฎเดียวกับ validateOperationOverridableFields)
+    const supports = (fieldName: string): boolean => {
+      const def = defByName.get(fieldName);
+      if (!def) return false;
+      return (
+        templateFieldNames.has(fieldName) ||
+        def.supportedModels.some(
           (m) =>
             m.deviceModel === config.deviceModel &&
             m.protocol === config.protocol,
-        ) ?? false;
+        )
+      );
+    };
 
     const items: RolloutDeviceValuesItem[] = [];
     for (const deviceId of deviceIds) {

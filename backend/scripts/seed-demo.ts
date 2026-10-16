@@ -17,7 +17,7 @@ loadEnv({ path: path.resolve(__dirname, '../../.env'), quiet: true });
  * กติกาข้อมูล:
  * - อุปกรณ์ทุกเครื่องมี IMEI, Serial Number และ Blackbox ID ครบ (บังคับกรอก
  *   ตามมติ A กับ B 13 ต.ค. 2569)
- * - `hardwareRevisionCode` ว่าง = รุ่นมาตรฐาน มีค่า = รุ่นพิเศษ
+ * - `hardwareRevisionCode` ว่าง = ไม่มีรุ่นย่อย มีค่า = รหัสรุ่นย่อย (Hardware Revision)
  * - ข้อความที่ผู้ใช้เห็นไม่มี em dash, จุดคั่นกลาง หรือป้าย "(ข้อมูลตัวอย่าง)"
  * - ชื่อบริษัท/คน/เบอร์เป็นค่าสมมติทั้งหมด ห้ามใช้ข้อมูลจริงจากระบบเดิม
  *
@@ -354,7 +354,7 @@ async function main(): Promise<void> {
           deviceModel: modelName,
           protocol: modelName === 'GT08-4G' && i % 3 === 0 ? 'UDP' : 'TCP',
           ...identity,
-          // ทุก 5 เครื่องมี 1 เครื่องเป็นรุ่นพิเศษ ที่เหลือเป็นรุ่นมาตรฐาน
+          // ทุก 5 เครื่องมี 1 เครื่องที่มีรหัสรุ่นย่อย ที่เหลือไม่มีรุ่นย่อย
           hardwareRevisionCode: i % 5 === 4 ? 'R2-SPECIAL' : null,
           status,
           registeredAt: reg,
@@ -415,6 +415,10 @@ async function main(): Promise<void> {
     extra?: Record<string, unknown>;
     approver?: 'op' | 'op2';
     suggest?: boolean;
+    /** ชื่อ Config ต้นทางที่โคลนมา (ต้องอยู่ก่อนหน้าในรายการนี้) — ค่าเริ่มต้น
+     * ของ fields มาจากต้นทาง แล้วทับด้วย `extra` เพื่อให้หน้าอนุมัติเทียบ
+     * ต่างจากต้นทางได้จริง */
+    clonedFrom?: string;
   }[] = [
     {
       name: 'GT08-4G/TCP มาตรฐาน',
@@ -477,6 +481,16 @@ async function main(): Promise<void> {
       suggest: true,
     },
     {
+      name: 'GT06N/TCP ปรับพอร์ตและเบอร์ SOS',
+      model: 'GT06N',
+      protocol: 'TCP',
+      status: 'testing',
+      days: 2,
+      description: 'สำเนาจากรายงานถี่ เปลี่ยนพอร์ตและเพิ่มเบอร์ฉุกเฉิน',
+      extra: { SERVER_PORT: 9100, SOS_NUMBER_1: '0899999999' },
+      clonedFrom: 'GT06N/TCP รายงานถี่ (รถเย็น)',
+    },
+    {
       name: 'VT300/TCP เปิด CAN bus + ตัดน้ำมัน',
       model: 'VT300',
       protocol: 'TCP',
@@ -520,9 +534,20 @@ async function main(): Promise<void> {
     const created = ago(c.days, 5);
     if (!row) {
       const approverId = c.approver ? U[c.approver] : null;
-      const fields = { ...baseFields(c.model), ...(c.extra ?? {}) };
+      const source = c.clonedFrom
+        ? await prisma.config.findUnique({ where: { name: c.clonedFrom } })
+        : null;
+      const sourceFields =
+        source && typeof source.fields === 'object' && source.fields !== null
+          ? (source.fields as Prisma.InputJsonObject)
+          : null;
+      const fields = {
+        ...(sourceFields ?? baseFields(c.model)),
+        ...(c.extra ?? {}),
+      } as Prisma.InputJsonObject;
       row = await prisma.config.create({
         data: {
+          clonedFromId: source?.id ?? null,
           name: c.name,
           deviceModel: c.model,
           protocol: c.protocol,
@@ -570,6 +595,13 @@ async function main(): Promise<void> {
           reason: 'พอร์ตไม่ตรงกับ server จริง',
         });
       }
+    }
+    // ซ่อมแถวที่สร้างไว้ก่อนมี clonedFromId (รันซ้ำได้ ตั้งเฉพาะที่ยังว่าง)
+    if (c.clonedFrom && cfg[c.clonedFrom]) {
+      await prisma.config.updateMany({
+        where: { id: row.id, clonedFromId: null },
+        data: { clonedFromId: cfg[c.clonedFrom].id },
+      });
     }
     cfg[c.name] = row;
   }
