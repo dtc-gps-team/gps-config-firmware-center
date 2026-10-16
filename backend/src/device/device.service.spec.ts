@@ -2018,10 +2018,13 @@ describe('DeviceService', () => {
 
       const result = await service.overrideDeviceConfig('DTC-0001', dto, st);
 
+      // ส่งชื่อ field ของ template ไปด้วย ให้ field นอกชุดของรุ่นที่อยู่ใน
+      // template แล้วขอแก้ได้ (รีวิวพี่เลี้ยง 12 ต.ค. 2569)
       expect(validateOverridableFields).toHaveBeenCalledWith(
         'GT06N',
         'TCP',
         dto.fields,
+        ['APN'],
       );
       expect(deviceConfigOverride.create).toHaveBeenCalledWith({
         data: {

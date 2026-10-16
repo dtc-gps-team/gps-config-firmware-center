@@ -161,6 +161,51 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     expect(body.status).toBe('draft');
   });
 
+  // รีวิวพี่เลี้ยง 12 ต.ค. 2569: ผู้สร้าง template เพิ่มพารามิเตอร์นอกชุดของ
+  // รุ่นได้ (APN1 ผูกไว้กับ GT06N/TCP เท่านั้น แต่ใส่ใน Config ของ GT06L ได้)
+  it('POST /config มี field ที่ไม่ได้ผูกกับรุ่นนี้ -> 201 บันทึกได้', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06L',
+        protocol: 'TCP',
+        fields: { APN1: 'internet' },
+      })
+      .expect(201);
+
+    expect((res.body as { fields: unknown }).fields).toEqual({
+      APN1: 'internet',
+    });
+  });
+
+  it('POST /config มี field ที่ไม่มีนิยามในคลังเลย -> 400 (ยัง block เหมือนเดิม)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: `cfg-${randomUUID()}`,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { NOT_IN_LIBRARY: 'x' },
+      })
+      .expect(400);
+  });
+
   describe('clonedFromId (ต้นทางของการโคลน)', () => {
     async function setup() {
       const ce = await makeUser(prisma, { role: 'ConfigEngineer' });
