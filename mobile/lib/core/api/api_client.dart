@@ -25,9 +25,32 @@ class ApiException implements Exception {
 /// Only the handful of calls the Mobile app needs for Phase 1 are implemented;
 /// add more as the spec grows.
 class ApiClient {
-  ApiClient({Dio? dio}) : _dio = dio ?? _defaultDio();
+  ApiClient({Dio? dio}) : _dio = dio ?? _defaultDio() {
+    // UX audit #5 — 401 ของคำขอที่แนบ token = session หมดอายุ แจ้งที่เดียว
+    // (AuthController.expireSession) ไม่ว่าคำขอมาจากหน้าไหนหรือจากคิว sync
+    // · ผู้เรียกยังได้ ApiException(401) เหมือนเดิม คิว sync จึงจัดการ 401
+    // ของตัวเอง (ตั้ง syncAuthExpired, เก็บรายการไว้ส่งใหม่) ต่อได้ตามเดิม
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onError: (e, handler) {
+          if (_isExpiredSession(e)) onUnauthorized?.call();
+          handler.next(e);
+        },
+      ),
+    );
+  }
 
   final Dio _dio;
+
+  /// เรียกเมื่อคำขอที่แนบ token ได้ 401 — ตั้งโดย `AuthController`
+  void Function()? onUnauthorized;
+
+  /// 401 จาก `/auth/login` คือรหัสผิด ไม่ใช่ token หมดอายุ และคำขอที่ไม่ได้
+  /// แนบ token ก็ไม่มี session ให้หมดอายุ
+  static bool _isExpiredSession(DioException e) =>
+      e.response?.statusCode == 401 &&
+      e.requestOptions.path != '/auth/login' &&
+      e.requestOptions.headers['Authorization'] != null;
 
   static Dio _defaultDio() => Dio(
     BaseOptions(
