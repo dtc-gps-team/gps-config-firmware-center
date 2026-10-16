@@ -153,7 +153,10 @@ void main() {
         final client = _clientFailingWith(
           (o) => DioException(
             requestOptions: o,
-            response: _response(o, 502, '<html>Bad Gateway</html>'),
+            // 4xx: 5xx ทุกตัวเป็นข้อความไทยกลางแล้ว (UX audit #13,
+            // api_error_message_test.dart) เทสนี้ดูแค่ fallback ของ body
+            // ที่ไม่ใช่ Map
+            response: _response(o, 401, '<html>Unauthorized</html>'),
           ),
         );
 
