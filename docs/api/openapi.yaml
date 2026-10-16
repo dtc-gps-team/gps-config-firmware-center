@@ -30,6 +30,12 @@ tags:
     description: อัปโหลดและทดสอบ Firmware ของกล่อง
   - name: device-status
     description: สถานะ Config และ Firmware รายกล่อง
+  - name: device-sync
+    description: >-
+      endpoint ที่ **อุปกรณ์เรียกเอง** (v3.56, docs/19) ดึงงาน Config ที่รออยู่
+      และรายงานผลกลับ ยืนยันตัวตนด้วย header `X-Device-Api-Key`
+      (`deviceApiKey`) ไม่ใช่ JWT · ใช้กับ Rollout ที่ปล่อยในโหมด
+      `DEVICE_CONFIG_APPLY_MODE=real` (`CampaignRollout.applyMode = real`)
   - name: device
     description: การทำงานกับตัวกล่อง — ทดสอบการเชื่อมต่อ/สัญญาณ
   - name: device-model
@@ -91,6 +97,108 @@ paths:
                 $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Username/Password ไม่ถูกต้อง
+
+  /device-sync/{deviceId}/jobs:
+    get:
+      tags: [device-sync]
+      operationId: listDeviceSyncJobs
+      summary: อุปกรณ์ดึงงาน Config ที่รออยู่ (v3.56, docs/19 §4.1)
+      description: >-
+        เรียกโดย**อุปกรณ์** ไม่ใช่ผู้ใช้ — ยืนยันตัวตนด้วย `X-Device-Api-Key`
+        ของเครื่องที่ตรงกับ `deviceId` ใน path (key ของเครื่องอื่นได้ 401)
+
+        **งานที่ส่ง:** target `pending` ของเครื่องนี้ใน Rollout ที่ `active`
+        และ `applyMode = real` เท่านั้น Rollout ที่ `paused` (Auto Pause)
+        ไม่แจกงานใหม่ · เรียงตาม `createdAt` จากเก่าไปใหม่ **เครื่องต้องทำทีละ
+        งานตามลำดับ** งานสุดท้ายคือค่าที่ใช้จริง
+
+        `fields` เป็นค่าหลังรวมค่าเฉพาะเครื่องที่อนุมัติแล้ว ณ เวลาที่ดึง
+        ค่าที่ sensitive ส่งค่าจริงเพราะอุปกรณ์ต้องใช้งาน
+
+        **ตรวจซ้ำก่อนส่งทุกครั้ง:** Config ถูกลบ/ถอนอนุมัติ หรืออุปกรณ์ไม่ใช่
+        `installed`/โมเดลไม่ตรง จะไม่ส่งงานนั้น และบันทึกเป็น `failed` พร้อม
+        เหตุผล
+
+        ครั้งแรกที่งานถูกส่งบันทึก `pulledAt` (คงเวลาแรกไว้) ทุกครั้งที่เรียก
+        สำเร็จอัปเดต `Device.lastSeenAt` (เขียนเมื่อค่าเดิมเก่ากว่า 1 นาที)
+
+        ไม่ลง AuditLog (ตกลงกับ B 15 ต.ค. 2569) — ผลเก็บที่ target
+      security:
+        - deviceApiKey: []
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+          description: Device.deviceId (เลขเครื่องจริง)
+      responses:
+        "200":
+          description: รายการงาน (ว่างได้ ไม่ใช่ 404)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSyncJobs"
+        "401":
+          description: ไม่แนบ `X-Device-Api-Key` หรือ deviceId/key ไม่ถูกต้อง
+
+  /device-sync/{deviceId}/jobs/{jobId}/result:
+    post:
+      tags: [device-sync]
+      operationId: reportDeviceSyncJobResult
+      summary: อุปกรณ์รายงานผลของงาน (v3.56, docs/19 §4.2)
+      description: >-
+        เรียกโดย**อุปกรณ์** ยืนยันตัวตนด้วย `X-Device-Api-Key` เหมือน
+        `listDeviceSyncJobs` · `jobId` คือ `jobs[].jobId`
+
+        บันทึกผลผ่านกลไกเดิมของ Campaign (`recordTargetResult`) จึงนับ
+        successCount/failureCount, Auto Pause และปิด Rollout เมื่อครบให้เอง
+
+        **ส่งซ้ำได้ (idempotent):** ทุกกรณีที่ไม่บันทึกตอบ **200** พร้อม
+        `accepted: false` ไม่ใช่ error เพื่อให้อุปกรณ์ที่เน็ตหลุดหยุดส่งซ้ำ ·
+        `reason`: `already-reported` (งานนี้มีผลแล้ว) หรือ `rollout-closed`
+        (Rollout ถูก Rollback/จบ/ปฏิเสธแล้ว) · Rollout ที่ `paused` ยังรับผลได้
+        (เครื่องที่ดึงไปก่อนหยุด) · ทั้งสองกรณี**ไม่เปลี่ยนสถานะและตัวนับ** แต่
+        ข้อความที่เครื่องส่งมา (`detail` และผล success/failed) ถูกต่อท้าย
+        `resultDetail` ของงานเป็น "[รายงานล่าช้าจากเครื่อง: ...]" เพื่อให้
+        Operation เห็น (เช่นเครื่องที่ถูก Rollback แล้วแต่ใช้ Config ตัวที่มี
+        ปัญหาไปจริง) ต่อได้ครั้งเดียวต่อแถว ส่งซ้ำไม่ทำให้ข้อความโตขึ้น
+
+        `jobId` ที่ไม่ใช่งานของเครื่องนี้ (หรือไม่มี) ตอบ 404 ไม่บอกว่ามีอยู่จริง
+        ของเครื่องอื่นไหม
+      security:
+        - deviceApiKey: []
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSyncJobResultRequest"
+      responses:
+        "200":
+          description: รับคำขอแล้ว (ดู `accepted`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceSyncJobResultResponse"
+        "400":
+          description: body ผิดรูปแบบ (`result` ไม่ใช่ success/failed, `detail` ยาวเกิน 500 ตัวอักษร) หรือ `jobId` ไม่ใช่ UUID
+        "401":
+          description: ไม่แนบ `X-Device-Api-Key` หรือ deviceId/key ไม่ถูกต้อง
+        "404":
+          description: ไม่พบงานนี้ของอุปกรณ์เครื่องนี้
 
   /health:
     get:
@@ -3052,8 +3160,97 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    deviceApiKey:
+      type: apiKey
+      in: header
+      name: X-Device-Api-Key
+      description: >-
+        API key ต่ออุปกรณ์ (`Device.apiKeyHash`, ออกตอน `POST /devices` หรือ
+        `rotate-key`) ใช้เฉพาะ endpoint `/device-sync/*` ที่อุปกรณ์เรียกเอง
+        (v3.56) ตรวจโดย `DeviceApiKeyGuard` เทียบกับเครื่องที่ `deviceId` ใน
+        path ระบุ
 
   schemas:
+    DeviceSyncJobs:
+      type: object
+      required: [serverTime, pollAfterSeconds, jobs]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+          description: เวลาของ server ให้อุปกรณ์ใช้ดูเวลาที่ถูกต้อง (นาฬิกากล่องอาจคลาด) ไม่บังคับใช้
+        pollAfterSeconds:
+          type: integer
+          example: 30
+          description: >-
+            อุปกรณ์ต้องรออย่างน้อยกี่วินาทีก่อนดึงครั้งถัดไป · เรียกไม่สำเร็จ
+            (เน็ตหลุด/5xx) ให้รอนานขึ้นเรื่อยๆ ไม่ยิงรัว · 401 ให้หยุดและแจ้งผู้ใช้
+        jobs:
+          type: array
+          description: เรียงจากเก่าไปใหม่ เครื่องต้องทำทีละงานตามลำดับ
+          items:
+            $ref: "#/components/schemas/DeviceSyncJob"
+
+    DeviceSyncJob:
+      type: object
+      required: [jobId, rolloutId, createdAt, payloadType, config]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+          description: "`CampaignRolloutTarget.id` ใช้เป็น path ตอนรายงานผล"
+        rolloutId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        payloadType:
+          type: string
+          enum: [Config]
+          description: ตอนนี้มีแต่ Config (ขั้นที่ 2 ของ docs/19 จะเพิ่ม Firmware)
+        config:
+          type: object
+          required: [configId, name, deviceModel, protocol, fields]
+          properties:
+            configId:
+              type: string
+              format: uuid
+            name:
+              type: string
+            deviceModel:
+              type: string
+            protocol:
+              type: string
+            fields:
+              type: object
+              additionalProperties: true
+              description: ค่าหลังรวมค่าเฉพาะเครื่องที่อนุมัติแล้ว (ค่า sensitive เป็นค่าจริง)
+
+    DeviceSyncJobResultRequest:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          enum: [success, failed]
+        detail:
+          type: string
+          maxLength: 500
+          description: ข้อความจากเครื่อง (ไม่บังคับ) แสดงบนหน้า Rollout
+
+    DeviceSyncJobResultResponse:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          description: true = บันทึกผลแล้ว · false = ไม่บันทึก (ดู `reason`) ไม่ใช่ error
+        reason:
+          type: string
+          enum: [already-reported, rollout-closed]
+          description: มีเฉพาะตอน `accepted` เป็น false
+
     HealthStatus:
       type: object
       required: [status, database]
@@ -3530,6 +3727,16 @@ components:
         failureCount:
           type: integer
           description: เหตุผลเดียวกับ successCount ด้านบน (นับจาก status = failed)
+        applyMode:
+          type: string
+          enum: [mock, real]
+          nullable: true
+          description: >-
+            (v3.56, docs/19 §3) โหมดการส่ง Config ตอนปล่อย: `mock` = backend
+            apply ให้ทุกเครื่องทันที · `real` = รอให้อุปกรณ์ดึงงานเองผ่าน
+            `/device-sync/*` · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
+            field นี้ (ถือเป็น `mock`) · Firmware เป็น `mock` เสมอ · Rollback
+            สืบทอดจากรอบต้นเรื่อง
         createdBy:
           type: string
           format: uuid
@@ -3643,6 +3850,14 @@ components:
           type: string
           nullable: true
           description: รายละเอียดผล (จาก `ConfigApplyResult.details` หรือข้อความยืนยันติดตั้ง Firmware)
+        pulledAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            (v3.56, docs/19 §4.1) เวลาที่อุปกรณ์ดึงงานนี้ครั้งแรก · null =
+            ยังไม่ได้ดึง (หรือ Rollout โหมด mock) · แยก "รอเครื่องดึง" ออกจาก
+            "ดึงแล้วรอผล"
         createdAt:
           type: string
           format: date-time
@@ -4859,9 +5074,9 @@ components:
     DeviceStatus:
       type: object
       description: >-
-        เวอร์ชันย่อ (v3.39, issue #245) — มีแค่ configStatus/firmwareStatus
-        ยังไม่มี online/offline หรือเวลา check-in จริง (ดู description ของ
-        `getDeviceStatus`)
+        เวอร์ชันย่อ (v3.39, issue #245) — configStatus/firmwareStatus · v3.56
+        เพิ่ม `lastSeenAt`/`online` จากเวลาที่อุปกรณ์เรียก `/device-sync/*`
+        ล่าสุด (docs/19) ส่วน `lastCheckInMessage` ยังเป็น placeholder
       required:
         [
           deviceId,
@@ -4871,6 +5086,8 @@ components:
           firmwareRolloutId,
           lastCheckInMessage,
           pendingFirmwareOverride,
+          lastSeenAt,
+          online,
         ]
       properties:
         deviceId:
@@ -4909,6 +5126,18 @@ components:
             placeholder — เป็น null เสมอตอนนี้ รอผลคำถาม online/offline/
             check-in ที่เปิดแยกไว้ต่างหาก (ยังไม่มี concept นี้ในระบบเลย)
           example: null
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            (v3.56, docs/19 §4.3) เวลาที่อุปกรณ์เรียก `/device-sync/*` สำเร็จ
+            ล่าสุด · null = ไม่เคยติดต่อเข้ามา
+        online:
+          type: boolean
+          description: >-
+            (v3.56) true ถ้า `lastSeenAt` อยู่ภายใน 5 นาทีล่าสุด · เครื่องที่ไม่
+            เคยติดต่อเลยเป็น false
         pendingFirmwareOverride:
           type: object
           nullable: true
