@@ -4,14 +4,18 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
-import { CONFIG_APPLIER } from '../device/config-applier';
+import {
+  CONFIG_APPLIER,
+  CONFIG_APPLY_MODE,
+  ConfigApplyMode,
+} from '../device/config-applier';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
@@ -76,6 +80,7 @@ const sampleRollout: CampaignRollout = {
   approvedBy: null,
   approvedAt: null,
   activeWindowStartedAt: null,
+  applyMode: null,
   isRollback: false,
   rollbackOfId: null,
   deviceValuesReason: null,
@@ -136,8 +141,33 @@ describe('CampaignRolloutService', () => {
   let auditLog: { create: jest.Mock };
   let firmwareRollbackExecutor: { switchPartition: jest.Mock };
   let configApplier: { applyConfig: jest.Mock };
+  // โหมดของ env ตอนปล่อย Rollout (docs/19 §3) — เทสที่ต้องการ `real` ตั้งก่อน
+  // beforeEach ไม่ได้ จึงให้ provider อ่านจากตัวแปรนี้ตอนสร้าง service ใหม่
+  let configApplyMode: ConfigApplyMode;
+
+  async function buildService(): Promise<CampaignRolloutService> {
+    const built = await Test.createTestingModule({
+      providers: [
+        CampaignRolloutService,
+        { provide: PrismaService, useValue: prismaMockRef },
+        {
+          provide: FIRMWARE_ROLLBACK_EXECUTOR,
+          useValue: firmwareRollbackExecutor,
+        },
+        { provide: CONFIG_APPLIER, useValue: configApplier },
+        { provide: CONFIG_APPLY_MODE, useValue: configApplyMode },
+        {
+          provide: ConfigDefinitionService,
+          useValue: configDefinitionService,
+        },
+      ],
+    }).compile();
+    return built.get(CampaignRolloutService);
+  }
+  let prismaMockRef: unknown;
 
   beforeEach(async () => {
+    configApplyMode = 'mock';
     campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
     campaignTarget = { findMany: jest.fn().mockResolvedValue(groupTargets) };
     campaignRollout = {
@@ -209,23 +239,8 @@ describe('CampaignRolloutService', () => {
       $transaction: transactionMock,
     };
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CampaignRolloutService,
-        { provide: PrismaService, useValue: prismaMock },
-        {
-          provide: FIRMWARE_ROLLBACK_EXECUTOR,
-          useValue: firmwareRollbackExecutor,
-        },
-        { provide: CONFIG_APPLIER, useValue: configApplier },
-        {
-          provide: ConfigDefinitionService,
-          useValue: configDefinitionService,
-        },
-      ],
-    }).compile();
-
-    service = module.get(CampaignRolloutService);
+    prismaMockRef = prismaMock;
+    service = await buildService();
   });
 
   describe('create', () => {
@@ -538,6 +553,111 @@ describe('CampaignRolloutService', () => {
         data: expect.objectContaining({
           status: 'active',
         }) as Partial<CampaignRollout>,
+      });
+    });
+
+    describe('applyMode (docs/19 §3)', () => {
+      const activeFor = (r: CampaignRollout): CampaignRollout => ({
+        ...r,
+        status: 'active',
+      });
+
+      it('โหมดระบบ mock -> บันทึก applyMode "mock" และ auto-apply ให้เครื่อง pending', async () => {
+        configApplyMode = 'mock';
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'mock' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([
+          { id: 't-1', rolloutId: approvedRollout.id, deviceId: 'DEV-0001' },
+        ]);
+        campaignRolloutTarget.findFirst.mockResolvedValue(null);
+
+        await service.release(approvedRollout.id, otherOperation);
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: approvedRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            status: 'active',
+            applyMode: 'mock',
+          }) as Partial<CampaignRollout>,
+        });
+        expect(configApplier.applyConfig).toHaveBeenCalledTimes(1);
+      });
+
+      it('โหมดระบบ real -> บันทึก applyMode "real" และ **ไม่** apply ให้เอง ไม่แตะ target', async () => {
+        configApplyMode = 'real';
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'real' }),
+        );
+
+        const result = await service.release(
+          approvedRollout.id,
+          otherOperation,
+        );
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: approvedRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            applyMode: 'real',
+          }) as Partial<CampaignRollout>,
+        });
+        expect(result.status).toBe('active');
+        expect(configApplier.applyConfig).not.toHaveBeenCalled();
+        expect(campaignRolloutTarget.findMany).not.toHaveBeenCalled();
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('Firmware payload เป็น mock เสมอแม้ระบบตั้ง real (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)', async () => {
+        configApplyMode = 'real';
+        service = await buildService();
+        const firmwareRollout: CampaignRollout = {
+          ...approvedRollout,
+          payloadType: CampaignPayloadType.Firmware,
+          configId: null,
+          firmwareId: 'fw-1',
+        };
+        campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...firmwareRollout, applyMode: 'mock' }),
+        );
+
+        await service.release(firmwareRollout.id, otherOperation);
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: firmwareRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            applyMode: 'mock',
+          }) as Partial<CampaignRollout>,
+        });
+      });
+
+      it('Rollout ที่มี applyMode อยู่แล้ว (Rollback สืบทอดมา) -> คงค่าเดิม ไม่ใช้โหมดระบบ', async () => {
+        configApplyMode = 'mock';
+        service = await buildService();
+        const inherited: CampaignRollout = {
+          ...approvedRollout,
+          applyMode: 'real',
+          isRollback: true,
+          rollbackOfId: 'rollout-bad',
+        };
+        campaignRollout.findUnique.mockResolvedValue(inherited);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor(inherited),
+        );
+
+        await service.release(inherited.id, otherOperation);
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: inherited.id, status: 'approved' },
+          data: expect.objectContaining({
+            applyMode: 'real',
+          }) as Partial<CampaignRollout>,
+        });
+        expect(configApplier.applyConfig).not.toHaveBeenCalled();
       });
     });
 
@@ -1848,6 +1968,25 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    it('Rollout โหมด real: resume -> active แต่ไม่ apply ให้เอง เครื่องที่ค้างได้งานเองเมื่อมาดึง', async () => {
+      const pausedReal: CampaignRollout = {
+        ...sampleRollout,
+        status: 'paused',
+        applyMode: 'real',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pausedReal);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...pausedReal,
+        status: 'active',
+      });
+
+      const result = await service.resume(pausedReal.id, operation);
+
+      expect(result.status).toBe('active');
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+      expect(campaignRolloutTarget.findMany).not.toHaveBeenCalled();
+    });
+
     it('ผู้สร้าง Rollout เองก็ resume ได้ (ไม่เช็ค Separation of Duty)', async () => {
       const pausedRollout: CampaignRollout = {
         ...sampleRollout,
@@ -2099,6 +2238,8 @@ describe('CampaignRolloutService', () => {
           createdBy: operation.id,
           isRollback: true,
           rollbackOfId: badRollout.id,
+          // สืบทอดโหมดจากรอบต้นเรื่อง (null = Rollout เก่าก่อนมีคอลัมน์)
+          applyMode: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
@@ -2129,12 +2270,42 @@ describe('CampaignRolloutService', () => {
           createdBy: operation.id,
           isRollback: true,
           rollbackOfId: badRollout.id,
+          applyMode: null,
         },
       });
       expect(campaignRolloutTarget.createMany).toHaveBeenCalledWith({
         data: [
           { rolloutId: 'rollout-new', deviceId: installedDeviceA.deviceId },
         ],
+      });
+    });
+
+    it('เลือกเครื่องที่ success หรือ ดึงงานแล้วแต่ยัง pending (pulledAt มีค่า) — ไม่รวมเครื่องที่ยังไม่ได้ดึง (docs/19 §3.1)', async () => {
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith({
+        where: {
+          rolloutId: badRollout.id,
+          OR: [
+            { status: 'success' },
+            { status: 'pending', pulledAt: { not: null } },
+          ],
+        },
+      });
+    });
+
+    it('Rollout ต้นเรื่องเป็น applyMode real -> Rollback สืบทอด real', async () => {
+      campaignRollout.findUnique.mockResolvedValue({
+        ...badRollout,
+        applyMode: 'real',
+      });
+
+      await service.rollback(campaignId, badRollout.id, {}, operation);
+
+      expect(campaignRollout.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          applyMode: 'real',
+        }) as Partial<CampaignRollout>,
       });
     });
 

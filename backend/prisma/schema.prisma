@@ -432,6 +432,11 @@ model Device {
   status               DeviceLifecycleStatus @default(registered)
   registeredAt         DateTime              @default(now())
   installedAt          DateTime?
+  // เวลาที่อุปกรณ์เรียก endpoint `/device-sync/*` สำเร็จล่าสุด (ผ่าน
+  // `DeviceApiKeyGuard`) ใช้ตัดสิน online/offline (docs/19 §4.3) — เขียนเมื่อ
+  // ค่าเดิมเก่ากว่า 1 นาทีเท่านั้น กันเขียนทุกคำขอ · nullable: เครื่องที่ไม่เคย
+  // ติดต่อเข้ามาเลย (รวมเครื่องทั้งหมดก่อนมี field นี้) ยังไม่มีค่า
+  lastSeenAt           DateTime?
   // ผูกกับลูกค้า (docs/12 เฟส B) — nullable เพราะอุปกรณ์เดิมทั้งหมดยังไม่มีลูกค้า
   // ผูกไว้ (data ว่างตอน migration ไม่ใช่ orphan — เป็นค่าที่ยังไม่เคยกำหนด) ใช้
   // เป็นมิติกรอง/bulk-assign บนหน้า Device Search เท่านั้น ไม่ใช่ RBAC scope
@@ -1096,6 +1101,16 @@ model CampaignRollout {
   // ต้น rollout ไม่เคยรีเซ็ต (ไม่แก้ failureCount ที่โชว์ผู้ใช้เอง —ยังสะสม
   // ตามจริงเหมือนเดิม)
   activeWindowStartedAt DateTime?
+  // โหมดการส่ง Config ของ Rollout นี้ตอนถูกปล่อย (`release()`) (docs/19 §3):
+  //   'mock' = backend apply ให้ทุกเครื่องทันที (พฤติกรรมเดิม)
+  //   'real' = รอให้อุปกรณ์ดึงงานเอง (`GET /device-sync/{deviceId}/jobs`) แล้ว
+  //            รายงานผลกลับ (`POST .../result`)
+  // บันทึกไว้ที่ Rollout แทนการอ่าน env ใหม่ทุกครั้ง เพื่อให้ Rollout ที่ปล่อย
+  // ตอน `real` ยังรอเครื่องต่อได้แม้ภายหลังเปลี่ยน env กลับเป็น `mock` · null =
+  // Rollout ก่อนมีคอลัมน์นี้ (ถือเป็น mock) หรือยังไม่เคยถูกปล่อย · Firmware
+  // payload เป็น 'mock' เสมอในรอบนี้ · Rollback สืบทอดค่าจากรอบต้นเรื่อง
+  // (string อิสระ ไม่ใช่ enum DB เพื่อเพิ่มโหมดทีหลังได้โดยไม่ migrate)
+  applyMode             String?
   // Rollback (แก้ไข 2026-09-24, Incident & Rollback #28) — mirror
   // `POST /api/campaigns/{id}/rollback` ของ GPS_Config_Firmware_Center_Design.pdf
   // §15.1 แต่ implement เป็น "สร้าง CampaignRollout รอบใหม่ที่ payload เป็น
@@ -1146,6 +1161,11 @@ model CampaignRolloutTarget {
   // เท่านั้น · แก้ไม่ได้หลังสร้าง (ไม่มี endpoint แก้) · null = ไม่มีค่า
   // เฉพาะเครื่อง · เป็นคอลัมน์ของโปรเจกต์เอง ไม่มีใน Data Dictionary
   proposedFields Json?
+  // เวลาที่อุปกรณ์ดึงงานนี้ไปครั้งแรก (`GET /device-sync/{deviceId}/jobs`,
+  // docs/19 §4.1) แยก "ยังไม่มาดึง" (null) ออกจาก "ดึงแล้วรอผล" (มีค่า) ·
+  // Rollback ใช้เลือกเครื่องที่ต้องส่ง Config เก่าคืน (ดึงไปแล้วแต่ยังไม่
+  // รายงานผลก็อาจใช้ Config ที่มีปัญหาไปแล้ว) · คงค่าครั้งแรกไว้เสมอ
+  pulledAt     DateTime?
   createdAt    DateTime                    @default(now())
   updatedAt    DateTime                    @updatedAt
 

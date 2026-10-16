@@ -28,7 +28,9 @@ import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import {
   APPLICABLE_CONFIG_STATUSES,
   CONFIG_APPLIER,
+  CONFIG_APPLY_MODE,
   type ConfigApplier,
+  type ConfigApplyMode,
 } from '../device/config-applier';
 import { mergeApprovedOverride } from '../device/config-override-merge';
 import {
@@ -59,7 +61,7 @@ const MASKED_VALUE = '********';
  * เป้าหมายของ rollout ต่อให้ยังอยู่ในกลุ่มก็ตาม (สถานะอาจเปลี่ยนไปหลังเข้า
  * กลุ่มแล้ว — เช็คซ้ำตรงนี้อีกที ไม่เชื่อว่าตอนเข้ากลุ่มยัง `installed` แปลว่า
  * ตอน push ก็ยังต้อง `installed` เหมือนเดิม) */
-const TARGETABLE_DEVICE_STATUS = 'installed';
+export const TARGETABLE_DEVICE_STATUS = 'installed';
 
 /** 1 เครื่องใน response ของ `GET .../rollouts/device-values` */
 export interface RolloutDeviceValuesItem {
@@ -105,6 +107,10 @@ export class CampaignRolloutService {
     @Inject(CONFIG_APPLIER)
     private readonly configApplier: ConfigApplier,
     private readonly configDefinitionService: ConfigDefinitionService,
+    // โหมดตอนนี้ของ env `DEVICE_CONFIG_APPLY_MODE` — ใช้ตอน `release()` เพื่อ
+    // บันทึกลง `CampaignRollout.applyMode` เท่านั้น ที่อื่นอ่านจาก Rollout เอง
+    @Inject(CONFIG_APPLY_MODE)
+    private readonly configApplyMode: ConfigApplyMode,
   ) {}
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
@@ -479,7 +485,18 @@ export class CampaignRolloutService {
    * ร่วมกัน — ดู comment เหนือ `autoApplyConfig`/`autoApplyFirmware`
    */
   async release(id: string, actor: ActingUser): Promise<CampaignRollout> {
-    await this.findOne(id); // 404 ถ้าไม่พบ
+    const existing = await this.findOne(id); // 404 ถ้าไม่พบ
+
+    // โหมดของ Rollout นี้ (docs/19 §3): Config ตามโหมดของระบบตอนปล่อย ส่วน
+    // Firmware เป็น 'mock' เสมอในรอบนี้ (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)
+    // Rollback สืบทอดค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้
+    // ค่าที่มีอยู่ก่อน
+    const applyMode: ConfigApplyMode =
+      existing.applyMode === 'real' || existing.applyMode === 'mock'
+        ? existing.applyMode
+        : existing.payloadType === 'Config'
+          ? this.configApplyMode
+          : 'mock';
 
     // race condition — mirror approve()/resume() ทุกประการ กดปล่อยซ้ำ (เช่น
     // double-click หรือ client retry หลัง timeout) จะวน dispatchAutoApply()
@@ -499,6 +516,7 @@ export class CampaignRolloutService {
             // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ — ดู comment เหนือ field นี้
             // ใน schema.prisma (ย้ายมาจาก approve() เดิม)
             activeWindowStartedAt: new Date(),
+            applyMode,
           },
         });
         if (result.count === 0) {
@@ -800,6 +818,13 @@ export class CampaignRolloutService {
     rollout: CampaignRollout,
     actorId: string,
   ): Promise<CampaignRollout> {
+    // โหมด `real` (docs/19 §3): ไม่ apply ให้เอง ปล่อยเครื่องเป้าหมายเป็น
+    // `pending` รออุปกรณ์ดึงงานผ่าน `GET /device-sync/{deviceId}/jobs` แล้วรายงาน
+    // ผลกลับ (`DeviceSyncService`) — ใช้กับ `resume()` ด้วย: เครื่องที่ค้าง
+    // pending หลัง Auto Pause จะได้งานเองเมื่อ Rollout กลับเป็น `active`
+    if (rollout.applyMode === 'real') {
+      return Promise.resolve(rollout);
+    }
     if (rollout.isRollback && rollout.payloadType === 'Firmware') {
       return this.executeFirmwarePartitionRollback(rollout);
     }
@@ -963,8 +988,19 @@ export class CampaignRolloutService {
       );
     }
 
+    // เครื่องที่ต้องได้ payload เก่าคืน = ที่ `success` + (โหมด `real`, docs/19
+    // §3.1) ที่ดึงงานไปแล้วแต่ยังไม่รายงานผล (`pulledAt` มีค่า สถานะยัง
+    // `pending`) เพราะอาจใช้ payload ที่มีปัญหาไปแล้วโดยระบบยังไม่รู้ผล ·
+    // เครื่องที่ยังไม่ได้ดึงไม่ต้องส่ง ยังใช้ของเดิมอยู่ · โหมด `mock` ไม่มี
+    // `pulledAt` เลย พฤติกรรมจึงเหมือนเดิมทุกประการ
     const affectedTargets = await this.prisma.campaignRolloutTarget.findMany({
-      where: { rolloutId, status: 'success' },
+      where: {
+        rolloutId,
+        OR: [
+          { status: 'success' },
+          { status: 'pending', pulledAt: { not: null } },
+        ],
+      },
     });
     const excludeSet = new Set(dto.excludeDeviceIds ?? []);
     const unknownExcludes = [...excludeSet].filter(
@@ -1035,6 +1071,9 @@ export class CampaignRolloutService {
           createdBy: actor.id,
           isRollback: true,
           rollbackOfId: rolloutId,
+          // สืบทอดโหมดจากรอบต้นเรื่อง (docs/19 §3) — null (Rollout เก่าก่อนมี
+          // คอลัมน์นี้) ให้ `release()` ตัดสินจากโหมดระบบตอนปล่อยตามปกติ
+          applyMode: badRollout.applyMode,
         },
       });
 

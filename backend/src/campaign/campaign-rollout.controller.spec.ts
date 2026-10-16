@@ -39,6 +39,7 @@ const sampleRollout: CampaignRollout = {
   approvedBy: null,
   approvedAt: null,
   activeWindowStartedAt: null,
+  applyMode: null,
   isRollback: false,
   rollbackOfId: null,
   deviceValuesReason: null,
@@ -53,6 +54,7 @@ const sampleRolloutTarget: CampaignRolloutTarget = {
   status: 'pending',
   resultDetail: null,
   proposedFields: null,
+  pulledAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
