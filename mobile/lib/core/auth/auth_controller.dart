@@ -86,6 +86,11 @@ const webOnlyRoleError = 'บัญชีนี้ใช้ได้เฉพา
 class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
+    // UX audit #5 — 401 จากคำขอไหนก็ตาม (หน้าทั่วไปหรือคิว sync) มาจบที่
+    // expireSession() จุดเดียว
+    final client = ref.read(apiClientProvider);
+    client.onUnauthorized = () => unawaited(expireSession());
+    ref.onDispose(() => client.onUnauthorized = null);
     // Restore a persisted session without blocking first paint.
     Future.microtask(_restore);
     return const AuthState();
@@ -157,6 +162,12 @@ class AuthController extends Notifier<AuthState> {
         );
         return;
       }
+      // session ก่อนหน้าหมดอายุ ([expireSession] เก็บ profile + ข้อมูลในเครื่อง
+      // ไว้) แล้วคนอื่นมา login ต่อ → ล้างข้อมูลของคนก่อนแบบเดียวกับ logout
+      final previous = await _profileStore.read();
+      if (previous != null && previous.username != trimmedUsername) {
+        await _clearLocalUserData();
+      }
       await _tokenStore.save(token);
       if (role != null) {
         await _profileStore.save(trimmedUsername, role);
@@ -196,6 +207,35 @@ class AuthController extends Notifier<AuthState> {
     await ref.read(pushNotificationServiceProvider).unregisterAndStop();
     await _tokenStore.clear();
     await _profileStore.clear();
+    await _clearLocalUserData();
+    ref.read(apiClientProvider).setAuthToken(null);
+    state = const AuthState(status: AuthStatus.unauthenticated);
+  }
+
+  /// ข้อความบนหน้า login หลัง token หมดอายุ (UX audit #5)
+  static const sessionExpiredMessage = 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่';
+
+  /// Token หมดอายุ (`ApiClient.onUnauthorized` — 401 ของคำขอที่แนบ token) →
+  /// กลับหน้า login (router redirect ตาม status) พร้อม [sessionExpiredMessage]
+  ///
+  /// **ต่างจาก [logout]:** ไม่ล้าง Drift cache / คิว sync และไม่ล้าง session
+  /// profile — รายการที่ช่างทำไว้ตอนออฟไลน์ต้องไม่หายเพราะ token หมดอายุ
+  /// คนเดิม login กลับมา คิวจะถูกส่งต่อ (syncTriggersProvider flush ตอน
+  /// authenticated) ส่วนคนอื่น login จะถูกล้างก่อนใน [login] · ไม่ทำอะไรถ้าไม่ได้
+  /// authenticated อยู่ (กัน 401 หลายคำขอพร้อมกัน หรือ 401 ที่มาช้าหลัง logout)
+  Future<void> expireSession() async {
+    if (!state.isAuthenticated) return;
+    ref.read(apiClientProvider).setAuthToken(null);
+    state = const AuthState(
+      status: AuthStatus.unauthenticated,
+      error: sessionExpiredMessage,
+    );
+    await _tokenStore.clear();
+  }
+
+  /// ล้างข้อมูลในเครื่องของ user คนปัจจุบัน — ใช้ทั้ง [logout] และตอนคนอื่น
+  /// login ต่อหลัง session หมดอายุ ([login])
+  Future<void> _clearLocalUserData() async {
     // ล้างประวัติเลขเครื่องที่เคยทดสอบสัญญาณ (issue #204) — กันช่างคนถัดไปที่
     // login เข้าเครื่องเดียวกันเห็นประวัติของคนก่อนหน้า
     await ref.read(recentDeviceIdStoreProvider).clear();
@@ -211,7 +251,5 @@ class AuthController extends Notifier<AuthState> {
     } catch (e) {
       debugPrint('logout: clearing local database failed: $e');
     }
-    ref.read(apiClientProvider).setAuthToken(null);
-    state = const AuthState(status: AuthStatus.unauthenticated);
   }
 }
