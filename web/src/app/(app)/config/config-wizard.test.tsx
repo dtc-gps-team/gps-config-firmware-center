@@ -208,3 +208,113 @@ describe("ConfigWizard — json/array dataType (แก้ตามรีวิ�
     expect(createConfig).not.toHaveBeenCalled();
   });
 });
+
+describe("ConfigWizard: พารามิเตอร์นอกชุดของโมเดล (รีวิวพี่เลี้ยง 12 ต.ค.)", () => {
+  const otherModel = [{ deviceModel: "GT06L", protocol: "TCP" }];
+
+  beforeEach(() => {
+    createConfig.mockReset();
+    routerPush.mockReset();
+    createConfig.mockResolvedValue({ id: "c1", name: "Test Config" });
+    definitionsState.data = [
+      makeFieldDef({ fieldName: "APN1" }),
+      makeFieldDef({ fieldName: "EXTRA_PARAM", supportedModels: otherModel }),
+      makeFieldDef({
+        fieldName: "OTHER_REQUIRED",
+        required: true,
+        supportedModels: otherModel,
+      }),
+    ];
+  });
+
+  it("ค่าเริ่มต้นแสดงเฉพาะชุดของโมเดล ติ๊กแสดงทั้งหมดแล้วเห็นตัวนอกชุดพร้อมป้าย", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+
+    expect(screen.getByRole("button", { name: /APN1/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /EXTRA_PARAM/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงพารามิเตอร์ทั้งหมด/ }),
+    );
+
+    const extra = screen.getByRole("button", { name: /EXTRA_PARAM/ });
+    expect(extra).toHaveTextContent("นอกชุดของโมเดลนี้");
+    expect(
+      screen.getByRole("button", { name: /APN1/ }),
+    ).not.toHaveTextContent("นอกชุดของโมเดลนี้");
+  });
+
+  it("field required ของโมเดลอื่นไม่ถูกใส่อัตโนมัติ และเป็น optional เมื่อเพิ่มเข้ามา", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+
+    expect(document.getElementById("field-OTHER_REQUIRED")).toBeNull();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงพารามิเตอร์ทั้งหมด/ }),
+    );
+    await user.click(screen.getByRole("button", { name: /OTHER_REQUIRED/ }));
+
+    expect(
+      screen.getByRole("button", { name: "เอา OTHER_REQUIRED ออก" }),
+    ).toBeInTheDocument();
+  });
+
+  it("เพิ่มพารามิเตอร์นอกชุดแล้วบันทึก: ส่ง field นั้นไปด้วย", async () => {
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+    await goToStep2(user);
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงพารามิเตอร์ทั้งหมด/ }),
+    );
+    await user.click(screen.getByRole("button", { name: /EXTRA_PARAM/ }));
+    await user.type(document.getElementById("field-EXTRA_PARAM")!, "x");
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    expect(createConfig.mock.calls[0][1].fields).toEqual({ EXTRA_PARAM: "x" });
+  });
+
+  it("โคลน Config ที่มีพารามิเตอร์นอกชุดอยู่แล้ว: แสดงใน Template พร้อมป้าย ไม่หายไป", async () => {
+    const user = userEvent.setup();
+    render(
+      <ConfigWizard
+        mode={{
+          kind: "create",
+          cloneFrom: {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "มีค่าพิเศษ",
+            deviceModel: "GT06N",
+            protocol: "TCP",
+            description: null,
+            status: "approved",
+            fields: { APN1: "internet", EXTRA_PARAM: "y" },
+            createdBy: "u1",
+            approvedBy: "op1",
+            suggestedApproverId: null,
+            clonedFromId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+          },
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
+
+    expect(document.getElementById("field-EXTRA_PARAM")).toHaveValue("y");
+    expect(screen.getAllByText("นอกชุดของโมเดลนี้").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: /บันทึก Config Draft/ }));
+    await waitFor(() => expect(createConfig).toHaveBeenCalled());
+    expect(createConfig.mock.calls[0][1].fields).toEqual({
+      APN1: "internet",
+      EXTRA_PARAM: "y",
+    });
+  });
+});
