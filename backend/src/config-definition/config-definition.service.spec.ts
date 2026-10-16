@@ -859,6 +859,21 @@ describe('ConfigDefinitionService', () => {
       expect(errors[0]).toContain('ไม่รู้จัก field "GHOST"');
     });
 
+    it('ส่งคลังที่โหลดไว้แล้วมาด้วย -> ไม่ query คลังซ้ำ', async () => {
+      findMany.mockClear();
+
+      const errors = await service.validateOperationOverridableFields(
+        'GT06N',
+        'TCP',
+        { APN1: 'internet' },
+        [],
+        [apnDef] as never,
+      );
+
+      expect(errors).toEqual([]);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+
     it('ไม่เช็ค stOverridable (Operation แก้ field ที่ช่างแก้ไม่ได้)', async () => {
       findMany.mockResolvedValue([modeDef]);
 

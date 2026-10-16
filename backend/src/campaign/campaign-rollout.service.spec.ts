@@ -131,6 +131,7 @@ describe('CampaignRolloutService', () => {
   let configFieldDefinition: { findMany: jest.Mock };
   let configDefinitionService: {
     validateOperationOverridableFields: jest.Mock;
+    loadFieldDefinitions: jest.Mock;
   };
   let auditLog: { create: jest.Mock };
   let firmwareRollbackExecutor: { switchPartition: jest.Mock };
@@ -179,6 +180,7 @@ describe('CampaignRolloutService', () => {
     configFieldDefinition = { findMany: jest.fn().mockResolvedValue([]) };
     configDefinitionService = {
       validateOperationOverridableFields: jest.fn().mockResolvedValue([]),
+      loadFieldDefinitions: jest.fn().mockResolvedValue([]),
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     firmwareRollbackExecutor = { switchPartition: jest.fn() };
@@ -2980,6 +2982,24 @@ describe('CampaignRolloutService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('ตรวจหลายเครื่อง: โหลดคลัง Parameter ครั้งเดียว ไม่ query ต่อเครื่อง', async () => {
+      await service.create(
+        campaignId,
+        valuesDto([
+          { deviceId: 'DEV-0001', fields: { SPEED_LIMIT: 180 } },
+          { deviceId: 'DEV-0002', fields: { SPEED_LIMIT: 150 } },
+        ]),
+        operation,
+      );
+
+      expect(
+        configDefinitionService.loadFieldDefinitions,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        configDefinitionService.validateOperationOverridableFields,
+      ).toHaveBeenCalledTimes(2);
+    });
+
     it('field ไม่ผ่านการตรวจเทียบคลัง Parameter -> 400 ต่อเครื่อง และไม่สร้าง Rollout', async () => {
       config.findUnique.mockResolvedValue({
         ...approvedConfig,
@@ -3010,6 +3030,8 @@ describe('CampaignRolloutService', () => {
         { SPEED_LIMIT: 'เร็ว' },
         // ชื่อ field ใน template ของ Config (config.fields) ส่งไปด้วย
         ['SPEED_LIMIT'],
+        // คลัง Parameter ที่โหลดครั้งเดียวแล้วส่งต่อ
+        [],
       );
       expect(campaignRollout.create).not.toHaveBeenCalled();
     });
@@ -3088,6 +3110,39 @@ describe('CampaignRolloutService', () => {
       expect(releaseAudit?.data.metadata).toEqual({
         deviceValues: [{ deviceId: 'DEV-0001', fieldNames: ['SPEED_LIMIT'] }],
       });
+    });
+
+    it('ช่างขอ override (เครื่อง, Config นี้) หลังสร้าง Rollout -> release 409 ระบุเครื่อง ไม่สร้างแถว override (docs/17 §5)', async () => {
+      campaignRolloutTarget.findMany.mockResolvedValueOnce([
+        {
+          id: 'rt-1',
+          rolloutId: approvedRollout.id,
+          deviceId: 'DEV-0001',
+          proposedFields: { SPEED_LIMIT: 180 },
+        },
+        {
+          id: 'rt-2',
+          rolloutId: approvedRollout.id,
+          deviceId: 'DEV-0002',
+          proposedFields: { SPEED_LIMIT: 150 },
+        },
+      ]);
+      deviceConfigOverride.findMany.mockResolvedValueOnce([
+        { deviceId: 'DEV-0001' },
+      ]);
+
+      await expect(
+        service.release(approvedRollout.id, otherOperation),
+      ).rejects.toThrow(/DEV-0001/);
+      expect(deviceConfigOverride.findMany).toHaveBeenCalledWith({
+        where: {
+          configId: approvedConfig.id,
+          status: 'pending',
+          deviceId: { in: ['DEV-0001', 'DEV-0002'] },
+        },
+        select: { deviceId: true },
+      });
+      expect(deviceConfigOverride.create).not.toHaveBeenCalled();
     });
 
     it('ไม่มี target ที่มีค่าเฉพาะเครื่อง -> ไม่สร้าง override', async () => {
@@ -3221,6 +3276,19 @@ describe('CampaignRolloutService', () => {
       expect(items[0].previous?.dropped.map((d) => d.fieldName)).toEqual([
         'GHOST_FIELD',
       ]);
+    });
+
+    it('เครื่องที่ยังไม่ installed ไม่อยู่ในผลลัพธ์ (create() เอาเข้า Rollout ไม่ได้)', async () => {
+      device.findMany.mockResolvedValue([
+        { ...installedDeviceA, status: 'registered' },
+      ]);
+
+      const items = await service.getDeviceValues(
+        campaignId,
+        approvedConfig.id,
+      );
+
+      expect(items).toEqual([]);
     });
 
     it('เครื่องที่โมเดล/โปรโตคอลไม่ตรงกับ Config ไม่อยู่ในผลลัพธ์', async () => {

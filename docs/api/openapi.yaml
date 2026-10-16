@@ -2939,7 +2939,12 @@ paths:
         "404":
           description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Rollout ปัจจุบันไม่ใช่ approved จึงปล่อยไม่ได้
+          description: >-
+            สถานะ Rollout ปัจจุบันไม่ใช่ approved จึงปล่อยไม่ได้ หรือ (v3.58,
+            docs/17 §5) Rollout นี้มีค่าเฉพาะเครื่องแต่ช่างขอ override ของ
+            (เครื่อง, Config นี้) ค้าง `pending` อยู่ระหว่างรออนุมัติ/ปล่อย —
+            ข้อความระบุเครื่อง ไม่สร้างค่าเฉพาะเครื่องใดๆ และ Rollout ยังเป็น
+            `approved` ปล่อยใหม่ได้หลัง Operation ตัดสินคำขอของช่างแล้ว
 
   /campaigns/{id}/rollouts/{rolloutId}/reject:
     post:

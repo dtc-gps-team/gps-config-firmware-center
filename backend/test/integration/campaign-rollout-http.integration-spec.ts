@@ -1310,6 +1310,69 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       ).toBe(0);
     });
 
+    it('ช่างขอ override หลังสร้าง Rollout แต่ก่อนปล่อย -> release 409 ไม่สร้างแถว override และ Rollout ยังเป็น approved (ปล่อยใหม่ได้เมื่อคำขอถูกตัดสิน)', async () => {
+      const s = await seedScenario();
+      const st = await makeUser(prisma, { role: 'ST' });
+      const res = await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+          deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+        },
+      ).expect(201);
+      const rolloutId = (res.body as { id: string }).id;
+      const base = `/api/v1/campaigns/${s.campaign.id}/rollouts/${rolloutId}`;
+      const approverToken = tokenFor(s.approver.id, 'Operation');
+      await request(app.getHttpServer())
+        .post(`${base}/approve`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+
+      // ช่างขอ override ของ (เครื่อง, Config นี้) หลังสร้าง Rollout ไปแล้ว
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.device.deviceId,
+          configId: s.config.id,
+          versionNumber: 1,
+          fields: { SPEED_LIMIT: 150 },
+          reason: 'ช่างขอ',
+          status: 'pending',
+          overriddenBy: st.id,
+        },
+      });
+
+      const blocked = await request(app.getHttpServer())
+        .post(`${base}/release`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(409);
+      expect(JSON.stringify(blocked.body)).toContain(s.device.deviceId);
+      expect(await prisma.deviceConfigOverride.count()).toBe(1);
+      const stillApproved = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rolloutId },
+      });
+      expect(stillApproved.status).toBe('approved');
+
+      // Operation ตัดสินคำขอของช่างแล้ว (ปฏิเสธ) ปล่อยต่อได้
+      await prisma.deviceConfigOverride.updateMany({
+        where: { deviceId: s.device.deviceId },
+        data: { status: 'rejected' },
+      });
+      await request(app.getHttpServer())
+        .post(`${base}/release`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+      expect(
+        await prisma.deviceConfigOverride.count({
+          where: { status: 'approved' },
+        }),
+      ).toBe(1);
+    });
+
     it('GET device-values: คืนค่าพิเศษเดิมที่ใช้ต่อได้ และธงคำขอของช่างที่ค้าง', async () => {
       const s = await seedScenario();
       const st = await makeUser(prisma, { role: 'ST' });

@@ -440,6 +440,14 @@ export class ConfigDefinitionService {
     }
   }
 
+  /** คลัง Parameter ทั้งก้อนพร้อมรุ่นที่รองรับ — ให้ผู้เรียกที่ตรวจหลายเครื่อง
+   * โหลดครั้งเดียว (`validateOperationOverridableFields`) */
+  loadFieldDefinitions(): Promise<ConfigFieldDefinitionWithSupport[]> {
+    return this.prisma.configFieldDefinition.findMany({
+      include: { supportedModels: true },
+    });
+  }
+
   /**
    * ตรวจ `fields` ค่าเฉพาะเครื่องที่ **Operation** เสนอตอนสร้าง Rollout
    * (docs/17 ข้อ 3.4 ทางเลือก ข — มติ B 13 ต.ค. 2569) เทียบคลัง Parameter
@@ -468,11 +476,12 @@ export class ConfigDefinitionService {
     protocol: string,
     fields: Record<string, unknown>,
     templateFieldNames: readonly string[] = [],
+    // ผู้เรียกที่ตรวจหลายเครื่องโหลดคลังครั้งเดียวด้วย `loadFieldDefinitions()`
+    // แล้วส่งมาที่นี่ (ไม่ส่ง = โหลดเอง) กัน query คลังซ้ำต่อเครื่อง
+    preloadedDefinitions?: ConfigFieldDefinitionWithSupport[],
   ): Promise<string[]> {
     const inTemplate = new Set(templateFieldNames);
-    const defs = await this.prisma.configFieldDefinition.findMany({
-      include: { supportedModels: true },
-    });
+    const defs = preloadedDefinitions ?? (await this.loadFieldDefinitions());
     const defByName = new Map(defs.map((d) => [d.fieldName, d]));
     const errors: string[] = [];
 

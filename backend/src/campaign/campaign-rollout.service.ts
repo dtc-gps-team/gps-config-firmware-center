@@ -383,6 +383,9 @@ export class CampaignRolloutService {
     const templateFieldNames = Object.keys(
       (config.fields ?? {}) as Record<string, unknown>,
     );
+    // โหลดคลัง Parameter ครั้งเดียวสำหรับทุกเครื่อง (สูงสุด 200) ไม่ query ซ้ำต่อเครื่อง
+    const definitions =
+      await this.configDefinitionService.loadFieldDefinitions();
     for (const [deviceId, fields] of result) {
       const fieldErrors =
         await this.configDefinitionService.validateOperationOverridableFields(
@@ -390,6 +393,7 @@ export class CampaignRolloutService {
           config.protocol,
           fields,
           templateFieldNames,
+          definitions,
         );
       errors.push(...fieldErrors.map((e) => `${deviceId}: ${e}`));
     }
@@ -570,6 +574,38 @@ export class CampaignRolloutService {
       orderBy: { createdAt: 'asc' },
     });
 
+    // ช่างอาจขอ override (เครื่อง, Config นี้) หลังสร้าง Rollout ไปแล้ว (create()
+    // เช็ค pending ตอนสร้างเท่านั้น ระหว่างรออนุมัติถึงปล่อยอาจห่างกันเป็นวัน)
+    // ถ้าปล่อยต่อ แถว approved ที่สร้างตอนนี้จะได้ versionNumber สูงกว่าคำขอของช่าง
+    // ที่จองเลขไว้แล้ว พออนุมัติคำขอนั้นทีหลัง mergeApprovedOverride() หยิบแถวของ
+    // Rollout แทนและค่าที่ช่างได้รับอนุมัติถูกข้ามเงียบๆ (docs/17 §5) จึงหยุดที่นี่
+    // ให้ Operation ตัดสินคำขอนั้นก่อน · ทรานแซกชันนี้ย้อนกลับทั้งหมด Rollout
+    // ยังเป็น `approved` ปล่อยใหม่ได้
+    const withValues = targets
+      .filter(
+        (t) =>
+          Object.keys((t.proposedFields ?? {}) as Record<string, unknown>)
+            .length > 0,
+      )
+      .map((t) => t.deviceId);
+    if (withValues.length > 0) {
+      const pending = await tx.deviceConfigOverride.findMany({
+        where: {
+          configId: rollout.configId,
+          status: 'pending',
+          deviceId: { in: withValues },
+        },
+        select: { deviceId: true },
+      });
+      if (pending.length > 0) {
+        throw new ConflictException(
+          `เครื่องต่อไปนี้มีคำขอ override ของช่างรออนุมัติอยู่ ให้ Operation ตัดสินใจก่อนแล้วค่อยปล่อย Rollout: ${pending
+            .map((p) => p.deviceId)
+            .join(', ')}`,
+        );
+      }
+    }
+
     const persisted: { deviceId: string; fieldNames: string[] }[] = [];
     for (const target of targets) {
       const proposed = target.proposedFields as Record<string, unknown>;
@@ -655,11 +691,19 @@ export class CampaignRolloutService {
     });
     const devices = await this.prisma.device.findMany({
       where: { deviceId: { in: members.map((m) => m.deviceId) } },
-      select: { deviceId: true, deviceModel: true, protocol: true },
+      select: {
+        deviceId: true,
+        deviceModel: true,
+        protocol: true,
+        status: true,
+      },
     });
+    // เฉพาะเครื่องที่เข้า Rollout ได้จริง (installed) — create() เอาแค่เครื่อง
+    // เหล่านี้ ถ้าหน้าเว็บให้เลือกเครื่องที่ยัง registered แล้วส่งมาจะได้ 400
     const deviceIds = devices
       .filter(
         (d) =>
+          d.status === TARGETABLE_DEVICE_STATUS &&
           d.deviceModel === config.deviceModel &&
           d.protocol === config.protocol,
       )
