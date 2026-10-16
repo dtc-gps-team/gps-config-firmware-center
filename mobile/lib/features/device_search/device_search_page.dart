@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/skeleton_card.dart';
 import 'device_search_repository.dart';
@@ -144,6 +145,9 @@ class _DeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ตัวอักษรใหญ่: ป้ายสถานะย้ายลงมาใต้รายละเอียด (UX audit #23) เดิมป้าย
+    // ด้านขวาทำให้การ์ดล้นขอบ และรุ่น/โปรโตคอลขึ้นบรรทัดใหม่กลางคำ
+    final largeText = isLargeTextScale(context);
     return Material(
       color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
@@ -174,11 +178,17 @@ class _DeviceCard extends StatelessWidget {
                         color: AppTheme.textSecondary,
                       ),
                     ),
+                    if (largeText) ...[
+                      const SizedBox(height: 8),
+                      DeviceStatusPill(status: device.status),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              DeviceStatusPill(status: device.status),
+              if (!largeText) ...[
+                const SizedBox(width: 12),
+                DeviceStatusPill(status: device.status),
+              ],
             ],
           ),
         ),

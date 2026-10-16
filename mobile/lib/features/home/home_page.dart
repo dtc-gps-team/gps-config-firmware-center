@@ -9,6 +9,7 @@ import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
@@ -414,6 +415,20 @@ class _UrgentTaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final urgency = TaskUrgencyStyle.of(task);
     final (bg, fg) = TaskUrgencyStyle.colors(urgency);
+    // ตัวอักษรใหญ่: ป้ายย้ายจากด้านขวาลงมาใต้ชื่องาน (UX audit #23) เดิมป้าย
+    // กินความกว้างจนชื่องานเหลือ "ติดตั้ง Co…" และเลขเครื่องขึ้นบรรทัดใหม่ทีละตัว
+    final largeText = isLargeTextScale(context);
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        TaskUrgencyStyle.label(urgency),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -452,7 +467,9 @@ class _UrgentTaskCard extends StatelessWidget {
                     children: [
                       Text(
                         task.title,
-                        maxLines: 1,
+                        // 2 บรรทัด: ชื่องานมักมีรายละเอียดท้ายชื่อ (ทะเบียนรถ /
+                        // ลูกค้า) ที่ใช้แยกงาน (UX audit #23)
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14.5,
@@ -468,28 +485,11 @@ class _UrgentTaskCard extends StatelessWidget {
                           color: AppTheme.mockTextSecondary,
                         ),
                       ),
+                      if (largeText) ...[const SizedBox(height: 8), badge],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    TaskUrgencyStyle.label(urgency),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    ),
-                  ),
-                ),
+                if (!largeText) ...[const SizedBox(width: 8), badge],
               ],
             ),
           ),
@@ -553,14 +553,19 @@ class _HistorySection extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'ประวัติงานล่าสุด',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.mockTextPrimary,
+                // Expanded: ตัวอักษรใหญ่ หัวข้อขึ้นบรรทัดใหม่แทนดันจำนวนล้นขอบ
+                // (UX audit #23)
+                const Expanded(
+                  child: Text(
+                    'ประวัติงานล่าสุด',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.mockTextPrimary,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${completed.length} รายการ',
                   style: const TextStyle(
@@ -713,6 +718,23 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ตัวอักษรใหญ่: ป้าย "เสร็จสิ้น" ย้ายลงมาใต้รายละเอียด (UX audit #23)
+    final largeText = isLargeTextScale(context);
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.mockSuccessSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        'เสร็จสิ้น',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.mockSuccess,
+        ),
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -750,7 +772,7 @@ class _HistoryCard extends StatelessWidget {
                     children: [
                       Text(
                         task.title,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14.5,
@@ -764,35 +786,19 @@ class _HistoryCard extends StatelessWidget {
                       // เขียน updatedAt ตอนเปลี่ยนสถานะ ไม่มี completedAt แยก)
                       Text(
                         '${task.deviceId ?? '—'} · ${_formatDate(task.updatedAt)}',
-                        maxLines: 1,
+                        // ตัวอักษรใหญ่ให้ 2 บรรทัด วันที่จะไม่ถูกตัดทิ้ง
+                        maxLines: largeText ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12.5,
                           color: AppTheme.mockTextSecondary,
                         ),
                       ),
+                      if (largeText) ...[const SizedBox(height: 8), badge],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.mockSuccessSoft,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'เสร็จสิ้น',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.mockSuccess,
-                    ),
-                  ),
-                ),
+                if (!largeText) ...[const SizedBox(width: 8), badge],
               ],
             ),
           ),

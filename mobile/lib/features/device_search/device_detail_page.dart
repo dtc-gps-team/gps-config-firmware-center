@@ -7,6 +7,7 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/pending_config_override_banner.dart';
@@ -347,6 +348,10 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ตัวอักษรใหญ่: label อยู่เหนือค่าและได้ความกว้างเต็มแถว (UX audit #23)
+    // เดิมคอลัมน์ label กว้างตายตัว 110 ตอนตัวอักษรใหญ่ "สถานะ Firmware" ขึ้น
+    // บรรทัดใหม่กลางคำ ("Firmwar|e") และค่า (IMEI, วันที่) เหลือที่แคบ
+    final largeText = isLargeTextScale(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -359,37 +364,42 @@ class _InfoCard extends StatelessWidget {
           for (final (label, value) in rows)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 110,
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                      ),
+              child: largeText
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _label(label),
+                        const SizedBox(height: 2),
+                        _value(value),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(width: 110, child: _label(label)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _value(value)),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
         ],
       ),
     );
   }
+
+  static Widget _label(String text) => Text(
+    text,
+    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+  );
+
+  static Widget _value(String text) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.textPrimary,
+    ),
+  );
 }
 
 class _DetailError extends StatelessWidget {
