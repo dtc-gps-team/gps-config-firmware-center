@@ -1,0 +1,68 @@
+name: Docker Build
+
+# ตรวจว่า image ของ backend / web และ docker-compose.yml ยัง build ได้ ไม่ push ไปไหน
+# (docs/deploy/docker-compose.md) กัน Dockerfile พังเงียบๆ ระหว่างที่ฟีเจอร์อื่นเพิ่มเข้ามา
+#
+# ไม่ได้ตั้งเป็น required status check จึงกรอง paths ได้ รันเฉพาะ PR ที่แตะส่วนที่มีผลกับ image
+# PR อื่นไม่ต้องรอ
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "web/**"
+      - "docker-compose.yml"
+      - "infra/caddy/**"
+      - ".github/workflows/docker-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "web/**"
+      - "docker-compose.yml"
+      - "infra/caddy/**"
+      - ".github/workflows/docker-build.yml"
+
+jobs:
+  build:
+    name: Docker / build images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Compose config
+        run: |
+          docker compose config -q
+          docker compose --profile app config -q
+
+      - name: Build backend (runtime)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: runtime
+          push: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build backend (migrator)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: migrator
+          push: false
+          cache-from: type=gha,scope=backend
+
+      - name: Build web
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Validate Caddyfile
+        run: >
+          docker run --rm -v "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.8.4-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

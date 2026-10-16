@@ -1,4 +1,4 @@
-import { MockConfigApplier } from './config-applier';
+import { MockConfigApplier, resolveConfigApplyMode } from './config-applier';
 
 describe('MockConfigApplier', () => {
   const applier = new MockConfigApplier();
@@ -46,4 +46,26 @@ describe('MockConfigApplier', () => {
 
     expect(result.applied).toBe(true);
   });
+});
+
+describe('resolveConfigApplyMode', () => {
+  it.each([undefined, '', '  ', 'mock', 'MOCK'])(
+    '%p -> mock (ค่าเริ่มต้น)',
+    (raw) => {
+      expect(resolveConfigApplyMode(raw)).toBe('mock');
+    },
+  );
+
+  it.each(['real', ' REAL '])('%p -> real', (raw) => {
+    expect(resolveConfigApplyMode(raw)).toBe('real');
+  });
+
+  it.each(['docker', 'production', 'true', '1'])(
+    'ค่าที่ไม่รู้จัก %p -> throw ตอน startup ไม่เดาเอง',
+    (raw) => {
+      expect(() => resolveConfigApplyMode(raw)).toThrow(
+        'DEVICE_CONFIG_APPLY_MODE',
+      );
+    },
+  );
 });
