@@ -557,6 +557,19 @@ void main() {
     },
   );
 
+  /// เลื่อนจนเห็นปุ่ม "ยืนยัน Override" แล้วคืน finder ของปุ่ม — ปุ่มอยู่ท้าย
+  /// ListView ถ้าแถวด้านบนสูงขึ้น (เช่น #334 ย้ายป้าย "(override ไม่ได้)" ลง
+  /// บรรทัดล่าง) ปุ่มจะเลยพื้นที่จอของเทส (800x600) จน ListView ไม่สร้าง
+  Future<Finder> revealSubmit(WidgetTester tester) async {
+    final submit = find.byKey(const Key('config_override_submit'));
+    await tester.scrollUntilVisible(
+      submit,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    return submit;
+  }
+
   // UX audit #16 — เดิมเช็คเหตุผลก่อนแล้ว return ทันที ค่าที่ผิดชนิดในช่องอื่น
   // ไม่ขึ้น error จนกว่าจะกดส่งรอบสอง
   group('ตรวจครบทุกช่องในการกดส่งครั้งเดียว (UX audit #16)', () {
@@ -585,7 +598,7 @@ void main() {
           find.byKey(const Key('config_override_input_F')),
           'abc',
         );
-        await tester.tap(find.byKey(const Key('config_override_submit')));
+        await tester.tap(await revealSubmit(tester));
         await tester.pumpAndSettle();
 
         expect(errorTextOf(tester, 'config_override_input_F'), isNotNull);
@@ -602,7 +615,7 @@ void main() {
     ) async {
       final fake = await _pump(tester);
 
-      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.tap(await revealSubmit(tester));
       await tester.pumpAndSettle();
 
       expect(
@@ -615,7 +628,7 @@ void main() {
 
     testWidgets('errorText ของเหตุผลหายเมื่อเริ่มพิมพ์เหตุผล', (tester) async {
       await _pump(tester);
-      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.tap(await revealSubmit(tester));
       await tester.pumpAndSettle();
       expect(errorTextOf(tester, 'config_override_reason_input'), isNotNull);
 
@@ -644,7 +657,7 @@ void main() {
         find.byKey(const Key('config_override_reason_input')),
         'ลูกค้าขอเปลี่ยนค่าหน้างาน',
       );
-      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.tap(await revealSubmit(tester));
       await tester.pumpAndSettle();
     }
 
@@ -679,14 +692,8 @@ void main() {
         'ลูกค้าขอเปลี่ยนค่าหน้างาน',
       );
       expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsNothing);
-      expect(
-        tester
-            .widget<FilledButton>(
-              find.byKey(const Key('config_override_submit')),
-            )
-            .onPressed,
-        isNotNull,
-      );
+      final submit = await revealSubmit(tester);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
     });
 
     testWidgets(
