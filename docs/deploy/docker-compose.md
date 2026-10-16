@@ -114,10 +114,11 @@ flutter run   --dart-define=API_BASE_URL=https://xxxx.trycloudflare.com/api/v1  
   ค่าเริ่มต้นเป็น mock) ซึ่งจะไม่เรียก backend เลย ทำให้ดูเหมือนระบบไม่ทำงาน
 - **`API_BASE_URL` ต้องลงท้าย `/api/v1`** และเป็น URL ของ tunnel (หรือของเครื่องที่รัน compose) ไม่ใช่ `localhost`
   เพราะมือถือเรียก `localhost` ของตัวเองไม่ได้ ถ้า tunnel เปิดใหม่ URL เปลี่ยน ต้อง build แอปใหม่
-- **ทดสอบแจ้งเตือน push:** backend ต้องใช้ service account ของ Firebase project dev
-  (`FCM_SERVICE_ACCOUNT_PATH` และ `APP_NOTIFICATION_MODE=fcm`) และมือถือต้องติดตั้ง Android flavor `dev`
-  (`--flavor dev` ใช้ `google-services.json` ของ project dev) ถ้าติดตั้ง flavor `prod` จะได้ token ของคนละ project
-  push ไม่ถึงเครื่อง ถ้า flavor ยังไม่มีใน `main` ข้ามข้อนี้ได้ (ทดสอบ push ไม่ใช่ส่วนจำเป็นของวันทดสอบ docs/19)
+- **แจ้งเตือน push ใช้กับ compose ชุดนี้ไม่ได้:** backend ใน compose ทำงานโหมด `mock` เสมอ (บันทึกแจ้งเตือนลง
+  ฐานข้อมูลและแสดงในแอปได้ แต่ไม่ยิงเข้า Firebase) เพราะ compose ไม่ได้ส่ง service account ของ FCM เข้า container
+  ถ้าจะทดสอบ push จริงให้รัน backend แบบ dev server (`npm run start:dev`) แล้วตั้ง `NOTIFICATION_MODE=fcm` และ
+  `FCM_SERVICE_ACCOUNT_PATH` ชี้ไฟล์ของ Firebase project dev ตามที่ `.env.example` อธิบาย พร้อมติดตั้งแอป Android
+  flavor `dev` ถ้ายังไม่มี flavor นี้ใน `main` ข้ามข้อนี้ได้ (ทดสอบ push ไม่ใช่ส่วนจำเป็นของวันทดสอบ docs/19)
 
 **หลังทดสอบ:** ปิด tunnel, เอา `APP_TRUST_PROXY` / `CADDY_TRUSTED_PROXIES` ออก, ตั้ง `DEVICE_CONFIG_APPLY_MODE=mock`
 แล้ว `up -d` อีกครั้ง

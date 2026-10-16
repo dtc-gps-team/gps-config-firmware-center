@@ -102,7 +102,11 @@ services:
       DEVICE_CONFIG_APPLY_MODE: ${DEVICE_CONFIG_APPLY_MODE:-mock}
       DEVICE_SIMULATOR_MODE: ${DEVICE_SIMULATOR_MODE:-mock}
       LEGACY_SYNC_MODE: mock
-      NOTIFICATION_MODE: ${APP_NOTIFICATION_MODE:-mock}
+      # คงที่เป็น mock: compose นี้ไม่ได้ส่ง service account ของ FCM เข้า container
+      # (ไม่มี mount และไม่ส่ง FCM_SERVICE_ACCOUNT_PATH) ถ้าปล่อยให้ตั้งเป็น fcm ได้
+      # backend จะ throw ตอน startup แล้ว web กับ proxy ไม่ขึ้นตาม จึงไม่เปิดตัวแปรนี้
+      # ทดสอบ push จริงให้ใช้ dev server (npm run start:dev) ตามคู่มือ Mobile
+      NOTIFICATION_MODE: mock
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-gps_minio_admin}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-gps_minio_password}
