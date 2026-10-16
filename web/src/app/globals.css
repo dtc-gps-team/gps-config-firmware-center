@@ -27,6 +27,17 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-subtle: var(--info-subtle);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-subtle: var(--danger-subtle);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -138,6 +149,20 @@
   --accent: oklch(0.961 0.011 243.7); /* #ECF3F9 pale blue — hover fills, selected rows */
   --accent-foreground: oklch(0.313 0.06 243.7); /* #12344D */
   --destructive: oklch(0.577 0.245 27.325);
+  /* สีตามความหมาย (semantic) — ใช้กับสถานะ/ความเสี่ยงเท่านั้น ไม่ใช่ตกแต่ง
+   * แต่ละสีมี 3 ระดับ: ตัวเข้ม (จุด/ไอคอน/แท่งกราฟ), -foreground (ตัวหนังสือ
+   * บนพื้น subtle ผ่าน contrast 4.5:1) และ -subtle (พื้นป้าย/แถวไฮไลต์) */
+  --success: oklch(0.627 0.105 155); /* #3F9D6B */
+  --success-foreground: oklch(0.43 0.09 158); /* #1F6B45 */
+  --success-subtle: oklch(0.948 0.035 160); /* #DCF3E6 */
+  --warning: oklch(0.67 0.14 70); /* #D08A1E */
+  --warning-foreground: oklch(0.45 0.11 55); /* #92400E */
+  --warning-subtle: oklch(0.962 0.055 95); /* #FEF3C7 */
+  --info: oklch(0.58 0.15 252); /* #2A78D6 */
+  --info-foreground: oklch(0.45 0.11 245); /* #075985 */
+  --info-subtle: oklch(0.951 0.026 236); /* #E0F2FE */
+  --danger-foreground: oklch(0.45 0.17 15); /* #9F1239 */
+  --danger-subtle: oklch(0.969 0.017 12); /* #FFF1F2 */
   --border: oklch(0.923 0.008 253.9); /* #E2E6EB */
   --input: oklch(0.923 0.008 253.9);
   --ring: oklch(0.528 0.13 248.3); /* #1C6FB2 — same blue for focus + links */
@@ -173,6 +198,17 @@
   --accent: oklch(0.258 0.031 247.3); /* #172532 */
   --accent-foreground: oklch(0.941 0.008 253.9);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.13 155);
+  --success-foreground: oklch(0.85 0.1 158);
+  --success-subtle: oklch(0.3 0.05 160);
+  --warning: oklch(0.77 0.14 70);
+  --warning-foreground: oklch(0.88 0.11 85);
+  --warning-subtle: oklch(0.32 0.06 65);
+  --info: oklch(0.7 0.12 245);
+  --info-foreground: oklch(0.86 0.07 240);
+  --info-subtle: oklch(0.3 0.05 245);
+  --danger-foreground: oklch(0.85 0.09 15);
+  --danger-subtle: oklch(0.3 0.07 18);
   --border: oklch(0.32 0.03 252.6); /* #283442 */
   --input: oklch(0.358 0.034 250.4); /* #2F3E4E */
   --ring: oklch(0.686 0.114 239.6); /* #4FA3D9 */
