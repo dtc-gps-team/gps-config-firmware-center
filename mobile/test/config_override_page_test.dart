@@ -556,4 +556,76 @@ void main() {
       );
     },
   );
+
+  // UX audit #16 — เดิมเช็คเหตุผลก่อนแล้ว return ทันที ค่าที่ผิดชนิดในช่องอื่น
+  // ไม่ขึ้น error จนกว่าจะกดส่งรอบสอง
+  group('ตรวจครบทุกช่องในการกดส่งครั้งเดียว (UX audit #16)', () {
+    String? errorTextOf(WidgetTester tester, String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).decoration?.errorText;
+
+    testWidgets(
+      'เหตุผลว่าง + ค่าผิดชนิด -> กดส่งครั้งเดียวเห็น errorText ทั้งสองช่อง',
+      (tester) async {
+        final fake = await _pump(
+          tester,
+          repo: _FakeConfigOverrideRepository(
+            config: const DeviceConfigDraft(
+              id: 'cfg-1',
+              name: 'cfg',
+              deviceModel: 'GT06N',
+              protocol: 'TCP',
+              status: ConfigStatus.approved,
+              fields: {'F': 30},
+            ),
+            definitions: [_defOf('F', 'integer')],
+          ),
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('config_override_input_F')),
+          'abc',
+        );
+        await tester.tap(find.byKey(const Key('config_override_submit')));
+        await tester.pumpAndSettle();
+
+        expect(errorTextOf(tester, 'config_override_input_F'), isNotNull);
+        expect(
+          errorTextOf(tester, 'config_override_reason_input'),
+          'กรอกเหตุผลก่อน override',
+        );
+        expect(fake.lastDeviceId, isNull);
+      },
+    );
+
+    testWidgets('เหตุผลว่าง + ไม่ได้แก้ค่าไหน -> บอกทั้งสองเรื่องในรอบเดียว', (
+      tester,
+    ) async {
+      final fake = await _pump(tester);
+
+      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.pumpAndSettle();
+
+      expect(
+        errorTextOf(tester, 'config_override_reason_input'),
+        'กรอกเหตุผลก่อน override',
+      );
+      expect(find.text('ยังไม่ได้แก้ค่าไหนเลย'), findsOneWidget);
+      expect(fake.lastDeviceId, isNull);
+    });
+
+    testWidgets('errorText ของเหตุผลหายเมื่อเริ่มพิมพ์เหตุผล', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.byKey(const Key('config_override_submit')));
+      await tester.pumpAndSettle();
+      expect(errorTextOf(tester, 'config_override_reason_input'), isNotNull);
+
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ล',
+      );
+      await tester.pump();
+
+      expect(errorTextOf(tester, 'config_override_reason_input'), isNull);
+    });
+  });
 }
