@@ -451,33 +451,40 @@ class _FieldRowState extends State<_FieldRow> {
     if (def == null || !def.stOverridable) {
       final masked = def?.sensitive == true && !revealed;
       final display = masked ? '••••••' : currentValue;
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+      // ค่าอยู่บรรทัดบน ป้าย "(override ไม่ได้)" อยู่บรรทัดล่าง (UX audit #8) —
+      // เดิมอยู่ใน Row เดียวกัน ตอนตัวอักษรใหญ่ / จอแคบล้นขอบ และป้ายแย่ง
+      // ความกว้างจากค่าที่ช่างต้องอ่าน
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Text(
-              display,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontFamily: 'monospace',
-                color: AppTheme.textSecondary,
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  display,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
               ),
-            ),
+              if (def?.sensitive == true)
+                IconButton(
+                  iconSize: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: widget.onToggleReveal,
+                  icon: Icon(
+                    revealed
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
+            ],
           ),
-          if (def?.sensitive == true)
-            IconButton(
-              iconSize: 16,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: widget.onToggleReveal,
-              icon: Icon(
-                revealed
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-              ),
-            ),
-          const SizedBox(width: 4),
+          const SizedBox(height: 2),
           const Text(
             '(override ไม่ได้)',
             style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
