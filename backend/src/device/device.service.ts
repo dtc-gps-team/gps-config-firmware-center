@@ -1137,6 +1137,7 @@ export class DeviceService {
       baseConfig.deviceModel,
       baseConfig.protocol,
       dto.fields,
+      Object.keys((baseConfig.fields as Record<string, unknown>) ?? {}),
     );
 
     try {
