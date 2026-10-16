@@ -51,9 +51,22 @@ const columns: ColumnDef<Device>[] = [
   },
   {
     accessorKey: "deviceModel",
-    header: "รุ่น",
+    header: "โมเดล",
     filterFn: multiSelectFilterFn,
-    meta: { filterVariant: "multi-select", label: "รุ่น" },
+    meta: { filterVariant: "multi-select", label: "โมเดล" },
+  },
+  {
+    id: "hardwareRevisionCode",
+    // ไม่มีรุ่นย่อยแสดงว่าง ไม่ใส่ป้ายอะไร (ช่องว่าง = ไม่มีรุ่นย่อย)
+    accessorFn: (row) => row.hardwareRevisionCode ?? "",
+    header: "รุ่นย่อย",
+    meta: { filterVariant: "text", label: "รุ่นย่อย" },
+    cell: ({ row }) =>
+      row.original.hardwareRevisionCode ? (
+        <StatusPill tone="neutral">
+          {row.original.hardwareRevisionCode}
+        </StatusPill>
+      ) : null,
   },
   {
     accessorKey: "protocol",
@@ -109,7 +122,7 @@ export function DeviceSearchView() {
         <CardHeader>
           <CardTitle>รายการอุปกรณ์</CardTitle>
           <CardDescription>
-            ค้นด้วย Device ID หรือ SIM · กรองตามรุ่น / โปรโตคอล / สถานะ
+            ค้นด้วย Device ID หรือ SIM · กรองตามโมเดล / โปรโตคอล / สถานะ
             {data ? ` · ${data.length} เครื่อง` : ""}
           </CardDescription>
           {canRegisterDevice(session?.role) && (

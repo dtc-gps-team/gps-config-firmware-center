@@ -4520,8 +4520,13 @@ components:
 
     RegisterDeviceRequest:
       type: object
-      description: Request body สำหรับ registerDevice (issue #157 PR 1)
-      required: [deviceId, simNumber, modelId, protocol]
+      description: >-
+        Request body สำหรับ registerDevice (issue #157 PR 1) — v3.53: `imei`,
+        `serialNumber` และ `blackboxId` เป็นช่องบังคับ (ไม่ว่าง ตัดช่องว่าง
+        หัวท้ายก่อน) ตามมติ A กับ B 13 ต.ค. 2569 · ค่าใน response ของ `Device`
+        ยัง nullable เพราะอุปกรณ์ที่ลงทะเบียนก่อนกติกานี้ไม่มีค่า
+      required:
+        [deviceId, simNumber, modelId, protocol, imei, serialNumber, blackboxId]
       properties:
         deviceId:
           type: string
@@ -4553,16 +4558,19 @@ components:
           nullable: true
         imei:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
         serialNumber:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
         blackboxId:
           type: string
+          minLength: 1
           maxLength: 50
-          nullable: true
+          description: >-
+            เลขที่มากับตัวอุปกรณ์เอง (คนละอย่างกับ `deviceId` ที่เป็นเลขเครื่อง
+            ของระบบ)
         bootloader:
           type: string
           maxLength: 50

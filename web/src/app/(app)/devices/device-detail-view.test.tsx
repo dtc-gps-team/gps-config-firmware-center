@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { DeviceDetailView } from "./device-detail-view";
 import type { Device } from "@/lib/device-api";
+
+const authState = vi.hoisted(() => ({ role: "Operation" as string }));
+const rotateDeviceKey = vi.hoisted(() => vi.fn());
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { role: authState.role, accessToken: "tok" } }),
+}));
+vi.mock("@/lib/device-api", async (orig) => ({
+  ...(await orig<typeof import("@/lib/device-api")>()),
+  rotateDeviceKey,
+}));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("next/link", () => ({
   default: ({
@@ -14,7 +26,7 @@ vi.mock("next/link", () => ({
   }) => <a href={href}>{children}</a>,
 }));
 
-const device: Device = {
+let device: Device = {
   id: "id-1",
   deviceId: "DEV-0001",
   simNumber: "0800000000",
@@ -108,5 +120,49 @@ describe("DeviceDetailView", () => {
     expect(screen.getByText("DEV-0001")).toBeInTheDocument();
     expect(screen.getByText("GT06N")).toBeInTheDocument();
     expect(screen.getByText("โหลดสถานะอุปกรณ์ไม่สำเร็จ")).toBeInTheDocument();
+  });
+
+  it("เครื่องเก่าที่ไม่มี IMEI/Serial/Blackbox ID: แสดง ยังไม่ได้บันทึก ไม่ใช่ ไม่ระบุ", () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    expect(screen.getAllByText("ยังไม่ได้บันทึก")).toHaveLength(3);
+  });
+
+  it("มีรหัสรุ่นย่อย: แสดงรหัสเป็นป้ายข้างสถานะ", () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    device = { ...device, hardwareRevisionCode: "RevA" };
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    expect(screen.getAllByText("RevA").length).toBeGreaterThan(0);
+    device = { ...device, hardwareRevisionCode: null };
+  });
+
+  it("Operation ไม่เห็นปุ่มออก API Key ใหม่", () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    authState.role = "Operation";
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    expect(
+      screen.queryByRole("button", { name: /ออก API Key ใหม่/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Admin: ต้องยืนยันก่อน แล้วโชว์ key ใหม่", async () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    authState.role = "Admin";
+    rotateDeviceKey.mockResolvedValue({ deviceId: "DEV-0001", apiKey: "new-key-123" });
+    const user = userEvent.setup();
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+    await user.click(screen.getByRole("button", { name: /ออก API Key ใหม่/ }));
+    expect(rotateDeviceKey).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "ยืนยันออก key ใหม่" }));
+
+    expect(rotateDeviceKey).toHaveBeenCalledWith("tok", "DEV-0001");
+    expect(await screen.findByDisplayValue("new-key-123")).toBeInTheDocument();
   });
 });
