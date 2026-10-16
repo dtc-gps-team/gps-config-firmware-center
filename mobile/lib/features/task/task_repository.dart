@@ -66,16 +66,24 @@ class CachedApiTaskRepository implements TaskRepository {
   final PendingActionDao _queue;
   final SyncQueueService _sync;
 
+  /// แจ้งที่มาของข้อมูลที่เพิ่งอ่าน (UX audit #14): `null` = สดจาก server,
+  /// ไม่ใช่ null = ใช้ cache ในเครื่องเพราะเรียก server ไม่ได้ พร้อมเวลาที่ cache
+  /// ถูกบันทึก — ตั้งโดย [buildCachedTaskRepository]
+  void Function(TaskCacheSnapshot? snapshot)? onSource;
+
   @override
   Future<List<Task>> listTasks() async {
     List<Task> tasks;
     try {
       tasks = await _api.listTasks();
       await _dao.upsertTasks(tasks.map(taskToCompanion).toList());
+      onSource?.call(null);
     } on ApiException {
       final cached = await _dao.getAllTasks();
       if (cached.isEmpty) rethrow;
       tasks = cached.map(taskFromRow).toList();
+      // เวลาที่เก่าที่สุดในชุด: ข้อมูลบางแถวอาจเก่าได้ถึงตอนนั้น
+      onSource?.call(TaskCacheSnapshot(_oldest(cached.map((r) => r.cachedAt))));
     }
     final overlay = await _pendingStatuses();
     return tasks.map((t) => _withPending(t, overlay)).toList();
@@ -87,10 +95,12 @@ class CachedApiTaskRepository implements TaskRepository {
     try {
       task = await _api.getTask(id);
       await _dao.upsertTask(taskToCompanion(task));
+      onSource?.call(null);
     } on ApiException {
       final cached = await _dao.getTaskById(id);
       if (cached == null) rethrow;
       task = taskFromRow(cached);
+      onSource?.call(TaskCacheSnapshot(cached.cachedAt));
     }
     return _withPending(task, await _pendingStatuses());
   }
@@ -109,6 +119,14 @@ class CachedApiTaskRepository implements TaskRepository {
       status: status,
     );
     return _withPending(taskFromRow(cached), {id: status});
+  }
+
+  static DateTime? _oldest(Iterable<DateTime?> times) {
+    DateTime? oldest;
+    for (final t in times) {
+      if (t != null && (oldest == null || t.isBefore(oldest))) oldest = t;
+    }
+    return oldest;
   }
 
   /// taskId → status of the newest queued change for it.
@@ -255,14 +273,43 @@ class MockTaskRepository implements TaskRepository {
   }
 }
 
-final taskRepositoryProvider = Provider<TaskRepository>((ref) {
-  if (AppConfig.apiMockMode) return MockTaskRepository();
-  return CachedApiTaskRepository(
+/// ข้อมูลงานที่แสดงอยู่มาจาก cache ในเครื่อง (ออฟไลน์) — [cachedAt] คือเวลาที่
+/// cache ถูกบันทึกจาก server (null = cache เก่าก่อนมีการเก็บเวลา)
+class TaskCacheSnapshot {
+  const TaskCacheSnapshot(this.cachedAt);
+
+  final DateTime? cachedAt;
+}
+
+/// `null` = ข้อมูลงานที่อ่านล่าสุดสดจาก server · ไม่ใช่ null = ออฟไลน์ กำลังแสดง
+/// cache (UX audit #14) — หน้า Home / รายการงาน / รายละเอียดงานแสดงแถบจากค่านี้
+final taskCacheSnapshotProvider = StateProvider<TaskCacheSnapshot?>(
+  (ref) => null,
+);
+
+/// [CachedApiTaskRepository] พร้อมต่อ [taskCacheSnapshotProvider] — แยกเป็น
+/// ฟังก์ชันให้เทสใช้ repository จริงได้โดยไม่ขึ้นกับ `API_MOCK_MODE`
+CachedApiTaskRepository buildCachedTaskRepository(Ref ref) {
+  final repository = CachedApiTaskRepository(
     ref.watch(apiClientProvider),
     ref.watch(taskDaoProvider),
     ref.watch(pendingActionDaoProvider),
     ref.watch(syncQueueServiceProvider),
   );
+  repository.onSource = (snapshot) {
+    final notifier = ref.read(taskCacheSnapshotProvider.notifier);
+    if (notifier.state?.cachedAt != snapshot?.cachedAt ||
+        (notifier.state == null) != (snapshot == null)) {
+      notifier.state = snapshot;
+    }
+  };
+  ref.onDispose(() => repository.onSource = null);
+  return repository;
+}
+
+final taskRepositoryProvider = Provider<TaskRepository>((ref) {
+  if (AppConfig.apiMockMode) return MockTaskRepository();
+  return buildCachedTaskRepository(ref);
 });
 
 /// The signed-in user's task list.

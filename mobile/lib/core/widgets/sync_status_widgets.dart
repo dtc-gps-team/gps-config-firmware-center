@@ -93,3 +93,50 @@ class SyncAuthExpiredBanner extends StatelessWidget {
     );
   }
 }
+
+/// "ข้อมูลเมื่อ ..." ของแถบออฟไลน์ — วันนี้บอกแค่ HH:mm วันอื่นบอก dd/MM HH:mm
+/// ด้วย (ไม่งั้น cache ของเมื่อวานจะดูเหมือนข้อมูลของวันนี้)
+String offlineCacheLabel(DateTime? cachedAt, {DateTime? now}) {
+  if (cachedAt == null) return 'ออฟไลน์ — แสดงข้อมูลที่บันทึกไว้ในเครื่อง';
+  String two(int n) => n.toString().padLeft(2, '0');
+  final at = cachedAt.toLocal();
+  final today = (now ?? DateTime.now()).toLocal();
+  final sameDay =
+      at.year == today.year && at.month == today.month && at.day == today.day;
+  final time = '${two(at.hour)}:${two(at.minute)}';
+  return sameDay
+      ? 'ออฟไลน์ — ข้อมูลเมื่อ $time'
+      : 'ออฟไลน์ — ข้อมูลเมื่อ ${two(at.day)}/${two(at.month)} $time';
+}
+
+/// เรียก server ไม่ได้ กำลังแสดงข้อมูลที่ cache ไว้ในเครื่อง (UX audit #14) —
+/// [cachedAt] คือเวลาที่ cache ถูกบันทึกจาก server จริง ไม่ใช่เวลาปัจจุบัน
+class OfflineCacheBanner extends StatelessWidget {
+  const OfflineCacheBanner({super.key, required this.cachedAt});
+
+  final DateTime? cachedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('offline_cache_banner'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.iconBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off_outlined, color: AppTheme.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              offlineCacheLabel(cachedAt),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
