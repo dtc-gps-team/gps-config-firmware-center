@@ -114,11 +114,18 @@ flutter run   --dart-define=API_BASE_URL=https://xxxx.trycloudflare.com/api/v1  
   ค่าเริ่มต้นเป็น mock) ซึ่งจะไม่เรียก backend เลย ทำให้ดูเหมือนระบบไม่ทำงาน
 - **`API_BASE_URL` ต้องลงท้าย `/api/v1`** และเป็น URL ของ tunnel (หรือของเครื่องที่รัน compose) ไม่ใช่ `localhost`
   เพราะมือถือเรียก `localhost` ของตัวเองไม่ได้ ถ้า tunnel เปิดใหม่ URL เปลี่ยน ต้อง build แอปใหม่
-- **แจ้งเตือน push ใช้กับ compose ชุดนี้ไม่ได้:** backend ใน compose ทำงานโหมด `mock` เสมอ (บันทึกแจ้งเตือนลง
-  ฐานข้อมูลและแสดงในแอปได้ แต่ไม่ยิงเข้า Firebase) เพราะ compose ไม่ได้ส่ง service account ของ FCM เข้า container
-  ถ้าจะทดสอบ push จริงให้รัน backend แบบ dev server (`npm run start:dev`) แล้วตั้ง `NOTIFICATION_MODE=fcm` และ
-  `FCM_SERVICE_ACCOUNT_PATH` ชี้ไฟล์ของ Firebase project dev ตามที่ `.env.example` อธิบาย พร้อมติดตั้งแอป Android
-  flavor `dev` ถ้ายังไม่มี flavor นี้ใน `main` ข้ามข้อนี้ได้ (ทดสอบ push ไม่ใช่ส่วนจำเป็นของวันทดสอบ docs/19)
+- **ทดสอบแจ้งเตือน push (ไม่บังคับ):** ค่าเริ่มต้นของ compose คือ `mock` (บันทึกแจ้งเตือนลงฐานข้อมูลและแสดงในแอป
+  ได้ แต่ไม่ยิงเข้า Firebase) ถ้าจะให้ push เด้งบนเครื่องจริง
+  1. วางไฟล์ service account ของ Firebase project **dev** ไว้ที่ `secrets/` ในโฟลเดอร์ root (โฟลเดอร์นี้ถูก
+     gitignore อยู่แล้ว ห้ามเอาไฟล์นี้ขึ้น GitHub) เช่น `secrets/fcm-service-account.dev.json`
+  2. ตั้ง `APP_NOTIFICATION_MODE=fcm` ใน `.env` (ถ้าชื่อไฟล์ต่างจากข้างบนให้ตั้ง `APP_FCM_SERVICE_ACCOUNT_FILE`
+     เป็น**ชื่อไฟล์**) แล้ว `docker compose --profile app up -d --build`
+  3. ติดตั้งแอป Android flavor `dev` (`--flavor dev` ใช้ `google-services.json` ของ project dev) ถ้าติดตั้ง flavor
+     `prod` จะได้ token ของคนละ project push ไม่ถึงเครื่อง
+  - ถ้าไฟล์ไม่มี อ่านไม่ได้ หรือ `project_id` ไม่ลงท้าย `-dev` backend จะไม่ยอมเริ่ม (ตั้งใจให้ล้มตั้งแต่เริ่มดีกว่า
+    ยิง push เข้า production โดยไม่รู้ตัว) ดูข้อความใน `docker compose logs backend`
+  - ถ้า backend อยู่ใน container แล้วอ่านไฟล์ไม่ได้บน Linux ให้ตรวจสิทธิ์ไฟล์ (container รันเป็นผู้ใช้ `node`)
+  - flavor ยังไม่มีใน `main` หรือไม่ได้ทดสอบ push ข้ามข้อนี้ได้ (ไม่ใช่ส่วนจำเป็นของวันทดสอบ docs/19)
 
 **หลังทดสอบ:** ปิด tunnel, เอา `APP_TRUST_PROXY` / `CADDY_TRUSTED_PROXIES` ออก, ตั้ง `DEVICE_CONFIG_APPLY_MODE=mock`
 แล้ว `up -d` อีกครั้ง

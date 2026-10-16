@@ -102,15 +102,21 @@ services:
       DEVICE_CONFIG_APPLY_MODE: ${DEVICE_CONFIG_APPLY_MODE:-mock}
       DEVICE_SIMULATOR_MODE: ${DEVICE_SIMULATOR_MODE:-mock}
       LEGACY_SYNC_MODE: mock
-      # คงที่เป็น mock: compose นี้ไม่ได้ส่ง service account ของ FCM เข้า container
-      # (ไม่มี mount และไม่ส่ง FCM_SERVICE_ACCOUNT_PATH) ถ้าปล่อยให้ตั้งเป็น fcm ได้
-      # backend จะ throw ตอน startup แล้ว web กับ proxy ไม่ขึ้นตาม จึงไม่เปิดตัวแปรนี้
-      # ทดสอบ push จริงให้ใช้ dev server (npm run start:dev) ตามคู่มือ Mobile
-      NOTIFICATION_MODE: mock
+      # mock (ค่าเริ่มต้น) = ไม่ต้องมีไฟล์ใดๆ | fcm = ส่ง push จริง ต้องวางไฟล์ service
+      # account ของ Firebase project dev ไว้ที่ ./secrets/ (mount เข้า /app/secrets แบบอ่าน
+      # อย่างเดียวด้านล่าง) ถ้าไม่มีไฟล์ backend จะ throw ตอน startup (fail fast ตามที่ออกแบบ)
+      # ดู docs/deploy/docker-compose.md หัวข้อแจ้งเตือน push
+      NOTIFICATION_MODE: ${APP_NOTIFICATION_MODE:-mock}
+      FCM_SERVICE_ACCOUNT_PATH: /app/secrets/${APP_FCM_SERVICE_ACCOUNT_FILE:-fcm-service-account.dev.json}
+      FCM_ALLOW_NON_DEV_PROJECT: ${APP_FCM_ALLOW_NON_DEV_PROJECT:-false}
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-gps_minio_admin}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-gps_minio_password}
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-gps-firmware}
+    volumes:
+      # โฟลเดอร์ secrets/ ถูก gitignore อยู่แล้ว (ไม่ขึ้น GitHub) ไม่มีโฟลเดอร์ก็ไม่เป็นไร
+      # docker สร้างให้ว่างๆ และโหมด mock ไม่ใช้
+      - ./secrets:/app/secrets:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
