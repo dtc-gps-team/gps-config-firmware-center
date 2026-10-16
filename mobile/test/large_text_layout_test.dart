@@ -11,6 +11,12 @@ import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/device_search/device_detail_page.dart';
+import 'package:mobile/features/device_search/device_search_page.dart';
+import 'package:mobile/features/device_search/device_search_repository.dart';
+import 'package:mobile/features/device_search/device_status_repository.dart';
+import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_list_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 import 'package:mobile/features/task/task_status_ui.dart';
@@ -217,6 +223,117 @@ void expectFullyVisible(WidgetTester tester, String label) {
   }
 }
 
+// --------------------------------------------------------------- #23 ----
+
+class _NoNotifications implements NotificationRepository {
+  @override
+  Future<List<AppNotification>> list({bool? unread}) async => const [];
+
+  @override
+  Future<AppNotification> markRead(String id) => throw UnimplementedError();
+}
+
+final _device = Device(
+  id: 'uuid-1',
+  deviceId: 'DEV-0117',
+  simNumber: '0812345678',
+  deviceModel: 'GT06N',
+  protocol: 'TCP',
+  status: DeviceLifecycleStatus.installed,
+  registeredAt: DateTime(2026, 6, 1, 9),
+  installedAt: DateTime(2026, 6, 3, 14, 30),
+  imei: '860000000000117',
+  serialNumber: 'SNGT06N000117',
+);
+
+class _FakeDeviceRepository implements DeviceSearchRepository {
+  @override
+  Future<List<Device>> listDevices() async => [_device];
+
+  @override
+  Future<Device> getDevice(String deviceId) async => _device;
+}
+
+class _FakeStatusRepository implements DeviceStatusRepository {
+  @override
+  Future<DeviceStatus> getDeviceStatus(String deviceId) async => DeviceStatus(
+    deviceId: deviceId,
+    configStatus: DevicePayloadStatus.unknown,
+    firmwareStatus: DevicePayloadStatus.unknown,
+  );
+}
+
+Future<void> _pumpPage(
+  WidgetTester tester,
+  Widget page, {
+  List<Task> tasks = const [],
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        ..._taskOverrides(tasks),
+        notificationRepositoryProvider.overrideWithValue(_NoNotifications()),
+        deviceSearchRepositoryProvider.overrideWithValue(
+          _FakeDeviceRepository(),
+        ),
+        deviceStatusRepositoryProvider.overrideWithValue(
+          _FakeStatusRepository(),
+        ),
+        // หน้าอุปกรณ์ของ ST อาจโหลด Config ปัจจุบันด้วย (คำขอ override ที่รออยู่)
+        configOverrideRepositoryProvider.overrideWithValue(
+          _FakeConfigOverrideRepository(),
+        ),
+      ],
+      child: MaterialApp(home: page),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
+
+const _longTitle =
+    'ติดตั้ง Config ใหม่ให้ลูกค้า ABC Logistics รถบรรทุกห้องเย็น';
+
+List<Task> _homeTasks() {
+  final now = DateTime.now();
+  return [
+    Task(
+      id: 'u1',
+      title: _longTitle,
+      assignedTo: 'u1',
+      status: TaskStatus.pending,
+      createdAt: DateTime(2026, 10, 1),
+      updatedAt: DateTime(2026, 10, 1),
+      dueDate: now.subtract(const Duration(days: 2)),
+      deviceId: 'DEV-0410',
+    ),
+    Task(
+      id: 'h1',
+      title: _longTitle,
+      assignedTo: 'u1',
+      status: TaskStatus.completed,
+      createdAt: DateTime(2026, 10, 1),
+      updatedAt: now.subtract(const Duration(hours: 1)),
+      deviceId: 'DEV-0231',
+    ),
+  ];
+}
+
+/// จำนวนบรรทัดที่ข้อความแสดงจริง
+int _lineCount(WidgetTester tester, Finder text) =>
+    (tester.renderObject(text) as RenderParagraph)
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: 0,
+            extentOffset: (tester.renderObject(text) as RenderParagraph).text
+                .toPlainText()
+                .length,
+          ),
+        )
+        .map((b) => b.top.round())
+        .toSet()
+        .length;
+
 void main() {
   group('Config Override ช่องที่ override ไม่ได้ (UX audit #8)', () {
     testWidgets('320dp x2.0 -> ไม่ล้นขอบ และ "(override ไม่ได้)" อยู่ใต้ค่า', (
@@ -267,5 +384,110 @@ void main() {
         expectFullyVisible(tester, TaskStatusStyle.label(status));
       }
     });
+  });
+
+  group('ข้อความถูกตัดสั้นเกิน / ตัดกลางคำ (UX audit #23)', () {
+    testWidgets('Home: ชื่องานแสดง 2 บรรทัด ป้ายย้ายลงใต้ชื่อ ไม่ล้น', (
+      tester,
+    ) async {
+      useLargeTextNarrowScreen(tester);
+      await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
+
+      expect(tester.takeException(), isNull);
+      for (final key in ['urgent_task_card_0', 'history_card_0']) {
+        final card = find.byKey(Key(key));
+        final title = find.descendant(
+          of: card,
+          matching: find.text(_longTitle),
+        );
+        expect(_lineCount(tester, title), 2, reason: '$key ชื่องาน 2 บรรทัด');
+        // ป้าย (เลยกำหนด / เสร็จสิ้น) อยู่ใต้ชื่องาน ไม่แย่งความกว้างด้านข้าง
+        final badge = find.descendant(
+          of: card,
+          matching: find.text(
+            key.startsWith('urgent') ? 'เลยกำหนด' : 'เสร็จสิ้น',
+          ),
+        );
+        expect(
+          tester.getTopLeft(badge).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(title).dy),
+          reason: key,
+        );
+      }
+      // เลขเครื่องได้ความกว้างเกือบเต็มการ์ด ไม่ขึ้นบรรทัดใหม่ทีละ 1-2 ตัวอักษร
+      // (เดิม "G|PS-…") · ฟอนต์ทดสอบกว้าง 1em จึงยอมให้ 2 บรรทัด ฟอนต์ Android
+      // จริงอยู่บรรทัดเดียว
+      expect(_lineCount(tester, find.text('DEV-0410')), lessThanOrEqualTo(2));
+    });
+
+    testWidgets('Home ตัวอักษรปกติ: ป้ายยังอยู่ด้านขวาเหมือนเดิม', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(430 * 3, 3000 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
+
+      final card = find.byKey(const Key('urgent_task_card_0'));
+      final title = find.descendant(of: card, matching: find.text(_longTitle));
+      final badge = find.descendant(of: card, matching: find.text('เลยกำหนด'));
+      expect(
+        tester.getTopLeft(badge).dx,
+        greaterThan(tester.getTopRight(title).dx),
+      );
+    });
+
+    testWidgets('รายละเอียดอุปกรณ์: label ไม่ถูกตัดกลางคำ ("Firmwar|e")', (
+      tester,
+    ) async {
+      useLargeTextNarrowScreen(tester);
+      await _pumpPage(tester, const DeviceDetailPage(deviceId: 'DEV-0117'));
+
+      expect(tester.takeException(), isNull);
+      for (final label in ['สถานะ Firmware', 'สถานะ Config', 'Serial Number']) {
+        expect(midWordBreaks(tester, find.text(label)), isEmpty, reason: label);
+      }
+      // ค่าได้ความกว้างเต็มแถว (อยู่ใต้ label) — เลข IMEI 15 หลักต่อกันไม่มีจุด
+      // ตัดบรรทัด ฟอนต์ทดสอบ (1em) ที่ 2 เท่ากว้างเกินจอเองอยู่แล้ว จึงเช็ค
+      // ตำแหน่งแทน ฟอนต์ Android จริงอยู่บรรทัดเดียว
+      final imeiLabel = find.text('IMEI');
+      final imei = find.text('860000000000117');
+      expect(
+        tester.getTopLeft(imei).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(imeiLabel).dy),
+      );
+      expect(tester.getTopLeft(imei).dx, tester.getTopLeft(imeiLabel).dx);
+    });
+
+    testWidgets('ค้นหาอุปกรณ์: รุ่น/โปรโตคอลไม่ถูกตัดกลางคำ ป้ายสถานะไม่ล้น', (
+      tester,
+    ) async {
+      useLargeTextNarrowScreen(tester);
+      await _pumpPage(tester, const DeviceSearchPage());
+
+      expect(tester.takeException(), isNull);
+      // ป้ายสถานะอยู่ใต้รายละเอียด รายละเอียดจึงได้ความกว้างเต็มการ์ด
+      final detail = find.textContaining('GT06N/TCP');
+      expect(
+        tester.getTopLeft(find.text('ติดตั้งแล้ว')).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(detail).dy),
+      );
+    });
+
+    testWidgets(
+      'Config Override: ชื่อ field อยู่เหนือค่า ได้ความกว้างเต็มแถว',
+      (tester) async {
+        useLargeTextNarrowScreen(tester);
+        await _pumpConfigOverride(tester);
+
+        expect(tester.takeException(), isNull);
+        final name = find.text('APN');
+        final input = find.byKey(const Key('config_override_input_APN'));
+        expect(
+          tester.getTopLeft(input).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(name).dy),
+        );
+      },
+    );
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
@@ -416,30 +417,40 @@ class _FieldRowState extends State<_FieldRow> {
   Widget build(BuildContext context) {
     final currentValue =
         widget.editValue ?? configValueToInput(widget.originalValue);
+    final name = Text(
+      widget.fieldKey,
+      style: const TextStyle(
+        fontSize: 12,
+        fontFamily: 'monospace',
+        color: AppTheme.textSecondary,
+      ),
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.fieldBorder)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              widget.fieldKey,
-              style: const TextStyle(
-                fontSize: 12,
-                fontFamily: 'monospace',
-                color: AppTheme.textSecondary,
-              ),
+      // ตัวอักษรใหญ่: ชื่อ field อยู่เหนือช่องค่า ได้ความกว้างเต็มแถว (UX audit
+      // #23) เดิมแบ่ง 2:3 ในแถวเดียว ชื่อยาวอย่าง REPORT_INTERVAL_MOVING ขึ้น
+      // บรรทัดใหม่กลางคำหลายครั้ง และช่องกรอกค่าเหลือที่แคบ
+      child: isLargeTextScale(context)
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                name,
+                const SizedBox(height: 6),
+                _buildValue(currentValue),
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(flex: 2, child: name),
+                const SizedBox(width: 8),
+                Expanded(flex: 3, child: _buildValue(currentValue)),
+              ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(flex: 3, child: _buildValue(currentValue)),
-        ],
-      ),
     );
   }
 
