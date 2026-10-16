@@ -42,6 +42,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { dayRangeToIso } from "@/lib/audit-date-range";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 
 /** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
  * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
@@ -97,14 +98,11 @@ export function AuditLogView() {
 
   return (
     <RoleGuard allow={canAccessAuditLog}>
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Audit Log</h1>
-          <p className="text-sm text-muted-foreground">
-            ดูได้อย่างเดียวทุก Role ยกเว้น
-            ConfigEngineer/FirmwareEngineer/QAEngineer
-          </p>
-        </div>
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          title="Audit Log"
+          description="ประวัติการกระทำที่เปลี่ยนข้อมูลในระบบ ใครทำอะไร เมื่อไร กรองตามช่วงวันที่หรือผู้ทำรายการได้"
+        />
 
         <Card>
           <CardHeader>

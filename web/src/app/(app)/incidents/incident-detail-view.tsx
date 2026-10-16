@@ -35,6 +35,7 @@ import {
   StatusPill,
   statusLabel,
 } from "@/lib/status-pill";
+import { PageHeader } from "@/components/page-header";
 import { IncidentActions } from "./incident-actions";
 
 /**
@@ -109,23 +110,20 @@ function IncidentDetailContent({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/incidents"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Incident & Rollback
-        </Link>
-        <h1 className="text-2xl font-semibold">{incident.title}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone={INCIDENT_SEVERITY_TONE[incident.severity]}>
-            {incident.severity}
-          </StatusPill>
-          <StatusPill tone={INCIDENT_STATUS_TONE[incident.status]}>
-            {statusLabel(incident.status)}
-          </StatusPill>
-        </div>
-      </div>
+      <PageHeader
+        title={incident.title}
+        breadcrumb={[{ label: incident.title }]}
+        status={
+          <>
+            <StatusPill tone={INCIDENT_SEVERITY_TONE[incident.severity]}>
+              {incident.severity}
+            </StatusPill>
+            <StatusPill tone={INCIDENT_STATUS_TONE[incident.status]}>
+              {statusLabel(incident.status)}
+            </StatusPill>
+          </>
+        }
+      />
 
       <Card className="max-w-xl p-4">
         {incident.description && (

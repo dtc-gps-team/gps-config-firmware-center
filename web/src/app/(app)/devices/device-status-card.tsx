@@ -121,7 +121,7 @@ export function DeviceStatusCard({ deviceId }: { deviceId: string }) {
             </div>
 
             {data.pendingFirmwareOverride && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-xs text-warning-foreground">
                 <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
                 <span className="flex-1">
                   มีคำขอ Firmware Override รออนุมัติ ส่งเมื่อ{" "}

@@ -77,7 +77,7 @@ function PendingApprovalsBanner() {
   return (
     <Link
       href="/approvals"
-      className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+      className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-subtle px-4 py-2.5 text-sm text-warning-foreground transition-colors hover:bg-warning-subtle"
     >
       <BellIcon className="size-4 shrink-0" />
       <span className="flex-1">

@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { LayersIcon } from "lucide-react";
+import { LayersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canManageDeviceModels } from "@/lib/permissions";
@@ -10,11 +10,7 @@ import { type DeviceModel } from "@/lib/device-model-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +25,8 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill, DEVICE_MODEL_STATUS_TONE } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { DeviceModelRowActions } from "./device-model-row-actions";
 import { CreateDeviceModelForm } from "./create-device-model-form";
 
@@ -96,7 +94,7 @@ export function DeviceModelManagementView() {
             {row.original.supportedProtocols.map((p) => (
               <span
                 key={p}
-                className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground"
               >
                 {p}
               </span>
@@ -138,37 +136,31 @@ export function DeviceModelManagementView() {
 
   return (
     <RoleGuard allow={canManageDeviceModels}>
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Device Model Management</h1>
-          <p className="text-sm text-muted-foreground">
-            ทะเบียนโมเดล + protocol ที่รองรับ ใช้ทำ dropdown ตอนสร้าง
-            Config/Parameter/ลงทะเบียนอุปกรณ์ทั่วทั้งระบบ
-          </p>
-        </div>
-
-        <Card>
-          {justCreated && (
-            <div className="mx-6 -mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              เพิ่มโมเดล &ldquo;{justCreated.name}&rdquo; แล้ว
-            </div>
-          )}
-          <CardHeader>
-            <CardTitle>โมเดลทั้งหมด</CardTitle>
-            <CardDescription>รวมโมเดลที่เลิกผลิตแล้ว</CardDescription>
-            <CardAction className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refetch()}
-              >
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          title="Device Model"
+          description="ทะเบียนโมเดลอุปกรณ์และ protocol ที่รองรับ ใช้เป็นตัวเลือกตอนสร้าง Config, Parameter และลงทะเบียนอุปกรณ์"
+          actions={
+            <>
+              <Button variant="outline" onClick={() => void refetch()}>
+                <RefreshCwIcon />
                 รีเฟรช
               </Button>
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                + เพิ่มโมเดล
+              <Button onClick={() => setDialogOpen(true)}>
+                <PlusIcon />
+                เพิ่มโมเดล
               </Button>
-            </CardAction>
-          </CardHeader>
+            </>
+          }
+        />
+
+        {justCreated && (
+          <Notice tone="success">
+            เพิ่มโมเดล &ldquo;{justCreated.name}&rdquo; แล้ว
+          </Notice>
+        )}
+
+        <Card>
           <CardContent>
             {isLoading && data === null ? (
               <TableSkeleton columns={columns.length} />
@@ -189,7 +181,8 @@ export function DeviceModelManagementView() {
                 message="ยังไม่มีโมเดลในทะเบียน"
                 action={
                   <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    + เพิ่มโมเดล
+                    <PlusIcon />
+                    เพิ่มโมเดล
                   </Button>
                 }
               />
@@ -210,8 +203,8 @@ export function DeviceModelManagementView() {
           <DialogHeader>
             <DialogTitle>เพิ่มโมเดลใหม่</DialogTitle>
             <DialogDescription>
-              เฉพาะ Role Admin/SuperAdmin ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้ว
-              เป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อทีหลังไม่ได้
+              ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้วเป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อ
+              ทีหลังไม่ได้
             </DialogDescription>
           </DialogHeader>
           <CreateDeviceModelForm onCreated={handleCreated} />

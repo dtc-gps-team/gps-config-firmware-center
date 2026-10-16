@@ -374,9 +374,9 @@ function SourceIncidentNotice({
   deviceInstalled: boolean;
 }) {
   const info =
-    "rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200";
+    "rounded-lg border border-info/30 bg-info-subtle p-3 text-sm text-info-foreground";
   const warn =
-    "rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300";
+    "rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning-foreground";
 
   if (isLoading) {
     return <div className={info}>กำลังโหลดรายงานปัญหาที่ส่งต่อมา…</div>;

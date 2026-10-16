@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canCreateCampaign } from "@/lib/permissions";
+import { PageHeader } from "@/components/page-header";
 import { CampaignRolloutCreateForm } from "./campaign-rollout-create-form";
 
 /**
@@ -20,15 +20,14 @@ export function CampaignRolloutCreateView({
   return (
     <RoleGuard allow={canCreateCampaign}>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <Link
-            href={`/campaigns/${campaignId}`}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← กลับไปหน้ากลุ่ม
-          </Link>
-          <h1 className="text-2xl font-semibold">เริ่ม Rollout ใหม่</h1>
-        </div>
+        <PageHeader
+          title="เริ่ม Rollout ใหม่"
+          description="เลือกเครื่องในกลุ่ม และ Config หรือ Firmware ที่จะปล่อย รอบนี้ต้องให้ Operation อีกคนอนุมัติก่อนปล่อยจริง"
+          breadcrumb={[
+            { label: "กลุ่มอุปกรณ์", href: `/campaigns/${campaignId}` },
+            { label: "เริ่ม Rollout ใหม่" },
+          ]}
+        />
 
         <CampaignRolloutCreateForm campaignId={campaignId} />
       </div>

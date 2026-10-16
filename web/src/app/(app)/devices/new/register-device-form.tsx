@@ -362,7 +362,7 @@ function RegisterDeviceSuccess({ result }: { result: RegisterDeviceResult }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+      <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning-foreground">
         <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
         <p>
           ลงทะเบียน <strong className="font-mono">{result.deviceId}</strong>{" "}

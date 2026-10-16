@@ -33,6 +33,8 @@ import {
   StatusPill,
   statusLabel,
 } from "@/lib/status-pill";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { ApprovalActions } from "./approval-actions";
 
 const CHANGE_LABEL: Record<FieldChangeKind, string> = {
@@ -216,80 +218,73 @@ function Content({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/approvals"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Approval Center
-        </Link>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <EntityTypeTag type="Config" />
-              <h1 className="text-2xl font-semibold">{config.name}</h1>
-              <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
-                {statusLabel(config.status)}
-              </StatusPill>
+      <PageHeader
+        title={config.name}
+        breadcrumb={[{ label: config.name }]}
+        status={
+          <>
+            <EntityTypeTag type="Config" />
+            <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
+              {statusLabel(config.status)}
+            </StatusPill>
+          </>
+        }
+        description={config.description ?? undefined}
+        meta={
+          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">โมเดล</dt>
+              <dd>{config.deviceModel}</dd>
             </div>
-            {config.description && (
-              <p className="text-sm text-muted-foreground">
-                {config.description}
-              </p>
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">โปรโตคอล</dt>
+              <dd>{config.protocol}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">ผู้สร้าง</dt>
+              <dd>{resolveName(config.createdBy)}</dd>
+            </div>
+            {config.clonedFromId && (
+              <div className="flex gap-1.5">
+                <dt className="text-muted-foreground">โคลนจาก</dt>
+                <dd>
+                  <CloneSourceLink
+                    sourceId={config.clonedFromId}
+                    sourceName={source.data?.name ?? null}
+                    unavailable={source.error !== null && source.data === null}
+                  />
+                </dd>
+              </div>
             )}
-            <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">เข้าคิวเมื่อ</dt>
+              <dd>{formatDateTime(config.updatedAt)}</dd>
+            </div>
+            {config.suggestedApproverId && (
               <div className="flex gap-1.5">
-                <dt className="text-muted-foreground">โมเดล</dt>
-                <dd>{config.deviceModel}</dd>
+                <dt className="text-muted-foreground">เจาะจงถึง</dt>
+                <dd>{resolveName(config.suggestedApproverId)}</dd>
               </div>
-              <div className="flex gap-1.5">
-                <dt className="text-muted-foreground">โปรโตคอล</dt>
-                <dd>{config.protocol}</dd>
-              </div>
-              <div className="flex gap-1.5">
-                <dt className="text-muted-foreground">ผู้สร้าง</dt>
-                <dd>{resolveName(config.createdBy)}</dd>
-              </div>
-              {config.clonedFromId && (
-                <div className="flex gap-1.5">
-                  <dt className="text-muted-foreground">โคลนจาก</dt>
-                  <dd>
-                    <CloneSourceLink
-                      sourceId={config.clonedFromId}
-                      sourceName={source.data?.name ?? null}
-                      unavailable={source.error !== null && source.data === null}
-                    />
-                  </dd>
-                </div>
-              )}
-              <div className="flex gap-1.5">
-                <dt className="text-muted-foreground">เข้าคิวเมื่อ</dt>
-                <dd>{formatDateTime(config.updatedAt)}</dd>
-              </div>
-              {config.suggestedApproverId && (
-                <div className="flex gap-1.5">
-                  <dt className="text-muted-foreground">เจาะจงถึง</dt>
-                  <dd>{resolveName(config.suggestedApproverId)}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-          {inQueue && (
+            )}
+          </dl>
+        }
+        actions={
+          inQueue && (
             <ApprovalActions
               configId={config.id}
               configName={config.name}
               canDecide={canDecide}
               onDecided={() => router.push("/approvals")}
             />
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {!inQueue && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+        <Notice tone="warning">
           Config นี้ไม่อยู่ในคิวรออนุมัติแล้ว (สถานะ{" "}
           {statusLabel(config.status)}) อาจมีคนตัดสินใจไปก่อนหน้านี้
-        </div>
+        </Notice>
       )}
 
       <Card className="gap-3 p-4">
@@ -337,7 +332,7 @@ function Content({
             {(resolved.kind === "source-version" ||
               resolved.kind === "source-current") &&
               resolved.crossModel && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                <div className="rounded-lg border border-warning/30 bg-warning-subtle p-2 text-xs text-warning-foreground">
                   ต้นฉบับเป็น {resolved.crossModel.deviceModel} /{" "}
                   {resolved.crossModel.protocol} ต่างจาก Config นี้ (
                   {config.deviceModel} / {config.protocol}) ค่าที่ไม่มีในโมเดลนี้
@@ -345,13 +340,13 @@ function Content({
                 </div>
               )}
             <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              <span className="rounded-full bg-success-subtle px-2 py-0.5 text-success-foreground">
                 เพิ่ม {diff.counts.added}
               </span>
-              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+              <span className="rounded-full bg-info-subtle px-2 py-0.5 text-info-foreground">
                 แก้ไข {diff.counts.changed}
               </span>
-              <span className="rounded-full bg-rose-100 px-2 py-0.5 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+              <span className="rounded-full bg-danger-subtle px-2 py-0.5 text-danger-foreground">
                 ลบ {diff.counts.removed}
               </span>
               <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
@@ -392,7 +387,7 @@ function Content({
                                 : "ค่าอ่อนไหว"
                             }
                           >
-                            <TriangleAlertIcon className="size-3.5 text-amber-600" />
+                            <TriangleAlertIcon className="size-3.5 text-warning" />
                           </span>
                         )}
                       </span>
@@ -400,7 +395,7 @@ function Content({
                         className={
                           c.kind === "added"
                             ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
-                            : "min-w-0 rounded bg-rose-50 px-1.5 py-0.5 dark:bg-rose-950/40"
+                            : "min-w-0 rounded bg-danger-subtle px-1.5 py-0.5"
                         }
                       >
                         <span className="text-muted-foreground sm:hidden">
@@ -419,7 +414,7 @@ function Content({
                         className={
                           c.kind === "removed"
                             ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
-                            : "min-w-0 rounded bg-emerald-50 px-1.5 py-0.5 dark:bg-emerald-950/40"
+                            : "min-w-0 rounded bg-success-subtle px-1.5 py-0.5"
                         }
                       >
                         <span className="text-muted-foreground sm:hidden">
@@ -497,7 +492,7 @@ function Content({
                     <span className="flex shrink-0 items-center gap-1.5 font-mono text-muted-foreground">
                       {name}
                       {changedNames.has(name) && (
-                        <span className="rounded bg-sky-100 px-1 text-[10px] text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                        <span className="rounded bg-info-subtle px-1 text-[10px] text-info-foreground">
                           เปลี่ยน
                         </span>
                       )}

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canCreateCampaign } from "@/lib/permissions";
+import { PageHeader } from "@/components/page-header";
 import { CampaignCreateForm } from "./campaign-create-form";
 
 /**
@@ -21,15 +21,11 @@ export function CampaignCreateView({
   return (
     <RoleGuard allow={canCreateCampaign}>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <Link
-            href="/campaigns"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← กลับไปรายการแคมเปญ
-          </Link>
-          <h1 className="text-2xl font-semibold">สร้างกลุ่มอุปกรณ์ใหม่</h1>
-        </div>
+        <PageHeader
+          title="สร้างกลุ่มอุปกรณ์ใหม่"
+          description="ตั้งชื่อกลุ่มและเลือกเครื่องที่จะติดตามด้วยกัน หลังสร้างแล้วเริ่มปล่อย Config หรือ Firmware เป็นรอบได้จากหน้ากลุ่ม"
+          breadcrumb={[{ label: "สร้างกลุ่มอุปกรณ์ใหม่" }]}
+        />
 
         <CampaignCreateForm sourceIncidentId={sourceIncidentId} />
       </div>

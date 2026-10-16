@@ -33,6 +33,7 @@ import { useIncidents } from "@/hooks/use-incidents";
 import { useUserNames } from "@/hooks/use-user-names";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import {
   INCIDENT_SEVERITY_TONE,
   INCIDENT_STATUS_TONE,
@@ -91,13 +92,11 @@ export function IncidentsView() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Incident & Rollback</h1>
-        <p className="text-sm text-muted-foreground">
-          Operation สั่ง Rollback ส่วน ST แก้ไขเชิงเทคนิค
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Incident & Rollback"
+        description="ปัญหาที่ระบบตรวจพบหลังปล่อย Config หรือ Firmware และรายงานจากหน้างาน พร้อมสั่ง Rollback เมื่อจำเป็น"
+      />
 
       <Card>
         <CardHeader>

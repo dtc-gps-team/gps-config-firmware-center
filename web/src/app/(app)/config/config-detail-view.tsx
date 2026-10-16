@@ -52,6 +52,7 @@ import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CloneSourceLinkLoader } from "@/components/config/clone-source-link";
 import { SensitiveValue } from "@/components/sensitive-value";
+import { PageHeader, PageHeaderMeta } from "@/components/page-header";
 import { ConfigReviewPanel } from "./config-review-panel";
 
 const MASKED_JSON_PLACEHOLDER = "••••••••";
@@ -214,65 +215,54 @@ function ConfigDetailContent({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Link
-          href="/config"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← กลับไปรายการ Config
-        </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold break-words">{config.name}</h1>
+      <PageHeader
+        title={config.name}
+        breadcrumb={[{ label: config.name }]}
+        status={
           <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
             {statusLabel(config.status)}
           </StatusPill>
-          {latestVersion != null && (
-            <span className="text-sm text-muted-foreground">
-              เวอร์ชัน {latestVersion}
-            </span>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {getConfigNextStepMessage(config.status, session?.role)}
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={copyJson}>
-          {copied ? (
-            <>
-              <CheckIcon /> คัดลอกแล้ว
-            </>
-          ) : (
-            <>
-              <CopyIcon /> คัดลอก JSON
-            </>
-          )}
-        </Button>
-        <Link
-          href={`/config/new?from=${encodeURIComponent(config.id)}`}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
-          โคลน Config
-        </Link>
-        {canModify && (
+        }
+        description={getConfigNextStepMessage(config.status, session?.role)}
+        meta={
+          <PageHeaderMeta
+            items={[
+              { label: "โมเดล", value: config.deviceModel },
+              { label: "โปรโตคอล", value: config.protocol },
+              ...(latestVersion != null
+                ? [{ label: "เวอร์ชัน", value: String(latestVersion) }]
+                : []),
+            ]}
+          />
+        }
+        actions={
           <>
-            <Link
-              href={`/config/${config.id}/edit`}
-              className={buttonVariants({ size: "sm" })}
-            >
-              แก้ไข
-            </Link>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setConfirming(true)}
-            >
-              ลบ
+            <Button variant="outline" onClick={copyJson}>
+              {copied ? <CheckIcon /> : <CopyIcon />}
+              {copied ? "คัดลอกแล้ว" : "คัดลอก JSON"}
             </Button>
+            <Link
+              href={`/config/new?from=${encodeURIComponent(config.id)}`}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              โคลน Config
+            </Link>
+            {canModify && (
+              <>
+                <Button variant="destructive" onClick={() => setConfirming(true)}>
+                  ลบ
+                </Button>
+                <Link
+                  href={`/config/${config.id}/edit`}
+                  className={buttonVariants()}
+                >
+                  แก้ไข
+                </Link>
+              </>
+            )}
           </>
-        )}
-      </div>
+        }
+      />
 
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>

@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 import {
   Card,
@@ -7,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { RegisterDeviceForm } from "./register-device-form";
 
 export const metadata = {
@@ -21,19 +21,11 @@ export const metadata = {
 export default function NewDevicePage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/devices"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← กลับไป Device Search
-        </Link>
-        <h1 className="text-2xl font-semibold">ลงทะเบียนอุปกรณ์ใหม่</h1>
-        <p className="text-sm text-muted-foreground">
-          เฉพาะ Role Admin/SuperAdmin ระบบจะออก API key ให้อุปกรณ์ใช้เชื่อมต่อ
-          และโชว์ได้ครั้งเดียวตอนลงทะเบียนสำเร็จเท่านั้น
-        </p>
-      </div>
+      <PageHeader
+        title="ลงทะเบียนอุปกรณ์ใหม่"
+        description="ระบบจะออก API key ให้อุปกรณ์ใช้เชื่อมต่อ และแสดงได้ครั้งเดียวตอนลงทะเบียนสำเร็จเท่านั้น"
+        breadcrumb={[{ label: "ลงทะเบียนอุปกรณ์ใหม่" }]}
+      />
 
       <Card>
         <CardHeader>

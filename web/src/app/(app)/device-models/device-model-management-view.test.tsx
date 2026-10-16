@@ -47,7 +47,7 @@ describe("DeviceModelManagementView — RoleGuard", () => {
     render(<DeviceModelManagementView />);
 
     expect(screen.getByText("คุณไม่มีสิทธิ์เข้าถึงหน้านี้")).toBeInTheDocument();
-    expect(screen.queryByText("Device Model Management")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Device Model" })).not.toBeInTheDocument();
     expect(screen.queryByText("GT06N")).not.toBeInTheDocument();
   });
 
@@ -55,10 +55,10 @@ describe("DeviceModelManagementView — RoleGuard", () => {
     authState.role = "Admin";
     render(<DeviceModelManagementView />);
 
-    expect(screen.getByText("Device Model Management")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Device Model" })).toBeInTheDocument();
     expect(screen.getByText("GT06N")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "+ เพิ่มโมเดล" }),
+      screen.getByRole("button", { name: "เพิ่มโมเดล" }),
     ).toBeInTheDocument();
   });
 
@@ -66,6 +66,6 @@ describe("DeviceModelManagementView — RoleGuard", () => {
     authState.role = "SuperAdmin";
     render(<DeviceModelManagementView />);
 
-    expect(screen.getByText("Device Model Management")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Device Model" })).toBeInTheDocument();
   });
 });

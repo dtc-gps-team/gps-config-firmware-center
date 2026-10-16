@@ -188,16 +188,17 @@ describe("ConfigApprovalDetailView", () => {
     api.approveConfig.mockReset();
   });
 
-  it("ส่วนหัว: ชื่อผู้สร้างแทน UUID, โมเดล, โปรโตคอล และลิงก์กลับ Approval Center", () => {
+  // ลิงก์กลับ Approval Center ย้ายไปอยู่ใน breadcrumb ของแถบบนแล้ว (UI ปรับใหม่
+  // 2026-10) — breadcrumb ทดสอบแยกที่ components/page-header.test.tsx
+  it("ส่วนหัว: ชื่อผู้สร้างแทน UUID, โมเดล, โปรโตคอล", () => {
     setup({});
 
-    expect(screen.getByText("Test Config")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Test Config" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("สมชาย ใจดี")).toBeInTheDocument();
     expect(screen.queryByText("user-1")).not.toBeInTheDocument();
     expect(screen.getByText("GT06N")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /Approval Center/ }),
-    ).toHaveAttribute("href", "/approvals");
   });
 
   it("เคยอนุมัติแล้ว: สรุปจำนวน เพิ่ม/แก้ไข/ลบ เทียบเวอร์ชันล่าสุด และบอกว่าอนุมัติแล้วจะเป็นเวอร์ชันถัดไป", () => {

@@ -34,7 +34,7 @@ describe("StatusPill", () => {
     expect(screen.getByText("status_from_the_future")).toBeInTheDocument();
     // ไอคอนกลางถูก render (svg ของ lucide) และใช้สี neutral ไม่ใช่ class ว่าง
     expect(container.querySelector("svg")).not.toBeNull();
-    expect(container.querySelector("span")?.className).toContain("slate");
+    expect(container.querySelector("span")?.className).toContain("bg-secondary");
   });
 
   it("ตาราง tone ของ Incident ครอบทุกสถานะที่ backend ส่งมาได้ตอนนี้", () => {

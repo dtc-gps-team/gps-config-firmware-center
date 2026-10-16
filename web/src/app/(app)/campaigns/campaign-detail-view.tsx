@@ -35,6 +35,7 @@ import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
 import { canCreateCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -100,18 +101,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/campaigns"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← กลับไปรายการแคมเปญ
-        </Link>
-        <h1 className="text-2xl font-semibold break-words">{data.name}</h1>
-        {data.description && (
-          <p className="text-sm text-muted-foreground">{data.description}</p>
-        )}
-      </div>
+      <PageHeader
+        title={data.name}
+        description={data.description ?? undefined}
+        breadcrumb={[{ label: data.name }]}
+      />
 
       {latestRollout && (
         <Card className="gap-4 p-5">
@@ -130,11 +124,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           </p>
           <p className="text-xs text-muted-foreground">
             สำเร็จ{" "}
-            <span className="font-medium text-emerald-700 dark:text-emerald-400">
+            <span className="font-medium text-success-foreground">
               {latestRollout.successCount}
             </span>{" "}
             / ล้มเหลว{" "}
-            <span className="font-medium text-rose-700 dark:text-rose-400">
+            <span className="font-medium text-danger-foreground">
               {latestRollout.failureCount}
             </span>{" "}
             / ทั้งหมด {latestRollout.targetCount}
@@ -287,11 +281,11 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                     </TableCell>
                     <TableCell>{rollout.payloadType}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      <span className="text-emerald-700 dark:text-emerald-400">
+                      <span className="text-success-foreground">
                         {rollout.successCount}
                       </span>
                       <span className="text-muted-foreground"> / </span>
-                      <span className="text-rose-700 dark:text-rose-400">
+                      <span className="text-danger-foreground">
                         {rollout.failureCount}
                       </span>
                       <span className="text-muted-foreground">

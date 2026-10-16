@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -38,8 +39,9 @@ export function UploadFirmwareButton({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        + อัปโหลด Firmware
+      <DialogTrigger render={<Button />}>
+        <PlusIcon />
+        อัปโหลด Firmware
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

@@ -14,15 +14,9 @@ export const metadata = {
  */
 export default function FirmwarePage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Firmware Repository</h1>
-        <p className="text-sm text-muted-foreground">
-          อัปโหลด + Compatibility Tag อัปโหลด/แก้ได้เฉพาะ Role FirmwareEngineer
-        </p>
-      </div>
-
-      <FirmwareTableCard />
-    </div>
+    <FirmwareTableCard
+      title="Firmware Repository"
+      description="เก็บ Firmware แต่ละเวอร์ชัน ระบุโมเดลที่ใช้ได้ และส่งให้ QA ตรวจก่อนนำไปติดตั้ง คลิกแถวเพื่อดูรายละเอียด"
+    />
   );
 }
