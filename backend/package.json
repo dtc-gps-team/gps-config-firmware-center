@@ -21,6 +21,7 @@
     "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "seed:ci-fixtures": "ts-node scripts/seed-ci-fixtures.ts",
     "seed:demo": "ts-node scripts/seed-demo.ts",
+    "test-users:set-password": "ts-node scripts/set-test-users-password.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -38,6 +39,7 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "dotenv": "^17.4.2",
     "firebase-admin": "^14.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -54,7 +56,6 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
-    "dotenv": "^17.4.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
