@@ -42,6 +42,7 @@ const installedDevice: Device = {
   status: 'installed',
   registeredAt: new Date('2026-01-01T00:00:00.000Z'),
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
+  lastSeenAt: null,
   customerId: null,
   modelId: 'dm-1',
   activePartition: 'A',
@@ -158,6 +159,7 @@ const createdDevice: Omit<Device, 'apiKeyHash'> = {
   status: 'registered',
   registeredAt: new Date('2026-10-01T00:00:00.000Z'),
   installedAt: null,
+  lastSeenAt: null,
   customerId: null,
   modelId: gt06nModel.id,
   activePartition: 'A',
@@ -448,7 +450,41 @@ describe('DeviceService', () => {
         configRolloutId: null,
         firmwareRolloutId: null,
         lastCheckInMessage: null,
+        lastSeenAt: null,
+        online: false,
         pendingFirmwareOverride: null,
+      });
+    });
+
+    describe('lastSeenAt / online (docs/19 §4.3)', () => {
+      beforeEach(() => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(null);
+      });
+
+      it('ติดต่อมาเมื่อ 1 นาทีก่อน -> online true พร้อม lastSeenAt', async () => {
+        const seen = new Date(Date.now() - 60_000);
+        device.findUnique.mockResolvedValue({
+          ...installedDevice,
+          lastSeenAt: seen,
+        });
+
+        const result = await service.getStatus(installedDevice.deviceId);
+
+        expect(result.online).toBe(true);
+        expect(result.lastSeenAt).toBe(seen.toISOString());
+      });
+
+      it('ติดต่อมาเมื่อ 6 นาทีก่อน (เกิน 5 นาที) -> online false แต่ยังบอกเวลา', async () => {
+        const seen = new Date(Date.now() - 6 * 60_000);
+        device.findUnique.mockResolvedValue({
+          ...installedDevice,
+          lastSeenAt: seen,
+        });
+
+        const result = await service.getStatus(installedDevice.deviceId);
+
+        expect(result.online).toBe(false);
+        expect(result.lastSeenAt).toBe(seen.toISOString());
       });
     });
 
@@ -1811,6 +1847,90 @@ describe('DeviceService', () => {
           status: 'pending',
         },
         orderBy: { versionNumber: 'desc' },
+      });
+    });
+
+    describe('Config ปัจจุบันนับผล Rollout ที่สำเร็จด้วย (docs/19 §5)', () => {
+      const rolloutConfig = { ...approvedConfig, id: 'cfg-from-rollout' };
+
+      beforeEach(() => {
+        device.findUnique.mockResolvedValue(installedDevice);
+        mockOverrideQueries({});
+        config.findUnique.mockImplementation(
+          ({ where }: { where: { id: string } }) =>
+            Promise.resolve(
+              where.id === rolloutConfig.id ? rolloutConfig : approvedConfig,
+            ),
+        );
+      });
+
+      it('Rollout target สำเร็จใหม่กว่า Task -> ใช้ Config ของ Rollout', async () => {
+        task.findFirst.mockResolvedValue(completedTask);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-10-20T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+
+        const result = await service.getCurrentConfig('DTC-0001');
+
+        expect(result.id).toBe(rolloutConfig.id);
+        expect(campaignRolloutTarget.findFirst).toHaveBeenCalledWith({
+          where: {
+            deviceId: 'DTC-0001',
+            status: 'success',
+            rollout: { payloadType: 'Config', configId: { not: null } },
+          },
+          orderBy: { updatedAt: 'desc' },
+          include: { rollout: { select: { configId: true } } },
+        });
+      });
+
+      it('Task ใหม่กว่า Rollout target -> ใช้ Config ของ Task', async () => {
+        task.findFirst.mockResolvedValue(completedTask);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+
+        const result = await service.getCurrentConfig('DTC-0001');
+
+        expect(result.id).toBe(approvedConfig.id);
+      });
+
+      it('ไม่มี Task เลย แต่มี Rollout ที่สำเร็จ -> ใช้ Config ของ Rollout (ไม่ 404)', async () => {
+        task.findFirst.mockResolvedValue(null);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-10-20T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+
+        const result = await service.getCurrentConfig('DTC-0001');
+
+        expect(result.id).toBe(rolloutConfig.id);
+      });
+
+      it('Config ของ Rollout ที่สำเร็จถูกลบ (soft-delete) แล้ว -> NotFoundException เหมือน Task', async () => {
+        task.findFirst.mockResolvedValue(null);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-10-20T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+        config.findUnique.mockResolvedValue({
+          ...rolloutConfig,
+          deletedAt: new Date(),
+        });
+
+        await expect(service.getCurrentConfig('DTC-0001')).rejects.toThrow(
+          NotFoundException,
+        );
       });
     });
 
