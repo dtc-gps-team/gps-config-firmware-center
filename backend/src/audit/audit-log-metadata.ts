@@ -28,6 +28,9 @@ export interface AuditLogMetadata {
   incidentId?: string;
   /** `resolve`/`dismiss`/`promote` — ผลตัดสินใจของ Operation บน field report */
   outcome?: string;
+  /** Rollout ที่มีค่าเฉพาะเครื่อง (docs/17): รายชื่อเครื่อง + ชื่อ field
+   * ที่ตั้ง **ไม่เก็บค่า** (เหตุผลเดียวกับ `fieldNames`) */
+  deviceValues?: { deviceId: string; fieldNames: string[] }[];
   /** device-model: id + ชื่อรุ่น (ไม่ใช่ค่าที่เปลี่ยน) */
   deviceModelId?: string;
   modelName?: string;
