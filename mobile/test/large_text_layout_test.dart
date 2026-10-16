@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/core/db/app_database.dart';
+import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/task/task_list_page.dart';
+import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/features/task/task_status_ui.dart';
 
 // ช่างหน้างานตั้งตัวอักษรระบบใหญ่ได้ (Android ถึง 2.0 เท่า) — ทดสอบทุกหน้าที่
 // จอแคบสุดที่รองรับ (320dp) คู่กับ textScale 2.0 เป็นหลัก (UX audit #8, #9, #23)
@@ -129,6 +138,85 @@ Future<void> _pumpConfigOverride(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+// ---------------------------------------------------------------- #9 ----
+
+class _StAuth extends AuthController {
+  @override
+  AuthState build() => const AuthState(
+    status: AuthStatus.authenticated,
+    role: UserRole.st,
+    username: 'somchai.thongprasert',
+  );
+}
+
+class _FakeTaskRepository implements TaskRepository {
+  _FakeTaskRepository(this.tasks);
+
+  final List<Task> tasks;
+
+  @override
+  Future<List<Task>> listTasks() async => tasks;
+
+  @override
+  Future<Task> getTask(String id) async => tasks.firstWhere((t) => t.id == id);
+
+  @override
+  Future<Task> updateStatus(String id, TaskStatus status) =>
+      throw UnimplementedError();
+}
+
+/// งานที่ครอบทุกป้ายของการ์ด: เลยกำหนด / ใกล้ถึงกำหนด / ไม่เร่ง × ทุกสถานะ
+List<Task> _tasksForEveryBadge() {
+  final now = DateTime.now();
+  Task t(String id, TaskStatus status, DateTime? due) => Task(
+    id: id,
+    title: 'ติดตั้งกล่อง GPS รถบรรทุก $id',
+    assignedTo: 'u1',
+    status: status,
+    createdAt: DateTime(2026, 10, 1),
+    updatedAt: DateTime(2026, 10, 1),
+    dueDate: due,
+    deviceId: 'GPS-TH-NE-000123456$id',
+  );
+  return [
+    t('1', TaskStatus.pending, now.subtract(const Duration(days: 3))),
+    t('2', TaskStatus.inProgress, now.add(const Duration(hours: 6))),
+    t('3', TaskStatus.completed, null),
+    t('4', TaskStatus.cancelled, null),
+    t('5', TaskStatus.pending, now.add(const Duration(days: 5))),
+  ];
+}
+
+List<Override> _taskOverrides(List<Task> tasks) => [
+  authControllerProvider.overrideWith(_StAuth.new),
+  tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+  sessionProfileStoreProvider.overrideWithValue(InMemorySessionProfileStore()),
+  taskRepositoryProvider.overrideWithValue(_FakeTaskRepository(tasks)),
+  pendingTaskIdsProvider.overrideWith((ref) => Stream.value(const <String>{})),
+  failedSyncActionsProvider.overrideWith(
+    (ref) => Stream.value(const <PendingActionRow>[]),
+  ),
+  appDatabaseProvider.overrideWith((ref) {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    ref.onDispose(db.close);
+    return db;
+  }),
+];
+
+/// ข้อความ [label] ทุกตัวแสดงครบ ไม่ถูกตัด (ไม่ ellipsis และอยู่ในจอ)
+void expectFullyVisible(WidgetTester tester, String label) {
+  final found = find.text(label);
+  expect(found, findsWidgets, reason: label);
+  final screenWidth =
+      tester.view.physicalSize.width / tester.view.devicePixelRatio;
+  for (final e in found.evaluate()) {
+    final p = e.renderObject! as RenderParagraph;
+    expect(p.didExceedMaxLines, isFalse, reason: '$label ถูกตัด');
+    final right = tester.getTopRight(find.byElementPredicate((x) => x == e)).dx;
+    expect(right, lessThanOrEqualTo(screenWidth), reason: '$label ล้นจอ');
+  }
+}
+
 void main() {
   group('Config Override ช่องที่ override ไม่ได้ (UX audit #8)', () {
     testWidgets('320dp x2.0 -> ไม่ล้นขอบ และ "(override ไม่ได้)" อยู่ใต้ค่า', (
@@ -156,6 +244,28 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('(override ไม่ได้)'), findsNWidgets(2));
+    });
+  });
+
+  group('ป้ายความเร่งด่วนในรายการงาน (UX audit #9)', () {
+    testWidgets('320dp x2.0 -> ไม่ล้น และป้ายทุกตัวอ่านได้ครบ', (tester) async {
+      useLargeTextNarrowScreen(tester);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: _taskOverrides(_tasksForEveryBadge()),
+          child: const MaterialApp(home: TaskListPage()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      for (final urgency in [TaskUrgency.overdue, TaskUrgency.dueSoon]) {
+        expectFullyVisible(tester, TaskUrgencyStyle.label(urgency));
+      }
+      for (final status in TaskStatus.values) {
+        expectFullyVisible(tester, TaskStatusStyle.label(status));
+      }
     });
   });
 }
