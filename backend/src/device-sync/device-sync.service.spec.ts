@@ -625,13 +625,16 @@ describe('DeviceSyncService', () => {
         expect(recordLateTargetResult).not.toHaveBeenCalled();
       });
 
-      it('ล้มเหลวเพราะดึงแล้วเงียบ แล้วรายงานทีหลัง -> ไม่เปลี่ยนผล แต่เก็บข้อความไว้ให้ Operation เห็น', async () => {
+      it('ล้มเหลวเพราะดึงแล้วเงียบ แล้วรายงานทีหลัง -> ไม่เปลี่ยนผล แต่เก็บข้อความไว้ให้ Operation เห็น (กลไกเดียวกับ appendLateReport)', async () => {
         campaignRolloutTarget.findFirst.mockResolvedValue(
           makeTarget({
             status: 'failed',
             resultDetail: 'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
           }),
         );
+        campaignRolloutTarget.findUnique.mockResolvedValue({
+          resultDetail: 'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
+        });
 
         const result = await service.reportResult(
           DEVICE_ID,
@@ -643,21 +646,37 @@ describe('DeviceSyncService', () => {
         expect(result).toEqual({ accepted: false, reason: 'already-reported' });
         expect(recordTargetResult).not.toHaveBeenCalled();
         expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
-          where: { id: 'job-1', status: 'failed' },
+          where: {
+            id: 'job-1',
+            resultDetail: 'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที',
+          },
           data: {
-            resultDetail: expect.stringContaining('รายงานล่าช้า') as string,
+            resultDetail:
+              'ดึงงานแล้วไม่รายงานผลภายใน 30 นาที | [รายงานล่าช้าจากเครื่อง: ใช้ Config สำเร็จ] ใช้ค่าได้แล้ว',
           },
         });
       });
 
-      it('ล้มเหลวที่เครื่องรายงานเอง (ไม่ใช่หมดเวลา) แล้วส่งซ้ำ -> ไม่แก้ข้อความ', async () => {
+      it('skipped_offline แล้ว Rollout ถูก cancelled -> rollout-closed และเก็บข้อความไว้เช่นกัน', async () => {
         campaignRolloutTarget.findFirst.mockResolvedValue(
-          makeTarget({ status: 'failed', resultDetail: 'ค่า APN ใช้ไม่ได้' }),
+          makeTarget({
+            status: 'skipped_offline',
+            pulledAt: new Date(),
+            rollout: {
+              id: 'rollout-1',
+              status: 'cancelled',
+              applyMode: 'real',
+              payloadType: 'Config',
+              configId: 'cfg-1',
+            },
+          }),
         );
 
-        await service.reportResult(DEVICE_ID, 'job-1', 'failed');
-
-        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        await expect(
+          service.reportResult(DEVICE_ID, 'job-1', 'success', 'ok'),
+        ).resolves.toEqual({ accepted: false, reason: 'rollout-closed' });
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledTimes(1);
+        expect(recordLateTargetResult).not.toHaveBeenCalled();
       });
     });
 
