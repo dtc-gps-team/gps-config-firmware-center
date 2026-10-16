@@ -100,6 +100,25 @@ Audit Log บนเครื่องเหล่านี้จึงอาจ�
 3. เปิด tunnel ชี้ไปที่พอร์ตของ Caddy: `cloudflared tunnel --url http://localhost:8080`
 4. ใช้ URL ที่ได้ในแอปมือถือทุกเครื่อง (หน้าเว็บ API และ endpoint ของกล่องอยู่ใต้ URL เดียวกัน)
 
+**การ build แอปมือถือสำหรับวันทดสอบ**
+
+ค่า URL และโหมดของแอปฝังตอน build (`--dart-define`) ไม่ใช่ค่าที่แก้ในแอปภายหลังได้ (ยกเว้นโหมดจำลองกล่องที่ B
+จะทำให้กรอก URL ได้ตาม `docs/19` หัวข้อ 8)
+
+```bash
+cd mobile
+flutter run   --dart-define=API_BASE_URL=https://xxxx.trycloudflare.com/api/v1   --dart-define=API_MOCK_MODE=false
+```
+
+- **ใส่ `API_MOCK_MODE=false` ทุกครั้ง** แอปที่ build โดยไม่ใส่จะเป็นโหมด mock (กฎ Mock Mode ใน CLAUDE.md คือ
+  ค่าเริ่มต้นเป็น mock) ซึ่งจะไม่เรียก backend เลย ทำให้ดูเหมือนระบบไม่ทำงาน
+- **`API_BASE_URL` ต้องลงท้าย `/api/v1`** และเป็น URL ของ tunnel (หรือของเครื่องที่รัน compose) ไม่ใช่ `localhost`
+  เพราะมือถือเรียก `localhost` ของตัวเองไม่ได้ ถ้า tunnel เปิดใหม่ URL เปลี่ยน ต้อง build แอปใหม่
+- **ทดสอบแจ้งเตือน push:** backend ต้องใช้ service account ของ Firebase project dev
+  (`FCM_SERVICE_ACCOUNT_PATH` และ `APP_NOTIFICATION_MODE=fcm`) และมือถือต้องติดตั้ง Android flavor `dev`
+  (`--flavor dev` ใช้ `google-services.json` ของ project dev) ถ้าติดตั้ง flavor `prod` จะได้ token ของคนละ project
+  push ไม่ถึงเครื่อง ถ้า flavor ยังไม่มีใน `main` ข้ามข้อนี้ได้ (ทดสอบ push ไม่ใช่ส่วนจำเป็นของวันทดสอบ docs/19)
+
 **หลังทดสอบ:** ปิด tunnel, เอา `APP_TRUST_PROXY` / `CADDY_TRUSTED_PROXIES` ออก, ตั้ง `DEVICE_CONFIG_APPLY_MODE=mock`
 แล้ว `up -d` อีกครั้ง
 
