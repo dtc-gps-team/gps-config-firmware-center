@@ -99,8 +99,17 @@ class TaskDetailPage extends ConsumerWidget {
       ),
       body: taskAsync.when(
         skipLoadingOnRefresh: true,
+        // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh) ถ้า
+        // ไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย spinner แล้ว dispose ทิ้ง
+        // ระหว่างโหลด (UX audit #3)
+        skipLoadingOnReload: true,
         data: (task) => _TaskDetailView(
-          key: ValueKey('${task.id}:${task.status}:${task.updatedAt}'),
+          // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt ทำให้
+          // ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
+          // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config ที่ยัง
+          // ค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server ทำใน
+          // didUpdateWidget แทน
+          key: ValueKey(task.id),
           taskId: taskId,
           task: task,
         ),
@@ -158,6 +167,18 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   bool _incidentReported = false;
 
   bool get _simulationBlocked => _simulationResult?.passed == false;
+
+  @override
+  void didUpdateWidget(covariant _TaskDetailView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // server เปลี่ยนสถานะงาน (sync / บันทึกเสร็จ): ถ้าผู้ใช้ยังไม่ได้เลือก
+    // สถานะอื่นค้างไว้ ให้ตัวเลือกตามสถานะใหม่ — แทนการ reset ทั้ง view ด้วย
+    // key แบบเดิม ส่วนตัวเลือกที่ผู้ใช้เลือกค้างไว้ไม่ถูกทับ
+    if (widget.task.status != oldWidget.task.status &&
+        _selected == oldWidget.task.status) {
+      _selected = widget.task.status;
+    }
+  }
 
   bool get _dirty => _selected != widget.task.status;
 
