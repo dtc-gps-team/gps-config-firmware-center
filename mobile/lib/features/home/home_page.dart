@@ -201,20 +201,34 @@ class _HeaderRow extends ConsumerWidget {
         ),
         const SizedBox(width: 8),
         _NotificationBell(),
+        const SizedBox(width: 4),
+        // กดค้างเพื่อ logout (+ dialog ยืนยันเสมอ) กันแตะพลาดตอนรีบในภาคสนาม ·
+        // ไม่ใส่ tooltip เพราะ Tooltip บนมือถือแย่ง gesture กดค้างไป
         IconButton(
           key: const Key('home_logout'),
-          icon: const Icon(Icons.logout, color: AppTheme.mockTextSecondary),
-          tooltip: 'ออกจากระบบ',
-          onPressed: () => _confirmAndLogout(context, ref),
+          icon: const Icon(
+            Icons.logout,
+            color: AppTheme.mockTextSecondary,
+            semanticLabel: 'ออกจากระบบ (กดค้าง)',
+          ),
+          onPressed: () => ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('กดค้างเพื่อออกจากระบบ'),
+                duration: Duration(seconds: 2),
+              ),
+            ),
+          onLongPress: () => _confirmAndLogout(context, ref),
         ),
       ],
     );
   }
 }
 
-/// Logout, with a warning first when queued changes would be lost: logout
-/// wipes the local DB, including `PendingActions` that never reached the
-/// server. No queued changes -> logs out straight away, no dialog.
+/// Logout always asks first. When queued changes would be lost (logout wipes
+/// the local DB, including `PendingActions` that never reached the server)
+/// the dialog says how many; otherwise it is a plain confirm.
 Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
   var unsynced = 0;
   if (!AppConfig.apiMockMode) {
@@ -244,6 +258,28 @@ Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
             key: const Key('logout_unsynced_confirm'),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('ยืนยัน'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+  } else if (context.mounted) {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        key: const Key('logout_confirm_dialog'),
+        title: const Text('ออกจากระบบ?'),
+        content: const Text('ต้องการออกจากระบบใช่หรือไม่?'),
+        actions: [
+          TextButton(
+            key: const Key('logout_cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            key: const Key('logout_confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('ออกจากระบบ'),
           ),
         ],
       ),

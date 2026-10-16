@@ -14,6 +14,7 @@ import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.
 import { CustomerModule } from './customer/customer.module';
 import { DeviceModule } from './device/device.module';
 import { DeviceModelModule } from './device-model/device-model.module';
+import { DeviceSyncModule } from './device-sync/device-sync.module';
 import { FirmwareModule } from './firmware/firmware.module';
 import { HealthModule } from './health/health.module';
 import { IncidentModule } from './incident/incident.module';
@@ -43,6 +44,7 @@ import { UserModule } from './user/user.module';
     CustomerModule,
     DeviceModule,
     DeviceModelModule,
+    DeviceSyncModule,
     FirmwareModule,
     HealthModule,
     IncidentModule,

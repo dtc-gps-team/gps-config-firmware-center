@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
@@ -275,12 +276,51 @@ class PushMessageHandler {
     // Defer so navigation runs after the current frame / app resume settles.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        _ref.read(routerProvider).go(path);
+        _openOverHome(_ref.read(routerProvider), path);
       } catch (_) {
         // router not ready / disposed — nothing to do
       }
     });
   }
+
+  /// UX audit #4: เดิมใช้ `go(path)` ซึ่งแทนที่ stack ทั้งหมด หน้าปลายทางจึงไม่มี
+  /// ปุ่ม back และ back ของระบบปิดแอป — ตอนนี้วาง Home เป็นฐานก่อนแล้ว push
+  /// ปลายทางทับ กด back จึงกลับ Home เสมอ ไม่ว่าตอนแตะจะอยู่หน้าไหน
+  static void _openOverHome(GoRouter router, String path) {
+    final delegate = router.routerDelegate;
+    // uri ของ go_router = หน้าฐานที่ go() ไปล่าสุด (หน้าที่ push ทับไม่เปลี่ยน
+    // uri) จึงปิดหน้าที่ push ทับไว้ก่อน (pop ทำทันที) แล้วค่อยดูหน้าฐาน
+    String base() => delegate.currentConfiguration.uri.path;
+    while (router.canPop()) {
+      router.pop();
+    }
+    if (base() == AppRoutes.home) {
+      if (path != AppRoutes.home) router.push(path);
+      return;
+    }
+    router.go(AppRoutes.home);
+    if (path == AppRoutes.home) return;
+    // go() parse route แบบ async (และ delegate ไม่แจ้ง listener ตอนนั้น) — push
+    // ทันทีจะไปซ้อนบน stack เก่าแล้วถูก go() ทับ จึงเช็คทีละ frame จนหน้าฐาน
+    // เป็น Home จริงแล้วค่อย push · ไม่ถึง Home (เช่น redirect ไป login เพราะ
+    // session หลุด) ภายใน [_maxFramesToReachHome] frame = เลิก ไม่ค้างไว้ push ทีหลัง
+    var frames = 0;
+    void check(Duration _) {
+      if (base() == AppRoutes.home) {
+        router.push(path);
+      } else if (++frames < _maxFramesToReachHome) {
+        WidgetsBinding.instance
+          ..addPostFrameCallback(check)
+          ..scheduleFrame();
+      }
+    }
+
+    WidgetsBinding.instance
+      ..addPostFrameCallback(check)
+      ..scheduleFrame();
+  }
+
+  static const _maxFramesToReachHome = 30;
 }
 
 final pushMessageHandlerProvider = Provider<PushMessageHandler>((ref) {

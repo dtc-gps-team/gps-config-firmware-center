@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
@@ -72,6 +75,47 @@ class _NeverCompletesStatusRepository implements DeviceStatusRepository {
       Completer<DeviceStatus>().future;
 }
 
+DeviceConfigOverride _pendingOverride() => DeviceConfigOverride(
+  id: 'ovr-1',
+  deviceId: 'DEV-0117',
+  configId: 'cfg-1',
+  versionNumber: 1,
+  fields: const {'REPORT_INTERVAL_MOVING': 60},
+  reason: 'ลูกค้าขอปรับรอบส่งพิกัด',
+  status: 'pending',
+  overriddenBy: 'u-st',
+  overriddenAt: '2026-10-16T09:00:00.000Z',
+);
+
+/// `GET /devices/{deviceId}/config` ปลอม — ตั้ง [pending] / [error] ระหว่างเทสได้
+/// (จำลองว่าไปส่งคำขอที่หน้า Override แล้วย้อนกลับมา)
+class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
+  DeviceConfigOverride? pending;
+  Object? error;
+  int getCalls = 0;
+
+  @override
+  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) async {
+    getCalls++;
+    if (error != null) throw error!;
+    return DeviceConfigDraft(
+      id: 'cfg-1',
+      fields: const {'REPORT_INTERVAL_MOVING': 30},
+      pendingOverride: pending,
+    );
+  }
+
+  @override
+  Future<List<ConfigFieldDefinition>> listDefinitions() async => const [];
+
+  @override
+  Future<DeviceConfigOverride> overrideConfig({
+    required String deviceId,
+    required Map<String, dynamic> fields,
+    required String reason,
+  }) => throw UnimplementedError();
+}
+
 DeviceStatus _makeStatus({
   DevicePayloadStatus config = DevicePayloadStatus.unknown,
   DevicePayloadStatus firmware = DevicePayloadStatus.unknown,
@@ -91,6 +135,8 @@ Future<void> _pump(
   DeviceStatusRepository? statusRepo,
   String deviceId = 'DEV-0117',
   UserRole? role,
+  ConfigOverrideRepository? overrideRepo,
+  GoRouter? router,
 }) async {
   // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
   // ListView สร้างทุก section (สถานะ Config/Firmware, ปุ่มด้านล่าง) ได้ในเทสต์
@@ -105,8 +151,13 @@ Future<void> _pump(
           statusRepo ?? _FakeDeviceStatusRepository(),
         ),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
+        configOverrideRepositoryProvider.overrideWithValue(
+          overrideRepo ?? _FakeConfigOverrideRepository(),
+        ),
       ],
-      child: MaterialApp(home: DeviceDetailPage(deviceId: deviceId)),
+      child: router == null
+          ? MaterialApp(home: DeviceDetailPage(deviceId: deviceId))
+          : MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pump(); // resolve getDevice
@@ -120,6 +171,7 @@ Finder _rowValue(String label, String value) => find.descendant(
 
 void main() {
   _statusTests();
+  _pendingConfigOverrideTests();
 
   // ผลตรวจ #304 — backend ส่ง imei/serialNumber/blackboxId/customer มาแล้ว และ
   // Web แสดงแล้ว แต่ Mobile ยังไม่แสดง
@@ -566,5 +618,146 @@ void _statusTests() {
       expect(find.text('สถานะ Config'), findsOneWidget);
       expect(find.byKey(const Key('device_status_error')), findsNothing);
     });
+  });
+}
+
+const _pendingBanner = Key('device_detail_config_override_pending');
+
+/// UX audit #2 — ส่งคำขอ Config Override แล้วย้อนกลับมา หน้าอุปกรณ์ต้องบอกว่า
+/// มีคำขอรอ Operation อนุมัติอยู่ (เดิมไม่มีอะไรบอกเลย)
+void _pendingConfigOverrideTests() {
+  group('คำขอ Config Override ที่รออนุมัติ (UX audit #2)', () {
+    testWidgets(
+      'ST + มีคำขอ pending -> แสดง banner พร้อม field ที่ขอแก้และเหตุผล',
+      (tester) async {
+        final overrideRepo = _FakeConfigOverrideRepository()
+          ..pending = _pendingOverride();
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          overrideRepo: overrideRepo,
+        );
+        await tester.pump();
+
+        expect(find.byKey(_pendingBanner), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(_pendingBanner),
+            matching: find.textContaining('REPORT_INTERVAL_MOVING'),
+          ),
+          findsOneWidget,
+        );
+        // ไม่แสดงค่า (field อาจเป็น sensitive — banner ไม่รู้ definition)
+        expect(
+          find.descendant(
+            of: find.byKey(_pendingBanner),
+            matching: find.textContaining('60'),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(_pendingBanner),
+            matching: find.textContaining('ลูกค้าขอปรับรอบส่งพิกัด'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('ST + ไม่มีคำขอ pending -> ไม่มี banner', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+        overrideRepo: _FakeConfigOverrideRepository(),
+      );
+      await tester.pump();
+
+      expect(find.byKey(_pendingBanner), findsNothing);
+      expect(find.text('DEV-0117'), findsOneWidget);
+    });
+
+    testWidgets(
+      'โหลด Config ไม่สำเร็จ (เช่น 404 เครื่องยังไม่มี Config) -> ไม่มี banner '
+      'และไม่ขึ้น error ทับหน้า',
+      (tester) async {
+        final overrideRepo = _FakeConfigOverrideRepository()
+          ..error = ApiException('ไม่พบ Config', statusCode: 404);
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          overrideRepo: overrideRepo,
+        );
+        await tester.pump();
+
+        expect(find.byKey(_pendingBanner), findsNothing);
+        expect(find.text('ไม่พบ Config'), findsNothing);
+        expect(find.text('DEV-0117'), findsOneWidget);
+      },
+    );
+
+    testWidgets('role อื่น (ขอ override ไม่ได้) -> ไม่เรียก API นี้เลย', (
+      tester,
+    ) async {
+      final overrideRepo = _FakeConfigOverrideRepository()
+        ..pending = _pendingOverride();
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.operation,
+        overrideRepo: overrideRepo,
+      );
+      await tester.pump();
+
+      expect(overrideRepo.getCalls, 0);
+      expect(find.byKey(_pendingBanner), findsNothing);
+    });
+
+    testWidgets(
+      'ไปหน้า Override ส่งคำขอแล้วย้อนกลับมา -> โหลดใหม่และเห็น banner ทันที',
+      (tester) async {
+        final overrideRepo = _FakeConfigOverrideRepository();
+        final router = GoRouter(
+          initialLocation: AppRoutes.deviceDetail('DEV-0117'),
+          routes: [
+            GoRoute(
+              path: AppRoutes.deviceDetailPattern,
+              builder: (_, state) =>
+                  DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+            ),
+            GoRoute(
+              path: AppRoutes.deviceConfigOverridePattern,
+              builder: (_, _) => const Text('OVERRIDE_PAGE'),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          overrideRepo: overrideRepo,
+          router: router,
+        );
+        await tester.pump();
+        expect(find.byKey(_pendingBanner), findsNothing);
+
+        await tester.tap(
+          find.byKey(const Key('device_detail_config_override')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('OVERRIDE_PAGE'), findsOneWidget);
+
+        // ระหว่างอยู่หน้า Override: ส่งคำขอสำเร็จ -> backend มีคำขอ pending
+        overrideRepo.pending = _pendingOverride();
+        router.pop();
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(_pendingBanner), findsOneWidget);
+      },
+    );
   });
 }
