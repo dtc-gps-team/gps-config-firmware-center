@@ -14,6 +14,7 @@ import {
 import { getTokenSubject } from "@/lib/jwt";
 import { canDecideCampaignApproval } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
+import { DisabledWithReason } from "@/components/disabled-with-reason";
 
 type Decision = "release" | "reject";
 
@@ -115,15 +116,8 @@ export function CampaignRolloutReleasePanel({
       <p className="text-sm text-muted-foreground">
         Rollout นี้อนุมัติแล้ว กดปล่อยเมื่อพร้อมส่ง Config/Firmware เข้าทุก
         เครื่องในกลุ่มจริง (เลือกจังหวะปล่อยเองได้ ไม่บังคับต้องปล่อยทันที)
-        {!isOwnRollout &&
-          " หรือกดปฏิเสธถ้าเปลี่ยนใจก่อนปล่อยจริง"}
+        {!isOwnRollout && " หรือกดปฏิเสธถ้าเปลี่ยนใจก่อนปล่อยจริง"}
       </p>
-      {isOwnRollout && (
-        <p className="text-xs text-muted-foreground">
-          คุณเป็นผู้สร้าง Rollout นี้ ปฏิเสธของตัวเองไม่ได้ (Separation of
-          Duty) ปล่อยเข้าอุปกรณ์ได้ตามปกติ
-        </p>
-      )}
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       {confirming ? (
@@ -158,7 +152,14 @@ export function CampaignRolloutReleasePanel({
         </div>
       ) : (
         <div className="flex gap-2">
-          {!isOwnRollout && (
+          {isOwnRollout ? (
+            // Separation of Duty — ผู้สร้างปฏิเสธของตัวเองไม่ได้ แต่ปล่อยได้
+            <DisabledWithReason reason="คุณเป็นผู้สร้าง Rollout นี้ ปฏิเสธของตัวเองไม่ได้ ปล่อยเข้าอุปกรณ์ได้ตามปกติ">
+              <Button size="sm" variant="outline" disabled>
+                ปฏิเสธ
+              </Button>
+            </DisabledWithReason>
+          ) : (
             <Button
               size="sm"
               variant="outline"

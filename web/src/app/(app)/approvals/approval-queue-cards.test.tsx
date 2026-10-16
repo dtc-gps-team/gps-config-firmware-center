@@ -163,7 +163,7 @@ describe("CampaignRolloutApprovalCard", () => {
     ).toHaveAttribute("href", "/campaigns/c1/rollouts/r1");
   });
 
-  it("เป็นผู้สร้างเอง: ไม่มีปุ่ม แสดงเหตุผลเป็นข้อความธรรมดาแทนกล่อง", () => {
+  it("เป็นผู้สร้างเอง: ปุ่มยังอยู่แต่กดไม่ได้ พร้อมเหตุผลให้ screen reader อ่าน", () => {
     auth.sub = "op-creator";
 
     render(
@@ -174,17 +174,11 @@ describe("CampaignRolloutApprovalCard", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "อนุมัติ" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ปฏิเสธ" })).toBeDisabled();
     expect(
-      screen.queryByRole("button", { name: "อนุมัติ" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /คุณเป็นผู้สร้าง Rollout นี้ อนุมัติ\/ปฏิเสธของตัวเองไม่ได้/,
-      ),
+      screen.getByText(/คุณเป็นผู้สร้าง Rollout นี้ อนุมัติหรือปฏิเสธของตัวเองไม่ได้/),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("รอ Operation อีกคนอนุมัติ"),
-    ).not.toBeInTheDocument();
   });
 });
 
