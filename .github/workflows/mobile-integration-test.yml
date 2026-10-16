@@ -127,6 +127,12 @@ jobs:
         working-directory: mobile
         run: flutter pub get
 
+      # Drift (*.g.dart) ไม่ได้ commit ไว้ — ต้อง generate ก่อน build/drive
+      # (คำสั่งเดียวกับ mobile-ci.yml)
+      - name: Mobile — generate code (Drift / build_runner)
+        working-directory: mobile
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Mobile — google-services.json placeholder
         # google-services.json จริงไม่ commit เข้า repo (gitignore) แต่ปลั๊กอิน
         # com.google.gms.google-services บังคับให้มีไฟล์ตอน Gradle build — สร้าง

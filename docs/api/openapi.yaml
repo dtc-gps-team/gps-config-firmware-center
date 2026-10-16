@@ -16,6 +16,10 @@ security:
 tags:
   - name: auth
     description: Login และการยืนยันตัวตน (JWT)
+  - name: health
+    description: >-
+      ตรวจสถานะระบบสำหรับ healthcheck ของ docker compose / ผู้ให้บริการคลาวด์
+      (v3.55) public ไม่ต้อง login
   - name: config
     description: จัดการ Device Config — สร้าง/นำเข้า/ทดสอบ/อนุมัติ
   - name: config-deletion
@@ -87,6 +91,30 @@ paths:
                 $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Username/Password ไม่ถูกต้อง
+
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: ตรวจว่า backend รันอยู่และต่อฐานข้อมูลได้ (v3.55)
+      description: >-
+        public ไม่ต้อง login เพราะผู้เรียกคือระบบ (healthcheck ของ docker compose,
+        ผู้ให้บริการคลาวด์, เครื่องมือติดตามระบบ) ตอบแค่ ok / error ไม่ส่งรายละเอียด
+        ของ error ออกไป
+      security: []   # public — ผู้เรียกคือระบบ ไม่ใช่ผู้ใช้
+      responses:
+        "200":
+          description: ระบบพร้อมใช้งาน
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: ต่อฐานข้อมูลไม่ได้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
 
   /config:
     get:
@@ -1842,8 +1870,10 @@ paths:
                 $ref: "#/components/schemas/DeviceConfigOverride"
         "400":
           description: >-
-            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้/
-            stOverridable: false/ชนิดข้อมูลไม่ตรง/ค่าไม่อยู่ใน allowedValues
+            ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้
+            และไม่อยู่ใน Config ของเครื่อง (v3.54 field นอกชุดของรุ่นที่อยู่ใน
+            Config template แล้วขอแก้ได้)/stOverridable: false/ชนิดข้อมูลไม่ตรง/
+            ค่าไม่อยู่ใน allowedValues
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -3024,6 +3054,16 @@ components:
       bearerFormat: JWT
 
   schemas:
+    HealthStatus:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        database:
+          type: string
+          enum: [ok, error]
     LoginRequest:
       type: object
       required: [username, password]
@@ -3981,9 +4021,11 @@ components:
         supportedModels:
           type: array
           description: >-
-            รุ่นอุปกรณ์/โปรโตคอลที่ field นี้ใช้ได้ (Semantic Validation
-            v3.11) — Config ที่ deviceModel/protocol ไม่อยู่ในรายการนี้
-            จะถูก block ตอน create/update Config
+            รุ่นอุปกรณ์/โปรโตคอลที่ field นี้เป็นค่าเริ่มต้น (Semantic
+            Validation v3.11) ใช้กรองคลังพารามิเตอร์ตอนสร้าง Config และหา
+            required field ของรุ่น · ตั้งแต่ v3.54 (รีวิวพี่เลี้ยง 12 ต.ค.
+            2569) **ไม่ใช่ข้อห้ามแล้ว** Config ใส่ field นอกชุดของรุ่นได้
+            (ยังตรวจชนิดข้อมูลและ allowedValues ตามนิยาม)
           items:
             $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
         createdAt:
