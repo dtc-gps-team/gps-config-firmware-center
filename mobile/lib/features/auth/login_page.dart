@@ -49,7 +49,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }) {
     const border = OutlineInputBorder(
       borderRadius: BorderRadius.all(Radius.circular(10)),
-      borderSide: BorderSide(color: AppTheme.fieldBorder),
+      // ขอบช่องกรอกที่ผ่าน 3:1 (UX audit #10)
+      borderSide: BorderSide(color: AppTheme.inputBorder),
     );
     return InputDecoration(
       labelText: label,

@@ -272,7 +272,9 @@ class _NotificationBell extends ConsumerWidget {
       icon: unread > 0
           ? Badge(
               label: Text(unread > 99 ? '99+' : '$unread'),
-              backgroundColor: const Color(0xFFE53935),
+              // AppTheme.error: ตัวเลขสีขาว 5.44:1 (เดิม #E53935 4.23:1, UX
+              // audit #10)
+              backgroundColor: AppTheme.error,
               child: bellIcon,
             )
           : bellIcon,
