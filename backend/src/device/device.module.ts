@@ -14,6 +14,7 @@ import {
   CONFIG_APPLIER,
   type ConfigApplier,
   MockConfigApplier,
+  resolveConfigApplyMode,
 } from './config-applier';
 import {
   DEVICE_CONNECTION_TESTER,
@@ -82,12 +83,12 @@ import { DeviceService } from './device.service';
     {
       provide: CONFIG_APPLIER,
       useFactory: (nestConfig: NestConfigService): ConfigApplier => {
-        const mode = nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE', 'mock');
-        if (mode === 'real') {
-          throw new Error(
-            'DEVICE_CONFIG_APPLY_MODE=real ยังไม่รองรับ (ยังไม่มีช่องทางเขียน Config เข้าอุปกรณ์จริง — ดู config-sync-writer #32)',
-          );
-        }
+        // `real` ไม่ throw อีกต่อไป (docs/19 §3): หมายถึง Campaign Rollout รอ
+        // ให้อุปกรณ์ดึงงานเอง ไม่ได้เปลี่ยน applier — ปุ่มของช่างยังใช้ mock
+        // ตามเดิม (ยังไม่มีช่องทางเขียน Config เข้ากล่องจากฝั่ง server)
+        resolveConfigApplyMode(
+          nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE'),
+        );
         return new MockConfigApplier();
       },
       inject: [NestConfigService],
