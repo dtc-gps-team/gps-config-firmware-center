@@ -14,6 +14,7 @@ import type { IncidentSeverity } from '@prisma/client';
  */
 export const ROLLOUT_FAILED_EVENT = 'rollout-failed';
 export const ROLLOUT_STATUS_CHANGED_EVENT = 'rollout-status-changed';
+export const ROLLOUT_RESULT_UPDATED_EVENT = 'rollout-result-updated';
 
 export type RolloutFailureKind =
   'auto-pause' | 'completed-with-failures' | 'completed-with-skipped';
@@ -51,6 +52,25 @@ export interface RolloutStatusChangedEvent {
   action: 'resumed' | 'rolled-back' | 'completed-clean';
 }
 
+/** `rollout-result-updated` — ผลของเครื่องในรอบที่จบหรือหยุดไปแล้วเปลี่ยน (เช่น
+ * เครื่องที่ถูกข้ามกลับมารายงานผลล่าช้า docs/19 §16.4) ให้ incident อัปเดต
+ * **ตัวเลขใน Incident เดิมอย่างเดียว** ไม่เปลี่ยนสถานะ ไม่สร้างใหม่ และ
+ * **notification ไม่ฟัง** จึงไม่แจ้งเตือนซ้ำต่อเครื่อง (docs/19 §15.4 แถวสุดท้าย) */
+export interface RolloutResultUpdatedEvent {
+  rolloutId: string;
+  campaignId: string;
+  campaignName: string;
+  /** ใช้ตอนอัปเดตเท่านั้นเลือกค่าที่สูงกว่าเดิม ไม่ลดระดับ Incident */
+  severity: IncidentSeverity;
+  failureCount: number;
+  skippedCount: number;
+  targetCount: number;
+  /** ไม่เกิน 20 เครื่อง */
+  failedDeviceIds: string[];
+  /** ไม่เกิน 3 รายการ */
+  sampleErrors: string[];
+}
+
 export const MAX_EVENT_FAILED_DEVICE_IDS = 20;
 export const MAX_EVENT_SAMPLE_ERRORS = 3;
 
@@ -64,6 +84,10 @@ export class RolloutEvents extends EventEmitter {
   safeEmit(
     event: typeof ROLLOUT_STATUS_CHANGED_EVENT,
     payload: RolloutStatusChangedEvent,
+  ): void;
+  safeEmit(
+    event: typeof ROLLOUT_RESULT_UPDATED_EVENT,
+    payload: RolloutResultUpdatedEvent,
   ): void;
   safeEmit(event: string, payload: unknown): void {
     try {

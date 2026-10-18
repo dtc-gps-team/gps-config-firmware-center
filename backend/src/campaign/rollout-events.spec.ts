@@ -1,6 +1,7 @@
 import {
   maxSeverity,
   ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
   RolloutEvents,
   rolloutFailureSeverity,
 } from './rollout-events';
@@ -74,6 +75,23 @@ describe('rollout-events', () => {
       expect(() =>
         events.safeEmit(ROLLOUT_FAILED_EVENT, { rolloutId: 'r' } as never),
       ).not.toThrow();
+    });
+
+    it('rollout-result-updated: listener ที่ throw แบบ sync ไม่ทำให้ผู้เรียกล้ม และ listener ของ rollout-failed ไม่ได้รับ event นี้', () => {
+      const events = new RolloutEvents();
+      const failedListener = jest.fn();
+      events.on(ROLLOUT_FAILED_EVENT, failedListener);
+      events.on(ROLLOUT_RESULT_UPDATED_EVENT, () => {
+        throw new Error('พัง');
+      });
+
+      expect(() =>
+        events.safeEmit(ROLLOUT_RESULT_UPDATED_EVENT, {
+          rolloutId: 'r',
+        } as never),
+      ).not.toThrow();
+      // notification ฟังเฉพาะ rollout-failed จึงไม่แจ้งเตือนจากผลล่าช้า
+      expect(failedListener).not.toHaveBeenCalled();
     });
   });
 });

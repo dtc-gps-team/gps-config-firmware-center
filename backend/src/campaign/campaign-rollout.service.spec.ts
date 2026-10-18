@@ -13,9 +13,11 @@ import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 import {
   ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
   ROLLOUT_STATUS_CHANGED_EVENT,
   RolloutEvents,
   type RolloutFailedEvent,
+  type RolloutResultUpdatedEvent,
   type RolloutStatusChangedEvent,
 } from './rollout-events';
 import {
@@ -3064,10 +3066,16 @@ describe('CampaignRolloutService', () => {
     };
     let failedEvents: RolloutFailedEvent[];
     let statusEvents: RolloutStatusChangedEvent[];
+    let updatedEvents: RolloutResultUpdatedEvent[];
 
     beforeEach(() => {
       failedEvents = [];
       statusEvents = [];
+      updatedEvents = [];
+      rolloutEvents.on(
+        ROLLOUT_RESULT_UPDATED_EVENT,
+        (e: RolloutResultUpdatedEvent) => updatedEvents.push(e),
+      );
       rolloutEvents.on(ROLLOUT_FAILED_EVENT, (e: RolloutFailedEvent) =>
         failedEvents.push(e),
       );
@@ -3413,20 +3421,42 @@ describe('CampaignRolloutService', () => {
     });
 
     describe('recordLateTargetResult', () => {
-      it('skipped_offline -> success พร้อมหมายเหตุล่าช้า นับตัวเลขใหม่ ไม่เปลี่ยนสถานะ Rollout ที่ยังมี pending', async () => {
-        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
-          id: 'rt-1',
-          rolloutId: activeRollout.id,
-        });
+      const lateTarget = { id: 'rt-1', rolloutId: activeRollout.id };
+
+      /** count ในทรานแซกชัน 3 ค่า (success, failed, pending) */
+      function mockTxCounts(c: {
+        success: number;
+        failed: number;
+        pending: number;
+      }) {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue(lateTarget);
         campaignRolloutTarget.count
-          .mockResolvedValueOnce(5) // success
-          .mockResolvedValueOnce(1) // failed
-          .mockResolvedValueOnce(2) // pending
-          // ตอนประกอบ event (ไม่ปิด Rollout -> ยังคำนวณ outcome)
-          .mockResolvedValueOnce(1)
-          .mockResolvedValueOnce(0)
-          .mockResolvedValueOnce(0);
-        campaignRolloutTarget.findMany.mockResolvedValue([]);
+          .mockResolvedValueOnce(c.success)
+          .mockResolvedValueOnce(c.failed)
+          .mockResolvedValueOnce(c.pending);
+      }
+
+      /** ข้อมูลที่อ่านหลัง commit เพื่อประกอบ event (windowFailure, skipped,
+       * timeoutFailure แล้วตามด้วยรายการที่ล้ม) */
+      function mockEventData(e: {
+        window: number;
+        skipped: number;
+        timeout: number;
+        failed?: { deviceId: string; resultDetail: string | null }[];
+      }) {
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(e.window)
+          .mockResolvedValueOnce(e.skipped)
+          .mockResolvedValueOnce(e.timeout);
+        campaignRolloutTarget.findMany.mockResolvedValue(e.failed ?? []);
+      }
+
+      it('skipped_offline -> success พร้อมหมายเหตุล่าช้า นับตัวเลขใหม่', async () => {
+        mockTxCounts({ success: 5, failed: 1, pending: 2 });
+        campaignRollout.update.mockResolvedValue({
+          ...activeRollout,
+          status: 'active',
+        });
 
         const result = await service.recordLateTargetResult(
           'rt-1',
@@ -3446,16 +3476,186 @@ describe('CampaignRolloutService', () => {
           where: { id: activeRollout.id },
           data: { successCount: 5, failureCount: 1 },
         });
-        // ไม่เกิดการหยุดหรือปิดใหม่ และไม่ส่ง completed-clean (ให้ Operation ปิดเอง)
+      });
+
+      it('Rollout ยัง active และยังมีเครื่องค้าง -> ไม่ส่ง event ใดๆ (ผลสุดท้ายตอนจบจะส่งเอง) และไม่อ่านข้อมูลประกอบ event', async () => {
+        mockTxCounts({ success: 5, failed: 1, pending: 2 });
+        campaignRollout.update.mockResolvedValue({
+          ...activeRollout,
+          status: 'active',
+        });
+
+        await service.recordLateTargetResult('rt-1', true, 'ใช้ค่าแล้ว');
+
+        // รีวิว B บน #337: เดิมได้ rollout-failed 1 ตัวทั้งที่ Rollout ยังรันอยู่
+        expect(failedEvents).toEqual([]);
+        expect(updatedEvents).toEqual([]);
+        expect(statusEvents).toEqual([]);
+        // มีแค่ count ในทรานแซกชัน 3 ครั้ง ไม่มี query ประกอบ event
+        expect(campaignRolloutTarget.count).toHaveBeenCalledTimes(3);
+        expect(campaignRolloutTarget.findMany).not.toHaveBeenCalled();
+      });
+
+      it('Rollout จบ (completed) ไปแล้ว -> ส่ง rollout-result-updated อย่างเดียว ไม่ส่ง rollout-failed / status-changed', async () => {
+        mockTxCounts({ success: 9, failed: 1, pending: 0 });
+        // ปิดไม่ได้เพราะไม่ใช่ active แล้ว (เงื่อนไข status: 'active' ไม่ match)
+        campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+        campaignRollout.update.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+        });
+        campaignRollout.findUnique.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+          failureCount: 1,
+          campaign: { name: 'กลุ่มรถบรรทุก' },
+        });
+        mockEventData({
+          window: 1,
+          skipped: 0,
+          timeout: 0,
+          failed: [{ deviceId: 'DEV-9', resultDetail: 'ผลล่าช้า: ค่าผิด' }],
+        });
+
+        const result = await service.recordLateTargetResult(
+          'rt-1',
+          false,
+          'ค่าผิด',
+        );
+
+        expect(result).toBe(true);
+        expect(failedEvents).toEqual([]);
+        expect(statusEvents).toEqual([]);
+        expect(updatedEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            campaignId: activeRollout.campaignId,
+            campaignName: 'กลุ่มรถบรรทุก',
+            // ล้ม 1 จาก 10 เครื่อง = 10% เกินเกณฑ์ Auto Pause จึงเป็น high
+            severity: 'high',
+            failureCount: 1,
+            skippedCount: 0,
+            targetCount: 10,
+            failedDeviceIds: ['DEV-9'],
+            sampleErrors: ['ผลล่าช้า: ค่าผิด'],
+          },
+        ]);
+      });
+
+      it('Rollout จบแล้วและผลล่าช้าทำให้ไม่มีเครื่องค้าง/ล้มเหลือ -> ยังส่ง rollout-result-updated (อัปเดตตัวเลข) ไม่ส่ง completed-clean', async () => {
+        mockTxCounts({ success: 10, failed: 0, pending: 0 });
+        campaignRollout.updateMany.mockResolvedValueOnce({ count: 0 });
+        campaignRollout.update.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+        });
+        campaignRollout.findUnique.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+          failureCount: 0,
+          campaign: { name: 'กลุ่มรถบรรทุก' },
+        });
+        mockEventData({ window: 0, skipped: 0, timeout: 0 });
+
+        await service.recordLateTargetResult('rt-1', true, 'ใช้ค่าแล้ว');
+
+        expect(failedEvents).toEqual([]);
+        // §15.4 แถวสุดท้าย: ไม่ปิด Incident เอง ให้ Operation ปิด
+        expect(statusEvents).toEqual([]);
+        expect(updatedEvents).toHaveLength(1);
+        expect(updatedEvents[0]).toMatchObject({
+          failureCount: 0,
+          skippedCount: 0,
+          severity: 'low',
+        });
+      });
+
+      it('Rollout หยุด (paused) อยู่ -> ส่ง rollout-result-updated อย่างเดียว', async () => {
+        mockTxCounts({ success: 4, failed: 3, pending: 3 });
+        campaignRollout.update.mockResolvedValue({
+          ...activeRollout,
+          status: 'paused',
+        });
+        campaignRollout.findUnique.mockResolvedValue({
+          ...activeRollout,
+          status: 'paused',
+          failureCount: 3,
+          campaign: { name: 'กลุ่มรถบรรทุก' },
+        });
+        mockEventData({ window: 3, skipped: 1, timeout: 0 });
+
+        await service.recordLateTargetResult('rt-1', true, 'ใช้ค่าแล้ว');
+
+        expect(failedEvents).toEqual([]);
+        expect(statusEvents).toEqual([]);
+        expect(updatedEvents).toHaveLength(1);
+        expect(updatedEvents[0]).toMatchObject({
+          failureCount: 3,
+          skippedCount: 1,
+        });
+      });
+
+      it('ผลล่าช้าเป็นตัวสุดท้ายที่ปิด Rollout ที่ยัง active และมีเครื่องล้ม -> ส่ง rollout-failed 1 ตัว (การจบครั้งแรกจริง) ไม่ส่ง rollout-result-updated', async () => {
+        mockTxCounts({ success: 8, failed: 2, pending: 0 });
+        // updateMany ค่า default = {count: 1} -> ปิด Rollout ได้
+        campaignRollout.findUnique.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+          failureCount: 2,
+          campaign: { name: 'กลุ่มรถบรรทุก' },
+        });
+        mockEventData({
+          window: 2,
+          skipped: 0,
+          timeout: 0,
+          failed: [
+            { deviceId: 'DEV-8', resultDetail: 'x' },
+            { deviceId: 'DEV-9', resultDetail: 'y' },
+          ],
+        });
+
+        await service.recordLateTargetResult('rt-1', false, 'ค่าผิด');
+
+        expect(failedEvents).toHaveLength(1);
+        expect(failedEvents[0]).toMatchObject({
+          kind: 'completed-with-failures',
+          failureCount: 2,
+        });
+        expect(updatedEvents).toEqual([]);
         expect(statusEvents).toEqual([]);
       });
 
-      it('ไม่ใช่ skipped_offline แล้ว -> false', async () => {
+      it('ผลล่าช้าเป็นตัวสุดท้ายที่ปิด Rollout ที่ยัง active และสะอาด -> ส่ง completed-clean', async () => {
+        mockTxCounts({ success: 10, failed: 0, pending: 0 });
+        campaignRollout.findUnique.mockResolvedValue({
+          ...activeRollout,
+          status: 'completed',
+          failureCount: 0,
+          campaign: { name: 'กลุ่มรถบรรทุก' },
+        });
+        mockEventData({ window: 0, skipped: 0, timeout: 0 });
+
+        await service.recordLateTargetResult('rt-1', true, 'ใช้ค่าแล้ว');
+
+        expect(failedEvents).toEqual([]);
+        expect(updatedEvents).toEqual([]);
+        expect(statusEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            campaignId: activeRollout.campaignId,
+            action: 'completed-clean',
+          },
+        ]);
+      });
+
+      it('ไม่ใช่ skipped_offline แล้ว -> false ไม่ส่ง event', async () => {
         campaignRolloutTarget.updateMany.mockResolvedValueOnce({ count: 0 });
 
         await expect(
           service.recordLateTargetResult('rt-1', true, 'x'),
         ).resolves.toBe(false);
+        expect(failedEvents).toEqual([]);
+        expect(updatedEvents).toEqual([]);
       });
     });
 

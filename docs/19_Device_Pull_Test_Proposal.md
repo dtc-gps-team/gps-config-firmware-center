@@ -416,7 +416,7 @@ backend รันบนคอมพิวเตอร์ของ A มือถ
 | กด Resume | `investigating` |
 | Rollout จบ และ**ไม่มีเครื่องล้มหรือถูกข้ามในรอบหลัง Resume** | `resolved` พร้อมหมายเหตุ "ปิดอัตโนมัติ: Rollout เสร็จสิ้น" |
 | Rollout จบ แต่ยังมีเครื่องล้มหรือถูกข้าม | คง `open` ไว้ให้ Operation ตัดสินใจ |
-| ผลล่าช้า (หัวข้อ 16.4) ทำให้ Rollout ที่จบแล้วไม่มีเครื่องค้าง | อัปเดตตัวเลขใน Incident ไม่ปิดเอง ให้ Operation ปิด |
+| ผลล่าช้า (หัวข้อ 16.4) ของ Rollout ที่จบหรือหยุดไปแล้ว | อัปเดต**ตัวเลข**ใน Incident เดิมอย่างเดียว **ไม่เปลี่ยนสถานะ** (ไม่เปิดกลับเป็น `open` ไม่ปิดเอง ให้ Operation ตัดสินเอง) และไม่สร้าง Incident ใหม่ ผ่าน event `rollout-result-updated` (หัวข้อ 15.5) |
 
 Operation ยังเปลี่ยนสถานะเองได้ตามปกติ เช่นปิดเองพร้อมหมายเหตุถ้าเป็นแค่เครื่องเสีย หรือส่งช่างไปดูเครื่องนั้น
 
@@ -425,7 +425,7 @@ Operation ยังเปลี่ยนสถานะเองได้ตา�
 ใช้รูปแบบเดียวกับ `config-sync-writer` ที่มีอยู่: โมดูล campaign ส่ง event แล้วโมดูล incident (A) กับโมดูล
 notification (B) ต่างฟังเอง
 
-- **campaign (A):** ส่ง event 2 ชนิด
+- **campaign (A):** ส่ง event 3 ชนิด
   - `rollout-failed` ตอน Auto Pause และตอนจบแบบมีเครื่องไม่สำเร็จ (incident และ notification ฟัง)
 
     ```ts
@@ -449,6 +449,13 @@ notification (B) ต่างฟังเอง
     ครั้งเดียว ทั้ง incident และ notification ใช้ค่าเดียวกัน
   - `rollout-status-changed` `{ rolloutId, status }` ตอน Resume / Rollback / จบ ให้ incident ปรับสถานะตามหัวข้อ 15.4
     (เฉพาะ incident ฟัง notification ไม่ต้องทำอะไร)
+  - `rollout-result-updated` ตอนเครื่องรายงาน**ผลล่าช้า**ของ Rollout ที่จบหรือหยุดไปแล้ว (หัวข้อ 16.4) ส่งตัวเลขล่าสุด
+    (`failureCount`, `skippedCount`, `targetCount`, `failedDeviceIds`, `sampleErrors`, `severity`) ให้ incident อัปเดต
+    ตัวเลขใน Incident เดิมโดย**ไม่แตะสถานะ** (เฉพาะ incident ฟัง **notification ไม่ต้องฟัง**) เพื่อไม่ให้เครื่อง 50 เครื่อง
+    ที่ทยอยกลับมารายงานกลายเป็นแจ้งเตือน 50 รอบ
+  - **กติกาว่าผลล่าช้าส่ง event ไหน:** ผลนั้นปิด Rollout ที่ยัง `active` เป็นตัวสุดท้าย = การจบครั้งแรกจริง ส่งผลการจบตามปกติ
+    (`rollout-failed` หรือ `completed-clean`) · Rollout จบหรือหยุดไปแล้ว ส่ง `rollout-result-updated` อย่างเดียว ไม่ส่ง
+    `rollout-failed` · Rollout ยัง `active` และยังมีเครื่องค้าง ไม่ส่งอะไร (ผลสุดท้ายตอนจบคำนวณจากข้อมูลสด)
 - **incident (A):** สร้างหรืออัปเดต Incident ตามหัวข้อ 15.2 ถึง 15.4
 - **notification (B):** เพิ่มชนิดแจ้งเตือนใหม่ **`rollout_failed`** (เพิ่มค่าใน enum `NotificationType` ต้องมี migration
   แบบ additive) แล้วฟัง `rollout-failed` ส่งให้ Operation ทุกคนที่ active (เหมือน `config-sync-failure-alert.listener.ts`)
@@ -516,7 +523,8 @@ Rollout ไม่มีวันจบ Auto Pause ไม่ทำงาน แ�
 - เครื่อง `skipped_offline` ที่กลับมาออนไลน์ **ยังได้งานนั้น** ถ้า Rollout เป็น `active` หรือ `completed` (ไม่ใช่ `cancelled`)
   และเครื่องยังไม่มีงานใหม่กว่าของ payload ชนิดเดียวกัน (ถ้ามี Rollout ใหม่กว่า เครื่องจะได้งานของรอบนั้นแทน)
 - รายงานผลได้ตามปกติ `skipped_offline` เปลี่ยนเป็น `success` หรือ `failed` พร้อมหมายเหตุ "ล่าช้า" นับตัวเลขใหม่และอัปเดต
-  Incident ตามหัวข้อ 15.4 Rollout ที่ `completed` แล้วไม่เปิดใหม่ และผลล่าช้าไม่ทำให้เกิด Auto Pause
+  Incident ตามหัวข้อ 15.4 Rollout ที่ `completed` แล้วไม่เปิดใหม่ ผลล่าช้าไม่ทำให้เกิด Auto Pause และ**ไม่ทำให้เกิด
+  `rollout-failed` ซ้ำ** (ดูกติกาในหัวข้อ 15.5)
 - เครื่อง `failed` จากการดึงแล้วเงียบ ถ้ารายงานผลทีหลัง **ไม่เปลี่ยนผล** (ตัดสินไปแล้วและอาจทำให้เกิด Auto Pause ไปแล้ว)
   ตอบ `already-reported` และเก็บข้อความไว้ให้ Operation เห็น
 

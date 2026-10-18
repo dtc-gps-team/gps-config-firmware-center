@@ -8,6 +8,11 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { CampaignRolloutService } from '../../src/campaign/campaign-rollout.service';
 import { CampaignModule } from '../../src/campaign/campaign.module';
+import {
+  ROLLOUT_FAILED_EVENT,
+  RolloutEvents,
+  type RolloutFailedEvent,
+} from '../../src/campaign/rollout-events';
 import { RolloutTimeoutService } from '../../src/campaign/rollout-timeout.service';
 import { DeviceSyncModule } from '../../src/device-sync/device-sync.module';
 import { IncidentModule } from '../../src/incident/incident.module';
@@ -32,6 +37,7 @@ describe('Rollout timeout + auto Incident (integration — real postgres)', () =
   let prisma: PrismaClient;
   let rolloutService: CampaignRolloutService;
   let timeoutService: RolloutTimeoutService;
+  let rolloutEvents: RolloutEvents;
   const previousMode = process.env.DEVICE_CONFIG_APPLY_MODE;
   const apiKeyOf = new Map<string, string>();
 
@@ -64,6 +70,7 @@ describe('Rollout timeout + auto Incident (integration — real postgres)', () =
     timeoutService = moduleFixture.get(RolloutTimeoutService, {
       strict: false,
     });
+    rolloutEvents = moduleFixture.get(RolloutEvents, { strict: false });
     prisma = createTestPrisma();
     await prisma.$connect();
   });
@@ -251,6 +258,143 @@ describe('Rollout timeout + auto Incident (integration — real postgres)', () =
       where: { id: rollout.id },
     });
     expect(after.successCount).toBe(1);
+  });
+
+  /** เครื่องดึงงานแล้วรายงานผล (ใช้กับเครื่องที่ถูกข้ามกลับมา = ผลล่าช้า) */
+  async function pullAndReport(
+    deviceId: string,
+    result: 'success' | 'failed',
+    detail: string,
+  ) {
+    const key = apiKeyOf.get(deviceId) as string;
+    const jobs = await request(app.getHttpServer())
+      .get(`/api/v1/device-sync/${deviceId}/jobs`)
+      .set('X-Device-Api-Key', key)
+      .expect(200);
+    const body = jobs.body as { jobs: { jobId: string }[] };
+    expect(body.jobs).toHaveLength(1);
+    await request(app.getHttpServer())
+      .post(`/api/v1/device-sync/${deviceId}/jobs/${body.jobs[0].jobId}/result`)
+      .set('X-Device-Api-Key', key)
+      .send({ result, detail })
+      .expect(200);
+    return body.jobs[0].jobId;
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+  it('ผลล่าช้าตอน Rollout ยังรันอยู่ (ยังมีเครื่องค้าง) -> ไม่สร้าง Incident และไม่ส่ง rollout-failed (รีวิว B บน #337)', async () => {
+    const a = await seedDevice();
+    const b = await seedDevice();
+    const c = await seedDevice();
+    const { rollout } = await seedReleasedRollout([
+      a.deviceId,
+      b.deviceId,
+      c.deviceId,
+    ]);
+    // c ดึงงานแล้วรอผล (ไม่ใช่ skipped) -> Rollout ยังไม่จบหลัง sweep
+    await request(app.getHttpServer())
+      .get(`/api/v1/device-sync/${c.deviceId}/jobs`)
+      .set('X-Device-Api-Key', apiKeyOf.get(c.deviceId) as string)
+      .expect(200);
+    await prisma.campaignRollout.update({
+      where: { id: rollout.id },
+      data: { activeWindowStartedAt: hoursAgo(80) },
+    });
+    const swept = await timeoutService.sweep();
+    expect(swept.skippedOffline).toBe(2);
+    expect(
+      (
+        await prisma.campaignRollout.findUniqueOrThrow({
+          where: { id: rollout.id },
+        })
+      ).status,
+    ).toBe('active');
+    await settle();
+    expect(await prisma.incident.count()).toBe(0);
+
+    const failedEvents: RolloutFailedEvent[] = [];
+    const onFailed = (e: RolloutFailedEvent) => failedEvents.push(e);
+    rolloutEvents.on(ROLLOUT_FAILED_EVENT, onFailed);
+    try {
+      await pullAndReport(a.deviceId, 'failed', 'ค่าผิด');
+      await settle();
+    } finally {
+      rolloutEvents.off(ROLLOUT_FAILED_EVENT, onFailed);
+    }
+
+    // เดิม: ได้ rollout-failed "จบแล้ว" 1 ตัวและ Incident ทั้งที่ Rollout ยังรันอยู่
+    expect(failedEvents).toEqual([]);
+    expect(await prisma.incident.count()).toBe(0);
+    const after = await prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rollout.id },
+    });
+    expect(after.status).toBe('active');
+    expect(after.failureCount).toBe(1);
+  });
+
+  it('ผลล่าช้าหลัง Rollout จบและ Operation ตัดสิน Incident แล้ว -> ไม่เปิดกลับเป็น open ไม่ส่ง rollout-failed ซ้ำ แต่ตัวเลขอัปเดต (รีวิว B บน #337)', async () => {
+    const a = await seedDevice();
+    const b = await seedDevice();
+    const { rollout } = await seedReleasedRollout([a.deviceId, b.deviceId]);
+    await prisma.campaignRollout.update({
+      where: { id: rollout.id },
+      data: { activeWindowStartedAt: hoursAgo(80) },
+    });
+    await timeoutService.sweep();
+    const incident = await waitFor(() =>
+      prisma.incident.findFirst({ where: { source: 'rollout-failure' } }),
+    );
+    expect(incident.status).toBe('open');
+    expect(incident.severity).toBe('low');
+    // Operation ตัดสินแล้ว (ปิดโดยไม่ทำอะไรต่อ)
+    await prisma.incident.update({
+      where: { id: incident.id },
+      data: { status: 'dismissed' },
+    });
+
+    const failedEvents: RolloutFailedEvent[] = [];
+    const onFailed = (e: RolloutFailedEvent) => failedEvents.push(e);
+    rolloutEvents.on(ROLLOUT_FAILED_EVENT, onFailed);
+    try {
+      await pullAndReport(a.deviceId, 'failed', 'ค่าผิด');
+      await waitFor(async () => {
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incident.id },
+        });
+        return (row.metadata as { failureCount?: number }).failureCount === 1
+          ? row
+          : null;
+      });
+      await pullAndReport(b.deviceId, 'success', 'ใช้ค่าแล้ว');
+      await waitFor(async () => {
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incident.id },
+        });
+        return (row.metadata as { skippedCount?: number }).skippedCount === 0
+          ? row
+          : null;
+      });
+    } finally {
+      rolloutEvents.off(ROLLOUT_FAILED_EVENT, onFailed);
+    }
+
+    const final = await prisma.incident.findUniqueOrThrow({
+      where: { id: incident.id },
+    });
+    // ยังเป็น dismissed ไม่ถูกเปิดกลับ และ title เดิม
+    expect(final.status).toBe('dismissed');
+    expect(final.title).toBe(incident.title);
+    // ล้ม 1 จาก 2 เครื่อง = 50% เกินเกณฑ์ -> severity ขึ้นเป็น high ไม่ลดระดับ
+    expect(final.severity).toBe('high');
+    expect(final.metadata).toMatchObject({
+      failureCount: 1,
+      skippedCount: 0,
+      targetCount: 2,
+      failedDeviceIds: [a.deviceId],
+    });
+    expect(failedEvents).toEqual([]);
+    expect(await prisma.incident.count()).toBe(1);
   });
 
   it('Rollout ที่ค้างอยู่ในโหมด mock ไม่ถูก sweep', async () => {

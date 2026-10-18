@@ -5,9 +5,11 @@ import { ConfigSyncFailure } from '../config-sync-writer/config-sync-writer-queu
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
 import {
   ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
   ROLLOUT_STATUS_CHANGED_EVENT,
   RolloutEvents,
   type RolloutFailedEvent,
+  type RolloutResultUpdatedEvent,
 } from '../campaign/rollout-events';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -183,6 +185,126 @@ describe('IncidentService', () => {
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(incidentCreate).toHaveBeenCalledTimes(1);
+    });
+
+    describe('rollout-result-updated (ผลล่าช้า — อัปเดตตัวเลขอย่างเดียว)', () => {
+      const resultUpdated: RolloutResultUpdatedEvent = {
+        rolloutId: 'rollout-1',
+        campaignId: 'camp-1',
+        campaignName: 'กลุ่มรถบรรทุก',
+        severity: 'low',
+        failureCount: 1,
+        skippedCount: 0,
+        targetCount: 10,
+        failedDeviceIds: ['DEV-1'],
+        sampleErrors: ['ผลล่าช้า: ค่าผิด'],
+      };
+      const existingIncident = (status: string, severity = 'medium') => {
+        incidentFindFirst.mockResolvedValue({
+          id: 'inc-9',
+          title: 'Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: กลุ่มรถบรรทุก',
+          severity,
+          status,
+          metadata: {
+            rolloutId: 'rollout-1',
+            campaignId: 'camp-1',
+            kind: 'completed-with-skipped',
+            skippedCount: 3,
+          },
+        });
+      };
+
+      it.each([
+        'open',
+        'investigating',
+        'resolved',
+        'dismissed',
+        'rolled_back',
+      ])(
+        'Incident สถานะ %s -> อัปเดตตัวเลข/คำอธิบาย แต่ไม่แตะ status และ title',
+        async (status) => {
+          existingIncident(status);
+
+          await service.handleRolloutResultUpdated(resultUpdated);
+
+          expect(incidentUpdate).toHaveBeenCalledTimes(1);
+          const call = incidentUpdate.mock.calls[0] as [
+            { where: unknown; data: Record<string, unknown> },
+          ];
+          expect(call[0].where).toEqual({ id: 'inc-9' });
+          // รีวิว B บน #337: เดิมทุกผลล่าช้าเปิด Incident กลับเป็น open
+          expect(call[0].data).not.toHaveProperty('status');
+          expect(call[0].data).not.toHaveProperty('title');
+          expect(call[0].data.description).toEqual(
+            expect.stringContaining('ล้มเหลว 1 จาก 10 เครื่อง'),
+          );
+          expect(call[0].data.metadata).toMatchObject({
+            rolloutId: 'rollout-1',
+            // คง kind เดิมไว้ ไม่ถูกเขียนทับ
+            kind: 'completed-with-skipped',
+            failureCount: 1,
+            skippedCount: 0,
+            targetCount: 10,
+            failedDeviceIds: ['DEV-1'],
+            sampleErrors: ['ผลล่าช้า: ค่าผิด'],
+          });
+        },
+      );
+
+      it('severity เลือกค่าที่สูงกว่า ไม่ลดระดับ Incident', async () => {
+        existingIncident('open', 'critical');
+
+        await service.handleRolloutResultUpdated({
+          ...resultUpdated,
+          severity: 'low',
+        });
+        await service.handleRolloutResultUpdated({
+          ...resultUpdated,
+          severity: 'critical',
+        });
+
+        const severities = incidentUpdate.mock.calls.map(
+          (c) => (c as [{ data: { severity: string } }])[0].data.severity,
+        );
+        expect(severities).toEqual(['critical', 'critical']);
+
+        existingIncident('open', 'low');
+        incidentUpdate.mockClear();
+        await service.handleRolloutResultUpdated({
+          ...resultUpdated,
+          severity: 'high',
+        });
+        expect(incidentUpdate).toHaveBeenCalledWith({
+          where: { id: 'inc-9' },
+          data: expect.objectContaining({ severity: 'high' }) as unknown,
+        });
+      });
+
+      it('ไม่มี Incident ของ Rollout นี้ -> ไม่ทำอะไร ไม่สร้างใหม่', async () => {
+        await service.handleRolloutResultUpdated(resultUpdated);
+
+        expect(incidentCreate).not.toHaveBeenCalled();
+        expect(incidentUpdate).not.toHaveBeenCalled();
+      });
+
+      it('prisma พัง -> ไม่ throw (never-throws)', async () => {
+        incidentFindFirst.mockRejectedValue(new Error('db down'));
+
+        await expect(
+          service.handleRolloutResultUpdated(resultUpdated),
+        ).resolves.toBeUndefined();
+      });
+
+      it('onModuleInit ผูก listener: emit rollout-result-updated แล้วอัปเดตตัวเลข', async () => {
+        existingIncident('dismissed');
+        service.onModuleInit();
+
+        rolloutEvents.emit(ROLLOUT_RESULT_UPDATED_EVENT, resultUpdated);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(incidentUpdate).toHaveBeenCalledTimes(1);
+        expect(incidentCreate).not.toHaveBeenCalled();
+      });
     });
 
     describe('rollout-status-changed', () => {

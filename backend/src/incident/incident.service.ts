@@ -10,9 +10,11 @@ import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import {
   maxSeverity,
   ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
   ROLLOUT_STATUS_CHANGED_EVENT,
   RolloutEvents,
   type RolloutFailedEvent,
+  type RolloutResultUpdatedEvent,
   type RolloutStatusChangedEvent,
 } from '../campaign/rollout-events';
 import {
@@ -80,6 +82,35 @@ const UNSCOPED_INCIDENT_ROLES: readonly string[] = [
  * ฟัง event `'sync-failed'` จาก `ConfigSyncWriterQueue` — B มี listener แยก
  * ของตัวเอง (`incident_alert` notification) คนละ PR โดยไม่ต้องแตะไฟล์นี้
  */
+/** ข้อความ description ของ Incident จาก Rollout — ใช้ร่วมกันตอนสร้าง/อัปเดตจาก
+ * `rollout-failed` และตอนอัปเดตเฉพาะตัวเลขจาก `rollout-result-updated`
+ * เพื่อให้รูปแบบเดียวกันเสมอ */
+function rolloutIncidentDescription(
+  event: Pick<
+    RolloutFailedEvent,
+    | 'campaignName'
+    | 'rolloutId'
+    | 'failureCount'
+    | 'targetCount'
+    | 'skippedCount'
+    | 'sampleErrors'
+  >,
+): string {
+  const failureRate =
+    event.targetCount > 0 ? event.failureCount / event.targetCount : 0;
+  return (
+    `Campaign "${event.campaignName}" Rollout ${event.rolloutId}: ` +
+    `ล้มเหลว ${event.failureCount} จาก ${event.targetCount} เครื่อง ` +
+    `(${(failureRate * 100).toFixed(1)}%)` +
+    (event.skippedCount > 0
+      ? ` · ข้ามเพราะออฟไลน์ ${event.skippedCount} เครื่อง`
+      : '') +
+    (event.sampleErrors.length > 0
+      ? ` · ตัวอย่างข้อผิดพลาด: ${event.sampleErrors.join(' / ')}`
+      : '')
+  );
+}
+
 @Injectable()
 export class IncidentService implements OnModuleInit {
   private readonly logger = new Logger(IncidentService.name);
@@ -113,6 +144,12 @@ export class IncidentService implements OnModuleInit {
         void this.handleRolloutStatusChanged(event);
       },
     );
+    this.rolloutEvents.on(
+      ROLLOUT_RESULT_UPDATED_EVENT,
+      (event: RolloutResultUpdatedEvent) => {
+        void this.handleRolloutResultUpdated(event);
+      },
+    );
     this.logger.log("ผูก listener 'rollout-failed' ของ Campaign Rollout แล้ว");
   }
 
@@ -128,8 +165,6 @@ export class IncidentService implements OnModuleInit {
    */
   async handleRolloutFailed(event: RolloutFailedEvent): Promise<void> {
     try {
-      const failureRate =
-        event.targetCount > 0 ? event.failureCount / event.targetCount : 0;
       const metadata: IncidentMetadata = {
         rolloutId: event.rolloutId,
         campaignId: event.campaignId,
@@ -144,16 +179,7 @@ export class IncidentService implements OnModuleInit {
         event.kind === 'auto-pause'
           ? `Rollout หยุดอัตโนมัติ: ${event.campaignName}`
           : `Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: ${event.campaignName}`;
-      const description =
-        `Campaign "${event.campaignName}" Rollout ${event.rolloutId}: ` +
-        `ล้มเหลว ${event.failureCount} จาก ${event.targetCount} เครื่อง ` +
-        `(${(failureRate * 100).toFixed(1)}%)` +
-        (event.skippedCount > 0
-          ? ` · ข้ามเพราะออฟไลน์ ${event.skippedCount} เครื่อง`
-          : '') +
-        (event.sampleErrors.length > 0
-          ? ` · ตัวอย่างข้อผิดพลาด: ${event.sampleErrors.join(' / ')}`
-          : '');
+      const description = rolloutIncidentDescription(event);
 
       const existing = await this.findRolloutIncident(event.rolloutId);
       if (existing) {
@@ -191,6 +217,55 @@ export class IncidentService implements OnModuleInit {
     } catch (err) {
       this.logger.error(
         `สร้าง Incident จาก 'rollout-failed' ไม่สำเร็จ (rollout ${event.rolloutId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * อัปเดต**ตัวเลข**ใน Incident เดิมของ Rollout เมื่อผลของเครื่องในรอบที่จบหรือ
+   * หยุดไปแล้วเปลี่ยน เช่น เครื่องที่ถูกข้ามกลับมารายงานผลล่าช้า (docs/19
+   * §15.4 แถวสุดท้าย, §16.4) — never-throws
+   *
+   * ต่างจาก `handleRolloutFailed` โดยตั้งใจ (แก้ตามรีวิว B บน #337):
+   *   - **ไม่แตะ `status`** Incident ที่ Operation ตัดสินแล้ว (`investigating`,
+   *     `resolved`, `dismissed`, `rolled_back`) ต้องไม่ถูกเปิดกลับเป็น `open`
+   *     เพราะมีเครื่องทยอยกลับมารายงาน และ Incident ที่ปิดสะอาดแล้วไม่ถูกปิดเอง
+   *     เพิ่ม (Operation ปิดเอง)
+   *   - **ไม่สร้าง Incident ใหม่** ไม่มี Incident ของ Rollout นี้ก็ไม่ทำอะไร
+   *   - คง `title` / `kind` เดิม และ severity ใช้ค่าที่สูงกว่า ไม่ลดระดับ
+   */
+  async handleRolloutResultUpdated(
+    event: RolloutResultUpdatedEvent,
+  ): Promise<void> {
+    try {
+      const existing = await this.findRolloutIncident(event.rolloutId);
+      if (!existing) return;
+
+      const previous =
+        existing.metadata &&
+        typeof existing.metadata === 'object' &&
+        !Array.isArray(existing.metadata)
+          ? (existing.metadata as IncidentMetadata)
+          : {};
+      const metadata: IncidentMetadata = {
+        ...previous,
+        failureCount: event.failureCount,
+        skippedCount: event.skippedCount,
+        targetCount: event.targetCount,
+        failedDeviceIds: event.failedDeviceIds,
+        sampleErrors: event.sampleErrors,
+      };
+      await this.prisma.incident.update({
+        where: { id: existing.id },
+        data: {
+          description: rolloutIncidentDescription(event),
+          severity: maxSeverity(existing.severity, event.severity),
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `อัปเดตตัวเลข Incident จาก Rollout ${event.rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
       );
     }
   }
