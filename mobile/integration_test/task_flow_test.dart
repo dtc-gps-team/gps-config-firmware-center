@@ -20,8 +20,7 @@ Future<void> _ensureLoggedOut(WidgetTester tester) async {
   // A previous run can leave a persisted session (reinstalling the APK keeps
   // secure storage). If we land on Home, log out first.
   if (find.byKey(const Key('home_logout')).evaluate().isNotEmpty) {
-    await tester.tap(find.byKey(const Key('home_logout')));
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    await _logout(tester);
   }
 }
 
@@ -90,8 +89,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('home_logout')));
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    await _logout(tester);
 
     // Operation แทน SW เดิม (role ถูกแยกตั้งแต่ #174 และ role ใหม่อย่าง
     // ConfigEngineer ยัง login เข้า Mobile ไม่ได้ — UserRole ฝั่ง Mobile ไม่มี)
@@ -103,4 +101,18 @@ void main() {
     expect(find.byKey(const Key('shortcut_my_tasks')), findsNothing);
     await binding.takeScreenshot('04-home-operation-no-tasks');
   });
+}
+
+/// Logout ต้องกดค้าง + ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`,
+/// มีคิวค้าง = `logout_unsynced_confirm`)
+Future<void> _logout(WidgetTester tester) async {
+  await tester.longPress(find.byKey(const Key('home_logout')));
+  await tester.pumpAndSettle();
+  final plain = find.byKey(const Key('logout_confirm'));
+  await tester.tap(
+    plain.evaluate().isNotEmpty
+        ? plain
+        : find.byKey(const Key('logout_unsynced_confirm')),
+  );
+  await tester.pumpAndSettle(const Duration(seconds: 2));
 }

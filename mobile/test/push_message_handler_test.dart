@@ -233,8 +233,13 @@ void main() {
 
     setUp(() {
       router = GoRouter(
+        // ผู้ใช้ที่ login แล้วอยู่บน /home เสมอ (redirect ของ routerProvider)
+        // ปลายทางจาก push เปิดทับ Home (UX audit #4)
+        initialLocation: '/home',
         routes: [
           GoRoute(path: '/', builder: (_, _) => const SizedBox()),
+          // ปลายทางจาก push เปิดทับ Home เสมอ (UX audit #4)
+          GoRoute(path: '/home', builder: (_, _) => const SizedBox()),
           GoRoute(path: '/incidents/:id', builder: (_, _) => const SizedBox()),
         ],
       );
@@ -260,7 +265,14 @@ void main() {
       await tester.pump();
     }
 
-    String location() => router.routeInformationProvider.value.uri.toString();
+    // หน้าบนสุดของ stack — ปลายทางจาก push เปิดด้วย push() ทับ Home (UX
+    // audit #4) ซึ่ง go_router ไม่เปลี่ยน uri ให้ จึงอ่านจาก match ตัวสุดท้าย
+    String location() {
+      final config = router.routerDelegate.currentConfiguration;
+      return config.isEmpty
+          ? router.routeInformationProvider.value.uri.toString()
+          : config.last.matchedLocation;
+    }
 
     _MutableAuth auth() =>
         container.read(authControllerProvider.notifier) as _MutableAuth;
@@ -269,7 +281,7 @@ void main() {
       container.read(pushMessageHandlerProvider).openPath('/incidents/i1');
 
       expect(container.read(pendingPushRouteProvider), '/incidents/i1');
-      expect(location(), '/');
+      expect(location(), '/home');
     });
 
     testWidgets('parked path opens once authenticated, then is cleared', (
@@ -347,7 +359,7 @@ void main() {
       await settle(tester);
 
       expect(container.read(pendingPushRouteProvider), isNull);
-      expect(location(), '/');
+      expect(location(), '/home');
     });
 
     testWidgets('A logout -> กด push -> A login กลับมา = ไปปลายทางตามปกติ', (
