@@ -34,6 +34,8 @@ class TaskListPage extends ConsumerWidget {
     final failedCount = ref.watch(failedSyncActionsProvider).value?.length ?? 0;
     final authExpired =
         ref.watch(syncAuthExpiredProvider) && pendingIds.isNotEmpty;
+    // UX audit #14 — ออฟไลน์ กำลังแสดง cache ในเครื่อง
+    final offline = ref.watch(taskListCacheSnapshotProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -55,14 +57,22 @@ class TaskListPage extends ConsumerWidget {
             // — เกณฑ์เดียวกับ Home "งานค้างวันนี้" ใช้ shared helper ตัวเดียวกัน
             // กันไม่ให้สองหน้าตัดสิน "เร่งด่วน" ต่างกัน)
             final tasks = TaskUrgencyStyle.sorted(rawTasks);
-            final offset = (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
+            final offlineRow = offline == null ? 0 : 1;
+            final offset =
+                offlineRow + (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
             return ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: tasks.length + offset,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
-                if (authExpired && i == 0) return const SyncAuthExpiredBanner();
-                if (failedCount > 0 && i == (authExpired ? 1 : 0)) {
+                if (offline != null && i == 0) {
+                  return OfflineCacheBanner(cachedAt: offline.cachedAt);
+                }
+                if (authExpired && i == offlineRow) {
+                  return const SyncAuthExpiredBanner();
+                }
+                if (failedCount > 0 &&
+                    i == offlineRow + (authExpired ? 1 : 0)) {
                   return SyncFailedBanner(count: failedCount);
                 }
                 final task = tasks[i - offset];

@@ -11,6 +11,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
@@ -141,6 +142,14 @@ Future<void> _pumpHome(
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
         ),
+        // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+        // (timer ของ stream ค้างหลังปิด tree)
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
       ],
       child: const MaterialApp(home: HomePage()),
     ),
@@ -203,6 +212,14 @@ Future<void> _pumpHomeRouted(
         ),
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
+        ),
+        // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+        // (timer ของ stream ค้างหลังปิด tree)
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
         ),
       ],
       child: MaterialApp.router(routerConfig: router),
@@ -472,6 +489,9 @@ void main() {
       tester,
     ) async {
       await _pumpHomeRouted(tester, UserRole.st);
+      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
+      await tester.ensureVisible(find.byKey(const Key('shortcut_simulator')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shortcut_simulator')));
       await tester.pumpAndSettle();
       expect(find.text('SIMULATOR_PAGE_STUB'), findsOneWidget);
@@ -479,6 +499,9 @@ void main() {
 
     testWidgets('ST แตะ "ทดสอบสัญญาณ" -> ไปหน้าทดสอบสัญญาณ', (tester) async {
       await _pumpHomeRouted(tester, UserRole.st);
+      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
+      await tester.ensureVisible(find.byKey(const Key('shortcut_device_test')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shortcut_device_test')));
       await tester.pumpAndSettle();
       expect(find.text('DEVICE_TEST_PAGE_STUB'), findsOneWidget);
@@ -702,6 +725,14 @@ void main() {
           appDatabaseProvider.overrideWithValue(db),
           recentDeviceIdStoreProvider.overrideWithValue(
             InMemoryRecentDeviceIdStore(),
+          ),
+          // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+          // (timer ของ stream ค้างหลังปิด tree)
+          pendingTaskIdsProvider.overrideWith(
+            (ref) => Stream.value(const <String>{}),
+          ),
+          failedSyncActionsProvider.overrideWith(
+            (ref) => Stream.value(const <PendingActionRow>[]),
           ),
         ],
       );

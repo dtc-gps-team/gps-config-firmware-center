@@ -413,11 +413,18 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         (canEditStatus || role == UserRole.operation) &&
         task.status != TaskStatus.cancelled;
 
+    // UX audit #14 — ออฟไลน์ กำลังแสดง cache ในเครื่อง
+    final offline = ref.watch(taskDetailCacheSnapshotProvider(widget.taskId));
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
+          if (offline != null) ...[
+            OfflineCacheBanner(cachedAt: offline.cachedAt),
+            const SizedBox(height: 16),
+          ],
           Text(
             task.title,
             style: const TextStyle(

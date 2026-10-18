@@ -14,6 +14,7 @@ import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
+import 'home_status_banners.dart';
 
 /// Human-readable role label shown in the greeting badge.
 String _roleLabel(UserRole? role) {
@@ -71,6 +72,7 @@ class HomePage extends ConsumerWidget {
             _HeaderRow(username: auth.username, role: role),
             const SizedBox(height: 20),
             if (isFieldStaff) ...[
+              const HomeStatusBanners(),
               _UrgentTasksSection(tasksAsync: tasksAsync!),
               _HistorySection(tasksAsync: tasksAsync),
               const SizedBox(height: 24),
