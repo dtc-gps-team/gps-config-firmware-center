@@ -6,6 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 /// `ApiClient` error-mapping is already covered end-to-end in
 /// `api_client_test.dart` — this fake just proves `ApiConfigOverrideRepository`
@@ -223,14 +229,29 @@ void main() {
     );
   });
 
-  test('configOverrideRepositoryProvider ให้ ApiConfigOverrideRepository เมื่อ '
-      'API_MOCK_MODE=false (ค่า default ตอนรันเทส — mirror regression guard '
-      'ของ simulatorRepositoryProvider)', () {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
-    expect(
-      container.read(configOverrideRepositoryProvider),
-      isA<ApiConfigOverrideRepository>(),
-    );
-  });
+  test(
+    'configOverrideRepositoryProvider ให้ ApiConfigOverrideRepository เมื่อ API_MOCK_MODE=false',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(configOverrideRepositoryProvider),
+        isA<ApiConfigOverrideRepository>(),
+      );
+    },
+    skip: AppConfig.apiMockMode ? _realModeOnly : false,
+  );
+
+  test(
+    'configOverrideRepositoryProvider ให้ MockConfigOverrideRepository เมื่อ API_MOCK_MODE=true (default)',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(configOverrideRepositoryProvider),
+        isA<MockConfigOverrideRepository>(),
+      );
+    },
+    skip: AppConfig.apiMockMode ? false : 'mock-mode only',
+  );
 }

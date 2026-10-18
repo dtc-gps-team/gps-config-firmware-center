@@ -19,6 +19,12 @@ import 'package:mobile/core/widgets/sync_status_widgets.dart';
 import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 // Flow-level tests that map 1:1 onto the PR #276 emulator checklist: they
 // wire the real pieces together (repository + queue + triggers + AuthController)
@@ -277,6 +283,7 @@ void main() {
     });
   });
 
+  // SyncTriggers flush คิวตอน cold start เฉพาะโหมดจริง (sync_providers.dart)
   group('cold start: flush รอจน session restore เสร็จ', () {
     // regression ที่เจอบน emulator: SyncTriggers.start() flush ทันทีใน initState
     // ก่อน token ถูก restore -> 401 -> banner "เซสชันหมดอายุ" หลอก และคิวค้าง
@@ -344,7 +351,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(api.updates, isEmpty);
     });
-  });
+  }, skip: AppConfig.apiMockMode ? _realModeOnly : false);
 
   group('checklist 4: logout ตอนมีคิวค้าง / request ค้างบนสาย', () {
     ProviderContainer containerWith(SyncQueueService sync) {
