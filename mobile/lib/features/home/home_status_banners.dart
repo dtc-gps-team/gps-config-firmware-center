@@ -16,7 +16,7 @@ import '../task/task_status_ui.dart';
 /// - แถบออฟไลน์เมื่อกำลังแสดงข้อมูลงานจาก cache (UX audit #14)
 /// - banner session หมดอายุ / ซิงค์ไม่สำเร็จ (UX audit #15) เดิมมีแค่หน้ารายการงาน
 ///   ใช้ widget และเงื่อนไขเดียวกับหน้านั้น
-/// - แถบสรุป "ค้าง N · ด่วน M" แตะแล้วไปหน้างานของฉัน (UX audit #15)
+/// - แถบสรุป "ค้าง N งาน ด่วน M งาน" แตะแล้วไปหน้างานของฉัน (UX audit #15)
 class HomeStatusBanners extends ConsumerWidget {
   const HomeStatusBanners({super.key});
 
@@ -89,7 +89,7 @@ class _TaskSummary extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'ค้าง ${open.length} · ด่วน $urgent',
+                    'ค้าง ${open.length} งาน ด่วน $urgent งาน',
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

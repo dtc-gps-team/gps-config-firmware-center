@@ -147,16 +147,22 @@ void main() {
 
       expect(_summary, findsOneWidget);
       expect(
-        find.descendant(of: _summary, matching: find.text('ค้าง 4 · ด่วน 2')),
+        find.descendant(
+          of: _summary,
+          matching: find.text('ค้าง 4 งาน ด่วน 2 งาน'),
+        ),
         findsOneWidget,
       );
     });
 
-    testWidgets('ไม่มีงานค้าง -> ค้าง 0 · ด่วน 0', (tester) async {
+    testWidgets('ไม่มีงานค้าง -> ค้าง 0 งาน ด่วน 0 งาน', (tester) async {
       await _pumpHome(tester, tasks: [_task('1', TaskStatus.completed)]);
 
       expect(
-        find.descendant(of: _summary, matching: find.text('ค้าง 0 · ด่วน 0')),
+        find.descendant(
+          of: _summary,
+          matching: find.text('ค้าง 0 งาน ด่วน 0 งาน'),
+        ),
         findsOneWidget,
       );
     });

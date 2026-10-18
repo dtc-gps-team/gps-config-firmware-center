@@ -19,7 +19,7 @@ import 'package:mobile/features/task/task_list_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 // UX audit #14 — ตอนออฟไลน์ repository ใช้ข้อมูลงานจาก cache ในเครื่องแบบเงียบๆ
-// ช่างไม่รู้ว่ากำลังดูข้อมูลเก่า ต้องมีแถบ "ออฟไลน์ — ข้อมูลเมื่อ HH:mm" โดยเวลาคือ
+// ช่างไม่รู้ว่ากำลังดูข้อมูลเก่า ต้องมีแถบ "ออฟไลน์ ข้อมูลเมื่อ HH:mm" โดยเวลาคือ
 // ตอนที่ cache ถูกบันทึกจริง (ไม่ใช่เวลาปัจจุบัน)
 
 /// server ปลอม: [offline] = true -> ทุกคำขอล้มแบบไม่มี HTTP response
@@ -141,7 +141,7 @@ void main() {
       await _pump(tester, const TaskListPage(), api);
 
       expect(_banner, findsOneWidget);
-      expect(find.text('ออฟไลน์ — ข้อมูลเมื่อ 09:15'), findsOneWidget);
+      expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
       expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
     });
 
@@ -166,7 +166,7 @@ void main() {
 
       await _pump(tester, const TaskListPage(), api);
 
-      expect(find.text('ออฟไลน์ — ข้อมูลเมื่อ 08:05'), findsOneWidget);
+      expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 08:05'), findsOneWidget);
     });
 
     testWidgets('cache ของเมื่อวาน -> บอกวันที่ด้วย ไม่ใช่แค่เวลา', (
@@ -180,7 +180,7 @@ void main() {
 
       final dd = yesterday.day.toString().padLeft(2, '0');
       final mm = yesterday.month.toString().padLeft(2, '0');
-      expect(find.text('ออฟไลน์ — ข้อมูลเมื่อ $dd/$mm 09:15'), findsOneWidget);
+      expect(find.text('ออฟไลน์ ข้อมูลเมื่อ $dd/$mm 09:15'), findsOneWidget);
     });
 
     testWidgets('รายละเอียดงาน: ออฟไลน์ -> แถบบอกเวลาของงานนั้น', (
@@ -191,7 +191,7 @@ void main() {
 
       await _pump(tester, const TaskDetailPage(taskId: '1'), api);
 
-      expect(find.text('ออฟไลน์ — ข้อมูลเมื่อ 07:30'), findsOneWidget);
+      expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 07:30'), findsOneWidget);
     });
 
     testWidgets('Home: ออฟไลน์ -> แถบขึ้นบน Home ด้วย', (tester) async {
@@ -200,7 +200,7 @@ void main() {
 
       await _pump(tester, const HomePage(), api);
 
-      expect(find.text('ออฟไลน์ — ข้อมูลเมื่อ 09:15'), findsOneWidget);
+      expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
     });
 
     testWidgets('เน็ตกลับมาแล้วดึงใหม่ -> แถบหายไป', (tester) async {

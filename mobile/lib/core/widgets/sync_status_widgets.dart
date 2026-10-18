@@ -97,7 +97,7 @@ class SyncAuthExpiredBanner extends StatelessWidget {
 /// "ข้อมูลเมื่อ ..." ของแถบออฟไลน์ — วันนี้บอกแค่ HH:mm วันอื่นบอก dd/MM HH:mm
 /// ด้วย (ไม่งั้น cache ของเมื่อวานจะดูเหมือนข้อมูลของวันนี้)
 String offlineCacheLabel(DateTime? cachedAt, {DateTime? now}) {
-  if (cachedAt == null) return 'ออฟไลน์ — แสดงข้อมูลที่บันทึกไว้ในเครื่อง';
+  if (cachedAt == null) return 'ออฟไลน์ แสดงข้อมูลที่บันทึกไว้ในเครื่อง';
   String two(int n) => n.toString().padLeft(2, '0');
   final at = cachedAt.toLocal();
   final today = (now ?? DateTime.now()).toLocal();
@@ -105,8 +105,8 @@ String offlineCacheLabel(DateTime? cachedAt, {DateTime? now}) {
       at.year == today.year && at.month == today.month && at.day == today.day;
   final time = '${two(at.hour)}:${two(at.minute)}';
   return sameDay
-      ? 'ออฟไลน์ — ข้อมูลเมื่อ $time'
-      : 'ออฟไลน์ — ข้อมูลเมื่อ ${two(at.day)}/${two(at.month)} $time';
+      ? 'ออฟไลน์ ข้อมูลเมื่อ $time'
+      : 'ออฟไลน์ ข้อมูลเมื่อ ${two(at.day)}/${two(at.month)} $time';
 }
 
 /// เรียก server ไม่ได้ กำลังแสดงข้อมูลที่ cache ไว้ในเครื่อง (UX audit #14) —
