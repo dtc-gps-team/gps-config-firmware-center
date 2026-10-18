@@ -1023,4 +1023,471 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       expect((res.body as { status: string }[])[0].status).toBe('pending');
     });
   });
+
+  describe('ค่าเฉพาะเครื่องตอนสร้าง/ปล่อย Rollout (docs/17)', () => {
+    async function seedDefinitions() {
+      await prisma.configFieldDefinition.deleteMany();
+      for (const def of [
+        { fieldName: 'SPEED_LIMIT', dataType: 'integer', sensitive: false },
+        { fieldName: 'COMMAND_PASSWORD', dataType: 'string', sensitive: true },
+      ]) {
+        await prisma.configFieldDefinition.create({
+          data: {
+            fieldName: def.fieldName,
+            dataType: def.dataType,
+            allowedValues: [],
+            sensitive: def.sensitive,
+            supportedModels: {
+              create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+            },
+          },
+        });
+      }
+    }
+
+    async function seedScenario() {
+      await seedDefinitions();
+      const creator = await makeUser(prisma, { role: 'Operation' });
+      const approver = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      await grant('Operation', ActionType.Approve);
+      await grant('Operation', ActionType.Read);
+      const config = await seedApprovedConfig();
+      const device = await seedInstalledDevice();
+      const other = await seedInstalledDevice();
+      const campaign = await seedGroup(creator.id, [
+        device.deviceId,
+        other.deviceId,
+      ]);
+      return { creator, approver, config, device, other, campaign };
+    }
+
+    function createWithValues(
+      campaignId: string,
+      token: string,
+      body: Record<string, unknown>,
+    ) {
+      return request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaignId}/rollouts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+    }
+
+    it('สร้างพร้อม deviceValues -> เก็บ proposedFields ที่ target และเหตุผลที่ Rollout ยังไม่มี override', async () => {
+      const s = await seedScenario();
+
+      const res = await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+          deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+        },
+      ).expect(201);
+
+      const rolloutId = (res.body as { id: string }).id;
+      const rollout = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rolloutId },
+      });
+      expect(rollout.deviceValuesReason).toBe(
+        'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+      );
+      const targets = await prisma.campaignRolloutTarget.findMany({
+        where: { rolloutId },
+      });
+      const withValues = targets.find((t) => t.deviceId === s.device.deviceId);
+      expect(withValues?.proposedFields).toEqual({ SPEED_LIMIT: 180 });
+      expect(
+        targets.find((t) => t.deviceId === s.other.deviceId)?.proposedFields,
+      ).toBeNull();
+      expect(await prisma.deviceConfigOverride.count()).toBe(0);
+    });
+
+    describe('field นอกชุดของรุ่นที่ template ใส่ไว้ (รีวิวพี่เลี้ยง 12 ต.ค.)', () => {
+      /** field ที่ผูกกับรุ่นอื่นเท่านั้น (VT300) ไม่ใช่ GT06N ที่ Config นี้ใช้ */
+      async function seedOutsideModelScenario(inTemplate: boolean) {
+        const s = await seedScenario();
+        await prisma.configFieldDefinition.create({
+          data: {
+            fieldName: 'OUTSIDE_FIELD',
+            dataType: 'string',
+            allowedValues: [],
+            sensitive: false,
+            supportedModels: {
+              create: [{ deviceModel: 'VT300', protocol: 'TCP' }],
+            },
+          },
+        });
+        const config = await prisma.config.update({
+          where: { id: s.config.id },
+          data: {
+            fields: inTemplate
+              ? { APN: 'internet', OUTSIDE_FIELD: 'default' }
+              : { APN: 'internet' },
+          },
+        });
+        return { ...s, config };
+      }
+
+      it('field อยู่ใน template ของ Config -> ตั้งค่าเฉพาะเครื่องได้ (201)', async () => {
+        const s = await seedOutsideModelScenario(true);
+
+        await createWithValues(
+          s.campaign.id,
+          tokenFor(s.creator.id, 'Operation'),
+          {
+            payloadType: 'Config',
+            configId: s.config.id,
+            deviceValues: [
+              {
+                deviceId: s.device.deviceId,
+                fields: { OUTSIDE_FIELD: 'custom' },
+              },
+            ],
+            deviceValuesReason: 'ลูกค้าใช้ค่านอกชุดของรุ่น',
+          },
+        ).expect(201);
+      });
+
+      it('field ไม่อยู่ใน template -> 400 (เพิ่ม field นอกชุดเองไม่ได้)', async () => {
+        const s = await seedOutsideModelScenario(false);
+
+        await createWithValues(
+          s.campaign.id,
+          tokenFor(s.creator.id, 'Operation'),
+          {
+            payloadType: 'Config',
+            configId: s.config.id,
+            deviceValues: [
+              {
+                deviceId: s.device.deviceId,
+                fields: { OUTSIDE_FIELD: 'custom' },
+              },
+            ],
+            deviceValuesReason: 'x',
+          },
+        ).expect(400);
+        expect(await prisma.campaignRollout.count()).toBe(0);
+      });
+    });
+
+    it('field ที่ไม่รู้จักหรือชนิดผิด -> 400 ไม่สร้าง Rollout', async () => {
+      const s = await seedScenario();
+
+      await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            {
+              deviceId: s.device.deviceId,
+              fields: { SPEED_LIMIT: 'เร็ว', NO_SUCH_FIELD: 1 },
+            },
+          ],
+          deviceValuesReason: 'x',
+        },
+      ).expect(400);
+
+      expect(await prisma.campaignRollout.count()).toBe(0);
+    });
+
+    it('มี deviceValues แต่ไม่กรอกเหตุผล -> 400', async () => {
+      const s = await seedScenario();
+
+      await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+        },
+      ).expect(400);
+    });
+
+    it('เครื่องที่ช่างมีคำขอ override รออนุมัติของ Config นี้ -> 409', async () => {
+      const s = await seedScenario();
+      const st = await makeUser(prisma, { role: 'ST' });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.device.deviceId,
+          configId: s.config.id,
+          versionNumber: 1,
+          fields: { SPEED_LIMIT: 150 },
+          reason: 'ช่างขอ',
+          status: 'pending',
+          overriddenBy: st.id,
+        },
+      });
+
+      await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+          deviceValuesReason: 'x',
+        },
+      ).expect(409);
+      expect(await prisma.campaignRollout.count()).toBe(0);
+    });
+
+    it('อนุมัติแล้วปล่อย -> บันทึก DeviceConfigOverride approved ต่อเครื่อง (รวมค่า approved เดิม) และอนุมัติไม่ได้สร้างอะไรก่อนปล่อย', async () => {
+      const s = await seedScenario();
+      // ค่า approved เดิมของ (เครื่อง, Config นี้) version 3
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.device.deviceId,
+          configId: s.config.id,
+          versionNumber: 3,
+          fields: { COMMAND_PASSWORD: 'old-secret' },
+          reason: 'เดิม',
+          status: 'approved',
+          overriddenBy: s.creator.id,
+          decidedBy: s.approver.id,
+          decidedAt: new Date(),
+        },
+      });
+      const res = await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+          deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+        },
+      ).expect(201);
+      const rolloutId = (res.body as { id: string }).id;
+      const base = `/api/v1/campaigns/${s.campaign.id}/rollouts/${rolloutId}`;
+      const approverToken = tokenFor(s.approver.id, 'Operation');
+
+      await request(app.getHttpServer())
+        .post(`${base}/approve`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+      // อนุมัติแล้วแต่ยังไม่ปล่อย: ยังไม่มี override ใหม่
+      expect(await prisma.deviceConfigOverride.count()).toBe(1);
+
+      await request(app.getHttpServer())
+        .post(`${base}/release`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+
+      const rows = await prisma.deviceConfigOverride.findMany({
+        where: { deviceId: s.device.deviceId },
+        orderBy: { versionNumber: 'asc' },
+      });
+      expect(rows).toHaveLength(2);
+      const created = rows[1];
+      expect(created.versionNumber).toBe(4);
+      expect(created.status).toBe('approved');
+      expect(created.fields).toEqual({
+        COMMAND_PASSWORD: 'old-secret',
+        SPEED_LIMIT: 180,
+      });
+      expect(created.reason).toBe('ลูกค้าขอเพดานความเร็วสูงกว่าปกติ');
+      expect(created.overriddenBy).toBe(s.creator.id);
+      expect(created.decidedBy).toBe(s.approver.id);
+      // เครื่องที่ไม่มีค่าเฉพาะเครื่องไม่มี override
+      expect(
+        await prisma.deviceConfigOverride.count({
+          where: { deviceId: s.other.deviceId },
+        }),
+      ).toBe(0);
+    });
+
+    it('ช่างขอ override หลังสร้าง Rollout แต่ก่อนปล่อย -> release 409 ไม่สร้างแถว override และ Rollout ยังเป็น approved (ปล่อยใหม่ได้เมื่อคำขอถูกตัดสิน)', async () => {
+      const s = await seedScenario();
+      const st = await makeUser(prisma, { role: 'ST' });
+      const res = await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            { deviceId: s.device.deviceId, fields: { SPEED_LIMIT: 180 } },
+          ],
+          deviceValuesReason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
+        },
+      ).expect(201);
+      const rolloutId = (res.body as { id: string }).id;
+      const base = `/api/v1/campaigns/${s.campaign.id}/rollouts/${rolloutId}`;
+      const approverToken = tokenFor(s.approver.id, 'Operation');
+      await request(app.getHttpServer())
+        .post(`${base}/approve`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+
+      // ช่างขอ override ของ (เครื่อง, Config นี้) หลังสร้าง Rollout ไปแล้ว
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.device.deviceId,
+          configId: s.config.id,
+          versionNumber: 1,
+          fields: { SPEED_LIMIT: 150 },
+          reason: 'ช่างขอ',
+          status: 'pending',
+          overriddenBy: st.id,
+        },
+      });
+
+      const blocked = await request(app.getHttpServer())
+        .post(`${base}/release`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(409);
+      expect(JSON.stringify(blocked.body)).toContain(s.device.deviceId);
+      expect(await prisma.deviceConfigOverride.count()).toBe(1);
+      const stillApproved = await prisma.campaignRollout.findUniqueOrThrow({
+        where: { id: rolloutId },
+      });
+      expect(stillApproved.status).toBe('approved');
+
+      // Operation ตัดสินคำขอของช่างแล้ว (ปฏิเสธ) ปล่อยต่อได้
+      await prisma.deviceConfigOverride.updateMany({
+        where: { deviceId: s.device.deviceId },
+        data: { status: 'rejected' },
+      });
+      await request(app.getHttpServer())
+        .post(`${base}/release`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .expect(200);
+      expect(
+        await prisma.deviceConfigOverride.count({
+          where: { status: 'approved' },
+        }),
+      ).toBe(1);
+    });
+
+    it('GET device-values: คืนค่าพิเศษเดิมที่ใช้ต่อได้ และธงคำขอของช่างที่ค้าง', async () => {
+      const s = await seedScenario();
+      const st = await makeUser(prisma, { role: 'ST' });
+      const oldConfig = await seedApprovedConfig();
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.device.deviceId,
+          configId: oldConfig.id,
+          versionNumber: 1,
+          fields: { SPEED_LIMIT: 180, GHOST_FIELD: 1 },
+          reason: 'เดิม',
+          status: 'approved',
+          overriddenBy: st.id,
+          decidedBy: s.approver.id,
+          decidedAt: new Date(),
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: s.other.deviceId,
+          configId: s.config.id,
+          versionNumber: 1,
+          fields: { SPEED_LIMIT: 150 },
+          reason: 'ช่างขอ',
+          status: 'pending',
+          overriddenBy: st.id,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(
+          `/api/v1/campaigns/${s.campaign.id}/rollouts/device-values?configId=${s.config.id}`,
+        )
+        .set('Authorization', `Bearer ${tokenFor(s.creator.id, 'Operation')}`)
+        .expect(200);
+
+      const items = res.body as {
+        deviceId: string;
+        hasPendingRequest: boolean;
+        previous: {
+          fields: Record<string, unknown>;
+          dropped: { fieldName: string }[];
+          fromConfigId: string;
+        } | null;
+      }[];
+      const first = items.find((i) => i.deviceId === s.device.deviceId);
+      expect(first?.hasPendingRequest).toBe(false);
+      expect(first?.previous?.fields).toEqual({ SPEED_LIMIT: 180 });
+      expect(first?.previous?.dropped.map((d) => d.fieldName)).toEqual([
+        'GHOST_FIELD',
+      ]);
+      expect(first?.previous?.fromConfigId).toBe(oldConfig.id);
+      const second = items.find((i) => i.deviceId === s.other.deviceId);
+      expect(second).toMatchObject({ hasPendingRequest: true, previous: null });
+    });
+
+    it('GET device-values: role ที่ไม่มีสิทธิ์ Create (Auditor) -> 403', async () => {
+      const s = await seedScenario();
+      const auditor = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read);
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/v1/campaigns/${s.campaign.id}/rollouts/device-values?configId=${s.config.id}`,
+        )
+        .set('Authorization', `Bearer ${tokenFor(auditor.id, 'Auditor')}`)
+        .expect(403);
+    });
+
+    it('GET targets: Operation เห็นค่า sensitive จริง role อื่นเห็น mask', async () => {
+      const s = await seedScenario();
+      const auditor = await makeUser(prisma, { role: 'Auditor' });
+      await grant('Auditor', ActionType.Read);
+      const res = await createWithValues(
+        s.campaign.id,
+        tokenFor(s.creator.id, 'Operation'),
+        {
+          payloadType: 'Config',
+          configId: s.config.id,
+          deviceValues: [
+            {
+              deviceId: s.device.deviceId,
+              fields: { SPEED_LIMIT: 180, COMMAND_PASSWORD: 'new-secret' },
+            },
+          ],
+          deviceValuesReason: 'x',
+        },
+      ).expect(201);
+      const url = `/api/v1/campaigns/${s.campaign.id}/rollouts/${
+        (res.body as { id: string }).id
+      }/targets`;
+      type Row = {
+        deviceId: string;
+        proposedFields: Record<string, unknown> | null;
+      };
+
+      const asOperation = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${tokenFor(s.creator.id, 'Operation')}`)
+        .expect(200);
+      const asAuditor = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${tokenFor(auditor.id, 'Auditor')}`)
+        .expect(200);
+
+      const pick = (rows: Row[]) =>
+        rows.find((r) => r.deviceId === s.device.deviceId)?.proposedFields;
+      expect(pick(asOperation.body as Row[])).toEqual({
+        SPEED_LIMIT: 180,
+        COMMAND_PASSWORD: 'new-secret',
+      });
+      expect(pick(asAuditor.body as Row[])).toEqual({
+        SPEED_LIMIT: 180,
+        COMMAND_PASSWORD: '********',
+      });
+    });
+  });
 });

@@ -130,7 +130,7 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 | `LEGACY_SYNC_MODE` | `mock` \| `docker` \| `production` | `config-sync-writer` (ดู Build Reference §4.1) |
 | `NOTIFICATION_MODE` | `mock` (default) \| `fcm` | `notification` module |
 | `DEVICE_SIMULATOR_MODE` | `mock` \| `real` | config/firmware simulation |
-| `API_MOCK_MODE` | `true` \| `false` | Mobile (ผ่าน `--dart-define=API_MOCK_MODE=true`) |
+| `API_MOCK_MODE` | `true` (default) \| `false` | Mobile (ค่าเริ่มต้น mock · ต่อ backend จริงส่ง `--dart-define=API_MOCK_MODE=false`) |
 
 default ต้องเป็น mock เสมอ — โหมดที่ยิงระบบจริงต้องตั้ง env var ชัดเจนถึงจะทำงาน
 
