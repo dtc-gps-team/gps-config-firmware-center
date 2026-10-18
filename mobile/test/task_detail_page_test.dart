@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
@@ -9,6 +10,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
@@ -180,6 +182,7 @@ Future<void> _pump(
   DeviceStatusRepository? statusRepo,
   Set<String> pendingIds = const {},
   TaskEventRepository? eventRepo,
+  GoRouter? router,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -211,11 +214,31 @@ Future<void> _pump(
           statusRepo ?? _FakeDeviceStatusRepository(),
         ),
       ],
-      child: MaterialApp(home: TaskDetailPage(taskId: taskId)),
+      child: router == null
+          ? MaterialApp(home: TaskDetailPage(taskId: taskId))
+          : MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pump(); // resolve getTask
 }
+
+/// go_router จริง: `/tasks/:id` = หน้าจริง, `/devices/:deviceId` = หน้าปลอมที่
+/// บอก deviceId ที่ได้รับ (ใช้ยืนยันว่านำทางไป path ไหน)
+GoRouter _taskToDeviceRouter() => GoRouter(
+  initialLocation: AppRoutes.taskDetail('t1'),
+  routes: [
+    GoRoute(
+      path: AppRoutes.taskDetailPattern,
+      builder: (_, state) =>
+          TaskDetailPage(taskId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: AppRoutes.deviceDetailPattern,
+      builder: (_, state) =>
+          Text('DEVICE_PAGE ${state.pathParameters['deviceId']}'),
+    ),
+  ],
+);
 
 FilledButton _saveButton(WidgetTester tester) =>
     tester.widget<FilledButton>(find.byKey(const Key('task_status_save')));
@@ -224,6 +247,45 @@ Finder get _confirmInstallButton =>
     find.byKey(const Key('confirm_install_button'));
 
 void main() {
+  group('ลิงก์ไปหน้าอุปกรณ์ (UX audit #1)', () {
+    testWidgets('แตะเลขอุปกรณ์ -> ไปหน้ารายละเอียดอุปกรณ์ของเครื่องนั้น', (
+      tester,
+    ) async {
+      final router = _taskToDeviceRouter();
+      addTearDown(router.dispose);
+      await _pump(tester, repo: _FakeTaskRepository(), router: router);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('task_detail_device_link')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEVICE_PAGE DVC-1'), findsOneWidget);
+    });
+
+    testWidgets('เป้ากดของลิงก์สูงอย่างน้อย 48dp (กดด้วยนิ้วหน้างาน)', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeTaskRepository());
+      await tester.pump();
+
+      final size = tester.getSize(
+        find.byKey(const Key('task_detail_device_link')),
+      );
+      expect(size.height, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('งานไม่มีอุปกรณ์ -> แสดง "—" และไม่มีลิงก์', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(task: _makeTask(deviceId: null)),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('task_detail_device_link')), findsNothing);
+      expect(find.text('—'), findsWidgets);
+    });
+  });
+
   testWidgets('แสดงหัวข้องาน + สถานะ + ข้อมูลอุปกรณ์', (tester) async {
     await _pump(
       tester,

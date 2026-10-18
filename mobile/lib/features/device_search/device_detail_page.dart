@@ -7,7 +7,10 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../config_override/config_override_repository.dart';
+import '../config_override/pending_config_override_banner.dart';
 import '../firmware_override/pending_firmware_override_banner.dart';
 import 'device_search_repository.dart';
 import 'device_status_repository.dart';
@@ -110,6 +113,9 @@ class _DeviceDetailView extends ConsumerWidget {
           alignment: Alignment.centerLeft,
           child: DeviceStatusPill(status: device.status),
         ),
+        // UX audit #2 — เฉพาะ ST (role เดียวที่ขอ Config Override ได้ จึงไม่
+        // ยิง GET /devices/{id}/config ให้ role อื่นโดยไม่จำเป็น)
+        if (isSt) _PendingConfigOverride(deviceId: deviceId),
         const SizedBox(height: 20),
         const _SectionTitle('ข้อมูลอุปกรณ์'),
         const SizedBox(height: 8),
@@ -158,8 +164,12 @@ class _DeviceDetailView extends ConsumerWidget {
           const SizedBox(height: 20),
           OutlinedButton.icon(
             key: const Key('device_detail_config_override'),
-            onPressed: () =>
-                context.push(AppRoutes.deviceConfigOverride(deviceId)),
+            onPressed: () => _pushThenRefresh(
+              context,
+              ref,
+              deviceId: deviceId,
+              path: AppRoutes.deviceConfigOverride(deviceId),
+            ),
             icon: const Icon(Icons.tune),
             label: const Text('Override ค่าพารามิเตอร์'),
             style: OutlinedButton.styleFrom(
@@ -173,8 +183,12 @@ class _DeviceDetailView extends ConsumerWidget {
           // ไม่ตรงแผน Campaign (backend ตอบ 409 ที่ confirm-firmware-install)
           OutlinedButton.icon(
             key: const Key('device_detail_firmware_override'),
-            onPressed: () =>
-                context.push(AppRoutes.deviceFirmwareOverride(deviceId)),
+            onPressed: () => _pushThenRefresh(
+              context,
+              ref,
+              deviceId: deviceId,
+              path: AppRoutes.deviceFirmwareOverride(deviceId),
+            ),
             icon: const Icon(Icons.system_update_alt),
             label: const Text('ขอ Firmware Override'),
             style: OutlinedButton.styleFrom(
@@ -185,6 +199,45 @@ class _DeviceDetailView extends ConsumerWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// เปิดหน้าขอ Override แล้วโหลดคำขอที่รออยู่ใหม่เมื่อย้อนกลับมา (UX audit #2)
+/// — คำขอ Config อยู่ใน `GET /devices/{id}/config` ส่วนคำขอ Firmware อยู่ใน
+/// `GET /devices/{id}/status` จึง refresh ทั้งคู่
+Future<void> _pushThenRefresh(
+  BuildContext context,
+  WidgetRef ref, {
+  required String deviceId,
+  required String path,
+}) async {
+  await context.push(path);
+  if (!context.mounted) return;
+  ref.invalidate(currentConfigProvider(deviceId));
+  ref.invalidate(deviceStatusProvider(deviceId));
+}
+
+/// คำขอ Config Override ที่รอ Operation อนุมัติของเครื่องนี้ (UX audit #2) —
+/// โหลดไม่ได้ (เช่น 404 เครื่องยังไม่มี Config) หรือยังโหลดอยู่ = ไม่แสดงอะไร
+/// เพราะเป็นข้อมูลเสริม ไม่ควรบังข้อมูลอุปกรณ์ด้วย error
+class _PendingConfigOverride extends ConsumerWidget {
+  const _PendingConfigOverride({required this.deviceId});
+
+  final String deviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref
+        .watch(currentConfigProvider(deviceId))
+        .valueOrNull
+        ?.pendingOverride;
+    if (pending == null || pending.status != 'pending') {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: PendingConfigOverrideBanner(pending: pending),
     );
   }
 }
@@ -295,6 +348,10 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ตัวอักษรใหญ่: label อยู่เหนือค่าและได้ความกว้างเต็มแถว (UX audit #23)
+    // เดิมคอลัมน์ label กว้างตายตัว 110 ตอนตัวอักษรใหญ่ "สถานะ Firmware" ขึ้น
+    // บรรทัดใหม่กลางคำ ("Firmwar|e") และค่า (IMEI, วันที่) เหลือที่แคบ
+    final largeText = isLargeTextScale(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -307,37 +364,42 @@ class _InfoCard extends StatelessWidget {
           for (final (label, value) in rows)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 110,
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                      ),
+              child: largeText
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _label(label),
+                        const SizedBox(height: 2),
+                        _value(value),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(width: 110, child: _label(label)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _value(value)),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
         ],
       ),
     );
   }
+
+  static Widget _label(String text) => Text(
+    text,
+    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+  );
+
+  static Widget _value(String text) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.textPrimary,
+    ),
+  );
 }
 
 class _DetailError extends StatelessWidget {

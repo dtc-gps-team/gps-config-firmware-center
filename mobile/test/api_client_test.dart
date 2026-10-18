@@ -91,6 +91,69 @@ Future<void> _login(ApiClient client) =>
     client.login(const LoginRequest(username: 'x', password: 'y'));
 
 void main() {
+  // UX audit #5 — token หมดอายุ (401) ระหว่างใช้งานหน้าไหนก็ตาม ต้องแจ้ง
+  // AuthController ที่เดียว (เดิมรู้เฉพาะในคิว sync)
+  group('onUnauthorized (UX audit #5)', () {
+    test('401 จากคำขอที่แนบ token -> เรียก onUnauthorized 1 ครั้ง และยัง throw '
+        'ApiException(401) ให้ผู้เรียกเหมือนเดิม', () async {
+      final (:client, adapter: _) = _clientReturning({
+        'message': 'Unauthorized',
+      }, statusCode: 401);
+      var calls = 0;
+      client
+        ..setAuthToken('expired-token')
+        ..onUnauthorized = () => calls++;
+
+      await expectLater(
+        client.listTasks(),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'code', 401)),
+      );
+      expect(calls, 1);
+    });
+
+    test('401 จาก /auth/login (รหัสผิด) -> ไม่ใช่ session หมดอายุ', () async {
+      final (:client, adapter: _) = _clientReturning({
+        'message': 'Invalid credentials',
+      }, statusCode: 401);
+      var calls = 0;
+      client
+        ..setAuthToken('some-token')
+        ..onUnauthorized = () => calls++;
+
+      await expectLater(
+        client.login(const LoginRequest(username: 'st.x', password: 'bad')),
+        throwsA(isA<ApiException>()),
+      );
+      expect(calls, 0);
+    });
+
+    test('401 จากคำขอที่ไม่ได้แนบ token -> ไม่เรียก', () async {
+      final (:client, adapter: _) = _clientReturning({
+        'message': 'Unauthorized',
+      }, statusCode: 401);
+      var calls = 0;
+      client.onUnauthorized = () => calls++;
+
+      await expectLater(client.listTasks(), throwsA(isA<ApiException>()));
+      expect(calls, 0);
+    });
+
+    test('403 / 500 -> ไม่เรียก (ไม่ใช่ session หมดอายุ)', () async {
+      for (final code in [403, 500]) {
+        final (:client, adapter: _) = _clientReturning({
+          'message': 'x',
+        }, statusCode: code);
+        var calls = 0;
+        client
+          ..setAuthToken('t')
+          ..onUnauthorized = () => calls++;
+
+        await expectLater(client.listTasks(), throwsA(isA<ApiException>()));
+        expect(calls, 0, reason: 'status $code');
+      }
+    });
+  });
+
   group('ApiClient._wrap error message', () {
     test(
       'อ่าน response.data["message"] (ข้อความไทย) แทน statusMessage',
@@ -153,7 +216,10 @@ void main() {
         final client = _clientFailingWith(
           (o) => DioException(
             requestOptions: o,
-            response: _response(o, 502, '<html>Bad Gateway</html>'),
+            // 4xx: 5xx ทุกตัวเป็นข้อความไทยกลางแล้ว (UX audit #13,
+            // api_error_message_test.dart) เทสนี้ดูแค่ fallback ของ body
+            // ที่ไม่ใช่ Map
+            response: _response(o, 401, '<html>Unauthorized</html>'),
           ),
         );
 
