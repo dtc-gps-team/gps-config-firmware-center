@@ -35,7 +35,7 @@ class TaskListPage extends ConsumerWidget {
     final authExpired =
         ref.watch(syncAuthExpiredProvider) && pendingIds.isNotEmpty;
     // UX audit #14 — ออฟไลน์ กำลังแสดง cache ในเครื่อง
-    final offline = ref.watch(taskCacheSnapshotProvider);
+    final offline = ref.watch(taskListCacheSnapshotProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,

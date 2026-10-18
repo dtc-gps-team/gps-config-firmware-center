@@ -69,7 +69,15 @@ class CachedApiTaskRepository implements TaskRepository {
   /// แจ้งที่มาของข้อมูลที่เพิ่งอ่าน (UX audit #14): `null` = สดจาก server,
   /// ไม่ใช่ null = ใช้ cache ในเครื่องเพราะเรียก server ไม่ได้ พร้อมเวลาที่ cache
   /// ถูกบันทึก — ตั้งโดย [buildCachedTaskRepository]
-  void Function(TaskCacheSnapshot? snapshot)? onSource;
+  ///
+  /// แยกรายการ ([onListSource]) กับรายละเอียดรายงาน ([onTaskSource]) ตามรีวิว A
+  /// บน #338: หน้ารายการยัง mount อยู่ใต้หน้ารายละเอียดและไม่ดึงใหม่ตอนกลับมา
+  /// ถ้าใช้ค่าเดียวร่วมกัน แถบของหน้ารายการจะบอก "การอ่านล่าสุด" ของหน้ารายละเอียด
+  /// แทน "ข้อมูลที่หน้านั้นแสดงอยู่"
+  void Function(TaskCacheSnapshot? snapshot)? onListSource;
+
+  /// เหมือน [onListSource] แต่ของ `getTask(id)` — ผูกกับ id ของงานนั้น
+  void Function(String id, TaskCacheSnapshot? snapshot)? onTaskSource;
 
   @override
   Future<List<Task>> listTasks() async {
@@ -77,13 +85,15 @@ class CachedApiTaskRepository implements TaskRepository {
     try {
       tasks = await _api.listTasks();
       await _dao.upsertTasks(tasks.map(taskToCompanion).toList());
-      onSource?.call(null);
+      onListSource?.call(null);
     } on ApiException {
       final cached = await _dao.getAllTasks();
       if (cached.isEmpty) rethrow;
       tasks = cached.map(taskFromRow).toList();
       // เวลาที่เก่าที่สุดในชุด: ข้อมูลบางแถวอาจเก่าได้ถึงตอนนั้น
-      onSource?.call(TaskCacheSnapshot(_oldest(cached.map((r) => r.cachedAt))));
+      onListSource?.call(
+        TaskCacheSnapshot(_oldest(cached.map((r) => r.cachedAt))),
+      );
     }
     final overlay = await _pendingStatuses();
     return tasks.map((t) => _withPending(t, overlay)).toList();
@@ -95,12 +105,12 @@ class CachedApiTaskRepository implements TaskRepository {
     try {
       task = await _api.getTask(id);
       await _dao.upsertTask(taskToCompanion(task));
-      onSource?.call(null);
+      onTaskSource?.call(id, null);
     } on ApiException {
       final cached = await _dao.getTaskById(id);
       if (cached == null) rethrow;
       task = taskFromRow(cached);
-      onSource?.call(TaskCacheSnapshot(cached.cachedAt));
+      onTaskSource?.call(id, TaskCacheSnapshot(cached.cachedAt));
     }
     return _withPending(task, await _pendingStatuses());
   }
@@ -281,13 +291,23 @@ class TaskCacheSnapshot {
   final DateTime? cachedAt;
 }
 
-/// `null` = ข้อมูลงานที่อ่านล่าสุดสดจาก server · ไม่ใช่ null = ออฟไลน์ กำลังแสดง
-/// cache (UX audit #14) — หน้า Home / รายการงาน / รายละเอียดงานแสดงแถบจากค่านี้
-final taskCacheSnapshotProvider = StateProvider<TaskCacheSnapshot?>(
+/// ที่มาของ**รายการงาน** (`listTasks`): `null` = สดจาก server · ไม่ใช่ null =
+/// ออฟไลน์ กำลังแสดง cache (UX audit #14) — หน้า Home กับหน้ารายการงานใช้ข้อมูล
+/// ชุดเดียวกัน ([taskListProvider]) จึงแสดงแถบจากค่านี้ทั้งคู่
+final taskListCacheSnapshotProvider = StateProvider<TaskCacheSnapshot?>(
   (ref) => null,
 );
 
-/// [CachedApiTaskRepository] พร้อมต่อ [taskCacheSnapshotProvider] — แยกเป็น
+/// ที่มาของ**รายละเอียดงาน**ตาม id (`getTask`) แยกจาก
+/// [taskListCacheSnapshotProvider] (รีวิว A #338) — ไม่ใช้ `autoDispose`
+/// เพราะ repository เขียนค่าก่อนส่วนที่แสดงแถบของหน้ารายละเอียดจะ build (build
+/// หลังได้ข้อมูล) ค่าจะถูกทิ้งก่อนมีคนอ่าน · ค่าไม่ค้างข้ามรอบ เพราะเปิดหน้านี้
+/// ทุกครั้งจะดึงใหม่และเขียนทับก่อนแสดงเสมอ
+final taskDetailCacheSnapshotProvider =
+    StateProvider.family<TaskCacheSnapshot?, String>((ref, id) => null);
+
+/// [CachedApiTaskRepository] พร้อมต่อ [taskListCacheSnapshotProvider] กับ
+/// [taskDetailCacheSnapshotProvider] — แยกเป็น
 /// ฟังก์ชันให้เทสใช้ repository จริงได้โดยไม่ขึ้นกับ `API_MOCK_MODE`
 CachedApiTaskRepository buildCachedTaskRepository(Ref ref) {
   final repository = CachedApiTaskRepository(
@@ -296,14 +316,24 @@ CachedApiTaskRepository buildCachedTaskRepository(Ref ref) {
     ref.watch(pendingActionDaoProvider),
     ref.watch(syncQueueServiceProvider),
   );
-  repository.onSource = (snapshot) {
-    final notifier = ref.read(taskCacheSnapshotProvider.notifier);
-    if (notifier.state?.cachedAt != snapshot?.cachedAt ||
-        (notifier.state == null) != (snapshot == null)) {
-      notifier.state = snapshot;
+  void update(
+    StateController<TaskCacheSnapshot?> notifier,
+    TaskCacheSnapshot? s,
+  ) {
+    if (notifier.state?.cachedAt != s?.cachedAt ||
+        (notifier.state == null) != (s == null)) {
+      notifier.state = s;
     }
-  };
-  ref.onDispose(() => repository.onSource = null);
+  }
+
+  repository.onListSource = (snapshot) =>
+      update(ref.read(taskListCacheSnapshotProvider.notifier), snapshot);
+  repository.onTaskSource = (id, snapshot) =>
+      update(ref.read(taskDetailCacheSnapshotProvider(id).notifier), snapshot);
+  ref.onDispose(() {
+    repository.onListSource = null;
+    repository.onTaskSource = null;
+  });
   return repository;
 }
 

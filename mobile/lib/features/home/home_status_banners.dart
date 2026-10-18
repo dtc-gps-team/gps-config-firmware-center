@@ -22,7 +22,7 @@ class HomeStatusBanners extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final offline = ref.watch(taskCacheSnapshotProvider);
+    final offline = ref.watch(taskListCacheSnapshotProvider);
     final pendingIds = ref.watch(pendingTaskIdsProvider).value ?? const {};
     final failedCount = ref.watch(failedSyncActionsProvider).value?.length ?? 0;
     // เกณฑ์เดียวกับหน้ารายการงาน: เตือนเฉพาะเมื่อมีรายการค้างที่จะหายถ้า logout

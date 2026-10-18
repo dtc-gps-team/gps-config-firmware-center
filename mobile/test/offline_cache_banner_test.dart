@@ -220,6 +220,74 @@ void main() {
       expect(_banner, findsNothing);
     });
 
+    // รีวิว A #338: state "ใช้ cache อยู่" ต้องผูกกับข้อมูลที่หน้านั้นแสดงอยู่
+    // ไม่ใช่ "การอ่านล่าสุด" — หน้ารายการยัง mount อยู่ใต้หน้ารายละเอียด (push)
+    // และไม่ดึงใหม่ตอนกลับมา ถ้าใช้ state ร่วมกัน แถบของหน้ารายการจะเพี้ยนตาม
+    // ผลการอ่านของหน้ารายละเอียด
+    group('รายการงานกับรายละเอียดงานไม่ใช้ state cache ร่วมกัน', () {
+      Future<void> openDetail(WidgetTester tester) async {
+        Navigator.of(tester.element(find.byType(TaskListPage))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const TaskDetailPage(taskId: '1'),
+          ),
+        );
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+      }
+
+      Future<void> back(WidgetTester tester) async {
+        Navigator.of(tester.element(find.byType(TaskDetailPage))).pop();
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+      }
+
+      testWidgets('รายการสดจาก server แล้วรายละเอียดใช้ cache -> กลับมา '
+          'รายการต้องไม่มีแถบออฟไลน์', (tester) async {
+        final api = _FakeApi([_task('1')]);
+        await _pump(tester, const TaskListPage(), api);
+        expect(_banner, findsNothing);
+
+        api.offline = true;
+        await openDetail(tester);
+        expect(
+          find.descendant(of: find.byType(TaskDetailPage), matching: _banner),
+          findsOneWidget,
+        );
+
+        await back(tester);
+        expect(
+          find.descendant(of: find.byType(TaskListPage), matching: _banner),
+          findsNothing,
+        );
+      });
+
+      testWidgets('รายการจาก cache แล้วรายละเอียดดึงสำเร็จ -> กลับมา '
+          'รายการต้องยังมีแถบออฟไลน์', (tester) async {
+        await _seedCache([(_task('1'), _todayAt(9, 15))]);
+        final api = _FakeApi([_task('1')])..offline = true;
+        await _pump(tester, const TaskListPage(), api);
+        expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
+
+        api.offline = false;
+        await openDetail(tester);
+        expect(
+          find.descendant(of: find.byType(TaskDetailPage), matching: _banner),
+          findsNothing,
+        );
+
+        await back(tester);
+        expect(
+          find.descendant(
+            of: find.byType(TaskListPage),
+            matching: find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'),
+          ),
+          findsOneWidget,
+        );
+      });
+    });
+
     test(
       'ข้อมูลจาก server -> cachedAt ของแถวถูกบันทึกเป็นเวลาที่ดึง',
       () async {

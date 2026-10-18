@@ -414,7 +414,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         task.status != TaskStatus.cancelled;
 
     // UX audit #14 — ออฟไลน์ กำลังแสดง cache ในเครื่อง
-    final offline = ref.watch(taskCacheSnapshotProvider);
+    final offline = ref.watch(taskDetailCacheSnapshotProvider(widget.taskId));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
