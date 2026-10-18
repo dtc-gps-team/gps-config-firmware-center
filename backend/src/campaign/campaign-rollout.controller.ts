@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -20,9 +21,13 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { ActingUser } from './campaign.service';
-import { CampaignRolloutService } from './campaign-rollout.service';
+import {
+  CampaignRolloutService,
+  type RolloutDeviceValuesItem,
+} from './campaign-rollout.service';
 import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
+import { QueryRolloutDeviceValuesDto } from './dto/query-rollout-device-values.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -59,6 +64,18 @@ export class CampaignRolloutController {
     return this.rolloutService.create(campaignId, dto, toActor(req));
   }
 
+  // ค่าพิเศษเดิมของเครื่องในกลุ่มต่อ Config ที่จะใช้ (docs/17) — ใช้ตอน
+  // สร้าง Rollout จึงใช้สิทธิ์ Create (Operation) · ต้องประกาศก่อน
+  // `:id` ไม่งั้น "device-values" ถูกตีเป็น id
+  @Get('device-values')
+  @RequirePermission('campaign', ActionType.Create)
+  getDeviceValues(
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Query() query: QueryRolloutDeviceValuesDto,
+  ): Promise<RolloutDeviceValuesItem[]> {
+    return this.rolloutService.getDeviceValues(campaignId, query.configId);
+  }
+
   @Get(':id')
   @RequirePermission('campaign', ActionType.Read)
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<CampaignRollout> {
@@ -71,8 +88,9 @@ export class CampaignRolloutController {
   @RequirePermission('campaign', ActionType.Read)
   findTargets(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
   ): Promise<CampaignRolloutTarget[]> {
-    return this.rolloutService.findTargets(id);
+    return this.rolloutService.findTargets(id, toActor(req));
   }
 
   // Campaign Approval (แก้ครั้งที่ 39) — resource `campaign` action `Approve`
