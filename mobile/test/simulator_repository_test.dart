@@ -10,6 +10,12 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/features/config_simulator/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -193,10 +199,7 @@ void main() {
   });
 
   test(
-    'simulatorRepositoryProvider ให้ ApiSimulatorRepository เมื่อ API_MOCK_MODE=false '
-    '(ค่า default ตอนรันเทส — ไม่ได้ตั้ง --dart-define) — regression test: เดิม '
-    'provider นี้ hardcode คืน MockSimulatorRepository เสมอ ไม่เคยเช็ค '
-    'AppConfig.apiMockMode เลย ต่างจาก taskRepositoryProvider/notificationRepositoryProvider',
+    'simulatorRepositoryProvider ให้ ApiSimulatorRepository เมื่อ API_MOCK_MODE=false',
     () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -205,6 +208,20 @@ void main() {
         isA<ApiSimulatorRepository>(),
       );
     },
+    skip: AppConfig.apiMockMode ? _realModeOnly : false,
+  );
+
+  test(
+    'simulatorRepositoryProvider ให้ MockSimulatorRepository เมื่อ API_MOCK_MODE=true (default)',
+    () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(simulatorRepositoryProvider),
+        isA<MockSimulatorRepository>(),
+      );
+    },
+    skip: AppConfig.apiMockMode ? false : 'mock-mode only',
   );
 
   group('assignedDeviceIdListProvider', () {

@@ -795,4 +795,93 @@ describe('ConfigDefinitionService', () => {
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('validateOperationOverridableFields (ค่าเฉพาะเครื่องตอนสร้าง Rollout)', () => {
+    it('field รองรับรุ่นนี้ + ชนิดถูก -> ไม่มี error', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOperationOverridableFields('GT06N', 'TCP', {
+          APN1: 'internet',
+        }),
+      ).resolves.toEqual([]);
+    });
+
+    it('field ไม่รองรับรุ่นนี้และไม่อยู่ใน template -> error ไม่รองรับโมเดล', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      const errors = await service.validateOperationOverridableFields(
+        'GT06L',
+        'TCP',
+        { APN1: 'x' },
+      );
+
+      expect(errors).toEqual(['field "APN1" ไม่รองรับโมเดล GT06L/TCP']);
+    });
+
+    it('field ไม่รองรับรุ่นนี้แต่อยู่ใน template ของ Config -> ผ่าน (กฎเดียวกับช่าง)', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      await expect(
+        service.validateOperationOverridableFields(
+          'GT06L',
+          'TCP',
+          { APN1: 'x' },
+          ['APN1'],
+        ),
+      ).resolves.toEqual([]);
+    });
+
+    it('field อยู่ใน template แต่ชนิดข้อมูลผิด -> ยัง error', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      const errors = await service.validateOperationOverridableFields(
+        'GT06L',
+        'TCP',
+        { APN1: 12345 },
+        ['APN1'],
+      );
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain('ชนิดข้อมูล');
+    });
+
+    it('field ที่ไม่มีนิยามในคลัง -> error แม้อยู่ใน template', async () => {
+      findMany.mockResolvedValue([apnDef]);
+
+      const errors = await service.validateOperationOverridableFields(
+        'GT06N',
+        'TCP',
+        { GHOST: 1 },
+        ['GHOST'],
+      );
+
+      expect(errors[0]).toContain('ไม่รู้จัก field "GHOST"');
+    });
+
+    it('ส่งคลังที่โหลดไว้แล้วมาด้วย -> ไม่ query คลังซ้ำ', async () => {
+      findMany.mockClear();
+
+      const errors = await service.validateOperationOverridableFields(
+        'GT06N',
+        'TCP',
+        { APN1: 'internet' },
+        [],
+        [apnDef] as never,
+      );
+
+      expect(errors).toEqual([]);
+      expect(findMany).not.toHaveBeenCalled();
+    });
+
+    it('ไม่เช็ค stOverridable (Operation แก้ field ที่ช่างแก้ไม่ได้)', async () => {
+      findMany.mockResolvedValue([modeDef]);
+
+      await expect(
+        service.validateOperationOverridableFields('GT06N', 'TCP', {
+          MODE: 'GPRS',
+        }),
+      ).resolves.toEqual([]);
+    });
+  });
 });

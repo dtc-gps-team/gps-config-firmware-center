@@ -4,7 +4,9 @@ import '../api/models.dart';
 import 'app_database.dart' show TaskRow, TasksCompanion;
 
 /// `Task` (API model) → Drift row companion. Shared by the task repository
-/// (read-through cache) and `SyncQueueService` (refresh after a send).
+/// (read-through cache) and `SyncQueueService` (refresh after a send) — both
+/// write data that just came from the server, so `cachedAt` = now
+/// (UX audit #14: shown as "ข้อมูลเมื่อ HH:mm" when offline).
 TasksCompanion taskToCompanion(Task task) => TasksCompanion.insert(
   id: task.id,
   title: task.title,
@@ -16,6 +18,7 @@ TasksCompanion taskToCompanion(Task task) => TasksCompanion.insert(
   deviceId: Value(task.deviceId),
   configId: Value(task.configId),
   dueDate: Value(task.dueDate),
+  cachedAt: Value(DateTime.now()),
 );
 
 Task taskFromRow(TaskRow row) => Task(
