@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/db/tables/pending_actions_table.dart';
+import '../../core/router/app_router.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
@@ -97,8 +99,17 @@ class TaskDetailPage extends ConsumerWidget {
       ),
       body: taskAsync.when(
         skipLoadingOnRefresh: true,
+        // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh) ถ้า
+        // ไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย spinner แล้ว dispose ทิ้ง
+        // ระหว่างโหลด (UX audit #3)
+        skipLoadingOnReload: true,
         data: (task) => _TaskDetailView(
-          key: ValueKey('${task.id}:${task.status}:${task.updatedAt}'),
+          // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt ทำให้
+          // ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
+          // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config ที่ยัง
+          // ค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server ทำใน
+          // didUpdateWidget แทน
+          key: ValueKey(task.id),
           taskId: taskId,
           task: task,
         ),
@@ -156,6 +167,18 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   bool _incidentReported = false;
 
   bool get _simulationBlocked => _simulationResult?.passed == false;
+
+  @override
+  void didUpdateWidget(covariant _TaskDetailView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // server เปลี่ยนสถานะงาน (sync / บันทึกเสร็จ): ถ้าผู้ใช้ยังไม่ได้เลือก
+    // สถานะอื่นค้างไว้ ให้ตัวเลือกตามสถานะใหม่ — แทนการ reset ทั้ง view ด้วย
+    // key แบบเดิม ส่วนตัวเลือกที่ผู้ใช้เลือกค้างไว้ไม่ถูกทับ
+    if (widget.task.status != oldWidget.task.status &&
+        _selected == oldWidget.task.status) {
+      _selected = widget.task.status;
+    }
+  }
 
   bool get _dirty => _selected != widget.task.status;
 
@@ -423,6 +446,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           ),
           const SizedBox(height: 20),
           _InfoCard(
+            // UX audit #1: เลขอุปกรณ์กดไปหน้ารายละเอียดอุปกรณ์ได้ (เดิมต้องกลับ
+            // Home แล้วค้นหาเอง ก่อนจะไปขอแก้ Config ของเครื่องนั้น)
+            links: {
+              if ((task.deviceId ?? '').isNotEmpty)
+                'อุปกรณ์': (
+                  const Key('task_detail_device_link'),
+                  () => context.push(AppRoutes.deviceDetail(task.deviceId!)),
+                ),
+            },
             rows: [
               ('อุปกรณ์', task.deviceId ?? '—'),
               // raw user id — ยังไม่มี GET /users resolve ชื่อฝั่ง Mobile
@@ -746,9 +778,13 @@ class _ConfirmInstallBar extends StatelessWidget {
 }
 
 class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.rows});
+  const _InfoCard({required this.rows, this.links = const {}});
 
   final List<(String, String)> rows;
+
+  /// แถวที่ค่ากดได้ (label -> key + action) แสดงเป็นลิงก์ขีดเส้นใต้ และกด
+  /// ได้ทั้งแถว สูงอย่างน้อย 48dp
+  final Map<String, (Key, VoidCallback)> links;
 
   @override
   Widget build(BuildContext context) {
@@ -762,35 +798,75 @@ class _InfoCard extends StatelessWidget {
       child: Column(
         children: [
           for (final (label, value) in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 96,
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 13,
+            if (links[label] case (final key, final onTap))
+              InkWell(
+                key: key,
+                onTap: onTap,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 96,
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.navy,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 20,
                         color: AppTheme.textSecondary,
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 96,
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textSecondary,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
         ],
       ),
     );

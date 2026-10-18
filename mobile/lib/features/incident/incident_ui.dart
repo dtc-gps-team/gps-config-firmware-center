@@ -18,7 +18,8 @@ class IncidentStyle {
   static (Color, Color) severityColors(IncidentSeverity s) => switch (s) {
     IncidentSeverity.critical => (Color(0xFF7B241C), Colors.white),
     IncidentSeverity.high => (Color(0xFFFCE8E6), Color(0xFFC0392B)),
-    IncidentSeverity.medium => (Color(0xFFFDF0E3), Color(0xFFB9770E)),
+    // ส้มเดียวกับป้าย "ใกล้ถึงกำหนด" — 4.74:1 (เดิม 3.28:1, UX audit #10)
+    IncidentSeverity.medium => (Color(0xFFFDF0E3), Color(0xFF95600B)),
     IncidentSeverity.low => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
   };
 
@@ -33,7 +34,7 @@ class IncidentStyle {
   static (Color, Color) statusColors(IncidentStatus s) => switch (s) {
     IncidentStatus.open => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
     IncidentStatus.investigating => (Color(0xFFE3F0FB), Color(0xFF1F6FB2)),
-    IncidentStatus.rolledBack => (Color(0xFFFDF0E3), Color(0xFFB9770E)),
+    IncidentStatus.rolledBack => (Color(0xFFFDF0E3), Color(0xFF95600B)),
     IncidentStatus.resolved => (Color(0xFFE6F4EA), Color(0xFF1E7E34)),
     IncidentStatus.dismissed => (Color(0xFFECEFF1), Color(0xFF5F6E79)),
   };

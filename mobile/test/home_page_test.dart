@@ -754,7 +754,7 @@ void main() {
           ),
         );
 
-    testWidgets('ไม่มีรายการค้างในคิว -> logout ทันที ไม่มี dialog', (
+    testWidgets('แตะปุ่ม logout ครั้งเดียว -> ไม่ logout แค่บอกให้กดค้าง', (
       tester,
     ) async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -762,9 +762,51 @@ void main() {
       final container = await pumpHome(tester, db);
 
       await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('กดค้างเพื่อออกจากระบบ'), findsOneWidget);
+      expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
+      expect(
+        container.read(authControllerProvider).status,
+        AuthStatus.authenticated,
+      );
+    });
+
+    testWidgets(
+      'ไม่มีรายการค้าง: กดค้าง -> dialog ยืนยัน, ยกเลิก = ยังไม่ logout',
+      (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        final container = await pumpHome(tester, db);
+
+        await tester.longPress(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_confirm_dialog')), findsOneWidget);
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('logout_cancel')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.authenticated,
+        );
+      },
+    );
+
+    testWidgets('ไม่มีรายการค้าง: กดค้าง + ยืนยัน -> logout', (tester) async {
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final container = await pumpHome(tester, db);
+
+      await tester.longPress(find.byKey(const Key('home_logout')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('logout_confirm')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
       expect(
         container.read(authControllerProvider).status,
         AuthStatus.unauthenticated,
@@ -779,7 +821,7 @@ void main() {
       await queueAction(db, 'f', 'failed');
       final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.longPress(find.byKey(const Key('home_logout')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
@@ -802,7 +844,7 @@ void main() {
       await queueAction(db, 'p', 'pending');
       final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.longPress(find.byKey(const Key('home_logout')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
       await tester.pumpAndSettle();

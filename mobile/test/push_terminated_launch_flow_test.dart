@@ -96,7 +96,10 @@ void main() {
     await tester.pump();
   }
 
-  String path() => router.routeInformationProvider.value.uri.path;
+  // หน้าบนสุดของ stack — ปลายทางจาก push เปิดด้วย push() ทับ Home (UX audit
+  // #4) ซึ่ง go_router ไม่เปลี่ยน uri ให้ จึงอ่านจาก match ตัวสุดท้าย
+  String path() =>
+      router.routerDelegate.currentConfiguration.last.matchedLocation;
 
   Future<void> settle(WidgetTester tester) async {
     // addPostFrameCallback doesn't request a frame by itself; in the real app

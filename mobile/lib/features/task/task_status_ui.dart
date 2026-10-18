@@ -107,7 +107,8 @@ class TaskUrgencyStyle {
   /// `IncidentStyle` (แดง = error/overdue, ส้ม = warning/dueSoon)
   static (Color, Color) colors(TaskUrgency urgency) => switch (urgency) {
     TaskUrgency.overdue => (Color(0xFFFCE8E6), Color(0xFFC0392B)),
-    TaskUrgency.dueSoon => (Color(0xFFFDF0E3), Color(0xFFB9770E)),
+    // ส้มเข้มขึ้นจาก #B9770E (3.28:1) — 4.74:1 บนพื้นส้มอ่อน (UX audit #10)
+    TaskUrgency.dueSoon => (Color(0xFFFDF0E3), Color(0xFF95600B)),
     TaskUrgency.none => (Colors.transparent, Colors.transparent),
   };
 
