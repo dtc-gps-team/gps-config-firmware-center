@@ -46,6 +46,6 @@
 | 19 | ข้อความ hint mock mode อ้างถึง role "sw" ที่ลบไปแล้ว และ admin/audit ที่ถูกบล็อกบน Mobile แล้ว | งานเล็ก |
 | 20 | ปุ่มตาเปิด/ปิดค่าลับ ไม่มี tooltip/semanticLabel ขนาดเล็ก | งานเล็ก |
 | 21 | ไม่มี PopScope ในหน้าเลือกอุปกรณ์ ไม่มี errorBuilder ใน router | งานเล็ก |
-| 22 | hardcode font-size/radius/การ์ด/สี 200+ จุดทั่วแอป (`fontSize:` 109 จุด, `Radius.circular(` 76 จุด, `Color(0x` 43 จุด ณ `6c341a5`) | อยู่ในแผน docs/20: Step 1-2 สร้าง token/component, Step 4 ย้ายทีละโมดูล, Step 5 เทสดัก `Color(0x` |
+| 22 | hardcode font-size/radius/การ์ด/สี 200+ จุดทั่วแอป (`fontSize:` 109 จุด, `Radius.circular(` 76 จุด, `Color(0x` 67 จุดใน 50 บรรทัด 8 ไฟล์ หรือ 26 บรรทัดถ้าไม่นับ `app_theme.dart` — นับด้วย `git grep` ใน `mobile/lib` ณ `6c341a5`) | อยู่ในแผน docs/20: Step 1-2 สร้าง token/component, Step 4 ย้ายทีละโมดูล, Step 5 เทสดัก `Color(0x` |
 | 24 | แอปรองรับ dark theme โดยไม่ตั้งใจ (ไม่ได้ล็อก ThemeMode.light) | docs/20 §2 ระบุแค่ว่าเก็บ `AppTheme.dark()` ไว้ให้ build ได้แต่ไม่ขัดเกลา ยังไม่ได้ระบุว่าจะล็อก `ThemeMode.light` ต้องตัดสินเพิ่ม |
 | 25 | pubspec description/README ยังเป็น template, ชื่อแอป iOS/Android ยังเป็นค่า default | ต้องคุยกับทีมก่อน (เกี่ยวกับ #7) |

@@ -10,10 +10,15 @@ secrets/
 # [Ss] ให้ครอบทั้ง serviceAccount.json และ myServiceAccountKey.json บนเครื่องที่
 # git แยกตัวพิมพ์ (Linux / CI ที่ core.ignorecase=false)
 *[Ss]erviceAccount*.json
+*serviceaccount*.json
 *service_account*.json
+# ชื่อที่ tutorial บางตัวใช้ตอนดาวน์โหลด service account key
+credentials.json
 # ไฟล์ตัวอย่าง (placeholder) ยัง commit ได้ — ตั้งชื่อเป็น *.example.json
 !*service-account*.example.json
 !*[Ss]erviceAccount*.example.json
+!*serviceaccount*.example.json
+!*service_account*.example.json
 # ไฟล์ที่ Firebase Console ตั้งชื่อให้ตอนดาวน์โหลด (<project>-firebase-adminsdk-xxxxx.json)
 *firebase-adminsdk*.json
 
