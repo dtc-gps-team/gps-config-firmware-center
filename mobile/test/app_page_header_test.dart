@@ -11,12 +11,14 @@ Widget _wrap(Widget child) => MaterialApp(
 );
 
 void main() {
-  testWidgets('title เป็นหัวข้อ (header) ตัว 2xl semibold', (tester) async {
+  testWidgets('title เป็นหัวข้อ (header) ตัว xl semibold (มติ B Batch 2)', (
+    tester,
+  ) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(_wrap(const AppPageHeader(title: 'Incidents')));
 
     final title = tester.widget<Text>(find.text('Incidents'));
-    expect(title.style!.fontSize, AppTypography.xxl);
+    expect(title.style!.fontSize, AppTypography.xl);
     expect(title.style!.fontWeight, FontWeight.w600);
     expect(
       tester.getSemantics(find.text('Incidents')),

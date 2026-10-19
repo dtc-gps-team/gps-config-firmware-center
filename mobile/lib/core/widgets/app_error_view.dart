@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/app_tokens.dart';
+import '../ui/app_v2_theme.dart';
 
 /// Shared "error icon + message + ลองอีกครั้ง" block — pulled out of the
 /// near-identical copies in Home, Task List/Detail, Device Search/Detail,
@@ -17,6 +19,10 @@ import '../theme/app_theme.dart';
 ///  - `compact: true`: the small inline card (icon(18) + message in a Row,
 ///    right-aligned [TextButton] below) that Home uses for its "งานวันนี้"
 ///    preview card, where a full-page error block would be too heavy.
+///
+/// ในหน้าที่ย้ายไป design system ใหม่แล้ว (อยู่ใต้ [AppV2Theme]) ใช้สีจาก token
+/// (`destructive` / `mutedForeground` / ปุ่ม outline ของ theme v2) — หน้าที่ยัง
+/// ไม่ย้ายหน้าตาเหมือนเดิมทุกอย่าง (docs/22 Batch 2)
 ///
 /// [retryKey] / [messageKey] let call sites keep the exact `Key`s their
 /// existing widget tests already reference (e.g. `my_tasks_retry`,
@@ -39,13 +45,17 @@ class AppErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final v2 = AppV2Theme.isActive(context);
+    final errorColor = v2 ? AppColors.destructive : AppTheme.error;
+    final textColor = v2 ? AppColors.mutedForeground : AppTheme.textSecondary;
+    final accentColor = v2 ? AppColors.primary : AppTheme.navy;
     if (compact) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(12),
+          color: v2 ? AppColors.card : AppTheme.surface,
+          borderRadius: BorderRadius.circular(v2 ? AppRadius.lg : 12),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,20 +63,13 @@ class AppErrorView extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 18,
-                  color: AppTheme.error,
-                ),
+                Icon(Icons.error_outline, size: 18, color: errorColor),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     message,
                     key: messageKey,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                    ),
+                    style: TextStyle(fontSize: 13, color: textColor),
                   ),
                 ),
               ],
@@ -76,7 +79,7 @@ class AppErrorView extends StatelessWidget {
               child: TextButton(
                 key: retryKey,
                 onPressed: onRetry,
-                style: TextButton.styleFrom(foregroundColor: AppTheme.navy),
+                style: TextButton.styleFrom(foregroundColor: accentColor),
                 child: const Text('ลองอีกครั้ง'),
               ),
             ),
@@ -93,7 +96,7 @@ class AppErrorView extends StatelessWidget {
           children: [
             Icon(
               Icons.error_outline,
-              color: AppTheme.error.withValues(alpha: 0.7),
+              color: errorColor.withValues(alpha: 0.7),
               size: 32,
             ),
             const SizedBox(height: 12),
@@ -101,10 +104,7 @@ class AppErrorView extends StatelessWidget {
               message,
               key: messageKey,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppTheme.textSecondary,
-              ),
+              style: TextStyle(fontSize: 14, color: textColor),
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
@@ -112,10 +112,13 @@ class AppErrorView extends StatelessWidget {
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
               label: const Text('ลองอีกครั้ง'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.navy,
-                side: const BorderSide(color: AppTheme.navy),
-              ),
+              // v2: ใช้ปุ่ม outline ของ theme (ขอบ border ตัวอักษร foreground)
+              style: v2
+                  ? null
+                  : OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.navy,
+                      side: const BorderSide(color: AppTheme.navy),
+                    ),
             ),
           ],
         ),

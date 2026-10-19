@@ -50,8 +50,9 @@ class AppPageHeaderAction {
 /// - [actions] ดูกติกาที่ [AppPageHeaderAction]
 /// - [onBack] หน้าลูก: ปุ่มย้อนกลับอยู่แถวเดียวกับชื่อ · หน้าระดับแท็บไม่ใส่
 ///
-/// ขนาดชื่อใช้ `2xl` ตาม Web ไปก่อน (docs/22 §4.5 — อาจลดเป็น `xl` บนมือถือ
-/// ตัดสินตอนเอาไปใช้จริงพร้อม screenshot ใน Batch 2)
+/// ขนาดชื่อ `xl` (20) เล็กกว่า Web (`2xl` = 24) โดยตั้งใจ — มติ B Batch 2 หลังเทียบ
+/// screenshot บนเครื่องจริง: จอมือถือแคบ หน้ารายละเอียดที่มีปุ่มย้อนกลับ + ป้าย
+/// สถานะ + ชื่อยาวจะไม่ตัดขึ้นบรรทัดใหม่ง่ายๆ (docs/22 §4.5)
 class AppPageHeader extends StatelessWidget {
   const AppPageHeader({
     super.key,
@@ -109,8 +110,8 @@ class AppPageHeader extends StatelessWidget {
                         child: Text(
                           title,
                           style: const TextStyle(
-                            fontSize: AppTypography.xxl,
-                            height: AppTypography.xxlHeight,
+                            fontSize: AppTypography.xl,
+                            height: AppTypography.xlHeight,
                             fontWeight: FontWeight.w600,
                             color: AppColors.foreground,
                           ),

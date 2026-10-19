@@ -6,6 +6,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/theme/app_theme.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
@@ -119,24 +120,35 @@ void main() {
     );
   });
 
-  testWidgets('ปุ่มหลักหน้า login (ตัวเทียบ): กรมท่า ตัวอักษรขาว มุม 12', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      const LoginPage(),
-      auth: const AuthState(status: AuthStatus.unauthenticated),
-    );
-    final login = _Look(
-      _effectiveStyle(tester, find.byKey(const Key('login_submit'))),
-    );
-    expect(login.background, AppTheme.navy);
-    expect(login.foreground, Colors.white);
-    expect(
-      login.shape,
-      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    );
-  });
+  // Login ย้ายไป design system ใหม่แล้ว (docs/22 Batch 2) — ปุ่มหลักใช้ theme v2
+  // (primary #1B6FB2 มุม 10) · หน้าที่ยังไม่ย้ายด้านล่างยังเทียบกับแบบเดิม
+  // (กรมท่า มุม 12) จนกว่าจะย้ายตาม batch ของตัวเอง — ระหว่างทางสองแบบอยู่ร่วมกัน
+  // ได้ (docs/22 §9) แต่ในหน้าเดียวกันต้องไม่ปนกัน
+  testWidgets(
+    'ปุ่มหลักหน้า login: theme v2 — primary ตัวอักษรขาว มุม 10 สูง ≥ 48',
+    (tester) async {
+      await _pump(
+        tester,
+        const LoginPage(),
+        auth: const AuthState(status: AuthStatus.unauthenticated),
+      );
+      final login = _Look(
+        _effectiveStyle(tester, find.byKey(const Key('login_submit'))),
+      );
+      expect(login.background, AppColors.primary);
+      expect(login.foreground, AppColors.primaryForeground);
+      expect(
+        login.shape,
+        const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+        ),
+      );
+      expect(
+        tester.getSize(find.byKey(const Key('login_submit'))).height,
+        greaterThanOrEqualTo(48),
+      );
+    },
+  );
 
   final pages = <String, Widget>{
     'Config Override': const ConfigOverridePage(deviceId: 'DEV-0117'),
@@ -150,23 +162,24 @@ void main() {
   };
 
   pages.forEach((name, page) {
-    testWidgets('UX audit #12: ปุ่มหลักหน้า "$name" สี/ทรงเหมือนหน้า login', (
-      tester,
-    ) async {
-      await _pump(tester, page);
+    testWidgets(
+      'UX audit #12: ปุ่มหลักหน้า "$name" (ยังไม่ย้าย) กรมท่า มุม 12',
+      (tester) async {
+        await _pump(tester, page);
 
-      final button = find.byType(FilledButton);
-      expect(button, findsOneWidget, reason: name);
-      final look = _Look(_effectiveStyle(tester, button));
-      expect(look.background, AppTheme.navy, reason: '$name: $look');
-      expect(look.foreground, Colors.white, reason: '$name: $look');
-      expect(
-        look.shape,
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        reason: '$name: $look',
-      );
-      // สูงอย่างน้อย 48dp (กดด้วยนิ้วหน้างาน)
-      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
-    });
+        final button = find.byType(FilledButton);
+        expect(button, findsOneWidget, reason: name);
+        final look = _Look(_effectiveStyle(tester, button));
+        expect(look.background, AppTheme.navy, reason: '$name: $look');
+        expect(look.foreground, Colors.white, reason: '$name: $look');
+        expect(
+          look.shape,
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          reason: '$name: $look',
+        );
+        // สูงอย่างน้อย 48dp (กดด้วยนิ้วหน้างาน)
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      },
+    );
   });
 }

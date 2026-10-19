@@ -7,7 +7,15 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_info_row.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
+import '../../core/ui/labels.dart';
+import '../../core/ui/status_tones.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'incident_repository.dart';
 import 'incident_ui.dart';
@@ -17,6 +25,10 @@ import 'incident_ui.dart';
 /// permission — RBAC_Matrix.md "Incident & Rollback"). Related Config/Firmware
 /// ids are shown as selectable text: Mobile has no Config/Firmware screen to
 /// link to.
+///
+/// design system ใหม่ (docs/22 Batch 2): ป้าย severity / status ย้ายขึ้น
+/// `AppPageHeader` (หลังโหลดเสร็จ) · แถวข้อมูลเป็น `AppInfoRow` · ตรรกะ/การเรียก
+/// API เหมือนเดิม
 class IncidentDetailPage extends ConsumerWidget {
   const IncidentDetailPage({super.key, required this.incidentId});
 
@@ -25,29 +37,60 @@ class IncidentDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final incidentAsync = ref.watch(incidentDetailProvider(incidentId));
+    final navigator = Navigator.of(context);
+    final incident = incidentAsync.valueOrNull;
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('รายละเอียด Incident'),
-      ),
-      body: incidentAsync.when(
-        skipLoadingOnRefresh: true,
-        data: (incident) => _IncidentDetailView(incident: incident),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => ListView(
-          children: [
-            const SizedBox(height: 64),
-            AppErrorView(
-              message: _errorMessage(error),
-              onRetry: () => ref.invalidate(incidentDetailProvider(incidentId)),
-              messageKey: const Key('incident_detail_error'),
-              retryKey: const Key('incident_detail_retry'),
-            ),
-          ],
+    return AppV2Theme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppPageHeader(
+                title: 'รายละเอียด Incident',
+                onBack: navigator.canPop() ? navigator.pop : null,
+                status: incident == null
+                    ? null
+                    : Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          AppBadge(
+                            label: incidentSeverityLabel(incident.severity),
+                            tone: incidentSeverityTone(incident.severity),
+                            dot: true,
+                          ),
+                          AppBadge(
+                            label: incidentStatusLabel(incident.status),
+                            tone: incidentStatusTone(incident.status),
+                            dot: true,
+                          ),
+                        ],
+                      ),
+              ),
+              Expanded(
+                child: incidentAsync.when(
+                  skipLoadingOnRefresh: true,
+                  data: (incident) => _IncidentDetailView(incident: incident),
+                  loading: () => const AppDetailSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => ListView(
+                    children: [
+                      const SizedBox(height: 64),
+                      AppErrorView(
+                        message: _errorMessage(error),
+                        onRetry: () =>
+                            ref.invalidate(incidentDetailProvider(incidentId)),
+                        messageKey: const Key('incident_detail_error'),
+                        retryKey: const Key('incident_detail_retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -77,79 +120,66 @@ class _IncidentDetailView extends StatelessWidget {
         reviewedAt != null ||
         (reviewNote != null && reviewNote.isNotEmpty);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.fieldBorder, width: 1),
-          ),
+        AppCard(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 incident.title,
                 key: const Key('incident_detail_title'),
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: AppTypography.base,
+                  height: AppTypography.baseHeight,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
+                  color: AppColors.foreground,
                 ),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  IncidentSeverityPill(severity: incident.severity),
-                  IncidentStatusPill(status: incident.status),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const _Label('รายละเอียด'),
+              const SizedBox(height: 12),
+              const _SectionLabel('รายละเอียด'),
               Text(
                 description == null || description.isEmpty
                     ? 'ไม่มีรายละเอียด'
                     : description,
                 key: const Key('incident_detail_description'),
                 style: const TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textPrimary,
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  color: AppColors.foreground,
                 ),
               ),
-              const SizedBox(height: 14),
-              _Field(
+              const SizedBox(height: 8),
+              const Divider(),
+              AppInfoRow(
                 label: 'แหล่งที่มา',
                 valueKey: const Key('incident_detail_source'),
                 value: incident.source,
               ),
-              _DeviceField(deviceId: incident.deviceId),
-              _Field(
+              _DeviceRow(deviceId: incident.deviceId),
+              AppInfoRow(
                 label: 'ผู้แจ้ง',
                 valueKey: const Key('incident_detail_reported_by'),
                 value: incident.reportedBy,
                 selectable: true,
               ),
-              _Field(
+              AppInfoRow(
                 label: 'Config ที่เกี่ยวข้อง',
                 valueKey: const Key('incident_detail_config'),
                 value: incident.relatedConfigId,
                 selectable: true,
               ),
-              _Field(
+              AppInfoRow(
                 label: 'Firmware ที่เกี่ยวข้อง',
                 valueKey: const Key('incident_detail_firmware'),
                 value: incident.relatedFirmwareId,
                 selectable: true,
               ),
-              _Field(
+              AppInfoRow(
                 label: 'สร้างเมื่อ',
                 value: formatIncidentDate(incident.createdAt),
               ),
-              _Field(
+              AppInfoRow(
                 label: 'อัปเดตล่าสุด',
                 value: formatIncidentDate(incident.updatedAt),
               ),
@@ -161,41 +191,26 @@ class _IncidentDetailView extends StatelessWidget {
         // section นี้เลย (ไม่ใช่การ์ดว่างที่เต็มไปด้วย "-")
         if (hasReview) ...[
           const SizedBox(height: 12),
-          Container(
+          AppCard(
             key: const Key('incident_detail_review'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.fieldBorder, width: 1),
-            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'ผลการตรวจสอบ',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _Field(
+                const _CardTitle('ผลการตรวจสอบ'),
+                AppInfoRow(
                   label: 'ผู้ตรวจสอบ',
                   valueKey: const Key('incident_detail_reviewed_by'),
                   value: incident.reviewedBy,
                   selectable: true,
                 ),
-                _Field(
+                AppInfoRow(
                   label: 'ตรวจสอบเมื่อ',
                   valueKey: const Key('incident_detail_reviewed_at'),
                   value: reviewedAt == null
                       ? null
                       : formatIncidentDate(reviewedAt),
                 ),
-                _Field(
+                AppInfoRow(
                   label: 'หมายเหตุ',
                   valueKey: const Key('incident_detail_review_note'),
                   value: incident.reviewNote,
@@ -206,21 +221,14 @@ class _IncidentDetailView extends StatelessWidget {
         ],
         if (metadata != null && metadata.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Container(
+          AppCard(
             key: const Key('incident_detail_metadata'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.fieldBorder, width: 1),
-            ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _Label('ข้อมูลเพิ่มเติม'),
+                const _CardTitle('ข้อมูลเพิ่มเติม'),
                 for (final entry in metadata.entries)
-                  _Field(
+                  AppInfoRow(
                     label: entry.key,
                     value: entry.value is String
                         ? entry.value as String
@@ -237,9 +245,9 @@ class _IncidentDetailView extends StatelessWidget {
 }
 
 /// อุปกรณ์ที่ report ผูกไว้ — แตะแล้วไปหน้า Device Detail ของเครื่องนั้น
-/// ไม่มี deviceId (incident อัตโนมัติ) แสดง "-" แบบ [_Field]
-class _DeviceField extends StatelessWidget {
-  const _DeviceField({required this.deviceId});
+/// ไม่มี deviceId (incident อัตโนมัติ) แสดง "-" แบบแถวอื่น
+class _DeviceRow extends StatelessWidget {
+  const _DeviceRow({required this.deviceId});
 
   final String? deviceId;
 
@@ -247,39 +255,36 @@ class _DeviceField extends StatelessWidget {
   Widget build(BuildContext context) {
     final id = deviceId;
     if (id == null || id.isEmpty) {
-      return const _Field(
+      return const AppInfoRow(
         label: 'อุปกรณ์',
         valueKey: Key('incident_detail_device'),
         value: null,
       );
     }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _Label('อุปกรณ์'),
-          InkWell(
-            onTap: () => context.push(AppRoutes.deviceDetail(id)),
-            child: Text(
-              id,
-              key: const Key('incident_detail_device'),
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppTheme.navy,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline,
-              ),
-            ),
+    return AppInfoRow(
+      label: 'อุปกรณ์',
+      child: InkWell(
+        onTap: () => context.push(AppRoutes.deviceDetail(id)),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Text(
+          id,
+          key: const Key('incident_detail_device'),
+          style: const TextStyle(
+            fontSize: AppTypography.sm,
+            height: AppTypography.smHeight,
+            color: AppColors.primary,
+            fontWeight: FontWeight.w600,
+            decoration: TextDecoration.underline,
+            decorationColor: AppColors.primary,
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
 
   final String text;
 
@@ -288,41 +293,31 @@ class _Label extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 4),
     child: Text(
       text,
-      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+      style: const TextStyle(
+        fontSize: AppTypography.xs,
+        height: AppTypography.xsHeight,
+        color: AppColors.mutedForeground,
+      ),
     ),
   );
 }
 
-/// Label + value; a null/empty [value] renders "-" (the backend omits
-/// optional fields rather than sending empty strings).
-class _Field extends StatelessWidget {
-  const _Field({
-    required this.label,
-    required this.value,
-    this.valueKey,
-    this.selectable = false,
-  });
+class _CardTitle extends StatelessWidget {
+  const _CardTitle(this.text);
 
-  final String label;
-  final String? value;
-  final Key? valueKey;
-  final bool selectable;
+  final String text;
 
   @override
-  Widget build(BuildContext context) {
-    final text = (value == null || value!.isEmpty) ? '-' : value!;
-    const style = TextStyle(fontSize: 14, color: AppTheme.textPrimary);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _Label(label),
-          selectable
-              ? SelectableText(text, key: valueKey, style: style)
-              : Text(text, key: valueKey, style: style),
-        ],
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: AppTypography.sm,
+        height: AppTypography.smHeight,
+        fontWeight: FontWeight.w600,
+        color: AppColors.foreground,
       ),
-    );
-  }
+    ),
+  );
 }

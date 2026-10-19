@@ -4,7 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_empty_state.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'notification_repository.dart';
 import 'notification_ui.dart';
@@ -72,49 +77,68 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
   Widget build(BuildContext context) {
     final async = ref.watch(notificationListProvider);
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('รายการแจ้งเตือน'),
-      ),
-      body: async.when(
-        skipLoadingOnRefresh: true,
-        data: (items) {
-          if (items.isEmpty) {
-            return const _CenteredMessage(
-              icon: Icons.notifications_none,
-              text: 'ไม่มีการแจ้งเตือน',
-            );
-          }
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(notificationListProvider),
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, i) {
-                final n = items[i];
-                return _NotificationTile(
-                  key: Key('notification_tile_$i'),
-                  notification: n,
-                  read: _isRead(n),
-                  onTap: () => _handleTap(context, n),
-                );
-              },
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => AppErrorView(
-          message: error is ApiException
-              ? error.message
-              : 'โหลดการแจ้งเตือนไม่สำเร็จ',
-          onRetry: () => ref.invalidate(notificationListProvider),
-          messageKey: const Key('notification_list_message'),
-          retryKey: const Key('notification_list_retry'),
+    final navigator = Navigator.of(context);
+
+    // design system ใหม่ (docs/22 Batch 2) — หัวหน้าจอ AppPageHeader แทน AppBar
+    // สีกรมท่า · ตรรกะ/การเรียก API เหมือนเดิมทุกอย่าง
+    return AppV2Theme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppPageHeader(
+                title: 'รายการแจ้งเตือน',
+                onBack: navigator.canPop() ? navigator.pop : null,
+              ),
+              Expanded(
+                child: async.when(
+                  skipLoadingOnRefresh: true,
+                  data: (items) {
+                    if (items.isEmpty) {
+                      return const Align(
+                        alignment: Alignment.topCenter,
+                        child: AppEmptyState(
+                          icon: Icons.notifications_none,
+                          message: 'ไม่มีการแจ้งเตือน',
+                          messageKey: Key('notification_list_message'),
+                        ),
+                      );
+                    }
+                    return RefreshIndicator(
+                      onRefresh: () async =>
+                          ref.invalidate(notificationListProvider),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        itemCount: items.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final n = items[i];
+                          return _NotificationTile(
+                            key: Key('notification_tile_$i'),
+                            notification: n,
+                            read: _isRead(n),
+                            onTap: () => _handleTap(context, n),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                  loading: () => const AppListSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => AppErrorView(
+                    message: error is ApiException
+                        ? error.message
+                        : 'โหลดการแจ้งเตือนไม่สำเร็จ',
+                    onRetry: () => ref.invalidate(notificationListProvider),
+                    messageKey: const Key('notification_list_message'),
+                    retryKey: const Key('notification_list_retry'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -138,115 +162,78 @@ class _NotificationTile extends StatelessWidget {
     final (iconBg, iconFg) = NotificationTypeStyle.iconColors(
       notification.type,
     );
-    return Material(
-      color: read ? AppTheme.surface : AppTheme.unreadTint,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  shape: BoxShape.circle,
+    // ยังไม่อ่าน: พื้น accent (AppCard.highlighted) + ชื่อตัวหนา + จุดสี primary —
+    // บอกสถานะด้วยหลายอย่าง ไม่ใช่สีพื้นอย่างเดียว
+    return AppCard(
+      onTap: onTap,
+      highlighted: !read,
+      size: AppCardSize.small,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(
+              NotificationTypeStyle.icon(notification.type),
+              color: iconFg,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  NotificationTypeStyle.label(notification.type),
+                  style: TextStyle(
+                    fontSize: AppTypography.sm,
+                    height: AppTypography.smHeight,
+                    fontWeight: read ? FontWeight.w500 : FontWeight.w700,
+                    color: AppColors.foreground,
+                  ),
                 ),
-                child: Icon(
-                  NotificationTypeStyle.icon(notification.type),
-                  color: iconFg,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      NotificationTypeStyle.label(notification.type),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: read ? FontWeight.w500 : FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                      ),
+                for (final line in NotificationTypeStyle.details(
+                  notification,
+                )) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    line,
+                    style: const TextStyle(
+                      fontSize: AppTypography.sm,
+                      height: AppTypography.smHeight,
+                      color: AppColors.foreground,
                     ),
-                    for (final line in NotificationTypeStyle.details(
-                      notification,
-                    )) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        line,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatDate(notification.createdAt),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (!read) ...[
-                const SizedBox(width: 8),
-                Container(
-                  key: const Key('unread_dot'),
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.only(top: 4),
-                  decoration: const BoxDecoration(
-                    color: AppTheme.unreadDot,
-                    shape: BoxShape.circle,
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  _formatDate(notification.createdAt),
+                  style: const TextStyle(
+                    fontSize: AppTypography.xs,
+                    height: AppTypography.xsHeight,
+                    color: AppColors.mutedForeground,
                   ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Empty-list state only now — the error+retry case moved to [AppErrorView].
-class _CenteredMessage extends StatelessWidget {
-  const _CenteredMessage({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 32, color: AppTheme.textSecondary),
-            const SizedBox(height: 12),
-            Text(
-              text,
-              key: const Key('notification_list_message'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppTheme.textSecondary,
+          if (!read) ...[
+            const SizedBox(width: 8),
+            Container(
+              key: const Key('unread_dot'),
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

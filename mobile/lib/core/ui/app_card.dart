@@ -16,17 +16,23 @@ enum AppCardSize {
 /// ขอบ = [AppColors.foreground] 20% (Web คำนวณไว้ว่า /10 จางจนแทบมองไม่เห็น)
 /// · ใส่ [onTap] = การ์ดกดได้ ขอบเข้มขึ้นเป็น 40% ระหว่างกดค้าง แทน hover ของ
 /// Web ที่มือถือไม่มี · ไม่ใส่ = การ์ดข้อมูลธรรมดา ไม่ถูกประกาศเป็นปุ่ม
+///
+/// [highlighted] = พื้น [AppColors.accent] สำหรับแถวที่ยังไม่อ่าน (docs/22 §4.1
+/// "แถวที่ยังไม่อ่าน" — มติ B Batch 2) · ใช้คู่กับตัวบ่งชี้อื่นเสมอ (ตัวหนา / จุด)
+/// เพราะสีพื้นต่างจากการ์ดปกติเล็กน้อย ไม่ควรเป็นสิ่งเดียวที่บอกสถานะ
 class AppCard extends StatefulWidget {
   const AppCard({
     super.key,
     required this.child,
     this.onTap,
     this.size = AppCardSize.regular,
+    this.highlighted = false,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final AppCardSize size;
+  final bool highlighted;
 
   @override
   State<AppCard> createState() => _AppCardState();
@@ -43,7 +49,7 @@ class _AppCardState extends State<AppCard> {
     final content = Padding(padding: padding, child: widget.child);
 
     return Material(
-      color: AppColors.card,
+      color: widget.highlighted ? AppColors.accent : AppColors.card,
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
