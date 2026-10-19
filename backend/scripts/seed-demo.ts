@@ -637,7 +637,7 @@ async function main(): Promise<void> {
     return c;
   }
 
-  type TargetResult = 'success' | 'failed' | 'pending';
+  type TargetResult = 'success' | 'failed' | 'pending' | 'skipped_offline';
   async function rollout(
     c: { id: string; name: string },
     opts: {
@@ -899,6 +899,37 @@ async function main(): Promise<void> {
     }
   }
 
+  {
+    // Rollout ที่จบแล้วแต่มีเครื่องล้มหลายเครื่องและเครื่องที่ถูกข้ามเพราะออฟไลน์
+    // ใช้เป็นต้นทางของ Incident ตัวอย่างบนหน้า Incident (ตัวเลขทั้งหมดคำนวณจาก
+    // เป้าหมายรายเครื่องของ Rollout นี้ ด้านล่าง ไม่ได้พิมพ์เอง)
+    const list = ids(installed('GT06N'));
+    const failedAt = [3, 5, 8, 10, 12];
+    const skippedAt = [6, 13];
+    const c = await campaign(
+      'ทัวร์ภาคกลาง อัปเดต Firmware GT06N',
+      'อัปเดต Firmware ให้ทั้งกลุ่มก่อนฤดูท่องเที่ยว',
+      list,
+      7,
+    );
+    if (c) {
+      await rollout(c, {
+        payloadType: 'Firmware',
+        firmwareId: fw['2.4.2'].id,
+        status: 'completed',
+        deviceIds: list,
+        results: list.map((_, i): TargetResult =>
+          failedAt.includes(i)
+            ? 'failed'
+            : skippedAt.includes(i)
+              ? 'skipped_offline'
+              : 'success',
+        ),
+        days: 6,
+      });
+    }
+  }
+
   // ---------------- Incidents (รายงานจากหน้างาน) ----------------
   const incidentDefs: {
     title: string;
@@ -983,6 +1014,148 @@ async function main(): Promise<void> {
     log(U[r.by], 'incident', 'report', ago(r.days), { deviceId: r.deviceId });
     if (r.reviewNote) {
       log(U.op, 'incident', 'decide', ago(r.days - 0.2), { outcome: r.status });
+    }
+  }
+
+  // ---------------- Incidents ที่ระบบสร้างเอง ----------------
+  // Incident จาก Rollout: ตัวเลข รหัสเครื่อง และข้อผิดพลาดตัวอย่าง "อ่านจาก
+  // เป้าหมายรายเครื่องของ Rollout ที่ seed ไว้ข้างบน" ไม่ได้พิมพ์เอง จึงตรงกับ
+  // หน้า Rollout เสมอ (รูปแบบ metadata ตาม `IncidentMetadata` ฝั่ง backend)
+  // 1 Rollout มี 1 Incident รันซ้ำได้ ข้ามถ้ามีแล้ว
+  async function rolloutFailureIncident(opts: {
+    campaignName: string;
+    rolloutStatus: 'paused' | 'completed';
+    kind: 'auto-pause' | 'completed-with-failures' | 'completed-with-skipped';
+    status: 'open' | 'investigating' | 'rolled_back' | 'resolved';
+    days: number;
+  }) {
+    const campaignRow = await prisma.campaign.findFirst({
+      where: { name: opts.campaignName },
+    });
+    if (!campaignRow) return;
+    const ro = await prisma.campaignRollout.findFirst({
+      where: {
+        campaignId: campaignRow.id,
+        status: opts.rolloutStatus,
+        isRollback: false,
+      },
+    });
+    if (!ro) return;
+    const existing = await prisma.incident.findFirst({
+      where: {
+        source: 'rollout-failure',
+        metadata: { path: ['rolloutId'], equals: ro.id },
+      },
+    });
+    if (existing) return;
+
+    const targets = await prisma.campaignRolloutTarget.findMany({
+      where: { rolloutId: ro.id },
+      orderBy: { deviceId: 'asc' },
+    });
+    const failed = targets.filter((t) => t.status === 'failed');
+    const skippedCount = targets.filter(
+      (t) => t.status === 'skipped_offline',
+    ).length;
+    const sampleErrors = [
+      ...new Set(
+        failed.map((t) => t.resultDetail).filter((d): d is string => !!d),
+      ),
+    ].slice(0, 3);
+    const rate = ro.targetCount > 0 ? failed.length / ro.targetCount : 0;
+    const severity =
+      opts.kind === 'completed-with-skipped'
+        ? 'low'
+        : rate > 0.05
+          ? 'high'
+          : 'medium';
+    const percent = Math.round(rate * 1000) / 10;
+    const description =
+      `ล้มเหลว ${failed.length} จาก ${ro.targetCount} เครื่อง (${percent}%)` +
+      (skippedCount > 0 ? ` ข้ามเพราะออฟไลน์ ${skippedCount} เครื่อง` : '') +
+      (sampleErrors.length > 0
+        ? ` ตัวอย่างข้อผิดพลาด: ${sampleErrors.join(' / ')}`
+        : '');
+
+    await prisma.incident.create({
+      data: {
+        title:
+          opts.kind === 'auto-pause'
+            ? `Rollout หยุดอัตโนมัติ: ${campaignRow.name}`
+            : `Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: ${campaignRow.name}`,
+        description,
+        severity,
+        status: opts.status,
+        relatedConfigId: ro.configId,
+        relatedFirmwareId: ro.firmwareId,
+        source: 'rollout-failure',
+        metadata: {
+          kind: opts.kind,
+          rolloutId: ro.id,
+          campaignId: campaignRow.id,
+          failureCount: failed.length,
+          skippedCount,
+          targetCount: ro.targetCount,
+          failedDeviceIds: failed.slice(0, 20).map((t) => t.deviceId),
+          sampleErrors,
+        },
+        createdAt: ago(opts.days),
+      },
+    });
+  }
+
+  // Rollout Firmware 2.5.0 ของเชียงใหม่ถูกหยุด และมี Rollback แล้ว (seed ไว้ข้างบน)
+  await rolloutFailureIncident({
+    campaignName: 'เชียงใหม่โลจิสติกส์ อัปเกรด Firmware 2.5.0',
+    rolloutStatus: 'paused',
+    kind: 'auto-pause',
+    status: 'rolled_back',
+    days: 4.5,
+  });
+  // Rollout ที่จบแล้วแต่มีเครื่องล้มและเครื่องที่ถูกข้าม ยังเปิดอยู่
+  await rolloutFailureIncident({
+    campaignName: 'ทัวร์ภาคกลาง อัปเดต Firmware GT06N',
+    rolloutStatus: 'completed',
+    kind: 'completed-with-failures',
+    status: 'open',
+    days: 5.5,
+  });
+
+  // Incident จาก config-sync-writer (เขียน Config ไม่สำเร็จหลัง retry ครบ 3 ครั้ง)
+  {
+    const syncCfg = await prisma.config.findUnique({
+      where: { name: 'GT06L/TCP มาตรฐาน' },
+    });
+    const syncTitle = 'เขียน Config เข้าระบบเดิมไม่สำเร็จ (v1)';
+    if (syncCfg) {
+      const found = await prisma.incident.findFirst({
+        where: {
+          title: syncTitle,
+          source: 'config-sync-writer',
+          relatedConfigId: syncCfg.id,
+        },
+      });
+      if (!found) {
+        await prisma.incident.create({
+          data: {
+            title: syncTitle,
+            description:
+              `config-sync-writer เขียน Config ${syncCfg.id} ` +
+              `(${syncCfg.deviceModel}/${syncCfg.protocol}) ไม่สำเร็จ` +
+              ' หลัง retry 3 ครั้ง (connect ETIMEDOUT)',
+            severity: 'high',
+            status: 'investigating',
+            relatedConfigId: syncCfg.id,
+            source: 'config-sync-writer',
+            metadata: {
+              versionNumber: 1,
+              attempts: 3,
+              lastError: 'connect ETIMEDOUT',
+            },
+            createdAt: ago(1.5),
+          },
+        });
+      }
     }
   }
 
