@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/ui/app_badge.dart';
+import 'package:mobile/core/ui/app_card.dart';
+import 'package:mobile/core/ui/app_empty_state.dart';
+import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
+import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/incident/incident_list_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 
@@ -122,7 +130,9 @@ void main() {
     expect(find.byType(FloatingActionButton), findsNothing);
   });
 
-  testWidgets('severity label ครบ 4 กรณี', (tester) async {
+  testWidgets('severity label ครบ 4 กรณี (อังกฤษตาม Web — docs/22 §6.1)', (
+    tester,
+  ) async {
     await _pump(
       tester,
       repo: _FakeIncidentRepository(
@@ -139,13 +149,21 @@ void main() {
       ),
     );
 
-    expect(find.text('วิกฤต'), findsOneWidget);
-    expect(find.text('สูง'), findsOneWidget);
-    expect(find.text('ปานกลาง'), findsOneWidget);
-    expect(find.text('ต่ำ'), findsOneWidget);
+    expect(find.text('Critical'), findsOneWidget);
+    expect(find.text('High'), findsOneWidget);
+    expect(find.text('Medium'), findsOneWidget);
+    expect(find.text('Low'), findsOneWidget);
+    // ป้ายเป็น AppBadge พร้อม dot และ tone ตาม docs/22 §5.2
+    final crit = tester.widget<AppBadge>(
+      find.widgetWithText(AppBadge, 'Critical'),
+    );
+    expect(crit.tone, AppBadgeTone.danger);
+    expect(crit.dot, isTrue);
   });
 
-  testWidgets('status label ภาษาไทยครบ 4 กรณี', (tester) async {
+  testWidgets('status label ครบ 5 กรณี (ตาม Web — docs/22 §6.1)', (
+    tester,
+  ) async {
     await _pump(
       tester,
       repo: _FakeIncidentRepository(
@@ -154,14 +172,76 @@ void main() {
           _incident(id: 'i', title: 'i', status: IncidentStatus.investigating),
           _incident(id: 'r', title: 'r', status: IncidentStatus.rolledBack),
           _incident(id: 'x', title: 'x', status: IncidentStatus.resolved),
+          _incident(id: 'd', title: 'd', status: IncidentStatus.dismissed),
         ],
       ),
     );
 
-    expect(find.text('เปิดอยู่'), findsOneWidget);
-    expect(find.text('กำลังตรวจสอบ'), findsOneWidget);
+    expect(find.text('Open'), findsOneWidget);
+    expect(find.text('Investigating'), findsOneWidget);
     expect(find.text('Rollback แล้ว'), findsOneWidget);
-    expect(find.text('แก้ไขแล้ว'), findsOneWidget);
+    expect(find.text('Resolved'), findsOneWidget);
+    expect(
+      tester.widget<AppBadge>(find.widgetWithText(AppBadge, 'Open')).tone,
+      AppBadgeTone.danger,
+    );
+    // การ์ดใบที่ 5 อยู่นอกจอ (ListView สร้างแบบ lazy) — เลื่อนลงก่อน
+    await tester.scrollUntilVisible(
+      find.text('ไม่ต้องดำเนินการ'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('ไม่ต้องดำเนินการ'), findsOneWidget);
+  });
+
+  group('design system ใหม่ (docs/22 Batch 2)', () {
+    testWidgets('theme v2 + AppPageHeader ชื่อ "Incidents" แทน AppBar', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeIncidentRepository());
+
+      expect(find.byType(AppBar), findsNothing);
+      expect(find.byType(AppV2Theme), findsOneWidget);
+      expect(find.widgetWithText(AppPageHeader, 'Incidents'), findsOneWidget);
+      expect(find.byType(AppCard), findsOneWidget);
+    });
+
+    testWidgets('กำลังโหลดครั้งแรก -> AppListSkeleton (ไม่ใช่ spinner)', (
+      tester,
+    ) async {
+      final completer = Completer<List<Incident>>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            incidentListProvider.overrideWith((ref) => completer.future),
+          ],
+          child: const MaterialApp(home: IncidentListPage()),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(AppListSkeleton), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      completer.complete(const []);
+      await tester.pump();
+    });
+
+    testWidgets('ลิงก์เลขอุปกรณ์มีพื้นที่กดสูงขึ้น ≥ 40 (docs/21 #18)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeIncidentRepository(
+          incidents: [_incident(deviceId: 'DEV-0092')],
+        ),
+      );
+
+      final link = find.ancestor(
+        of: find.byKey(const Key('incident_card_device_0')),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.getSize(link.first).height, greaterThanOrEqualTo(40));
+    });
   });
 
   testWidgets('ไม่มี incident -> empty state', (tester) async {
@@ -169,6 +249,7 @@ void main() {
 
     expect(find.byKey(const Key('incidents_empty')), findsOneWidget);
     expect(find.text('ยังไม่มี Incident'), findsOneWidget);
+    expect(find.byType(AppEmptyState), findsOneWidget);
   });
 
   testWidgets('error -> error card + ปุ่มลองอีกครั้ง (กดแล้วยิงซ้ำ)', (

@@ -6,6 +6,9 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/incident/incident_detail_page.dart';
+import 'package:mobile/core/ui/app_badge.dart';
+import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/incident/incident_list_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 
@@ -112,7 +115,9 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      // design system ใหม่: skeleton แทน spinner (docs/22 Batch 2)
+      expect(find.byType(AppDetailSkeleton), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
       await tester.pump();
 
       expect(repo.detailCalls, ['inc-1']);
@@ -121,8 +126,21 @@ void main() {
         find.text('config-sync-writer เขียนไม่สำเร็จหลัง retry 3 ครั้ง'),
         findsOneWidget,
       );
-      expect(find.text('สูง'), findsOneWidget);
-      expect(find.text('กำลังตรวจสอบ'), findsOneWidget);
+      // ป้าย severity / status อยู่บน AppPageHeader (อังกฤษตาม Web)
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.widgetWithText(AppBadge, 'High'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.widgetWithText(AppBadge, 'Investigating'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('config-sync-writer'), findsOneWidget);
       expect(find.text('cfg-123'), findsOneWidget);
       expect(find.text('fw-9'), findsOneWidget);
@@ -246,7 +264,7 @@ void main() {
       tester,
     ) async {
       final repo = await pumpApp(tester);
-      expect(find.text('รายการ Incident'), findsOneWidget);
+      expect(find.text('Incidents'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('incident_card_1')));
       await tester.pumpAndSettle();

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
 import '../../core/router/app_router.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
 
 /// Thai labels + icons for [NotificationType]. [details] reads extra fields
 /// out of `payload` for the types listed there (Config/Firmware Override,
@@ -140,11 +140,13 @@ class NotificationTypeStyle {
     _ => false,
   };
 
-  /// `(background, foreground)` ของวงไอคอน — เด่นกว่าปกติเฉพาะ type ที่
-  /// [isUrgent] (โทนเดียวกับ `IncidentSeverityPill` วิกฤต/สูง)
+  /// `(background, foreground)` ของวงไอคอน — token ของ design system ใหม่
+  /// (docs/22 Batch 2, มติ B): type ที่ [isUrgent] ใช้โทน danger (`dangerSubtle` +
+  /// `destructive`) ที่เหลือ neutral (`secondary` + `mutedForeground`) ตามกติกา
+  /// Badge ของ Web ที่สีมีไว้สื่อความหมายเท่านั้น
   static (Color, Color) iconColors(NotificationType type) => isUrgent(type)
-      ? (Color(0xFFFCE8E6), Color(0xFFC0392B))
-      : (AppTheme.iconBg, AppTheme.navy);
+      ? (AppColors.dangerSubtle, AppColors.destructive)
+      : (AppColors.secondary, AppColors.mutedForeground);
 
   static IconData icon(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => Icons.assignment_outlined,
