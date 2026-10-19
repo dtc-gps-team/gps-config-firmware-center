@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { RefreshCwIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardAction,
@@ -62,6 +62,14 @@ const INCIDENT_STATUS_OPTIONS: { value: IncidentStatus; label: string }[] = [
   { value: "dismissed", label: "ไม่ต้องดำเนินการ" },
 ];
 
+type IncidentView = "open" | "closed" | "all";
+
+const INCIDENT_VIEW_OPTIONS: { value: IncidentView; label: string }[] = [
+  { value: "open", label: "ยังไม่ปิด" },
+  { value: "closed", label: "ปิดแล้ว" },
+  { value: "all", label: "ทั้งหมด" },
+];
+
 const INCIDENT_SEVERITY_OPTIONS: { value: IncidentSeverity; label: string }[] =
   [
     { value: "critical", label: "critical" },
@@ -90,25 +98,36 @@ export function IncidentsView() {
   const { data, isLoading, error, refetch } = useIncidents({
     status: status || undefined,
   });
-  // ค่าเริ่มต้นซ่อน Incident ที่ปิดแล้ว (แก้แล้ว/ไม่ต้องดำเนินการ/Rollback แล้ว)
-  // ให้เห็นเฉพาะที่ยังต้องตาม · เลือกสถานะเจาะจงเองในตัวกรองสถานะ = ผู้ใช้ขอดู
-  // สถานะนั้นตรงๆ จึงไม่ซ่อน
-  const [showClosed, setShowClosed] = useState(false);
-  const hideClosed = !showClosed && !status;
+  // มุมมองของรายการ: ยังไม่ปิด (ค่าเริ่มต้น) | ปิดแล้ว | ทั้งหมด · เป็นแท็บที่มี
+  // จำนวนกำกับ กดอันไหนเห็นตามชื่อนั้นตรงๆ (เดิมเป็นช่องติ๊ก "แสดงที่ปิดแล้วด้วย"
+  // ซึ่งแปลว่าเพิ่มที่ปิดแล้วเข้ามา ผู้ใช้เข้าใจว่าควรเห็นแต่ที่ปิดแล้ว จึงสับสน)
+  // เลือกสถานะเจาะจงในตัวกรองสถานะ = ผู้ใช้ขอดูสถานะนั้นตรงๆ แท็บจึงไม่ทำงาน
+  const [view, setView] = useState<IncidentView>("open");
   const matching = (data ?? []).filter(
     (i) =>
       (!type || incidentType(i) === type) &&
       (!severity || i.severity === severity),
   );
-  const rows = hideClosed
-    ? matching.filter((i) => !isIncidentClosed(i.status))
-    : matching;
-  const hiddenClosedCount = matching.length - rows.length;
-  // ติ๊ก "แสดงที่ปิดแล้วด้วย": แยกเป็น 2 กลุ่ม (ยังไม่ปิดก่อน ปิดแล้วตามหลัง)
-  // ไม่เรียงปนกันตามเวลา ไม่งั้นแยกไม่ออกว่าใบไหนยังต้องตัดสินใจ
+  const openCount = matching.filter((i) => !isIncidentClosed(i.status)).length;
+  const closedCount = matching.length - openCount;
+  const viewCounts: Record<IncidentView, number> = {
+    open: openCount,
+    closed: closedCount,
+    all: matching.length,
+  };
+  const effectiveView: IncidentView = status ? "all" : view;
+  const rows =
+    effectiveView === "open"
+      ? matching.filter((i) => !isIncidentClosed(i.status))
+      : effectiveView === "closed"
+        ? matching.filter((i) => isIncidentClosed(i.status))
+        : matching;
+  // มุมมอง "ทั้งหมด": แยก 2 กลุ่ม (ยังไม่ปิดก่อน ปิดแล้วตามหลัง) ไม่เรียงปนกันตาม
+  // เวลา ไม่งั้นแยกไม่ออกว่าใบไหนยังต้องตัดสินใจ
   const openRows = rows.filter((i) => !isIncidentClosed(i.status));
   const closedRows = rows.filter((i) => isIncidentClosed(i.status));
-  const grouped = openRows.length > 0 && closedRows.length > 0;
+  const grouped =
+    effectiveView === "all" && openRows.length > 0 && closedRows.length > 0;
   const hasFilter = Boolean(status || type || severity);
   const router = useRouter();
   const { resolveName } = useUserNames();
@@ -157,6 +176,46 @@ export function IncidentsView() {
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <div
+            role="group"
+            aria-label="มุมมองรายการ"
+            className="flex flex-wrap gap-1 border-b"
+          >
+            {INCIDENT_VIEW_OPTIONS.map((v) => {
+              const active = v.value === effectiveView;
+              return (
+                <button
+                  key={v.value}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={Boolean(status)}
+                  title={
+                    status ? "กำลังใช้ตัวกรองสถานะอยู่ แท็บนี้ไม่ทำงาน" : undefined
+                  }
+                  onClick={() => setView(v.value)}
+                  className={cn(
+                    "-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60",
+                    active
+                      ? "border-primary font-medium text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {v.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-xs",
+                      v.value === "open" && viewCounts.open > 0
+                        ? "bg-warning-subtle text-warning-foreground"
+                        : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {viewCounts[v.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <Select
               value={status}
@@ -225,17 +284,6 @@ export function IncidentsView() {
                 ))}
               </SelectContent>
             </Select>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Checkbox
-                checked={showClosed}
-                disabled={Boolean(status)}
-                onCheckedChange={(c) => setShowClosed(c === true)}
-              />
-              แสดงที่ปิดแล้วด้วย
-              {hideClosed && hiddenClosedCount > 0 && (
-                <span>(ซ่อนอยู่ {hiddenClosedCount} รายการ)</span>
-              )}
-            </label>
           </div>
 
           {isLoading && data === null ? (
@@ -249,13 +297,19 @@ export function IncidentsView() {
             </div>
           ) : rows.length === 0 ? (
             <EmptyState
-              icon={hasFilter || hiddenClosedCount > 0 ? SearchXIcon : TriangleAlertIcon}
+              icon={
+                hasFilter || matching.length > 0
+                  ? SearchXIcon
+                  : TriangleAlertIcon
+              }
               message={
                 hasFilter
                   ? "ไม่พบ Incident ที่ตรงกับเงื่อนไข"
-                  : hiddenClosedCount > 0
+                  : effectiveView === "open" && closedCount > 0
                     ? "ไม่มี Incident ที่ยังไม่ปิด"
-                    : "ยังไม่มี Incident"
+                    : effectiveView === "closed" && openCount > 0
+                      ? "ยังไม่มี Incident ที่ปิดแล้ว"
+                      : "ยังไม่มี Incident"
               }
             />
           ) : (

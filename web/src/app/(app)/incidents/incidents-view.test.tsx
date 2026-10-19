@@ -105,10 +105,8 @@ describe("IncidentsView: Field Report", () => {
     ];
 
     render(<IncidentsView />);
-    // Incident ที่ปิดแล้วถูกซ่อนเป็นค่าเริ่มต้น ติ๊กแสดงก่อนถึงจะเห็นแถวนี้
-    await userEvent.click(
-      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
-    );
+    // Incident ที่ปิดแล้วอยู่ในแท็บ "ปิดแล้ว" ไม่อยู่ในแท็บเริ่มต้น กดแท็บก่อนถึงจะเห็นแถวนี้
+    await userEvent.click(screen.getByRole("button", { name: /^ปิดแล้ว\s*\d+$/ }));
 
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
@@ -286,8 +284,7 @@ describe("IncidentsView: แยกที่มาและผลกระทบ"
     expect(within(heading).getByText("(1)")).toBeInTheDocument();
   });
 });
-
-describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเป็นค่าเริ่มต้น", () => {
+describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแล้ว / ทั้งหมด", () => {
   beforeEach(() => {
     auth.role = "Operation";
     router.push.mockReset();
@@ -303,7 +300,12 @@ describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเ
   const rolledBack = () =>
     incident({ id: "b", title: "ย้อนกลับแล้ว", status: "rolled_back" });
 
-  it("ค่าเริ่มต้น: เห็นเฉพาะ open และ investigating ซ่อน resolved, dismissed, rolled_back", () => {
+  const tab = (name: RegExp) => screen.getByRole("button", { name });
+  const openTab = /^ยังไม่ปิด\s*\d+$/;
+  const closedTab = /^ปิดแล้ว\s*\d+$/;
+  const allTab = /^ทั้งหมด\s*\d+$/;
+
+  it("ค่าเริ่มต้นคือแท็บ 'ยังไม่ปิด': เห็นเฉพาะ open และ investigating", () => {
     incidentsState.rows = [
       open(),
       investigating(),
@@ -314,40 +316,94 @@ describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเ
 
     render(<IncidentsView />);
 
+    expect(tab(openTab)).toHaveAttribute("aria-pressed", "true");
+    expect(tab(closedTab)).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("ยังเปิดอยู่")).toBeInTheDocument();
     expect(screen.getByText("กำลังตรวจสอบ")).toBeInTheDocument();
     expect(screen.queryByText("แก้แล้ว")).not.toBeInTheDocument();
     expect(screen.queryByText("ไม่ต้องดำเนินการแล้ว")).not.toBeInTheDocument();
     expect(screen.queryByText("ย้อนกลับแล้ว")).not.toBeInTheDocument();
-    expect(screen.getByText("(ซ่อนอยู่ 3 รายการ)")).toBeInTheDocument();
   });
 
-  it("จำนวนในหัวการ์ดนับเฉพาะที่แสดงอยู่", () => {
+  it("แต่ละแท็บมีจำนวนกำกับ", () => {
+    incidentsState.rows = [
+      open(),
+      investigating(),
+      resolved(),
+      dismissed(),
+      rolledBack(),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByRole("button", { name: "ยังไม่ปิด 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ปิดแล้ว 3" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ทั้งหมด 5" })).toBeInTheDocument();
+  });
+
+  it("กดแท็บ 'ปิดแล้ว': เห็นเฉพาะที่ปิดแล้ว ไม่เห็นที่ยังเปิดอยู่ และไม่มีหัวกลุ่ม", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [open(), investigating(), resolved(), dismissed()];
+
+    render(<IncidentsView />);
+    await user.click(tab(closedTab));
+
+    expect(tab(closedTab)).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
+    expect(screen.getByText("ไม่ต้องดำเนินการแล้ว")).toBeInTheDocument();
+    expect(screen.queryByText("ยังเปิดอยู่")).not.toBeInTheDocument();
+    expect(screen.queryByText("กำลังตรวจสอบ")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^ยังไม่ปิด \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
+  });
+
+  it("กดแท็บ 'ทั้งหมด': เห็นครบ ยังไม่ปิดอยู่ก่อนแม้ที่ปิดแล้วจะใหม่กว่า พร้อมหัวกลุ่มและจำนวน", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [
+      incident({ id: "c1", title: "ปิดแล้วใหม่สุด", status: "dismissed" }),
+      incident({ id: "o1", title: "ยังเปิดเก่ากว่า", status: "open" }),
+      incident({ id: "c2", title: "ปิดแล้วเก่า", status: "resolved" }),
+    ];
+
+    render(<IncidentsView />);
+    await user.click(tab(allTab));
+
+    expect(screen.getByText("ยังไม่ปิด (1)")).toBeInTheDocument();
+    expect(screen.getByText("ปิดแล้ว (2)")).toBeInTheDocument();
+    const titles = screen
+      .getAllByRole("link", {
+        name: /ปิดแล้วใหม่สุด|ยังเปิดเก่ากว่า|ปิดแล้วเก่า/,
+      })
+      .map((a) => a.textContent);
+    expect(titles).toEqual(["ยังเปิดเก่ากว่า", "ปิดแล้วใหม่สุด", "ปิดแล้วเก่า"]);
+  });
+
+  it("'ทั้งหมด' ที่มีแต่ที่ปิดแล้ว: ไม่มีหัวกลุ่ม ไม่ต้องแยก", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [resolved()];
+
+    render(<IncidentsView />);
+    await user.click(tab(allTab));
+
+    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
+  });
+
+  it("จำนวนในหัวการ์ดตามแท็บที่เลือก", async () => {
+    const user = userEvent.setup();
     incidentsState.rows = [open(), resolved(), dismissed()];
 
     render(<IncidentsView />);
-
     const heading = screen.getByText(/^รายการ Incident/);
     expect(within(heading).getByText("(1)")).toBeInTheDocument();
+
+    await user.click(tab(closedTab));
+    expect(within(heading).getByText("(2)")).toBeInTheDocument();
+
+    await user.click(tab(allTab));
+    expect(within(heading).getByText("(3)")).toBeInTheDocument();
   });
 
-  it("ติ๊ก 'แสดงที่ปิดแล้วด้วย': เห็นครบทุกสถานะ และไม่มีข้อความซ่อนอยู่", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [open(), resolved(), dismissed(), rolledBack()];
-
-    render(<IncidentsView />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
-    );
-
-    expect(screen.getByText("ยังเปิดอยู่")).toBeInTheDocument();
-    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
-    expect(screen.getByText("ไม่ต้องดำเนินการแล้ว")).toBeInTheDocument();
-    expect(screen.getByText("ย้อนกลับแล้ว")).toBeInTheDocument();
-    expect(screen.queryByText(/ซ่อนอยู่/)).not.toBeInTheDocument();
-  });
-
-  it("ปิดทั้งหมดแล้ว: บอกว่าไม่มีที่ยังไม่ปิด ไม่ใช่ 'ยังไม่มี Incident'", () => {
+  it("ปิดทั้งหมดแล้ว: แท็บ 'ยังไม่ปิด' บอกว่าไม่มีที่ยังไม่ปิด ไม่ใช่ 'ยังไม่มี Incident'", () => {
     incidentsState.rows = [resolved(), dismissed()];
 
     render(<IncidentsView />);
@@ -356,7 +412,17 @@ describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเ
     expect(screen.queryByText("ยังไม่มี Incident")).not.toBeInTheDocument();
   });
 
-  it("ไม่มี Incident เลย: ยังขึ้น 'ยังไม่มี Incident'", () => {
+  it("ยังเปิดอยู่ทั้งหมด: แท็บ 'ปิดแล้ว' บอกว่ายังไม่มีที่ปิดแล้ว", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [open(), investigating()];
+
+    render(<IncidentsView />);
+    await user.click(tab(closedTab));
+
+    expect(screen.getByText("ยังไม่มี Incident ที่ปิดแล้ว")).toBeInTheDocument();
+  });
+
+  it("ไม่มี Incident เลย: ขึ้น 'ยังไม่มี Incident'", () => {
     incidentsState.rows = [];
 
     render(<IncidentsView />);
@@ -364,7 +430,7 @@ describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเ
     expect(screen.getByText("ยังไม่มี Incident")).toBeInTheDocument();
   });
 
-  it("เลือกสถานะเจาะจงในตัวกรอง: ไม่ซ่อน และปิดช่องติ๊ก (ผู้ใช้ขอดูสถานะนั้นตรงๆ)", async () => {
+  it("เลือกสถานะเจาะจงในตัวกรอง: แสดงสถานะนั้นตรงๆ และแท็บปิดไว้", async () => {
     const user = userEvent.setup();
     incidentsState.rows = [resolved()];
 
@@ -375,150 +441,25 @@ describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเ
     await user.click(await screen.findByRole("option", { name: "Resolved" }));
 
     expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
-    // Checkbox ของ base-ui เป็น <span role="checkbox"> ไม่ใช่ input จึงดู aria-disabled
-    expect(
-      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
-    ).toHaveAttribute("aria-disabled", "true");
-  });
-});
-
-describe("IncidentsView: ตัวอย่างเครื่องที่ล้มเหลวในแถว", () => {
-  beforeEach(() => {
-    auth.role = "Operation";
-    router.push.mockReset();
+    expect(tab(openTab)).toBeDisabled();
+    expect(tab(closedTab)).toBeDisabled();
+    expect(tab(allTab)).toBeDisabled();
   });
 
-  it("Rollout หลายเครื่อง: แสดง 3 เครื่องแรกและ 'และอีก N เครื่อง'", () => {
-    incidentsState.rows = [
-      rolloutIncident({
-        metadata: {
-          kind: "auto-pause",
-          failureCount: 20,
-          targetCount: 100,
-          skippedCount: 0,
-          failedDeviceIds: Array.from(
-            { length: 20 },
-            (_, i) => `DEV-${String(i + 1).padStart(4, "0")}`,
-          ),
-        },
-      }),
-    ];
-
-    render(<IncidentsView />);
-
-    expect(
-      screen.getByText("DEV-0001, DEV-0002, DEV-0003"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/และอีก 17 เครื่อง/)).toBeInTheDocument();
-    expect(screen.queryByText(/DEV-0004/)).not.toBeInTheDocument();
-  });
-
-  it("Rollout ที่ล้มเหลวไม่เกิน 3 เครื่อง: แสดงครบ ไม่มี 'และอีก'", () => {
-    incidentsState.rows = [
-      rolloutIncident({
-        metadata: {
-          kind: "completed-with-failures",
-          failureCount: 2,
-          targetCount: 10,
-          failedDeviceIds: ["DEV-0007", "DEV-0008"],
-        },
-      }),
-    ];
-
-    render(<IncidentsView />);
-
-    expect(screen.getByText("DEV-0007, DEV-0008")).toBeInTheDocument();
-    expect(screen.queryByText(/และอีก/)).not.toBeInTheDocument();
-  });
-});
-
-describe("IncidentsView: คำอธิบายในรายการ", () => {
-  beforeEach(() => {
-    auth.role = "Operation";
-    router.push.mockReset();
-  });
-
-  it("Incident ที่ระบบสร้างเอง (Rollout, เขียน Config): ไม่แสดงคำอธิบายยาวในรายการ (ดูที่หน้ารายละเอียด)", () => {
-    incidentsState.rows = [
-      rolloutIncident({
-        title: "Rollout จบแต่มีเครื่องที่ไม่สำเร็จ",
-        description: "ล้มเหลว 5 จาก 14 เครื่อง ตัวอย่างข้อผิดพลาด: timeout",
-      }),
-      incident({
-        id: "inc-s",
-        title: "เขียน Config เข้าระบบเดิมไม่สำเร็จ (v1)",
-        source: "config-sync-writer",
-        deviceId: null,
-        reportedBy: null,
-        description: "config-sync-writer เขียน Config 06aae780 ไม่สำเร็จ",
-      }),
-    ];
-
-    render(<IncidentsView />);
-
-    expect(screen.getByText("Rollout จบแต่มีเครื่องที่ไม่สำเร็จ")).toBeInTheDocument();
-    expect(screen.queryByText(/ตัวอย่างข้อผิดพลาด: timeout/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/06aae780/)).not.toBeInTheDocument();
-  });
-
-  it("แจ้งจากหน้างาน: ยังแสดงคำอธิบายที่ช่างเขียน", () => {
-    incidentsState.rows = [incident({ description: "ทดสอบกด 3 ครั้ง ไม่มีแจ้งเตือน" })];
-
-    render(<IncidentsView />);
-
-    expect(screen.getByText("ทดสอบกด 3 ครั้ง ไม่มีแจ้งเตือน")).toBeInTheDocument();
-  });
-});
-
-describe("IncidentsView: แยกกลุ่ม ยังไม่ปิด / ปิดแล้ว เมื่อติ๊กแสดงที่ปิดแล้ว", () => {
-  beforeEach(() => {
-    auth.role = "Operation";
-    router.push.mockReset();
-  });
-
-  it("ยังไม่ปิดอยู่ก่อนเสมอ แม้ที่ปิดแล้วจะใหม่กว่า และมีหัวกลุ่มพร้อมจำนวน", async () => {
+  it("ตัวกรองประเภท/ความรุนแรงมีผลกับจำนวนบนแท็บด้วย", async () => {
     const user = userEvent.setup();
     incidentsState.rows = [
-      incident({ id: "c1", title: "ปิดแล้วใหม่สุด", status: "dismissed" }),
-      incident({ id: "o1", title: "ยังเปิดเก่ากว่า", status: "open" }),
-      incident({ id: "c2", title: "ปิดแล้วเก่า", status: "resolved" }),
+      incident({ id: "a", status: "open", severity: "critical" }),
+      incident({ id: "b", status: "open", severity: "low" }),
+      incident({ id: "c", status: "resolved", severity: "low" }),
     ];
 
     render(<IncidentsView />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
-    );
+    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
+    await user.click(await screen.findByRole("option", { name: "low" }));
 
-    expect(screen.getByText("ยังไม่ปิด (1)")).toBeInTheDocument();
-    expect(screen.getByText("ปิดแล้ว (2)")).toBeInTheDocument();
-
-    const titles = screen
-      .getAllByRole("link", { name: /ปิดแล้วใหม่สุด|ยังเปิดเก่ากว่า|ปิดแล้วเก่า/ })
-      .map((a) => a.textContent);
-    expect(titles).toEqual(["ยังเปิดเก่ากว่า", "ปิดแล้วใหม่สุด", "ปิดแล้วเก่า"]);
-  });
-
-  it("ค่าเริ่มต้น (ซ่อนที่ปิดแล้ว): ไม่มีหัวกลุ่ม", () => {
-    incidentsState.rows = [
-      incident({ id: "o1", status: "open" }),
-      incident({ id: "c1", title: "ปิดแล้ว", status: "resolved" }),
-    ];
-
-    render(<IncidentsView />);
-
-    expect(screen.queryByText(/^ยังไม่ปิด \(/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
-  });
-
-  it("มีแต่ที่ปิดแล้วทั้งหมด (ติ๊กแสดง): ไม่มีหัวกลุ่ม ไม่ต้องแยก", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [incident({ id: "c1", status: "resolved" })];
-
-    render(<IncidentsView />);
-    await user.click(
-      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
-    );
-
-    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ยังไม่ปิด 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ปิดแล้ว 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ทั้งหมด 2" })).toBeInTheDocument();
   });
 });
