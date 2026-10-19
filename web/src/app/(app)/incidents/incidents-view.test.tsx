@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { IncidentsView } from "./incidents-view";
 import type { Incident } from "@/lib/incident-api";
@@ -67,8 +68,9 @@ describe("IncidentsView: Field Report", () => {
 
     render(<IncidentsView />);
 
-    expect(screen.getByText(/แจ้งจากหน้างาน/)).toBeInTheDocument();
-    expect(screen.getByText("DEV-0103")).toBeInTheDocument();
+    // ประเภท + ผลกระทบ (อุปกรณ์) + ผู้แจ้ง แยกคนละช่อง
+    expect(screen.getByText("แจ้งจากหน้างาน")).toBeInTheDocument();
+    expect(screen.getByText("อุปกรณ์ DEV-0103")).toBeInTheDocument();
     expect(screen.getByText(/ช่างสมศรี/)).toBeInTheDocument();
     expect(screen.queryByText(/user-st/)).not.toBeInTheDocument();
   });
@@ -93,7 +95,7 @@ describe("IncidentsView: Field Report", () => {
     ).toBeInTheDocument();
   });
 
-  it("ตัดสินใจไปแล้ว: ไม่มีปุ่ม แสดงหมายเหตุของ Operation และป้ายสถานะ 'ไม่ต้องดำเนินการ'", () => {
+  it("ตัดสินใจไปแล้ว: ไม่มีปุ่ม แสดงหมายเหตุของ Operation และป้ายสถานะ 'ไม่ต้องดำเนินการ'", async () => {
     incidentsState.rows = [
       incident({
         status: "dismissed",
@@ -103,6 +105,10 @@ describe("IncidentsView: Field Report", () => {
     ];
 
     render(<IncidentsView />);
+    // Incident ที่ปิดแล้วถูกซ่อนเป็นค่าเริ่มต้น ติ๊กแสดงก่อนถึงจะเห็นแถวนี้
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
+    );
 
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
@@ -138,5 +144,326 @@ describe("IncidentsView: Field Report", () => {
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+function rolloutIncident(overrides: Partial<Incident> = {}): Incident {
+  return incident({
+    id: "inc-r1",
+    title: "Rollout หยุดอัตโนมัติ: อัปเดต GT06N",
+    description: null,
+    severity: "high",
+    source: "rollout-failure",
+    deviceId: null,
+    reportedBy: null,
+    metadata: {
+      kind: "auto-pause",
+      failureCount: 20,
+      targetCount: 100,
+      skippedCount: 5,
+    },
+    ...overrides,
+  });
+}
+
+describe("IncidentsView: แยกที่มาและผลกระทบ", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("Incident จาก Rollout: แสดงประเภท ชนิดย่อย และจำนวนเครื่องที่ได้รับผลกระทบ", () => {
+    incidentsState.rows = [rolloutIncident()];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("Rollout ล้มเหลว")).toBeInTheDocument();
+    expect(screen.getByText("หยุดอัตโนมัติ")).toBeInTheDocument();
+    expect(
+      screen.getByText("ล้มเหลว 20 จาก 100 เครื่อง (20%)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ข้ามเพราะออฟไลน์ 5 เครื่อง")).toBeInTheDocument();
+    // แถบสัดส่วนล้มเหลว/ถูกข้ามแสดงเฉพาะ Incident จาก Rollout
+    expect(
+      screen.getByRole("img", { name: /สัดส่วนเครื่องที่ล้มเหลว/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("Incident จากการเขียน Config: แสดงประเภท และไม่มีส่วนผลกระทบ (ไม่มีจำนวนเครื่อง)", () => {
+    incidentsState.rows = [
+      incident({
+        source: "config-sync-writer",
+        deviceId: null,
+        reportedBy: null,
+        metadata: { attempts: 3 },
+      }),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("เขียน Config ไม่สำเร็จ")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("img", { name: /สัดส่วนเครื่องที่ล้มเหลว/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/จาก .* เครื่อง/)).not.toBeInTheDocument();
+  });
+
+  it("source ที่ไม่รู้จัก: แสดงเป็น 'อื่นๆ' ไม่หายจากรายการ", () => {
+    incidentsState.rows = [incident({ source: null, deviceId: null })];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("อื่นๆ")).toBeInTheDocument();
+  });
+
+  it("กรองตามประเภท: เหลือเฉพาะ Incident ของประเภทที่เลือก", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [
+      incident({ id: "inc-f", title: "ปัญหาจากช่าง" }),
+      rolloutIncident({ title: "ปัญหาจาก Rollout" }),
+    ];
+
+    render(<IncidentsView />);
+    expect(screen.getByText("ปัญหาจากช่าง")).toBeInTheDocument();
+    expect(screen.getByText("ปัญหาจาก Rollout")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /ประเภท/ }));
+    await user.click(
+      await screen.findByRole("option", { name: "Rollout ล้มเหลว" }),
+    );
+
+    expect(screen.queryByText("ปัญหาจากช่าง")).not.toBeInTheDocument();
+    expect(screen.getByText("ปัญหาจาก Rollout")).toBeInTheDocument();
+  });
+
+  it("กรองตามความรุนแรง: เหลือเฉพาะระดับที่เลือก", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [
+      incident({ id: "inc-c", title: "รุนแรงมาก", severity: "critical" }),
+      rolloutIncident({ title: "รุนแรงสูง", severity: "high" }),
+    ];
+
+    render(<IncidentsView />);
+
+    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
+    await user.click(await screen.findByRole("option", { name: "high" }));
+
+    expect(screen.queryByText("รุนแรงมาก")).not.toBeInTheDocument();
+    expect(screen.getByText("รุนแรงสูง")).toBeInTheDocument();
+  });
+
+  it("กรองแล้วไม่เหลือรายการ: ขึ้นข้อความไม่พบที่ตรงกับเงื่อนไข", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [incident({ severity: "critical" })];
+
+    render(<IncidentsView />);
+
+    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
+    await user.click(await screen.findByRole("option", { name: "low" }));
+
+    expect(
+      screen.getByText("ไม่พบ Incident ที่ตรงกับเงื่อนไข"),
+    ).toBeInTheDocument();
+  });
+
+  it("จำนวนในหัวการ์ดนับเฉพาะรายการที่ผ่านตัวกรอง", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [
+      incident({ id: "a", severity: "critical" }),
+      incident({ id: "b", severity: "critical" }),
+      rolloutIncident({ severity: "high" }),
+    ];
+
+    render(<IncidentsView />);
+    const heading = screen.getByText(/^รายการ Incident/);
+    expect(within(heading).getByText("(3)")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
+    await user.click(await screen.findByRole("option", { name: "high" }));
+
+    expect(within(heading).getByText("(1)")).toBeInTheDocument();
+  });
+});
+
+describe("IncidentsView: ซ่อน Incident ที่ปิดแล้วเป็นค่าเริ่มต้น", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  const open = () => incident({ id: "o", title: "ยังเปิดอยู่", status: "open" });
+  const investigating = () =>
+    incident({ id: "i", title: "กำลังตรวจสอบ", status: "investigating" });
+  const resolved = () =>
+    incident({ id: "r", title: "แก้แล้ว", status: "resolved" });
+  const dismissed = () =>
+    incident({ id: "d", title: "ไม่ต้องดำเนินการแล้ว", status: "dismissed" });
+  const rolledBack = () =>
+    incident({ id: "b", title: "ย้อนกลับแล้ว", status: "rolled_back" });
+
+  it("ค่าเริ่มต้น: เห็นเฉพาะ open และ investigating ซ่อน resolved, dismissed, rolled_back", () => {
+    incidentsState.rows = [
+      open(),
+      investigating(),
+      resolved(),
+      dismissed(),
+      rolledBack(),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("ยังเปิดอยู่")).toBeInTheDocument();
+    expect(screen.getByText("กำลังตรวจสอบ")).toBeInTheDocument();
+    expect(screen.queryByText("แก้แล้ว")).not.toBeInTheDocument();
+    expect(screen.queryByText("ไม่ต้องดำเนินการแล้ว")).not.toBeInTheDocument();
+    expect(screen.queryByText("ย้อนกลับแล้ว")).not.toBeInTheDocument();
+    expect(screen.getByText("(ซ่อนอยู่ 3 รายการ)")).toBeInTheDocument();
+  });
+
+  it("จำนวนในหัวการ์ดนับเฉพาะที่แสดงอยู่", () => {
+    incidentsState.rows = [open(), resolved(), dismissed()];
+
+    render(<IncidentsView />);
+
+    const heading = screen.getByText(/^รายการ Incident/);
+    expect(within(heading).getByText("(1)")).toBeInTheDocument();
+  });
+
+  it("ติ๊ก 'แสดงที่ปิดแล้วด้วย': เห็นครบทุกสถานะ และไม่มีข้อความซ่อนอยู่", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [open(), resolved(), dismissed(), rolledBack()];
+
+    render(<IncidentsView />);
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
+    );
+
+    expect(screen.getByText("ยังเปิดอยู่")).toBeInTheDocument();
+    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
+    expect(screen.getByText("ไม่ต้องดำเนินการแล้ว")).toBeInTheDocument();
+    expect(screen.getByText("ย้อนกลับแล้ว")).toBeInTheDocument();
+    expect(screen.queryByText(/ซ่อนอยู่/)).not.toBeInTheDocument();
+  });
+
+  it("ปิดทั้งหมดแล้ว: บอกว่าไม่มีที่ยังไม่ปิด ไม่ใช่ 'ยังไม่มี Incident'", () => {
+    incidentsState.rows = [resolved(), dismissed()];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("ไม่มี Incident ที่ยังไม่ปิด")).toBeInTheDocument();
+    expect(screen.queryByText("ยังไม่มี Incident")).not.toBeInTheDocument();
+  });
+
+  it("ไม่มี Incident เลย: ยังขึ้น 'ยังไม่มี Incident'", () => {
+    incidentsState.rows = [];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("ยังไม่มี Incident")).toBeInTheDocument();
+  });
+
+  it("เลือกสถานะเจาะจงในตัวกรอง: ไม่ซ่อน และปิดช่องติ๊ก (ผู้ใช้ขอดูสถานะนั้นตรงๆ)", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [resolved()];
+
+    render(<IncidentsView />);
+    expect(screen.queryByText("แก้แล้ว")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: /สถานะ/ }));
+    await user.click(await screen.findByRole("option", { name: "Resolved" }));
+
+    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
+    // Checkbox ของ base-ui เป็น <span role="checkbox"> ไม่ใช่ input จึงดู aria-disabled
+    expect(
+      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("IncidentsView: ตัวอย่างเครื่องที่ล้มเหลวในแถว", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("Rollout หลายเครื่อง: แสดง 3 เครื่องแรกและ 'และอีก N เครื่อง'", () => {
+    incidentsState.rows = [
+      rolloutIncident({
+        metadata: {
+          kind: "auto-pause",
+          failureCount: 20,
+          targetCount: 100,
+          skippedCount: 0,
+          failedDeviceIds: Array.from(
+            { length: 20 },
+            (_, i) => `DEV-${String(i + 1).padStart(4, "0")}`,
+          ),
+        },
+      }),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(
+      screen.getByText("DEV-0001, DEV-0002, DEV-0003"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/และอีก 17 เครื่อง/)).toBeInTheDocument();
+    expect(screen.queryByText(/DEV-0004/)).not.toBeInTheDocument();
+  });
+
+  it("Rollout ที่ล้มเหลวไม่เกิน 3 เครื่อง: แสดงครบ ไม่มี 'และอีก'", () => {
+    incidentsState.rows = [
+      rolloutIncident({
+        metadata: {
+          kind: "completed-with-failures",
+          failureCount: 2,
+          targetCount: 10,
+          failedDeviceIds: ["DEV-0007", "DEV-0008"],
+        },
+      }),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("DEV-0007, DEV-0008")).toBeInTheDocument();
+    expect(screen.queryByText(/และอีก/)).not.toBeInTheDocument();
+  });
+});
+
+describe("IncidentsView: คำอธิบายในรายการ", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("Incident ที่ระบบสร้างเอง (Rollout, เขียน Config): ไม่แสดงคำอธิบายยาวในรายการ (ดูที่หน้ารายละเอียด)", () => {
+    incidentsState.rows = [
+      rolloutIncident({
+        title: "Rollout จบแต่มีเครื่องที่ไม่สำเร็จ",
+        description: "ล้มเหลว 5 จาก 14 เครื่อง ตัวอย่างข้อผิดพลาด: timeout",
+      }),
+      incident({
+        id: "inc-s",
+        title: "เขียน Config เข้าระบบเดิมไม่สำเร็จ (v1)",
+        source: "config-sync-writer",
+        deviceId: null,
+        reportedBy: null,
+        description: "config-sync-writer เขียน Config 06aae780 ไม่สำเร็จ",
+      }),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("Rollout จบแต่มีเครื่องที่ไม่สำเร็จ")).toBeInTheDocument();
+    expect(screen.queryByText(/ตัวอย่างข้อผิดพลาด: timeout/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/06aae780/)).not.toBeInTheDocument();
+  });
+
+  it("แจ้งจากหน้างาน: ยังแสดงคำอธิบายที่ช่างเขียน", () => {
+    incidentsState.rows = [incident({ description: "ทดสอบกด 3 ครั้ง ไม่มีแจ้งเตือน" })];
+
+    render(<IncidentsView />);
+
+    expect(screen.getByText("ทดสอบกด 3 ครั้ง ไม่มีแจ้งเตือน")).toBeInTheDocument();
   });
 });
