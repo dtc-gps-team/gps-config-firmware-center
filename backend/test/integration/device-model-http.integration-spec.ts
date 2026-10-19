@@ -121,12 +121,29 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
       const res = await request(app.getHttpServer())
         .post('/api/v1/device-models')
         .set('Authorization', `Bearer ${token}`)
-        .send({ name: 'GT06X', supportedProtocols: ['TCP', 'UDP'] })
+        .send({ name: 'GT06X', supportedProtocols: ['TCP'] })
         .expect(201);
 
       const body = res.body as { name: string; supportedProtocols: string[] };
       expect(body.name).toBe('GT06X');
-      expect(body.supportedProtocols).toEqual(['TCP', 'UDP']);
+      expect(body.supportedProtocols).toEqual(['TCP']);
+    });
+
+    it('supportedProtocols มากกว่า 1 ค่า -> 400 (1 โมเดลมีได้โปรโตคอลเดียว)', async () => {
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Create, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/device-models')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'GT06X', supportedProtocols: ['TCP', 'UDP'] })
+        .expect(400);
+
+      expect(JSON.stringify(res.body)).toContain('1 โมเดลมีได้โปรโตคอลเดียว');
+      expect(
+        await prisma.deviceModel.findUnique({ where: { name: 'GT06X' } }),
+      ).toBeNull();
     });
 
     it('สร้างสำเร็จ -> มีแถว AuditLog 1 แถว พร้อม IP และชื่อรุ่น', async () => {
@@ -283,6 +300,38 @@ describe('DeviceModelController (integration — real postgres + guard chain)', 
       expect((res.body as { endOfSupportDate: string }).endOfSupportDate).toBe(
         '2028-01-31T00:00:00.000Z',
       );
+    });
+
+    it('แก้ supportedProtocols เป็นมากกว่า 1 ค่า -> 400 (1 โมเดลมีได้โปรโตคอลเดียว)', async () => {
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Update, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/device-models/${model.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ supportedProtocols: ['TCP', 'UDP'] })
+        .expect(400);
+    });
+
+    it('รุ่นเก่าที่มีหลายโปรโตคอลอยู่แล้ว แก้ให้เหลือ 1 ค่า -> 200', async () => {
+      // getOrCreateDeviceModel สร้างผ่าน prisma ตรงๆ (TCP + UDP) จำลองแถวเก่า
+      // ที่เกิดก่อนมีกฎ 1 โมเดล 1 โปรโตคอล
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const admin = await makeUser(prisma, { role: 'Admin' });
+      await grant('Admin', ActionType.Update, 'device-model');
+      const token = tokenFor(admin.id, 'Admin');
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/device-models/${model.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ supportedProtocols: ['TCP'] })
+        .expect(200);
+
+      expect(
+        (res.body as { supportedProtocols: string[] }).supportedProtocols,
+      ).toEqual(['TCP']);
     });
 
     it('แก้สำเร็จ -> มีแถว AuditLog พร้อมชื่อ field ที่แก้ (ไม่เก็บค่า)', async () => {

@@ -2512,9 +2512,9 @@ paths:
       summary: สร้างรุ่นอุปกรณ์ใหม่ (Admin/SuperAdmin เท่านั้น — v3.28, issue #209)
       description: >-
         resource `device-model` action `Create` — Admin/SuperAdmin เท่านั้น
-        (master/reference data ที่เพิ่มไม่บ่อย) · `supportedProtocols` บังคับ
-        อย่างน้อย 1 ค่า — กันสร้างรุ่นที่ไม่มี protocol เลยจนสร้าง Config ให้
-        รุ่นนั้นไม่ได้ถาวร (`ConfigService.create()`/`update()` enforce ว่า
+        (master/reference data ที่เพิ่มไม่บ่อย) · `supportedProtocols` ต้องมี
+        1 ค่าพอดี (1 โมเดลมีได้โปรโตคอลเดียว) — กันสร้างรุ่นที่ไม่มี protocol เลย
+        จนสร้าง Config ให้รุ่นนั้นไม่ได้ถาวร (`ConfigService.create()`/`update()` enforce ว่า
         `Config.protocol` ต้องอยู่ในลิสต์นี้จริง)
       requestBody:
         required: true
@@ -2530,7 +2530,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceModel"
         "400":
-          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่า)
+          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่าหรือมากกว่า 1 ค่า)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -2592,7 +2592,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceModel"
         "400":
-          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่า)
+          description: validation ไม่ผ่าน (เช่น supportedProtocols ว่างเปล่าหรือมากกว่า 1 ค่า)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -3508,7 +3508,9 @@ components:
           items:
             type: string
           description: >-
-            โปรโตคอลที่รุ่นนี้รองรับ — enforce จริงตอนสร้าง/แก้ Config
+            โปรโตคอลของรุ่นนี้ — **1 โมเดลมีได้โปรโตคอลเดียว** (ปกติมี 1 ค่า ยังเป็น
+            array เพื่อไม่เปลี่ยนรูปแบบ API · รุ่นเก่าที่สร้างก่อนมีกฎนี้อาจมีหลายค่า
+            แก้ให้เหลือ 1 ค่าผ่าน PATCH) · enforce จริงตอนสร้าง/แก้ Config
             (Config.protocol ต้องอยู่ในลิสต์นี้ ไม่งั้น 400)
         status:
           $ref: "#/components/schemas/DeviceModelStatus"
@@ -3543,9 +3545,12 @@ components:
         supportedProtocols:
           type: array
           minItems: 1
+          maxItems: 1
           items:
             type: string
-          description: บังคับอย่างน้อย 1 ค่า
+          description: >-
+            ต้องมี 1 ค่าพอดี (1 โมเดลมีได้โปรโตคอลเดียว) · มากกว่า 1 ค่าหรือว่าง
+            ได้ 400
         status:
           $ref: "#/components/schemas/DeviceModelStatus"
         warrantyMonths:
@@ -3568,8 +3573,12 @@ components:
         supportedProtocols:
           type: array
           minItems: 1
+          maxItems: 1
           items:
             type: string
+          description: >-
+            ต้องมี 1 ค่าพอดี (1 โมเดลมีได้โปรโตคอลเดียว) ใช้แก้รุ่นเก่าที่มีหลายค่า
+            ให้เหลือค่าเดียวได้
         status:
           $ref: "#/components/schemas/DeviceModelStatus"
         warrantyMonths:

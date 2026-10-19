@@ -375,6 +375,10 @@ model DeviceModel {
   // Config.protocol ต้องอยู่ในลิสต์นี้ก่อนสร้าง/แก้ไข (issue #209 ข้อ 4 —
   // ตัดสินใจ enforce เข้มงวด ไม่ใช่แค่ dropdown ช่วยเฉยๆ เพราะ backfill
   // มีข้อมูลจริงรองรับอยู่แล้ว)
+  // 1 โมเดลมีได้โปรโตคอลเดียว (มติรีวิวพี่เลี้ยง 19 ต.ค. 2569) — DTO บังคับ 1 ค่า
+  // พอดี แต่ยังเก็บเป็น array เพื่อไม่เปลี่ยนรูปแบบ API/ตาราง (ไม่ต้อง migration
+  // และไม่กระทบ Mobile) · แถวเก่าที่มีหลายค่าอยู่แล้วยังอ่านได้ แก้ให้เหลือ 1 ค่า
+  // ผ่าน PATCH /device-models/{id}
   supportedProtocols String[]
   status             DeviceModelStatus @default(active)
   // Warranty/lifecycle ต่อรุ่น — optional เพราะรุ่นที่ backfill เข้ามาตอน
