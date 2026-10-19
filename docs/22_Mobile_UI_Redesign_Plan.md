@@ -1,8 +1,9 @@
 # แผนรื้อ UI Mobile ใหม่ทั้งแอป ให้สอดคล้องกับ Web
 
-> **สถานะ:** แผน รอ A (paveekornkwork-dev) รีวิว · ยังไม่มีโค้ด UI ในใบนี้ (เอกสารอย่างเดียว) · ร่างแรก 19 ต.ค. 2569
+> **สถานะ:** แผน — A (paveekornkwork-dev) รีวิวและ approve แล้ว (#347) · ร่างแรก 19 ต.ค. 2569
 > · ปรับตามการตัดสินใจรอบ 2 ของ B วันเดียวกัน (§3) · อัปเดตตามคำตอบของ A (§10) และมติ §5.2 ของ B วันเดียวกัน
-> (§3 ข้อ 17–18) · **ไม่มีคำถามเปิดเหลือ**
+> (§3 ข้อ 17–18) · อัปเดตตามค่าจริงของ Web หลัง #344 merge (§3 ข้อ 19–20)
+> · **ความคืบหน้า:** Batch 0 merge แล้ว (#346) · **Batch 1 implement แล้วใน #349 (รอ A รีวิว)** ดู §9
 >
 > **แทนที่:** `docs/20_Mobile_Redesign_Phase3_Design.md` (มติ B 19 ต.ค. 2569 — token ของ docs/20 ไม่ตรงกับ
 > Web จริง ดู §1)
@@ -67,7 +68,8 @@
 2. คำเฉพาะ (ชื่อสถานะ, ชื่อเมนู/ฟีเจอร์) ใช้ภาษาอังกฤษให้ตรงกับ Web · ประโยคอธิบาย ข้อความแจ้งเตือน ข้อความ
    error และปุ่มคำกริยาทั่วไป คงภาษาไทย (§6)
 3. ใช้ระบบสี **Badge** ของ Web (semantic tone: neutral / success / warning / danger / info + dot) เป็นมาตรฐาน
-   **ไม่ใช้** `lib/status-pill.tsx` ที่ใช้สี Tailwind ดิบ (§5)
+   **ไม่ใช้** `lib/status-pill.tsx` ที่ตอนนั้นใช้สี Tailwind ดิบ (§5) — หลัง #344 `StatusPill` ใช้ token ชุดเดียวกับ
+   Badge แล้ว สีสถานะสองฝั่งตรงกัน (§5.3)
 4. ตัดหน้า `/simulator` ("ทดสอบความพร้อม Config") — เหลือแค่ปุ่ม "ทดสอบกับ Device Simulator" ใน Task Detail
 5. ตัดหน้า `/device-connection-test` ("ทดสอบสัญญาณ") และหน้าลูก `/device-connection-test/pick-device` — backend
    `DEVICE_CONNECTION_TEST_MODE=real` ยัง throw ตอน startup (ไม่มีตัวจริงให้เชื่อม) ผลเป็น mock ทุก environment
@@ -83,7 +85,7 @@
 12. **ตัดหน้า "งานของฉัน" (`/tasks`) รวมเข้าหน้าแรก**
 13. การนำทางเป็น **แท็บด้านล่าง** · ยกเลิก AppBar สีกรมท่า ใช้หัวหน้าจอเรียบแบบ `PageHeader` ของ Web
 14. **ล็อกโหมดสว่างอย่างเดียว** ไม่พอร์ต `.dark` ในรอบนี้
-15. ขอบช่องกรอกใช้ **`muted-foreground #667080`** ของ Web
+15. ขอบช่องกรอกใช้ **`muted-foreground`** ของ Web (ตอนนั้น `#667080` — ค่าเปลี่ยนเป็น `#576171` ตามข้อ 19)
 16. **ลบหน้า `/simulator` ใน Batch 3** พร้อมหน้าแรกใหม่ (เดิมวางไว้ Batch 5) — ทางลัดเดียวที่เข้าหน้านี้หายไปกับ
     หน้าแรกใหม่ใน Batch 3 ถ้าเก็บหน้าไว้ถึง Batch 5 จะเป็น route ค้างที่ไม่มีทางเข้า และปุ่ม "ทดสอบกับ Device
     Simulator" ใน Task Detail ไม่ได้พึ่งหน้านี้อยู่แล้ว
@@ -94,6 +96,14 @@
     Firmware ยังไม่ได้สร้าง (ขั้นที่ 2 ของ docs/19) ข้อความบน Web ที่ว่าไม่ต้องรอช่างกดยืนยันเป็นการจำลอง และยังมี
     use case จริงคือช่างเปลี่ยน Firmware ด้วยมือหน้างานนอก Campaign
 18. **Task `cancelled` ใช้โทน `danger`** ตาม `TASK_STATUS_TONE` ของ Web (ไม่ใช้ `neutral` ที่ร่างแรกเสนอ) — §5.2
+
+**รอบ 4 — ตามค่าใหม่ของ Web หลัง #344 merge (19 ต.ค. 2569)**
+19. **`muted-foreground` / ขอบช่องกรอก = `#576171`** ตามค่าใหม่ของ Web (`oklch(0.49 0.028 259.8)` จาก #344 เข้มขึ้นจาก
+    `#667080`) — 6.26:1 บนการ์ด, 5.89:1 บน background · §4.1, §4.3 · implement แล้วใน #349
+20. **`text-xs` / `text-sm` = 13 / 15** ตาม Web (#344 ขยายจาก 12 / 14 ของ Tailwind) — §4.5 · implement แล้วใน #349
+
+ฟอนต์: Web เปลี่ยนเป็น **Anuphan** ใน #344 · **ยังไม่ตัดสินใจ**ว่า Mobile จะตามไหม รอ A ตอบเหตุผลที่เปลี่ยน (ถามไว้ใน
+รีวิว #344) · ระหว่างนี้ Mobile ตั้งเป็น Noto Sans Thai Looped ไว้ก่อน (§4.5)
 
 ---
 
@@ -115,7 +125,7 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 | `primary-foreground` | `1 0 0` | `#FFFFFF` | ตัวอักษรบนปุ่มหลัก |
 | `secondary` / `muted` | `0.957 0.006 255.5` | `#EEF1F5` | พื้นปุ่มรอง, พื้น Badge neutral |
 | `secondary-foreground` | `0.267 0.028 248.9` | `#1B2733` | |
-| `muted-foreground` | `0.542 0.028 259.8` | `#667080` | label, ข้อความรอง (5.02:1 บนการ์ด, 4.72:1 บน background), แท็บที่ไม่ได้เลือก, **ขอบช่องกรอก (§4.3)** |
+| `muted-foreground` | `0.49 0.028 259.8` | `#576171` | label, ข้อความรอง (6.26:1 บนการ์ด, 5.89:1 บน background), แท็บที่ไม่ได้เลือก, **ขอบช่องกรอก (§4.3)** · ค่าใหม่จาก #344 (เดิม `#667080`) ตรงกับที่ implement ใน #349 |
 | `accent` | `0.961 0.011 243.7` | `#ECF3F9` | พื้นตอนกด/รายการที่เลือก, แถวที่ยังไม่อ่าน, พื้นแท็บที่เลือก |
 | `accent-foreground` | `0.313 0.06 243.7` | `#12344D` | (= `AppTheme.navy` เดิมของ Mobile) |
 | `destructive` | `0.577 0.245 27.325` | `#E7000B` | ปุ่มอันตราย, จุดของ Badge danger |
@@ -132,12 +142,15 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 
 **ล็อก `ThemeMode.light` อย่างเดียว** (มติ B ข้อ 14 · ปิด docs/21 ข้อ #24 ที่แอปรองรับ dark โดยไม่ตั้งใจ) · **ไม่พอร์ต
 `.dark` ของ Web** · ถ้าจะทำ dark mode ทีหลังเป็นงานแยก (Web มี `.dark` ครบทุก token และคู่สีผ่าน contrast แล้ว
-ยกมาใช้ได้ตอนนั้น) · ระหว่างนี้ไม่ต้องเก็บ `AppTheme.dark()` ไว้ให้ build ได้
+ยกมาใช้ได้ตอนนั้น) · ระหว่างนี้ไม่ต้องเก็บ `AppTheme.dark()` ไว้ให้ build ได้ · **ล็อก `ThemeMode.light` ใน Batch 6**
+ตอนสลับทั้งแอปเป็น v2 ไม่ใช่ Batch 1 (ถ้าล็อกก่อน หน้าตาทั้งแอปจะเปลี่ยนทันทีกับเครื่องที่ตั้ง dark mode ทั้งที่หน้ายังเป็น
+theme เดิม) · `AppTheme.v2()` ใน #349 เป็นโหมดสว่างอย่างเดียวแล้ว
 
-### 4.3 ขอบช่องกรอก: ใช้ `muted-foreground #667080` (ต่างจาก Web โดยตั้งใจ)
+### 4.3 ขอบช่องกรอก: ใช้ `muted-foreground #576171` (ต่างจาก Web โดยตั้งใจ)
 
-- ขอบช่องกรอกของ Mobile = **`muted-foreground #667080`** ได้ **5.01:1** บนพื้นขาว ผ่าน WCAG 1.4.11 (ขอบของ UI
-  component ต้อง ≥ 3:1) — เป็น token ที่มีอยู่แล้วใน Web ไม่ได้เพิ่มสีใหม่
+- ขอบช่องกรอกของ Mobile = **`muted-foreground #576171`** ได้ **6.26:1** บนพื้นขาว (5.89:1 บน background) ผ่าน WCAG
+  1.4.11 (ขอบของ UI component ต้อง ≥ 3:1) — เป็น token ที่มีอยู่แล้วใน Web ไม่ได้เพิ่มสีใหม่ · ค่าใหม่หลัง #344 (เดิม
+  `#667080` 5.01:1) มติ B ข้อ 19 · implement ใน #349 เป็น `AppColors.inputBorder` (= `mutedForeground`)
 - เหตุผลที่ไม่ยก `--input` ของ Web: ได้แค่ 1.25:1 (เท่ากับ `--border`) ไม่ผ่านเกณฑ์ และ Mobile เคยแก้ปัญหานี้แล้วใน
   #335 ถ้ายกมาตรงๆ จะถอยหลัง · แจ้ง A เป็นข้อสังเกต (§10 ข้อ A2)
 
@@ -146,7 +159,9 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 ค่าที่ browser แสดงจริงคือ `oklch()` ไม่ใช่คอมเมนต์ ตัวที่ต่าง: `primary` (คอมเมนต์ `#1C6FB2` / จริง `#1B6FB2`),
 `success` (`#3F9D6B` / `#4E9B6C`), `success-foreground` (`#1F6B45` / `#165E3C`), `warning` (`#D08A1E` / `#CB8315`),
 `warning-foreground` (`#92400E` / `#824103`), `info` (`#2A78D6` / `#287CCF`), `info-foreground`, `danger-foreground`,
-และ `-subtle` ทุกตัวต่างเล็กน้อย · Mobile ใช้ค่าที่แปลงจาก oklch (คอลัมน์ hex ใน §4.1) · แจ้ง A เป็นข้อสังเกต
+และ `-subtle` ทุกตัวต่างเล็กน้อย · หลัง #344 เพิ่ม `muted-foreground` (คอมเมนต์ `≈#5A6473` / จริง `#576171` — แจ้ง A
+ไว้ในรีวิว #344) · Mobile ใช้ค่าที่แปลงจาก oklch (คอลัมน์ hex ใน §4.1 — แปลงซ้ำจาก main `d487763` หลัง #344 ตรงกับ
+#349) · แจ้ง A เป็นข้อสังเกต
 
 ### 4.5 Radius, ตัวอักษร, ระยะห่าง
 
@@ -155,15 +170,18 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 - **ความสูงปุ่ม/ช่องกรอก (ต่างจาก Web โดยตั้งใจ):** Web ใช้ `h-8` (32px) ซึ่งเหมาะกับเมาส์ แต่ต่ำกว่าพื้นที่กด
   ขั้นต่ำบนมือถือ (Material 48dp) · Mobile คงความสูงขั้นต่ำ **48** เหมือนปุ่มหลักตอนนี้ (#335) ใช้แค่สี radius
   ตัวอักษร และ variant ตาม Web
-- **ตัวอักษร:** **Noto Sans Thai Looped** (น้ำหนัก 400 / 500 / 600 / 700) แบบเดียวกับ Web (`app/layout.tsx`) ·
-  ตัวเลข/รหัสเครื่องใช้ monospace (Web ใช้ Geist Mono — ฝั่ง Mobile เลือกตอน Batch 1 ว่าจะ bundle ตัวไหน)
+- **ตัวอักษร:** **Noto Sans Thai Looped** (น้ำหนัก 400 / 500 / 600 / 700) — เดิมเลือกเพราะตรงกับ Web แต่ **#344
+  เปลี่ยนฟอนต์ Web เป็น Anuphan** แล้ว · **ยังไม่ตัดสินใจ**ว่า Mobile จะตามไหม รอ A ตอบเหตุผล (หมายเหตุท้าย §3) ·
+  ระหว่างนี้ #349 ตั้ง `AppTypography.fontFamily` เป็น Noto Sans Thai Looped พร้อม TODO และ**ยังไม่ bundle ไฟล์ฟอนต์**
+  (ไม่ commit ไฟล์ที่อาจต้องเปลี่ยนทั้งชุด) · ตัวเลข/รหัสเครื่องใช้ monospace (Web ใช้ Geist Mono — เลือกตอน bundle)
   - **bundle เป็น asset** ใน `mobile/assets/fonts/` พร้อม `OFL.txt` (SIL Open Font License 1.1) ไม่ใช้ `google_fonts`
     ที่โหลดจากเน็ต — ช่างใช้แอปตอนออฟไลน์บ่อย ถ้าโหลดฟอนต์ไม่ได้ตัวไทยจะเป็นกล่องสี่เหลี่ยม (เหตุผลเดิมจาก
     docs/20 ยังใช้ได้)
-  - ตรวจขนาด APK ที่เพิ่มขึ้นและรายงานใน PR ของ Batch 1
-- **ขนาดตัวอักษร:** อิงสเกลของ Tailwind ที่ Web ใช้ (`text-xs 12 · sm 14 · base 16 · lg 18 · xl 20 · 2xl 24`) ·
-  หัวหน้าจอ = `2xl` semibold ตาม `PageHeader` ของ Web (บนจอมือถืออาจลดเป็น `xl` — ตัดสินตอน Batch 1 พร้อม
-  screenshot)
+  - ตรวจขนาด APK ที่เพิ่มขึ้นและรายงานใน PR ที่ bundle ฟอนต์ (หลังได้ข้อสรุปเรื่องฟอนต์)
+- **ขนาดตัวอักษร:** อิงสเกลที่ Web ใช้ (`text-xs 13 · sm 15 · base 16 · lg 18 · xl 20 · 2xl 24`) — `xs` / `sm` ขยาย
+  1px ตาม #344 (Tailwind ปกติ 12 / 14, มติ B ข้อ 20) · implement ใน #349 (`AppTypography`) · หัวหน้าจอ = `2xl`
+  semibold ตาม `PageHeader` ของ Web (#349 ใช้ `2xl` ไปก่อน บนจอมือถืออาจลดเป็น `xl` — ตัดสินตอน Batch 2 ที่ใช้กับ
+  หน้าจริงพร้อม screenshot)
 - **ระยะห่าง:** สเกล 4px ของ Tailwind (`1 = 4px`) · การ์ดใช้ padding 16 (`--card-spacing: spacing(4)`) ขนาดเล็ก 12
 
 ---
@@ -219,15 +237,14 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 | | ซิงก์ไม่สำเร็จ (`SyncFailedBanner`) | danger | เสนอ |
 | ประเภท Incident source, ประเภทแจ้งเตือน, protocol ฯลฯ | ทุกค่า | neutral | กติกา Badge (ไม่ใช่สถานะ) |
 
-### 5.3 ข้อควรรู้: หน้าจริงของ Web ยังใช้ status-pill อยู่
+### 5.3 ข้อควรรู้: หน้าจริงของ Web ยังใช้ status-pill อยู่ (แต่สีตรงกับ Badge แล้ว)
 
-สำรวจแล้ว `Badge` ของ Web **ยังไม่ถูกใช้ในหน้าจริงเลย** (มีแค่ใน `page-header.test.tsx`) หน้าจริง 20 ไฟล์ยังใช้
-`StatusPill` (สี Tailwind sky/amber/emerald/rose) ผลคือหลัง Mobile เปลี่ยนเป็น Badge **สีสถานะของ Mobile กับหน้า
-Web ปัจจุบันจะต่างกันเล็กน้อย** จนกว่า Web จะย้ายไป Badge เหมือนกัน · ไม่บล็อกแผนนี้ (B ตัดสินแล้วว่าใช้ Badge)
-(A ตอบใน §10 ข้อ A3)
-
-> **⚠️ ต้องรีวิวอีกครั้งหลัง PR #344 (ของ A) merge:** ข้อความ "สี Tailwind ดิบ" ในส่วนนี้ (และ §3 ข้อ 3) จะ
-> outdated เพราะ #344 เปลี่ยน `StatusPill` ให้ใช้ token เดียวกับ Badge · ตอนนี้ #344 ยังไม่ merge จึงยังไม่แก้เนื้อหา
+`Badge` ของ Web **ยังไม่ถูกใช้ในหน้าจริง** หน้าจริง 19 ไฟล์ใช้ `StatusPill` (นับบน main `d487763`) · **หลัง #344
+merge `StatusPill` ใช้ token ชุดเดียวกับ Badge แล้ว** (ตรวจใน `lib/status-pill.tsx`: `neutral` = `bg-secondary
+text-secondary-foreground/80`, `info` / `success` / `danger` = `*-subtle` + `*-foreground`, `progress` =
+`warning-subtle` + `warning-foreground`) เลิกใช้สี Tailwind ดิบ (sky/amber/emerald/rose) แล้ว **สีสถานะของ Mobile
+(`AppBadge`) กับหน้า Web จึงตรงกัน** · ที่ยังต่าง: `StatusPill` ใช้ไอคอนนำหน้า ส่วน Badge ใช้ `dot` · การย้ายหน้า Web ไป
+เรียก Badge ตรงๆ ยังไม่ได้ตัดสินใจ (§10 ข้อ A3) ไม่บล็อกแผนนี้
 
 ---
 
@@ -242,7 +259,7 @@ Web ปัจจุบันจะต่างกันเล็กน้อย*
    Web อยู่แล้ว), ชื่อแจ้งเตือน (Web เองก็เป็นไทย), ปุ่มคำกริยา (บันทึกสถานะ, ส่งรายงานปัญหา, ยืนยัน, ยกเลิก,
    ออกจากระบบ), หัวข้อส่วน (ประวัติงานล่าสุด)
 
-label ทุกตัวในตารางนี้รวมไว้ไฟล์เดียว (`lib/core/ui/labels.dart` หรือชื่อที่ตกลงตอน Batch 1) พร้อมเทสว่าทุกค่าของ
+label ทุกตัวในตารางนี้รวมไว้ไฟล์เดียว (`lib/core/ui/labels.dart` หรือชื่อที่ตกลงตอนทำ — ไม่อยู่ใน #349 สร้างใน batch แรกที่มีหน้าใช้จริง) พร้อมเทสว่าทุกค่าของ
 enum มี label — ไม่ให้แต่ละหน้าเขียนเอง
 
 ### 6.1 ชื่อสถานะ
@@ -306,7 +323,7 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
 | `InfoRow` | แถว label/value (+ icon ได้) ในหน้ารายละเอียด | `AppInfoRow` | Batch 2 (Incident Detail) | Incident Detail, Device Detail, Task Detail (`_InfoCard`) |
 | `EmptyState` | icon + ข้อความ + ปุ่ม action ชวนทำขั้นต่อไป แทนข้อความลอยๆ | `AppEmptyState` | Batch 2 | แจ้งเตือน, Incidents, รายการงานบนหน้าแรก, Device Search (ไม่พบ) |
 | `skeleton/*` | card-list / detail skeleton แทน "กำลังโหลด…" | `AppListSkeleton`, `AppDetailSkeleton` (แทน `SkeletonCard` เดิม) | Batch 2 | ทุกหน้า list / detail ตอน fetch ครั้งแรก |
-| `Button` variants | `default` (primary) / `outline` / `secondary` / `ghost` / `destructive` / `link` · ปุ่มหลักวางท้ายสุด | `ThemeData` button themes + `AppButton.variant` | Batch 1 (theme) | ทุกหน้า · ปิด docs/21 ข้อ #11 ใน Batch 5 (Task Detail มี FilledButton 2 ปุ่มเท่ากัน → ปุ่มหลัก 1 + outline 1) |
+| `Button` variants | `default` (primary) / `outline` / `secondary` / `ghost` / `destructive` / `link` · ปุ่มหลักวางท้ายสุด | `ThemeData` button themes (#349) + `AppButton.variant` (batch แรกที่มีหน้าใช้) | Batch 1 (theme) | ทุกหน้า · ปิด docs/21 ข้อ #11 ใน Batch 5 (Task Detail มี FilledButton 2 ปุ่มเท่ากัน → ปุ่มหลัก 1 + outline 1) |
 | `SensitiveValue` | mask ค่าเป็นค่าเริ่มต้น + ปุ่มแสดง/ซ่อนที่มี label (`sensitive` เป็นแค่ flag การแสดงผล ไม่ใช่การเข้ารหัส) | `AppSensitiveValue` | Batch 4 (Config Override) | Config Override (field ที่ `sensitive`) · ปิด docs/21 ข้อ #20 |
 | `WizardStepIndicator` | ตัวบอกขั้นของงานหลายขั้น | `AppStepIndicator` | Batch 5 (ถ้าใช้) | Task Detail ส่วน "ส่ง Config เข้าเครื่อง" (ทดสอบกับ Device Simulator → ส่ง) — ตัดสินตอนทำ |
 | (ของเดิม Mobile ที่คงไว้) | `AppErrorView`, `OfflineCacheBanner`, `SyncFailedBanner`, `SyncAuthExpiredBanner` | ย้ายมาใช้ token / `AppBadge` | ตาม batch ของหน้าที่ใช้ | ตามเดิม |
@@ -406,12 +423,12 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 | Batch | งาน | เงื่อนไขว่าเสร็จ (คร่าวๆ) |
 |---|---|---|
 | 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | merge แล้ว (`9cfa1d1`) |
-| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography`, `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#667080`, ปุ่มตาม variant), bundle Noto Sans Thai Looped + `OFL.txt`, ไฟล์ label กลาง (§6), ล็อก `ThemeMode.light` · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี label + tone · รายงานขนาด APK |
+| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography` (13 / 15), `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#576171`, ปุ่มตาม variant), mapping สถานะ → tone (§5.2) · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** · **implement แล้วใน #349 (รอ A รีวิว)** · **ยังค้าง:** ฟอนต์เป็น TODO รอ A ตอบเรื่อง Anuphan (ยังไม่ bundle ไฟล์ฟอนต์ / `OFL.txt` / รายงานขนาด APK — §4.5) · ล็อก `ThemeMode.light` ย้ายไป Batch 6 (§4.2) · ไฟล์ label กลาง (§6) และ `AppButton.variant` ทำใน batch แรกที่มีหน้าใช้จริง | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี tone (เทส label มากับไฟล์ label) |
 | 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว |
 | 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว |
 | 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → **Confirm Firmware Install (317)** → Config Override (722, + `AppSensitiveValue`) · Confirm Firmware Install วางต่อจาก Device Detail ไม่ใช่ตามขนาดไฟล์ เพราะเป็นหน้าลูกที่เปิดจากปุ่มใน Device Detail (§3 ข้อ 17) · แตกหลายใบได้ | เหมือน Batch 2 |
 | 5 | **Task Detail** (หน้าซับซ้อนสุด 909 บรรทัด) — รื้อดีไซน์ทั้งหน้า รวมส่วน "ทดสอบกับ Device Simulator" (ที่เดียวของ Simulator หลังหน้า `/simulator` ถูกลบใน Batch 3) · ปุ่มหลัก/รอง (docs/21 #11) · งาน Step 4.1 ที่เคยอยู่ใน docs/20: แยกข้อความ ออฟไลน์ / 401 / 5xx / 4xx อื่น ยกเว้น 408 และ 429 (ยกเงื่อนไขว่าเสร็จมาทั้งหมด) | เหมือน Batch 2 + เทส simulator ใน Task Detail ผ่าน + เทสแยกกรณี error ครบ |
-| 6 | **ปิดงาน** — สลับ ThemeData ทั้งแอปเป็น v2 · ลบ token เก่า (`navy`, `mock*` ฯลฯ) และ `AppTheme.dark()` · เทสดัก `Color(0x` นอกไฟล์ token · ปิด docs/21 ข้อ #21, #22, #24 · อัปเดตสถานะใน docs/21 | grep `Color(0x` ใน `lib/` เหลือแค่ไฟล์ token · E2E เขียว |
+| 6 | **ปิดงาน** — สลับ ThemeData ทั้งแอปเป็น v2 + ล็อก `ThemeMode.light` (§4.2) · ลบ token เก่า (`navy`, `mock*` ฯลฯ) และ `AppTheme.dark()` · เทสดัก `Color(0x` นอกไฟล์ token · ปิด docs/21 ข้อ #21, #22, #24 · อัปเดตสถานะใน docs/21 | grep `Color(0x` ใน `lib/` เหลือแค่ไฟล์ token · E2E เขียว |
 
 - ระหว่างทาง (Batch 2–5) ครอบ theme ใหม่เฉพาะหน้าที่ย้ายแล้ว หน้าที่โชว์จะไม่มีสีปนกัน · สลับทั้งแอปใน Batch 6
 - docs/21 ข้อ #7 / #25 (applicationId, keystore, ชื่อแอป, ไอคอน) ไม่อยู่ในแผนนี้ ต้องคุยกับทีมแยก
@@ -449,4 +466,4 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 ข้อ B1–B6 ในร่างแรกได้คำตอบหมดแล้ว รวมไว้ใน §3 ข้อ 7–15 และปรับเนื้อหาทั้งเอกสารตามนั้น
 (B1 สถานะที่ Web เป็นไทย → คงไทย · B2 ตัวพิมพ์ → ตัวแรกพิมพ์ใหญ่ · B3 คำที่ไม่มีคู่เทียบ → คงไทย, "Incidents",
 ป้าย Role `ST` · B4 dark mode → ล็อกโหมดสว่าง · B5 การนำทาง → แท็บด้านล่าง ไม่มี AppBar สีกรมท่า · B6 ขอบช่องกรอก →
-`#667080`) · และย้ายการลบหน้า `/simulator` มาไว้ Batch 3 (§3 ข้อ 16)
+`muted-foreground` ตอนนั้น `#667080` ภายหลังเป็น `#576171` ตาม §3 ข้อ 19) · และย้ายการลบหน้า `/simulator` มาไว้ Batch 3 (§3 ข้อ 16)
