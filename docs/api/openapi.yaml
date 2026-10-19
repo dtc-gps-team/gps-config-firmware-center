@@ -2270,6 +2270,49 @@ paths:
             อีกต่อไป · Incident ที่ระบบสร้างเอง: ไม่ใช่ `open` หรือ
             `investigating` อีกต่อไป)
 
+  /incidents/{id}/retry-sync:
+    post:
+      tags: [incident]
+      operationId: retryIncidentConfigSync
+      summary: Operation สั่งเขียน Config เข้าระบบปลายทางใหม่ จาก Incident ที่เขียนไม่สำเร็จ
+      description: >-
+        resource `incidents` action `Approve` (ตัวเดียวกับ `decideFieldIncidentReport`)
+        ใช้ได้เฉพาะ Incident ที่ `source: config-sync-writer` และเป็น `status: open`
+        หรือ `investigating` · เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้
+        (`ConfigVersion` ตาม `metadata.versionNumber`) ไม่ใช่ค่าปัจจุบันของ
+        Config · ตอบทันทีว่าสั่งแล้วโดยตั้งสถานะเป็น `investigating` (เขียนจริง
+        ทำเบื้องหลังเหมือนตอน approve): สำเร็จ -> ระบบปิด Incident ให้เองเป็น
+        `resolved` พร้อมหมายเหตุปิดอัตโนมัติ, ล้มอีก -> อัปเดต Incident เดิมกลับ
+        เป็น `open` พร้อมรวมจำนวนครั้ง (ไม่สร้างรายการซ้ำ) · ลง Audit Log
+        (action `retry-sync`) ตอนนี้ระบบปลายทางเป็นโหมด mock
+        (`LEGACY_SYNC_MODE`) จึงสำเร็จเสมอจนกว่าจะต่อระบบจริง
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: สั่งเขียนใหม่แล้ว — คืน Incident ที่เปลี่ยนเป็น `investigating`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          description: >-
+            ไม่ใช่ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทาง หรือ
+            Incident นี้ไม่มีข้อมูล Config/เวอร์ชันที่ต้องเขียนซ้ำ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Incident นี้ หรือไม่พบ Config เวอร์ชันที่ต้องเขียน
+        "409":
+          description: Incident นี้ปิดไปแล้ว (ไม่ใช่ `open` หรือ `investigating` อีกต่อไป)
+
   /audit-logs:
     get:
       tags: [audit]

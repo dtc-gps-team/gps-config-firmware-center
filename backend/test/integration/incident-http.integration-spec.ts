@@ -689,6 +689,79 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
       });
     });
 
+    describe('POST /incidents/:id/retry-sync', () => {
+      it('ไม่ส่ง Authorization -> 401', async () => {
+        const incidentId = await makeIncident({
+          title: 'เขียน Config ไม่สำเร็จ',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .expect(401);
+      });
+
+      it('role ST (ไม่มีสิทธิ์ Approve) -> 403', async () => {
+        const token = await stToken();
+        const incidentId = await makeIncident({
+          title: 'เขียน Config ไม่สำเร็จ',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      });
+
+      it('ไม่พบ Incident -> 404', async () => {
+        const token = await opToken();
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${randomUUID()}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+
+      it('ไม่ใช่ Incident เขียน Config (เช่น field report) -> 400', async () => {
+        const token = await opToken();
+        const { id: reporterId } = await otToken();
+        const incident = await prisma.incident.create({
+          data: {
+            title: 'รายงานจากภาคสนาม',
+            severity: 'high',
+            status: 'open',
+            source: 'field-report',
+            reportedBy: reporterId,
+          },
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incident.id}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+      });
+
+      it('Incident เขียน Config ที่ไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ -> 400 และสถานะไม่เปลี่ยน', async () => {
+        const token = await opToken();
+        const incidentId = await makeIncident({ title: 'ไม่มีเวอร์ชัน' });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incidentId },
+        });
+        expect(row.status).toBe('open');
+      });
+
+      it.each(['resolved', 'dismissed', 'rolled_back'] as const)(
+        'ปิดไปแล้ว (%s) -> 409',
+        async (status) => {
+          const token = await opToken();
+          const incidentId = await makeIncident({ title: 'ปิดแล้ว', status });
+          await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+            .set('Authorization', `Bearer ${token}`)
+            .expect(409);
+        },
+      );
+    });
+
     describe('self-scoping สำหรับ field report (GET /incidents, GET /incidents/:id)', () => {
       it('ST เห็นเฉพาะ field report ของตัวเอง + เห็น incident auto-detect ของทุกคน', async () => {
         const { id: ownerId, token } = await otToken();

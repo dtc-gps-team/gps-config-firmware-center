@@ -20,8 +20,10 @@ import {
 } from '../campaign/rollout-events';
 import {
   ConfigSyncFailure,
+  ConfigSyncSuccess,
   ConfigSyncWriterQueue,
 } from '../config-sync-writer/config-sync-writer-queue.service';
+import { toLegacyFields } from '../config-sync-writer/legacy-fields';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateIncidentDto } from './dto/create-incident.dto';
@@ -134,6 +136,11 @@ export class IncidentService implements OnModuleInit {
       void this.createFromSyncFailure(failure);
     });
     this.logger.log("ผูก listener 'sync-failed' ของ config-sync-writer แล้ว");
+    // เขียน Config สำเร็จ (รวมที่ Operation สั่งลองเขียนใหม่) -> ปิด Incident ที่ค้าง
+    // ของ Config เดียวกันให้เอง (never-throw เหมือน listener ข้างบน)
+    this.configSyncQueue.on('sync-succeeded', (success: ConfigSyncSuccess) => {
+      void this.resolveFromSyncSuccess(success);
+    });
 
     // handler ทั้งสองไม่ throw (never-throw) จึงห่อ `void` ได้เหมือนข้างบน
     this.rolloutEvents.on(ROLLOUT_FAILED_EVENT, (event: RolloutFailedEvent) => {
@@ -345,6 +352,39 @@ export class IncidentService implements OnModuleInit {
         attempts: failure.attempts,
         lastError: failure.lastError,
       };
+      // เวอร์ชันเดียวกันของ Config เดียวกันที่ยังมี Incident ค้างอยู่ (เช่น Operation
+      // สั่งลองเขียนใหม่แล้วล้มอีก) -> อัปเดตของเดิม ไม่สร้างซ้ำเป็นรายการที่สอง
+      const active = await this.prisma.incident.findFirst({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: failure.configId,
+          status: { in: ['open', 'investigating'] },
+          metadata: { path: ['versionNumber'], equals: failure.versionNumber },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (active) {
+        const previous = (active.metadata ?? {}) as IncidentMetadata;
+        const totalAttempts = (previous.attempts ?? 0) + failure.attempts;
+        await this.prisma.incident.update({
+          where: { id: active.id },
+          data: {
+            status: 'open',
+            description:
+              `config-sync-writer เขียน Config ${failure.configId} ` +
+              `(${failure.deviceModel}/${failure.protocol}) เข้า config.dtc.co.th:909 ` +
+              `ไม่สำเร็จ รวม ${totalAttempts} ครั้ง — ${failure.lastError}`,
+            metadata: {
+              ...metadata,
+              attempts: totalAttempts,
+            } as Prisma.InputJsonValue,
+          },
+        });
+        this.logger.warn(
+          `อัปเดต Incident ${active.id} — config-sync ล้มเหลวซ้ำ (config ${failure.configId} v${failure.versionNumber})`,
+        );
+        return;
+      }
       const incident = await this.prisma.incident.create({
         data: {
           title: `เขียน Config เข้าระบบเดิมไม่สำเร็จ (v${failure.versionNumber})`,
@@ -369,6 +409,141 @@ export class IncidentService implements OnModuleInit {
           `${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * เขียน Config เข้าระบบปลายทางสำเร็จ -> ปิด Incident เขียน Config ที่ค้างอยู่ของ
+   * Config เดียวกันให้เอง (status `resolved` พร้อมหมายเหตุ ไม่มีผู้ปิดเพราะระบบทำ)
+   * · ปิดเฉพาะ Incident ของเวอร์ชันเดียวกันหรือเก่ากว่า: เวอร์ชันใหม่เขียนผ่านแปลว่า
+   * ค่าเก่าถูกแทนที่แล้ว แต่เวอร์ชันเก่าเขียนผ่านไม่ได้แปลว่าเวอร์ชันใหม่ที่ค้างอยู่
+   * ผ่านด้วย · never-throws
+   */
+  async resolveFromSyncSuccess(success: ConfigSyncSuccess): Promise<void> {
+    try {
+      const active = await this.prisma.incident.findMany({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: success.configId,
+          status: { in: ['open', 'investigating'] },
+        },
+      });
+      const ids = active
+        .filter((incident) => {
+          const version = (incident.metadata as IncidentMetadata | null)
+            ?.versionNumber;
+          return (
+            typeof version !== 'number' || version <= success.versionNumber
+          );
+        })
+        .map((incident) => incident.id);
+      if (ids.length === 0) return;
+
+      const result = await this.prisma.incident.updateMany({
+        where: { id: { in: ids }, status: { in: ['open', 'investigating'] } },
+        data: {
+          status: 'resolved',
+          reviewedAt: new Date(),
+          reviewNote: 'ปิดอัตโนมัติ: เขียน Config เข้าระบบปลายทางสำเร็จภายหลัง',
+        },
+      });
+      this.logger.log(
+        `ปิด Incident ${result.count} รายการอัตโนมัติ — config ${success.configId} v${success.versionNumber} เขียนสำเร็จ`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `ปิด Incident จาก 'sync-succeeded' ไม่สำเร็จ (config ${success.configId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * `POST /incidents/:id/retry-sync` — Operation สั่งเขียน Config เข้าระบบปลายทาง
+   * ใหม่ จาก Incident ที่เกิดจากการเขียน Config ไม่สำเร็จ (`config-sync-writer`)
+   * resource `incidents` action `Approve` (ตัวเดียวกับ `decide`)
+   *
+   * เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้ (`ConfigVersion`) ไม่ใช่ค่าปัจจุบันของ
+   * Config จึงได้ค่าที่อนุมัติจริงเสมอ · fire-and-forget เหมือนตอน approve: ตอบทันที
+   * ว่าสั่งแล้ว (status เป็น `investigating`) ผลจริงมาทาง event: สำเร็จ -> ปิดอัตโนมัติ
+   * (`resolveFromSyncSuccess`), ล้มอีก -> อัปเดต Incident เดิมกลับเป็น `open`
+   *
+   * 404 ไม่พบ Incident หรือไม่พบเวอร์ชันของ Config · 400 ไม่ใช่ Incident เขียน Config
+   * หรือไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ · 409 ปิดไปแล้ว
+   */
+  async retrySync(id: string, actor: ActingUser): Promise<Incident> {
+    const existing = await this.prisma.incident.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Incident id ${id}`);
+    }
+    if (existing.source !== INCIDENT_SOURCE.configSyncWriter) {
+      throw new BadRequestException(
+        'ลองเขียนใหม่ได้เฉพาะ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทางไม่สำเร็จ',
+      );
+    }
+    if (existing.status !== 'open' && existing.status !== 'investigating') {
+      throw new ConflictException(
+        `Incident นี้ปิดไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+      );
+    }
+    const versionNumber = (existing.metadata as IncidentMetadata | null)
+      ?.versionNumber;
+    if (!existing.relatedConfigId || typeof versionNumber !== 'number') {
+      throw new BadRequestException(
+        'Incident นี้ไม่มีข้อมูล Config และเวอร์ชันที่ต้องเขียน จึงลองเขียนใหม่ไม่ได้',
+      );
+    }
+    const version = await this.prisma.configVersion.findUnique({
+      where: {
+        configId_versionNumber: {
+          configId: existing.relatedConfigId,
+          versionNumber,
+        },
+      },
+    });
+    if (!version) {
+      throw new NotFoundException(
+        `ไม่พบ Config เวอร์ชัน ${versionNumber} ของ Incident นี้`,
+      );
+    }
+
+    const updated = await this.prisma.incident.updateMany({
+      where: { id, status: { in: ['open', 'investigating'] } },
+      data: { status: 'investigating' },
+    });
+    if (updated.count === 0) {
+      throw new ConflictException(
+        `Incident id ${id} ถูกปิดไปแล้วโดยคำขออื่นที่เกิดขึ้นพร้อมกัน`,
+      );
+    }
+
+    const metadata: AuditLogMetadata = {
+      incidentId: id,
+      incidentSource: INCIDENT_SOURCE.configSyncWriter,
+    };
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'retry-sync',
+          metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action retry-sync, user ${actor.id}): ${(err as Error).message}`,
+      );
+    }
+
+    this.configSyncQueue.enqueueConfigSync({
+      configId: existing.relatedConfigId,
+      versionNumber,
+      deviceModel: version.deviceModel,
+      protocol: version.protocol,
+      fields: toLegacyFields(version.fields),
+    });
+
+    return { ...existing, status: 'investigating' };
   }
 
   /**
