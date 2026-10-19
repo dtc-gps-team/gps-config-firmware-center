@@ -17,8 +17,7 @@ import 'package:mobile/main.dart' as app;
 /// (some unread).
 Future<void> _ensureLoggedOut(WidgetTester tester) async {
   if (find.byKey(const Key('home_logout')).evaluate().isNotEmpty) {
-    await tester.tap(find.byKey(const Key('home_logout')));
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    await _logout(tester);
   }
 }
 
@@ -62,4 +61,18 @@ void main() {
     );
     await binding.takeScreenshot('03-notification-after-read');
   });
+}
+
+/// Logout ต้องกดค้าง + ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`,
+/// มีคิวค้าง = `logout_unsynced_confirm`)
+Future<void> _logout(WidgetTester tester) async {
+  await tester.longPress(find.byKey(const Key('home_logout')));
+  await tester.pumpAndSettle();
+  final plain = find.byKey(const Key('logout_confirm'));
+  await tester.tap(
+    plain.evaluate().isNotEmpty
+        ? plain
+        : find.byKey(const Key('logout_unsynced_confirm')),
+  );
+  await tester.pumpAndSettle(const Duration(seconds: 2));
 }

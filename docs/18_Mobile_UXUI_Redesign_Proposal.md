@@ -1,6 +1,7 @@
 # Mobile UX/UI Redesign — Phase 1-2 Proposal (Screen Inventory + Gap Analysis)
 
-**สถานะ:** ขอ review จาก A ก่อนเข้า Phase 3 (ออกแบบหน้าจอใหม่จริง)
+**สถานะ:** คำถามเปิด 3 ข้อตอบแล้วใน #303 · Phase 3 (ออกแบบหน้าจอใหม่จริง) อยู่ที่
+`docs/20_Mobile_Redesign_Phase3_Design.md`
 **สโคป:** Mobile application เท่านั้น — ไม่แตะ Web/Backend ในรอบนี้
 **หลักฐานอ้างอิง:** [คลังภาพหน้าจอ GPS Mobile](https://claude.ai/artifact/MFTVyn1bLebq6Q8CqwejoW)
 (50 ภาพ ครอบคลุม 24 หน้าจอ ทุก Role, ตรวจสอบภาพจริงเทียบกับ README แล้วตรงกันทุกจุด —

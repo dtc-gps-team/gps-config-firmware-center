@@ -38,8 +38,11 @@ class AppDatabase extends _$AppDatabase {
   ///
   /// v2 → v3 (Task Event History, issue #296): adds `TaskEvents`, the cached
   /// task timelines. Additive only.
+  ///
+  /// v3 → v4 (UX audit #14): adds nullable `Tasks.cachedAt` — when each cached
+  /// task was last written from server data. Additive only (old rows = null).
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -50,6 +53,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await m.createTable(taskEvents);
+      }
+      if (from < 4) {
+        await m.addColumn(tasks, tasks.cachedAt);
       }
     },
   );

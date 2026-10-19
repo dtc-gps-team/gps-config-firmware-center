@@ -9,10 +9,12 @@ import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/text_scale.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../notification/notification_repository.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
+import 'home_status_banners.dart';
 
 /// Human-readable role label shown in the greeting badge.
 String _roleLabel(UserRole? role) {
@@ -70,6 +72,7 @@ class HomePage extends ConsumerWidget {
             _HeaderRow(username: auth.username, role: role),
             const SizedBox(height: 20),
             if (isFieldStaff) ...[
+              const HomeStatusBanners(),
               _UrgentTasksSection(tasksAsync: tasksAsync!),
               _HistorySection(tasksAsync: tasksAsync),
               const SizedBox(height: 24),
@@ -200,20 +203,34 @@ class _HeaderRow extends ConsumerWidget {
         ),
         const SizedBox(width: 8),
         _NotificationBell(),
+        const SizedBox(width: 4),
+        // กดค้างเพื่อ logout (+ dialog ยืนยันเสมอ) กันแตะพลาดตอนรีบในภาคสนาม ·
+        // ไม่ใส่ tooltip เพราะ Tooltip บนมือถือแย่ง gesture กดค้างไป
         IconButton(
           key: const Key('home_logout'),
-          icon: const Icon(Icons.logout, color: AppTheme.mockTextSecondary),
-          tooltip: 'ออกจากระบบ',
-          onPressed: () => _confirmAndLogout(context, ref),
+          icon: const Icon(
+            Icons.logout,
+            color: AppTheme.mockTextSecondary,
+            semanticLabel: 'ออกจากระบบ (กดค้าง)',
+          ),
+          onPressed: () => ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text('กดค้างเพื่อออกจากระบบ'),
+                duration: Duration(seconds: 2),
+              ),
+            ),
+          onLongPress: () => _confirmAndLogout(context, ref),
         ),
       ],
     );
   }
 }
 
-/// Logout, with a warning first when queued changes would be lost: logout
-/// wipes the local DB, including `PendingActions` that never reached the
-/// server. No queued changes -> logs out straight away, no dialog.
+/// Logout always asks first. When queued changes would be lost (logout wipes
+/// the local DB, including `PendingActions` that never reached the server)
+/// the dialog says how many; otherwise it is a plain confirm.
 Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
   var unsynced = 0;
   if (!AppConfig.apiMockMode) {
@@ -248,6 +265,28 @@ Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
       ),
     );
     if (confirmed != true) return;
+  } else if (context.mounted) {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        key: const Key('logout_confirm_dialog'),
+        title: const Text('ออกจากระบบ?'),
+        content: const Text('ต้องการออกจากระบบใช่หรือไม่?'),
+        actions: [
+          TextButton(
+            key: const Key('logout_cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('ยกเลิก'),
+          ),
+          TextButton(
+            key: const Key('logout_confirm'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('ออกจากระบบ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
   }
   await ref.read(authControllerProvider.notifier).logout();
 }
@@ -272,7 +311,9 @@ class _NotificationBell extends ConsumerWidget {
       icon: unread > 0
           ? Badge(
               label: Text(unread > 99 ? '99+' : '$unread'),
-              backgroundColor: const Color(0xFFE53935),
+              // AppTheme.error: ตัวเลขสีขาว 5.44:1 (เดิม #E53935 4.23:1, UX
+              // audit #10)
+              backgroundColor: AppTheme.error,
               child: bellIcon,
             )
           : bellIcon,
@@ -378,6 +419,20 @@ class _UrgentTaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final urgency = TaskUrgencyStyle.of(task);
     final (bg, fg) = TaskUrgencyStyle.colors(urgency);
+    // ตัวอักษรใหญ่: ป้ายย้ายจากด้านขวาลงมาใต้ชื่องาน (UX audit #23) เดิมป้าย
+    // กินความกว้างจนชื่องานเหลือ "ติดตั้ง Co…" และเลขเครื่องขึ้นบรรทัดใหม่ทีละตัว
+    final largeText = isLargeTextScale(context);
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        TaskUrgencyStyle.label(urgency),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -416,7 +471,9 @@ class _UrgentTaskCard extends StatelessWidget {
                     children: [
                       Text(
                         task.title,
-                        maxLines: 1,
+                        // 2 บรรทัด: ชื่องานมักมีรายละเอียดท้ายชื่อ (ทะเบียนรถ /
+                        // ลูกค้า) ที่ใช้แยกงาน (UX audit #23)
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14.5,
@@ -432,28 +489,11 @@ class _UrgentTaskCard extends StatelessWidget {
                           color: AppTheme.mockTextSecondary,
                         ),
                       ),
+                      if (largeText) ...[const SizedBox(height: 8), badge],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    TaskUrgencyStyle.label(urgency),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    ),
-                  ),
-                ),
+                if (!largeText) ...[const SizedBox(width: 8), badge],
               ],
             ),
           ),
@@ -517,14 +557,19 @@ class _HistorySection extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'ประวัติงานล่าสุด',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.mockTextPrimary,
+                // Expanded: ตัวอักษรใหญ่ หัวข้อขึ้นบรรทัดใหม่แทนดันจำนวนล้นขอบ
+                // (UX audit #23)
+                const Expanded(
+                  child: Text(
+                    'ประวัติงานล่าสุด',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.mockTextPrimary,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${completed.length} รายการ',
                   style: const TextStyle(
@@ -677,6 +722,23 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ตัวอักษรใหญ่: ป้าย "เสร็จสิ้น" ย้ายลงมาใต้รายละเอียด (UX audit #23)
+    final largeText = isLargeTextScale(context);
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.mockSuccessSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Text(
+        'เสร็จสิ้น',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.mockSuccess,
+        ),
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -714,7 +776,7 @@ class _HistoryCard extends StatelessWidget {
                     children: [
                       Text(
                         task.title,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14.5,
@@ -728,35 +790,19 @@ class _HistoryCard extends StatelessWidget {
                       // เขียน updatedAt ตอนเปลี่ยนสถานะ ไม่มี completedAt แยก)
                       Text(
                         '${task.deviceId ?? '—'} · ${_formatDate(task.updatedAt)}',
-                        maxLines: 1,
+                        // ตัวอักษรใหญ่ให้ 2 บรรทัด วันที่จะไม่ถูกตัดทิ้ง
+                        maxLines: largeText ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12.5,
                           color: AppTheme.mockTextSecondary,
                         ),
                       ),
+                      if (largeText) ...[const SizedBox(height: 8), badge],
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.mockSuccessSoft,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'เสร็จสิ้น',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.mockSuccess,
-                    ),
-                  ),
-                ),
+                if (!largeText) ...[const SizedBox(width: 8), badge],
               ],
             ),
           ),

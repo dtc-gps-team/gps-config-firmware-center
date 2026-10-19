@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import {
   CONFIG_APPLIER,
   CONFIG_APPLY_MODE,
@@ -36,7 +37,9 @@ import {
 // มอบหมายงานให้ช่างหน้างานอีกต่อไป (ดู comment เหนือ CampaignService.create)
 // จึงไม่มี notification ต้องส่งจากโมดูลนี้แล้ว
 @Module({
-  imports: [AuthModule],
+  // ConfigDefinitionModule: ตรวจค่าเฉพาะเครื่องของ Rollout เทียบคลัง Parameter
+  // (`validateOperationOverridableFields`) ทิศทางเดียว ไม่วนกลับ
+  imports: [AuthModule, ConfigDefinitionModule],
   controllers: [CampaignController, CampaignRolloutController],
   providers: [
     CampaignService,

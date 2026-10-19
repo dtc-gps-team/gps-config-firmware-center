@@ -10,6 +10,7 @@ import '../../core/widgets/sync_status_widgets.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/skeleton_card.dart';
+import '../../core/widgets/text_scale.dart';
 import 'task_repository.dart';
 import 'task_status_ui.dart';
 
@@ -33,6 +34,8 @@ class TaskListPage extends ConsumerWidget {
     final failedCount = ref.watch(failedSyncActionsProvider).value?.length ?? 0;
     final authExpired =
         ref.watch(syncAuthExpiredProvider) && pendingIds.isNotEmpty;
+    // UX audit #14 — ออฟไลน์ กำลังแสดง cache ในเครื่อง
+    final offline = ref.watch(taskListCacheSnapshotProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -54,14 +57,22 @@ class TaskListPage extends ConsumerWidget {
             // — เกณฑ์เดียวกับ Home "งานค้างวันนี้" ใช้ shared helper ตัวเดียวกัน
             // กันไม่ให้สองหน้าตัดสิน "เร่งด่วน" ต่างกัน)
             final tasks = TaskUrgencyStyle.sorted(rawTasks);
-            final offset = (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
+            final offlineRow = offline == null ? 0 : 1;
+            final offset =
+                offlineRow + (failedCount > 0 ? 1 : 0) + (authExpired ? 1 : 0);
             return ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: tasks.length + offset,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
-                if (authExpired && i == 0) return const SyncAuthExpiredBanner();
-                if (failedCount > 0 && i == (authExpired ? 1 : 0)) {
+                if (offline != null && i == 0) {
+                  return OfflineCacheBanner(cachedAt: offline.cachedAt);
+                }
+                if (authExpired && i == offlineRow) {
+                  return const SyncAuthExpiredBanner();
+                }
+                if (failedCount > 0 &&
+                    i == offlineRow + (authExpired ? 1 : 0)) {
                   return SyncFailedBanner(count: failedCount);
                 }
                 final task = tasks[i - offset];
@@ -106,6 +117,21 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final urgency = TaskUrgencyStyle.of(task);
     final (urgencyBg, urgencyFg) = TaskUrgencyStyle.colors(urgency);
+    // ตัวอักษรใหญ่: ป้ายสถานะย้ายจากด้านขวามาอยู่ใต้รายละเอียด (UX audit #9)
+    // ไม่งั้นป้ายกินความกว้างจนการ์ดล้นขอบและวันที่ขึ้นบรรทัดใหม่กลางตัวเลข
+    final largeText = isLargeTextScale(context);
+    final badges = Column(
+      crossAxisAlignment: largeText
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.end,
+      children: [
+        TaskStatusPill(status: task.status),
+        if (pendingSync) ...[
+          const SizedBox(height: 6),
+          const PendingSyncBadge(),
+        ],
+      ],
+    );
     return Material(
       color: AppTheme.surface,
       borderRadius: BorderRadius.circular(12),
@@ -171,32 +197,28 @@ class _TaskCard extends StatelessWidget {
                               color: urgencyFg,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              TaskUrgencyStyle.label(urgency),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: urgencyFg,
+                            // Flexible: ตัวอักษรใหญ่ / จอแคบ ข้อความขึ้นบรรทัด
+                            // ใหม่แทนล้นขอบ (UX audit #9) ไม่ตัดด้วย ellipsis
+                            // เพราะเป็นข้อความสั้นที่ช่างใช้จัดลำดับงาน
+                            Flexible(
+                              child: Text(
+                                TaskUrgencyStyle.label(urgency),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: urgencyFg,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ],
+                    if (largeText) ...[const SizedBox(height: 8), badges],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  TaskStatusPill(status: task.status),
-                  if (pendingSync) ...[
-                    const SizedBox(height: 6),
-                    const PendingSyncBadge(),
-                  ],
-                ],
-              ),
+              if (!largeText) ...[const SizedBox(width: 12), badges],
             ],
           ),
         ),

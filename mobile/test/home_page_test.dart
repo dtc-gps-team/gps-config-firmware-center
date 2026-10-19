@@ -11,10 +11,17 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/core/config/app_config.dart';
+
+/// เทสพฤติกรรมเฉพาะโหมดต่อ backend จริง — default ของแอปเป็น mock (CLAUDE.md
+/// Mock Mode Pattern) จึงรันใน CI step `flutter test --dart-define=API_MOCK_MODE=false`
+const _realModeOnly =
+    'real-mode only: run with --dart-define=API_MOCK_MODE=false';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -135,6 +142,14 @@ Future<void> _pumpHome(
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
         ),
+        // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+        // (timer ของ stream ค้างหลังปิด tree)
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
+        ),
       ],
       child: const MaterialApp(home: HomePage()),
     ),
@@ -197,6 +212,14 @@ Future<void> _pumpHomeRouted(
         ),
         notificationRepositoryProvider.overrideWithValue(
           notiRepo ?? _FakeNotificationRepository(),
+        ),
+        // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+        // (timer ของ stream ค้างหลังปิด tree)
+        pendingTaskIdsProvider.overrideWith(
+          (ref) => Stream.value(const <String>{}),
+        ),
+        failedSyncActionsProvider.overrideWith(
+          (ref) => Stream.value(const <PendingActionRow>[]),
         ),
       ],
       child: MaterialApp.router(routerConfig: router),
@@ -466,6 +489,9 @@ void main() {
       tester,
     ) async {
       await _pumpHomeRouted(tester, UserRole.st);
+      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
+      await tester.ensureVisible(find.byKey(const Key('shortcut_simulator')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shortcut_simulator')));
       await tester.pumpAndSettle();
       expect(find.text('SIMULATOR_PAGE_STUB'), findsOneWidget);
@@ -473,6 +499,9 @@ void main() {
 
     testWidgets('ST แตะ "ทดสอบสัญญาณ" -> ไปหน้าทดสอบสัญญาณ', (tester) async {
       await _pumpHomeRouted(tester, UserRole.st);
+      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
+      await tester.ensureVisible(find.byKey(const Key('shortcut_device_test')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('shortcut_device_test')));
       await tester.pumpAndSettle();
       expect(find.text('DEVICE_TEST_PAGE_STUB'), findsOneWidget);
@@ -697,6 +726,14 @@ void main() {
           recentDeviceIdStoreProvider.overrideWithValue(
             InMemoryRecentDeviceIdStore(),
           ),
+          // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
+          // (timer ของ stream ค้างหลังปิด tree)
+          pendingTaskIdsProvider.overrideWith(
+            (ref) => Stream.value(const <String>{}),
+          ),
+          failedSyncActionsProvider.overrideWith(
+            (ref) => Stream.value(const <PendingActionRow>[]),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -723,7 +760,7 @@ void main() {
           ),
         );
 
-    testWidgets('ไม่มีรายการค้างในคิว -> logout ทันที ไม่มี dialog', (
+    testWidgets('แตะปุ่ม logout ครั้งเดียว -> ไม่ logout แค่บอกให้กดค้าง', (
       tester,
     ) async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -731,57 +768,103 @@ void main() {
       final container = await pumpHome(tester, db);
 
       await tester.tap(find.byKey(const Key('home_logout')));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
-      expect(
-        container.read(authControllerProvider).status,
-        AuthStatus.unauthenticated,
-      );
-    });
-
-    testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
-        'ยกเลิก = ยังไม่ logout และข้อมูลในคิวอยู่ครบ', (tester) async {
-      final db = AppDatabase.forTesting(NativeDatabase.memory());
-      addTearDown(db.close);
-      await queueAction(db, 'p', 'pending');
-      await queueAction(db, 'f', 'failed');
-      final container = await pumpHome(tester, db);
-
-      await tester.tap(find.byKey(const Key('home_logout')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
-      expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('logout_unsynced_cancel')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+      expect(find.text('กดค้างเพื่อออกจากระบบ'), findsOneWidget);
+      expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
       expect(
         container.read(authControllerProvider).status,
         AuthStatus.authenticated,
       );
-      expect(await db.pendingActionDao.countUnsynced(), 2);
     });
 
-    testWidgets('มีรายการค้าง + ยืนยัน -> logout และล้างคิว', (tester) async {
+    testWidgets(
+      'ไม่มีรายการค้าง: กดค้าง -> dialog ยืนยัน, ยกเลิก = ยังไม่ logout',
+      (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        final container = await pumpHome(tester, db);
+
+        await tester.longPress(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_confirm_dialog')), findsOneWidget);
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('logout_cancel')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.authenticated,
+        );
+      },
+    );
+
+    testWidgets('ไม่มีรายการค้าง: กดค้าง + ยืนยัน -> logout', (tester) async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
-      await queueAction(db, 'p', 'pending');
       final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
+      await tester.longPress(find.byKey(const Key('home_logout')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
+      await tester.tap(find.byKey(const Key('logout_confirm')));
       await tester.pumpAndSettle();
 
       expect(
         container.read(authControllerProvider).status,
         AuthStatus.unauthenticated,
       );
-      expect(await db.pendingActionDao.countUnsynced(), 0);
     });
+
+    // dialog เตือนคิวค้างอ่าน PendingActions เฉพาะโหมดจริง (home_page.dart
+    // `_confirmAndLogout`)
+    group('โหมดจริง', () {
+      testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
+          'ยกเลิก = ยังไม่ logout และข้อมูลในคิวอยู่ครบ', (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        await queueAction(db, 'p', 'pending');
+        await queueAction(db, 'f', 'failed');
+        final container = await pumpHome(tester, db);
+
+        await tester.longPress(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
+        expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('logout_unsynced_cancel')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.authenticated,
+        );
+        expect(await db.pendingActionDao.countUnsynced(), 2);
+      });
+
+      testWidgets('มีรายการค้าง + ยืนยัน -> logout และล้างคิว', (tester) async {
+        final db = AppDatabase.forTesting(NativeDatabase.memory());
+        addTearDown(db.close);
+        await queueAction(db, 'p', 'pending');
+        final container = await pumpHome(tester, db);
+
+        await tester.longPress(find.byKey(const Key('home_logout')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
+        await tester.pumpAndSettle();
+
+        expect(
+          container.read(authControllerProvider).status,
+          AuthStatus.unauthenticated,
+        );
+        expect(await db.pendingActionDao.countUnsynced(), 0);
+      });
+    }, skip: AppConfig.apiMockMode ? _realModeOnly : false);
   });
 }
 
