@@ -89,6 +89,17 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # ฟอนต์ของ theme v2 (docs/22 §4.5) — Anuphan จาก google/fonts (`ofl/anuphan`)
+  # ไฟล์เดียวเป็น variable font (แกน wght 100–700) FontWeight เลือกน้ำหนักบนแกนให้เอง
+  # ไม่ต้องแยกไฟล์ต่อน้ำหนัก · bundle ในแอปเพราะช่างใช้งานออฟไลน์บ่อย
+  # OFL.txt (SIL Open Font License 1.1) ต้องแจกไปพร้อมฟอนต์ จึงใส่เป็น asset ด้วย
+  assets:
+    - assets/fonts/OFL.txt
+  fonts:
+    - family: Anuphan
+      fonts:
+        - asset: "assets/fonts/Anuphan[wght].ttf"
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
