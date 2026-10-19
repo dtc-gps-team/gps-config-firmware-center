@@ -26,6 +26,7 @@ import {
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { WizardStepIndicator } from "@/components/wizard-step-indicator";
@@ -130,6 +131,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const { session } = useAuth();
   const { data: defs, isLoading, error: defsError, refetch } =
     useConfigDefinitions();
+  const { data: registeredModels } = useDeviceModels();
 
   const editing = mode.kind === "edit" ? mode.config : null;
   const cloneFrom = mode.kind === "create" ? mode.cloneFrom ?? null : null;
@@ -193,17 +195,30 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [defs]);
 
-  /** โปรโตคอลที่รองรับสำหรับรุ่นที่เลือก */
-  const protocolOptions = useMemo(() => {
-    if (!deviceModel) return [] as string[];
+  /** โปรโตคอลที่เลือกได้ของรุ่นหนึ่ง: ล็อกตามทะเบียนโมเดล (`DeviceModel.
+   * supportedProtocols`) เหมือนหน้าลงทะเบียนอุปกรณ์ ไม่ใช่ทุกโปรโตคอลที่มี
+   * พารามิเตอร์ · รุ่นที่ยังไม่อยู่ในทะเบียน (ข้อมูลเก่า) ถอยไปใช้โปรโตคอลที่
+   * พารามิเตอร์ของรุ่นนั้นรองรับ · โหมดแก้เพิ่มโปรโตคอลเดิมของ Config เข้าไป
+   * เสมอ กันช่องที่ล็อกอยู่แสดงค่าว่างถ้าทะเบียนเปลี่ยนไปภายหลัง */
+  function protocolsFor(model: string): string[] {
+    if (!model) return [];
+    const registered = (registeredModels ?? []).find((m) => m.name === model);
     const set = new Set<string>();
-    for (const d of defs ?? []) {
-      for (const m of d.supportedModels) {
-        if (m.deviceModel === deviceModel) set.add(m.protocol);
+    if (registered) {
+      for (const p of registered.supportedProtocols) set.add(p);
+    } else {
+      for (const d of defs ?? []) {
+        for (const m of d.supportedModels) {
+          if (m.deviceModel === model) set.add(m.protocol);
+        }
       }
     }
+    if (editing && editing.deviceModel === model) set.add(editing.protocol);
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [defs, deviceModel]);
+  }
+
+  const protocolOptions = protocolsFor(deviceModel);
+  // โมเดลหนึ่งใช้ได้โปรโตคอลเดียว: เลือกให้แล้วล็อกช่อง ไม่ให้เปลี่ยน
 
   /** field เป็นชุดค่าเริ่มต้นของรุ่น/โปรโตคอลที่เลือกไหม (`supportedModels`) */
   function isInModelSet(d: ConfigFieldDefinition): boolean {
@@ -303,7 +318,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   function changeDeviceModel(next: string) {
     if (editing) return;
     setDeviceModel(next);
-    setProtocol("");
+    // รุ่นที่รองรับโปรโตคอลเดียวเลือกให้เลย (เหมือนหน้าลงทะเบียนอุปกรณ์)
+    const options = protocolsFor(next);
+    setProtocol(options.length === 1 ? options[0] : "");
     setSelected([]);
     setValues({});
     setMissingRequired([]);
@@ -538,7 +555,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
               <Label htmlFor="config-protocol">โปรโตคอล</Label>
               <Select
                 value={protocol}
-                disabled={!!editing || !deviceModel}
+                disabled={
+                  !!editing || !deviceModel || protocolOptions.length === 1
+                }
                 onValueChange={(value) => changeProtocol(value ?? "")}
               >
                 <SelectTrigger id="config-protocol" className="w-full">
