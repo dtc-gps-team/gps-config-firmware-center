@@ -7,6 +7,7 @@
 # (.env.example ชี้ path นี้ไว้เป็น placeholder เฉยๆ)
 secrets/
 *service-account*.json
+*serviceAccount*.json
 !*service-account*.example.json
 # ไฟล์ที่ Firebase Console ตั้งชื่อให้ตอนดาวน์โหลด (<project>-firebase-adminsdk-xxxxx.json)
 *firebase-adminsdk*.json
