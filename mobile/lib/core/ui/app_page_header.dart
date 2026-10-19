@@ -205,8 +205,8 @@ class _ActionButton extends StatelessWidget {
     final label = Text(action.label);
     final icon = action.icon == null ? null : Icon(action.icon, size: 18);
 
-    // ปุ่มใน header ไม่ยืดเต็มกว้าง (theme v2 ตั้ง minimumSize กว้างเต็มไว้ให้
-    // ปุ่มหลักในฟอร์ม) — คงความสูง 48 ไว้
+    // ตั้ง minimumSize เองไม่พึ่ง theme — หน้าที่ยังใช้ theme เดิม (`light()`) ตั้ง
+    // `Size.fromHeight(48)` (กว้าง infinity) ซึ่งจะ throw ใน Wrap · v2 ใช้ค่าเดียวกันนี้แล้ว
     const style = ButtonStyle(
       minimumSize: WidgetStatePropertyAll(Size(64, 48)),
     );

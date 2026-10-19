@@ -160,10 +160,53 @@ void main() {
       final style = theme.filledButtonTheme.style!;
       expect(style.backgroundColor!.resolve({}), AppColors.primary);
       expect(style.foregroundColor!.resolve({}), AppColors.primaryForeground);
-      expect(style.minimumSize!.resolve({})!.height, 48);
+      expect(style.minimumSize!.resolve({}), const Size(64, 48));
       final shape = style.shape!.resolve({})! as RoundedRectangleBorder;
       expect(shape.borderRadius, BorderRadius.circular(AppRadius.lg));
     });
+  });
+
+  testWidgets(
+    'ปุ่มทั้ง 3 แบบวางใน Row / Wrap ได้ไม่ throw (กว้างขั้นต่ำ 64 ไม่ใช่ infinity)',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.v2(),
+          home: Scaffold(
+            body: Column(
+              children: [
+                Row(
+                  children: [
+                    FilledButton(onPressed: () {}, child: const Text('หลัก')),
+                    OutlinedButton(onPressed: () {}, child: const Text('รอง')),
+                    TextButton(onPressed: () {}, child: const Text('ลิงก์')),
+                  ],
+                ),
+                Wrap(
+                  children: [
+                    FilledButton(onPressed: () {}, child: const Text('หลัก 2')),
+                    OutlinedButton(
+                      onPressed: () {},
+                      child: const Text('รอง 2'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final filled = tester.getSize(find.widgetWithText(FilledButton, 'หลัก'));
+      expect(filled.height, greaterThanOrEqualTo(48));
+      expect(filled.width, greaterThanOrEqualTo(64));
+      expect(filled.width, lessThan(400));
+    },
+  );
+
+  test('ฟอนต์ theme v2 = Anuphan (มติ B ตาม Web #344)', () {
+    expect(AppTypography.fontFamily, 'Anuphan');
+    expect(AppTheme.v2().textTheme.bodyMedium!.fontFamily, 'Anuphan');
   });
 
   group('tone ของสถานะ (docs/22 §5.2)', () {

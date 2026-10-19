@@ -90,7 +90,10 @@ class AppTheme {
     const shape = RoundedRectangleBorder(borderRadius: radius);
     // ความสูงปุ่ม 48 ต่างจาก Web (h-8 = 32) โดยตั้งใจ — พื้นที่กดขั้นต่ำบนมือถือ
     // (Material 48dp) ใช้แค่สี radius ตัวอักษร ตาม Web (docs/22 §4.5)
-    const buttonSize = Size.fromHeight(48);
+    // · กว้างขั้นต่ำ 64 ไม่ใช่ `Size.fromHeight` (กว้าง infinity) ที่ทำให้ปุ่มใน Row /
+    // Wrap throw "BoxConstraints forces an infinite width" (รีวิว #349) — ปุ่มที่ต้อง
+    // เต็มความกว้างให้ครอบเองด้วย `SizedBox(width: double.infinity)` หรือ `Expanded`
+    const buttonSize = Size(64, 48);
     const buttonText = TextStyle(
       fontSize: AppTypography.sm,
       fontWeight: FontWeight.w500,

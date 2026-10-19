@@ -72,10 +72,9 @@ class AppRadius {
 class AppTypography {
   const AppTypography._();
 
-  // TODO(B): รอคำตอบ A เรื่อง Anuphan ใน PR #344 — ถ้า A ยืนยันเปลี่ยนจริง ให้สลับ font ตรงนี้
-  // ยังไม่ bundle ไฟล์ฟอนต์ใน pubspec จนกว่าจะได้ข้อสรุป ระหว่างนี้ Flutter ใช้
-  // ฟอนต์ระบบแทน (ยังไม่มีหน้าไหนใช้ theme v2)
-  static const fontFamily = 'NotoSansThaiLooped';
+  /// Anuphan ตาม Web (#344) — มติ B · bundle เป็น asset (`assets/fonts/`, ประกาศ
+  /// ใน pubspec) เป็น variable font ไฟล์เดียว `FontWeight` เลือกน้ำหนักให้เอง
+  static const fontFamily = 'Anuphan';
 
   static const double xs = 13;
   static const double sm = 15;
