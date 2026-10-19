@@ -238,3 +238,24 @@ export function rolloutImpactBar(
   const skippedPct = Math.min(100 - failedPct, (skipped / target) * 100);
   return { failedPct, skippedPct };
 }
+
+/** Incident ที่ยังต้องตาม (ยังไม่ปิด): open หรือ investigating */
+export function isIncidentActive(status: IncidentStatus): boolean {
+  return !isIncidentClosed(status);
+}
+
+/**
+ * สั่งลองเขียน Config ใหม่ได้ไหม: ต้องเป็น Incident เขียน Config ที่ยังไม่ปิด และมี
+ * Config + เวอร์ชันที่ต้องเขียนซ้ำครบ (ตรงกับเงื่อนไขที่ backend `retrySync` รับ
+ * ไม่งั้นกดแล้วได้ 400)
+ */
+export function canRetryConfigSync(
+  incident: Pick<Incident, "source" | "status" | "relatedConfigId" | "metadata">,
+): boolean {
+  return (
+    incidentType(incident) === "config-sync-writer" &&
+    isIncidentActive(incident.status) &&
+    Boolean(incident.relatedConfigId) &&
+    typeof incident.metadata?.versionNumber === "number"
+  );
+}

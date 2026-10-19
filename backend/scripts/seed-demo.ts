@@ -1128,6 +1128,27 @@ async function main(): Promise<void> {
     });
     const syncTitle = 'เขียน Config เข้าระบบเดิมไม่สำเร็จ (v1)';
     if (syncCfg) {
+      // ปุ่ม "ลองเขียนใหม่" เขียนจาก snapshot เวอร์ชันที่อนุมัติ (ConfigVersion) ให้
+      // ครบ: Config สถานะ synced ต้องมีเวอร์ชันที่อนุมัติแล้ว แต่ seed หลักไม่ได้
+      // สร้างแถวนี้ไว้ ถ้าไม่มี ปุ่มจะได้ 404 ตอนกดลอง
+      const hasVersion = await prisma.configVersion.findUnique({
+        where: {
+          configId_versionNumber: { configId: syncCfg.id, versionNumber: 1 },
+        },
+      });
+      if (!hasVersion) {
+        await prisma.configVersion.create({
+          data: {
+            configId: syncCfg.id,
+            versionNumber: 1,
+            fields: syncCfg.fields as Prisma.InputJsonValue,
+            deviceModel: syncCfg.deviceModel,
+            protocol: syncCfg.protocol,
+            approvedBy: U.op2,
+            approvedAt: ago(20),
+          },
+        });
+      }
       const found = await prisma.incident.findFirst({
         where: {
           title: syncTitle,

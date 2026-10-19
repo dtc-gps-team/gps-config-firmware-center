@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canRetryConfigSync,
   failedDeviceSample,
   formatPercent,
   incidentImpact,
@@ -10,6 +11,7 @@ import {
   incidentTechnicalDetails,
   incidentType,
   incidentTypeLabel,
+  isIncidentActive,
   isIncidentClosed,
   rolloutImpactBar,
   rolloutKindLabel,
@@ -340,5 +342,45 @@ describe("rolloutImpactBar (แถบสัดส่วนในการ์ด)
       rolloutImpactBar(rollout({ failureCount: 0, targetCount: 0 })),
     ).toBeNull();
     expect(rolloutImpactBar(rollout(null))).toBeNull();
+  });
+});
+
+describe("isIncidentActive / canRetryConfigSync", () => {
+  const syncIncident = {
+    source: "config-sync-writer",
+    status: "open" as const,
+    relatedConfigId: "cfg-1",
+    metadata: { versionNumber: 2 },
+  };
+
+  it("open และ investigating ยังต้องตาม ที่เหลือปิดแล้ว", () => {
+    expect(isIncidentActive("open")).toBe(true);
+    expect(isIncidentActive("investigating")).toBe(true);
+    expect(isIncidentActive("resolved")).toBe(false);
+    expect(isIncidentActive("dismissed")).toBe(false);
+    expect(isIncidentActive("rolled_back")).toBe(false);
+  });
+
+  it("เขียน Config ที่ยังไม่ปิดและมี Config กับเวอร์ชันครบ: ลองเขียนใหม่ได้", () => {
+    expect(canRetryConfigSync(syncIncident)).toBe(true);
+    expect(canRetryConfigSync({ ...syncIncident, status: "investigating" })).toBe(
+      true,
+    );
+  });
+
+  it("ปิดแล้ว, ไม่ใช่ Incident เขียน Config หรือข้อมูลไม่พอ: ลองเขียนใหม่ไม่ได้", () => {
+    expect(canRetryConfigSync({ ...syncIncident, status: "resolved" })).toBe(
+      false,
+    );
+    expect(
+      canRetryConfigSync({ ...syncIncident, source: "rollout-failure" }),
+    ).toBe(false);
+    expect(canRetryConfigSync({ ...syncIncident, relatedConfigId: null })).toBe(
+      false,
+    );
+    expect(canRetryConfigSync({ ...syncIncident, metadata: null })).toBe(false);
+    expect(
+      canRetryConfigSync({ ...syncIncident, metadata: { versionNumber: "2" } }),
+    ).toBe(false);
   });
 });

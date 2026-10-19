@@ -118,7 +118,7 @@ describe("IncidentsView: Field Report", () => {
     expect(screen.getByText("ไม่ต้องดำเนินการ")).toBeInTheDocument();
   });
 
-  it("Incident ที่ไม่ใช่ Field Report (สร้างอัตโนมัติ): ไม่มีปุ่มตัดสินใจแม้เป็น Operation", () => {
+  it("Incident ที่ไม่ใช่ Field Report (สร้างอัตโนมัติ): Operation ไม่เห็นปุ่มตัดสินใจ แต่ปิดได้ด้วยปุ่ม 'ปิด Incident'", () => {
     incidentsState.rows = [
       incident({
         source: "config-sync-writer",
@@ -132,7 +132,9 @@ describe("IncidentsView: Field Report", () => {
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("ดูได้อย่างเดียว")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ปิด Incident" }),
+    ).toBeInTheDocument();
   });
 
   it("Role อื่นที่ไม่ใช่ Operation: ไม่เห็นปุ่มตัดสินใจ", () => {

@@ -2,9 +2,11 @@
 
 import { useAuth } from "@/components/auth/auth-provider";
 import {
+  canCloseIncident,
   canDecideFieldReport,
   canEditIncidentTechnical,
 } from "@/lib/permissions";
+import { canRetryConfigSync, isIncidentActive } from "@/lib/incident-display";
 import {
   FIELD_REPORT_SOURCE,
   type Incident,
@@ -14,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DecideFieldReportDialog } from "./decide-field-report-dialog";
+import { RetrySyncButton } from "./retry-sync-button";
 
 /**
  * ปุ่ม "แก้ไขเชิงเทคนิค" (ST) — RBAC_Matrix.md Section 2 แถว Incident &
@@ -32,8 +35,14 @@ import { DecideFieldReportDialog } from "./decide-field-report-dialog";
  * ตาม PDF เป็นงานสโคปใหม่แยกต่างหาก
  *
  * **ปุ่ม "ตัดสินใจ" (Operation)** เพิ่มใหม่ (issue #284, backend `POST
- * /incidents/{id}/decide`) — เฉพาะ Field Report ที่ยัง `open` role อื่นหรือ
- * รายการอื่นเห็น "ดูได้อย่างเดียว" เหมือนเดิม
+ * /incidents/{id}/decide`) — Field Report ที่ยัง `open`
+ *
+ * **Incident ที่ระบบสร้างเอง (Rollout ล้มเหลว, เขียน Config ไม่สำเร็จ)** ที่ยังไม่ปิด:
+ * Operation เห็นปุ่ม "ปิด Incident" (resolve/dismiss พร้อมหมายเหตุ) และถ้าเป็น
+ * Incident เขียน Config เห็นปุ่ม "ลองเขียนใหม่" เพิ่ม (`POST /incidents/{id}/retry-sync`)
+ * · ก่อนหน้านี้ Incident กลุ่มนี้ไม่มีทางปิดเลย ค้างหน้าแรกตลอดไป
+ *
+ * role อื่น หรือรายการที่ปิดแล้ว เห็น "ดูได้อย่างเดียว" เหมือนเดิม
  */
 export function IncidentActions({
   incident,
@@ -56,6 +65,27 @@ export function IncidentActions({
     return (
       <div className="flex justify-end">
         <DecideFieldReportDialog
+          incident={incident}
+          onDecided={onDecided}
+          onStale={onStale}
+        />
+      </div>
+    );
+  }
+
+  const isSystemIncident = incident.source !== FIELD_REPORT_SOURCE;
+  if (
+    isSystemIncident &&
+    isIncidentActive(incident.status) &&
+    canCloseIncident(role)
+  ) {
+    return (
+      <div className="flex justify-end gap-2">
+        {canRetryConfigSync(incident) && (
+          <RetrySyncButton incident={incident} onChanged={onStale} />
+        )}
+        <DecideFieldReportDialog
+          variant="system"
           incident={incident}
           onDecided={onDecided}
           onStale={onStale}
