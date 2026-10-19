@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { XIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canManageDeviceModels } from "@/lib/permissions";
@@ -12,7 +11,6 @@ import {
   type DeviceModel,
   type DeviceModelStatus,
 } from "@/lib/device-model-api";
-import { pillClass } from "@/lib/status-pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,8 +24,9 @@ import {
 
 /**
  * ฟอร์มสร้างรุ่นอุปกรณ์ใหม่ — Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md ตาราง
- * 4.1 `createDeviceModel`) · chip input ของ `supportedProtocols` mirror
- * `EditCompatibilityForm` (add/remove chip เดิมของ Firmware Compatibility Tag)
+ * 4.1 `createDeviceModel`) · **1 โมเดลมีได้โปรโตคอลเดียว** (มติรีวิวพี่เลี้ยง
+ * 19 ต.ค. 2569) จึงกรอกช่องเดียว ส่งเป็น `supportedProtocols: [ค่าเดียว]`
+ * (API ยังเป็น array ตามเดิม)
  *
  * เดิมเป็นหน้าเต็ม `/device-models/new` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71)
  * เรียก `onCreated` แทน `router.push` เดิม ให้ parent ปิด dialog + refetch เอง
@@ -43,8 +42,7 @@ export function CreateDeviceModelForm({
 
   const [name, setName] = useState("");
   const [manufacturer, setManufacturer] = useState("");
-  const [protocols, setProtocols] = useState<string[]>([]);
-  const [protocolDraft, setProtocolDraft] = useState("");
+  const [protocol, setProtocol] = useState("");
   const [status, setStatus] = useState<DeviceModelStatus>("active");
   const [warrantyMonths, setWarrantyMonths] = useState("");
   const [endOfSupportDate, setEndOfSupportDate] = useState("");
@@ -60,20 +58,6 @@ export function CreateDeviceModelForm({
     );
   }
 
-  function addProtocol() {
-    const trimmed = protocolDraft.trim();
-    if (!trimmed || protocols.includes(trimmed)) {
-      setProtocolDraft("");
-      return;
-    }
-    setProtocols((prev) => [...prev, trimmed]);
-    setProtocolDraft("");
-  }
-
-  function removeProtocol(protocol: string) {
-    setProtocols((prev) => prev.filter((p) => p !== protocol));
-  }
-
   async function onSubmit() {
     if (!session?.accessToken) return;
     const trimmedName = name.trim();
@@ -83,8 +67,9 @@ export function CreateDeviceModelForm({
       setFormError("ต้องระบุชื่อโมเดล");
       return;
     }
-    if (protocols.length === 0) {
-      setFormError("ต้องระบุ Protocol ที่รองรับอย่างน้อย 1 รายการ");
+    const trimmedProtocol = protocol.trim();
+    if (!trimmedProtocol) {
+      setFormError("ต้องระบุโปรโตคอล");
       return;
     }
 
@@ -94,7 +79,7 @@ export function CreateDeviceModelForm({
       const created = await createDeviceModel(session.accessToken, {
         name: trimmedName,
         manufacturer: trimmedManufacturer || undefined,
-        supportedProtocols: protocols,
+        supportedProtocols: [trimmedProtocol],
         status,
         warrantyMonths: warrantyMonths ? Number(warrantyMonths) : undefined,
         endOfSupportDate: endOfSupportDate || undefined,
@@ -112,7 +97,7 @@ export function CreateDeviceModelForm({
   }
 
   const canSubmit =
-    name.trim() !== "" && protocols.length > 0 && !submitting;
+    name.trim() !== "" && protocol.trim() !== "" && !submitting;
 
   return (
     <div className="flex flex-col gap-4">
@@ -143,52 +128,17 @@ export function CreateDeviceModelForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label>Protocol ที่รองรับ</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {protocols.map((p) => (
-            <span key={p} className={`${pillClass("neutral")} gap-1 pr-1`}>
-              {p}
-              <button
-                type="button"
-                onClick={() => removeProtocol(p)}
-                disabled={submitting}
-                aria-label={`ลบ protocol ${p}`}
-                className="rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-              >
-                <XIcon className="size-3" />
-              </button>
-            </span>
-          ))}
-          {protocols.length === 0 && (
-            <span className="text-xs text-muted-foreground">
-              ยังไม่มี protocol ที่รองรับ
-            </span>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={protocolDraft}
-            disabled={submitting}
-            placeholder="เช่น TCP"
-            className="h-8"
-            onChange={(e) => setProtocolDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addProtocol();
-              }
-            }}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={submitting}
-            onClick={addProtocol}
-          >
-            เพิ่ม
-          </Button>
-        </div>
+        <Label htmlFor="model-protocol">โปรโตคอล</Label>
+        <Input
+          id="model-protocol"
+          value={protocol}
+          disabled={submitting}
+          placeholder="เช่น TCP"
+          onChange={(e) => setProtocol(e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          1 โมเดลมีได้โปรโตคอลเดียว
+        </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

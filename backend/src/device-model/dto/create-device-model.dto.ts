@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
@@ -30,10 +31,16 @@ export class CreateDeviceModelDto {
   @MaxLength(100)
   manufacturer?: string;
 
-  /** บังคับอย่างน้อย 1 ค่า — กันสร้างรุ่นที่ไม่มี protocol เลยจนสร้าง Config
+  /** **1 โมเดลมีได้โปรโตคอลเดียว** (มติรีวิวพี่เลี้ยง 19 ต.ค. 2569) — ยังเก็บ
+   * เป็น array ตามเดิมเพื่อไม่เปลี่ยนรูปแบบ API/ตาราง (ไม่ต้อง migration) แต่
+   * บังคับให้มี 1 ค่าพอดี · กันสร้างรุ่นที่ไม่มี protocol เลยจนสร้าง Config
    * ไม่ได้ถาวร (issue #209 ข้อ 4 — enforce จริงตอนสร้าง Config ด้วย) */
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(1, {
+    message:
+      'supportedProtocols ต้องมีได้แค่ 1 ค่า (1 โมเดลมีได้โปรโตคอลเดียว)',
+  })
   @IsString({ each: true })
   supportedProtocols!: string[];
 

@@ -37,13 +37,15 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     await user.click(await screen.findByRole("option", { name: "GT06N" }));
   }
 
-  it("ใช้คำว่า โมเดล และโปรโตคอลถูกเลือกให้เองเมื่อโมเดลรองรับอันเดียว", async () => {
+  it("ใช้คำว่า โมเดล และโปรโตคอลถูกเลือกให้เองและล็อกช่อง (1 โมเดลมีได้โปรโตคอลเดียว)", async () => {
     const user = userEvent.setup();
     render(<RegisterDeviceForm />);
 
     await fillBase(user);
 
     expect(screen.getByLabelText("โปรโตคอล")).toHaveTextContent("TCP");
+    // 1 โมเดลมีได้โปรโตคอลเดียว: ช่องถูกล็อก เปลี่ยนไม่ได้
+    expect(screen.getByLabelText("โปรโตคอล")).toBeDisabled();
   });
 
   it("ยังไม่กรอกทั้งสามช่อง: ปุ่มลงทะเบียนกดไม่ได้ ไม่ยิง API", async () => {

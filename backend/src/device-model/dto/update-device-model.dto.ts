@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
@@ -24,9 +25,15 @@ export class UpdateDeviceModelDto {
   @MaxLength(100)
   manufacturer?: string;
 
+  /** ส่งมาได้ 1 ค่าพอดี (1 โมเดลมีได้โปรโตคอลเดียว) — ใช้แก้รุ่นเก่าที่เคยมี
+   * หลายโปรโตคอลให้เหลือตัวเดียวได้ */
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(1, {
+    message:
+      'supportedProtocols ต้องมีได้แค่ 1 ค่า (1 โมเดลมีได้โปรโตคอลเดียว)',
+  })
   @IsString({ each: true })
   supportedProtocols?: string[];
 

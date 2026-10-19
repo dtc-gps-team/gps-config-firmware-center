@@ -35,10 +35,11 @@ const createdModel: DeviceModel = {
 
 /**
  * PR #273 review ข้อ 1(ข) — ฟอร์มสร้างรุ่น validate + ส่ง payload ถูกต้อง
- * (ชื่อรุ่น + protocol อย่างน้อย 1 รายการบังคับ, field ที่เหลือ optional)
+ * (ชื่อรุ่น + โปรโตคอลบังคับ, field ที่เหลือ optional) · 1 โมเดลมีได้
+ * โปรโตคอลเดียว จึงเป็นช่องกรอกเดียว ไม่ใช่รายการ
  */
 describe("CreateDeviceModelForm", () => {
-  it("ปุ่ม 'เพิ่มโมเดล' disabled จนกว่าจะกรอกชื่อ + เพิ่ม protocol อย่างน้อย 1 รายการ", async () => {
+  it("ปุ่ม 'เพิ่มโมเดล' disabled จนกว่าจะกรอกชื่อและโปรโตคอล", async () => {
     const user = userEvent.setup();
     render(<CreateDeviceModelForm onCreated={vi.fn()} />);
 
@@ -46,11 +47,18 @@ describe("CreateDeviceModelForm", () => {
     expect(submitBtn).toBeDisabled();
 
     await user.type(screen.getByLabelText("ชื่อโมเดล"), "GT06N");
-    expect(submitBtn).toBeDisabled(); // ยังไม่มี protocol
+    expect(submitBtn).toBeDisabled(); // ยังไม่มีโปรโตคอล
 
-    await user.type(screen.getByPlaceholderText("เช่น TCP"), "TCP");
-    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    await user.type(screen.getByLabelText("โปรโตคอล"), "TCP");
     expect(submitBtn).not.toBeDisabled();
+  });
+
+  it("มีช่องโปรโตคอลช่องเดียว ไม่มีปุ่มเพิ่มรายการ (1 โมเดลมีได้โปรโตคอลเดียว)", () => {
+    render(<CreateDeviceModelForm onCreated={vi.fn()} />);
+
+    expect(screen.getAllByLabelText("โปรโตคอล")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "เพิ่ม" })).not.toBeInTheDocument();
+    expect(screen.getByText("1 โมเดลมีได้โปรโตคอลเดียว")).toBeInTheDocument();
   });
 
   it("ส่ง payload ตรงกับที่กรอก รวม supportedProtocols และ field optional ที่เว้นว่างเป็น undefined", async () => {
@@ -60,8 +68,7 @@ describe("CreateDeviceModelForm", () => {
     render(<CreateDeviceModelForm onCreated={onCreated} />);
 
     await user.type(screen.getByLabelText("ชื่อโมเดล"), "GT06N");
-    await user.type(screen.getByPlaceholderText("เช่น TCP"), "TCP");
-    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    await user.type(screen.getByLabelText("โปรโตคอล"), " TCP ");
     await user.click(screen.getByRole("button", { name: "เพิ่มโมเดล" }));
 
     await waitFor(() => expect(createDeviceModel).toHaveBeenCalledTimes(1));

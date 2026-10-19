@@ -86,7 +86,7 @@ export function DeviceModelManagementView() {
       },
       {
         id: "supportedProtocols",
-        header: "Protocol ที่รองรับ",
+        header: "โปรโตคอล",
         enableSorting: false,
         accessorFn: (row) => row.supportedProtocols.join(", "),
         cell: ({ row }) => (

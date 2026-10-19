@@ -61,6 +61,10 @@ export function RegisterDeviceForm() {
   const modelList = useMemo(() => models ?? [], [models]);
   const customerList = useMemo(() => customers ?? [], [customers]);
   const selectedModel = modelList.find((m) => m.id === modelId) ?? null;
+  // 1 โมเดลมีได้โปรโตคอลเดียว: เลือกให้แล้วล็อกช่อง (รุ่นเก่าที่ยังมีหลายค่าอยู่
+  // ยังเลือกเองได้จนกว่าจะแก้ให้เหลือ 1 ค่า)
+  const protocolLocked =
+    !selectedModel || selectedModel.supportedProtocols.length === 1;
 
   if (!canRegisterDevice(session?.role)) {
     return (
@@ -76,7 +80,7 @@ export function RegisterDeviceForm() {
 
   function changeModel(nextModelId: string) {
     setModelId(nextModelId);
-    // โมเดลที่รองรับโปรโตคอลเดียวเลือกให้เลย ไม่ต้องให้ผู้ใช้กดซ้ำ
+    // โมเดลมีโปรโตคอลเดียว เลือกให้เลย ไม่ต้องให้ผู้ใช้กดซ้ำ
     const next = modelList.find((m) => m.id === nextModelId);
     const only =
       next && next.supportedProtocols.length === 1
@@ -261,13 +265,13 @@ export function RegisterDeviceForm() {
             <Label htmlFor="device-protocol">โปรโตคอล</Label>
             <Select
               value={protocol}
-              disabled={!selectedModel}
+              disabled={protocolLocked}
               onValueChange={(value) => setProtocol(value ?? "")}
             >
               <SelectTrigger
                 id="device-protocol"
                 className="w-full"
-                disabled={submitting || !selectedModel}
+                disabled={submitting || protocolLocked}
               >
                 <SelectValue placeholder="- เลือกโมเดลก่อน -" />
               </SelectTrigger>
