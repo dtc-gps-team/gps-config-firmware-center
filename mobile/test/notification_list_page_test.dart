@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +9,12 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/core/theme/app_theme.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
+import 'package:mobile/core/ui/app_card.dart';
+import 'package:mobile/core/ui/app_empty_state.dart';
+import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
+import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/notification/notification_list_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 
@@ -250,7 +257,7 @@ void main() {
         ),
       );
 
-      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+      expect(iconBgOf(tester, 0), AppColors.dangerSubtle);
     });
 
     testWidgets('incidentAlert -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (
@@ -263,7 +270,7 @@ void main() {
         ),
       );
 
-      expect(iconBgOf(tester, 0), isNot(AppTheme.iconBg));
+      expect(iconBgOf(tester, 0), AppColors.dangerSubtle);
     });
 
     testWidgets(
@@ -276,7 +283,7 @@ void main() {
           ),
         );
 
-        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+        expect(iconBgOf(tester, 0), AppColors.secondary);
       },
     );
 
@@ -290,7 +297,7 @@ void main() {
           ),
         );
 
-        expect(iconBgOf(tester, 0), AppTheme.iconBg);
+        expect(iconBgOf(tester, 0), AppColors.secondary);
       },
     );
   });
@@ -581,9 +588,115 @@ void main() {
     expect(find.textContaining('อุปกรณ์:'), findsNothing);
   });
 
-  testWidgets('empty state', (tester) async {
+  testWidgets('empty state — AppEmptyState', (tester) async {
     await _pump(tester, _FakeNotificationRepository(items: []));
     expect(find.text('ไม่มีการแจ้งเตือน'), findsOneWidget);
+    expect(find.byType(AppEmptyState), findsOneWidget);
+  });
+
+  group('design system ใหม่ (docs/22 Batch 2)', () {
+    testWidgets('ใช้ theme v2 + AppPageHeader แทน AppBar สีกรมท่า', (
+      tester,
+    ) async {
+      await _pump(tester, _FakeNotificationRepository(items: [_n('n1')]));
+
+      expect(find.byType(AppBar), findsNothing);
+      expect(find.byType(AppV2Theme), findsOneWidget);
+      expect(
+        find.widgetWithText(AppPageHeader, 'รายการแจ้งเตือน'),
+        findsOneWidget,
+      );
+      final theme = Theme.of(tester.element(find.text('รายการแจ้งเตือน')));
+      expect(theme.colorScheme.primary, AppColors.primary);
+      // หน้าแรกของ stack (ไม่มีหน้าให้ย้อน) -> ไม่มีปุ่มย้อนกลับ
+      expect(find.byTooltip('ย้อนกลับ'), findsNothing);
+    });
+
+    testWidgets(
+      'ยังไม่อ่าน: การ์ดพื้น accent + จุด primary · อ่านแล้ว: การ์ดปกติ',
+      (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(items: [_n('n1'), _n('n2', read: true)]),
+        );
+
+        AppCard cardOf(int i) => tester.widget<AppCard>(
+          find.descendant(
+            of: find.byKey(Key('notification_tile_$i')),
+            matching: find.byType(AppCard),
+          ),
+        );
+        expect(cardOf(0).highlighted, isTrue);
+        expect(cardOf(1).highlighted, isFalse);
+        final dot = tester.widget<Container>(
+          find.byKey(const Key('unread_dot')),
+        );
+        expect((dot.decoration! as BoxDecoration).color, AppColors.primary);
+      },
+    );
+
+    testWidgets('กำลังโหลดครั้งแรก -> AppListSkeleton (ไม่ใช่ spinner)', (
+      tester,
+    ) async {
+      final completer = Completer<List<AppNotification>>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(_FakeAuthController.new),
+            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(),
+            ),
+            notificationListProvider.overrideWith((ref) => completer.future),
+          ],
+          child: const MaterialApp(home: NotificationListPage()),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(AppListSkeleton), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      completer.complete(const []);
+      await tester.pump();
+    });
+
+    testWidgets('เปิดต่อจากหน้าอื่น -> มีปุ่มย้อนกลับ กดแล้วกลับ', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(_FakeAuthController.new),
+            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+            sessionProfileStoreProvider.overrideWithValue(
+              InMemorySessionProfileStore(),
+            ),
+            notificationRepositoryProvider.overrideWithValue(
+              _FakeNotificationRepository(items: []),
+            ),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const NotificationListPage(),
+                  ),
+                ),
+                child: const Text('OPEN'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('OPEN'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('ย้อนกลับ'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NotificationListPage), findsNothing);
+      expect(find.text('OPEN'), findsOneWidget);
+    });
   });
 
   testWidgets('error state + ปุ่มลองอีกครั้ง', (tester) async {

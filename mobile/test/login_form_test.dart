@@ -6,6 +6,10 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
+import 'package:mobile/core/config/app_config.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
+import 'package:mobile/core/ui/app_card.dart';
+import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -185,5 +189,76 @@ void main() {
     expect(find.text('ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม'), findsNothing);
     // ปุ่ม login ยังอยู่ใน widget tree เสมอ (Scrollable ทำให้เลื่อนไปหาได้)
     expect(find.byKey(const Key('login_submit')), findsOneWidget);
+  });
+
+  group('design system ใหม่ (docs/22 Batch 2)', () {
+    testWidgets('theme v2 + ฟอร์มอยู่ใน AppCard + ไม่มี AppBar', (
+      tester,
+    ) async {
+      await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+      expect(find.byType(AppV2Theme), findsOneWidget);
+      expect(find.byType(AppBar), findsNothing);
+      expect(
+        find.ancestor(
+          of: find.byKey(const Key('login_submit')),
+          matching: find.byType(AppCard),
+        ),
+        findsOneWidget,
+      );
+      final theme = Theme.of(
+        tester.element(find.byKey(const Key('login_submit'))),
+      );
+      expect(theme.colorScheme.primary, AppColors.primary);
+    });
+
+    testWidgets('ช่องกรอกใช้ขอบ inputBorder #576171 จาก theme v2', (
+      tester,
+    ) async {
+      await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+      final element = tester.element(find.byKey(const Key('login_username')));
+      final border =
+          Theme.of(element).inputDecorationTheme.enabledBorder!
+              as OutlineInputBorder;
+      expect(border.borderSide.color, AppColors.inputBorder);
+      final decorator = tester.widget<InputDecorator>(
+        find.descendant(
+          of: find.byKey(const Key('login_username')),
+          matching: find.byType(InputDecorator),
+        ),
+      );
+      // ขอบที่วาดจริง (หลังรวมค่าจาก theme) = inputBorder · ผ่าน 3:1 บนการ์ด
+      final drawn = decorator.decoration.enabledBorder! as OutlineInputBorder;
+      expect(drawn.borderSide.color, AppColors.inputBorder);
+    });
+
+    testWidgets(
+      'mock mode: คำใบ้ prefix เหลือเฉพาะ role ที่เข้า Mobile ได้ (docs/21 #19)',
+      (tester) async {
+        await _pumpLogin(tester, _container(_FakeAuthRepository()));
+        final hint = find.byKey(const Key('login_mock_hint'));
+        if (!AppConfig.apiMockMode) {
+          expect(hint, findsNothing);
+          return;
+        }
+        final text = tester.widget<Text>(hint).data!;
+        expect(text, contains('(op / st / ot)'));
+        for (final stale in ['sw', 'admin', 'audit']) {
+          expect(text, isNot(contains(stale)), reason: stale);
+        }
+      },
+    );
+
+    testWidgets('สัญลักษณ์ระบบสี primary ตาม LogoMark ของ Web', (tester) async {
+      await _pumpLogin(tester, _container(_FakeAuthRepository()));
+      final mark = tester.widget<Container>(
+        find.ancestor(
+          of: find.byIcon(Icons.location_on_outlined),
+          matching: find.byType(Container),
+        ),
+      );
+      expect((mark.decoration! as BoxDecoration).color, AppColors.primary);
+    });
   });
 }
