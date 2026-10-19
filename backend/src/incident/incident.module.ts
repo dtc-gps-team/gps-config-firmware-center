@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CampaignModule } from '../campaign/campaign.module';
 import { ConfigSyncWriterModule } from '../config-sync-writer/config-sync-writer.module';
 import { NotificationModule } from '../notification/notification.module';
 import { IncidentController } from './incident.controller';
@@ -26,7 +27,15 @@ import { IncidentService } from './incident.service';
   //   (listener `'sync-failed'`)
   // NotificationModule (issue #236) — แจ้ง Operation ตอนมี field report ใหม่
   //   + แจ้งผู้รายงานตอน Operation ตัดสินใจ (mirror DeviceModule)
-  imports: [AuthModule, ConfigSyncWriterModule, NotificationModule],
+  // CampaignModule (docs/19 §15) — inject `RolloutEvents` ฟัง event ของ Rollout
+  //   (`rollout-failed` / `rollout-status-changed`) สร้างและปรับสถานะ Incident ·
+  //   ทิศทางเดียว CampaignModule ไม่ import IncidentModule จึงไม่วน
+  imports: [
+    AuthModule,
+    CampaignModule,
+    ConfigSyncWriterModule,
+    NotificationModule,
+  ],
   controllers: [IncidentController],
   providers: [IncidentService],
   exports: [IncidentService],
