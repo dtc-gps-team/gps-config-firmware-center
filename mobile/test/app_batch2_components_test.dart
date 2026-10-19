@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/models.dart';
@@ -215,10 +216,18 @@ void main() {
       expect(label.style!.color, AppColors.mutedForeground);
       final value = tester.widget<Text>(find.byKey(const Key('v')));
       expect(value.style!.color, AppColors.foreground);
-      expect(value.textAlign, TextAlign.right);
+      // อยู่บรรทัดเดียวกับ label ชิดขวา (เว้น caretInset ให้ตรงกับค่าที่เลือกได้)
       expect(
         tester.getTopRight(find.byKey(const Key('v'))).dx,
-        closeTo(tester.getTopRight(find.byType(AppInfoRow)).dx, 0.5),
+        closeTo(
+          tester.getTopRight(find.byType(AppInfoRow)).dx -
+              AppInfoRow.caretInset,
+          0.5,
+        ),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const Key('v'))).dy,
+        closeTo(tester.getTopLeft(find.text('ผู้แจ้ง')).dy, 0.5),
       );
     });
 
@@ -272,6 +281,95 @@ void main() {
         () => AppInfoRow(label: 'x', value: 'a', child: const Text('b')),
         throwsA(isA<AssertionError>()),
       );
+    });
+
+    testWidgets('label ยาว + ค่าสั้น -> label บรรทัดเดียว ไม่ถูกบีบ', (
+      tester,
+    ) async {
+      // font ทดสอบกว้างตัวละ fontSize: label 330 + ค่า "-" พอดีใน 400 แต่ 2/5 ของ
+      // 400 (แบบเดิม) ไม่พอ
+      await tester.pumpWidget(
+        _wrap(
+          const SizedBox(
+            width: 400,
+            child: Column(
+              children: [
+                AppInfoRow(label: 'ID', value: '-'),
+                AppInfoRow(
+                  label: 'Firmware ที่เกี่ยวข้อง',
+                  value: '-',
+                  valueKey: Key('fw'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      final oneLine = tester.getSize(find.text('ID')).height;
+      expect(
+        tester.getSize(find.text('Firmware ที่เกี่ยวข้อง')).height,
+        oneLine,
+      );
+      // ค่ายังอยู่บรรทัดเดียวกับ label
+      expect(
+        tester.getTopLeft(find.byKey(const Key('fw'))).dy,
+        closeTo(tester.getTopLeft(find.text('Firmware ที่เกี่ยวข้อง')).dy, 0.5),
+      );
+    });
+
+    testWidgets('ค่าไม่พอที่ข้าง label -> ขึ้นบรรทัดใหม่ใต้ label', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const SizedBox(
+            width: 400,
+            child: AppInfoRow(
+              label: 'Firmware ที่เกี่ยวข้อง',
+              value: 'GT06N-v2.4.1-build-20261019-hotfix',
+              valueKey: Key('fw'),
+            ),
+          ),
+        ),
+      );
+      final label = tester.getRect(find.text('Firmware ที่เกี่ยวข้อง'));
+      final value = tester.getRect(find.byKey(const Key('fw')));
+      expect(value.top, greaterThanOrEqualTo(label.bottom));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('ค่าที่เลือกได้กับค่าธรรมดา ขอบขวาของตัวอักษรตรงกัน', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const SizedBox(
+            width: 400,
+            child: Column(
+              children: [
+                AppInfoRow(label: 'id', value: 'cfg-1', selectable: true),
+                AppInfoRow(
+                  label: 'ผู้แจ้ง',
+                  value: 'st.demo',
+                  valueKey: Key('v'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      // ปลายตัวอักษรตัวสุดท้ายของ SelectableText (ไม่รวมที่กันไว้ให้ cursor)
+      final editable = tester.allRenderObjects
+          .whereType<RenderEditable>()
+          .single;
+      final boxes = editable.getBoxesForSelection(
+        const TextSelection(baseOffset: 0, extentOffset: 'cfg-1'.length),
+      );
+      final selectableEnd = editable
+          .localToGlobal(Offset(boxes.last.right, 0))
+          .dx;
+      final plainEnd = tester.getTopRight(find.byKey(const Key('v'))).dx;
+      expect(selectableEnd, closeTo(plainEnd, 0.5));
     });
 
     testWidgets('ค่ายาวบนจอแคบตัดบรรทัด ไม่ล้น', (tester) async {
