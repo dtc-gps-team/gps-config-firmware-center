@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LogoMark } from "@/components/brand/logo-mark";
 import { useAuth } from "./auth-provider";
 
 export function LoginForm() {
@@ -54,9 +55,7 @@ export function LoginForm() {
   return (
     <Card className="w-full [--card-spacing:--spacing(6)] shadow-2xl">
       <CardHeader className="items-center gap-2 text-center">
-        <div className="mb-1 flex size-14 items-center justify-center rounded-full bg-sidebar-primary text-white">
-          <UserIcon className="size-7" />
-        </div>
+        <LogoMark className="mb-1 size-14 rounded-xl" />
         <CardTitle className="text-2xl font-semibold">เข้าสู่ระบบ</CardTitle>
         <CardDescription className="text-base">
           GPS Config &amp; Firmware Center

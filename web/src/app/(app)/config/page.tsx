@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { ConfigTableCard } from "./config-table";
 
 export const metadata = {
@@ -18,12 +19,10 @@ export default async function ConfigPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Config Editor</h1>
-        <p className="text-sm text-muted-foreground">
-          สร้าง/แก้ Draft สร้างได้เฉพาะ Role ConfigEngineer
-        </p>
-      </div>
+      <PageHeader
+        title="Config Editor"
+        description="ร่าง ทดสอบ และส่ง Config ของแต่ละโมเดลให้ Operation อนุมัติ"
+      />
 
       <ConfigTableCard justSavedId={saved ?? null} />
     </div>
