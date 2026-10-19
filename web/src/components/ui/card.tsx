@@ -15,7 +15,11 @@ function Card({
    *  การ์ดทั่วไปเป็น **ขอบบาง ไม่มีเงา** โดยตั้งใจ (UI ปรับใหม่ 2026-10):
    *  เดิมทุกการ์ดมี shadow-md + hover ยกตัว หน้าที่มีการ์ดหลายใบเลยดูเหมือน
    *  template สำเร็จรูป ระบบนี้เป็นเครื่องมือทำงานที่เปิดดูวันละหลายรอบ
-   *  ข้อมูลต้องเด่นกว่ากรอบ — อย่าเติมเงากลับเข้ามาที่การ์ดเดี่ยวๆ */
+   *  ข้อมูลต้องเด่นกว่ากรอบ — อย่าเติมเงากลับเข้ามาที่การ์ดเดี่ยวๆ
+   *
+   *  ความเข้มขอบ (ring-foreground/N) คำนวณ contrast ของสีขอบเทียบพื้นการ์ดไว้:
+   *  /10 ได้ 1.28:1 สว่าง / 1.16:1 มืด จางจนแทบมองไม่เห็นบนโปรเจกเตอร์
+   *  ตอนเดโม จึงใช้ /20 (1.58:1 / 1.59:1) ส่วนการ์ดกดได้ตอน hover /40 */
   interactive?: boolean
 }) {
   return (
@@ -23,9 +27,9 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-lg bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 transition-[box-shadow] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-lg *:[img:last-child]:rounded-b-lg",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-lg bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/20 transition-[box-shadow] [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-lg *:[img:last-child]:rounded-b-lg",
         interactive &&
-          "cursor-pointer hover:shadow-sm hover:ring-foreground/20",
+          "cursor-pointer hover:shadow-sm hover:ring-foreground/40",
         className
       )}
       {...props}
