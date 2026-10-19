@@ -29,6 +29,11 @@ class Tasks extends Table {
   /// migration later when the queue lands.
   TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
 
+  /// เวลาที่แถวนี้ถูกเขียนจากข้อมูลของ server ล่าสุด (UX audit #14) — ตอนออฟไลน์
+  /// แอปแสดง cache นี้แทนและบอกผู้ใช้ว่าเป็นข้อมูลเมื่อไร · null = แถวที่ cache
+  /// ไว้ก่อนมีคอลัมน์นี้ (schema v3)
+  DateTimeColumn get cachedAt => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

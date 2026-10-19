@@ -38,9 +38,13 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
+import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
-import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
+import {
+  CreateCampaignRolloutDto,
+  MAX_DEVICE_VALUES_PER_ROLLOUT,
+} from './dto/create-campaign-rollout.dto';
 import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import {
   MAX_EVENT_FAILED_DEVICE_IDS,
@@ -59,12 +63,35 @@ import {
 
 const AUDIT_MODULE = 'campaign';
 
+/** role ที่เห็นค่า `sensitive` ใน `proposedFields` จริง (ผู้อนุมัติ Rollout) */
+const SENSITIVE_VALUE_VIEWER_ROLE = 'Operation';
+const MASKED_VALUE = '********';
+
 /** สำเนาของ `TESTABLE_DEVICE_STATUS` ใน device.service.ts (ไม่ได้ export จากที่
  * นั่น) — อุปกรณ์ที่ยัง `registered` หรือ `decommissioned` แล้ว ไม่ควรเป็น
  * เป้าหมายของ rollout ต่อให้ยังอยู่ในกลุ่มก็ตาม (สถานะอาจเปลี่ยนไปหลังเข้า
  * กลุ่มแล้ว — เช็คซ้ำตรงนี้อีกที ไม่เชื่อว่าตอนเข้ากลุ่มยัง `installed` แปลว่า
  * ตอน push ก็ยังต้อง `installed` เหมือนเดิม) */
 export const TARGETABLE_DEVICE_STATUS = 'installed';
+
+/** 1 เครื่องใน response ของ `GET .../rollouts/device-values` */
+export interface RolloutDeviceValuesItem {
+  deviceId: string;
+  /** มีคำขอ override ของช่าง `pending` ของ (เครื่อง, Config นี้) — ตั้งค่า
+   * เฉพาะเครื่องของเครื่องนี้ไม่ได้จนกว่า Operation จะตัดสินใจคำขอนั้น */
+  hasPendingRequest: boolean;
+  previous: {
+    /** ค่าพิเศษเดิมที่ใช้ต่อกับ Config นี้ได้ */
+    fields: Record<string, unknown>;
+    /** field ที่ Config นี้ใช้ไม่ได้ (ถูกตัดทิ้ง) พร้อมเหตุผล */
+    dropped: { fieldName: string; reason: string }[];
+    fromConfigId: string;
+    /** ผู้ตั้งค่า (ช่าง/Operation) — เว็บ resolve ชื่อเอง */
+    overriddenBy: string;
+    overriddenAt: Date;
+    versionNumber: number;
+  } | null;
+}
 
 type PayloadResult =
   | { configId: string; firmwareId: null }
@@ -90,6 +117,7 @@ export class CampaignRolloutService {
     private readonly firmwareRollbackExecutor: FirmwareRollbackExecutor,
     @Inject(CONFIG_APPLIER)
     private readonly configApplier: ConfigApplier,
+    private readonly configDefinitionService: ConfigDefinitionService,
     // โหมดตอนนี้ของ env `DEVICE_CONFIG_APPLY_MODE` — ใช้ตอน `release()` เพื่อ
     // บันทึกลง `CampaignRollout.applyMode` เท่านั้น ที่อื่นอ่านจาก Rollout เอง
     @Inject(CONFIG_APPLY_MODE)
@@ -131,10 +159,40 @@ export class CampaignRolloutService {
     return rollout;
   }
 
-  findTargets(rolloutId: string): Promise<CampaignRolloutTarget[]> {
-    return this.prisma.campaignRolloutTarget.findMany({
+  /**
+   * ผลต่อเครื่องของ Rollout · `proposedFields` (ค่าเฉพาะเครื่อง) ที่เป็น field
+   * `sensitive` คืนค่าจริงเฉพาะ Operation (ผู้อนุมัติต้องตรวจค่าได้) role อื่น
+   * ที่ดู Rollout ได้เห็นเป็น `MASKED_VALUE` (มติ A 15 ต.ค. 2569 ข้อ ก)
+   */
+  async findTargets(
+    rolloutId: string,
+    actor?: ActingUser,
+  ): Promise<CampaignRolloutTarget[]> {
+    const targets = await this.prisma.campaignRolloutTarget.findMany({
       where: { rolloutId },
       orderBy: { createdAt: 'asc' },
+    });
+    if (actor?.role === SENSITIVE_VALUE_VIEWER_ROLE) return targets;
+
+    const withValues = targets.filter((t) => t.proposedFields !== null);
+    if (withValues.length === 0) return targets;
+
+    const sensitive = await this.prisma.configFieldDefinition.findMany({
+      where: { sensitive: true },
+      select: { fieldName: true },
+    });
+    const sensitiveNames = new Set(sensitive.map((d) => d.fieldName));
+    return targets.map((t) => {
+      if (t.proposedFields === null) return t;
+      const masked = Object.fromEntries(
+        Object.entries(t.proposedFields as Record<string, unknown>).map(
+          ([name, value]) => [
+            name,
+            sensitiveNames.has(name) ? MASKED_VALUE : value,
+          ],
+        ),
+      );
+      return { ...t, proposedFields: masked as Prisma.JsonObject };
     });
   }
 
@@ -185,6 +243,13 @@ export class CampaignRolloutService {
         ? await this.validateConfigPayload(dto, targetRefs)
         : await this.validateFirmwarePayload(dto, targetRefs);
 
+    // ค่าเฉพาะเครื่อง (docs/17) — ตรวจหลังรู้ Config แล้ว (ต้องใช้โมเดล/โปรโตคอล)
+    const deviceValues = await this.validateDeviceValues(
+      dto,
+      configId,
+      rolloutDeviceIds,
+    );
+
     // เช็ค "มีรอบเปิดอยู่ไหม" + สร้าง rollout ต้องอยู่ใน transaction เดียวกัน
     // (แก้ตาม review B บน PR #224) — เดิมเช็คนอก transaction ทำให้ 2 requests
     // ที่ยิงพร้อมกัน (double-click/concurrent) ผ่านเช็คนี้ได้ทั้งคู่แล้วสร้าง
@@ -217,14 +282,43 @@ export class CampaignRolloutService {
             // เวลารอของโหมด real (docs/19 §16) ไม่ส่ง = null = ค่าเริ่มต้น
             pullTimeoutHours: dto.pullTimeoutHours ?? null,
             applyTimeoutMinutes: dto.applyTimeoutMinutes ?? null,
+            ...(deviceValues.size > 0
+              ? { deviceValuesReason: dto.deviceValuesReason ?? null }
+              : {}),
           },
         });
 
+        // ช่างมีคำขอ override ของ (เครื่อง, Config นี้) รออนุมัติอยู่ — ถ้า
+        // Rollout นี้ตั้งค่าเฉพาะเครื่องซ้อนจะชนกฎ "pending ได้ทีละ 1" ตอนปล่อย
+        if (deviceValues.size > 0 && configId) {
+          const pending = await tx.deviceConfigOverride.findMany({
+            where: {
+              configId,
+              status: 'pending',
+              deviceId: { in: [...deviceValues.keys()] },
+            },
+            select: { deviceId: true },
+          });
+          if (pending.length > 0) {
+            throw new ConflictException(
+              `เครื่องต่อไปนี้มีคำขอ override ของช่างรออนุมัติอยู่ ให้ Operation ตัดสินใจก่อนแล้วค่อยตั้งค่าเฉพาะเครื่อง: ${pending
+                .map((p) => p.deviceId)
+                .join(', ')}`,
+            );
+          }
+        }
+
         await tx.campaignRolloutTarget.createMany({
-          data: rolloutDeviceIds.map((deviceId) => ({
-            rolloutId: createdRollout.id,
-            deviceId,
-          })),
+          data: rolloutDeviceIds.map((deviceId) => {
+            const proposed = deviceValues.get(deviceId);
+            return {
+              rolloutId: createdRollout.id,
+              deviceId,
+              ...(proposed
+                ? { proposedFields: proposed as Prisma.InputJsonValue }
+                : {}),
+            };
+          }),
         });
 
         return createdRollout;
@@ -232,8 +326,107 @@ export class CampaignRolloutService {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
-    await this.logAudit('create', actor.id, undefined, actor.ipAddress ?? null);
+    await this.logAudit(
+      'create',
+      actor.id,
+      deviceValues.size > 0
+        ? { deviceValues: this.toAuditDeviceValues(deviceValues) }
+        : undefined,
+      actor.ipAddress ?? null,
+    );
     return rollout;
+  }
+
+  /** รายชื่อเครื่อง + ชื่อ field (ไม่เก็บค่า) สำหรับ Audit Log */
+  private toAuditDeviceValues(
+    values: Map<string, Record<string, unknown>>,
+  ): { deviceId: string; fieldNames: string[] }[] {
+    return [...values.entries()].map(([deviceId, fields]) => ({
+      deviceId,
+      fieldNames: Object.keys(fields).sort(),
+    }));
+  }
+
+  /**
+   * ตรวจ `deviceValues` ของ `POST /campaigns/{id}/rollouts` (docs/17 ข้อ 3.6)
+   * คืน Map deviceId -> fields (ว่างถ้าไม่ส่งมา) · ตอบ 400 พร้อมรายการ error
+   * ต่อเครื่อง/field · ไม่ตรวจเรื่อง pending ของช่างที่นี่ (ทำใน
+   * ทรานแซกชันของ `create()` เพื่อลด race)
+   */
+  private async validateDeviceValues(
+    dto: CreateCampaignRolloutDto,
+    configId: string | null,
+    rolloutDeviceIds: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const values = dto.deviceValues ?? [];
+    const result = new Map<string, Record<string, unknown>>();
+    if (values.length === 0) return result;
+
+    if (dto.payloadType !== CampaignPayloadType.Config || !configId) {
+      throw new BadRequestException(
+        'deviceValues ใช้ได้เฉพาะ Rollout ที่ payloadType เป็น "Config"',
+      );
+    }
+    if (values.length > MAX_DEVICE_VALUES_PER_ROLLOUT) {
+      throw new BadRequestException(
+        `ตั้งค่าเฉพาะเครื่องได้ไม่เกิน ${MAX_DEVICE_VALUES_PER_ROLLOUT} เครื่องต่อ Rollout`,
+      );
+    }
+
+    const inRollout = new Set(rolloutDeviceIds);
+    const errors: string[] = [];
+    for (const v of values) {
+      if (result.has(v.deviceId)) {
+        errors.push(`${v.deviceId}: ระบุ deviceValues ซ้ำ`);
+        continue;
+      }
+      if (!inRollout.has(v.deviceId)) {
+        errors.push(
+          `${v.deviceId}: ไม่ได้อยู่ใน Rollout นี้ (ไม่อยู่ในกลุ่มหรือถูกเอาออก)`,
+        );
+        continue;
+      }
+      if (Object.keys(v.fields).length === 0) {
+        errors.push(`${v.deviceId}: ไม่มีค่าที่ต้องการตั้ง`);
+        continue;
+      }
+      result.set(v.deviceId, v.fields);
+    }
+
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+      select: { deviceModel: true, protocol: true, fields: true },
+    });
+    if (!config) {
+      throw new NotFoundException(`ไม่พบ Config id ${configId}`);
+    }
+    // field ใน template ตั้งค่าเฉพาะเครื่องได้แม้อยู่นอกชุดของรุ่น (กฎเดียวกับ
+    // ช่าง — validateOverridableFields)
+    const templateFieldNames = Object.keys(
+      (config.fields ?? {}) as Record<string, unknown>,
+    );
+    // โหลดคลัง Parameter ครั้งเดียวสำหรับทุกเครื่อง (สูงสุด 200) ไม่ query ซ้ำต่อเครื่อง
+    const definitions =
+      await this.configDefinitionService.loadFieldDefinitions();
+    for (const [deviceId, fields] of result) {
+      const fieldErrors =
+        await this.configDefinitionService.validateOperationOverridableFields(
+          config.deviceModel,
+          config.protocol,
+          fields,
+          templateFieldNames,
+          definitions,
+        );
+      errors.push(...fieldErrors.map((e) => `${deviceId}: ${e}`));
+    }
+
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        message: 'ค่าเฉพาะเครื่องไม่ผ่านการตรวจสอบ',
+        errors,
+      });
+    }
+    return result;
   }
 
   /**
@@ -324,32 +517,306 @@ export class CampaignRolloutService {
     // race condition — mirror approve()/resume() ทุกประการ กดปล่อยซ้ำ (เช่น
     // double-click หรือ client retry หลัง timeout) จะวน dispatchAutoApply()
     // ซ้ำบน target ชุดเดียวกันได้ (apply ซ้ำ + audit row ซ้ำ)
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.campaignRollout.updateMany({
-        where: { id, status: RELEASABLE_CAMPAIGN_ROLLOUT_STATUS },
-        data: {
-          status: 'active',
-          // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ — ดู comment เหนือ field นี้
-          // ใน schema.prisma (ย้ายมาจาก approve() เดิม)
-          activeWindowStartedAt: new Date(),
-          applyMode,
-        },
+    // บันทึกค่าเฉพาะเครื่อง (docs/17 ข้อ 3.3) ในทรานแซกชันเดียวกับการเปลี่ยน
+    // เป็น active — ปล่อยซ้ำ/พร้อมกันจึงบันทึกซ้ำไม่ได้ (updateMany กันอยู่)
+    // และ reject() ที่รับ `approved` ไม่ทิ้งแถวไว้ให้ต้องล้าง
+    let persistedDeviceValues: { deviceId: string; fieldNames: string[] }[] =
+      [];
+    let updated: CampaignRollout;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const result = await tx.campaignRollout.updateMany({
+          where: { id, status: RELEASABLE_CAMPAIGN_ROLLOUT_STATUS },
+          data: {
+            status: 'active',
+            // เริ่มหน้าต่างคำนวณ Auto Pause ใหม่ — ดู comment เหนือ field นี้
+            // ใน schema.prisma (ย้ายมาจาก approve() เดิม)
+            activeWindowStartedAt: new Date(),
+            applyMode,
+          },
+        });
+        if (result.count === 0) {
+          throw new ConflictException(
+            `Rollout นี้ถูกเปลี่ยนสถานะไปแล้วระหว่างทำรายการ (ไม่ใช่ ${RELEASABLE_CAMPAIGN_ROLLOUT_STATUS} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
+          );
+        }
+        const released = await tx.campaignRollout.findUniqueOrThrow({
+          where: { id },
+        });
+        persistedDeviceValues = await this.persistDeviceValues(tx, released);
+        return released;
       });
-      if (result.count === 0) {
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         throw new ConflictException(
-          `Rollout นี้ถูกเปลี่ยนสถานะไปแล้วระหว่างทำรายการ (ไม่ใช่ ${RELEASABLE_CAMPAIGN_ROLLOUT_STATUS} อีกต่อไป) — กรุณาโหลดข้อมูลใหม่`,
+          'ปล่อยไม่สำเร็จเพราะค่าเฉพาะเครื่องของอุปกรณ์เปลี่ยนระหว่างทำรายการ กรุณาลองอีกครั้ง',
         );
       }
-      return tx.campaignRollout.findUniqueOrThrow({ where: { id } });
-    });
+      throw err;
+    }
 
     await this.logAudit(
       'release',
       actor.id,
-      undefined,
+      persistedDeviceValues.length > 0
+        ? { deviceValues: persistedDeviceValues }
+        : undefined,
       actor.ipAddress ?? null,
     );
     return this.dispatchAutoApply(updated, actor.id);
+  }
+
+  /**
+   * บันทึก `CampaignRolloutTarget.proposedFields` เป็น `DeviceConfigOverride`
+   * สถานะ `approved` (docs/17 ข้อ 3.3) — เรียกจาก `release()` ในทรานแซกชัน
+   * เดียวกับการเปลี่ยนเป็น `active` เท่านั้น
+   *
+   * ต่อเครื่อง (ใช้กฎเดิมของระบบ override ข้อ 4 และ 5):
+   * - `fields` = ค่า approved ล่าสุดของ (เครื่อง, Config นี้) ถ้ามี บวก
+   *   `proposedFields` (ค่าที่ผู้ใช้เลือกไว้แล้ว ทับค่าเดิม)
+   * - `versionNumber` = ล่าสุดของเครื่อง (รวมทุก Config) + 1 อ่านใน
+   *   ทรานแซกชันนี้ ชนกับ unique ของ (deviceId, versionNumber) → P2002 ให้
+   *   ผู้เรียกแปลงเป็น 409
+   * - `overriddenBy` = ผู้สร้าง Rollout, `decidedBy`/`decidedAt` = ผู้อนุมัติ
+   *   Rollout และเวลาที่อนุมัติ, `reason` = เหตุผลระดับ Rollout
+   *
+   * ทำทีละเครื่องตามลำดับ (ไม่ขนาน) เพราะ `versionNumber` ต้องอ่านค่าล่าสุด
+   * ของแต่ละเครื่องก่อนเขียน — คืนรายชื่อเครื่อง + ชื่อ field ให้ Audit Log
+   * (ไม่เก็บค่า)
+   */
+  private async persistDeviceValues(
+    tx: Prisma.TransactionClient,
+    rollout: CampaignRollout,
+  ): Promise<{ deviceId: string; fieldNames: string[] }[]> {
+    // `deviceValuesReason` ถูกตั้งก็ต่อเมื่อ Rollout นี้มีค่าเฉพาะเครื่องตอน
+    // สร้าง (บังคับกรอกคู่กับ deviceValues) — Rollout ส่วนใหญ่ข้ามคิวรีนี้ไป
+    if (
+      rollout.payloadType !== CampaignPayloadType.Config ||
+      !rollout.configId ||
+      rollout.deviceValuesReason === null
+    ) {
+      return [];
+    }
+    const targets = await tx.campaignRolloutTarget.findMany({
+      where: {
+        rolloutId: rollout.id,
+        proposedFields: { not: Prisma.DbNull },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // ช่างอาจขอ override (เครื่อง, Config นี้) หลังสร้าง Rollout ไปแล้ว (create()
+    // เช็ค pending ตอนสร้างเท่านั้น ระหว่างรออนุมัติถึงปล่อยอาจห่างกันเป็นวัน)
+    // ถ้าปล่อยต่อ แถว approved ที่สร้างตอนนี้จะได้ versionNumber สูงกว่าคำขอของช่าง
+    // ที่จองเลขไว้แล้ว พออนุมัติคำขอนั้นทีหลัง mergeApprovedOverride() หยิบแถวของ
+    // Rollout แทนและค่าที่ช่างได้รับอนุมัติถูกข้ามเงียบๆ (docs/17 §5) จึงหยุดที่นี่
+    // ให้ Operation ตัดสินคำขอนั้นก่อน · ทรานแซกชันนี้ย้อนกลับทั้งหมด Rollout
+    // ยังเป็น `approved` ปล่อยใหม่ได้
+    const withValues = targets
+      .filter(
+        (t) =>
+          Object.keys((t.proposedFields ?? {}) as Record<string, unknown>)
+            .length > 0,
+      )
+      .map((t) => t.deviceId);
+    if (withValues.length > 0) {
+      const pending = await tx.deviceConfigOverride.findMany({
+        where: {
+          configId: rollout.configId,
+          status: 'pending',
+          deviceId: { in: withValues },
+        },
+        select: { deviceId: true },
+      });
+      if (pending.length > 0) {
+        throw new ConflictException(
+          `เครื่องต่อไปนี้มีคำขอ override ของช่างรออนุมัติอยู่ ให้ Operation ตัดสินใจก่อนแล้วค่อยปล่อย Rollout: ${pending
+            .map((p) => p.deviceId)
+            .join(', ')}`,
+        );
+      }
+    }
+
+    const persisted: { deviceId: string; fieldNames: string[] }[] = [];
+    for (const target of targets) {
+      const proposed = target.proposedFields as Record<string, unknown>;
+      if (Object.keys(proposed).length === 0) continue;
+
+      const previousApproved = await tx.deviceConfigOverride.findFirst({
+        where: {
+          deviceId: target.deviceId,
+          configId: rollout.configId,
+          status: 'approved',
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      const latest = await tx.deviceConfigOverride.findFirst({
+        where: { deviceId: target.deviceId },
+        orderBy: { versionNumber: 'desc' },
+      });
+      const fields = {
+        ...((previousApproved?.fields as Record<string, unknown>) ?? {}),
+        ...proposed,
+      };
+
+      await tx.deviceConfigOverride.create({
+        data: {
+          deviceId: target.deviceId,
+          configId: rollout.configId,
+          versionNumber: (latest?.versionNumber ?? 0) + 1,
+          fields: fields as Prisma.InputJsonValue,
+          reason: rollout.deviceValuesReason ?? 'ค่าเฉพาะเครื่องจาก Rollout',
+          status: 'approved',
+          overriddenBy: rollout.createdBy,
+          overriddenAt: rollout.createdAt,
+          decidedBy: rollout.approvedBy,
+          decidedAt: rollout.approvedAt,
+        },
+      });
+      persisted.push({
+        deviceId: target.deviceId,
+        fieldNames: Object.keys(proposed).sort(),
+      });
+    }
+    return persisted;
+  }
+
+  /**
+   * `GET /campaigns/{campaignId}/rollouts/device-values?configId=` (docs/17
+   * ข้อ 3.5/3.6) — อ่านอย่างเดียว ให้หน้าสร้าง Rollout รู้ว่าเครื่องไหนมี
+   * "ค่าพิเศษเดิม" ให้ผู้ใช้ยืนยันทีละเครื่อง และเครื่องไหนแก้ไม่ได้เพราะ
+   * ช่างมีคำขอค้าง
+   *
+   * คืนเฉพาะเครื่องในกลุ่มที่เข้ากับ Config (โมเดล/โปรโตคอลตรง) และมีอย่างใด
+   * อย่างหนึ่ง: มีค่าพิเศษเดิม (override `approved` ล่าสุดของเครื่อง
+   * **ไม่สนว่าผูกกับ Config ตัวไหน**) หรือมีคำขอของช่าง `pending` ของ
+   * (เครื่อง, Config นี้) · field ของค่าพิเศษเดิมที่ Config ใหม่ไม่รองรับ
+   * ถูกแยกไปที่ `dropped` พร้อมเหตุผล ไม่ปนใน `fields` · backend **ไม่เติม
+   * ค่าให้เอง** ผู้ใช้ต้องเลือกแล้วส่งกลับมาใน `deviceValues`
+   */
+  async getDeviceValues(
+    campaignId: string,
+    configId: string,
+  ): Promise<RolloutDeviceValuesItem[]> {
+    const campaign = await this.prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { id: true },
+    });
+    if (!campaign) {
+      throw new NotFoundException(`ไม่พบ Campaign id ${campaignId}`);
+    }
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+      select: { id: true, deviceModel: true, protocol: true, fields: true },
+    });
+    if (!config) {
+      throw new NotFoundException(`ไม่พบ Config id ${configId}`);
+    }
+    const templateFieldNames = new Set(
+      Object.keys((config.fields ?? {}) as Record<string, unknown>),
+    );
+
+    const members = await this.prisma.campaignTarget.findMany({
+      where: { campaignId },
+      select: { deviceId: true },
+    });
+    const devices = await this.prisma.device.findMany({
+      where: { deviceId: { in: members.map((m) => m.deviceId) } },
+      select: {
+        deviceId: true,
+        deviceModel: true,
+        protocol: true,
+        status: true,
+      },
+    });
+    // เฉพาะเครื่องที่เข้า Rollout ได้จริง (installed) — create() เอาแค่เครื่อง
+    // เหล่านี้ ถ้าหน้าเว็บให้เลือกเครื่องที่ยัง registered แล้วส่งมาจะได้ 400
+    const deviceIds = devices
+      .filter(
+        (d) =>
+          d.status === TARGETABLE_DEVICE_STATUS &&
+          d.deviceModel === config.deviceModel &&
+          d.protocol === config.protocol,
+      )
+      .map((d) => d.deviceId);
+    if (deviceIds.length === 0) return [];
+
+    const [approvedRows, pendingRows, defs] = await Promise.all([
+      this.prisma.deviceConfigOverride.findMany({
+        where: { deviceId: { in: deviceIds }, status: 'approved' },
+        orderBy: { versionNumber: 'desc' },
+      }),
+      this.prisma.deviceConfigOverride.findMany({
+        where: { deviceId: { in: deviceIds }, configId, status: 'pending' },
+        select: { deviceId: true },
+      }),
+      this.prisma.configFieldDefinition.findMany({
+        include: { supportedModels: true },
+      }),
+    ]);
+
+    const latestByDevice = new Map<string, (typeof approvedRows)[number]>();
+    for (const row of approvedRows) {
+      if (!latestByDevice.has(row.deviceId)) {
+        latestByDevice.set(row.deviceId, row);
+      }
+    }
+    const pendingDevices = new Set(pendingRows.map((p) => p.deviceId));
+    const defByName = new Map(defs.map((d) => [d.fieldName, d]));
+    // ใช้ได้ถ้ารุ่นรองรับ หรืออยู่ใน template ของ Config นี้ (นอกชุดของรุ่นที่
+    // template ใส่ไว้ — กฎเดียวกับ validateOperationOverridableFields)
+    const supports = (fieldName: string): boolean => {
+      const def = defByName.get(fieldName);
+      if (!def) return false;
+      return (
+        templateFieldNames.has(fieldName) ||
+        def.supportedModels.some(
+          (m) =>
+            m.deviceModel === config.deviceModel &&
+            m.protocol === config.protocol,
+        )
+      );
+    };
+
+    const items: RolloutDeviceValuesItem[] = [];
+    for (const deviceId of deviceIds) {
+      const row = latestByDevice.get(deviceId);
+      const hasPendingRequest = pendingDevices.has(deviceId);
+      if (!row && !hasPendingRequest) continue;
+
+      let previous: RolloutDeviceValuesItem['previous'] = null;
+      if (row) {
+        const carried: Record<string, unknown> = {};
+        const dropped: { fieldName: string; reason: string }[] = [];
+        for (const [fieldName, value] of Object.entries(
+          row.fields as Record<string, unknown>,
+        )) {
+          if (supports(fieldName)) {
+            carried[fieldName] = value;
+          } else {
+            dropped.push({
+              fieldName,
+              reason: defByName.has(fieldName)
+                ? 'ไม่รองรับโมเดล/โปรโตคอลของ Config นี้'
+                : 'ไม่มีนิยามในคลัง Parameter',
+            });
+          }
+        }
+        previous = {
+          fields: carried,
+          dropped,
+          fromConfigId: row.configId,
+          overriddenBy: row.overriddenBy,
+          overriddenAt: row.overriddenAt,
+          versionNumber: row.versionNumber,
+        };
+      }
+      items.push({ deviceId, hasPendingRequest, previous });
+    }
+    return items;
   }
 
   /**

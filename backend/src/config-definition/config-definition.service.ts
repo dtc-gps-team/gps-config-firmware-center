@@ -439,4 +439,86 @@ export class ConfigDefinitionService {
       });
     }
   }
+
+  /** คลัง Parameter ทั้งก้อนพร้อมรุ่นที่รองรับ — ให้ผู้เรียกที่ตรวจหลายเครื่อง
+   * โหลดครั้งเดียว (`validateOperationOverridableFields`) */
+  loadFieldDefinitions(): Promise<ConfigFieldDefinitionWithSupport[]> {
+    return this.prisma.configFieldDefinition.findMany({
+      include: { supportedModels: true },
+    });
+  }
+
+  /**
+   * ตรวจ `fields` ค่าเฉพาะเครื่องที่ **Operation** เสนอตอนสร้าง Rollout
+   * (docs/17 ข้อ 3.4 ทางเลือก ข — มติ B 13 ต.ค. 2569) เทียบคลัง Parameter
+   *
+   * **ต่างจาก `validateOverridableFields()` ของช่างที่จุดเดียว:** ไม่เช็ค
+   * `stOverridable` — Operation แก้ได้ทุก field ที่โมเดล/โปรโตคอลนั้นรองรับ
+   * (ธง `stOverridable` ตั้งไว้สำหรับช่างหน้างานเท่านั้น) · ที่เหลือเหมือน
+   * กัน: ต้องมีนิยามในคลัง, รองรับโมเดล/โปรโตคอล, ชนิดข้อมูลถูก, อยู่ใน
+   * `allowedValues` · เป็น partial update จึงไม่เช็ค required
+   *
+   * แยกเป็นฟังก์ชันใหม่ ไม่แก้ `validateOverridableFields()` ที่ช่างใช้อยู่
+   * ตามที่ตกลงใน docs/17 (กันคนอ่านทีหลังสับสนว่าเป็นตัวเดียวกับของช่าง)
+   *
+   * field ต้องรองรับรุ่นนี้ **หรือ** อยู่ใน Config template ที่ใช้สร้าง Rollout
+   * (`templateFieldNames`) — กฎเดียวกับ `validateOverridableFields()` ของช่าง
+   * Config template มี field นอกชุดของรุ่นได้ตั้งแต่ผ่อนกฎใน `validateFields()`
+   * (รีวิวพี่เลี้ยง 12 ต.ค. 2569) ถ้าไม่รับ field ของ template ที่ Operation
+   * เห็นอยู่ในหน้า Config จะตั้งค่าเฉพาะเครื่องให้ field นั้นไม่ได้ · เพิ่ม field
+   * นอกชุดที่ template ไม่มีเองไม่ได้ (การเพิ่มเป็นสิทธิ์ของผู้สร้าง template)
+   *
+   * คืนรายการ error ต่อ field (ไม่ throw) ให้ผู้เรียกที่ตรวจหลายเครื่อง
+   * รวมข้อความพร้อมชื่อเครื่องเอง
+   */
+  async validateOperationOverridableFields(
+    deviceModel: string,
+    protocol: string,
+    fields: Record<string, unknown>,
+    templateFieldNames: readonly string[] = [],
+    // ผู้เรียกที่ตรวจหลายเครื่องโหลดคลังครั้งเดียวด้วย `loadFieldDefinitions()`
+    // แล้วส่งมาที่นี่ (ไม่ส่ง = โหลดเอง) กัน query คลังซ้ำต่อเครื่อง
+    preloadedDefinitions?: ConfigFieldDefinitionWithSupport[],
+  ): Promise<string[]> {
+    const inTemplate = new Set(templateFieldNames);
+    const defs = preloadedDefinitions ?? (await this.loadFieldDefinitions());
+    const defByName = new Map(defs.map((d) => [d.fieldName, d]));
+    const errors: string[] = [];
+
+    for (const [name, value] of Object.entries(fields)) {
+      const def = defByName.get(name);
+      if (!def) {
+        errors.push(
+          `ไม่รู้จัก field "${name}" ต้องสร้างนิยามในคลัง Parameter ก่อน`,
+        );
+        continue;
+      }
+
+      const supportsModel = def.supportedModels.some(
+        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+      );
+      if (!supportsModel && !inTemplate.has(name)) {
+        errors.push(
+          `field "${name}" ไม่รองรับโมเดล ${deviceModel}/${protocol}`,
+        );
+        continue;
+      }
+
+      if (!matchesDataType(value, def.dataType)) {
+        errors.push(`field "${name}" ต้องเป็นชนิดข้อมูล ${def.dataType}`);
+        continue;
+      }
+
+      if (
+        def.allowedValues.length > 0 &&
+        !def.allowedValues.includes(String(value))
+      ) {
+        errors.push(
+          `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
+        );
+      }
+    }
+
+    return errors;
+  }
 }

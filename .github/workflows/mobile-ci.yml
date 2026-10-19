@@ -38,5 +38,10 @@ jobs:
       - name: Format check
         run: dart format --output=none --set-exit-if-changed .
 
-      - name: Test
+      # แอป default เป็น mock (CLAUDE.md Mock Mode Pattern) รันทั้งสองโหมด —
+      # เทสเฉพาะโหมดจริงถูก skip ในรอบแรกและรันในรอบที่สอง
+      - name: Test (mock mode — default)
         run: flutter test
+
+      - name: Test (real mode — API_MOCK_MODE=false)
+        run: flutter test --dart-define=API_MOCK_MODE=false

@@ -1,8 +1,9 @@
 /// Compile-time configuration, injected via `--dart-define`.
 ///
-/// Example (mock auth, no backend needed):
+/// Defaults to mock mode (CLAUDE.md "Mock Mode Pattern": default ต้องเป็น mock
+/// เสมอ). To call a real backend, opt in explicitly:
 /// ```
-/// flutter run --dart-define=API_MOCK_MODE=true
+/// flutter run --dart-define=API_MOCK_MODE=false --dart-define=API_BASE_URL=http://10.0.2.2:3001/api/v1
 /// ```
 class AppConfig {
   const AppConfig._();
@@ -11,7 +12,7 @@ class AppConfig {
   /// Lets the team build UI while `[A]` finishes the real auth service.
   static const bool apiMockMode = bool.fromEnvironment(
     'API_MOCK_MODE',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   /// Base URL of the GPS Config & Firmware Center API (`openapi.yaml` `servers`).

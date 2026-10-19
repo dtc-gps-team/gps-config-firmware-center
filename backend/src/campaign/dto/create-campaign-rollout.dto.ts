@@ -1,20 +1,40 @@
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayUnique,
   IsArray,
   IsEnum,
   IsInt,
+  IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { CampaignPayloadType } from '@prisma/client';
 import {
   MAX_APPLY_TIMEOUT_MINUTES,
   MAX_PULL_TIMEOUT_HOURS,
 } from '../campaign-rollout-status';
+
+/** จำนวนเครื่องที่มีค่าเฉพาะเครื่องได้ต่อ Rollout (docs/17 ข้อ 5) */
+export const MAX_DEVICE_VALUES_PER_ROLLOUT = 200;
+
+/** ค่าเฉพาะเครื่อง 1 เครื่อง — `fields` คือค่าสุดท้ายที่เลือกแล้ว (รวมค่า
+ * พิเศษเดิมที่ผู้ใช้ยืนยันให้ใช้ต่อ) backend ไม่เติมค่าให้เอง */
+export class RolloutDeviceValueDto {
+  @IsString()
+  @IsNotEmpty()
+  deviceId!: string;
+
+  @IsObject()
+  fields!: Record<string, unknown>;
+}
 
 /**
  * Body ของ `POST /campaigns/{id}/rollouts` — เลือก Config หรือ Firmware มา
@@ -65,4 +85,27 @@ export class CreateCampaignRolloutDto {
   @Min(1)
   @Max(MAX_APPLY_TIMEOUT_MINUTES)
   applyTimeoutMinutes?: number;
+
+  /** ค่าเฉพาะเครื่องตอนเริ่ม Rollout (docs/17) — ใช้ได้เฉพาะ
+   * payloadType=Config เก็บไว้ที่ target ยังไม่มีผลกับเครื่อง จนกว่า
+   * Rollout จะถูกปล่อย (`release()`) */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_DEVICE_VALUES_PER_ROLLOUT)
+  @ValidateNested({ each: true })
+  @Type(() => RolloutDeviceValueDto)
+  deviceValues?: RolloutDeviceValueDto[];
+
+  /** เหตุผลของค่าเฉพาะเครื่องทั้งรอบ — บังคับเมื่อมี `deviceValues` */
+  @ValidateIf(
+    (dto: CreateCampaignRolloutDto) =>
+      dto.deviceValues !== undefined && dto.deviceValues.length > 0,
+  )
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  deviceValuesReason?: string;
 }

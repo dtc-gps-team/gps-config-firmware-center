@@ -44,6 +44,7 @@ const sampleRollout: CampaignRollout = {
   applyTimeoutMinutes: null,
   isRollback: false,
   rollbackOfId: null,
+  deviceValuesReason: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -54,6 +55,7 @@ const sampleRolloutTarget: CampaignRolloutTarget = {
   deviceId: 'DEV-0001',
   status: 'pending',
   resultDetail: null,
+  proposedFields: null,
   pulledAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -141,10 +143,14 @@ describe('CampaignRolloutController', () => {
   it('GET /campaigns/:campaignId/rollouts/:id/targets -> service.findTargets', async () => {
     service.findTargets.mockResolvedValue([sampleRolloutTarget]);
 
-    const result = await controller.findTargets(sampleRollout.id);
+    const result = await controller.findTargets(sampleRollout.id, opReq);
 
     expect(result).toEqual([sampleRolloutTarget]);
-    expect(service.findTargets).toHaveBeenCalledWith(sampleRollout.id);
+    // ส่งผู้เรียกไปด้วย — service ใช้ role ตัดสินว่าเห็นค่า sensitive จริงไหม
+    expect(service.findTargets).toHaveBeenCalledWith(
+      sampleRollout.id,
+      expect.objectContaining({ id: 'op-1', role: 'Operation' }),
+    );
   });
 
   it('POST .../approve -> service.approve พร้อม actor จาก JWT', async () => {

@@ -190,6 +190,8 @@ void main() {
       // task_events, user_version 2.
       final fresh = AppDatabase.forTesting(NativeDatabase(file));
       await fresh.customStatement('DROP TABLE task_events');
+      // tasks.cached_at มาใน v4 (UX audit #14) — v2 ยังไม่มีคอลัมน์นี้
+      await fresh.customStatement('ALTER TABLE tasks DROP COLUMN cached_at');
       await fresh.customStatement(
         "INSERT INTO tasks (id, title, assigned_to, status, created_at, "
         "updated_at) VALUES ('t1', 'งานเก่า', 'u1', 'pending', 0, 0)",
@@ -212,7 +214,38 @@ void main() {
       final version = await upgraded
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.data.values.single, 3);
+      // อัปเกรดต่อจนถึง version ล่าสุดเสมอ (v3 -> v4 เพิ่ม tasks.cached_at)
+      expect(version.data.values.single, upgraded.schemaVersion);
+    },
+  );
+
+  test(
+    'migration v3 -> v4: เพิ่ม tasks.cached_at (nullable) ข้อมูลเดิมอยู่ครบ',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('task_cache_mig');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/app.db');
+
+      // v3 บนเครื่อง: มี task_events แล้ว แต่ tasks ยังไม่มี cached_at
+      final fresh = AppDatabase.forTesting(NativeDatabase(file));
+      await fresh.customStatement('ALTER TABLE tasks DROP COLUMN cached_at');
+      await fresh.customStatement(
+        "INSERT INTO tasks (id, title, assigned_to, status, created_at, "
+        "updated_at) VALUES ('t1', 'งานก่อนอัปเกรด', 'u1', 'pending', 0, 0)",
+      );
+      await fresh.customStatement('PRAGMA user_version = 3');
+      await fresh.close();
+
+      final upgraded = AppDatabase.forTesting(NativeDatabase(file));
+      addTearDown(upgraded.close);
+
+      final row = await upgraded.taskDao.getTaskById('t1');
+      expect(row?.title, 'งานก่อนอัปเกรด');
+      expect(row?.cachedAt, isNull); // แถวเก่า: ไม่รู้ว่า cache ไว้เมื่อไร
+      final version = await upgraded
+          .customSelect('PRAGMA user_version')
+          .getSingle();
+      expect(version.data.values.single, 4);
     },
   );
 }

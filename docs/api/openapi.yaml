@@ -2810,7 +2810,11 @@ paths:
         ทุกประการ (Config ต้อง `approved`/`synced` + deviceModel/protocol
         ตรงกับอุปกรณ์ทุกเครื่อง, Firmware ต้อง `uploadStatus: stored` +
         `approvalStatus: approved` + `deviceModel` อยู่ใน
-        `deviceModelCompatibility`)
+        `deviceModelCompatibility`) · **v3.58 (docs/17):** ใส่ `deviceValues`
+        ได้ (เฉพาะ Config) เพื่อตั้งค่าเฉพาะเครื่อง — 409 ถ้าเครื่องใดมีคำขอ
+        override ของช่าง `pending` ของ Config นี้ · field ต้องมีนิยามในคลัง
+        Parameter และรองรับโมเดล/โปรโตคอลของ Config **หรืออยู่ใน template ของ
+        Config นี้อยู่แล้ว** (field นอกชุดของรุ่นที่ผู้สร้าง template ใส่ไว้ — v3.58)
       parameters:
         - in: path
           name: id
@@ -2834,8 +2838,10 @@ paths:
         "400":
           description: >-
             validation ไม่ผ่าน (ไม่ระบุ configId/firmwareId ให้ตรงกับ
-            payloadType, excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในกลุ่ม, หรือ
-            เอาเครื่องออกจนไม่เหลือเป้าหมายเลย)
+            payloadType, excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในกลุ่ม, เอา
+            เครื่องออกจนไม่เหลือเป้าหมายเลย, หรือ `deviceValues` ไม่ผ่าน (ไม่ใช่
+            Config, เกิน 200 เครื่อง, ไม่มีเหตุผล, เครื่องไม่อยู่ใน Rollout/ซ้ำ,
+            field ไม่ผ่านคลัง Parameter — v3.58))
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -2847,6 +2853,51 @@ paths:
             กลุ่มนี้มี Rollout ที่ยังไม่จบค้างอยู่ หรือ Config/Firmware ยังไม่
             ผ่านเกณฑ์ หรืออุปกรณ์เป้าหมายบางเครื่องยังไม่ installed หรือ
             รุ่น/โปรโตคอลไม่ตรงกับ payload (รวมทุกปัญหาไว้ในข้อความเดียว)
+
+  /campaigns/{id}/rollouts/device-values:
+    get:
+      tags: [campaign]
+      operationId: getCampaignRolloutDeviceValues
+      summary: ค่าพิเศษเดิมของเครื่องในกลุ่มต่อ Config ที่จะใช้ — v3.58 (docs/17)
+      description: >-
+        **Operation เท่านั้น** (resource `campaign` action `Create` เพราะใช้ตอน
+        สร้าง Rollout) อ่านอย่างเดียว · คืนเฉพาะเครื่องในกลุ่มที่โมเดล/โปรโตคอล
+        ตรงกับ Config และมีอย่างใดอย่างหนึ่ง: ค่าพิเศษเดิม (override `approved`
+        ล่าสุดของเครื่อง **ไม่สนว่าผูกกับ Config ตัวไหน**) หรือคำขอ override
+        ของช่าง `pending` ของ (เครื่อง, Config นี้) · field ที่ Config ใหม่ใช้ไม่ได้
+        แยกไปที่ `dropped` พร้อมเหตุผล · backend **ไม่เติมค่าให้เอง** ผู้ใช้ต้อง
+        เลือกแล้วส่งกลับใน `deviceValues`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: configId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Config แม่แบบที่กำลังจะใช้สร้าง Rollout
+      responses:
+        "200":
+          description: รายการเครื่องที่มีค่าพิเศษเดิมหรือมีคำขอของช่างค้าง
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RolloutDeviceValuesItem"
+        "400":
+          description: ไม่ส่ง configId หรือไม่ใช่ uuid
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Create (ไม่ใช่ Operation)
+        "404":
+          description: ไม่พบกลุ่มนี้หรือไม่พบ Config
 
   /campaigns/{id}/rollouts/{rolloutId}:
     get:
@@ -2996,7 +3047,12 @@ paths:
         "404":
           description: ไม่พบ Rollout นี้
         "409":
-          description: สถานะ Rollout ปัจจุบันไม่ใช่ approved จึงปล่อยไม่ได้
+          description: >-
+            สถานะ Rollout ปัจจุบันไม่ใช่ approved จึงปล่อยไม่ได้ หรือ (v3.58,
+            docs/17 §5) Rollout นี้มีค่าเฉพาะเครื่องแต่ช่างขอ override ของ
+            (เครื่อง, Config นี้) ค้าง `pending` อยู่ระหว่างรออนุมัติ/ปล่อย —
+            ข้อความระบุเครื่อง ไม่สร้างค่าเฉพาะเครื่องใดๆ และ Rollout ยังเป็น
+            `approved` ปล่อยใหม่ได้หลัง Operation ตัดสินคำขอของช่างแล้ว
 
   /campaigns/{id}/rollouts/{rolloutId}/reject:
     post:
@@ -3774,6 +3830,12 @@ components:
             (v3.37, Incident & Rollback #28) — payload คัดลอกมาจากรอบก่อนหน้า
             ที่ `completed` ล่าสุดของ payloadType เดียวกันโดยระบบเอง ไม่ใช่
             จาก request ตรงๆ
+        deviceValuesReason:
+          type: string
+          nullable: true
+          description: >-
+            (v3.58, docs/17) เหตุผลของค่าเฉพาะเครื่องทั้งรอบ — null = Rollout นี้
+            ไม่มีค่าเฉพาะเครื่อง
         rollbackOfId:
           type: string
           format: uuid
@@ -3832,6 +3894,88 @@ components:
             เครื่องดึงงานไป เกินแล้วนับเป็น `failed` (นับเข้า Auto Pause และ
             Incident ระดับ `critical`) · ไม่ส่ง = 30 · ใช้กับ Rollout โหมด
             `real` เท่านั้น
+        deviceValues:
+          type: array
+          maxItems: 200
+          description: >-
+            (v3.58, docs/17) ค่าเฉพาะเครื่องที่ Operation เสนอตอนสร้าง Rollout
+            ใช้ได้เฉพาะ `payloadType: Config` · เก็บไว้ที่ target (`proposedFields`)
+            ยังไม่มีผลกับเครื่อง จนกว่า Rollout จะถูกปล่อย (`releaseCampaignRollout`)
+            แล้วถูกบันทึกเป็น `DeviceConfigOverride` สถานะ `approved` · แต่ละ
+            รายการคือ **ค่าสุดท้ายที่เลือกแล้ว** (รวมค่าพิเศษเดิมที่ผู้ใช้ยืนยัน
+            ให้ใช้ต่อ) backend ไม่เติมค่าให้เอง · `deviceId` ต้องอยู่ใน Rollout
+            นี้จริง ไม่ซ้ำ และ field ต้องมีนิยามในคลัง Parameter รองรับโมเดล/
+            โปรโตคอลของ Config ชนิดข้อมูลถูกและอยู่ใน `allowedValues`
+          items:
+            $ref: "#/components/schemas/RolloutDeviceValue"
+        deviceValuesReason:
+          type: string
+          maxLength: 1000
+          description: >-
+            (v3.58) เหตุผลของค่าเฉพาะเครื่องทั้งรอบ **บังคับเมื่อมี
+            `deviceValues`** (หนึ่งเหตุผลต่อทั้ง Rollout) ถูกคัดลอกเป็น `reason`
+            ของ `DeviceConfigOverride` ตอนปล่อย
+
+    RolloutDeviceValue:
+      type: object
+      required: [deviceId, fields]
+      description: ค่าเฉพาะเครื่อง 1 เครื่องใน `CampaignRolloutCreateRequest.deviceValues`
+      properties:
+        deviceId:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+          minProperties: 1
+          description: ชื่อ field เป็น key ค่าที่ตั้งเป็น value (ชนิดตามคลัง Parameter)
+
+    RolloutDeviceValuesItem:
+      type: object
+      required: [deviceId, hasPendingRequest, previous]
+      description: >-
+        1 เครื่องใน response ของ `getCampaignRolloutDeviceValues` (v3.58) —
+        คืนเฉพาะเครื่องที่มีค่าพิเศษเดิมหรือมีคำขอของช่างค้าง
+      properties:
+        deviceId:
+          type: string
+        hasPendingRequest:
+          type: boolean
+          description: >-
+            มีคำขอ override ของช่าง `pending` ของ (เครื่อง, Config นี้) — ตั้งค่า
+            เฉพาะเครื่องของเครื่องนี้ไม่ได้ (409) จนกว่า Operation จะตัดสินใจคำขอนั้น
+        previous:
+          type: object
+          nullable: true
+          description: ค่าพิเศษเดิม (override `approved` ล่าสุดของเครื่อง ไม่สนว่าผูก Config ตัวไหน)
+          required:
+            [fields, dropped, fromConfigId, overriddenBy, overriddenAt, versionNumber]
+          properties:
+            fields:
+              type: object
+              additionalProperties: true
+              description: ค่าที่ใช้ต่อกับ Config ใหม่ได้
+            dropped:
+              type: array
+              description: field ที่ Config ใหม่ใช้ไม่ได้ (ถูกตัดทิ้ง) พร้อมเหตุผล
+              items:
+                type: object
+                required: [fieldName, reason]
+                properties:
+                  fieldName:
+                    type: string
+                  reason:
+                    type: string
+            fromConfigId:
+              type: string
+              format: uuid
+            overriddenBy:
+              type: string
+              description: user id ของผู้ตั้งค่า (ช่างหรือ Operation) — เว็บ resolve ชื่อเอง
+            overriddenAt:
+              type: string
+              format: date-time
+            versionNumber:
+              type: integer
 
     CampaignRollbackCreateRequest:
       type: object
@@ -3884,6 +4028,14 @@ components:
           type: string
           nullable: true
           description: รายละเอียดผล (จาก `ConfigApplyResult.details` หรือข้อความยืนยันติดตั้ง Firmware)
+        proposedFields:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >-
+            (v3.58, docs/17) ค่าเฉพาะเครื่องที่เสนอไว้ตอนสร้าง Rollout (ยังไม่มีผล
+            กับเครื่องจนกว่าจะปล่อย) · null = ไม่มีค่าเฉพาะเครื่อง · ค่าของ field
+            ที่ `sensitive` คืนค่าจริงเฉพาะ Operation role อื่นเห็นเป็น `********`
         pulledAt:
           type: string
           format: date-time

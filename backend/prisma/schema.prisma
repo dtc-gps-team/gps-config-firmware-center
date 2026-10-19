@@ -1128,6 +1128,12 @@ model CampaignRollout {
   // relation รองรับ chain ยาวเท่าไหร่ก็ได้) แค่ไม่คาดว่าจะเกิดบ่อยในทางปฏิบัติ
   isRollback   Boolean               @default(false)
   rollbackOfId String?
+  // เหตุผลของค่าเฉพาะเครื่องทั้งรอบ (docs/17 ข้อ 3.3) — Operation กรอกตอนสร้าง
+  // Rollout พร้อม `CampaignRolloutTarget.proposedFields` เก็บไว้ตรงนี้เพราะ
+  // ต้องคงอยู่ข้ามช่วงรออนุมัติ/ปล่อย แล้วถูกคัดลอกเป็น `reason` ของ
+  // `DeviceConfigOverride` ตอน release() · null = Rollout นี้ไม่มีค่าเฉพาะ
+  // เครื่อง · เป็นคอลัมน์ของโปรเจกต์เอง ไม่มีใน Data Dictionary
+  deviceValuesReason String?
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
@@ -1163,6 +1169,12 @@ model CampaignRolloutTarget {
   deviceId     String
   status       CampaignRolloutTargetStatus @default(pending)
   resultDetail String?
+  // ค่าเฉพาะเครื่องที่ Operation เสนอไว้ตอนสร้าง Rollout (docs/17 ข้อ 3.2) —
+  // ยังไม่มีผลกับเครื่อง เป็นค่าสุดท้ายที่เลือกแล้ว (รวมค่าพิเศษเดิมที่ยืนยัน
+  // ให้ใช้ต่อ) บันทึกเป็น DeviceConfigOverride (status approved) ตอน release()
+  // เท่านั้น · แก้ไม่ได้หลังสร้าง (ไม่มี endpoint แก้) · null = ไม่มีค่า
+  // เฉพาะเครื่อง · เป็นคอลัมน์ของโปรเจกต์เอง ไม่มีใน Data Dictionary
+  proposedFields Json?
   // เวลาที่อุปกรณ์ดึงงานนี้ไปครั้งแรก (`GET /device-sync/{deviceId}/jobs`,
   // docs/19 §4.1) แยก "ยังไม่มาดึง" (null) ออกจาก "ดึงแล้วรอผล" (มีค่า) ·
   // Rollback ใช้เลือกเครื่องที่ต้องส่ง Config เก่าคืน (ดึงไปแล้วแต่ยังไม่
