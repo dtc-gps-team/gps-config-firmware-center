@@ -10,9 +10,10 @@ import {
 /**
  * Status pill — className helper สำหรับ badge สถานะ (Config / Task / Device ฯลฯ)
  *
- * signal color ของ status **แยกจาก** theme token ใน globals.css โดยตั้งใจ —
- * ไม่ผูกกับ --primary/--accent (สีเตือนต้องคงที่ข้าม theme) ใช้ Tailwind
- * default palette ตรง ๆ
+ * สีมาจาก semantic token ใน globals.css (`--success`/`--warning`/`--info`/
+ * `--danger-*`, UI ปรับใหม่ 2026-10) — ไม่ผูกกับ --primary/--accent (สีเตือน
+ * ต้องคงที่ข้าม theme) เดิมใช้ Tailwind palette ตรงๆ (`bg-amber-100` ฯลฯ)
+ * แล้วหน้าอื่นก็เขียนสีเองตาม ทำให้โทนเพี้ยนกันไปแต่ละหน้า
  *
  * เดิมอยู่ใน `demo-data.ts` — ย้ายออกมาเพราะไม่ใช่ข้อมูล demo แต่เป็น UI helper
  * ที่หน้าจริง (ต่อ API แล้ว) ก็ใช้ · `demo-data.ts` re-export ต่อให้หน้าที่ยัง
@@ -22,12 +23,11 @@ import {
 export type PillTone = "neutral" | "info" | "progress" | "success" | "danger";
 
 const PILL_TONE: Record<PillTone, string> = {
-  neutral: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-  info: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  progress: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  success:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  danger: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  neutral: "bg-secondary text-secondary-foreground/80",
+  info: "bg-info-subtle text-info-foreground",
+  progress: "bg-warning-subtle text-warning-foreground",
+  success: "bg-success-subtle text-success-foreground",
+  danger: "bg-danger-subtle text-danger-foreground",
 };
 
 export function pillClass(tone: PillTone): string {
@@ -273,23 +273,23 @@ export const INCIDENT_SEVERITY_TONE: Record<string, PillTone> = {
  * สีต่อประเภทให้สแกนสายตาเร็วเวลามีหลายประเภทปนกันในลิสต์เดียว ของจริงเดิม
  * ทุกการ์ดหน้าตาเหมือนกันหมดไม่มีแยก — **คนละชุดสีกับ `PillTone`
  * โดยตั้งใจ** เพราะ PillTone สื่อ "สถานะ" (success/danger/...) แต่อันนี้สื่อ
- * "ประเภท" ซึ่งไม่มีความหมายดี/แย่ในตัวเอง ใช้สีจาก `--chart-*` tokens เดิม
- * ใน globals.css (ไม่คิดชุดสีใหม่แยก)
+ * "ประเภท" ซึ่งไม่มีความหมายดี/แย่ในตัวเอง
+ *
+ * **แก้ 2026-10 (UI ปรับใหม่): ทุกประเภทใช้สีเทาเดียวกันแล้ว** เดิมแต่ละ
+ * ประเภทมีสีของตัวเอง (เขียวอมฟ้า/ฟ้า/ม่วง/ส้ม) พอปนกับป้ายสถานะที่มีสีของ
+ * มันเองด้วย หน้าเลยมีสีเยอะเกินความหมายที่ต้องสื่อ ข้อความบนป้ายบอกประเภท
+ * อยู่แล้ว สีสงวนไว้ให้สถานะเท่านั้น · ยังเก็บเป็นตารางต่อประเภทไว้ เผื่อ
+ * ต้องแยกกลับในอนาคตจะแก้ที่เดียว
  */
+const NEUTRAL_TAG = "bg-secondary text-secondary-foreground/80";
+
 const ENTITY_TYPE_TAG_CLASS: Record<string, string> = {
-  Config:
-    "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
-  Firmware:
-    "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  Campaign:
-    "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  Override:
-    "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  // แยก Override 2 ชนิดในคิวอนุมัติให้ดูออกทันที (เดิมใช้ป้าย "Override" ร่วมกัน)
-  "Config Override":
-    "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  "Firmware Override":
-    "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
+  Config: NEUTRAL_TAG,
+  Firmware: NEUTRAL_TAG,
+  Campaign: NEUTRAL_TAG,
+  Override: NEUTRAL_TAG,
+  "Config Override": NEUTRAL_TAG,
+  "Firmware Override": NEUTRAL_TAG,
 };
 
 export function EntityTypeTag({
@@ -317,7 +317,7 @@ export function EntityTypeTag({
  */
 export function StalePendingBadge({ label }: { label: string }) {
   return (
-    <span className="inline-flex animate-device-glow items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+    <span className="inline-flex animate-device-glow items-center rounded-full bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning-foreground">
       {label}
     </span>
   );

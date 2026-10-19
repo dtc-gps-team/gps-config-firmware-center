@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { DashboardSummary } from "./dashboard-summary";
 import { DashboardPendingApprovals } from "./dashboard-pending-approvals";
 import { DashboardConfigStatusChart } from "./dashboard-config-status-chart";
@@ -27,14 +28,7 @@ export const metadata = {
 export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          ภาพรวมระบบ ทุก Role เข้าถึงได้ และ Operation อนุมัติรายการด้านล่างได้
-          โดยตรงจากหน้านี้
-        </p>
-        <DashboardLoadedAt />
-      </div>
+      <PageHeader title="Dashboard" actions={<DashboardLoadedAt />} />
 
       <DashboardPendingApprovals />
       <DashboardSummary />

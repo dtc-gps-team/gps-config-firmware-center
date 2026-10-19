@@ -35,6 +35,8 @@ import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-conf
 import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { ApprovalCard } from "./approval-card";
 import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 import { DeviceConfigOverrideApprovalCard } from "./device-config-override-approval-card";
@@ -105,16 +107,18 @@ export function ApprovalCenterView() {
     !firmwareOverrideNotice;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Approval Center</h1>
-        <p className="text-sm text-muted-foreground">
-          คำขอทุกประเภทที่รอ Operation อนุมัติ แยกเป็นส่วนตามประเภทคำขอ{" "}
-          {canDecide
-            ? "คุณอนุมัติหรือปฏิเสธได้"
-            : "เฉพาะ Operation ที่อนุมัติหรือปฏิเสธได้ คุณดูได้อย่างเดียว"}
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Approval Center"
+        description="คำขอทุกประเภทที่รอ Operation อนุมัติ แยกเป็นส่วนตามประเภทคำขอ"
+      />
+      {/* คนที่ไม่ใช่ Operation เข้ามาดูได้ แต่ปุ่มอนุมัติ/ปฏิเสธจะไม่แสดง —
+       * บอกครั้งเดียวตรงนี้ให้รู้ว่าทำไมไม่มีปุ่ม (ไม่ใช่ระบบพัง) */}
+      {!canDecide && (
+        <Notice tone="neutral">
+          หน้านี้แสดงให้ดูอย่างเดียว การอนุมัติหรือปฏิเสธทำได้เฉพาะ Operation
+        </Notice>
+      )}
 
       {configQueueEmpty ? (
         <EmptyQueueRow title="Config รออนุมัติ" />
@@ -177,7 +181,7 @@ export function ApprovalCenterView() {
             )}
 
             {notice && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+              <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm text-success-foreground">
                 {notice}
               </div>
             )}
@@ -312,7 +316,7 @@ export function ApprovalCenterView() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {overrideNotice && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm text-success-foreground">
                   {overrideNotice}
                 </div>
               )}
@@ -381,7 +385,7 @@ export function ApprovalCenterView() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {firmwareOverrideNotice && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+                <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm text-success-foreground">
                   {firmwareOverrideNotice}
                 </div>
               )}

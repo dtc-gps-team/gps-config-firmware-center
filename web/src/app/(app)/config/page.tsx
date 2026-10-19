@@ -1,4 +1,3 @@
-import { PageHeader } from "@/components/page-header";
 import { ConfigTableCard } from "./config-table";
 
 export const metadata = {
@@ -18,13 +17,10 @@ export default async function ConfigPage({
   const { saved } = await searchParams;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Config Editor"
-        description="ร่าง ทดสอบ และส่ง Config ของแต่ละโมเดลให้ Operation อนุมัติ"
-      />
-
-      <ConfigTableCard justSavedId={saved ?? null} />
-    </div>
+    <ConfigTableCard
+      title="Config Editor"
+      description="ร่าง ทดสอบ และส่ง Config ของแต่ละโมเดลให้ Operation อนุมัติ คลิกแถวเพื่อดูรายละเอียด"
+      justSavedId={saved ?? null}
+    />
   );
 }

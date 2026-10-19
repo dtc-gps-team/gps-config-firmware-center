@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
@@ -8,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { Config } from "@/lib/config-api";
 import { useConfig } from "@/hooks/use-config";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
+import { PageHeader } from "@/components/page-header";
 import { ConfigWizard, type ConfigWizardMode } from "./config-wizard";
 
 type ViewProps =
@@ -34,15 +34,7 @@ export function ConfigWizardView(props: ViewProps) {
       allow={props.mode === "create" ? canCreateConfig : canUpdateConfig}
     >
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-2">
-          <Link
-            href="/config"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← กลับไปรายการ Config
-          </Link>
-          <h1 className="text-2xl font-semibold">{title}</h1>
-        </div>
+        <PageHeader title={title} breadcrumb={[{ label: title }]} />
 
         {props.mode === "edit" ? (
           <SourcedWizard

@@ -43,6 +43,7 @@ import { useDevice } from "@/hooks/use-device";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { rotateDeviceKey, type Device } from "@/lib/device-api";
+import { PageHeader } from "@/components/page-header";
 import { DeviceStatusCard } from "./device-status-card";
 
 export function DeviceDetailView({ deviceId }: { deviceId: string }) {
@@ -216,31 +217,21 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
 function DeviceDetailContent({ device }: { device: Device }) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href="/devices"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Device Search
-        </Link>
-        <div className="flex items-center gap-3">
-          <h1 className="font-mono text-2xl font-semibold">
-            {device.deviceId}
-          </h1>
-          <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
-            {statusLabel(device.status)}
-          </StatusPill>
-          {device.hardwareRevisionCode && (
-            <StatusPill tone="neutral">{device.hardwareRevisionCode}</StatusPill>
-          )}
-          <div className="ml-auto">
-            <RotateKeyControl deviceId={device.deviceId} />
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          ทุก Role เข้าถึงได้ (Read-only)
-        </p>
-      </div>
+      <PageHeader
+        title={<span className="font-mono">{device.deviceId}</span>}
+        breadcrumb={[{ label: device.deviceId }]}
+        status={
+          <>
+            <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
+              {statusLabel(device.status)}
+            </StatusPill>
+            {device.hardwareRevisionCode && (
+              <StatusPill tone="neutral">{device.hardwareRevisionCode}</StatusPill>
+            )}
+          </>
+        }
+        actions={<RotateKeyControl deviceId={device.deviceId} />}
+      />
 
       {/* สถานะไว้บนสุด — คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
        * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}

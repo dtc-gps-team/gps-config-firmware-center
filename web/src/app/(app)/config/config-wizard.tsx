@@ -767,7 +767,7 @@ function ErrorBanner({
  * template รู้ตัวว่าไม่ใช่ชุดปกติของโมเดล) */
 function OutsideSetBadge() {
   return (
-    <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 text-[0.65rem] whitespace-nowrap text-amber-700 dark:text-amber-400">
+    <span className="shrink-0 rounded-full border border-warning/30 bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
       นอกชุดของโมเดลนี้
     </span>
   );

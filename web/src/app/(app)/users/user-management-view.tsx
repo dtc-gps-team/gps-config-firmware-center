@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { UsersIcon } from "lucide-react";
+import { UsersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
@@ -10,11 +10,7 @@ import { type ManagedUser } from "@/lib/users-api";
 import { useManagedUsers } from "@/hooks/use-users";
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +25,8 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { UserRowActions } from "./user-row-actions";
 import { CreateUserForm } from "./create-user-form";
 
@@ -117,37 +115,32 @@ export function UserManagementView() {
 
   return (
     <RoleGuard allow={canAccessUserManagement}>
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold">User / Role Management</h1>
-          <p className="text-sm text-muted-foreground">
-            จัดการได้แค่บัญชีทั่วไป ไม่รวม Admin/SuperAdmin
-          </p>
-        </div>
-
-        <Card>
-          {justCreated && (
-            <div className="mx-6 -mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-              เพิ่มผู้ใช้ &ldquo;{justCreated.username}&rdquo; แล้ว role{" "}
-              <strong>{justCreated.role}</strong>
-            </div>
-          )}
-          <CardHeader>
-            <CardTitle>รายชื่อผู้ใช้</CardTitle>
-            <CardDescription>บัญชีทั่วไปทั้งหมด (รวมที่ปิดใช้งาน)</CardDescription>
-            <CardAction className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void refetch()}
-              >
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          title="User Management"
+          description="จัดการบัญชีผู้ใช้ทั่วไป กำหนด Role และเปิดหรือปิดการใช้งาน บัญชี Admin และ SuperAdmin ไม่อยู่ในรายการนี้"
+          actions={
+            <>
+              <Button variant="outline" onClick={() => void refetch()}>
+                <RefreshCwIcon />
                 รีเฟรช
               </Button>
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                + เพิ่มผู้ใช้
+              <Button onClick={() => setDialogOpen(true)}>
+                <PlusIcon />
+                เพิ่มผู้ใช้
               </Button>
-            </CardAction>
-          </CardHeader>
+            </>
+          }
+        />
+
+        {justCreated && (
+          <Notice tone="success">
+            เพิ่มผู้ใช้ &ldquo;{justCreated.username}&rdquo; แล้ว role{" "}
+            <strong>{justCreated.role}</strong>
+          </Notice>
+        )}
+
+        <Card>
           <CardContent>
             {isLoading && data === null ? (
               <TableSkeleton columns={columns.length} />
@@ -168,7 +161,8 @@ export function UserManagementView() {
                 message="ยังไม่มีผู้ใช้ในระบบ"
                 action={
                   <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    + เพิ่มผู้ใช้
+                    <PlusIcon />
+                    เพิ่มผู้ใช้
                   </Button>
                 }
               />

@@ -4,6 +4,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ขนาดตัวอักษรเล็กสองระดับ ขยายขึ้น 1px จากค่าเริ่มต้นของ Tailwind (2026-10-16)
+ * — Anuphan ตัวไทยเล็กกว่าและเส้นบางกว่า Noto ที่ขนาดเท่ากัน ข้อความรอง
+ * (12px) กับเนื้อหาตาราง (14px) เลยอ่านยาก ปรับที่ token ทีเดียวทุกหน้าได้ผล
+ * line-height ตั้งให้สูงพอสำหรับสระบน/ล่างของไทย */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1.25 / 0.8125);
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: calc(1.5 / 0.9375);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -145,7 +156,7 @@
   --secondary: oklch(0.957 0.006 255.5); /* #EEF1F5 */
   --secondary-foreground: oklch(0.267 0.028 248.9);
   --muted: oklch(0.957 0.006 255.5);
-  --muted-foreground: oklch(0.542 0.028 259.8); /* #667080 */
+  --muted-foreground: oklch(0.49 0.028 259.8); /* ≈#5A6473 เข้มขึ้นจาก #667080 ตอนเปลี่ยนเป็น Anuphan ที่เส้นบางกว่า */
   --accent: oklch(0.961 0.011 243.7); /* #ECF3F9 pale blue — hover fills, selected rows */
   --accent-foreground: oklch(0.313 0.06 243.7); /* #12344D */
   --destructive: oklch(0.577 0.245 27.325);

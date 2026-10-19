@@ -4,15 +4,11 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { BoxIcon } from "lucide-react";
+import { BoxIcon, PlusIcon } from "lucide-react";
 
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
@@ -24,6 +20,7 @@ import { type Device } from "@/lib/device-api";
 import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 
 function textSort(a: Row<Device>, b: Row<Device>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(String(b.getValue(columnId)));
@@ -109,33 +106,21 @@ export function DeviceSearchView() {
   const devices = useMemo(() => data ?? [], [data]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Device Search</h1>
-        <p className="text-sm text-muted-foreground">
-          ทุก Role อ่านได้ · Admin/SuperAdmin ลงทะเบียนอุปกรณ์ใหม่ได้จากหน้านี้
-          · คลิกแถวเพื่อดูรายละเอียด
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Device Search"
+        description="ค้นหาอุปกรณ์ด้วย Device ID หรือเบอร์ SIM แล้วกรองตามโมเดล โปรโตคอล หรือสถานะ คลิกแถวเพื่อดูรายละเอียด"
+        actions={
+          canRegisterDevice(session?.role) && (
+            <Link href="/devices/new" className={buttonVariants()}>
+              <PlusIcon />
+              ลงทะเบียนอุปกรณ์
+            </Link>
+          )
+        }
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>รายการอุปกรณ์</CardTitle>
-          <CardDescription>
-            ค้นด้วย Device ID หรือ SIM · กรองตามโมเดล / โปรโตคอล / สถานะ
-            {data ? ` · ${data.length} เครื่อง` : ""}
-          </CardDescription>
-          {canRegisterDevice(session?.role) && (
-            <CardAction>
-              <Link
-                href="/devices/new"
-                className={buttonVariants({ size: "sm" })}
-              >
-                + ลงทะเบียนอุปกรณ์
-              </Link>
-            </CardAction>
-          )}
-        </CardHeader>
         <CardContent>
           {isLoading && data === null ? (
             <TableSkeleton columns={columns.length} />
@@ -156,7 +141,8 @@ export function DeviceSearchView() {
                     href="/devices/new"
                     className={buttonVariants({ size: "sm" })}
                   >
-                    + ลงทะเบียนอุปกรณ์
+                    <PlusIcon />
+                    ลงทะเบียนอุปกรณ์
                   </Link>
                 ) : undefined
               }

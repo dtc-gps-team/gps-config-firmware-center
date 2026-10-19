@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -20,7 +21,8 @@ export function CreateConfigButton() {
 
   return (
     <Link href="/config/new" className={buttonVariants()}>
-      + สร้าง Config ใหม่
+      <PlusIcon />
+      สร้าง Config ใหม่
     </Link>
   );
 }

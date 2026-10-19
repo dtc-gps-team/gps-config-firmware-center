@@ -7,11 +7,7 @@ import { CpuIcon } from "lucide-react";
 
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
@@ -28,6 +24,8 @@ import {
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { formatFileSize } from "@/lib/format-bytes";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { UploadFirmwareButton } from "./upload-firmware-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -137,7 +135,14 @@ const columns: ColumnDef<Firmware>[] = [
   },
 ];
 
-export function FirmwareTableCard() {
+export function FirmwareTableCard({
+  title,
+  description,
+}: {
+  /** หัวหน้าจอ render ที่นี่เพราะปุ่มอัปโหลดต้อง refetch ตารางของ component นี้ */
+  title: string;
+  description: string;
+}) {
   const router = useRouter();
   const { data, isLoading, error, refetch } = useFirmwareList();
   const firmwareList = useMemo(() => data ?? [], [data]);
@@ -152,52 +157,51 @@ export function FirmwareTableCard() {
   );
 
   return (
-    <Card>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={title}
+        description={description}
+        actions={<UploadFirmwareButton onUploaded={handleUploaded} />}
+      />
       {justUploaded && (
-        <div className="mx-6 -mb-2 flex flex-wrap items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
-          อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว
-          สถานะ{" "}
-          <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ?? "neutral"}>
-            {statusLabel(justUploaded.uploadStatus)}
-          </StatusPill>
-        </div>
+        <Notice tone="success" onDismiss={() => setJustUploaded(null)}>
+          <span className="flex flex-wrap items-center gap-1">
+            อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว
+            สถานะ{" "}
+            <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ?? "neutral"}>
+              {statusLabel(justUploaded.uploadStatus)}
+            </StatusPill>
+          </span>
+        </Notice>
       )}
-      <CardHeader>
-        <CardTitle>รายการ Firmware</CardTitle>
-        <CardDescription>
-          ทุก Role ที่ login แล้วดูได้ คลิกแถวเพื่อดูรายละเอียด/แก้
-          Compatibility Tag/ทดสอบ
-        </CardDescription>
-        <CardAction>
-          <UploadFirmwareButton onUploaded={handleUploaded} />
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {isLoading && data === null ? (
-          <TableSkeleton columns={columns.length} />
-        ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-          </div>
-        ) : firmwareList.length === 0 ? (
-          <EmptyState
-            icon={CpuIcon}
-            message="ยังไม่มี Firmware ในระบบ"
-            action={<UploadFirmwareButton onUploaded={handleUploaded} />}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={firmwareList}
-            searchPlaceholder="ค้นหาเวอร์ชัน / โมเดล…"
-            emptyMessage="ไม่พบ Firmware ที่ตรงกับเงื่อนไข"
-            onRowClick={(fw) => router.push(`/firmware/${fw.id}`)}
-          />
-        )}
-      </CardContent>
-    </Card>
+      <Card>
+        <CardContent>
+          {isLoading && data === null ? (
+            <TableSkeleton columns={columns.length} />
+          ) : error ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                ลองใหม่
+              </Button>
+            </div>
+          ) : firmwareList.length === 0 ? (
+            <EmptyState
+              icon={CpuIcon}
+              message="ยังไม่มี Firmware ในระบบ"
+              action={<UploadFirmwareButton onUploaded={handleUploaded} />}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={firmwareList}
+              searchPlaceholder="ค้นหาเวอร์ชัน / โมเดล…"
+              emptyMessage="ไม่พบ Firmware ที่ตรงกับเงื่อนไข"
+              onRowClick={(fw) => router.push(`/firmware/${fw.id}`)}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

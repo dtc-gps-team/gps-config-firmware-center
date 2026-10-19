@@ -6,17 +6,14 @@ import { MegaphoneIcon } from "lucide-react";
 
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { type Campaign } from "@/lib/campaign-api";
+import { PageHeader } from "@/components/page-header";
 import { CreateCampaignButton } from "./create-campaign-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -67,48 +64,53 @@ const columns: ColumnDef<Campaign>[] = [
 /** การ์ดรายการแคมเปญ — ต่อ `GET /campaigns` จริง (Sprint 3 #21) ทุก Role
  * ที่ login แล้วดูได้ (resource `campaign` action `Read`) · ใช้ `DataTable`
  * กลางเดียวกับ config-table/firmware-table (ค้นหารวม + ฟิลเตอร์ต่อคอลัมน์ +
- * เรียงลำดับ) · Card + CardAction (ปุ่ม "สร้างแคมเปญ") เป็นเจ้าของโดย
- * component นี้เอง mirror `ConfigTableCard`/`FirmwareTableCard` (เดิมปุ่ม
- * สร้างอยู่นอก Card ที่ page.tsx แยกจากอีก 2 หน้า) */
-export function CampaignsTableCard() {
+ * เรียงลำดับ) · หัวหน้าจอ (PageHeader + ปุ่ม "สร้างแคมเปญ") เป็นเจ้าของโดย
+ * component นี้เอง mirror `ConfigTableCard`/`FirmwareTableCard` */
+export function CampaignsTableCard({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const router = useRouter();
   const { data, isLoading, error, refetch } = useCampaigns();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>รายการแคมเปญ</CardTitle>
-        <CardDescription>ทุก Role ที่ login แล้วดูได้</CardDescription>
-        <CardAction>
-          <CreateCampaignButton />
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {isLoading && data === null ? (
-          <TableSkeleton columns={columns.length} />
-        ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-          </div>
-        ) : !data || data.length === 0 ? (
-          <EmptyState
-            icon={MegaphoneIcon}
-            message="ยังไม่มีแคมเปญ"
-            action={<CreateCampaignButton />}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={data}
-            searchPlaceholder="ค้นหาชื่อแคมเปญ…"
-            emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
-            onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
-          />
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={title}
+        description={description}
+        actions={<CreateCampaignButton />}
+      />
+      <Card>
+        <CardContent>
+          {isLoading && data === null ? (
+            <TableSkeleton columns={columns.length} />
+          ) : error ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                ลองใหม่
+              </Button>
+            </div>
+          ) : !data || data.length === 0 ? (
+            <EmptyState
+              icon={MegaphoneIcon}
+              message="ยังไม่มีแคมเปญ"
+              action={<CreateCampaignButton />}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={data}
+              searchPlaceholder="ค้นหาชื่อแคมเปญ…"
+              emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
+              onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

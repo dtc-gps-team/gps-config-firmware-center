@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -20,7 +21,8 @@ export function CreateCampaignButton() {
 
   return (
     <Link href="/campaigns/new" className={buttonVariants()}>
-      + สร้างกลุ่มอุปกรณ์
+      <PlusIcon />
+      สร้างกลุ่มอุปกรณ์
     </Link>
   );
 }

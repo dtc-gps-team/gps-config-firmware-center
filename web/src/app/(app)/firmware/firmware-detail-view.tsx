@@ -20,6 +20,7 @@ import { useFirmware } from "@/hooks/use-firmware";
 import { useUserNames } from "@/hooks/use-user-names";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { PageHeader } from "@/components/page-header";
 import { EditCompatibilityForm } from "./edit-compatibility-form";
 import { FirmwareApprovalPanel } from "./firmware-approval-panel";
 import { FirmwareSimulatePanel } from "./firmware-simulate-panel";
@@ -70,32 +71,27 @@ function FirmwareDetailContent({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <Link
-          href="/firmware"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← กลับไปรายการ Firmware
-        </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold break-words">
-            เวอร์ชัน {firmware.version}
-          </h1>
-          <StatusPill
-            tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
-          >
-            {statusLabel(firmware.uploadStatus)}
-          </StatusPill>
-          <StatusPill
-            tone={
-              FIRMWARE_APPROVAL_STATUS_TONE[firmware.approvalStatus] ??
-              "neutral"
-            }
-          >
-            {statusLabel(firmware.approvalStatus)}
-          </StatusPill>
-        </div>
-      </div>
+      <PageHeader
+        title={`เวอร์ชัน ${firmware.version}`}
+        breadcrumb={[{ label: `เวอร์ชัน ${firmware.version}` }]}
+        status={
+          <>
+            <StatusPill
+              tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
+            >
+              {statusLabel(firmware.uploadStatus)}
+            </StatusPill>
+            <StatusPill
+              tone={
+                FIRMWARE_APPROVAL_STATUS_TONE[firmware.approvalStatus] ??
+                "neutral"
+              }
+            >
+              {statusLabel(firmware.approvalStatus)}
+            </StatusPill>
+          </>
+        }
+      />
 
       <FirmwareSimulatePanel firmware={firmware} />
       <FirmwareApprovalPanel firmware={firmware} onDecided={onUpdated} />

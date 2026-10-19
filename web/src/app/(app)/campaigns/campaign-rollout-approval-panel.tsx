@@ -14,6 +14,7 @@ import { getTokenSubject } from "@/lib/jwt";
 import { canDecideCampaignApproval } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DisabledWithReason } from "@/components/disabled-with-reason";
 
 type Decision = "approve" | "reject";
 
@@ -30,6 +31,9 @@ type Decision = "approve" | "reject";
  * ให้ปุ่มและข้อความหน้าตาเดียวกับการ์ดคำขอประเภทอื่นในคิว ส่วนหน้ารายละเอียด
  * Rollout ใช้ค่าเริ่มต้น `"panel"` (กล่องเทาเหมือนเดิม)
  */
+const OWN_ROLLOUT_REASON =
+  "คุณเป็นผู้สร้าง Rollout นี้ อนุมัติหรือปฏิเสธของตัวเองไม่ได้ ต้องให้ Operation คนอื่นตัดสินใจ";
+
 export function CampaignRolloutApprovalPanel({
   campaignId,
   rollout,
@@ -72,26 +76,6 @@ export function CampaignRolloutApprovalPanel({
         <p className="text-sm text-muted-foreground">
           Rollout นี้ยังไม่ได้รับการอนุมัติ เฉพาะ Operation
           เท่านั้นที่อนุมัติ/ปฏิเสธได้
-        </p>
-      </Card>
-    );
-  }
-
-  if (isOwnRollout) {
-    if (inline) {
-      return (
-        <span className="text-sm text-muted-foreground">
-          คุณเป็นผู้สร้าง Rollout นี้ อนุมัติ/ปฏิเสธของตัวเองไม่ได้ ต้องรอ
-          Operation คนอื่นตัดสินใจ
-        </span>
-      );
-    }
-    return (
-      <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
-        <p className="text-sm font-medium">รอ Operation อีกคนอนุมัติ</p>
-        <p className="text-sm text-muted-foreground">
-          คุณเป็นผู้สร้าง Rollout นี้ อนุมัติ/ปฏิเสธของตัวเองไม่ได้
-          (Separation of Duty) ต้องรอ Operation คนอื่นตัดสินใจ
         </p>
       </Card>
     );
@@ -166,16 +150,34 @@ export function CampaignRolloutApprovalPanel({
         </div>
       ) : (
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setConfirming("reject")}
-          >
-            ปฏิเสธ
-          </Button>
-          <Button size="sm" onClick={() => setConfirming("approve")}>
-            อนุมัติ
-          </Button>
+          {isOwnRollout ? (
+            // Separation of Duty — ผู้สร้างรอบอนุมัติ/ปฏิเสธของตัวเองไม่ได้
+            // (backend บังคับอยู่แล้ว) แสดงปุ่มแบบ disable พร้อมเหตุผล แทนการ
+            // ซ่อนปุ่มทิ้ง เพราะ Operation คาดว่าจะเห็นปุ่มนี้
+            <DisabledWithReason reason={OWN_ROLLOUT_REASON}>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" disabled>
+                  ปฏิเสธ
+                </Button>
+                <Button size="sm" disabled>
+                  อนุมัติ
+                </Button>
+              </div>
+            </DisabledWithReason>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirming("reject")}
+              >
+                ปฏิเสธ
+              </Button>
+              <Button size="sm" onClick={() => setConfirming("approve")}>
+                อนุมัติ
+              </Button>
+            </>
+          )}
         </div>
       )}
     </>
@@ -187,7 +189,9 @@ export function CampaignRolloutApprovalPanel({
 
   return (
     <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
-      <p className="text-sm font-medium">อนุมัติ Rollout</p>
+      <p className="text-sm font-medium">
+        {isOwnRollout ? "รอ Operation คนอื่นอนุมัติ" : "อนุมัติ Rollout"}
+      </p>
       <p className="text-sm text-muted-foreground">
         อนุมัติแล้วยังไม่แตะอุปกรณ์ ต้องกด &ldquo;ปล่อยเข้าอุปกรณ์&rdquo;
         อีกขั้นถึงจะเริ่มทำงานจริง ปฏิเสธแล้วผู้สร้างเปิดรอบใหม่ได้

@@ -420,7 +420,7 @@ export function CampaignRolloutCreateForm({
                       <TableCell className="font-mono text-xs">
                         {deviceId}
                         {incompatible && (
-                          <p className="mt-0.5 font-sans text-amber-700 dark:text-amber-400">
+                          <p className="mt-0.5 font-sans text-warning-foreground">
                             {incompatibleReason}
                           </p>
                         )}
@@ -439,7 +439,7 @@ export function CampaignRolloutCreateForm({
         )}
 
         {incompatibleReasons.size > 0 && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+          <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-xs text-warning-foreground">
             จะส่งให้ {includedDeviceIds.length} จาก {memberDeviceIds.length}{" "}
             เครื่อง ส่วนอีก {incompatibleReasons.size} เครื่องไม่เข้ากันกับ{" "}
             {payloadType === "Config" ? "Config" : "Firmware"} ที่เลือก

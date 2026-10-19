@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ListIcon } from "lucide-react";
+import { ListIcon, PlusIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { RoleGuard } from "@/components/auth/role-guard";
@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
@@ -206,20 +207,19 @@ function ParameterLibraryContent() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">คลัง Parameter</h1>
-          <p className="text-sm text-muted-foreground">
-            นิยาม field ที่ใช้กรอก Config สร้างได้เฉพาะ Role ConfigEngineer
-          </p>
-        </div>
-        {canCreate && !showForm ? (
-          <Button onClick={() => setShowForm(true)}>
-            + สร้าง Parameter ใหม่
-          </Button>
-        ) : null}
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Parameter Library"
+        description="นิยามพารามิเตอร์ที่ใช้กรอก Config ของแต่ละโมเดล ทั้งชนิดข้อมูล ช่วงค่า และค่าเริ่มต้น"
+        actions={
+          canCreate && !showForm ? (
+            <Button onClick={() => setShowForm(true)}>
+              <PlusIcon />
+              สร้าง Parameter ใหม่
+            </Button>
+          ) : null
+        }
+      />
 
       {canCreate && showForm ? (
         <ParameterCreateForm
@@ -238,7 +238,8 @@ function ParameterLibraryContent() {
         emptyAction={
           canCreate && !showForm ? (
             <Button size="sm" onClick={() => setShowForm(true)}>
-              + สร้าง Parameter ใหม่
+              <PlusIcon />
+              สร้าง Parameter ใหม่
             </Button>
           ) : undefined
         }

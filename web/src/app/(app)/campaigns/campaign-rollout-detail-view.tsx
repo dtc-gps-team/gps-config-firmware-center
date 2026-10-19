@@ -34,6 +34,7 @@ import { useConfig } from "@/hooks/use-config";
 import { useFirmware } from "@/hooks/use-firmware";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { PageHeader } from "@/components/page-header";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -88,25 +89,21 @@ export function CampaignRolloutDetailView({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href={`/campaigns/${campaignId}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← กลับไปหน้ากลุ่ม
-        </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">Rollout: {data.payloadType}</h1>
+      <PageHeader
+        title={`Rollout: ${data.payloadType}`}
+        breadcrumb={[
+          { label: "กลุ่มอุปกรณ์", href: `/campaigns/${campaignId}` },
+          { label: `Rollout: ${data.payloadType}` },
+        ]}
+        status={
           <StatusPill
             tone={CAMPAIGN_ROLLOUT_STATUS_TONE[data.status] ?? "neutral"}
           >
             {statusLabel(data.status)}
           </StatusPill>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {getRolloutStatusExplanation(data.status)}
-        </p>
-      </div>
+        }
+        description={getRolloutStatusExplanation(data.status)}
+      />
 
       <CampaignRolloutApprovalPanel
         campaignId={campaignId}
@@ -143,11 +140,11 @@ export function CampaignRolloutDetailView({
             {data.targetCount}
           </InfoRow>
           <InfoRow label="สำเร็จ / ล้มเหลว" icon={ActivityIcon}>
-            <span className="text-emerald-700 dark:text-emerald-400">
+            <span className="text-success-foreground">
               {data.successCount}
             </span>{" "}
             /{" "}
-            <span className="text-rose-700 dark:text-rose-400">
+            <span className="text-danger-foreground">
               {data.failureCount}
             </span>
           </InfoRow>

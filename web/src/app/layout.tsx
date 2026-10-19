@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Noto_Sans_Thai_Looped } from "next/font/google";
+import { Anuphan, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -15,7 +15,14 @@ import "./globals.css";
 // Thai Looped" มีหัวตามอักขระไทยดั้งเดิม อ่านชัดกว่าเมื่อมองจากระยะไกล/ตัวเล็ก
 // (feedback จากผู้ใช้จริง 2026-09-16) — เปลี่ยนแค่ชื่อฟอนต์ที่โหลด ไม่กระทบ
 // ชื่อ CSS variable/weight/subset เดิมเลย
-const notoSansThaiLooped = Noto_Sans_Thai_Looped({
+//
+// เปลี่ยนเป็น Anuphan (2026-10-16, UI ปรับใหม่): ฟอนต์ไทย
+// ของ Cadson Demak ออกแบบมาให้ไทยกับอังกฤษเข้าชุดกันในบรรทัดเดียว (หน้าจอ
+// ระบบนี้ปนสองภาษาตลอด เช่น "สร้าง Config ใหม่") ดูเป็นแอปสมัยใหม่กว่า แต่
+// เป็นแบบไม่มีหัว ซึ่งต่างจากเหตุผลที่เลือก Looped ไว้ข้างบน ถ้าผู้ใช้กลับมา
+// บอกว่าตัวเล็กอ่านยาก ให้ย้อนกลับมาดูจุดนี้ · ชื่อ CSS variable ยังเป็น
+// --font-sans เหมือนเดิม
+const anuphan = Anuphan({
   variable: "--font-sans",
   subsets: ["thai", "latin"],
   weight: ["400", "500", "600", "700"],
@@ -35,7 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="th"
-      className={`${notoSansThaiLooped.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${anuphan.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>

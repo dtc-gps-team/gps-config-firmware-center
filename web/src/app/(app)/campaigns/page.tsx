@@ -12,15 +12,9 @@ export const metadata = {
  */
 export default function CampaignsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Campaign</h1>
-        <p className="text-sm text-muted-foreground">
-          สร้าง/ติดตามกลุ่มอุปกรณ์ สร้างได้เฉพาะ Role Operation
-        </p>
-      </div>
-
-      <CampaignsTableCard />
-    </div>
+    <CampaignsTableCard
+      title="Campaign"
+      description="จัดกลุ่มอุปกรณ์ แล้วปล่อย Config หรือ Firmware เป็นรอบ พร้อมติดตามผลรายเครื่อง"
+    />
   );
 }

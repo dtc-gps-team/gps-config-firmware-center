@@ -7,11 +7,7 @@ import { SlidersHorizontalIcon } from "lucide-react";
 
 import {
   Card,
-  CardAction,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
@@ -23,6 +19,8 @@ import { useConfigs } from "@/hooks/use-configs";
 import { type Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
+import { PageHeader } from "@/components/page-header";
+import { Notice } from "@/components/ui/notice";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
@@ -88,8 +86,14 @@ const columns: ColumnDef<Config>[] = [
 ];
 
 export function ConfigTableCard({
+  title,
+  description,
   justSavedId = null,
 }: {
+  /** หัวหน้าจอ render ที่นี่ (ไม่ใช่ page.tsx) เพราะปุ่ม Import ต้อง refetch
+   *  ตารางของ component นี้หลัง import เสร็จ */
+  title: string;
+  description: string;
   justSavedId?: string | null;
 }) {
   const router = useRouter();
@@ -119,60 +123,55 @@ export function ConfigTableCard({
       : null;
 
   return (
-    <Card>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={title}
+        description={description}
+        actions={
+          <>
+            <ImportConfigButton onImported={handleImported} />
+            <CreateConfigButton />
+          </>
+        }
+      />
       {savedConfig && !dismissedBanner && (
-        <div className="mx-6 -mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <Notice tone="success" onDismiss={() => setDismissedBanner(true)}>
           <span className="flex flex-wrap items-center gap-1">
             บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว สถานะ{" "}
             <StatusPill tone={CONFIG_STATUS_TONE[savedConfig.status] ?? "neutral"}>
               {statusLabel(savedConfig.status)}
             </StatusPill>
           </span>
-          <button
-            type="button"
-            onClick={() => setDismissedBanner(true)}
-            className="shrink-0 text-xs underline"
-          >
-            ปิด
-          </button>
-        </div>
+        </Notice>
       )}
-      <CardHeader>
-        <CardTitle>รายการ Config</CardTitle>
-        <CardDescription>
-          ทุก Role ที่ login แล้วดูได้ คลิกแถวเพื่อดูรายละเอียด
-        </CardDescription>
-        <CardAction className="flex gap-2">
-          <ImportConfigButton onImported={handleImported} />
-          <CreateConfigButton />
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {isLoading && data === null ? (
-          <TableSkeleton columns={columns.length} />
-        ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-          </div>
-        ) : configs.length === 0 ? (
-          <EmptyState
-            icon={SlidersHorizontalIcon}
-            message="ยังไม่มี Config ในระบบ"
-            action={<CreateConfigButton />}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={configs}
-            searchPlaceholder="ค้นหาชื่อ / โมเดล / โปรโตคอล…"
-            emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
-            onRowClick={(config) => router.push(`/config/${config.id}`)}
-          />
-        )}
-      </CardContent>
-    </Card>
+      <Card>
+        <CardContent>
+          {isLoading && data === null ? (
+            <TableSkeleton columns={columns.length} />
+          ) : error ? (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                ลองใหม่
+              </Button>
+            </div>
+          ) : configs.length === 0 ? (
+            <EmptyState
+              icon={SlidersHorizontalIcon}
+              message="ยังไม่มี Config ในระบบ"
+              action={<CreateConfigButton />}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={configs}
+              searchPlaceholder="ค้นหาชื่อ / โมเดล / โปรโตคอล…"
+              emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
+              onRowClick={(config) => router.push(`/config/${config.id}`)}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
