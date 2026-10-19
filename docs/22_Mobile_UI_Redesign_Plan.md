@@ -2,7 +2,7 @@
 
 > **สถานะ:** แผน — A (paveekornkwork-dev) รีวิวและ approve แล้ว (#347) · ร่างแรก 19 ต.ค. 2569
 > · ปรับตามการตัดสินใจรอบ 2 ของ B วันเดียวกัน (§3) · อัปเดตตามคำตอบของ A (§10) และมติ §5.2 ของ B วันเดียวกัน
-> (§3 ข้อ 17–18) · อัปเดตตามค่าจริงของ Web หลัง #344 merge (§3 ข้อ 19–20)
+> (§3 ข้อ 17–18) · อัปเดตตามค่าจริงของ Web หลัง #344 merge (§3 ข้อ 19–21)
 > · **ความคืบหน้า:** Batch 0 merge แล้ว (#346) · **Batch 1 implement แล้วใน #349 (รอ A รีวิว)** ดู §9
 >
 > **แทนที่:** `docs/20_Mobile_Redesign_Phase3_Design.md` (มติ B 19 ต.ค. 2569 — token ของ docs/20 ไม่ตรงกับ
@@ -101,9 +101,9 @@
 19. **`muted-foreground` / ขอบช่องกรอก = `#576171`** ตามค่าใหม่ของ Web (`oklch(0.49 0.028 259.8)` จาก #344 เข้มขึ้นจาก
     `#667080`) — 6.26:1 บนการ์ด, 5.89:1 บน background · §4.1, §4.3 · implement แล้วใน #349
 20. **`text-xs` / `text-sm` = 13 / 15** ตาม Web (#344 ขยายจาก 12 / 14 ของ Tailwind) — §4.5 · implement แล้วใน #349
-
-ฟอนต์: Web เปลี่ยนเป็น **Anuphan** ใน #344 · **ยังไม่ตัดสินใจ**ว่า Mobile จะตามไหม รอ A ตอบเหตุผลที่เปลี่ยน (ถามไว้ใน
-รีวิว #344) · ระหว่างนี้ Mobile ตั้งเป็น Noto Sans Thai Looped ไว้ก่อน (§4.5)
+21. **ฟอนต์ = Anuphan ตาม Web** — A ตอบแล้วใน #344: Web ยังทดลอง Anuphan (ไม่ใช่ทางการ — เปลี่ยนเพราะ Noto Sans Thai
+    Looped ดูไม่ทันสมัย ยังไม่ได้เทียบความอ่านชัดตอนตัวเล็ก) mobile ไม่ต้องตาม — **B ตัดสินใจเปลี่ยนเป็น Anuphan ตามเว็บ
+    ด้วย** (implement ใน PR #349) · แทน Noto Sans Thai Looped ที่แผนเดิมเลือกไว้ · ถ้า Web เปลี่ยนฟอนต์อีกค่อยทบทวน (§4.5)
 
 ---
 
@@ -170,14 +170,15 @@ theme เดิม) · `AppTheme.v2()` ใน #349 เป็นโหมดส�
 - **ความสูงปุ่ม/ช่องกรอก (ต่างจาก Web โดยตั้งใจ):** Web ใช้ `h-8` (32px) ซึ่งเหมาะกับเมาส์ แต่ต่ำกว่าพื้นที่กด
   ขั้นต่ำบนมือถือ (Material 48dp) · Mobile คงความสูงขั้นต่ำ **48** เหมือนปุ่มหลักตอนนี้ (#335) ใช้แค่สี radius
   ตัวอักษร และ variant ตาม Web
-- **ตัวอักษร:** **Noto Sans Thai Looped** (น้ำหนัก 400 / 500 / 600 / 700) — เดิมเลือกเพราะตรงกับ Web แต่ **#344
-  เปลี่ยนฟอนต์ Web เป็น Anuphan** แล้ว · **ยังไม่ตัดสินใจ**ว่า Mobile จะตามไหม รอ A ตอบเหตุผล (หมายเหตุท้าย §3) ·
-  ระหว่างนี้ #349 ตั้ง `AppTypography.fontFamily` เป็น Noto Sans Thai Looped พร้อม TODO และ**ยังไม่ bundle ไฟล์ฟอนต์**
-  (ไม่ commit ไฟล์ที่อาจต้องเปลี่ยนทั้งชุด) · ตัวเลข/รหัสเครื่องใช้ monospace (Web ใช้ Geist Mono — เลือกตอน bundle)
+- **ตัวอักษร:** **Anuphan** (Cadson Demak) ตาม Web (`app/layout.tsx` หลัง #344) — A ตอบแล้วใน #344: Web ยังทดลอง
+  Anuphan (ไม่ใช่ทางการ) mobile ไม่ต้องตาม — B ตัดสินใจเปลี่ยนเป็น Anuphan ตามเว็บด้วย (implement ใน PR #349, §3 ข้อ 21)
+  · **ค่าเดิมที่เปลี่ยนไปแล้ว:** แผนเดิมใช้ Noto Sans Thai Looped (ตอนนั้นเป็นฟอนต์ของ Web เลือกเพราะมีหัว อ่านชัดตอน
+  ตัวเล็ก) · ตัวเลข/รหัสเครื่องใช้ monospace (Web ใช้ Geist Mono — ฝั่ง Mobile ยังไม่ได้เลือก ทำตอนมีหน้าที่ใช้จริง)
   - **bundle เป็น asset** ใน `mobile/assets/fonts/` พร้อม `OFL.txt` (SIL Open Font License 1.1) ไม่ใช้ `google_fonts`
     ที่โหลดจากเน็ต — ช่างใช้แอปตอนออฟไลน์บ่อย ถ้าโหลดฟอนต์ไม่ได้ตัวไทยจะเป็นกล่องสี่เหลี่ยม (เหตุผลเดิมจาก
-    docs/20 ยังใช้ได้)
-  - ตรวจขนาด APK ที่เพิ่มขึ้นและรายงานใน PR ที่ bundle ฟอนต์ (หลังได้ข้อสรุปเรื่องฟอนต์)
+    docs/20 ยังใช้ได้) · #349 ใช้ `Anuphan[wght].ttf` จาก google/fonts เป็น variable font ไฟล์เดียว (แกน wght 100–700)
+    `FontWeight` เลือกน้ำหนักให้เอง ไม่ต้องแยกไฟล์ต่อน้ำหนัก
+  - ขนาด APK ที่เพิ่มขึ้น (#349, release prod): **+119,066 bytes (≈116 KB, +0.19%)**
 - **ขนาดตัวอักษร:** อิงสเกลที่ Web ใช้ (`text-xs 13 · sm 15 · base 16 · lg 18 · xl 20 · 2xl 24`) — `xs` / `sm` ขยาย
   1px ตาม #344 (Tailwind ปกติ 12 / 14, มติ B ข้อ 20) · implement ใน #349 (`AppTypography`) · หัวหน้าจอ = `2xl`
   semibold ตาม `PageHeader` ของ Web (#349 ใช้ `2xl` ไปก่อน บนจอมือถืออาจลดเป็น `xl` — ตัดสินตอน Batch 2 ที่ใช้กับ
@@ -423,7 +424,7 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 | Batch | งาน | เงื่อนไขว่าเสร็จ (คร่าวๆ) |
 |---|---|---|
 | 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | merge แล้ว (`9cfa1d1`) |
-| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography` (13 / 15), `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#576171`, ปุ่มตาม variant), mapping สถานะ → tone (§5.2) · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** · **implement แล้วใน #349 (รอ A รีวิว)** · **ยังค้าง:** ฟอนต์เป็น TODO รอ A ตอบเรื่อง Anuphan (ยังไม่ bundle ไฟล์ฟอนต์ / `OFL.txt` / รายงานขนาด APK — §4.5) · ล็อก `ThemeMode.light` ย้ายไป Batch 6 (§4.2) · ไฟล์ label กลาง (§6) และ `AppButton.variant` ทำใน batch แรกที่มีหน้าใช้จริง | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี tone (เทส label มากับไฟล์ label) |
+| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography` (13 / 15, Anuphan), `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#576171`, ปุ่มตาม variant), mapping สถานะ → tone (§5.2) · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** · **implement แล้วใน #349 (รอ A รีวิว)** + bundle ฟอนต์ Anuphan + `OFL.txt` (APK +≈116 KB — §4.5, §3 ข้อ 21) · **ยังค้าง:** ล็อก `ThemeMode.light` ย้ายไป Batch 6 (§4.2) · ไฟล์ label กลาง (§6) และ `AppButton.variant` ทำใน batch แรกที่มีหน้าใช้จริง | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี tone (เทส label มากับไฟล์ label) |
 | 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว |
 | 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว |
 | 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → **Confirm Firmware Install (317)** → Config Override (722, + `AppSensitiveValue`) · Confirm Firmware Install วางต่อจาก Device Detail ไม่ใช่ตามขนาดไฟล์ เพราะเป็นหน้าลูกที่เปิดจากปุ่มใน Device Detail (§3 ข้อ 17) · แตกหลายใบได้ | เหมือน Batch 2 |
