@@ -83,6 +83,9 @@
 13. การนำทางเป็น **แท็บด้านล่าง** · ยกเลิก AppBar สีกรมท่า ใช้หัวหน้าจอเรียบแบบ `PageHeader` ของ Web
 14. **ล็อกโหมดสว่างอย่างเดียว** ไม่พอร์ต `.dark` ในรอบนี้
 15. ขอบช่องกรอกใช้ **`muted-foreground #667080`** ของ Web
+16. **ลบหน้า `/simulator` ใน Batch 3** พร้อมหน้าแรกใหม่ (เดิมวางไว้ Batch 5) — ทางลัดเดียวที่เข้าหน้านี้หายไปกับ
+    หน้าแรกใหม่ใน Batch 3 ถ้าเก็บหน้าไว้ถึง Batch 5 จะเป็น route ค้างที่ไม่มีทางเข้า และปุ่ม "ทดสอบกับ Device
+    Simulator" ใน Task Detail ไม่ได้พึ่งหน้านี้อยู่แล้ว
 
 `/devices/:id/confirm-firmware` ("ยืนยันติดตั้ง Firmware") **ยังไม่ตัดสินใจ** รอคำตอบ A (§10 ข้อ A1)
 
@@ -346,7 +349,7 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
 | `/devices/:id/config-override` | ST / Device Detail | แก้ค่าเฉพาะ field แล้วส่งคำขอ | `GET /devices/:id/config`, `GET /config-definitions`, `POST /devices/:id/config-override` | รื้อดีไซน์ · ใช้ `AppSensitiveValue` (docs/21 #20) | 4 |
 | `/devices/:id/confirm-firmware` | ST/OT / Device Detail | ยืนยันติดตั้ง Firmware | `GET /firmware`, `GET /devices/:id/status`, `POST /devices/:id/confirm-firmware-install` | **รอ A ตัดสินใจ** (§10 ข้อ A1) — ยังไม่กำหนด batch | ยังไม่กำหนด |
 | `/tasks/:id` `task_detail_page.dart` | ST/OT, Operation (เพิ่มบันทึก) / หน้าแรก, แจ้งเตือน, push | บันทึกสถานะ, timeline + เพิ่มบันทึก, **ทดสอบกับ Device Simulator** (ไม่บังคับ), ส่ง Config เข้าเครื่อง | `GET/PATCH /tasks/:id`, `GET /tasks/:id/events`, `POST /tasks/:id/notes`, `POST /devices/:id/simulate-config`, `POST /devices/:id/apply-config` | รื้อดีไซน์ (หน้าซับซ้อนสุด) · **เป็นที่เดียวที่เหลือของ Device Simulator** · ปุ่มหลัก/รอง (docs/21 #11) | 5 |
-| `/simulator` `simulator_page.dart` | (เดิม ST/OT จากทางลัด) | ทดสอบความพร้อม Config | `GET /config`, `POST /devices/:id/simulate-config` | **ตัดออก** (มติ B ข้อ 4) · ทางลัดหายไปใน Batch 3 ตัวหน้า + ผลพ่วงลบใน Batch 5 คู่กับ Task Detail | 3 (ทางลัด) / 5 (หน้า) |
+| `/simulator` `simulator_page.dart` | (เดิม ST/OT จากทางลัด) | ทดสอบความพร้อม Config | `GET /config`, `POST /devices/:id/simulate-config` | **ตัดออก** (มติ B ข้อ 4) · ลบทางลัด + route + หน้า + ผลพ่วงพร้อมกันใน Batch 3 (มติ B ข้อ 16) | 3 |
 | push (`push_message_handler.dart`) | — | พาไปหน้า Task Detail / Incident / แจ้งเตือน / หน้าแรก | `POST/DELETE /notifications/device-tokens` | ไม่มี UI ไม่ต้องรื้อ · ปรับให้ deep link เข้าโครงแท็บใหม่ (Batch 3) | 3 |
 
 ### 8.1 ผลพ่วงของการตัดหน้า (สำรวจ import / link แล้ว — บันทึกไว้ ทำตอน implement)
@@ -366,14 +369,16 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
   - `ApiClient.listCustomers()` (`GET /customers`) จะไม่มีใครใช้ ลบด้วย
   - เทส: `device_connection_test_page_test.dart`, `recent_device_id_store_test.dart`, key `shortcut_device_test` ใน
     `home_page_test.dart` ฯลฯ
-- **`/simulator`** (ทางลัด Batch 3 · หน้า Batch 5)
-  - ลบ `simulator_page.dart`, `config_repository.dart` (`deployableConfigListProvider`) และ `ApiClient.listConfigs()`
+- **`/simulator`** (Batch 3 — มติ B ข้อ 16)
+  - ลบทางลัด "ทดสอบการตั้งค่า" (หายไปกับหน้าแรกใหม่), `AppRoutes.simulator` + route ใน `app_router.dart`,
+    `simulator_page.dart`, `config_repository.dart` (`deployableConfigListProvider`) และ `ApiClient.listConfigs()`
     (Mobile จะไม่เรียก `GET /config` อีก) · **ต้องเก็บ** `simulator_repository.dart` และ `simulation_result_card.dart`
     เพราะ Task Detail ใช้ (ย้ายไป `features/task/`) · `DeviceConfigDraft` ยังใช้ใน Config Override
   - เทส: `simulator_page_test.dart` · `task_detail_simulator_test.dart` / `task_detail_simulator_checklist_test.dart`
     ต้องยังผ่าน (เป็นตัวยืนยันว่าปุ่มใน Task Detail ครอบหน้าที่ถูกตัด)
-  - หมายเหตุ: ระหว่าง Batch 3 ถึง 5 route `/simulator` ยังอยู่แต่ไม่มีทางเข้า (ทางลัดหายไปกับหน้าแรกใหม่) ถ้าไม่อยากมี
-    route ค้าง ย้ายการลบหน้าทั้งหมดมาไว้ Batch 3 ได้ เพราะปุ่มใน Task Detail ใช้ได้อยู่แล้วโดยไม่พึ่งหน้านี้
+  - ทำใน Batch 3 ไม่รอ Batch 5 เพราะทางลัดเดียวที่เข้าหน้านี้หายไปกับหน้าแรกใหม่ ถ้ารอจะมี route ค้างที่ไม่มีทางเข้า
+    และปุ่มใน Task Detail ใช้ได้อยู่แล้วโดยไม่พึ่งหน้านี้ (`simulator_repository.dart` / `simulation_result_card.dart`
+    ย้ายไป `features/task/` ใน Batch 3 ด้วย ส่วนการรื้อดีไซน์ของปุ่มรอ Batch 5)
 - เทสกลางที่อ้าง 2 หน้าที่ถูกตัด: `color_contrast_test.dart`, `primary_button_consistency_test.dart`,
   `auth_controller_test.dart`, `session_expiry_flow_test.dart`, `offline_sync_flow_test.dart`, `models_test.dart`
   — แก้ในใบเดียวกับที่ตัดหน้า
@@ -392,9 +397,9 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 | 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | เปิดแล้ว รอรีวิว |
 | 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography`, `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#667080`, ปุ่มตาม variant), bundle Noto Sans Thai Looped + `OFL.txt`, ไฟล์ label กลาง (§6), ล็อก `ThemeMode.light` · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี label + tone · รายงานขนาด APK |
 | 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว |
-| 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device` + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส + E2E เขียว |
+| 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว |
 | 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → Config Override (722, + `AppSensitiveValue`) · แตกหลายใบได้ | เหมือน Batch 2 |
-| 5 | **Task Detail** (หน้าซับซ้อนสุด 909 บรรทัด) — ส่วน "ทดสอบกับ Device Simulator" กลายเป็นที่เดียวของ Simulator: **ลบหน้า `/simulator` + ผลพ่วง (§8.1)** · ปุ่มหลัก/รอง (docs/21 #11) · งาน Step 4.1 ที่เคยอยู่ใน docs/20: แยกข้อความ ออฟไลน์ / 401 / 5xx / 4xx อื่น ยกเว้น 408 และ 429 (ยกเงื่อนไขว่าเสร็จมาทั้งหมด) | เหมือน Batch 2 + เทส simulator ใน Task Detail ผ่าน + เทสแยกกรณี error ครบ |
+| 5 | **Task Detail** (หน้าซับซ้อนสุด 909 บรรทัด) — รื้อดีไซน์ทั้งหน้า รวมส่วน "ทดสอบกับ Device Simulator" (ที่เดียวของ Simulator หลังหน้า `/simulator` ถูกลบใน Batch 3) · ปุ่มหลัก/รอง (docs/21 #11) · งาน Step 4.1 ที่เคยอยู่ใน docs/20: แยกข้อความ ออฟไลน์ / 401 / 5xx / 4xx อื่น ยกเว้น 408 และ 429 (ยกเงื่อนไขว่าเสร็จมาทั้งหมด) | เหมือน Batch 2 + เทส simulator ใน Task Detail ผ่าน + เทสแยกกรณี error ครบ |
 | 6 | **ปิดงาน** — สลับ ThemeData ทั้งแอปเป็น v2 · ลบ token เก่า (`navy`, `mock*` ฯลฯ) และ `AppTheme.dark()` · เทสดัก `Color(0x` นอกไฟล์ token · ปิด docs/21 ข้อ #21, #22, #24 · อัปเดตสถานะใน docs/21 | grep `Color(0x` ใน `lib/` เหลือแค่ไฟล์ token · E2E เขียว |
 | — | **`/devices/:id/confirm-firmware`** | **ยังไม่กำหนด batch — รอคำตอบ A (§10 ข้อ A1)** · ถ้ายังจำเป็น รื้อดีไซน์ต่อจาก Device Detail · ถ้าไม่จำเป็น ตัดออกเป็นใบแยก (ปุ่มใน Device Detail หายด้วย) |
 
@@ -424,4 +429,4 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 ข้อ B1–B6 ในร่างแรกได้คำตอบหมดแล้ว รวมไว้ใน §3 ข้อ 7–15 และปรับเนื้อหาทั้งเอกสารตามนั้น
 (B1 สถานะที่ Web เป็นไทย → คงไทย · B2 ตัวพิมพ์ → ตัวแรกพิมพ์ใหญ่ · B3 คำที่ไม่มีคู่เทียบ → คงไทย, "Incidents",
 ป้าย Role `ST` · B4 dark mode → ล็อกโหมดสว่าง · B5 การนำทาง → แท็บด้านล่าง ไม่มี AppBar สีกรมท่า · B6 ขอบช่องกรอก →
-`#667080`) · เหลือจุดเล็กที่เลือกได้ตอน implement: ลบหน้า `/simulator` ใน Batch 3 แทน Batch 5 (§8.1 หมายเหตุ)
+`#667080`) · และย้ายการลบหน้า `/simulator` มาไว้ Batch 3 (§3 ข้อ 16)
