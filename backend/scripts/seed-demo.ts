@@ -112,7 +112,7 @@ async function main(): Promise<void> {
     {
       name: 'GT08-4G',
       manufacturer: 'DTC Hardware',
-      supportedProtocols: ['TCP', 'UDP'],
+      supportedProtocols: ['TCP'],
       warrantyMonths: 24,
       notes: 'รุ่นหลักปี 2026 รองรับ 4G',
     },
@@ -140,6 +140,13 @@ async function main(): Promise<void> {
     if (!existed) {
       await prisma.deviceModel.create({ data: m });
       log(U.admin, 'device-model', 'create', ago(28), { name: m.name });
+    } else if (existed.supportedProtocols.length !== 1) {
+      // 1 โมเดลมีได้โปรโตคอลเดียว (มติรีวิวพี่เลี้ยง 19 ต.ค. 2569): โมเดลตัวอย่าง
+      // ที่เคยสร้างไว้ด้วยหลายค่าจากการรันรอบก่อนๆ ปรับให้เหลือค่าเดียวตามชุดนี้
+      await prisma.deviceModel.update({
+        where: { name: m.name },
+        data: { supportedProtocols: m.supportedProtocols as string[] },
+      });
     }
   }
   const models = Object.fromEntries(
@@ -170,7 +177,6 @@ async function main(): Promise<void> {
   });
   for (const [deviceModel, protocol] of [
     ['GT08-4G', 'TCP'],
-    ['GT08-4G', 'UDP'],
     ['VT300', 'TCP'],
     ['LT100', 'TCP'],
   ]) {
@@ -352,7 +358,7 @@ async function main(): Promise<void> {
           deviceId,
           simNumber: `08${digits(8)}`,
           deviceModel: modelName,
-          protocol: modelName === 'GT08-4G' && i % 3 === 0 ? 'UDP' : 'TCP',
+          protocol: 'TCP', // 1 โมเดลมีได้โปรโตคอลเดียว ตัวอย่างทั้งหมดใช้ TCP
           ...identity,
           // ทุก 5 เครื่องมี 1 เครื่องที่มีรหัสรุ่นย่อย ที่เหลือไม่มีรุ่นย่อย
           hardwareRevisionCode: i % 5 === 4 ? 'R2-SPECIAL' : null,
@@ -451,9 +457,9 @@ async function main(): Promise<void> {
       extra: { REPORT_INTERVAL_MOVING: 10 },
     },
     {
-      name: 'GT08-4G/UDP ประหยัดแบต',
+      name: 'GT08-4G/TCP ประหยัดแบต',
       model: 'GT08-4G',
-      protocol: 'UDP',
+      protocol: 'TCP',
       status: 'approved',
       days: 10,
       approver: 'op2',
@@ -985,12 +991,12 @@ async function main(): Promise<void> {
   // กับข้อมูลชุดใหม่ ใช้เงื่อนไขเจาะจงเฉพาะแถวตัวอย่าง รันซ้ำได้ ไม่แตะงานที่
   // ผู้ใช้สร้างเอง ต้องรันก่อนสร้าง Task ตัวอย่างด้านล่าง ไม่งั้นแถวที่ย้าย
   // เครื่องแล้วจะถูกสร้างซ้ำอีกชุด
-  const udpConfig = cfg['GT08-4G/UDP ประหยัดแบต'];
+  const powerSaveConfig = cfg['GT08-4G/TCP ประหยัดแบต'];
   await prisma.task.updateMany({
     where: {
       title: 'ติดตั้ง Config ประหยัดแบต',
       deviceId: 'DEV-0124',
-      configId: udpConfig.id,
+      configId: powerSaveConfig.id,
     },
     data: { deviceId: 'DEV-0125' },
   });
@@ -1128,10 +1134,8 @@ async function main(): Promise<void> {
       description: 'รถจอดนาน แบตหมดบ่อย',
       who: 'st',
       status: 'completed',
-      // DEV-0125 ใช้ UDP ส่วน DEV-0124 ใช้ TCP (assertConfigAssignable ของ API
-      // จริงต้องให้ Config ตรงโปรโตคอลของเครื่อง)
       deviceId: 'DEV-0125',
-      configName: 'GT08-4G/UDP ประหยัดแบต',
+      configName: 'GT08-4G/TCP ประหยัดแบต',
       dueInDays: -3,
       createdDays: 2,
     },
