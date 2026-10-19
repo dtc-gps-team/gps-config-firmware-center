@@ -104,6 +104,11 @@ export function IncidentsView() {
     ? matching.filter((i) => !isIncidentClosed(i.status))
     : matching;
   const hiddenClosedCount = matching.length - rows.length;
+  // ติ๊ก "แสดงที่ปิดแล้วด้วย": แยกเป็น 2 กลุ่ม (ยังไม่ปิดก่อน ปิดแล้วตามหลัง)
+  // ไม่เรียงปนกันตามเวลา ไม่งั้นแยกไม่ออกว่าใบไหนยังต้องตัดสินใจ
+  const openRows = rows.filter((i) => !isIncidentClosed(i.status));
+  const closedRows = rows.filter((i) => isIncidentClosed(i.status));
+  const grouped = openRows.length > 0 && closedRows.length > 0;
   const hasFilter = Boolean(status || type || severity);
   const router = useRouter();
   const { resolveName } = useUserNames();
@@ -255,17 +260,32 @@ export function IncidentsView() {
             />
           ) : (
             <div className="flex flex-col gap-3">
-              {rows.map((incident) => (
-                <IncidentCard
-                  key={incident.id}
-                  incident={incident}
-                  reporterName={
-                    incident.reportedBy ? resolveName(incident.reportedBy) : null
-                  }
-                  onDecided={handleDecided}
-                  onStale={() => void refetch()}
-                />
-              ))}
+              {[
+                { key: "open", label: "ยังไม่ปิด", items: openRows },
+                { key: "closed", label: "ปิดแล้ว", items: closedRows },
+              ].flatMap(({ key, label, items }) => [
+                grouped && (
+                  <h3
+                    key={`${key}-heading`}
+                    className="mt-1 text-xs font-medium text-muted-foreground"
+                  >
+                    {label} ({items.length})
+                  </h3>
+                ),
+                ...items.map((incident) => (
+                  <IncidentCard
+                    key={incident.id}
+                    incident={incident}
+                    reporterName={
+                      incident.reportedBy
+                        ? resolveName(incident.reportedBy)
+                        : null
+                    }
+                    onDecided={handleDecided}
+                    onStale={() => void refetch()}
+                  />
+                )),
+              ])}
             </div>
           )}
         </CardContent>
@@ -314,7 +334,11 @@ function IncidentCard({
   const detailHref = `/incidents/${encodeURIComponent(incident.id)}`;
 
   return (
-    <Card className={`gap-3 border-l-4 ${SEVERITY_ACCENT[incident.severity]}`}>
+    <Card
+      className={`gap-3 border-l-4 ${SEVERITY_ACCENT[incident.severity]} ${
+        isIncidentClosed(incident.status) ? "opacity-70" : ""
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 px-4">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">

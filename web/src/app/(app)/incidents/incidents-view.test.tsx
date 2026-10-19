@@ -467,3 +467,56 @@ describe("IncidentsView: คำอธิบายในรายการ", () =
     expect(screen.getByText("ทดสอบกด 3 ครั้ง ไม่มีแจ้งเตือน")).toBeInTheDocument();
   });
 });
+
+describe("IncidentsView: แยกกลุ่ม ยังไม่ปิด / ปิดแล้ว เมื่อติ๊กแสดงที่ปิดแล้ว", () => {
+  beforeEach(() => {
+    auth.role = "Operation";
+    router.push.mockReset();
+  });
+
+  it("ยังไม่ปิดอยู่ก่อนเสมอ แม้ที่ปิดแล้วจะใหม่กว่า และมีหัวกลุ่มพร้อมจำนวน", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [
+      incident({ id: "c1", title: "ปิดแล้วใหม่สุด", status: "dismissed" }),
+      incident({ id: "o1", title: "ยังเปิดเก่ากว่า", status: "open" }),
+      incident({ id: "c2", title: "ปิดแล้วเก่า", status: "resolved" }),
+    ];
+
+    render(<IncidentsView />);
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
+    );
+
+    expect(screen.getByText("ยังไม่ปิด (1)")).toBeInTheDocument();
+    expect(screen.getByText("ปิดแล้ว (2)")).toBeInTheDocument();
+
+    const titles = screen
+      .getAllByRole("link", { name: /ปิดแล้วใหม่สุด|ยังเปิดเก่ากว่า|ปิดแล้วเก่า/ })
+      .map((a) => a.textContent);
+    expect(titles).toEqual(["ยังเปิดเก่ากว่า", "ปิดแล้วใหม่สุด", "ปิดแล้วเก่า"]);
+  });
+
+  it("ค่าเริ่มต้น (ซ่อนที่ปิดแล้ว): ไม่มีหัวกลุ่ม", () => {
+    incidentsState.rows = [
+      incident({ id: "o1", status: "open" }),
+      incident({ id: "c1", title: "ปิดแล้ว", status: "resolved" }),
+    ];
+
+    render(<IncidentsView />);
+
+    expect(screen.queryByText(/^ยังไม่ปิด \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
+  });
+
+  it("มีแต่ที่ปิดแล้วทั้งหมด (ติ๊กแสดง): ไม่มีหัวกลุ่ม ไม่ต้องแยก", async () => {
+    const user = userEvent.setup();
+    incidentsState.rows = [incident({ id: "c1", status: "resolved" })];
+
+    render(<IncidentsView />);
+    await user.click(
+      screen.getByRole("checkbox", { name: /แสดงที่ปิดแล้วด้วย/ }),
+    );
+
+    expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
+  });
+});
