@@ -40,6 +40,8 @@ const sampleRollout: CampaignRollout = {
   approvedAt: null,
   activeWindowStartedAt: null,
   applyMode: null,
+  pullTimeoutHours: null,
+  applyTimeoutMinutes: null,
   isRollback: false,
   rollbackOfId: null,
   deviceValuesReason: null,

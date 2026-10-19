@@ -1111,6 +1111,14 @@ model CampaignRollout {
   // payload เป็น 'mock' เสมอในรอบนี้ · Rollback สืบทอดค่าจากรอบต้นเรื่อง
   // (string อิสระ ไม่ใช่ enum DB เพื่อเพิ่มโหมดทีหลังได้โดยไม่ migrate)
   applyMode             String?
+  // เวลารอของ Rollout โหมด real (docs/19 §16) — null = ใช้ค่าเริ่มต้น (72 ชั่วโมง /
+  // 30 นาที ที่ `campaign-rollout-status.ts`) · Operation ปรับได้ตอนสร้าง Rollout
+  // (PDF §9.1 Execution: Timeout)
+  //   pullTimeoutHours     เครื่องไม่มาดึงงานเลยภายในกี่ชั่วโมงหลังปล่อย (หรือ
+  //                        หลัง Resume ล่าสุด) -> ข้าม (skipped_offline)
+  //   applyTimeoutMinutes  ดึงงานแล้วไม่รายงานผลภายในกี่นาที -> failed
+  pullTimeoutHours      Int?
+  applyTimeoutMinutes   Int?
   // Rollback (แก้ไข 2026-09-24, Incident & Rollback #28) — mirror
   // `POST /api/campaigns/{id}/rollback` ของ GPS_Config_Firmware_Center_Design.pdf
   // §15.1 แต่ implement เป็น "สร้าง CampaignRollout รอบใหม่ที่ payload เป็น
@@ -1147,6 +1155,12 @@ enum CampaignRolloutTargetStatus {
   pending
   success
   failed
+  // ข้าม: เครื่องออฟไลน์ (docs/19 §16) — Rollout โหมด real รอเครื่องมาดึงงานเกิน
+  // `CampaignRollout.pullTimeoutHours` โดยเครื่องไม่เคยมาดึงเลย ไม่นับเป็น
+  // ความล้มเหลวของ Config (ไม่เข้า Auto Pause, ไม่นับใน failureCount) นับว่า
+  // "มีผลแล้ว" Rollout จึงจบได้ · เครื่องที่กลับมาทีหลังยังได้งานนี้และรายงานผล
+  // ได้ (เปลี่ยนเป็น success/failed พร้อมหมายเหตุล่าช้า)
+  skipped_offline
 }
 
 model CampaignRolloutTarget {

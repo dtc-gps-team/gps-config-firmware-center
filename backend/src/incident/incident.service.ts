@@ -8,6 +8,16 @@ import {
 import { Incident, Prisma } from '@prisma/client';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import {
+  maxSeverity,
+  ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
+  ROLLOUT_STATUS_CHANGED_EVENT,
+  RolloutEvents,
+  type RolloutFailedEvent,
+  type RolloutResultUpdatedEvent,
+  type RolloutStatusChangedEvent,
+} from '../campaign/rollout-events';
+import {
   ConfigSyncFailure,
   ConfigSyncWriterQueue,
 } from '../config-sync-writer/config-sync-writer-queue.service';
@@ -72,6 +82,35 @@ const UNSCOPED_INCIDENT_ROLES: readonly string[] = [
  * ฟัง event `'sync-failed'` จาก `ConfigSyncWriterQueue` — B มี listener แยก
  * ของตัวเอง (`incident_alert` notification) คนละ PR โดยไม่ต้องแตะไฟล์นี้
  */
+/** ข้อความ description ของ Incident จาก Rollout — ใช้ร่วมกันตอนสร้าง/อัปเดตจาก
+ * `rollout-failed` และตอนอัปเดตเฉพาะตัวเลขจาก `rollout-result-updated`
+ * เพื่อให้รูปแบบเดียวกันเสมอ */
+function rolloutIncidentDescription(
+  event: Pick<
+    RolloutFailedEvent,
+    | 'campaignName'
+    | 'rolloutId'
+    | 'failureCount'
+    | 'targetCount'
+    | 'skippedCount'
+    | 'sampleErrors'
+  >,
+): string {
+  const failureRate =
+    event.targetCount > 0 ? event.failureCount / event.targetCount : 0;
+  return (
+    `Campaign "${event.campaignName}" Rollout ${event.rolloutId}: ` +
+    `ล้มเหลว ${event.failureCount} จาก ${event.targetCount} เครื่อง ` +
+    `(${(failureRate * 100).toFixed(1)}%)` +
+    (event.skippedCount > 0
+      ? ` · ข้ามเพราะออฟไลน์ ${event.skippedCount} เครื่อง`
+      : '') +
+    (event.sampleErrors.length > 0
+      ? ` · ตัวอย่างข้อผิดพลาด: ${event.sampleErrors.join(' / ')}`
+      : '')
+  );
+}
+
 @Injectable()
 export class IncidentService implements OnModuleInit {
   private readonly logger = new Logger(IncidentService.name);
@@ -80,6 +119,9 @@ export class IncidentService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly configSyncQueue: ConfigSyncWriterQueue,
     private readonly notificationService: NotificationService,
+    // event ของ Campaign Rollout (docs/19 §15.5) — A เป็นเจ้าของทั้งฝั่งส่ง
+    // (campaign) และฝั่งฟัง (ที่นี่) ส่วน notification (B) ฟังคนละโมดูล
+    private readonly rolloutEvents: RolloutEvents,
   ) {}
 
   onModuleInit(): void {
@@ -91,6 +133,200 @@ export class IncidentService implements OnModuleInit {
       void this.createFromSyncFailure(failure);
     });
     this.logger.log("ผูก listener 'sync-failed' ของ config-sync-writer แล้ว");
+
+    // handler ทั้งสองไม่ throw (never-throw) จึงห่อ `void` ได้เหมือนข้างบน
+    this.rolloutEvents.on(ROLLOUT_FAILED_EVENT, (event: RolloutFailedEvent) => {
+      void this.handleRolloutFailed(event);
+    });
+    this.rolloutEvents.on(
+      ROLLOUT_STATUS_CHANGED_EVENT,
+      (event: RolloutStatusChangedEvent) => {
+        void this.handleRolloutStatusChanged(event);
+      },
+    );
+    this.rolloutEvents.on(
+      ROLLOUT_RESULT_UPDATED_EVENT,
+      (event: RolloutResultUpdatedEvent) => {
+        void this.handleRolloutResultUpdated(event);
+      },
+    );
+    this.logger.log("ผูก listener 'rollout-failed' ของ Campaign Rollout แล้ว");
+  }
+
+  /**
+   * สร้างหรืออัปเดต Incident จาก Rollout ที่เข้า Auto Pause หรือจบแต่มีเครื่อง
+   * ที่ไม่สำเร็จ / ถูกข้าม (docs/19 §15.2 ถึง §15.3) — never-throws
+   *
+   * **1 Rollout มีได้ 1 Incident**: หยุดเองหลายรอบหรือหยุดแล้วจบทีหลังอัปเดต
+   * Incident เดิม (ตัวเลข, severity เป็นค่าที่สูงกว่า) และเปลี่ยนสถานะกลับเป็น
+   * `open` ไม่สร้างใหม่ · การสร้างโดยระบบไม่ลง AuditLog (เหมือน Incident
+   * อัตโนมัติจาก config-sync-writer) ส่วนการ Resume/Rollback ของ Operation
+   * ลงครบที่โมดูล campaign อยู่แล้ว
+   */
+  async handleRolloutFailed(event: RolloutFailedEvent): Promise<void> {
+    try {
+      const metadata: IncidentMetadata = {
+        rolloutId: event.rolloutId,
+        campaignId: event.campaignId,
+        kind: event.kind,
+        failureCount: event.failureCount,
+        skippedCount: event.skippedCount,
+        targetCount: event.targetCount,
+        failedDeviceIds: event.failedDeviceIds,
+        sampleErrors: event.sampleErrors,
+      };
+      const title =
+        event.kind === 'auto-pause'
+          ? `Rollout หยุดอัตโนมัติ: ${event.campaignName}`
+          : `Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: ${event.campaignName}`;
+      const description = rolloutIncidentDescription(event);
+
+      const existing = await this.findRolloutIncident(event.rolloutId);
+      if (existing) {
+        await this.prisma.incident.update({
+          where: { id: existing.id },
+          data: {
+            title,
+            description,
+            severity: maxSeverity(existing.severity, event.severity),
+            status: 'open',
+            metadata: metadata as Prisma.InputJsonValue,
+          },
+        });
+        this.logger.warn(
+          `อัปเดต Incident ${existing.id} — Rollout ${event.rolloutId} (${event.kind})`,
+        );
+        return;
+      }
+
+      const incident = await this.prisma.incident.create({
+        data: {
+          title,
+          description,
+          severity: event.severity,
+          status: 'open',
+          relatedConfigId: event.configId,
+          relatedFirmwareId: event.firmwareId,
+          source: INCIDENT_SOURCE.rolloutFailure,
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      this.logger.warn(
+        `สร้าง Incident ${incident.id} — Rollout ${event.rolloutId} (${event.kind})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `สร้าง Incident จาก 'rollout-failed' ไม่สำเร็จ (rollout ${event.rolloutId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * อัปเดต**ตัวเลข**ใน Incident เดิมของ Rollout เมื่อผลของเครื่องในรอบที่จบหรือ
+   * หยุดไปแล้วเปลี่ยน เช่น เครื่องที่ถูกข้ามกลับมารายงานผลล่าช้า (docs/19
+   * §15.4 แถวสุดท้าย, §16.4) — never-throws
+   *
+   * ต่างจาก `handleRolloutFailed` โดยตั้งใจ (แก้ตามรีวิว B บน #337):
+   *   - **ไม่แตะ `status`** Incident ที่ Operation ตัดสินแล้ว (`investigating`,
+   *     `resolved`, `dismissed`, `rolled_back`) ต้องไม่ถูกเปิดกลับเป็น `open`
+   *     เพราะมีเครื่องทยอยกลับมารายงาน และ Incident ที่ปิดสะอาดแล้วไม่ถูกปิดเอง
+   *     เพิ่ม (Operation ปิดเอง)
+   *   - **ไม่สร้าง Incident ใหม่** ไม่มี Incident ของ Rollout นี้ก็ไม่ทำอะไร
+   *   - คง `title` / `kind` เดิม และ severity ใช้ค่าที่สูงกว่า ไม่ลดระดับ
+   */
+  async handleRolloutResultUpdated(
+    event: RolloutResultUpdatedEvent,
+  ): Promise<void> {
+    try {
+      const existing = await this.findRolloutIncident(event.rolloutId);
+      if (!existing) return;
+
+      const previous =
+        existing.metadata &&
+        typeof existing.metadata === 'object' &&
+        !Array.isArray(existing.metadata)
+          ? (existing.metadata as IncidentMetadata)
+          : {};
+      const metadata: IncidentMetadata = {
+        ...previous,
+        failureCount: event.failureCount,
+        skippedCount: event.skippedCount,
+        targetCount: event.targetCount,
+        failedDeviceIds: event.failedDeviceIds,
+        sampleErrors: event.sampleErrors,
+      };
+      await this.prisma.incident.update({
+        where: { id: existing.id },
+        data: {
+          description: rolloutIncidentDescription(event),
+          severity: maxSeverity(existing.severity, event.severity),
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `อัปเดตตัวเลข Incident จาก Rollout ${event.rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * ปรับสถานะ Incident ของ Rollout ตามการตัดสินใจของ Operation / ผลของ Rollout
+   * (docs/19 §15.4) — never-throws · ไม่มี Incident ของ Rollout นี้ก็ไม่ทำอะไร
+   *   resumed         open -> investigating
+   *   rolled-back     -> rolled_back
+   *   completed-clean open/investigating -> resolved พร้อมหมายเหตุปิดอัตโนมัติ
+   *                   (ไม่ทับ rolled_back/dismissed ที่ Operation ตัดสินแล้ว)
+   */
+  async handleRolloutStatusChanged(
+    event: RolloutStatusChangedEvent,
+  ): Promise<void> {
+    try {
+      const incident = await this.findRolloutIncident(event.rolloutId);
+      if (!incident) return;
+
+      if (event.action === 'rolled-back') {
+        await this.prisma.incident.update({
+          where: { id: incident.id },
+          data: { status: 'rolled_back' },
+        });
+        return;
+      }
+      if (event.action === 'resumed') {
+        if (incident.status === 'open') {
+          await this.prisma.incident.update({
+            where: { id: incident.id },
+            data: { status: 'investigating' },
+          });
+        }
+        return;
+      }
+      // completed-clean
+      if (incident.status === 'open' || incident.status === 'investigating') {
+        await this.prisma.incident.update({
+          where: { id: incident.id },
+          data: {
+            status: 'resolved',
+            description: `${incident.description ?? ''}${incident.description ? ' · ' : ''}ปิดอัตโนมัติ: Rollout เสร็จสิ้น ไม่มีเครื่องล้มหรือถูกข้ามในรอบหลัง Resume`,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.error(
+        `ปรับสถานะ Incident จาก Rollout ${event.rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** Incident ของ Rollout นี้ (1 Rollout ต่อ 1 Incident) — หาจาก `metadata.rolloutId` */
+  private findRolloutIncident(rolloutId: string): Promise<Incident | null> {
+    return this.prisma.incident.findFirst({
+      where: {
+        source: INCIDENT_SOURCE.rolloutFailure,
+        metadata: { path: ['rolloutId'], equals: rolloutId },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /**
