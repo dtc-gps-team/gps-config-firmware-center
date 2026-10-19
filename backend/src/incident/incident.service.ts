@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -484,17 +485,25 @@ export class IncidentService implements OnModuleInit {
    * `Approve` ตัวเดียวกันอยู่แล้วไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ — mirror
    * `campaign-rollout.controller.ts`/`device-config-override.controller.ts`)
    *
-   * เช็คว่าเป็น field report (`source: 'field-report'`) เท่านั้น — incident
-   * auto-detect เดิมไม่มี flow ตัดสินใจแบบนี้ (ใช้ Rollback แทน) · ต้องเป็น
-   * `open` เท่านั้น (404 ถ้าไม่พบ, 409 ถ้าตัดสินใจไปแล้ว — mirror
-   * `getPendingOverrideOrThrow()`)
+   * ใช้ได้กับ Incident 2 กลุ่ม:
+   *   - field report (`source: 'field-report'`): ต้องเป็น `open` · ได้ทั้ง 3
+   *     outcome (resolve/dismiss/promote)
+   *   - Incident ที่ระบบสร้างเอง (rollout-failure, config-sync-writer ฯลฯ):
+   *     ต้องเป็น `open` หรือ `investigating` · ปิดด้วยมือได้เฉพาะ `resolve`/
+   *     `dismiss` (`promote` ไม่รองรับ — Rollout มีทาง Rollback ของตัวเองอยู่
+   *     แล้ว) · ใช้เมื่อระบบปิดให้เองไม่ได้ เช่น Rollout จบแต่มีเครื่องล้มและ
+   *     ไม่มีใคร resume · ไม่มีผู้รายงานจึงไม่ส่ง notification
+   *
+   * 404 ถ้าไม่พบ, 409 ถ้าปิด/ตัดสินใจไปแล้ว (mirror `getPendingOverrideOrThrow()`)
+   * · ปิดแล้วไม่เปิดคืนเอง ยกเว้น Rollout เดิมล้มซ้ำ (`handleRolloutFailed`)
    */
   async decide(
     id: string,
     dto: DecideIncidentDto,
     actor: ActingUser,
   ): Promise<DecideIncidentResult> {
-    const existing = await this.getOpenFieldReportOrThrow(id);
+    const existing = await this.getDecidableIncidentOrThrow(id, dto.outcome);
+    const isFieldReport = existing.source === INCIDENT_SOURCE.fieldReport;
 
     const status =
       dto.outcome === 'resolve'
@@ -505,7 +514,9 @@ export class IncidentService implements OnModuleInit {
 
     const reviewedAt = new Date();
     const result = await this.prisma.incident.updateMany({
-      where: { id, status: 'open' },
+      where: isFieldReport
+        ? { id, status: 'open' }
+        : { id, status: { in: ['open', 'investigating'] } },
       data: {
         status,
         reviewedBy: actor.id,
@@ -522,6 +533,10 @@ export class IncidentService implements OnModuleInit {
     const metadata: AuditLogMetadata = {
       incidentId: id,
       outcome: dto.outcome,
+      // การปิด Incident ที่ระบบสร้างเองด้วยมือ: บันทึกที่มาไว้ให้ตรวจย้อนหลัง
+      ...(isFieldReport
+        ? {}
+        : { incidentSource: existing.source ?? 'unknown' }),
     };
     try {
       await this.prisma.auditLog.create({
@@ -561,17 +576,35 @@ export class IncidentService implements OnModuleInit {
     return { ...decided, device };
   }
 
-  /** หา field report ที่ยัง `open` — 404 ไม่พบ/ไม่ใช่ field report, 409
-   * ตัดสินใจไปแล้ว (mirror `getPendingOverrideOrThrow()` ของ Device Config
-   * Override ทุกประการ) */
-  private async getOpenFieldReportOrThrow(id: string): Promise<Incident> {
+  /** หา Incident ที่ตัดสินใจ/ปิดได้ — 404 ไม่พบ, 400 ถ้าขอ `promote` กับ Incident
+   * ที่ระบบสร้างเอง, 409 ถ้าตัดสินใจ/ปิดไปแล้ว (mirror `getPendingOverrideOrThrow()`
+   * ของ Device Config Override) */
+  private async getDecidableIncidentOrThrow(
+    id: string,
+    outcome: DecideIncidentDto['outcome'],
+  ): Promise<Incident> {
     const existing = await this.prisma.incident.findUnique({ where: { id } });
-    if (!existing || existing.source !== INCIDENT_SOURCE.fieldReport) {
-      throw new NotFoundException(`ไม่พบ field report id ${id}`);
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Incident id ${id}`);
     }
-    if (existing.status !== 'open') {
+    if (existing.source === INCIDENT_SOURCE.fieldReport) {
+      if (existing.status !== 'open') {
+        throw new ConflictException(
+          `Incident นี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+        );
+      }
+      return existing;
+    }
+
+    if (outcome === 'promote') {
+      throw new BadRequestException(
+        'ส่งต่อเป็น Campaign ได้เฉพาะ field report ที่ช่างแจ้งจากหน้างาน ' +
+          'Incident ที่ระบบสร้างเองปิดได้ด้วย resolve หรือ dismiss เท่านั้น',
+      );
+    }
+    if (existing.status !== 'open' && existing.status !== 'investigating') {
       throw new ConflictException(
-        `Incident นี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+        `Incident นี้ปิดไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
       );
     }
     return existing;

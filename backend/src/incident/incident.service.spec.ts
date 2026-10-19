@@ -1,4 +1,9 @@
-import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigSyncFailure } from '../config-sync-writer/config-sync-writer-queue.service';
@@ -724,16 +729,123 @@ describe('IncidentService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('ไม่ใช่ field report (auto-detect เดิม) -> NotFoundException', async () => {
-      incidentFindUnique.mockResolvedValue({
-        id: 'inc-1',
+    describe('Incident ที่ระบบสร้างเอง (ปิดด้วยมือ)', () => {
+      const systemIncident = {
+        id: 'inc-s',
         source: INCIDENT_SOURCE.configSyncWriter,
         status: 'open',
+        reportedBy: null,
+        deviceId: null,
+      };
+
+      it('resolve จาก open -> status: resolved ไม่ส่ง notification ไม่ query Device', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        const result = await service.decide(
+          'inc-s',
+          { outcome: 'resolve', note: 'เขียนเองแล้ว' },
+          operation,
+        );
+
+        expect(result.status).toBe('resolved');
+        expect(result.device).toBeNull();
+        expect(incidentUpdateMany).toHaveBeenCalledWith({
+          where: { id: 'inc-s', status: { in: ['open', 'investigating'] } },
+          data: {
+            status: 'resolved',
+            reviewedBy: operation.id,
+            reviewedAt: expect.any(Date) as Date,
+            reviewNote: 'เขียนเองแล้ว',
+          },
+        });
+        expect(notificationSend).not.toHaveBeenCalled();
+        expect(deviceFindUnique).not.toHaveBeenCalled();
+      });
+
+      it('dismiss จาก investigating -> status: dismissed (Rollout ที่เคย resume)', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...systemIncident,
+          source: INCIDENT_SOURCE.rolloutFailure,
+          status: 'investigating',
+        });
+
+        const result = await service.decide(
+          'inc-s',
+          { outcome: 'dismiss', note: 'เครื่องที่ล้มถูกถอดออกจากรถแล้ว' },
+          operation,
+        );
+
+        expect(result.status).toBe('dismissed');
+      });
+
+      it('promote -> BadRequestException (ส่งต่อเป็น Campaign ได้เฉพาะ field report)', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        await expect(
+          service.decide('inc-s', { outcome: 'promote', note: 'x' }, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(incidentUpdateMany).not.toHaveBeenCalled();
+      });
+
+      it.each(['resolved', 'dismissed', 'rolled_back'])(
+        'ปิดไปแล้ว (%s) -> ConflictException',
+        async (status) => {
+          incidentFindUnique.mockResolvedValue({ ...systemIncident, status });
+
+          await expect(
+            service.decide(
+              'inc-s',
+              { outcome: 'resolve', note: 'x' },
+              operation,
+            ),
+          ).rejects.toThrow(ConflictException);
+          expect(incidentUpdateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it('race condition (ถูกปิดโดยคำขออื่น/ระบบพร้อมกัน) -> ConflictException', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+        incidentUpdateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.decide('inc-s', { outcome: 'resolve', note: 'x' }, operation),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('เขียน AuditLog action decide พร้อม outcome และที่มาของ Incident', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        await service.decide(
+          'inc-s',
+          { outcome: 'resolve', note: 'x' },
+          operation,
+        );
+
+        expect(auditLogCreate).toHaveBeenCalledWith({
+          data: {
+            userId: operation.id,
+            auditModule: 'incident',
+            action: 'decide',
+            metadata: {
+              incidentId: 'inc-s',
+              outcome: 'resolve',
+              incidentSource: INCIDENT_SOURCE.configSyncWriter,
+            },
+            ipAddress: null,
+          },
+        });
+      });
+    });
+
+    it('field report ที่ investigating (promote ไปแล้ว) -> ยัง ConflictException ตามเดิม', async () => {
+      incidentFindUnique.mockResolvedValue({
+        ...openReport,
+        status: 'investigating',
       });
 
       await expect(
         service.decide('inc-1', { outcome: 'resolve', note: 'x' }, operation),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ตัดสินใจไปแล้ว (ไม่ใช่ open) -> ConflictException', async () => {
