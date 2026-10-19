@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
@@ -17,7 +19,6 @@ import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
-import 'package:mobile/features/task/task_list_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 import 'package:mobile/features/task/task_status_ui.dart';
 
@@ -364,13 +365,23 @@ void main() {
     });
   });
 
+  // หน้า "งานของฉัน" รวมเข้าหน้าแรกแล้ว (docs/22 §7.2) — เทสรายการงานบนหน้าแรก
   group('ป้ายความเร่งด่วนในรายการงาน (UX audit #9)', () {
+    // ป้าย AppBadge บรรทัดเดียวตาม Web (nowrap) — วัดด้วยฟอนต์ Anuphan จริงที่แอป
+    // bundle ไว้ ไม่ใช่ฟอนต์ทดสอบที่กว้าง 1em ทุกตัวรวมสระ/วรรณยุกต์ไทย (ซึ่งทำให้
+    // "ใกล้ถึงกำหนด" ยาวเกินจริงหลายเท่า)
+    setUpAll(() async {
+      final loader = FontLoader(AppTypography.fontFamily)
+        ..addFont(rootBundle.load('assets/fonts/Anuphan[wght].ttf'));
+      await loader.load();
+    });
+
     testWidgets('320dp x2.0 -> ไม่ล้น และป้ายทุกตัวอ่านได้ครบ', (tester) async {
       useLargeTextNarrowScreen(tester);
       await tester.pumpWidget(
         ProviderScope(
           overrides: _taskOverrides(_tasksForEveryBadge()),
-          child: const MaterialApp(home: TaskListPage()),
+          child: const MaterialApp(home: HomePage()),
         ),
       );
       await tester.pump();
@@ -394,18 +405,18 @@ void main() {
       await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
 
       expect(tester.takeException(), isNull);
-      for (final key in ['urgent_task_card_0', 'history_card_0']) {
+      for (final key in ['my_task_card_0', 'history_card_0']) {
         final card = find.byKey(Key(key));
         final title = find.descendant(
           of: card,
           matching: find.text(_longTitle),
         );
         expect(_lineCount(tester, title), 2, reason: '$key ชื่องาน 2 บรรทัด');
-        // ป้าย (เลยกำหนด / เสร็จสิ้น) อยู่ใต้ชื่องาน ไม่แย่งความกว้างด้านข้าง
+        // ป้าย (เลยกำหนด / เสร็จแล้ว) อยู่ใต้ชื่องาน ไม่แย่งความกว้างด้านข้าง
         final badge = find.descendant(
           of: card,
           matching: find.text(
-            key.startsWith('urgent') ? 'เลยกำหนด' : 'เสร็จสิ้น',
+            key.startsWith('my_task') ? 'เลยกำหนด' : 'เสร็จแล้ว',
           ),
         );
         expect(
@@ -417,23 +428,27 @@ void main() {
       // เลขเครื่องได้ความกว้างเกือบเต็มการ์ด ไม่ขึ้นบรรทัดใหม่ทีละ 1-2 ตัวอักษร
       // (เดิม "G|PS-…") · ฟอนต์ทดสอบกว้าง 1em จึงยอมให้ 2 บรรทัด ฟอนต์ Android
       // จริงอยู่บรรทัดเดียว
-      expect(_lineCount(tester, find.text('DEV-0410')), lessThanOrEqualTo(2));
+      expect(
+        _lineCount(tester, find.text('อุปกรณ์: DEV-0410')),
+        lessThanOrEqualTo(2),
+      );
     });
 
-    testWidgets('Home ตัวอักษรปกติ: ป้ายยังอยู่ด้านขวาเหมือนเดิม', (
-      tester,
-    ) async {
+    // การ์ดงานแบบใหม่ (docs/22 Batch 3) วางป้ายใต้ชื่องานทุกขนาดตัวอักษร (แบบ
+    // การ์ดของ Web) — เดิมตัวอักษรปกติป้ายอยู่ด้านขวา
+    testWidgets('Home ตัวอักษรปกติ: ป้ายอยู่ใต้ชื่องาน ไม่ล้น', (tester) async {
       tester.view.physicalSize = const Size(430 * 3, 3000 * 3);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
       await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
 
-      final card = find.byKey(const Key('urgent_task_card_0'));
+      expect(tester.takeException(), isNull);
+      final card = find.byKey(const Key('my_task_card_0'));
       final title = find.descendant(of: card, matching: find.text(_longTitle));
       final badge = find.descendant(of: card, matching: find.text('เลยกำหนด'));
       expect(
-        tester.getTopLeft(badge).dx,
-        greaterThan(tester.getTopRight(title).dx),
+        tester.getTopLeft(badge).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(title).dy),
       );
     });
 

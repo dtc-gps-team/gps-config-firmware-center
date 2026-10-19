@@ -15,7 +15,6 @@ import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
-import 'package:mobile/features/task/task_list_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
 // UX audit #14 — ตอนออฟไลน์ repository ใช้ข้อมูลงานจาก cache ในเครื่องแบบเงียบๆ
@@ -138,7 +137,7 @@ void main() {
       await _seedCache([(_task('1'), _todayAt(9, 15))]);
       final api = _FakeApi([_task('1')])..offline = true;
 
-      await _pump(tester, const TaskListPage(), api);
+      await _pump(tester, const HomePage(), api);
 
       expect(_banner, findsOneWidget);
       expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
@@ -149,7 +148,7 @@ void main() {
       await _seedCache([(_task('1'), _todayAt(9, 15))]);
       final api = _FakeApi([_task('1')]);
 
-      await _pump(tester, const TaskListPage(), api);
+      await _pump(tester, const HomePage(), api);
 
       expect(_banner, findsNothing);
       expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
@@ -164,7 +163,7 @@ void main() {
       ]);
       final api = _FakeApi(const [])..offline = true;
 
-      await _pump(tester, const TaskListPage(), api);
+      await _pump(tester, const HomePage(), api);
 
       expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 08:05'), findsOneWidget);
     });
@@ -176,7 +175,7 @@ void main() {
       await _seedCache([(_task('1'), yesterday)]);
       final api = _FakeApi(const [])..offline = true;
 
-      await _pump(tester, const TaskListPage(), api);
+      await _pump(tester, const HomePage(), api);
 
       final dd = yesterday.day.toString().padLeft(2, '0');
       final mm = yesterday.month.toString().padLeft(2, '0');
@@ -206,12 +205,12 @@ void main() {
     testWidgets('เน็ตกลับมาแล้วดึงใหม่ -> แถบหายไป', (tester) async {
       await _seedCache([(_task('1'), _todayAt(9, 15))]);
       final api = _FakeApi([_task('1')])..offline = true;
-      await _pump(tester, const TaskListPage(), api);
+      await _pump(tester, const HomePage(), api);
       expect(_banner, findsOneWidget);
 
       api.offline = false;
       ProviderScope.containerOf(
-        tester.element(find.byType(TaskListPage)),
+        tester.element(find.byType(HomePage)),
       ).invalidate(taskListProvider);
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 50));
@@ -226,7 +225,7 @@ void main() {
     // ผลการอ่านของหน้ารายละเอียด
     group('รายการงานกับรายละเอียดงานไม่ใช้ state cache ร่วมกัน', () {
       Future<void> openDetail(WidgetTester tester) async {
-        Navigator.of(tester.element(find.byType(TaskListPage))).push(
+        Navigator.of(tester.element(find.byType(HomePage))).push(
           MaterialPageRoute<void>(
             builder: (_) => const TaskDetailPage(taskId: '1'),
           ),
@@ -246,7 +245,7 @@ void main() {
       testWidgets('รายการสดจาก server แล้วรายละเอียดใช้ cache -> กลับมา '
           'รายการต้องไม่มีแถบออฟไลน์', (tester) async {
         final api = _FakeApi([_task('1')]);
-        await _pump(tester, const TaskListPage(), api);
+        await _pump(tester, const HomePage(), api);
         expect(_banner, findsNothing);
 
         api.offline = true;
@@ -258,7 +257,7 @@ void main() {
 
         await back(tester);
         expect(
-          find.descendant(of: find.byType(TaskListPage), matching: _banner),
+          find.descendant(of: find.byType(HomePage), matching: _banner),
           findsNothing,
         );
       });
@@ -267,7 +266,7 @@ void main() {
           'รายการต้องยังมีแถบออฟไลน์', (tester) async {
         await _seedCache([(_task('1'), _todayAt(9, 15))]);
         final api = _FakeApi([_task('1')])..offline = true;
-        await _pump(tester, const TaskListPage(), api);
+        await _pump(tester, const HomePage(), api);
         expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
 
         api.offline = false;
@@ -280,7 +279,7 @@ void main() {
         await back(tester);
         expect(
           find.descendant(
-            of: find.byType(TaskListPage),
+            of: find.byType(HomePage),
             matching: find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'),
           ),
           findsOneWidget,

@@ -11,9 +11,12 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/core/widgets/skeleton_card.dart';
-import 'package:mobile/features/task/task_list_page.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
+import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/task/task_repository.dart';
+
+// หน้า "งานของฉัน" (`/tasks`) ถูกรวมเข้าหน้าแรก (docs/22 §7.2, มติ B ข้อ 12) —
+// เทสเดิมของหน้านั้นย้ายมาเทสส่วน "ต้องทำ" ของหน้าแรกแทน (ไม่ลบทิ้ง docs/22 §8.1)
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -94,7 +97,7 @@ Future<void> _pump(
           InMemorySessionProfileStore(),
         ),
       ],
-      child: const MaterialApp(home: TaskListPage()),
+      child: const MaterialApp(home: HomePage()),
     ),
   );
   await tester.pump(); // resolve listTasks
@@ -105,9 +108,9 @@ Future<void> _pumpRouted(
   required TaskRepository repo,
 }) async {
   final router = GoRouter(
-    initialLocation: AppRoutes.myTasks,
+    initialLocation: AppRoutes.home,
     routes: [
-      GoRoute(path: AppRoutes.myTasks, builder: (_, _) => const TaskListPage()),
+      GoRoute(path: AppRoutes.home, builder: (_, _) => const HomePage()),
       GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (_, state) => Scaffold(
@@ -145,7 +148,7 @@ Future<void> _pumpRouted(
 
 void main() {
   testWidgets(
-    'กำลังโหลดครั้งแรก -> โชว์ SkeletonCard (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
+    'กำลังโหลดครั้งแรก -> โชว์ skeleton (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
     'skeleton หายไปเหลือแต่การ์ดจริง',
     (tester) async {
       await tester.pumpWidget(
@@ -166,15 +169,15 @@ void main() {
               InMemorySessionProfileStore(),
             ),
           ],
-          child: const MaterialApp(home: TaskListPage()),
+          child: const MaterialApp(home: HomePage()),
         ),
       );
 
-      expect(find.byType(SkeletonCard), findsWidgets);
+      expect(find.byType(AppListSkeleton), findsWidgets);
       expect(find.byType(CircularProgressIndicator), findsNothing);
 
       await tester.pump(); // resolve listTasks
-      expect(find.byType(SkeletonCard), findsNothing);
+      expect(find.byType(AppListSkeleton), findsNothing);
     },
   );
 
