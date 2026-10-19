@@ -1,7 +1,8 @@
 # แผนรื้อ UI Mobile ใหม่ทั้งแอป ให้สอดคล้องกับ Web
 
 > **สถานะ:** แผน รอ A (paveekornkwork-dev) รีวิว · ยังไม่มีโค้ด UI ในใบนี้ (เอกสารอย่างเดียว) · ร่างแรก 19 ต.ค. 2569
-> · ปรับตามการตัดสินใจรอบ 2 ของ B วันเดียวกัน (§3) · เหลือคำถามเปิดข้อเดียวที่บล็อกการวางแผน (§10 ข้อ A1)
+> · ปรับตามการตัดสินใจรอบ 2 ของ B วันเดียวกัน (§3) · อัปเดตตามคำตอบของ A (§10) และมติ §5.2 ของ B วันเดียวกัน
+> (§3 ข้อ 17–18) · **ไม่มีคำถามเปิดเหลือ**
 >
 > **แทนที่:** `docs/20_Mobile_Redesign_Phase3_Design.md` (มติ B 19 ต.ค. 2569 — token ของ docs/20 ไม่ตรงกับ
 > Web จริง ดู §1)
@@ -11,7 +12,7 @@
 > ในไฟล์ (คอมเมนต์ hex บางตัวไม่ตรงกับค่าจริง ดู §4.4)
 >
 > **เอกสารที่เกี่ยวข้อง:** `docs/18` (สำรวจหน้าจอ Phase 1-2), `docs/21` (UX audit รอบแรก 25 ข้อ — ข้อที่ยังค้าง
-> ถูกรวมเข้า batch ใน §9), `docs/19` (Device PULL model ที่เกี่ยวกับคำถามเปิดใน §10)
+> ถูกรวมเข้า batch ใน §9), `docs/19` (Device PULL model ที่เกี่ยวกับ §10 ข้อ A1)
 
 ---
 
@@ -87,7 +88,12 @@
     หน้าแรกใหม่ใน Batch 3 ถ้าเก็บหน้าไว้ถึง Batch 5 จะเป็น route ค้างที่ไม่มีทางเข้า และปุ่ม "ทดสอบกับ Device
     Simulator" ใน Task Detail ไม่ได้พึ่งหน้านี้อยู่แล้ว
 
-`/devices/:id/confirm-firmware` ("ยืนยันติดตั้ง Firmware") **ยังไม่ตัดสินใจ** รอคำตอบ A (§10 ข้อ A1)
+**รอบ 3 — ตามคำตอบของ A (19 ต.ค. 2569)**
+17. **เก็บหน้า `/devices/:id/confirm-firmware` ("ยืนยันติดตั้ง Firmware") ไว้ รื้อดีไซน์ตามปกติใน Batch 4** ต่อจาก
+    Device Detail · backend ไม่แก้ · ทบทวนอีกครั้งตอนทำ Firmware PULL จริง — เหตุผลจาก A (§10 ข้อ A1): PULL ของ
+    Firmware ยังไม่ได้สร้าง (ขั้นที่ 2 ของ docs/19) ข้อความบน Web ที่ว่าไม่ต้องรอช่างกดยืนยันเป็นการจำลอง และยังมี
+    use case จริงคือช่างเปลี่ยน Firmware ด้วยมือหน้างานนอก Campaign
+18. **Task `cancelled` ใช้โทน `danger`** ตาม `TASK_STATUS_TONE` ของ Web (ไม่ใช้ `neutral` ที่ร่างแรกเสนอ) — §5.2
 
 ---
 
@@ -181,14 +187,16 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 ### 5.2 Mapping สถานะของ Mobile → tone
 
 ยึด mapping ที่ Web ใช้อยู่แล้วใน `lib/status-pill.tsx` (เปลี่ยนแค่ tone `progress` ของ status-pill เป็น `warning`
-ของ Badge เพราะ Badge ไม่มี `progress`) สถานะที่ Web ไม่มีหน้า (Task) เสนอตามหลักเดียวกัน · ข้อความบนป้ายดู §6
+ของ Badge เพราะ Badge ไม่มี `progress`) · Task status ใช้ `TASK_STATUS_TONE` ของ Web (มีใน `status-pill.tsx` ใช้กับ
+`demo-data.ts` เท่านั้น Web ไม่มีหน้า Task จริง) ให้สีของสถานะเดียวกันตรงกันสองฝั่ง (มติ B ข้อ 18) · สถานะที่ Web
+ไม่มีเลย (Task urgency, ซิงก์ในเครื่อง) เสนอตามหลักเดียวกัน · ข้อความบนป้ายดู §6
 
 | กลุ่ม | ค่า (wire) | Tone | ที่มา |
 |---|---|---|---|
-| Task status | `pending` | neutral | เสนอ (Web ไม่มีหน้า Task) |
-| | `in_progress` | warning | เสนอ — ตามหลัก "กำลังดำเนินการ" = `progress` ของ Web (เช่น `investigating`) |
-| | `completed` | success | เสนอ |
-| | `cancelled` | neutral | เสนอ |
+| Task status | `pending` | neutral | Web `TASK_STATUS_TONE` |
+| | `in_progress` | warning | Web (`progress`) |
+| | `completed` | success | Web |
+| | `cancelled` | danger | Web — **ร่างแรกเสนอ neutral** · B ตัดสินใช้ danger ตาม Web ให้สองฝั่งตรงกัน (มติ B ข้อ 18) |
 | Task urgency | `overdue` | danger | เสนอ |
 | | `dueSoon` | warning | เสนอ |
 | Incident status | `open` | danger | Web `INCIDENT_STATUS_TONE` |
@@ -216,7 +224,10 @@ kebab-case เป็น camelCase เช่น `--muted-foreground` → `mutedFo
 สำรวจแล้ว `Badge` ของ Web **ยังไม่ถูกใช้ในหน้าจริงเลย** (มีแค่ใน `page-header.test.tsx`) หน้าจริง 20 ไฟล์ยังใช้
 `StatusPill` (สี Tailwind sky/amber/emerald/rose) ผลคือหลัง Mobile เปลี่ยนเป็น Badge **สีสถานะของ Mobile กับหน้า
 Web ปัจจุบันจะต่างกันเล็กน้อย** จนกว่า Web จะย้ายไป Badge เหมือนกัน · ไม่บล็อกแผนนี้ (B ตัดสินแล้วว่าใช้ Badge)
-แต่ถาม A ไว้ใน §10 ข้อ A3 ว่า Web มีแผนย้ายไหม
+(A ตอบใน §10 ข้อ A3)
+
+> **⚠️ ต้องรีวิวอีกครั้งหลัง PR #344 (ของ A) merge:** ข้อความ "สี Tailwind ดิบ" ในส่วนนี้ (และ §3 ข้อ 3) จะ
+> outdated เพราะ #344 เปลี่ยน `StatusPill` ให้ใช้ token เดียวกับ Badge · ตอนนี้ #344 ยังไม่ merge จึงยังไม่แก้เนื้อหา
 
 ---
 
@@ -262,7 +273,7 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
 | ปุ่ม + หัวหน้าแจ้งปัญหา | แจ้งปัญหา / แจ้งปัญหาหน้างาน | `Field Report` (ใช้ในหน้า Incident) | **Field Report** | ตาม Web |
 | หน้า Override ค่า | Override ค่าพารามิเตอร์ | `Config Override` | **Config Override** | ตาม Web |
 | หน้าขอ Firmware Override | ขอ Firmware Override | `Firmware Override` | **Firmware Override** | ตาม Web |
-| หน้ายืนยันติดตั้ง Firmware | ยืนยันติดตั้ง Firmware | — | รอ §10 ข้อ A1 | |
+| หน้ายืนยันติดตั้ง Firmware | ยืนยันติดตั้ง Firmware | — | **คงไทย** (ยืนยันติดตั้ง Firmware) | **ไม่มีคู่เทียบใน Web จึงคงภาษาไทย** · หน้าเก็บไว้ตาม §3 ข้อ 17 |
 | แท็บ + หัวหน้าหน้าแรก (รวมรายการงาน §7.2) | (ไม่มีชื่อ) · "งานของฉัน" (หน้าแยก ถูกตัด) | — | **คงไทย** (เช่น "หน้าแรก" — ตั้งชื่อตอน Batch 3) | **ไม่มีคู่เทียบใน Web จึงคงภาษาไทย** (Dashboard ของ Web เป็นภาพรวมของ Operation คนละอย่างกับรายการงานของช่าง) |
 | แท็บ + หัวหน้าแจ้งเตือน | รายการแจ้งเตือน | (ไม่มีหน้าแยก มีแค่กระดิ่ง) | **คงไทย** (แท็บ "แจ้งเตือน", หัวหน้า "รายการแจ้งเตือน") | **ไม่มีคู่เทียบใน Web จึงคงภาษาไทย** |
 | หัวหน้าหน้ารายละเอียด | รายละเอียดงาน / รายละเอียดอุปกรณ์ / รายละเอียด Incident | (ใช้ชื่อ record เป็นหัวหน้า) | **คงเดิม** | **ไม่มีคู่เทียบใน Web จึงคงภาษาไทย** · ชื่อ record (ชื่องาน / เลขเครื่อง / หัวข้อ) อยู่ใน meta ของ `AppPageHeader` |
@@ -346,8 +357,8 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
 | `/incident-report` `field_report_page.dart` | ST/OT / ปุ่มในแท็บ Incidents, Device Detail | ส่งรายงานปัญหา | `POST /incidents` | รื้อดีไซน์ | 4 |
 | `/devices/:id/firmware-override` | ST / Device Detail | เลือก Firmware ส่งคำขอ | `GET /firmware`, `POST /devices/:id/firmware-override` | รื้อดีไซน์ | 4 |
 | `/devices/:id` `device_detail_page.dart` | ทุกคน / Device Search, Task Detail, Incident, แจ้งเตือน | ปุ่ม Config Override (ST), Firmware Override (ST), ยืนยันติดตั้ง Firmware (ST/OT), Field Report (ST/OT) | `GET /devices/:id`, `GET /devices/:id/status` | รื้อดีไซน์ | 4 |
+| `/devices/:id/confirm-firmware` `confirm_firmware_install_page.dart` | ST/OT / Device Detail | ยืนยันติดตั้ง Firmware | `GET /firmware`, `GET /devices/:id/status`, `POST /devices/:id/confirm-firmware-install` | **เก็บไว้ รื้อดีไซน์ปกติ** (§3 ข้อ 17 · §10 ข้อ A1) — ทำต่อจาก Device Detail · ทบทวนอีกครั้งตอนทำ Firmware PULL | 4 |
 | `/devices/:id/config-override` | ST / Device Detail | แก้ค่าเฉพาะ field แล้วส่งคำขอ | `GET /devices/:id/config`, `GET /config-definitions`, `POST /devices/:id/config-override` | รื้อดีไซน์ · ใช้ `AppSensitiveValue` (docs/21 #20) | 4 |
-| `/devices/:id/confirm-firmware` | ST/OT / Device Detail | ยืนยันติดตั้ง Firmware | `GET /firmware`, `GET /devices/:id/status`, `POST /devices/:id/confirm-firmware-install` | **รอ A ตัดสินใจ** (§10 ข้อ A1) — ยังไม่กำหนด batch | ยังไม่กำหนด |
 | `/tasks/:id` `task_detail_page.dart` | ST/OT, Operation (เพิ่มบันทึก) / หน้าแรก, แจ้งเตือน, push | บันทึกสถานะ, timeline + เพิ่มบันทึก, **ทดสอบกับ Device Simulator** (ไม่บังคับ), ส่ง Config เข้าเครื่อง | `GET/PATCH /tasks/:id`, `GET /tasks/:id/events`, `POST /tasks/:id/notes`, `POST /devices/:id/simulate-config`, `POST /devices/:id/apply-config` | รื้อดีไซน์ (หน้าซับซ้อนสุด) · **เป็นที่เดียวที่เหลือของ Device Simulator** · ปุ่มหลัก/รอง (docs/21 #11) | 5 |
 | `/simulator` `simulator_page.dart` | (เดิม ST/OT จากทางลัด) | ทดสอบความพร้อม Config | `GET /config`, `POST /devices/:id/simulate-config` | **ตัดออก** (มติ B ข้อ 4) · ลบทางลัด + route + หน้า + ผลพ่วงพร้อมกันใน Batch 3 (มติ B ข้อ 16) | 3 |
 | push (`push_message_handler.dart`) | — | พาไปหน้า Task Detail / Incident / แจ้งเตือน / หน้าแรก | `POST/DELETE /notifications/device-tokens` | ไม่มี UI ไม่ต้องรื้อ · ปรับให้ deep link เข้าโครงแท็บใหม่ (Batch 3) | 3 |
@@ -394,35 +405,44 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 
 | Batch | งาน | เงื่อนไขว่าเสร็จ (คร่าวๆ) |
 |---|---|---|
-| 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | เปิดแล้ว รอรีวิว |
+| 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | merge แล้ว (`9cfa1d1`) |
 | 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography`, `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#667080`, ปุ่มตาม variant), bundle Noto Sans Thai Looped + `OFL.txt`, ไฟล์ label กลาง (§6), ล็อก `ThemeMode.light` · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี label + tone · รายงานขนาด APK |
 | 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว |
 | 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว |
-| 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → Config Override (722, + `AppSensitiveValue`) · แตกหลายใบได้ | เหมือน Batch 2 |
+| 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → **Confirm Firmware Install (317)** → Config Override (722, + `AppSensitiveValue`) · Confirm Firmware Install วางต่อจาก Device Detail ไม่ใช่ตามขนาดไฟล์ เพราะเป็นหน้าลูกที่เปิดจากปุ่มใน Device Detail (§3 ข้อ 17) · แตกหลายใบได้ | เหมือน Batch 2 |
 | 5 | **Task Detail** (หน้าซับซ้อนสุด 909 บรรทัด) — รื้อดีไซน์ทั้งหน้า รวมส่วน "ทดสอบกับ Device Simulator" (ที่เดียวของ Simulator หลังหน้า `/simulator` ถูกลบใน Batch 3) · ปุ่มหลัก/รอง (docs/21 #11) · งาน Step 4.1 ที่เคยอยู่ใน docs/20: แยกข้อความ ออฟไลน์ / 401 / 5xx / 4xx อื่น ยกเว้น 408 และ 429 (ยกเงื่อนไขว่าเสร็จมาทั้งหมด) | เหมือน Batch 2 + เทส simulator ใน Task Detail ผ่าน + เทสแยกกรณี error ครบ |
 | 6 | **ปิดงาน** — สลับ ThemeData ทั้งแอปเป็น v2 · ลบ token เก่า (`navy`, `mock*` ฯลฯ) และ `AppTheme.dark()` · เทสดัก `Color(0x` นอกไฟล์ token · ปิด docs/21 ข้อ #21, #22, #24 · อัปเดตสถานะใน docs/21 | grep `Color(0x` ใน `lib/` เหลือแค่ไฟล์ token · E2E เขียว |
-| — | **`/devices/:id/confirm-firmware`** | **ยังไม่กำหนด batch — รอคำตอบ A (§10 ข้อ A1)** · ถ้ายังจำเป็น รื้อดีไซน์ต่อจาก Device Detail · ถ้าไม่จำเป็น ตัดออกเป็นใบแยก (ปุ่มใน Device Detail หายด้วย) |
 
 - ระหว่างทาง (Batch 2–5) ครอบ theme ใหม่เฉพาะหน้าที่ย้ายแล้ว หน้าที่โชว์จะไม่มีสีปนกัน · สลับทั้งแอปใน Batch 6
 - docs/21 ข้อ #7 / #25 (applicationId, keystore, ชื่อแอป, ไอคอน) ไม่อยู่ในแผนนี้ ต้องคุยกับทีมแยก
 
 ---
 
-## 10. คำถามเปิด
+## 10. คำถามถึง A และคำตอบ (ไม่มีคำถามเปิดเหลือ)
 
-### ถึง A
+### ถึง A — ตอบครบแล้ว (19 ต.ค. 2569)
 
-- **A1. "ยืนยันติดตั้ง Firmware" ยังจำเป็นไหมหลังเปลี่ยนเป็น PULL model?** — Web บอก Operation ตอนปล่อย
-  Rollout ว่า "ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป"
-  (`lib/status-pill.tsx`) แต่ Mobile ยังมีหน้า `/devices/:id/confirm-firmware` ให้ ST/OT กดยืนยัน
-  (`POST /devices/{id}/confirm-firmware-install` ยัง active เขียน AuditLog และเช็คว่าตรงกับ Firmware ที่ Campaign
-  กำหนดไหม ถ้าไม่ตรงต้องขอ Firmware Override ก่อน) — ปุ่มนี้ยังมี use case จริงไหม (เช่น ช่างเปลี่ยน
-  Firmware ด้วยมือหน้างานนอก Campaign) หรือควรตัดออก · ถ้าตัด backend endpoint จะเก็บไว้หรือเลิกใช้
+- **A1. "ยืนยันติดตั้ง Firmware" ยังจำเป็นไหมหลังเปลี่ยนเป็น PULL model?**
+  - **คำตอบของ A: ยังจำเป็น เก็บไว้ก่อน** — PULL ของ Firmware ยังไม่ได้สร้าง (docs/19 ทำ Config ก่อน Firmware เป็น
+    ขั้นที่ 2) ข้อความบน Web ที่ว่า "ไม่ต้องรอช่างกดยืนยัน" เป็นการจำลองว่ากล่องดึงค่าไปใช้เอง ยังไม่ใช่ของจริง ·
+    ยังมี use case จริงคือช่างเปลี่ยน Firmware ด้วยมือหน้างานนอก Campaign และ endpoint `confirm-firmware-install`
+    เขียน AuditLog กับเช็คว่าตรงกับ Firmware ที่ Campaign กำหนด · **ผล:** Mobile เก็บหน้านี้และรื้อดีไซน์ตามปกติ
+    (A อ้าง "Batch 9" ซึ่งเป็นเลขของร่างแรก = **Batch 4** ของแผนนี้ ต่อจาก Device Detail — §3 ข้อ 17, §9) ·
+    backend ไม่แตะ · ทบทวนอีกครั้งตอนทำ Firmware PULL จริง · **A จะปรับข้อความบน Web เอง**ให้ไม่ขัดกับหน้านี้
+  - คำถามเดิม: Web บอก Operation ตอนปล่อย
+    Rollout ว่า "ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป"
+    (`lib/status-pill.tsx`) แต่ Mobile ยังมีหน้า `/devices/:id/confirm-firmware` ให้ ST/OT กดยืนยัน
+    (`POST /devices/{id}/confirm-firmware-install` ยัง active เขียน AuditLog และเช็คว่าตรงกับ Firmware ที่ Campaign
+    กำหนดไหม ถ้าไม่ตรงต้องขอ Firmware Override ก่อน) — ปุ่มนี้ยังมี use case จริงไหม (เช่น ช่างเปลี่ยน
+    Firmware ด้วยมือหน้างานนอก Campaign) หรือควรตัดออก · ถ้าตัด backend endpoint จะเก็บไว้หรือเลิกใช้
 - **A2.** (ข้อสังเกต ไม่บล็อก) คอมเมนต์ hex ใน `globals.css` ไม่ตรงกับค่า oklch จริงหลายตัว (§4.4) และ `--input`
-  ได้ 1.25:1 ไม่ถึง 3:1 สำหรับขอบช่องกรอก (§4.3 — Mobile ใช้ `muted-foreground` แทนแล้ว)
+  ได้ 1.25:1 ไม่ถึง 3:1 สำหรับขอบช่องกรอก (§4.3 — Mobile ใช้ `muted-foreground` แทนแล้ว) · **A รับทราบ**
 - **A3.** (ข้อสังเกต ไม่บล็อก) หน้าจริงของ Web ยังใช้ `StatusPill` ทั้งหมด `Badge` ยังไม่ถูกใช้ (§5.3) — Web มี
   แผนย้ายไป Badge ไหม (ถ้าย้าย สีสถานะสองฝั่งจะตรงกัน) และป้ายสถานะคำเดียวที่แสดงค่าดิบตัวเล็ก (`open`,
   `registered`) จะเปลี่ยนเป็นตัวแรกพิมพ์ใหญ่แบบที่ Mobile ใช้ (§6.1) ไหม
+  - **คำตอบของ A:** Web ยังใช้ `StatusPill` ต่อในรอบนี้ แต่ #344 เปลี่ยนสีของ `StatusPill` ไปใช้ token ชุดเดียวกับ
+    Badge สีสถานะสองฝั่งจึงตรงกัน (ดู note ใน §5.3) · การย้ายหน้าจริงไปเรียก `Badge` ตรงๆ และการเปลี่ยนป้ายคำเดียว
+    เป็นตัวแรกพิมพ์ใหญ่ ยังไม่ได้ตัดสินใจ (ไม่บล็อกแผนนี้)
 
 ### ถึง B — ตัดสินครบแล้ว (19 ต.ค. 2569 รอบ 2)
 
