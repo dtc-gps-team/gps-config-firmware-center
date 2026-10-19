@@ -78,7 +78,7 @@ export class DeviceSyncService {
    * `autoApplyConfig()` ในโหมด `mock` ทุกประการ แทนการส่งค่าที่ไม่ควรส่ง
    */
   async listJobs(deviceId: string): Promise<DeviceJobsResponse> {
-    const targets = await this.prisma.campaignRolloutTarget.findMany({
+    const pending = await this.prisma.campaignRolloutTarget.findMany({
       where: {
         deviceId,
         status: 'pending',
@@ -92,6 +92,10 @@ export class DeviceSyncService {
       include: { rollout: true },
       orderBy: { createdAt: 'asc' },
     });
+    const lateReturns = await this.findLateReturnTargets(deviceId);
+    const targets = [...pending, ...lateReturns].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
 
     const response: DeviceJobsResponse = {
       serverTime: new Date().toISOString(),
@@ -115,6 +119,11 @@ export class DeviceSyncService {
       const config = configCache.get(configId) ?? null;
 
       const problem = this.findProblem(config, device);
+      if (problem && target.status === 'skipped_offline') {
+        // เครื่องที่กลับมาทีหลัง: งานนี้ใช้ไม่ได้แล้ว ไม่ส่ง และไม่มีอะไรให้บันทึก
+        // (ผลถูกตัดสินเป็น `skipped_offline` ไปแล้ว ไม่เปลี่ยนเป็น failed)
+        continue;
+      }
       if (problem) {
         await this.campaignRolloutService.recordTargetResult(
           deviceId,
@@ -137,7 +146,11 @@ export class DeviceSyncService {
       // ครั้งแรกที่งานถูกส่งเท่านั้น (คงเวลาแรกไว้) — ใช้แยก "ยังไม่มาดึง" กับ
       // "ดึงแล้วรอผล" และเลือกเครื่องที่ต้องได้ Config เก่าคืนตอน Rollback
       await this.prisma.campaignRolloutTarget.updateMany({
-        where: { id: target.id, pulledAt: null, status: 'pending' },
+        where: {
+          id: target.id,
+          pulledAt: null,
+          status: { in: ['pending', 'skipped_offline'] },
+        },
         data: { pulledAt: new Date() },
       });
 
@@ -185,6 +198,26 @@ export class DeviceSyncService {
       throw new NotFoundException('ไม่พบงานนี้ของอุปกรณ์เครื่องนี้');
     }
 
+    const rollout = target.rollout;
+
+    // เครื่องที่ถูกข้ามเพราะออฟไลน์ แล้วกลับมารายงานผลทีหลัง (docs/19 §16.4)
+    // รับได้ถ้า Rollout ยังไม่ถูกยกเลิก/ปฏิเสธ — เปลี่ยนเป็น success/failed
+    // พร้อมหมายเหตุ "ล่าช้า" โดยไม่ทำให้เกิด Auto Pause และไม่เปิด Rollout ที่จบแล้วใหม่
+    if (target.status === 'skipped_offline') {
+      if (!['active', 'completed'].includes(rollout.status)) {
+        await this.appendLateReport(target.id, result, detail);
+        return { accepted: false, reason: 'rollout-closed' };
+      }
+      const recorded = await this.campaignRolloutService.recordLateTargetResult(
+        target.id,
+        result === 'success',
+        this.messageFor(result, detail),
+      );
+      return recorded
+        ? { accepted: true }
+        : { accepted: false, reason: 'already-reported' };
+    }
+
     // ข้อความของเครื่องเก็บไว้เสมอแม้ไม่ถูกนับ (docs/19 §4.2) เพราะเครื่องที่ถูก
     // Rollback ไปแล้วอาจได้ใช้ Config ตัวที่มีปัญหาไปจริงก่อนจะรู้ตัว Operation
     // ต้องเห็นว่าเครื่องนั้นรายงานว่าอะไร
@@ -192,7 +225,6 @@ export class DeviceSyncService {
       await this.appendLateReport(target.id, result, detail);
       return { accepted: false, reason: 'already-reported' };
     }
-    const rollout = target.rollout;
     if (
       !(ROLLOUT_OPEN_FOR_RESULT as readonly string[]).includes(rollout.status)
     ) {
@@ -210,12 +242,7 @@ export class DeviceSyncService {
     }
 
     const success = result === 'success';
-    const message =
-      detail && detail.trim() !== ''
-        ? detail
-        : success
-          ? 'อุปกรณ์รายงานว่าใช้ Config สำเร็จ'
-          : 'อุปกรณ์รายงานว่าใช้ Config ไม่สำเร็จ';
+    const message = this.messageFor(result, detail);
 
     const claimed = await this.campaignRolloutService.recordTargetResult(
       deviceId,
@@ -261,6 +288,54 @@ export class DeviceSyncService {
         resultDetail: row.resultDetail ? `${row.resultDetail} | ${note}` : note,
       },
     });
+  }
+
+  /** ข้อความผลของเครื่อง — ใช้ข้อความมาตรฐานถ้าเครื่องไม่ได้ส่ง `detail` มา */
+  private messageFor(result: JobResult, detail?: string): string {
+    if (detail && detail.trim() !== '') return detail;
+    return result === 'success'
+      ? 'อุปกรณ์รายงานว่าใช้ Config สำเร็จ'
+      : 'อุปกรณ์รายงานว่าใช้ Config ไม่สำเร็จ';
+  }
+
+  /**
+   * งานที่เคยถูกข้ามเพราะเครื่องออฟไลน์ (`skipped_offline`) ของเครื่องนี้ ที่ยัง
+   * ควรส่งให้เมื่อเครื่องกลับมา (docs/19 §16.4): Rollout ยัง `active` หรือ
+   * `completed` (ไม่ใช่ cancelled/rejected) และเครื่องยังไม่มีงานของ Rollout ที่
+   * ใหม่กว่า (ถ้ามี Rollout ใหม่กว่าหรือ Rollback แล้ว เครื่องจะได้งานของรอบนั้น
+   * แทน ไม่ส่ง Config เก่าทับ)
+   */
+  private async findLateReturnTargets(deviceId: string) {
+    const skipped = await this.prisma.campaignRolloutTarget.findMany({
+      where: {
+        deviceId,
+        status: 'skipped_offline',
+        rollout: {
+          status: { in: ['active', 'completed'] },
+          applyMode: 'real',
+          payloadType: 'Config',
+          configId: { not: null },
+        },
+      },
+      include: { rollout: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const current: typeof skipped = [];
+    for (const target of skipped) {
+      const newer = await this.prisma.campaignRolloutTarget.count({
+        where: {
+          deviceId,
+          id: { not: target.id },
+          rollout: {
+            payloadType: 'Config',
+            status: { notIn: ['rejected', 'cancelled'] },
+            createdAt: { gt: target.rollout.createdAt },
+          },
+        },
+      });
+      if (newer === 0) current.push(target);
+    }
+    return current;
   }
 
   /** เหตุผลที่งานนี้ส่งให้อุปกรณ์ไม่ได้ (null = ส่งได้) — เงื่อนไขเดียวกับ

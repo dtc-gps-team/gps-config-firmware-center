@@ -16,6 +16,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import {
+  APPLY_TIMEOUT_DETAIL_PREFIX,
   APPROVABLE_CAMPAIGN_ROLLOUT_STATUS,
   AUTO_PAUSE_FAILURE_RATE_THRESHOLD,
   OPEN_CAMPAIGN_ROLLOUT_STATUSES,
@@ -45,6 +46,16 @@ import {
   MAX_DEVICE_VALUES_PER_ROLLOUT,
 } from './dto/create-campaign-rollout.dto';
 import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
+import {
+  MAX_EVENT_FAILED_DEVICE_IDS,
+  MAX_EVENT_SAMPLE_ERRORS,
+  ROLLOUT_FAILED_EVENT,
+  ROLLOUT_RESULT_UPDATED_EVENT,
+  ROLLOUT_STATUS_CHANGED_EVENT,
+  RolloutEvents,
+  RolloutFailureKind,
+  rolloutFailureSeverity,
+} from './rollout-events';
 import {
   FIRMWARE_ROLLBACK_EXECUTOR,
   type FirmwareRollbackExecutor,
@@ -111,6 +122,8 @@ export class CampaignRolloutService {
     // บันทึกลง `CampaignRollout.applyMode` เท่านั้น ที่อื่นอ่านจาก Rollout เอง
     @Inject(CONFIG_APPLY_MODE)
     private readonly configApplyMode: ConfigApplyMode,
+    // event ที่โมดูล incident (A) และ notification (B) ฟัง — docs/19 §15.5
+    private readonly rolloutEvents: RolloutEvents,
   ) {}
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
@@ -266,6 +279,9 @@ export class CampaignRolloutService {
             status: 'pending_approval',
             targetCount: rolloutDeviceIds.length,
             createdBy: actor.id,
+            // เวลารอของโหมด real (docs/19 §16) ไม่ส่ง = null = ค่าเริ่มต้น
+            pullTimeoutHours: dto.pullTimeoutHours ?? null,
+            applyTimeoutMinutes: dto.applyTimeoutMinutes ?? null,
             ...(deviceValues.size > 0
               ? { deviceValuesReason: dto.deviceValuesReason ?? null }
               : {}),
@@ -928,6 +944,12 @@ export class CampaignRolloutService {
     });
 
     await this.logAudit('resume', actor.id, undefined, actor.ipAddress ?? null);
+    // ให้ Incident ของ Rollout นี้ (ถ้ามี) เปลี่ยนเป็น investigating (docs/19 §15.4)
+    this.rolloutEvents.safeEmit(ROLLOUT_STATUS_CHANGED_EVENT, {
+      rolloutId: updated.id,
+      campaignId: updated.campaignId,
+      action: 'resumed',
+    });
     return this.dispatchAutoApply(updated, actor.id);
   }
 
@@ -1074,6 +1096,9 @@ export class CampaignRolloutService {
           // สืบทอดโหมดจากรอบต้นเรื่อง (docs/19 §3) — null (Rollout เก่าก่อนมี
           // คอลัมน์นี้) ให้ `release()` ตัดสินจากโหมดระบบตอนปล่อยตามปกติ
           applyMode: badRollout.applyMode,
+          // เวลารอเดียวกับรอบต้นเรื่อง (docs/19 §16.3)
+          pullTimeoutHours: badRollout.pullTimeoutHours,
+          applyTimeoutMinutes: badRollout.applyTimeoutMinutes,
         },
       });
 
@@ -1093,6 +1118,12 @@ export class CampaignRolloutService {
       undefined,
       actor.ipAddress ?? null,
     );
+    // Incident ของรอบที่มีปัญหา (ถ้ามี) เปลี่ยนเป็น rolled_back (docs/19 §15.4)
+    this.rolloutEvents.safeEmit(ROLLOUT_STATUS_CHANGED_EVENT, {
+      rolloutId: badRollout.id,
+      campaignId,
+      action: 'rolled-back',
+    });
     return rollback;
   }
 
@@ -1690,8 +1721,11 @@ export class CampaignRolloutService {
         return false;
       }
       const rollout = target.rollout;
+      // การเปลี่ยนสถานะของ Rollout ที่เกิดใน transaction นี้ — ใช้ส่ง event หลัง
+      // commit เท่านั้น (listener อ่านข้อมูลสดจาก DB ต้องเห็นผลที่ commit แล้ว)
+      let transition = null as 'auto-pause' | 'completed' | null;
 
-      return await this.prisma.$transaction(async (tx) => {
+      const claimed = await this.prisma.$transaction(async (tx) => {
         const claim = await tx.campaignRolloutTarget.updateMany({
           where: { id: target.id, status: 'pending' },
           data: {
@@ -1768,13 +1802,346 @@ export class CampaignRolloutService {
                   : rollout.status,
           },
         });
+        if (pendingCount === 0) transition = 'completed';
+        else if (shouldAutoPause) transition = 'auto-pause';
         return true;
       });
+
+      if (claimed && transition) {
+        await this.emitFailureOutcome(rollout.id, transition, {
+          resolveWhenClean: true,
+        });
+      }
+      return claimed;
     } catch (err) {
       this.logger.warn(
         `บันทึกผล Campaign Rollout ไม่สำเร็จ (deviceId ${deviceId}): ${(err as Error).message}`,
       );
       return false;
+    }
+  }
+
+  /**
+   * ข้ามเครื่องที่ไม่เคยมาดึงงานเลยจนหมดเวลารอ (docs/19 §16.3) — เรียกจากงาน
+   * ตามเวลา (`RolloutTimeoutService`) เท่านั้น `pending` + `pulledAt = null`
+   * -> `skipped_offline` ไม่นับเป็นความล้มเหลว (ไม่แตะ failureCount และไม่เข้า
+   * Auto Pause เพราะเครื่องออฟไลน์ไม่ใช่ความผิดของ Config ตาม PDF §10.1)
+   * แต่นับว่า "มีผลแล้ว" ถ้าเป็นเครื่องสุดท้ายที่ค้าง Rollout จบเป็น `completed`
+   *
+   * claim แบบ atomic (`updateMany` ระบุสถานะเดิม) กันชนกับเครื่องที่ดึงงาน/
+   * รายงานผลเข้ามาพร้อมกัน — คืน `false` ถ้าไม่ใช่ pending/ถูกดึงไปแล้ว
+   */
+  async markTargetSkippedOffline(
+    targetId: string,
+    detail: string,
+  ): Promise<boolean> {
+    try {
+      let completedRolloutId = null as string | null;
+      const skipped = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.campaignRolloutTarget.updateMany({
+          where: { id: targetId, status: 'pending', pulledAt: null },
+          data: { status: 'skipped_offline', resultDetail: detail },
+        });
+        if (claim.count === 0) return false;
+
+        const target = await tx.campaignRolloutTarget.findUniqueOrThrow({
+          where: { id: targetId },
+        });
+        const pendingCount = await tx.campaignRolloutTarget.count({
+          where: { rolloutId: target.rolloutId, status: 'pending' },
+        });
+        if (pendingCount === 0) {
+          const closed = await tx.campaignRollout.updateMany({
+            where: { id: target.rolloutId, status: 'active' },
+            data: { status: 'completed' },
+          });
+          if (closed.count > 0) completedRolloutId = target.rolloutId;
+        }
+        return true;
+      });
+
+      if (skipped && completedRolloutId) {
+        await this.emitFailureOutcome(completedRolloutId, 'completed', {
+          resolveWhenClean: true,
+        });
+      }
+      return skipped;
+    } catch (err) {
+      this.logger.warn(
+        `ข้ามเครื่องที่ไม่มาดึงงานไม่สำเร็จ (target ${targetId}): ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * ผลที่มาช้า (docs/19 §16.4) — เครื่องที่ถูกข้าม (`skipped_offline`) กลับมา
+   * ดึงงานและรายงานผลทีหลัง เปลี่ยนเป็น `success`/`failed` พร้อมหมายเหตุ
+   * "ล่าช้า" และนับตัวเลขใหม่ **ไม่ทำให้เกิด Auto Pause และไม่เปิด Rollout ที่
+   * `completed` แล้วขึ้นมาใหม่** (แค่ตัวเลขถูกต้องขึ้น) · ถ้าเป็นผลสุดท้ายของ
+   * Rollout ที่ยัง `active` จะปิดเป็น `completed` ตามปกติ
+   *
+   * Incident ของ Rollout นี้ถูกอัปเดตตัวเลขเท่านั้น **ไม่ปิดเอง** (§15.4 แถวสุดท้าย
+   * ให้ Operation ปิด) คืน `false` ถ้าไม่ใช่ `skipped_offline` แล้ว
+   *
+   * **event ที่ส่งแยกตามสถานะของ Rollout หลังบันทึก** (แก้ตามรีวิว B บน #337):
+   *   - ผลนี้เป็นตัวสุดท้ายที่ปิด Rollout ที่ยัง `active` -> ส่งผลการจบตามปกติ
+   *     (`rollout-failed` หรือ `completed-clean`) เพราะเป็นการจบครั้งแรกจริง
+   *   - Rollout จบหรือหยุดไปแล้ว (`completed` / `paused` ฯลฯ) -> ส่ง
+   *     `rollout-result-updated` อย่างเดียว อัปเดตตัวเลขใน Incident เดิมโดยไม่
+   *     แตะสถานะ (ไม่เปิดกลับเป็น `open`) และ notification ไม่ฟัง จึงไม่แจ้งเตือน
+   *     ซ้ำต่อเครื่องที่ทยอยกลับมารายงาน
+   *   - Rollout ยัง `active` และยังมีเครื่องค้าง -> ไม่ส่งอะไร ผลสุดท้ายตอนจบ
+   *     คำนวณจากข้อมูลสดอยู่แล้ว
+   */
+  async recordLateTargetResult(
+    targetId: string,
+    success: boolean,
+    detail: string,
+  ): Promise<boolean> {
+    try {
+      let completedRolloutId = null as string | null;
+      let openedRolloutId = null as string | null;
+      let statusAfter = null as string | null;
+      const recorded = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.campaignRolloutTarget.updateMany({
+          where: { id: targetId, status: 'skipped_offline' },
+          data: {
+            status: success ? 'success' : 'failed',
+            resultDetail: `ผลล่าช้า: ${detail}`,
+          },
+        });
+        if (claim.count === 0) return false;
+
+        const target = await tx.campaignRolloutTarget.findUniqueOrThrow({
+          where: { id: targetId },
+        });
+        const rolloutId = target.rolloutId;
+        const [successCount, failureCount, pendingCount] = await Promise.all([
+          tx.campaignRolloutTarget.count({
+            where: { rolloutId, status: 'success' },
+          }),
+          tx.campaignRolloutTarget.count({
+            where: { rolloutId, status: 'failed' },
+          }),
+          tx.campaignRolloutTarget.count({
+            where: { rolloutId, status: 'pending' },
+          }),
+        ]);
+        const closed =
+          pendingCount === 0
+            ? await tx.campaignRollout.updateMany({
+                where: { id: rolloutId, status: 'active' },
+                data: { successCount, failureCount, status: 'completed' },
+              })
+            : { count: 0 };
+        if (closed.count > 0) {
+          completedRolloutId = rolloutId;
+        } else {
+          const updated = await tx.campaignRollout.update({
+            where: { id: rolloutId },
+            data: { successCount, failureCount },
+          });
+          openedRolloutId = rolloutId;
+          statusAfter = updated.status;
+        }
+        return true;
+      });
+
+      if (recorded) {
+        if (completedRolloutId) {
+          await this.emitFailureOutcome(completedRolloutId, 'completed', {
+            resolveWhenClean: true,
+          });
+        } else if (openedRolloutId && statusAfter !== 'active') {
+          await this.emitResultUpdate(openedRolloutId);
+        }
+      }
+      return recorded;
+    } catch (err) {
+      this.logger.warn(
+        `บันทึกผลล่าช้าไม่สำเร็จ (target ${targetId}): ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * ส่ง event `rollout-failed` / `rollout-status-changed` หลังที่ Rollout เข้า
+   * Auto Pause หรือจบ (docs/19 §15.2) — **never-throw** เป็นแค่ผลข้างเคียง
+   * ไม่ใช่ส่วนของการบันทึกผล
+   *
+   * อ่านข้อมูลสดจาก DB หลัง commit: จำนวนล้ม "ในรอบปัจจุบัน" (ตั้งแต่ปล่อย/
+   * Resume ล่าสุด) นับแยกจากสะสม เพื่อให้ Rollout ที่ Resume แล้วจบสะอาดปิด
+   * Incident ได้ (§15.4) ส่วน severity คำนวณที่นี่ครั้งเดียว
+   *
+   * `resolveWhenClean`: จบโดยไม่มีเครื่องล้ม/ถูกข้ามในรอบนี้ ให้ส่ง
+   * `completed-clean` (Incident เดิมจะถูกปิดอัตโนมัติ) · ผลล่าช้าส่ง false
+   * เพราะ §15.4 ให้ Operation ปิดเอง
+   */
+  private async emitFailureOutcome(
+    rolloutId: string,
+    transition: 'auto-pause' | 'completed',
+    options: { resolveWhenClean: boolean },
+  ): Promise<void> {
+    try {
+      const outcome = await this.loadRolloutOutcome(rolloutId);
+      if (!outcome) return;
+      const {
+        rollout,
+        windowFailureCount,
+        skippedCount,
+        timeoutFailureCount,
+        failed,
+        sampleErrors,
+      } = outcome;
+
+      const autoPaused = transition === 'auto-pause';
+      let kind: RolloutFailureKind;
+      if (autoPaused) {
+        kind = 'auto-pause';
+      } else if (windowFailureCount > 0) {
+        kind = 'completed-with-failures';
+      } else if (skippedCount > 0) {
+        kind = 'completed-with-skipped';
+      } else {
+        // จบโดยไม่มีเครื่องล้ม/ถูกข้ามในรอบนี้ — ไม่มีอะไรต้องแจ้งเพิ่ม
+        if (options.resolveWhenClean) {
+          this.rolloutEvents.safeEmit(ROLLOUT_STATUS_CHANGED_EVENT, {
+            rolloutId,
+            campaignId: rollout.campaignId,
+            action: 'completed-clean',
+          });
+        }
+        return;
+      }
+
+      this.rolloutEvents.safeEmit(ROLLOUT_FAILED_EVENT, {
+        rolloutId,
+        campaignId: rollout.campaignId,
+        campaignName: rollout.campaign.name,
+        configId: rollout.configId,
+        firmwareId: rollout.firmwareId,
+        kind,
+        severity: rolloutFailureSeverity({
+          autoPaused,
+          timeoutFailureCount,
+          windowFailureCount,
+          skippedCount,
+          targetCount: rollout.targetCount,
+          threshold: AUTO_PAUSE_FAILURE_RATE_THRESHOLD,
+        }),
+        failureCount: rollout.failureCount,
+        skippedCount,
+        targetCount: rollout.targetCount,
+        failedDeviceIds: failed.map((f) => f.deviceId),
+        sampleErrors,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `ส่ง event ผลของ Rollout ${rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * อ่านข้อมูลสดจาก DB เพื่อประกอบ event ของ Rollout (ใช้ร่วมกันระหว่าง
+   * `emitFailureOutcome` กับ `emitResultUpdate`) `null` ถ้าไม่มี Rollout นี้
+   * ลำดับ query คงเดิม (เทส unit พึ่งลำดับ `count` ของ mock)
+   */
+  private async loadRolloutOutcome(rolloutId: string) {
+    const rollout = await this.prisma.campaignRollout.findUnique({
+      where: { id: rolloutId },
+      include: { campaign: { select: { name: true } } },
+    });
+    if (!rollout) return null;
+
+    const windowFilter = rollout.activeWindowStartedAt
+      ? { updatedAt: { gte: rollout.activeWindowStartedAt } }
+      : {};
+    const [windowFailureCount, skippedCount, timeoutFailureCount, failed] =
+      await Promise.all([
+        this.prisma.campaignRolloutTarget.count({
+          where: { rolloutId, status: 'failed', ...windowFilter },
+        }),
+        this.prisma.campaignRolloutTarget.count({
+          where: { rolloutId, status: 'skipped_offline' },
+        }),
+        this.prisma.campaignRolloutTarget.count({
+          where: {
+            rolloutId,
+            status: 'failed',
+            resultDetail: { startsWith: APPLY_TIMEOUT_DETAIL_PREFIX },
+          },
+        }),
+        this.prisma.campaignRolloutTarget.findMany({
+          where: { rolloutId, status: 'failed' },
+          select: { deviceId: true, resultDetail: true },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_EVENT_FAILED_DEVICE_IDS,
+        }),
+      ]);
+
+    const sampleErrors = [
+      ...new Set(
+        failed
+          .map((f) => f.resultDetail)
+          .filter((d): d is string => !!d && d.trim() !== ''),
+      ),
+    ].slice(0, MAX_EVENT_SAMPLE_ERRORS);
+
+    return {
+      rollout,
+      windowFailureCount,
+      skippedCount,
+      timeoutFailureCount,
+      failed,
+      sampleErrors,
+    };
+  }
+
+  /**
+   * ส่ง `rollout-result-updated` ผลของเครื่องในรอบที่จบหรือหยุดไปแล้วเปลี่ยน
+   * (ผลล่าช้า docs/19 §16.4) incident อัปเดต**ตัวเลข**ใน Incident เดิมเท่านั้น
+   * ไม่แตะสถานะ ไม่สร้างใหม่ · ไม่ใช่ `rollout-failed` เพื่อให้ notification
+   * (ฟังเฉพาะ `rollout-failed`) ไม่แจ้งเตือนซ้ำต่อเครื่องที่ทยอยกลับมารายงาน ·
+   * **never-throw** เหมือน `emitFailureOutcome`
+   */
+  private async emitResultUpdate(rolloutId: string): Promise<void> {
+    try {
+      const outcome = await this.loadRolloutOutcome(rolloutId);
+      if (!outcome) return;
+      const {
+        rollout,
+        windowFailureCount,
+        skippedCount,
+        timeoutFailureCount,
+        failed,
+        sampleErrors,
+      } = outcome;
+
+      this.rolloutEvents.safeEmit(ROLLOUT_RESULT_UPDATED_EVENT, {
+        rolloutId,
+        campaignId: rollout.campaignId,
+        campaignName: rollout.campaign.name,
+        severity: rolloutFailureSeverity({
+          autoPaused: false,
+          timeoutFailureCount,
+          windowFailureCount,
+          skippedCount,
+          targetCount: rollout.targetCount,
+          threshold: AUTO_PAUSE_FAILURE_RATE_THRESHOLD,
+        }),
+        failureCount: rollout.failureCount,
+        skippedCount,
+        targetCount: rollout.targetCount,
+        failedDeviceIds: failed.map((f) => f.deviceId),
+        sampleErrors,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `ส่ง event อัปเดตผลของ Rollout ${rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
     }
   }
 

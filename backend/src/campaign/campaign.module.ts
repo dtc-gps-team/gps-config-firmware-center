@@ -14,6 +14,9 @@ import { CampaignController } from './campaign.controller';
 import { CampaignRolloutController } from './campaign-rollout.controller';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CampaignService } from './campaign.service';
+import { RolloutEvents } from './rollout-events';
+import { RolloutTimeoutJob } from './rollout-timeout.job';
+import { RolloutTimeoutService } from './rollout-timeout.service';
 import {
   FIRMWARE_ROLLBACK_EXECUTOR,
   type FirmwareRollbackExecutor,
@@ -44,6 +47,12 @@ import {
   providers: [
     CampaignService,
     CampaignRolloutService,
+    // event `rollout-failed` / `rollout-status-changed` (docs/19 §15.5) —
+    // incident (A) และ notification (B) ฟังคนละโมดูล
+    RolloutEvents,
+    // เวลารอเครื่องที่ไม่ตอบกลับ (docs/19 §16) — งานตามเวลาทุก 5 นาที
+    RolloutTimeoutService,
+    RolloutTimeoutJob,
     // FIRMWARE_ROLLBACK_EXECUTOR: env `FIRMWARE_ROLLBACK_MODE` (`mock`
     // default | `real`) ตาม Mock Mode Pattern เดียวกับ `CONFIG_APPLIER` ใน
     // `device.module.ts` — อยู่ที่นี่ไม่ใช่ device.module.ts เพราะใช้แค่ใน
@@ -94,6 +103,6 @@ import {
       inject: [NestConfigService],
     },
   ],
-  exports: [CampaignService, CampaignRolloutService],
+  exports: [CampaignService, CampaignRolloutService, RolloutEvents],
 })
 export class CampaignModule {}

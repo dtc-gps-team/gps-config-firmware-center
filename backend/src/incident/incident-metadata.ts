@@ -25,6 +25,21 @@ export interface IncidentMetadata {
   lastError?: string;
   /** ผลเช็คแบบมีโครงสร้าง (เช่น configCheck/connectionCheck ของ Mobile Simulator Test) */
   checkResults?: unknown;
+
+  // ---- source `rollout-failure` (docs/19 §15.3) ----
+  /** `CampaignRollout.id` — 1 Rollout มีได้ 1 Incident ใช้เป็นกุญแจหา Incident เดิม */
+  rolloutId?: string;
+  campaignId?: string;
+  /** `auto-pause` | `completed-with-failures` | `completed-with-skipped` */
+  kind?: string;
+  failureCount?: number;
+  /** เครื่องที่ถูกข้ามเพราะออฟไลน์ (docs/19 §16) */
+  skippedCount?: number;
+  targetCount?: number;
+  /** ไม่เกิน 20 เครื่อง */
+  failedDeviceIds?: string[];
+  /** ไม่เกิน 3 รายการ */
+  sampleErrors?: string[];
 }
 
 /**
@@ -37,6 +52,9 @@ export const INCIDENT_SOURCE = {
   // เพิ่มใหม่ (issue #236) — ST/OT แจ้งปัญหาที่เจอกับอุปกรณ์เองผ่าน Mobile
   // (ไม่ใช่ auto-detect เหมือน 2 ค่าข้างบน) ดู `createFieldReport()`
   fieldReport: 'field-report',
+  // เพิ่มใหม่ (docs/19 §15) — Rollout เข้า Auto Pause หรือจบแต่มีเครื่องที่ไม่สำเร็จ
+  // / ถูกข้ามเพราะออฟไลน์ สร้างอัตโนมัติ 1 Incident ต่อ 1 Rollout
+  rolloutFailure: 'rollout-failure',
 } as const;
 
 export type IncidentSource =

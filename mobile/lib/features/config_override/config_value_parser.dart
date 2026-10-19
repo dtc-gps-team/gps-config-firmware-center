@@ -10,9 +10,6 @@ bool isIntegerDataType(String dataType) => dataType == 'integer';
 bool isDecimalDataType(String dataType) =>
     dataType == 'decimal' || dataType == 'number';
 
-bool isNumericDataType(String dataType) =>
-    isIntegerDataType(dataType) || isDecimalDataType(dataType);
-
 bool isJsonDataType(String dataType) =>
     dataType == 'json' || dataType == 'array';
 

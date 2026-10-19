@@ -3793,6 +3793,18 @@ components:
             `/device-sync/*` · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
             field นี้ (ถือเป็น `mock`) · Firmware เป็น `mock` เสมอ · Rollback
             สืบทอดจากรอบต้นเรื่อง
+        pullTimeoutHours:
+          type: integer
+          nullable: true
+          description: >-
+            (v3.57, docs/19 §16) เวลารอให้เครื่องมาดึงงาน (ชั่วโมง) · null =
+            ใช้ค่าเริ่มต้น 72 · Rollback สืบทอดจากรอบต้นเรื่อง
+        applyTimeoutMinutes:
+          type: integer
+          nullable: true
+          description: >-
+            (v3.57, docs/19 §16) เวลารอให้เครื่องรายงานผลหลังดึงงาน (นาที) ·
+            null = ใช้ค่าเริ่มต้น 30 · Rollback สืบทอดจากรอบต้นเรื่อง
         createdBy:
           type: string
           format: uuid
@@ -3864,6 +3876,24 @@ components:
             `Device.deviceId` ของสมาชิกกลุ่มที่ต้องการเอาออกจาก Rollout รอบนี้
             (ทุกตัวต้องเป็นสมาชิกกลุ่มจริง ไม่งั้น 400 — เอาออกจนไม่เหลือ
             เป้าหมายเลยก็ 400 เช่นกัน)
+        pullTimeoutHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          description: >-
+            (v3.57, docs/19 §16) เวลารอให้เครื่อง "มาดึงงาน" เป็นชั่วโมง นับจาก
+            ปล่อยหรือ Resume ล่าสุด เกินแล้วเครื่องที่ไม่เคยดึงงานถูกข้าม
+            (`skipped_offline`) ไม่นับเป็นล้มเหลว · ไม่ส่ง = 72 · ใช้กับ
+            Rollout โหมด `real` เท่านั้น
+        applyTimeoutMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: >-
+            (v3.57, docs/19 §16) เวลารอให้เครื่อง "รายงานผล" เป็นนาที นับจาก
+            เครื่องดึงงานไป เกินแล้วนับเป็น `failed` (นับเข้า Auto Pause และ
+            Incident ระดับ `critical`) · ไม่ส่ง = 30 · ใช้กับ Rollout โหมด
+            `real` เท่านั้น
         deviceValues:
           type: array
           maxItems: 200
@@ -3967,11 +3997,15 @@ components:
 
     CampaignRolloutTargetStatus:
       type: string
-      enum: [pending, success, failed]
+      enum: [pending, success, failed, skipped_offline]
       description: >-
         ผลของ Rollout รอบหนึ่งต่ออุปกรณ์หนึ่งเครื่อง (Campaign Monitor #22) —
         เริ่มเป็น `pending` เสมอตอนสร้าง Rollout เปลี่ยนเป็น `success`/`failed`
-        เมื่อ `applyConfigToDevice`/`confirmFirmwareInstall` รายงานผลเข้ามา
+        เมื่อ `applyConfigToDevice`/`confirmFirmwareInstall` รายงานผลเข้ามา ·
+        (v3.57, docs/19 §16) `skipped_offline` = เครื่องไม่เคยมาดึงงานภายใน
+        เวลารอ จึงถูกข้ามโดยไม่ใช่ความล้มเหลว (ไม่นับเข้า `failureCount`
+        และ Auto Pause) ถ้าเครื่องกลับมาดึงงานและรายงานผลทีหลังจะเปลี่ยนเป็น
+        `success`/`failed` พร้อมหมายเหตุ "ผลล่าช้า"
 
     CampaignRolloutTarget:
       type: object
