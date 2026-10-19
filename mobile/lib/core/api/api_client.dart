@@ -91,25 +91,10 @@ class ApiClient {
     );
   }
 
-  /// `POST /config/{configId}/simulate`
-  Future<SimulationResult> simulateConfig({
-    required String configId,
-    String? deviceModel,
-  }) async {
-    final body = <String, dynamic>{};
-    if (deviceModel != null) body['deviceModel'] = deviceModel;
-    return _wrap(
-      () => _dio.post<Map<String, dynamic>>(
-        '/config/$configId/simulate',
-        data: body,
-      ),
-      SimulationResult.fromJson,
-    );
-  }
-
   /// `POST /devices/{deviceId}/simulate-config` — readiness check เต็มรูปแบบ
   /// (config_simulator Phase 2): รวม config + compatibility + connection check
-  /// เป็นผลเดียว ต่างจาก [simulateConfig] (Phase 1) ที่เช็คแค่ตัว Config เอง.
+  /// เป็นผลเดียว ต่างจาก `POST /config/{configId}/simulate` (Phase 1) ที่เช็คแค่
+  /// ตัว Config เอง (Mobile ไม่ได้เรียก endpoint นั้นแล้ว).
   /// `deviceId` คือ `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ Prisma id.
   Future<DeviceSimulateConfigResult> simulateConfigOnDevice({
     required String deviceId,
