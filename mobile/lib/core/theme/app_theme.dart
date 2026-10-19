@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_tokens.dart';
+
 /// App-wide theme. Kept intentionally small — a design pass comes later.
 ///
 /// The colors below were consolidated from per-screen `_XColors` classes
@@ -64,6 +66,152 @@ class AppTheme {
 
   static ThemeData light() => _base(Brightness.light);
   static ThemeData dark() => _base(Brightness.dark);
+
+  /// Theme ใหม่ตาม design system ของ Web (docs/22 §4) — โหมดสว่างอย่างเดียว
+  /// ยังไม่มีหน้าไหนใช้ หน้าที่ย้ายแล้วครอบด้วย theme นี้ทีละหน้า (Batch 2–5)
+  /// แล้วสลับทั้งแอปใน Batch 6 · token อยู่ใน `app_tokens.dart`
+  static ThemeData v2() {
+    const scheme = ColorScheme(
+      brightness: Brightness.light,
+      primary: AppColors.primary,
+      onPrimary: AppColors.primaryForeground,
+      secondary: AppColors.secondary,
+      onSecondary: AppColors.secondaryForeground,
+      error: AppColors.destructive,
+      onError: AppColors.primaryForeground,
+      surface: AppColors.card,
+      onSurface: AppColors.foreground,
+      onSurfaceVariant: AppColors.mutedForeground,
+      surfaceContainerHighest: AppColors.secondary,
+      outline: AppColors.inputBorder,
+      outlineVariant: AppColors.border,
+    );
+    const radius = BorderRadius.all(Radius.circular(AppRadius.lg));
+    const shape = RoundedRectangleBorder(borderRadius: radius);
+    // ความสูงปุ่ม 48 ต่างจาก Web (h-8 = 32) โดยตั้งใจ — พื้นที่กดขั้นต่ำบนมือถือ
+    // (Material 48dp) ใช้แค่สี radius ตัวอักษร ตาม Web (docs/22 §4.5)
+    // · กว้างขั้นต่ำ 64 ไม่ใช่ `Size.fromHeight` (กว้าง infinity) ที่ทำให้ปุ่มใน Row /
+    // Wrap throw "BoxConstraints forces an infinite width" (รีวิว #349) — ปุ่มที่ต้อง
+    // เต็มความกว้างให้ครอบเองด้วย `SizedBox(width: double.infinity)` หรือ `Expanded`
+    const buttonSize = Size(64, 48);
+    const buttonText = TextStyle(
+      fontSize: AppTypography.sm,
+      fontWeight: FontWeight.w500,
+    );
+
+    TextStyle text(double size, double height, [FontWeight? weight]) =>
+        TextStyle(
+          fontSize: size,
+          height: height,
+          fontWeight: weight,
+          color: AppColors.foreground,
+        );
+
+    OutlineInputBorder inputBorder(Color color, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide(color: color, width: width),
+        );
+
+    return ThemeData(
+      colorScheme: scheme,
+      scaffoldBackgroundColor: AppColors.background,
+      fontFamily: AppTypography.fontFamily,
+      textTheme: TextTheme(
+        headlineSmall: text(
+          AppTypography.xxl,
+          AppTypography.xxlHeight,
+          FontWeight.w600,
+        ),
+        titleLarge: text(
+          AppTypography.xl,
+          AppTypography.xlHeight,
+          FontWeight.w600,
+        ),
+        titleMedium: text(
+          AppTypography.base,
+          AppTypography.baseHeight,
+          FontWeight.w500,
+        ),
+        titleSmall: text(
+          AppTypography.sm,
+          AppTypography.smHeight,
+          FontWeight.w500,
+        ),
+        bodyLarge: text(AppTypography.base, AppTypography.baseHeight),
+        bodyMedium: text(AppTypography.sm, AppTypography.smHeight),
+        bodySmall: text(AppTypography.xs, AppTypography.xsHeight),
+        labelLarge: text(
+          AppTypography.sm,
+          AppTypography.smHeight,
+          FontWeight.w500,
+        ),
+        labelMedium: text(
+          AppTypography.xs,
+          AppTypography.xsHeight,
+          FontWeight.w500,
+        ),
+        labelSmall: text(
+          AppTypography.xs,
+          AppTypography.xsHeight,
+          FontWeight.w500,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: inputBorder(AppColors.inputBorder),
+        enabledBorder: inputBorder(AppColors.inputBorder),
+        focusedBorder: inputBorder(AppColors.ring, 2),
+        errorBorder: inputBorder(AppColors.destructive),
+        focusedErrorBorder: inputBorder(AppColors.destructive, 2),
+        disabledBorder: inputBorder(AppColors.border),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: buttonSize,
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.primaryForeground,
+          // Web: disabled:opacity-50
+          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
+          disabledForegroundColor: AppColors.primaryForeground,
+          shape: shape,
+          textStyle: buttonText,
+        ),
+      ),
+      // variant `outline` ของ Web: ขอบ border พื้น background ตัวอักษร foreground
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: buttonSize,
+          foregroundColor: AppColors.foreground,
+          backgroundColor: AppColors.background,
+          side: const BorderSide(color: AppColors.border),
+          shape: shape,
+          textStyle: buttonText,
+        ),
+      ),
+      // variant `ghost` / `link` ของ Web
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          shape: shape,
+          textStyle: buttonText,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.card,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: AppColors.foreground.withValues(alpha: 0.2)),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: AppColors.border,
+        thickness: 1,
+        space: 1,
+      ),
+    );
+  }
 
   static ThemeData _base(Brightness brightness) {
     final scheme = ColorScheme.fromSeed(
