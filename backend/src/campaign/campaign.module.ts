@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { CentralDeviceModule } from '../central-device/central-device.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import {
   CONFIG_APPLIER,
@@ -14,6 +15,8 @@ import { CampaignController } from './campaign.controller';
 import { CampaignRolloutController } from './campaign-rollout.controller';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CampaignService } from './campaign.service';
+import { CentralRolloutPollJob } from './central-rollout-poll.job';
+import { CentralRolloutPollService } from './central-rollout-poll.service';
 import { RolloutEvents } from './rollout-events';
 import { RolloutTimeoutJob } from './rollout-timeout.job';
 import { RolloutTimeoutService } from './rollout-timeout.service';
@@ -42,7 +45,8 @@ import {
 @Module({
   // ConfigDefinitionModule: ตรวจค่าเฉพาะเครื่องของ Rollout เทียบคลัง Parameter
   // (`validateOperationOverridableFields`) ทิศทางเดียว ไม่วนกลับ
-  imports: [AuthModule, ConfigDefinitionModule],
+  // CentralDeviceModule: ส่ง Config ไป Server กลางในโหมด `central` (ทิศทางเดียว ไม่วนกลับ)
+  imports: [AuthModule, ConfigDefinitionModule, CentralDeviceModule],
   controllers: [CampaignController, CampaignRolloutController],
   providers: [
     CampaignService,
@@ -53,6 +57,9 @@ import {
     // เวลารอเครื่องที่ไม่ตอบกลับ (docs/19 §16) — งานตามเวลาทุก 5 นาที
     RolloutTimeoutService,
     RolloutTimeoutJob,
+    // ถามผลคำสั่งของ Rollout โหมด central ทุก 4 วินาที
+    CentralRolloutPollService,
+    CentralRolloutPollJob,
     // FIRMWARE_ROLLBACK_EXECUTOR: env `FIRMWARE_ROLLBACK_MODE` (`mock`
     // default | `real`) ตาม Mock Mode Pattern เดียวกับ `CONFIG_APPLIER` ใน
     // `device.module.ts` — อยู่ที่นี่ไม่ใช่ device.module.ts เพราะใช้แค่ใน

@@ -3919,12 +3919,16 @@ components:
           description: เหตุผลเดียวกับ successCount ด้านบน (นับจาก status = failed)
         applyMode:
           type: string
-          enum: [mock, real]
+          enum: [mock, real, central]
           nullable: true
           description: >-
             (v3.56, docs/19 §3) โหมดการส่ง Config ตอนปล่อย: `mock` = backend
             apply ให้ทุกเครื่องทันที · `real` = รอให้อุปกรณ์ดึงงานเองผ่าน
-            `/device-sync/*` · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
+            `/device-sync/*` · `central` = backend สั่ง Server กลาง (ESP32
+            Central Management) ส่ง Config ให้กล่องทีละเครื่อง แล้วถามผลคำสั่ง
+            ทุก 4 วินาที (`DEVICE_CONFIG_APPLY_MODE=central`) ผลสำเร็จ/ล้มเหลว
+            นับเข้า Auto Pause ตามเดิม ส่วนกล่องออฟไลน์หรือคำสั่งถูกแทนที่/ยกเลิก
+            นับเป็นข้าม (`skipped_offline`) ไม่นับล้มเหลว · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
             field นี้ (ถือเป็น `mock`) · Firmware เป็น `mock` เสมอ · Rollback
             สืบทอดจากรอบต้นเรื่อง
         pullTimeoutHours:

@@ -3,8 +3,14 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CENTRAL_DEVICE_CLIENT,
   type CentralDeviceClient,
+  CentralRejectedError,
   CentralUnavailableError,
 } from './central-device.client';
+import {
+  buildCentralSettings,
+  classifyCentralCommand,
+  type CentralCommandOutcome,
+} from './central-config';
 import type {
   CentralDevice,
   CentralDeviceList,
@@ -13,6 +19,15 @@ import type {
   RawGatewayDevice,
   RawRegistryDevice,
 } from './central-device.types';
+
+/** ผลการสั่งส่ง Config ให้กล่องหนึ่งเครื่อง */
+export type PushConfigOutcome =
+  /** Server กลางรับคำสั่งแล้ว ผลสำเร็จหรือไม่ต้องตามด้วย `getCommandOutcome` */
+  | { kind: 'sent'; commandId: string; configVersion: number }
+  /** ส่งไม่ได้เพราะข้อมูลหรือสถานะกล่องไม่เหมาะ (ไม่รู้จักกล่อง, ไม่ผ่าน schema ฯลฯ) ลองซ้ำไม่ช่วย */
+  | { kind: 'rejected'; reason: string }
+  /** ติดต่อ Server กลางไม่ได้ */
+  | { kind: 'unavailable'; reason: string };
 
 /** เก็บผลล่าสุดสั้นๆ กันหน้าเว็บที่ refresh ทุก 5 วินาทีหลายหน้าต่างยิง Server กลางถี่เกินจำเป็น */
 const CACHE_TTL_MS = 3000;
@@ -73,6 +88,93 @@ export class CentralDeviceService {
       list,
       device: list.devices.find((d) => d.deviceId === deviceId) ?? null,
     };
+  }
+
+  /**
+   * สั่งส่ง Config ให้กล่อง: ตรวจว่า Server กลางรู้จักและกล่องอยู่ในทะเบียน, แปลงค่าตาม schema
+   * ที่กล่อง **รายงานว่ารันอยู่จริง**, แล้ว `PUT config` (Server กลางสร้างเวอร์ชันใหม่และส่งทันที
+   * ถ้ากล่องออนไลน์ ถ้าออฟไลน์เขาเก็บคิวไว้ส่งตอนกล่องกลับมา) · ไม่โยน error ออกไป
+   */
+  async pushConfig(
+    deviceId: string,
+    fields: Record<string, unknown>,
+  ): Promise<PushConfigOutcome> {
+    const { list, device } = await this.findDevice(deviceId);
+    if (!list.reachable) {
+      return {
+        kind: 'unavailable',
+        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
+      };
+    }
+    if (!device) {
+      return {
+        kind: 'rejected',
+        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
+      };
+    }
+    if (!device.registered) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงสั่ง Config ไม่ได้`,
+      };
+    }
+    if (!device.hardwareModel || device.reportedSchemaVersion === null) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่รายงานโมเดลหรือ schema ที่รัน (ต้องให้กล่องเชื่อมต่อก่อน)`,
+      };
+    }
+
+    try {
+      const schema = await this.client.getSchema(
+        device.hardwareModel,
+        device.reportedSchemaVersion,
+      );
+      const built = buildCentralSettings(fields, schema);
+      if ('errors' in built) {
+        return { kind: 'rejected', reason: built.errors.join(' | ') };
+      }
+      const result = await this.client.putDeviceConfig(
+        deviceId,
+        built.settings,
+      );
+      // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
+      this.cache = null;
+      const commandId = result.command?.command_id;
+      if (!commandId) {
+        return {
+          kind: 'rejected',
+          reason: 'Server กลางรับ Config แล้วแต่ไม่สร้างคำสั่งส่งให้กล่อง',
+        };
+      }
+      return { kind: 'sent', commandId, configVersion: result.config_version };
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return { kind: 'rejected', reason: err.message };
+      }
+      return {
+        kind: 'unavailable',
+        reason:
+          err instanceof CentralUnavailableError
+            ? err.message
+            : 'ติดต่อ Server กลางไม่สำเร็จ',
+      };
+    }
+  }
+
+  /** ผลล่าสุดของคำสั่งที่เคยสั่งไว้ · ถามไม่ได้ = `unavailable` (ไม่ตัดสิน รอถามใหม่) */
+  async getCommandOutcome(commandId: string): Promise<CentralCommandOutcome> {
+    try {
+      return classifyCentralCommand(await this.client.getCommand(commandId));
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return {
+          kind: 'failed',
+          detail: `Server กลางไม่พบคำสั่ง ${commandId} (${err.message})`,
+        };
+      }
+      return { kind: 'unavailable' };
+    }
   }
 
   private async fetchDevices(): Promise<CentralDeviceList> {

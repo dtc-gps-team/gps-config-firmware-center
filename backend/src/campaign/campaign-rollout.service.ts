@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   CampaignPayloadType,
@@ -38,6 +39,7 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
+import { CentralDeviceService } from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
@@ -124,6 +126,10 @@ export class CampaignRolloutService {
     private readonly configApplyMode: ConfigApplyMode,
     // event ที่โมดูล incident (A) และ notification (B) ฟัง — docs/19 §15.5
     private readonly rolloutEvents: RolloutEvents,
+    // ส่ง Config ไป Server กลาง (โหมด `central`) · @Optional เพื่อให้ module/เทสที่ไม่ได้
+    // ต่อ Server กลางสร้างได้ตามเดิม · `CampaignModule` import ให้เสมอ ถ้าไม่มีแล้ว
+    // Rollout โหมด central จะนับเป็นล้มเหลวพร้อมเหตุผล ไม่ค้างเงียบๆ
+    @Optional() private readonly central?: CentralDeviceService,
   ) {}
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
@@ -508,7 +514,9 @@ export class CampaignRolloutService {
     // Rollback สืบทอดค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้
     // ค่าที่มีอยู่ก่อน
     const applyMode: ConfigApplyMode =
-      existing.applyMode === 'real' || existing.applyMode === 'mock'
+      existing.applyMode === 'real' ||
+      existing.applyMode === 'mock' ||
+      existing.applyMode === 'central'
         ? existing.applyMode
         : existing.payloadType === 'Config'
           ? this.configApplyMode
@@ -1241,7 +1249,13 @@ export class CampaignRolloutService {
     });
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
-      where: { rolloutId: rollout.id, status: 'pending' },
+      where: {
+        rolloutId: rollout.id,
+        status: 'pending',
+        // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
+        // ตอน resume() หลัง Auto Pause
+        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -1364,6 +1378,17 @@ export class CampaignRolloutService {
         // ตอนนี้ไม่กระทบเพราะ ConfigApplier ยังเป็น mock แต่ก่อนเปลี่ยนเป็น
         // implementation จริง (docker/production) ต้องย้าย claim ไปก่อน apply
         // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
+        if (rollout.applyMode === 'central') {
+          await this.pushToCentral(
+            rollout,
+            target.id,
+            device.deviceId,
+            config.id,
+            fields,
+            actorId,
+          );
+          continue;
+        }
         const result = await this.configApplier.applyConfig({
           deviceId: device.deviceId,
           deviceModel: device.deviceModel,
@@ -1421,6 +1446,61 @@ export class CampaignRolloutService {
     return this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rollout.id },
     });
+  }
+
+  /**
+   * โหมด `central`: สั่ง Server กลางส่ง Config ให้กล่องหนึ่งเครื่อง
+   * - สั่งสำเร็จ: เก็บรหัสคำสั่งไว้ที่ target (ยังเป็น `pending`) ให้ `CentralRolloutPollService`
+   *   ถามผลจนจบ · ลง AuditLog `apply-config` ตอนสั่ง (การนำ Config ไปใช้เกิดขึ้นตอนนี้)
+   * - ส่งไม่ได้ (ไม่รู้จักกล่อง, ไม่ผ่าน schema, ติดต่อ Server กลางไม่ได้): นับเป็นล้มเหลวทันที
+   *   ผ่าน `recordTargetResult()` จึงได้ Auto Pause และ Incident ตามกฎเดิม
+   */
+  private async pushToCentral(
+    rollout: CampaignRollout,
+    targetId: string,
+    deviceId: string,
+    configId: string,
+    fields: Record<string, unknown>,
+    actorId: string,
+  ): Promise<void> {
+    const outcome = this.central
+      ? await this.central.pushConfig(deviceId, fields)
+      : ({
+          kind: 'unavailable',
+          reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
+        } as const);
+
+    if (outcome.kind === 'sent') {
+      await this.prisma.campaignRolloutTarget.update({
+        where: { id: targetId },
+        data: {
+          centralCommandId: outcome.commandId,
+          resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Config เวอร์ชัน ${outcome.configVersion}) รอกล่องยืนยัน`,
+        },
+      });
+      await this.logAudit('apply-config', actorId, {
+        deviceId,
+        configId,
+        fieldNames: Object.keys(fields),
+        centralCommandId: outcome.commandId,
+      });
+      return;
+    }
+
+    const claimed = await this.recordTargetResult(
+      deviceId,
+      { configId },
+      false,
+      outcome.reason,
+      rollout.id,
+    );
+    if (claimed) {
+      await this.logAudit('apply-config', actorId, {
+        deviceId,
+        configId,
+        fieldNames: Object.keys(fields),
+      });
+    }
   }
 
   /**

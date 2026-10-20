@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
+  CentralRejectedError,
   CentralUnavailableError,
   HttpCentralDeviceClient,
   MockCentralDeviceClient,
@@ -158,6 +159,70 @@ describe('HttpCentralDeviceClient (กับ Server กลางปลอม)', 
 
     expect(results).toEqual([[], []]);
     expect(logins).toBe(2); // เพิ่มแค่ 1 รอบ ไม่ใช่ 2
+  });
+
+  it('PUT config: ส่ง settings เป็น JSON และอ่านคำสั่งที่ได้กลับมา', async () => {
+    let seenBody = '';
+    let seenMethod = '';
+    handler = (req) => {
+      if (req.url === '/api/login')
+        return { status: 200, body: { token: 't' } };
+      seenMethod = req.method ?? '';
+      return {
+        status: 200,
+        body: { config_version: 3, command: { command_id: 'CMD-3' } },
+      };
+    };
+    server.on('request', (req) => {
+      if (req.url?.includes('/config')) {
+        req.on('data', (c: Buffer) => (seenBody += c.toString()));
+      }
+    });
+    const out = await makeClient().putDeviceConfig('BOX-1', {
+      gps: { send_interval_sec: 20 },
+    });
+    expect(out.config_version).toBe(3);
+    expect(seenMethod).toBe('PUT');
+    expect(JSON.parse(seenBody)).toEqual({
+      settings: { gps: { send_interval_sec: 20 } },
+    });
+  });
+
+  it('PUT config: Server กลางปฏิเสธ 400 -> CentralRejectedError พร้อมเหตุผลของเขา', async () => {
+    handler = (req) =>
+      req.url === '/api/login'
+        ? { status: 200, body: { token: 't' } }
+        : {
+            status: 400,
+            body: {
+              error: 'INVALID_CONFIG',
+              details: ['gps.send_interval_sec ต่ำกว่า 5'],
+            },
+          };
+    const err = await makeClient()
+      .putDeviceConfig('BOX-1', { gps: { send_interval_sec: 1 } })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CentralRejectedError);
+    expect((err as CentralRejectedError).status).toBe(400);
+    expect((err as Error).message).toContain('INVALID_CONFIG');
+    expect((err as Error).message).toContain('ต่ำกว่า 5');
+  });
+
+  it('getCommand และ getSchema เรียกเส้นทางที่ถูกต้อง', async () => {
+    const urls: string[] = [];
+    handler = (req) => {
+      if (req.url === '/api/login')
+        return { status: 200, body: { token: 't' } };
+      urls.push(req.url ?? '');
+      return { status: 200, body: {} };
+    };
+    const client = makeClient();
+    await client.getCommand('CMD-1');
+    await client.getSchema('ESP32-DEVKIT-V1', 3);
+    expect(urls).toEqual([
+      '/api/gw/jobs/CMD-1',
+      '/api/admin/schemas/ESP32-DEVKIT-V1/3',
+    ]);
   });
 
   it('เชื่อมต่อไม่ได้เลย -> CentralUnavailableError', async () => {

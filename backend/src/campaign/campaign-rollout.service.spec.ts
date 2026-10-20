@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
+import { CentralDeviceService } from '../central-device/central-device.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
@@ -157,6 +158,8 @@ describe('CampaignRolloutService', () => {
   // beforeEach ไม่ได้ จึงให้ provider อ่านจากตัวแปรนี้ตอนสร้าง service ใหม่
   let configApplyMode: ConfigApplyMode;
   let rolloutEvents: RolloutEvents;
+  // ตัวส่ง Config ไป Server กลาง — null = ไม่ได้ต่อ (provider ถูก @Optional)
+  let central: { pushConfig: jest.Mock } | null;
 
   async function buildService(): Promise<CampaignRolloutService> {
     const built = await Test.createTestingModule({
@@ -174,6 +177,9 @@ describe('CampaignRolloutService', () => {
           provide: ConfigDefinitionService,
           useValue: configDefinitionService,
         },
+        ...(central
+          ? [{ provide: CentralDeviceService, useValue: central }]
+          : []),
       ],
     }).compile();
     rolloutEvents = built.get(RolloutEvents);
@@ -183,6 +189,7 @@ describe('CampaignRolloutService', () => {
 
   beforeEach(async () => {
     configApplyMode = 'mock';
+    central = null;
     campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
     campaignTarget = { findMany: jest.fn().mockResolvedValue(groupTargets) };
     campaignRollout = {
@@ -576,6 +583,145 @@ describe('CampaignRolloutService', () => {
         data: expect.objectContaining({
           status: 'active',
         }) as Partial<CampaignRollout>,
+      });
+    });
+
+    describe('applyMode central (ส่ง Config ไป Server กลาง)', () => {
+      const activeFor = (r: CampaignRollout): CampaignRollout => ({
+        ...r,
+        status: 'active',
+      });
+      const pendingTarget = {
+        id: 't-1',
+        rolloutId: approvedRollout.id,
+        deviceId: 'DEV-0001',
+      };
+
+      const centralFields = { 'gps.send_interval_sec': 20 };
+
+      async function releaseInCentralMode() {
+        configApplyMode = 'central';
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        config.findUnique.mockResolvedValue({
+          ...approvedConfig,
+          fields: centralFields,
+        });
+        return service.release(approvedRollout.id, otherOperation);
+      }
+
+      it('บันทึก applyMode "central" สั่ง Server กลางแล้วเก็บรหัสคำสั่งไว้ที่ target (ยังไม่นับผล) โดยไม่ใช้ applier เดิม', async () => {
+        central = {
+          pushConfig: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-10050',
+            configVersion: 7,
+          }),
+        };
+
+        await releaseInCentralMode();
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: approvedRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            status: 'active',
+            applyMode: 'central',
+          }) as Partial<CampaignRollout>,
+        });
+        // ถามเฉพาะเครื่อง pending ที่ยังไม่เคยสั่ง Server กลาง
+        expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              rolloutId: approvedRollout.id,
+              status: 'pending',
+              centralCommandId: null,
+            },
+          }),
+        );
+        expect(central.pushConfig).toHaveBeenCalledWith(
+          'DEV-0001',
+          centralFields,
+        );
+        expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+          where: { id: 't-1' },
+          data: expect.objectContaining({
+            centralCommandId: 'CMD-10050',
+          }) as Record<string, unknown>,
+        });
+        expect(configApplier.applyConfig).not.toHaveBeenCalled();
+        // ยังไม่ตัดสินผล: ผลจริงมาจาก poll
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        // ลง AuditLog การนำ Config ไปใช้ พร้อมรหัสคำสั่ง (ไม่เก็บค่า)
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0001',
+              centralCommandId: 'CMD-10050',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        });
+      });
+
+      it.each([
+        ['rejected', 'กล่อง DEV-0001 ยังไม่อยู่ในทะเบียนของ delivery-server'],
+        ['unavailable', 'Server กลางไม่ตอบภายใน 5000 มิลลิวินาที'],
+      ])(
+        'ส่งไม่ได้ (%s) -> นับเป็นล้มเหลวทันทีพร้อมเหตุผล (เข้า Auto Pause ตามกฎเดิม) ไม่เก็บรหัสคำสั่ง',
+        async (kind, reason) => {
+          central = {
+            pushConfig: jest.fn().mockResolvedValue({ kind, reason }),
+          };
+          configApplyMode = 'central';
+          service = await buildService();
+          const record = jest
+            .spyOn(service, 'recordTargetResult')
+            .mockResolvedValue(true);
+          campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+          campaignRollout.findUniqueOrThrow.mockResolvedValue(
+            activeFor({ ...approvedRollout, applyMode: 'central' }),
+          );
+          campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+
+          await service.release(approvedRollout.id, otherOperation);
+
+          expect(record).toHaveBeenCalledWith(
+            'DEV-0001',
+            { configId: approvedConfig.id },
+            false,
+            reason,
+            approvedRollout.id,
+          );
+          expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it('ไม่ได้เปิดการเชื่อมต่อ Server กลาง (ไม่มี provider) -> นับเป็นล้มเหลวพร้อมเหตุผล ไม่ค้างเงียบ', async () => {
+        central = null;
+        configApplyMode = 'central';
+        service = await buildService();
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+
+        await service.release(approvedRollout.id, otherOperation);
+
+        expect(record).toHaveBeenCalledWith(
+          'DEV-0001',
+          { configId: approvedConfig.id },
+          false,
+          expect.stringContaining('CENTRAL_MODE'),
+          approvedRollout.id,
+        );
       });
     });
 

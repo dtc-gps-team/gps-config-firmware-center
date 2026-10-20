@@ -71,3 +71,37 @@ export interface RawRegistryDevice {
   status?: string;
   config_version_desired?: number | null;
 }
+
+/** พารามิเตอร์หนึ่งตัวใน schema ของโมเดล (`GET /api/admin/schemas/{model}/{version}`) */
+export interface RawSchemaParameter {
+  key: string;
+  type: string;
+  options?: (string | number)[];
+  min?: number;
+  max?: number;
+  default?: unknown;
+}
+
+export interface RawCentralSchema {
+  hardware_model: string;
+  schema_version: number;
+  parameters: RawSchemaParameter[];
+}
+
+/** คำสั่งหนึ่งรายการ (`GET /api/gw/jobs/{commandId}` และ `command` ใน response ของ PUT config) */
+export interface RawCentralCommand {
+  command_id: string;
+  device_id: string;
+  action: string;
+  status: string;
+  target_config_version?: number;
+  target_firmware_version?: string;
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
+/** ผลของ `PUT /api/admin/devices/{id}/config` */
+export interface RawPutConfigResult {
+  config_version: number;
+  command?: RawCentralCommand | null;
+}
