@@ -24,6 +24,7 @@ const CACHE_TTL_MS = 3000;
 @Injectable()
 export class CentralDeviceService {
   private cache: { at: number; value: CentralDeviceList } | null = null;
+  private inFlight: Promise<CentralDeviceList> | null = null;
 
   constructor(
     @Inject(CENTRAL_DEVICE_CLIENT) private readonly client: CentralDeviceClient,
@@ -40,9 +41,17 @@ export class CentralDeviceService {
     if (this.cache && Date.now() - this.cache.at < CACHE_TTL_MS) {
       return this.cache.value;
     }
-    const value = await this.fetchDevices();
-    this.cache = { at: Date.now(), value };
-    return value;
+    // single-flight: คำขอที่มาพร้อมกันตอน cache หมดอายุรอผลของรอบที่กำลังโหลดอยู่ร่วมกัน
+    // ไม่ยิง Server กลางซ้ำซ้อน (cache อย่างเดียวกันคำขอที่กำลังวิ่งพร้อมกันไม่ได้)
+    this.inFlight ??= this.fetchDevices()
+      .then((value) => {
+        this.cache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+    return this.inFlight;
   }
 
   async getStatus(): Promise<CentralStatus> {
@@ -89,6 +98,11 @@ export class CentralDeviceService {
   }
 }
 
+/** อยู่ในทะเบียนของ delivery-server และยังไม่ถูก revoke (กล่องที่ถูกเพิกถอนสั่ง Config ไม่ได้) */
+function isUsableRegistration(reg: RawRegistryDevice | undefined): boolean {
+  return reg !== undefined && reg.status !== 'revoked';
+}
+
 function mergeDevices(
   gateway: RawGatewayDevice[],
   registry: RawRegistryDevice[],
@@ -109,7 +123,7 @@ function mergeDevices(
       reportedConfigVersion: g.config_version_reported ?? null,
       reportedSchemaVersion: g.schema_version_reported ?? null,
       desiredConfigVersion: reg?.config_version_desired ?? null,
-      registered: reg !== undefined,
+      registered: isUsableRegistration(reg),
       lastCommand: g.last_command
         ? {
             commandId: g.last_command.command_id,
@@ -139,7 +153,7 @@ function mergeDevices(
       reportedConfigVersion: null,
       reportedSchemaVersion: null,
       desiredConfigVersion: reg.config_version_desired ?? null,
-      registered: true,
+      registered: isUsableRegistration(reg),
       lastCommand: null,
     });
   }

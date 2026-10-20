@@ -76,7 +76,7 @@ describe('CentralDeviceController (integration — mock mode + guard chain)', ()
   it.each([
     '/api/v1/central/status',
     '/api/v1/central/devices',
-    '/api/v1/devices/ESP32-DEMO-01/central',
+    '/api/v1/devices/DEV-0001/central',
   ])('ไม่ส่ง Authorization -> 401 (%s)', async (url) => {
     await request(app.getHttpServer()).get(url).expect(401);
   });
@@ -116,22 +116,22 @@ describe('CentralDeviceController (integration — mock mode + guard chain)', ()
     };
     expect(body.mode).toBe('mock');
     expect(body.devices.map((d) => d.deviceId)).toEqual([
+      'DEV-0001',
+      'DEV-0002',
       'ESP32-DEMO-01',
-      'ESP32-DEMO-02',
-      'ESP32-DEMO-03',
     ]);
-    expect(body.devices.map((d) => d.online)).toEqual([true, true, false]);
+    expect(body.devices.map((d) => d.online)).toEqual([true, false, true]);
   });
 
   it('GET /devices/:deviceId/central: เครื่องที่รู้จักได้ข้อมูล ส่วนเครื่องที่ไม่รู้จักได้ device=null (ไม่ 404)', async () => {
     const token = await readerToken('ST');
     const known = await request(app.getHttpServer())
-      .get('/api/v1/devices/ESP32-DEMO-01/central')
+      .get('/api/v1/devices/DEV-0001/central')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(known.body).toMatchObject({
       reachable: true,
-      device: { deviceId: 'ESP32-DEMO-01', online: true, registered: true },
+      device: { deviceId: 'DEV-0001', online: true, registered: true },
     });
 
     const unknown = await request(app.getHttpServer())

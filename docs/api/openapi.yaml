@@ -5401,7 +5401,9 @@ components:
           description: เวอร์ชัน Config ที่ Server กลางตั้งเป้าไว้ `null` = ยังไม่เคยตั้ง
         registered:
           type: boolean
-          description: อยู่ในทะเบียนของ delivery-server หรือไม่ (ไม่อยู่ = สั่ง Config ไม่ได้)
+          description: >-
+            อยู่ในทะเบียนของ delivery-server และยังไม่ถูก revoke หรือไม่ (ไม่อยู่หรือถูก revoke
+            = สั่ง Config ไม่ได้)
         lastCommand:
           type: object
           allOf:

@@ -21,14 +21,19 @@ export interface CentralDeviceClient {
   listRegistryDevices: () => Promise<RawRegistryDevice[]>;
 }
 
-/** ข้อมูลตัวอย่างสำหรับ dev/CI โดยไม่ต้องมี Server กลาง — ค่าเริ่มต้นของ `CENTRAL_MODE` */
+/**
+ * ข้อมูลตัวอย่างสำหรับ dev/CI โดยไม่ต้องมี Server กลาง — ค่าเริ่มต้นของ `CENTRAL_MODE`
+ * `DEV-0001` / `DEV-0002` ตรงกับเครื่องใน seed ของเรา (หน้า Device Search จึงเห็นออนไลน์/ออฟไลน์
+ * ในโหมด mock) ส่วน `ESP32-DEMO-01` เป็นกล่องที่ Server กลางรู้จักแต่ยังไม่ได้ลงทะเบียนในระบบเรา
+ * ไว้ลองเลือกจาก Server กลางตอนลงทะเบียนอุปกรณ์
+ */
 @Injectable()
 export class MockCentralDeviceClient implements CentralDeviceClient {
   listGatewayDevices = (): Promise<RawGatewayDevice[]> => {
     const now = new Date().toISOString();
     return Promise.resolve([
       {
-        device_id: 'ESP32-DEMO-01',
+        device_id: 'DEV-0001',
         hardware_model: 'ESP32-DEVKIT-V1',
         online: true,
         last_seen_at: now,
@@ -45,7 +50,7 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
         },
       },
       {
-        device_id: 'ESP32-DEMO-02',
+        device_id: 'ESP32-DEMO-01',
         hardware_model: 'ESP32-DEVKIT-V1',
         online: true,
         last_seen_at: now,
@@ -55,7 +60,7 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
         last_command: null,
       },
       {
-        device_id: 'ESP32-DEMO-03',
+        device_id: 'DEV-0002',
         hardware_model: 'ESP32-DEVKIT-V1',
         online: false,
         last_seen_at: new Date(Date.now() - 3_600_000).toISOString(),
@@ -77,21 +82,21 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
   listRegistryDevices = (): Promise<RawRegistryDevice[]> =>
     Promise.resolve([
       {
-        device_id: 'ESP32-DEMO-01',
+        device_id: 'DEV-0001',
         hardware_model: 'ESP32-DEVKIT-V1',
         schema_version: 1,
         status: 'active',
         config_version_desired: 1,
       },
       {
-        device_id: 'ESP32-DEMO-02',
+        device_id: 'ESP32-DEMO-01',
         hardware_model: 'ESP32-DEVKIT-V1',
         schema_version: 1,
         status: 'active',
         config_version_desired: null,
       },
       {
-        device_id: 'ESP32-DEMO-03',
+        device_id: 'DEV-0002',
         hardware_model: 'ESP32-DEVKIT-V1',
         schema_version: 1,
         status: 'active',
@@ -116,6 +121,7 @@ export interface HttpCentralClientOptions {
 export class HttpCentralDeviceClient implements CentralDeviceClient {
   private readonly logger = new Logger(HttpCentralDeviceClient.name);
   private token: string | null = null;
+  private loginInFlight: Promise<string> | null = null;
 
   constructor(private readonly options: HttpCentralClientOptions) {}
 
@@ -126,11 +132,12 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
     this.getJson<RawRegistryDevice[]>('/api/admin/devices');
 
   private async getJson<T>(path: string): Promise<T> {
-    if (!this.token) await this.login();
-    let res = await this.request(path, this.token);
+    let token = await this.getToken();
+    let res = await this.request(path, token);
     if (res.status === 401) {
-      await this.login();
-      res = await this.request(path, this.token);
+      // token หมดอายุ/ถูกเปลี่ยน: login ใหม่ 1 ครั้ง (ถ้าคำขอขนานอื่นเพิ่ง login ใหม่ไปแล้ว ใช้ token นั้น)
+      token = await this.getToken(token);
+      res = await this.request(path, token);
     }
     if (!res.ok) {
       throw new CentralUnavailableError(
@@ -140,7 +147,20 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
     return this.readJson<T>(res, path);
   }
 
-  private async login(): Promise<void> {
+  /**
+   * single-flight: คำขอที่มาพร้อมกันตอนยังไม่มี token (เช่น `Promise.all` ของสองรายการ) หรือ
+   * เจอ 401 พร้อมกัน รอ login รอบเดียวกัน ไม่ login ซ้อน · `rejected` = token ที่เพิ่งถูกปฏิเสธ
+   * ถ้า token ปัจจุบันเป็นตัวใหม่กว่านั้นแล้ว (มีคำขออื่น login ไปแล้ว) ใช้ตัวนั้นเลย
+   */
+  private async getToken(rejected?: string): Promise<string> {
+    if (this.token && this.token !== rejected) return this.token;
+    this.loginInFlight ??= this.login().finally(() => {
+      this.loginInFlight = null;
+    });
+    return this.loginInFlight;
+  }
+
+  private async login(): Promise<string> {
     const res = await this.request('/api/login', null, {
       method: 'POST',
       body: JSON.stringify({
@@ -159,6 +179,7 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
       throw new CentralUnavailableError('Server กลางไม่ส่ง token กลับมา');
     }
     this.token = body.token;
+    return body.token;
   }
 
   private async request(

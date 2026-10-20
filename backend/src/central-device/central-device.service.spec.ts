@@ -111,3 +111,85 @@ describe('CentralDeviceService', () => {
     expect(list.reachable).toBe(true);
   });
 });
+
+describe('registered (กล่องที่ถูก revoke)', () => {
+  const clientWith = (
+    registry: { device_id: string; status?: string }[],
+  ): CentralDeviceClient => ({
+    listGatewayDevices: () =>
+      Promise.resolve([{ device_id: 'A', online: true }]),
+    listRegistryDevices: () => Promise.resolve(registry),
+  });
+
+  it('อยู่ในทะเบียนและ active -> registered', async () => {
+    const res = await makeService(
+      clientWith([{ device_id: 'A', status: 'active' }]),
+    ).listDevices();
+    expect(res.devices[0].registered).toBe(true);
+  });
+
+  it('อยู่ในทะเบียนแต่ถูก revoke -> ไม่นับว่าลงทะเบียน (สั่ง Config ไม่ได้)', async () => {
+    const res = await makeService(
+      clientWith([{ device_id: 'A', status: 'revoked' }]),
+    ).listDevices();
+    expect(res.devices[0].registered).toBe(false);
+  });
+
+  it('กล่องที่อยู่แต่ในทะเบียน (ยังไม่เคยต่อ gateway) และถูก revoke -> ไม่นับว่าลงทะเบียน', async () => {
+    const client: CentralDeviceClient = {
+      listGatewayDevices: () => Promise.resolve([]),
+      listRegistryDevices: () =>
+        Promise.resolve([{ device_id: 'Z', status: 'revoked' }]),
+    };
+    const res = await makeService(client).listDevices();
+    expect(res.devices[0]).toMatchObject({ deviceId: 'Z', registered: false });
+  });
+});
+
+describe('single-flight การโหลดรายการ', () => {
+  it('คำขอที่มาพร้อมกันตอน cache ว่าง ยิง Server กลางรอบเดียวและได้ผลเดียวกัน', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const listGatewayDevices = jest.fn(async () => {
+      await gate;
+      return [];
+    });
+    const client: CentralDeviceClient = {
+      listGatewayDevices,
+      listRegistryDevices: () => Promise.resolve([]),
+    };
+    const svc = makeService(client);
+
+    const all = Promise.all([
+      svc.listDevices(),
+      svc.listDevices(),
+      svc.getStatus(),
+    ]);
+    release();
+    const [a, b] = await all;
+
+    expect(listGatewayDevices).toHaveBeenCalledTimes(1);
+    expect(a).toBe(b);
+  });
+
+  it('รอบที่ล้มเหลวไม่ค้าง: เรียกใหม่หลังจากนั้นลองโหลดอีกครั้ง', async () => {
+    const listGatewayDevices = jest
+      .fn()
+      .mockRejectedValueOnce(new CentralUnavailableError('x'))
+      .mockResolvedValue([]);
+    const client: CentralDeviceClient = {
+      listGatewayDevices,
+      listRegistryDevices: () => Promise.resolve([]),
+    };
+    const svc = makeService(client);
+
+    expect((await svc.listDevices()).reachable).toBe(false);
+    // ผลล้มเหลวถูก cache สั้นๆ ตามปกติ ข้ามช่วง cache ด้วยการเรียกผ่านเวลา
+    jest.useFakeTimers().setSystemTime(Date.now() + 10_000);
+    expect((await svc.listDevices()).reachable).toBe(true);
+    jest.useRealTimers();
+    expect(listGatewayDevices).toHaveBeenCalledTimes(2);
+  });
+});

@@ -118,6 +118,48 @@ describe('HttpCentralDeviceClient (กับ Server กลางปลอม)', 
     );
   });
 
+  it('คำขอสองรายการพร้อมกันตอนยังไม่มี token: login รอบเดียว (single-flight)', async () => {
+    handler = (req) =>
+      req.url === '/api/login'
+        ? { status: 200, body: { token: 'tok-1' }, delayMs: 100 }
+        : { status: 200, body: [] };
+    const client = makeClient();
+
+    await Promise.all([
+      client.listGatewayDevices(),
+      client.listRegistryDevices(),
+    ]);
+
+    expect(logins).toBe(1);
+  });
+
+  it('เจอ 401 พร้อมกันสองคำขอ: login ใหม่รอบเดียวแล้วทั้งคู่สำเร็จ', async () => {
+    let issued = 0;
+    let revokeFirstToken = false;
+    handler = (req) => {
+      if (req.url === '/api/login') {
+        issued += 1;
+        return { status: 200, body: { token: `tok-${issued}` }, delayMs: 50 };
+      }
+      const valid = revokeFirstToken ? 'Bearer tok-2' : 'Bearer tok-1';
+      return req.headers.authorization === valid
+        ? { status: 200, body: [] }
+        : { status: 401 };
+    };
+    const client = makeClient();
+    await client.listGatewayDevices(); // login ครั้งแรกได้ tok-1
+    expect(logins).toBe(1);
+
+    revokeFirstToken = true; // tok-1 ถูกเพิกถอน ทั้งสองคำขอจะโดน 401 พร้อมกัน
+    const results = await Promise.all([
+      client.listGatewayDevices(),
+      client.listRegistryDevices(),
+    ]);
+
+    expect(results).toEqual([[], []]);
+    expect(logins).toBe(2); // เพิ่มแค่ 1 รอบ ไม่ใช่ 2
+  });
+
   it('เชื่อมต่อไม่ได้เลย -> CentralUnavailableError', async () => {
     const client = new HttpCentralDeviceClient({
       baseUrl: 'http://127.0.0.1:1',
