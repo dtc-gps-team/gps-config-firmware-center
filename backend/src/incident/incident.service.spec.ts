@@ -1146,6 +1146,22 @@ describe('IncidentService', () => {
         },
       );
 
+      it('กำลังลองเขียนอยู่ (investigating) -> 409 บอกให้รอผล ไม่เข้าคิวเขียนซ้ำ', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...activeSyncIncident,
+          status: 'investigating',
+        });
+
+        const err = await service
+          .retrySync('inc-sync', operation)
+          .catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as Error).message).toContain('กำลังลองเขียนอยู่');
+        expect(incidentUpdateMany).not.toHaveBeenCalled();
+        expect(enqueueConfigSync).not.toHaveBeenCalled();
+      });
+
       it('metadata ไม่มีเวอร์ชัน หรือไม่มี Config ที่เกี่ยวข้อง -> 400', async () => {
         incidentFindUnique.mockResolvedValue({
           ...activeSyncIncident,
@@ -1199,11 +1215,9 @@ describe('IncidentService', () => {
             },
           },
         });
+        // claim เฉพาะที่ยัง open: คำขอที่สองที่มาพร้อมกันจะได้ count 0
         expect(incidentUpdateMany).toHaveBeenCalledWith({
-          where: {
-            id: 'inc-sync',
-            status: { in: ['open', 'investigating'] },
-          },
+          where: { id: 'inc-sync', status: 'open' },
           data: { status: 'investigating' },
         });
         expect(enqueueConfigSync).toHaveBeenCalledWith({

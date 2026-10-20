@@ -2311,7 +2311,9 @@ paths:
         "404":
           description: ไม่พบ Incident นี้ หรือไม่พบ Config เวอร์ชันที่ต้องเขียน
         "409":
-          description: Incident นี้ปิดไปแล้ว (ไม่ใช่ `open` หรือ `investigating` อีกต่อไป)
+          description: >-
+            Incident นี้ปิดไปแล้ว หรือกำลังลองเขียนอยู่แล้ว (สถานะ `investigating` รอผลก่อน)
+            หรือถูกคำขออื่นสั่งเขียนไปพร้อมกัน
 
   /audit-logs:
     get:

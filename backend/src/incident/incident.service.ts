@@ -464,10 +464,15 @@ export class IncidentService implements OnModuleInit {
    * เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้ (`ConfigVersion`) ไม่ใช่ค่าปัจจุบันของ
    * Config จึงได้ค่าที่อนุมัติจริงเสมอ · fire-and-forget เหมือนตอน approve: ตอบทันที
    * ว่าสั่งแล้ว (status เป็น `investigating`) ผลจริงมาทาง event: สำเร็จ -> ปิดอัตโนมัติ
-   * (`resolveFromSyncSuccess`), ล้มอีก -> อัปเดต Incident เดิมกลับเป็น `open`
+   * (`resolveFromSyncSuccess`), ล้มอีก -> อัปเดต Incident เดิมกลับเป็น `open` แล้ว
+   * สั่งใหม่ได้อีก
+   *
+   * **รับเฉพาะสถานะ `open`**: `investigating` หมายถึงสั่งเขียนไปแล้วและกำลังรอผล ถ้ารับ
+   * ด้วยจะเข้าคิวเขียนซ้ำได้เมื่อกดซ้ำหรือ Operation สองคนกดพร้อมกัน (ตอนต่อระบบจริงจะ
+   * เขียนซ้ำจริง) และ claim ด้วย `updateMany` ระบุสถานะ `open` เพื่อให้คนที่สองแพ้การแข่ง
    *
    * 404 ไม่พบ Incident หรือไม่พบเวอร์ชันของ Config · 400 ไม่ใช่ Incident เขียน Config
-   * หรือไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ · 409 ปิดไปแล้ว
+   * หรือไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ · 409 ปิดไปแล้วหรือกำลังลองเขียนอยู่
    */
   async retrySync(id: string, actor: ActingUser): Promise<Incident> {
     const existing = await this.prisma.incident.findUnique({ where: { id } });
@@ -479,7 +484,12 @@ export class IncidentService implements OnModuleInit {
         'ลองเขียนใหม่ได้เฉพาะ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทางไม่สำเร็จ',
       );
     }
-    if (existing.status !== 'open' && existing.status !== 'investigating') {
+    if (existing.status === 'investigating') {
+      throw new ConflictException(
+        'Incident นี้กำลังลองเขียนอยู่แล้ว กรุณารอผลก่อน (ถ้าล้มเหลวอีกจะกลับเป็นเปิดและสั่งใหม่ได้)',
+      );
+    }
+    if (existing.status !== 'open') {
       throw new ConflictException(
         `Incident นี้ปิดไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
       );
@@ -505,13 +515,14 @@ export class IncidentService implements OnModuleInit {
       );
     }
 
+    // claim เฉพาะที่ยัง `open`: คำขอที่มาพร้อมกันอีกใบจะได้ count 0 และไม่เข้าคิวเขียนซ้ำ
     const updated = await this.prisma.incident.updateMany({
-      where: { id, status: { in: ['open', 'investigating'] } },
+      where: { id, status: 'open' },
       data: { status: 'investigating' },
     });
     if (updated.count === 0) {
       throw new ConflictException(
-        `Incident id ${id} ถูกปิดไปแล้วโดยคำขออื่นที่เกิดขึ้นพร้อมกัน`,
+        `Incident id ${id} ถูกคำขออื่นสั่งเขียนหรือปิดไปแล้วระหว่างที่ทำรายการ`,
       );
     }
 

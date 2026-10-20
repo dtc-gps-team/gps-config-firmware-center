@@ -749,6 +749,22 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
         expect(row.status).toBe('open');
       });
 
+      it('กำลังลองเขียนอยู่ (investigating) -> 409 และสถานะไม่เปลี่ยน', async () => {
+        const token = await opToken();
+        const incidentId = await makeIncident({
+          title: 'กำลังลองเขียน',
+          status: 'investigating',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(409);
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incidentId },
+        });
+        expect(row.status).toBe('investigating');
+      });
+
       it.each(['resolved', 'dismissed', 'rolled_back'] as const)(
         'ปิดไปแล้ว (%s) -> 409',
         async (status) => {
