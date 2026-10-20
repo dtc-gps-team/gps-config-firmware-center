@@ -7,6 +7,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/router/app_shell.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/features/auth/login_page.dart';
@@ -15,7 +16,6 @@ import 'package:mobile/features/config_simulator/simulator_page.dart';
 import 'package:mobile/features/config_simulator/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_ui.dart';
-import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/incident/incident_ui.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -187,9 +187,20 @@ void main() {
     });
   });
 
-  testWidgets('badge จำนวนแจ้งเตือนบนกระดิ่ง ข้อความ >= 4.5:1 '
+  // กระดิ่งบนหัวหน้าแรกย้ายมาเป็นตัวเลขบนแท็บแจ้งเตือน (docs/22 §7.2)
+  testWidgets('badge จำนวนแจ้งเตือนบนแท็บ ข้อความ >= 4.5:1 '
       '(UX audit #10)', (tester) async {
-    await _pump(tester, const HomePage(), _st);
+    await _pump(
+      tester,
+      Scaffold(
+        bottomNavigationBar: AppTabBar(
+          tabs: AppTab.values,
+          selectedIndex: 0,
+          onSelected: (_) {},
+        ),
+      ),
+      _st,
+    );
 
     final badgeFinder = find.byType(Badge);
     expect(badgeFinder, findsOneWidget);

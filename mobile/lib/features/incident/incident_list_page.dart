@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/app_shell.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
@@ -15,6 +17,7 @@ import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
 import '../../core/ui/status_tones.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../auth/account_sheet.dart';
 import 'incident_repository.dart';
 import 'incident_ui.dart';
 
@@ -43,6 +46,21 @@ class IncidentListPage extends ConsumerWidget {
               AppPageHeader(
                 title: 'Incidents',
                 onBack: navigator.canPop() ? navigator.pop : null,
+                trailing: const AccountButton(),
+                // ST/OT แจ้งปัญหาหน้างาน (docs/22 §7.2) — role อื่นซ่อนปุ่ม (ไม่ใช่
+                // disable) เพราะไม่มีสิทธิ์ `POST /incidents` แบบ field report
+                actions: [
+                  AppPageHeaderAction(
+                    key: const Key('incidents_field_report'),
+                    label: 'Field Report',
+                    icon: Icons.add,
+                    primary: true,
+                    visible: isFieldStaff(
+                      ref.watch(authControllerProvider.select((s) => s.role)),
+                    ),
+                    onPressed: () => context.push(AppRoutes.incidentReport),
+                  ),
+                ],
               ),
               Expanded(
                 child: RefreshIndicator(

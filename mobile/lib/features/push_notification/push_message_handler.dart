@@ -12,6 +12,7 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/app_shell.dart';
 import '../notification/notification_ui.dart';
 
 /// Android notification channel for pushes the app renders itself. The backend
@@ -58,6 +59,18 @@ String resolvePushDeepLink(Map<String, dynamic> data) {
         : AppRoutes.incidentDetail(incidentId);
   }
   return AppRoutes.notifications;
+}
+
+/// แท็บที่เป็นฐานของหน้าปลายทางจาก push (docs/22 §7.2) — กด back จากหน้าปลายทาง
+/// กลับแท็บที่เกี่ยวข้อง ไม่ปิดแอป (UX audit #4): Incident → แท็บ Incidents ·
+/// Task Detail → หน้าแรก (Operation ไม่มีแท็บงาน ใช้แท็บแจ้งเตือนที่เปิดงานมาแทน) ·
+/// ปลายทางที่เป็นแท็บอยู่แล้ว (แจ้งเตือน) = แท็บนั้นเอง
+String pushBaseTabFor(String path, UserRole? role) {
+  for (final tab in AppTab.values) {
+    if (path == tab.location) return path;
+  }
+  if (path.startsWith('${AppRoutes.incidents}/')) return AppRoutes.incidents;
+  return isFieldStaff(role) ? AppRoutes.home : AppRoutes.notifications;
 }
 
 String? _nonEmptyString(Object? value) {
@@ -276,7 +289,12 @@ class PushMessageHandler {
     // Defer so navigation runs after the current frame / app resume settles.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
-        _openOverHome(_ref.read(routerProvider), path);
+        final role = _ref.read(authControllerProvider).role;
+        _openOverTab(
+          _ref.read(routerProvider),
+          path,
+          pushBaseTabFor(path, role),
+        );
       } catch (_) {
         // router not ready / disposed — nothing to do
       }
@@ -284,9 +302,9 @@ class PushMessageHandler {
   }
 
   /// UX audit #4: เดิมใช้ `go(path)` ซึ่งแทนที่ stack ทั้งหมด หน้าปลายทางจึงไม่มี
-  /// ปุ่ม back และ back ของระบบปิดแอป — ตอนนี้วาง Home เป็นฐานก่อนแล้ว push
-  /// ปลายทางทับ กด back จึงกลับ Home เสมอ ไม่ว่าตอนแตะจะอยู่หน้าไหน
-  static void _openOverHome(GoRouter router, String path) {
+  /// ปุ่ม back และ back ของระบบปิดแอป — วางแท็บฐาน ([pushBaseTabFor]) ก่อนแล้ว
+  /// push ปลายทางทับ กด back จึงกลับแท็บนั้นเสมอ ไม่ว่าตอนแตะจะอยู่หน้าไหน
+  static void _openOverTab(GoRouter router, String path, String tab) {
     final delegate = router.routerDelegate;
     // uri ของ go_router = หน้าฐานที่ go() ไปล่าสุด (หน้าที่ push ทับไม่เปลี่ยน
     // uri) จึงปิดหน้าที่ push ทับไว้ก่อน (pop ทำทันที) แล้วค่อยดูหน้าฐาน
@@ -294,21 +312,21 @@ class PushMessageHandler {
     while (router.canPop()) {
       router.pop();
     }
-    if (base() == AppRoutes.home) {
-      if (path != AppRoutes.home) router.push(path);
+    if (base() == tab) {
+      if (path != tab) router.push(path);
       return;
     }
-    router.go(AppRoutes.home);
-    if (path == AppRoutes.home) return;
+    router.go(tab);
+    if (path == tab) return;
     // go() parse route แบบ async (และ delegate ไม่แจ้ง listener ตอนนั้น) — push
     // ทันทีจะไปซ้อนบน stack เก่าแล้วถูก go() ทับ จึงเช็คทีละ frame จนหน้าฐาน
-    // เป็น Home จริงแล้วค่อย push · ไม่ถึง Home (เช่น redirect ไป login เพราะ
-    // session หลุด) ภายใน [_maxFramesToReachHome] frame = เลิก ไม่ค้างไว้ push ทีหลัง
+    // เป็นแท็บนั้นจริงแล้วค่อย push · ไม่ถึง (เช่น redirect ไป login เพราะ session
+    // หลุด) ภายใน [_maxFramesToReachTab] frame = เลิก ไม่ค้างไว้ push ทีหลัง
     var frames = 0;
     void check(Duration _) {
-      if (base() == AppRoutes.home) {
+      if (base() == tab) {
         router.push(path);
-      } else if (++frames < _maxFramesToReachHome) {
+      } else if (++frames < _maxFramesToReachTab) {
         WidgetsBinding.instance
           ..addPostFrameCallback(check)
           ..scheduleFrame();
@@ -320,7 +338,7 @@ class PushMessageHandler {
       ..scheduleFrame();
   }
 
-  static const _maxFramesToReachHome = 30;
+  static const _maxFramesToReachTab = 30;
 }
 
 final pushMessageHandlerProvider = Provider<PushMessageHandler>((ref) {
