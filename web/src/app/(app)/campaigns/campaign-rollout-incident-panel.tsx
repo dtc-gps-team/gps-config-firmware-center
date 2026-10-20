@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { PlayIcon, Undo2Icon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
@@ -19,8 +20,15 @@ import {
   canDecideCampaignApproval,
 } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -59,6 +67,7 @@ export function CampaignRolloutIncidentPanel({
   targets,
   targetsLoading = false,
   targetsError = null,
+  showPausedNotice = true,
   onResumed,
 }: {
   campaignId: string;
@@ -71,6 +80,9 @@ export function CampaignRolloutIncidentPanel({
    * error) กันพังของเก่าที่ยังไม่ได้ส่งมา */
   targetsLoading?: boolean;
   targetsError?: string | null;
+  /** แสดงคำอธิบายว่าหยุดอัตโนมัติเพราะอะไรเหนือปุ่ม (ค่าเริ่มต้นแสดง) · หน้า Rollout Detail
+   * ปิดไว้เพราะหัวหน้าอธิบายสถานะ paused อยู่แล้ว และวางปุ่มไว้มุมขวาบนของหัวหน้า */
+  showPausedNotice?: boolean;
   onResumed: (updated: CampaignRollout) => void;
 }) {
   const router = useRouter();
@@ -168,138 +180,132 @@ export function CampaignRolloutIncidentPanel({
     }
   }
 
-  // สถานะปกติ: ไม่ใช้การ์ด แค่ปุ่ม (เดิมเป็นการ์ดใหญ่มีหัวข้อทั้งที่มีปุ่มเดียว ดันผลต่อเครื่อง
-  // ลงไปใต้ขอบจอ) · ถ้า Rollout หยุดเองให้มีแถบแจ้งเหตุผลสั้นๆ ข้างปุ่ม เพราะเป็นข้อมูลที่ต้องรู้
-  if (!rollbackOpen) {
-    return (
-      <div
-        className={
-          canResume
-            ? "flex flex-col gap-2 rounded-xl border bg-muted/30 px-4 py-3"
-            : "flex flex-col gap-2"
-        }
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {canResume && (
-            <p className="text-sm text-muted-foreground">
-              Rollout นี้หยุดอัตโนมัติเพราะ Failure Rate เกิน 5%, resume
-              ให้ไปต่อ หรือสั่ง rollback กลับไปใช้ payload รอบก่อนหน้าแทน
-            </p>
-          )}
-          <div className="flex gap-2">
-            {canResume && (
-              <Button
-                size="sm"
-                disabled={resuming}
-                onClick={() => void handleResume()}
-              >
-                {resuming ? "กำลัง Resume…" : "Resume"}
-              </Button>
-            )}
-            {canRollback && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setRollbackOpen(true)}
-              >
-                สั่ง Rollback
-              </Button>
-            )}
-          </div>
-        </div>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </div>
-    );
+  function closeRollback() {
+    setRollbackOpen(false);
+    setExcludedDeviceIds(new Set());
+    setError(null);
   }
 
   return (
-    <Card className="max-w-2xl gap-3 p-4">
-      <p className="text-sm font-medium">สั่ง Rollback</p>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      <div className="flex flex-col gap-3">
-        <p className="text-sm">
-          สั่ง Rollback: สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่
-          completed ล่าสุด เอาเครื่องที่ไม่ต้องการ rollback ออกได้ (
-          {includedCount}/{successTargets.length} เครื่อง)
-        </p>
-
-        {targetsLoading ? (
+    <>
+      <div className="flex flex-col items-end gap-2">
+        {canResume && showPausedNotice && (
           <p className="text-sm text-muted-foreground">
-            กำลังโหลดรายชื่อเครื่อง…
+            Rollout นี้หยุดอัตโนมัติเพราะ Failure Rate เกิน 5% กด Resume
+            เพื่อไปต่อ หรือสั่ง Rollback กลับไปใช้ค่าของรอบก่อนหน้า
           </p>
-        ) : targetsError ? (
-          <p className="text-sm text-destructive">{targetsError}</p>
-        ) : successTargets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            ยังไม่มีเครื่องที่ได้รับ payload ของรอบนี้สำเร็จเลย
-          </p>
-        ) : (
-          <div className="max-h-56 overflow-y-auto rounded-lg border">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-muted/50">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-10"></TableHead>
-                  <TableHead>เลขเครื่อง</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {successTargets.map((target) => {
-                  const included = !excludedDeviceIds.has(target.deviceId);
-                  return (
-                    <TableRow key={target.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={included}
-                          onCheckedChange={(c) =>
-                            toggleExcluded(target.deviceId, c === true)
-                          }
-                          aria-label={
-                            included
-                              ? "เอาเครื่องนี้ออกจาก Rollback"
-                              : "เอาเครื่องนี้กลับเข้า Rollback"
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {target.deviceId}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
         )}
-
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={
-              submitting ||
-              targetsLoading ||
-              !!targetsError ||
-              successTargets.length === 0
-            }
-            onClick={() => void handleRollback()}
-          >
-            {submitting ? "กำลังสร้าง Rollout…" : "ยืนยันสั่ง Rollback"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={submitting}
-            onClick={() => {
-              setRollbackOpen(false);
-              setExcludedDeviceIds(new Set());
-              setError(null);
-            }}
-          >
-            ยกเลิก
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canRollback && (
+            // Rollback เป็นการกระทำเสี่ยง: ใช้สีแดงอ่อน (destructive) ไม่ใช่ปุ่มทึบ
+            // และให้ Resume เป็นปุ่มหลัก (วางท้ายสุดตามแบบของ PageHeader)
+            <Button variant="destructive" onClick={() => setRollbackOpen(true)}>
+              <Undo2Icon />
+              สั่ง Rollback
+            </Button>
+          )}
+          {canResume && (
+            <Button disabled={resuming} onClick={() => void handleResume()}>
+              <PlayIcon />
+              {resuming ? "กำลัง Resume…" : "Resume"}
+            </Button>
+          )}
         </div>
+        {error && !rollbackOpen && (
+          <p className="text-xs text-destructive">{error}</p>
+        )}
       </div>
-    </Card>
+
+      <Dialog
+        open={rollbackOpen}
+        onOpenChange={(open) => {
+          if (open) setRollbackOpen(true);
+          else if (!submitting) closeRollback();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>สั่ง Rollback</DialogTitle>
+            <DialogDescription>
+              สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่ completed ล่าสุด
+              เอาเครื่องที่ไม่ต้องการ rollback ออกได้ ({includedCount}/
+              {successTargets.length} เครื่อง)
+            </DialogDescription>
+          </DialogHeader>
+
+          {targetsLoading ? (
+            <p className="text-sm text-muted-foreground">
+              กำลังโหลดรายชื่อเครื่อง…
+            </p>
+          ) : targetsError ? (
+            <p className="text-sm text-destructive">{targetsError}</p>
+          ) : successTargets.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              ยังไม่มีเครื่องที่ได้รับ payload ของรอบนี้สำเร็จเลย
+            </p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-muted/50">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead>เลขเครื่อง</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {successTargets.map((target) => {
+                    const included = !excludedDeviceIds.has(target.deviceId);
+                    return (
+                      <TableRow key={target.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={included}
+                            onCheckedChange={(c) =>
+                              toggleExcluded(target.deviceId, c === true)
+                            }
+                            aria-label={
+                              included
+                                ? "เอาเครื่องนี้ออกจาก Rollback"
+                                : "เอาเครื่องนี้กลับเข้า Rollback"
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {target.deviceId}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={submitting}
+              onClick={closeRollback}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={
+                submitting ||
+                targetsLoading ||
+                !!targetsError ||
+                successTargets.length === 0
+              }
+              onClick={() => void handleRollback()}
+            >
+              {submitting ? "กำลังสร้าง Rollout…" : "ยืนยันสั่ง Rollback"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

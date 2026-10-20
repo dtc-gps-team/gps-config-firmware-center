@@ -127,6 +127,17 @@ export function CampaignRolloutDetailView({
           </StatusPill>
         }
         description={getRolloutStatusExplanation(data.status)}
+        actions={
+          <CampaignRolloutIncidentPanel
+            showPausedNotice={false}
+            campaignId={campaignId}
+            rollout={data}
+            targets={targets}
+            targetsLoading={targetsQuery.isLoading && !targetsQuery.data}
+            targetsError={targetsQuery.error}
+            onResumed={() => void refetch()}
+          />
+        }
       />
 
       {/* สองคอลัมน์บนจอกว้าง: งานหลัก (อนุมัติ ปล่อย ความคืบหน้า ผลต่อเครื่อง) ทางซ้าย
@@ -159,16 +170,6 @@ export function CampaignRolloutDetailView({
                 awaiting={awaitingResults}
               />
             )}
-
-          <CampaignRolloutIncidentPanel
-            campaignId={campaignId}
-            rollout={data}
-            targets={targets}
-            targetsLoading={targetsQuery.isLoading && !targetsQuery.data}
-            targetsError={targetsQuery.error}
-            onResumed={() => void refetch()}
-          />
-
           <Card className="gap-3 p-5">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-medium">
