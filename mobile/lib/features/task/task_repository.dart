@@ -236,7 +236,8 @@ class MockTaskRepository implements TaskRepository {
       status: TaskStatus.inProgress,
       createdAt: DateTime(2026, 9, 4, 11),
       updatedAt: DateTime(2026, 9, 4, 11),
-      description: 'เครื่องเดิม DEV-0512 ถูก decommission — เปลี่ยนกล่องใหม่',
+      description:
+          'เครื่องเดิม DEV-0512 ถูก decommission แล้ว ต้องเปลี่ยนกล่องใหม่',
       deviceId: 'DEV-0512',
       dueDate: DateTime(2026, 9, 7),
     ),

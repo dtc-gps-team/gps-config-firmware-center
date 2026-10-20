@@ -79,7 +79,7 @@ class MockNotificationRepository implements NotificationRepository {
       payload: const {
         'incidentId': 'mock-incident-2',
         'deviceId': 'DEV-0092',
-        'reviewNote': 'ต้องอัปเดต Firmware — ส่งต่อเป็น Campaign แล้ว',
+        'reviewNote': 'ต้องอัปเดต Firmware จึงส่งต่อเป็น Campaign แล้ว',
       },
       read: true,
       createdAt: DateTime(2026, 9, 6, 10, 1),
