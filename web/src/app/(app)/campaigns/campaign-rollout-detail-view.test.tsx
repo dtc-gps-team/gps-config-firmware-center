@@ -111,7 +111,7 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
     expect(screen.queryByText("ล้มเหลว")).not.toBeInTheDocument();
   });
 
-  it("สรุปจำนวนรายสถานะเหนือตาราง แสดงเฉพาะสถานะที่มีเครื่อง", () => {
+  it("สรุปจำนวนรายสถานะอยู่ใต้แถบความคืบหน้า", () => {
     setup(rollout({ status: "completed" }), [
       target("D1", "success"),
       target("D2", "success"),
@@ -119,10 +119,11 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       target("D4", "skipped_offline"),
     ]);
 
+    // สรุปจำนวนอยู่ใต้แถบความคืบหน้า (การ์ดเดียว ไม่ซ้ำกับหัวตาราง)
     expect(screen.getByText("สำเร็จ 2")).toBeInTheDocument();
     expect(screen.getByText("ล้มเหลว 1")).toBeInTheDocument();
     expect(screen.getByText("ข้าม 1")).toBeInTheDocument();
-    expect(screen.queryByText(/^รอผล \d/)).not.toBeInTheDocument();
+    expect(screen.getByText("รอผล 0")).toBeInTheDocument();
   });
 
   it("เหตุผลยาวๆ ไม่ถูกตัด ขึ้นบรรทัดใหม่แทน", () => {
@@ -141,7 +142,6 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       target("D2", "pending"),
     ]);
 
-    expect(screen.getByText("รอผล 1")).toBeInTheDocument();
     expect(screen.getByText(/รีเฟรชอัตโนมัติทุก 5 วินาที/)).toBeInTheDocument();
 
     act(() => {
@@ -172,5 +172,47 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       vi.advanceTimersByTime(20_000);
     });
     expect(targetsQuery.refetch).not.toHaveBeenCalled();
+  });
+
+  it("หลังปล่อย: มีแถบความคืบหน้า นับทุกเครื่องที่ได้ผลแล้วเป็นเปอร์เซ็นต์", () => {
+    setup(rollout({ status: "active" }), [
+      target("D1", "success"),
+      target("D2", "failed"),
+      target("D3", "skipped_offline"),
+      target("D4", "pending"),
+    ]);
+
+    const bar = screen.getByRole("progressbar", {
+      name: "ความคืบหน้าของ Rollout",
+    });
+    expect(bar).toHaveAttribute("aria-valuenow", "75");
+    expect(screen.getByText("75% ได้ผลแล้ว")).toBeInTheDocument();
+    expect(screen.getByText("3 / 4 เครื่อง")).toBeInTheDocument();
+    expect(screen.getByText("กำลังส่ง Config ให้ 4 เครื่อง")).toBeInTheDocument();
+  });
+
+  it("ได้ผลครบ: 100% และหัวข้อเป็นเสร็จสิ้น", () => {
+    setup(rollout({ status: "completed" }), [
+      target("D1", "success"),
+      target("D2", "failed"),
+    ]);
+
+    expect(screen.getByText("100% ได้ผลแล้ว")).toBeInTheDocument();
+    expect(screen.getByText("ส่ง Config ให้ 2 เครื่องเสร็จสิ้น")).toBeInTheDocument();
+  });
+
+  it("Rollout หยุดชั่วคราว (Auto Pause): หัวข้อบอกว่าหยุดชั่วคราว", () => {
+    setup(rollout({ status: "paused" }), [
+      target("D1", "failed"),
+      target("D2", "pending"),
+    ]);
+
+    expect(screen.getByText(/หยุดชั่วคราว การส่ง Config ให้ 2 เครื่อง/)).toBeInTheDocument();
+  });
+
+  it("ก่อนปล่อย (รออนุมัติ/อนุมัติแล้ว): ไม่แสดงแถบความคืบหน้า", () => {
+    setup(rollout({ status: "approved" }), [target("D1", "pending")]);
+
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 });

@@ -51,3 +51,19 @@ export function isAwaitingTargetResults(
   if (rolloutStatus !== "active" && rolloutStatus !== "paused") return false;
   return targets.some((t) => t.status === "pending");
 }
+
+export type RolloutProgress = {
+  /** เครื่องที่ได้ผลแล้ว (สำเร็จ ล้มเหลว หรือข้าม) */
+  done: number;
+  total: number;
+  /** 0 ถึง 100 ปัดเป็นจำนวนเต็ม · ไม่มีเป้าหมายเป็น 0 */
+  percent: number;
+};
+
+/** ความคืบหน้าของ Rollout: นับทุกเครื่องที่ "ได้ผลแล้ว" ไม่ว่าผลจะเป็นอย่างไร */
+export function rolloutProgress(summary: RolloutTargetSummary): RolloutProgress {
+  const done = summary.total - summary.pending;
+  const percent =
+    summary.total === 0 ? 0 : Math.round((done / summary.total) * 100);
+  return { done, total: summary.total, percent };
+}

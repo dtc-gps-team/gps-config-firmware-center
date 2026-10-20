@@ -44,6 +44,7 @@ import { PageHeader } from "@/components/page-header";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
+import { RolloutProgressCard } from "./rollout-progress-card";
 
 /**
  * รายละเอียด Rollout 1 รอบ — ต่อ `GET /campaigns/{id}/rollouts/{rolloutId}`
@@ -139,6 +140,19 @@ export function CampaignRolloutDetailView({
         onRejected={() => void refetch()}
       />
 
+      {/* แถบความคืบหน้าหลังกดปล่อย: ก่อนปล่อยทุกเครื่องยังไม่มีผล จึงยังไม่แสดง */}
+      {(data.status === "active" ||
+        data.status === "paused" ||
+        data.status === "completed") &&
+        summary.total > 0 && (
+          <RolloutProgressCard
+            status={data.status}
+            payloadType={data.payloadType}
+            summary={summary}
+            awaiting={awaitingResults}
+          />
+        )}
+
       <CampaignRolloutIncidentPanel
         campaignId={campaignId}
         rollout={data}
@@ -186,22 +200,6 @@ export function CampaignRolloutDetailView({
       <Card className="gap-3 p-5">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium">ผลต่อเครื่อง ({targets.length})</p>
-          {targets.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {summary.success > 0 && (
-                <StatusPill tone="success">สำเร็จ {summary.success}</StatusPill>
-              )}
-              {summary.failed > 0 && (
-                <StatusPill tone="danger">ล้มเหลว {summary.failed}</StatusPill>
-              )}
-              {summary.skipped > 0 && (
-                <StatusPill tone="info">ข้าม {summary.skipped}</StatusPill>
-              )}
-              {summary.pending > 0 && (
-                <StatusPill tone="neutral">รอผล {summary.pending}</StatusPill>
-              )}
-            </div>
-          )}
           {awaitingResults && (
             <span className="text-xs text-muted-foreground">
               กำลังรอผลจากกล่อง รีเฟรชอัตโนมัติทุก 5 วินาที

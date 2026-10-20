@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isAwaitingTargetResults,
+  rolloutProgress,
   rolloutTargetStatusLabel,
   summarizeRolloutTargets,
 } from "./rollout-target-display";
@@ -63,5 +64,35 @@ describe("isAwaitingTargetResults", () => {
     for (const s of ["pending_approval", "approved", "rejected", "completed"] as const) {
       expect(isAwaitingTargetResults(s, [t("pending")])).toBe(false);
     }
+  });
+});
+
+describe("rolloutProgress", () => {
+  const s = (over: Partial<ReturnType<typeof summarizeRolloutTargets>>) => ({
+    total: 0,
+    success: 0,
+    failed: 0,
+    skipped: 0,
+    pending: 0,
+    ...over,
+  });
+
+  it("นับทุกเครื่องที่ได้ผลแล้วไม่ว่าผลเป็นอย่างไร", () => {
+    expect(
+      rolloutProgress(s({ total: 4, success: 1, failed: 1, skipped: 1, pending: 1 })),
+    ).toEqual({ done: 3, total: 4, percent: 75 });
+  });
+
+  it("ยังไม่ได้ผลเลย 0% และได้ผลครบ 100%", () => {
+    expect(rolloutProgress(s({ total: 3, pending: 3 })).percent).toBe(0);
+    expect(rolloutProgress(s({ total: 3, success: 3 })).percent).toBe(100);
+  });
+
+  it("ไม่มีเป้าหมาย: 0% ไม่หารศูนย์", () => {
+    expect(rolloutProgress(s({}))).toEqual({ done: 0, total: 0, percent: 0 });
+  });
+
+  it("ปัดเศษเป็นจำนวนเต็ม", () => {
+    expect(rolloutProgress(s({ total: 3, success: 1, pending: 2 })).percent).toBe(33);
   });
 });
