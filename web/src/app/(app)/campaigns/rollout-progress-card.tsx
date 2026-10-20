@@ -41,7 +41,7 @@ export function RolloutProgressCard({
   const pct = (n: number) => (total === 0 ? 0 : (n / total) * 100);
 
   return (
-    <Card className="max-w-xl gap-3 p-5" data-testid="rollout-progress">
+    <Card className="gap-3 p-5" data-testid="rollout-progress">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm font-medium">
           {headline(status, payloadType, total, awaiting)}
