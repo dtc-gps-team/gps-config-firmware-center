@@ -4,6 +4,11 @@
 > · รอ A (paveekornkwork-dev — ผู้เขียน `device-sync` module, #330/#337, และ `DeviceApiKeyGuard`,
 > docs/14) ตอบคำถามเปิดใน §10 ก่อนเริ่ม implement
 >
+> **ปรับรอบ 2 (20 ต.ค. 2569):** A ตอบคำถามใน PR แล้ว และชี้ว่ากล่องส่ง telemetry โดยไม่มี auth header เลย
+> `DeviceApiKeyGuard` เดิมจึงใช้ไม่ได้ · พี่เลี้ยงให้ B ตัดสินใจ B เลือกทาง (ก) ฝัง key ใน URL ที่ตั้งผ่าน Config
+> แบบเป็น **path parameter** (ไม่ใช่ query — ข้อจำกัดของระบบพี่เลี้ยง) — เขียน §7 ใหม่และแก้จุดที่เกี่ยวข้อง
+> (§2, §4, §5, §8, §10) · คำตอบของ A ข้ออื่นยังไม่ได้ใส่ในรอบนี้
+>
 > **ที่มาของข้อมูล:** อ่านจาก `main` ที่ `cec3779` — `backend/prisma/schema.prisma` (model `Device`),
 > `backend/src/device-sync/*`, `backend/src/common/guards/device-api-key.guard.ts`,
 > `backend/src/device/*`, `backend/src/main.ts`, `docs/14_Device_Sync_Proposal.md` §3.2
@@ -28,10 +33,10 @@
 
 | เรื่อง | มีอะไรอยู่แล้ว | ผลต่อแผนนี้ |
 |---|---|---|
-| ช่องทางที่อุปกรณ์เรียกเอง | `device-sync` module: `GET /device-sync/:deviceId/jobs`, `POST /device-sync/:deviceId/jobs/:jobId/result` — controller ครอบ `@UseGuards(DeviceApiKeyGuard)` ทั้งตัว, path แยกจาก `/devices/*` ของ staff (JWT) | endpoint ใหม่ต่อท้าย controller เดิมได้เลย |
-| Auth อุปกรณ์ | `DeviceApiKeyGuard` ตรวจ header `X-Device-Api-Key` กับ `Device.apiKeyHash` (bcrypt) ของเครื่องตาม path `:deviceId` แล้วแนบ `req.device` | ใช้ได้ทันที ไม่ต้องสร้างกลไกใหม่ (§7) |
-| ออก key | `POST /devices` (ลงทะเบียน — คืน `apiKey` ครั้งเดียว) และ `POST /devices/:deviceId/rotate-key` — สิทธิ์ `device-registration` (Admin; SuperAdmin inherit) | กล่องตัวอย่างต้องลงทะเบียนก่อน (§8) |
-| สถานะ online | guard เขียน `Device.lastSeenAt` ทุกครั้งที่ auth ผ่าน (throttle ≥ 1 นาที, never-throw — docs/19 §4.3) | ส่ง telemetry ทุก 10 วิ = เครื่องขึ้นเป็น online อัตโนมัติ ไม่ต้องทำเพิ่ม |
+| ช่องทางที่อุปกรณ์เรียกเอง | `device-sync` module: `GET /device-sync/:deviceId/jobs`, `POST /device-sync/:deviceId/jobs/:jobId/result` — controller ครอบ `@UseGuards(DeviceApiKeyGuard)` ทั้งตัว, path แยกจาก `/devices/*` ของ staff (JWT) | **ต่อท้าย controller เดิมไม่ได้** — `DeviceApiKeyGuard` ระดับ controller จะครอบ endpoint ใหม่ด้วย ต้องเป็น controller แยกที่ใช้ path prefix `device-sync` เดียวกัน (§4) |
+| Auth อุปกรณ์ | `DeviceApiKeyGuard` ตรวจ header `X-Device-Api-Key` กับ `Device.apiKeyHash` (bcrypt) ของเครื่องตาม path `:deviceId` แล้วแนบ `req.device` | **ใช้กับ telemetry ไม่ได้** — กล่องส่งข้อมูลไป `data_server` โดยไม่ใส่ header ยืนยันตัวตนเลย ต้องมี guard ใหม่ที่อ่าน key จาก path (§7) |
+| ออก key | `POST /devices` (ลงทะเบียน — คืน `apiKey` ครั้งเดียว) และ `POST /devices/:deviceId/rotate-key` — สิทธิ์ `device-registration` (Admin; SuperAdmin inherit) | กล่องตัวอย่างยังต้องลงทะเบียนก่อน (§8) แต่ key ของ telemetry เป็นคนละตัวกับ `apiKey` นี้ (§7) |
+| สถานะ online | guard เขียน `Device.lastSeenAt` ทุกครั้งที่ auth ผ่าน (throttle ≥ 1 นาที, never-throw — docs/19 §4.3) | guard ใหม่ของ telemetry ไม่ได้เขียนให้อัตโนมัติ — ถ้าต้องการต้องเขียน `lastSeenAt` แบบเดียวกันใน guard ใหม่ (§7) · หรือใช้สถานะออนไลน์จาก Server กลาง (#359) |
 | FK ไปหา Device | `DeviceConfigOverride` / `DeviceFirmwareOverride` ใช้ `@relation(fields: [deviceId], references: [deviceId], onDelete: Restrict)` | ตารางใหม่ใช้แบบเดียวกัน |
 | Validation ทั้งแอป | `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })` + `setGlobalPrefix('api/v1')` (`main.ts`) | **payload ปัจจุบันของกล่องจะโดน 400 ทันที** (field snake_case และ `device_id` ใน body ไม่อยู่ใน DTO) — ต้องตัดสินใจเรื่องชื่อ field (§5, §10 Q4) |
 | DTO pattern | `class-validator` เช่น `ReportJobResultDto` (`@IsIn`, `@IsOptional`, `@MaxLength`) + ค่าคงที่ export จากไฟล์ DTO | DTO ใหม่ทำแบบเดียวกัน |
@@ -71,10 +76,12 @@ model DeviceTelemetry {
 - **`fix = false`:** กล่องยังส่ง latitude/longitude มาหรือไม่ และเป็นค่าอะไร (0,0 / ค่าล่าสุด) ยังไม่รู้ —
   ถ้าส่งเป็น null ต้องเปลี่ยน `latitude`/`longitude` เป็น nullable → §10 Q7
 
-## 4. Endpoint ใหม่: `POST /device-sync/:deviceId/telemetry`
+## 4. Endpoint ใหม่: `POST /device-sync/:deviceId/telemetry/:key`
 
-- เพิ่มใน `DeviceSyncController` เดิม (ได้ `DeviceApiKeyGuard` จาก `@UseGuards` ระดับ controller อัตโนมัติ)
-  URL เต็ม: `{host}:3001/api/v1/device-sync/{deviceId}/telemetry`
+- **controller แยก** (เช่น `DeviceTelemetryController` ที่ `@Controller('device-sync')`) ไม่ใส่ใน
+  `DeviceSyncController` เดิม เพราะ `@UseGuards(DeviceApiKeyGuard)` ระดับ controller จะบังคับ header
+  `X-Device-Api-Key` ซึ่งกล่องไม่ส่ง · ใช้ guard ใหม่ตาม §7 แทน
+  URL เต็ม: `{host}:3001/api/v1/device-sync/{deviceId}/telemetry/{key}`
 - service scope ทุก query ด้วย `deviceId` ที่ผ่าน guard แล้ว (IDOR Prevention ใน CLAUDE.md) — `deviceId`
   มาจาก path เท่านั้น ไม่รับจาก body
 - **DTO คร่าวๆ** (ชื่อ field ขึ้นกับ §10 Q4 — ร่างเป็น camelCase ตาม convention ของ API ทั้งระบบ):
@@ -95,14 +102,15 @@ model DeviceTelemetry {
 - **response:** เสนอ `200` + `{ accepted: true }` ตาม pattern `jobs/:jobId/result` (ส่งซ้ำตอนเน็ตหลุดเป็นเรื่อง
   ปกติของอุปกรณ์) · กล่องไม่ต้องอ่าน body
 - **`openapi.yaml`** (ตาม CLAUDE.md): path ใหม่ + `operationId` (เช่น `reportDeviceTelemetry`),
-  `tags: [device-sync]` เดียวกับ path เดิม, `security: - deviceApiKey: []` (scheme ที่มีอยู่แล้ว ไม่ใช่
-  `bearerAuth`), response
-  `400` (validation), `401` (key ผิด/ไม่มี), schema `DeviceTelemetryReport` + รัน
+  `tags: [device-sync]` เดียวกับ path เดิม, `security: []` (ไม่ใช้ `bearerAuth` และไม่ใช่ `deviceApiKey`
+  — key อยู่ใน path parameter `key` อธิบายใน `description` ว่าเป็นความลับ), response
+  `400` (validation), `401` (key ผิด), schema `DeviceTelemetryReport` + รัน
   `npx @redocly/cli lint docs/api/openapi.yaml` ก่อน commit
 - ไม่ผ่าน `PermissionGuard` และไม่เพิ่มแถวใน RBAC_Matrix — เหมือน `/device-sync/*` เดิม (อุปกรณ์ไม่มี role)
   แต่ควรเพิ่มหมายเหตุใน RBAC_Matrix ว่ามี endpoint อุปกรณ์เพิ่ม
-- เทส: unit (service) + integration ผ่าน HTTP จริง (401 ไม่มี key / key ของเครื่องอื่น, 400 field ผิด/เกิน,
-  200 บันทึกได้ + `lastSeenAt` ขยับ)
+- เทส: unit (service + guard) + integration ผ่าน HTTP จริง (401 key ผิด / key ของเครื่องอื่นถ้าเป็น key ต่อกล่อง /
+  เครื่องที่ไม่มีในระบบ — ข้อความเดียวกันทุกกรณี, 400 field ผิด/เกิน, 200 บันทึกได้) · ไม่ใส่ key ต่อท้ายเลย
+  ได้ 404 ตาม routing ปกติ
 
 ## 5. Payload mapping (กล่อง → backend ที่เสนอ)
 
@@ -134,8 +142,9 @@ model DeviceTelemetry {
 | `latitude` / `longitude` | `latitude` / `longitude` | |
 | `timestamp` | `timestamp` → `occurredAt` | |
 
-ตอนนี้กล่องส่งทั้ง 2 แบบไปที่ path เดียวกัน (`data_server.path`) — backend ต้องแยกได้ว่าเป็นอะไร: ใช้ endpoint
-คนละตัว (เช่น `.../telemetry` กับ `.../events`) หรือ endpoint เดียวแยกด้วย `eventType` → ขึ้นกับ §10 Q2
+กล่องส่งทั้ง 2 แบบไปที่ URL เดียวกัน (`data_server` มี `path` ช่องเดียว) จึง**แยก endpoint เป็น `.../telemetry`
+กับ `.../events` ไม่ได้ถ้าไม่แก้ firmware** — ต้องเป็น endpoint เดียว แยกชนิดด้วยการมี `event_type` ใน body (แบบที่
+`data-monitor` ของพี่เลี้ยงทำ) แล้วจะเก็บ event ไว้ที่ไหนขึ้นกับ §10 Q2 · key ใน path (§7) จึงครอบทั้งสองแบบ
 
 ## 6. `firmware_version` ที่กล่องรายงานเอง
 
@@ -151,19 +160,59 @@ model DeviceTelemetry {
   - (ค) ทั้งสองอย่าง (ค่าล่าสุดที่ `Device` + ประวัติที่ telemetry)
 - เทียบกับ `Firmware.version` ได้หรือไม่ขึ้นกับว่ารูปแบบ string ตรงกัน — ยังไม่ได้เช็คกับ Firmware ที่อัปโหลดจริง
 
-## 7. Auth — ใช้ `DeviceApiKeyGuard` เดิม ไม่ต้องสร้างกลไกใหม่
+## 7. Auth — key ฝังใน path ของ URL ที่ตั้งผ่าน Config (ไม่ต้องแก้ firmware)
 
-- กลไกพร้อมใช้: key ต่อเครื่อง 1 ตัว, bcrypt, ตรวจว่า key เป็นของเครื่องตาม path (เครื่องหนึ่งส่งข้อมูลแทนอีก
-  เครื่องไม่ได้), ข้อความ error เดียวกันทั้ง "ไม่พบเครื่อง" และ "key ผิด" (กัน enumeration)
-- **ต่างจากที่ `arduino_gps` ใช้ตอนนี้** (`Authorization: Bearer <device token>` + header `X-Device-Id`) —
-  ฝั่งกล่องต้องเปลี่ยนเป็น header `X-Device-Api-Key: <key>` และใส่ `deviceId` ใน path แทน (§8)
-- **การเอา key ไปใส่กล่อง:** `docs/14_Device_Sync_Proposal.md` §3.2 (B ยืนยันใน PR #190, 21 ก.ย. 2569)
-  แบ่งขอบเขตไว้ว่า **ตัว scheme ทีมทำเองได้เต็มที่** ส่วน **"การแจกจ่าย/ติดตั้ง key ให้อุปกรณ์ภาคสนามจริง
-  นับพันเครื่อง" + secrets infra + policy หมุนเวียนระดับ operation เป็นของพี่เลี้ยง** — docs/14 ไม่ได้ระบุถึง
-  กล่องทดสอบตัวเดียวแบบนี้ตรงๆ จึง**ต้องตกลงกับพี่เลี้ยงว่าใครเป็นคนใส่ key ลง Config ของกล่องตัวอย่าง**
-  (§10 Q6) · ตัว key ออกได้ครั้งเดียวตอน `POST /devices` หรือ `rotate-key` ทั้งคู่ต้องใช้สิทธิ์ Admin
-- **ช่องว่างที่เจอ:** guard ไม่เช็ค `Device.status` — เครื่องที่ `decommissioned` แต่ยังมี key จะส่ง telemetry
-  ได้ต่อ → §10 Q5
+**ที่มา:** A อ่านโค้ดกล่องแล้วพบว่าการส่งไป Data Server **ไม่ใส่ header ยืนยันตัวตนเลย** (`httpJson(..., false)`
+ใน `features.h`) ส่วน `Authorization: Bearer` + `X-Device-Id` ใช้เฉพาะตอนคุยกับ Server กลาง `DeviceApiKeyGuard`
+(header `X-Device-Api-Key`) จึงใช้กับ endpoint นี้ไม่ได้ · A เสนอ 3 ทาง: (ก) ฝัง key ใน URL ที่ตั้งผ่าน Config,
+(ข) รับ `device_id` แบบไม่ยืนยันตัวตน, (ค) แก้ firmware ให้ส่ง header · พี่เลี้ยงให้ B ตัดสินใจ **B เลือก (ก)** —
+ไม่ต้อง reflash กล่องจริงที่มีอยู่ตัวเดียว ปลอดภัยกว่า (ข) และใช้กลไก Config ที่มีอยู่แล้ว
+
+**ทำไมเป็น path ไม่ใช่ query (`?key=`):** `data_server` ของระบบพี่เลี้ยงไม่ใช่ URL ช่องเดียว แต่เป็น 4 ช่อง
+(`protocol`, `host`, `port`, `path`) ที่ firmware ต่อกันเป็น `protocol://host:port` + `path` ตรงๆ
+(`dataServerUrl()` ใน `features.h`) · schema ของ `delivery-server` จำกัด `data_server.path` ไว้ที่
+`^/[A-Za-z0-9._~/-]*$` ยาวไม่เกิน 128 ตัวอักษร (`schemas/ESP32-DEVKIT-V1/1.json` — schema 2, 3 สืบทอดโดยไม่เปลี่ยน
+และ schema ที่เผยแพร่แล้วแก้ไม่ได้) จึง**ไม่รับ `?`, `=`, `&`** สั่ง Config ที่มี query จะได้ `400 INVALID_CONFIG`
+ตั้งแต่ delivery-server · ตัว firmware เองเช็คแค่ว่า `path` ขึ้นต้นด้วย `/` (`device_config.h`)
+
+**แนวทาง**
+- route `POST /device-sync/:deviceId/telemetry/:key` ใน controller แยก (§4)
+- **guard ใหม่** (เช่น `TelemetryKeyGuard`) อ่าน key จาก `req.params.key` แทน header — ไม่ผูกกับ `Device.apiKeyHash`
+  หรือ `DeviceApiKeyGuard` เดิม เป็นกลไกเฉพาะ endpoint นี้
+  - เทียบแบบ constant-time กับ hash ที่เก็บไว้ (key สุ่ม entropy สูง ใช้ SHA-256 พอ ไม่ต้อง bcrypt ซึ่งช้าเกินสำหรับ
+    คำขอทุก 10 วินาที)
+  - ไม่ผ่าน → `401` ข้อความกลางๆ เดียวกันทุกกรณี (ไม่มีเครื่องนี้ / key ผิด / key ของเครื่องอื่น) กัน enumeration
+  - เครื่องที่ `decommissioned` ปฏิเสธเหมือน key ผิด (คำตอบ A ใน Q5)
+  - ถ้าต้องการสถานะออนไลน์จาก telemetry ให้เขียน `Device.lastSeenAt` แบบ throttle เหมือน guard เดิม
+- **รูปแบบ key:** สุ่ม 32 byte เข้ารหัส base64url (43 ตัวอักษร `A-Z a-z 0-9 _ -`) ผ่าน pattern ข้างบน · ความยาว path
+  สูงสุด = `/api/v1/device-sync/` (20) + deviceId (≤ 32) + `/telemetry/` (11) + key (43) = 106 ≤ 128
+
+**การ provision — เลือก 1 แบบ (→ §10 Q10)**
+
+| แบบ | เก็บที่ไหน | ข้อดี | ข้อเสีย |
+|---|---|---|---|
+| **key ต่อกล่อง** | field ใหม่ เช่น `Device.telemetryKeyHash String?` (additive) + endpoint ออก/หมุน key สิทธิ์ Admin | key ผูกกับ `deviceId` ใน path — กล่องหนึ่งส่งแทนอีกกล่องไม่ได้ · key หลุดกระทบกล่องเดียว · เพิกถอนรายกล่องได้ | ต้อง provision ทุกกล่อง · แก้ schema + มี endpoint/หน้าจอออก key เพิ่ม |
+| **key กลางเดียว** | env var เช่น `TELEMETRY_INGEST_KEY` (เก็บ hash หรือเทียบตรง) | ง่ายสุด ไม่แก้ schema · เหมาะช่วงที่มีกล่องจริงตัวเดียว | `deviceId` ใน path ไม่ถูกยืนยัน — ใครมี key ส่งแทนกล่องไหนก็ได้ · key หลุดต้องเปลี่ยน Config ทุกกล่อง |
+
+**ตั้งค่าที่กล่อง (B / admin ทำ — ไม่ต้องแก้ firmware เลย):** สั่ง Config ใหม่ผ่าน `delivery-server`
+(`PUT /api/admin/devices/BOX-0001/config` ซึ่ง merge กับค่าเดิม) ตั้ง `data_server` 4 ช่อง เช่น
+
+```json
+{ "protocol": "http", "host": "<IP หรือโดเมนของ backend>", "port": 3001,
+  "path": "/api/v1/device-sync/BOX-0001/telemetry/<key>" }
+```
+
+- `path` **ต้องมี `/api/v1` นำหน้า** เพราะ backend ตั้ง `setGlobalPrefix('api/v1')`
+- `host` ต้องอยู่ใน `DATA_SERVER_HOST_ALLOWLIST` ของ delivery-server (A ชี้ไว้) ถ้าใช้ IP
+- กล่องส่งไปที่ URL นี้ตรงๆ ทั้ง telemetry และ event (§5)
+
+**ความปลอดภัย (ตามจริง)**
+- ตอนนี้ `data_server` ของกล่องจริงตั้งเป็น **`http` ไปที่ IP ในวง LAN** (ไม่ใช่ https) key ใน path จึง**วิ่งผ่าน Wi-Fi
+  แบบไม่เข้ารหัส** ใครดักในเครือข่ายเดียวกันเห็น key ได้ ไม่ใช่แค่เสี่ยงหลุดใน log
+- key ใน URL ยังอาจไปอยู่ใน access log ของ reverse proxy / web server ระหว่างทาง (NestJS เองไม่ log URL เป็นค่าเริ่มต้น)
+- ช่วงทดสอบใน LAN ยอมรับความเสี่ยงนี้ได้ · **เมื่อ backend มีโดเมนและ cert ใช้งานจริง ต้องเปลี่ยน `protocol` เป็น
+  `https`** (firmware รองรับ https อยู่แล้ว — Config เดิมของกล่องเคยใช้ https) และหมุน key ใหม่ตอนเปลี่ยน
+- ถ้าต้องการเข้มงวดกว่านี้ในอนาคต ค่อยย้าย key ไป header ซึ่งต้องแก้ firmware (ทาง ค)
 
 ## 8. สิ่งที่ฝั่งกล่อง / ข้อมูลต้องเตรียม (นอกโค้ด backend)
 
@@ -171,13 +220,14 @@ model DeviceTelemetry {
    `simNumber`, `modelId` (ต้องมี `DeviceModel` สำหรับกล่อง ESP32 ใน catalog ก่อน), `protocol` (โมเดลมีได้
    โปรโตคอลเดียว — #351), `imei`, `serialNumber`, `blackboxId` → ต้องหาค่าที่ใช้กับกล่อง ESP32 ทดสอบ
    (ESP32 อาจไม่มี IMEI/SIM จริง) → §10 Q8
-2. **เปลี่ยน Config ของกล่อง** (`data_server.host` / `port` / `path`): จาก `192.168.1.43:320/api/gps` เป็น
-   `{backend}:3001/api/v1/device-sync/BOX-0001/telemetry`
-3. **เปลี่ยน auth header** ของกล่องเป็น `X-Device-Api-Key` (§7)
+2. **เปลี่ยน Config ของกล่อง** (`data_server` 4 ช่อง): จาก `http://<data-monitor>:320/api/gps` เป็น
+   `{backend}:3001` + `path` = `/api/v1/device-sync/BOX-0001/telemetry/<key>` (§7)
+3. **ไม่ต้องเปลี่ยน auth header และไม่ต้องแก้ firmware** — key อยู่ใน path ที่ตั้งผ่าน Config (§7)
 4. **ชื่อ field ใน body** — ถ้าเลือก camelCase (§10 Q4 ทาง ก) firmware กล่องต้องเปลี่ยนชื่อ field และเลิกส่ง
    `device_id` ใน body
 
-ข้อ 2–4 เป็นการแก้ฝั่ง `arduino_gps` ซึ่งเป็นของพี่เลี้ยง — ต้องตกลงกันว่าใครแก้
+ข้อ 2 เป็นแค่การสั่ง Config ผ่าน `delivery-server` (B / admin ทำ) ข้อ 4 ขึ้นกับ Q4 ถ้าเลือก camelCase ต้องแก้
+firmware ของพี่เลี้ยง
 
 ## 9. เอกสาร/คอมเมนต์ที่ต้องอัปเดตตอน implement
 
@@ -214,14 +264,17 @@ model DeviceTelemetry {
 **Q5 — เครื่องที่ `decommissioned`:** ให้ส่ง telemetry ได้ต่อ (guard ปัจจุบัน) หรือปฏิเสธ (ถ้าปฏิเสธ — แก้ที่
 guard ซึ่งกระทบ `/jobs` ด้วย หรือเช็คเฉพาะ endpoint ใหม่)
 
-**Q6 — ใครใส่ API key ลงกล่องตัวอย่าง และใครแก้ firmware/Config ฝั่ง `arduino_gps`** (§7, §8) — ต้องคุยกับ
-พี่เลี้ยง
+**Q6 — ใครใส่ key ลงกล่องตัวอย่าง** — **ตัดสินแล้ว:** B / admin ตั้งผ่าน Config ของ `delivery-server`
+(key อยู่ใน `data_server.path`) ไม่ต้องแก้ firmware (§7)
 
 **Q7 — `fix = false`:** กล่องส่ง latitude/longitude มาเป็นค่าอะไร และ `location_source` มีค่าอะไรได้บ้างนอกจาก
 `"gps"` (ต้องถามพี่เลี้ยง/ดูโค้ด `arduino_gps`)
 
 **Q8 — ข้อมูลลงทะเบียนกล่อง ESP32:** ใช้ `DeviceModel` ตัวไหน (สร้างใหม่ เช่น "ESP32-GPS"?) และ `imei` /
 `simNumber` / `serialNumber` / `blackboxId` ใช้ค่าอะไรกับกล่องทดสอบ
+
+**Q10 — key ของ telemetry แบบไหน:** key ต่อกล่อง (`Device.telemetryKeyHash`) หรือ key กลางเดียว
+(`TELEMETRY_INGEST_KEY`) — ข้อดีข้อเสียใน §7
 
 **Q9 — ใครทำ:** `device-sync` เป็นงานของ A (#330/#337) — A ทำเอง, B ทำแล้ว A รีวิว, หรือแบ่ง (เช่น B ทำ
 telemetry, A ทำ event/Incident)
