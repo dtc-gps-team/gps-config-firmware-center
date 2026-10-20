@@ -5,9 +5,6 @@ import 'app_badge.dart';
 // `web/src/lib/status-pill.tsx` (tone `progress` ของ Web = `warning` ของ Badge)
 // · ใช้ switch ครบทุกค่าของ enum ถ้า backend เพิ่มสถานะใหม่ compile จะไม่ผ่าน
 // จนกว่าจะเลือก tone ให้ · ข้อความบนป้ายอยู่คนละไฟล์ (docs/22 §6)
-//
-// Task urgency (`TaskUrgency`) อยู่ใน features/task ยังไม่ย้ายมา — ทำตอน
-// Batch 3 ที่รื้อหน้าแรก (overdue = danger, dueSoon = warning ตาม §5.2)
 
 /// ตาม `TASK_STATUS_TONE` ของ Web — `cancelled` = danger (มติ B docs/22 §3 ข้อ 18)
 AppBadgeTone taskStatusTone(TaskStatus status) => switch (status) {
@@ -16,6 +13,12 @@ AppBadgeTone taskStatusTone(TaskStatus status) => switch (status) {
   TaskStatus.completed => AppBadgeTone.success,
   TaskStatus.cancelled => AppBadgeTone.danger,
 };
+
+/// ความเร่งด่วนของงาน (§5.2): เลยกำหนด = danger, ใกล้ถึงกำหนด = warning ·
+/// `none` ไม่แสดงป้าย — รับเป็น `bool` แทน enum `TaskUrgency` ที่อยู่ใน
+/// features/task (core ไม่ import features)
+AppBadgeTone taskUrgencyTone({required bool overdue}) =>
+    overdue ? AppBadgeTone.danger : AppBadgeTone.warning;
 
 /// ตาม `INCIDENT_STATUS_TONE` ของ Web
 AppBadgeTone incidentStatusTone(IncidentStatus status) => switch (status) {

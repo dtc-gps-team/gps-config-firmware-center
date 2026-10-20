@@ -11,6 +11,7 @@ import '../../core/ui/app_page_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../auth/account_sheet.dart';
 import 'notification_repository.dart';
 import 'notification_ui.dart';
 
@@ -90,6 +91,7 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
               AppPageHeader(
                 title: 'รายการแจ้งเตือน',
                 onBack: navigator.canPop() ? navigator.pop : null,
+                trailing: const AccountButton(),
               ),
               Expanded(
                 child: async.when(

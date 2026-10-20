@@ -125,7 +125,7 @@ void main() {
 
       expect(result.passed, isTrue);
       expect(result.configCheck.passed, isTrue);
-      expect(result.configCheck.details.first, startsWith('MOCK'));
+      expect(result.configCheck.details.first, startsWith('ผลจำลอง'));
       expect(result.configCheck.details, contains('configId = cfg-1'));
       expect(result.compatibilityCheck.passed, isTrue);
       expect(result.connectionCheck.passed, isTrue);
