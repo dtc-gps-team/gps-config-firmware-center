@@ -220,6 +220,8 @@ export const CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE: Record<string, PillTone> = {
   pending: "neutral",
   success: "success",
   failed: "danger",
+  // ข้ามเพราะเครื่องออฟไลน์/คำสั่งถูกยกเลิก ไม่ใช่ความล้มเหลว จึงไม่ใช้สีแดง
+  skipped_offline: "info",
 };
 
 /** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend

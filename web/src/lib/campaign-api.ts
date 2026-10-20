@@ -55,6 +55,7 @@ export const CAMPAIGN_ROLLOUT_TARGET_STATUSES = [
   "pending",
   "success",
   "failed",
+  "skipped_offline",
 ] as const;
 
 export type CampaignRolloutTargetStatus =

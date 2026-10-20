@@ -32,6 +32,12 @@ import { useCampaignRollout } from "@/hooks/use-campaign-rollout";
 import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets";
 import { useConfig } from "@/hooks/use-config";
 import { useFirmware } from "@/hooks/use-firmware";
+import { usePollInterval } from "@/hooks/use-poll-interval";
+import {
+  isAwaitingTargetResults,
+  rolloutTargetStatusLabel,
+  summarizeRolloutTargets,
+} from "@/lib/rollout-target-display";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { PageHeader } from "@/components/page-header";
@@ -45,6 +51,9 @@ import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel"
  * ผล success/failure ต่อเครื่องจริง (ปิด gap เดิมที่ `successCount`/
  * `failureCount` เป็น 0 เสมอ)
  */
+/** ระหว่างรอผลรายเครื่อง รีเฟรชทุก 5 วินาที (ผลจากกล่องมาทีหลังกดปล่อยหลายวินาที) */
+const RESULT_POLL_INTERVAL_MS = 5_000;
+
 export function CampaignRolloutDetailView({
   campaignId,
   rolloutId,
@@ -61,6 +70,17 @@ export function CampaignRolloutDetailView({
   // campaign-detail-view.tsx เดิม
   const configQuery = useConfig(data?.configId ?? null);
   const firmwareQuery = useFirmware(data?.firmwareId ?? null);
+
+  // รีเฟรชทั้ง Rollout (สถานะอาจเปลี่ยนเป็น completed/paused เอง) และผลรายเครื่อง
+  // เฉพาะตอนยังมีเครื่องรอผลอยู่ · หยุดเองเมื่อไม่มีอะไรให้รอ
+  const awaitingResults = data
+    ? isAwaitingTargetResults(data.status, targetsQuery.data ?? [])
+    : false;
+  usePollInterval(() => {
+    if (!awaitingResults) return;
+    void refetch();
+    void targetsQuery.refetch();
+  }, RESULT_POLL_INTERVAL_MS);
 
   if (isLoading && !data) {
     return <DetailSkeleton />;
@@ -86,6 +106,7 @@ export function CampaignRolloutDetailView({
   }
 
   const targets = targetsQuery.data ?? [];
+  const summary = summarizeRolloutTargets(targets);
 
   return (
     <div className="flex flex-col gap-6">
@@ -163,7 +184,30 @@ export function CampaignRolloutDetailView({
       </Card>
 
       <Card className="gap-3 p-5">
-        <p className="text-sm font-medium">ผลต่อเครื่อง ({targets.length})</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium">ผลต่อเครื่อง ({targets.length})</p>
+          {targets.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {summary.success > 0 && (
+                <StatusPill tone="success">สำเร็จ {summary.success}</StatusPill>
+              )}
+              {summary.failed > 0 && (
+                <StatusPill tone="danger">ล้มเหลว {summary.failed}</StatusPill>
+              )}
+              {summary.skipped > 0 && (
+                <StatusPill tone="info">ข้าม {summary.skipped}</StatusPill>
+              )}
+              {summary.pending > 0 && (
+                <StatusPill tone="neutral">รอผล {summary.pending}</StatusPill>
+              )}
+            </div>
+          )}
+          {awaitingResults && (
+            <span className="text-xs text-muted-foreground">
+              กำลังรอผลจากกล่อง รีเฟรชอัตโนมัติทุก 5 วินาที
+            </span>
+          )}
+        </div>
         {targetsQuery.isLoading && !targetsQuery.data ? (
           <p className="py-4 text-sm text-muted-foreground">กำลังโหลด…</p>
         ) : targetsQuery.error ? (
@@ -196,14 +240,10 @@ export function CampaignRolloutDetailView({
                           "neutral"
                         }
                       >
-                        {target.status === "pending"
-                          ? "ยังไม่มีผล"
-                          : target.status === "success"
-                            ? "สำเร็จ"
-                            : "ล้มเหลว"}
+                        {rolloutTargetStatusLabel(target.status)}
                       </StatusPill>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate text-muted-foreground">
+                    <TableCell className="max-w-md whitespace-normal break-words text-muted-foreground">
                       {target.resultDetail ?? "-"}
                     </TableCell>
                     <TableCell
