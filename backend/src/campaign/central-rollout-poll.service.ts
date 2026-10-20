@@ -19,8 +19,8 @@ export interface CentralPollResult {
  * |---|---|---|
  * | SUCCESS | success | - |
  * | FAILED, ROLLED_BACK, DEVICE_NO_RESPONSE | failed | นับ |
- * | EXPIRED จาก DEVICE_OFFLINE, TTL_EXPIRED | skipped_offline | ไม่นับ |
- * | EXPIRED จาก SUPERSEDED, CANCELLED | skipped_offline | ไม่นับ |
+ * | DEVICE_OFFLINE (gateway ตั้งเป็น FAILED), TTL_EXPIRED | skipped_offline | ไม่นับ |
+ * | SUPERSEDED, CANCELLED (EXPIRED) | skipped_offline | ไม่นับ |
  * | สถานะระหว่างทาง | รอต่อ | - |
  *
  * ผลสำเร็จและล้มเหลวผ่าน `recordTargetResult()` ตัวเดิม จึงได้ Auto Pause และ Incident ตาม

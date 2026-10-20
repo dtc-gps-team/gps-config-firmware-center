@@ -138,23 +138,39 @@ describe('classifyCentralCommand', () => {
     },
   );
 
-  it.each(['DEVICE_OFFLINE', 'TTL_EXPIRED'])(
-    'EXPIRED จาก %s -> ข้าม (กล่องออฟไลน์ ไม่ใช่ความผิดของ Config)',
-    (error_code) => {
-      expect(
-        classifyCentralCommand(cmd({ status: 'EXPIRED', error_code })).kind,
-      ).toBe('skipped');
-    },
-  );
+  // ตรวจจากโค้ด gateway จริง: DEVICE_OFFLINE มาพร้อมสถานะ FAILED ไม่ใช่ EXPIRED
+  it('FAILED จาก DEVICE_OFFLINE (กล่องออฟไลน์เกิน 600 วินาที) -> ข้าม ไม่นับล้มเหลว', () => {
+    const r = classifyCentralCommand(
+      cmd({ status: 'FAILED', error_code: 'DEVICE_OFFLINE' }),
+    );
+    expect(r.kind).toBe('skipped');
+  });
 
-  it.each(['SUPERSEDED', 'CANCELLED'])(
-    'EXPIRED จาก %s -> ข้าม (ถูกแทนที่หรือยกเลิก ไม่นับล้มเหลว)',
-    (error_code) => {
-      expect(
-        classifyCentralCommand(cmd({ status: 'EXPIRED', error_code })).kind,
-      ).toBe('skipped');
-    },
-  );
+  it.each([
+    ['EXPIRED', 'TTL_EXPIRED'],
+    ['EXPIRED', 'SUPERSEDED'],
+    ['EXPIRED', 'CANCELLED'],
+  ])('%s จาก %s -> ข้าม (ไม่ใช่ความผิดของ Config)', (status, error_code) => {
+    expect(classifyCentralCommand(cmd({ status, error_code })).kind).toBe(
+      'skipped',
+    );
+  });
+
+  it('รหัสข้ามชนะสถานะ: แม้รหัส DEVICE_OFFLINE มากับสถานะอื่นที่จบแล้วก็ยังข้าม', () => {
+    expect(
+      classifyCentralCommand(
+        cmd({ status: 'EXPIRED', error_code: 'DEVICE_OFFLINE' }),
+      ).kind,
+    ).toBe('skipped');
+  });
+
+  it('FAILED จาก DEVICE_NO_RESPONSE (ส่งถึงแล้วแต่กล่องเงียบ) -> ล้มเหลว', () => {
+    expect(
+      classifyCentralCommand(
+        cmd({ status: 'FAILED', error_code: 'DEVICE_NO_RESPONSE' }),
+      ).kind,
+    ).toBe('failed');
+  });
 
   it('EXPIRED จาก DEVICE_NO_RESPONSE หรือรหัสที่ไม่รู้จัก -> ล้มเหลว', () => {
     expect(

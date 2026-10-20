@@ -129,9 +129,12 @@ function describe(command: RawCentralCommand): string {
 /**
  * แปลงสถานะคำสั่งของ Server กลางเป็นผลของ Rollout
  * - SUCCESS = สำเร็จ (Server กลางยืนยันจากเวอร์ชันที่กล่องรายงานแล้ว)
- * - FAILED / ROLLED_BACK = ล้มเหลว
- * - EXPIRED แยกตาม error_code: DEVICE_OFFLINE, TTL_EXPIRED = กล่องไม่ได้รับ (ข้าม ไม่นับ),
- *   SUPERSEDED, CANCELLED = ถูกแทนที่หรือยกเลิก (ข้าม ไม่นับ), DEVICE_NO_RESPONSE และอื่นๆ = ล้มเหลว
+ * - ดู `error_code` ก่อนสถานะ เพราะ gateway ตั้งสถานะต่างกันตามรหัส (ตรวจจากโค้ด
+ *   `expireSweep` และ `create`): DEVICE_OFFLINE ตั้งเป็น **FAILED** (ไม่ใช่ EXPIRED),
+ *   SUPERSEDED/CANCELLED/TTL_EXPIRED ตั้งเป็น EXPIRED
+ *   - DEVICE_OFFLINE, TTL_EXPIRED = กล่องไม่ได้รับ (ข้าม ไม่นับล้มเหลว)
+ *   - SUPERSEDED, CANCELLED = ถูกแทนที่หรือยกเลิก (ข้าม ไม่นับล้มเหลว)
+ * - FAILED / ROLLED_BACK / DEVICE_NO_RESPONSE / รหัสอื่นที่ไม่รู้จัก = ล้มเหลว
  * - สถานะระหว่างทาง (PENDING ... REBOOTING) = ยังรอ
  */
 export function classifyCentralCommand(
@@ -139,20 +142,19 @@ export function classifyCentralCommand(
 ): CentralCommandOutcome {
   if (!TERMINAL_STATUSES.has(command.status)) return { kind: 'pending' };
   if (command.status === 'SUCCESS') return { kind: 'success' };
-  if (command.status === 'EXPIRED') {
-    const code = command.error_code ?? '';
-    if (['DEVICE_OFFLINE', 'TTL_EXPIRED'].includes(code)) {
-      return {
-        kind: 'skipped',
-        detail: `กล่องออฟไลน์ ไม่ได้รับ Config (${describe(command)})`,
-      };
-    }
-    if (['SUPERSEDED', 'CANCELLED'].includes(code)) {
-      return {
-        kind: 'skipped',
-        detail: `คำสั่งถูกแทนที่หรือยกเลิกที่ Server กลาง (${describe(command)})`,
-      };
-    }
+
+  const code = command.error_code ?? '';
+  if (['DEVICE_OFFLINE', 'TTL_EXPIRED'].includes(code)) {
+    return {
+      kind: 'skipped',
+      detail: `กล่องออฟไลน์ ไม่ได้รับ Config (${describe(command)})`,
+    };
+  }
+  if (['SUPERSEDED', 'CANCELLED'].includes(code)) {
+    return {
+      kind: 'skipped',
+      detail: `คำสั่งถูกแทนที่หรือยกเลิกที่ Server กลาง (${describe(command)})`,
+    };
   }
   return { kind: 'failed', detail: describe(command) };
 }
