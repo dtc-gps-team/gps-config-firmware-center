@@ -195,7 +195,7 @@ void main() {
     expect(find.text('ติดตั้งกล่อง GPS รถบรรทุก'), findsOneWidget);
     expect(find.text('ตรวจเช็คสัญญาณ'), findsOneWidget);
     expect(find.text('อุปกรณ์: DVC-1'), findsOneWidget);
-    expect(find.text('อุปกรณ์: —'), findsOneWidget);
+    expect(find.text('อุปกรณ์: -'), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_1')), findsOneWidget);
   });
@@ -214,7 +214,7 @@ void main() {
     );
 
     expect(find.text('กำหนดส่ง: 10/09/2026'), findsOneWidget);
-    expect(find.text('กำหนดส่ง: —'), findsOneWidget);
+    expect(find.text('กำหนดส่ง: -'), findsOneWidget);
   });
 
   testWidgets(

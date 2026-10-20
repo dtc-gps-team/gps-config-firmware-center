@@ -429,6 +429,50 @@ void main() {
       );
     });
 
+    testWidgets('ประวัติเกิน 20 งาน -> แสดงแค่ 20 ใบล่าสุด + ข้อความบอก', (
+      tester,
+    ) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(
+          tasks: [
+            for (var i = 0; i < 25; i++)
+              task(
+                'h$i',
+                TaskStatus.completed,
+                updated: DateTime(2026, 9, 1).add(Duration(hours: i)),
+              ),
+          ],
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('history_card_19'), skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('history_card_20'), skipOffstage: false),
+        findsNothing,
+      );
+      expect(
+        find.text('แสดง 20 งานล่าสุด', skipOffstage: false),
+        findsOneWidget,
+      );
+      // ตัวเลขสถิติยังนับครบทุกงาน ไม่ใช่แค่ 20 ใบที่แสดง
+      expect(find.text('25', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('ประวัติไม่เกิน 20 งาน -> ไม่มีข้อความจำกัดจำนวน', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+      expect(
+        find.byKey(const Key('home_history_limit_note'), skipOffstage: false),
+        findsNothing,
+      );
+    });
+
     testWidgets('ไม่มีประวัติ -> empty state ของส่วนประวัติ', (tester) async {
       await _pumpHome(
         tester,

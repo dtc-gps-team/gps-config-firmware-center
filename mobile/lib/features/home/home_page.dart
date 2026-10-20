@@ -116,6 +116,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
+/// จำนวนการ์ดสูงสุดใน "ประวัติงานล่าสุด" — สร้างทุกใบใน Column ตรงๆ (ไม่ lazy)
+/// จึงจำกัดไว้ไม่ให้หน้าแรกยาวและหนักขึ้นเรื่อยๆ ตามงานที่สะสม (รีวิว A ใน #355)
+const _historyLimit = 20;
+
 class _TaskSections extends ConsumerWidget {
   const _TaskSections({required this.openSectionKey});
 
@@ -231,7 +235,7 @@ class _TaskSections extends ConsumerWidget {
                 message: 'ยังไม่มีประวัติงาน',
                 messageKey: Key('home_history_empty'),
               ),
-            for (final (i, task) in history.indexed)
+            for (final (i, task) in history.take(_historyLimit).indexed)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _TaskCard(
@@ -241,6 +245,13 @@ class _TaskSections extends ConsumerWidget {
                   pendingSync: pendingIds.contains(task.id),
                   onTap: () => openTask(task),
                 ),
+              ),
+            if (history.length > _historyLimit)
+              const Text(
+                'แสดง $_historyLimit งานล่าสุด',
+                key: Key('home_history_limit_note'),
+                textAlign: TextAlign.center,
+                style: _TaskCard._meta,
               ),
           ],
         );
@@ -337,7 +348,7 @@ class _TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final urgency = TaskUrgencyStyle.of(task);
-    final device = task.deviceId ?? '—';
+    final device = task.deviceId ?? '-';
     return AppCard(
       onTap: onTap,
       child: Column(
@@ -362,7 +373,7 @@ class _TaskCard extends StatelessWidget {
             Text('อุปกรณ์: $device', style: _meta),
             Text(
               'กำหนดส่ง: '
-              '${task.dueDate == null ? '—' : _formatDay(task.dueDate!)}',
+              '${task.dueDate == null ? '-' : _formatDay(task.dueDate!)}',
               style: _meta,
             ),
           ],
