@@ -62,6 +62,7 @@ class AppPageHeader extends StatelessWidget {
     this.meta = const [],
     this.actions = const [],
     this.onBack,
+    this.trailing,
     this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 12),
   });
 
@@ -71,6 +72,10 @@ class AppPageHeader extends StatelessWidget {
   final List<AppPageHeaderMeta> meta;
   final List<AppPageHeaderAction> actions;
   final VoidCallback? onBack;
+
+  /// ปุ่มมุมขวาของแถว title — หน้าระดับแท็บใส่ปุ่มบัญชีผู้ใช้ (avatar, docs/22
+  /// §7.2) · ไม่ใช่ที่ของปุ่มคำสั่ง ปุ่มคำสั่งใช้ [actions]
+  final Widget? trailing;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -122,6 +127,7 @@ class AppPageHeader extends StatelessWidget {
                   ),
                 ),
               ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing!],
             ],
           ),
           if (description != null) ...[

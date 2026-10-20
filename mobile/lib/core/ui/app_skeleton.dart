@@ -80,6 +80,9 @@ class AppListSkeleton extends StatelessWidget {
         child: ListView.separated(
           padding: padding ?? const EdgeInsets.all(16),
           physics: const NeverScrollableScrollPhysics(),
+          // จำนวนการ์ดคงที่และไม่เลื่อน — shrinkWrap ให้วางในรายการที่เลื่อนได้
+          // (เช่นหน้าแรก) ได้ด้วย ไม่ใช่แค่ใน Expanded
+          shrinkWrap: true,
           itemCount: count,
           separatorBuilder: (_, _) => const SizedBox(height: 12),
           itemBuilder: (_, _) => const AppCard(
