@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
+import '../../core/ui/labels.dart';
 
 /// Shared labels + palette for [TaskStatus], so the Home task cards and the
 /// Task Detail screen render status the same way. Colours reuse the navy
@@ -8,12 +9,7 @@ import '../../core/api/models.dart';
 class TaskStatusStyle {
   const TaskStatusStyle._();
 
-  static String label(TaskStatus status) => switch (status) {
-    TaskStatus.pending => 'รอดำเนินการ',
-    TaskStatus.inProgress => 'กำลังทำ',
-    TaskStatus.completed => 'เสร็จแล้ว',
-    TaskStatus.cancelled => 'ยกเลิก',
-  };
+  static String label(TaskStatus status) => taskStatusLabel(status);
 
   /// `(background, foreground)` for the status pill.
   static (Color, Color) colors(TaskStatus status) => switch (status) {
