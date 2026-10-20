@@ -14,6 +14,9 @@ import {
 } from "@/lib/device-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
 import { useCustomers } from "@/hooks/use-customers";
+import { useCentralDevices } from "@/hooks/use-central-devices";
+import { useDevices } from "@/hooks/use-devices";
+import { matchModelIdByHardwareModel } from "@/lib/central-device-display";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +46,8 @@ export function RegisterDeviceForm() {
   const { session } = useAuth();
   const { data: models } = useDeviceModels();
   const { data: customers } = useCustomers();
+  const { data: central } = useCentralDevices();
+  const { data: registeredDevices } = useDevices();
 
   const [deviceId, setDeviceId] = useState("");
   const [simNumber, setSimNumber] = useState("");
@@ -54,6 +59,7 @@ export function RegisterDeviceForm() {
   const [serialNumber, setSerialNumber] = useState("");
   const [blackboxId, setBlackboxId] = useState("");
   const [bootloader, setBootloader] = useState("");
+  const [centralPick, setCentralPick] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [result, setResult] = useState<RegisterDeviceResult | null>(null);
@@ -61,6 +67,11 @@ export function RegisterDeviceForm() {
   const modelList = useMemo(() => models ?? [], [models]);
   const customerList = useMemo(() => customers ?? [], [customers]);
   const selectedModel = modelList.find((m) => m.id === modelId) ?? null;
+  // กล่องที่ Server กลางรู้จักแต่ยังไม่ได้ลงทะเบียนในระบบเรา (ตัดที่ลงทะเบียนแล้วออก)
+  const pickableCentral = useMemo(() => {
+    const taken = new Set((registeredDevices ?? []).map((d) => d.deviceId));
+    return (central?.devices ?? []).filter((d) => !taken.has(d.deviceId));
+  }, [central, registeredDevices]);
   // 1 โมเดลมีได้โปรโตคอลเดียว: เลือกให้แล้วล็อกช่อง (รุ่นเก่าที่ยังมีหลายค่าอยู่
   // ยังเลือกเองได้จนกว่าจะแก้ให้เหลือ 1 ค่า)
   const protocolLocked =
@@ -87,6 +98,22 @@ export function RegisterDeviceForm() {
         ? next.supportedProtocols[0]
         : "";
     setProtocol(only);
+  }
+
+  // เติมฟอร์มจากกล่องที่ Server กลางรู้จัก: Device ID และโมเดลเป็นค่าจริง ส่วน SIM/IMEI/
+  // Serial/Blackbox กล่องไม่ได้รายงาน จึงใส่ค่าชั่วคราว `central:<id>` ให้แก้ทับเองได้
+  function prefillFromCentral(id: string) {
+    setCentralPick(id);
+    const picked = pickableCentral.find((d) => d.deviceId === id);
+    if (!picked) return;
+    const placeholder = `central:${picked.deviceId}`;
+    setDeviceId(picked.deviceId);
+    setSimNumber(placeholder);
+    setImei(placeholder);
+    setSerialNumber(placeholder);
+    setBlackboxId(placeholder);
+    const matched = matchModelIdByHardwareModel(picked.hardwareModel, modelList);
+    if (matched) changeModel(matched);
   }
 
   async function onSubmit() {
@@ -166,6 +193,49 @@ export function RegisterDeviceForm() {
       {/* 2 คอลัมน์ — mirror pattern "สร้างใหม่" หน้าอื่น (users/new,
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
+      {central && (
+        <section className="flex flex-col gap-2">
+          <Label htmlFor="central-pick">
+            เลือกจาก Server กลาง{" "}
+            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+          </Label>
+          {!central.reachable ? (
+            <p className="text-sm text-muted-foreground">
+              ติดต่อ Server กลางไม่ได้ตอนนี้ กรอกข้อมูลเองได้ตามปกติ
+            </p>
+          ) : pickableCentral.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              ไม่มีกล่องใหม่ที่ Server กลางรู้จักและยังไม่ได้ลงทะเบียน
+            </p>
+          ) : (
+            <>
+              <Select
+                value={centralPick}
+                onValueChange={(value) => prefillFromCentral(value ?? "")}
+              >
+                <SelectTrigger
+                  id="central-pick"
+                  className="w-full max-w-sm"
+                  disabled={submitting}
+                >
+                  <SelectValue placeholder="- เลือกกล่องเพื่อเติมข้อมูลให้ -" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pickableCentral.map((d) => (
+                    <SelectItem key={d.deviceId} value={d.deviceId}>
+                      {d.deviceId} ({d.online ? "ออนไลน์" : "ออฟไลน์"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                เติม Device ID และโมเดลให้ ส่วน SIM, IMEI, Serial และ Blackbox ID
+                กล่องไม่ได้รายงาน จึงใส่ค่าชั่วคราวขึ้นต้นด้วย central: ให้แก้เป็นค่าจริง
+              </p>
+            </>
+          )}
+        </section>
+      )}
       <section className="flex flex-col gap-4">
         <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลตัวเครื่อง</h2>
         <div className="grid grid-cols-2 gap-4">

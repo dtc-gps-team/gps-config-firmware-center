@@ -25,10 +25,25 @@ vi.mock("@/hooks/use-device-models", () => ({
     ],
   }),
 }));
+const central = vi.hoisted(() => ({
+  value: { reachable: true, devices: [] } as {
+    reachable: boolean;
+    devices: unknown[];
+  } | null,
+}));
+vi.mock("@/hooks/use-central-devices", () => ({
+  useCentralDevices: () => ({ data: central.value }),
+}));
+vi.mock("@/hooks/use-devices", () => ({
+  useDevices: () => ({ data: [{ deviceId: "DEV-TAKEN" }] }),
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคับกรอก", () => {
-  beforeEach(() => registerDevice.mockReset());
+  beforeEach(() => {
+    registerDevice.mockReset();
+    central.value = { reachable: true, devices: [] };
+  });
 
   async function fillBase(user: ReturnType<typeof userEvent.setup>) {
     await user.type(screen.getByLabelText("Device ID"), "DEV-1");
@@ -78,5 +93,74 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
         blackboxId: "BB-1",
       }),
     );
+  });
+
+  describe("เลือกจาก Server กลาง", () => {
+    const box = (deviceId: string, online = true) => ({
+      deviceId,
+      hardwareModel: "gt06n",
+      online,
+    });
+
+    it("เติม Device ID โมเดล และค่าชั่วคราว central: ให้ แล้วแก้ทับได้", async () => {
+      central.value = { reachable: true, devices: [box("BOX-0001")] };
+      const user = userEvent.setup();
+      render(<RegisterDeviceForm />);
+
+      await user.click(screen.getByLabelText(/เลือกจาก Server กลาง/));
+      await user.click(
+        await screen.findByRole("option", { name: "BOX-0001 (ออนไลน์)" }),
+      );
+
+      expect(screen.getByLabelText("Device ID")).toHaveValue("BOX-0001");
+      expect(screen.getByLabelText("IMEI")).toHaveValue("central:BOX-0001");
+      expect(screen.getByLabelText("Serial Number")).toHaveValue(
+        "central:BOX-0001",
+      );
+      // จับคู่โมเดลจาก hardware_model ไม่สนตัวพิมพ์ และเลือกโปรโตคอลให้เอง
+      expect(screen.getByLabelText("โมเดล")).toHaveTextContent("GT06N");
+      expect(screen.getByLabelText("โปรโตคอล")).toHaveTextContent("TCP");
+
+      await user.clear(screen.getByLabelText("IMEI"));
+      await user.type(screen.getByLabelText("IMEI"), "860000000000001");
+      expect(screen.getByLabelText("IMEI")).toHaveValue("860000000000001");
+    });
+
+    it("ไม่เสนอกล่องที่ลงทะเบียนในระบบเราไปแล้ว", async () => {
+      central.value = {
+        reachable: true,
+        devices: [box("DEV-TAKEN"), box("BOX-0002", false)],
+      };
+      const user = userEvent.setup();
+      render(<RegisterDeviceForm />);
+
+      await user.click(screen.getByLabelText(/เลือกจาก Server กลาง/));
+
+      expect(
+        await screen.findByRole("option", { name: "BOX-0002 (ออฟไลน์)" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("option", { name: /DEV-TAKEN/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("ติดต่อ Server กลางไม่ได้: บอกให้กรอกเอง ฟอร์มยังใช้ได้", () => {
+      central.value = { reachable: false, devices: [] };
+      render(<RegisterDeviceForm />);
+
+      expect(
+        screen.getByText(/ติดต่อ Server กลางไม่ได้ตอนนี้/),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Device ID")).toBeEnabled();
+    });
+
+    it("ยังโหลดไม่เสร็จ (ไม่มีข้อมูล): ไม่แสดงส่วนนี้", () => {
+      central.value = null;
+      render(<RegisterDeviceForm />);
+
+      expect(
+        screen.queryByLabelText(/เลือกจาก Server กลาง/),
+      ).not.toBeInTheDocument();
+    });
   });
 });
