@@ -11,7 +11,6 @@ import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/router/app_shell.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/home/home_page.dart';
@@ -128,9 +127,6 @@ Future<GoRouter> _pumpApp(
       tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
       sessionProfileStoreProvider.overrideWithValue(
         InMemorySessionProfileStore(),
-      ),
-      recentDeviceIdStoreProvider.overrideWithValue(
-        InMemoryRecentDeviceIdStore(),
       ),
       appDatabaseProvider.overrideWith((ref) {
         final db = AppDatabase.forTesting(NativeDatabase.memory());

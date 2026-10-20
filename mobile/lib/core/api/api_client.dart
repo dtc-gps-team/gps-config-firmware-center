@@ -81,16 +81,6 @@ class ApiClient {
     );
   }
 
-  /// `GET /config` — not scoped per-user by the backend (every role with
-  /// `config:Read` sees every Config, deliberately — see
-  /// `backend/src/config/config.service.ts` `findAll()`).
-  Future<List<DeviceConfigDraft>> listConfigs() async {
-    return _wrapListStrict(
-      () => _dio.get<List<dynamic>>('/config'),
-      DeviceConfigDraft.fromJson,
-    );
-  }
-
   /// `POST /devices/{deviceId}/simulate-config` — readiness check เต็มรูปแบบ
   /// (config_simulator Phase 2): รวม config + compatibility + connection check
   /// เป็นผลเดียว ต่างจาก `POST /config/{configId}/simulate` (Phase 1) ที่เช็คแค่
@@ -263,16 +253,6 @@ class ApiClient {
     );
   }
 
-  /// `GET /customers` — every logged-in role may call it (no PermissionGuard,
-  /// mirrors `GET /users`). Feeds the "เลือกบริษัท" step of the ทดสอบสัญญาณ
-  /// flow (issue #204).
-  Future<List<Customer>> listCustomers() async {
-    return _wrapListStrict(
-      () => _dio.get<List<dynamic>>('/customers'),
-      Customer.fromJson,
-    );
-  }
-
   /// `GET /devices/{deviceId}` — Device Detail. Keyed by `Device.deviceId`
   /// (the real hardware number), not the internal UUID. 404 when not found.
   Future<Device> getDevice(String deviceId) async {
@@ -364,17 +344,6 @@ class ApiClient {
     return _wrapListStrict(
       () => _dio.get<List<dynamic>>('/config-definitions'),
       ConfigFieldDefinition.fromJson,
-    );
-  }
-
-  /// `POST /devices/{deviceId}/test-connection` — no request body.
-  Future<DeviceConnectionTestResult> testDeviceConnection(
-    String deviceId,
-  ) async {
-    return _wrap(
-      () =>
-          _dio.post<Map<String, dynamic>>('/devices/$deviceId/test-connection'),
-      DeviceConnectionTestResult.fromJson,
     );
   }
 
