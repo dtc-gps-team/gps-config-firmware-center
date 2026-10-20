@@ -17,6 +17,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
+import { toLegacyFields } from '../config-sync-writer/legacy-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { type LegacyConfigWrite } from '../config-sync-writer/config-sync-writer.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -507,21 +508,7 @@ export class ConfigService {
    * จริงเป็น TBD ของ handoff (docs/07 §8) ตอน mock ขอแค่ serialize ได้
    */
   private toLegacyFields(fields: unknown): LegacyConfigWrite['fields'] {
-    const out: Record<string, string | number> = {};
-    if (fields != null && typeof fields === 'object') {
-      for (const [key, value] of Object.entries(
-        fields as Record<string, unknown>,
-      )) {
-        if (value === null || value === undefined) continue;
-        out[key] =
-          typeof value === 'number' || typeof value === 'string'
-            ? value
-            : typeof value === 'boolean'
-              ? String(value)
-              : JSON.stringify(value);
-      }
-    }
-    return out;
+    return toLegacyFields(fields);
   }
 
   /**

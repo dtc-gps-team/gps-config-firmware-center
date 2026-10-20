@@ -27,6 +27,15 @@ export interface ConfigSyncFailure {
   lastError: string;
 }
 
+/** payload ของ event `'sync-succeeded'` — เขียน Config เข้าระบบปลายทางสำเร็จ
+ * (ไม่ว่าจะ attempt ที่เท่าไร) · A ใช้ปิด Incident เขียน Config ที่ค้างของ Config
+ * เดียวกันอัตโนมัติ (`IncidentService.resolveFromSyncSuccess`) · listener ต้อง
+ * self-contain error handling เหมือน `'sync-failed'` ด้านบน */
+export interface ConfigSyncSuccess {
+  configId: string;
+  versionNumber: number;
+}
+
 /**
  * Job runner ของ config-sync-writer (docs/07 §5, มติ §9.5) — in-process queue
  * ช่วง mock (สลับเป็น BullMQ+Redis ตอน docker/production handoff — ข้อที่ไม่
@@ -74,6 +83,10 @@ export class ConfigSyncWriterQueue extends EventEmitter {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         await this.writer.writeConfigToLegacySystem(input);
+        this.emitSucceeded({
+          configId: input.configId,
+          versionNumber: input.versionNumber,
+        });
         return;
       } catch (err) {
         lastError = err;
@@ -109,6 +122,18 @@ export class ConfigSyncWriterQueue extends EventEmitter {
     } catch (emitErr) {
       this.logger.error(
         `listener ของ 'sync-failed' throw (sync) — ${(emitErr as Error).message}`,
+      );
+    }
+  }
+
+  /** emit `'sync-succeeded'` โดยไม่ให้ listener ที่ throw (sync) ทำให้ job พัง —
+   * เขียนสำเร็จแล้วต้องไม่ถูกนับเป็นล้มเหลวเพราะ listener */
+  private emitSucceeded(success: ConfigSyncSuccess): void {
+    try {
+      this.emit('sync-succeeded', success);
+    } catch (emitErr) {
+      this.logger.error(
+        `listener ของ 'sync-succeeded' throw (sync) — ${(emitErr as Error).message}`,
       );
     }
   }

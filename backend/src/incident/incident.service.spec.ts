@@ -1,4 +1,9 @@
-import { ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigSyncFailure } from '../config-sync-writer/config-sync-writer-queue.service';
@@ -44,6 +49,8 @@ describe('IncidentService', () => {
   let rolloutEvents: RolloutEvents;
   let incidentFindFirst: jest.Mock;
   let incidentUpdate: jest.Mock;
+  let configVersionFindUnique: jest.Mock;
+  let enqueueConfigSync: jest.Mock;
 
   beforeEach(async () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
@@ -57,7 +64,11 @@ describe('IncidentService', () => {
     userFindMany = jest.fn().mockResolvedValue([]);
     auditLogCreate = jest.fn().mockResolvedValue(undefined);
     notificationSend = jest.fn().mockResolvedValue(undefined);
-    queue = new EventEmitter() as unknown as ConfigSyncWriterQueue;
+    configVersionFindUnique = jest.fn().mockResolvedValue(null);
+    enqueueConfigSync = jest.fn();
+    queue = Object.assign(new EventEmitter(), {
+      enqueueConfigSync,
+    }) as unknown as ConfigSyncWriterQueue;
     rolloutEvents = new RolloutEvents();
     incidentFindFirst = jest.fn().mockResolvedValue(null);
     incidentUpdate = jest.fn().mockResolvedValue({ id: 'inc-1' });
@@ -77,6 +88,7 @@ describe('IncidentService', () => {
               updateMany: incidentUpdateMany,
             },
             device: { findUnique: deviceFindUnique },
+            configVersion: { findUnique: configVersionFindUnique },
             user: { findMany: userFindMany },
             auditLog: { create: auditLogCreate },
           },
@@ -724,16 +736,123 @@ describe('IncidentService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('ไม่ใช่ field report (auto-detect เดิม) -> NotFoundException', async () => {
-      incidentFindUnique.mockResolvedValue({
-        id: 'inc-1',
+    describe('Incident ที่ระบบสร้างเอง (ปิดด้วยมือ)', () => {
+      const systemIncident = {
+        id: 'inc-s',
         source: INCIDENT_SOURCE.configSyncWriter,
         status: 'open',
+        reportedBy: null,
+        deviceId: null,
+      };
+
+      it('resolve จาก open -> status: resolved ไม่ส่ง notification ไม่ query Device', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        const result = await service.decide(
+          'inc-s',
+          { outcome: 'resolve', note: 'เขียนเองแล้ว' },
+          operation,
+        );
+
+        expect(result.status).toBe('resolved');
+        expect(result.device).toBeNull();
+        expect(incidentUpdateMany).toHaveBeenCalledWith({
+          where: { id: 'inc-s', status: { in: ['open', 'investigating'] } },
+          data: {
+            status: 'resolved',
+            reviewedBy: operation.id,
+            reviewedAt: expect.any(Date) as Date,
+            reviewNote: 'เขียนเองแล้ว',
+          },
+        });
+        expect(notificationSend).not.toHaveBeenCalled();
+        expect(deviceFindUnique).not.toHaveBeenCalled();
+      });
+
+      it('dismiss จาก investigating -> status: dismissed (Rollout ที่เคย resume)', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...systemIncident,
+          source: INCIDENT_SOURCE.rolloutFailure,
+          status: 'investigating',
+        });
+
+        const result = await service.decide(
+          'inc-s',
+          { outcome: 'dismiss', note: 'เครื่องที่ล้มถูกถอดออกจากรถแล้ว' },
+          operation,
+        );
+
+        expect(result.status).toBe('dismissed');
+      });
+
+      it('promote -> BadRequestException (ส่งต่อเป็น Campaign ได้เฉพาะ field report)', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        await expect(
+          service.decide('inc-s', { outcome: 'promote', note: 'x' }, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(incidentUpdateMany).not.toHaveBeenCalled();
+      });
+
+      it.each(['resolved', 'dismissed', 'rolled_back'])(
+        'ปิดไปแล้ว (%s) -> ConflictException',
+        async (status) => {
+          incidentFindUnique.mockResolvedValue({ ...systemIncident, status });
+
+          await expect(
+            service.decide(
+              'inc-s',
+              { outcome: 'resolve', note: 'x' },
+              operation,
+            ),
+          ).rejects.toThrow(ConflictException);
+          expect(incidentUpdateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it('race condition (ถูกปิดโดยคำขออื่น/ระบบพร้อมกัน) -> ConflictException', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+        incidentUpdateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.decide('inc-s', { outcome: 'resolve', note: 'x' }, operation),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('เขียน AuditLog action decide พร้อม outcome และที่มาของ Incident', async () => {
+        incidentFindUnique.mockResolvedValue(systemIncident);
+
+        await service.decide(
+          'inc-s',
+          { outcome: 'resolve', note: 'x' },
+          operation,
+        );
+
+        expect(auditLogCreate).toHaveBeenCalledWith({
+          data: {
+            userId: operation.id,
+            auditModule: 'incident',
+            action: 'decide',
+            metadata: {
+              incidentId: 'inc-s',
+              outcome: 'resolve',
+              incidentSource: INCIDENT_SOURCE.configSyncWriter,
+            },
+            ipAddress: null,
+          },
+        });
+      });
+    });
+
+    it('field report ที่ investigating (promote ไปแล้ว) -> ยัง ConflictException ตามเดิม', async () => {
+      incidentFindUnique.mockResolvedValue({
+        ...openReport,
+        status: 'investigating',
       });
 
       await expect(
         service.decide('inc-1', { outcome: 'resolve', note: 'x' }, operation),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ตัดสินใจไปแล้ว (ไม่ใช่ open) -> ConflictException', async () => {
@@ -876,6 +995,251 @@ describe('IncidentService', () => {
         service.decide('inc-1', { outcome: 'resolve', note: 'x' }, operation),
       ).resolves.toBeDefined();
       expect(notificationSend).not.toHaveBeenCalled();
+    });
+  });
+  describe('เขียน Config ซ้ำ / สำเร็จภายหลัง / ลองเขียนใหม่', () => {
+    const activeSyncIncident = {
+      id: 'inc-sync',
+      source: INCIDENT_SOURCE.configSyncWriter,
+      status: 'open',
+      relatedConfigId: failure.configId,
+      metadata: {
+        versionNumber: 4,
+        attempts: 3,
+        lastError: 'connection refused',
+      },
+    };
+
+    it('createFromSyncFailure ซ้ำ (เวอร์ชันเดียวกันยังมี Incident ค้าง) -> อัปเดตของเดิม รวมจำนวนครั้ง กลับเป็น open ไม่สร้างใหม่', async () => {
+      incidentFindFirst.mockResolvedValue({
+        ...activeSyncIncident,
+        status: 'investigating',
+      });
+
+      await service.createFromSyncFailure({
+        ...failure,
+        lastError: 'timeout อีกครั้ง',
+      });
+
+      expect(incidentFindFirst).toHaveBeenCalledWith({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: failure.configId,
+          status: { in: ['open', 'investigating'] },
+          metadata: { path: ['versionNumber'], equals: 4 },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(incidentCreate).not.toHaveBeenCalled();
+      expect(incidentUpdate).toHaveBeenCalledWith({
+        where: { id: 'inc-sync' },
+        data: {
+          status: 'open',
+          description: expect.stringContaining('timeout อีกครั้ง') as string,
+          metadata: {
+            versionNumber: 4,
+            attempts: 6,
+            lastError: 'timeout อีกครั้ง',
+          },
+        },
+      });
+    });
+
+    it('sync-succeeded บน queue -> ปิด Incident ที่ค้างของ Config นั้น (resolved + หมายเหตุปิดอัตโนมัติ)', async () => {
+      service.onModuleInit();
+      incidentFindMany.mockResolvedValue([activeSyncIncident]);
+
+      queue.emit('sync-succeeded', {
+        configId: failure.configId,
+        versionNumber: 4,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(incidentFindMany).toHaveBeenCalledWith({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: failure.configId,
+          status: { in: ['open', 'investigating'] },
+        },
+      });
+      expect(incidentUpdateMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['inc-sync'] },
+          status: { in: ['open', 'investigating'] },
+        },
+        data: {
+          status: 'resolved',
+          reviewedAt: expect.any(Date) as Date,
+          reviewNote: 'ปิดอัตโนมัติ: เขียน Config เข้าระบบปลายทางสำเร็จภายหลัง',
+        },
+      });
+    });
+
+    it('เขียนสำเร็จเฉพาะเวอร์ชันเก่า -> ไม่ปิด Incident ของเวอร์ชันที่ใหม่กว่า', async () => {
+      incidentFindMany.mockResolvedValue([
+        { ...activeSyncIncident, metadata: { versionNumber: 5 } },
+      ]);
+
+      await service.resolveFromSyncSuccess({
+        configId: failure.configId,
+        versionNumber: 4,
+      });
+
+      expect(incidentUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('ไม่มี Incident ค้าง -> ไม่เขียนอะไร และ prisma พังก็ไม่ throw', async () => {
+      await service.resolveFromSyncSuccess({
+        configId: failure.configId,
+        versionNumber: 4,
+      });
+      expect(incidentUpdateMany).not.toHaveBeenCalled();
+
+      incidentFindMany.mockRejectedValue(new Error('db down'));
+      await expect(
+        service.resolveFromSyncSuccess({
+          configId: failure.configId,
+          versionNumber: 4,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    describe('retrySync', () => {
+      const version = {
+        configId: failure.configId,
+        versionNumber: 4,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: { APN1: 'internet', GPS_ON: true, EMPTY: null },
+      };
+
+      it('ไม่พบ Incident -> 404', async () => {
+        await expect(service.retrySync('nope', operation)).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+
+      it('ไม่ใช่ Incident เขียน Config -> 400 และไม่เขียนอะไร', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...activeSyncIncident,
+          source: INCIDENT_SOURCE.rolloutFailure,
+        });
+
+        await expect(service.retrySync('inc-sync', operation)).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(enqueueConfigSync).not.toHaveBeenCalled();
+      });
+
+      it.each(['resolved', 'dismissed', 'rolled_back'])(
+        'ปิดไปแล้ว (%s) -> 409',
+        async (status) => {
+          incidentFindUnique.mockResolvedValue({
+            ...activeSyncIncident,
+            status,
+          });
+
+          await expect(
+            service.retrySync('inc-sync', operation),
+          ).rejects.toThrow(ConflictException);
+          expect(enqueueConfigSync).not.toHaveBeenCalled();
+        },
+      );
+
+      it('กำลังลองเขียนอยู่ (investigating) -> 409 บอกให้รอผล ไม่เข้าคิวเขียนซ้ำ', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...activeSyncIncident,
+          status: 'investigating',
+        });
+
+        const err = await service
+          .retrySync('inc-sync', operation)
+          .catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as Error).message).toContain('กำลังลองเขียนอยู่');
+        expect(incidentUpdateMany).not.toHaveBeenCalled();
+        expect(enqueueConfigSync).not.toHaveBeenCalled();
+      });
+
+      it('metadata ไม่มีเวอร์ชัน หรือไม่มี Config ที่เกี่ยวข้อง -> 400', async () => {
+        incidentFindUnique.mockResolvedValue({
+          ...activeSyncIncident,
+          metadata: null,
+        });
+        await expect(service.retrySync('inc-sync', operation)).rejects.toThrow(
+          BadRequestException,
+        );
+
+        incidentFindUnique.mockResolvedValue({
+          ...activeSyncIncident,
+          relatedConfigId: null,
+        });
+        await expect(service.retrySync('inc-sync', operation)).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('ไม่พบเวอร์ชันของ Config -> 404', async () => {
+        incidentFindUnique.mockResolvedValue(activeSyncIncident);
+
+        await expect(service.retrySync('inc-sync', operation)).rejects.toThrow(
+          NotFoundException,
+        );
+        expect(enqueueConfigSync).not.toHaveBeenCalled();
+      });
+
+      it('race: ถูกปิดโดยคำขออื่นระหว่างนั้น -> 409 และไม่เขียน', async () => {
+        incidentFindUnique.mockResolvedValue(activeSyncIncident);
+        configVersionFindUnique.mockResolvedValue(version);
+        incidentUpdateMany.mockResolvedValue({ count: 0 });
+
+        await expect(service.retrySync('inc-sync', operation)).rejects.toThrow(
+          ConflictException,
+        );
+        expect(enqueueConfigSync).not.toHaveBeenCalled();
+      });
+
+      it('สำเร็จ -> investigating, สั่งเขียนจาก snapshot ของเวอร์ชัน (แปลงค่าเหมือนตอน approve), ลง Audit Log', async () => {
+        incidentFindUnique.mockResolvedValue(activeSyncIncident);
+        configVersionFindUnique.mockResolvedValue(version);
+
+        const result = await service.retrySync('inc-sync', operation);
+
+        expect(result.status).toBe('investigating');
+        expect(configVersionFindUnique).toHaveBeenCalledWith({
+          where: {
+            configId_versionNumber: {
+              configId: failure.configId,
+              versionNumber: 4,
+            },
+          },
+        });
+        // claim เฉพาะที่ยัง open: คำขอที่สองที่มาพร้อมกันจะได้ count 0
+        expect(incidentUpdateMany).toHaveBeenCalledWith({
+          where: { id: 'inc-sync', status: 'open' },
+          data: { status: 'investigating' },
+        });
+        expect(enqueueConfigSync).toHaveBeenCalledWith({
+          configId: failure.configId,
+          versionNumber: 4,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet', GPS_ON: 'true' },
+        });
+        expect(auditLogCreate).toHaveBeenCalledWith({
+          data: {
+            userId: operation.id,
+            auditModule: 'incident',
+            action: 'retry-sync',
+            metadata: {
+              incidentId: 'inc-sync',
+              incidentSource: INCIDENT_SOURCE.configSyncWriter,
+            },
+            ipAddress: null,
+          },
+        });
+      });
     });
   });
 });

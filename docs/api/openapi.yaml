@@ -2209,14 +2209,21 @@ paths:
     post:
       tags: [incident]
       operationId: decideFieldIncidentReport
-      summary: Operation ตัดสินใจ field report ที่ยัง open (Field Incident Report — issue #236, v3.47)
+      summary: Operation ตัดสินใจ field report หรือปิด Incident ที่ระบบสร้างเองด้วยมือ (issue #236, v3.47)
       description: >-
         resource `incidents` action `Approve` (ไม่สร้าง action ใหม่ —
         `ActionType` เป็น Prisma enum จริง ทุกจุดที่ Operation ตัดสินใจใน
         ระบบนี้ใช้ `Approve` ตัวเดียวกันเสมอไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ
-        mirror `approveDeviceConfigOverride`) ใช้ได้เฉพาะ Incident ที่
-        `source: field-report` และยังเป็น `status: open` เท่านั้น — `outcome`
-        มี 3 แบบ: `resolve` (แก้ปัญหาจริงแล้วนอกเหนือ Campaign →
+        mirror `approveDeviceConfigOverride`) ใช้ได้กับ Incident 2 กลุ่ม:
+        (1) `source: field-report` ที่ยังเป็น `status: open` ได้ทั้ง 3 outcome
+        (2) Incident ที่ระบบสร้างเอง (`rollout-failure`, `config-sync-writer`
+        ฯลฯ) ที่เป็น `status: open` หรือ `investigating` ปิดด้วยมือได้เฉพาะ
+        `resolve`/`dismiss` (`promote` ได้ 400 — Rollout มีทาง Rollback ของ
+        ตัวเองอยู่แล้ว) ใช้เมื่อระบบปิดให้เองไม่ได้ เช่น Rollout จบแต่มีเครื่อง
+        ล้มและไม่มีใคร resume · ไม่มีผู้รายงานจึงไม่ส่ง notification · ปิดแล้วไม่
+        เปิดคืนเอง ยกเว้น Rollout เดิมล้มซ้ำ · ลง Audit Log ทุกครั้ง (กลุ่ม (2)
+        มี `incidentSource` ใน metadata) — `outcome` มี 3 แบบ: `resolve`
+        (แก้ปัญหาจริงแล้วนอกเหนือ Campaign →
         `status: resolved`), `dismiss` (ไม่ใช่ปัญหาจริง/ซ้ำ →
         `status: dismissed`), `promote` (ต้องแก้ด้วย Campaign →
         `status: investigating` คืน `device.deviceModel`/`device.protocol`
@@ -2248,16 +2255,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/IncidentDecisionResult"
         "400":
-          description: ไม่ส่ง note มา หรือ outcome ไม่อยู่ใน enum (resolve/dismiss/promote)
+          description: >-
+            ไม่ส่ง note มา, outcome ไม่อยู่ใน enum (resolve/dismiss/promote)
+            หรือขอ `promote` กับ Incident ที่ระบบสร้างเอง
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ตัดสินใจ field report — เฉพาะ Role Operation เท่านั้น
+          description: ไม่มีสิทธิ์ตัดสินใจหรือปิด Incident — เฉพาะ Role Operation เท่านั้น
         "404":
-          description: ไม่พบ Incident นี้ หรือไม่ใช่ field report (`source` อื่น ใช้ Rollback แทน)
+          description: ไม่พบ Incident นี้
         "409":
           description: >-
-            Incident นี้ถูกตัดสินใจไปแล้ว (ไม่ใช่ `status: open` อีกต่อไป)
+            Incident นี้ถูกตัดสินใจ/ปิดไปแล้ว (field report: ไม่ใช่ `open`
+            อีกต่อไป · Incident ที่ระบบสร้างเอง: ไม่ใช่ `open` หรือ
+            `investigating` อีกต่อไป)
+
+  /incidents/{id}/retry-sync:
+    post:
+      tags: [incident]
+      operationId: retryIncidentConfigSync
+      summary: Operation สั่งเขียน Config เข้าระบบปลายทางใหม่ จาก Incident ที่เขียนไม่สำเร็จ
+      description: >-
+        resource `incidents` action `Approve` (ตัวเดียวกับ `decideFieldIncidentReport`)
+        ใช้ได้เฉพาะ Incident ที่ `source: config-sync-writer` และเป็น `status: open`
+        หรือ `investigating` · เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้
+        (`ConfigVersion` ตาม `metadata.versionNumber`) ไม่ใช่ค่าปัจจุบันของ
+        Config · ตอบทันทีว่าสั่งแล้วโดยตั้งสถานะเป็น `investigating` (เขียนจริง
+        ทำเบื้องหลังเหมือนตอน approve): สำเร็จ -> ระบบปิด Incident ให้เองเป็น
+        `resolved` พร้อมหมายเหตุปิดอัตโนมัติ, ล้มอีก -> อัปเดต Incident เดิมกลับ
+        เป็น `open` พร้อมรวมจำนวนครั้ง (ไม่สร้างรายการซ้ำ) · ลง Audit Log
+        (action `retry-sync`) ตอนนี้ระบบปลายทางเป็นโหมด mock
+        (`LEGACY_SYNC_MODE`) จึงสำเร็จเสมอจนกว่าจะต่อระบบจริง
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: สั่งเขียนใหม่แล้ว — คืน Incident ที่เปลี่ยนเป็น `investigating`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          description: >-
+            ไม่ใช่ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทาง หรือ
+            Incident นี้ไม่มีข้อมูล Config/เวอร์ชันที่ต้องเขียนซ้ำ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Incident นี้ หรือไม่พบ Config เวอร์ชันที่ต้องเขียน
+        "409":
+          description: >-
+            Incident นี้ปิดไปแล้ว หรือกำลังลองเขียนอยู่แล้ว (สถานะ `investigating` รอผลก่อน)
+            หรือถูกคำขออื่นสั่งเขียนไปพร้อมกัน
 
   /audit-logs:
     get:
