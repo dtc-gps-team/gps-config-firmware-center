@@ -6,7 +6,11 @@ import {
   canDecideFieldReport,
   canEditIncidentTechnical,
 } from "@/lib/permissions";
-import { canRetryConfigSync, isIncidentActive } from "@/lib/incident-display";
+import {
+  canRetryConfigSync,
+  isConfigSyncRetrying,
+  isIncidentActive,
+} from "@/lib/incident-display";
 import {
   FIELD_REPORT_SOURCE,
   type Incident,
@@ -83,6 +87,20 @@ export function IncidentActions({
       <div className="flex justify-end gap-2">
         {canRetryConfigSync(incident) && (
           <RetrySyncButton incident={incident} onChanged={onStale} />
+        )}
+        {isConfigSyncRetrying(incident) && (
+          // สั่งไปแล้วและกำลังรอผล: แสดงปุ่มที่กดไม่ได้ให้เห็นสถานะ ไม่ซ่อนจนคนงงว่าปุ่มหาย
+          // (ล้มอีกจะกลับเป็นเปิดและกดใหม่ได้ สำเร็จระบบปิดให้เอง)
+          <Tooltip>
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              <Button variant="outline" size="sm" disabled>
+                กำลังลองเขียน…
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              สั่งเขียน Config เข้าระบบปลายทางไปแล้ว กำลังรอผล
+            </TooltipContent>
+          </Tooltip>
         )}
         <DecideFieldReportDialog
           variant="system"

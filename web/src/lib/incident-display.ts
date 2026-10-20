@@ -245,17 +245,28 @@ export function isIncidentActive(status: IncidentStatus): boolean {
 }
 
 /**
- * สั่งลองเขียน Config ใหม่ได้ไหม: ต้องเป็น Incident เขียน Config ที่ยังไม่ปิด และมี
- * Config + เวอร์ชันที่ต้องเขียนซ้ำครบ (ตรงกับเงื่อนไขที่ backend `retrySync` รับ
- * ไม่งั้นกดแล้วได้ 400)
+ * สั่งลองเขียน Config ใหม่ได้ไหม: ต้องเป็น Incident เขียน Config ที่ยัง **เปิดอยู่เท่านั้น**
+ * (`open`) และมี Config + เวอร์ชันที่ต้องเขียนซ้ำครบ (ตรงกับเงื่อนไขที่ backend `retrySync` รับ
+ * ไม่งั้นกดแล้วได้ 400/409) · `investigating` คือสั่งไปแล้วและกำลังรอผล ไม่ให้กดซ้ำ เพราะ
+ * จะเข้าคิวเขียนซ้ำ (ดู `isConfigSyncRetrying`)
  */
 export function canRetryConfigSync(
   incident: Pick<Incident, "source" | "status" | "relatedConfigId" | "metadata">,
 ): boolean {
   return (
     incidentType(incident) === "config-sync-writer" &&
-    isIncidentActive(incident.status) &&
+    incident.status === "open" &&
     Boolean(incident.relatedConfigId) &&
     typeof incident.metadata?.versionNumber === "number"
+  );
+}
+
+/** Incident เขียน Config ที่สั่งลองเขียนไปแล้วและกำลังรอผล (ล้มอีกจะกลับเป็น `open`) */
+export function isConfigSyncRetrying(
+  incident: Pick<Incident, "source" | "status">,
+): boolean {
+  return (
+    incidentType(incident) === "config-sync-writer" &&
+    incident.status === "investigating"
   );
 }

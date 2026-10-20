@@ -66,8 +66,8 @@ describe("IncidentActions: Incident ที่ระบบสร้างเอ�
     retryIncidentConfigSync.mockReset();
   });
 
-  it("เขียน Config ไม่สำเร็จที่ยังไม่ปิด: Operation เห็นทั้ง 'ลองเขียนใหม่' และ 'ปิด Incident'", () => {
-    renderActions(incident());
+  it("เขียน Config ไม่สำเร็จที่ยังเปิดอยู่: Operation เห็นทั้ง 'ลองเขียนใหม่' และ 'ปิด Incident'", () => {
+    renderActions(incident({ status: "open" }));
 
     expect(
       screen.getByRole("button", { name: "ลองเขียนใหม่" }),
@@ -139,7 +139,7 @@ describe("IncidentActions: Incident ที่ระบบสร้างเอ�
     retryIncidentConfigSync.mockResolvedValue(
       incident({ status: "investigating" }),
     );
-    const { onStale } = renderActions(incident());
+    const { onStale } = renderActions(incident({ status: "open" }));
 
     await user.click(screen.getByRole("button", { name: "ลองเขียนใหม่" }));
 
@@ -154,11 +154,26 @@ describe("IncidentActions: Incident ที่ระบบสร้างเอ�
     retryIncidentConfigSync.mockRejectedValue(
       new ApiError("Incident นี้ปิดไปแล้ว", 409),
     );
-    const { onStale } = renderActions(incident());
+    const { onStale } = renderActions(incident({ status: "open" }));
 
     await user.click(screen.getByRole("button", { name: "ลองเขียนใหม่" }));
 
     await waitFor(() => expect(onStale).toHaveBeenCalled());
+  });
+
+  it("กำลังลองเขียนอยู่ (investigating): ไม่มีปุ่ม 'ลองเขียนใหม่' ให้กดซ้ำ มีปุ่มที่กดไม่ได้บอกว่ากำลังรอผล", () => {
+    renderActions(incident({ status: "investigating" }));
+
+    expect(
+      screen.queryByRole("button", { name: "ลองเขียนใหม่" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "กำลังลองเขียน…" }),
+    ).toBeDisabled();
+    // ยังปิด Incident ด้วยมือได้ตามปกติ
+    expect(
+      screen.getByRole("button", { name: "ปิด Incident" }),
+    ).toBeInTheDocument();
   });
 
   it("ปิด Incident: เลือกผลและกรอกหมายเหตุ แล้วส่ง resolve ไปที่ decide (ไม่มีตัวเลือกส่งต่อเป็น Campaign)", async () => {

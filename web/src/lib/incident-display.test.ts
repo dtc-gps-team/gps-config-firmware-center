@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canRetryConfigSync,
+  isConfigSyncRetrying,
   failedDeviceSample,
   formatPercent,
   incidentImpact,
@@ -361,11 +362,18 @@ describe("isIncidentActive / canRetryConfigSync", () => {
     expect(isIncidentActive("rolled_back")).toBe(false);
   });
 
-  it("เขียน Config ที่ยังไม่ปิดและมี Config กับเวอร์ชันครบ: ลองเขียนใหม่ได้", () => {
+  it("เขียน Config ที่เปิดอยู่และมี Config กับเวอร์ชันครบ: ลองเขียนใหม่ได้", () => {
     expect(canRetryConfigSync(syncIncident)).toBe(true);
-    expect(canRetryConfigSync({ ...syncIncident, status: "investigating" })).toBe(
-      true,
-    );
+  });
+
+  it("กำลังลองเขียนอยู่ (investigating): ลองเขียนใหม่ไม่ได้ กันเขียนซ้ำ แต่รู้ว่ากำลังรอผล", () => {
+    const retrying = { ...syncIncident, status: "investigating" as const };
+    expect(canRetryConfigSync(retrying)).toBe(false);
+    expect(isConfigSyncRetrying(retrying)).toBe(true);
+    expect(isConfigSyncRetrying(syncIncident)).toBe(false);
+    expect(
+      isConfigSyncRetrying({ ...retrying, source: "rollout-failure" }),
+    ).toBe(false);
   });
 
   it("ปิดแล้ว, ไม่ใช่ Incident เขียน Config หรือข้อมูลไม่พอ: ลองเขียนใหม่ไม่ได้", () => {
