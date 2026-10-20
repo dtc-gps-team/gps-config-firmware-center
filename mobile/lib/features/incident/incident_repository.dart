@@ -89,7 +89,7 @@ class MockIncidentRepository implements IncidentRepository {
       reportedBy: 'mock-st-user',
       reviewedBy: 'mock-operation-user',
       reviewedAt: DateTime(2026, 9, 6, 10, 0),
-      reviewNote: 'ต้องอัปเดต Firmware — ส่งต่อเป็น Campaign แล้ว',
+      reviewNote: 'ต้องอัปเดต Firmware จึงส่งต่อเป็น Campaign แล้ว',
       createdAt: DateTime(2026, 9, 5, 9, 12),
       updatedAt: DateTime(2026, 9, 6, 10, 0),
     ),
