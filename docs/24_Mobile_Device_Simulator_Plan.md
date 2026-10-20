@@ -288,3 +288,99 @@ Phase 1 ทำทีหลังได้โดยไม่รื้อของ
 - การเปลี่ยน token ต้องทำ 3 ที่ให้ตรงกัน: `delivery-server`, `ws-gateway` (พี่เลี้ยง) และค่าที่เก็บใน backend ของเรา
 - device_id เดียว (`mobile-sim-001`) ต่อ gateway ได้ทีละ 1 เครื่อง ถ้าช่าง 2 คนเปิด simulator พร้อมกันจะเตะกันเอง
   (ดู §10.1) ถ้าต้องให้หลายเครื่องใช้พร้อมกัน ต้องออก device_id + token แยกต่อเครื่อง ซึ่งยังไม่อยู่ในขอบเขตตอนนี้
+
+---
+
+## 11. ข้อเท็จจริงจากระบบ `arduino_gps` ที่ยืนยันแล้ว (ไม่ขึ้นกับโค้ดตัวอย่างของ A)
+
+> **ที่มา:** B อ่านโค้ดและข้อมูลจริงของระบบพี่เลี้ยงที่รันอยู่ (`ws-gateway`, `delivery-server`, `data-monitor`, firmware
+> `esp32_gps_box`) เมื่อ 20 ต.ค. 2569 ไม่ได้ทดลองกับกล่องจริง ข้อมูลงานมาจากประวัติงานจริง 41 งานใน `ws-gateway`
+> (UPDATE_FIRMWARE 34, UPDATE_CONFIG 7) · ค่า timeout / TTL ในหัวข้อนี้เป็น**ค่าเริ่มต้นในโค้ด** `.env` ของพี่เลี้ยงตั้งทับได้
+>
+> หัวข้อนี้เป็นข้อกำหนดที่แอปต้องทำตาม ส่วน flow การเชื่อม Gateway และโครงสร้าง WebSocket client ในแอปยังรอโค้ดตัวอย่างจาก A
+> · ตาราง §4.2.4 เดิมเป็นการเทียบกับ `/device-sync` ของเรา (แผนรุ่นก่อน) ตารางสถานะของ Gateway อยู่ที่ §11.4 แทน
+
+### 11.1 Device ID ของมือถือ
+
+- ต้องใช้ device_id ของมือถือเอง **ห้ามซ้ำกับ `BOX-0001`** ใช้ `mobile-sim-001` ตามที่ตัดสินใจใน §10.1
+- เหตุผลจากโค้ด `ws-gateway` (`src/ws.js`): gateway เก็บได้ 1 connection ต่อ device_id เมื่อ connection ใหม่ยืนยันตัวผ่าน
+  connection เดิมจะโดน `close(4000, 'replaced by new connection')` ทันที ถ้าใช้ device_id เดียวกับกล่องจริง กล่องจริงจะหลุด
+  แล้วต่อกลับมาเตะมือถือออก สลับกันไปเรื่อยๆ
+
+### 11.2 ขั้นตอนลงทะเบียน (admin / พี่เลี้ยงทำ ทำผ่านแอปไม่ได้)
+
+1. `delivery-server` `POST /api/admin/devices` ก่อน
+   - ระบุ `device_id`, `hardware_model` และ `schema_version` ที่มี schema ลงทะเบียนไว้แล้ว (ตอนนี้มี schema 1, 2, 3 ของ
+     `ESP32-DEVKIT-V1`)
+   - ถ้าไม่ส่ง `token` server สร้างให้ (สุ่ม 24 byte แบบ base64url = 32 ตัวอักษร) และตอบเป็น plaintext **ครั้งเดียว** ใน
+     response 201 server เก็บแค่ hash
+   - ถ้าใส่ `token` เอง ต้องยาวอย่างน้อย `MIN_DEVICE_TOKEN_LENGTH` (ค่าเริ่มต้น 24 ตัวอักษร)
+2. `ws-gateway` `POST /api/admin/devices` ด้วย `device_id` และ **token ค่าเดียวกัน** (สองระบบไม่ sync กันเอง)
+3. admin นำ token ไปตั้งค่าที่ backend ของเราผ่าน Web ตาม §10.2 มือถือขอผ่าน endpoint ใน §10.3 **ผู้ทดสอบไม่ต้องกรอก token
+   ในแอป**
+
+**ไม่ใช้ auto-register ด้วยรหัสร่วม:** `BOX-0001` ก็ลงทะเบียนด้วยมือแบบนี้ (audit ของทั้งสองเซอร์วิสมี `DEVICE_REGISTER` โดย
+`admin` hash ของ token ตรงกันทั้งสองระบบ และ record ไม่มี `auto_registered`) แต่คู่มือของพี่เลี้ยง (`คู่มือการใช้งาน.md`)
+เขียนว่า "ไม่ต้องลงทะเบียนกล่อง ใช้รหัสร่วมที่ฝังใน firmware" **คู่มือกับของจริงขัดกัน ควรถามพี่เลี้ยงให้ชัดตอนมีโอกาส**
+
+### 11.3 การต่อใหม่ (reconnect) ให้ทำตามกล่องจริง
+
+| เรื่อง | กล่องจริงทำ / gateway ทำ | แอปต้องทำ |
+|---|---|---|
+| Backoff | เริ่ม 2 วินาที เพิ่ม 2 เท่าทุกรอบ สูงสุด 60 วินาที บวก jitter สุ่มไม่เกิน 1 วินาที รีเซ็ตเป็น 2 วินาทีเมื่อได้ `WELCOME` (HELLO ผ่าน) ไม่ใช่แค่เปิด socket ได้ | ทำแบบเดียวกัน |
+| HELLO | ต้องเป็นข้อความแรกทุกครั้งที่ต่อใหม่ ถ้าไม่ส่งก่อน message อื่นจะได้ `HELLO_REQUIRED` | ส่ง HELLO ทุกครั้งหลังเชื่อมต่อ |
+| HEARTBEAT | gateway บอก `heartbeat_interval_sec` (ค่าเริ่มต้น 30) ใน `WELCOME` | ส่ง HEARTBEAT ตามรอบนั้น |
+| งานค้างตอนต่อกลับ | หลัง HELLO gateway ส่ง**งานที่ยังไม่จบทั้งหมดซ้ำ** (ไม่ใช่แค่ PENDING) | กันทำซ้ำด้วย `command_id` เอง |
+| รายงานซ้ำหลังงานจบ | gateway ตอบสถานะเดิมพร้อม `duplicate: true` | ส่งซ้ำได้ ไม่ต้องกลัวเปลี่ยนผล |
+| ws ping | gateway ส่ง ping ทุก `heartbeat_interval_sec` | ตอบ pong (`WebSocket` มาตรฐานของ Dart ตอบให้อัตโนมัติ) |
+| ตัดสินว่า offline | ถ้าไม่มี pong หรือ message ใดๆ เข้ามาก่อน ping รอบถัดไป gateway จะ `terminate()` (รู้ภายใน 30–60 วินาที) | — |
+
+### 11.4 สถานะงานของ Gateway (11 สถานะ)
+
+| สถานะ | ใครตั้ง | ความหมาย / ที่เห็นจริง |
+|---|---|---|
+| PENDING | gateway | สร้างงานแล้ว รอส่ง |
+| DELIVERED | gateway | ส่งถึง connection ที่ HELLO แล้ว (กล่องออนไลน์ = ~0 วินาทีหลังสร้าง) |
+| ACKNOWLEDGED | กล่อง | รับงานแล้ว |
+| DOWNLOADING | กล่อง | ส่งซ้ำพร้อม `progress_percent` 0, 10 … 100 (ไฟล์ ~1.3 MB ใช้ ~9 วินาที) |
+| VALIDATING | กล่อง | ตรวจไฟล์ |
+| INSTALLING | กล่อง | |
+| REBOOTING | กล่อง | |
+| SUCCESS | กล่อง | Firmware: ต้องมาหลังต่อใหม่ด้วย HELLO ที่มีเวอร์ชันใหม่ (เห็นจริง ~6 วินาทีหลัง REBOOTING) · Config: ~0.2 วินาทีหลัง ACKNOWLEDGED |
+| FAILED | กล่อง หรือ gateway (timeout) | ของจริงเกิดหลัง ACKNOWLEDGED ทันทีได้ (เช่น `MANIFEST_HTTP_409`, `UPDATE_BEGIN_FAILED`, `DOWNLOAD_HTTP_-1`) |
+| ROLLED_BACK | กล่อง | หลัง REBOOTING เมื่อ firmware ใหม่ไม่ผ่าน health check (`NEW_FIRMWARE_FAILED_HEALTH_CHECK`) รายงานเวอร์ชันเดิม |
+| **EXPIRED** | gateway | **สถานะที่ 11** ไม่อยู่ในรายการ 10 สถานะที่วางไว้เดิม · `TTL_EXPIRED` = ค้างที่ PENDING / DELIVERED / ACKNOWLEDGED เกินอายุงาน (24 ชั่วโมง) · `SUPERSEDED` = งาน Config ที่ยังไม่เริ่มถูกงาน Config ใหม่แทน |
+
+กรณีพิเศษที่เห็นจริง: สั่ง Firmware เวอร์ชันที่ติดตั้งอยู่แล้ว กล่องตอบ SUCCESS ทันทีโดยข้าม ACKNOWLEDGED (PENDING → DELIVERED →
+SUCCESS) · PENDING / DELIVERED / EXPIRED เป็นสถานะของ gateway กล่องรายงานเองไม่ได้
+
+**Timeout ของ server ที่ทำให้งาน FAILED** (`expireSweep` ทุก 5 วินาที นับจากเวลาที่งานอัปเดตล่าสุด):
+
+| สถานการณ์ | Timeout | ผล |
+|---|---|---|
+| ยังเป็น PENDING | 600 วินาที (`COMMAND_DELIVERY_TIMEOUT_SEC`) | FAILED `DEVICE_OFFLINE` |
+| ส่งถึงแล้วแต่เงียบ | 180 วินาที (`COMMAND_RESPONSE_TIMEOUT_SEC`) | FAILED `DEVICE_NO_RESPONSE` |
+| ค้างที่ REBOOTING | 300 วินาที (`COMMAND_REBOOT_TIMEOUT_SEC`) | FAILED `DEVICE_NO_RESPONSE` |
+| อายุงานทั้งหมด | 24 ชั่วโมง (`COMMAND_TTL_SEC`) | EXPIRED `TTL_EXPIRED` |
+
+**สิ่งที่แอปต้องทำ:** ถ้าจำลองขั้น REBOOTING ต้องต่อกลับและส่ง HELLO ด้วยเวอร์ชันใหม่ภายใน 300 วินาที ไม่งั้นงานจะ FAILED เอง
+และระหว่างแต่ละขั้นต้องรายงานสถานะห่างกันไม่เกิน 180 วินาที
+
+### 11.5 Signature ของ firmware (ถ้าจะตรวจบนมือถือ)
+
+- firmware ทุกเวอร์ชันใน `delivery-server` (1.0.0, 1.1.0, 1.2.0) ใช้ `signature_alg` = **`ECDSA_P256_SHA256`** และ server
+  เป็นคนเซ็นตอนอัปโหลด (`signed_by_server: true`)
+- ลายเซ็นเข้ารหัสแบบ **DER แล้วแปลงเป็น base64** (`crypto.sign(..., { dsaEncoding: 'der' })`) **ไม่ใช่** r‖s 64 byte แบบ
+  JOSE / `ES256` มาตรฐาน ถ้าจะตรวจบนมือถือต้อง decode DER เอง ใช้ library JWT ทั่วไปตรงๆ ไม่ได้
+- กล่องจริงตรวจด้วย `mbedtls_pk_verify` ใช้ public key ที่ฝังใน firmware มือถือต้องได้ public key จากพี่เลี้ยงถ้าจะตรวจ
+- **ต้องถาม A ให้ชัดตอนได้โค้ดตัวอย่าง** ว่ามือถือจำเป็นต้องตรวจ signature เองจริงไหม หรือข้ามขั้นนี้ได้ (A เคยคอมเมนต์ใน
+  PR #357 ว่ามือถือไม่ต้องตรวจลายเซ็นเอง)
+
+### 11.6 Flow ดาวน์โหลดไฟล์: ไม่ยึดค่า TTL คงที่
+
+- กล่องขอ `GET /api/device/me/firmware-manifest?target=…&current=…` จาก `delivery-server` ได้ `url` แบบ signed
+  (`/firmware/download/{model}/{version}?device=…&exp=…&sig=…`) พร้อม `url_expires_at`
+- อายุ URL (`DOWNLOAD_URL_TTL_SEC`) ค่าจริง**ไม่ทราบ** ค่าเริ่มต้นในโค้ดคือ 600 วินาทีแต่ `.env` ตั้งทับได้ และไม่มี log ไหน
+  เก็บ `url_expires_at` ไว้ให้คำนวณ
+- **แอปขอ manifest ใหม่ทันทีก่อนดาวน์โหลดทุกครั้ง** ไม่เก็บ URL ไว้ใช้ซ้ำข้ามเวลา จึงไม่ต้องพึ่งค่า TTL ที่แน่นอน
+- ตัดสินใจแล้วว่าไม่ต้องหาค่าจริงเพิ่ม ไม่คุ้มกับความซับซ้อนที่ต้องเพิ่มใน Phase 1
