@@ -36,7 +36,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 //                                field report สำหรับ ST/OT — ดู incident.service.ts)
 //   GET  /incidents/:id         — detail 1 รายการ · ทุก Role (self-scope เหมือนกัน)
 //   POST /incidents             — ST/OT แจ้งปัญหาที่เจอกับอุปกรณ์ (issue #236)
-//   POST /incidents/:id/decide  — Operation ตัดสินใจ field report (issue #236)
+//   POST /incidents/:id/retry-sync — Operation สั่งเขียน Config เข้าระบบปลายทางใหม่
+//                                 จาก Incident ที่เขียนไม่สำเร็จ (config-sync-writer)
+//   POST /incidents/:id/decide  — Operation ตัดสินใจ field report (issue #236) และ
+//                                 ปิด Incident ที่ระบบสร้างเองด้วยมือ (resolve/dismiss)
 //
 // resource `incidents` (พหูพจน์ ตั้งชื่อตาม path — mirror `devices`/`tasks`/
 // `notifications`) action `Read` · RBAC_Matrix.md §2 แถว "Incident & Rollback"
@@ -85,5 +88,15 @@ export class IncidentController {
     @Req() req: AuthenticatedRequest,
   ): Promise<DecideIncidentResult> {
     return this.incidentService.decide(id, dto, toActor(req));
+  }
+
+  @Post(':id/retry-sync')
+  @RequirePermission('incidents', ActionType.Approve)
+  @HttpCode(HttpStatus.OK)
+  retrySync(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Incident> {
+    return this.incidentService.retrySync(id, toActor(req));
   }
 }
