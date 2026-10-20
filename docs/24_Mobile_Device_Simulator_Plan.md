@@ -220,3 +220,71 @@ Phase 1 ทำทีหลังได้โดยไม่รื้อของ
 
 **Q3 — cleanup:** ลบอัตโนมัติ (เช่น job ตามรอบ decommission + revoke กล่องจำลองที่ `lastSeenAt` เก่ากว่า **30 วัน** หรือไม่เคยติดต่อ
 เลยภายใน 30 วันหลังสร้าง) หรือให้ลบมือ (§4.1.4) อย่างเดียว
+
+---
+
+## 10. Token Management สำหรับ Gateway Connection
+
+> **สถานะของหัวข้อนี้: ตัดสินใจแล้ว (B, 20 ต.ค. 2569) และไม่ขึ้นกับโค้ดตัวอย่างของ A**
+> เพิ่มหลังจากตกลงกับ A ใน PR #357 ว่าจะเปลี่ยนทิศทางเป็น "มือถือต่อ ws-gateway ของพี่เลี้ยงตรง" (มือถือเป็นกล่องอีกตัว
+> ในระบบ `arduino_gps`) · **หัวข้ออื่นของเอกสาร** (flow การเชื่อม Gateway, mobile WebSocket client, OTA lifecycle) **ยังรอ
+> โค้ดตัวอย่างจาก A** แล้วจะเขียนใหม่ทั้งฉบับทีหลัง เนื้อหาเดิมใน §1–§9 ยังเป็นแผนรุ่นก่อน (`/device-sync` + กล่องจำลองหลายตัว)
+>
+> หัวข้อนี้ใช้แทนสองจุดเดิมเฉพาะเรื่อง token ของ Gateway: การเก็บ key ใน `flutter_secure_storage` (§4.2) และการให้ผู้ทดสอบกรอก
+> key เอง (`docs/19` §8)
+
+### 10.1 ที่มาของ token
+
+- ออก token ให้ device_id เฉพาะ **`mobile-sim-001`** ผ่าน Admin API ของพี่เลี้ยง **ไม่ใช้รหัสร่วมของ auto-register**
+  - ตรวจข้อมูลจริงแล้ว (20 ต.ค.): กล่องจริง `BOX-0001` ไม่ได้มาจาก auto-register มี `DEVICE_REGISTER` โดย `admin` ใน audit
+    ของทั้งสองเซอร์วิส และ record ไม่มี `auto_registered`
+- ต้องลงทะเบียน **ทั้ง 2 เซอร์วิสด้วย token เดียวกัน** (สองระบบไม่ sync กันเอง แบบเดียวกับ `BOX-0001`):
+  - `delivery-server` `POST /api/admin/devices` (ระบุ `hardware_model` + `schema_version` ที่มี schema อยู่จริง) ถ้าไม่ส่ง
+    `token` server จะสร้างให้ (32 ตัวอักษร) และตอบกลับเป็น plaintext **ครั้งเดียว**
+  - `ws-gateway` `POST /api/admin/devices` ส่ง `token` ค่าเดียวกันเข้าไป
+- ต้องเป็น device_id ของมือถือเอง ห้ามใช้ `BOX-0001` เพราะ gateway เก็บได้ 1 connection ต่อ device_id
+  connection ใหม่จะเตะ connection เดิมออก (`close(4000, 'replaced by new connection')`)
+
+### 10.2 เก็บที่ backend ของทีมเรา ไม่เก็บในตัวแอป
+
+- **config entry ใหม่ ไม่ใช้ตาราง `Device` เดิม:** token นี้เป็น credential ของระบบภายนอก ไม่ใช่กล่องของเรา
+  - backend ยังไม่มีตาราง setting หรือ util เข้ารหัสอยู่เลย จึงต้องเพิ่มใหม่ (additive migration) ชื่อและรูปแบบจะตกลงตอน
+    implement เช่น `IntegrationCredential { key @unique, externalDeviceId, encryptedToken, iv, authTag, updatedById, updatedAt }`
+    ใช้ `key` เป็น `mentor-gateway` ไว้แยกกับ credential ภายนอกตัวอื่นในอนาคต
+- **เข้ารหัสแบบถอดกลับได้ (encrypt at rest):** เช่น AES-256-GCM ด้วย key จาก env var ใหม่ (ห้าม commit ค่าเข้า repo)
+  - ต่างจาก `Device.apiKeyHash` ของกล่องจริงที่เป็น bcrypt (hash ทางเดียว) เพราะ backend ของเราแค่ **ตรวจ** key ที่กล่อง
+    ส่งมา แต่ token นี้มือถือต้องเอา **ค่าจริง** ไปยิงออกไปที่ ws-gateway
+- **ตั้งและดูค่าได้เฉพาะ Admin / SuperAdmin** ตาม pattern เดิม (`@RequirePermission(resource, ActionType)` + grant ใน `seed.ts`)
+  เช่น resource ใหม่ `simulator-gateway-config` action `Read` / `Update` grant ให้ Admin (SuperAdmin สืบทอด)
+  - Admin / SuperAdmin เข้า Mobile ไม่ได้ (`webOnlyRoles`) จึงตั้งค่าผ่าน Web เท่านั้น
+  - การตั้งหรือเปลี่ยน token เป็น mutation ต้องลง `AuditLog` (ไม่ใส่ค่า token ใน log) หน้า Web ควรแสดงแบบปิดบังเป็นค่าเริ่มต้น
+
+### 10.3 Endpoint ใหม่ให้มือถือขอ token
+
+- ยืนยันตัวตนด้วย **staff JWT ปกติของมือถือ** (`JwtAuthGuard`) ไม่ใช่ `DeviceApiKeyGuard` / `X-Device-Api-Key`
+- จำกัดสิทธิ์ด้วย permission ใหม่ของฟีเจอร์นี้ เช่น resource `simulator-gateway-token` action `Read` grant ให้ **ST / OT**
+- backend ถอดรหัสแล้วตอบ token จริง เช่น `{ "deviceId": "mobile-sim-001", "token": "…" }` พร้อม header
+  `Cache-Control: no-store` ถ้ายังไม่ได้ตั้งค่าตอบ 404
+- **path:** ที่ร่างไว้คือ `GET /devices/simulator-gateway-token` แต่ใน `device.controller.ts` มี `@Get(':deviceId')` อยู่แล้ว
+  path นี้จะชนกับ route นั้น (ถูกตีความเป็น deviceId) จึงเสนอแยก path เช่น `GET /simulator/gateway-token` หรือถ้าจะอยู่ใต้
+  `/devices` ต้องประกาศ route นี้ก่อน `:deviceId`
+- ตอน implement ต้องอัปเดต `openapi.yaml` (operationId, tag, 401/403/404) และ `RBAC_Matrix.md` ตามกฎใน `CLAUDE.md`
+
+### 10.4 ฝั่งมือถือไม่เก็บ token ถาวร
+
+- ขอ token จาก backend ทุกครั้งที่เริ่มใช้ฟีเจอร์ simulator และ cache ไว้ใน memory ระหว่าง session เดียวเท่านั้น
+- ทิ้งเมื่อปิดแอปหรือ logout **ไม่ใช้ `flutter_secure_storage`** หรือที่เก็บถาวรอื่นของเครื่อง และไม่ log ค่า token
+- ถ้า ws-gateway ปฏิเสธ (401 ตอน upgrade) ให้ขอ token จาก backend ใหม่ 1 ครั้ง เผื่อเพิ่งเปลี่ยน token ถ้ายังไม่ผ่านให้หยุดและแจ้งผู้ใช้
+
+### 10.5 ข้อดีและข้อจำกัด
+
+**ข้อดี**
+- เพิกถอนหรือเปลี่ยน token ได้จากที่เดียว (แก้ที่ backend ของเรา) ไม่ต้องไล่แก้ในเครื่องผู้ใช้
+- ไม่มี token ค้างอยู่ในเครื่องมือถือที่อาจหายหรือถูกแครก
+
+**ข้อจำกัดที่ต้องรู้**
+- ระหว่างใช้งาน token ยังเป็น plaintext อยู่ใน memory ของแอป และผู้ที่มีสิทธิ์ ST/OT ขอค่าได้ทุกคน แนวทางนี้ลดการค้างของ
+  token ในเครื่อง ไม่ได้ซ่อน token จากผู้ใช้ที่มีสิทธิ์
+- การเปลี่ยน token ต้องทำ 3 ที่ให้ตรงกัน: `delivery-server`, `ws-gateway` (พี่เลี้ยง) และค่าที่เก็บใน backend ของเรา
+- device_id เดียว (`mobile-sim-001`) ต่อ gateway ได้ทีละ 1 เครื่อง ถ้าช่าง 2 คนเปิด simulator พร้อมกันจะเตะกันเอง
+  (ดู §10.1) ถ้าต้องให้หลายเครื่องใช้พร้อมกัน ต้องออก device_id + token แยกต่อเครื่อง ซึ่งยังไม่อยู่ในขอบเขตตอนนี้
