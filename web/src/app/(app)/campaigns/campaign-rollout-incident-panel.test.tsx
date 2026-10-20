@@ -101,6 +101,42 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
     ).toBeInTheDocument();
   });
 
+  it("สถานะปกติ (ไม่ได้หยุด) -> มีแค่ปุ่ม ไม่มีการ์ดและหัวข้อ Incident & Rollback", () => {
+    authState.role = "Operation";
+    render(
+      <CampaignRolloutIncidentPanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "active" })}
+        targets={[]}
+        onResumed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Incident & Rollback")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "สั่ง Rollback" }),
+    ).toBeInTheDocument();
+  });
+
+  it("เปิดแผง Rollback แล้วจึงขึ้นเป็นการ์ดมีหัวข้อ สั่ง Rollback", () => {
+    authState.role = "Operation";
+    render(
+      <CampaignRolloutIncidentPanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "active" })}
+        targets={[]}
+        onResumed={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
+
+    expect(screen.getByText("สั่ง Rollback")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
+    ).toBeInTheDocument();
+  });
+
   it("role ST (ไม่ใช่ Operation) -> ไม่เห็นปุ่มไหนเลย ไม่ render อะไร", () => {
     authState.role = "ST";
     const { container } = render(
