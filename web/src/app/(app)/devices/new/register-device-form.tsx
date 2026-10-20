@@ -16,6 +16,7 @@ import { useDeviceModels } from "@/hooks/use-device-models";
 import { useCustomers } from "@/hooks/use-customers";
 import { useCentralDevices } from "@/hooks/use-central-devices";
 import { useDevices } from "@/hooks/use-devices";
+import { StatusPill } from "@/lib/status-pill";
 import { matchModelIdByHardwareModel } from "@/lib/central-device-display";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,16 @@ import {
 } from "@/components/ui/select";
 
 const NO_CUSTOMER = "__none__";
+
+/** ค่าชั่วคราวที่ห้ามบันทึกเป็นข้อมูลเครื่องจริง (เผื่อมีคนวางหรือพิมพ์เอง) */
+const PLACEHOLDER_PREFIX = "central:";
+
+function findPlaceholderField(fields: [string, string][]): string | null {
+  const hit = fields.find(([, value]) =>
+    value.toLowerCase().startsWith(PLACEHOLDER_PREFIX),
+  );
+  return hit ? hit[0] : null;
+}
 
 /**
  * ฟอร์มลงทะเบียนอุปกรณ์ใหม่ — Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md ตาราง
@@ -100,18 +111,14 @@ export function RegisterDeviceForm() {
     setProtocol(only);
   }
 
-  // เติมฟอร์มจากกล่องที่ Server กลางรู้จัก: Device ID และโมเดลเป็นค่าจริง ส่วน SIM/IMEI/
-  // Serial/Blackbox กล่องไม่ได้รายงาน จึงใส่ค่าชั่วคราว `central:<id>` ให้แก้ทับเองได้
+  // เติมฟอร์มจากกล่องที่ Server กลางรู้จัก เฉพาะค่าที่เป็นความจริงเท่านั้น คือ Device ID และ
+  // โมเดล · SIM/IMEI/Serial/Blackbox กล่องไม่ได้รายงาน **ปล่อยว่างให้กรอกเอง** ไม่เติมค่า
+  // ชั่วคราว เพราะระบบไม่มีทางแก้ข้อมูลเครื่องหลังลงทะเบียน ค่าที่ลืมแก้จะค้างเป็นข้อมูลจริงถาวร
   function prefillFromCentral(id: string) {
     setCentralPick(id);
     const picked = pickableCentral.find((d) => d.deviceId === id);
     if (!picked) return;
-    const placeholder = `central:${picked.deviceId}`;
     setDeviceId(picked.deviceId);
-    setSimNumber(placeholder);
-    setImei(placeholder);
-    setSerialNumber(placeholder);
-    setBlackboxId(placeholder);
     const matched = matchModelIdByHardwareModel(picked.hardwareModel, modelList);
     if (matched) changeModel(matched);
   }
@@ -131,6 +138,19 @@ export function RegisterDeviceForm() {
     const trimmedImei = imei.trim();
     const trimmedSerial = serialNumber.trim();
     const trimmedBlackbox = blackboxId.trim();
+    // กันชั้นที่สอง: ค่าที่ขึ้นต้นด้วย `central:` (เช่น วางมาจากที่อื่น) ห้ามถูกบันทึกเป็นข้อมูลจริง
+    const placeholderField = findPlaceholderField([
+      ["SIM Number", trimmedSimNumber],
+      ["IMEI", trimmedImei],
+      ["Serial Number", trimmedSerial],
+      ["Blackbox ID", trimmedBlackbox],
+    ]);
+    if (placeholderField) {
+      setFormError(
+        `ช่อง ${placeholderField} ยังเป็นค่าชั่วคราวที่ขึ้นต้นด้วย central: กรุณากรอกค่าจริงของเครื่อง`,
+      );
+      return;
+    }
     if (!trimmedImei) {
       setFormError("ต้องระบุ IMEI");
       return;
@@ -195,10 +215,17 @@ export function RegisterDeviceForm() {
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
       {central && (
         <section className="flex flex-col gap-2">
-          <Label htmlFor="central-pick">
-            เลือกจาก Server กลาง{" "}
-            <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-          </Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="central-pick">
+              เลือกจาก Server กลาง{" "}
+              <span className="font-normal text-muted-foreground">
+                (ไม่บังคับ)
+              </span>
+            </Label>
+            {central.mode === "mock" && (
+              <StatusPill tone="info">ข้อมูลตัวอย่าง</StatusPill>
+            )}
+          </div>
           {!central.reachable ? (
             <p className="text-sm text-muted-foreground">
               ติดต่อ Server กลางไม่ได้ตอนนี้ กรอกข้อมูลเองได้ตามปกติ
@@ -230,7 +257,7 @@ export function RegisterDeviceForm() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 เติม Device ID และโมเดลให้ ส่วน SIM, IMEI, Serial และ Blackbox ID
-                กล่องไม่ได้รายงาน จึงใส่ค่าชั่วคราวขึ้นต้นด้วย central: ให้แก้เป็นค่าจริง
+                กล่องไม่ได้รายงาน ต้องกรอกเอง
               </p>
             </>
           )}

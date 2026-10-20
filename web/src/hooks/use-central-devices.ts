@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import {
@@ -15,26 +15,42 @@ import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 /** รีเฟรชสถานะกล่องทุก 5 วินาที (สถานะออนไลน์เปลี่ยนเร็วกว่าคิวอนุมัติ) */
 export const CENTRAL_POLL_INTERVAL_MS = 5_000;
 
-type State<T> = { data: T | null; isLoading: boolean; error: string | null };
+type State<T> = {
+  /** กุญแจของคำขอที่ผลนี้เป็นของ (เช่น deviceId) กันผลของเครื่องเก่ามาโผล่ตอนเปลี่ยนเครื่อง */
+  key: string;
+  data: T | null;
+  isLoading: boolean;
+  error: string | null;
+};
 
-function useCentralFetch<T>(load: (token: string) => Promise<T>) {
+function useCentralFetch<T>(load: (token: string) => Promise<T>, key: string) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
   const [state, setState] = useState<State<T>>({
+    key,
     data: null,
     isLoading: true,
     error: null,
   });
+  // กุญแจล่าสุดที่ผู้ใช้ขอ: คำขอที่ตอบกลับช้าและไม่ใช่ของกุญแจนี้แล้ว (เปลี่ยนเครื่องไปแล้ว)
+  // ต้องไม่เขียนทับผลใหม่
+  const latestKey = useRef(key);
+  useEffect(() => {
+    latestKey.current = key;
+  }, [key]);
 
   const refetch = useCallback(async () => {
     if (!token) return;
     try {
       const data = await load(token);
-      setState({ data, isLoading: false, error: null });
+      if (latestKey.current !== key) return;
+      setState({ key, data, isLoading: false, error: null });
     } catch (err) {
+      if (latestKey.current !== key) return;
       // รีเฟรชเบื้องหลังล้มเหลว: เก็บข้อมูลเดิมไว้ ไม่ทำให้การ์ดกระพริบเป็นว่าง
       setState((prev) => ({
-        data: prev.data,
+        key,
+        data: prev.key === key ? prev.data : null,
         isLoading: false,
         error:
           err instanceof ApiError
@@ -42,7 +58,7 @@ function useCentralFetch<T>(load: (token: string) => Promise<T>) {
             : "โหลดสถานะจาก Server กลางไม่สำเร็จ",
       }));
     }
-  }, [token, load]);
+  }, [token, load, key]);
 
   useEffect(() => {
     void refetch();
@@ -50,7 +66,18 @@ function useCentralFetch<T>(load: (token: string) => Promise<T>) {
   useRefetchOnFocus(refetch);
   usePollInterval(() => void refetch(), CENTRAL_POLL_INTERVAL_MS);
 
-  return { ...state, refetch };
+  // เปลี่ยนกุญแจ (เช่น เปลี่ยนเครื่อง) แล้วผลที่ค้างอยู่เป็นของกุญแจเก่า: แสดงเป็นกำลังโหลดใหม่
+  const current: State<T> =
+    state.key === key
+      ? state
+      : { key, data: null, isLoading: true, error: null };
+  // ไม่มี token (ยังไม่ login/session หมด) จะไม่มีอะไรโหลด ไม่ให้ค้างสถานะกำลังโหลดตลอดไป
+  return {
+    data: current.data,
+    error: current.error,
+    isLoading: token ? current.isLoading : false,
+    refetch,
+  };
 }
 
 /** `GET /central/devices` รีเฟรชอัตโนมัติ — ข้อมูลเสริม ล้มเหลวแล้วหน้าหลักต้องยังใช้ได้ */
@@ -59,7 +86,7 @@ export function useCentralDevices() {
     (token: string): Promise<CentralDeviceList> => listCentralDevices(token),
     [],
   );
-  return useCentralFetch(load);
+  return useCentralFetch(load, "all");
 }
 
 /** `GET /devices/{deviceId}/central` รีเฟรชอัตโนมัติ */
@@ -69,5 +96,5 @@ export function useDeviceCentral(deviceId: string) {
       getDeviceCentral(token, deviceId),
     [deviceId],
   );
-  return useCentralFetch(load);
+  return useCentralFetch(load, deviceId);
 }

@@ -26,7 +26,8 @@ vi.mock("@/hooks/use-device-models", () => ({
   }),
 }));
 const central = vi.hoisted(() => ({
-  value: { reachable: true, devices: [] } as {
+  value: { mode: "real", reachable: true, devices: [] } as {
+    mode: "mock" | "real";
     reachable: boolean;
     devices: unknown[];
   } | null,
@@ -42,7 +43,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคับกรอก", () => {
   beforeEach(() => {
     registerDevice.mockReset();
-    central.value = { reachable: true, devices: [] };
+    central.value = { mode: "real", reachable: true, devices: [] };
   });
 
   async function fillBase(user: ReturnType<typeof userEvent.setup>) {
@@ -102,8 +103,12 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       online,
     });
 
-    it("เติม Device ID โมเดล และค่าชั่วคราว central: ให้ แล้วแก้ทับได้", async () => {
-      central.value = { reachable: true, devices: [box("BOX-0001")] };
+    it("เติมเฉพาะ Device ID กับโมเดล (ค่าจริง) ส่วน SIM/IMEI/Serial/Blackbox ปล่อยว่างให้กรอกเอง", async () => {
+      central.value = {
+        mode: "real",
+        reachable: true,
+        devices: [box("BOX-0001")],
+      };
       const user = userEvent.setup();
       render(<RegisterDeviceForm />);
 
@@ -113,21 +118,77 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       );
 
       expect(screen.getByLabelText("Device ID")).toHaveValue("BOX-0001");
-      expect(screen.getByLabelText("IMEI")).toHaveValue("central:BOX-0001");
-      expect(screen.getByLabelText("Serial Number")).toHaveValue(
-        "central:BOX-0001",
-      );
       // จับคู่โมเดลจาก hardware_model ไม่สนตัวพิมพ์ และเลือกโปรโตคอลให้เอง
       expect(screen.getByLabelText("โมเดล")).toHaveTextContent("GT06N");
       expect(screen.getByLabelText("โปรโตคอล")).toHaveTextContent("TCP");
+      // ไม่มีค่าชั่วคราวใดๆ: ระบบแก้ข้อมูลเครื่องทีหลังไม่ได้ ค่าที่ลืมแก้จะค้างถาวร
+      for (const label of ["SIM Number", "IMEI", "Serial Number", "Blackbox ID"]) {
+        expect(screen.getByLabelText(label)).toHaveValue("");
+      }
+      // ยังไม่กรอกครบ ปุ่มลงทะเบียนกดไม่ได้
+      expect(
+        screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
+      ).toBeDisabled();
+    });
 
+    it("ช่องที่ขึ้นต้นด้วย central: (วางหรือพิมพ์เอง) กดส่งไม่ได้ ไม่เรียก API และบอกว่าช่องไหน", async () => {
+      central.value = {
+        mode: "real",
+        reachable: true,
+        devices: [box("BOX-0001")],
+      };
+      const user = userEvent.setup();
+      render(<RegisterDeviceForm />);
+      await user.click(screen.getByLabelText(/เลือกจาก Server กลาง/));
+      await user.click(
+        await screen.findByRole("option", { name: "BOX-0001 (ออนไลน์)" }),
+      );
+      await user.type(screen.getByLabelText("SIM Number"), "0899999999");
+      await user.type(screen.getByLabelText("IMEI"), "Central:BOX-0001");
+      await user.type(screen.getByLabelText("Serial Number"), "SN-1");
+      await user.type(screen.getByLabelText("Blackbox ID"), "BB-1");
+
+      await user.click(
+        screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
+      );
+
+      expect(registerDevice).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(/ช่อง IMEI ยังเป็นค่าชั่วคราว/),
+      ).toBeInTheDocument();
+
+      // แก้เป็นค่าจริงแล้วส่งได้
+      registerDevice.mockResolvedValue({ deviceId: "BOX-0001", apiKey: "k" });
       await user.clear(screen.getByLabelText("IMEI"));
       await user.type(screen.getByLabelText("IMEI"), "860000000000001");
-      expect(screen.getByLabelText("IMEI")).toHaveValue("860000000000001");
+      await user.click(
+        screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
+      );
+      expect(registerDevice).toHaveBeenCalledTimes(1);
+    });
+
+    it("โหมด mock: ช่องเลือกมีป้ายข้อมูลตัวอย่าง (โหมดจริงไม่มี)", () => {
+      central.value = {
+        mode: "mock",
+        reachable: true,
+        devices: [box("ESP32-DEMO-01")],
+      };
+      const { unmount } = render(<RegisterDeviceForm />);
+      expect(screen.getByText("ข้อมูลตัวอย่าง")).toBeInTheDocument();
+      unmount();
+
+      central.value = {
+        mode: "real",
+        reachable: true,
+        devices: [box("BOX-0001")],
+      };
+      render(<RegisterDeviceForm />);
+      expect(screen.queryByText("ข้อมูลตัวอย่าง")).not.toBeInTheDocument();
     });
 
     it("ไม่เสนอกล่องที่ลงทะเบียนในระบบเราไปแล้ว", async () => {
       central.value = {
+        mode: "real",
         reachable: true,
         devices: [box("DEV-TAKEN"), box("BOX-0002", false)],
       };
@@ -145,7 +206,7 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     });
 
     it("ติดต่อ Server กลางไม่ได้: บอกให้กรอกเอง ฟอร์มยังใช้ได้", () => {
-      central.value = { reachable: false, devices: [] };
+      central.value = { mode: "real", reachable: false, devices: [] };
       render(<RegisterDeviceForm />);
 
       expect(
