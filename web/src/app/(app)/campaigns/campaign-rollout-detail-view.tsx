@@ -25,7 +25,7 @@ import {
   CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE,
   StatusPill,
   getRolloutStatusExplanation,
-  statusLabel,
+  rolloutStatusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useCampaignRollout } from "@/hooks/use-campaign-rollout";
@@ -123,7 +123,7 @@ export function CampaignRolloutDetailView({
           <StatusPill
             tone={CAMPAIGN_ROLLOUT_STATUS_TONE[data.status] ?? "neutral"}
           >
-            {statusLabel(data.status)}
+            {rolloutStatusLabel(data.status)}
           </StatusPill>
         }
         description={getRolloutStatusExplanation(data.status)}

@@ -54,6 +54,23 @@ export function statusLabel(status: string): string {
   return STATUS_LABEL[status] ?? status;
 }
 
+/** ป้ายสถานะของ Rollout เป็นภาษาไทยทุกสถานะ (ของกลางข้างบนแปลงเฉพาะสถานะที่มีขีดล่าง
+ * จึงปล่อย active/paused/completed เป็นอังกฤษดิบ) แยกเฉพาะ Rollout เพื่อไม่กระทบ
+ * ที่อื่นที่ใช้คำว่า active ร่วมกัน เช่น โมเดลอุปกรณ์ */
+const ROLLOUT_STATUS_LABEL: Record<string, string> = {
+  pending_approval: "รออนุมัติ",
+  approved: "อนุมัติแล้ว",
+  active: "กำลังทำงาน",
+  paused: "หยุดชั่วคราว",
+  rejected: "ถูกปฏิเสธ",
+  completed: "เสร็จสิ้น",
+  cancelled: "ยกเลิกแล้ว",
+};
+
+export function rolloutStatusLabel(status: string): string {
+  return ROLLOUT_STATUS_LABEL[status] ?? statusLabel(status);
+}
+
 /** สี bg/text ล้วนๆ ต่อ tone (ไม่มีรูปทรง pill) — ใช้ทำ badge ไอคอนที่ไม่ใช่
  *  pill สถานะ เช่น icon badge บนการ์ดสรุป Dashboard ให้สีชุดเดียวกับ pill
  *  ทั้งระบบ ไม่ต้องคิดสีชุดใหม่แยก */
@@ -196,13 +213,13 @@ export const CAMPAIGN_ROLLOUT_STATUS_TONE: Record<string, PillTone> = {
 export function getRolloutStatusExplanation(status: string): string {
   switch (status) {
     case "pending_approval":
-      return "รอ Operation อีกคนอนุมัติก่อน";
+      return "รอ Operation อีกคนอนุมัติก่อน ยังไม่ส่งอะไรให้อุปกรณ์";
     case "approved":
-      return "อนุมัติแล้ว ยังไม่แตะอุปกรณ์เลย กด \"ปล่อยเข้าอุปกรณ์\" เพื่อเริ่ม apply จริง หรือกด \"ปฏิเสธ\" ถ้าเปลี่ยนใจก่อนปล่อย";
+      return "อนุมัติแล้ว ยังไม่ส่งอะไรให้อุปกรณ์ กด \"ปล่อยเข้าอุปกรณ์\" เพื่อเริ่มส่ง หรือกด \"ปฏิเสธ\" ถ้าเปลี่ยนใจ";
     case "active":
-      return "ปล่อยเข้าอุปกรณ์แล้ว ระบบกำลัง apply ให้ทุกเครื่องอัตโนมัติ (จำลองว่ากล่องดึงค่าไปใช้เอง คือ PULL model) ไม่ต้องรอช่างกดยืนยันที่เครื่องอีกต่อไป";
+      return "ปล่อยแล้ว ระบบกำลังส่งให้อุปกรณ์ทีละเครื่อง ผลของแต่ละเครื่องจะขึ้นในตารางด้านล่างเมื่ออุปกรณ์ตอบกลับ";
     case "paused":
-      return "หยุดอัตโนมัติ (Auto Pause) Failure Rate เกิน 5% ระหว่างรอบ ต้องกด Resume ถึงจะไปต่อได้";
+      return "หยุดอัตโนมัติเพราะเครื่องล้มเหลวเกิน 5% ของรอบนี้ กด Resume เพื่อส่งต่อ หรือสั่ง Rollback เพื่อย้อนกลับ";
     case "rejected":
       return "ถูกปฏิเสธ เริ่มรอบใหม่ได้จากหน้ากลุ่ม";
     case "completed":
@@ -221,7 +238,8 @@ export const CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE: Record<string, PillTone> = {
   success: "success",
   failed: "danger",
   // ข้ามเพราะเครื่องออฟไลน์/คำสั่งถูกยกเลิก ไม่ใช่ความล้มเหลว จึงไม่ใช้สีแดง
-  skipped_offline: "info",
+  // สีเหลืองอำพัน (ไม่ใช่ฟ้า) เพื่อแยกจาก "รอผล" ที่เป็นเทา และบอกว่าควรรู้แต่ไม่ใช่ความผิดพลาด
+  skipped_offline: "progress",
 };
 
 /** Firmware.uploadStatus — `pending` แทบไม่เจอจริงตอนนี้ (upload() ของ backend

@@ -60,23 +60,24 @@ export function RolloutProgressCard({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
+        className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full"
       >
         <div
-          className="h-full bg-success transition-[width] duration-500"
+          className="h-full rounded-full bg-success transition-[width] duration-500"
           style={{ width: `${pct(summary.success)}%` }}
         />
         <div
-          className="h-full bg-info transition-[width] duration-500"
+          className="h-full rounded-full bg-warning transition-[width] duration-500"
           style={{ width: `${pct(summary.skipped)}%` }}
         />
         <div
-          className="h-full bg-destructive transition-[width] duration-500"
+          className="h-full rounded-full bg-destructive transition-[width] duration-500"
           style={{ width: `${pct(summary.failed)}%` }}
         />
-        {awaiting && summary.pending > 0 && (
+        {/* ส่วนที่ยังรอผล: เทาลายเฉียงตรงกับจุดสีในคำอธิบาย กะพริบเบาๆ ขณะยังรออยู่ */}
+        {summary.pending > 0 && (
           <div
-            className="h-full animate-pulse bg-primary/30"
+            className={`h-full rounded-full bg-muted-foreground/25 bg-[repeating-linear-gradient(45deg,transparent_0_6px,rgba(255,255,255,0.45)_6px_12px)] ${awaiting ? "animate-pulse" : ""}`}
             style={{ width: `${pct(summary.pending)}%` }}
           />
         )}
@@ -88,7 +89,7 @@ export function RolloutProgressCard({
           สำเร็จ {summary.success}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-info" />
+          <span className="size-2 rounded-full bg-warning" />
           ข้าม {summary.skipped}
         </span>
         <span className="inline-flex items-center gap-1.5">
