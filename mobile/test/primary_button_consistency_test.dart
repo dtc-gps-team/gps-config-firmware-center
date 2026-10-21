@@ -10,11 +10,7 @@ import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
-import 'package:mobile/features/config_simulator/config_repository.dart';
-import 'package:mobile/features/config_simulator/simulator_page.dart';
-import 'package:mobile/features/config_simulator/simulator_repository.dart';
-import 'package:mobile/features/device_connection_test/device_connection_test_page.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
+import 'package:mobile/features/task/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_page.dart';
@@ -49,7 +45,6 @@ List<Override> _overrides(AuthState auth) => [
   configOverrideRepositoryProvider.overrideWithValue(
     MockConfigOverrideRepository(),
   ),
-  configRepositoryProvider.overrideWithValue(MockConfigRepository()),
   simulatorRepositoryProvider.overrideWithValue(MockSimulatorRepository()),
   deviceSearchRepositoryProvider.overrideWithValue(
     MockDeviceSearchRepository(),
@@ -62,7 +57,6 @@ List<Override> _overrides(AuthState auth) => [
   ),
   incidentRepositoryProvider.overrideWithValue(MockIncidentRepository()),
   taskRepositoryProvider.overrideWithValue(MockTaskRepository()),
-  recentDeviceIdStoreProvider.overrideWithValue(InMemoryRecentDeviceIdStore()),
 ];
 
 Future<void> _pump(
@@ -152,8 +146,6 @@ void main() {
 
   final pages = <String, Widget>{
     'Config Override': const ConfigOverridePage(deviceId: 'DEV-0117'),
-    'ทดสอบการตั้งค่า (Simulator)': const SimulatorPage(),
-    'ทดสอบสัญญาณ': const DeviceConnectionTestPage(),
     'ขอ Firmware Override': const FirmwareOverridePage(deviceId: 'DEV-0117'),
     'แจ้งปัญหา': const FieldReportPage(),
     'ยืนยันติดตั้ง Firmware': const ConfirmFirmwareInstallPage(
