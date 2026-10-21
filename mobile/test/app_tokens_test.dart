@@ -185,6 +185,28 @@ void main() {
       expect(style.foregroundColor!.resolve({}), AppColors.foreground);
       expect(style.backgroundColor!.resolve({}), AppColors.background);
     });
+
+    // ปุ่มหลัก (filled) ตอนกดไม่ได้ — เดิม primary 50% + ตัวอักษรขาว ได้แค่
+    // ~2.2:1 (ปุ่ม "บันทึกสถานะ" ใน Task Detail ตอนงานยังรอดำเนินการ) · ใช้พื้น
+    // accent (ฟ้าอ่อน ยังบอกว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) +
+    // ตัวอักษร mutedForeground: อ่านออก ≥ 4.5:1 และดูออกว่ากดไม่ได้
+    test('ปุ่มหลักตอนกดไม่ได้: อ่านออก ≥ 4.5:1 พื้นฟ้าอ่อนต่างจาก outline', () {
+      final style = theme.filledButtonTheme.style!;
+      const disabled = {WidgetState.disabled};
+      final fg = style.foregroundColor!.resolve(disabled)!;
+      final bg = style.backgroundColor!.resolve(disabled)!;
+      expect(fg, AppColors.mutedForeground);
+      expect(bg, AppColors.accent);
+      final ratio = _contrast(fg, bg);
+      expect(
+        ratio,
+        greaterThanOrEqualTo(4.5),
+        reason: '${ratio.toStringAsFixed(2)}:1',
+      );
+      final outlineBg = theme.outlinedButtonTheme.style!.backgroundColor!
+          .resolve(disabled);
+      expect(bg, isNot(outlineBg));
+    });
   });
 
   testWidgets(

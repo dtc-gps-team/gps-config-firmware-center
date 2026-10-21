@@ -170,9 +170,12 @@ class AppTheme {
           minimumSize: buttonSize,
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.primaryForeground,
-          // Web: disabled:opacity-50
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
-          disabledForegroundColor: AppColors.primaryForeground,
+          // ตอนกดไม่ได้ — ต่างจาก Web (disabled:opacity-50) โดยตั้งใจ: primary 50%
+          // + ตัวอักษรขาวได้แค่ ~2.2:1 อ่านแทบไม่ออก · พื้น accent (ฟ้าอ่อน ยังบอก
+          // ว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) + ตัวอักษร
+          // mutedForeground ได้ ~5.6:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+          disabledBackgroundColor: AppColors.accent,
+          disabledForegroundColor: AppColors.mutedForeground,
           shape: shape,
           textStyle: buttonText,
         ),
