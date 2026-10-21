@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_notice.dart';
 
 /// บอกว่าอุปกรณ์เครื่องนี้มีคำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจ
 /// (`pendingFirmwareOverride` จาก `GET /devices/{deviceId}/status`, PR #257) —
 /// mirror `_PendingOverrideBanner` ของ Config Override · เครื่องหนึ่งมีคำขอ
 /// pending พร้อมกันได้แค่ 1 รายการ ใช้ทั้งใน Device Detail และหน้า
 /// Firmware Override
+///
+/// design system ใหม่ (docs/22 Batch 4): `AppNotice` tone warning (รอดำเนินการ =
+/// warning ตาม §5.2) แทนกล่องสี `mockAccentSoft` เดิม
 class PendingFirmwareOverrideBanner extends StatelessWidget {
   const PendingFirmwareOverrideBanner({super.key, required this.pending});
 
@@ -15,44 +19,12 @@ class PendingFirmwareOverrideBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppNotice(
       key: const Key('firmware_override_pending_banner'),
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.mockAccentSoft,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.hourglass_top, size: 16, color: AppTheme.mockAccent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'มีคำขอ Firmware Override รอ Operation อนุมัติอยู่',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.mockAccent,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'เหตุผล: ${pending.reason}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      tone: AppBadgeTone.warning,
+      icon: Icons.hourglass_top,
+      title: 'มีคำขอ Firmware Override รอ Operation อนุมัติอยู่',
+      child: Text('เหตุผล: ${pending.reason}'),
     );
   }
 }

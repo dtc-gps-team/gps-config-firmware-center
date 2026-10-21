@@ -3,8 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_notice.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../device_search/device_header_meta.dart';
 import '../device_search/device_search_repository.dart';
 import '../device_search/device_status_repository.dart';
 import 'firmware_override_repository.dart';
@@ -24,6 +31,10 @@ import 'pending_firmware_override_banner.dart';
 /// จึงมีแค่ เลือก Firmware → กรอกเหตุผล (บังคับ ≤500) → ส่ง · ไม่มี endpoint
 /// ให้ ST อ่านคำขอของตัวเอง จึงไม่มี pending banner — กรณีมีคำขอรออยู่แล้ว
 /// backend ตอบ 409 พร้อมข้อความ แสดงตรงๆ พร้อมคำอธิบายใต้กล่อง error
+///
+/// design system ใหม่ (docs/22 Batch 4): หัวหน้าจอ "Firmware Override" ตาม Web
+/// (§6.2) + เครื่อง/รุ่นใน meta · คำอธิบายเป็น description · กล่องแจ้งผล / error
+/// เป็น `AppNotice` · ตรรกะ/การเรียก API เหมือนเดิม
 class FirmwareOverridePage extends ConsumerStatefulWidget {
   const FirmwareOverridePage({super.key, required this.deviceId});
 
@@ -110,39 +121,58 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
         .watch(deviceStatusProvider(widget.deviceId))
         .valueOrNull
         ?.pendingFirmwareOverride;
+    final navigator = Navigator.of(context);
+    final device = deviceAsync.valueOrNull;
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('ขอ Firmware Override'),
-      ),
-      body: deviceAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => AppErrorView(
-          message: error is ApiException
-              ? error.message
-              : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
-          messageKey: const Key('firmware_override_load_error'),
-          retryKey: const Key('firmware_override_load_retry'),
-          onRetry: () {
-            ref.invalidate(deviceDetailProvider(widget.deviceId));
-            ref.invalidate(firmwareListProvider);
-          },
-        ),
-        data: (device) => firmwareAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => AppErrorView(
-            message: error is ApiException
-                ? error.message
-                : 'โหลดรายการ Firmware ไม่สำเร็จ',
-            messageKey: const Key('firmware_override_load_error'),
-            retryKey: const Key('firmware_override_load_retry'),
-            onRetry: () => ref.invalidate(firmwareListProvider),
+    return AppV2Theme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppPageHeader(
+                title: 'Firmware Override',
+                onBack: navigator.canPop() ? navigator.pop : null,
+                description:
+                    'ใช้เมื่อ Firmware ที่ต้องการติดตั้งไม่ตรงกับแผน Campaign ที่กำหนดไว้ '
+                    'ต้องรอ Operation อนุมัติก่อน แล้วจึงยืนยันติดตั้งได้ · ใช้ได้ครั้งเดียว '
+                    '(ติดตั้งซ้ำต้องขอใหม่) · ต้องระบุเหตุผลและถูกบันทึกลง Audit Log',
+                meta: deviceHeaderMeta(device),
+              ),
+              Expanded(
+                child: deviceAsync.when(
+                  loading: () => const AppDetailSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => AppErrorView(
+                    message: error is ApiException
+                        ? error.message
+                        : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
+                    messageKey: const Key('firmware_override_load_error'),
+                    retryKey: const Key('firmware_override_load_retry'),
+                    onRetry: () {
+                      ref.invalidate(deviceDetailProvider(widget.deviceId));
+                      ref.invalidate(firmwareListProvider);
+                    },
+                  ),
+                  data: (device) => firmwareAsync.when(
+                    loading: () => const AppDetailSkeleton(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    ),
+                    error: (error, _) => AppErrorView(
+                      message: error is ApiException
+                          ? error.message
+                          : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                      messageKey: const Key('firmware_override_load_error'),
+                      retryKey: const Key('firmware_override_load_retry'),
+                      onRetry: () => ref.invalidate(firmwareListProvider),
+                    ),
+                    data: (all) => _buildForm(device, all, pending),
+                  ),
+                ),
+              ),
+            ],
           ),
-          data: (all) => _buildForm(device, all, pending),
         ),
       ),
     );
@@ -160,47 +190,20 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
         .toList(growable: false);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
-        Text(
-          'อุปกรณ์ ${device.deviceId}'
-          '${device.deviceModel.isEmpty ? '' : ' · ${device.deviceModel}'}',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'ใช้เมื่อ Firmware ที่ต้องการติดตั้งไม่ตรงกับแผน Campaign ที่กำหนดไว้ '
-          'ต้องรอ Operation อนุมัติก่อน แล้วจึงยืนยันติดตั้งได้ · ใช้ได้ครั้งเดียว '
-          '(ติดตั้งซ้ำต้องขอใหม่) · ต้องระบุเหตุผลและถูกบันทึกลง Audit Log',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
         if (pending != null) ...[
-          const SizedBox(height: 12),
           PendingFirmwareOverrideBanner(pending: pending),
+          const SizedBox(height: 16),
         ],
-        const SizedBox(height: 16),
-        const Text(
-          'Firmware ที่ต้องการติดตั้ง',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
+        const AppFieldLabel('Firmware ที่ต้องการติดตั้ง'),
         if (options.isEmpty)
-          Container(
-            key: const Key('firmware_override_no_options'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.fieldBorder),
-            ),
-            child: const Text(
+          const AppNotice(
+            key: Key('firmware_override_no_options'),
+            tone: AppBadgeTone.neutral,
+            child: Text(
               'ยังไม่มี Firmware ที่ติดตั้งได้กับรุ่นนี้ (ต้องอัปโหลดสำเร็จ + '
               'ผ่านการอนุมัติคุณภาพ + รองรับรุ่นอุปกรณ์) — แจ้ง Firmware Engineer',
-              style: TextStyle(color: AppTheme.textSecondary),
             ),
           )
         else
@@ -210,9 +213,8 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
             isExpanded: true,
             hint: const Text('เลือก Firmware'),
             decoration: const InputDecoration(
-              border: OutlineInputBorder(),
               filled: true,
-              fillColor: AppTheme.surface,
+              fillColor: AppColors.card,
             ),
             items: [
               for (final f in options)
@@ -231,48 +233,27 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
                 : (v) => setState(() => _selectedFirmwareId = v),
           ),
         const SizedBox(height: 20),
-        const Text(
-          'เหตุผล (บังคับ)',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
+        const AppFieldLabel('เหตุผล', hint: '(บังคับ)'),
         TextField(
           key: const Key('firmware_override_reason_input'),
           controller: _reasonController,
           enabled: !_submitted,
           maxLength: 500,
           decoration: const InputDecoration(
-            border: OutlineInputBorder(),
             hintText: 'เช่น ลูกค้าขอใช้ Firmware รุ่นนี้ / แก้ปัญหาหน้างาน',
             filled: true,
-            fillColor: AppTheme.surface,
+            fillColor: AppColors.card,
           ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Container(
+          AppNotice(
             key: const Key('firmware_override_error'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.error.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.error.withValues(alpha: 0.4)),
-            ),
+            tone: AppBadgeTone.danger,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_error!, style: const TextStyle(color: AppTheme.error)),
-                for (final msg in _errorList)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '• $msg',
-                      style: const TextStyle(
-                        color: AppTheme.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
+                AppErrorDetails(message: _error!, details: _errorList),
                 if (_errorStatus == 409) ...[
                   const SizedBox(height: 8),
                   const Text(
@@ -281,8 +262,8 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
                     'หรือแจ้ง Firmware Engineer',
                     key: Key('firmware_override_conflict_hint'),
                     style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
+                      fontSize: AppTypography.xs,
+                      height: AppTypography.xsHeight,
                     ),
                   ),
                 ],
@@ -292,14 +273,11 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
         ],
         if (_submitted) ...[
           const SizedBox(height: 8),
-          Container(
-            key: const Key('firmware_override_submitted'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.mockAccentSoft,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
+          const AppNotice(
+            key: Key('firmware_override_submitted'),
+            tone: AppBadgeTone.success,
+            icon: Icons.check_circle_outline,
+            child: Text(
               'ส่งคำขอแล้ว — รอ Operation อนุมัติ (จะมีแจ้งเตือนเมื่อมีผล) '
               'แล้วจึงยืนยันติดตั้ง Firmware นี้ได้',
             ),
@@ -318,7 +296,9 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
                   width: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                    valueColor: AlwaysStoppedAnimation(
+                      AppColors.primaryForeground,
+                    ),
                   ),
                 )
               : const Text('ส่งคำขอ Override'),

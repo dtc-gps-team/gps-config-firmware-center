@@ -293,4 +293,29 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  // พบตอนใช้ meta ครั้งแรกใน Batch 4 (Device Detail): label ยาวกว่าจอเมื่อขยาย
+  // ตัวอักษร Row เดิมล้นขอบ — ค่าต้องขึ้นบรรทัดใหม่ได้
+  testWidgets('meta: ตัวอักษร 2 เท่าบนจอ 320 ไม่ล้น ค่าอยู่ใต้ label', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      _wrap(
+        const AppPageHeader(
+          title: 'รายละเอียดอุปกรณ์',
+          meta: [AppPageHeaderMeta(label: 'เลขเครื่อง', value: 'DEV-0117')],
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(find.text('DEV-0117')).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.text('เลขเครื่อง')).dy),
+    );
+  });
 }

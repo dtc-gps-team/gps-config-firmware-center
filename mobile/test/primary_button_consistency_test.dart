@@ -115,9 +115,9 @@ void main() {
   });
 
   // Login ย้ายไป design system ใหม่แล้ว (docs/22 Batch 2) — ปุ่มหลักใช้ theme v2
-  // (primary #1B6FB2 มุม 10) · หน้าที่ยังไม่ย้ายด้านล่างยังเทียบกับแบบเดิม
-  // (กรมท่า มุม 12) จนกว่าจะย้ายตาม batch ของตัวเอง — ระหว่างทางสองแบบอยู่ร่วมกัน
-  // ได้ (docs/22 §9) แต่ในหน้าเดียวกันต้องไม่ปนกัน
+  // (primary #1B6FB2 มุม 10) · หน้าฟอร์มทั้งหมดย้ายครบใน Batch 4 แล้ว (หน้าที่ยังไม่
+  // ย้ายเดิม 2 หน้า Simulator / ทดสอบสัญญาณ ถูกลบใน Batch 3b #361) · Task Detail
+  // (Batch 5) มีเทสปุ่มของตัวเองแยก
   testWidgets(
     'ปุ่มหลักหน้า login: theme v2 — primary ตัวอักษรขาว มุม 10 สูง ≥ 48',
     (tester) async {
@@ -144,32 +144,39 @@ void main() {
     },
   );
 
-  final pages = <String, Widget>{
+  // หน้าฟอร์มที่ย้ายไป design system ใหม่ใน Batch 4 (docs/22 §9) — ปุ่มหลักตาม theme v2
+  // แบบเดียวกับหน้า login ด้านบน
+  final v2Pages = <String, Widget>{
     'Config Override': const ConfigOverridePage(deviceId: 'DEV-0117'),
-    'ขอ Firmware Override': const FirmwareOverridePage(deviceId: 'DEV-0117'),
-    'แจ้งปัญหา': const FieldReportPage(),
+    'Firmware Override': const FirmwareOverridePage(deviceId: 'DEV-0117'),
+    'Field Report': const FieldReportPage(),
     'ยืนยันติดตั้ง Firmware': const ConfirmFirmwareInstallPage(
       deviceId: 'DEV-0117',
     ),
   };
 
-  pages.forEach((name, page) {
+  v2Pages.forEach((name, page) {
     testWidgets(
-      'UX audit #12: ปุ่มหลักหน้า "$name" (ยังไม่ย้าย) กรมท่า มุม 12',
+      'ปุ่มหลักหน้า "$name": theme v2 — primary ตัวอักษรขาว มุม 10 สูง ≥ 48',
       (tester) async {
         await _pump(tester, page);
 
         final button = find.byType(FilledButton);
         expect(button, findsOneWidget, reason: name);
         final look = _Look(_effectiveStyle(tester, button));
-        expect(look.background, AppTheme.navy, reason: '$name: $look');
-        expect(look.foreground, Colors.white, reason: '$name: $look');
+        expect(look.background, AppColors.primary, reason: '$name: $look');
         expect(
-          look.shape,
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          look.foreground,
+          AppColors.primaryForeground,
           reason: '$name: $look',
         );
-        // สูงอย่างน้อย 48dp (กดด้วยนิ้วหน้างาน)
+        expect(
+          look.shape,
+          const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+          ),
+          reason: '$name: $look',
+        );
         expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
       },
     );
