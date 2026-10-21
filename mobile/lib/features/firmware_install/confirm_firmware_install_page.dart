@@ -6,8 +6,15 @@ import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_notice.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../device_search/device_header_meta.dart';
 import '../device_search/device_search_repository.dart';
 import '../device_search/device_status_repository.dart';
 import '../firmware_override/firmware_override_repository.dart';
@@ -32,6 +39,11 @@ String _formatDateTime(DateTime dt) {
 /// - 409 gate (Firmware ไม่ตรงแผน Campaign / override ถูกใช้ไปแล้ว): แสดง
 ///   ข้อความ + ปุ่มไปหน้า Firmware Override **เฉพาะ ST** (OT ไม่มีสิทธิ์ขอ
 ///   override จึงเห็นแค่ข้อความ)
+///
+/// design system ใหม่ (docs/22 Batch 4): หัวหน้าจอคงไทย "ยืนยันติดตั้ง Firmware"
+/// (ไม่มีคู่เทียบใน Web §6.2) + เลขเครื่อง/รุ่นใน meta · กล่อง error / ผลสำเร็จเป็น
+/// `AppNotice` · ปุ่มไปหน้าขอ override ชื่อ "Firmware Override" ตามชื่อหน้า · ตรรกะ/
+/// การเรียก API เหมือนเดิม
 class ConfirmFirmwareInstallPage extends ConsumerStatefulWidget {
   const ConfirmFirmwareInstallPage({super.key, required this.deviceId});
 
@@ -112,39 +124,56 @@ class _ConfirmFirmwareInstallPageState
   Widget build(BuildContext context) {
     final deviceAsync = ref.watch(deviceDetailProvider(widget.deviceId));
     final firmwareAsync = ref.watch(firmwareListProvider);
+    final navigator = Navigator.of(context);
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('ยืนยันติดตั้ง Firmware'),
-      ),
-      body: deviceAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => AppErrorView(
-          message: error is ApiException
-              ? error.message
-              : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
-          messageKey: const Key('confirm_firmware_load_error'),
-          retryKey: const Key('confirm_firmware_load_retry'),
-          onRetry: () {
-            ref.invalidate(deviceDetailProvider(widget.deviceId));
-            ref.invalidate(firmwareListProvider);
-          },
-        ),
-        data: (device) => firmwareAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => AppErrorView(
-            message: error is ApiException
-                ? error.message
-                : 'โหลดรายการ Firmware ไม่สำเร็จ',
-            messageKey: const Key('confirm_firmware_load_error'),
-            retryKey: const Key('confirm_firmware_load_retry'),
-            onRetry: () => ref.invalidate(firmwareListProvider),
+    return AppV2Theme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppPageHeader(
+                title: 'ยืนยันติดตั้ง Firmware',
+                onBack: navigator.canPop() ? navigator.pop : null,
+                description:
+                    'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกว่ามีการ'
+                    'ยืนยัน (Audit Log) ไม่ได้ส่งอะไรไปที่อุปกรณ์',
+                meta: deviceHeaderMeta(deviceAsync.valueOrNull),
+              ),
+              Expanded(
+                child: deviceAsync.when(
+                  loading: () => const AppDetailSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => AppErrorView(
+                    message: error is ApiException
+                        ? error.message
+                        : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
+                    messageKey: const Key('confirm_firmware_load_error'),
+                    retryKey: const Key('confirm_firmware_load_retry'),
+                    onRetry: () {
+                      ref.invalidate(deviceDetailProvider(widget.deviceId));
+                      ref.invalidate(firmwareListProvider);
+                    },
+                  ),
+                  data: (device) => firmwareAsync.when(
+                    loading: () => const AppDetailSkeleton(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    ),
+                    error: (error, _) => AppErrorView(
+                      message: error is ApiException
+                          ? error.message
+                          : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                      messageKey: const Key('confirm_firmware_load_error'),
+                      retryKey: const Key('confirm_firmware_load_retry'),
+                      onRetry: () => ref.invalidate(firmwareListProvider),
+                    ),
+                    data: (all) => _buildForm(device, all),
+                  ),
+                ),
+              ),
+            ],
           ),
-          data: (all) => _buildForm(device, all),
         ),
       ),
     );
@@ -158,42 +187,16 @@ class _ConfirmFirmwareInstallPageState
     final done = _result != null;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
-        Text(
-          'อุปกรณ์ ${device.deviceId}'
-          '${device.deviceModel.isEmpty ? '' : ' · ${device.deviceModel}'}',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกว่ามีการ'
-          'ยืนยัน (Audit Log) ไม่ได้ส่งอะไรไปที่อุปกรณ์',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Firmware ที่ติดตั้งแล้ว',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
+        const AppFieldLabel('Firmware ที่ติดตั้งแล้ว'),
         if (options.isEmpty)
-          Container(
-            key: const Key('confirm_firmware_no_options'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.fieldBorder),
-            ),
-            child: const Text(
+          const AppNotice(
+            key: Key('confirm_firmware_no_options'),
+            tone: AppBadgeTone.neutral,
+            child: Text(
               'ยังไม่มี Firmware ที่ยืนยันติดตั้งได้กับรุ่นนี้ (ต้องอัปโหลดสำเร็จ '
               '+ ผ่านการอนุมัติคุณภาพ + รองรับรุ่นอุปกรณ์) — แจ้ง Firmware Engineer',
-              style: TextStyle(color: AppTheme.textSecondary),
             ),
           )
         else
@@ -203,9 +206,8 @@ class _ConfirmFirmwareInstallPageState
             isExpanded: true,
             hint: const Text('เลือก Firmware'),
             decoration: const InputDecoration(
-              border: OutlineInputBorder(),
               filled: true,
-              fillColor: AppTheme.surface,
+              fillColor: AppColors.card,
             ),
             items: [
               for (final f in options)
@@ -225,18 +227,13 @@ class _ConfirmFirmwareInstallPageState
           ),
         if (_error != null) ...[
           const SizedBox(height: 12),
-          Container(
+          AppNotice(
             key: const Key('confirm_firmware_error'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.error.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.error.withValues(alpha: 0.4)),
-            ),
+            tone: AppBadgeTone.danger,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_error!, style: const TextStyle(color: AppTheme.error)),
+                Text(_error!),
                 if (_gateConflict) ...[
                   const SizedBox(height: 8),
                   const Text(
@@ -245,8 +242,8 @@ class _ConfirmFirmwareInstallPageState
                     'Firmware Override และรอ Operation อนุมัติก่อน',
                     key: Key('confirm_firmware_gate_hint'),
                     style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondary,
+                      fontSize: AppTypography.xs,
+                      height: AppTypography.xsHeight,
                     ),
                   ),
                   if (isSt) ...[
@@ -257,7 +254,7 @@ class _ConfirmFirmwareInstallPageState
                         AppRoutes.deviceFirmwareOverride(widget.deviceId),
                       ),
                       icon: const Icon(Icons.system_update_alt),
-                      label: const Text('ขอ Firmware Override'),
+                      label: const Text('Firmware Override'),
                     ),
                   ],
                 ],
@@ -267,21 +264,14 @@ class _ConfirmFirmwareInstallPageState
         ],
         if (_result != null) ...[
           const SizedBox(height: 12),
-          Container(
+          AppNotice(
             key: const Key('confirm_firmware_success'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.mockAccentSoft,
-              borderRadius: BorderRadius.circular(8),
-            ),
+            tone: AppBadgeTone.success,
+            icon: Icons.check_circle_outline,
+            title: 'บันทึกการยืนยันติดตั้ง Firmware แล้ว',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'บันทึกการยืนยันติดตั้ง Firmware แล้ว',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
                 Text('อุปกรณ์: ${_result!.deviceId}'),
                 Text('Firmware: ${_firmwareLabel(all, _result!.firmwareId)}'),
                 Text('เมื่อ: ${_formatDateTime(_result!.confirmedAt)}'),
@@ -299,7 +289,9 @@ class _ConfirmFirmwareInstallPageState
                   width: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                    valueColor: AlwaysStoppedAnimation(
+                      AppColors.primaryForeground,
+                    ),
                   ),
                 )
               : const Text('ยืนยันติดตั้ง Firmware'),

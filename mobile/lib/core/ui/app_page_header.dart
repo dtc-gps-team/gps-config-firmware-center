@@ -178,21 +178,22 @@ class _MetaItem extends StatelessWidget {
       fontSize: AppTypography.sm,
       height: AppTypography.smHeight,
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    // Wrap ไม่ใช่ Row: ตัวอักษรใหญ่บนจอแคบ label ยาว (เช่น "เลขเครื่อง") กว้างเกินจอ
+    // ได้เอง Row ที่ label ไม่ยืดหยุ่นจะล้นขอบ (เจอตอนใช้ meta ครั้งแรกใน Batch 4) ·
+    // Wrap ให้ค่าขึ้นบรรทัดใหม่ใต้ label และแต่ละข้อความตัดบรรทัดในความกว้างที่มี
+    return Wrap(
+      spacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
           item.label,
           style: base.copyWith(color: AppColors.mutedForeground),
         ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            item.value,
-            style: base.copyWith(
-              color: AppColors.foreground,
-              fontWeight: FontWeight.w500,
-            ),
+        Text(
+          item.value,
+          style: base.copyWith(
+            color: AppColors.foreground,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
