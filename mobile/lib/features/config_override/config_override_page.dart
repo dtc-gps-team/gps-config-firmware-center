@@ -3,9 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/widgets/text_scale.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_notice.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_sensitive_value.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
+import '../../core/widgets/text_scale.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
 
@@ -22,6 +30,11 @@ import 'config_value_parser.dart';
 /// field, เฉพาะ `stOverridable: true` แก้ได้ตาม dataType, เหตุผลบังคับกรอก,
 /// ต้องมีอย่างน้อย 1 field เปลี่ยนค่าก่อน submit ได้, ไม่มี confirm dialog
 /// เพิ่ม (submit ตรงๆ เหมือน Web).
+///
+/// design system ใหม่ (docs/22 Batch 4): หัวหน้าจอ "Config Override" ตาม Web (§6.2)
+/// + ชื่อ Config ใน meta + ป้าย "มี override เครื่องนี้" เป็น status · ค่า `sensitive`
+/// ใช้ `AppSensitiveValue` / `AppRevealToggle` (ซ่อนเป็นค่าเริ่มต้น ปุ่มรูปตามี label,
+/// docs/21 #20) · แถบคำขอที่รออนุมัติ / error เป็น `AppNotice` · ตรรกะ/การเรียก API เหมือนเดิม
 class ConfigOverridePage extends ConsumerStatefulWidget {
   const ConfigOverridePage({super.key, required this.deviceId});
 
@@ -151,60 +164,111 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
   Widget build(BuildContext context) {
     final configAsync = ref.watch(currentConfigProvider(widget.deviceId));
     final definitionsAsync = ref.watch(configFieldDefinitionListProvider);
+    final navigator = Navigator.of(context);
+    final config = configAsync.valueOrNull;
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.navy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Override ค่าพารามิเตอร์'),
-      ),
-      body: configAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => AppErrorView(
-          message: _configErrorMessage(error),
-          messageKey: const Key('config_override_load_error'),
-          retryKey: const Key('config_override_load_retry'),
-          onRetry: () {
-            ref.invalidate(currentConfigProvider(widget.deviceId));
-            ref.invalidate(configFieldDefinitionListProvider);
-          },
-        ),
-        data: (config) => definitionsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => AppErrorView(
-            message: 'โหลดข้อมูล Parameter ไม่สำเร็จ',
-            messageKey: const Key('config_override_load_error'),
-            retryKey: const Key('config_override_load_retry'),
-            onRetry: () => ref.invalidate(configFieldDefinitionListProvider),
+    return AppV2Theme(
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppPageHeader(
+                title: 'Config Override',
+                onBack: navigator.canPop() ? navigator.pop : null,
+                // ข้อความนี้ยืนยัน 2 เรื่อง: (1) issue #223 ตัดสินใจแล้วว่า override
+                // เป็น**รายเครื่อง** (POST /devices/{deviceId}/config-override ไม่ใช่
+                // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) จึงไม่
+                // กระทบเครื่องอื่น (2) **แก้ตามรีวิว A บน PR #225 (มติ 2026-09-24)**:
+                // เปลี่ยนจากข้อความเดิมที่บอกว่า override มีผลทันที เป็นบอกตรงๆ ว่า
+                // ต้องผ่าน Operation อนุมัติก่อน แล้วช่างต้องกด "ใส่ Config เข้าเครื่อง"
+                // ต่อเองอีกครั้ง (apply-config ยังไม่ automation ในรอบนี้)
+                description:
+                    'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
+                    'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
+                    'Audit Log ทุกครั้ง',
+                // issue #223 — ค่าที่เห็นในฟอร์มไม่ใช่ base Config ล้วนๆ
+                // (`hasDeviceOverride` = true เฉพาะคำขอที่ Operation อนุมัติแล้ว)
+                status: config != null && config.hasDeviceOverride
+                    ? const AppBadge(
+                        key: Key('config_override_has_override_badge'),
+                        label: 'มี override เครื่องนี้',
+                        tone: AppBadgeTone.info,
+                        dot: true,
+                      )
+                    : null,
+                meta: [
+                  if (config != null)
+                    AppPageHeaderMeta(
+                      label: 'Config',
+                      value:
+                          config.name ??
+                          '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
+                    ),
+                ],
+              ),
+              Expanded(
+                child: configAsync.when(
+                  loading: () => const AppDetailSkeleton(
+                    lines: 6,
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => AppErrorView(
+                    message: _configErrorMessage(error),
+                    messageKey: const Key('config_override_load_error'),
+                    retryKey: const Key('config_override_load_retry'),
+                    onRetry: () {
+                      ref.invalidate(currentConfigProvider(widget.deviceId));
+                      ref.invalidate(configFieldDefinitionListProvider);
+                    },
+                  ),
+                  data: (config) => definitionsAsync.when(
+                    loading: () => const AppDetailSkeleton(
+                      lines: 6,
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    ),
+                    error: (error, _) => AppErrorView(
+                      message: 'โหลดข้อมูล Parameter ไม่สำเร็จ',
+                      messageKey: const Key('config_override_load_error'),
+                      retryKey: const Key('config_override_load_retry'),
+                      onRetry: () =>
+                          ref.invalidate(configFieldDefinitionListProvider),
+                    ),
+                    data: (definitions) {
+                      final defByName = {
+                        for (final d in definitions) d.fieldName: d,
+                      };
+                      return _OverrideForm(
+                        config: config,
+                        defByName: defByName,
+                        edits: _edits,
+                        revealed: _revealed,
+                        reasonController: _reasonController,
+                        submitting: _submitting,
+                        error: _error,
+                        errorList: _errorList,
+                        fieldErrors: _fieldErrors,
+                        reasonError: _reasonError,
+                        onReasonChanged: () {
+                          if (_reasonError != null) {
+                            setState(() => _reasonError = null);
+                          }
+                        },
+                        onEdit: (key, value) => setState(() {
+                          _edits[key] = value;
+                          _fieldErrors.remove(key);
+                        }),
+                        onToggleReveal: (key) => setState(() {
+                          if (!_revealed.remove(key)) _revealed.add(key);
+                        }),
+                        onSubmit: () => _submit(config, defByName),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
-          data: (definitions) {
-            final defByName = {for (final d in definitions) d.fieldName: d};
-            return _OverrideForm(
-              config: config,
-              defByName: defByName,
-              edits: _edits,
-              revealed: _revealed,
-              reasonController: _reasonController,
-              submitting: _submitting,
-              error: _error,
-              errorList: _errorList,
-              fieldErrors: _fieldErrors,
-              reasonError: _reasonError,
-              onReasonChanged: () {
-                if (_reasonError != null) setState(() => _reasonError = null);
-              },
-              onEdit: (key, value) => setState(() {
-                _edits[key] = value;
-                _fieldErrors.remove(key);
-              }),
-              onToggleReveal: (key) => setState(() {
-                if (!_revealed.remove(key)) _revealed.add(key);
-              }),
-              onSubmit: () => _submit(config, defByName),
-            );
-          },
         ),
       ),
     );
@@ -263,56 +327,19 @@ class _OverrideForm extends StatelessWidget {
         .toList(growable: false);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(
-                config.name ??
-                    '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-            ),
-            if (config.hasDeviceOverride) ...[
-              const SizedBox(width: 8),
-              const _DeviceOverrideBadge(),
-            ],
-          ],
-        ),
-        const SizedBox(height: 4),
-        // ข้อความนี้ยืนยัน 2 เรื่อง: (1) issue #223 ตัดสินใจแล้วว่า override
-        // เป็น**รายเครื่อง** (POST /devices/{deviceId}/config-override ไม่ใช่
-        // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) จึงไม่
-        // กระทบเครื่องอื่น (2) **แก้ตามรีวิว A บน PR #225 (มติ 2026-09-24)**:
-        // เปลี่ยนจากข้อความเดิมที่บอกว่า override มีผลทันที เป็นบอกตรงๆ ว่า
-        // ต้องผ่าน Operation อนุมัติก่อน แล้วช่างต้องกด "ใส่ Config เข้าเครื่อง"
-        // ต่อเองอีกครั้ง (apply-config ยังไม่ automation ในรอบนี้)
-        const Text(
-          'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
-          'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
-          'Audit Log ทุกครั้ง',
-          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-        ),
         if (config.pendingOverride != null) ...[
-          const SizedBox(height: 12),
           _PendingOverrideBanner(pending: config.pendingOverride!),
+          const SizedBox(height: 16),
         ],
-        const SizedBox(height: 16),
-        Container(
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.fieldBorder),
-          ),
+        AppCard(
+          size: AppCardSize.small,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final entry in fieldEntries)
+              for (final (i, entry) in fieldEntries.indexed) ...[
+                if (i > 0) const Divider(),
                 _FieldRow(
                   key: Key('config_override_field_${entry.key}'),
                   fieldKey: entry.key,
@@ -324,55 +351,30 @@ class _OverrideForm extends StatelessWidget {
                   onToggleReveal: () => onToggleReveal(entry.key),
                   onChanged: (v) => onEdit(entry.key, v),
                 ),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 20),
-        const Text(
-          'เหตุผล (บังคับ)',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
+        const AppFieldLabel('เหตุผล', hint: '(บังคับ)'),
         TextField(
           key: const Key('config_override_reason_input'),
           controller: reasonController,
           maxLength: 500,
           onChanged: (_) => onReasonChanged(),
           decoration: InputDecoration(
-            border: const OutlineInputBorder(),
             hintText: 'เช่น ลูกค้าขอเปลี่ยนค่าหน้างาน / แก้ไขข้อผิดพลาดที่พบ',
             filled: true,
-            fillColor: AppTheme.surface,
+            fillColor: AppColors.card,
             errorText: reasonError,
           ),
         ),
         if (error != null) ...[
           const SizedBox(height: 8),
-          Container(
+          AppNotice(
             key: const Key('config_override_error'),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.error.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.error.withValues(alpha: 0.4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(error!, style: const TextStyle(color: AppTheme.error)),
-                for (final msg in errorList)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '• $msg',
-                      style: const TextStyle(
-                        color: AppTheme.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            tone: AppBadgeTone.danger,
+            child: AppErrorDetails(message: error!, details: errorList),
           ),
         ],
         const SizedBox(height: 16),
@@ -385,7 +387,9 @@ class _OverrideForm extends StatelessWidget {
                   width: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                    valueColor: AlwaysStoppedAnimation(
+                      AppColors.primaryForeground,
+                    ),
                   ),
                 )
               : const Text('ยืนยัน Override'),
@@ -447,17 +451,15 @@ class _FieldRowState extends State<_FieldRow> {
     final name = Text(
       widget.fieldKey,
       style: const TextStyle(
-        fontSize: 12,
-        fontFamily: 'monospace',
-        color: AppTheme.textSecondary,
+        fontSize: AppTypography.xs,
+        height: AppTypography.xsHeight,
+        fontFamily: AppTypography.monoFamily,
+        color: AppColors.mutedForeground,
       ),
     );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppTheme.fieldBorder)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       // ตัวอักษรใหญ่: ชื่อ field อยู่เหนือช่องค่า ได้ความกว้างเต็มแถว (UX audit
       // #23) เดิมแบ่ง 2:3 ในแถวเดียว ชื่อยาวอย่าง REPORT_INTERVAL_MOVING ขึ้น
       // บรรทัดใหม่กลางคำหลายครั้ง และช่องกรอกค่าเหลือที่แคบ
@@ -487,45 +489,39 @@ class _FieldRowState extends State<_FieldRow> {
     final fieldKey = widget.fieldKey;
 
     if (def == null || !def.stOverridable) {
-      final masked = def?.sensitive == true && !revealed;
-      final display = masked ? '••••••' : currentValue;
+      const valueStyle = TextStyle(
+        fontSize: AppTypography.xs,
+        height: AppTypography.xsHeight,
+        fontFamily: AppTypography.monoFamily,
+        color: AppColors.mutedForeground,
+      );
       // ค่าอยู่บรรทัดบน ป้าย "(override ไม่ได้)" อยู่บรรทัดล่าง (UX audit #8) —
       // เดิมอยู่ใน Row เดียวกัน ตอนตัวอักษรใหญ่ / จอแคบล้นขอบ และป้ายแย่ง
       // ความกว้างจากค่าที่ช่างต้องอ่าน
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  display,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ),
-              if (def?.sensitive == true)
-                IconButton(
-                  iconSize: 16,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: widget.onToggleReveal,
-                  icon: Icon(
-                    revealed
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                ),
-            ],
-          ),
+          if (def?.sensitive == true)
+            AppSensitiveValue(
+              value: currentValue,
+              revealed: revealed,
+              onToggle: widget.onToggleReveal,
+              style: valueStyle,
+            )
+          else
+            Text(
+              currentValue,
+              overflow: TextOverflow.ellipsis,
+              style: valueStyle,
+            ),
           const SizedBox(height: 2),
           const Text(
             '(override ไม่ได้)',
-            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+            style: TextStyle(
+              fontSize: AppTypography.xs,
+              height: AppTypography.xsHeight,
+              color: AppColors.mutedForeground,
+            ),
           ),
         ],
       );
@@ -580,18 +576,12 @@ class _FieldRowState extends State<_FieldRow> {
       maxLines: multiline ? 6 : 1,
       decoration: InputDecoration(
         isDense: true,
-        border: const OutlineInputBorder(),
         hintText: _hintFor(dataType),
         errorText: widget.errorText,
         suffixIcon: def.sensitive
-            ? IconButton(
-                iconSize: 16,
+            ? AppRevealToggle(
+                revealed: revealed,
                 onPressed: widget.onToggleReveal,
-                icon: Icon(
-                  revealed
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
               )
             : null,
       ),
@@ -645,78 +635,12 @@ class _PendingOverrideBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AppNotice(
       key: const Key('config_override_pending_banner'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.mockAccentSoft,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.hourglass_top, size: 16, color: AppTheme.mockAccent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'มีคำขอ override รอ Operation อนุมัติอยู่',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.mockAccent,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'เหตุผล: ${pending.reason}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// บอกช่างว่าอุปกรณ์เครื่องนี้มี override เฉพาะเครื่องอยู่แล้ว (issue #223) —
-/// ค่าที่เห็นในฟอร์มด้านล่างจึงไม่ใช่ base Config ล้วนๆ (`hasDeviceOverride`
-/// จาก `GET /devices/{deviceId}/config` — `true` เฉพาะคำขอที่ Operation
-/// อนุมัติแล้วเท่านั้น, มติ 2026-09-24).
-class _DeviceOverrideBadge extends StatelessWidget {
-  const _DeviceOverrideBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('config_override_has_override_badge'),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.mockAccentSoft,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.tune, size: 12, color: AppTheme.mockAccent),
-          SizedBox(width: 4),
-          Text(
-            'มี override เครื่องนี้',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.mockAccent,
-            ),
-          ),
-        ],
-      ),
+      tone: AppBadgeTone.warning,
+      icon: Icons.hourglass_top,
+      title: 'มีคำขอ override รอ Operation อนุมัติอยู่',
+      child: Text('เหตุผล: ${pending.reason}'),
     );
   }
 }

@@ -150,8 +150,10 @@ Future<void> _syncFlushed(
 
 Finder get _confirmButton => find.byKey(const Key('confirm_install_button'));
 
-FilledButton _button(WidgetTester tester, String key) =>
-    tester.widget<FilledButton>(find.byKey(Key(key)));
+// ปุ่มบันทึกสถานะเป็น OutlinedButton ตอนมีปุ่มส่ง Config ด้วย (docs/21 #11) —
+// helper อ่านแค่ onPressed จึงรับได้ทั้ง Filled / Outlined
+ButtonStyleButton _button(WidgetTester tester, String key) =>
+    tester.widget<ButtonStyleButton>(find.byKey(Key(key)));
 
 void main() {
   group('state การส่ง Config ไม่หายเมื่อ sync flush (UX audit #3)', () {

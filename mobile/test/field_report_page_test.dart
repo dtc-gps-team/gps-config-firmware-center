@@ -73,6 +73,11 @@ Future<_SpyIncidentRepository> _pump(
   String? initialDeviceId,
 }) async {
   final spy = repo ?? _SpyIncidentRepository();
+  // หัวหน้าจอแบบ AppPageHeader (docs/22 Batch 4) กินพื้นที่บนจอ 800x600 ค่าเริ่มต้น
+  // จนปุ่มส่งเลื่อนพ้นจอเมื่อมีกล่องแจ้งผลขึ้น — ใช้จอสูงขึ้นแบบโทรศัพท์จริง
+  tester.view.physicalSize = const Size(400 * 3, 900 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -157,7 +162,7 @@ void main() {
       expect(find.byKey(const Key('field_report_error')), findsNothing);
       // ส่งซ้ำไม่ได้
       final button = tester.widget<FilledButton>(
-        find.byKey(const Key('field_report_submit')),
+        find.byKey(const Key('field_report_submit'), skipOffstage: false),
       );
       expect(button.onPressed, isNull);
     },
@@ -169,7 +174,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('field_report_severity')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('วิกฤต').last);
+    await tester.tap(find.text('Critical').last);
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const Key('field_report_device')));
@@ -240,7 +245,7 @@ void main() {
       expect(find.byKey(const Key('field_report_submitted')), findsNothing);
       // กดส่งใหม่ได้
       final button = tester.widget<FilledButton>(
-        find.byKey(const Key('field_report_submit')),
+        find.byKey(const Key('field_report_submit'), skipOffstage: false),
       );
       expect(button.onPressed, isNotNull);
     },

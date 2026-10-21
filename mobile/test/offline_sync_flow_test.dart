@@ -16,7 +16,6 @@ import 'package:mobile/core/db/task_mapping.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/sync/sync_queue_service.dart';
 import 'package:mobile/core/widgets/sync_status_widgets.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 import 'package:mobile/features/task/task_repository.dart';
 import 'package:mobile/core/config/app_config.dart';
@@ -365,9 +364,6 @@ void main() {
             ),
           ),
           pushNotificationServiceProvider.overrideWithValue(_NoopPush()),
-          recentDeviceIdStoreProvider.overrideWithValue(
-            InMemoryRecentDeviceIdStore(),
-          ),
           appDatabaseProvider.overrideWithValue(db),
           syncQueueServiceProvider.overrideWithValue(sync),
         ],

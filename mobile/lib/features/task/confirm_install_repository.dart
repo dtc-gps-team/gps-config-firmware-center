@@ -19,9 +19,8 @@ abstract class ConfirmInstallRepository {
 }
 
 /// Talks to the real backend — endpoint is live (device module, PR #85 +
-/// `applyConfigToDevice`). No mock implementation: same call as
-/// `ApiDeviceConnectionTestRepository`, which also always hits the real
-/// backend regardless of `API_MOCK_MODE` because both actions only make
+/// `applyConfigToDevice`). No mock implementation: always hits the real
+/// backend regardless of `API_MOCK_MODE` because the action only makes
 /// sense against a real Device/Config record.
 class ApiConfirmInstallRepository implements ConfirmInstallRepository {
   ApiConfirmInstallRepository(this._api);
