@@ -451,8 +451,8 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
   ในแถวข้อมูลแสดง `-` ตาม `AppInfoRow` (เดิม `—`)
 - **component ใหม่:** `AppNotice`, `AppFieldLabel`, `AppSensitiveValue` (§7.1) · แก้ `AppPageHeader` ให้ meta ใช้ `Wrap` (label
   ยาวล้นขอบตอนตัวอักษรใหญ่ — เจอครั้งแรกใน Device Detail ที่ใช้ meta)
-- **`DeviceStatusPill` เหลือเป็นตัวครอบ `AppBadge`** ให้หน้าเลือกอุปกรณ์ของ "ทดสอบสัญญาณ" ที่ #361 (3b) ลบ — ลบไฟล์
-  `device_status_ui.dart` ได้หลัง #361 merge (หรือใน Batch 6)
+- **ลบ `device_status_ui.dart` (`DeviceStatusPill`) แล้ว** — ระหว่างทำเหลือเป็นตัวครอบ `AppBadge` ให้หน้าเลือกอุปกรณ์ของ
+  "ทดสอบสัญญาณ" ใช้ชั่วคราว ลบได้หลัง #361 (3b) merge ลบหน้านั้นไป
 - **ยังไม่ลบ token เก่า** (`AppTheme.navy`, `mock*` ฯลฯ) — Task Detail (Batch 5) ยังใช้ ลบใน Batch 6 ตามแผน
 
 ---
