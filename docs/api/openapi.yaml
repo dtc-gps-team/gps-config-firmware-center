@@ -1535,6 +1535,75 @@ paths:
         "404":
           description: ไม่พบ Device นี้
 
+  /central/status:
+    get:
+      tags: [device]
+      operationId: getCentralStatus
+      summary: สถานะการเชื่อมต่อ Server กลาง (ESP32 Central Management)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (resource `devices` action `Read`) ·
+        ติดต่อ Server กลางไม่ได้ **ไม่ใช่ error** ตอบ 200 พร้อม `reachable=false` ·
+        `mode` = `mock` (ค่าเริ่มต้น ข้อมูลตัวอย่าง ไม่ต่อเครือข่าย) หรือ `real`
+        ตาม env `CENTRAL_MODE`
+      responses:
+        "200":
+          description: สถานะการเชื่อมต่อ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralStatus"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
+  /central/devices:
+    get:
+      tags: [device]
+      operationId: listCentralDevices
+      summary: รายการกล่องทั้งหมดที่ Server กลางรู้จัก (อ่านอย่างเดียว)
+      description: >-
+        ผสมข้อมูลออนไลน์จาก ws-gateway กับทะเบียนจาก delivery-server · ผลถูก cache
+        ไม่กี่วินาที · `devices` เป็นรายการว่างเมื่อ `reachable=false`
+      responses:
+        "200":
+          description: รายการกล่อง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralDeviceList"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
+  /devices/{deviceId}/central:
+    get:
+      tags: [device]
+      operationId: getDeviceCentral
+      summary: สถานะจริงของอุปกรณ์เครื่องเดียวจาก Server กลาง
+      description: >-
+        เครื่องที่ Server กลางไม่รู้จักตอบ 200 พร้อม `device=null` (ไม่ใช่ 404 เพราะ
+        ระบบเราอาจลงทะเบียนเครื่องไว้ก่อนที่กล่องจะเชื่อมต่อ) · `{deviceId}` คือเลขเครื่อง
+        (`Device.deviceId`) เดียวกับที่กล่องใช้ตอนต่อ Server กลาง
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: สถานะของเครื่องนี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCentralView"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
   /devices/{deviceId}/test-connection:
     post:
       tags: [device]
@@ -5321,6 +5390,139 @@ components:
                   type: string
                 protocol:
                   type: string
+
+    CentralLastCommand:
+      type: object
+      required: [commandId, action, target, status, errorCode, updatedAt]
+      properties:
+        commandId:
+          type: string
+        action:
+          type: string
+          description: เช่น `UPDATE_CONFIG`, `UPDATE_FIRMWARE`
+        target:
+          type: string
+          nullable: true
+          description: เวอร์ชันเป้าหมายเป็นข้อความ เช่น `3` หรือ `1.0.1` (config หรือ firmware ตาม action)
+        status:
+          type: string
+          description: >-
+            PENDING, DELIVERED, ACKNOWLEDGED, DOWNLOADING, VALIDATING, INSTALLING,
+            REBOOTING, SUCCESS, FAILED, ROLLED_BACK, EXPIRED (รับค่าใหม่ได้ในอนาคต)
+        errorCode:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CentralDevice:
+      type: object
+      required:
+        - deviceId
+        - hardwareModel
+        - online
+        - lastSeenAt
+        - reportedFirmwareVersion
+        - reportedConfigVersion
+        - reportedSchemaVersion
+        - desiredConfigVersion
+        - registered
+        - lastCommand
+      properties:
+        deviceId:
+          type: string
+        hardwareModel:
+          type: string
+          nullable: true
+        online:
+          type: boolean
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+        reportedFirmwareVersion:
+          type: string
+          nullable: true
+        reportedConfigVersion:
+          type: integer
+          nullable: true
+        reportedSchemaVersion:
+          type: integer
+          nullable: true
+        desiredConfigVersion:
+          type: integer
+          nullable: true
+          description: เวอร์ชัน Config ที่ Server กลางตั้งเป้าไว้ `null` = ยังไม่เคยตั้ง
+        registered:
+          type: boolean
+          description: >-
+            อยู่ในทะเบียนของ delivery-server และยังไม่ถูก revoke หรือไม่ (ไม่อยู่หรือถูก revoke
+            = สั่ง Config ไม่ได้)
+        lastCommand:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CentralLastCommand"
+          nullable: true
+
+    CentralStatus:
+      type: object
+      required: [mode, reachable, error, checkedAt]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+          description: เหตุผลสั้นๆ เมื่อ `reachable=false` (ไม่มี token หรือรหัสผ่าน)
+        checkedAt:
+          type: string
+          format: date-time
+
+    CentralDeviceList:
+      type: object
+      required: [mode, reachable, error, fetchedAt, devices]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/CentralDevice"
+
+    DeviceCentralView:
+      type: object
+      required: [mode, reachable, error, fetchedAt, device]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        device:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CentralDevice"
+          nullable: true
 
     DeviceStatus:
       type: object
