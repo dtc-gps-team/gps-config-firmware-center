@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ApprovalCenterView } from "./approval-center-view";
 
@@ -51,40 +51,42 @@ function emptyQueryState() {
  * ของ hook ตรงๆ ไม่ต้อง mock fetch) ส่วน Operation ต้องเห็นครบเหมือนเดิม
  */
 describe("ApprovalCenterView — permission gate ของ Per-device Config/Firmware Override", () => {
-  it("role Admin: ไม่เห็น section Config Override / Firmware Override เลย และ hook ถูกเรียกด้วย enabled=false", () => {
+  it("role Admin: ไม่เห็นแท็บ Config Override / Firmware Override เลย และ hook ถูกเรียกด้วย enabled=false", () => {
     authState.role = "Admin";
     usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
     usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
 
     render(<ApprovalCenterView />);
 
-    // เช็คจากชื่อ section ไม่ใช่ CardDescription — คิวว่างทุกคิวในเทสนี้ section
-    // เลยยุบเหลือแถบบรรทัดเดียว (ข้อ 14) ซึ่งมีแค่ชื่อ ไม่มีคำอธิบาย
     expect(
-      screen.queryByText(/^Config Override รออนุมัติ/),
+      screen.queryByRole("button", { name: /^Config Override/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText(/^Firmware Override รออนุมัติ/),
+      screen.queryByRole("button", { name: /^Firmware Override/ }),
     ).not.toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(false);
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(false);
 
-    // section ที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นตามปกติ
-    expect(screen.getByText(/^Config รออนุมัติ/)).toBeInTheDocument();
-    expect(screen.getByText(/^Campaign Rollout รออนุมัติ/)).toBeInTheDocument();
+    // หมวดที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นเป็นแท็บ
+    expect(screen.getByRole("button", { name: /^Config\s*\d*$/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Campaign Rollout/ }),
+    ).toBeInTheDocument();
   });
 
-  it("role Operation: เห็นครบทั้ง 4 section เหมือนเดิม และ hook ถูกเรียกด้วย enabled=true", () => {
+  it("role Operation: เห็นครบทั้ง 4 แท็บ และ hook ถูกเรียกด้วย enabled=true", () => {
     authState.role = "Operation";
     usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
     usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
 
     render(<ApprovalCenterView />);
 
-    expect(screen.getByText(/^Config Override รออนุมัติ/)).toBeInTheDocument();
     expect(
-      screen.getByText(/^Firmware Override รออนุมัติ/),
+      screen.getByRole("button", { name: /^Config Override/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Firmware Override/ }),
     ).toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(true);
@@ -92,25 +94,69 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
   });
 });
 
-/** รายการแก้ UI เว็บข้อ 14 — section ที่คิวว่างยุบเหลือแถบบรรทัดเดียว */
-describe("ApprovalCenterView — ยุบ section ที่คิวว่าง", () => {
-  it("คิวว่างทั้งหมด: ทุก section เป็นแถบบรรทัดเดียว ไม่มีคำอธิบาย/EmptyState เต็ม", () => {
+/** รายการแก้ UI เว็บตามรีวิวพี่เลี้ยง: แยกหมวดเป็นแท็บ แสดงทีละหมวด */
+describe("ApprovalCenterView — แท็บแยกหมวดคำขอ", () => {
+  it("เปิดมาที่หมวด Config และกดสลับไปหมวดอื่นได้ โดยแต่ละครั้งเห็นแค่หมวดเดียว", () => {
     authState.role = "Operation";
     usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
     usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
 
     render(<ApprovalCenterView />);
 
-    expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(4);
+    expect(screen.getByText(/^Config รออนุมัติ/)).toBeInTheDocument();
     expect(
-      screen.queryByText(/Config ที่ทดสอบผ่านแล้ว/),
+      screen.queryByText(/^Campaign Rollout รออนุมัติ/),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Campaign Rollout/ }));
+    expect(screen.getByText(/^Campaign Rollout รออนุมัติ/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Config รออนุมัติ/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Config Override/ }));
+    expect(screen.getByText(/^Config Override รออนุมัติ/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Firmware Override/ }));
     expect(
-      screen.queryByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
-    ).not.toBeInTheDocument();
+      screen.getByText(/^Firmware Override รออนุมัติ/),
+    ).toBeInTheDocument();
   });
 
-  it("คิวโหลดพัง: ไม่ยุบ ยังโชว์การ์ดเต็มพร้อม error + ปุ่มลองใหม่", () => {
+  it("แท็บที่เลือกอยู่มี aria-pressed=true แท็บอื่นเป็น false", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    const configTab = screen.getByRole("button", { name: /^Config\s*\d*$/ });
+    const rolloutTab = screen.getByRole("button", { name: /^Campaign Rollout/ });
+    expect(configTab).toHaveAttribute("aria-pressed", "true");
+    expect(rolloutTab).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(rolloutTab);
+    expect(configTab).toHaveAttribute("aria-pressed", "false");
+    expect(rolloutTab).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("ป้ายตัวเลขบนแท็บแสดงจำนวนรออนุมัติของแต่ละหมวด", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue({
+      ...emptyQueryState(),
+      data: [{ id: "o1" }, { id: "o2" }, { id: "o3" }],
+    });
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    expect(
+      screen.getByRole("button", { name: /^Config Override\s*3$/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Firmware Override\s*0$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("หมวดที่โหลดพัง: เห็น error + ปุ่มลองใหม่ เมื่อกดเข้าหมวดนั้น", () => {
     authState.role = "Operation";
     usePendingDeviceConfigOverrides.mockReturnValue({
       data: null,
@@ -122,13 +168,22 @@ describe("ApprovalCenterView — ยุบ section ที่คิวว่า�
 
     render(<ApprovalCenterView />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Config Override/ }));
     expect(
       screen.getByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
     ).toBeInTheDocument();
     expect(screen.getByText("โหลดไม่สำเร็จ")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ลองใหม่" })).toBeInTheDocument();
-    // อีก 3 section ที่คิวว่างจริงยังยุบตามปกติ
-    expect(screen.getAllByText(/ไม่มีรายการรออนุมัติ/)).toHaveLength(3);
+  });
+
+  it("หมวดที่ว่าง: แสดงข้อความว่าไม่มีรายการ ไม่ซ่อนทั้งหมวด", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    expect(screen.getByText("ไม่มี Config รออนุมัติ")).toBeInTheDocument();
   });
 });
 
