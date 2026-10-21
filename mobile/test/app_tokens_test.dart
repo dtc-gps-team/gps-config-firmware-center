@@ -164,6 +164,27 @@ void main() {
       final shape = style.shape!.resolve({})! as RoundedRectangleBorder;
       expect(shape.borderRadius, BorderRadius.circular(AppRadius.lg));
     });
+
+    // ปุ่มรอง (outline) ตอนกดไม่ได้ — เดิมไม่ได้ตั้งค่า ตกไปใช้ค่า default ของ
+    // Material (onSurface 38%) ได้แค่ ~2.2:1 อ่านแทบไม่ออก (ปุ่ม "บันทึกสถานะ"
+    // ใน Task Detail ตอนยังไม่เปลี่ยนสถานะ) · ใช้พื้น muted + ตัวอักษร
+    // mutedForeground: ยังอ่านออก (≥ 4.5:1) แต่ต่างจากปุ่มที่กดได้ชัดเจน
+    test('ปุ่ม outline ตอนกดไม่ได้: อ่านออก ≥ 4.5:1 และดูต่างจากตอนกดได้', () {
+      final style = theme.outlinedButtonTheme.style!;
+      const disabled = {WidgetState.disabled};
+      final fg = style.foregroundColor!.resolve(disabled)!;
+      final bg = style.backgroundColor!.resolve(disabled)!;
+      expect(fg, AppColors.mutedForeground);
+      expect(bg, AppColors.muted);
+      final ratio = _contrast(fg, bg);
+      expect(
+        ratio,
+        greaterThanOrEqualTo(4.5),
+        reason: '${ratio.toStringAsFixed(2)}:1',
+      );
+      expect(style.foregroundColor!.resolve({}), AppColors.foreground);
+      expect(style.backgroundColor!.resolve({}), AppColors.background);
+    });
   });
 
   testWidgets(

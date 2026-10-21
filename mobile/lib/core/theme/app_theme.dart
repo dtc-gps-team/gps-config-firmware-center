@@ -183,6 +183,11 @@ class AppTheme {
           minimumSize: buttonSize,
           foregroundColor: AppColors.foreground,
           backgroundColor: AppColors.background,
+          // ตอนกดไม่ได้ — ถ้าไม่ตั้ง Material ใช้ onSurface 38% ได้แค่ ~2.2:1 อ่าน
+          // แทบไม่ออก (ไม่ใช้ opacity-50 แบบปุ่มหลักด้วยเหตุผลเดียวกัน) · พื้น muted
+          // + ตัวอักษร mutedForeground ได้ ~5.5:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+          disabledForegroundColor: AppColors.mutedForeground,
+          disabledBackgroundColor: AppColors.muted,
           side: const BorderSide(color: AppColors.border),
           shape: shape,
           textStyle: buttonText,
