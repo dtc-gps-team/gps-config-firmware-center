@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../features/device_connection_test/recent_device_id_store.dart';
 import '../../features/push_notification/push_notification_service.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
@@ -12,6 +12,10 @@ import '../db/providers/database_provider.dart';
 import '../sync/sync_providers.dart';
 import 'auth_repository.dart';
 import 'token_store.dart';
+
+/// SharedPreferences key ของประวัติเลขเครื่องจากหน้าทดสอบสัญญาณเดิม (ลบแล้ว
+/// ใน docs/22 Batch 3b) — เหลือไว้แค่ให้ logout ล้างค่าเก่าที่ค้างในเครื่อง
+const legacyRecentDeviceIdsPrefsKey = 'device_connection_test_recent_ids';
 
 enum AuthStatus { unknown, unauthenticated, authenticating, authenticated }
 
@@ -235,10 +239,21 @@ class AuthController extends Notifier<AuthState> {
 
   /// ล้างข้อมูลในเครื่องของ user คนปัจจุบัน — ใช้ทั้ง [logout] และตอนคนอื่น
   /// login ต่อหลัง session หมดอายุ ([login])
+  Future<void> _clearLegacyRecentDeviceIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(legacyRecentDeviceIdsPrefsKey);
+    } catch (e) {
+      debugPrint('clear legacy recent device ids failed: $e');
+    }
+  }
+
   Future<void> _clearLocalUserData() async {
-    // ล้างประวัติเลขเครื่องที่เคยทดสอบสัญญาณ (issue #204) — กันช่างคนถัดไปที่
-    // login เข้าเครื่องเดียวกันเห็นประวัติของคนก่อนหน้า
-    await ref.read(recentDeviceIdStoreProvider).clear();
+    // หน้าทดสอบสัญญาณถูกลบใน docs/22 Batch 3b (§8.1) แต่เครื่องที่เคยใช้อาจยังเก็บ
+    // ประวัติเลขเครื่อง (issue #204) ไว้ใน SharedPreferences — ล้างทิ้งไม่ให้ค้าง
+    // ข้ามผู้ใช้ · ไม่ await: ไม่ใช่งานจำเป็น และ plugin ที่ค้าง/ไม่มี (เช่นใน
+    // widget test) ต้องไม่ทำให้ logout ค้างตาม
+    unawaited(_clearLegacyRecentDeviceIds());
     // ล้าง Drift cache (Task ที่เก็บไว้ออฟไลน์ + คิว sync ที่ยังค้าง) — กัน
     // user คนถัดไปบนเครื่องเดียวกันเห็น/ส่งข้อมูลของคนก่อนหน้า. ห้ามให้ความ
     // ล้มเหลวตรงนี้บล็อก logout (เหมือน step อื่นด้านบน)

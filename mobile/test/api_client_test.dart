@@ -566,59 +566,6 @@ void main() {
     });
   });
 
-  group('config endpoints', () {
-    Map<String, dynamic> configJson({
-      String id = 'c1',
-      String status = 'draft',
-      String deviceModel = 'GT06N',
-    }) => {
-      'id': id,
-      'deviceModel': deviceModel,
-      'protocol': 'TCP',
-      'status': status,
-      'fields': {'APN': 'internet'},
-    };
-
-    test('listConfigs -> GET /config, maps the JSON array', () async {
-      final (:client, :adapter) = _clientReturning([
-        configJson(id: 'c1', status: 'draft'),
-        configJson(id: 'c2', status: 'approved'),
-      ]);
-
-      final configs = await client.listConfigs();
-
-      expect(adapter.lastRequest?.method, 'GET');
-      expect(adapter.lastRequest?.path, '/config');
-      expect(configs.map((c) => c.id), ['c1', 'c2']);
-      expect(configs[0].status, ConfigStatus.draft);
-      expect(configs[1].status, ConfigStatus.approved);
-    });
-
-    test('listConfigs -> tolerates an empty array', () async {
-      final (:client, :adapter) = _clientReturning(<dynamic>[]);
-      expect(await client.listConfigs(), isEmpty);
-      expect(adapter.lastRequest?.path, '/config');
-    });
-
-    test(
-      'listConfigs -> record เสีย (status ที่ไม่รู้จัก) throw ทั้งก้อน (strict, '
-      'mirror listTasks — Config data ก็ใช้ตัดสินใจจริง ไม่ใช่ best-effort '
-      'แบบ notifications)',
-      () async {
-        final (:client, :adapter) = _clientReturning([
-          configJson(id: 'c1'),
-          {
-            ...configJson(id: 'c2'),
-            'status': 'some_future_status_we_dont_know',
-          },
-        ]);
-
-        await expectLater(client.listConfigs(), throwsA(isA<ArgumentError>()));
-        expect(adapter.lastRequest?.path, '/config');
-      },
-    );
-  });
-
   group('config override endpoints (Phase 2 Mobile, issue #211)', () {
     Map<String, dynamic> configJson({
       String id = 'c1',
@@ -1196,38 +1143,6 @@ void main() {
         );
       },
     );
-  });
-
-  group('customer endpoints', () {
-    test('listCustomers -> GET /customers, maps the JSON array', () async {
-      final (:client, :adapter) = _clientReturning([
-        {'id': 'cust-1', 'companyName': 'บริษัท เอ จำกัด'},
-        {'id': 'cust-2', 'companyName': 'บริษัท บี จำกัด'},
-      ]);
-
-      final customers = await client.listCustomers();
-
-      expect(adapter.lastRequest?.method, 'GET');
-      expect(adapter.lastRequest?.path, '/customers');
-      expect(customers.map((c) => c.id), ['cust-1', 'cust-2']);
-    });
-
-    test('listCustomers -> tolerates an empty array', () async {
-      final (:client, :adapter) = _clientReturning(<dynamic>[]);
-      expect(await client.listCustomers(), isEmpty);
-      expect(adapter.lastRequest?.path, '/customers');
-    });
-
-    test('listCustomers -> record เสีย (id หาย) throw ทั้งก้อน (strict, '
-        'mirror listTasks)', () async {
-      final (:client, :adapter) = _clientReturning([
-        {'id': 'cust-1', 'companyName': 'บริษัท เอ จำกัด'},
-        {'companyName': 'บริษัท ไม่มี id'},
-      ]);
-
-      await expectLater(client.listCustomers(), throwsA(isA<TypeError>()));
-      expect(adapter.lastRequest?.path, '/customers');
-    });
   });
 
   group('incident endpoints', () {

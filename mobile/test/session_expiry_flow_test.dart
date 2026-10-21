@@ -15,7 +15,6 @@ import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/db/tables/pending_actions_table.dart';
 import 'package:mobile/core/db/task_mapping.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 
 // UX audit #5 — token หมดอายุ (401) ระหว่างใช้งาน ต้องพากลับหน้า login พร้อม
@@ -80,9 +79,6 @@ AppDatabase _inMemoryDb(Ref ref) {
       ),
       pushNotificationServiceProvider.overrideWithValue(_NoopPush()),
       appDatabaseProvider.overrideWith(_inMemoryDb),
-      recentDeviceIdStoreProvider.overrideWithValue(
-        InMemoryRecentDeviceIdStore(),
-      ),
     ],
   );
   addTearDown(container.dispose);

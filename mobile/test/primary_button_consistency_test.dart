@@ -10,11 +10,7 @@ import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
-import 'package:mobile/features/config_simulator/config_repository.dart';
-import 'package:mobile/features/config_simulator/simulator_page.dart';
-import 'package:mobile/features/config_simulator/simulator_repository.dart';
-import 'package:mobile/features/device_connection_test/device_connection_test_page.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
+import 'package:mobile/features/task/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_page.dart';
@@ -49,7 +45,6 @@ List<Override> _overrides(AuthState auth) => [
   configOverrideRepositoryProvider.overrideWithValue(
     MockConfigOverrideRepository(),
   ),
-  configRepositoryProvider.overrideWithValue(MockConfigRepository()),
   simulatorRepositoryProvider.overrideWithValue(MockSimulatorRepository()),
   deviceSearchRepositoryProvider.overrideWithValue(
     MockDeviceSearchRepository(),
@@ -62,7 +57,6 @@ List<Override> _overrides(AuthState auth) => [
   ),
   incidentRepositoryProvider.overrideWithValue(MockIncidentRepository()),
   taskRepositoryProvider.overrideWithValue(MockTaskRepository()),
-  recentDeviceIdStoreProvider.overrideWithValue(InMemoryRecentDeviceIdStore()),
 ];
 
 Future<void> _pump(
@@ -121,9 +115,9 @@ void main() {
   });
 
   // Login ย้ายไป design system ใหม่แล้ว (docs/22 Batch 2) — ปุ่มหลักใช้ theme v2
-  // (primary #1B6FB2 มุม 10) · หน้าที่ยังไม่ย้ายด้านล่างยังเทียบกับแบบเดิม
-  // (กรมท่า มุม 12) จนกว่าจะย้ายตาม batch ของตัวเอง — ระหว่างทางสองแบบอยู่ร่วมกัน
-  // ได้ (docs/22 §9) แต่ในหน้าเดียวกันต้องไม่ปนกัน
+  // (primary #1B6FB2 มุม 10) · หน้าฟอร์มทั้งหมดย้ายครบใน Batch 4 แล้ว (หน้าที่ยังไม่
+  // ย้ายเดิม 2 หน้า Simulator / ทดสอบสัญญาณ ถูกลบใน Batch 3b #361) · Task Detail
+  // (Batch 5) มีเทสปุ่มของตัวเองแยก
   testWidgets(
     'ปุ่มหลักหน้า login: theme v2 — primary ตัวอักษรขาว มุม 10 สูง ≥ 48',
     (tester) async {
@@ -183,33 +177,6 @@ void main() {
           ),
           reason: '$name: $look',
         );
-        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
-      },
-    );
-  });
-
-  final pages = <String, Widget>{
-    'ทดสอบการตั้งค่า (Simulator)': const SimulatorPage(),
-    'ทดสอบสัญญาณ': const DeviceConnectionTestPage(),
-  };
-
-  pages.forEach((name, page) {
-    testWidgets(
-      'UX audit #12: ปุ่มหลักหน้า "$name" (ยังไม่ย้าย) กรมท่า มุม 12',
-      (tester) async {
-        await _pump(tester, page);
-
-        final button = find.byType(FilledButton);
-        expect(button, findsOneWidget, reason: name);
-        final look = _Look(_effectiveStyle(tester, button));
-        expect(look.background, AppTheme.navy, reason: '$name: $look');
-        expect(look.foreground, Colors.white, reason: '$name: $look');
-        expect(
-          look.shape,
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          reason: '$name: $look',
-        );
-        // สูงอย่างน้อย 48dp (กดด้วยนิ้วหน้างาน)
         expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
       },
     );

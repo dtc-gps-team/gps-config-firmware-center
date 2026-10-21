@@ -13,9 +13,7 @@ import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/status_tones.dart';
 import 'package:mobile/features/auth/login_page.dart';
-import 'package:mobile/features/config_simulator/config_repository.dart';
-import 'package:mobile/features/config_simulator/simulator_page.dart';
-import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/task/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/incident/incident_ui.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
@@ -113,7 +111,6 @@ Future<void> _pump(WidgetTester tester, Widget page, AuthState auth) async {
           ref.onDispose(db.close);
           return db;
         }),
-        configRepositoryProvider.overrideWithValue(MockConfigRepository()),
         simulatorRepositoryProvider.overrideWithValue(
           MockSimulatorRepository(),
         ),
@@ -246,18 +243,6 @@ void main() {
         const LoginPage(),
         const AuthState(status: AuthStatus.unauthenticated),
       );
-      final colors = _enabledBorderColors(tester);
-      expect(colors, isNotEmpty);
-      for (final c in colors) {
-        expect(
-          contrastRatio(c, AppTheme.surface),
-          greaterThanOrEqualTo(_uiMin),
-        );
-      }
-    });
-
-    testWidgets('หน้าทดสอบการตั้งค่า (dropdown)', (tester) async {
-      await _pump(tester, const SimulatorPage(), _st);
       final colors = _enabledBorderColors(tester);
       expect(colors, isNotEmpty);
       for (final c in colors) {
