@@ -1535,6 +1535,75 @@ paths:
         "404":
           description: ไม่พบ Device นี้
 
+  /central/status:
+    get:
+      tags: [device]
+      operationId: getCentralStatus
+      summary: สถานะการเชื่อมต่อ Server กลาง (ESP32 Central Management)
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (resource `devices` action `Read`) ·
+        ติดต่อ Server กลางไม่ได้ **ไม่ใช่ error** ตอบ 200 พร้อม `reachable=false` ·
+        `mode` = `mock` (ค่าเริ่มต้น ข้อมูลตัวอย่าง ไม่ต่อเครือข่าย) หรือ `real`
+        ตาม env `CENTRAL_MODE`
+      responses:
+        "200":
+          description: สถานะการเชื่อมต่อ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralStatus"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
+  /central/devices:
+    get:
+      tags: [device]
+      operationId: listCentralDevices
+      summary: รายการกล่องทั้งหมดที่ Server กลางรู้จัก (อ่านอย่างเดียว)
+      description: >-
+        ผสมข้อมูลออนไลน์จาก ws-gateway กับทะเบียนจาก delivery-server · ผลถูก cache
+        ไม่กี่วินาที · `devices` เป็นรายการว่างเมื่อ `reachable=false`
+      responses:
+        "200":
+          description: รายการกล่อง
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CentralDeviceList"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
+  /devices/{deviceId}/central:
+    get:
+      tags: [device]
+      operationId: getDeviceCentral
+      summary: สถานะจริงของอุปกรณ์เครื่องเดียวจาก Server กลาง
+      description: >-
+        เครื่องที่ Server กลางไม่รู้จักตอบ 200 พร้อม `device=null` (ไม่ใช่ 404 เพราะ
+        ระบบเราอาจลงทะเบียนเครื่องไว้ก่อนที่กล่องจะเชื่อมต่อ) · `{deviceId}` คือเลขเครื่อง
+        (`Device.deviceId`) เดียวกับที่กล่องใช้ตอนต่อ Server กลาง
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: สถานะของเครื่องนี้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCentralView"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ devices Read
+
   /devices/{deviceId}/test-connection:
     post:
       tags: [device]
@@ -2209,14 +2278,21 @@ paths:
     post:
       tags: [incident]
       operationId: decideFieldIncidentReport
-      summary: Operation ตัดสินใจ field report ที่ยัง open (Field Incident Report — issue #236, v3.47)
+      summary: Operation ตัดสินใจ field report หรือปิด Incident ที่ระบบสร้างเองด้วยมือ (issue #236, v3.47)
       description: >-
         resource `incidents` action `Approve` (ไม่สร้าง action ใหม่ —
         `ActionType` เป็น Prisma enum จริง ทุกจุดที่ Operation ตัดสินใจใน
         ระบบนี้ใช้ `Approve` ตัวเดียวกันเสมอไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ
-        mirror `approveDeviceConfigOverride`) ใช้ได้เฉพาะ Incident ที่
-        `source: field-report` และยังเป็น `status: open` เท่านั้น — `outcome`
-        มี 3 แบบ: `resolve` (แก้ปัญหาจริงแล้วนอกเหนือ Campaign →
+        mirror `approveDeviceConfigOverride`) ใช้ได้กับ Incident 2 กลุ่ม:
+        (1) `source: field-report` ที่ยังเป็น `status: open` ได้ทั้ง 3 outcome
+        (2) Incident ที่ระบบสร้างเอง (`rollout-failure`, `config-sync-writer`
+        ฯลฯ) ที่เป็น `status: open` หรือ `investigating` ปิดด้วยมือได้เฉพาะ
+        `resolve`/`dismiss` (`promote` ได้ 400 — Rollout มีทาง Rollback ของ
+        ตัวเองอยู่แล้ว) ใช้เมื่อระบบปิดให้เองไม่ได้ เช่น Rollout จบแต่มีเครื่อง
+        ล้มและไม่มีใคร resume · ไม่มีผู้รายงานจึงไม่ส่ง notification · ปิดแล้วไม่
+        เปิดคืนเอง ยกเว้น Rollout เดิมล้มซ้ำ · ลง Audit Log ทุกครั้ง (กลุ่ม (2)
+        มี `incidentSource` ใน metadata) — `outcome` มี 3 แบบ: `resolve`
+        (แก้ปัญหาจริงแล้วนอกเหนือ Campaign →
         `status: resolved`), `dismiss` (ไม่ใช่ปัญหาจริง/ซ้ำ →
         `status: dismissed`), `promote` (ต้องแก้ด้วย Campaign →
         `status: investigating` คืน `device.deviceModel`/`device.protocol`
@@ -2248,16 +2324,65 @@ paths:
               schema:
                 $ref: "#/components/schemas/IncidentDecisionResult"
         "400":
-          description: ไม่ส่ง note มา หรือ outcome ไม่อยู่ใน enum (resolve/dismiss/promote)
+          description: >-
+            ไม่ส่ง note มา, outcome ไม่อยู่ใน enum (resolve/dismiss/promote)
+            หรือขอ `promote` กับ Incident ที่ระบบสร้างเอง
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ตัดสินใจ field report — เฉพาะ Role Operation เท่านั้น
+          description: ไม่มีสิทธิ์ตัดสินใจหรือปิด Incident — เฉพาะ Role Operation เท่านั้น
         "404":
-          description: ไม่พบ Incident นี้ หรือไม่ใช่ field report (`source` อื่น ใช้ Rollback แทน)
+          description: ไม่พบ Incident นี้
         "409":
           description: >-
-            Incident นี้ถูกตัดสินใจไปแล้ว (ไม่ใช่ `status: open` อีกต่อไป)
+            Incident นี้ถูกตัดสินใจ/ปิดไปแล้ว (field report: ไม่ใช่ `open`
+            อีกต่อไป · Incident ที่ระบบสร้างเอง: ไม่ใช่ `open` หรือ
+            `investigating` อีกต่อไป)
+
+  /incidents/{id}/retry-sync:
+    post:
+      tags: [incident]
+      operationId: retryIncidentConfigSync
+      summary: Operation สั่งเขียน Config เข้าระบบปลายทางใหม่ จาก Incident ที่เขียนไม่สำเร็จ
+      description: >-
+        resource `incidents` action `Approve` (ตัวเดียวกับ `decideFieldIncidentReport`)
+        ใช้ได้เฉพาะ Incident ที่ `source: config-sync-writer` และเป็น `status: open`
+        หรือ `investigating` · เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้
+        (`ConfigVersion` ตาม `metadata.versionNumber`) ไม่ใช่ค่าปัจจุบันของ
+        Config · ตอบทันทีว่าสั่งแล้วโดยตั้งสถานะเป็น `investigating` (เขียนจริง
+        ทำเบื้องหลังเหมือนตอน approve): สำเร็จ -> ระบบปิด Incident ให้เองเป็น
+        `resolved` พร้อมหมายเหตุปิดอัตโนมัติ, ล้มอีก -> อัปเดต Incident เดิมกลับ
+        เป็น `open` พร้อมรวมจำนวนครั้ง (ไม่สร้างรายการซ้ำ) · ลง Audit Log
+        (action `retry-sync`) ตอนนี้ระบบปลายทางเป็นโหมด mock
+        (`LEGACY_SYNC_MODE`) จึงสำเร็จเสมอจนกว่าจะต่อระบบจริง
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: สั่งเขียนใหม่แล้ว — คืน Incident ที่เปลี่ยนเป็น `investigating`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          description: >-
+            ไม่ใช่ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทาง หรือ
+            Incident นี้ไม่มีข้อมูล Config/เวอร์ชันที่ต้องเขียนซ้ำ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบ Incident นี้ หรือไม่พบ Config เวอร์ชันที่ต้องเขียน
+        "409":
+          description: >-
+            Incident นี้ปิดไปแล้ว หรือกำลังลองเขียนอยู่แล้ว (สถานะ `investigating` รอผลก่อน)
+            หรือถูกคำขออื่นสั่งเขียนไปพร้อมกัน
 
   /audit-logs:
     get:
@@ -5265,6 +5390,139 @@ components:
                   type: string
                 protocol:
                   type: string
+
+    CentralLastCommand:
+      type: object
+      required: [commandId, action, target, status, errorCode, updatedAt]
+      properties:
+        commandId:
+          type: string
+        action:
+          type: string
+          description: เช่น `UPDATE_CONFIG`, `UPDATE_FIRMWARE`
+        target:
+          type: string
+          nullable: true
+          description: เวอร์ชันเป้าหมายเป็นข้อความ เช่น `3` หรือ `1.0.1` (config หรือ firmware ตาม action)
+        status:
+          type: string
+          description: >-
+            PENDING, DELIVERED, ACKNOWLEDGED, DOWNLOADING, VALIDATING, INSTALLING,
+            REBOOTING, SUCCESS, FAILED, ROLLED_BACK, EXPIRED (รับค่าใหม่ได้ในอนาคต)
+        errorCode:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CentralDevice:
+      type: object
+      required:
+        - deviceId
+        - hardwareModel
+        - online
+        - lastSeenAt
+        - reportedFirmwareVersion
+        - reportedConfigVersion
+        - reportedSchemaVersion
+        - desiredConfigVersion
+        - registered
+        - lastCommand
+      properties:
+        deviceId:
+          type: string
+        hardwareModel:
+          type: string
+          nullable: true
+        online:
+          type: boolean
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+        reportedFirmwareVersion:
+          type: string
+          nullable: true
+        reportedConfigVersion:
+          type: integer
+          nullable: true
+        reportedSchemaVersion:
+          type: integer
+          nullable: true
+        desiredConfigVersion:
+          type: integer
+          nullable: true
+          description: เวอร์ชัน Config ที่ Server กลางตั้งเป้าไว้ `null` = ยังไม่เคยตั้ง
+        registered:
+          type: boolean
+          description: >-
+            อยู่ในทะเบียนของ delivery-server และยังไม่ถูก revoke หรือไม่ (ไม่อยู่หรือถูก revoke
+            = สั่ง Config ไม่ได้)
+        lastCommand:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CentralLastCommand"
+          nullable: true
+
+    CentralStatus:
+      type: object
+      required: [mode, reachable, error, checkedAt]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+          description: เหตุผลสั้นๆ เมื่อ `reachable=false` (ไม่มี token หรือรหัสผ่าน)
+        checkedAt:
+          type: string
+          format: date-time
+
+    CentralDeviceList:
+      type: object
+      required: [mode, reachable, error, fetchedAt, devices]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/CentralDevice"
+
+    DeviceCentralView:
+      type: object
+      required: [mode, reachable, error, fetchedAt, device]
+      properties:
+        mode:
+          type: string
+          enum: [mock, real]
+        reachable:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+        fetchedAt:
+          type: string
+          format: date-time
+        device:
+          type: object
+          allOf:
+            - $ref: "#/components/schemas/CentralDevice"
+          nullable: true
 
     DeviceStatus:
       type: object

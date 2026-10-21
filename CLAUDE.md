@@ -131,6 +131,7 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 | `NOTIFICATION_MODE` | `mock` (default) \| `fcm` | `notification` module |
 | `DEVICE_SIMULATOR_MODE` | `mock` \| `real` | config/firmware simulation |
 | `API_MOCK_MODE` | `true` (default) \| `false` | Mobile (ค่าเริ่มต้น mock · ต่อ backend จริงส่ง `--dart-define=API_MOCK_MODE=false`) |
+| `CENTRAL_MODE` | `mock` (default) \| `real` | `central-device` module (อ่านสถานะกล่องจาก ESP32 Central Management ของพี่เลี้ยง · `real` ต้องตั้ง `CENTRAL_BASE_URL`, `CENTRAL_ADMIN_USERNAME`, `CENTRAL_ADMIN_PASSWORD`) |
 
 default ต้องเป็น mock เสมอ — โหมดที่ยิงระบบจริงต้องตั้ง env var ชัดเจนถึงจะทำงาน
 
