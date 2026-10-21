@@ -150,15 +150,47 @@ void main() {
     },
   );
 
-  final pages = <String, Widget>{
+  // หน้าฟอร์มที่ย้ายไป design system ใหม่ใน Batch 4 (docs/22 §9) — ปุ่มหลักตาม theme v2
+  // แบบเดียวกับหน้า login ด้านบน
+  final v2Pages = <String, Widget>{
     'Config Override': const ConfigOverridePage(deviceId: 'DEV-0117'),
-    'ทดสอบการตั้งค่า (Simulator)': const SimulatorPage(),
-    'ทดสอบสัญญาณ': const DeviceConnectionTestPage(),
-    'ขอ Firmware Override': const FirmwareOverridePage(deviceId: 'DEV-0117'),
-    'แจ้งปัญหา': const FieldReportPage(),
+    'Firmware Override': const FirmwareOverridePage(deviceId: 'DEV-0117'),
+    'Field Report': const FieldReportPage(),
     'ยืนยันติดตั้ง Firmware': const ConfirmFirmwareInstallPage(
       deviceId: 'DEV-0117',
     ),
+  };
+
+  v2Pages.forEach((name, page) {
+    testWidgets(
+      'ปุ่มหลักหน้า "$name": theme v2 — primary ตัวอักษรขาว มุม 10 สูง ≥ 48',
+      (tester) async {
+        await _pump(tester, page);
+
+        final button = find.byType(FilledButton);
+        expect(button, findsOneWidget, reason: name);
+        final look = _Look(_effectiveStyle(tester, button));
+        expect(look.background, AppColors.primary, reason: '$name: $look');
+        expect(
+          look.foreground,
+          AppColors.primaryForeground,
+          reason: '$name: $look',
+        );
+        expect(
+          look.shape,
+          const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+          ),
+          reason: '$name: $look',
+        );
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      },
+    );
+  });
+
+  final pages = <String, Widget>{
+    'ทดสอบการตั้งค่า (Simulator)': const SimulatorPage(),
+    'ทดสอบสัญญาณ': const DeviceConnectionTestPage(),
   };
 
   pages.forEach((name, page) {
