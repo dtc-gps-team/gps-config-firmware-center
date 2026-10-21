@@ -65,8 +65,8 @@ void main() {
 
 /// Logout อยู่ในแผ่นบัญชีผู้ใช้ (ปุ่ม avatar บนหัวหน้าระดับแท็บ docs/22 §7.2) +
 /// ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`, มีคิวค้าง =
-/// `logout_unsynced_confirm`) · หน้า Device Search (แท็บแรกของ Operation) ยังไม่
-/// ย้าย design (Batch 4) จึงยังไม่มี avatar — สลับไปแท็บแจ้งเตือนก่อน
+/// `logout_unsynced_confirm`) · ทุกหน้าระดับแท็บมี avatar แล้ว (Device Search ย้าย
+/// design ใน Batch 4) — ถ้าหน้าปัจจุบันไม่มีปุ่ม (เช่นอยู่หน้าลูก) สลับไปแท็บแจ้งเตือนก่อน
 Future<void> _logout(WidgetTester tester) async {
   final account = find.byKey(const Key('account_button'));
   if (account.evaluate().isEmpty) {
