@@ -221,7 +221,7 @@ Phase 1 ทำทีหลังได้โดยไม่รื้อของ
 **Q3 — cleanup:** ลบอัตโนมัติ (เช่น job ตามรอบ decommission + revoke กล่องจำลองที่ `lastSeenAt` เก่ากว่า **30 วัน** หรือไม่เคยติดต่อ
 เลยภายใน 30 วันหลังสร้าง) หรือให้ลบมือ (§4.1.4) อย่างเดียว
 
-**Q4 (ใหม่ 21 ต.ค., ยังไม่มีแผน) — ระบบเราสั่ง Config / Firmware ไปที่ delivery-server:** ดู §12.3
+**Q4 (ใหม่ 21 ต.ค.) — ระบบเราสั่งงานไปที่ delivery-server:** ส่วน Config มีแผนแล้วใน #362 · ส่วน Firmware และการจำกัดสิทธิ์ credential ยังเปิดอยู่ ดู §12.3
 
 ---
 
@@ -403,17 +403,28 @@ SUCCESS) · PENDING / DELIVERED / EXPIRED เป็นสถานะของ g
   (อนุมัติได้เฉพาะ Operation) และ AuditLog ซึ่ง Web Admin นั้นไม่มี ถ้าใช้ทั้งสองที่จะมีหน้าจัดการสองแห่งที่ข้ามขั้นตอนอนุมัติกันได้
 - เชื่อมกันผ่าน API เท่านั้น
 
-### 12.3 คำถามเปิดใหม่ (future work, ยังไม่ได้ออกแบบ)
+### 12.3 ระบบเราสั่งงานไปที่ delivery-server (Config มีแผนแล้ว · Firmware / credential ยังเปิดอยู่)
 
-> **ยังไม่มีแผน** — บันทึกไว้ตามที่พี่เลี้ยงเตือน
+> **ส่วน Config มีแผนแล้ว → #362** (A, `feat(rollout): โหมด central ส่ง Config ไปกล่องผ่าน Server กลางจาก Rollout`)
+> · **ส่วน Firmware และการจำกัดสิทธิ์ credential ยังเป็นคำถามเปิด**
 
-- ตอนนี้ระบบเราเชื่อมกับ `arduino_gps` แบบ**อ่านอย่างเดียว** (#359: `GET /central/status`, `/central/devices`,
-  `/devices/{id}/central`) ส่วนการสั่ง Config / Firmware ให้กล่อง ESP32 ยังต้องทำที่ Web Admin หรือ Admin API ของ
-  `delivery-server` โดยตรง ซึ่งข้ามการอนุมัติและ AuditLog ของเรา
-- ถ้า ESP32 กลายเป็นอุปกรณ์ที่ใช้งานจริง ระบบเราต้องมีทาง**เขียน/สั่งงาน**ไปที่ `delivery-server` เช่น
-  `PUT /api/admin/devices/{id}/config` และ `POST /api/admin/devices/{id}/firmware` **หลัง** Config / Firmware ผ่านการอนุมัติ
-  ของ Operation ในระบบเราแล้ว
-- เรื่องที่ต้องตัดสินตอนออกแบบ: ใครเป็นเจ้าของงานส่วนนี้ (backend `central-device` ของ A หรือ `config-sync-writer` ร่วม) ·
-  credential ของ `delivery-server` ที่ตอนนี้มีสิทธิ์เต็ม (#359) · จับคู่ Config / Schema ของเรากับ schema ของ `delivery-server` ·
-  การรายงานผลกลับ (สถานะคำสั่ง 11 สถานะใน §11.4) · ไม่ให้ admin สั่งตรงที่ `delivery-server` อีกเมื่อมีทางผ่านระบบเรา
-- ไม่อยู่ในขอบเขตของ `docs/24` — แยกเป็นเอกสาร/งานใหม่เมื่อมีการตัดสินใจว่า ESP32 จะใช้งานจริง
+**ที่ #362 ทำ (เฉพาะ Config):**
+- โหมดใหม่ `DEVICE_CONFIG_APPLY_MODE=central` (ต้องตั้ง `CENTRAL_MODE=real` คู่กันถึงจะส่งถึงกล่องจริง): หลัง Operation
+  อนุมัติและปล่อย Campaign Rollout backend สั่ง `PUT /api/admin/devices/{id}/config` ของ `delivery-server` ทีละเครื่อง
+  ผ่านขั้นอนุมัติและ AuditLog (`apply-config` พร้อมรหัสคำสั่ง) ของระบบเรา
+- แปลง Config ของเราตาม schema ที่กล่อง**รายงานว่ารันอยู่จริง** (`GET /api/admin/schemas/{model}/{version}`) — คีย์ที่ schema
+  ไม่มีหรือค่าที่แปลงชนิดไม่ได้ ไม่ส่งทั้งชุด · ช่วงค่า (min/max) ให้ `delivery-server` ตรวจ
+- เก็บรหัสคำสั่งที่ `CampaignRolloutTarget.centralCommandId` แล้วถามผล `GET /api/gw/jobs/{id}` ทุก 4 วินาที แปลงผลตาม
+  ตาราง §11.4: SUCCESS → success · FAILED / ROLLED_BACK / DEVICE_NO_RESPONSE → failed (นับ Auto Pause) ·
+  DEVICE_OFFLINE / TTL_EXPIRED / SUPERSEDED / CANCELLED → skipped_offline (ไม่นับล้มเหลว)
+- ไม่รู้จักกล่อง / ไม่อยู่ในทะเบียน / ติดต่อ Server กลางไม่ได้ → failed ทันทีพร้อมเหตุผล
+- ยังไม่เคยทดสอบสั่ง Config กับกล่องจริง (BOX-0001) — A จะนัดทดสอบพร้อมทีม
+
+**คำถามเปิดที่ยังเหลือ (Q4 ใน §9):**
+1. **Firmware** — #362 ส่งเฉพาะ Config · Rollout แบบ Firmware ยังเป็น `mock` เสมอ ยังไม่มีทางสั่ง
+   `POST /api/admin/devices/{id}/firmware` จากระบบเรา (การอัปโหลด / OTA ให้ ESP32 ยังต้องทำที่ `delivery-server` โดยตรง)
+2. **credential สิทธิ์เต็ม** — ยังใช้บัญชีที่ได้ `ADMIN_TOKEN` ของ `delivery-server` ซึ่งทำได้ทุกอย่าง (ลงทะเบียน / revoke กล่อง,
+   อัปโหลด firmware, ส่ง Config) เก็บใน env เท่านั้น ยังไม่มีการจำกัดสิทธิ์เพิ่ม — ตอนนี้ backend ใช้ทั้งอ่านและสั่ง Config ด้วย
+   credential ตัวเดียวกัน
+3. **ปิดทางสั่งตรง** — เมื่อมีทางผ่านระบบเราแล้ว admin ยังสั่งตรงที่ Web Admin ของ `delivery-server` ได้ ซึ่งข้ามการอนุมัติ ·
+   ยังไม่ได้ตกลงว่าจะห้ามด้วยกติกาทีม หรือจำกัดที่ฝั่ง `delivery-server`
