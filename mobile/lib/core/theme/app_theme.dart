@@ -166,19 +166,31 @@ class AppTheme {
         disabledBorder: inputBorder(AppColors.border),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: buttonSize,
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.primaryForeground,
-          // ตอนกดไม่ได้ — ต่างจาก Web (disabled:opacity-50) โดยตั้งใจ: primary 50%
-          // + ตัวอักษรขาวได้แค่ ~2.2:1 อ่านแทบไม่ออก · พื้น accent (ฟ้าอ่อน ยังบอก
-          // ว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) + ตัวอักษร
-          // mutedForeground ได้ ~5.6:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
-          disabledBackgroundColor: AppColors.accent,
-          disabledForegroundColor: AppColors.mutedForeground,
-          shape: shape,
-          textStyle: buttonText,
-        ),
+        style:
+            FilledButton.styleFrom(
+              minimumSize: buttonSize,
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.primaryForeground,
+              // ตอนกดไม่ได้ — ต่างจาก Web (disabled:opacity-50) โดยตั้งใจ: primary 50%
+              // + ตัวอักษรขาวได้แค่ ~2.2:1 อ่านแทบไม่ออก · พื้น accent (ฟ้าอ่อน ยังบอก
+              // ว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) + ตัวอักษร
+              // mutedForeground ได้ ~5.6:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+              disabledBackgroundColor: AppColors.accent,
+              disabledForegroundColor: AppColors.mutedForeground,
+              shape: shape,
+              textStyle: buttonText,
+            ).copyWith(
+              // พื้น accent กลืนกับพื้นหน้าจอ (~1.05:1) มองไม่เห็นทรงปุ่ม — ขอบฟ้าจาง
+              // (primary 35% ~1.6:1) เฉพาะตอนกดไม่ได้ ให้เห็นทรงชัดขึ้นแต่ยังจางกว่า
+              // ปุ่มที่กดได้ · ตอนกดได้ไม่มีขอบเหมือนเดิม
+              side: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? BorderSide(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                      )
+                    : null,
+              ),
+            ),
       ),
       // variant `outline` ของ Web: ขอบ border พื้น background ตัวอักษร foreground
       outlinedButtonTheme: OutlinedButtonThemeData(

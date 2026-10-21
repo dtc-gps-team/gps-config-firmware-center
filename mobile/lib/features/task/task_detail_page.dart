@@ -640,15 +640,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
         ],
       ),
       // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)
-      // ให้กดได้ง่ายด้วยมือเดียวโดยไม่ต้องเลื่อนจอ — error ของแต่ละปุ่มย้ายมา
-      // อยู่เหนือปุ่มของมันในบาร์นี้ด้วย ไม่ทิ้งไว้บนเนื้อหาด้านบนที่ปุ่มลอยอยู่
-      // ล่างสุดเสมอ (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
+      // ให้กดได้ง่ายด้วยมือเดียวโดยไม่ต้องเลื่อนจอ — error ของปุ่มย้ายมาอยู่เหนือ
+      // แถวปุ่มในบาร์นี้ด้วย ไม่ทิ้งไว้บนเนื้อหาด้านบนที่ปุ่มลอยอยู่ล่างสุดเสมอ
+      // (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
       //
       // docs/21 #11: เดิมสองปุ่มเป็น FilledButton สีเดียวกันขนาดเท่ากัน ไม่รู้ว่าปุ่ม
-      // ไหนสำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว (ไว้ล่างสุดตามกติกา Web) ตอนมีทั้งคู่
+      // ไหนสำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว (ไว้ท้ายสุดตามกติกา Web) ตอนมีทั้งคู่
       // "ยืนยันส่ง Config เข้าเครื่อง" เป็นปุ่มหลัก เพราะเป็นงานเฉพาะของใบงานติดตั้ง
-      // ส่วน "บันทึกสถานะ" ลดเป็น outline (ขนาดเท่าเดิม สูง 48 เต็มความกว้าง) ·
-      // มีปุ่มเดียวเมื่อไหร่ ปุ่มนั้นเป็นปุ่มหลัก
+      // ส่วน "บันทึกสถานะ" ลดเป็น outline · สองปุ่มวางเคียงกัน (ปุ่มหลักขวา) สูง 48
+      // ดู `_BottomActionBar` · มีปุ่มเดียวเมื่อไหร่ ปุ่มนั้นเป็นปุ่มหลักเต็มความกว้าง
       bottomNavigationBar: (canEditStatus || canConfirmInstall)
           ? DecoratedBox(
               decoration: const BoxDecoration(
@@ -658,35 +658,32 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
               child: SafeArea(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (canEditStatus)
-                        _StatusSaveBar(
-                          error: _saveError,
-                          saving: _saving,
-                          primary: !canConfirmInstall,
-                          onPressed: (!_dirty || _saving) ? null : _save,
-                        ),
-                      if (canEditStatus && canConfirmInstall)
-                        const SizedBox(height: 12),
-                      if (canConfirmInstall)
-                        _ConfirmInstallBar(
-                          error: _confirmInstallError,
-                          confirming: _confirmingInstall,
-                          confirmed: _installConfirmed,
-                          blockedMessage: _simulationBlocked
-                              ? 'ผลทดสอบกับ Device Simulator ไม่ผ่าน — ส่ง Config '
-                                    'ไม่ได้จนกว่าจะทดสอบซ้ำแล้วผ่าน'
-                              : null,
-                          onPressed:
-                              (_confirmingInstall ||
-                                  _installConfirmed ||
-                                  _simulationBlocked)
-                              ? null
-                              : _confirmInstall,
-                        ),
-                    ],
+                  child: _BottomActionBar(
+                    save: canEditStatus
+                        ? _StatusSaveBar(
+                            error: _saveError,
+                            saving: _saving,
+                            primary: !canConfirmInstall,
+                            onPressed: (!_dirty || _saving) ? null : _save,
+                          )
+                        : null,
+                    confirm: canConfirmInstall
+                        ? _ConfirmInstallBar(
+                            error: _confirmInstallError,
+                            confirming: _confirmingInstall,
+                            confirmed: _installConfirmed,
+                            blockedMessage: _simulationBlocked
+                                ? 'ผลทดสอบกับ Device Simulator ไม่ผ่าน — ส่ง Config '
+                                      'ไม่ได้จนกว่าจะทดสอบซ้ำแล้วผ่าน'
+                                : null,
+                            onPressed:
+                                (_confirmingInstall ||
+                                    _installConfirmed ||
+                                    _simulationBlocked)
+                                ? null
+                                : _confirmInstall,
+                          )
+                        : null,
                   ),
                 ),
               ),
@@ -738,13 +735,115 @@ class _ButtonSpinner extends StatelessWidget {
   }
 }
 
-class _StatusSaveBar extends StatelessWidget {
+/// แถบปุ่มล่าง — มีปุ่มเดียว: เต็มความกว้าง · มีสองปุ่ม: เคียงกันแถวเดียว
+/// (บันทึกสถานะ = รอง ซ้าย 2 ส่วน, ส่ง Config = หลัก ขวา 3 ส่วน ตามกติกา Web ที่ปุ่ม
+/// หลักอยู่ท้าย) ข้อความแจ้งเตือนของทั้งสองปุ่มอยู่เหนือแถวปุ่มเต็มความกว้าง
+///
+/// เดิมสองปุ่มวางซ้อนกัน แถบสูง ~156dp (17% ของจอโทรศัพท์) บังเนื้อหา · แถวเดียว
+/// เหลือ ~96dp · ถ้า label ไม่พอบรรทัดเดียวในความกว้างที่ได้ (จอแคบ / ผู้ใช้ตั้ง
+/// ตัวอักษรใหญ่) กลับไปวางซ้อนแบบเดิม — **ไม่ย่อหรือตัดข้อความ** และปุ่มยังสูง 48
+class _BottomActionBar extends StatelessWidget {
+  const _BottomActionBar({this.save, this.confirm});
+
+  final _StatusSaveBar? save;
+  final _ConfirmInstallBar? confirm;
+
+  static const _gap = 8.0;
+  static const _saveFlex = 2;
+  static const _confirmFlex = 3;
+
+  /// ระยะขอบซ้ายขวาในปุ่ม (ค่าเริ่มต้นของ Material 3 ที่สเกลตัวอักษรปกติ) —
+  /// ใช้ค่าสูงสุดเผื่อไว้ สเกลใหญ่ Material ลดระยะลงเองซึ่งยิ่งพอ
+  static const _buttonHorizontalPadding = 24.0 * 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final save = this.save;
+    final confirm = this.confirm;
+    if (save == null || confirm == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...?save?.notices(),
+          ?save?.button(),
+          ...?confirm?.notices(),
+          ?confirm?.button(),
+        ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sideBySide = _fitsSideBySide(context, constraints.maxWidth);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: sideBySide
+              ? [
+                  ...save.notices(),
+                  ...confirm.notices(),
+                  Row(
+                    children: [
+                      Expanded(flex: _saveFlex, child: save.button()),
+                      const SizedBox(width: _gap),
+                      Expanded(flex: _confirmFlex, child: confirm.button()),
+                    ],
+                  ),
+                ]
+              : [
+                  ...save.notices(),
+                  save.button(),
+                  const SizedBox(height: 12),
+                  ...confirm.notices(),
+                  confirm.button(),
+                ],
+        );
+      },
+    );
+  }
+
+  /// label ยาวสุดของแต่ละปุ่มพอบรรทัดเดียวในส่วนของตัวเองไหม — วัดด้วยฟอนต์ /
+  /// สเกลตัวอักษรจริงของเครื่อง (ไม่เดาจากความกว้างจอ)
+  bool _fitsSideBySide(BuildContext context, double maxWidth) {
+    final theme = Theme.of(context);
+    final style = (theme.textTheme.labelLarge ?? const TextStyle()).merge(
+      theme.filledButtonTheme.style?.textStyle?.resolve({}),
+    );
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    double labelWidth(String text) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final available = maxWidth - _gap;
+    const total = _saveFlex + _confirmFlex;
+    final saveWidth = available * _saveFlex / total;
+    final confirmWidth = available * _confirmFlex / total;
+    return labelWidth(_StatusSaveBar.label) + _buttonHorizontalPadding <=
+            saveWidth &&
+        _ConfirmInstallBar.labels
+            .map(labelWidth)
+            .every((w) => w + _buttonHorizontalPadding <= confirmWidth);
+  }
+}
+
+class _StatusSaveBar {
   const _StatusSaveBar({
     required this.error,
     required this.saving,
     required this.primary,
     required this.onPressed,
   });
+
+  static const label = 'บันทึกสถานะ';
 
   final String? error;
   final bool saving;
@@ -754,29 +853,25 @@ class _StatusSaveBar extends StatelessWidget {
   final bool primary;
   final VoidCallback? onPressed;
 
-  @override
-  Widget build(BuildContext context) {
+  List<Widget> notices() => [
+    if (error != null)
+      _BarNotice(message: error!, textKey: const Key('task_status_error')),
+  ];
+
+  Widget button() {
     const key = Key('task_status_save');
     final child = saving
         ? _ButtonSpinner(
             color: primary ? AppColors.primaryForeground : AppColors.foreground,
           )
-        : const Text('บันทึกสถานะ');
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (error != null)
-          _BarNotice(message: error!, textKey: const Key('task_status_error')),
-        primary
-            ? FilledButton(key: key, onPressed: onPressed, child: child)
-            : OutlinedButton(key: key, onPressed: onPressed, child: child),
-      ],
-    );
+        : const Text(label, maxLines: 1);
+    return primary
+        ? FilledButton(key: key, onPressed: onPressed, child: child)
+        : OutlinedButton(key: key, onPressed: onPressed, child: child);
   }
 }
 
-class _ConfirmInstallBar extends StatelessWidget {
+class _ConfirmInstallBar {
   const _ConfirmInstallBar({
     required this.error,
     required this.confirming,
@@ -794,37 +889,31 @@ class _ConfirmInstallBar extends StatelessWidget {
   /// blocked). Shown above the button.
   final String? blockedMessage;
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (blockedMessage != null)
-          _BarNotice(
-            message: blockedMessage!,
-            textKey: const Key('simulate_blocked_message'),
-            icon: Icons.block,
-          ),
-        if (error != null)
-          _BarNotice(
-            message: error!,
-            textKey: const Key('confirm_install_error'),
-          ),
-        FilledButton(
-          key: const Key('confirm_install_button'),
-          onPressed: onPressed,
-          child: confirming
-              ? const _ButtonSpinner(color: AppColors.primaryForeground)
-              : Text(
-                  confirmed
-                      ? 'ส่ง Config เข้าเครื่องแล้ว'
-                      : 'ยืนยันส่ง Config เข้าเครื่อง',
-                ),
-        ),
-      ],
-    );
-  }
+  static const _label = 'ยืนยันส่ง Config เข้าเครื่อง';
+  static const _confirmedLabel = 'ส่ง Config เข้าเครื่องแล้ว';
+
+  /// ทุก label ที่ปุ่มนี้แสดงได้ — `_BottomActionBar` วัดทุกตัวเพื่อไม่ให้แถบ
+  /// สลับ layout ไปมาตอนข้อความเปลี่ยน
+  static const labels = [_label, _confirmedLabel];
+
+  List<Widget> notices() => [
+    if (blockedMessage != null)
+      _BarNotice(
+        message: blockedMessage!,
+        textKey: const Key('simulate_blocked_message'),
+        icon: Icons.block,
+      ),
+    if (error != null)
+      _BarNotice(message: error!, textKey: const Key('confirm_install_error')),
+  ];
+
+  Widget button() => FilledButton(
+    key: const Key('confirm_install_button'),
+    onPressed: onPressed,
+    child: confirming
+        ? const _ButtonSpinner(color: AppColors.primaryForeground)
+        : Text(confirmed ? _confirmedLabel : _label, maxLines: 1),
+  );
 }
 
 /// แถว "อุปกรณ์" ที่กดไปหน้ารายละเอียดอุปกรณ์ได้ — กดได้ทั้งแถว สูงอย่างน้อย

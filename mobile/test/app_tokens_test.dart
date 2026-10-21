@@ -207,6 +207,22 @@ void main() {
           .resolve(disabled);
       expect(bg, isNot(outlineBg));
     });
+
+    // พื้น accent กลืนกับพื้นหน้าจอ (~1.05:1) มองไม่เห็นทรงปุ่ม — ใส่ขอบฟ้าจาง
+    // (primary 35%) ตอนกดไม่ได้เท่านั้น ให้เห็นทรงชัดขึ้นแต่ยังไม่เข้มเท่าปุ่มที่
+    // กดได้ · ตอนกดได้ไม่มีขอบเหมือนเดิม
+    test('ปุ่มหลักตอนกดไม่ได้มีขอบฟ้าจาง ตอนกดได้ไม่มีขอบ', () {
+      final side = theme.filledButtonTheme.style!.side!;
+      final disabledSide = side.resolve({WidgetState.disabled})!;
+      expect(disabledSide.color, AppColors.primary.withValues(alpha: 0.35));
+      expect(disabledSide.width, 1);
+      final onPage = Color.alphaBlend(disabledSide.color, AppColors.background);
+      expect(
+        _contrast(onPage, AppColors.background),
+        greaterThan(_contrast(AppColors.accent, AppColors.background)),
+      );
+      expect(side.resolve({}), isNull);
+    });
   });
 
   testWidgets(

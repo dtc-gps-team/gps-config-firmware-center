@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
@@ -776,6 +778,15 @@ void main() {
   });
 
   group('Bottom action bar', () {
+    // แถบล่างวัดความกว้าง label ด้วยฟอนต์จริง (ตัดสินว่าวางเคียงกันได้ไหม) —
+    // ฟอนต์ทดสอบของ flutter_test กว้าง 1em ทุกตัวอักษร ยาวเกินจริงหลายเท่า โหลด
+    // Anuphan จริงแบบเดียวกับ large_text_layout_test.dart
+    setUpAll(() async {
+      final loader = FontLoader(AppTypography.fontFamily)
+        ..addFont(rootBundle.load('assets/fonts/Anuphan[wght].ttf'));
+      await loader.load();
+    });
+
     testWidgets(
       'ทั้ง 2 ปุ่มโชว์พร้อมกันได้จริง (ST + in_progress + configId/deviceId '
       'ครบ) -> เรียงกันเป็น Column ไม่ซ้อนทับ, ไม่ต้อง scroll หาปุ่มเลย',
@@ -793,15 +804,118 @@ void main() {
         expect(find.byKey(const Key('task_status_save')), findsOneWidget);
         expect(_confirmInstallButton, findsOneWidget);
 
-        final saveOffset = tester.getTopLeft(
-          find.byKey(const Key('task_status_save')),
-        );
-        final confirmOffset = tester.getTopLeft(_confirmInstallButton);
-        // เรียงบน-ล่าง (Column) ไม่ใช่ซ้อนทับกันที่ตำแหน่งเดียวกัน — บันทึก
-        // สถานะอยู่บน, ส่ง Config อยู่ล่าง
-        expect(saveOffset.dy, lessThan(confirmOffset.dy));
+        final save = tester.getRect(find.byKey(const Key('task_status_save')));
+        final confirm = tester.getRect(_confirmInstallButton);
+        // ไม่ซ้อนทับกัน — บันทึกสถานะซ้าย, ส่ง Config (ปุ่มหลัก) ขวา
+        expect(save.overlaps(confirm), isFalse);
+        expect(save.right, lessThanOrEqualTo(confirm.left));
       },
     );
+
+    group('2 ปุ่มบนจอโทรศัพท์ (411dp): เคียงกันแถวเดียว แถบเตี้ยลง', () {
+      // เดิมวางซ้อน 2 แถว แถบสูง ~156dp (17% ของจอ) บังเนื้อหา · ตอนนี้แถวเดียว
+      // บันทึกสถานะ (รอง) ซ้าย 2 ส่วน, ส่ง Config (หลัก) ขวา 3 ส่วน สูง 48 เท่าเดิม
+      void phoneView(WidgetTester tester, {double textScale = 1}) {
+        tester.view.physicalSize = const Size(1080, 2424);
+        tester.view.devicePixelRatio = 2.625;
+        tester.platformDispatcher.textScaleFactorTestValue = textScale;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      }
+
+      Future<void> pumpBoth(WidgetTester tester) => _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        role: UserRole.st,
+      );
+
+      testWidgets('แถวเดียวกัน สูง 48 ปุ่มหลักขวาและกว้างกว่า ชิดขอบ 16', (
+        tester,
+      ) async {
+        phoneView(tester);
+        await pumpBoth(tester);
+
+        final save = tester.getRect(find.byKey(const Key('task_status_save')));
+        final confirm = tester.getRect(_confirmInstallButton);
+        final width =
+            tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+        expect(save.top, confirm.top);
+        expect(save.height, 48);
+        expect(confirm.height, 48);
+        expect(save.left, 16);
+        expect(confirm.right, width - 16);
+        expect(confirm.left - save.right, 8);
+        expect(confirm.width, greaterThan(save.width));
+        // label ทั้งสองอยู่บรรทัดเดียว (ไม่ตัดขึ้นบรรทัดใหม่จนปุ่มสูงเกิน)
+        expect(
+          tester.getSize(find.text('ยืนยันส่ง Config เข้าเครื่อง')).height,
+          lessThan(32),
+        );
+      });
+
+      testWidgets('ตัวอักษรใหญ่ (×1.6) ไม่พอแถวเดียว -> ซ้อน 2 แถวแบบเดิม '
+          'ไม่ย่อหรือตัดข้อความ', (tester) async {
+        phoneView(tester, textScale: 1.6);
+        await pumpBoth(tester);
+
+        final save = tester.getRect(find.byKey(const Key('task_status_save')));
+        final confirm = tester.getRect(_confirmInstallButton);
+        final width =
+            tester.view.physicalSize.width / tester.view.devicePixelRatio;
+        expect(save.bottom, lessThan(confirm.top));
+        expect(save.width, width - 32);
+        expect(confirm.width, width - 32);
+      });
+
+      testWidgets('error ของทั้งสองปุ่มอยู่เหนือแถวปุ่ม เต็มความกว้าง', (
+        tester,
+      ) async {
+        phoneView(tester);
+        final repo = _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          updateError: ApiException('forbidden', statusCode: 403),
+        );
+        await _pump(tester, repo: repo, role: UserRole.st);
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('task_status_save')));
+        await tester.pump();
+        await tester.pump();
+
+        final error = find.byKey(const Key('task_status_error'));
+        expect(error, findsOneWidget);
+        expect(
+          tester.getBottomLeft(error).dy,
+          lessThan(tester.getTopLeft(_confirmInstallButton).dy),
+        );
+        expect(
+          tester.getBottomLeft(error).dy,
+          lessThan(
+            tester.getTopLeft(find.byKey(const Key('task_status_save'))).dy,
+          ),
+        );
+      });
+
+      testWidgets('ปุ่มเดียว -> เต็มความกว้างเหมือนเดิม', (tester) async {
+        phoneView(tester);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.pending),
+          ),
+          role: UserRole.st,
+        );
+        final save = tester.getRect(find.byKey(const Key('task_status_save')));
+        final width =
+            tester.view.physicalSize.width / tester.view.devicePixelRatio;
+        expect(save.left, 16);
+        expect(save.width, width - 32);
+        expect(save.height, 48);
+      });
+    });
 
     testWidgets(
       'error ของแต่ละปุ่มอยู่เหนือปุ่มของมันเองใน bottom bar (ไม่ใช่ลอยอยู่'
@@ -1106,7 +1220,7 @@ void main() {
   // สำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว ขนาดเท่าเดิม
   group('ปุ่มหลัก/รองในแถบล่าง (docs/21 #11)', () {
     testWidgets(
-      'มีทั้งบันทึกสถานะและส่ง Config -> ส่ง Config เป็นปุ่มหลัก (ล่างสุด) '
+      'มีทั้งบันทึกสถานะและส่ง Config -> ส่ง Config เป็นปุ่มหลัก (ขวาสุด) '
       'บันทึกสถานะเป็น outline สูงเท่ากัน',
       (tester) async {
         await _pump(
@@ -1129,12 +1243,20 @@ void main() {
           ),
           findsOneWidget,
         );
-        // ปุ่มหลักอยู่ล่างสุด ขนาดเท่ากัน (เต็มความกว้าง สูง >= 48)
+        // ปุ่มหลักอยู่ท้าย (ขวา) แถวเดียวกัน สูงเท่ากัน >= 48 — เดิมซ้อนกันโดย
+        // ปุ่มหลักอยู่ล่างสุด เปลี่ยนเป็นเคียงกันเพื่อลดความสูงแถบล่าง
+        expect(
+          tester.getTopLeft(_confirmInstallButton).dx,
+          greaterThan(tester.getTopLeft(save).dx),
+        );
         expect(
           tester.getTopLeft(_confirmInstallButton).dy,
-          greaterThan(tester.getTopLeft(save).dy),
+          tester.getTopLeft(save).dy,
         );
-        expect(tester.getSize(save), tester.getSize(_confirmInstallButton));
+        expect(
+          tester.getSize(save).height,
+          tester.getSize(_confirmInstallButton).height,
+        );
         expect(tester.getSize(save).height, greaterThanOrEqualTo(48));
       },
     );
