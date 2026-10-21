@@ -211,14 +211,8 @@ class _DeviceDetailView extends StatelessWidget {
               AppInfoRow(label: 'รุ่น', value: device.deviceModel),
               AppInfoRow(label: 'โปรโตคอล', value: device.protocol),
               AppInfoRow(label: 'IMEI', value: device.imei),
-              AppInfoRow(
-                label: 'Serial Number',
-                value: device.serialNumber,
-              ),
-              AppInfoRow(
-                label: 'Blackbox ID',
-                value: device.blackboxId,
-              ),
+              AppInfoRow(label: 'Serial Number', value: device.serialNumber),
+              AppInfoRow(label: 'Blackbox ID', value: device.blackboxId),
               AppInfoRow(
                 label: 'ลงทะเบียนเมื่อ',
                 value: _formatDate(device.registeredAt),

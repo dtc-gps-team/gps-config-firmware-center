@@ -800,37 +800,38 @@ void main() {
     });
   });
 
-  testWidgets('มี override เครื่องนี้ -> ป้ายบนหัวหน้าจอ + ชื่อ Config ใน meta', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      repo: _FakeConfigOverrideRepository(
-        config: const DeviceConfigDraft(
-          id: 'cfg-1',
-          name: 'GT06N · ตั้งค่ามาตรฐาน',
-          deviceModel: 'GT06N',
-          protocol: 'TCP',
-          status: ConfigStatus.approved,
-          fields: {'APN': 'internet'},
-          hasDeviceOverride: true,
+  testWidgets(
+    'มี override เครื่องนี้ -> ป้ายบนหัวหน้าจอ + ชื่อ Config ใน meta',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: const DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'GT06N · ตั้งค่ามาตรฐาน',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'APN': 'internet'},
+            hasDeviceOverride: true,
+          ),
         ),
-      ),
-    );
+      );
 
-    expect(
-      find.descendant(
-        of: find.byType(AppPageHeader),
-        matching: find.byKey(const Key('config_override_has_override_badge')),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(AppPageHeader),
-        matching: find.text('GT06N · ตั้งค่ามาตรฐาน'),
-      ),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.byKey(const Key('config_override_has_override_badge')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.text('GT06N · ตั้งค่ามาตรฐาน'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }
