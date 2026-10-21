@@ -11,6 +11,7 @@ import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_info_row.dart';
 import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -137,10 +138,12 @@ class DeviceDetailPage extends ConsumerWidget {
               Expanded(
                 child: deviceAsync.when(
                   skipLoadingOnRefresh: true,
-                  data: (device) => _DeviceDetailView(
-                    device: device,
-                    deviceId: deviceId,
-                    isSt: isSt,
+                  data: (device) => AppFadeIn(
+                    child: _DeviceDetailView(
+                      device: device,
+                      deviceId: deviceId,
+                      isSt: isSt,
+                    ),
                   ),
                   loading: () => const AppDetailSkeleton(
                     lines: 6,

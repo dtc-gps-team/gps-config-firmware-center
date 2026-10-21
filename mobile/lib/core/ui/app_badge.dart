@@ -71,7 +71,8 @@ class AppBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.full),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        // ต่างจาก Web (px-2 py-0.5) — กว้างขึ้นนิด ตัวหนาขึ้น อ่านง่ายบนมือถือ (§4.6)
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -98,7 +99,7 @@ class AppBadge extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTypography.xs,
                   height: AppTypography.xsHeight,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: style.foreground,
                 ),
               ),

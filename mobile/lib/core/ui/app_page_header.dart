@@ -117,7 +117,8 @@ class AppPageHeader extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: AppTypography.xl,
                             height: AppTypography.xlHeight,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: AppTypography.headingTracking,
                             color: AppColors.foreground,
                           ),
                         ),

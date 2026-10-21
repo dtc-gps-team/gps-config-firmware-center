@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 import 'app_tokens.dart';
@@ -63,6 +64,16 @@ class AppTheme {
   static const mockShadowRow = [
     BoxShadow(color: Color(0x0A141822), blurRadius: 2, offset: Offset(0, 1)),
   ];
+
+  /// การเปลี่ยนหน้าแบบจางเข้า + เลื่อนนิดๆ (`FadeForwards` ของ Android 14+) แทน
+  /// Zoom ที่ Android ได้เป็นค่าเริ่มต้น — นุ่มกว่า · ใช้ทั้ง [light] (theme ของ
+  /// MaterialApp ที่ route ใช้จริง) และ [v2]
+  static const pageTransitions = PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    },
+  );
 
   static ThemeData light() => _base(Brightness.light);
   static ThemeData dark() => _base(Brightness.dark);
@@ -158,6 +169,8 @@ class AppTheme {
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.card,
         border: inputBorder(AppColors.inputBorder),
         enabledBorder: inputBorder(AppColors.inputBorder),
         focusedBorder: inputBorder(AppColors.ring, 2),
@@ -196,15 +209,18 @@ class AppTheme {
           textStyle: buttonText,
         ),
       ),
-      cardTheme: CardThemeData(
+      // การ์ดของ Material (ที่ยังไม่ได้เปลี่ยนเป็น AppCard) ให้หน้าตาใกล้ AppCard —
+      // มุม xl ขอบจาง (เงาทำได้แค่ใน AppCard)
+      cardTheme: const CardThemeData(
         color: AppColors.card,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(color: AppColors.foreground.withValues(alpha: 0.2)),
+          borderRadius: BorderRadius.all(Radius.circular(AppRadius.xl)),
+          side: BorderSide(color: AppColors.border),
         ),
       ),
+      pageTransitionsTheme: pageTransitions,
       dividerTheme: const DividerThemeData(
         color: AppColors.border,
         thickness: 1,
@@ -220,6 +236,7 @@ class AppTheme {
     );
     return ThemeData(
       colorScheme: scheme,
+      pageTransitionsTheme: pageTransitions,
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
       ),
