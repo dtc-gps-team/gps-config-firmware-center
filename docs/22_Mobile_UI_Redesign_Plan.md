@@ -3,7 +3,8 @@
 > **สถานะ:** แผน — A (paveekornkwork-dev) รีวิวและ approve แล้ว (#347) · ร่างแรก 19 ต.ค. 2569
 > · ปรับตามการตัดสินใจรอบ 2 ของ B วันเดียวกัน (§3) · อัปเดตตามคำตอบของ A (§10) และมติ §5.2 ของ B วันเดียวกัน
 > (§3 ข้อ 17–18) · อัปเดตตามค่าจริงของ Web หลัง #344 merge (§3 ข้อ 19–21)
-> · **ความคืบหน้า:** Batch 0 merge แล้ว (#346) · **Batch 1 implement แล้วใน #349 (รอ A รีวิว)** ดู §9
+> · **ความคืบหน้า (21 ต.ค. 2569):** Batch 0 (#346), 1 (#349), 2 (#352) และ 3a (#355) merge แล้ว · Batch 3b
+> (#361) รอ merge · **Batch 4 เสร็จ (PR แยก — ย้าย 6 หน้า)** · Batch 5–6 ยังไม่เริ่ม · ดู §9
 >
 > **แทนที่:** `docs/20_Mobile_Redesign_Phase3_Design.md` (มติ B 19 ต.ค. 2569 — token ของ docs/20 ไม่ตรงกับ
 > Web จริง ดู §1)
@@ -325,7 +326,9 @@ enum มี label — ไม่ให้แต่ละหน้าเขีย�
 | `EmptyState` | icon + ข้อความ + ปุ่ม action ชวนทำขั้นต่อไป แทนข้อความลอยๆ | `AppEmptyState` | Batch 2 | แจ้งเตือน, Incidents, รายการงานบนหน้าแรก, Device Search (ไม่พบ) |
 | `skeleton/*` | card-list / detail skeleton แทน "กำลังโหลด…" | `AppListSkeleton`, `AppDetailSkeleton` (แทน `SkeletonCard` เดิม) | Batch 2 | ทุกหน้า list / detail ตอน fetch ครั้งแรก |
 | `Button` variants | `default` (primary) / `outline` / `secondary` / `ghost` / `destructive` / `link` · ปุ่มหลักวางท้ายสุด | `ThemeData` button themes (#349) + `AppButton.variant` (batch แรกที่มีหน้าใช้) | Batch 1 (theme) | ทุกหน้า · ปิด docs/21 ข้อ #11 ใน Batch 5 (Task Detail มี FilledButton 2 ปุ่มเท่ากัน → ปุ่มหลัก 1 + outline 1) |
-| `SensitiveValue` | mask ค่าเป็นค่าเริ่มต้น + ปุ่มแสดง/ซ่อนที่มี label (`sensitive` เป็นแค่ flag การแสดงผล ไม่ใช่การเข้ารหัส) | `AppSensitiveValue` | Batch 4 (Config Override) | Config Override (field ที่ `sensitive`) · ปิด docs/21 ข้อ #20 |
+| `SensitiveValue` | mask ค่าเป็นค่าเริ่มต้น + ปุ่มแสดง/ซ่อนที่มี label (`sensitive` เป็นแค่ flag การแสดงผล ไม่ใช่การเข้ารหัส) | `AppSensitiveValue` (+ `AppRevealToggle` สำหรับช่องกรอก) | Batch 4 (Config Override) ✅ | Config Override (field ที่ `sensitive`) · ปิด docs/21 ข้อ #20 |
+| `Notice` (`components/ui/notice.tsx`) | กล่องข้อความแจ้งในหน้า tone ชุดเดียวกับ Badge (พื้น `*-subtle` ตัวอักษร `*-foreground` ขอบ 30%) แทนกล่องสีที่แต่ละหน้าเขียนเอง | `AppNotice` (+ `AppErrorDetails` สำหรับ error ของฟอร์มที่มีรายการ details) | Batch 4 ✅ (เพิ่มระหว่างทำ ไม่อยู่ในร่างแรก) | error / ส่งสำเร็จ / คำขอที่รออนุมัติ ในทุกหน้าฟอร์มของ Batch 4 |
+| `Label` (`components/ui/label.tsx`) | หัวช่องกรอก `text-sm font-medium` + ส่วนท้ายสีเทา "(บังคับ)" | `AppFieldLabel` | Batch 4 ✅ (เพิ่มระหว่างทำ) | หน้าฟอร์มทุกหน้า (Field Report, Firmware Override, ยืนยันติดตั้ง Firmware, Config Override) |
 | `WizardStepIndicator` | ตัวบอกขั้นของงานหลายขั้น | `AppStepIndicator` | Batch 5 (ถ้าใช้) | Task Detail ส่วน "ส่ง Config เข้าเครื่อง" (ทดสอบกับ Device Simulator → ส่ง) — ตัดสินตอนทำ |
 | (ของเดิม Mobile ที่คงไว้) | `AppErrorView`, `OfflineCacheBanner`, `SyncFailedBanner`, `SyncAuthExpiredBanner` | ย้ายมาใช้ token / `AppBadge` | ตาม batch ของหน้าที่ใช้ | ตามเดิม |
 
@@ -424,15 +427,33 @@ sync `main` ผ่าน CLI ก่อนเปิด/ก่อน merge, ใช
 | Batch | งาน | เงื่อนไขว่าเสร็จ (คร่าวๆ) |
 |---|---|---|
 | 0 | ลบ dead code `simulateConfig()` / `isNumericDataType()` — **#346** (ไม่ได้ตัดหน้าไหน) | merge แล้ว (`9cfa1d1`) |
-| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography` (13 / 15, Anuphan), `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#576171`, ปุ่มตาม variant), mapping สถานะ → tone (§5.2) · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** · **implement แล้วใน #349 (รอ A รีวิว)** + bundle ฟอนต์ Anuphan + `OFL.txt` (APK +≈116 KB — §4.5, §3 ข้อ 21) · **ยังค้าง:** ล็อก `ThemeMode.light` ย้ายไป Batch 6 (§4.2) · ไฟล์ label กลาง (§6) และ `AppButton.variant` ทำใน batch แรกที่มีหน้าใช้จริง | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี tone (เทส label มากับไฟล์ label) |
-| 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว |
-| 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว |
-| 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → **Confirm Firmware Install (317)** → Config Override (722, + `AppSensitiveValue`) · Confirm Firmware Install วางต่อจาก Device Detail ไม่ใช่ตามขนาดไฟล์ เพราะเป็นหน้าลูกที่เปิดจากปุ่มใน Device Detail (§3 ข้อ 17) · แตกหลายใบได้ | เหมือน Batch 2 |
+| 1 | **Token + component กลาง** — `AppColors` (ชื่อตาม Web §4.1), `AppTypography` (13 / 15, Anuphan), `AppTheme.v2()` (โหมดสว่าง, ขอบช่องกรอก `#576171`, ปุ่มตาม variant), mapping สถานะ → tone (§5.2) · สร้าง **`AppBadge`, `AppCard`, `AppPageHeader`** · **ยังไม่แก้หน้าไหนจริง** · **merge แล้ว (#349)** + bundle ฟอนต์ Anuphan + `OFL.txt` (APK +≈116 KB — §4.5, §3 ข้อ 21) · **ยังค้าง:** ล็อก `ThemeMode.light` ย้ายไป Batch 6 (§4.2) · ไฟล์ label กลาง (§6) และ `AppButton.variant` ทำใน batch แรกที่มีหน้าใช้จริง | มีแค่ widget ใหม่ + เทสของ widget เอง · เทส contrast ทุกคู่ใน §4–§5 · ขอบช่องกรอก ≥ 3:1 · เทสว่าทุกค่า enum มี tone (เทส label มากับไฟล์ label) |
+| 2 | **หน้าง่ายก่อน** เพื่อพิสูจน์ pattern: Login → Notifications → Incident List → Incident Detail (+ `AppInfoRow`, `AppEmptyState`, skeleton) · แตกเป็น 2a (Login + Notifications) / 2b (Incidents) ได้ | ใช้ token/component ใหม่ · ไม่มี `Color(0x` ในโมดูล · Key เดิมครบ · E2E เขียว · **merge แล้ว (#352)** |
+| 3 | **หน้าแรกใหม่ + แท็บด้านล่าง** — รวมรายการงานจาก `/tasks`, `StatefulShellRoute` ตาม role (§7.2), ตัด AppBar สีกรมท่าและทางลัดเดิม, avatar/บัญชีผู้ใช้, deep link ของ push เข้าโครงแท็บ · ตัด `/tasks`, `/device-connection-test`, `/pick-device`, **`/simulator`** + ผลพ่วง (§8.1) | หน้าแรกแสดงงานทั้งหมดได้ · ทุกแท็บเปิดได้ตาม role · back ไม่ปิดแอป · ไม่มี link ไป route ที่ถูกตัด · เทส simulator ใน Task Detail ยังผ่าน · เทส + E2E เขียว · **3a merge แล้ว (#355) · 3b รอ merge (#361)** |
+| 4 | **หน้าที่เหลือ เรียงจากง่ายไปซับซ้อน** (วัดจากขนาดไฟล์ตอนนี้): Device Search (256 บรรทัด) → Field Report (291) → Firmware Override (329) → Device Detail (420) → **Confirm Firmware Install (317)** → Config Override (722, + `AppSensitiveValue`) · Confirm Firmware Install วางต่อจาก Device Detail ไม่ใช่ตามขนาดไฟล์ เพราะเป็นหน้าลูกที่เปิดจากปุ่มใน Device Detail (§3 ข้อ 17) · แตกหลายใบได้ | เหมือน Batch 2 · **เสร็จแล้ว — ใบเดียว ครบ 6 หน้า (§9.1)** |
 | 5 | **Task Detail** (หน้าซับซ้อนสุด 909 บรรทัด) — รื้อดีไซน์ทั้งหน้า รวมส่วน "ทดสอบกับ Device Simulator" (ที่เดียวของ Simulator หลังหน้า `/simulator` ถูกลบใน Batch 3) · ปุ่มหลัก/รอง (docs/21 #11) · งาน Step 4.1 ที่เคยอยู่ใน docs/20: แยกข้อความ ออฟไลน์ / 401 / 5xx / 4xx อื่น ยกเว้น 408 และ 429 (ยกเงื่อนไขว่าเสร็จมาทั้งหมด) | เหมือน Batch 2 + เทส simulator ใน Task Detail ผ่าน + เทสแยกกรณี error ครบ |
 | 6 | **ปิดงาน** — สลับ ThemeData ทั้งแอปเป็น v2 + ล็อก `ThemeMode.light` (§4.2) · ลบ token เก่า (`navy`, `mock*` ฯลฯ) และ `AppTheme.dark()` · เทสดัก `Color(0x` นอกไฟล์ token · ปิด docs/21 ข้อ #21, #22, #24 · อัปเดตสถานะใน docs/21 | grep `Color(0x` ใน `lib/` เหลือแค่ไฟล์ token · E2E เขียว |
 
 - ระหว่างทาง (Batch 2–5) ครอบ theme ใหม่เฉพาะหน้าที่ย้ายแล้ว หน้าที่โชว์จะไม่มีสีปนกัน · สลับทั้งแอปใน Batch 6
 - docs/21 ข้อ #7 / #25 (applicationId, keystore, ชื่อแอป, ไอคอน) ไม่อยู่ในแผนนี้ ต้องคุยกับทีมแยก
+
+### 9.1 บันทึกตอนทำ Batch 4 (21 ต.ค. 2569)
+
+- **ครบ 6 หน้า** ตามแถว Batch 4 ด้านบน: Device Search, Field Report, Firmware Override, Device Detail, ยืนยันติดตั้ง
+  Firmware, Config Override (บางที่นับ "5 หน้า" เพราะไม่ได้นับยืนยันติดตั้ง Firmware ที่ §3 ข้อ 17 เพิ่มเข้ามาทีหลัง)
+- **ยืนยันติดตั้ง Firmware มี route เดียว** (`/devices/:id/confirm-firmware` จาก Device Detail) · "ยืนยันติดตั้ง" ที่อยู่ใน Task
+  Detail เป็นการส่ง Config เข้าเครื่อง (`confirm_install_repository.dart`) เป็นส่วนหนึ่งของหน้า Task Detail → **Batch 5**
+- **Device Detail เพิ่มปุ่ม Field Report (ST/OT)** ตามตาราง §8 / §7.2 (เดิมหน้านี้ยังไม่มีปุ่ม) — เปิดฟอร์มพร้อม pre-fill
+  อุปกรณ์ผ่าน `?deviceId=` ที่ route รองรับอยู่แล้ว · ปุ่มทั้งหมดย้ายขึ้น actions ของ `AppPageHeader` (แสดงหลังโหลดเครื่อง
+  สำเร็จเหมือนเดิม) · ชื่อปุ่มตามชื่อหน้า: "Config Override" / "Firmware Override"
+- **label ตาม §6.1:** สถานะเครื่อง `Registered / Installed / Decommissioned` · payload `เป็นปัจจุบัน / รอรับ Config / รอติดตั้ง
+  Firmware / ล้มเหลว / ยังไม่เคยอยู่ใน Rollout` · ระดับความรุนแรงในฟอร์ม Field Report `Critical / High / Medium / Low` · ค่าว่าง
+  ในแถวข้อมูลแสดง `-` ตาม `AppInfoRow` (เดิม `—`)
+- **component ใหม่:** `AppNotice`, `AppFieldLabel`, `AppSensitiveValue` (§7.1) · แก้ `AppPageHeader` ให้ meta ใช้ `Wrap` (label
+  ยาวล้นขอบตอนตัวอักษรใหญ่ — เจอครั้งแรกใน Device Detail ที่ใช้ meta)
+- **`DeviceStatusPill` เหลือเป็นตัวครอบ `AppBadge`** ให้หน้าเลือกอุปกรณ์ของ "ทดสอบสัญญาณ" ที่ #361 (3b) ลบ — ลบไฟล์
+  `device_status_ui.dart` ได้หลัง #361 merge (หรือใน Batch 6)
+- **ยังไม่ลบ token เก่า** (`AppTheme.navy`, `mock*` ฯลฯ) — Task Detail (Batch 5) ยังใช้ ลบใน Batch 6 ตามแผน
 
 ---
 
