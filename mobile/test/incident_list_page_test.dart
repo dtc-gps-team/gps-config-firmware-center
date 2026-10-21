@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/app_card.dart';
@@ -76,9 +77,19 @@ Future<void> _pump(
   await tester.pump(); // resolve listIncidents
 }
 
+class _FixedAuth extends AuthController {
+  _FixedAuth(this._role);
+
+  final UserRole _role;
+
+  @override
+  AuthState build() => AuthState(status: AuthStatus.authenticated, role: _role);
+}
+
 Future<void> _pumpRouted(
   WidgetTester tester, {
   required IncidentRepository repo,
+  UserRole? role,
 }) async {
   final router = GoRouter(
     initialLocation: AppRoutes.incidents,
@@ -99,11 +110,19 @@ Future<void> _pumpRouted(
           body: Text('DEVICE_DETAIL_STUB ${state.pathParameters['deviceId']}'),
         ),
       ),
+      GoRoute(
+        path: AppRoutes.incidentReport,
+        builder: (_, _) => const Scaffold(body: Text('FIELD_REPORT_STUB')),
+      ),
     ],
   );
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [incidentRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        incidentRepositoryProvider.overrideWithValue(repo),
+        if (role != null)
+          authControllerProvider.overrideWith(() => _FixedAuth(role)),
+      ],
       child: MaterialApp.router(routerConfig: router),
     ),
   );
@@ -372,6 +391,50 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('INCIDENT_DETAIL_STUB inc-9'), findsOneWidget);
+    });
+  });
+
+  // docs/22 §7.2 — ปุ่ม Field Report ใน actions ของหัวแท็บ Incidents (เว้นไว้จาก
+  // Batch 2 เพราะรอโครงแท็บ) · ทางลัด "แจ้งปัญหา" บนหน้าแรกเดิมหายไปพร้อมหน้าแรกใหม่
+  group('ปุ่ม Field Report (Batch 3)', () {
+    final button = find.byKey(const Key('incidents_field_report'));
+
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('${role.wireName}: เห็นปุ่ม แตะแล้วไปหน้า Field Report', (
+        tester,
+      ) async {
+        await _pumpRouted(tester, repo: _FakeIncidentRepository(), role: role);
+
+        expect(button, findsOneWidget);
+        expect(
+          find.descendant(of: button, matching: find.text('Field Report')),
+          findsOneWidget,
+        );
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        expect(find.text('FIELD_REPORT_STUB'), findsOneWidget);
+      });
+    }
+
+    testWidgets('Operation: ไม่เห็นปุ่ม (ซ่อน ไม่ใช่ disable)', (tester) async {
+      await _pumpRouted(
+        tester,
+        repo: _FakeIncidentRepository(),
+        role: UserRole.operation,
+      );
+
+      expect(button, findsNothing);
+      expect(find.text('Field Report'), findsNothing);
+    });
+
+    testWidgets('มีปุ่มบัญชีผู้ใช้มุมขวาของหัวแท็บ', (tester) async {
+      await _pumpRouted(
+        tester,
+        repo: _FakeIncidentRepository(),
+        role: UserRole.st,
+      );
+      expect(find.byKey(const Key('account_button')), findsOneWidget);
     });
   });
 }

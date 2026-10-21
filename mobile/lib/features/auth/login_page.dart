@@ -325,7 +325,7 @@ class _MockModeBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: const Text(
-        'API_MOCK_MODE — ล็อกอินด้วย prefix ของ role ได้ทันที (op / st / ot)',
+        'โหมด API_MOCK_MODE ล็อกอินด้วย prefix ของ role ได้ทันที (op / st / ot)',
         key: Key('login_mock_hint'),
         style: TextStyle(
           color: AppColors.mutedForeground,
