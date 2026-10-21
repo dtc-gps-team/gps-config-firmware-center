@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
-import 'package:mobile/core/widgets/skeleton_card.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 
@@ -89,7 +89,7 @@ Future<void> _pumpRouted(
 
 void main() {
   testWidgets(
-    'กำลังโหลดครั้งแรก -> โชว์ SkeletonCard (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
+    'กำลังโหลดครั้งแรก -> โชว์ AppListSkeleton (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
     'skeleton หายไปเหลือแต่การ์ดจริง',
     (tester) async {
       await tester.pumpWidget(
@@ -103,11 +103,11 @@ void main() {
         ),
       );
 
-      expect(find.byType(SkeletonCard), findsWidgets);
+      expect(find.byType(AppListSkeleton), findsWidgets);
       expect(find.byType(CircularProgressIndicator), findsNothing);
 
       await tester.pump(); // resolve listDevices
-      expect(find.byType(SkeletonCard), findsNothing);
+      expect(find.byType(AppListSkeleton), findsNothing);
     },
   );
 
