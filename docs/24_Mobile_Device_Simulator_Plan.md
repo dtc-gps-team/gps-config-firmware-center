@@ -221,6 +221,8 @@ Phase 1 ทำทีหลังได้โดยไม่รื้อของ
 **Q3 — cleanup:** ลบอัตโนมัติ (เช่น job ตามรอบ decommission + revoke กล่องจำลองที่ `lastSeenAt` เก่ากว่า **30 วัน** หรือไม่เคยติดต่อ
 เลยภายใน 30 วันหลังสร้าง) หรือให้ลบมือ (§4.1.4) อย่างเดียว
 
+**Q4 (ใหม่ 21 ต.ค., ยังไม่มีแผน) — ระบบเราสั่ง Config / Firmware ไปที่ delivery-server:** ดู §12.3
+
 ---
 
 ## 10. Token Management สำหรับ Gateway Connection
@@ -384,3 +386,34 @@ SUCCESS) · PENDING / DELIVERED / EXPIRED เป็นสถานะของ g
   เก็บ `url_expires_at` ไว้ให้คำนวณ
 - **แอปขอ manifest ใหม่ทันทีก่อนดาวน์โหลดทุกครั้ง** ไม่เก็บ URL ไว้ใช้ซ้ำข้ามเวลา จึงไม่ต้องพึ่งค่า TTL ที่แน่นอน
 - ตัดสินใจแล้วว่าไม่ต้องหาค่าจริงเพิ่ม ไม่คุ้มกับความซับซ้อนที่ต้องเพิ่มใน Phase 1
+
+## 12. สถานะของ `arduino_gps` และขอบเขตการเชื่อมต่อ (ยืนยันกับพี่เลี้ยง 21 ต.ค. 2569)
+
+### 12.1 สถานะ
+
+- `arduino_gps` (firmware ESP32 + `ws-gateway` + `delivery-server` + `data-monitor`) เป็น**ต้นแบบสาธิต**ในตอนนี้ และเป็น
+  **คนละงาน**กับกล่อง SMARTEYEPLUS / ระบบเดิม `config.dtc.co.th` — ไม่ปรับแกนของระบบตาม ESP32
+- ฝั่งเราเขียนโค้ดให้**พร้อมใช้กับของจริง**: mock mode เป็นค่าเริ่มต้น และเชื่อมกันผ่าน API อย่างเดียว (แบบเดียวกับ `CENTRAL_MODE`
+  ของ #359 และ `token` ใน §10) — พี่เลี้ยงยืนยันว่าแนวทางนี้ถูกแล้ว
+- ออกแบบโดยถือว่า firmware / schema ของกล่องที่ติดตั้งแล้ว**แก้ไม่ได้** (สภาพจริงภาคสนาม) — รายละเอียดอยู่ใน `docs/23` §1
+
+### 12.2 ไม่รวม Web Admin ของ `arduino_gps` เข้ากับ Config & Firmware Center
+
+- ไม่นำหน้า Web Admin ของ `delivery-server` มาใช้หรือฝังในระบบเรา — Config & Firmware Center มี RBAC, Separation of Duty
+  (อนุมัติได้เฉพาะ Operation) และ AuditLog ซึ่ง Web Admin นั้นไม่มี ถ้าใช้ทั้งสองที่จะมีหน้าจัดการสองแห่งที่ข้ามขั้นตอนอนุมัติกันได้
+- เชื่อมกันผ่าน API เท่านั้น
+
+### 12.3 คำถามเปิดใหม่ (future work, ยังไม่ได้ออกแบบ)
+
+> **ยังไม่มีแผน** — บันทึกไว้ตามที่พี่เลี้ยงเตือน
+
+- ตอนนี้ระบบเราเชื่อมกับ `arduino_gps` แบบ**อ่านอย่างเดียว** (#359: `GET /central/status`, `/central/devices`,
+  `/devices/{id}/central`) ส่วนการสั่ง Config / Firmware ให้กล่อง ESP32 ยังต้องทำที่ Web Admin หรือ Admin API ของ
+  `delivery-server` โดยตรง ซึ่งข้ามการอนุมัติและ AuditLog ของเรา
+- ถ้า ESP32 กลายเป็นอุปกรณ์ที่ใช้งานจริง ระบบเราต้องมีทาง**เขียน/สั่งงาน**ไปที่ `delivery-server` เช่น
+  `PUT /api/admin/devices/{id}/config` และ `POST /api/admin/devices/{id}/firmware` **หลัง** Config / Firmware ผ่านการอนุมัติ
+  ของ Operation ในระบบเราแล้ว
+- เรื่องที่ต้องตัดสินตอนออกแบบ: ใครเป็นเจ้าของงานส่วนนี้ (backend `central-device` ของ A หรือ `config-sync-writer` ร่วม) ·
+  credential ของ `delivery-server` ที่ตอนนี้มีสิทธิ์เต็ม (#359) · จับคู่ Config / Schema ของเรากับ schema ของ `delivery-server` ·
+  การรายงานผลกลับ (สถานะคำสั่ง 11 สถานะใน §11.4) · ไม่ให้ admin สั่งตรงที่ `delivery-server` อีกเมื่อมีทางผ่านระบบเรา
+- ไม่อยู่ในขอบเขตของ `docs/24` — แยกเป็นเอกสาร/งานใหม่เมื่อมีการตัดสินใจว่า ESP32 จะใช้งานจริง
