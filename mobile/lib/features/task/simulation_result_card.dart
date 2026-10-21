@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/models.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_notice.dart';
 
 /// ผลจาก `POST /devices/{deviceId}/simulate-config` — หัวข้อรวม (`result.passed`)
 /// แล้วแยกแสดง 3 ส่วน (Config / ความเข้ากันได้ / สัญญาณอุปกรณ์) พร้อม
 /// pass-fail + details ของแต่ละส่วน.
+///
+/// design system ใหม่ (docs/22 Batch 5): อยู่ในการ์ด "ส่ง Config เข้าเครื่อง" ของ
+/// Task Detail จึงเป็น `AppNotice` (ผ่าน = success, ไม่ผ่าน = danger) แทนการ์ดซ้อนการ์ด
 class SimulationResultCard extends StatelessWidget {
   const SimulationResultCard({super.key, required this.result});
 
@@ -12,50 +18,33 @@ class SimulationResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final conn = result.connectionCheck;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  result.passed ? Icons.check_circle : Icons.cancel,
-                  color: result.passed ? Colors.green : scheme.error,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  result.passed ? 'พร้อมติดตั้ง' : 'ยังไม่พร้อมติดตั้ง',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            _CheckBlock(
-              label: 'Config',
-              passed: result.configCheck.passed,
-              details: result.configCheck.details,
-            ),
-            const SizedBox(height: 12),
-            _CheckBlock(
-              label: 'ความเข้ากันได้กับอุปกรณ์',
-              passed: result.compatibilityCheck.passed,
-              details: result.compatibilityCheck.details,
-            ),
-            const SizedBox(height: 12),
-            _CheckBlock(
-              label: 'สัญญาณอุปกรณ์',
-              passed: conn.passed,
-              details: [
-                'แรงสัญญาณ: ${conn.signalStrength} dBm',
-                ...conn.details,
-              ],
-            ),
-          ],
-        ),
+    return AppNotice(
+      tone: result.passed ? AppBadgeTone.success : AppBadgeTone.danger,
+      icon: result.passed ? Icons.check_circle : Icons.cancel,
+      title: result.passed ? 'พร้อมติดตั้ง' : 'ยังไม่พร้อมติดตั้ง',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          _CheckBlock(
+            label: 'Config',
+            passed: result.configCheck.passed,
+            details: result.configCheck.details,
+          ),
+          const SizedBox(height: 8),
+          _CheckBlock(
+            label: 'ความเข้ากันได้กับอุปกรณ์',
+            passed: result.compatibilityCheck.passed,
+            details: result.compatibilityCheck.details,
+          ),
+          const SizedBox(height: 8),
+          _CheckBlock(
+            label: 'สัญญาณอุปกรณ์',
+            passed: conn.passed,
+            details: ['แรงสัญญาณ: ${conn.signalStrength} dBm', ...conn.details],
+          ),
+        ],
       ),
     );
   }
@@ -75,28 +64,43 @@ class _CheckBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              passed ? Icons.check_circle_outline : Icons.cancel_outlined,
-              size: 18,
-              color: passed ? Colors.green : scheme.error,
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: ExcludeSemantics(
+                child: Icon(
+                  passed ? Icons.check_circle_outline : Icons.cancel_outlined,
+                  size: 16,
+                  color: passed
+                      ? AppColors.successForeground
+                      : AppColors.dangerForeground,
+                ),
+              ),
             ),
             const SizedBox(width: 6),
-            Text(
-              '$label — ${passed ? 'ผ่าน' : 'ไม่ผ่าน'}',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            Expanded(
+              child: Text(
+                '$label — ${passed ? 'ผ่าน' : 'ไม่ผ่าน'}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.foreground,
+                ),
+              ),
             ),
           ],
         ),
         for (final line in details)
           Padding(
-            padding: const EdgeInsets.only(left: 24, top: 4),
-            child: Text('• $line'),
+            padding: const EdgeInsets.only(left: 22, top: 2),
+            child: Text(
+              '• $line',
+              style: const TextStyle(color: AppColors.foreground),
+            ),
           ),
       ],
     );

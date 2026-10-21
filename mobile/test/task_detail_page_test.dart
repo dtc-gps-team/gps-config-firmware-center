@@ -11,6 +11,8 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
@@ -240,8 +242,9 @@ GoRouter _taskToDeviceRouter() => GoRouter(
   ],
 );
 
-FilledButton _saveButton(WidgetTester tester) =>
-    tester.widget<FilledButton>(find.byKey(const Key('task_status_save')));
+// Filled หรือ Outlined ตามว่าแถบล่างมีปุ่มส่ง Config ด้วยไหม (docs/21 #11)
+ButtonStyleButton _saveButton(WidgetTester tester) =>
+    tester.widget<ButtonStyleButton>(find.byKey(const Key('task_status_save')));
 
 Finder get _confirmInstallButton =>
     find.byKey(const Key('confirm_install_button'));
@@ -274,7 +277,7 @@ void main() {
       expect(size.height, greaterThanOrEqualTo(48));
     });
 
-    testWidgets('งานไม่มีอุปกรณ์ -> แสดง "—" และไม่มีลิงก์', (tester) async {
+    testWidgets('งานไม่มีอุปกรณ์ -> แสดง "-" และไม่มีลิงก์', (tester) async {
       await _pump(
         tester,
         repo: _FakeTaskRepository(task: _makeTask(deviceId: null)),
@@ -282,7 +285,8 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('task_detail_device_link')), findsNothing);
-      expect(find.text('—'), findsWidgets);
+      // ค่าว่างแสดง "-" ตาม AppInfoRow (docs/22 Batch 4 §9.1 — เดิม "—")
+      expect(find.text('-'), findsWidgets);
     });
   });
 
@@ -836,7 +840,7 @@ void main() {
         role: UserRole.operation,
       );
 
-      // 2 Scaffold ซ้อนกัน (นอก: TaskDetailPage มี AppBar, ใน: _TaskDetailView
+      // 2 Scaffold ซ้อนกัน (นอก: TaskDetailPage มีหัวหน้าจอ, ใน: _TaskDetailView
       // มี bottomNavigationBar) — ตัวที่ deepest คือตัวใน
       final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).last);
       expect(scaffold.bottomNavigationBar, isNull);
@@ -1044,5 +1048,105 @@ void main() {
         },
       );
     }
+  });
+
+  // docs/22 Batch 5 — หัวหน้าจอแบบ AppPageHeader แทน AppBar สีกรมท่า
+  group('หัวหน้าจอ (AppPageHeader)', () {
+    testWidgets('ชื่อหน้า + ป้ายสถานะงานบนหัวหน้าจอ ไม่มี AppBar', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress),
+        ),
+      );
+
+      expect(find.byType(AppBar), findsNothing);
+      final header = find.byType(AppPageHeader);
+      expect(
+        find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.byKey(const Key('task_detail_status_badge')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: header, matching: find.text('กำลังทำ')),
+        findsOneWidget,
+      );
+      expect(AppV2Theme.isActive(tester.element(header)), isTrue);
+    });
+
+    testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" อยู่ข้างป้ายสถานะ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(task: _makeTask()),
+        pendingIds: {'t1'},
+      );
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.byKey(const Key('pending_sync_badge')),
+        ),
+        findsOneWidget,
+      );
+    });
+  });
+
+  // docs/21 #11 — เดิมแถบล่างมี FilledButton 2 ปุ่มหน้าตาเหมือนกัน ไม่รู้ว่าปุ่มไหน
+  // สำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว ขนาดเท่าเดิม
+  group('ปุ่มหลัก/รองในแถบล่าง (docs/21 #11)', () {
+    testWidgets(
+      'มีทั้งบันทึกสถานะและส่ง Config -> ส่ง Config เป็นปุ่มหลัก (ล่างสุด) '
+      'บันทึกสถานะเป็น outline สูงเท่ากัน',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+        );
+
+        final save = find.byKey(const Key('task_status_save'));
+        expect(tester.widget(save), isA<OutlinedButton>());
+        expect(tester.widget(_confirmInstallButton), isA<FilledButton>());
+        // ในแถบล่างมีปุ่มหลัก (FilledButton) ปุ่มเดียว
+        final scaffold = find.byType(Scaffold).last;
+        final bar = tester.widget<Scaffold>(scaffold).bottomNavigationBar!;
+        expect(
+          find.descendant(
+            of: find.byWidget(bar),
+            matching: find.byType(FilledButton),
+          ),
+          findsOneWidget,
+        );
+        // ปุ่มหลักอยู่ล่างสุด ขนาดเท่ากัน (เต็มความกว้าง สูง >= 48)
+        expect(
+          tester.getTopLeft(_confirmInstallButton).dy,
+          greaterThan(tester.getTopLeft(save).dy),
+        );
+        expect(tester.getSize(save), tester.getSize(_confirmInstallButton));
+        expect(tester.getSize(save).height, greaterThanOrEqualTo(48));
+      },
+    );
+
+    testWidgets('มีแค่บันทึกสถานะ -> เป็นปุ่มหลัก', (tester) async {
+      await _pump(tester, repo: _FakeTaskRepository(task: _makeTask()));
+
+      expect(
+        tester.widget(find.byKey(const Key('task_status_save'))),
+        isA<FilledButton>(),
+      );
+      expect(_confirmInstallButton, findsNothing);
+    });
   });
 }

@@ -74,8 +74,9 @@ void main() {
     await binding.takeScreenshot('03-task-detail-updated-st');
 
     // === switch to Operation: งานของช่างต้องไม่โผล่ ===
-    // task detail -> หน้าแรก
-    await tester.pageBack();
+    // task detail -> หน้าแรก · Task Detail ใช้ AppPageHeader แล้ว (docs/22 Batch 5)
+    // ปุ่มย้อนกลับไม่ใช่ BackButton ของ AppBar ที่ `pageBack()` หา
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
     await _logout(tester);
 
