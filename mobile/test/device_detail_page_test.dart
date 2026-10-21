@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/ui/app_info_row.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
@@ -163,9 +164,12 @@ Future<void> _pump(
   await tester.pump(); // resolve getDevice
 }
 
-/// แถวในการ์ดข้อมูลที่มี [label] — ใช้หาค่าของแถวนั้นโดยไม่ชนกับ "—" ของแถวอื่น
+/// แถวในการ์ดข้อมูลที่มี [label] — ใช้หาค่าของแถวนั้นโดยไม่ชนกับ "-" ของแถวอื่น
+/// (แถวเป็น `AppInfoRow` ตั้งแต่ docs/22 Batch 4)
 Finder _rowValue(String label, String value) => find.descendant(
-  of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first,
+  of: find
+      .ancestor(of: find.text(label), matching: find.byType(AppInfoRow))
+      .first,
   matching: find.text(value),
 );
 
@@ -206,16 +210,16 @@ void main() {
       expect(_rowValue('ชื่อบริษัท', 'ขนส่งสมมติ จำกัด'), findsOneWidget);
     });
 
-    testWidgets('เป็น null ทั้งหมด -> แสดง "—" ทุกแถว ไม่ซ่อนแถว ไม่ crash', (
+    testWidgets('เป็น null ทั้งหมด -> แสดง "-" ทุกแถว ไม่ซ่อนแถว ไม่ crash', (
       tester,
     ) async {
       await _pump(tester, repo: _FakeDeviceSearchRepository());
 
       expect(tester.takeException(), isNull);
-      expect(_rowValue('IMEI', '—'), findsOneWidget);
-      expect(_rowValue('Serial Number', '—'), findsOneWidget);
-      expect(_rowValue('Blackbox ID', '—'), findsOneWidget);
-      expect(_rowValue('ชื่อบริษัท', '—'), findsOneWidget);
+      expect(_rowValue('IMEI', '-'), findsOneWidget);
+      expect(_rowValue('Serial Number', '-'), findsOneWidget);
+      expect(_rowValue('Blackbox ID', '-'), findsOneWidget);
+      expect(_rowValue('ชื่อบริษัท', '-'), findsOneWidget);
     });
   });
 
@@ -231,13 +235,13 @@ void main() {
     expect(find.text('0812345678'), findsOneWidget);
     expect(find.text('GT06N'), findsOneWidget);
     expect(find.text('TCP'), findsOneWidget);
-    // status label shows in the pill + the info row
-    expect(find.text('ติดตั้งแล้ว'), findsWidgets);
+    // ป้ายสถานะเครื่องบนหัวหน้าจอ (docs/22 §6.1 — Installed ตาม Web)
+    expect(find.text('Installed'), findsOneWidget);
     expect(find.text('01/06/2026 09:00'), findsOneWidget); // registeredAt
     expect(find.text('03/06/2026 14:30'), findsOneWidget); // installedAt
   });
 
-  testWidgets('ยังไม่ติดตั้ง (installedAt null) -> แสดง —', (tester) async {
+  testWidgets('ยังไม่ติดตั้ง (installedAt null) -> แสดง -', (tester) async {
     await _pump(
       tester,
       repo: _FakeDeviceSearchRepository(
@@ -255,8 +259,8 @@ void main() {
     );
 
     expect(find.text('DEV-0092'), findsOneWidget);
-    expect(find.text('ลงทะเบียนแล้ว'), findsWidgets);
-    expect(_rowValue('ติดตั้งเมื่อ', '—'), findsOneWidget);
+    expect(find.text('Registered'), findsOneWidget);
+    expect(_rowValue('ติดตั้งเมื่อ', '-'), findsOneWidget);
   });
 
   testWidgets('404 -> "ไม่พบอุปกรณ์นี้" + ปุ่มลองอีกครั้ง', (tester) async {
@@ -374,6 +378,80 @@ void main() {
     }
   });
 
+  // docs/22 §7.2 / §8 (Batch 4) — ปุ่ม Field Report ในหน้า Device Detail สำหรับ ST/OT
+  // เปิดฟอร์มพร้อม pre-fill อุปกรณ์ผ่าน `?deviceId=` ที่ route รองรับอยู่แล้ว
+  group('ปุ่ม Field Report (docs/22 Batch 4, ST + OT)', () {
+    for (final entry in {
+      UserRole.st: true,
+      UserRole.ot: true,
+      UserRole.operation: false,
+    }.entries) {
+      testWidgets(
+        'role ${entry.key} -> ${entry.value ? 'เห็น' : 'ไม่เห็น'}ปุ่ม',
+        (tester) async {
+          await _pump(
+            tester,
+            repo: _FakeDeviceSearchRepository(),
+            role: entry.key,
+          );
+
+          expect(
+            find.byKey(const Key('device_detail_field_report')),
+            entry.value ? findsOneWidget : findsNothing,
+          );
+        },
+      );
+    }
+
+    testWidgets('แตะแล้วเปิดฟอร์มพร้อม deviceId ของเครื่องนี้', (tester) async {
+      String? openedDeviceId;
+      final router = GoRouter(
+        initialLocation: AppRoutes.deviceDetail('DEV-0117'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.deviceDetailPattern,
+            builder: (_, state) =>
+                DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+          ),
+          GoRoute(
+            path: AppRoutes.incidentReport,
+            builder: (_, state) {
+              openedDeviceId = state.uri.queryParameters['deviceId'];
+              return const Text('FIELD_REPORT_PAGE');
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.ot,
+        router: router,
+      );
+
+      await tester.tap(find.byKey(const Key('device_detail_field_report')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('FIELD_REPORT_PAGE'), findsOneWidget);
+      expect(openedDeviceId, 'DEV-0117');
+    });
+
+    testWidgets('โหลดเครื่องไม่สำเร็จ -> ไม่มีปุ่มใดๆ บนหัวหน้าจอ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          getError: ApiException('not found', statusCode: 404),
+        ),
+        role: UserRole.st,
+      );
+
+      expect(find.byKey(const Key('app_page_header_actions')), findsNothing);
+    });
+  });
+
   group('ปุ่ม ยืนยันติดตั้ง Firmware (issue #261, ST + OT)', () {
     for (final entry in {
       UserRole.st: true,
@@ -469,10 +547,10 @@ void _statusTests() {
     });
 
     for (final (status, label) in [
-      (DevicePayloadStatus.upToDate, 'อัปเดตล่าสุด'),
+      (DevicePayloadStatus.upToDate, 'เป็นปัจจุบัน'),
       (DevicePayloadStatus.failed, 'ล้มเหลว'),
-      (DevicePayloadStatus.pending, 'รออัปเดต'),
-      (DevicePayloadStatus.unknown, 'ไม่ทราบ'),
+      (DevicePayloadStatus.pending, 'รอรับ Config'),
+      (DevicePayloadStatus.unknown, 'ยังไม่เคยอยู่ใน Rollout'),
     ]) {
       testWidgets('configStatus ${status.wireName} -> "$label"', (
         tester,
@@ -511,8 +589,8 @@ void _statusTests() {
       );
       await tester.pump();
 
-      expect(find.text('ล้มเหลว'), findsOneWidget);
-      expect(find.text('รออัปเดต'), findsOneWidget);
+      expect(_rowValue('สถานะ Config', 'ล้มเหลว'), findsOneWidget);
+      expect(_rowValue('สถานะ Firmware', 'รอติดตั้ง Firmware'), findsOneWidget);
     });
 
     testWidgets('มี lastCheckInMessage -> แสดงข้อความ', (tester) async {
@@ -528,12 +606,12 @@ void _statusTests() {
       expect(find.text('เช็คอินเมื่อสักครู่'), findsOneWidget);
     });
 
-    testWidgets('lastCheckInMessage เป็น null -> แสดง "—"', (tester) async {
+    testWidgets('lastCheckInMessage เป็น null -> แสดง "-"', (tester) async {
       await _pump(tester, repo: _FakeDeviceSearchRepository());
       await tester.pump();
 
       expect(find.text('เช็คอินล่าสุด'), findsOneWidget);
-      expect(_rowValue('เช็คอินล่าสุด', '—'), findsOneWidget);
+      expect(_rowValue('เช็คอินล่าสุด', '-'), findsOneWidget);
     });
 
     testWidgets('ออนไลน์/ออฟไลน์ เป็น "ไม่ทราบ" คงที่ (placeholder)', (
