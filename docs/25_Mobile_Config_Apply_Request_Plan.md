@@ -1,6 +1,7 @@
 # แผนให้มือถือส่ง Config เข้าเครื่องจริง โดยรักษา Separation of Duty
 
-> **สถานะ:** แผนเพื่อรีวิว: **ยังไม่มีโค้ด** และยังไม่แก้ schema, backend หรือ mobile ใน PR นี้
+> **สถานะ:** แผน — **A ตอบคำถามเปิด Q1–Q9 ครบแล้ว** (คอมเมนต์ใน #364, 21 ต.ค. 2569) เอกสารนี้บันทึกคำตอบไว้ใน §7 และ
+> ปรับเนื้อหาส่วนที่เกี่ยวข้องให้ตรงแล้ว · **ยังไม่มีโค้ด** และยังไม่แก้ schema, backend หรือ mobile ใน PR นี้
 >
 > **ผู้เขียน/ผู้รีวิว:** ร่างโดย B (kittiphong) วันที่ 21 ต.ค. 2569 · ขอ A (paveekornkwork-dev) ร่วมรีวิว เพราะแผนนี้แตะ
 > `campaign` และ `device` ซึ่งเป็นโมดูลของ A รวมถึง Approval Center บน Web
@@ -103,9 +104,10 @@ POST /tasks/{taskId}/config-apply-requests              │
 |---|---|---|---|
 | **ก. Rollout เครื่องเดียวล้วน** | ปุ่มของช่างสร้าง `CampaignRollout` (`pending_approval`) ที่มี target เดียว แล้วใช้การ์ดอนุมัติ Rollout ที่มีอยู่แล้ว | ไม่ต้องมี model ใหม่ ได้การ์ด Web, poll, Auto Pause และ Incident ฟรี | **`Rollout.createdBy` ต้องเป็นช่าง** ซึ่งขัดกับกฎว่า Operation เท่านั้นที่สร้าง Rollout ได้ · `assertDecidable` เทียบแค่ผู้สร้าง จะ**ไม่จับ** Operation ที่ผูก Config เข้า Task (SoD ที่ต้องการหลุด) ถ้าไม่เพิ่มเช็ค · `campaignId` บังคับมี ต้องสร้าง Campaign เทียมทุกคำขอ · ชนกับกฎ "กลุ่มเดียวมี Rollout ค้างได้แค่ 1 รอบ" · หน้า Campaign Monitor รกด้วยคำขอรายเครื่อง · ไม่รู้ว่าคำขอนี้มาจาก Task ไหน |
 | **ข. model ใหม่ `ConfigApplyRequest` ล้วน** | model ใหม่ (mirror `DeviceConfigOverride` ของ #223) เก็บคำขอและผล แล้ว push/poll เองนอก Rollout | ความหมายชัด (คำขอจากหน้างาน ≠ Campaign) · ผูก Task และผู้ขอได้ตรงๆ · SoD เขียนเฉพาะได้ครบ | ต้องเขียน push, poll, timeout, Incident และ Auto Pause ซ้ำกับ #362 ทั้งหมด · poll สองชุดที่ทำงานเหมือนกัน |
-| **ค. Hybrid (แนะนำ)** | `ConfigApplyRequest` เก็บ**คำขอและการอนุมัติ** (SoD, Task, ผู้ขอ) และเมื่ออนุมัติ ระบบสร้าง **Rollout เครื่องเดียวสถานะ `active`** ที่ผูกกลับมาด้วย `rolloutId` เพื่อ reuse `pushToCentral()`, poll, Incident และ AuditLog | SoD อยู่ใน model ของเราเองเต็มที่ · ไม่เขียน push/poll ซ้ำ · การ์ด Web แยกจาก Rollout ของ Campaign | ยังต้องตอบว่า Rollout ที่ระบบสร้างจะผูกกับ Campaign ไหน (Q2) · ต้องมีเมธอด public ใหม่ใน `CampaignRolloutService` (โมดูลของ A) |
+| **ค. Hybrid (เลือกแล้ว — Q2)** | `ConfigApplyRequest` เก็บ**คำขอและการอนุมัติ** (SoD, Task, ผู้ขอ) และเมื่ออนุมัติ ระบบสร้าง **Rollout เครื่องเดียวสถานะ `active`** ที่ผูกกลับมาด้วย `rolloutId` เพื่อ reuse `pushToCentral()`, poll และ AuditLog (ไม่สร้าง Incident — Q4) | SoD อยู่ใน model ของเราเองเต็มที่ · ไม่เขียน push/poll ซ้ำ · การ์ด Web แยกจาก Rollout ของ Campaign | ต้องมี Campaign ระบบตัวเดียวให้ Rollout เหล่านี้ผูก (มติ Q2) · ต้องมีเมธอด public ใหม่ใน `CampaignRolloutService` (โมดูลของ A) |
 
-**เลือกทาง ค. (รอ A ยืนยันใน Q2):**
+**เลือกทาง ค. (A ยืนยันใน Q2):** Rollout เครื่องเดียวทุกตัวอยู่ใต้ **Campaign ระบบตัวเดียว** ที่ seed ไว้ล่วงหน้า (ไม่แก้
+schema) และ**ซ่อนจากหน้า Campaign Monitor** ไม่ให้ปนกับ Rollout ของแคมเปญจริง (A ทำส่วนซ่อน) · เหตุผลที่เลือก:
 - **ทาง ก.** ต้องดัด semantic ของ Rollout ถึง 2 จุด (ผู้สร้างเป็นช่าง และเช็ค SoD ที่ไม่ใช่ของ Rollout) เสี่ยงทำให้กฎ
   ของ Campaign เดิมอ่อนลงโดยไม่ตั้งใจ
 - **ทาง ข.** ซ้ำงานของ #362 มากเกินไป
@@ -117,7 +119,7 @@ POST /tasks/{taskId}/config-apply-requests              │
 
 ### 3.3 Mobile: ช่างกดขอส่ง
 
-**endpoint ที่เสนอ:** `POST /tasks/{taskId}/config-apply-requests` (ชื่อรอ A ยืนยันใน Q1)
+**endpoint:** `POST /tasks/{taskId}/config-apply-requests` (A ยืนยันชื่อแล้วใน Q1)
 - **ผูกกับ Task ไม่ใช่กับ device:**
   - body **ไม่รับ `configId` หรือ `deviceId` จาก client** backend อ่านจาก Task เอง ตามหลักเดิมที่ช่างเลือก Config เองไม่ได้
   - รับแค่ `note` (optional) เป็นข้อความถึง Operation
@@ -149,7 +151,7 @@ POST /tasks/{taskId}/config-apply-requests              │
 | `succeeded` | "กล่องรับ Config แล้ว" + เวลา | - |
 | `failed` / `skipped_offline` / `rejected` | เหตุผล | "ขอส่งอีกครั้ง" |
 
-- **endpoint อ่าน (เสนอ):**
+- **endpoint อ่าน (ยืนยันแล้วใน Q1):**
   - `GET /tasks/{taskId}/config-apply-requests`: scope ด้วยกฎเดียวกับ `GET /tasks/{taskId}`
   - `POST /config-apply-requests/{id}/cancel`: ผู้ขอเท่านั้น ใช้ได้เฉพาะตอน `pending`
 
@@ -157,7 +159,7 @@ POST /tasks/{taskId}/config-apply-requests              │
 
 mirror การ์ด Device Config Override (#223, `device-config-override-approval-card.tsx`) ทั้งโครงสร้างและข้อความ
 
-- **endpoint (เสนอ):** `GET /config-apply-requests?status=pending`, `POST /config-apply-requests/{id}/approve` และ
+- **endpoint (ยืนยันแล้วใน Q1):** `GET /config-apply-requests?status=pending`, `POST /config-apply-requests/{id}/approve` และ
   `POST /config-apply-requests/{id}/reject` (body `rejectReason` บังคับ mirror #223)
 - **สิทธิ์:** resource `config-apply-request` action `Approve`: **Operation เท่านั้น** · action `Read`: Operation, Auditor,
   Admin, SuperAdmin · Admin/SuperAdmin **อนุมัติไม่ได้** (RBAC_Matrix §5 ข้อ 5)
@@ -172,7 +174,9 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
   3. ผู้ตัดสิน **≠ ผู้ผูก Config เข้า Task** (`configAssignedBy` ที่ snapshot ไว้ในคำขอ) ถ้าซ้ำได้ 403
      "ผู้ผูก Config เข้างานนี้อนุมัติการส่งเองไม่ได้ (Separation of Duty)"
   4. ถ้า `configAssignedBy` เป็น null ได้ 403 (**fail closed**) ซึ่งไม่ควรเกิดเพราะ §3.3 กันไว้ตั้งแต่ตอนสร้าง
-  5. การ์ดบน Web ควรปิดปุ่มให้ผู้ที่เข้าข้อ 2 หรือ 3 พร้อมบอกเหตุผล แต่ backend คือด่านจริง
+  5. **(เพิ่มตาม Q8)** ผู้ตัดสิน **≠ ผู้อนุมัติตัว Config** (`Config.approvedBy`) ถ้าซ้ำได้ 403 — เข้มกว่า Rollout ปกติที่
+     ไม่ได้ห้ามข้อนี้ · กรณี `Config.approvedBy` ว่าง (ข้อมูลเก่า/seed) ยังไม่ได้ตกลง ต้องถาม A ตอน implement
+  6. การ์ดบน Web ควรปิดปุ่มให้ผู้ที่เข้าข้อ 2, 3 หรือ 5 พร้อมบอกเหตุผล แต่ backend คือด่านจริง
 - **race:** ใช้ `updateMany({ where: { id, status: 'pending' } })` แล้วเช็ค `count === 0` ได้ 409 (pattern เดียวกับ #225
   และ `CampaignRolloutService.approve()`)
 
@@ -203,10 +207,10 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
    - ใช้ env เดิม ไม่เพิ่ม env ใหม่ (CLAUDE.md Mock Mode Pattern)
    - โหมด `real` (device-sync pull) ใช้ flow เดียวกันได้โดยไม่ต้องแก้
 
-**ข้อที่ต้องตกลงเรื่อง Rollout เครื่องเดียว (Q4):**
-- Auto Pause ของ Rollout ที่มี target เดียว: ล้มเหลวครั้งเดียวก็ pause ซึ่งไม่มีความหมาย ควรปิดไว้หรือปล่อยให้จบเป็น
-  `completed` พร้อม failure
-- **Incident:** ควรสร้างเมื่อคำขอจากหน้างานล้มเหลวไหม
+**Rollout เครื่องเดียว (มติ Q4):**
+- **ปิด Auto Pause** — ไม่มีความหมายกับ Rollout ที่มี target เดียว
+- **ไม่สร้าง Incident** เมื่อคำขอจากหน้างานล้มเหลว — แจ้งผู้ขอผ่าน notification (`config_apply_failed`, §3.6) พอ ไม่ขึ้น
+  Incident list
 
 ### 3.6 แจ้งผลกลับมือถือ
 
@@ -220,8 +224,8 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
 | `config_apply_succeeded` | ผู้ขอ | กล่องยืนยันผ่าน poll |
 | `config_apply_failed` | ผู้ขอ | กล่องปฏิเสธ, ส่งไม่ได้ หรือกล่องออฟไลน์ (`skipped_offline` รวมไว้ที่นี่ แยกเหตุผลใน payload) |
 
-- **ไม่มี `config_apply_approved` แยก:** การอนุมัติตามด้วยการส่งทันที แจ้งแค่ผลสุดท้ายพอ ส่วนการ์ดในแอปแสดง `sending`
-  ให้เองเมื่อเปิดดู (รอ A เห็นด้วยใน Q5)
+- **ไม่มี `config_apply_approved` (มติ Q5):** การอนุมัติตามด้วยการส่งทันที แจ้งแค่ผลสุดท้ายพอ ส่วนการ์ดในแอปแสดง
+  `sending` ให้เองเมื่อเปิดดู
 - **payload:** `{ requestId, taskId, deviceId }` และ deep link ไปหน้า Task Detail (มีกลไกอยู่แล้วจาก push deep link)
 
 ### 3.7 AuditLog (mutation-only ตาม CLAUDE.md)
@@ -233,12 +237,18 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
 
 ### 3.8 ปุ่มเดิม `POST /devices/{deviceId}/apply-config`
 
-เมื่อ flow นี้พร้อมใช้ ปุ่มในแอปจะเปลี่ยนไปเรียก endpoint ใหม่ทั้งหมด ส่วน endpoint เดิมเสนอดังนี้ (Q6):
+เมื่อ flow นี้พร้อมใช้ ปุ่มในแอปจะเปลี่ยนไปเรียก endpoint ใหม่ทั้งหมด ส่วน endpoint เดิม (มติ Q6):
 - **โหมด `central`:** ตอบ 409 "ใช้คำขอส่ง Config แทน" เพื่อไม่ให้เหลือทางลัดที่ไม่ผ่านการอนุมัติ และไม่ให้ไปปิด target
   ของ Rollout แทนกล่องจริง (ดู §5)
 - **โหมด `mock`:** คงไว้ชั่วคราวให้ E2E เดิมผ่าน แล้ว deprecate ใน openapi
 
-### 3.9 ความสัมพันธ์กับมติ PULL model
+### 3.9 คำขอค้าง (มติ Q9)
+
+- **หมดอายุอัตโนมัติ:** คำขอ `pending` ที่ค้างนานเกินกำหนดถูกปิดเอง และแจ้งผู้ขอ
+- **ยกเลิกอัตโนมัติเมื่อ Task ถูกยกเลิก:** คำขอ `pending` ของ Task นั้นถูกยกเลิกตาม
+- **ยังไม่ได้ตกลง (ตัดสินตอน implement):** ระยะเวลาหมดอายุจริง (เดิมยกตัวอย่าง 24 ชม.) และสถานะปลายทางของคำขอที่หมดอายุ
+
+### 3.10 ความสัมพันธ์กับมติ PULL model
 
 - **มติ 2026-09-29** (คอมเมนต์ใน `CampaignRolloutService.release()`) ระบุว่าการรอให้ช่างกดยืนยันเป็นแค่ placeholder
   เพราะกล่องดึง Config เอง และ `docs/14` §7 ยังค้างคำถามว่าปุ่มนี้ยังจำเป็นไหม
@@ -290,16 +300,15 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 ### 4.3 อื่นๆ
 
 - **`NotificationType`:** เพิ่ม 4 ค่าตาม §3.6 (`ALTER TYPE ... ADD VALUE` แบบ additive)
-- **`CampaignRollout`:** ขึ้นกับคำตอบ Q2
-  - ใช้ Campaign ระบบตัวเดียวสำหรับคำขอหน้างาน: ไม่ต้องแก้ schema แค่ seed
-  - หรือทำ `campaignId` ให้ nullable และเพิ่ม `source` (`campaign` | `field_request`): แตะ model ของ A
+- **`CampaignRollout` (มติ Q2):** ใช้ Campaign ระบบตัวเดียวสำหรับคำขอหน้างาน — **ไม่แก้ schema** แค่ seed · ไม่ทำ
+  `campaignId` ให้ nullable
 - **RBAC:** seed row ของ resource `config-apply-request` (ตารางเดิม ไม่ต้อง migration) พร้อมอัปเดต RBAC_Matrix §2, §4 และ
   `openapi.yaml`
 
 ## 5. บั๊กที่พบระหว่างทาง: ต้องแก้ก่อนหรือคู่กัน (แยกจากงานออกแบบใหม่)
 
-> **พบจากการอ่านโค้ด ยังไม่ได้ทดสอบจริง** · ที่ `993b3d0` ของ #362 · PR นี้**ไม่แก้** #362 แค่บันทึกไว้ให้ A ตัดสินว่าจะแก้ใน
-> #362 ก่อน merge หรือแยก PR (Q7)
+> **พบจากการอ่านโค้ด** ที่ `993b3d0` ของ #362 · **A ยืนยันกับโค้ดแล้วว่าเป็นบั๊กจริง** (คอมเมนต์ใน #364) · PR นี้**ไม่แก้**
+> #362 — มติดูที่ §5.1
 
 - **ตำแหน่ง:** `CampaignRolloutService.recordTargetResult()` (`campaign-rollout.service.ts` บรรทัด ~1763)
 - **เงื่อนไขที่ใช้หา target:**
@@ -315,7 +324,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
   4. รอบ poll ถัดไปของ `CentralRolloutPollService` ไม่เจอ target ที่ `pending` แล้ว ผลจริงจากกล่องจึงถูกทิ้ง
      ถ้ากล่องล้มเหลวจริง Campaign Monitor จะยังแสดงสำเร็จ และ Auto Pause/Incident ไม่ทำงาน
   5. ทางกลับก็พังเหมือนกัน: mock ตอบ `applied: false` (เช่น Timeout ติดลบ) จะปิด target เป็น `failed` ทั้งที่กล่องอาจรับไปแล้ว
-- **แนวทางแก้ที่เสนอ (ให้ A เลือก):**
+- **แนวทางแก้ที่เสนอ (A เลือก (ข) แบบกว้าง — ดู §5.1):**
   - **(ก)** path ของ Mobile (`fallbackToPayload`) ข้าม target ที่ `centralCommandId != null` หรือข้าม Rollout ที่
     `applyMode !== 'mock'` ทั้งหมด
   - **(ข)** `DeviceService.applyConfig()` ไม่เรียก `recordTargetResult()` เลยเมื่อ Rollout ของเครื่องนั้นไม่ใช่โหมด `mock`
@@ -323,48 +332,68 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 - **ทำไมต้องแก้ก่อนหรือคู่กับงานนี้:** flow ใหม่ใน §3.5 พึ่ง `recordTargetResult()` ให้บันทึกผลจากกล่อง**จริงเท่านั้น**
   ถ้าบั๊กนี้ยังอยู่ ปุ่มเดิมจะไปปิดผลของคำขอที่อนุมัติแล้วได้ (§3.8 ปิดปุ่มเดิมในโหมด `central` เป็นอีกชั้นที่กันไว้)
 
-## 6. แบ่งงาน (เสนอ รอ A ยืนยันใน Q3)
+### 5.1 บั๊ก #362 (Q7) — มติ
+
+- **A ตัดสินใจแล้ว: แก้ใน #362 ก่อน merge** (ยังไม่ merge พอดี แก้ที่ต้นตอสะอาดกว่าแยก PR)
+- **วิธี: แนวทาง (ข) แบบกว้าง** — `DeviceService.applyConfig()` และ `DeviceService.confirmFirmwareInstall()` **ไม่เรียก
+  `recordTargetResult()` เลย** ถ้า Rollout ของเครื่องนั้น `applyMode !== 'mock'`
+  - ครอบคลุมทั้งโหมด `central` และ `real` ในจุดเดียว (ตอบคำถามเรื่องโหมด `real` ด้วย) ไม่ต้องเช็ค `centralCommandId` แยก
+- **ผู้ทำ: A ใน #362** — ไม่ใช่งานที่ B implement ในแผนนี้ · งานของแผนนี้เริ่มได้หลังการแก้นี้เข้า main
+
+## 6. แบ่งงาน (A ยืนยันใน Q3)
 
 | งาน | คน | หมายเหตุ |
 |---|---|---|
 | migration (§4): `ConfigApplyRequest`, enum, `Task.configAssignedBy/At`, `NotificationType` | B | ไฟล์ร่วม: pull main ก่อน และ resolve conflict เอง |
 | `TaskService` เขียน `configAssignedBy/At` | B | โมดูล `task` ของ B |
 | โมดูล backend ใหม่ `config-apply-request`: endpoint ใน §3.3, §3.4, SoD, AuditLog, notification | B | ตามที่ตกลงว่า B ทำ endpoint ใหม่ |
-| เมธอด public ใน `CampaignRolloutService` สร้าง Rollout เครื่องเดียวและเริ่มส่ง + hook ผลกลับเข้าคำขอ (§3.5 ข้อ 3, 5) | **A** (หรือ B ทำแล้ว A รีวิว) | แตะโมดูล `campaign` ของ A |
+| เมธอด public ใน `CampaignRolloutService` สร้าง Rollout เครื่องเดียวและเริ่มส่ง + hook ผลกลับเข้าคำขอ (§3.5 ข้อ 3, 5) รวมปิด Auto Pause ของ Rollout แบบนี้ (Q4) | **A** | โมดูล `campaign` ของ A — A เพิ่งแก้ `pushToCentral`/poll ใน #362 |
+| seed Campaign ระบบ + ซ่อน Rollout ของคำขอหน้างานจาก Campaign Monitor (Q2) | A | |
 | ปิด `apply-config` เดิมในโหมด `central` (§3.8) | A | โมดูล `device` ของ A |
-| แก้บั๊ก §5 | A | ใน #362 หรือ PR แยก |
+| แก้บั๊ก §5 (มติ §5.1) | A | ใน #362 ก่อน merge |
 | การ์ด Approval Center + จำนวนรออนุมัติบน Dashboard (§3.4) | A | mirror #223 |
 | Mobile: การ์ด Task Detail ตามสถานะ, ยกเลิก, deep link จาก notification | B | |
 | `openapi.yaml`, RBAC_Matrix, seed permission | B (A รีวิว) | redocly lint ก่อน commit |
 | เทส: SoD ทุกข้อใน §3.4 (โดยเฉพาะผู้ผูก Config อนุมัติเองต้องได้ 403), race ตอนอนุมัติ, ตรวจซ้ำแบบสด, E2E Mobile โหมด mock | B + A ตามส่วนของตัวเอง | |
 
 **ลำดับ:**
-1. แก้บั๊ก §5
+1. แก้บั๊ก §5 ใน #362 (A) แล้ว merge #362
 2. ทำ migration และ `TaskService`
 3. ทำ backend endpoint พร้อมกับเมธอดใน `campaign`
 4. ทำ Web card และ Mobile ขนานกัน
 
-## 7. คำถามเปิดถึง A
+## 7. คำถามถึง A — ตอบครบแล้ว
+
+> A ตอบทุกข้อในคอมเมนต์ของ #364 (21 ต.ค. 2569) และ approve แผน · คำถามเดิมคงไว้ด้านล่างพร้อม**คำตอบ**ต่อท้ายแต่ละข้อ
 
 1. **Q1 ชื่อ endpoint และ resource:** `POST /tasks/{taskId}/config-apply-requests` (ฝั่งช่าง) คู่กับ
    `/config-apply-requests/{id}/approve|reject|cancel` (ฝั่งคิว) และ resource `config-apply-request` โอเคไหม หรือ A อยาก
    ให้อยู่ใต้ `/devices/{deviceId}/...` แบบ #223
+   - **คำตอบ:** เห็นด้วยตามที่เสนอ ไม่ต้องเปลี่ยน
 2. **Q2 reuse Rollout หรือ model ใหม่:**
    - เห็นด้วยกับทาง ค. (Hybrid) ไหม
    - ถ้าเห็นด้วย Rollout เครื่องเดียวควรอยู่ใต้ **Campaign ระบบตัวเดียว** (seed, ไม่แก้ schema) หรือทำ `campaignId` ให้
      nullable และเพิ่ม `source`
    - Rollout แบบนี้ควรซ่อนจากหน้า Campaign Monitor ไหม
+   - **คำตอบ:** เห็นด้วยทาง ค. ใช้ Campaign ระบบตัวเดียว (seed ไม่แก้ schema) และซ่อน Rollout พวกนี้จาก Campaign Monitor
 3. **Q3 แบ่งงาน:**
    - เมธอด public ใน `CampaignRolloutService` และ hook ผลกลับ (§3.5) A ทำเอง หรือให้ B ทำแล้ว A รีวิว
    - โมดูล `config-apply-request` ใหม่เป็นของ B ตามตาราง §6 โอเคไหม
+   - **คำตอบ:** A ทำเมธอด public และ hook ผลกลับเอง ส่วนที่เหลือตามตาราง §6 โอเค
 4. **Q4 Rollout เครื่องเดียว:** ควรปิด Auto Pause ไหม และคำขอหน้างานที่ล้มเหลวควรสร้าง Incident ไหม
+   - **คำตอบ:** ปิด Auto Pause และไม่สร้าง Incident แจ้งผู้ขอผ่าน notification พอ
 5. **Q5 notification:** ตัด `config_apply_approved` ออก แจ้งแค่ผลสุดท้ายพอไหม
+   - **คำตอบ:** เห็นด้วย ตัดออก
 6. **Q6 endpoint เดิม `apply-config`:** ตอบ 409 ในโหมด `central` แล้ว deprecate โอเคไหม
+   - **คำตอบ:** เห็นด้วย
 7. **Q7 บั๊ก §5:** จะแก้ใน #362 ก่อน merge หรือแยก PR และเลือกแนวทาง (ก) หรือ (ข) · โหมด `real` มีปัญหาเดียวกันไหม
+   - **คำตอบ:** บั๊กจริง แก้ใน #362 ก่อน merge ด้วยแนวทาง (ข) แบบกว้าง ครอบคลุม `central` และ `real` — ดู §5.1
 8. **Q8 SoD เพิ่มเติม (เข้มขึ้น ไม่ใช่ผ่อน):** ควรห้ามผู้**อนุมัติตัว Config** (`Config.approvedBy`) อนุมัติคำขอส่งด้วยไหม
    ตอนนี้ Rollout ปกติไม่ได้ห้าม จึงไม่ได้ใส่ไว้ในแผน ถ้า A เห็นว่าควรห้าม เพิ่มได้ทันที
+   - **คำตอบ:** เห็นด้วยให้เพิ่ม — ใส่แล้วใน §3.4 ข้อ 5
 9. **Q9 คำขอค้าง:** คำขอ `pending` ควรหมดอายุเองไหม (เช่น 24 ชม.) และ Task ที่ถูกยกเลิกควรยกเลิกคำขอที่ค้างอยู่อัตโนมัติไหม
    (แผนนี้เสนอว่า "ควร" ทั้งสองข้อ)
+   - **คำตอบ:** เห็นด้วยทั้งสองข้อ — ดู §3.9
 
 ## 8. นอกขอบเขต
 
