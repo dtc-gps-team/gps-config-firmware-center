@@ -256,3 +256,12 @@ export function canCreateFieldDefinition(
 ): boolean {
   return role === "ConfigEngineer";
 }
+
+/**
+ * ปิด Incident ที่ระบบสร้างเอง (resolve/dismiss) และสั่งลองเขียน Config ใหม่ —
+ * Operation เท่านั้น ตรงกับ resource `incidents` action `Approve` ฝั่ง backend
+ * (ตัวเดียวกับการตัดสินใจ Field Report) · UX-level เท่านั้น backend บังคับจริง
+ */
+export function canCloseIncident(role: string | null | undefined): boolean {
+  return role === "Operation";
+}
