@@ -1640,14 +1640,19 @@ paths:
     post:
       tags: [device]
       operationId: applyConfigToDevice
-      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13)
+      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13, deprecated v3.31)
+      deprecated: true
       description: >-
         สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — เลือก Config ที่ผูกกับ Task
         ที่กำลังทำ แล้วส่งให้อุปกรณ์เครื่องนั้น. **ไม่ persist / ไม่แตะสถานะใดๆ**
         (fire-and-forget) — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป
         (../planning/01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
         โหมด mock ตรวจค่าเบื้องต้น (field ≥ 1, Timeout/Interval ไม่ติดลบ)
-        แล้วคืน `applied: true`
+        แล้วคืน `applied: true` · **ใช้ `MockConfigApplier` เสมอไม่ว่า
+        `DEVICE_CONFIG_APPLY_MODE` จะเป็นอะไร ไม่เคยเขียนเข้ากล่องจริง** —
+        ตอน `DEVICE_CONFIG_APPLY_MODE=central` endpoint นี้ตอบ 409 ทันที
+        (docs/25 §3.8/Q6 — กันช่างเข้าใจผิดว่า "สั่งสำเร็จแล้ว" ทั้งที่ไม่มี
+        อะไรเกิดขึ้นจริง) ให้ใช้ทางส่งคำขอ Config ผ่าน Server กลางแทน
       parameters:
         - in: path
           name: deviceId
@@ -1677,8 +1682,10 @@ paths:
           description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Config (configId) นี้
         "409":
           description: >-
-            ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
-            (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
+            ใส่ Config ไม่ได้ — `DEVICE_CONFIG_APPLY_MODE=central` (ปุ่มนี้ใช้ไม่ได้
+            อีกต่อไป ดู description ด้านบน) / Device ยังไม่ installed / Config
+            ยังไม่ผ่านอนุมัติ (ต้อง approved หรือ synced) / Config คนละ
+            deviceModel/protocol กับ Device
 
   /devices/{deviceId}/confirm-firmware-install:
     post:

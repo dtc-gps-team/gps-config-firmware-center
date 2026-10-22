@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CampaignRolloutStatus,
   CampaignRolloutTargetStatus,
@@ -42,6 +43,7 @@ import {
   CONFIG_APPLIER,
   type ConfigApplier,
   type ConfigApplyResult,
+  resolveConfigApplyMode,
 } from './config-applier';
 import {
   DEVICE_SIMULATOR,
@@ -196,6 +198,7 @@ export class DeviceService {
     private readonly configDefinitionService: ConfigDefinitionService,
     private readonly notificationService: NotificationService,
     private readonly deviceModelService: DeviceModelService,
+    private readonly nestConfig: NestConfigService,
   ) {}
 
   /**
@@ -546,6 +549,24 @@ export class DeviceService {
     actor: ActingUser,
     rolloutId?: string,
   ): Promise<ConfigApplyResult> {
+    // docs/25 §3.8/Q6 — โหมด central ของ Campaign ปิดช่องทางนี้: ปุ่มนี้ใช้
+    // MockConfigApplier เสมอ (ไม่เคยเขียนเข้ากล่องจริงไม่ว่าโหมดไหน — ดู
+    // comment เหนือ CONFIG_APPLIER ใน device.module.ts) กดแล้ว "สำเร็จ" ปลอม
+    // ทั้งที่ไม่มีอะไรเกิดขึ้นจริงกับกล่อง ทำให้ช่างเข้าใจผิด — โหมด central
+    // ของ Campaign หมายความว่ามีเส้นทางที่เขียนจริงอยู่แล้ว (ผ่าน Server
+    // กลาง) เส้นทางนี้จึงไม่มีความหมายอีกต่อไป ปิดไว้กันสับสน (แผนการ "ขอส่ง
+    // Config" ของ docs/25 จะมาแทนที่ปุ่มนี้) · โหมด `mock`/`real` ยังเปิดใช้
+    // ได้ตามเดิมให้ E2E เดิมผ่าน
+    if (
+      resolveConfigApplyMode(
+        this.nestConfig.get('DEVICE_CONFIG_APPLY_MODE'),
+      ) === 'central'
+    ) {
+      throw new ConflictException(
+        'ระบบตั้งค่าให้ส่ง Config ผ่าน Server กลางแล้ว (โหมด central) — ปุ่มนี้ใช้ไม่ได้อีกต่อไป ใช้ทางส่งคำขอแทน',
+      );
+    }
+
     const device = await this.findByDeviceId(deviceId);
 
     if (device.status !== TESTABLE_DEVICE_STATUS) {

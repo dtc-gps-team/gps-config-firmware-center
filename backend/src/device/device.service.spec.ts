@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService as NestConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Config, Device, DeviceModel, Firmware } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -222,9 +223,13 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
   let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
+  // ค่าเริ่มต้นเป็น mock เสมอ (CLAUDE.md Mock Mode Pattern) — เทสที่ต้องการ
+  // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
+  let deviceConfigApplyMode: string | undefined;
   let customer: { findUnique: jest.Mock };
 
   beforeEach(async () => {
+    deviceConfigApplyMode = 'mock';
     device = {
       findUnique: jest.fn(),
       findMany: jest.fn(),
@@ -321,6 +326,15 @@ describe('DeviceService', () => {
         },
         { provide: NotificationService, useValue: notificationService },
         { provide: DeviceModelService, useValue: deviceModelService },
+        {
+          provide: NestConfigService,
+          useValue: {
+            // อ่านค่าตัวแปรนอก ณ เวลาที่เรียกจริง (ไม่ snapshot ตอนสร้าง
+            // module) — เทสที่ต้องการโหมด central ตั้ง
+            // deviceConfigApplyMode = 'central' ก่อนเรียก service ได้เลย
+            get: () => deviceConfigApplyMode,
+          },
+        },
       ],
     }).compile();
 
@@ -931,6 +945,36 @@ describe('DeviceService', () => {
   });
 
   describe('applyConfig', () => {
+    it('โหมด central (docs/25 §3.8/Q6) -> 409 ทันที ไม่แตะ device/config เลย (ปุ่มนี้ใช้ MockConfigApplier เสมอ ไม่เคยเขียนเข้ากล่องจริง — ส่ง Config ต้องผ่าน Server กลางตาม Rollout เท่านั้น)', async () => {
+      deviceConfigApplyMode = 'central';
+
+      await expect(
+        service.applyConfig('DTC-0001', approvedConfig.id, st),
+      ).rejects.toThrow(ConflictException);
+
+      expect(device.findUnique).not.toHaveBeenCalled();
+      expect(config.findUnique).not.toHaveBeenCalled();
+      expect(configApplier.applyConfig).not.toHaveBeenCalled();
+    });
+
+    it.each(['mock', 'real', '', undefined])(
+      'โหมด %s (ไม่ใช่ central) -> ใช้งานได้ตามเดิม',
+      async (mode) => {
+        deviceConfigApplyMode = mode;
+        device.findUnique.mockResolvedValue(installedDevice);
+        config.findUnique.mockResolvedValue(approvedConfig);
+        configApplier.applyConfig.mockResolvedValue(applyResult);
+
+        const result = await service.applyConfig(
+          'DTC-0001',
+          approvedConfig.id,
+          st,
+        );
+
+        expect(result).toEqual(applyResult);
+      },
+    );
+
     it('device installed + config approved + รุ่นตรง -> เรียก applier ด้วย fields จาก DB', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue(approvedConfig);
