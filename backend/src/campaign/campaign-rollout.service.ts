@@ -42,6 +42,7 @@ import {
 } from '../firmware/firmware-status';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { getOrCreateFieldApplySystemCampaign } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
@@ -1807,6 +1808,73 @@ export class CampaignRolloutService {
         : 'เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ',
       rolloutId,
     );
+  }
+
+  /**
+   * docs/25 §3.2 ทาง ค. (Hybrid) + §3.5 ข้อ 2-3 — สร้าง `CampaignRollout`
+   * เครื่องเดียวให้กับคำขอส่ง Config จากหน้างาน (`ConfigApplyRequest` ของ B,
+   * ยังไม่มี model นี้ ณ ตอนเขียนเมธอดนี้) แล้วเริ่มส่งทันที — **ผู้เรียก
+   * (โมดูล `config-apply-request` ใหม่ของ B) ต้องตรวจซ้ำแบบสดเองก่อนเรียก**
+   * (§3.5 ข้อ 1: Config/Task/Device/เครื่องไม่ชนรอบอื่น) เมธอดนี้ตรวจแค่สิ่งที่
+   * `autoApplyConfig()` ตรวจอยู่แล้วเป็นปกติ (Config ยัง approved/ไม่ถูกลบ,
+   * Device ยัง installed, รุ่นตรงกัน) ไม่รู้จัก Task เลย
+   *
+   * **ข้าม `pending_approval`/`create()` ปกติโดยตั้งใจ** (ไม่ใช่ `approve()`
+   * ซ้อน `approve()` — การอนุมัติคำขอ (เช็ค SoD เต็มที่ `ConfigApplyRequest`
+   * ของ B) เกิดไปแล้วก่อนเรียกเมธอดนี้) และ **ไม่ใช้ `create()` เดิม** เพราะ
+   * `create()` บังคับ "กลุ่มเดียวมี Rollout ค้างได้แค่ 1 รอบ" — ถ้าใช้ร่วมกับ
+   * Campaign ระบบตัวเดียว คำขอหน้างานจากคนละเครื่องจะทำพร้อมกันไม่ได้เลย
+   * (ปัญหาที่เอกสารชั่งน้ำหนักไว้ว่าทำไมไม่เลือกทาง ก.)
+   *
+   * **Auto Pause ไม่ต้องปิดเองตามที่ถามไว้ใน Q4** — `recordTargetResult()`
+   * ปัจจุบัน `shouldAutoPause` ต้อง `pendingCount > 0` เสมอ, target เดียว
+   * resolve แล้ว pendingCount เป็น 0 ทันที เข้า `completed` เสมอ ไม่มีทาง
+   * pause ได้อยู่แล้วโดยไม่ต้องแก้โค้ดเพิ่ม — ส่วน **Incident ต้องกันเอง**
+   * (`completed` ที่มี failure ปกติสร้าง Incident) ดู
+   * `IncidentService.handleRolloutFailed()` ที่เช็ค
+   * `event.campaignName === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` แล้วข้าม
+   *
+   * **ยังไม่ทำ (รอ B): hook ส่งผลกลับเข้า `ConfigApplyRequest`** (§3.5 ข้อ 5)
+   * — ต้องรอ B เพิ่ม model/relation ก่อน จะไปเกี่ยวที่
+   * `recordTargetResult()`/`markTargetSkippedOffline()` ว่าถ้า target.rollout
+   * มี `configApplyRequest` ผูกอยู่ ให้อัปเดตสถานะคำขอ + แจ้งช่าง (never-throw
+   * เหมือน hook เดิมที่มีอยู่แล้วในทั้งสองเมธอดนี้)
+   */
+  async startFieldApplyRollout(
+    deviceId: string,
+    configId: string,
+    requestedBy: string,
+    decidedBy: string,
+  ): Promise<CampaignRollout> {
+    const systemCampaign = await getOrCreateFieldApplySystemCampaign(
+      this.prisma,
+      decidedBy,
+    );
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const rollout = await tx.campaignRollout.create({
+        data: {
+          campaignId: systemCampaign.id,
+          payloadType: 'Config',
+          configId,
+          status: 'active',
+          targetCount: 1,
+          createdBy: requestedBy,
+          approvedBy: decidedBy,
+          approvedAt: new Date(),
+          activeWindowStartedAt: new Date(),
+          applyMode: this.configApplyMode,
+        },
+      });
+      await tx.campaignRolloutTarget.create({
+        data: { rolloutId: rollout.id, deviceId },
+      });
+      return rollout;
+    });
+
+    await this.logAudit('create', requestedBy, undefined, null);
+
+    return this.autoApplyConfig(created, decidedBy);
   }
 
   /**

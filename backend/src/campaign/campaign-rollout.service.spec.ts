@@ -119,7 +119,11 @@ function firmwareDto(): CreateCampaignRolloutDto {
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
   let transactionMock: jest.Mock;
-  let campaign: { findUnique: jest.Mock };
+  let campaign: {
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    create: jest.Mock;
+  };
   let campaignTarget: { findMany: jest.Mock };
   let campaignRollout: {
     create: jest.Mock;
@@ -132,6 +136,7 @@ describe('CampaignRolloutService', () => {
     count: jest.Mock;
   };
   let campaignRolloutTarget: {
+    create: jest.Mock;
     createMany: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -202,7 +207,13 @@ describe('CampaignRolloutService', () => {
     firmwareStorage = {
       downloadObject: jest.fn().mockResolvedValue(Buffer.from('fake-bin')),
     };
-    campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
+    campaign = {
+      findUnique: jest.fn().mockResolvedValue(sampleCampaign),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'field-apply-system-campaign-id' }),
+    };
     campaignTarget = { findMany: jest.fn().mockResolvedValue(groupTargets) };
     campaignRollout = {
       create: jest.fn().mockResolvedValue(sampleRollout),
@@ -215,6 +226,7 @@ describe('CampaignRolloutService', () => {
       count: jest.fn(),
     };
     campaignRolloutTarget = {
+      create: jest.fn(),
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
@@ -932,6 +944,160 @@ describe('CampaignRolloutService', () => {
           expect.stringContaining('ไม่พบ Device'),
           'rollout-1',
         );
+      });
+    });
+
+    describe('startFieldApplyRollout (docs/25 §3.2/§3.5, Q2/Q4)', () => {
+      const requestedBy = 'st-requester-1';
+      const decidedBy = 'op-approver-1';
+
+      it('ยังไม่มี Campaign ระบบ -> สร้างใหม่ แล้วสร้าง Rollout เครื่องเดียวข้าม pending_approval ไปเป็น active ทันที', async () => {
+        campaign.findFirst.mockResolvedValue(null);
+        campaign.create.mockResolvedValue({ id: 'new-system-campaign' });
+        campaignRollout.create.mockResolvedValue({
+          id: 'field-rollout-1',
+          campaignId: 'new-system-campaign',
+        });
+        const autoApplyConfig = jest
+          .spyOn(
+            service as unknown as {
+              autoApplyConfig: (
+                r: unknown,
+                a: string,
+              ) => Promise<CampaignRollout>;
+            },
+            'autoApplyConfig',
+          )
+          .mockResolvedValue(sampleRollout);
+
+        const result = await service.startFieldApplyRollout(
+          'DEV-0001',
+          approvedConfig.id,
+          requestedBy,
+          decidedBy,
+        );
+
+        expect(campaign.create).toHaveBeenCalledTimes(1);
+        expect(campaignRollout.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            campaignId: 'new-system-campaign',
+            payloadType: 'Config',
+            configId: approvedConfig.id,
+            status: 'active',
+            targetCount: 1,
+            createdBy: requestedBy,
+            approvedBy: decidedBy,
+          }) as Record<string, unknown>,
+        });
+        const createCalls = campaignRollout.create.mock.calls as unknown[][];
+        const createCall = createCalls[0][0] as {
+          data: { approvedAt: unknown; activeWindowStartedAt: unknown };
+        };
+        expect(createCall.data.approvedAt).toBeInstanceOf(Date);
+        expect(createCall.data.activeWindowStartedAt).toBeInstanceOf(Date);
+        expect(campaignRolloutTarget.create).toHaveBeenCalledWith({
+          data: { rolloutId: 'field-rollout-1', deviceId: 'DEV-0001' },
+        });
+        expect(autoApplyConfig).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'field-rollout-1' }),
+          decidedBy,
+        );
+        expect(result).toBe(sampleRollout);
+      });
+
+      it('มี Campaign ระบบอยู่แล้ว -> ใช้ตัวเดิม ไม่สร้างซ้ำ', async () => {
+        campaign.findFirst.mockResolvedValue({
+          id: 'existing-system-campaign',
+        });
+        campaignRollout.create.mockResolvedValue({ id: 'field-rollout-2' });
+        jest
+          .spyOn(
+            service as unknown as {
+              autoApplyConfig: (
+                r: unknown,
+                a: string,
+              ) => Promise<CampaignRollout>;
+            },
+            'autoApplyConfig',
+          )
+          .mockResolvedValue(sampleRollout);
+
+        await service.startFieldApplyRollout(
+          'DEV-0001',
+          approvedConfig.id,
+          requestedBy,
+          decidedBy,
+        );
+
+        expect(campaign.create).not.toHaveBeenCalled();
+        const createCalls = campaignRollout.create.mock.calls as unknown[][];
+        const createCall = createCalls[0][0] as {
+          data: { campaignId: string };
+        };
+        expect(createCall.data.campaignId).toBe('existing-system-campaign');
+      });
+
+      it('applyMode ใช้โหมดระบบปัจจุบัน (CONFIG_APPLY_MODE) เหมือน release() ปกติ', async () => {
+        configApplyMode = 'central';
+        service = await buildService();
+        campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
+        campaignRollout.create.mockResolvedValue({ id: 'field-rollout-3' });
+        jest
+          .spyOn(
+            service as unknown as {
+              autoApplyConfig: (
+                r: unknown,
+                a: string,
+              ) => Promise<CampaignRollout>;
+            },
+            'autoApplyConfig',
+          )
+          .mockResolvedValue(sampleRollout);
+
+        await service.startFieldApplyRollout(
+          'DEV-0001',
+          approvedConfig.id,
+          requestedBy,
+          decidedBy,
+        );
+
+        const createCalls = campaignRollout.create.mock.calls as unknown[][];
+        const createCall = createCalls[0][0] as {
+          data: { applyMode: string };
+        };
+        expect(createCall.data.applyMode).toBe('central');
+      });
+
+      it('เขียน AuditLog action create ผูกกับ requestedBy', async () => {
+        campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
+        campaignRollout.create.mockResolvedValue({ id: 'field-rollout-4' });
+        jest
+          .spyOn(
+            service as unknown as {
+              autoApplyConfig: (
+                r: unknown,
+                a: string,
+              ) => Promise<CampaignRollout>;
+            },
+            'autoApplyConfig',
+          )
+          .mockResolvedValue(sampleRollout);
+
+        await service.startFieldApplyRollout(
+          'DEV-0001',
+          approvedConfig.id,
+          requestedBy,
+          decidedBy,
+        );
+
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: {
+            userId: requestedBy,
+            auditModule: 'campaign',
+            action: 'create',
+            ipAddress: null,
+          },
+        });
       });
     });
 

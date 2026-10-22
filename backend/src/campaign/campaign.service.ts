@@ -9,6 +9,7 @@ import { Campaign, CampaignTarget, Device } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ (แต่ละ
  * module ประกาศ interface นี้เองซ้ำกัน ไม่ import ข้าม module — pattern เดียวกับ
@@ -40,8 +41,13 @@ export class CampaignService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** ซ่อน Campaign ระบบของคำขอส่ง Config จากหน้างาน (docs/25 §3.2/Q2) — ไม่ใช่
+   * Campaign ที่ Operation จัดการเอง ไม่ควรโผล่ใน Campaign Monitor */
   findAll(): Promise<Campaign[]> {
-    return this.prisma.campaign.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.campaign.findMany({
+      where: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async findOne(id: string): Promise<Campaign> {
