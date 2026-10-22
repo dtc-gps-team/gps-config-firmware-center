@@ -2,6 +2,10 @@ import { PrismaClient, ActionType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { planInitialAdmin } from '../src/common/initial-admin';
 import { planTestUsersSeed } from '../src/common/test-users';
+import {
+  FIELD_APPLY_SYSTEM_CAMPAIGN_ID,
+  FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+} from '../src/config-apply-request/field-apply-rollout';
 
 const prisma = new PrismaClient();
 
@@ -325,6 +329,23 @@ async function main() {
     // action เดียวกันคุมทั้ง approve/reject mirror `config-deletion`
     // (`rejectConfigDeletionRequest` ก็ใช้ action Approve เดียวกับ approve)
     grant('Operation', 'device-config-override', 'Approve'),
+
+    // ---- config-apply-request (docs/25 §3.3–§3.4, PR #364) ----
+    // คำขอส่ง Config ของ Task เข้าเครื่องจริง — ST/OT ขอ (POST
+    // /tasks/{taskId}/config-apply-requests) และยกเลิกคำขอของตัวเอง (POST
+    // .../{id}/cancel) ด้วย action Create · เท่ากับ device-config-apply ตอนนี้
+    grant('ST', 'config-apply-request', 'Create'),
+    grant('OT', 'config-apply-request', 'Create'),
+    // GET /config-apply-requests — คิวคำขอ (Operation ตัดสิน, Auditor/Admin/
+    // SuperAdmin ดูอย่างเดียว)
+    grant('Operation', 'config-apply-request', 'Read'),
+    grant('Auditor', 'config-apply-request', 'Read'),
+    grant('Admin', 'config-apply-request', 'Read'),
+    grant('SuperAdmin', 'config-apply-request', 'Read'),
+    // POST /config-apply-requests/{id}/approve · .../reject — **Operation
+    // เท่านั้น** Admin/SuperAdmin อนุมัติไม่ได้ (RBAC_Matrix §5 ข้อ 5) · SoD ระดับ
+    // user id (≠ ผู้ขอ, ≠ ผู้ผูก Config, ≠ ผู้อนุมัติ Config) เช็คที่ service
+    grant('Operation', 'config-apply-request', 'Approve'),
 
     // ---- device-firmware-override (Sprint 3 แถวที่ 24) ----
     // Firmware Override รายเครื่อง — mirror device-config-override ทุกประการ
@@ -1259,6 +1280,25 @@ async function main() {
       },
     });
   }
+
+  // ---------------------------------------------------------------------
+  // 8) Campaign ระบบของคำขอส่ง Config จากหน้างาน (docs/25 §3.2 ทาง ค., มติ Q2)
+  //    — Rollout เครื่องเดียวที่สร้างตอนอนุมัติคำขอทุกตัวผูกกับ Campaign นี้
+  //    (`CampaignRollout.campaignId` บังคับมี ไม่แก้ schema) id คงที่ให้โค้ด
+  //    อ้างถึงได้ · ฝั่ง Web ซ่อนจาก Campaign Monitor (งาน A) · upsert
+  //    `update: {}` ไม่เขียนทับถ้ามีอยู่แล้ว
+  // ---------------------------------------------------------------------
+  await prisma.campaign.upsert({
+    where: { id: FIELD_APPLY_SYSTEM_CAMPAIGN_ID },
+    update: {},
+    create: {
+      id: FIELD_APPLY_SYSTEM_CAMPAIGN_ID,
+      name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+      description:
+        'สร้างโดยระบบ — เก็บ Rollout เครื่องเดียวจากคำขอส่ง Config ที่ Operation อนุมัติแล้ว (docs/25) ห้ามใช้เป็นแคมเปญปกติ',
+      createdBy: operationUser.id,
+    },
+  });
 
   console.log(
     `Seeded ${INITIAL_ROLES.length} roles, ${testUsers.length} users, ${grants.length} permissions, ${configFieldDefinitions.length} config field definitions, ${demoCustomers.length} customers, ${demoDevices.length} devices, ${demoConfigs.length} configs, ${demoFirmware.length} firmware.`,

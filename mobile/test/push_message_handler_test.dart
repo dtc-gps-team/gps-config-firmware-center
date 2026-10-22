@@ -171,6 +171,46 @@ void main() {
     });
   });
 
+  group('resolvePushDeepLink — config_apply_* (docs/25 §3.6)', () {
+    for (final type in [
+      'config_apply_rejected',
+      'config_apply_succeeded',
+      'config_apply_failed',
+      'config_apply_expired',
+    ]) {
+      test('$type + taskId -> task detail (การ์ดสถานะคำขอ)', () {
+        final path = resolvePushDeepLink({
+          'type': type,
+          'payload': jsonEncode({
+            'requestId': 'car-1',
+            'taskId': 'task-5',
+            'deviceId': 'BOX-0001',
+          }),
+        });
+        expect(path, AppRoutes.taskDetail('task-5'));
+      });
+    }
+
+    test(
+      'config_apply_pending (ส่งให้ Operation ที่ตัดสินบน Web) -> notifications',
+      () {
+        final path = resolvePushDeepLink({
+          'type': 'config_apply_pending',
+          'payload': jsonEncode({'requestId': 'car-1', 'taskId': 'task-5'}),
+        });
+        expect(path, AppRoutes.notifications);
+      },
+    );
+
+    test('config_apply_failed ไม่มี taskId -> notifications', () {
+      final path = resolvePushDeepLink({
+        'type': 'config_apply_failed',
+        'payload': jsonEncode({'requestId': 'car-1'}),
+      });
+      expect(path, AppRoutes.notifications);
+    });
+  });
+
   group('resolvePushBody', () {
     test('uses payload title (incident_report_pending)', () {
       expect(

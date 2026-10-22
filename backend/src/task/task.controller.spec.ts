@@ -16,6 +16,8 @@ const sampleTask: Task = {
   deviceId: null,
   configId: null,
   campaignId: null,
+  configAssignedBy: null,
+  configAssignedAt: null,
   status: 'pending',
   dueDate: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),

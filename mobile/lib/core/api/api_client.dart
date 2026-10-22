@@ -347,29 +347,44 @@ class ApiClient {
     );
   }
 
-  /// `POST /devices/{deviceId}/apply-config` — ส่ง Config ที่ผูกกับ Task ให้
-  /// อุปกรณ์ที่ติดตั้งจริง (Confirm Install, Sprint 3). `deviceId` คือ
-  /// `Device.deviceId` (เลขเครื่องจริง) ไม่ใช่ Prisma id — เหมือน
-  /// [simulateConfigOnDevice]. Fire-and-forget: `200` เสมอเมื่อ request ผ่าน
-  /// validation (`applied: false` ใน response ไม่ใช่ HTTP error — ดู
-  /// [ConfigApplyResult]) ส่วน 404/409 คือ error จริง (ไม่พบ device/config,
-  /// device ยังไม่ installed, config ยังไม่อนุมัติ, หรือรุ่น/โปรโตคอลไม่ตรง).
-  ///
-  /// [rolloutId] (issue #265 / backend #243) = `DeviceStatus.configRolloutId` —
-  /// ระบุว่าคำขอนี้ตอบสนอง `CampaignRollout` ไหน กัน backend match ผิดรอบ
-  /// เมื่ออุปกรณ์เป็น pending target ของ 2 รอบพร้อมกัน · ส่งเฉพาะตอนมีค่า
-  /// (ไม่ส่ง key นี้เลยตอนเป็น `null` — backend ใช้วิธี match แบบเดิม)
-  Future<ConfigApplyResult> applyConfigToDevice({
-    required String deviceId,
-    required String configId,
-    String? rolloutId,
+  /// `GET /tasks/{taskId}/config-apply-requests` — คำขอส่ง Config ทั้งหมดของ
+  /// งานนี้ ใหม่สุดก่อน (docs/25 §3.3) · กฎการเห็นเดียวกับ `GET /tasks/{id}` ·
+  /// strict เหมือน [listTasks]: สถานะใหม่ที่ build นี้ไม่รู้จักต้องเป็น error ที่
+  /// มองเห็น ไม่ใช่หายไปเงียบๆ แล้วปุ่ม "ขอส่ง" โผล่ทั้งที่มีคำขอค้างอยู่
+  Future<List<ConfigApplyRequest>> listTaskConfigApplyRequests(
+    String taskId,
+  ) async {
+    return _wrapListStrict(
+      () => _dio.get<List<dynamic>>('/tasks/$taskId/config-apply-requests'),
+      ConfigApplyRequest.fromJson,
+    );
+  }
+
+  /// `POST /tasks/{taskId}/config-apply-requests` — ช่างขอส่ง Config ของงาน
+  /// เข้าเครื่องจริง (docs/25 §3.3) · **ไม่ส่ง configId/deviceId** backend อ่าน
+  /// จาก Task เอง · 409 หลายกรณี (งานไม่ได้ in_progress, ไม่มีผู้ผูก Config,
+  /// มีคำขอค้าง, Campaign กำลังส่งให้เครื่องนี้ ฯลฯ) ข้อความจาก backend ใช้แสดงได้
+  Future<ConfigApplyRequest> createConfigApplyRequest(
+    String taskId, {
+    String? note,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
-        '/devices/$deviceId/apply-config',
-        data: {'configId': configId, 'rolloutId': ?rolloutId},
+        '/tasks/$taskId/config-apply-requests',
+        data: {'note': ?note},
       ),
-      ConfigApplyResult.fromJson,
+      ConfigApplyRequest.fromJson,
+    );
+  }
+
+  /// `POST /config-apply-requests/{id}/cancel` — ผู้ขอยกเลิกคำขอ `pending` ของ
+  /// ตัวเอง
+  Future<ConfigApplyRequest> cancelConfigApplyRequest(String requestId) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/config-apply-requests/$requestId/cancel',
+      ),
+      ConfigApplyRequest.fromJson,
     );
   }
 
