@@ -1801,6 +1801,34 @@ export class CampaignRolloutService {
         return false;
       }
       const rollout = target.rollout;
+
+      // docs/25 §5/§5.1 (Q7, มติ A) — บั๊ก: ปุ่มเดิมฝั่ง Mobile
+      // (`DeviceService.applyConfig()`/`confirmFirmwareInstall()`, ส่ง
+      // `fallbackToPayload: true` มาเสมอ) ใช้ `MockConfigApplier` เสมอไม่ว่า
+      // applyMode ของ Rollout จะเป็นอะไร ถ้าช่างกดปุ่มนี้ขณะ target เดียวกัน
+      // กำลังรอผลจริงจากกล่องอยู่ (โหมด `central`/`real`) ผลปลอมจาก mock จะมา
+      // ปิด target ก่อนที่ poll/`device-sync` จะได้คำตอบจริง ทำให้ Campaign
+      // Monitor, Auto Pause และ Incident พลาดผลจริงไปเงียบๆ (ไม่ throw เพราะ
+      // never-throw ของเมธอดนี้) — สกัดที่นี่ (ไม่ใช่ที่ caller) เพราะ caller
+      // (`DeviceService`) ไม่รู้ `rollout.applyMode` ของ target ที่จะ match
+      // ได้จนกว่าจะหาเจอในนี้ก่อน · เช็คนี้ไม่กระทบ `autoApplyConfig()`/
+      // `autoApplyFirmware()`/rollback เอง เพราะ call site พวกนั้นไม่เคยส่ง
+      // `fallbackToPayload: true` (เป็น `rollout.id` ของตัวเอง "แน่นอน" อยู่แล้ว
+      // ตามคอมเมนต์ข้างบน) · `applyMode` เป็น `null` ถือว่าเป็น `mock`
+      // (ค่าเริ่มต้นของระบบตาม CLAUDE.md Mock Mode Pattern — ยังไม่เคยตั้งค่า
+      // = mock เสมอ) ไม่ใช่กรณีอันตรายที่ต้องกัน บล็อกเฉพาะที่ตั้งค่าไว้ชัดเจน
+      // เป็น `real`/`central` เท่านั้น
+      if (
+        options?.fallbackToPayload &&
+        rollout.applyMode &&
+        rollout.applyMode !== 'mock'
+      ) {
+        this.logger.warn(
+          `recordTargetResult: target ${target.id} (deviceId ${deviceId}) อยู่ใน Rollout โหมด ${rollout.applyMode ?? 'null'} (ไม่ใช่ mock) — ปุ่มฝั่ง Mobile (mock) ไม่มีสิทธิ์บันทึกผลแทนกล่องจริง ข้าม`,
+        );
+        return false;
+      }
+
       // การเปลี่ยนสถานะของ Rollout ที่เกิดใน transaction นี้ — ใช้ส่ง event หลัง
       // commit เท่านั้น (listener อ่านข้อมูลสดจาก DB ต้องเห็นผลที่ commit แล้ว)
       let transition = null as 'auto-pause' | 'completed' | null;

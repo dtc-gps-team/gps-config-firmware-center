@@ -2896,6 +2896,57 @@ describe('CampaignRolloutService', () => {
         expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(1);
       });
 
+      it.each(['central', 'real'] as const)(
+        'target เป็นของ Rollout โหมด %s + fallbackToPayload (ปุ่มเดิมฝั่ง Mobile) -> ไม่บันทึกผลปลอมจาก mock ทับผลจริงที่กำลังรอ (docs/25 §5/§5.1, Q7)',
+        async (applyMode) => {
+          const centralRollout: CampaignRollout = {
+            ...activeRollout,
+            applyMode,
+          };
+          const centralTarget = {
+            ...pendingTarget,
+            rollout: centralRollout,
+          };
+          campaignRolloutTarget.findFirst.mockResolvedValueOnce(centralTarget);
+
+          const result = await service.recordTargetResult(
+            installedDeviceA.deviceId,
+            { configId: approvedConfig.id },
+            true,
+            'ok',
+            activeRollout.id,
+            { fallbackToPayload: true },
+          );
+
+          expect(result).toBe(false);
+          expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it('target เป็นของ Rollout โหมด central แต่เรียกแบบไม่เปิด fallbackToPayload (path autoApplyConfig/autoApplyFirmware เอง) -> บันทึกผลตามปกติ ไม่ถูกบล็อก', async () => {
+        const centralRollout: CampaignRollout = {
+          ...activeRollout,
+          applyMode: 'central',
+        };
+        const centralTarget = { ...pendingTarget, rollout: centralRollout };
+        campaignRolloutTarget.findFirst.mockResolvedValueOnce(centralTarget);
+        countsForSuccess();
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          activeRollout.id,
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: centralTarget.id, status: 'pending' },
+          data: { status: 'success', resultDetail: 'ok' },
+        });
+      });
+
       it('ไม่เปิด fallbackToPayload (path autoApply*/rollback ที่ส่ง rollout.id ของตัวเอง) -> หาด้วย rolloutId ไม่เจอก็คืน false ไม่ไปแย่ง target ของ rollout อื่น', async () => {
         campaignRolloutTarget.findFirst.mockResolvedValueOnce(null);
 
