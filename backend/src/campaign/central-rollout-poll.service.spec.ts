@@ -10,19 +10,40 @@ const target = (id: string, deviceId: string, commandId: string) => ({
   deviceId,
   status: 'pending',
   centralCommandId: commandId,
-  rollout: { id: 'r-1', configId: 'cfg-1' },
+  rollout: {
+    id: 'r-1',
+    payloadType: 'Config',
+    configId: 'cfg-1',
+    firmwareId: null,
+  },
+});
+
+const firmwareTarget = (id: string, deviceId: string, commandId: string) => ({
+  id,
+  rolloutId: 'r-2',
+  deviceId,
+  status: 'pending',
+  centralCommandId: commandId,
+  rollout: {
+    id: 'r-2',
+    payloadType: 'Firmware',
+    configId: null,
+    firmwareId: 'fw-1',
+  },
 });
 
 describe('CentralRolloutPollService', () => {
   let findMany: jest.Mock;
   let recordTargetResult: jest.Mock;
   let markTargetSkippedOffline: jest.Mock;
+  let confirmCentralFirmwareSuccess: jest.Mock;
   let getCommandOutcome: jest.Mock;
 
   async function build(withCentral = true): Promise<CentralRolloutPollService> {
     findMany = jest.fn().mockResolvedValue([]);
     recordTargetResult = jest.fn().mockResolvedValue(true);
     markTargetSkippedOffline = jest.fn().mockResolvedValue(true);
+    confirmCentralFirmwareSuccess = jest.fn().mockResolvedValue(true);
     getCommandOutcome = jest.fn();
     const module = await Test.createTestingModule({
       providers: [
@@ -33,7 +54,11 @@ describe('CentralRolloutPollService', () => {
         },
         {
           provide: CampaignRolloutService,
-          useValue: { recordTargetResult, markTargetSkippedOffline },
+          useValue: {
+            recordTargetResult,
+            markTargetSkippedOffline,
+            confirmCentralFirmwareSuccess,
+          },
         },
         ...(withCentral
           ? [{ provide: CentralDeviceService, useValue: { getCommandOutcome } }]
@@ -43,7 +68,7 @@ describe('CentralRolloutPollService', () => {
     return module.get(CentralRolloutPollService);
   }
 
-  it('ถามเฉพาะเครื่อง pending ที่มีรหัสคำสั่ง ของ Rollout โหมด central ที่ active/paused', async () => {
+  it('ถามเฉพาะเครื่อง pending ที่มีรหัสคำสั่ง ของ Rollout โหมด central ที่ active/paused (ทั้ง Config และ Firmware)', async () => {
     const service = await build();
     await service.poll();
     expect(findMany).toHaveBeenCalledWith(
@@ -53,12 +78,50 @@ describe('CentralRolloutPollService', () => {
           centralCommandId: { not: null },
           rollout: {
             applyMode: 'central',
-            payloadType: 'Config',
+            payloadType: { in: ['Config', 'Firmware'] },
             status: { in: ['active', 'paused'] },
           },
         },
       }),
     );
+  });
+
+  it('Firmware สำเร็จ -> ผ่าน confirmCentralFirmwareSuccess() ไม่ใช่ recordTargetResult() ตรงๆ (เขียน Dual Partition bookkeeping ก่อน)', async () => {
+    const service = await build();
+    findMany.mockResolvedValue([firmwareTarget('t1', 'D1', 'C1')]);
+    getCommandOutcome.mockResolvedValue({ kind: 'success' });
+
+    const result = await service.poll();
+
+    expect(result.success).toBe(1);
+    expect(confirmCentralFirmwareSuccess).toHaveBeenCalledWith(
+      'D1',
+      'fw-1',
+      'r-2',
+      expect.stringContaining('C1'),
+    );
+    expect(recordTargetResult).not.toHaveBeenCalled();
+  });
+
+  it('Firmware ล้มเหลว -> ผ่าน recordTargetResult() ธรรมดา (ไม่แตะ Dual Partition)', async () => {
+    const service = await build();
+    findMany.mockResolvedValue([firmwareTarget('t1', 'D1', 'C1')]);
+    getCommandOutcome.mockResolvedValue({
+      kind: 'failed',
+      detail: 'Server กลางรายงาน FAILED',
+    });
+
+    const result = await service.poll();
+
+    expect(result.failed).toBe(1);
+    expect(recordTargetResult).toHaveBeenCalledWith(
+      'D1',
+      { firmwareId: 'fw-1' },
+      false,
+      'Server กลางรายงาน FAILED',
+      'r-2',
+    );
+    expect(confirmCentralFirmwareSuccess).not.toHaveBeenCalled();
   });
 
   it('แปลงผลแต่ละเครื่องเป็นผลของ Rollout: สำเร็จ ล้มเหลว ข้าม รอ ถามไม่ได้', async () => {

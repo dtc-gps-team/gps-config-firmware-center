@@ -16,6 +16,7 @@ import type {
   CentralDeviceList,
   CentralMode,
   CentralStatus,
+  PushFirmwareOptions,
   RawGatewayDevice,
   RawRegistryDevice,
 } from './central-device.types';
@@ -27,6 +28,13 @@ export type PushConfigOutcome =
   /** ส่งไม่ได้เพราะข้อมูลหรือสถานะกล่องไม่เหมาะ (ไม่รู้จักกล่อง, ไม่ผ่าน schema ฯลฯ) ลองซ้ำไม่ช่วย */
   | { kind: 'rejected'; reason: string }
   /** ติดต่อ Server กลางไม่ได้ */
+  | { kind: 'unavailable'; reason: string };
+
+/** ผลการสั่งอัปเดต Firmware ให้กล่องหนึ่งเครื่อง — รูปร่างเดียวกับ `PushConfigOutcome`
+ * (ไม่มี version ตอน sent เพราะ Server กลางไม่คืน config_version สำหรับ firmware) */
+export type PushFirmwareOutcome =
+  | { kind: 'sent'; commandId: string }
+  | { kind: 'rejected'; reason: string }
   | { kind: 'unavailable'; reason: string };
 
 /** เก็บผลล่าสุดสั้นๆ กันหน้าเว็บที่ refresh ทุก 5 วินาทีหลายหน้าต่างยิง Server กลางถี่เกินจำเป็น */
@@ -148,6 +156,65 @@ export class CentralDeviceService {
         };
       }
       return { kind: 'sent', commandId, configVersion: result.config_version };
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return { kind: 'rejected', reason: err.message };
+      }
+      return {
+        kind: 'unavailable',
+        reason:
+          err instanceof CentralUnavailableError
+            ? err.message
+            : 'ติดต่อ Server กลางไม่สำเร็จ',
+      };
+    }
+  }
+
+  /**
+   * สั่งอัปเดต Firmware ให้กล่อง: ตรวจว่า Server กลางรู้จักและกล่องอยู่ในทะเบียนเหมือน
+   * `pushConfig()` แต่ **ไม่ตรวจ schema เองฝั่งเรา** — Server กลางตรวจรุ่นฮาร์ดแวร์/เวอร์ชัน/
+   * downgrade เองจากไฟล์ที่ส่งไป (`checkHardwareModel`/`VERSION_MISMATCH`/`DOWNGRADE_NOT_ALLOWED`
+   * ใน `admin.js`) ไม่โยน error ออกไปเหมือนกัน
+   */
+  async pushFirmware(
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<PushFirmwareOutcome> {
+    const { list, device } = await this.findDevice(deviceId);
+    if (!list.reachable) {
+      return {
+        kind: 'unavailable',
+        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
+      };
+    }
+    if (!device) {
+      return {
+        kind: 'rejected',
+        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
+      };
+    }
+    if (!device.registered) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงอัปเดต Firmware ไม่ได้`,
+      };
+    }
+
+    try {
+      const result = await this.client.pushFirmware(deviceId, data, options);
+      // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
+      this.cache = null;
+      const commandId = result.command?.command_id;
+      if (!commandId) {
+        return {
+          kind: 'rejected',
+          reason:
+            result.message ??
+            'Server กลางรับไฟล์ Firmware แล้วแต่ไม่สร้างคำสั่งส่งให้กล่อง',
+        };
+      }
+      return { kind: 'sent', commandId };
     } catch (err) {
       if (err instanceof CentralRejectedError) {
         return { kind: 'rejected', reason: err.message };

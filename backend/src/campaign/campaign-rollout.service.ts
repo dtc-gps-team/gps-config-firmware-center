@@ -14,6 +14,7 @@ import {
   CampaignRolloutStatus,
   CampaignRolloutTarget,
   Device,
+  Firmware,
   Prisma,
 } from '@prisma/client';
 import {
@@ -41,6 +42,7 @@ import {
 } from '../firmware/firmware-status';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import {
@@ -120,6 +122,7 @@ export class CampaignRolloutService {
     @Inject(CONFIG_APPLIER)
     private readonly configApplier: ConfigApplier,
     private readonly configDefinitionService: ConfigDefinitionService,
+    private readonly firmwareStorage: FirmwareStorageService,
     // โหมดตอนนี้ของ env `DEVICE_CONFIG_APPLY_MODE` — ใช้ตอน `release()` เพื่อ
     // บันทึกลง `CampaignRollout.applyMode` เท่านั้น ที่อื่นอ่านจาก Rollout เอง
     @Inject(CONFIG_APPLY_MODE)
@@ -1529,7 +1532,13 @@ export class CampaignRolloutService {
     });
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
-      where: { rolloutId: rollout.id, status: 'pending' },
+      where: {
+        rolloutId: rollout.id,
+        status: 'pending',
+        // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
+        // ตอน resume() หลัง Auto Pause (เหมือน autoApplyConfig ข้างบน)
+        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -1612,6 +1621,22 @@ export class CampaignRolloutService {
         continue;
       }
 
+      // โหมด central: ส่งไฟล์ให้ Server กลางแล้วรอผลจริงจากกล่องผ่าน poll
+      // (`CentralRolloutPollService`) — **ยังไม่เขียน Dual Partition
+      // bookkeeping ตรงนี้** ต่างจาก mock ที่เขียนทันที เพราะยังไม่รู้ว่ากล่อง
+      // จะติดตั้งสำเร็จจริงไหม เขียนตอน poll ยืนยันสำเร็จแทน (ดู
+      // `CentralRolloutPollService.poll()`)
+      if (rollout.applyMode === 'central') {
+        await this.pushFirmwareToCentral(
+          rollout,
+          target.id,
+          device.deviceId,
+          firmware,
+          actorId,
+        );
+        continue;
+      }
+
       const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
       // #235 review comment ข้อ 4 — เดิม catch แค่ log warn แล้วยังรายงาน
       // success เสมอทั้งที่ bookkeeping เขียนไม่สำเร็จจริง กลายเป็นหลบ Auto
@@ -1669,6 +1694,119 @@ export class CampaignRolloutService {
     return this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rollout.id },
     });
+  }
+
+  /**
+   * โหมด `central` ของ `autoApplyFirmware()`: ดาวน์โหลดไฟล์จาก Object Storage
+   * แล้วส่งให้ Server กลางเครื่องเดียว — mirror `pushToCentral()` (Config) ทุก
+   * ประการ ต่างกันที่ไม่มี schema ให้แปลงค่า (ส่งไฟล์ดิบตรงๆ) และ Server กลาง
+   * ไม่คืนเลขเวอร์ชันมาด้วย
+   */
+  private async pushFirmwareToCentral(
+    rollout: CampaignRollout,
+    targetId: string,
+    deviceId: string,
+    firmware: Firmware,
+    actorId: string,
+  ): Promise<void> {
+    const outcome = this.central
+      ? await this.central.pushFirmware(
+          deviceId,
+          await this.firmwareStorage.downloadObject(firmware.objectKey),
+          { firmwareVersion: firmware.version },
+        )
+      : ({
+          kind: 'unavailable',
+          reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
+        } as const);
+
+    if (outcome.kind === 'sent') {
+      await this.prisma.campaignRolloutTarget.update({
+        where: { id: targetId },
+        data: {
+          centralCommandId: outcome.commandId,
+          resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Firmware v${firmware.version}) รอกล่องยืนยัน`,
+        },
+      });
+      await this.logAudit('confirm-firmware-install', actorId, {
+        deviceId,
+        firmwareId: firmware.id,
+        firmwareVersion: firmware.version,
+        centralCommandId: outcome.commandId,
+      });
+      return;
+    }
+
+    const claimed = await this.recordTargetResult(
+      deviceId,
+      { firmwareId: firmware.id },
+      false,
+      outcome.reason,
+      rollout.id,
+    );
+    if (claimed) {
+      await this.logAudit('confirm-firmware-install', actorId, {
+        deviceId,
+        firmwareId: firmware.id,
+        firmwareVersion: firmware.version,
+      });
+    }
+  }
+
+  /**
+   * เรียกจาก `CentralRolloutPollService.poll()` เมื่อ Server กลางยืนยันว่ากล่อง
+   * ติดตั้ง Firmware สำเร็จแล้ว — เขียน Dual Partition bookkeeping ตอนนี้ (ไม่ใช่
+   * ตอนสั่ง `pushFirmwareToCentral()` เพราะตอนนั้นยังไม่รู้ผลจริง) แล้วค่อย
+   * `recordTargetResult()` mirror ขั้นตอนของ mock ใน `autoApplyFirmware()`
+   * ทุกประการ (เขียน partition ไม่สำเร็จ = นับ failed จริง ไม่ใช่ success เงียบๆ)
+   */
+  async confirmCentralFirmwareSuccess(
+    deviceId: string,
+    firmwareId: string,
+    rolloutId: string,
+    detail: string,
+  ): Promise<boolean> {
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!device) {
+      return this.recordTargetResult(
+        deviceId,
+        { firmwareId },
+        false,
+        `ไม่พบ Device deviceId ${deviceId}`,
+        rolloutId,
+      );
+    }
+
+    const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
+    let partitionWriteSucceeded = true;
+    try {
+      await this.prisma.device.update({
+        where: { deviceId },
+        data: {
+          activePartition: nextPartition,
+          ...(nextPartition === 'A'
+            ? { partitionAFirmwareId: firmwareId }
+            : { partitionBFirmwareId: firmwareId }),
+        },
+      });
+    } catch (err) {
+      partitionWriteSucceeded = false;
+      this.logger.warn(
+        `อัปเดต Dual Partition ไม่สำเร็จ (deviceId ${deviceId}, โหมด central): ${(err as Error).message}`,
+      );
+    }
+
+    return this.recordTargetResult(
+      deviceId,
+      { firmwareId },
+      partitionWriteSucceeded,
+      partitionWriteSucceeded
+        ? detail
+        : 'เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ',
+      rolloutId,
+    );
   }
 
   /**

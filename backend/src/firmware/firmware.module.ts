@@ -42,6 +42,8 @@ import {
       inject: [NestConfigService],
     },
   ],
-  exports: [FirmwareService],
+  // FirmwareStorageService: ให้ CampaignModule เรียกดาวน์โหลดไฟล์ไบนารีตอนส่ง
+  // Firmware ให้ Server กลาง (`CentralDeviceService.pushFirmware()`)
+  exports: [FirmwareService, FirmwareStorageService],
 })
 export class FirmwareModule {}

@@ -23,8 +23,11 @@ export interface CentralPollResult {
  * | SUPERSEDED, CANCELLED (EXPIRED) | skipped_offline | ไม่นับ |
  * | สถานะระหว่างทาง | รอต่อ | - |
  *
- * ผลสำเร็จและล้มเหลวผ่าน `recordTargetResult()` ตัวเดิม จึงได้ Auto Pause และ Incident ตาม
- * docs/19 หัวข้อ 15 โดยไม่เขียนซ้ำ · เวลารอเครื่องออฟไลน์/ไม่ตอบ Server กลางกำหนดเอง
+ * ผลล้มเหลวผ่าน `recordTargetResult()` ตัวเดิมเสมอ ได้ Auto Pause และ Incident ตาม
+ * docs/19 หัวข้อ 15 โดยไม่เขียนซ้ำ — **ผลสำเร็จแยกตาม payloadType**: Config ผ่าน
+ * `recordTargetResult()` ตรงๆ (ไม่มี bookkeeping อะไรเพิ่ม) ส่วน Firmware ผ่าน
+ * `confirmCentralFirmwareSuccess()` ก่อน (เขียน Dual Partition bookkeeping ให้
+ * ตอนนี้ที่รู้ผลจริงแล้ว ไม่ใช่ตอนสั่ง) · เวลารอเครื่องออฟไลน์/ไม่ตอบ Server กลางกำหนดเอง
  * (delivery 600 วินาที, ตอบกลับตามชนิดคำสั่ง) ไม่ใช้ `RolloutTimeoutService` ของโหมด real
  */
 @Injectable()
@@ -52,18 +55,31 @@ export class CentralRolloutPollService {
         centralCommandId: { not: null },
         rollout: {
           applyMode: 'central',
-          payloadType: 'Config',
+          payloadType: { in: ['Config', 'Firmware'] },
           status: { in: ['active', 'paused'] },
         },
       },
-      include: { rollout: { select: { id: true, configId: true } } },
+      include: {
+        rollout: {
+          select: {
+            id: true,
+            payloadType: true,
+            configId: true,
+            firmwareId: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
     for (const target of targets) {
       const commandId = target.centralCommandId as string;
-      const configId = target.rollout.configId;
-      if (!configId) continue; // defensive — Config rollout ต้องมี configId เสมอ
+      const isFirmware = target.rollout.payloadType === 'Firmware';
+      const payload = isFirmware
+        ? { firmwareId: target.rollout.firmwareId }
+        : { configId: target.rollout.configId };
+      // defensive — Config rollout ต้องมี configId เสมอ, Firmware ต้องมี firmwareId เสมอ
+      if (!payload.configId && !payload.firmwareId) continue;
 
       const outcome = await this.central.getCommandOutcome(commandId);
       switch (outcome.kind) {
@@ -73,20 +89,31 @@ export class CentralRolloutPollService {
           result.unavailable += 1;
           break;
         case 'success': {
-          const claimed = await this.rolloutService.recordTargetResult(
-            target.deviceId,
-            { configId },
-            true,
-            `Server กลางยืนยันแล้ว คำสั่ง ${commandId}: กล่องรับ Config ใหม่สำเร็จ`,
-            target.rolloutId,
-          );
+          const detail = isFirmware
+            ? `Server กลางยืนยันแล้ว คำสั่ง ${commandId}: กล่องติดตั้ง Firmware สำเร็จ`
+            : `Server กลางยืนยันแล้ว คำสั่ง ${commandId}: กล่องรับ Config ใหม่สำเร็จ`;
+          const claimed =
+            isFirmware && payload.firmwareId
+              ? await this.rolloutService.confirmCentralFirmwareSuccess(
+                  target.deviceId,
+                  payload.firmwareId,
+                  target.rolloutId,
+                  detail,
+                )
+              : await this.rolloutService.recordTargetResult(
+                  target.deviceId,
+                  payload as { configId: string },
+                  true,
+                  detail,
+                  target.rolloutId,
+                );
           if (claimed) result.success += 1;
           break;
         }
         case 'failed': {
           const claimed = await this.rolloutService.recordTargetResult(
             target.deviceId,
-            { configId },
+            payload as { configId: string } | { firmwareId: string },
             false,
             outcome.detail,
             target.rolloutId,

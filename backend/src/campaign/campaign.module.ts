@@ -3,6 +3,7 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CentralDeviceModule } from '../central-device/central-device.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
+import { FirmwareModule } from '../firmware/firmware.module';
 import {
   CONFIG_APPLIER,
   CONFIG_APPLY_MODE,
@@ -45,8 +46,15 @@ import {
 @Module({
   // ConfigDefinitionModule: ตรวจค่าเฉพาะเครื่องของ Rollout เทียบคลัง Parameter
   // (`validateOperationOverridableFields`) ทิศทางเดียว ไม่วนกลับ
-  // CentralDeviceModule: ส่ง Config ไป Server กลางในโหมด `central` (ทิศทางเดียว ไม่วนกลับ)
-  imports: [AuthModule, ConfigDefinitionModule, CentralDeviceModule],
+  // CentralDeviceModule: ส่ง Config/Firmware ไป Server กลางในโหมด `central` (ทิศทางเดียว ไม่วนกลับ)
+  // FirmwareModule: ดาวน์โหลดไฟล์ไบนารีจาก Object Storage ตอนส่ง Firmware ให้
+  // Server กลาง (ทิศทางเดียว — FirmwareModule ไม่ import CampaignModule)
+  imports: [
+    AuthModule,
+    ConfigDefinitionModule,
+    CentralDeviceModule,
+    FirmwareModule,
+  ],
   controllers: [CampaignController, CampaignRolloutController],
   providers: [
     CampaignService,
