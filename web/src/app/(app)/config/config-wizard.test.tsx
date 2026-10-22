@@ -26,6 +26,20 @@ vi.mock("@/hooks/use-config-definitions", () => ({
   }),
 }));
 
+// ทะเบียนโมเดล (`GET /device-models`) — โปรโตคอลที่เลือกได้ในหน้า step 1 ล็อก
+// ตาม `supportedProtocols` ของรุ่นในทะเบียน (เหมือนหน้าลงทะเบียนอุปกรณ์)
+const registryState = vi.hoisted(() => ({
+  data: [] as { name: string; supportedProtocols: string[] }[],
+}));
+vi.mock("@/hooks/use-device-models", () => ({
+  useDeviceModels: () => ({
+    data: registryState.data,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 const createConfig = vi.fn();
 vi.mock("@/lib/config-api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/config-api")>(
@@ -63,7 +77,7 @@ function makeFieldDef(
 }
 
 /** ข้าม step 1 (ชื่อ/รุ่น/โปรโตคอล) ไป step 2 (กรอกค่า field) — กรอกชื่อ +
- * เลือกรุ่น/โปรโตคอลผ่าน native <select> (shadcn Select render เป็น
+ * เลือกรุ่น (โปรโตคอลถูกเลือกให้ตามทะเบียน) ผ่าน native <select> (shadcn Select render เป็น
  * combobox ของ Radix ซึ่งทดสอบด้วย userEvent.click ตรงๆ ได้) */
 async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText("ชื่อ Config"), "Test Config");
@@ -71,11 +85,17 @@ async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
   await user.click(await screen.findByRole("option", { name: "GT06N" }));
 
-  await user.click(screen.getByRole("combobox", { name: "โปรโตคอล" }));
-  await user.click(await screen.findByRole("option", { name: "TCP" }));
+  // GT06N ในทะเบียนรองรับ TCP อย่างเดียว: โปรโตคอลถูกเลือกให้และล็อกช่องไว้
+  expect(screen.getByRole("combobox", { name: "โปรโตคอล" })).toHaveTextContent(
+    "TCP",
+  );
 
   await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
 }
+
+beforeEach(() => {
+  registryState.data = [{ name: "GT06N", supportedProtocols: ["TCP"] }];
+});
 
 describe("ConfigWizard — โหมดโคลนบันทึกต้นทาง (clonedFromId)", () => {
   const source = {
@@ -316,5 +336,112 @@ describe("ConfigWizard: พารามิเตอร์นอกชุดข�
       APN1: "internet",
       EXTRA_PARAM: "y",
     });
+  });
+});
+
+describe("ConfigWizard: ล็อกโปรโตคอลตามทะเบียนโมเดล (รีวิวพี่เลี้ยง 19 ต.ค.)", () => {
+  beforeEach(() => {
+    createConfig.mockReset();
+    definitionsState.data = [
+      makeFieldDef({
+        fieldName: "APN1",
+        supportedModels: [
+          { deviceModel: "GT06N", protocol: "TCP" },
+          { deviceModel: "GT06N", protocol: "UDP" },
+        ],
+      }),
+    ];
+  });
+
+  async function pickModel(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string,
+  ) {
+    await user.click(screen.getByRole("combobox", { name: "โมเดล" }));
+    await user.click(await screen.findByRole("option", { name }));
+  }
+
+  it("โมเดลที่รองรับโปรโตคอลเดียวในทะเบียน: เลือกโปรโตคอลให้อัตโนมัติและล็อกช่อง", async () => {
+    registryState.data = [{ name: "GT06N", supportedProtocols: ["TCP"] }];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+
+    await pickModel(user, "GT06N");
+
+    const protocolBox = screen.getByRole("combobox", { name: "โปรโตคอล" });
+    expect(protocolBox).toHaveTextContent("TCP");
+    // โมเดลหนึ่งใช้ได้โปรโตคอลเดียว: ช่องถูกล็อก เปลี่ยนไม่ได้
+    expect(protocolBox).toBeDisabled();
+  });
+
+  it("โมเดลที่รองรับหลายโปรโตคอล: ไม่เลือกให้ ต้องเลือกเอง และเห็นเฉพาะที่ทะเบียนรองรับ", async () => {
+    registryState.data = [
+      { name: "GT06N", supportedProtocols: ["TCP", "UDP"] },
+    ];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+
+    await pickModel(user, "GT06N");
+
+    const protocolBox = screen.getByRole("combobox", { name: "โปรโตคอล" });
+    expect(protocolBox).not.toHaveTextContent("TCP");
+    expect(protocolBox).not.toHaveTextContent("UDP");
+
+    await user.click(protocolBox);
+    expect(await screen.findByRole("option", { name: "TCP" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "UDP" })).toBeInTheDocument();
+  });
+
+  it("ทะเบียนรองรับโปรโตคอลที่พารามิเตอร์ยังไม่มี: ยังเลือกได้ตามทะเบียน", async () => {
+    registryState.data = [
+      { name: "GT06N", supportedProtocols: ["TCP", "HTTP"] },
+    ];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+
+    await pickModel(user, "GT06N");
+    await user.click(screen.getByRole("combobox", { name: "โปรโตคอล" }));
+
+    expect(await screen.findByRole("option", { name: "HTTP" })).toBeInTheDocument();
+  });
+
+  it("เปลี่ยนโมเดล: ล้างโปรโตคอลที่เลือกไว้ แล้วเลือกให้ใหม่ถ้าโมเดลใหม่มีโปรโตคอลเดียว", async () => {
+    definitionsState.data = [
+      makeFieldDef({
+        fieldName: "APN1",
+        supportedModels: [
+          { deviceModel: "GT06N", protocol: "TCP" },
+          { deviceModel: "GT06L", protocol: "UDP" },
+        ],
+      }),
+    ];
+    registryState.data = [
+      { name: "GT06N", supportedProtocols: ["TCP"] },
+      { name: "GT06L", supportedProtocols: ["UDP"] },
+    ];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+
+    await pickModel(user, "GT06N");
+    expect(screen.getByRole("combobox", { name: "โปรโตคอล" })).toHaveTextContent(
+      "TCP",
+    );
+
+    await pickModel(user, "GT06L");
+    expect(screen.getByRole("combobox", { name: "โปรโตคอล" })).toHaveTextContent(
+      "UDP",
+    );
+  });
+
+  it("โมเดลที่ยังไม่อยู่ในทะเบียน (ข้อมูลเก่า): ถอยไปใช้โปรโตคอลจากพารามิเตอร์เหมือนเดิม", async () => {
+    registryState.data = [];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "create" }} />);
+
+    await pickModel(user, "GT06N");
+    await user.click(screen.getByRole("combobox", { name: "โปรโตคอล" }));
+
+    expect(await screen.findByRole("option", { name: "TCP" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "UDP" })).toBeInTheDocument();
   });
 });

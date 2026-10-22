@@ -158,6 +158,75 @@ void main() {
     expect(find.text('Field Report'), findsOneWidget);
   });
 
+  group('ปุ่มตั้งแต่ 3 ปุ่ม: ตารางสองคอลัมน์กว้างเท่ากัน ขอบตรงกับเนื้อหา', () {
+    // เดิม Wrap ชิดขวาความกว้างตามข้อความ — 4 ปุ่มของ Device Detail ขึ้น 2 แถว
+    // ที่เริ่มคนละตำแหน่ง ไม่ตรงทั้งกันเองและกับขอบการ์ด (บั๊กจาก Batch 4)
+    Future<void> pumpActions(WidgetTester tester, List<String> labels) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _wrap(
+          AppPageHeader(
+            title: 'รายละเอียดอุปกรณ์',
+            onBack: () {},
+            actions: [
+              for (final (i, label) in labels.indexed)
+                AppPageHeaderAction(
+                  label: label,
+                  icon: Icons.tune,
+                  primary: i == labels.length - 1,
+                  onPressed: () {},
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Rect rectOf(WidgetTester tester, String label) => tester.getRect(
+      find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+
+    testWidgets('4 ปุ่ม: 2 แถว ซ้าย/ขวาตรงกัน กว้างเท่ากัน ชิดขอบ 16', (
+      tester,
+    ) async {
+      const labels = [
+        'Config Override',
+        'Firmware Override',
+        'Field Report',
+        'ยืนยันติดตั้ง Firmware',
+      ];
+      await pumpActions(tester, labels);
+      final r = [for (final l in labels) rectOf(tester, l)];
+      final width = tester.getSize(find.byType(Scaffold)).width;
+
+      expect(r[0].left, 16);
+      expect(r[2].left, 16);
+      expect(r[1].right, width - 16);
+      expect(r[3].right, width - 16);
+      expect(r[0].top, r[1].top);
+      expect(r[2].top, r[3].top);
+      expect(r[2].top, greaterThan(r[0].bottom));
+      for (final rect in r) {
+        expect(rect.width, closeTo(r[0].width, 0.01));
+      }
+    });
+
+    testWidgets('3 ปุ่ม: ปุ่มสุดท้าย (ปุ่มหลัก) เต็มแถว', (tester) async {
+      const labels = ['Config Override', 'Field Report', 'ยืนยัน'];
+      await pumpActions(tester, labels);
+      final last = rectOf(tester, 'ยืนยัน');
+      final width = tester.getSize(find.byType(Scaffold)).width;
+      expect(last.left, 16);
+      expect(last.right, width - 16);
+      expect(rectOf(tester, 'Field Report').right, width - 16);
+    });
+  });
+
   testWidgets('ไม่มีปุ่มที่มองเห็นเลย ไม่เหลือแถว actions ว่าง', (
     tester,
   ) async {
@@ -292,5 +361,30 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull);
+  });
+
+  // พบตอนใช้ meta ครั้งแรกใน Batch 4 (Device Detail): label ยาวกว่าจอเมื่อขยาย
+  // ตัวอักษร Row เดิมล้นขอบ — ค่าต้องขึ้นบรรทัดใหม่ได้
+  testWidgets('meta: ตัวอักษร 2 เท่าบนจอ 320 ไม่ล้น ค่าอยู่ใต้ label', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      _wrap(
+        const AppPageHeader(
+          title: 'รายละเอียดอุปกรณ์',
+          meta: [AppPageHeaderMeta(label: 'เลขเครื่อง', value: 'DEV-0117')],
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(find.text('DEV-0117')).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.text('เลขเครื่อง')).dy),
+    );
   });
 }

@@ -46,6 +46,7 @@ export type Firmware = {
   objectKey: string;
   originalFilename: string;
   fileSizeBytes: number;
+  checksumSha256: string | null;
   uploadedBy: string;
   uploadedAt: string;
   approvalStatus: FirmwareApprovalStatus;

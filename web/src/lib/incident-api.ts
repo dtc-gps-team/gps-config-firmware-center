@@ -83,8 +83,10 @@ export type IncidentDecisionResult = Incident & {
 
 /**
  * `POST /incidents/{id}/decide` — Operation เท่านั้น (resource `incidents`
- * action `Approve`) · ใช้ได้กับ Field Report ที่ยัง `open` (404 ถ้าไม่ใช่
- * field report, 409 ถ้าตัดสินใจไปแล้ว) · `note` บังคับกรอก 1 ถึง 1000 ตัวอักษร
+ * action `Approve`) · ใช้ได้กับ 2 กลุ่ม: Field Report ที่ยัง `open` (ได้ทั้ง 3
+ * outcome) และ Incident ที่ระบบสร้างเองที่ยัง `open`/`investigating` (ปิดด้วยมือ
+ * ได้เฉพาะ resolve/dismiss, promote ได้ 400) · 404 ถ้าไม่พบ, 409 ถ้าปิด/ตัดสินใจ
+ * ไปแล้ว · `note` บังคับกรอก 1 ถึง 1000 ตัวอักษร
  */
 export function decideIncident(
   token: string,
@@ -97,3 +99,20 @@ export function decideIncident(
   );
 }
 
+/**
+ * `POST /incidents/{id}/retry-sync` (openapi `retryIncidentConfigSync`) — Operation
+ * สั่งเขียน Config เข้าระบบปลายทางใหม่จาก Incident ที่เขียนไม่สำเร็จ
+ * (`source: config-sync-writer`) · ตอบทันทีว่าสั่งแล้ว (Incident เป็น
+ * `investigating`) เขียนจริงทำเบื้องหลัง: สำเร็จ -> ระบบปิด Incident ให้เอง,
+ * ล้มอีก -> Incident เดิมกลับเป็น `open` · 400 ไม่ใช่ Incident เขียน Config หรือ
+ * ข้อมูลไม่พอ, 404 ไม่พบเวอร์ชัน, 409 ปิดไปแล้ว
+ */
+export function retryIncidentConfigSync(
+  token: string,
+  id: string,
+): Promise<Incident> {
+  return apiJson<Incident>(`/incidents/${encodeURIComponent(id)}/retry-sync`, {
+    method: "POST",
+    token,
+  });
+}

@@ -122,7 +122,12 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       expect(screen.getByLabelText("โมเดล")).toHaveTextContent("GT06N");
       expect(screen.getByLabelText("โปรโตคอล")).toHaveTextContent("TCP");
       // ไม่มีค่าชั่วคราวใดๆ: ระบบแก้ข้อมูลเครื่องทีหลังไม่ได้ ค่าที่ลืมแก้จะค้างถาวร
-      for (const label of ["SIM Number", "IMEI", "Serial Number", "Blackbox ID"]) {
+      for (const label of [
+        "SIM Number",
+        "IMEI",
+        "Serial Number",
+        "Blackbox ID",
+      ]) {
         expect(screen.getByLabelText(label)).toHaveValue("");
       }
       // ยังไม่กรอกครบ ปุ่มลงทะเบียนกดไม่ได้
@@ -131,7 +136,9 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
       ).toBeDisabled();
     });
 
-    it("ช่องที่ขึ้นต้นด้วย central: (วางหรือพิมพ์เอง) กดส่งไม่ได้ ไม่เรียก API และบอกว่าช่องไหน", async () => {
+    it("ช่องที่ขึ้นต้นด้วย central: (วางหรือพิมพ์เอง) กดส่งไม่ได้ ไม่เรียก API และบอกว่าช่องไหน", // พิมพ์หลายช่อง + คลิกเลือกตัวเลือกหลายครั้ง (userEvent จำลองทีละตัวอักษร) ช้ากว่าปกติภายใต้
+    // โหลดตอนรันทั้งชุดพร้อมกัน จึงให้เวลามากกว่าค่าเริ่มต้น 5 วินาที
+    async () => {
       central.value = {
         mode: "real",
         reachable: true,
@@ -165,7 +172,7 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
         screen.getByRole("button", { name: "ลงทะเบียนอุปกรณ์" }),
       );
       expect(registerDevice).toHaveBeenCalledTimes(1);
-    });
+    }, 15000);
 
     it("โหมด mock: ช่องเลือกมีป้ายข้อมูลตัวอย่าง (โหมดจริงไม่มี)", () => {
       central.value = {

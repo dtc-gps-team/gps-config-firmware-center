@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -19,8 +20,10 @@ import {
 } from '../campaign/rollout-events';
 import {
   ConfigSyncFailure,
+  ConfigSyncSuccess,
   ConfigSyncWriterQueue,
 } from '../config-sync-writer/config-sync-writer-queue.service';
+import { toLegacyFields } from '../config-sync-writer/legacy-fields';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateIncidentDto } from './dto/create-incident.dto';
@@ -133,6 +136,11 @@ export class IncidentService implements OnModuleInit {
       void this.createFromSyncFailure(failure);
     });
     this.logger.log("ผูก listener 'sync-failed' ของ config-sync-writer แล้ว");
+    // เขียน Config สำเร็จ (รวมที่ Operation สั่งลองเขียนใหม่) -> ปิด Incident ที่ค้าง
+    // ของ Config เดียวกันให้เอง (never-throw เหมือน listener ข้างบน)
+    this.configSyncQueue.on('sync-succeeded', (success: ConfigSyncSuccess) => {
+      void this.resolveFromSyncSuccess(success);
+    });
 
     // handler ทั้งสองไม่ throw (never-throw) จึงห่อ `void` ได้เหมือนข้างบน
     this.rolloutEvents.on(ROLLOUT_FAILED_EVENT, (event: RolloutFailedEvent) => {
@@ -344,6 +352,39 @@ export class IncidentService implements OnModuleInit {
         attempts: failure.attempts,
         lastError: failure.lastError,
       };
+      // เวอร์ชันเดียวกันของ Config เดียวกันที่ยังมี Incident ค้างอยู่ (เช่น Operation
+      // สั่งลองเขียนใหม่แล้วล้มอีก) -> อัปเดตของเดิม ไม่สร้างซ้ำเป็นรายการที่สอง
+      const active = await this.prisma.incident.findFirst({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: failure.configId,
+          status: { in: ['open', 'investigating'] },
+          metadata: { path: ['versionNumber'], equals: failure.versionNumber },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (active) {
+        const previous = (active.metadata ?? {}) as IncidentMetadata;
+        const totalAttempts = (previous.attempts ?? 0) + failure.attempts;
+        await this.prisma.incident.update({
+          where: { id: active.id },
+          data: {
+            status: 'open',
+            description:
+              `config-sync-writer เขียน Config ${failure.configId} ` +
+              `(${failure.deviceModel}/${failure.protocol}) เข้า config.dtc.co.th:909 ` +
+              `ไม่สำเร็จ รวม ${totalAttempts} ครั้ง — ${failure.lastError}`,
+            metadata: {
+              ...metadata,
+              attempts: totalAttempts,
+            } as Prisma.InputJsonValue,
+          },
+        });
+        this.logger.warn(
+          `อัปเดต Incident ${active.id} — config-sync ล้มเหลวซ้ำ (config ${failure.configId} v${failure.versionNumber})`,
+        );
+        return;
+      }
       const incident = await this.prisma.incident.create({
         data: {
           title: `เขียน Config เข้าระบบเดิมไม่สำเร็จ (v${failure.versionNumber})`,
@@ -368,6 +409,152 @@ export class IncidentService implements OnModuleInit {
           `${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * เขียน Config เข้าระบบปลายทางสำเร็จ -> ปิด Incident เขียน Config ที่ค้างอยู่ของ
+   * Config เดียวกันให้เอง (status `resolved` พร้อมหมายเหตุ ไม่มีผู้ปิดเพราะระบบทำ)
+   * · ปิดเฉพาะ Incident ของเวอร์ชันเดียวกันหรือเก่ากว่า: เวอร์ชันใหม่เขียนผ่านแปลว่า
+   * ค่าเก่าถูกแทนที่แล้ว แต่เวอร์ชันเก่าเขียนผ่านไม่ได้แปลว่าเวอร์ชันใหม่ที่ค้างอยู่
+   * ผ่านด้วย · never-throws
+   */
+  async resolveFromSyncSuccess(success: ConfigSyncSuccess): Promise<void> {
+    try {
+      const active = await this.prisma.incident.findMany({
+        where: {
+          source: INCIDENT_SOURCE.configSyncWriter,
+          relatedConfigId: success.configId,
+          status: { in: ['open', 'investigating'] },
+        },
+      });
+      const ids = active
+        .filter((incident) => {
+          const version = (incident.metadata as IncidentMetadata | null)
+            ?.versionNumber;
+          return (
+            typeof version !== 'number' || version <= success.versionNumber
+          );
+        })
+        .map((incident) => incident.id);
+      if (ids.length === 0) return;
+
+      const result = await this.prisma.incident.updateMany({
+        where: { id: { in: ids }, status: { in: ['open', 'investigating'] } },
+        data: {
+          status: 'resolved',
+          reviewedAt: new Date(),
+          reviewNote: 'ปิดอัตโนมัติ: เขียน Config เข้าระบบปลายทางสำเร็จภายหลัง',
+        },
+      });
+      this.logger.log(
+        `ปิด Incident ${result.count} รายการอัตโนมัติ — config ${success.configId} v${success.versionNumber} เขียนสำเร็จ`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `ปิด Incident จาก 'sync-succeeded' ไม่สำเร็จ (config ${success.configId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * `POST /incidents/:id/retry-sync` — Operation สั่งเขียน Config เข้าระบบปลายทาง
+   * ใหม่ จาก Incident ที่เกิดจากการเขียน Config ไม่สำเร็จ (`config-sync-writer`)
+   * resource `incidents` action `Approve` (ตัวเดียวกับ `decide`)
+   *
+   * เขียนจาก snapshot ของเวอร์ชันที่อนุมัติไว้ (`ConfigVersion`) ไม่ใช่ค่าปัจจุบันของ
+   * Config จึงได้ค่าที่อนุมัติจริงเสมอ · fire-and-forget เหมือนตอน approve: ตอบทันที
+   * ว่าสั่งแล้ว (status เป็น `investigating`) ผลจริงมาทาง event: สำเร็จ -> ปิดอัตโนมัติ
+   * (`resolveFromSyncSuccess`), ล้มอีก -> อัปเดต Incident เดิมกลับเป็น `open` แล้ว
+   * สั่งใหม่ได้อีก
+   *
+   * **รับเฉพาะสถานะ `open`**: `investigating` หมายถึงสั่งเขียนไปแล้วและกำลังรอผล ถ้ารับ
+   * ด้วยจะเข้าคิวเขียนซ้ำได้เมื่อกดซ้ำหรือ Operation สองคนกดพร้อมกัน (ตอนต่อระบบจริงจะ
+   * เขียนซ้ำจริง) และ claim ด้วย `updateMany` ระบุสถานะ `open` เพื่อให้คนที่สองแพ้การแข่ง
+   *
+   * 404 ไม่พบ Incident หรือไม่พบเวอร์ชันของ Config · 400 ไม่ใช่ Incident เขียน Config
+   * หรือไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ · 409 ปิดไปแล้วหรือกำลังลองเขียนอยู่
+   */
+  async retrySync(id: string, actor: ActingUser): Promise<Incident> {
+    const existing = await this.prisma.incident.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Incident id ${id}`);
+    }
+    if (existing.source !== INCIDENT_SOURCE.configSyncWriter) {
+      throw new BadRequestException(
+        'ลองเขียนใหม่ได้เฉพาะ Incident ที่เกิดจากการเขียน Config เข้าระบบปลายทางไม่สำเร็จ',
+      );
+    }
+    if (existing.status === 'investigating') {
+      throw new ConflictException(
+        'Incident นี้กำลังลองเขียนอยู่แล้ว กรุณารอผลก่อน (ถ้าล้มเหลวอีกจะกลับเป็นเปิดและสั่งใหม่ได้)',
+      );
+    }
+    if (existing.status !== 'open') {
+      throw new ConflictException(
+        `Incident นี้ปิดไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+      );
+    }
+    const versionNumber = (existing.metadata as IncidentMetadata | null)
+      ?.versionNumber;
+    if (!existing.relatedConfigId || typeof versionNumber !== 'number') {
+      throw new BadRequestException(
+        'Incident นี้ไม่มีข้อมูล Config และเวอร์ชันที่ต้องเขียน จึงลองเขียนใหม่ไม่ได้',
+      );
+    }
+    const version = await this.prisma.configVersion.findUnique({
+      where: {
+        configId_versionNumber: {
+          configId: existing.relatedConfigId,
+          versionNumber,
+        },
+      },
+    });
+    if (!version) {
+      throw new NotFoundException(
+        `ไม่พบ Config เวอร์ชัน ${versionNumber} ของ Incident นี้`,
+      );
+    }
+
+    // claim เฉพาะที่ยัง `open`: คำขอที่มาพร้อมกันอีกใบจะได้ count 0 และไม่เข้าคิวเขียนซ้ำ
+    const updated = await this.prisma.incident.updateMany({
+      where: { id, status: 'open' },
+      data: { status: 'investigating' },
+    });
+    if (updated.count === 0) {
+      throw new ConflictException(
+        `Incident id ${id} ถูกคำขออื่นสั่งเขียนหรือปิดไปแล้วระหว่างที่ทำรายการ`,
+      );
+    }
+
+    const metadata: AuditLogMetadata = {
+      incidentId: id,
+      incidentSource: INCIDENT_SOURCE.configSyncWriter,
+    };
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'retry-sync',
+          metadata: metadata as Prisma.InputJsonValue,
+          ipAddress: actor.ipAddress ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `เขียน AuditLog ไม่สำเร็จ (module ${AUDIT_MODULE}, action retry-sync, user ${actor.id}): ${(err as Error).message}`,
+      );
+    }
+
+    this.configSyncQueue.enqueueConfigSync({
+      configId: existing.relatedConfigId,
+      versionNumber,
+      deviceModel: version.deviceModel,
+      protocol: version.protocol,
+      fields: toLegacyFields(version.fields),
+    });
+
+    return { ...existing, status: 'investigating' };
   }
 
   /**
@@ -484,17 +671,25 @@ export class IncidentService implements OnModuleInit {
    * `Approve` ตัวเดียวกันอยู่แล้วไม่ว่าผลจะเป็นอนุมัติหรือปฏิเสธ — mirror
    * `campaign-rollout.controller.ts`/`device-config-override.controller.ts`)
    *
-   * เช็คว่าเป็น field report (`source: 'field-report'`) เท่านั้น — incident
-   * auto-detect เดิมไม่มี flow ตัดสินใจแบบนี้ (ใช้ Rollback แทน) · ต้องเป็น
-   * `open` เท่านั้น (404 ถ้าไม่พบ, 409 ถ้าตัดสินใจไปแล้ว — mirror
-   * `getPendingOverrideOrThrow()`)
+   * ใช้ได้กับ Incident 2 กลุ่ม:
+   *   - field report (`source: 'field-report'`): ต้องเป็น `open` · ได้ทั้ง 3
+   *     outcome (resolve/dismiss/promote)
+   *   - Incident ที่ระบบสร้างเอง (rollout-failure, config-sync-writer ฯลฯ):
+   *     ต้องเป็น `open` หรือ `investigating` · ปิดด้วยมือได้เฉพาะ `resolve`/
+   *     `dismiss` (`promote` ไม่รองรับ — Rollout มีทาง Rollback ของตัวเองอยู่
+   *     แล้ว) · ใช้เมื่อระบบปิดให้เองไม่ได้ เช่น Rollout จบแต่มีเครื่องล้มและ
+   *     ไม่มีใคร resume · ไม่มีผู้รายงานจึงไม่ส่ง notification
+   *
+   * 404 ถ้าไม่พบ, 409 ถ้าปิด/ตัดสินใจไปแล้ว (mirror `getPendingOverrideOrThrow()`)
+   * · ปิดแล้วไม่เปิดคืนเอง ยกเว้น Rollout เดิมล้มซ้ำ (`handleRolloutFailed`)
    */
   async decide(
     id: string,
     dto: DecideIncidentDto,
     actor: ActingUser,
   ): Promise<DecideIncidentResult> {
-    const existing = await this.getOpenFieldReportOrThrow(id);
+    const existing = await this.getDecidableIncidentOrThrow(id, dto.outcome);
+    const isFieldReport = existing.source === INCIDENT_SOURCE.fieldReport;
 
     const status =
       dto.outcome === 'resolve'
@@ -505,7 +700,9 @@ export class IncidentService implements OnModuleInit {
 
     const reviewedAt = new Date();
     const result = await this.prisma.incident.updateMany({
-      where: { id, status: 'open' },
+      where: isFieldReport
+        ? { id, status: 'open' }
+        : { id, status: { in: ['open', 'investigating'] } },
       data: {
         status,
         reviewedBy: actor.id,
@@ -522,6 +719,10 @@ export class IncidentService implements OnModuleInit {
     const metadata: AuditLogMetadata = {
       incidentId: id,
       outcome: dto.outcome,
+      // การปิด Incident ที่ระบบสร้างเองด้วยมือ: บันทึกที่มาไว้ให้ตรวจย้อนหลัง
+      ...(isFieldReport
+        ? {}
+        : { incidentSource: existing.source ?? 'unknown' }),
     };
     try {
       await this.prisma.auditLog.create({
@@ -561,17 +762,35 @@ export class IncidentService implements OnModuleInit {
     return { ...decided, device };
   }
 
-  /** หา field report ที่ยัง `open` — 404 ไม่พบ/ไม่ใช่ field report, 409
-   * ตัดสินใจไปแล้ว (mirror `getPendingOverrideOrThrow()` ของ Device Config
-   * Override ทุกประการ) */
-  private async getOpenFieldReportOrThrow(id: string): Promise<Incident> {
+  /** หา Incident ที่ตัดสินใจ/ปิดได้ — 404 ไม่พบ, 400 ถ้าขอ `promote` กับ Incident
+   * ที่ระบบสร้างเอง, 409 ถ้าตัดสินใจ/ปิดไปแล้ว (mirror `getPendingOverrideOrThrow()`
+   * ของ Device Config Override) */
+  private async getDecidableIncidentOrThrow(
+    id: string,
+    outcome: DecideIncidentDto['outcome'],
+  ): Promise<Incident> {
     const existing = await this.prisma.incident.findUnique({ where: { id } });
-    if (!existing || existing.source !== INCIDENT_SOURCE.fieldReport) {
-      throw new NotFoundException(`ไม่พบ field report id ${id}`);
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Incident id ${id}`);
     }
-    if (existing.status !== 'open') {
+    if (existing.source === INCIDENT_SOURCE.fieldReport) {
+      if (existing.status !== 'open') {
+        throw new ConflictException(
+          `Incident นี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+        );
+      }
+      return existing;
+    }
+
+    if (outcome === 'promote') {
+      throw new BadRequestException(
+        'ส่งต่อเป็น Campaign ได้เฉพาะ field report ที่ช่างแจ้งจากหน้างาน ' +
+          'Incident ที่ระบบสร้างเองปิดได้ด้วย resolve หรือ dismiss เท่านั้น',
+      );
+    }
+    if (existing.status !== 'open' && existing.status !== 'investigating') {
       throw new ConflictException(
-        `Incident นี้ถูกตัดสินใจไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
+        `Incident นี้ปิดไปแล้ว (สถานะปัจจุบัน: ${existing.status})`,
       );
     }
     return existing;

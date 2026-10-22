@@ -28,6 +28,9 @@ export interface AuditLogMetadata {
   incidentId?: string;
   /** `resolve`/`dismiss`/`promote` — ผลตัดสินใจของ Operation บน field report */
   outcome?: string;
+  /** `Incident.source` ของ Incident ที่ระบบสร้างเองที่ Operation ปิดด้วยมือ
+   * (เช่น `rollout-failure`, `config-sync-writer`) — ไม่ใส่ตอน field report */
+  incidentSource?: string;
   /** Rollout ที่มีค่าเฉพาะเครื่อง (docs/17): รายชื่อเครื่อง + ชื่อ field
    * ที่ตั้ง **ไม่เก็บค่า** (เหตุผลเดียวกับ `fieldNames`) */
   deviceValues?: { deviceId: string; fieldNames: string[] }[];

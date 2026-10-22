@@ -11,7 +11,6 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/core/ui/labels.dart';
@@ -599,9 +598,6 @@ void main() {
           // throws (no plugin binding in this test) before logout() reaches
           // `state = ...unauthenticated`.
           appDatabaseProvider.overrideWithValue(db),
-          recentDeviceIdStoreProvider.overrideWithValue(
-            InMemoryRecentDeviceIdStore(),
-          ),
           // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
           // (timer ของ stream ค้างหลังปิด tree)
           pendingTaskIdsProvider.overrideWith(
