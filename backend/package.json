@@ -21,6 +21,8 @@
     "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "seed:ci-fixtures": "ts-node scripts/seed-ci-fixtures.ts",
     "seed:demo": "ts-node scripts/seed-demo.ts",
+    "import:central-schema": "ts-node scripts/import-central-schema.ts",
+    "clear:sample-data": "ts-node scripts/clear-sample-data.ts",
     "test-users:set-password": "ts-node scripts/set-test-users-password.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
