@@ -73,6 +73,29 @@ void main() {
       expect(devices.map((d) => d.deviceId), contains('DEV-0117'));
     });
 
+    test('each device model uses exactly one protocol (#351)', () async {
+      // ตรงกับข้อมูลตัวอย่างของ backend (prisma/seed.ts, scripts/seed-demo.ts)
+      const backendProtocols = {
+        'GT06N': 'TCP',
+        'GT06L': 'TCP',
+        'GT08-4G': 'TCP',
+      };
+      final devices = await MockDeviceSearchRepository().listDevices();
+
+      final protocolsByModel = <String, Set<String>>{};
+      for (final d in devices) {
+        protocolsByModel.putIfAbsent(d.deviceModel, () => {}).add(d.protocol);
+      }
+      for (final entry in protocolsByModel.entries) {
+        expect(entry.value, hasLength(1), reason: entry.key);
+        expect(
+          entry.value.single,
+          backendProtocols[entry.key],
+          reason: entry.key,
+        );
+      }
+    });
+
     test('getDevice returns a match / throws 404 otherwise', () async {
       final repo = MockDeviceSearchRepository();
 

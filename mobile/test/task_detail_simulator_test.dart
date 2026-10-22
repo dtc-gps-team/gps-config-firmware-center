@@ -9,7 +9,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
-import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/task/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/task/confirm_install_repository.dart';

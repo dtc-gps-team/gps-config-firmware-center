@@ -11,7 +11,6 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/db/tables/pending_actions_table.dart';
-import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
@@ -177,28 +176,23 @@ void main() {
       expect(_summary, findsNothing);
     });
 
-    testWidgets('แตะแถบสรุป -> ไปหน้างานของฉัน', (tester) async {
-      final router = GoRouter(
-        initialLocation: AppRoutes.home,
-        routes: [
-          GoRoute(path: AppRoutes.home, builder: (_, _) => const HomePage()),
-          GoRoute(
-            path: AppRoutes.myTasks,
-            builder: (_, _) => const Text('MY_TASKS_PAGE'),
-          ),
-        ],
-      );
-      addTearDown(router.dispose);
+    // หน้า "งานของฉัน" รวมเข้าหน้าแรกแล้ว (docs/22 §7.2) — แตะแถบสรุปเลื่อนไปส่วน
+    // "ต้องทำ" บนหน้าเดียวกัน แทนการเปิดอีกหน้า
+    testWidgets('แตะแถบสรุป -> เลื่อนไปส่วน "ต้องทำ" บนหน้าเดียวกัน', (
+      tester,
+    ) async {
       await _pumpHome(
         tester,
-        tasks: [_task('1', TaskStatus.pending)],
-        router: router,
+        tasks: [for (var i = 0; i < 40; i++) _task('$i', TaskStatus.pending)],
       );
+      final section = find.byKey(const Key('home_open_section'));
+      final before = tester.getTopLeft(section).dy;
 
       await tester.tap(_summary);
       await tester.pumpAndSettle();
 
-      expect(find.text('MY_TASKS_PAGE'), findsOneWidget);
+      expect(tester.getTopLeft(section).dy, lessThan(before));
+      expect(tester.getTopLeft(section).dy, lessThan(40));
     });
   });
 

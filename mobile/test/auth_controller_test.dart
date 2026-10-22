@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:drift/native.dart';
@@ -8,7 +9,6 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
 import 'package:mobile/features/push_notification/push_notification_service.dart';
 
 class _NoopAuthRepository implements AuthRepository {
@@ -106,12 +106,7 @@ ProviderContainer _container({String? token, SessionProfile? profile}) {
       pushNotificationServiceProvider.overrideWithValue(
         _FakePushNotificationService(),
       ),
-      // logout() clears this too (issue #204) — override so no test in this
-      // file accidentally touches the real SharedPreferences-backed store.
       appDatabaseProvider.overrideWith(inMemoryAppDatabase),
-      recentDeviceIdStoreProvider.overrideWithValue(
-        InMemoryRecentDeviceIdStore(),
-      ),
     ],
   );
   addTearDown(container.dispose);
@@ -415,9 +410,6 @@ void main() {
             _FakePushNotificationService(),
           ),
           appDatabaseProvider.overrideWith(inMemoryAppDatabase),
-          recentDeviceIdStoreProvider.overrideWithValue(
-            InMemoryRecentDeviceIdStore(),
-          ),
         ],
       );
       addTearDown(container.dispose);
@@ -455,9 +447,6 @@ void main() {
         pushNotificationServiceProvider.overrideWithValue(
           _FakePushNotificationService(),
         ),
-        recentDeviceIdStoreProvider.overrideWithValue(
-          InMemoryRecentDeviceIdStore(),
-        ),
         appDatabaseProvider.overrideWithValue(db),
       ],
     );
@@ -470,9 +459,12 @@ void main() {
     expect(await db.taskDao.getAllTasks(), isEmpty);
   });
 
-  test('logout clears the recent-device-id history so the next tech to log in '
-      'on this device does not see the previous one\'s (issue #204)', () async {
-    final recentStore = InMemoryRecentDeviceIdStore(['DEV-OLD']);
+  test('logout ล้างประวัติเลขเครื่องที่หน้าทดสอบสัญญาณเดิมเก็บไว้ (หน้าถูกลบใน '
+      'Batch 3b แต่ค่าเก่ายังค้างในเครื่องได้)', () async {
+    SharedPreferences.setMockInitialValues({
+      legacyRecentDeviceIdsPrefsKey: ['DEV-OLD'],
+      'other_key': 'keep',
+    });
     final container = ProviderContainer(
       overrides: [
         authRepositoryProvider.overrideWithValue(_NoopAuthRepository()),
@@ -486,16 +478,17 @@ void main() {
           _FakePushNotificationService(),
         ),
         appDatabaseProvider.overrideWith(inMemoryAppDatabase),
-        recentDeviceIdStoreProvider.overrideWithValue(recentStore),
       ],
     );
     addTearDown(container.dispose);
 
-    expect(await recentStore.read(), ['DEV-OLD']);
-
     await container.read(authControllerProvider.notifier).logout();
+    // logout ไม่ await การล้างค่านี้ (ห้ามบล็อก logout) — รอ microtask ให้จบก่อนเช็ค
+    await pumpEventQueue();
 
-    expect(await recentStore.read(), isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList(legacyRecentDeviceIdsPrefsKey), isNull);
+    expect(prefs.getString('other_key'), 'keep');
   });
 
   group('push notification hook', () {
@@ -542,9 +535,6 @@ void main() {
             ),
             pushNotificationServiceProvider.overrideWithValue(fakePush),
             appDatabaseProvider.overrideWith(inMemoryAppDatabase),
-            recentDeviceIdStoreProvider.overrideWithValue(
-              InMemoryRecentDeviceIdStore(),
-            ),
           ],
         );
         addTearDown(container.dispose);

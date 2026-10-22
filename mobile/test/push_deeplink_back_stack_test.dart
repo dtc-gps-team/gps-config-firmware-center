@@ -9,6 +9,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
+import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/push_notification/push_message_handler.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
@@ -65,6 +66,29 @@ class _NotificationRepository implements NotificationRepository {
       throw UnimplementedError();
 }
 
+class _IncidentRepository implements IncidentRepository {
+  @override
+  Future<List<Incident>> listIncidents() async => const [];
+
+  @override
+  Future<Incident> getIncident(String id) async => Incident(
+    id: id,
+    title: 'Incident จากแจ้งเตือน',
+    severity: IncidentSeverity.high,
+    status: IncidentStatus.open,
+    createdAt: DateTime(2026, 10, 1),
+    updatedAt: DateTime(2026, 10, 1),
+  );
+
+  @override
+  Future<Incident> createFieldReport({
+    required String title,
+    required String description,
+    required IncidentSeverity severity,
+    String? deviceId,
+  }) => throw UnimplementedError();
+}
+
 const _loggedIn = AuthState(
   status: AuthStatus.authenticated,
   role: UserRole.st,
@@ -100,6 +124,7 @@ void main() {
         authControllerProvider.overrideWith(() => _MutableAuth(initial)),
         taskRepositoryProvider.overrideWithValue(_TaskRepository()),
         taskEventRepositoryProvider.overrideWithValue(_TaskEventRepository()),
+        incidentRepositoryProvider.overrideWithValue(_IncidentRepository()),
         notificationRepositoryProvider.overrideWithValue(
           _NotificationRepository(),
         ),
@@ -140,8 +165,10 @@ void main() {
 
   Future<void> expectBackToHome(WidgetTester tester) async {
     expect(router.canPop(), isTrue, reason: 'ต้องมี Home อยู่ใต้หน้าปลายทาง');
-    final back = find.byType(BackButton);
-    expect(back, findsOneWidget, reason: 'AppBar ต้องมีปุ่ม back');
+    // Task Detail ย้ายไป AppPageHeader แล้ว (docs/22 Batch 5) — ปุ่มย้อนกลับเป็น
+    // IconButton tooltip "ย้อนกลับ" แทน BackButton ของ AppBar
+    final back = find.byTooltip('ย้อนกลับ');
+    expect(back, findsOneWidget, reason: 'หัวหน้าจอต้องมีปุ่มย้อนกลับ');
     await tester.tap(back);
     await settle(tester);
     expect(path(), AppRoutes.home);
@@ -219,6 +246,72 @@ void main() {
 
       expect(path(), AppRoutes.home);
       expect(router.canPop(), isFalse);
+    });
+  });
+  // docs/22 §7.2 — หน้าแรกเป็นแท็บแล้ว: ฐานของหน้าปลายทาง = แท็บที่เกี่ยวข้อง
+  group('ฐานของ deep link = แท็บที่เกี่ยวข้อง (docs/22 §7.2)', () {
+    Future<void> tapHeaderBack(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('ย้อนกลับ'));
+      await settle(tester);
+    }
+
+    _flowTest('แจ้งเตือน Incident -> เปิดหน้า Incident, back กลับแท็บ '
+        'Incidents', (tester) async {
+      await boot(tester, _loggedIn);
+      await settle(tester);
+
+      handler.openPath(
+        resolvePushDeepLink({
+          'type': 'incident_report_resolved',
+          'payload': jsonEncode({'incidentId': 'i-7'}),
+        }),
+      );
+      await settle(tester);
+
+      expect(path(), '/incidents/i-7');
+      expect(router.canPop(), isTrue);
+      await tapHeaderBack(tester);
+      expect(path(), AppRoutes.incidents);
+      expect(find.byKey(const Key('app_tab_bar')), findsOneWidget);
+    });
+
+    _flowTest('Operation (ไม่มีแท็บงาน) แจ้งเตือนงาน -> back กลับแท็บ '
+        'แจ้งเตือน', (tester) async {
+      await boot(
+        tester,
+        const AuthState(
+          status: AuthStatus.authenticated,
+          role: UserRole.operation,
+          username: 'op.a',
+        ),
+      );
+      await settle(tester);
+      expect(path(), AppRoutes.deviceSearch);
+
+      handler.openPath(resolvePushDeepLink(_taskPayload));
+      await settle(tester);
+
+      expect(path(), '/tasks/t-42');
+      await tester.tap(find.byTooltip('ย้อนกลับ'));
+      await settle(tester);
+      expect(path(), AppRoutes.notifications);
+    });
+
+    test('pushBaseTabFor', () {
+      expect(pushBaseTabFor('/tasks/t-1', UserRole.st), AppRoutes.home);
+      expect(
+        pushBaseTabFor('/tasks/t-1', UserRole.operation),
+        AppRoutes.notifications,
+      );
+      expect(
+        pushBaseTabFor('/incidents/i-1', UserRole.ot),
+        AppRoutes.incidents,
+      );
+      expect(
+        pushBaseTabFor(AppRoutes.notifications, UserRole.st),
+        AppRoutes.notifications,
+      );
+      expect(pushBaseTabFor(AppRoutes.home, UserRole.st), AppRoutes.home);
     });
   });
 }

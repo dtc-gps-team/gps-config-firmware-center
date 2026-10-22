@@ -6,9 +6,6 @@ import '../../features/auth/login_page.dart';
 import '../../features/config_override/config_override_page.dart';
 import '../../features/firmware_install/confirm_firmware_install_page.dart';
 import '../../features/firmware_override/firmware_override_page.dart';
-import '../../features/config_simulator/simulator_page.dart';
-import '../../features/device_connection_test/company_device_picker_page.dart';
-import '../../features/device_connection_test/device_connection_test_page.dart';
 import '../../features/device_search/device_detail_page.dart';
 import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
@@ -17,8 +14,8 @@ import '../../features/incident/field_report_page.dart';
 import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
 import '../../features/task/task_detail_page.dart';
-import '../../features/task/task_list_page.dart';
 import '../auth/auth_controller.dart';
+import 'app_shell.dart';
 
 class AppRoutes {
   const AppRoutes._();
@@ -28,14 +25,6 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const home = '/home';
-  static const simulator = '/simulator';
-  static const deviceConnectionTest = '/device-connection-test';
-
-  /// "เลือกจากรายการ" step of ทดสอบสัญญาณ (issue #204) — เลือกบริษัท →
-  /// เลือกอุปกรณ์ pop กลับไปที่ [deviceConnectionTest] พร้อม `deviceId` ที่
-  /// เลือก (ผ่าน `context.push<String>(...)`) ไม่ใช่ทางเข้าเองจาก Home
-  static const deviceConnectionTestPicker =
-      '/device-connection-test/pick-device';
   static const notifications = '/notifications';
 
   /// Incident list (read-only) — `/incidents`.
@@ -81,10 +70,6 @@ class AppRoutes {
   static String deviceConfirmFirmware(String deviceId) =>
       '/devices/$deviceId/confirm-firmware';
 
-  /// "งานของฉัน" — full task list. `/tasks` (distinct from [taskDetailPattern]
-  /// `/tasks/:id` by segment count, so go_router never confuses the two).
-  static const myTasks = '/tasks';
-
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
   static String taskDetail(String id) => '/tasks/$id';
@@ -92,7 +77,8 @@ class AppRoutes {
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
 /// to `/login`, and an authenticated user landing on `/login` (or `/`) is
-/// sent to `/home`. While the session is still restoring ([AuthStatus.unknown])
+/// sent to their landing tab ([landingFor] — `/home` for ST/OT, Device Search
+/// for Operation, docs/22 §7.2). While the session is still restoring ([AuthStatus.unknown])
 /// the router is held at [AppRoutes.splash] — `initialLocation` is `/`, not
 /// `/login`, specifically so an already-authenticated user never sees
 /// [LoginPage] flash on screen before landing on Home (regression: it used to
@@ -121,7 +107,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!auth.isAuthenticated) return atLogin ? null : AppRoutes.login;
 
       // Authenticated: neither splash nor login is a valid resting place.
-      if (atLogin || atSplash) return AppRoutes.home;
+      if (atLogin || atSplash) return landingFor(auth.role);
+      // แท็บหน้าแรก (งาน) มีเฉพาะช่าง — role อื่นไม่มีแท็บนี้ (docs/22 §7.2)
+      if (state.matchedLocation == AppRoutes.home && !isFieldStaff(auth.role)) {
+        return landingFor(auth.role);
+      }
       return null;
     },
     routes: [
@@ -133,25 +123,44 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.login,
         builder: (context, state) => const LoginPage(),
       ),
-      GoRoute(
-        path: AppRoutes.home,
-        builder: (context, state) => const HomePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.simulator,
-        builder: (context, state) => const SimulatorPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.deviceConnectionTest,
-        builder: (context, state) => const DeviceConnectionTestPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.deviceConnectionTestPicker,
-        builder: (context, state) => const CompanyDevicePickerPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.incidents,
-        builder: (context, state) => const IncidentListPage(),
+      // หน้าระดับแท็บ (docs/22 §7.2) — แต่ละแท็บเก็บ stack ของตัวเอง · ลำดับ branch
+      // = ลำดับ [AppTab] · หน้าลูกทุกหน้าอยู่นอก shell ด้านล่าง จึง push ทับแถบแท็บ
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, shell) => AppTabShell(shell: shell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.home,
+                builder: (context, state) => const HomePage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.deviceSearch,
+                builder: (context, state) => const DeviceSearchPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.incidents,
+                builder: (context, state) => const IncidentListPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: AppRoutes.notifications,
+                builder: (context, state) => const NotificationListPage(),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.incidentReport,
@@ -163,10 +172,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.incidentDetailPattern,
         builder: (context, state) =>
             IncidentDetailPage(incidentId: state.pathParameters['id']!),
-      ),
-      GoRoute(
-        path: AppRoutes.deviceSearch,
-        builder: (context, state) => const DeviceSearchPage(),
       ),
       GoRoute(
         path: AppRoutes.deviceDetailPattern,
@@ -190,17 +195,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: AppRoutes.myTasks,
-        builder: (context, state) => const TaskListPage(),
-      ),
-      GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (context, state) =>
             TaskDetailPage(taskId: state.pathParameters['id']!),
-      ),
-      GoRoute(
-        path: AppRoutes.notifications,
-        builder: (context, state) => const NotificationListPage(),
       ),
     ],
   );
