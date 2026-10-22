@@ -24,6 +24,7 @@ import {
 import { DeviceConfigOverrideController } from './device-config-override.controller';
 import { DeviceFirmwareOverrideController } from './device-firmware-override.controller';
 import { DeviceController } from './device.controller';
+import { DeviceHistoryService } from './device-history.service';
 import { DeviceService } from './device.service';
 
 // Device module — `POST /devices/:deviceId/test-connection` (ดู device.controller.ts
@@ -52,6 +53,7 @@ import { DeviceService } from './device.service';
   ],
   providers: [
     DeviceService,
+    DeviceHistoryService,
     // DEVICE_CONNECTION_TESTER: อ่านโหมดจาก env `DEVICE_CONNECTION_TEST_MODE`
     // (`mock` default | `real`) ตาม Mock Mode Pattern ใน CLAUDE.md —
     // **แยกจาก `DEVICE_SIMULATOR_MODE` โดยตั้งใจ** เป็นคนละ capability กัน
