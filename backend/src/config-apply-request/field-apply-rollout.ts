@@ -9,15 +9,12 @@ import { Prisma } from '@prisma/client';
  * `FieldApplyRolloutStarter` ใน `CampaignRolloutService` แล้วผูก provider
  * `FIELD_APPLY_ROLLOUT_STARTER` แทน `PendingFieldApplyRolloutStarter` ด้านล่าง
  * และส่ง event `FIELD_APPLY_RESULT_EVENT` ผ่าน `RolloutEvents` ตอนได้ผลจากกล่อง
+ *
+ * Campaign ระบบตัวเดียวที่ Rollout เครื่องเดียวผูกอยู่ (มติ Q2) เป็นของ A ทั้งหมด:
+ * `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` + `getOrCreateFieldApplySystemCampaign()` ใน
+ * `campaign/field-apply-system-campaign.ts` (#362) หาด้วยชื่อ ไม่มีก็สร้างตอนอนุมัติ
+ * ครั้งแรก (ใช้ได้ทั้ง dev และ production) — ฝั่ง B ไม่ seed และไม่อ้างถึง Campaign นี้
  */
-
-/** Campaign ระบบตัวเดียวที่ Rollout เครื่องเดียวของคำขอหน้างานทุกตัวผูกอยู่
- * (มติ Q2) — id คงที่ seed ไว้ที่ `prisma/seed.ts` · ฝั่ง Web ซ่อน Campaign นี้
- * จาก Campaign Monitor (งาน A) */
-export const FIELD_APPLY_SYSTEM_CAMPAIGN_ID =
-  '00000000-0000-4000-8000-00000000c0a1';
-export const FIELD_APPLY_SYSTEM_CAMPAIGN_NAME =
-  'คำขอส่ง Config จากหน้างาน (ระบบ)';
 
 export interface FieldApplyRolloutInput {
   /** `ConfigApplyRequest.id` ที่ Rollout นี้ถูกสร้างมาให้ */
@@ -33,7 +30,7 @@ export interface FieldApplyRolloutInput {
 
 export interface FieldApplyRolloutStarter {
   /**
-   * สร้าง Rollout เครื่องเดียวใต้ `FIELD_APPLY_SYSTEM_CAMPAIGN_ID` สถานะ
+   * สร้าง Rollout เครื่องเดียวใต้ Campaign ระบบ (หา/สร้างด้วย `tx` เดียวกัน) สถานะ
    * `active` (ข้าม `pending_approval` เพราะอนุมัติแล้วที่คำขอ) ปิด Auto Pause
    * และไม่สร้าง Incident (มติ Q4) · `applyMode` ตาม env เดิม
    * `DEVICE_CONFIG_APPLY_MODE` (§3.5 ข้อ 6) — **เรียกในทรานแซกชันของผู้เรียก**

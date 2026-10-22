@@ -110,8 +110,8 @@ POST /tasks/{taskId}/config-apply-requests              │
 | **ข. model ใหม่ `ConfigApplyRequest` ล้วน** | model ใหม่ (mirror `DeviceConfigOverride` ของ #223) เก็บคำขอและผล แล้ว push/poll เองนอก Rollout | ความหมายชัด (คำขอจากหน้างาน ≠ Campaign) · ผูก Task และผู้ขอได้ตรงๆ · SoD เขียนเฉพาะได้ครบ | ต้องเขียน push, poll, timeout, Incident และ Auto Pause ซ้ำกับ #362 ทั้งหมด · poll สองชุดที่ทำงานเหมือนกัน |
 | **ค. Hybrid (เลือกแล้ว — Q2)** | `ConfigApplyRequest` เก็บ**คำขอและการอนุมัติ** (SoD, Task, ผู้ขอ) และเมื่ออนุมัติ ระบบสร้าง **Rollout เครื่องเดียวสถานะ `active`** ที่ผูกกลับมาด้วย `rolloutId` เพื่อ reuse `pushToCentral()`, poll และ AuditLog (ไม่สร้าง Incident — Q4) | SoD อยู่ใน model ของเราเองเต็มที่ · ไม่เขียน push/poll ซ้ำ · การ์ด Web แยกจาก Rollout ของ Campaign | ต้องมี Campaign ระบบตัวเดียวให้ Rollout เหล่านี้ผูก (มติ Q2) · ต้องมีเมธอด public ใหม่ใน `CampaignRolloutService` (โมดูลของ A) |
 
-**เลือกทาง ค. (A ยืนยันใน Q2):** Rollout เครื่องเดียวทุกตัวอยู่ใต้ **Campaign ระบบตัวเดียว** ที่ seed ไว้ล่วงหน้า (ไม่แก้
-schema) และ**ซ่อนจากหน้า Campaign Monitor** ไม่ให้ปนกับ Rollout ของแคมเปญจริง (A ทำส่วนซ่อน) · เหตุผลที่เลือก:
+**เลือกทาง ค. (A ยืนยันใน Q2):** Rollout เครื่องเดียวทุกตัวอยู่ใต้ **Campaign ระบบตัวเดียว** ที่ระบบสร้างเองตอนอนุมัติคำขอแรก
+(ไม่แก้ schema — §4.3) และ**ซ่อนจากหน้า Campaign Monitor** ไม่ให้ปนกับ Rollout ของแคมเปญจริง (A ทำส่วนซ่อน) · เหตุผลที่เลือก:
 - **ทาง ก.** ต้องดัด semantic ของ Rollout ถึง 2 จุด (ผู้สร้างเป็นช่าง และเช็ค SoD ที่ไม่ใช่ของ Rollout) เสี่ยงทำให้กฎ
   ของ Campaign เดิมอ่อนลงโดยไม่ตั้งใจ
 - **ทาง ข.** ซ้ำงานของ #362 มากเกินไป
@@ -318,10 +318,10 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 
 - **`NotificationType`:** เพิ่ม 5 ค่าตาม §3.6 (4 ค่าเดิมในแผน + `config_apply_expired`) (`ALTER TYPE ... ADD VALUE` แบบ
   additive)
-- **`CampaignRollout` (มติ Q2):** ใช้ Campaign ระบบตัวเดียวสำหรับคำขอหน้างาน — **ไม่แก้ schema** แค่ seed · ไม่ทำ
-  `campaignId` ให้ nullable · id คงที่ `FIELD_APPLY_SYSTEM_CAMPAIGN_ID` ใน `field-apply-rollout.ts` · **seed ใน
-  `prisma/seed.ts` สร้างได้เฉพาะ dev** (ต้องมีบัญชีทดสอบ `operation.test` เป็น `createdBy`) ใน production A ต้องสร้าง
-  Campaign นี้เอง (§9.2)
+- **`CampaignRollout` (มติ Q2):** ใช้ Campaign ระบบตัวเดียวสำหรับคำขอหน้างาน — **ไม่แก้ schema** · ไม่ทำ
+  `campaignId` ให้ nullable · **ไม่ seed:** A หาด้วยชื่อ `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` และสร้างเองตอนอนุมัติคำขอแรก
+  (`getOrCreateFieldApplySystemCampaign()` ใน `campaign/field-apply-system-campaign.ts`, #362) ใช้ได้ทั้ง dev และ
+  production · `createdBy` = Operation ผู้อนุมัติคนแรก (§9.2)
 - **RBAC:** seed row ของ resource `config-apply-request` (ตารางเดิม ไม่ต้อง migration) พร้อมอัปเดต RBAC_Matrix §2, §4 และ
   `openapi.yaml`
 
@@ -368,7 +368,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | `TaskService` เขียน `configAssignedBy/At` | B | โมดูล `task` ของ B |
 | โมดูล backend ใหม่ `config-apply-request`: endpoint ใน §3.3, §3.4, SoD, AuditLog, notification | B | ตามที่ตกลงว่า B ทำ endpoint ใหม่ |
 | เมธอด public ใน `CampaignRolloutService` สร้าง Rollout เครื่องเดียวและเริ่มส่ง + hook ผลกลับเข้าคำขอ (§3.5 ข้อ 3, 5) รวมปิด Auto Pause ของ Rollout แบบนี้ (Q4) | **A** | โมดูล `campaign` ของ A — A เพิ่งแก้ `pushToCentral`/poll ใน #362 |
-| seed Campaign ระบบ + ซ่อน Rollout ของคำขอหน้างานจาก Campaign Monitor (Q2) | A | **seed (dev) B ทำไปก่อนแล้ว** ตามที่ B สั่งในรอบ implement — ถ้า A ไม่อยากให้ B ทำแทน แจ้งได้ · การซ่อนจาก Campaign Monitor และการสร้างใน production ยังเป็นของ A |
+| seed Campaign ระบบ + ซ่อน Rollout ของคำขอหน้างานจาก Campaign Monitor (Q2) | A | ทำแล้วใน #362 (`ee3da6c`): สร้าง Campaign ระบบเองตอนอนุมัติคำขอแรก + ซ่อนจาก Campaign Monitor · B ถอน seed ของตัวเองออกแล้ว (ชื่อชนกับของ A) |
 | ปิด `apply-config` เดิมในโหมด `central` (§3.8) | A | โมดูล `device` ของ A |
 | แก้บั๊ก §5 (มติ §5.1) | A | ใน #362 ก่อน merge |
 | การ์ด Approval Center + จำนวนรออนุมัติบน Dashboard (§3.4) | A | mirror #223 |
@@ -441,7 +441,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | หมดอายุ | 24 ชม. เก็บใน `expiresAt` · สถานะ `expired` · แจ้ง `config_apply_expired` | §3.9 เดิมเปิดไว้ |
 | `Config.approvedBy` ว่าง | 403 (fail closed) | §3.4 ข้อ 5 เดิมเปิดไว้ |
 | ผู้ผูก Config ของงานเปลี่ยนระหว่างรอ | ตอนอนุมัติ ถ้า `Task.configAssignedBy` ≠ snapshot ได้ 409 ให้ช่างขอใหม่ | เพิ่มจากแผน (เข้มขึ้น ไม่ผ่อน) |
-| seed Campaign ระบบ | B seed ใน `seed.ts` ซึ่งรันได้เฉพาะ dev · production A ต้องสร้างเอง | §6 เดิมเป็นงาน A |
+| Campaign ระบบ | ไม่ seed — ใช้ของ A ที่หาด้วยชื่อและสร้างเองตอนอนุมัติคำขอแรก (#362) · เดิม B seed ไว้ใน `seed.ts` แต่ชื่อไม่ตรงกับตัวกรองของ A (จะได้ 2 แถวและแถวของ seed โผล่ใน Campaign Monitor) จึงถอนออก | §6 เดิมเป็นงาน A · รีวิว #362 รอบ 2 |
 
 ### 9.3 จุดที่รอ A (`backend/src/config-apply-request/field-apply-rollout.ts`)
 
@@ -456,8 +456,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 3. **ส่งผลกลับเข้าคำขอ** — hook ใน `recordTargetResult()`/`markTargetSkippedOffline()` emit `FIELD_APPLY_RESULT_EVENT`
    (`field-apply-result`, payload `{ rolloutId, outcome, detail }`) ผ่าน `RolloutEvents` เมื่อ Rollout มีคำขอผูกอยู่ ·
    ฝั่ง B ฟังไว้แล้ว (ใช้ event แทนให้ campaign import โมดูลของ B กัน circular dependency) (§3.5 ข้อ 5)
-4. **ผูก provider + Campaign ระบบ** — เปลี่ยน `FIELD_APPLY_ROLLOUT_STARTER` ใน `config-apply-request.module.ts` ให้ชี้
-   implementation จริง แล้วลบ `PendingFieldApplyRolloutStarter` · ซ่อน Campaign ระบบจาก Campaign Monitor และสร้างใน
-   production (Q2)
+4. **ผูก provider** — เปลี่ยน `FIELD_APPLY_ROLLOUT_STARTER` ใน `config-apply-request.module.ts` ให้ชี้
+   implementation จริง แล้วลบ `PendingFieldApplyRolloutStarter` (Campaign ระบบ + ซ่อนจาก Monitor A ทำแล้วใน #362)
 
 ส่วน Web (การ์ด Approval Center + จำนวนรออนุมัติบน Dashboard, §3.4) เป็นงาน A ตาม §6 เช่นเดิม
