@@ -844,6 +844,17 @@ export class CampaignRolloutService {
    * จริงตอนเรียกจาก `resume()` เพราะ `executeFirmwarePartitionRollback()` ไม่
    * เคยพา Rollout ไป `paused` เลย (ไม่ผ่าน `recordTargetResult()`) แต่เช็คไว้
    * เพื่อความสมมาตรกับ `approve()` เผื่อกรณีข้อมูลผิดปกติ
+   *
+   * **โหมด `central` ไม่ใช้ fast-path นี้** (แก้ไข #362 ส่วนขยาย Rollback) —
+   * `FirmwareRollbackExecutor`/`switchPartition()` จำลองแค่ "สลับพาร์ทิชันที่
+   * มีของเก่าอยู่แล้ว" ซึ่งเป็นกลไกภายในตัวอุปกรณ์เอง Server กลางไม่มีช่องให้
+   * สั่งสลับพาร์ทิชันจากนอกเลย (เช็คโค้ด delivery-server แล้ว) มีแต่ช่องทาง
+   * ยิง firmware-update ซ้ำแบบเดียวกับการอัปเปิดปกติ (ต้องแนบ
+   * `X-Allow-Downgrade` เพราะเวอร์ชันที่ rollback ไปมักต่ำกว่าที่กล่องรันอยู่)
+   * จึงปล่อยให้ตกไปที่ `autoApplyFirmware()` เส้นทางเดิม (มี branch `central`
+   * อยู่แล้วที่ `pushFirmwareToCentral()`) ต่างจาก mock ที่ "ของเก่ายังอยู่บน
+   * พาร์ทิชันเดิม" ไม่ต้องส่งไฟล์ใหม่เลย — ของจริงกับ Server กลางไม่มี fast
+   * path แบบนั้น ต้องส่งไฟล์ใหม่ทุกครั้งเหมือนการอัปเดตปกติ
    */
   private dispatchAutoApply(
     rollout: CampaignRollout,
@@ -856,7 +867,11 @@ export class CampaignRolloutService {
     if (rollout.applyMode === 'real') {
       return Promise.resolve(rollout);
     }
-    if (rollout.isRollback && rollout.payloadType === 'Firmware') {
+    if (
+      rollout.isRollback &&
+      rollout.payloadType === 'Firmware' &&
+      rollout.applyMode !== 'central'
+    ) {
       return this.executeFirmwarePartitionRollback(rollout);
     }
     if (rollout.payloadType === 'Config') {
@@ -1150,6 +1165,11 @@ export class CampaignRolloutService {
    * `FirmwareRollbackExecutor.switchPartition()` ทีละเครื่อง แล้วปิด Rollout
    * เป็น `completed` เสมอ (ไม่มีอะไรค้าง `pending` ต่อ — ต่างจาก Config ที่
    * รอ `recordTargetResult()` จาก field จริง)
+   *
+   * **เรียกเฉพาะโหมด `mock` (และ `real` ซึ่งไม่เข้ามาถึงจุดนี้อยู่แล้ว)** —
+   * โหมด `central` ไม่ผ่านฟังก์ชันนี้ ไปที่ `autoApplyFirmware()`/
+   * `pushFirmwareToCentral()` แทน เพราะ Server กลางไม่มีช่องสั่งสลับพาร์ทิชัน
+   * จากนอกเลย ดู comment เหนือ `dispatchAutoApply`
    */
   private async executeFirmwarePartitionRollback(
     rollout: CampaignRollout,
@@ -1705,6 +1725,13 @@ export class CampaignRolloutService {
    * แล้วส่งให้ Server กลางเครื่องเดียว — mirror `pushToCentral()` (Config) ทุก
    * ประการ ต่างกันที่ไม่มี schema ให้แปลงค่า (ส่งไฟล์ดิบตรงๆ) และ Server กลาง
    * ไม่คืนเลขเวอร์ชันมาด้วย
+   *
+   * **`rollout.isRollback` → แนบ `allowDowngrade: true`** — Firmware ที่
+   * rollback ไปมักมีเลขเวอร์ชันต่ำกว่าที่กล่องรันอยู่ตอนนี้ Server กลางปฏิเสธ
+   * การลดเวอร์ชันโดย default (`DOWNGRADE_NOT_ALLOWED`) ต้องส่ง header
+   * `X-Allow-Downgrade` มายืนยันเจตนาเสมอ (ดู comment เหนือ
+   * `dispatchAutoApply` เรื่องทำไม Rollback โหมด central ไม่มี fast-path แบบ
+   * mock แล้วมาตกที่ฟังก์ชันนี้)
    */
   private async pushFirmwareToCentral(
     rollout: CampaignRollout,
@@ -1717,7 +1744,10 @@ export class CampaignRolloutService {
       ? await this.central.pushFirmware(
           deviceId,
           await this.firmwareStorage.downloadObject(firmware.objectKey),
-          { firmwareVersion: firmware.version },
+          {
+            firmwareVersion: firmware.version,
+            ...(rollout.isRollback ? { allowDowngrade: true } : {}),
+          },
         )
       : ({
           kind: 'unavailable',

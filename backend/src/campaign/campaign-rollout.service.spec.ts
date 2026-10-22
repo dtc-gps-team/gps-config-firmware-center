@@ -825,6 +825,41 @@ describe('CampaignRolloutService', () => {
         });
       });
 
+      it('Firmware Rollback โหมด central (isRollback=true) -> แนบ allowDowngrade: true ให้ Server กลาง ไม่ใช้ fast-path switchPartition', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-ROLLBACK-1',
+          }),
+        };
+        configApplyMode = 'central';
+        service = await buildService();
+        const rollbackRollout = {
+          ...approvedFirmwareRollout,
+          isRollback: true,
+          rollbackOfId: 'rollout-bad',
+        };
+        campaignRollout.findUnique.mockResolvedValue(rollbackRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...rollbackRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(firmwareBytes);
+
+        await service.release(rollbackRollout.id, otherOperation);
+
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          firmwareBytes,
+          { firmwareVersion: storedFirmware.version, allowDowngrade: true },
+        );
+        // ไม่ใช่ fast-path mock — Server กลางไม่มีช่องสั่งสลับพาร์ทิชันจากนอก
+        expect(firmwareRollbackExecutor.switchPartition).not.toHaveBeenCalled();
+      });
+
       it.each([
         ['rejected', 'กล่อง DEV-0002 ยังไม่อยู่ในทะเบียนของ delivery-server'],
         ['unavailable', 'Server กลางไม่ตอบภายใน 5000 มิลลิวินาที'],
