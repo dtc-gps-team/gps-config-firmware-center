@@ -74,8 +74,9 @@ void main() {
     await binding.takeScreenshot('03-task-detail-updated-st');
 
     // === switch to Operation: งานของช่างต้องไม่โผล่ ===
-    // task detail -> หน้าแรก
-    await tester.pageBack();
+    // task detail -> หน้าแรก · Task Detail ใช้ AppPageHeader แล้ว (docs/22 Batch 5)
+    // ปุ่มย้อนกลับไม่ใช่ BackButton ของ AppBar ที่ `pageBack()` หา
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
     await _logout(tester);
 
@@ -94,8 +95,8 @@ void main() {
 
 /// Logout อยู่ในแผ่นบัญชีผู้ใช้ (ปุ่ม avatar บนหัวหน้าระดับแท็บ docs/22 §7.2) +
 /// ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`, มีคิวค้าง =
-/// `logout_unsynced_confirm`) · หน้า Device Search (แท็บแรกของ Operation) ยังไม่
-/// ย้าย design (Batch 4) จึงยังไม่มี avatar — สลับไปแท็บแจ้งเตือนก่อน
+/// `logout_unsynced_confirm`) · ทุกหน้าระดับแท็บมี avatar แล้ว (Device Search ย้าย
+/// design ใน Batch 4) — ถ้าหน้าปัจจุบันไม่มีปุ่ม (เช่นอยู่หน้าลูก) สลับไปแท็บแจ้งเตือนก่อน
 Future<void> _logout(WidgetTester tester) async {
   final account = find.byKey(const Key('account_button'));
   if (account.evaluate().isEmpty) {

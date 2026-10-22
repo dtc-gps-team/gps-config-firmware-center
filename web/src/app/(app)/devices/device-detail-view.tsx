@@ -44,6 +44,7 @@ import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { rotateDeviceKey, type Device } from "@/lib/device-api";
 import { PageHeader } from "@/components/page-header";
+import { DeviceCentralCard } from "./device-central-card";
 import { DeviceStatusCard } from "./device-status-card";
 
 export function DeviceDetailView({ deviceId }: { deviceId: string }) {
@@ -236,6 +237,8 @@ function DeviceDetailContent({ device }: { device: Device }) {
       {/* สถานะไว้บนสุด — คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
        * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}
       <DeviceStatusCard deviceId={device.deviceId} />
+
+      <DeviceCentralCard deviceId={device.deviceId} />
 
       {/* เนื้อหาเป็น label/value ล้วนเหมือน Campaign detail — จำกัด max-width
        * ไว้ที่การ์ดนี้ ไม่ปล่อยเต็มความกว้างหน้าจอ (mirror ปัญหาเดียวกับที่

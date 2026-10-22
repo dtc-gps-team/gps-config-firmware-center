@@ -461,14 +461,95 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
           .expect(404);
       });
 
-      it('incident ที่ไม่ใช่ field report (auto-detect เดิม) -> 404', async () => {
-        const token = await opToken();
-        const incidentId = await makeIncident({ title: 'auto-detect' });
-        await request(app.getHttpServer())
-          .post(`/api/v1/incidents/${incidentId}/decide`)
-          .set('Authorization', `Bearer ${token}`)
-          .send({ outcome: 'resolve', note: 'แก้แล้ว' })
-          .expect(404);
+      describe('Incident ที่ระบบสร้างเอง (ปิดด้วยมือ)', () => {
+        it('resolve -> 200 สถานะ resolved + บันทึกผู้ปิด/หมายเหตุ + AuditLog มี incidentSource', async () => {
+          const token = await opToken();
+          const incidentId = await makeIncident({
+            title: 'เขียน Config ไม่สำเร็จ',
+          });
+
+          const res = await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/decide`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ outcome: 'resolve', note: 'เขียนเข้าระบบปลายทางเองแล้ว' })
+            .expect(200);
+
+          const body = res.body as {
+            status: string;
+            reviewNote: string;
+            device: unknown;
+          };
+          expect(body.status).toBe('resolved');
+          expect(body.reviewNote).toBe('เขียนเข้าระบบปลายทางเองแล้ว');
+          expect(body.device).toBeNull();
+
+          const logs = await prisma.auditLog.findMany({
+            where: { auditModule: 'incident', action: 'decide' },
+          });
+          expect(logs).toHaveLength(1);
+          expect(logs[0].metadata).toMatchObject({
+            incidentId,
+            outcome: 'resolve',
+            incidentSource: 'config-sync-writer',
+          });
+        });
+
+        it('dismiss จากสถานะ investigating -> 200 สถานะ dismissed', async () => {
+          const token = await opToken();
+          const incidentId = await makeIncident({
+            title: 'กำลังตรวจสอบ',
+            status: 'investigating',
+          });
+
+          const res = await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/decide`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ outcome: 'dismiss', note: 'ไม่ใช่ปัญหาจริง' })
+            .expect(200);
+
+          expect((res.body as { status: string }).status).toBe('dismissed');
+        });
+
+        it('promote -> 400 (ส่งต่อเป็น Campaign ได้เฉพาะ field report) และสถานะไม่เปลี่ยน', async () => {
+          const token = await opToken();
+          const incidentId = await makeIncident({ title: 'ห้าม promote' });
+
+          await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/decide`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ outcome: 'promote', note: 'x' })
+            .expect(400);
+
+          const row = await prisma.incident.findUniqueOrThrow({
+            where: { id: incidentId },
+          });
+          expect(row.status).toBe('open');
+        });
+
+        it.each(['resolved', 'dismissed', 'rolled_back'] as const)(
+          'ปิดไปแล้ว (%s) -> 409',
+          async (status) => {
+            const token = await opToken();
+            const incidentId = await makeIncident({ title: 'ปิดแล้ว', status });
+
+            await request(app.getHttpServer())
+              .post(`/api/v1/incidents/${incidentId}/decide`)
+              .set('Authorization', `Bearer ${token}`)
+              .send({ outcome: 'resolve', note: 'x' })
+              .expect(409);
+          },
+        );
+
+        it('role ST (ไม่มีสิทธิ์ Approve) ปิด Incident ที่ระบบสร้างเองไม่ได้ -> 403', async () => {
+          const token = await stToken();
+          const incidentId = await makeIncident({ title: 'ST ห้ามปิด' });
+
+          await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/decide`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ outcome: 'resolve', note: 'x' })
+            .expect(403);
+        });
       });
 
       it('outcome ไม่อยู่ใน enum -> 400', async () => {
@@ -606,6 +687,95 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
           .send({ outcome: 'dismiss', note: 'ลองซ้ำ' })
           .expect(409);
       });
+    });
+
+    describe('POST /incidents/:id/retry-sync', () => {
+      it('ไม่ส่ง Authorization -> 401', async () => {
+        const incidentId = await makeIncident({
+          title: 'เขียน Config ไม่สำเร็จ',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .expect(401);
+      });
+
+      it('role ST (ไม่มีสิทธิ์ Approve) -> 403', async () => {
+        const token = await stToken();
+        const incidentId = await makeIncident({
+          title: 'เขียน Config ไม่สำเร็จ',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      });
+
+      it('ไม่พบ Incident -> 404', async () => {
+        const token = await opToken();
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${randomUUID()}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+
+      it('ไม่ใช่ Incident เขียน Config (เช่น field report) -> 400', async () => {
+        const token = await opToken();
+        const { id: reporterId } = await otToken();
+        const incident = await prisma.incident.create({
+          data: {
+            title: 'รายงานจากภาคสนาม',
+            severity: 'high',
+            status: 'open',
+            source: 'field-report',
+            reportedBy: reporterId,
+          },
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incident.id}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+      });
+
+      it('Incident เขียน Config ที่ไม่มีข้อมูลเวอร์ชันพอให้เขียนซ้ำ -> 400 และสถานะไม่เปลี่ยน', async () => {
+        const token = await opToken();
+        const incidentId = await makeIncident({ title: 'ไม่มีเวอร์ชัน' });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incidentId },
+        });
+        expect(row.status).toBe('open');
+      });
+
+      it('กำลังลองเขียนอยู่ (investigating) -> 409 และสถานะไม่เปลี่ยน', async () => {
+        const token = await opToken();
+        const incidentId = await makeIncident({
+          title: 'กำลังลองเขียน',
+          status: 'investigating',
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(409);
+        const row = await prisma.incident.findUniqueOrThrow({
+          where: { id: incidentId },
+        });
+        expect(row.status).toBe('investigating');
+      });
+
+      it.each(['resolved', 'dismissed', 'rolled_back'] as const)(
+        'ปิดไปแล้ว (%s) -> 409',
+        async (status) => {
+          const token = await opToken();
+          const incidentId = await makeIncident({ title: 'ปิดแล้ว', status });
+          await request(app.getHttpServer())
+            .post(`/api/v1/incidents/${incidentId}/retry-sync`)
+            .set('Authorization', `Bearer ${token}`)
+            .expect(409);
+        },
+      );
     });
 
     describe('self-scoping สำหรับ field report (GET /incidents, GET /incidents/:id)', () => {
