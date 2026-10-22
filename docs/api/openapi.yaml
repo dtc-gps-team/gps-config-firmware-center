@@ -4880,6 +4880,7 @@ components:
           objectKey,
           originalFilename,
           fileSizeBytes,
+          checksumSha256,
           uploadedBy,
           uploadedAt,
           approvalStatus,
@@ -4915,6 +4916,13 @@ components:
           type: string
         fileSizeBytes:
           type: integer
+        checksumSha256:
+          type: string
+          nullable: true
+          description: >-
+            SHA-256 ของไฟล์ตอนอัปโหลด (hex, เสมอ 64 ตัวอักษร) — ให้ QA เทียบกับ
+            hash ที่ผู้สร้างไฟล์แจ้งมานอกระบบก่อนอนุมัติ `null` สำหรับ Firmware
+            ที่อัปโหลดไว้ก่อนฟีเจอร์นี้ (ไม่ย้อนคำนวณจากไฟล์เดิม)
         uploadedBy:
           type: string
           format: uuid

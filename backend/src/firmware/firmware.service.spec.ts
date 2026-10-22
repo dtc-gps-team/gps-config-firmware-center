@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Firmware } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, FirmwareService } from './firmware.service';
 import { FirmwareStorageService } from './firmware-storage.service';
@@ -21,6 +22,7 @@ const sampleFirmware: Firmware = {
   objectKey: 'firmware/fw-1/gt06n.bin',
   originalFilename: 'gt06n.bin',
   fileSizeBytes: 1024,
+  checksumSha256: 'a'.repeat(64),
   uploadedBy: actor.id,
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'pending_review',
@@ -113,6 +115,43 @@ describe('FirmwareService', () => {
         fileSizeBytes: 1024,
         uploadedBy: actor.id,
       });
+    });
+
+    it('คำนวณ SHA-256 ของไฟล์จริงแล้วเก็บไว้ (ให้ QA เทียบ hash ก่อนอนุมัติ)', async () => {
+      const file = makeFile({ buffer: Buffer.from('firmware bytes') });
+      const expected = createHash('sha256').update(file.buffer).digest('hex');
+
+      await service.upload(file, 'v1', 'GT06N', actor);
+
+      const createCalls = firmware.create.mock.calls as unknown[][];
+      const createCall = createCalls[0][0] as { data: Record<string, unknown> };
+      expect(createCall.data.checksumSha256).toBe(expected);
+      expect(createCall.data.checksumSha256).toHaveLength(64);
+    });
+
+    it('ไฟล์ต่างกัน -> checksum ต่างกัน (ไม่ใช่ค่าคงที่/placeholder)', async () => {
+      await service.upload(
+        makeFile({ buffer: Buffer.from('aaa') }),
+        'v1',
+        'GT06N',
+        actor,
+      );
+      const createCalls = firmware.create.mock.calls as unknown[][];
+      const firstChecksum = (
+        createCalls[0][0] as { data: Record<string, unknown> }
+      ).data.checksumSha256;
+
+      await service.upload(
+        makeFile({ buffer: Buffer.from('bbb') }),
+        'v1',
+        'GT06N',
+        actor,
+      );
+      const secondChecksum = (
+        createCalls[1][0] as { data: Record<string, unknown> }
+      ).data.checksumSha256;
+
+      expect(firstChecksum).not.toBe(secondChecksum);
     });
 
     it('เขียน AuditLog action create หลังอัปโหลดสำเร็จ', async () => {

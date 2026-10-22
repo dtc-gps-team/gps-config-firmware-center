@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Firmware, FirmwareUploadStatus } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFirmwareCompatibilityDto } from './dto/update-firmware-compatibility.dto';
 import { FirmwareStorageService } from './firmware-storage.service';
@@ -90,6 +90,12 @@ export class FirmwareService {
 
     const id = randomUUID();
     const objectKey = `firmware/${id}/${file.originalname}`;
+    // ให้ QA เทียบกับ hash ที่ผู้สร้างไฟล์แจ้งมานอกระบบก่อนอนุมัติ (จับได้แค่
+    // "ไฟล์ผิด/ไฟล์เสียระหว่างอัปโหลด" ไม่ได้ตรวจเนื้อหาว่าโค้ดถูกต้อง) —
+    // คำนวณจาก buffer ที่รับมาตรงๆ ก่อนส่งขึ้น Object Storage
+    const checksumSha256 = createHash('sha256')
+      .update(file.buffer)
+      .digest('hex');
 
     let uploadStatus: FirmwareUploadStatus;
     try {
@@ -115,6 +121,7 @@ export class FirmwareService {
         objectKey,
         originalFilename: file.originalname,
         fileSizeBytes: file.size,
+        checksumSha256,
         uploadedBy: actor.id,
       },
     });
