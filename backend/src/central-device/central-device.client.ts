@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  PushFirmwareOptions,
   RawCentralCommand,
   RawCentralSchema,
   RawGatewayDevice,
+  RawPushFirmwareResult,
   RawPutConfigResult,
   RawRegistryDevice,
 } from './central-device.types';
@@ -46,6 +48,13 @@ export interface CentralDeviceClient {
   ) => Promise<RawPutConfigResult>;
   /** สถานะปัจจุบันของคำสั่งหนึ่งรายการ */
   getCommand: (commandId: string) => Promise<RawCentralCommand>;
+  /** อัปโหลดไฟล์ firmware (.bin) ให้กล่องเครื่องเดียว — Server กลางเก็บไฟล์และสั่งอัปเดตทันที
+   * ถ้ากล่องออนไลน์ (ไม่รอผลลัพธ์จริง — ใช้ `getCommand` ตามผลต่อ) */
+  pushFirmware: (
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ) => Promise<RawPushFirmwareResult>;
 }
 
 /**
@@ -180,6 +189,30 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
         config_version_desired: 2,
       },
     ]);
+
+  // โหมด mock: อัปโหลดสำเร็จทันทีเสมอ (ไม่มีกล่องจริงให้ตรวจเวอร์ชัน/ฮาร์ดแวร์)
+  pushFirmware = (
+    deviceId: string,
+    _data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<RawPushFirmwareResult> => {
+    this.commandSeq += 1;
+    const command: RawCentralCommand = {
+      command_id: `CMD-${this.commandSeq}`,
+      device_id: deviceId,
+      action: 'UPDATE_FIRMWARE',
+      status: 'SUCCESS',
+      target_firmware_version: options.firmwareVersion,
+      error_code: null,
+    };
+    this.commands.set(command.command_id, command);
+    return Promise.resolve({
+      ok: true,
+      device_id: deviceId,
+      command,
+      message: `ส่งคำสั่งอัปเดตให้กล่องแล้ว (mock) — v${options.firmwareVersion}`,
+    });
+  };
 }
 
 export interface HttpCentralClientOptions {
@@ -227,6 +260,27 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
       `/api/gw/jobs/${encodeURIComponent(commandId)}`,
     );
 
+  pushFirmware = (
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<RawPushFirmwareResult> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+      'X-Firmware-Version': options.firmwareVersion,
+    };
+    if (options.schemaVersion !== undefined) {
+      headers['X-Schema-Version'] = String(options.schemaVersion);
+    }
+    if (options.signature) headers['X-Firmware-Signature'] = options.signature;
+    if (options.allowDowngrade) headers['X-Allow-Downgrade'] = 'true';
+    return this.sendBinary<RawPushFirmwareResult>(
+      `/api/admin/devices/${encodeURIComponent(deviceId)}/firmware`,
+      data,
+      headers,
+    );
+  };
+
   private getJson<T>(path: string): Promise<T> {
     return this.sendJson<T>(path, {});
   }
@@ -261,6 +315,66 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
     return this.readJson<T>(res, path);
   }
 
+  /**
+   * เหมือน `sendJson` แต่ body เป็นไฟล์ดิบ + header กำหนดเอง (POST firmware ไม่ใช่ JSON) —
+   * แยกจาก `sendJson`/`request` เพราะ body/Content-Type คนละแบบ แต่ retry/error ใช้กฎเดียวกัน
+   */
+  private async sendBinary<T>(
+    path: string,
+    data: Buffer,
+    headers: Record<string, string>,
+  ): Promise<T> {
+    let token = await this.getToken();
+    let res = await this.requestBinary(path, token, data, headers);
+    if (res.status === 401) {
+      token = await this.getToken(token);
+      res = await this.requestBinary(path, token, data, headers);
+    }
+    if (res.status >= 400 && res.status < 500) {
+      throw new CentralRejectedError(
+        res.status,
+        await this.rejectionMessage(res),
+      );
+    }
+    if (!res.ok) {
+      throw new CentralUnavailableError(
+        `Server กลางตอบ HTTP ${res.status} ที่ ${path}`,
+      );
+    }
+    return this.readJson<T>(res, path);
+  }
+
+  private async requestBinary(
+    path: string,
+    token: string | null,
+    data: Buffer,
+    extraHeaders: Record<string, string>,
+  ): Promise<Response> {
+    const headers = { ...extraHeaders };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    try {
+      return await fetch(new URL(path, this.options.baseUrl), {
+        method: 'POST',
+        // Buffer ไม่อยู่ใน BodyInit ของ lib.dom.d.ts เวอร์ชันนี้ แต่ undici (fetch ของ
+        // Node) รับ Buffer ได้จริง — cast เฉพาะจุดนี้
+        body: data as unknown as BodyInit,
+        headers,
+        signal: AbortSignal.timeout(this.options.timeoutMs),
+      });
+    } catch (err) {
+      const timedOut =
+        (err as { name?: string } | null)?.name === 'TimeoutError';
+      this.logger.warn(
+        `เรียก Server กลางไม่สำเร็จ ${path}: ${timedOut ? 'timeout' : 'เชื่อมต่อไม่ได้'}`,
+      );
+      throw new CentralUnavailableError(
+        timedOut
+          ? `Server กลางไม่ตอบภายใน ${this.options.timeoutMs} มิลลิวินาที`
+          : 'เชื่อมต่อ Server กลางไม่ได้',
+      );
+    }
+  }
+
   /** ดึงเหตุผลจาก body ของ Server กลาง (`error` + `details`/`message`) ไม่มีก็บอกแค่ HTTP status */
   private async rejectionMessage(res: Response): Promise<string> {
     try {
@@ -273,7 +387,25 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
       if (typeof body.error === 'string') parts.push(body.error);
       if (typeof body.message === 'string') parts.push(body.message);
       if (Array.isArray(body.details)) {
-        parts.push(body.details.map((d) => String(d)).join('; '));
+        // delivery-server ส่ง details เป็น `{ key, message }` ไม่ใช่ string
+        // (ดู validateSettings ใน schemas.js) — String(d) ตรงๆ ได้ "[object
+        // Object]" ไม่สื่อความหมาย ต้องดึง key/message ออกมาก่อน
+        parts.push(
+          body.details
+            .map((d) => {
+              if (d && typeof d === 'object') {
+                const { key, message } = d as {
+                  key?: unknown;
+                  message?: unknown;
+                };
+                if (key !== undefined || message !== undefined) {
+                  return `${String(key)}: ${String(message)}`;
+                }
+              }
+              return String(d);
+            })
+            .join('; '),
+        );
       }
       if (parts.length > 0) return `${parts.join(': ')} (HTTP ${res.status})`;
     } catch {

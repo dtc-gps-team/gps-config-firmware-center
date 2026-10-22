@@ -105,3 +105,20 @@ export interface RawPutConfigResult {
   config_version: number;
   command?: RawCentralCommand | null;
 }
+
+/** ตัวเลือกตอนอัปโหลด firmware ให้กล่องหนึ่งเครื่อง (`POST /api/admin/devices/{id}/firmware`) —
+ * ไฟล์ดิบ (.bin) ส่งเป็น body ตรงๆ ไม่ใช่ JSON ส่วนนี้คือ header ประกอบ */
+export interface PushFirmwareOptions {
+  firmwareVersion: string;
+  schemaVersion?: number;
+  signature?: string;
+  allowDowngrade?: boolean;
+}
+
+/** ผลของ `POST /api/admin/devices/{id}/firmware` */
+export interface RawPushFirmwareResult {
+  ok: boolean;
+  device_id: string;
+  command?: RawCentralCommand | null;
+  message?: string;
+}

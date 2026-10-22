@@ -10,6 +10,7 @@ const unusedClientMethods = {
   getSchema: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   putDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   getCommand: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
+  pushFirmware: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
 };
 
 function makeService(client: CentralDeviceClient, mode = 'mock') {
@@ -240,6 +241,7 @@ describe('pushConfig', () => {
         },
       }),
       getCommand: jest.fn(),
+      pushFirmware: jest.fn(),
       ...over,
     };
     return client;
@@ -365,6 +367,7 @@ describe('getCommandOutcome', () => {
     listRegistryDevices: () => Promise.resolve([]),
     getSchema: jest.fn(),
     putDeviceConfig: jest.fn(),
+    pushFirmware: jest.fn(),
   };
 
   it('แปลงสถานะคำสั่งของ Server กลาง', async () => {

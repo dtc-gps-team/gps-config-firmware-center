@@ -225,6 +225,73 @@ describe('HttpCentralDeviceClient (กับ Server กลางปลอม)', 
     ]);
   });
 
+  it('pushFirmware: ส่งไฟล์ดิบ + header ครบ แล้วอ่านคำสั่งที่ได้กลับมา', async () => {
+    let seenMethod = '';
+    let seenHeaders: Record<string, string | undefined> = {};
+    let seenBody = Buffer.alloc(0);
+    handler = (req) => {
+      if (req.url === '/api/login')
+        return { status: 200, body: { token: 't' } };
+      seenMethod = req.method ?? '';
+      seenHeaders = {
+        version: req.headers['x-firmware-version'] as string | undefined,
+        schema: req.headers['x-schema-version'] as string | undefined,
+        signature: req.headers['x-firmware-signature'] as string | undefined,
+        downgrade: req.headers['x-allow-downgrade'] as string | undefined,
+      };
+      return {
+        status: 201,
+        body: {
+          ok: true,
+          device_id: 'BOX-1',
+          command: { command_id: 'CMD-9', action: 'UPDATE_FIRMWARE' },
+        },
+      };
+    };
+    server.on('request', (req) => {
+      if (req.url?.includes('/firmware')) {
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => (seenBody = Buffer.concat(chunks)));
+      }
+    });
+    const out = await makeClient().pushFirmware(
+      'BOX-1',
+      Buffer.from('fake-bin-content'),
+      { firmwareVersion: '1.1.0', schemaVersion: 1, allowDowngrade: true },
+    );
+    expect(out.ok).toBe(true);
+    expect(out.command?.command_id).toBe('CMD-9');
+    expect(seenMethod).toBe('POST');
+    expect(seenHeaders).toEqual({
+      version: '1.1.0',
+      schema: '1',
+      signature: undefined,
+      downgrade: 'true',
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(seenBody.toString()).toBe('fake-bin-content');
+  });
+
+  it('pushFirmware: Server กลางปฏิเสธ 409 -> CentralRejectedError', async () => {
+    handler = (req) =>
+      req.url === '/api/login'
+        ? { status: 200, body: { token: 't' } }
+        : {
+            status: 409,
+            body: {
+              error: 'ALREADY_ON_VERSION',
+              message: 'ใช้เวอร์ชันนี้อยู่แล้ว',
+            },
+          };
+    const err = await makeClient()
+      .pushFirmware('BOX-1', Buffer.from('x'), { firmwareVersion: '1.0.0' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CentralRejectedError);
+    expect((err as CentralRejectedError).status).toBe(409);
+    expect((err as Error).message).toContain('ALREADY_ON_VERSION');
+  });
+
   it('เชื่อมต่อไม่ได้เลย -> CentralUnavailableError', async () => {
     const client = new HttpCentralDeviceClient({
       baseUrl: 'http://127.0.0.1:1',
