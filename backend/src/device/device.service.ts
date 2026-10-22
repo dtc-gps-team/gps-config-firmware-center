@@ -378,6 +378,29 @@ export class DeviceService {
       }
     }
 
+    // Firmware ที่กล่องมีติดมาก่อนเข้าระบบเรา (ดู comment เหนือ
+    // `RegisterDeviceDto.initialFirmwareId`) — เช็คมีอยู่จริง + รองรับรุ่น
+    // อุปกรณ์นี้ เหมือนที่ `CampaignRolloutService.autoApplyFirmware()` เช็ค
+    // ตอน apply จริง กัน seed bookkeeping ด้วย Firmware ที่ผิดรุ่น
+    let initialFirmware: Pick<Firmware, 'id'> | null = null;
+    if (dto.initialFirmwareId) {
+      const firmware = await this.prisma.firmware.findUnique({
+        where: { id: dto.initialFirmwareId },
+        select: { id: true, deviceModelCompatibility: true },
+      });
+      if (!firmware) {
+        throw new NotFoundException(
+          `ไม่พบ Firmware id ${dto.initialFirmwareId}`,
+        );
+      }
+      if (!firmware.deviceModelCompatibility.includes(model.name)) {
+        throw new BadRequestException(
+          `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ "${model.name}" (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+        );
+      }
+      initialFirmware = firmware;
+    }
+
     const apiKey = randomBytes(32).toString('hex');
     const apiKeyHash = await bcrypt.hash(apiKey, 10);
 
@@ -406,6 +429,12 @@ export class DeviceService {
             bootloader: dto.bootloader,
             modelId: model.id,
             apiKeyHash,
+            // activePartition default เป็น 'A' เสมอตอนสร้างใหม่ (schema.prisma)
+            // seed Firmware เริ่มต้นไว้ที่พาร์ทิชัน A ไปด้วยกัน (ไม่ใช่ B ที่ไม่
+            // active — ของเดียวที่กล่องมีตอนนี้ถือว่า "active" อยู่แล้วจริง)
+            ...(initialFirmware
+              ? { partitionAFirmwareId: initialFirmware.id }
+              : {}),
           },
         });
         const metadata: AuditLogMetadata = { deviceId: created.deviceId };

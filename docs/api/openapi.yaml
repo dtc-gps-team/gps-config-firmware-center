@@ -5163,6 +5163,15 @@ components:
           type: string
           maxLength: 50
           nullable: true
+        initialFirmwareId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Firmware ที่กล่องมีติดมาก่อนเข้าระบบ (เช่นจากโรงงาน) — ไม่ใส่ได้
+            ถ้าไม่รู้แน่ชัด แต่ถ้าไม่ใส่ กด "Rollback Firmware" ครั้งแรกในอนาคต
+            จะไม่มีของเก่าให้ย้อนกลับไป (Dual Partition bookkeeping ไม่มีจุด
+            เริ่มต้น)
 
     RegisterDeviceResponse:
       allOf:

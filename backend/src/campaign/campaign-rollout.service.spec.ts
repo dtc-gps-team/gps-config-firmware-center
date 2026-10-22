@@ -2879,6 +2879,73 @@ describe('CampaignRolloutService', () => {
       expect(result.isRollback).toBe(true);
     });
 
+    describe('payloadType Firmware', () => {
+      const badFirmwareRollout: CampaignRollout = {
+        ...badRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: 'fw-current',
+      };
+
+      beforeEach(() => {
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
+      });
+
+      it('หา Firmware เดิมจาก Dual Partition bookkeeping ของอุปกรณ์ตัวแทน ไม่ใช่ประวัติ Campaign (#362 ส่วนขยาย)', async () => {
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'B',
+          partitionAFirmwareId: 'fw-old',
+          partitionBFirmwareId: 'fw-current',
+        });
+        campaignRollout.create.mockResolvedValue({
+          ...badFirmwareRollout,
+          id: 'rollout-new',
+          status: 'pending_approval',
+          configId: null,
+          firmwareId: 'fw-old',
+          isRollback: true,
+          rollbackOfId: badFirmwareRollout.id,
+          targetCount: 2,
+          createdBy: operation.id,
+        });
+
+        await service.rollback(
+          campaignId,
+          badFirmwareRollout.id,
+          {},
+          operation,
+        );
+
+        expect(device.findUnique).toHaveBeenCalledWith({
+          where: { deviceId: installedDeviceA.deviceId },
+        });
+        // ไม่ค้นประวัติ Campaign เลยสำหรับ Firmware (ต่างจาก Config)
+        expect(campaignRollout.findFirst).not.toHaveBeenCalled();
+        expect(campaignRollout.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            payloadType: CampaignPayloadType.Firmware,
+            configId: null,
+            firmwareId: 'fw-old',
+          }) as Partial<CampaignRollout>,
+        });
+      });
+
+      it('พาร์ทิชันที่ไม่ active ของอุปกรณ์ตัวแทนไม่มี Firmware เลย -> BadRequestException', async () => {
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+
+        await expect(
+          service.rollback(campaignId, badFirmwareRollout.id, {}, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(campaignRollout.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('excludeDeviceIds เอาเครื่องออก 1 เครื่อง -> targetCount เหลือ 1', async () => {
       await service.rollback(
         campaignId,

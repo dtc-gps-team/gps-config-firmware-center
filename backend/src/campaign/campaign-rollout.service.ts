@@ -1000,6 +1000,22 @@ export class CampaignRolloutService {
    * แก้ปัญหารอบที่ค้างอยู่นี้เอง ไม่ใช่การเริ่มงานใหม่ (ดู comment เหนือ
    * `OPEN_CAMPAIGN_ROLLOUT_STATUSES`) — เช็คแค่ว่า rollout เป้าหมายอยู่ใน
    * สถานะที่เคยส่ง payload ไปแล้วจริง (`ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES`)
+   *
+   * **Firmware ไม่ใช้ประวัติ Campaign หา "ของเก่า" อีกต่อไป** (แก้ไข #362
+   * ส่วนขยาย Rollback — เจอตอนทดสอบกับกล่องจริง) เดิมค้นหา Rollout ที่
+   * `completed` ล่าสุดของ payloadType เดียวกันในกลุ่มนี้ ซึ่งพังเมื่อ Campaign
+   * เคย retry ปล่อย Firmware เวอร์ชันเดิมซ้ำหลายรอบ (เช่นพังแล้วลองใหม่) —
+   * "รอบก่อนหน้าที่สำเร็จ" ที่เจอก็กลายเป็นเวอร์ชันเดียวกับที่กำลังจะ rollback
+   * ไม่ใช่ของเก่าจริง แถมไม่มีทางรู้จัก Firmware ที่กล่องมีมาก่อนเข้าระบบเรา
+   * เลย (เช่น Firmware ติดเครื่องมาจากโรงงาน) เปลี่ยนมาอ่านจาก **Dual
+   * Partition bookkeeping ของอุปกรณ์เอง** (`partitionAFirmwareId`/
+   * `partitionBFirmwareId` — พาร์ทิชันที่ไม่ active ตอนนี้มี Firmware อะไร)
+   * แทน ตรงกับความเป็นจริงทางฮาร์ดแวร์เสมอ ไม่ว่า Campaign จะ retry กี่รอบก็
+   * ตาม ใช้เครื่องตัวแทนตัวแรกในกลุ่มเป้าหมาย (สมมติว่าทุกเครื่องในกลุ่ม
+   * เดียวกันมีประวัติ Firmware ตรงกัน — simplification เดียวกับที่ Config
+   * ใช้ payload เดียวทั้งกลุ่มอยู่แล้ว) · Config ยังใช้ประวัติ Campaign เหมือน
+   * เดิม เพราะ Config ไม่มี concept "ของเก่ายังอยู่บนอุปกรณ์" ให้อ่านจาก
+   * อุปกรณ์ตรงๆ แบบ Firmware
    */
   async rollback(
     campaignId: string,
@@ -1016,27 +1032,6 @@ export class CampaignRolloutService {
     if (!ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES.includes(badRollout.status)) {
       throw new ConflictException(
         `สถานะ Rollout ปัจจุบัน (${badRollout.status}) ยังไม่เคยส่ง payload ไปอุปกรณ์เลย ไม่มีอะไรให้ rollback`,
-      );
-    }
-
-    // ต้อง `completed` เท่านั้น (ไม่ใช่แค่ createdAt ก่อนหน้า) เพราะกลุ่มหนึ่ง
-    // รัน rollout ได้ทีละรอบ — รอบก่อนหน้าที่ `rejected`/`cancelled` ไม่เคยส่ง
-    // อะไรจริง ไม่ใช่เป้าหมาย rollback ที่ถูกต้อง · payloadType ต้องตรงกัน
-    // เท่านั้น (Config rollback กลับไป Config เดิม, Firmware กลับไป Firmware
-    // เดิม ห้ามข้ามชนิด)
-    const previousRollout = await this.prisma.campaignRollout.findFirst({
-      where: {
-        campaignId,
-        id: { not: rolloutId },
-        createdAt: { lt: badRollout.createdAt },
-        status: 'completed',
-        payloadType: badRollout.payloadType,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!previousRollout) {
-      throw new BadRequestException(
-        'ไม่มี Rollout รอบก่อนหน้าที่สำเร็จให้ย้อนกลับไป (นี่คือรอบแรกของ payload ประเภทนี้ในกลุ่มนี้)',
       );
     }
 
@@ -1071,6 +1066,49 @@ export class CampaignRolloutService {
       throw new BadRequestException(
         'ไม่มีอุปกรณ์เหลือให้ rollback (ไม่มีเครื่องไหนได้รับ payload ของรอบนี้สำเร็จ หรือเอาออกหมดแล้ว)',
       );
+    }
+
+    // payloadType/configId/firmwareId ของรอบ rollback ใหม่ — Config หาจาก
+    // ประวัติ Campaign (ไม่เปลี่ยนพฤติกรรมเดิม) ส่วน Firmware หาจาก Dual
+    // Partition bookkeeping ของอุปกรณ์ตัวแทน (ดู comment เหนือฟังก์ชันนี้)
+    let configId: string | null = null;
+    let firmwareId: string | null = null;
+    if (badRollout.payloadType === 'Config') {
+      // ต้อง `completed` เท่านั้น (ไม่ใช่แค่ createdAt ก่อนหน้า) เพราะกลุ่มหนึ่ง
+      // รัน rollout ได้ทีละรอบ — รอบก่อนหน้าที่ `rejected`/`cancelled` ไม่เคยส่ง
+      // อะไรจริง ไม่ใช่เป้าหมาย rollback ที่ถูกต้อง
+      const previousRollout = await this.prisma.campaignRollout.findFirst({
+        where: {
+          campaignId,
+          id: { not: rolloutId },
+          createdAt: { lt: badRollout.createdAt },
+          status: 'completed',
+          payloadType: 'Config',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!previousRollout) {
+        throw new BadRequestException(
+          'ไม่มี Rollout รอบก่อนหน้าที่สำเร็จให้ย้อนกลับไป (นี่คือรอบแรกของ payload ประเภทนี้ในกลุ่มนี้)',
+        );
+      }
+      configId = previousRollout.configId;
+    } else {
+      const representativeDeviceId = rollbackDeviceIds[0];
+      const representativeDevice = await this.prisma.device.findUnique({
+        where: { deviceId: representativeDeviceId },
+      });
+      const inactivePartitionFirmwareId = representativeDevice
+        ? representativeDevice.activePartition === 'A'
+          ? representativeDevice.partitionBFirmwareId
+          : representativeDevice.partitionAFirmwareId
+        : null;
+      if (!inactivePartitionFirmwareId) {
+        throw new BadRequestException(
+          `ไม่พบ Firmware เดิมบนพาร์ทิชันที่ไม่ active ของอุปกรณ์ ${representativeDeviceId} ให้ย้อนกลับไป (ไม่เคยบันทึกไว้ หรือกล่องยังไม่เคยเปลี่ยน Firmware ผ่านระบบมาก่อน)`,
+        );
+      }
+      firmwareId = inactivePartitionFirmwareId;
     }
 
     const rollback = await this.prisma.$transaction(async (tx) => {
@@ -1115,9 +1153,9 @@ export class CampaignRolloutService {
       const created = await tx.campaignRollout.create({
         data: {
           campaignId,
-          payloadType: previousRollout.payloadType,
-          configId: previousRollout.configId,
-          firmwareId: previousRollout.firmwareId,
+          payloadType: badRollout.payloadType,
+          configId,
+          firmwareId,
           status: 'pending_approval',
           targetCount: rollbackDeviceIds.length,
           createdBy: actor.id,

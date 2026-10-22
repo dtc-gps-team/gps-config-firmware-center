@@ -745,6 +745,64 @@ describe('DeviceService', () => {
       expect(device.create).not.toHaveBeenCalled();
     });
 
+    // Firmware ที่กล่องมีติดมาก่อนเข้าระบบ (ดู comment เหนือ
+    // `RegisterDeviceDto.initialFirmwareId`, #362 ส่วนขยาย Rollback) — seed
+    // Dual Partition bookkeeping ตั้งแต่ลงทะเบียน ไม่งั้นกด Rollback ครั้งแรก
+    // ในอนาคตจะไม่มีของเก่าให้ย้อนกลับไปเลย
+    it('ส่ง initialFirmwareId มา -> seed partitionAFirmwareId ให้ device.create', async () => {
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.register(
+        { ...registerDto, initialFirmwareId: readyFirmware.id },
+        admin,
+      );
+
+      expect(firmware.findUnique).toHaveBeenCalledWith({
+        where: { id: readyFirmware.id },
+        select: { id: true, deviceModelCompatibility: true },
+      });
+      expect(device.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          partitionAFirmwareId: readyFirmware.id,
+        }) as object,
+      });
+    });
+
+    it('ไม่ส่ง initialFirmwareId มา -> ไม่เรียก firmware.findUnique และไม่ตั้ง partitionAFirmwareId (พฤติกรรมเดิม)', async () => {
+      await service.register(registerDto, admin);
+
+      expect(firmware.findUnique).not.toHaveBeenCalled();
+      const calls = device.create.mock.calls as { data: object }[][];
+      expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
+    });
+
+    it('initialFirmwareId ไม่พบในระบบ -> NotFoundException ไม่เรียก device.create', async () => {
+      firmware.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.register(
+          { ...registerDto, initialFirmwareId: 'fw-missing' },
+          admin,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(device.create).not.toHaveBeenCalled();
+    });
+
+    it('initialFirmwareId ไม่รองรับรุ่นอุปกรณ์นี้ -> BadRequestException ไม่เรียก device.create', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...readyFirmware,
+        deviceModelCompatibility: ['ESP32-DEVKIT-V1'],
+      });
+
+      await expect(
+        service.register(
+          { ...registerDto, initialFirmwareId: readyFirmware.id },
+          admin,
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(device.create).not.toHaveBeenCalled();
+    });
+
     // #246 review B — customerId รูปแบบ UUID ถูกแต่ไม่มีอยู่จริง เดิมปล่อยให้
     // Prisma โยน P2003 (FK violation) ตอน create กลายเป็น 500 แทน error ที่
     // สื่อความหมาย
