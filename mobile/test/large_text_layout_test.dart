@@ -484,7 +484,7 @@ void main() {
       // ป้ายสถานะอยู่ใต้รายละเอียด รายละเอียดจึงได้ความกว้างเต็มการ์ด
       final detail = find.textContaining('GT06N/TCP');
       expect(
-        tester.getTopLeft(find.text('ติดตั้งแล้ว')).dy,
+        tester.getTopLeft(find.text('Installed')).dy,
         greaterThanOrEqualTo(tester.getBottomLeft(detail).dy),
       );
     });

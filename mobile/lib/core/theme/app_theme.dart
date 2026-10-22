@@ -166,16 +166,31 @@ class AppTheme {
         disabledBorder: inputBorder(AppColors.border),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: buttonSize,
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.primaryForeground,
-          // Web: disabled:opacity-50
-          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
-          disabledForegroundColor: AppColors.primaryForeground,
-          shape: shape,
-          textStyle: buttonText,
-        ),
+        style:
+            FilledButton.styleFrom(
+              minimumSize: buttonSize,
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.primaryForeground,
+              // ตอนกดไม่ได้ — ต่างจาก Web (disabled:opacity-50) โดยตั้งใจ: primary 50%
+              // + ตัวอักษรขาวได้แค่ ~2.2:1 อ่านแทบไม่ออก · พื้น accent (ฟ้าอ่อน ยังบอก
+              // ว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) + ตัวอักษร
+              // mutedForeground ได้ ~5.6:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+              disabledBackgroundColor: AppColors.accent,
+              disabledForegroundColor: AppColors.mutedForeground,
+              shape: shape,
+              textStyle: buttonText,
+            ).copyWith(
+              // พื้น accent กลืนกับพื้นหน้าจอ (~1.05:1) มองไม่เห็นทรงปุ่ม — ขอบฟ้าจาง
+              // (primary 35% ~1.6:1) เฉพาะตอนกดไม่ได้ ให้เห็นทรงชัดขึ้นแต่ยังจางกว่า
+              // ปุ่มที่กดได้ · ตอนกดได้ไม่มีขอบเหมือนเดิม
+              side: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? BorderSide(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                      )
+                    : null,
+              ),
+            ),
       ),
       // variant `outline` ของ Web: ขอบ border พื้น background ตัวอักษร foreground
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -183,6 +198,11 @@ class AppTheme {
           minimumSize: buttonSize,
           foregroundColor: AppColors.foreground,
           backgroundColor: AppColors.background,
+          // ตอนกดไม่ได้ — ถ้าไม่ตั้ง Material ใช้ onSurface 38% ได้แค่ ~2.2:1 อ่าน
+          // แทบไม่ออก (ไม่ใช้ opacity-50 แบบปุ่มหลักด้วยเหตุผลเดียวกัน) · พื้น muted
+          // + ตัวอักษร mutedForeground ได้ ~5.5:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+          disabledForegroundColor: AppColors.mutedForeground,
+          disabledBackgroundColor: AppColors.muted,
           side: const BorderSide(color: AppColors.border),
           shape: shape,
           textStyle: buttonText,

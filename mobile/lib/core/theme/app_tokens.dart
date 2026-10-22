@@ -76,6 +76,10 @@ class AppTypography {
   /// ใน pubspec) เป็น variable font ไฟล์เดียว `FontWeight` เลือกน้ำหนักให้เอง
   static const fontFamily = 'Anuphan';
 
+  /// ชื่อ field / ค่าดิบของ Config (เช่น `REPORT_INTERVAL_MOVING`) — Web ใช้ Geist Mono
+  /// ฝั่ง Mobile ใช้ monospace ของระบบไปก่อน ไม่ bundle ฟอนต์เพิ่ม (docs/22 §4.5)
+  static const monoFamily = 'monospace';
+
   static const double xs = 13;
   static const double sm = 15;
   static const double base = 16;
