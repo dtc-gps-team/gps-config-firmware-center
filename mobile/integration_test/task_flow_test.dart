@@ -18,8 +18,8 @@ import 'package:mobile/main.dart' as app;
 /// `dueDate`, newest = `pending`).
 Future<void> _ensureLoggedOut(WidgetTester tester) async {
   // A previous run can leave a persisted session (reinstalling the APK keeps
-  // secure storage). If we land on Home, log out first.
-  if (find.byKey(const Key('home_logout')).evaluate().isNotEmpty) {
+  // secure storage). If we land on a tab page, log out first.
+  if (find.byKey(const Key('app_tab_bar')).evaluate().isNotEmpty) {
     await _logout(tester);
   }
 }
@@ -49,22 +49,12 @@ void main() {
     // === ST: sees own tasks, can open + change status ===
     await _login(tester, 'st.test');
 
-    // Home ของ ST/OT (ตั้งแต่ #191 ไม่มี section "งานวันนี้" แล้ว): ประวัติงาน
-    // ล่าสุด + ทางลัด "งานของฉัน" ไปรายการงานเต็ม · "งานค้างวันนี้" โผล่เฉพาะงาน
-    // ที่เลย/ใกล้กำหนดส่ง ซึ่ง CI fixtures ไม่มี จึงไม่ใช้เป็นตัวเช็ค
-    expect(find.text('ประวัติงานล่าสุด'), findsOneWidget);
-    await binding.takeScreenshot('01-home-st');
-
-    final myTasks = find.byKey(const Key('shortcut_my_tasks'));
-    await tester.scrollUntilVisible(
-      myTasks,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(myTasks);
-    await tester.pumpAndSettle(const Duration(seconds: 3));
+    // หน้าแรกของ ST/OT รวมรายการงานจากหน้า "งานของฉัน" เดิมไว้แล้ว (docs/22
+    // §7.2): ส่วน "ต้องทำ" + "ประวัติงานล่าสุด" บนหน้าเดียว · fixtures มีงาน
+    // `pending` อย่างน้อยหนึ่งงาน จึงมีการ์ดในส่วนต้องทำเสมอ
+    expect(find.byKey(const Key('home_open_section')), findsOneWidget);
     expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
-    await binding.takeScreenshot('01b-my-tasks-st');
+    await binding.takeScreenshot('01-home-st');
 
     await tester.tap(find.byKey(const Key('my_task_card_0')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
@@ -84,10 +74,9 @@ void main() {
     await binding.takeScreenshot('03-task-detail-updated-st');
 
     // === switch to Operation: งานของช่างต้องไม่โผล่ ===
-    // task detail -> งานของฉัน -> Home
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.pageBack();
+    // task detail -> หน้าแรก · Task Detail ใช้ AppPageHeader แล้ว (docs/22 Batch 5)
+    // ปุ่มย้อนกลับไม่ใช่ BackButton ของ AppBar ที่ `pageBack()` หา
+    await tester.tap(find.byTooltip('ย้อนกลับ'));
     await tester.pumpAndSettle();
     await _logout(tester);
 
@@ -95,18 +84,28 @@ void main() {
     // ConfigEngineer ยัง login เข้า Mobile ไม่ได้ — UserRole ฝั่ง Mobile ไม่มี)
     await _login(tester, 'operation.test');
 
-    expect(find.text('ทางลัด'), findsOneWidget); // Home did render
-    expect(find.text('ประวัติงานล่าสุด'), findsNothing);
-    expect(find.byKey(const Key('urgent_tasks_section')), findsNothing);
-    expect(find.byKey(const Key('shortcut_my_tasks')), findsNothing);
-    await binding.takeScreenshot('04-home-operation-no-tasks');
+    // Operation ไม่มีแท็บงาน — เปิดมาที่ Device Search (docs/22 §7.2)
+    expect(find.byKey(const Key('app_tab_bar')), findsOneWidget);
+    expect(find.byKey(const Key('tab_home')), findsNothing);
+    expect(find.byKey(const Key('tab_devices')), findsOneWidget);
+    expect(find.byKey(const Key('home_open_section')), findsNothing);
+    await binding.takeScreenshot('04-operation-no-task-tab');
   });
 }
 
-/// Logout ต้องกดค้าง + ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`,
-/// มีคิวค้าง = `logout_unsynced_confirm`)
+/// Logout อยู่ในแผ่นบัญชีผู้ใช้ (ปุ่ม avatar บนหัวหน้าระดับแท็บ docs/22 §7.2) +
+/// ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`, มีคิวค้าง =
+/// `logout_unsynced_confirm`) · ทุกหน้าระดับแท็บมี avatar แล้ว (Device Search ย้าย
+/// design ใน Batch 4) — ถ้าหน้าปัจจุบันไม่มีปุ่ม (เช่นอยู่หน้าลูก) สลับไปแท็บแจ้งเตือนก่อน
 Future<void> _logout(WidgetTester tester) async {
-  await tester.longPress(find.byKey(const Key('home_logout')));
+  final account = find.byKey(const Key('account_button'));
+  if (account.evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('tab_notifications')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  }
+  await tester.tap(account);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('account_logout')));
   await tester.pumpAndSettle();
   final plain = find.byKey(const Key('logout_confirm'));
   await tester.tap(

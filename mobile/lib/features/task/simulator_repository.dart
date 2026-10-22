@@ -51,7 +51,7 @@ class MockSimulatorRepository implements SimulatorRepository {
       configCheck: SimulationResult(
         passed: configId.trim().isNotEmpty,
         details: [
-          'MOCK — ยังไม่ได้เรียก backend จริง',
+          'ผลจำลอง ยังไม่ได้เรียก backend จริง',
           'configId = $configId',
           if (configId.trim().isNotEmpty)
             'ทุก field ผ่านการตรวจ (จำลอง)'
@@ -63,7 +63,7 @@ class MockSimulatorRepository implements SimulatorRepository {
         passed: passed,
         details: [
           if (passed)
-            'MOCK — deviceModel/protocol ตรงกับอุปกรณ์ $deviceId (จำลอง)'
+            'deviceModel/protocol ตรงกับอุปกรณ์ $deviceId (จำลอง)'
           else
             'ต้องระบุ ${missing.join(' และ ')}',
         ],
@@ -73,7 +73,7 @@ class MockSimulatorRepository implements SimulatorRepository {
         signalStrength: -65,
         details: [
           if (deviceId.trim().isNotEmpty)
-            'MOCK — อุปกรณ์ $deviceId ออนไลน์ สัญญาณ -65 dBm (จำลอง)'
+            'อุปกรณ์ $deviceId ออนไลน์ สัญญาณ -65 dBm (จำลอง)'
           else
             'ต้องระบุ deviceId',
         ],

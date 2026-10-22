@@ -27,6 +27,7 @@ const sampleFirmware: Firmware = {
   objectKey: 'firmware/fw-1/gt06n.bin',
   originalFilename: 'gt06n.bin',
   fileSizeBytes: 1024,
+  checksumSha256: 'a'.repeat(64),
   uploadedBy: 'fe-1',
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'pending_review',

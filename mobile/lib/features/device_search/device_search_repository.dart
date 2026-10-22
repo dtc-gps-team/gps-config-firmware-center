@@ -36,6 +36,10 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
   // ตายตัวเป็น "ไม่ทราบ" เสมอ รอ #245 ทำ telemetry จริง) จึงไม่ fabricate field
   // นี้ในชุด mock — ความสมจริงที่เพิ่มในรอบนี้คือ imei/serialNumber/
   // blackboxId/customer ครบบางเครื่อง ว่างบางเครื่อง (null-safe ของ #306)
+  //
+  // 1 รุ่นมีได้โปรโตคอลเดียว (#351) — ใช้รุ่นและโปรโตคอลตามข้อมูลตัวอย่างของ
+  // backend (`prisma/seed.ts`, `scripts/seed-demo.ts`): GT06N, GT06L, GT08-4G
+  // ใช้ TCP ทั้งหมด
   final List<Device> _devices = [
     Device(
       id: 'mock-device-1',
@@ -69,7 +73,7 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
       deviceId: 'DEV-0231',
       simNumber: '0865432109',
       deviceModel: 'GT06N',
-      protocol: 'UDP',
+      protocol: 'TCP',
       status: DeviceLifecycleStatus.installed,
       registeredAt: DateTime(2026, 7, 10),
       installedAt: DateTime(2026, 7, 12),
@@ -85,7 +89,7 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
       id: 'mock-device-4',
       deviceId: 'DEV-0305',
       simNumber: '0823456789',
-      deviceModel: 'GT08',
+      deviceModel: 'GT08-4G',
       protocol: 'TCP',
       status: DeviceLifecycleStatus.installed,
       registeredAt: DateTime(2026, 7, 25),
@@ -108,13 +112,13 @@ class MockDeviceSearchRepository implements DeviceSearchRepository {
       id: 'mock-device-6',
       deviceId: 'DEV-0512',
       simNumber: '0845678901',
-      deviceModel: 'GT08',
-      protocol: 'UDP',
+      deviceModel: 'GT08-4G',
+      protocol: 'TCP',
       status: DeviceLifecycleStatus.decommissioned,
       registeredAt: DateTime(2026, 3, 1),
       installedAt: DateTime(2026, 3, 5),
       imei: '860000000000512',
-      serialNumber: 'SNGT08000512',
+      serialNumber: 'SNGT084G000512',
       blackboxId: '7100000512',
       customer: const Customer(
         id: 'mock-customer-1',

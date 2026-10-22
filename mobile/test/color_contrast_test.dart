@@ -7,15 +7,14 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
+import 'package:mobile/core/router/app_shell.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/theme/app_theme.dart';
+import 'package:mobile/core/ui/app_badge.dart';
+import 'package:mobile/core/ui/status_tones.dart';
 import 'package:mobile/features/auth/login_page.dart';
-import 'package:mobile/features/config_simulator/config_repository.dart';
-import 'package:mobile/features/config_simulator/simulator_page.dart';
-import 'package:mobile/features/config_simulator/simulator_repository.dart';
+import 'package:mobile/features/task/simulator_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
-import 'package:mobile/features/device_search/device_status_ui.dart';
-import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/incident/incident_ui.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -112,7 +111,6 @@ Future<void> _pump(WidgetTester tester, Widget page, AuthState auth) async {
           ref.onDispose(db.close);
           return db;
         }),
-        configRepositoryProvider.overrideWithValue(MockConfigRepository()),
         simulatorRepositoryProvider.overrideWithValue(
           MockSimulatorRepository(),
         ),
@@ -169,9 +167,15 @@ void main() {
       }
     });
 
+    // ป้ายสถานะอุปกรณ์เป็น AppBadge แล้ว (docs/22 Batch 4) — วัดสีจริงของ tone ที่ใช้
+    // (ตัวอักษรโปร่งแสงผสมกับพื้นก่อนวัด)
     test('ป้ายสถานะอุปกรณ์', () {
       for (final s in DeviceLifecycleStatus.values) {
-        _expectTextContrast('device $s', DeviceStatusStyle.colors(s));
+        final style = deviceLifecycleTone(s).style;
+        _expectTextContrast('device $s', (
+          style.background,
+          Color.alphaBlend(style.foreground, style.background),
+        ));
       }
     });
 
@@ -187,9 +191,20 @@ void main() {
     });
   });
 
-  testWidgets('badge จำนวนแจ้งเตือนบนกระดิ่ง ข้อความ >= 4.5:1 '
+  // กระดิ่งบนหัวหน้าแรกย้ายมาเป็นตัวเลขบนแท็บแจ้งเตือน (docs/22 §7.2)
+  testWidgets('badge จำนวนแจ้งเตือนบนแท็บ ข้อความ >= 4.5:1 '
       '(UX audit #10)', (tester) async {
-    await _pump(tester, const HomePage(), _st);
+    await _pump(
+      tester,
+      Scaffold(
+        bottomNavigationBar: AppTabBar(
+          tabs: AppTab.values,
+          selectedIndex: 0,
+          onSelected: (_) {},
+        ),
+      ),
+      _st,
+    );
 
     final badgeFinder = find.byType(Badge);
     expect(badgeFinder, findsOneWidget);
@@ -228,18 +243,6 @@ void main() {
         const LoginPage(),
         const AuthState(status: AuthStatus.unauthenticated),
       );
-      final colors = _enabledBorderColors(tester);
-      expect(colors, isNotEmpty);
-      for (final c in colors) {
-        expect(
-          contrastRatio(c, AppTheme.surface),
-          greaterThanOrEqualTo(_uiMin),
-        );
-      }
-    });
-
-    testWidgets('หน้าทดสอบการตั้งค่า (dropdown)', (tester) async {
-      await _pump(tester, const SimulatorPage(), _st);
       final colors = _enabledBorderColors(tester);
       expect(colors, isNotEmpty);
       for (final c in colors) {

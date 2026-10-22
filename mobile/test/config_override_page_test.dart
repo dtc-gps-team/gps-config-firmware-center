@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_sensitive_value.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
 
@@ -120,6 +122,11 @@ Future<_FakeConfigOverrideRepository> _pump(
   _FakeConfigOverrideRepository? repo,
 }) async {
   final fake = repo ?? _FakeConfigOverrideRepository();
+  // หัวหน้าจอแบบ AppPageHeader (docs/22 Batch 4) กินพื้นที่บนจอ 800x600 ค่าเริ่มต้น
+  // จนปุ่มส่งพ้นจอ — ใช้จอสูงแบบโทรศัพท์แนวตั้งให้เห็นทั้งฟอร์ม
+  tester.view.physicalSize = const Size(400 * 3, 1200 * 3);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [configOverrideRepositoryProvider.overrideWithValue(fake)],
@@ -731,4 +738,100 @@ void main() {
       expect(find.text(offlineMessage), findsNothing);
     });
   });
+
+  // docs/22 §7.1 (AppSensitiveValue, Batch 4) + docs/21 #20 — ค่า sensitive ซ่อนเป็นค่า
+  // เริ่มต้น ปุ่มรูปตามี label ให้ screen reader
+  group('ค่า sensitive (AppSensitiveValue)', () {
+    testWidgets('override ไม่ได้ -> ซ่อนค่า กดปุ่ม "แสดงค่า" แล้วเห็นค่าจริง', (
+      tester,
+    ) async {
+      await _pump(tester);
+
+      expect(find.text('123456'), findsNothing);
+      expect(find.text(AppSensitiveValue.masked), findsOneWidget);
+
+      await tester.tap(find.byTooltip('แสดงค่า'));
+      await tester.pump();
+
+      expect(find.text('123456'), findsOneWidget);
+      expect(find.byTooltip('ซ่อนค่า'), findsOneWidget);
+    });
+
+    testWidgets('แก้ได้ -> ช่องกรอกซ่อนตัวอักษร ปุ่มรูปตาสลับการแสดงผล', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: const DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'GT06N · ตั้งค่ามาตรฐาน',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'SERVER_TOKEN': 'abc'},
+          ),
+          definitions: const [
+            ConfigFieldDefinition(
+              id: 'def-token',
+              fieldName: 'SERVER_TOKEN',
+              dataType: 'string',
+              allowedValues: [],
+              required: false,
+              stOverridable: true,
+              sensitive: true,
+              supportedModels: [],
+            ),
+          ],
+        ),
+      );
+
+      EditableText field() => tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const Key('config_override_input_SERVER_TOKEN')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(field().obscureText, isTrue);
+
+      await tester.tap(find.byTooltip('แสดงค่า'));
+      await tester.pump();
+      expect(field().obscureText, isFalse);
+    });
+  });
+
+  testWidgets(
+    'มี override เครื่องนี้ -> ป้ายบนหัวหน้าจอ + ชื่อ Config ใน meta',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: const DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'GT06N · ตั้งค่ามาตรฐาน',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'APN': 'internet'},
+            hasDeviceOverride: true,
+          ),
+        ),
+      );
+
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.byKey(const Key('config_override_has_override_badge')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppPageHeader),
+          matching: find.text('GT06N · ตั้งค่ามาตรฐาน'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }

@@ -37,6 +37,7 @@ import {
 } from "@/lib/status-pill";
 import { PageHeader } from "@/components/page-header";
 import { IncidentActions } from "./incident-actions";
+import { RolloutImpactCard } from "./rollout-impact-card";
 
 /**
  * หน้ารายละเอียด Incident (`/incidents/{id}`) — ต่อ `GET /incidents/{id}` ที่มี
@@ -182,6 +183,8 @@ function IncidentDetailContent({
           </InfoRow>
         </div>
       </Card>
+
+      <RolloutImpactCard incident={incident} />
 
       {(technical.attempts !== null || technical.lastError !== null) && (
         <Card className="max-w-xl p-4">

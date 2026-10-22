@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_notice.dart';
+import '../../core/ui/labels.dart';
 import 'task_event_repository.dart';
-import 'task_status_ui.dart';
 
 String _formatDate(DateTime dt) {
   final d = dt.toLocal();
@@ -20,6 +23,9 @@ const _noteMaxLength = 2000;
 /// task's timeline oldest-first (created → status changes → notes) plus an
 /// "เพิ่มบันทึก" button. Text notes only — attaching photos is out of this
 /// round's scope.
+///
+/// design system ใหม่ (docs/22 Batch 5): ทั้งส่วนอยู่ใน `AppCard` เดียว (หัวข้อ +
+/// ปุ่มเพิ่มบันทึก + รายการ) แบบการ์ดอื่นใน Task Detail · ตรรกะเหมือนเดิม
 class TaskTimelineSection extends ConsumerWidget {
   const TaskTimelineSection({
     super.key,
@@ -37,9 +43,9 @@ class TaskTimelineSection extends ConsumerWidget {
     final added = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppTheme.surface,
+      backgroundColor: AppColors.card,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (_) => _AddNoteSheet(taskId: taskId),
     );
@@ -55,46 +61,39 @@ class TaskTimelineSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final eventsAsync = ref.watch(taskEventsProvider(taskId));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'ประวัติงาน',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'ประวัติงาน',
+                  style: TextStyle(
+                    fontSize: AppTypography.sm,
+                    height: AppTypography.smHeight,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.foreground,
+                  ),
                 ),
               ),
-            ),
-            if (canAddNote)
-              TextButton.icon(
-                key: const Key('task_add_note_button'),
-                onPressed: () => _openAddNote(context, ref),
-                icon: const Icon(Icons.edit_note, size: 20),
-                label: const Text('เพิ่มบันทึก'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        eventsAsync.when(
-          skipLoadingOnRefresh: true,
-          data: (events) => events.isEmpty
-              ? const _TimelineMessage('ยังไม่มีประวัติของงานนี้')
-              : Container(
-                  key: const Key('task_timeline'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
+              if (canAddNote)
+                TextButton.icon(
+                  key: const Key('task_add_note_button'),
+                  onPressed: () => _openAddNote(context, ref),
+                  icon: const Icon(Icons.edit_note, size: 20),
+                  label: const Text('เพิ่มบันทึก'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          eventsAsync.when(
+            skipLoadingOnRefresh: true,
+            data: (events) => events.isEmpty
+                ? const _TimelineMessage('ยังไม่มีประวัติของงานนี้')
+                : Column(
+                    key: const Key('task_timeline'),
                     children: [
                       for (var i = 0; i < events.length; i++)
                         _TimelineTile(
@@ -103,34 +102,34 @@ class TaskTimelineSection extends ConsumerWidget {
                         ),
                     ],
                   ),
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          ),
-          error: (_, _) => Row(
-            children: [
-              const Expanded(
-                child: _TimelineMessage(
-                  'โหลดประวัติงานไม่สำเร็จ',
-                  key: Key('task_timeline_error'),
+            error: (_, _) => Row(
+              children: [
+                const Expanded(
+                  child: _TimelineMessage(
+                    'โหลดประวัติงานไม่สำเร็จ',
+                    key: Key('task_timeline_error'),
+                  ),
                 ),
-              ),
-              TextButton(
-                key: const Key('task_timeline_retry'),
-                onPressed: () => ref.invalidate(taskEventsProvider(taskId)),
-                child: const Text('ลองใหม่'),
-              ),
-            ],
+                TextButton(
+                  key: const Key('task_timeline_retry'),
+                  onPressed: () => ref.invalidate(taskEventsProvider(taskId)),
+                  child: const Text('ลองใหม่'),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -144,7 +143,11 @@ class _TimelineMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+      style: const TextStyle(
+        fontSize: AppTypography.xs,
+        height: AppTypography.xsHeight,
+        color: AppColors.mutedForeground,
+      ),
     );
   }
 }
@@ -165,12 +168,14 @@ class _TimelineTile extends StatelessWidget {
       decoration: BoxDecoration(
         border: isLast
             ? null
-            : const Border(bottom: BorderSide(color: Color(0x14000000))),
+            : const Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: AppTheme.navy),
+          ExcludeSemantics(
+            child: Icon(icon, size: 20, color: AppColors.mutedForeground),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -179,20 +184,21 @@ class _TimelineTile extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14,
-                    height: 1.4,
+                    fontSize: AppTypography.sm,
+                    height: AppTypography.smHeight,
                     fontWeight: event.isNote
                         ? FontWeight.w400
-                        : FontWeight.w600,
-                    color: AppTheme.textPrimary,
+                        : FontWeight.w500,
+                    color: AppColors.foreground,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '$who · ${_formatDate(event.changedAt)}',
                   style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
+                    fontSize: AppTypography.xs,
+                    height: AppTypography.xsHeight,
+                    color: AppColors.mutedForeground,
                   ),
                 ),
               ],
@@ -210,7 +216,7 @@ class _TimelineTile extends StatelessWidget {
     if (from == null) return (Icons.add_task, 'สร้างงาน');
     return (
       Icons.swap_horiz,
-      'เปลี่ยนสถานะ: ${TaskStatusStyle.label(from)} → ${TaskStatusStyle.label(to)}',
+      'เปลี่ยนสถานะ: ${taskStatusLabel(from)} → ${taskStatusLabel(to)}',
     );
   }
 }
@@ -289,9 +295,10 @@ class _AddNoteSheetState extends ConsumerState<_AddNoteSheet> {
           const Text(
             'เพิ่มบันทึก',
             style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
+              fontSize: AppTypography.lg,
+              height: AppTypography.lgHeight,
+              fontWeight: FontWeight.w600,
+              color: AppColors.foreground,
             ),
           ),
           const SizedBox(height: 12),
@@ -305,39 +312,28 @@ class _AddNoteSheetState extends ConsumerState<_AddNoteSheet> {
             maxLength: _noteMaxLength,
             decoration: const InputDecoration(
               hintText: 'เช่น ลูกค้าไม่อยู่ นัดเข้าใหม่พรุ่งนี้',
-              border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
           ),
           if (_error != null) ...[
             const SizedBox(height: 4),
-            Text(
-              _error!,
-              key: const Key('task_note_error'),
-              style: const TextStyle(color: AppTheme.error, fontSize: 13),
+            AppNotice(
+              tone: AppBadgeTone.danger,
+              icon: Icons.error_outline,
+              child: Text(_error!, key: const Key('task_note_error')),
             ),
           ],
           const SizedBox(height: 12),
           FilledButton(
             key: const Key('task_note_save'),
             onPressed: canSave ? _save : null,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              backgroundColor: AppTheme.navy,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: AppTheme.navy.withValues(alpha: 0.4),
-              disabledForegroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
             child: _saving
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: Colors.white,
+                      color: AppColors.primaryForeground,
                     ),
                   )
                 : const Text('บันทึก'),

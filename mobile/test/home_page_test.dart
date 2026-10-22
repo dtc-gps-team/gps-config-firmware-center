@@ -6,13 +6,15 @@ import 'package:mobile/core/db/app_database.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:go_router/go_router.dart';
-import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
-import 'package:mobile/features/device_connection_test/recent_device_id_store.dart';
+import 'package:mobile/core/ui/app_badge.dart';
+import 'package:mobile/core/ui/app_v2_theme.dart';
+import 'package:mobile/core/ui/labels.dart';
+import 'package:mobile/features/auth/account_sheet.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -70,18 +72,15 @@ final _fakeTasks = <Task>[
 ];
 
 class _FakeTaskRepository implements TaskRepository {
-  _FakeTaskRepository({List<Task>? tasks, this.error})
-    : _tasks = tasks ?? _fakeTasks;
+  _FakeTaskRepository({List<Task>? tasks}) : _tasks = tasks ?? _fakeTasks;
 
   final List<Task> _tasks;
-  final Object? error;
 
   int listCalls = 0;
 
   @override
   Future<List<Task>> listTasks() async {
     listCalls++;
-    if (error != null) throw error!;
     return _tasks;
   }
 
@@ -94,9 +93,7 @@ class _FakeTaskRepository implements TaskRepository {
 }
 
 class _FakeNotificationRepository implements NotificationRepository {
-  _FakeNotificationRepository({this.unreadCount = 0});
-
-  final int unreadCount;
+  const _FakeNotificationRepository();
 
   AppNotification _n(int i, bool read) => AppNotification(
     id: 'n$i',
@@ -109,10 +106,7 @@ class _FakeNotificationRepository implements NotificationRepository {
 
   @override
   Future<List<AppNotification>> list({bool? unread}) async {
-    final items = [
-      for (var i = 0; i < unreadCount; i++) _n(i, false),
-      _n(99, true),
-    ];
+    final items = [_n(99, true)];
     return unread == true ? items.where((n) => !n.read).toList() : items;
   }
 
@@ -140,7 +134,7 @@ Future<void> _pumpHome(
           taskRepo ?? _FakeTaskRepository(),
         ),
         notificationRepositoryProvider.overrideWithValue(
-          notiRepo ?? _FakeNotificationRepository(),
+          notiRepo ?? const _FakeNotificationRepository(),
         ),
         // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
         // (timer ของ stream ค้างหลังปิด tree)
@@ -158,7 +152,7 @@ Future<void> _pumpHome(
 }
 
 /// Router-backed pump with stub destinations, so `context.push(...)` from the
-/// shortcut tiles and history cards can be asserted.
+/// task cards can be asserted.
 Future<void> _pumpHomeRouted(
   WidgetTester tester,
   UserRole? role, {
@@ -170,21 +164,9 @@ Future<void> _pumpHomeRouted(
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const HomePage()),
       GoRoute(
-        path: AppRoutes.simulator,
-        builder: (_, _) => const Scaffold(body: Text('SIMULATOR_PAGE_STUB')),
-      ),
-      GoRoute(
-        path: AppRoutes.deviceConnectionTest,
-        builder: (_, _) => const Scaffold(body: Text('DEVICE_TEST_PAGE_STUB')),
-      ),
-      GoRoute(
         path: AppRoutes.deviceSearch,
         builder: (_, _) =>
             const Scaffold(body: Text('DEVICE_SEARCH_PAGE_STUB')),
-      ),
-      GoRoute(
-        path: AppRoutes.myTasks,
-        builder: (_, _) => const Scaffold(body: Text('MY_TASKS_PAGE_STUB')),
       ),
       GoRoute(
         path: AppRoutes.incidents,
@@ -211,7 +193,7 @@ Future<void> _pumpHomeRouted(
           taskRepo ?? _FakeTaskRepository(),
         ),
         notificationRepositoryProvider.overrideWithValue(
-          notiRepo ?? _FakeNotificationRepository(),
+          notiRepo ?? const _FakeNotificationRepository(),
         ),
         // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
         // (timer ของ stream ค้างหลังปิด tree)
@@ -229,474 +211,367 @@ Future<void> _pumpHomeRouted(
 }
 
 void main() {
-  final deviceTestTile = find.byKey(const Key('shortcut_device_test'));
+  Task task(
+    String id,
+    TaskStatus status, {
+    String? title,
+    DateTime? due,
+    DateTime? updated,
+  }) => Task(
+    id: id,
+    title: title ?? 'งาน $id',
+    assignedTo: 'u1',
+    status: status,
+    createdAt: DateTime(2026, 9, 1),
+    updatedAt: updated ?? DateTime(2026, 9, 2),
+    deviceId: 'DVC-$id',
+    dueDate: due,
+  );
 
-  group('role badge label', () {
-    testWidgets('SuperAdmin -> "SuperAdmin • ผู้ดูแลระบบสูงสุด"', (
-      tester,
-    ) async {
-      await _pumpHome(tester, UserRole.superAdmin);
-      expect(find.text('SuperAdmin • ผู้ดูแลระบบสูงสุด'), findsOneWidget);
-    });
-  });
-
-  group('RBAC — ปุ่ม "ทดสอบสัญญาณ" ในกริดทางลัด', () {
-    testWidgets('ST เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
-      await _pumpHome(tester, UserRole.st);
-      expect(deviceTestTile, findsOneWidget);
-    });
-
-    testWidgets('OT เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
-      await _pumpHome(tester, UserRole.ot);
-      expect(deviceTestTile, findsOneWidget);
-    });
-
-    testWidgets('Operation ไม่เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
-      await _pumpHome(tester, UserRole.operation);
-      expect(deviceTestTile, findsNothing);
-    });
-
-    testWidgets('role ว่าง ไม่เห็นทางลัด "ทดสอบสัญญาณ"', (tester) async {
-      await _pumpHome(tester, null);
-      expect(deviceTestTile, findsNothing);
-    });
-  });
-
-  group('"งานค้างวันนี้" — Mobile UI Roadmap Phase 1 (เร่งด่วน)', () {
-    testWidgets('ไม่มีงานเร่งด่วนเลย -> section ไม่โผล่มาทั้งก้อน', (
-      tester,
-    ) async {
-      // _fakeTasks ปกติ: t3 (pending) ไม่มี dueDate เลย = ไม่เร่งด่วนตามเกณฑ์
-      await _pumpHome(tester, UserRole.st);
-
-      expect(find.byKey(const Key('urgent_tasks_section')), findsNothing);
-      expect(find.text('งานค้างวันนี้'), findsNothing);
-    });
-
+  group('หัวหน้าแรก (docs/22 §7.2)', () {
     testWidgets(
-      'มีงานเลยกำหนด + ใกล้ถึงกำหนด -> section โผล่ เรียง overdue ก่อน dueSoon',
+      'title "หน้าแรก" + ชื่อผู้ใช้ใน meta + ปุ่มบัญชี · ไม่มี AppBar',
       (tester) async {
-        final now = DateTime.now();
-        final overdueTask = Task(
-          id: 'u1',
-          title: 'งานเลยกำหนดแล้ว',
-          assignedTo: 'u1',
-          status: TaskStatus.pending,
-          createdAt: now,
-          updatedAt: now,
-          deviceId: 'DVC-001',
-          dueDate: now.subtract(const Duration(days: 1)),
-        );
-        final dueSoonTask = Task(
-          id: 'u2',
-          title: 'งานใกล้ถึงกำหนด',
-          assignedTo: 'u1',
-          status: TaskStatus.inProgress,
-          createdAt: now,
-          updatedAt: now,
-          deviceId: 'DVC-002',
-          dueDate: now.add(const Duration(hours: 6)),
-        );
-        // งานเสร็จแล้วแม้ dueDate เลยกำหนดก็ต้องไม่ถูกนับเป็นเร่งด่วน
-        final completedOverdueLooking = Task(
-          id: 'u3',
-          title: 'งานเสร็จแล้ว (ไม่ควรนับเร่งด่วน)',
-          assignedTo: 'u1',
-          status: TaskStatus.completed,
-          createdAt: now,
-          updatedAt: now,
-          dueDate: now.subtract(const Duration(days: 10)),
-        );
+        await _pumpHome(tester, UserRole.st);
 
-        await _pumpHome(
-          tester,
-          UserRole.st,
-          taskRepo: _FakeTaskRepository(
-            tasks: [dueSoonTask, overdueTask, completedOverdueLooking],
-          ),
-        );
-
-        expect(find.byKey(const Key('urgent_tasks_section')), findsOneWidget);
-        expect(find.text('งานค้างวันนี้'), findsOneWidget);
-        // งานเสร็จแล้วอาจโผล่ใน "ประวัติงานล่าสุด" ได้ตามปกติ แต่ต้องไม่ถูกนับ
-        // เป็นการ์ดเร่งด่วน — section เร่งด่วนต้องมีแค่ 2 การ์ด (overdue+dueSoon)
-        expect(find.byKey(const Key('urgent_task_card_0')), findsOneWidget);
-        expect(find.byKey(const Key('urgent_task_card_1')), findsOneWidget);
-        expect(find.byKey(const Key('urgent_task_card_2')), findsNothing);
-
-        // overdue ต้องมาก่อน dueSoon ในลำดับการ์ด
-        final overdueFinder = find.text('งานเลยกำหนดแล้ว');
-        final dueSoonFinder = find.text('งานใกล้ถึงกำหนด');
-        expect(overdueFinder, findsOneWidget);
-        expect(dueSoonFinder, findsOneWidget);
-        final overdueY = tester.getTopLeft(overdueFinder).dy;
-        final dueSoonY = tester.getTopLeft(dueSoonFinder).dy;
-        expect(overdueY, lessThan(dueSoonY));
+        expect(find.text('หน้าแรก'), findsOneWidget);
+        expect(find.text('somchai.t'), findsOneWidget);
+        expect(find.byKey(const Key('account_button')), findsOneWidget);
+        expect(find.byType(AppBar), findsNothing);
+        expect(find.byType(AppV2Theme), findsOneWidget);
       },
     );
 
-    testWidgets('แตะการ์ดงานเร่งด่วน -> navigate ไป Task Detail ของงานนั้น', (
-      tester,
-    ) async {
-      final now = DateTime.now();
-      final overdueTask = Task(
-        id: 'u9',
-        title: 'งานเลยกำหนดแล้ว',
-        assignedTo: 'u1',
-        status: TaskStatus.pending,
-        createdAt: now,
-        updatedAt: now,
-        dueDate: now.subtract(const Duration(days: 1)),
-      );
+    testWidgets('ไม่มีทางลัดเดิม / กระดิ่ง / ปุ่ม logout บนหัว (ย้ายไปแท็บ + '
+        'แผ่นบัญชี)', (tester) async {
+      await _pumpHome(tester, UserRole.st);
 
-      await _pumpHomeRouted(
-        tester,
-        UserRole.st,
-        taskRepo: _FakeTaskRepository(tasks: [overdueTask]),
-      );
-
-      await tester.tap(find.byKey(const Key('urgent_task_card_0')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('TASK_DETAIL_STUB u9'), findsOneWidget);
+      for (final key in [
+        'shortcut_simulator',
+        'shortcut_device_test',
+        'shortcut_my_tasks',
+        'shortcut_find_device',
+        'shortcut_field_report',
+        'shortcut_report_incident',
+        'home_notifications',
+        'home_logout',
+        'view_all_history',
+      ]) {
+        expect(find.byKey(Key(key)), findsNothing, reason: key);
+      }
+      expect(find.text('ทางลัด'), findsNothing);
     });
   });
 
-  group('"ประวัติงานล่าสุด" — ประวัติงานที่เสร็จแล้วจริงจาก GET /tasks', () {
-    testWidgets('แสดงเฉพาะงานที่เสร็จแล้ว + สถิติงานเดือนนี้', (tester) async {
-      await _pumpHome(tester, UserRole.st);
-
-      // t1 (completed, this month) และ t2 (completed, เดือนอื่น) โผล่ในประวัติ
-      expect(find.text('ติดตั้งกล่อง GPS รถบรรทุก'), findsOneWidget);
-      expect(find.text('ตรวจเช็คสัญญาณรถโดยสาร'), findsOneWidget);
-      // t3 (pending) ต้องไม่โผล่ในหน้า Home อีกต่อไป
-      expect(find.text('เปลี่ยนซิมการ์ดอุปกรณ์'), findsNothing);
-
-      // สถิติ: เดือนนี้เสร็จ 1 งาน (t1), ประวัติทั้งหมด 2 งาน (t1+t2)
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text('2 รายการ'), findsOneWidget);
-    });
-
-    testWidgets('การ์ดประวัติแสดงวันที่เสร็จงาน (updatedAt) ต่อกับ deviceId', (
-      tester,
-    ) async {
-      await _pumpHome(tester, UserRole.st);
-
-      // t1.updatedAt = DateTime(year, month, 2) — รูปแบบเดียวกับ
-      // _formatDate ใน task_detail_page.dart (dd/mm/yyyy HH:mm)
-      final two = _now.month.toString().padLeft(2, '0');
-      expect(
-        find.text('DVC-40271 · 02/$two/${_now.year} 00:00'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('empty state เมื่อไม่มีงานที่เสร็จแล้ว', (tester) async {
-      await _pumpHome(
-        tester,
-        UserRole.st,
-        taskRepo: _FakeTaskRepository(tasks: const []),
-      );
-
-      expect(find.text('ยังไม่มีประวัติงานที่เสร็จสิ้น'), findsOneWidget);
-    });
-
-    testWidgets('error state + ปุ่มลองอีกครั้ง', (tester) async {
+  group('รวม "งานของฉัน" เข้าหน้าแรก (มติ B ข้อ 12)', () {
+    testWidgets('งานทุกสถานะอยู่หน้าเดียว: ต้องทำ = pending + กำลังทำ, '
+        'ประวัติ = เสร็จ + ยกเลิก', (tester) async {
       await _pumpHome(
         tester,
         UserRole.st,
         taskRepo: _FakeTaskRepository(
-          error: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
+          tasks: [
+            task('p', TaskStatus.pending, title: 'งานรอทำ'),
+            task('w', TaskStatus.inProgress, title: 'งานกำลังทำ'),
+            task('c', TaskStatus.completed, title: 'งานเสร็จ'),
+            task('x', TaskStatus.cancelled, title: 'งานยกเลิก'),
+          ],
         ),
       );
-      await tester.pumpAndSettle();
 
-      expect(find.text('เซิร์ฟเวอร์ล่ม'), findsOneWidget);
-      expect(find.byKey(const Key('tasks_retry')), findsOneWidget);
-    });
-
-    testWidgets(
-      'แตะการ์ดประวัติงาน -> navigate ไปหน้า Task Detail ของงานนั้น',
-      (tester) async {
-        await _pumpHomeRouted(tester, UserRole.st);
-
-        await tester.tap(find.byKey(const Key('history_card_0')));
-        await tester.pumpAndSettle();
-
-        expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
-      },
-    );
-
-    testWidgets('แตะ "ดูประวัติงานทั้งหมด" -> navigate ไปหน้ารายการงาน', (
-      tester,
-    ) async {
-      await _pumpHomeRouted(tester, UserRole.st);
-
-      final btn = find.byKey(const Key('view_all_history'));
-      await tester.ensureVisible(btn);
-      await tester.pumpAndSettle();
-      await tester.tap(btn);
-      await tester.pumpAndSettle();
-
-      expect(find.text('MY_TASKS_PAGE_STUB'), findsOneWidget);
-    });
-  });
-
-  group(
-    'RBAC — ประวัติงานเฉพาะ ST/OT (backend GET /tasks self-scope 2 role นี้)',
-    () {
-      for (final role in [UserRole.operation, UserRole.auditor]) {
-        testWidgets('${role.wireName}: ไม่เห็น section + ไม่ยิง GET /tasks', (
-          tester,
-        ) async {
-          final repo = _FakeTaskRepository();
-          await _pumpHome(tester, role, taskRepo: repo);
-          await tester.pumpAndSettle();
-
-          expect(find.text('ประวัติงานล่าสุด'), findsNothing);
-          expect(find.byKey(const Key('history_card_0')), findsNothing);
-          expect(repo.listCalls, 0);
-        });
+      expect(find.text('ต้องทำ (2)'), findsOneWidget);
+      for (final (i, title) in ['งานรอทำ', 'งานกำลังทำ'].indexed) {
+        expect(
+          find.descendant(
+            of: find.byKey(Key('my_task_card_$i')),
+            matching: find.text(title),
+          ),
+          findsOneWidget,
+          reason: title,
+        );
       }
+      expect(find.byKey(const Key('my_task_card_2')), findsNothing);
 
-      testWidgets('role ว่าง (session ที่ยังไม่มี role): ไม่ยิง GET /tasks', (
-        tester,
-      ) async {
-        final repo = _FakeTaskRepository();
-        await _pumpHome(tester, null, taskRepo: repo);
-        await tester.pumpAndSettle();
+      final history = [
+        for (var i = 0; i < 2; i++)
+          tester
+              .widgetList<Text>(
+                find.descendant(
+                  of: find.byKey(Key('history_card_$i'), skipOffstage: false),
+                  matching: find.byType(Text, skipOffstage: false),
+                  skipOffstage: false,
+                ),
+              )
+              .first
+              .data,
+      ];
+      expect(history, unorderedEquals(['งานเสร็จ', 'งานยกเลิก']));
+    });
 
-        expect(find.text('ประวัติงานล่าสุด'), findsNothing);
-        expect(repo.listCalls, 0);
-      });
-
-      testWidgets('ST: ยังเห็น section + ยิง GET /tasks ตามเดิม', (
-        tester,
-      ) async {
-        final repo = _FakeTaskRepository();
-        await _pumpHome(tester, UserRole.st, taskRepo: repo);
-        await tester.pumpAndSettle();
-
-        expect(find.text('ประวัติงานล่าสุด'), findsOneWidget);
-        expect(repo.listCalls, 1);
-      });
-    },
-  );
-
-  group('การ navigate ของทางลัดของจริง (ต้องทำงานเหมือนเดิม)', () {
-    testWidgets('แตะ "ทดสอบการตั้งค่า" -> ไปหน้า Config Simulator', (
+    testWidgets('ป้ายสถานะใช้ AppBadge + tone ตาม Web (ยกเลิก = danger)', (
       tester,
     ) async {
-      await _pumpHomeRouted(tester, UserRole.st);
-      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
-      await tester.ensureVisible(find.byKey(const Key('shortcut_simulator')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('shortcut_simulator')));
-      await tester.pumpAndSettle();
-      expect(find.text('SIMULATOR_PAGE_STUB'), findsOneWidget);
-    });
-
-    testWidgets('ST แตะ "ทดสอบสัญญาณ" -> ไปหน้าทดสอบสัญญาณ', (tester) async {
-      await _pumpHomeRouted(tester, UserRole.st);
-      // แถบสรุปงานค้างบนสุด (UX audit #15) ดันทางลัดลงล่าง เลื่อนหาก่อนแตะ
-      await tester.ensureVisible(find.byKey(const Key('shortcut_device_test')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('shortcut_device_test')));
-      await tester.pumpAndSettle();
-      expect(find.text('DEVICE_TEST_PAGE_STUB'), findsOneWidget);
-    });
-
-    testWidgets('ST แตะ "งานของฉัน" -> ไปหน้ารายการงาน (ไม่ใช่ snackbar)', (
-      tester,
-    ) async {
-      await _pumpHomeRouted(tester, UserRole.st);
-      final tile = find.byKey(const Key('shortcut_my_tasks'));
-      await tester.ensureVisible(tile);
-      await tester.pumpAndSettle();
-      await tester.tap(tile);
-      await tester.pumpAndSettle();
-      expect(find.text('MY_TASKS_PAGE_STUB'), findsOneWidget);
-      expect(find.textContaining('เร็ว'), findsNothing);
-    });
-  });
-
-  // คำตอบ A ใน #303 ข้อ 2 — simulate-config ใช้สิทธิ์ device-connection-test
-  // (ST/OT เท่านั้น) role อื่นเห็นทางลัดแล้วใช้ไม่ได้
-  group('RBAC — ทางลัด "ทดสอบการตั้งค่า" เฉพาะ ST/OT', () {
-    final simulatorTile = find.byKey(const Key('shortcut_simulator'));
-
-    for (final role in [UserRole.st, UserRole.ot]) {
-      testWidgets('${role.wireName} เห็นทางลัด "ทดสอบการตั้งค่า"', (
+      await _pumpHome(
         tester,
-      ) async {
-        await _pumpHome(tester, role);
-        expect(simulatorTile, findsOneWidget);
-      });
-    }
-
-    for (final role in [UserRole.operation, UserRole.auditor, UserRole.admin]) {
-      testWidgets('${role.wireName} ไม่เห็นทางลัด "ทดสอบการตั้งค่า"', (
-        tester,
-      ) async {
-        await _pumpHome(tester, role);
-        expect(simulatorTile, findsNothing);
-      });
-    }
-  });
-
-  group('RBAC — ทางลัด "งานของฉัน" เฉพาะ ST/OT', () {
-    final myTasksTile = find.byKey(const Key('shortcut_my_tasks'));
-
-    for (final role in [UserRole.st, UserRole.ot]) {
-      testWidgets('${role.wireName} เห็นทางลัด "งานของฉัน"', (tester) async {
-        await _pumpHome(tester, role);
-        expect(myTasksTile, findsOneWidget);
-      });
-    }
-
-    for (final role in [UserRole.operation, UserRole.auditor, UserRole.admin]) {
-      testWidgets('${role.wireName} ไม่เห็นทางลัด "งานของฉัน"', (tester) async {
-        await _pumpHome(tester, role);
-        expect(myTasksTile, findsNothing);
-      });
-    }
-
-    testWidgets('role ว่าง ไม่เห็นทางลัด "งานของฉัน"', (tester) async {
-      await _pumpHome(tester, null);
-      expect(myTasksTile, findsNothing);
-    });
-  });
-
-  group(
-    'ทางลัด "ดู Incident" — read-only, ทุก role (GET /incidents = R ทุก Role)',
-    () {
-      for (final role in [
         UserRole.st,
-        UserRole.operation,
-        UserRole.auditor,
-        UserRole.admin,
-      ]) {
-        testWidgets('${role.wireName} เห็นทางลัด "ดู Incident"', (
-          tester,
-        ) async {
-          await _pumpHome(tester, role);
-          final tile = find.byKey(const Key('shortcut_report_incident'));
-          expect(tile, findsOneWidget);
-          // label = "ดู Incident" ไม่ใช่ "แจ้งเหตุ" (read-only ดูอย่างเดียว)
-          expect(
-            find.descendant(of: tile, matching: find.text('ดู Incident')),
-            findsOneWidget,
-          );
-        });
-      }
-
-      testWidgets(
-        'แตะแล้ว navigate ไปหน้า Incident (ไม่ใช่ snackbar อีกต่อไป)',
-        (tester) async {
-          await _pumpHomeRouted(tester, UserRole.st);
-          final tile = find.byKey(const Key('shortcut_report_incident'));
-          await tester.ensureVisible(tile);
-          await tester.pumpAndSettle();
-          await tester.tap(tile);
-          await tester.pumpAndSettle();
-          expect(find.text('INCIDENT_LIST_PAGE_STUB'), findsOneWidget);
-          expect(find.textContaining('เร็ว'), findsNothing);
-        },
+        taskRepo: _FakeTaskRepository(
+          tasks: [
+            task('p', TaskStatus.pending),
+            task('w', TaskStatus.inProgress),
+            task('c', TaskStatus.completed),
+            task('x', TaskStatus.cancelled),
+          ],
+        ),
       );
-    },
-  );
 
-  group('ทางลัด "แจ้งปัญหา" (Field Incident Report, design issue #236)', () {
-    for (final role in [UserRole.st, UserRole.ot]) {
-      testWidgets('${role.wireName} -> เห็นทางลัด', (tester) async {
-        await _pumpHome(tester, role);
-        expect(find.byKey(const Key('shortcut_field_report')), findsOneWidget);
-      });
-    }
+      final tones = {
+        for (final b in tester.widgetList<AppBadge>(
+          find.byType(AppBadge, skipOffstage: false),
+        ))
+          b.label: b.tone,
+      };
+      expect(tones['รอดำเนินการ'], AppBadgeTone.neutral);
+      expect(tones['กำลังทำ'], AppBadgeTone.warning);
+      expect(tones['เสร็จแล้ว'], AppBadgeTone.success);
+      expect(tones['ยกเลิก'], AppBadgeTone.danger);
+    });
 
+    testWidgets('ป้ายเร่งด่วน: เลยกำหนด = danger, ใกล้ถึงกำหนด = warning', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(
+          tasks: [
+            task(
+              'o',
+              TaskStatus.pending,
+              due: now.subtract(const Duration(days: 2)),
+            ),
+            task(
+              's',
+              TaskStatus.pending,
+              due: now.add(const Duration(hours: 3)),
+            ),
+          ],
+        ),
+      );
+
+      final urgency = tester
+          .widgetList<AppBadge>(find.byKey(const Key('task_urgency_badge')))
+          .toList();
+      expect(urgency.map((b) => (b.label, b.tone)), [
+        ('เลยกำหนด', AppBadgeTone.danger),
+        ('ใกล้ถึงกำหนด', AppBadgeTone.warning),
+      ]);
+    });
+
+    testWidgets('ไม่มีงานค้างแต่มีประวัติ -> empty state ของส่วนต้องทำ', (
+      tester,
+    ) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(tasks: [task('c', TaskStatus.completed)]),
+      );
+
+      expect(find.text('ต้องทำ (0)'), findsOneWidget);
+      expect(find.byKey(const Key('home_open_empty')), findsOneWidget);
+      expect(
+        find.byKey(const Key('history_card_0'), skipOffstage: false),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('"ประวัติงานล่าสุด"', () {
+    testWidgets('สถิติงานเดือนนี้ + งานค้างไม่อยู่ในประวัติ', (tester) async {
+      await _pumpHome(tester, UserRole.st);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('history_card_1')),
+        200,
+      );
+
+      // t1 เสร็จเดือนนี้, t2 เสร็จเดือนอื่น, t3 ยังค้าง (อยู่ส่วนต้องทำ)
+      expect(find.text('งานที่เสร็จเดือนนี้'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(
+        find.byKey(const Key('history_card_2'), skipOffstage: false),
+        findsNothing,
+      );
+    });
+
+    testWidgets('เรียงงานที่จบล่าสุดก่อน + แสดง deviceId · วันเวลาที่จบ', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('history_card_0')),
+        200,
+      );
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('history_card_0')),
+          matching: find.text('ติดตั้งกล่อง GPS รถบรรทุก'),
+        ),
+        findsOneWidget,
+      );
+      final d = DateTime(_now.year, _now.month, 2);
+      String two(int n) => n.toString().padLeft(2, '0');
+      expect(
+        find.text('DVC-40271 · ${two(d.day)}/${two(d.month)}/${d.year} 00:00'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('ประวัติเกิน 20 งาน -> แสดงแค่ 20 ใบล่าสุด + ข้อความบอก', (
+      tester,
+    ) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(
+          tasks: [
+            for (var i = 0; i < 25; i++)
+              task(
+                'h$i',
+                TaskStatus.completed,
+                updated: DateTime(2026, 9, 1).add(Duration(hours: i)),
+              ),
+          ],
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('history_card_19'), skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('history_card_20'), skipOffstage: false),
+        findsNothing,
+      );
+      expect(
+        find.text('แสดง 20 งานล่าสุด', skipOffstage: false),
+        findsOneWidget,
+      );
+      // ตัวเลขสถิติยังนับครบทุกงาน ไม่ใช่แค่ 20 ใบที่แสดง
+      expect(find.text('25', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('ประวัติไม่เกิน 20 งาน -> ไม่มีข้อความจำกัดจำนวน', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+      expect(
+        find.byKey(const Key('home_history_limit_note'), skipOffstage: false),
+        findsNothing,
+      );
+    });
+
+    testWidgets('ไม่มีประวัติ -> empty state ของส่วนประวัติ', (tester) async {
+      await _pumpHome(
+        tester,
+        UserRole.st,
+        taskRepo: _FakeTaskRepository(tasks: [task('p', TaskStatus.pending)]),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('home_history_empty')),
+        200,
+      );
+      expect(find.text('ยังไม่มีประวัติงาน'), findsOneWidget);
+    });
+
+    testWidgets('แตะการ์ดประวัติ -> ไปหน้า Task Detail ของงานนั้น', (
+      tester,
+    ) async {
+      await _pumpHomeRouted(tester, UserRole.st);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('history_card_0')),
+        200,
+      );
+      await tester.tap(find.byKey(const Key('history_card_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('TASK_DETAIL_STUB t1'), findsOneWidget);
+    });
+  });
+
+  group('role ที่ไม่ใช่ช่าง: ไม่ยิง GET /tasks (backend ไม่ self-scope ให้ '
+      'role อื่น)', () {
     for (final role in [
       UserRole.operation,
       UserRole.auditor,
       UserRole.admin,
       UserRole.superAdmin,
     ]) {
-      testWidgets('${role.wireName} -> ไม่เห็น (ST/OT เท่านั้น)', (
+      testWidgets('${role.wireName}: ไม่มีรายการงาน + ไม่ยิง GET /tasks', (
         tester,
       ) async {
-        await _pumpHome(tester, role);
-        expect(find.byKey(const Key('shortcut_field_report')), findsNothing);
-      });
-    }
-  });
+        final repo = _FakeTaskRepository();
+        await _pumpHome(tester, role, taskRepo: repo);
 
-  group('ทางลัด "ค้นหาอุปกรณ์" — ทุก role (GET /devices เปิดให้ทุก Role)', () {
-    for (final role in [
-      UserRole.st,
-      UserRole.operation,
-      UserRole.auditor,
-      UserRole.admin,
-    ]) {
-      testWidgets('${role.wireName} เห็นทางลัด "ค้นหาอุปกรณ์"', (tester) async {
-        await _pumpHome(tester, role);
-        expect(find.byKey(const Key('shortcut_find_device')), findsOneWidget);
+        expect(find.byKey(const Key('home_open_section')), findsNothing);
+        expect(repo.listCalls, 0);
       });
     }
 
-    testWidgets(
-      'แตะแล้ว navigate ไปหน้าค้นหาอุปกรณ์ (ไม่ใช่ snackbar อีกต่อไป)',
-      (tester) async {
-        await _pumpHomeRouted(tester, UserRole.operation);
-        final tile = find.byKey(const Key('shortcut_find_device'));
-        await tester.ensureVisible(tile);
-        await tester.pumpAndSettle();
-        await tester.tap(tile);
-        await tester.pumpAndSettle();
-        expect(find.text('DEVICE_SEARCH_PAGE_STUB'), findsOneWidget);
-        expect(find.textContaining('เร็ว'), findsNothing);
-      },
-    );
+    testWidgets('role ว่าง: ไม่ยิง GET /tasks', (tester) async {
+      final repo = _FakeTaskRepository();
+      await _pumpHome(tester, null, taskRepo: repo);
+      expect(repo.listCalls, 0);
+    });
+
+    testWidgets('ST: ยิง GET /tasks และเห็นรายการงาน', (tester) async {
+      final repo = _FakeTaskRepository();
+      await _pumpHome(tester, UserRole.st, taskRepo: repo);
+      expect(find.byKey(const Key('home_open_section')), findsOneWidget);
+      expect(repo.listCalls, 1);
+    });
   });
 
-  group('กระดิ่งแจ้งเตือน — badge จริง + navigate', () {
-    testWidgets('unread > 0 -> badge โชว์จำนวน', (tester) async {
-      await _pumpHome(
-        tester,
-        UserRole.st,
-        notiRepo: _FakeNotificationRepository(unreadCount: 3),
-      );
+  group('แผ่นบัญชีผู้ใช้ (docs/22 §7.2, §6.2)', () {
+    testWidgets('ST: ชื่อ + ป้าย "ST" + บรรทัดย่อย "ช่างภาคสนาม"', (
+      tester,
+    ) async {
+      await _pumpHome(tester, UserRole.st);
+      await tester.tap(find.byKey(const Key('account_button')));
       await tester.pumpAndSettle();
 
-      expect(find.byType(Badge), findsOneWidget);
       expect(
-        find.descendant(of: find.byType(Badge), matching: find.text('3')),
-        findsOneWidget,
+        tester.widget<Text>(find.byKey(const Key('account_username'))).data,
+        'somchai.t',
       );
+      expect(
+        tester
+            .widget<AppBadge>(find.byKey(const Key('account_role_badge')))
+            .label,
+        'ST',
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('account_role_description')))
+            .data,
+        'ช่างภาคสนาม',
+      );
+      expect(find.byKey(const Key('account_logout')), findsOneWidget);
     });
 
-    testWidgets('unread = 0 -> ไม่มี badge', (tester) async {
-      await _pumpHome(
-        tester,
-        UserRole.st,
-        notiRepo: _FakeNotificationRepository(unreadCount: 0),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byType(Badge), findsNothing);
+    test('ป้าย role ตาม Web (formatRoleLabel) + คำอธิบายไทย', () {
+      expect(roleLabel(UserRole.operation), 'Operation');
+      expect(roleLabel(UserRole.superAdmin), 'Super Admin');
+      expect(roleDescription(UserRole.operation), 'ฝ่ายปฏิบัติการ');
+      expect(roleDescription(UserRole.ot), 'ช่างภาคสนาม');
+      expect(roleDescription(null), 'ผู้ใช้งาน');
     });
 
-    testWidgets('แตะกระดิ่ง -> navigate ไปหน้ารายการแจ้งเตือน', (tester) async {
-      await _pumpHomeRouted(
-        tester,
-        UserRole.st,
-        notiRepo: _FakeNotificationRepository(unreadCount: 2),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('home_notifications')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('NOTIFICATION_LIST_STUB'), findsOneWidget);
+    test('อักษรย่อใน avatar มาจากชื่อจริง', () {
+      expect(accountInitials('somchai.t'), 'SO');
+      expect(accountInitials(null), '?');
+      expect(accountInitials('42'), '4');
     });
   });
 
@@ -716,16 +591,13 @@ void main() {
           ),
           taskRepositoryProvider.overrideWithValue(_FakeTaskRepository()),
           notificationRepositoryProvider.overrideWithValue(
-            _FakeNotificationRepository(),
+            const _FakeNotificationRepository(),
           ),
           // logout() clears this too (issue #204) — without an override it
           // falls through to the real SharedPreferences-backed store, which
           // throws (no plugin binding in this test) before logout() reaches
           // `state = ...unauthenticated`.
           appDatabaseProvider.overrideWithValue(db),
-          recentDeviceIdStoreProvider.overrideWithValue(
-            InMemoryRecentDeviceIdStore(),
-          ),
           // HomeStatusBanners (UX audit #15) — ไม่ใช้ Drift live query ในเทส widget
           // (timer ของ stream ค้างหลังปิด tree)
           pendingTaskIdsProvider.overrideWith(
@@ -760,18 +632,24 @@ void main() {
           ),
         );
 
-    testWidgets('แตะปุ่ม logout ครั้งเดียว -> ไม่ logout แค่บอกให้กดค้าง', (
+    Future<void> tapLogout(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('account_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('account_logout')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('เปิดแผ่นบัญชีอย่างเดียว -> ยังไม่ logout และไม่มี dialog', (
       tester,
     ) async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final container = await pumpHome(tester, db);
 
-      await tester.tap(find.byKey(const Key('home_logout')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('account_button')));
+      await tester.pumpAndSettle();
 
-      expect(find.text('กดค้างเพื่อออกจากระบบ'), findsOneWidget);
+      expect(find.byKey(const Key('account_sheet')), findsOneWidget);
       expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
       expect(
         container.read(authControllerProvider).status,
@@ -780,14 +658,13 @@ void main() {
     });
 
     testWidgets(
-      'ไม่มีรายการค้าง: กดค้าง -> dialog ยืนยัน, ยกเลิก = ยังไม่ logout',
+      'ไม่มีรายการค้าง: กดออกจากระบบ -> dialog ยืนยัน, ยกเลิก = ยังไม่ logout',
       (tester) async {
         final db = AppDatabase.forTesting(NativeDatabase.memory());
         addTearDown(db.close);
         final container = await pumpHome(tester, db);
 
-        await tester.longPress(find.byKey(const Key('home_logout')));
-        await tester.pumpAndSettle();
+        await tapLogout(tester);
 
         expect(find.byKey(const Key('logout_confirm_dialog')), findsOneWidget);
         expect(find.byKey(const Key('logout_unsynced_dialog')), findsNothing);
@@ -803,13 +680,14 @@ void main() {
       },
     );
 
-    testWidgets('ไม่มีรายการค้าง: กดค้าง + ยืนยัน -> logout', (tester) async {
+    testWidgets('ไม่มีรายการค้าง: กดออกจากระบบ + ยืนยัน -> logout', (
+      tester,
+    ) async {
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final container = await pumpHome(tester, db);
 
-      await tester.longPress(find.byKey(const Key('home_logout')));
-      await tester.pumpAndSettle();
+      await tapLogout(tester);
       await tester.tap(find.byKey(const Key('logout_confirm')));
       await tester.pumpAndSettle();
 
@@ -819,7 +697,7 @@ void main() {
       );
     });
 
-    // dialog เตือนคิวค้างอ่าน PendingActions เฉพาะโหมดจริง (home_page.dart
+    // dialog เตือนคิวค้างอ่าน PendingActions เฉพาะโหมดจริง (account_sheet.dart
     // `_confirmAndLogout`)
     group('โหมดจริง', () {
       testWidgets('มีรายการค้าง (pending + failed) -> dialog แสดงจำนวน, '
@@ -830,8 +708,7 @@ void main() {
         await queueAction(db, 'f', 'failed');
         final container = await pumpHome(tester, db);
 
-        await tester.longPress(find.byKey(const Key('home_logout')));
-        await tester.pumpAndSettle();
+        await tapLogout(tester);
 
         expect(find.byKey(const Key('logout_unsynced_dialog')), findsOneWidget);
         expect(find.textContaining('มี 2 รายการยังไม่ซิงค์'), findsOneWidget);
@@ -853,8 +730,7 @@ void main() {
         await queueAction(db, 'p', 'pending');
         final container = await pumpHome(tester, db);
 
-        await tester.longPress(find.byKey(const Key('home_logout')));
-        await tester.pumpAndSettle();
+        await tapLogout(tester);
         await tester.tap(find.byKey(const Key('logout_unsynced_confirm')));
         await tester.pumpAndSettle();
 

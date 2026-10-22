@@ -5,495 +5,108 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
-import '../../core/config/app_config.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/app_shell.dart';
 import '../../core/sync/sync_providers.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/widgets/text_scale.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_card.dart';
+import '../../core/ui/app_empty_state.dart';
+import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_skeleton.dart';
+import '../../core/ui/app_v2_theme.dart';
+import '../../core/ui/labels.dart';
+import '../../core/ui/status_tones.dart';
 import '../../core/widgets/app_error_view.dart';
-import '../notification/notification_repository.dart';
+import '../../core/widgets/sync_status_widgets.dart';
+import '../auth/account_sheet.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
 import 'home_status_banners.dart';
 
-/// Human-readable role label shown in the greeting badge.
-String _roleLabel(UserRole? role) {
-  switch (role) {
-    case UserRole.st:
-    case UserRole.ot:
-      return 'ช่างภาคสนาม';
-    case UserRole.operation:
-      return 'ฝ่ายปฏิบัติการ';
-    case UserRole.auditor:
-      return 'ผู้ตรวจสอบ';
-    case UserRole.admin:
-      return 'ผู้ดูแลระบบ';
-    case UserRole.superAdmin:
-      return 'ผู้ดูแลระบบสูงสุด';
-    case null:
-      return 'ผู้ใช้งาน';
-  }
+/// `dd/MM/yyyy` — กำหนดส่งของงานที่ยังต้องทำ (แบบหน้า "งานของฉัน" เดิม)
+String _formatDay(DateTime dt) {
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.day)}/${two(d.month)}/${d.year}';
 }
 
-/// Up to two initials for the avatar circle, derived from the real
-/// username — never a placeholder. `null`/empty falls back to "?".
-String _initials(String? username) {
-  if (username == null || username.isEmpty) return '?';
-  final letters = username.replaceAll(RegExp('[^A-Za-zก-๙]'), '');
-  if (letters.isEmpty) return username.substring(0, 1).toUpperCase();
-  return letters.substring(0, letters.length >= 2 ? 2 : 1).toUpperCase();
+/// `dd/MM/yyyy HH:mm` — เวลาที่งานในประวัติจบ (`updatedAt`)
+String _formatDateTime(DateTime dt) {
+  final d = dt.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${_formatDay(d)} ${two(d.hour)}:${two(d.minute)}';
 }
 
-/// How many completed tasks the "ประวัติงานล่าสุด" section shows before the
-/// "ดูประวัติงานทั้งหมด" link is needed instead.
-const _recentHistoryLimit = 3;
-
-class HomePage extends ConsumerWidget {
+/// แท็บหน้าแรกของช่าง (ST / OT) — docs/22 §7.2: รวมหน้า "งานของฉัน" (`/tasks`
+/// เดิม) เข้ามาทั้งหน้า (มติ B ข้อ 12) แสดงงานทั้งหมดของช่างในหน้าเดียว
+///
+/// 1. banner ออฟไลน์ / ซิงก์ + แถบสรุป "ค้าง N งาน ด่วน M งาน"
+/// 2. **ต้องทำ** — งาน `pending` + `in_progress` เรียงเลยกำหนด → ใกล้ถึงกำหนด →
+///    ที่เหลือ (เกณฑ์ [TaskUrgencyStyle] เดิม)
+/// 3. **ประวัติงานล่าสุด** — สถิติ + งาน `completed` / `cancelled` ใหม่สุดก่อน
+///
+/// ข้อมูลมาจาก `GET /tasks` ตัวเดียวกับหน้าเดิม ([taskListProvider]) ไม่เปลี่ยน
+/// การเรียก API · role อื่นไม่มีแท็บนี้ (router พาไป Device Search) แต่ถ้าหลุดมา
+/// ก็ไม่ยิง `GET /tasks` เพราะ backend ไม่ self-scope ให้ role อื่น
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  final _openSectionKey = GlobalKey();
+
+  void _scrollToOpenSection() {
+    final target = _openSectionKey.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
-    final role = auth.role;
-    // `GET /tasks` is only self-scoped by the backend for ST/OT. Every other
-    // role (and an unknown one) gets back every task in the system, so this
-    // field-staff app only fetches — and only shows a task history for —
-    // ST/OT. Same gate the old "งานวันนี้" section used, and the same gate
-    // the "ทดสอบสัญญาณ" shortcut below uses.
-    final isFieldStaff = role == UserRole.st || role == UserRole.ot;
-    final tasksAsync = isFieldStaff ? ref.watch(taskListProvider) : null;
+    final fieldStaff = isFieldStaff(auth.role);
 
-    return Scaffold(
-      backgroundColor: AppTheme.mockBg,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            _HeaderRow(username: auth.username, role: role),
-            const SizedBox(height: 20),
-            if (isFieldStaff) ...[
-              const HomeStatusBanners(),
-              _UrgentTasksSection(tasksAsync: tasksAsync!),
-              _HistorySection(tasksAsync: tasksAsync),
-              const SizedBox(height: 24),
-            ],
-            const _SectionLabel('ทางลัด'),
-            const SizedBox(height: 12),
-            _ShortcutGrid(
-              items: [
-                // ทางลัดทุกตัว navigate ไปหน้าจริง (ไม่มี "coming soon" แล้ว)
-                // ทดสอบการตั้งค่า — ST/OT เท่านั้น: `POST /devices/{id}/
-                // simulate-config` ใช้สิทธิ์ `device-connection-test` ที่ grant
-                // ให้แค่ ST/OT และรายการอุปกรณ์ในหน้านี้มาจากงานของตัวเอง
-                // (role อื่นได้รายการว่างเสมอ) — คำตอบ A ใน #303 ข้อ 2
-                if (isFieldStaff)
-                  _Shortcut(
-                    key: const Key('shortcut_simulator'),
-                    icon: Icons.tune,
-                    label: 'ทดสอบการตั้งค่า',
-                    onTap: () => context.push(AppRoutes.simulator),
-                  ),
-                // ทดสอบสัญญาณ — ช่างหน้างานเท่านั้น (backend บังคับ RBAC 403 ให้
-                // เฉพาะ ST/OT อยู่แล้ว — ซ่อนจาก UI เพื่อ UX ที่ดีกว่า)
-                if (role == UserRole.st || role == UserRole.ot) ...[
-                  _Shortcut(
-                    key: const Key('shortcut_device_test'),
-                    icon: Icons.wifi_tethering,
-                    label: 'ทดสอบสัญญาณ',
-                    onTap: () => context.push(AppRoutes.deviceConnectionTest),
-                  ),
-                  // "งานของฉัน" — หน้าเต็มของ taskListProvider (backend
-                  // self-scope GET /tasks ให้ ST/OT อยู่แล้ว) · role อื่น
-                  // taskListProvider คืนว่างเสมอ ไม่มีประโยชน์ให้เห็นปุ่มนี้
-                  _Shortcut(
-                    key: const Key('shortcut_my_tasks'),
-                    icon: Icons.assignment_outlined,
-                    label: 'งานของฉัน',
-                    onTap: () => context.push(AppRoutes.myTasks),
-                  ),
-                ],
-                // ค้นหาอุปกรณ์ — ทุก role เรียก GET /devices ได้ (RBAC "R" ทุก
-                // Role) ไม่ต้อง gate เหมือน "ทดสอบสัญญาณ"
-                _Shortcut(
-                  key: const Key('shortcut_find_device'),
-                  icon: Icons.search,
-                  label: 'ค้นหาอุปกรณ์',
-                  onTap: () => context.push(AppRoutes.deviceSearch),
-                ),
-                // แจ้งปัญหาหน้างาน (Field Incident Report, design issue #236) —
-                // ST/OT เท่านั้น (backend `POST /incidents` ให้ Create เฉพาะ
-                // ST/OT — PR #267)
-                if (role == UserRole.st || role == UserRole.ot)
-                  _Shortcut(
-                    key: const Key('shortcut_field_report'),
-                    icon: Icons.add_alert_outlined,
-                    label: 'แจ้งปัญหา',
-                    onTap: () => context.push(AppRoutes.incidentReport),
-                  ),
-                // ดู Incident — read-only list (`GET /incidents`, RBAC "R" ทุก
-                // Role) · label "ดู Incident" ไม่ใช่ "แจ้งเหตุ" เพราะช่างหน้างาน
-                // (ST/OT) ไม่มีสิทธิ์ Create Incident
-                _Shortcut(
-                  key: const Key('shortcut_report_incident'),
-                  icon: Icons.report_problem_outlined,
-                  label: 'ดู Incident',
-                  onTap: () => context.push(AppRoutes.incidents),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Custom header: avatar + name + role pill on the left, notification bell
-/// and logout on the right. Replaces the old plain `AppBar` — same two
-/// actions, same keys, just laid out to match the mockup.
-class _HeaderRow extends ConsumerWidget {
-  const _HeaderRow({required this.username, required this.role});
-
-  final String? username;
-  final UserRole? role;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: AppTheme.mockTextPrimary,
-            borderRadius: BorderRadius.circular(13),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            _initials(username),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                username ?? _roleLabel(role),
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.mockTextPrimary,
-                ),
-              ),
-              if (role != null) ...[
-                const SizedBox(height: 4),
-                _RoleBadge(role: role!),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        _NotificationBell(),
-        const SizedBox(width: 4),
-        // กดค้างเพื่อ logout (+ dialog ยืนยันเสมอ) กันแตะพลาดตอนรีบในภาคสนาม ·
-        // ไม่ใส่ tooltip เพราะ Tooltip บนมือถือแย่ง gesture กดค้างไป
-        IconButton(
-          key: const Key('home_logout'),
-          icon: const Icon(
-            Icons.logout,
-            color: AppTheme.mockTextSecondary,
-            semanticLabel: 'ออกจากระบบ (กดค้าง)',
-          ),
-          onPressed: () => ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              const SnackBar(
-                content: Text('กดค้างเพื่อออกจากระบบ'),
-                duration: Duration(seconds: 2),
-              ),
-            ),
-          onLongPress: () => _confirmAndLogout(context, ref),
-        ),
-      ],
-    );
-  }
-}
-
-/// Logout always asks first. When queued changes would be lost (logout wipes
-/// the local DB, including `PendingActions` that never reached the server)
-/// the dialog says how many; otherwise it is a plain confirm.
-Future<void> _confirmAndLogout(BuildContext context, WidgetRef ref) async {
-  var unsynced = 0;
-  if (!AppConfig.apiMockMode) {
-    try {
-      unsynced = await ref.read(pendingActionDaoProvider).countUnsynced();
-    } catch (_) {
-      // Can't read the queue -> don't trap the user on this screen.
-    }
-  }
-  if (unsynced > 0 && context.mounted) {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        key: const Key('logout_unsynced_dialog'),
-        title: const Text('ออกจากระบบ?'),
-        content: Text(
-          'มี $unsynced รายการยังไม่ซิงค์ ถ้าออกจากระบบตอนนี้'
-          'การแก้ไขที่ยังไม่ซิงค์จะหายไป ยืนยันออกจากระบบ?',
-        ),
-        actions: [
-          TextButton(
-            key: const Key('logout_unsynced_cancel'),
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            key: const Key('logout_unsynced_confirm'),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('ยืนยัน'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-  } else if (context.mounted) {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        key: const Key('logout_confirm_dialog'),
-        title: const Text('ออกจากระบบ?'),
-        content: const Text('ต้องการออกจากระบบใช่หรือไม่?'),
-        actions: [
-          TextButton(
-            key: const Key('logout_cancel'),
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('ยกเลิก'),
-          ),
-          TextButton(
-            key: const Key('logout_confirm'),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('ออกจากระบบ'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-  }
-  await ref.read(authControllerProvider.notifier).logout();
-}
-
-/// Home header bell. Badge shows the real unread count from
-/// `GET /notifications?unread=true` (hidden when 0); tapping opens the list.
-class _NotificationBell extends ConsumerWidget {
-  const _NotificationBell();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final unread = ref.watch(unreadNotificationCountProvider).valueOrNull ?? 0;
-    const bellIcon = Icon(
-      Icons.notifications_outlined,
-      color: AppTheme.mockTextSecondary,
-    );
-
-    return IconButton(
-      key: const Key('home_notifications'),
-      tooltip: 'การแจ้งเตือน',
-      onPressed: () => context.push(AppRoutes.notifications),
-      icon: unread > 0
-          ? Badge(
-              label: Text(unread > 99 ? '99+' : '$unread'),
-              // AppTheme.error: ตัวเลขสีขาว 5.44:1 (เดิม #E53935 4.23:1, UX
-              // audit #10)
-              backgroundColor: AppTheme.error,
-              child: bellIcon,
-            )
-          : bellIcon,
-    );
-  }
-}
-
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role});
-
-  final UserRole role;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppTheme.mockAccentSoft,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        '${role.wireName} • ${_roleLabel(role)}',
-        style: const TextStyle(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.mockAccent,
-        ),
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w700,
-        color: AppTheme.mockTextPrimary,
-      ),
-    );
-  }
-}
-
-/// "งานค้างวันนี้" — Mobile UI Roadmap Phase 1: งานที่ยังไม่เสร็จและเร่งด่วน
-/// (ดูเกณฑ์ที่ [TaskUrgencyStyle.of]) วางไว้เหนือสถิติ/ประวัติเสมอ เพราะ
-/// "มีงานไหนต้องรีบทำ" คือสิ่งที่ช่างต้องรู้ก่อนสุดตอนเปิดแอป — ไม่มีงาน
-/// เร่งด่วนเลยก็ไม่ render อะไรออกมาทั้งก้อน (ไม่ใช่กล่องเปล่า "ไม่มีงานเร่งด่วน")
-class _UrgentTasksSection extends StatelessWidget {
-  const _UrgentTasksSection({required this.tasksAsync});
-
-  final AsyncValue<List<Task>> tasksAsync;
-
-  @override
-  Widget build(BuildContext context) {
-    // `.value` rethrows on AsyncError (Riverpod semantics) — this section
-    // never shows its own error UI (that's `_HistorySection`'s job for the
-    // same provider), so just render nothing until data is actually in.
-    final tasks = tasksAsync.valueOrNull;
-    if (tasks == null) return const SizedBox.shrink();
-
-    final urgent = TaskUrgencyStyle.sorted(
-      tasks.where(TaskUrgencyStyle.isUrgent).toList(),
-    );
-    if (urgent.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Column(
-        key: const Key('urgent_tasks_section'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionLabel('งานค้างวันนี้'),
-          const SizedBox(height: 12),
-          for (final (i, task) in urgent.indexed)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _UrgentTaskCard(
-                key: Key('urgent_task_card_$i'),
-                task: task,
-                onTap: () => context.push(AppRoutes.taskDetail(task.id)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _UrgentTaskCard extends StatelessWidget {
-  const _UrgentTaskCard({super.key, required this.task, required this.onTap});
-
-  final Task task;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final urgency = TaskUrgencyStyle.of(task);
-    final (bg, fg) = TaskUrgencyStyle.colors(urgency);
-    // ตัวอักษรใหญ่: ป้ายย้ายจากด้านขวาลงมาใต้ชื่องาน (UX audit #23) เดิมป้าย
-    // กินความกว้างจนชื่องานเหลือ "ติดตั้ง Co…" และเลขเครื่องขึ้นบรรทัดใหม่ทีละตัว
-    final largeText = isLargeTextScale(context);
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        TaskUrgencyStyle.label(urgency),
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
-      ),
-    );
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.mockShadowRow,
-        border: Border(left: BorderSide(color: fg, width: 4)),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
+    return AppV2Theme(
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            // await refetch จริง — spinner ค้างจนข้อมูลใหม่มา
+            onRefresh: () => fieldStaff
+                ? ref.refresh(taskListProvider.future)
+                : Future<void>.value(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    TaskUrgencyStyle.icon(urgency),
-                    color: fg,
-                    size: 20,
-                  ),
+                AppPageHeader(
+                  title: 'หน้าแรก',
+                  meta: [
+                    if (auth.username != null)
+                      AppPageHeaderMeta(label: 'ผู้ใช้', value: auth.username!),
+                  ],
+                  trailing: const AccountButton(),
                 ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.title,
-                        // 2 บรรทัด: ชื่องานมักมีรายละเอียดท้ายชื่อ (ทะเบียนรถ /
-                        // ลูกค้า) ที่ใช้แยกงาน (UX audit #23)
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.mockTextPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        task.deviceId ?? '—',
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          color: AppTheme.mockTextSecondary,
-                        ),
-                      ),
-                      if (largeText) ...[const SizedBox(height: 8), badge],
-                    ],
+                if (fieldStaff)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        HomeStatusBanners(onSummaryTap: _scrollToOpenSection),
+                        _TaskSections(openSectionKey: _openSectionKey),
+                      ],
+                    ),
                   ),
-                ),
-                if (!largeText) ...[const SizedBox(width: 8), badge],
               ],
             ),
           ),
@@ -503,176 +116,204 @@ class _UrgentTaskCard extends StatelessWidget {
   }
 }
 
-/// "ประวัติงานล่าสุด" — real completed-task history, derived client-side
-/// from `GET /tasks` (self-scoped to the caller by the backend for ST/OT).
-/// Replaces the old "งานวันนี้" pending-task list with a history view —
-/// Phase 1 ([_UrgentTasksSection] above) brought outstanding/urgent work
-/// back onto Home, so this section's job stays narrow: what got finished.
-class _HistorySection extends ConsumerWidget {
-  const _HistorySection({required this.tasksAsync});
+/// จำนวนการ์ดสูงสุดใน "ประวัติงานล่าสุด" — สร้างทุกใบใน Column ตรงๆ (ไม่ lazy)
+/// จึงจำกัดไว้ไม่ให้หน้าแรกยาวและหนักขึ้นเรื่อยๆ ตามงานที่สะสม (รีวิว A ใน #355)
+const _historyLimit = 20;
 
-  final AsyncValue<List<Task>> tasksAsync;
+class _TaskSections extends ConsumerWidget {
+  const _TaskSections({required this.openSectionKey});
+
+  final GlobalKey openSectionKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tasksAsync = ref.watch(taskListProvider);
+    final pendingIds = ref.watch(pendingTaskIdsProvider).value ?? const {};
+
     return tasksAsync.when(
       skipLoadingOnRefresh: true,
+      loading: () => const AppListSkeleton(padding: EdgeInsets.zero),
+      error: (error, _) => AppErrorView(
+        message: error is ApiException ? error.message : 'โหลดงานไม่สำเร็จ',
+        onRetry: () => ref.invalidate(taskListProvider),
+        messageKey: const Key('my_tasks_error'),
+        retryKey: const Key('my_tasks_retry'),
+      ),
       data: (tasks) {
-        final completed =
-            tasks.where((t) => t.status == TaskStatus.completed).toList()
+        if (tasks.isEmpty) {
+          return const AppEmptyState(
+            icon: Icons.assignment_outlined,
+            message: 'ยังไม่มีงานที่ได้รับมอบหมาย',
+            messageKey: Key('my_tasks_empty'),
+          );
+        }
+        final open = TaskUrgencyStyle.sorted(
+          tasks
+              .where(
+                (t) =>
+                    t.status == TaskStatus.pending ||
+                    t.status == TaskStatus.inProgress,
+              )
+              .toList(),
+        );
+        final history =
+            tasks
+                .where(
+                  (t) =>
+                      t.status == TaskStatus.completed ||
+                      t.status == TaskStatus.cancelled,
+                )
+                .toList()
               ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        final completed = tasks
+            .where((t) => t.status == TaskStatus.completed)
+            .toList();
         final now = DateTime.now();
         final completedThisMonth = completed.where((t) {
           final local = t.updatedAt.toLocal();
           return local.year == now.year && local.month == now.month;
         }).length;
 
+        void openTask(Task task) => context.push(AppRoutes.taskDetail(task.id));
+
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Column(
+              key: openSectionKey,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SectionTitle(
+                  'ต้องทำ',
+                  count: open.length,
+                  key: const Key('home_open_section'),
+                ),
+                if (open.isEmpty)
+                  const AppEmptyState(
+                    icon: Icons.task_alt,
+                    message: 'ไม่มีงานค้าง',
+                    messageKey: Key('home_open_empty'),
+                  ),
+                for (final (i, task) in open.indexed)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _TaskCard(
+                      key: Key('my_task_card_$i'),
+                      task: task,
+                      pendingSync: pendingIds.contains(task.id),
+                      onTap: () => openTask(task),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const _SectionTitle(
+              'ประวัติงานล่าสุด',
+              key: Key('home_history_section'),
+            ),
             Row(
               children: [
                 Expanded(
                   child: _StatCard(
-                    icon: Icons.check_circle_outline,
-                    iconColor: AppTheme.mockAccent,
-                    iconBg: AppTheme.mockAccentSoft,
                     value: '$completedThisMonth',
                     label: 'งานที่เสร็จเดือนนี้',
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: _StatCard(
-                    icon: Icons.history,
-                    iconColor: AppTheme.mockSuccess,
-                    iconBg: AppTheme.mockSuccessSoft,
                     value: '${completed.length}',
                     label: 'ประวัติงานทั้งหมด',
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Expanded: ตัวอักษรใหญ่ หัวข้อขึ้นบรรทัดใหม่แทนดันจำนวนล้นขอบ
-                // (UX audit #23)
-                const Expanded(
-                  child: Text(
-                    'ประวัติงานล่าสุด',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.mockTextPrimary,
-                    ),
-                  ),
+            const SizedBox(height: 10),
+            if (history.isEmpty)
+              const AppEmptyState(
+                icon: Icons.history,
+                message: 'ยังไม่มีประวัติงาน',
+                messageKey: Key('home_history_empty'),
+              ),
+            for (final (i, task) in history.take(_historyLimit).indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _TaskCard(
+                  key: Key('history_card_$i'),
+                  task: task,
+                  history: true,
+                  pendingSync: pendingIds.contains(task.id),
+                  onTap: () => openTask(task),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${completed.length} รายการ',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.mockTextTertiary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (completed.isEmpty)
-              const _HistoryEmpty()
-            else ...[
-              for (
-                var i = 0;
-                i < completed.length && i < _recentHistoryLimit;
-                i++
-              )
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _HistoryCard(
-                    key: Key('history_card_$i'),
-                    task: completed[i],
-                    onTap: () =>
-                        context.push(AppRoutes.taskDetail(completed[i].id)),
-                  ),
-                ),
-              _ViewAllButton(onTap: () => context.push(AppRoutes.myTasks)),
-            ],
+              ),
+            if (history.length > _historyLimit)
+              const Text(
+                'แสดง $_historyLimit งานล่าสุด',
+                key: Key('home_history_limit_note'),
+                textAlign: TextAlign.center,
+                style: _TaskCard._meta,
+              ),
           ],
         );
       },
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => AppErrorView(
-        message: error is ApiException
-            ? error.message
-            : 'โหลดประวัติงานไม่สำเร็จ',
-        onRetry: () => ref.invalidate(taskListProvider),
-        retryKey: const Key('tasks_retry'),
-        compact: true,
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.title, {super.key, this.count});
+
+  final String title;
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Semantics(
+        header: true,
+        child: Text(
+          count == null ? title : '$title ($count)',
+          style: const TextStyle(
+            fontSize: AppTypography.base,
+            height: AppTypography.baseHeight,
+            fontWeight: FontWeight.w600,
+            color: AppColors.foreground,
+          ),
+        ),
       ),
     );
   }
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
-    required this.value,
-    required this.label,
-  });
+  const _StatCard({required this.value, required this.label});
 
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
   final String value;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.mockShadowCard,
-      ),
+    return AppCard(
+      size: AppCardSize.small,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(icon, size: 18, color: iconColor),
-          ),
-          const SizedBox(height: 10),
           Text(
             value,
             style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.mockTextPrimary,
-              height: 1.1,
+              fontSize: AppTypography.xxl,
+              height: AppTypography.xxlHeight,
+              fontWeight: FontWeight.w600,
+              color: AppColors.foreground,
             ),
           ),
-          const SizedBox(height: 4),
           Text(
             label,
             style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.mockTextSecondary,
-              fontWeight: FontWeight.w500,
+              fontSize: AppTypography.xs,
+              height: AppTypography.xsHeight,
+              color: AppColors.mutedForeground,
             ),
           ),
         ],
@@ -681,269 +322,83 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _HistoryEmpty extends StatelessWidget {
-  const _HistoryEmpty();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.mockShadowCard,
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.inbox_outlined, color: AppTheme.mockTextTertiary),
-          SizedBox(height: 8),
-          Text(
-            'ยังไม่มีประวัติงานที่เสร็จสิ้น',
-            style: TextStyle(fontSize: 13, color: AppTheme.mockTextSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _formatDate(DateTime dt) {
-  final d = dt.toLocal();
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
-}
-
-class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({super.key, required this.task, required this.onTap});
+/// การ์ดงานหนึ่งใบ — งานที่ต้องทำบอกกำหนดส่ง งานในประวัติ ([history]) บอกเวลาที่จบ
+/// · ป้ายทั้งหมดอยู่ใน `Wrap` ใต้รายละเอียด ตัวอักษรใหญ่จึงตัดบรรทัดแทนล้นขอบ
+/// (UX audit #9)
+class _TaskCard extends StatelessWidget {
+  const _TaskCard({
+    super.key,
+    required this.task,
+    required this.onTap,
+    this.history = false,
+    this.pendingSync = false,
+  });
 
   final Task task;
   final VoidCallback onTap;
+  final bool history;
+  final bool pendingSync;
+
+  static const _meta = TextStyle(
+    fontSize: AppTypography.xs,
+    height: AppTypography.xsHeight,
+    color: AppColors.mutedForeground,
+  );
 
   @override
   Widget build(BuildContext context) {
-    // ตัวอักษรใหญ่: ป้าย "เสร็จสิ้น" ย้ายลงมาใต้รายละเอียด (UX audit #23)
-    final largeText = isLargeTextScale(context);
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppTheme.mockSuccessSoft,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Text(
-        'เสร็จสิ้น',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: AppTheme.mockSuccess,
-        ),
-      ),
-    );
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.mockShadowRow,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppTheme.mockSuccessSoft,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.check,
-                    color: AppTheme.mockSuccess,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.mockTextPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      // วันที่เสร็จงาน ต่อท้ายในบรรทัดเดียวกับ deviceId (ไม่
-                      // เพิ่มความสูงการ์ด) — ใช้ updatedAt (Task.completed
-                      // เขียน updatedAt ตอนเปลี่ยนสถานะ ไม่มี completedAt แยก)
-                      Text(
-                        '${task.deviceId ?? '—'} · ${_formatDate(task.updatedAt)}',
-                        // ตัวอักษรใหญ่ให้ 2 บรรทัด วันที่จะไม่ถูกตัดทิ้ง
-                        maxLines: largeText ? 2 : 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          color: AppTheme.mockTextSecondary,
-                        ),
-                      ),
-                      if (largeText) ...[const SizedBox(height: 8), badge],
-                    ],
-                  ),
-                ),
-                if (!largeText) ...[const SizedBox(width: 8), badge],
-              ],
+    final urgency = TaskUrgencyStyle.of(task);
+    final device = task.deviceId ?? '-';
+    return AppCard(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 2 บรรทัดแล้วตัด (UX audit #23 — 1 บรรทัดสั้นเกินจนอ่านชื่องานไม่ออก)
+          Text(
+            task.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: AppTypography.base,
+              height: AppTypography.baseHeight,
+              fontWeight: FontWeight.w600,
+              color: AppColors.foreground,
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewAllButton extends StatelessWidget {
-  const _ViewAllButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        key: const Key('view_all_history'),
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 50,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.mockCardBorder, width: 1.5),
-          ),
-          child: const Text(
-            'ดูประวัติงานทั้งหมด',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.mockTextPrimary,
+          const SizedBox(height: 4),
+          if (history)
+            Text('$device · ${_formatDateTime(task.updatedAt)}', style: _meta)
+          else ...[
+            Text('อุปกรณ์: $device', style: _meta),
+            Text(
+              'กำหนดส่ง: '
+              '${task.dueDate == null ? '-' : _formatDay(task.dueDate!)}',
+              style: _meta,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Shortcut {
-  const _Shortcut({
-    required this.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final Key key;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-}
-
-/// Two-column grid. When the item count is odd the last tile spans full width
-/// so the layout stays balanced (spec allows either centered or full-width).
-class _ShortcutGrid extends StatelessWidget {
-  const _ShortcutGrid({required this.items});
-
-  final List<_Shortcut> items;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < items.length; i += 2) {
-      final left = items[i];
-      final hasRight = i + 1 < items.length;
-      if (hasRight) {
-        rows.add(
-          Row(
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
-              Expanded(child: _ShortcutTile(item: left)),
-              const SizedBox(width: 10),
-              Expanded(child: _ShortcutTile(item: items[i + 1])),
+              AppBadge(
+                label: taskStatusLabel(task.status),
+                tone: taskStatusTone(task.status),
+                dot: true,
+              ),
+              if (urgency != TaskUrgency.none)
+                AppBadge(
+                  key: const Key('task_urgency_badge'),
+                  label: TaskUrgencyStyle.label(urgency),
+                  tone: taskUrgencyTone(
+                    overdue: urgency == TaskUrgency.overdue,
+                  ),
+                ),
+              if (pendingSync) const PendingSyncBadge(),
             ],
           ),
-        );
-      } else {
-        rows.add(
-          Row(
-            children: [Expanded(child: _ShortcutTile(item: left))],
-          ),
-        );
-      }
-      if (i + 2 < items.length) rows.add(const SizedBox(height: 10));
-    }
-    return Column(children: rows);
-  }
-}
-
-class _ShortcutTile extends StatelessWidget {
-  const _ShortcutTile({required this.item});
-
-  final _Shortcut item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: item.key,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppTheme.mockShadowCard,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: item.onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-            child: Column(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.mockAccentSoft,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(item.icon, color: AppTheme.mockAccent, size: 22),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  item.label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.mockTextPrimary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }

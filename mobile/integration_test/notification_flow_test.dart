@@ -16,7 +16,7 @@ import 'package:mobile/main.dart' as app;
 /// Needs a seeded `st.test` / `password123` user with a few notifications
 /// (some unread).
 Future<void> _ensureLoggedOut(WidgetTester tester) async {
-  if (find.byKey(const Key('home_logout')).evaluate().isNotEmpty) {
+  if (find.byKey(const Key('app_tab_bar')).evaluate().isNotEmpty) {
     await _logout(tester);
   }
 }
@@ -24,7 +24,7 @@ Future<void> _ensureLoggedOut(WidgetTester tester) async {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('ST: bell badge -> list -> mark read', (tester) async {
+  testWidgets('ST: tab badge -> list -> mark read', (tester) async {
     app.main();
     await tester.pumpAndSettle();
     await binding.convertFlutterSurfaceToImage();
@@ -39,12 +39,12 @@ void main() {
     await tester.tap(find.byKey(const Key('login_submit')));
     await tester.pumpAndSettle(const Duration(seconds: 4));
 
-    // --- Home: bell shows a real unread count ---
-    expect(find.byType(Badge), findsOneWidget);
-    await binding.takeScreenshot('01-home-bell-badge');
+    // --- แท็บแจ้งเตือนมีตัวเลขยังไม่อ่านจริง (แทนกระดิ่งเดิม docs/22 §7.2) ---
+    expect(find.byKey(const Key('tab_notifications_badge')), findsOneWidget);
+    await binding.takeScreenshot('01-home-tab-badge');
 
     // --- notification list from GET /notifications ---
-    await tester.tap(find.byKey(const Key('home_notifications')));
+    await tester.tap(find.byKey(const Key('tab_notifications')));
     await tester.pumpAndSettle(const Duration(seconds: 3));
     expect(find.text('รายการแจ้งเตือน'), findsOneWidget);
     expect(find.byKey(const Key('notification_tile_0')), findsOneWidget);
@@ -63,10 +63,19 @@ void main() {
   });
 }
 
-/// Logout ต้องกดค้าง + ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`,
-/// มีคิวค้าง = `logout_unsynced_confirm`)
+/// Logout อยู่ในแผ่นบัญชีผู้ใช้ (ปุ่ม avatar บนหัวหน้าระดับแท็บ docs/22 §7.2) +
+/// ยืนยันใน dialog (ไม่มีคิวค้าง = `logout_confirm`, มีคิวค้าง =
+/// `logout_unsynced_confirm`) · ทุกหน้าระดับแท็บมี avatar แล้ว (Device Search ย้าย
+/// design ใน Batch 4) — ถ้าหน้าปัจจุบันไม่มีปุ่ม (เช่นอยู่หน้าลูก) สลับไปแท็บแจ้งเตือนก่อน
 Future<void> _logout(WidgetTester tester) async {
-  await tester.longPress(find.byKey(const Key('home_logout')));
+  final account = find.byKey(const Key('account_button'));
+  if (account.evaluate().isEmpty) {
+    await tester.tap(find.byKey(const Key('tab_notifications')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  }
+  await tester.tap(account);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('account_logout')));
   await tester.pumpAndSettle();
   final plain = find.byKey(const Key('logout_confirm'));
   await tester.tap(

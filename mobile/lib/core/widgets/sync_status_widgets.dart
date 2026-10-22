@@ -3,6 +3,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../sync/sync_providers.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_tokens.dart';
+import '../ui/app_badge.dart';
+import '../ui/app_v2_theme.dart';
+
+// หน้าที่ย้ายมา design system ใหม่แล้ว (ครอบ [AppV2Theme]) ใช้สีจาก token
+// (docs/22 §7.1 "ของเดิม Mobile ที่คงไว้") · หน้าที่ยังไม่ย้าย (Task Detail —
+// Batch 5) หน้าตาเดิมทุกอย่าง แบบเดียวกับ `AppErrorView`
+
+/// สีพื้น / ไอคอน ของ banner ตามหน้าที่อยู่ — `warning` = เรื่องซิงก์,
+/// ไม่ใช่ = ออฟไลน์ (ข้อมูลกลาง)
+(Color, Color, double) _bannerStyle(
+  BuildContext context, {
+  required bool warning,
+}) {
+  if (AppV2Theme.isActive(context)) {
+    return warning
+        ? (AppColors.warningSubtle, AppColors.warningForeground, AppRadius.lg)
+        : (AppColors.secondary, AppColors.mutedForeground, AppRadius.lg);
+  }
+  return warning
+      ? (const Color(0xFFFFF4E5), const Color(0xFFB45309), 12)
+      : (AppTheme.iconBg, AppTheme.textSecondary, 12);
+}
 
 /// Small "รอซิงค์" chip for an item whose change is still in the local queue.
 class PendingSyncBadge extends StatelessWidget {
@@ -10,6 +33,9 @@ class PendingSyncBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (AppV2Theme.isActive(context)) {
+      return const AppBadge(key: Key('pending_sync_badge'), label: 'รอซิงค์');
+    }
     return const Row(
       key: Key('pending_sync_badge'),
       mainAxisSize: MainAxisSize.min,
@@ -34,16 +60,17 @@ class SyncFailedBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final (bg, fg, radius) = _bannerStyle(context, warning: true);
     return Container(
       key: const Key('sync_failed_banner'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E5),
-        borderRadius: BorderRadius.circular(12),
+        color: bg,
+        borderRadius: BorderRadius.circular(radius),
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Color(0xFFB45309)),
+          Icon(Icons.warning_amber_rounded, color: fg),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -70,18 +97,19 @@ class SyncAuthExpiredBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, fg, radius) = _bannerStyle(context, warning: true);
     return Container(
       key: const Key('sync_auth_expired_banner'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4E5),
-        borderRadius: BorderRadius.circular(12),
+        color: bg,
+        borderRadius: BorderRadius.circular(radius),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.lock_clock_outlined, color: Color(0xFFB45309)),
-          SizedBox(width: 10),
-          Expanded(
+          Icon(Icons.lock_clock_outlined, color: fg),
+          const SizedBox(width: 10),
+          const Expanded(
             child: Text(
               'เซสชันหมดอายุ รายการที่รอซิงค์ยังส่งไม่ได้ — '
               'ถ้าออกจากระบบ รายการที่ค้างอยู่จะหายไป',
@@ -118,21 +146,26 @@ class OfflineCacheBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, fg, radius) = _bannerStyle(context, warning: false);
+    final v2 = AppV2Theme.isActive(context);
     return Container(
       key: const Key('offline_cache_banner'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.iconBg,
-        borderRadius: BorderRadius.circular(12),
+        color: bg,
+        borderRadius: BorderRadius.circular(radius),
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off_outlined, color: AppTheme.textSecondary),
+          Icon(Icons.cloud_off_outlined, color: fg),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               offlineCacheLabel(cachedAt),
-              style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+              style: TextStyle(
+                fontSize: 13,
+                color: v2 ? AppColors.foreground : AppTheme.textPrimary,
+              ),
             ),
           ),
         ],
