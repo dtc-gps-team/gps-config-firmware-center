@@ -40,7 +40,10 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
-import { CentralDeviceService } from '../central-device/central-device.service';
+import {
+  CentralDeviceService,
+  type PushFirmwareOutcome,
+} from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { getOrCreateFieldApplySystemCampaign } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
@@ -1794,6 +1797,14 @@ export class CampaignRolloutService {
    * `X-Allow-Downgrade` มายืนยันเจตนาเสมอ (ดู comment เหนือ
    * `dispatchAutoApply` เรื่องทำไม Rollback โหมด central ไม่มี fast-path แบบ
    * mock แล้วมาตกที่ฟังก์ชันนี้)
+   *
+   * **`downloadObject()` ต้องอยู่ใน try/catch** (review B #362 รอบ 1/2) —
+   * เดิมเรียกตรงๆ ใน argument ของ `pushFirmware()` ถ้า Object Storage ล่ม/
+   * หาไฟล์ไม่เจอตอน `approve()` exception จะหลุดออกจาก `autoApplyFirmware()`
+   * ทำให้ Rollout ค้าง `active` ตลอดไป (approve ซ้ำไม่ได้เพราะไม่ใช่
+   * `pending_approval` แล้ว, `resume()` ใช้ได้แค่ตอน `paused`) ย้ายไปอยู่ใน
+   * `resolvePushFirmwareOutcome()` แปลงเป็น `{ kind: 'unavailable' }` แทน
+   * ไหลเข้า `recordTargetResult(false)` เหมือนกรณีอื่นทั้งหมด
    */
   private async pushFirmwareToCentral(
     rollout: CampaignRollout,
@@ -1802,19 +1813,11 @@ export class CampaignRolloutService {
     firmware: Firmware,
     actorId: string,
   ): Promise<void> {
-    const outcome = this.central
-      ? await this.central.pushFirmware(
-          deviceId,
-          await this.firmwareStorage.downloadObject(firmware.objectKey),
-          {
-            firmwareVersion: firmware.version,
-            ...(rollout.isRollback ? { allowDowngrade: true } : {}),
-          },
-        )
-      : ({
-          kind: 'unavailable',
-          reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
-        } as const);
+    const outcome = await this.resolvePushFirmwareOutcome(
+      rollout,
+      deviceId,
+      firmware,
+    );
 
     if (outcome.kind === 'sent') {
       await this.prisma.campaignRolloutTarget.update({
@@ -1847,6 +1850,39 @@ export class CampaignRolloutService {
         firmwareVersion: firmware.version,
       });
     }
+  }
+
+  /**
+   * ดาวน์โหลดไฟล์ + ส่งให้ Server กลาง — แยกจาก `pushFirmwareToCentral()`
+   * เพื่อห่อ `downloadObject()` ด้วย try/catch ได้ (review B #362) ทุก path
+   * ที่ล้มเหลวคืนรูปร่างเดียวกับ `CentralDeviceService.pushFirmware()` เอง
+   * (`{ kind: 'unavailable' | 'rejected', reason }`) ให้ผู้เรียกจัดการแบบ
+   * เดียวกันหมด ไม่ต้องแยกเคส
+   */
+  private async resolvePushFirmwareOutcome(
+    rollout: CampaignRollout,
+    deviceId: string,
+    firmware: Firmware,
+  ): Promise<PushFirmwareOutcome> {
+    if (!this.central) {
+      return {
+        kind: 'unavailable',
+        reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
+      };
+    }
+    let data: Buffer;
+    try {
+      data = await this.firmwareStorage.downloadObject(firmware.objectKey);
+    } catch (err) {
+      return {
+        kind: 'unavailable',
+        reason: `ดาวน์โหลดไฟล์ Firmware ไม่สำเร็จ: ${(err as Error).message}`,
+      };
+    }
+    return this.central.pushFirmware(deviceId, data, {
+      firmwareVersion: firmware.version,
+      ...(rollout.isRollback ? { allowDowngrade: true } : {}),
+    });
   }
 
   /**
@@ -1934,42 +1970,70 @@ export class CampaignRolloutService {
    * `recordTargetResult()`/`markTargetSkippedOffline()` ว่าถ้า target.rollout
    * มี `configApplyRequest` ผูกอยู่ ให้อัปเดตสถานะคำขอ + แจ้งช่าง (never-throw
    * เหมือน hook เดิมที่มีอยู่แล้วในทั้งสองเมธอดนี้)
+   *
+   * **แยกเป็น 2 เมธอดตามที่ review B #362 รอบ 2 ขอ** (เดิมเมธอดเดียวทำทุก
+   * อย่างรวดเดียว รวม `autoApplyConfig()` ด้วย) — ปัญหาคือฝั่ง B (#370) ต้อง
+   * ผูก `ConfigApplyRequest.rolloutId` ก่อนผลจะไหลกลับไปหาคำขอได้ถูก แต่
+   * ด้วยลำดับเดิม `autoApplyConfig()` (ซึ่งบันทึกผล + ยิง event ในตัว) รันไป
+   * ก่อนที่ B จะได้ `rolloutId` กลับไปผูกเลย (โหมด mock จบงานในตัวทันที) ผล
+   * จึงหาคำขอไม่เจอ เปลี่ยนเป็น:
+   * - `createFieldApplyRollout(tx, input)` — สร้าง Rollout ในทรานแซกชันของ
+   *   ผู้เรียกเอง (docs/25 §3.5 ข้อ 2) ไม่เรียก `autoApplyConfig()` ไม่ส่ง
+   *   อะไรออกไปจนกว่าผู้เรียก commit สำเร็จ
+   * - `startFieldApplyRollout(rolloutId, actorId)` — เรียกหลัง commit (§3.5
+   *   ข้อ 3) ตอนนั้น B ผูก `rolloutId` ไว้กับคำขอแล้วแน่นอน ผลจึงไหลกลับถูก
    */
-  async startFieldApplyRollout(
-    deviceId: string,
-    configId: string,
-    requestedBy: string,
-    decidedBy: string,
-  ): Promise<CampaignRollout> {
+  async createFieldApplyRollout(
+    tx: Prisma.TransactionClient,
+    input: {
+      requestId: string;
+      deviceId: string;
+      configId: string;
+      requestedBy: string;
+      approvedBy: string;
+    },
+  ): Promise<{ rolloutId: string }> {
     const systemCampaign = await getOrCreateFieldApplySystemCampaign(
-      this.prisma,
-      decidedBy,
+      tx,
+      input.approvedBy,
     );
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const rollout = await tx.campaignRollout.create({
-        data: {
-          campaignId: systemCampaign.id,
-          payloadType: 'Config',
-          configId,
-          status: 'active',
-          targetCount: 1,
-          createdBy: requestedBy,
-          approvedBy: decidedBy,
-          approvedAt: new Date(),
-          activeWindowStartedAt: new Date(),
-          applyMode: this.configApplyMode,
-        },
-      });
-      await tx.campaignRolloutTarget.create({
-        data: { rolloutId: rollout.id, deviceId },
-      });
-      return rollout;
+    const rollout = await tx.campaignRollout.create({
+      data: {
+        campaignId: systemCampaign.id,
+        payloadType: 'Config',
+        configId: input.configId,
+        status: 'active',
+        targetCount: 1,
+        createdBy: input.requestedBy,
+        approvedBy: input.approvedBy,
+        approvedAt: new Date(),
+        activeWindowStartedAt: new Date(),
+        applyMode: this.configApplyMode,
+      },
+    });
+    await tx.campaignRolloutTarget.create({
+      data: { rolloutId: rollout.id, deviceId: input.deviceId },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: input.requestedBy,
+        auditModule: AUDIT_MODULE,
+        action: 'create',
+      },
     });
 
-    await this.logAudit('create', requestedBy, undefined, null);
+    return { rolloutId: rollout.id };
+  }
 
-    return this.autoApplyConfig(created, decidedBy);
+  async startFieldApplyRollout(
+    rolloutId: string,
+    actorId: string,
+  ): Promise<CampaignRollout> {
+    const rollout = await this.prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rolloutId },
+    });
+    return this.autoApplyConfig(rollout, actorId);
   }
 
   /**
