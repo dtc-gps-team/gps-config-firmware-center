@@ -1,7 +1,11 @@
 # แผนให้มือถือส่ง Config เข้าเครื่องจริง โดยรักษา Separation of Duty
 
 > **สถานะ:** แผน — **A ตอบคำถามเปิด Q1–Q9 ครบแล้ว** (คอมเมนต์ใน #364, 21 ต.ค. 2569) เอกสารนี้บันทึกคำตอบไว้ใน §7 และ
-> ปรับเนื้อหาส่วนที่เกี่ยวข้องให้ตรงแล้ว · **ยังไม่มีโค้ด** และยังไม่แก้ schema, backend หรือ mobile ใน PR นี้
+> ปรับเนื้อหาส่วนที่เกี่ยวข้องให้ตรงแล้ว
+>
+> **อัปเดต 22 ต.ค. 2569 — implement ส่วนของ B แล้ว** (branch `feat/mobile-config-apply-request`) เรื่องที่เดิมเขียนว่า
+> "ตัดสินตอน implement" B ยืนยันแล้วทั้งหมด บันทึกไว้ที่ §9 · **ยังส่งเข้ากล่องจริงไม่ได้** จนกว่า A จะเติมจุดที่รอใน
+> `backend/src/config-apply-request/field-apply-rollout.ts` (§9.3)
 >
 > **ผู้เขียน/ผู้รีวิว:** ร่างโดย B (kittiphong) วันที่ 21 ต.ค. 2569 · ขอ A (paveekornkwork-dev) ร่วมรีวิว เพราะแผนนี้แตะ
 > `campaign` และ `device` ซึ่งเป็นโมดูลของ A รวมถึง Approval Center บน Web
@@ -175,7 +179,8 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
      "ผู้ผูก Config เข้างานนี้อนุมัติการส่งเองไม่ได้ (Separation of Duty)"
   4. ถ้า `configAssignedBy` เป็น null ได้ 403 (**fail closed**) ซึ่งไม่ควรเกิดเพราะ §3.3 กันไว้ตั้งแต่ตอนสร้าง
   5. **(เพิ่มตาม Q8)** ผู้ตัดสิน **≠ ผู้อนุมัติตัว Config** (`Config.approvedBy`) ถ้าซ้ำได้ 403 — เข้มกว่า Rollout ปกติที่
-     ไม่ได้ห้ามข้อนี้ · กรณี `Config.approvedBy` ว่าง (ข้อมูลเก่า/seed) ยังไม่ได้ตกลง ต้องถาม A ตอน implement
+     ไม่ได้ห้ามข้อนี้ · กรณี `Config.approvedBy` ว่าง (ข้อมูลเก่า/seed): **ได้ 403 (fail closed)** — ตัดสินตอน implement
+     (§9.2)
   6. การ์ดบน Web ควรปิดปุ่มให้ผู้ที่เข้าข้อ 2, 3 หรือ 5 พร้อมบอกเหตุผล แต่ backend คือด่านจริง
 - **race:** ใช้ `updateMany({ where: { id, status: 'pending' } })` แล้วเช็ค `count === 0` ได้ 409 (pattern เดียวกับ #225
   และ `CampaignRolloutService.approve()`)
@@ -185,6 +190,8 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
 1. **ตรวจซ้ำแบบสด** ใน transaction เดียวกับการเปลี่ยนสถานะ (Config อาจถูกถอนอนุมัติหรือลบ Task อาจถูกยกเลิกระหว่างรอ):
    - Config ยัง `approved`/`synced` และไม่ถูกลบ
    - `Task.configId` ยังเป็นตัวเดียวกับในคำขอ
+   - **(เพิ่มตอน implement — §9.2)** `Task.configAssignedBy` ยังเป็นคนเดียวกับที่ snapshot ไว้ในคำขอ ถ้า Operation
+     คนอื่นผูก Config ใหม่ระหว่างรอ ได้ 409 ให้ช่างขอใหม่ (ไม่งั้น SoD ข้อ 3 จะไม่ครอบคนผูกล่าสุด)
    - Task ยัง `in_progress` และผู้ขอยังเป็นผู้ถูก assign
    - Device ยัง `installed` และรุ่นยังตรง
    - เครื่องยังไม่เป็น target ของ Rollout อื่นที่ค้างอยู่
@@ -223,6 +230,7 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
 | `config_apply_rejected` | ผู้ขอ | Operation ปฏิเสธ |
 | `config_apply_succeeded` | ผู้ขอ | กล่องยืนยันผ่าน poll |
 | `config_apply_failed` | ผู้ขอ | กล่องปฏิเสธ, ส่งไม่ได้ หรือกล่องออฟไลน์ (`skipped_offline` รวมไว้ที่นี่ แยกเหตุผลใน payload) |
+| `config_apply_expired` | ผู้ขอ | คำขอหมดอายุเพราะไม่มี Operation ตัดสินภายใน 24 ชม. (เพิ่มตอน implement — §9.2) |
 
 - **ไม่มี `config_apply_approved` (มติ Q5):** การอนุมัติตามด้วยการส่งทันที แจ้งแค่ผลสุดท้ายพอ ส่วนการ์ดในแอปแสดง
   `sending` ให้เองเมื่อเปิดดู
@@ -246,7 +254,8 @@ mirror การ์ด Device Config Override (#223, `device-config-override-app
 
 - **หมดอายุอัตโนมัติ:** คำขอ `pending` ที่ค้างนานเกินกำหนดถูกปิดเอง และแจ้งผู้ขอ
 - **ยกเลิกอัตโนมัติเมื่อ Task ถูกยกเลิก:** คำขอ `pending` ของ Task นั้นถูกยกเลิกตาม
-- **ยังไม่ได้ตกลง (ตัดสินตอน implement):** ระยะเวลาหมดอายุจริง (เดิมยกตัวอย่าง 24 ชม.) และสถานะปลายทางของคำขอที่หมดอายุ
+- **ตัดสินตอน implement (§9.2):** หมดอายุ **24 ชม.** นับจากตอนขอ เก็บเป็นคอลัมน์ `expiresAt` · สถานะปลายทาง **`expired`**
+  (แยกจาก `cancelled` ให้ช่างรู้ว่าไม่มีใครตัดสิน) แจ้งผู้ขอด้วย `config_apply_expired` · job ตรวจทุก 5 นาที
 
 ### 3.10 ความสัมพันธ์กับมติ PULL model
 
@@ -271,6 +280,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | `configAssignedBy` | `String` → `User` | snapshot ผู้ผูก Config เข้า Task ใช้เช็ค SoD (§3.4 ข้อ 3) **ไม่ nullable** |
 | `requestedBy` | `String` → `User` | ช่างผู้ขอ |
 | `requestedAt` | `DateTime @default(now())` | |
+| `expiresAt` | `DateTime` | **เพิ่มตอน implement (§9.2)** ครบกำหนดหมดอายุของคำขอ `pending` (`requestedAt` + 24 ชม.) |
 | `note` | `String?` | ข้อความถึง Operation |
 | `status` | `ConfigApplyRequestStatus @default(pending)` | |
 | `decidedBy` | `String?` → `User` | Operation ผู้อนุมัติหรือปฏิเสธ |
@@ -278,14 +288,20 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | `rejectReason` | `String?` | บังคับเมื่อ `rejected` |
 | `rolloutId` | `String? @unique` → `CampaignRollout` | Rollout เครื่องเดียวที่สร้างตอนอนุมัติ (ทาง ค.) |
 | `resultDetail` | `String?` | เหตุผลหรือผลจากกล่อง |
-| `completedAt` | `DateTime?` | |
+| `completedAt` | `DateTime?` | เวลาที่คำขอจบ ไม่ว่าจบแบบไหน (ผลจากกล่อง, ปฏิเสธ, ยกเลิก, หมดอายุ) |
 | `createdAt` / `updatedAt` | | |
 
-- **index:** `@@index([deviceId, status])` สำหรับเช็ค "คำขอที่ยังเปิดอยู่ต่อเครื่อง" และ `@@index([taskId])`
-- **กันคำขอซ้ำต่อเครื่อง:** Prisma ไม่รองรับ partial unique index จึงตรวจใน transaction พร้อม lock แถว Task
-  (`lockTask` เดิม) แทน
+- **ชื่อ field ตรงกับตารางนี้ทุกตัว ไม่ได้เปลี่ยนตอน implement:** ใช้ `decidedBy`/`decidedAt` ตัวเดียวทั้งอนุมัติและ
+  ปฏิเสธ (แยกด้วย `status`) แทนการมี `approvedBy`/`rejectedBy` สองคอลัมน์ mirror `DeviceConfigOverride` (#223) ·
+  `rolloutId` (ไม่ใช่ `campaignRolloutId`) ตามชื่อ FK ของ `CampaignRolloutTarget.rolloutId` · ส่วน `approvedBy`/
+  `approvedAt` ใน §3.2 และ §3.5 หมายถึง field ของ **`CampaignRollout`** ที่ A ตั้งตอนสร้าง Rollout เครื่องเดียว ไม่ใช่ของคำขอ
+
+- **index:** `@@index([deviceId, status])` สำหรับเช็ค "คำขอที่ยังเปิดอยู่ต่อเครื่อง", `@@index([taskId])` และ
+  `@@index([status, expiresAt])` ให้ job หมดอายุ
+- **กันคำขอซ้ำต่อเครื่อง:** Prisma ไม่รองรับ partial unique index จึงตรวจใน transaction · ตอน implement ใช้ advisory lock
+  ระดับเครื่อง (`pg_advisory_xact_lock`) แทนการ lock แถว Task เพราะคำขอซ้อนกันได้ข้าม Task ที่ผูกเครื่องเดียวกัน
 - **enum ใหม่ `ConfigApplyRequestStatus`:** `pending`, `sending`, `succeeded`, `failed`, `skipped_offline`, `rejected`,
-  `cancelled`
+  `cancelled`, `expired` (`expired` เพิ่มตอน implement — §9.2)
 
 ### 4.2 field ใหม่บน `Task`
 
@@ -295,13 +311,17 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 - **ทำไม:** ปัจจุบันไม่มีที่ไหนบอกได้ว่าใครผูก Config (`TaskEvent` บันทึกเฉพาะสถานะ) จึงเช็ค SoD ข้อ 3 ไม่ได้
 - **Task เดิมที่มี `configId` อยู่แล้ว:** ค่านี้จะเป็น null หลัง migrate ซึ่ง §3.3 จะ**ปฏิเสธ**คำขอของงานพวกนี้จนกว่า
   Operation จะผูก Config ใหม่ (fail closed) **ไม่เดาค่าย้อนหลัง** จาก AuditLog
-- **ต่างจาก Data Dictionary:** ต้องใส่ comment อธิบายเหนือ field และ note ใน Data Dictionary ตาม CLAUDE.md (§Deviation)
+- **ต่างจาก Data Dictionary:** ใส่ comment อธิบายเหนือ field ใน `schema.prisma` แล้ว และบันทึกใน
+  `docs/database/GPS_Data_Dictionary.xlsx` แล้ว (ตาราง `TASK` 2 field + ตารางใหม่ `CONFIG_APPLY_REQUEST`)
 
 ### 4.3 อื่นๆ
 
-- **`NotificationType`:** เพิ่ม 4 ค่าตาม §3.6 (`ALTER TYPE ... ADD VALUE` แบบ additive)
+- **`NotificationType`:** เพิ่ม 5 ค่าตาม §3.6 (4 ค่าเดิมในแผน + `config_apply_expired`) (`ALTER TYPE ... ADD VALUE` แบบ
+  additive)
 - **`CampaignRollout` (มติ Q2):** ใช้ Campaign ระบบตัวเดียวสำหรับคำขอหน้างาน — **ไม่แก้ schema** แค่ seed · ไม่ทำ
-  `campaignId` ให้ nullable
+  `campaignId` ให้ nullable · id คงที่ `FIELD_APPLY_SYSTEM_CAMPAIGN_ID` ใน `field-apply-rollout.ts` · **seed ใน
+  `prisma/seed.ts` สร้างได้เฉพาะ dev** (ต้องมีบัญชีทดสอบ `operation.test` เป็น `createdBy`) ใน production A ต้องสร้าง
+  Campaign นี้เอง (§9.2)
 - **RBAC:** seed row ของ resource `config-apply-request` (ตารางเดิม ไม่ต้อง migration) พร้อมอัปเดต RBAC_Matrix §2, §4 และ
   `openapi.yaml`
 
@@ -348,7 +368,7 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | `TaskService` เขียน `configAssignedBy/At` | B | โมดูล `task` ของ B |
 | โมดูล backend ใหม่ `config-apply-request`: endpoint ใน §3.3, §3.4, SoD, AuditLog, notification | B | ตามที่ตกลงว่า B ทำ endpoint ใหม่ |
 | เมธอด public ใน `CampaignRolloutService` สร้าง Rollout เครื่องเดียวและเริ่มส่ง + hook ผลกลับเข้าคำขอ (§3.5 ข้อ 3, 5) รวมปิด Auto Pause ของ Rollout แบบนี้ (Q4) | **A** | โมดูล `campaign` ของ A — A เพิ่งแก้ `pushToCentral`/poll ใน #362 |
-| seed Campaign ระบบ + ซ่อน Rollout ของคำขอหน้างานจาก Campaign Monitor (Q2) | A | |
+| seed Campaign ระบบ + ซ่อน Rollout ของคำขอหน้างานจาก Campaign Monitor (Q2) | A | **seed (dev) B ทำไปก่อนแล้ว** ตามที่ B สั่งในรอบ implement — ถ้า A ไม่อยากให้ B ทำแทน แจ้งได้ · การซ่อนจาก Campaign Monitor และการสร้างใน production ยังเป็นของ A |
 | ปิด `apply-config` เดิมในโหมด `central` (§3.8) | A | โมดูล `device` ของ A |
 | แก้บั๊ก §5 (มติ §5.1) | A | ใน #362 ก่อน merge |
 | การ์ด Approval Center + จำนวนรออนุมัติบน Dashboard (§3.4) | A | mirror #223 |
@@ -400,3 +420,44 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 - **Firmware:** `confirm-firmware-install` ยังไม่มี central path ใน #362 แผนนี้ครอบคลุมเฉพาะ Config
 - **หน้าเว็บสร้าง Task:** ยังไม่มีตามมติยกเลิก Task Management แผนนี้ไม่เปิดคำถามนั้นใหม่
 - **docs/24 (#357, กล่องจำลองในมือถือ):** อิสระจากแผนนี้ ถ้ากล่องจำลองลงทะเบียนกับ Server กลางได้ ก็ใช้ flow นี้ทดสอบได้เลย
+
+## 9. สถานะ implement (22 ต.ค. 2569)
+
+### 9.1 ส่วนของ B ที่ทำแล้ว
+
+- **migration** `20261022040000_add_config_apply_request` (additive): `ConfigApplyRequest` + enum, `Task.configAssignedBy/At`,
+  `NotificationType` 5 ค่า
+- **`TaskService`:** เขียนผู้ผูก Config ทุกครั้งที่ตั้ง/ล้าง `configId` · ยกเลิกคำขอ `pending` ตอนงานถูกยกเลิก (Q9)
+- **โมดูล `config-apply-request`:** endpoint ครบตาม §3.3–§3.4 · SoD ข้อ 1–5 · ตรวจซ้ำแบบสด · หมดอายุ · AuditLog ·
+  notification
+- **RBAC / openapi:** seed resource `config-apply-request`, RBAC_Matrix แก้ครั้งที่ 93, `openapi.yaml` (v3.59)
+- **Mobile:** ปุ่มใน Task Detail เปลี่ยนเป็น "ขอส่ง Config เข้าเครื่อง" + การ์ดสถานะตามตาราง §3.3 + ยกเลิก + deep link
+- **ไม่ได้ทำเอง:** ปิด `apply-config` ในโหมด `central` (§3.8) — อยู่ใน #362 ของ A แล้ว
+
+### 9.2 เรื่องที่ตัดสินตอน implement (B ยืนยันแล้ว)
+
+| เรื่อง | ตัดสินเป็น | ที่มา |
+|---|---|---|
+| หมดอายุ | 24 ชม. เก็บใน `expiresAt` · สถานะ `expired` · แจ้ง `config_apply_expired` | §3.9 เดิมเปิดไว้ |
+| `Config.approvedBy` ว่าง | 403 (fail closed) | §3.4 ข้อ 5 เดิมเปิดไว้ |
+| ผู้ผูก Config ของงานเปลี่ยนระหว่างรอ | ตอนอนุมัติ ถ้า `Task.configAssignedBy` ≠ snapshot ได้ 409 ให้ช่างขอใหม่ | เพิ่มจากแผน (เข้มขึ้น ไม่ผ่อน) |
+| seed Campaign ระบบ | B seed ใน `seed.ts` ซึ่งรันได้เฉพาะ dev · production A ต้องสร้างเอง | §6 เดิมเป็นงาน A |
+
+### 9.3 จุดที่รอ A (`backend/src/config-apply-request/field-apply-rollout.ts`)
+
+ระหว่างนี้ใช้ตัวแทนชั่วคราว `PendingFieldApplyRolloutStarter`: **อนุมัติได้ 503 ทั้งทรานแซกชัน rollback คำขอยัง `pending`**
+ไม่มีสถานะครึ่งๆ กลางๆ
+
+1. **`createFieldApplyRollout(tx, input)`** — สร้าง Rollout เครื่องเดียวใต้ Campaign ระบบ สถานะ `active` (`createdBy` = ผู้ขอ,
+   `approvedBy` = ผู้อนุมัติ, `applyMode` ตาม env) ปิด Auto Pause และไม่สร้าง Incident (Q4) คืน `rolloutId` · เรียกใน
+   transaction ของผู้เรียก (§3.5 ข้อ 2)
+2. **`startFieldApplyRollout(rolloutId, actorId)`** — เริ่มส่งหลัง commit (`autoApplyConfig()` → `pushToCentral()`/mock) ·
+   ส่งไม่ได้ให้จบผ่าน `recordTargetResult()` (§3.5 ข้อ 3)
+3. **ส่งผลกลับเข้าคำขอ** — hook ใน `recordTargetResult()`/`markTargetSkippedOffline()` emit `FIELD_APPLY_RESULT_EVENT`
+   (`field-apply-result`, payload `{ rolloutId, outcome, detail }`) ผ่าน `RolloutEvents` เมื่อ Rollout มีคำขอผูกอยู่ ·
+   ฝั่ง B ฟังไว้แล้ว (ใช้ event แทนให้ campaign import โมดูลของ B กัน circular dependency) (§3.5 ข้อ 5)
+4. **ผูก provider + Campaign ระบบ** — เปลี่ยน `FIELD_APPLY_ROLLOUT_STARTER` ใน `config-apply-request.module.ts` ให้ชี้
+   implementation จริง แล้วลบ `PendingFieldApplyRolloutStarter` · ซ่อน Campaign ระบบจาก Campaign Monitor และสร้างใน
+   production (Q2)
+
+ส่วน Web (การ์ด Approval Center + จำนวนรออนุมัติบน Dashboard, §3.4) เป็นงาน A ตาม §6 เช่นเดิม
