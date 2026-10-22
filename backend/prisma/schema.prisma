@@ -929,6 +929,11 @@ model Firmware {
   objectKey                String
   originalFilename         String
   fileSizeBytes            Int
+  // SHA-256 ของไฟล์ตอนอัปโหลด (hex) — ให้ QA เทียบกับ hash ที่ผู้สร้างไฟล์แจ้งมา
+  // นอกระบบก่อนอนุมัติ จับได้แค่ "ไฟล์ผิด/ไฟล์เสียระหว่างอัปโหลด" ไม่ได้ยืนยัน
+  // ว่าโค้ดในไฟล์ถูกต้อง · nullable เพราะ Firmware ที่อัปโหลดไว้ก่อนฟีเจอร์นี้
+  // ไม่มีค่า (ไม่ย้อนคำนวณจากไฟล์เดิม)
+  checksumSha256           String?
   uploadedBy               String
   uploadedAt               DateTime                   @default(now())
   // Firmware Approval Lifecycle — mirror Config.status/approvedBy (ดู comment

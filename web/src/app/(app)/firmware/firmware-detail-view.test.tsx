@@ -39,6 +39,7 @@ const baseFirmware: Firmware = {
   objectKey: "fw/fw-1.bin",
   originalFilename: "firmware.bin",
   fileSizeBytes: 1024,
+  checksumSha256: "a".repeat(64),
   uploadedBy: "fw-eng-1",
   uploadedAt: "2026-01-01T00:00:00Z",
   approvalStatus: "pending_review",
@@ -65,5 +66,25 @@ describe("FirmwareDetailView — แก้ UUID ดิบที่ 'อัปโ
     render(<FirmwareDetailView firmwareId="fw-1" />);
 
     expect(screen.getByText("unknown-user")).toBeInTheDocument();
+  });
+});
+
+describe("FirmwareDetailView — SHA-256 checksum ให้ QA เทียบก่อนอนุมัติ", () => {
+  it("มี checksum -> โชว์ hash เต็ม", () => {
+    firmwareState.data = baseFirmware;
+
+    render(<FirmwareDetailView firmwareId="fw-1" />);
+
+    expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
+  });
+
+  it("ไม่มี checksum (อัปโหลดก่อนมีฟีเจอร์นี้) -> โชว์ข้อความแทน ไม่ใช่ค่าว่าง", () => {
+    firmwareState.data = { ...baseFirmware, checksumSha256: null };
+
+    render(<FirmwareDetailView firmwareId="fw-1" />);
+
+    expect(
+      screen.getByText("ไม่มี (อัปโหลดก่อนมีฟีเจอร์นี้)"),
+    ).toBeInTheDocument();
   });
 });
