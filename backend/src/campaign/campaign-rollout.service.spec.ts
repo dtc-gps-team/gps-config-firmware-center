@@ -1156,7 +1156,7 @@ describe('CampaignRolloutService', () => {
         expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
       });
 
-      it('Firmware payload เป็น mock เสมอแม้ระบบตั้ง real (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)', async () => {
+      it('Firmware payload เป็น mock เสมอแม้ระบบตั้ง real (ไม่มีเส้นทาง real ให้อุปกรณ์ดึง Firmware เองเลย)', async () => {
         configApplyMode = 'real';
         service = await buildService();
         const firmwareRollout: CampaignRollout = {
@@ -1178,6 +1178,52 @@ describe('CampaignRolloutService', () => {
             applyMode: 'mock',
           }) as Partial<CampaignRollout>,
         });
+      });
+
+      it('Firmware payload ตามโหมดระบบ central ได้จริง (bug ที่เจอตอนทดสอบกับกล่องจริง — ลืมอัปเดต release() ตอนเพิ่ม central push ของ Firmware ใน #362)', async () => {
+        configApplyMode = 'central';
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-REGRESSION',
+          }),
+        };
+        service = await buildService();
+        const firmwareRollout: CampaignRollout = {
+          ...approvedRollout,
+          payloadType: CampaignPayloadType.Firmware,
+          configId: null,
+          firmwareId: storedFirmware.id,
+        };
+        campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...firmwareRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([
+          {
+            id: 't-fw-1',
+            rolloutId: firmwareRollout.id,
+            deviceId: installedDeviceB.deviceId,
+          },
+        ]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(Buffer.from('bin'));
+
+        await service.release(firmwareRollout.id, otherOperation);
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: firmwareRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            applyMode: 'central',
+          }) as Partial<CampaignRollout>,
+        });
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          expect.any(Buffer),
+          { firmwareVersion: storedFirmware.version },
+        );
       });
 
       it('Rollout ที่มี applyMode อยู่แล้ว (Rollback สืบทอดมา) -> คงค่าเดิม ไม่ใช้โหมดระบบ', async () => {

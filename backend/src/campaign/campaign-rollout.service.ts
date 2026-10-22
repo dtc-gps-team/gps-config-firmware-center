@@ -513,10 +513,11 @@ export class CampaignRolloutService {
   async release(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const existing = await this.findOne(id); // 404 ถ้าไม่พบ
 
-    // โหมดของ Rollout นี้ (docs/19 §3): Config ตามโหมดของระบบตอนปล่อย ส่วน
-    // Firmware เป็น 'mock' เสมอในรอบนี้ (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)
-    // Rollback สืบทอดค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้
-    // ค่าที่มีอยู่ก่อน
+    // โหมดของ Rollout นี้ (docs/19 §3): Config ตามโหมดของระบบตอนปล่อยตรงๆ ส่วน
+    // Firmware ไม่มีเส้นทาง `real` (ไม่มี PULL ให้อุปกรณ์ดึง Firmware เองเลย
+    // ต่างจาก Config) จึงตามโหมดระบบได้แค่กรณี `central` เท่านั้น (ส่งผ่าน
+    // Server กลางจริงตั้งแต่ #362) นอกนั้นเป็น `mock` เสมอ — Rollback สืบทอด
+    // ค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้ค่าที่มีอยู่ก่อน
     const applyMode: ConfigApplyMode =
       existing.applyMode === 'real' ||
       existing.applyMode === 'mock' ||
@@ -524,7 +525,9 @@ export class CampaignRolloutService {
         ? existing.applyMode
         : existing.payloadType === 'Config'
           ? this.configApplyMode
-          : 'mock';
+          : this.configApplyMode === 'central'
+            ? 'central'
+            : 'mock';
 
     // race condition — mirror approve()/resume() ทุกประการ กดปล่อยซ้ำ (เช่น
     // double-click หรือ client retry หลัง timeout) จะวน dispatchAutoApply()
