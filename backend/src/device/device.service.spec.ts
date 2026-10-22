@@ -18,6 +18,7 @@ import {
   DEVICE_CONNECTION_TESTER,
   DeviceConnectionTester,
 } from './device-connection-tester';
+import { CentralDeviceService } from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { ActingUser, DeviceService } from './device.service';
@@ -196,7 +197,7 @@ describe('DeviceService', () => {
   };
   let config: { findUnique: jest.Mock };
   let task: { findFirst: jest.Mock };
-  let firmware: { findUnique: jest.Mock };
+  let firmware: { findUnique: jest.Mock; findFirst: jest.Mock };
   let deviceConfigOverride: {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
@@ -223,6 +224,7 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
   let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
+  let centralDeviceService: { findDevice: jest.Mock };
   // ค่าเริ่มต้นเป็น mock เสมอ (CLAUDE.md Mock Mode Pattern) — เทสที่ต้องการ
   // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
   let deviceConfigApplyMode: string | undefined;
@@ -239,7 +241,7 @@ describe('DeviceService', () => {
     campaignRolloutTarget = { findFirst: jest.fn().mockResolvedValue(null) };
     config = { findUnique: jest.fn() };
     task = { findFirst: jest.fn() };
-    firmware = { findUnique: jest.fn() };
+    firmware = { findUnique: jest.fn(), findFirst: jest.fn() };
     deviceConfigOverride = {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
@@ -269,6 +271,12 @@ describe('DeviceService', () => {
     user = { findMany: jest.fn().mockResolvedValue([]) };
     notificationService = { send: jest.fn().mockResolvedValue(undefined) };
     deviceModelService = { findOne: jest.fn() };
+    // default: ไม่รู้จักกล่อง (เหมือนกล่องที่ยังไม่เคยเชื่อมต่อ Server กลาง) —
+    // register() ที่ไม่ใส่ initialFirmwareId จะไม่ seed อะไรให้ตามพฤติกรรม
+    // เดิม เว้นแต่เทสตั้ง mockResolvedValue เองเพื่อทดสอบ auto-detect
+    centralDeviceService = {
+      findDevice: jest.fn().mockResolvedValue({ device: null }),
+    };
     customer = { findUnique: jest.fn() };
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
@@ -326,6 +334,7 @@ describe('DeviceService', () => {
         },
         { provide: NotificationService, useValue: notificationService },
         { provide: DeviceModelService, useValue: deviceModelService },
+        { provide: CentralDeviceService, useValue: centralDeviceService },
         {
           provide: NestConfigService,
           useValue: {
@@ -768,12 +777,76 @@ describe('DeviceService', () => {
       });
     });
 
-    it('ไม่ส่ง initialFirmwareId มา -> ไม่เรียก firmware.findUnique และไม่ตั้ง partitionAFirmwareId (พฤติกรรมเดิม)', async () => {
+    it('ไม่ส่ง initialFirmwareId มา และ Server กลางไม่รู้จักกล่อง -> ไม่ตั้ง partitionAFirmwareId (พฤติกรรมเดิม)', async () => {
       await service.register(registerDto, admin);
 
+      expect(centralDeviceService.findDevice).toHaveBeenCalledWith(
+        registerDto.deviceId,
+      );
       expect(firmware.findUnique).not.toHaveBeenCalled();
       const calls = device.create.mock.calls as { data: object }[][];
       expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
+    });
+
+    // พี่เลี้ยงแนะนำ (#362 ส่วนขยาย Rollback) — กล่องที่เคยเชื่อมต่อ Server
+    // กลางมาก่อนลงทะเบียนในระบบเรา (auto-register ด้วย token ร่วม) มีรายงาน
+    // เวอร์ชันที่รันอยู่จริงอยู่แล้ว ดึงมา resolve เป็น Firmware ของเราเอง
+    // seed ให้โดยไม่ต้องให้ staff พิมพ์เอง
+    it('ไม่ส่ง initialFirmwareId มา แต่ Server กลางรู้จักกล่องและรายงานเวอร์ชันที่ตรงกับ Firmware ในคลัง -> auto-detect seed ให้', async () => {
+      centralDeviceService.findDevice.mockResolvedValue({
+        device: { reportedFirmwareVersion: readyFirmware.version },
+      });
+      firmware.findFirst.mockResolvedValue({ id: readyFirmware.id });
+
+      await service.register(registerDto, admin);
+
+      expect(firmware.findFirst).toHaveBeenCalledWith({
+        where: {
+          version: readyFirmware.version,
+          deviceModelCompatibility: { has: gt06nModel.name },
+        },
+        select: { id: true },
+      });
+      expect(device.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          partitionAFirmwareId: readyFirmware.id,
+        }) as object,
+      });
+    });
+
+    it('Server กลางรู้จักกล่องแต่เวอร์ชันที่รายงานไม่มีอยู่ในคลัง Firmware ของเรา -> ไม่ seed, ไม่ throw', async () => {
+      centralDeviceService.findDevice.mockResolvedValue({
+        device: { reportedFirmwareVersion: 'UNKNOWN-9.9.9' },
+      });
+      firmware.findFirst.mockResolvedValue(null);
+
+      await service.register(registerDto, admin);
+
+      const calls = device.create.mock.calls as { data: object }[][];
+      expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
+    });
+
+    it('ติดต่อ Server กลางไม่ได้ (throw) -> จับไว้เฉยๆ ลงทะเบียนสำเร็จตามปกติ ไม่ seed', async () => {
+      centralDeviceService.findDevice.mockRejectedValue(
+        new Error('เชื่อมต่อ Server กลางไม่ได้'),
+      );
+
+      const result = await service.register(registerDto, admin);
+
+      expect(result).toMatchObject(createdDevice);
+      const calls = device.create.mock.calls as { data: object }[][];
+      expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
+    });
+
+    it('ส่ง initialFirmwareId มาเอง -> ไม่เรียก centralDeviceService.findDevice เลย (explicit ชนะ auto-detect)', async () => {
+      firmware.findUnique.mockResolvedValue(readyFirmware);
+
+      await service.register(
+        { ...registerDto, initialFirmwareId: readyFirmware.id },
+        admin,
+      );
+
+      expect(centralDeviceService.findDevice).not.toHaveBeenCalled();
     });
 
     it('initialFirmwareId ไม่พบในระบบ -> NotFoundException ไม่เรียก device.create', async () => {

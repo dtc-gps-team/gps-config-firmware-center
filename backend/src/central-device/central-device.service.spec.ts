@@ -11,6 +11,7 @@ const unusedClientMethods = {
   putDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   getCommand: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   pushFirmware: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
+  listDeviceCommands: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
 };
 
 function makeService(client: CentralDeviceClient, mode = 'mock') {
@@ -242,6 +243,7 @@ describe('pushConfig', () => {
       }),
       getCommand: jest.fn(),
       pushFirmware: jest.fn(),
+      listDeviceCommands: jest.fn(),
       ...over,
     };
     return client;
@@ -368,6 +370,7 @@ describe('getCommandOutcome', () => {
     getSchema: jest.fn(),
     putDeviceConfig: jest.fn(),
     pushFirmware: jest.fn(),
+    listDeviceCommands: jest.fn(),
   };
 
   it('แปลงสถานะคำสั่งของ Server กลาง', async () => {
@@ -407,5 +410,121 @@ describe('getCommandOutcome', () => {
     const out = await makeService(client).getCommandOutcome('CMD-7');
     expect(out.kind).toBe('failed');
     expect((out as { detail: string }).detail).toContain('CMD-7');
+  });
+});
+
+// #362 ส่วนขยาย Rollback (พี่เลี้ยงแนะนำ) — fallback หา Firmware เดิมจาก
+// ประวัติคำสั่งของ Server กลางเองตอน Rollback ไม่มีบันทึกในระบบเราเลย
+describe('findPreviousSuccessfulFirmwareVersion', () => {
+  const base = {
+    listRegistryDevices: () => Promise.resolve([]),
+    getSchema: jest.fn(),
+    putDeviceConfig: jest.fn(),
+    getCommand: jest.fn(),
+    pushFirmware: jest.fn(),
+  };
+
+  it('เจอคำสั่งอัปเดต Firmware ล่าสุดที่ SUCCESS และเวอร์ชันต่างจากปัจจุบัน -> คืนเวอร์ชันนั้น', async () => {
+    const client: CentralDeviceClient = {
+      ...base,
+      listGatewayDevices: () =>
+        Promise.resolve([
+          {
+            device_id: 'BOX-0001',
+            online: true,
+            firmware_version_reported: '1.1.0',
+          },
+        ]),
+      listDeviceCommands: jest.fn().mockResolvedValue([
+        {
+          command_id: 'CMD-3',
+          device_id: 'BOX-0001',
+          action: 'UPDATE_FIRMWARE',
+          status: 'SUCCESS',
+          target_firmware_version: '1.1.0', // ตัวที่กำลังรันอยู่ ไม่ใช่คำตอบ
+        },
+        {
+          command_id: 'CMD-2',
+          device_id: 'BOX-0001',
+          action: 'UPDATE_FIRMWARE',
+          status: 'FAILED',
+          target_firmware_version: '1.2.0', // พังไปแล้ว ไม่ใช่คำตอบ
+        },
+        {
+          command_id: 'CMD-1',
+          device_id: 'BOX-0001',
+          action: 'UPDATE_FIRMWARE',
+          status: 'SUCCESS',
+          target_firmware_version: '1.0.0', // คำตอบที่ถูกต้อง
+        },
+      ]),
+    };
+
+    const result =
+      await makeService(client).findPreviousSuccessfulFirmwareVersion(
+        'BOX-0001',
+      );
+
+    expect(result).toBe('1.0.0');
+  });
+
+  it('ไม่รู้จักกล่องเลย -> null', async () => {
+    const client: CentralDeviceClient = {
+      ...base,
+      listGatewayDevices: () => Promise.resolve([]),
+      listDeviceCommands: jest.fn(),
+    };
+
+    const result =
+      await makeService(client).findPreviousSuccessfulFirmwareVersion('NOPE');
+
+    expect(result).toBeNull();
+    expect(client.listDeviceCommands).not.toHaveBeenCalled();
+  });
+
+  it('ติดต่อ Server กลางไม่ได้ (throw) -> null ไม่ throw ต่อ', async () => {
+    const client: CentralDeviceClient = {
+      ...base,
+      listGatewayDevices: () =>
+        Promise.reject(new CentralUnavailableError('x')),
+      listDeviceCommands: jest.fn(),
+    };
+
+    const result =
+      await makeService(client).findPreviousSuccessfulFirmwareVersion(
+        'BOX-0001',
+      );
+
+    expect(result).toBeNull();
+  });
+
+  it('มีประวัติแต่ไม่มีรายการ SUCCESS ที่เวอร์ชันต่างจากปัจจุบันเลย -> null', async () => {
+    const client: CentralDeviceClient = {
+      ...base,
+      listGatewayDevices: () =>
+        Promise.resolve([
+          {
+            device_id: 'BOX-0001',
+            online: true,
+            firmware_version_reported: '1.0.0',
+          },
+        ]),
+      listDeviceCommands: jest.fn().mockResolvedValue([
+        {
+          command_id: 'CMD-1',
+          device_id: 'BOX-0001',
+          action: 'UPDATE_FIRMWARE',
+          status: 'SUCCESS',
+          target_firmware_version: '1.0.0',
+        },
+      ]),
+    };
+
+    const result =
+      await makeService(client).findPreviousSuccessfulFirmwareVersion(
+        'BOX-0001',
+      );
+
+    expect(result).toBeNull();
   });
 });

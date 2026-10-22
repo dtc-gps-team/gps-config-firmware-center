@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
+import { CentralDeviceService } from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -199,6 +200,7 @@ export class DeviceService {
     private readonly notificationService: NotificationService,
     private readonly deviceModelService: DeviceModelService,
     private readonly nestConfig: NestConfigService,
+    private readonly centralDeviceService: CentralDeviceService,
   ) {}
 
   /**
@@ -399,6 +401,30 @@ export class DeviceService {
         );
       }
       initialFirmware = firmware;
+    } else {
+      // staff ไม่ได้ระบุมา — ลองดึง `reported.firmware_version` จาก Server
+      // กลางอัตโนมัติ (พี่เลี้ยงแนะนำ, #362 ส่วนขยาย Rollback) กล่องที่เคย
+      // เชื่อมต่อ Server กลางมาก่อนลงทะเบียนในระบบเรา (auto-register ด้วย
+      // token ร่วม — ดู ws-gateway/src/ws.js) จะมีรายงานเวอร์ชันที่รันอยู่จริง
+      // อยู่แล้ว **เป็น best-effort ล้วนๆ** — ติดต่อไม่ได้/ไม่รู้จักกล่อง/หา
+      // Firmware ที่ตรงในคลังเราไม่เจอ ก็ไม่ throw แค่ไม่ seed ให้ (เหมือนเดิม
+      // ทุกประการ — ไม่ควรทำให้ลงทะเบียนล้มเพราะ Server กลางมีปัญหา)
+      try {
+        const { device: centralDevice } =
+          await this.centralDeviceService.findDevice(dto.deviceId);
+        if (centralDevice?.reportedFirmwareVersion) {
+          initialFirmware = await this.prisma.firmware.findFirst({
+            where: {
+              version: centralDevice.reportedFirmwareVersion,
+              deviceModelCompatibility: { has: model.name },
+            },
+            select: { id: true },
+          });
+        }
+      } catch {
+        // เงียบๆ ตามนโยบาย CentralDeviceService (อ่านอย่างเดียว ไม่โยน error
+        // ออกไปให้ฟีเจอร์อื่น) — ไม่พบก็ไม่เป็นไร ลงทะเบียนต่อตามปกติ
+      }
     }
 
     const apiKey = randomBytes(32).toString('hex');

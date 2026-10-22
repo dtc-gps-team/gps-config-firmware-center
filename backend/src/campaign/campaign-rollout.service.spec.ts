@@ -146,7 +146,7 @@ describe('CampaignRolloutService', () => {
     findUniqueOrThrow: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
-  let firmware: { findUnique: jest.Mock };
+  let firmware: { findUnique: jest.Mock; findFirst: jest.Mock };
   let device: {
     findMany: jest.Mock;
     findUnique: jest.Mock;
@@ -170,7 +170,11 @@ describe('CampaignRolloutService', () => {
   let configApplyMode: ConfigApplyMode;
   let rolloutEvents: RolloutEvents;
   // ตัวส่ง Config ไป Server กลาง — null = ไม่ได้ต่อ (provider ถูก @Optional)
-  let central: { pushConfig: jest.Mock; pushFirmware: jest.Mock } | null;
+  let central: {
+    pushConfig: jest.Mock;
+    pushFirmware: jest.Mock;
+    findPreviousSuccessfulFirmwareVersion?: jest.Mock;
+  } | null;
   // ดาวน์โหลดไฟล์ Firmware จาก Object Storage — ใช้แค่ตอน push ให้ Server กลาง
   let firmwareStorage: { downloadObject: jest.Mock };
 
@@ -240,7 +244,10 @@ describe('CampaignRolloutService', () => {
       findUniqueOrThrow: jest.fn(),
     };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
-    firmware = { findUnique: jest.fn().mockResolvedValue(storedFirmware) };
+    firmware = {
+      findUnique: jest.fn().mockResolvedValue(storedFirmware),
+      findFirst: jest.fn(),
+    };
     device = {
       findMany: jest
         .fn()
@@ -2932,6 +2939,85 @@ describe('CampaignRolloutService', () => {
       });
 
       it('พาร์ทิชันที่ไม่ active ของอุปกรณ์ตัวแทนไม่มี Firmware เลย -> BadRequestException', async () => {
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+
+        await expect(
+          service.rollback(campaignId, badFirmwareRollout.id, {}, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(campaignRollout.create).not.toHaveBeenCalled();
+      });
+
+      // fallback พี่เลี้ยงแนะนำ — Dual Partition bookkeeping ของเราไม่มีของเก่า
+      // เลย (เช่นอุปกรณ์ลงทะเบียนก่อนมี initialFirmwareId) ไปถามประวัติคำสั่ง
+      // จาก Server กลางตรงๆ แทน
+      it('ไม่มีของเก่าใน Dual Partition bookkeeping เลย -> fallback ถามประวัติ Server กลาง เจอเวอร์ชันเดิม -> ใช้เวอร์ชันนั้น', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn(),
+          findPreviousSuccessfulFirmwareVersion: jest
+            .fn()
+            .mockResolvedValue('1.0.0'),
+        };
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+        firmware.findFirst.mockResolvedValue({ id: 'fw-old-from-central' });
+        campaignRollout.create.mockResolvedValue({
+          ...badFirmwareRollout,
+          id: 'rollout-new',
+          status: 'pending_approval',
+          configId: null,
+          firmwareId: 'fw-old-from-central',
+          isRollback: true,
+          rollbackOfId: badFirmwareRollout.id,
+          targetCount: 2,
+          createdBy: operation.id,
+        });
+
+        await service.rollback(
+          campaignId,
+          badFirmwareRollout.id,
+          {},
+          operation,
+        );
+
+        expect(
+          central.findPreviousSuccessfulFirmwareVersion,
+        ).toHaveBeenCalledWith(installedDeviceA.deviceId);
+        expect(firmware.findFirst).toHaveBeenCalledWith({
+          where: {
+            version: '1.0.0',
+            deviceModelCompatibility: { has: installedDeviceA.deviceModel },
+          },
+          select: { id: true },
+        });
+        expect(campaignRollout.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            firmwareId: 'fw-old-from-central',
+          }) as Partial<CampaignRollout>,
+        });
+      });
+
+      it('fallback ถาม Server กลางแล้วก็ไม่เจออะไรที่ตรงในคลัง Firmware ของเรา -> ยัง BadRequestException', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn(),
+          findPreviousSuccessfulFirmwareVersion: jest
+            .fn()
+            .mockResolvedValue(null),
+        };
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
         device.findUnique.mockResolvedValue({
           ...installedDeviceA,
           activePartition: 'A',

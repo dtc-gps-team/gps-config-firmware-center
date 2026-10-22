@@ -244,6 +244,35 @@ export class CentralDeviceService {
     }
   }
 
+  /**
+   * fallback หา Firmware เดิมตอน Rollback ไม่มีบันทึกในระบบเราเลย (#362
+   * ส่วนขยาย, พี่เลี้ยงแนะนำ) — ไล่ประวัติคำสั่งจาก Server กลางเอง (ground
+   * truth จริง ไม่ต้องพึ่งข้อมูลที่เราบันทึกเอง) หาคำสั่งอัปเดต Firmware
+   * ล่าสุดที่ `SUCCESS` และเวอร์ชันต่างจากที่กล่องรายงานว่ารันอยู่ตอนนี้ ·
+   * **best-effort ล้วนๆ เหมือน method อื่นในคลาสนี้** — ติดต่อไม่ได้/ไม่รู้จัก
+   * กล่อง/ไม่มีประวัติที่เข้าเกณฑ์ -> `null` เสมอ ไม่ throw ให้ผู้เรียกต้อง
+   * ตัดสินเองว่าจะแจ้ง error อะไรต่อ (ดู `CampaignRolloutService.rollback()`)
+   */
+  async findPreviousSuccessfulFirmwareVersion(
+    deviceId: string,
+  ): Promise<string | null> {
+    try {
+      const { device } = await this.findDevice(deviceId);
+      if (!device) return null;
+      const commands = await this.client.listDeviceCommands(deviceId);
+      const match = commands.find(
+        (c) =>
+          c.action === 'UPDATE_FIRMWARE' &&
+          c.status === 'SUCCESS' &&
+          c.target_firmware_version &&
+          c.target_firmware_version !== device.reportedFirmwareVersion,
+      );
+      return match?.target_firmware_version ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async fetchDevices(): Promise<CentralDeviceList> {
     const base = { mode: this.mode, fetchedAt: new Date().toISOString() };
     try {

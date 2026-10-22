@@ -1098,17 +1098,41 @@ export class CampaignRolloutService {
       const representativeDevice = await this.prisma.device.findUnique({
         where: { deviceId: representativeDeviceId },
       });
-      const inactivePartitionFirmwareId = representativeDevice
+      let resolvedFirmwareId = representativeDevice
         ? representativeDevice.activePartition === 'A'
           ? representativeDevice.partitionBFirmwareId
           : representativeDevice.partitionAFirmwareId
         : null;
-      if (!inactivePartitionFirmwareId) {
+
+      // fallback: บันทึกของเราไม่มีของเก่าเลย (เช่นอุปกรณ์ลงทะเบียนก่อนมี
+      // `initialFirmwareId`) — ลองถามประวัติคำสั่งจาก Server กลางตรงๆ
+      // (ground truth จริง) แทนที่จะยอมแพ้เลย · `this.central` เป็น Optional
+      // (มีแค่ตอน CentralDeviceModule ถูก import จริง — ปกติใช่เสมอ)
+      if (!resolvedFirmwareId && representativeDevice && this.central) {
+        const previousVersion =
+          await this.central.findPreviousSuccessfulFirmwareVersion(
+            representativeDeviceId,
+          );
+        if (previousVersion) {
+          const matchedFirmware = await this.prisma.firmware.findFirst({
+            where: {
+              version: previousVersion,
+              deviceModelCompatibility: {
+                has: representativeDevice.deviceModel,
+              },
+            },
+            select: { id: true },
+          });
+          resolvedFirmwareId = matchedFirmware?.id ?? null;
+        }
+      }
+
+      if (!resolvedFirmwareId) {
         throw new BadRequestException(
-          `ไม่พบ Firmware เดิมบนพาร์ทิชันที่ไม่ active ของอุปกรณ์ ${representativeDeviceId} ให้ย้อนกลับไป (ไม่เคยบันทึกไว้ หรือกล่องยังไม่เคยเปลี่ยน Firmware ผ่านระบบมาก่อน)`,
+          `ไม่พบ Firmware เดิมให้ย้อนกลับไปสำหรับอุปกรณ์ ${representativeDeviceId} (ไม่เคยบันทึกไว้ในระบบ, กล่องยังไม่เคยเปลี่ยน Firmware ผ่านระบบมาก่อน, และหาจากประวัติ Server กลางไม่เจอ)`,
         );
       }
-      firmwareId = inactivePartitionFirmwareId;
+      firmwareId = resolvedFirmwareId;
     }
 
     const rollback = await this.prisma.$transaction(async (tx) => {

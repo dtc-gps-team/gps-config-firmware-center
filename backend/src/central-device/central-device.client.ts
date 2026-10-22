@@ -55,6 +55,11 @@ export interface CentralDeviceClient {
     data: Buffer,
     options: PushFirmwareOptions,
   ) => Promise<RawPushFirmwareResult>;
+  /** ประวัติคำสั่งทั้งหมดของกล่องเครื่องเดียว เรียงล่าสุดก่อน (`GET
+   * /api/gw/devices/{id}/commands` ของ ws-gateway) — ใช้เป็น fallback หา
+   * Firmware เดิมตอน Rollback ไม่มีบันทึกในระบบเราเลย (#362 ส่วนขยาย,
+   * พี่เลี้ยงแนะนำ) */
+  listDeviceCommands: (deviceId: string) => Promise<RawCentralCommand[]>;
 }
 
 /**
@@ -213,6 +218,15 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
       message: `ส่งคำสั่งอัปเดตให้กล่องแล้ว (mock) — v${options.firmwareVersion}`,
     });
   };
+
+  // mock ไม่มีประวัติจริงให้ fallback (ไม่เคยเกิดในทางปฏิบัติเพราะ mock ไม่มี
+  // กล่องจริงให้ประวัติหายได้) — คืนค่าว่างเสมอ ปล่อยให้ fallback ไม่พบอะไร
+  listDeviceCommands = (deviceId: string): Promise<RawCentralCommand[]> =>
+    Promise.resolve(
+      [...this.commands.values()]
+        .filter((c) => c.device_id === deviceId)
+        .reverse(),
+    );
 }
 
 export interface HttpCentralClientOptions {
@@ -280,6 +294,11 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
       headers,
     );
   };
+
+  listDeviceCommands = (deviceId: string): Promise<RawCentralCommand[]> =>
+    this.getJson<RawCentralCommand[]>(
+      `/api/gw/devices/${encodeURIComponent(deviceId)}/commands`,
+    );
 
   private getJson<T>(path: string): Promise<T> {
     return this.sendJson<T>(path, {});
