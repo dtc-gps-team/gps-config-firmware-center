@@ -921,8 +921,7 @@ class DeviceStatus {
 }
 
 /// ลูกค้าแบบย่อ — mirrors `GET /customers` (`CustomerSummary` backend-side,
-/// issue #204) id + ชื่อบริษัทเท่านั้น ใช้เป็นรายการให้เลือกก่อนดูอุปกรณ์ของ
-/// บริษัทนั้นในหน้า "ทดสอบสัญญาณ" (เลือกบริษัท → เห็นอุปกรณ์ของบริษัทนั้น)
+/// issue #204) id + ชื่อบริษัทเท่านั้น ใช้เป็น `Device.customer`
 class Customer {
   const Customer({required this.id, required this.companyName});
 

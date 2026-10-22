@@ -156,7 +156,7 @@
   --secondary: oklch(0.957 0.006 255.5); /* #EEF1F5 */
   --secondary-foreground: oklch(0.267 0.028 248.9);
   --muted: oklch(0.957 0.006 255.5);
-  --muted-foreground: oklch(0.49 0.028 259.8); /* ≈#5A6473 เข้มขึ้นจาก #667080 ตอนเปลี่ยนเป็น Anuphan ที่เส้นบางกว่า */
+  --muted-foreground: oklch(0.49 0.028 259.8); /* ≈#576171 เข้มขึ้นจาก #667080 ตอนเปลี่ยนเป็น Anuphan ที่เส้นบางกว่า */
   --accent: oklch(0.961 0.011 243.7); /* #ECF3F9 pale blue — hover fills, selected rows */
   --accent-foreground: oklch(0.313 0.06 243.7); /* #12344D */
   --destructive: oklch(0.577 0.245 27.325);

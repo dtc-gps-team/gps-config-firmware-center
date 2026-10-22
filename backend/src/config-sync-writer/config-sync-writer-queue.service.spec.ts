@@ -85,6 +85,51 @@ describe('ConfigSyncWriterQueue', () => {
     expect(failed).not.toHaveBeenCalled();
   });
 
+  it('สำเร็จ — emit sync-succeeded พร้อม configId และเวอร์ชัน', async () => {
+    writer.writeConfigToLegacySystem.mockResolvedValue(undefined);
+    const succeeded = jest.fn();
+    queue.on('sync-succeeded', succeeded);
+
+    queue.enqueueConfigSync(write());
+    await pending('cfg-1');
+
+    expect(succeeded).toHaveBeenCalledTimes(1);
+    expect(succeeded).toHaveBeenCalledWith({
+      configId: 'cfg-1',
+      versionNumber: write().versionNumber,
+    });
+  });
+
+  it('พังครบ 3 ครั้ง — ไม่ emit sync-succeeded', async () => {
+    writer.writeConfigToLegacySystem.mockRejectedValue(new Error('down'));
+    const succeeded = jest.fn();
+    queue.on('sync-succeeded', succeeded);
+    queue.on('sync-failed', jest.fn());
+
+    queue.enqueueConfigSync(write());
+    const p = pending('cfg-1');
+    // backoff รวม 500 + 1000 = 1500ms (retry ครบ 3 ครั้ง)
+    await jest.advanceTimersByTimeAsync(1500);
+    await p;
+
+    expect(succeeded).not.toHaveBeenCalled();
+  });
+
+  it('listener ของ sync-succeeded throw (sync) — ไม่ทำให้ job นับเป็นล้มเหลวหรือ retry ซ้ำ', async () => {
+    writer.writeConfigToLegacySystem.mockResolvedValue(undefined);
+    const failed = jest.fn();
+    queue.on('sync-failed', failed);
+    queue.on('sync-succeeded', () => {
+      throw new Error('listener พัง');
+    });
+
+    queue.enqueueConfigSync(write());
+    await pending('cfg-1');
+
+    expect(writer.writeConfigToLegacySystem).toHaveBeenCalledTimes(1);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
   it('พังแล้วสำเร็จตอน attempt 2 — เรียก writer 2 ครั้ง มี backoff คั่น ไม่ emit', async () => {
     writer.writeConfigToLegacySystem
       .mockRejectedValueOnce(new Error('timeout'))

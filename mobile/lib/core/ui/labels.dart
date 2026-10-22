@@ -5,8 +5,7 @@ import '../api/models.dart';
 // Web เป็นไทย) · ไม่มีคู่เทียบ → คงไทยเดิม · ใช้ switch ครบทุกค่าของ enum
 //
 // เพิ่มทีละกลุ่มตามหน้าที่ย้ายมา design system ใหม่ — กลุ่ม Incident (Batch 2),
-// Task + Role (Batch 3) · หน้าที่ยังไม่ย้าย (เช่น Field Report) ยังใช้
-// `IncidentStyle` เดิม
+// Task + Role (Batch 3), Device + payload (Batch 4)
 
 /// docs/22 §6.1 — Web: `Open` / `Investigating` / `Resolved` อังกฤษ ·
 /// `Rollback แล้ว` / `ไม่ต้องดำเนินการ` Web เป็นไทย คงตาม Web
@@ -24,6 +23,26 @@ String incidentSeverityLabel(IncidentSeverity severity) => switch (severity) {
   IncidentSeverity.high => 'High',
   IncidentSeverity.medium => 'Medium',
   IncidentSeverity.low => 'Low',
+};
+
+/// docs/22 §6.1 — Device lifecycle ตาม Web + ตัวแรกพิมพ์ใหญ่ (Batch 4)
+String deviceLifecycleLabel(DeviceLifecycleStatus status) => switch (status) {
+  DeviceLifecycleStatus.registered => 'Registered',
+  DeviceLifecycleStatus.installed => 'Installed',
+  DeviceLifecycleStatus.decommissioned => 'Decommissioned',
+};
+
+/// docs/22 §6.1 — payload status (`configStatus` / `firmwareStatus`) Web เป็นไทย
+/// คงตาม Web · `pending` Web แยกคำตามชนิด payload ([firmware] = payload Firmware)
+String devicePayloadLabel(
+  DevicePayloadStatus status, {
+  required bool firmware,
+}) => switch (status) {
+  DevicePayloadStatus.upToDate => 'เป็นปัจจุบัน',
+  DevicePayloadStatus.pending =>
+    firmware ? 'รอติดตั้ง Firmware' : 'รอรับ Config',
+  DevicePayloadStatus.failed => 'ล้มเหลว',
+  DevicePayloadStatus.unknown => 'ยังไม่เคยอยู่ใน Rollout',
 };
 
 /// docs/22 §6 — Task status ไม่มีคู่เทียบใน Web คงไทยเดิม (`TaskStatusStyle.label`
