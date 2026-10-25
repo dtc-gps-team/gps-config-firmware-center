@@ -12,12 +12,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 import {
+  FIELD_APPLY_RESULT_EVENT,
   ROLLOUT_FAILED_EVENT,
   ROLLOUT_RESULT_UPDATED_EVENT,
   ROLLOUT_STATUS_CHANGED_EVENT,
   RolloutEvents,
+  type FieldApplyResultEvent,
   type RolloutFailedEvent,
   type RolloutResultUpdatedEvent,
   type RolloutStatusChangedEvent,
@@ -3411,7 +3414,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
         where: { id: pendingTarget.id, status: 'pending' },
@@ -3449,7 +3454,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
     });
 
@@ -3479,7 +3486,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
     });
 
@@ -3520,7 +3529,9 @@ describe('CampaignRolloutService', () => {
               configId: approvedConfig.id,
             },
           },
-          include: { rollout: true },
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         // ครั้งที่สอง (fallback) ไม่มี rolloutId — match ด้วย payload เหมือนก่อน #264
         expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(2, {
@@ -3532,7 +3543,9 @@ describe('CampaignRolloutService', () => {
               configId: approvedConfig.id,
             },
           },
-          include: { rollout: true },
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
           where: { id: pendingTarget.id, status: 'pending' },
@@ -3951,11 +3964,13 @@ describe('CampaignRolloutService', () => {
     let failedEvents: RolloutFailedEvent[];
     let statusEvents: RolloutStatusChangedEvent[];
     let updatedEvents: RolloutResultUpdatedEvent[];
+    let fieldApplyEvents: FieldApplyResultEvent[];
 
     beforeEach(() => {
       failedEvents = [];
       statusEvents = [];
       updatedEvents = [];
+      fieldApplyEvents = [];
       rolloutEvents.on(
         ROLLOUT_RESULT_UPDATED_EVENT,
         (e: RolloutResultUpdatedEvent) => updatedEvents.push(e),
@@ -3966,6 +3981,9 @@ describe('CampaignRolloutService', () => {
       rolloutEvents.on(
         ROLLOUT_STATUS_CHANGED_EVENT,
         (e: RolloutStatusChangedEvent) => statusEvents.push(e),
+      );
+      rolloutEvents.on(FIELD_APPLY_RESULT_EVENT, (e: FieldApplyResultEvent) =>
+        fieldApplyEvents.push(e),
       );
       // ข้อมูลที่อ่านหลัง commit เพื่อประกอบ event
       campaignRollout.findUnique.mockResolvedValue({
@@ -4217,6 +4235,82 @@ describe('CampaignRolloutService', () => {
       expect(statusEvents).toEqual([]);
     });
 
+    describe('field-apply-result (docs/25 §3.5 ข้อ 5, #370)', () => {
+      it('Rollout เป็นของคำขอส่ง Config หน้างาน (Campaign ระบบ) + สำเร็จ -> ส่ง field-apply-result outcome succeeded', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          ...pendingTarget,
+          rollout: {
+            ...activeRollout,
+            campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          },
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'สำเร็จ',
+        );
+
+        expect(fieldApplyEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            outcome: 'succeeded',
+            detail: 'สำเร็จ',
+          },
+        ]);
+      });
+
+      it('Rollout เป็นของคำขอส่ง Config หน้างาน + ล้มเหลว -> ส่ง field-apply-result outcome failed', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          ...pendingTarget,
+          rollout: {
+            ...activeRollout,
+            campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          },
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          false,
+          'ล้ม',
+        );
+
+        expect(fieldApplyEvents).toEqual([
+          { rolloutId: activeRollout.id, outcome: 'failed', detail: 'ล้ม' },
+        ]);
+      });
+
+      it('Rollout เป็น Campaign ปกติ (ไม่ใช่ระบบคำขอหน้างาน) -> ไม่ส่ง field-apply-result', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+        );
+
+        expect(fieldApplyEvents).toEqual([]);
+      });
+    });
+
     it('listener ที่ throw แบบ sync -> ไม่ทำให้การบันทึกผลล้ม', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       mockCounts({
@@ -4248,6 +4342,7 @@ describe('CampaignRolloutService', () => {
         campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
           id: 'rt-1',
           rolloutId: activeRollout.id,
+          rollout: { campaign: { name: 'กลุ่มรถบรรทุก' } },
         });
         campaignRolloutTarget.count.mockResolvedValueOnce(3); // ยังเหลือ pending
 
@@ -4273,6 +4368,7 @@ describe('CampaignRolloutService', () => {
         campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
           id: 'rt-1',
           rolloutId: activeRollout.id,
+          rollout: { campaign: { name: 'กลุ่มรถบรรทุก' } },
         });
         campaignRolloutTarget.count
           .mockResolvedValueOnce(0) // pending ในทรานแซกชัน
@@ -4301,6 +4397,25 @@ describe('CampaignRolloutService', () => {
 
         expect(result).toBe(false);
         expect(campaignRolloutTarget.count).not.toHaveBeenCalled();
+      });
+
+      it('เป็นของคำขอส่ง Config หน้างาน (Campaign ระบบ) -> ส่ง field-apply-result outcome skipped_offline ด้วย (docs/25 §3.5 ข้อ 5, #370)', async () => {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
+          id: 'rt-1',
+          rolloutId: activeRollout.id,
+          rollout: { campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+        });
+        campaignRolloutTarget.count.mockResolvedValueOnce(3); // ยังเหลือ pending
+
+        await service.markTargetSkippedOffline('rt-1', 'ข้าม');
+
+        expect(fieldApplyEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            outcome: 'skipped_offline',
+            detail: 'ข้าม',
+          },
+        ]);
       });
     });
 

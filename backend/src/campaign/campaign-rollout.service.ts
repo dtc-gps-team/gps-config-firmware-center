@@ -45,7 +45,10 @@ import {
   type PushFirmwareOutcome,
 } from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
-import { getOrCreateFieldApplySystemCampaign } from './field-apply-system-campaign';
+import {
+  FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+  getOrCreateFieldApplySystemCampaign,
+} from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
@@ -55,6 +58,7 @@ import {
 } from './dto/create-campaign-rollout.dto';
 import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import {
+  FIELD_APPLY_RESULT_EVENT,
   MAX_EVENT_FAILED_DEVICE_IDS,
   MAX_EVENT_SAMPLE_ERRORS,
   ROLLOUT_FAILED_EVENT,
@@ -2147,7 +2151,12 @@ export class CampaignRolloutService {
                 : { firmwareId: payload.firmwareId }),
             },
           },
-          include: { rollout: true },
+          // รวม campaign.name มาด้วย (แค่ select name) — ใช้เช็คว่า Rollout
+          // นี้เป็นของคำขอส่ง Config หน้างานไหม (docs/25 §3.5 ข้อ 5) โดยไม่ต้อง
+          // query แยกรอบสอง
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
 
       let target = await findPendingTarget(true);
@@ -2285,6 +2294,19 @@ export class CampaignRolloutService {
           resolveWhenClean: true,
         });
       }
+      // docs/25 §3.5 ข้อ 5 — Rollout เครื่องเดียวของคำขอส่ง Config หน้างาน
+      // (#370) แจ้งผลกลับให้โมดูล config-apply-request ของ B ทาง event แทน
+      // (เช็คชื่อ Campaign ระบบ ไม่ query relation ใหม่ที่ไม่มีฝั่งเรา)
+      if (
+        claimed &&
+        rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME
+      ) {
+        this.rolloutEvents.safeEmit(FIELD_APPLY_RESULT_EVENT, {
+          rolloutId: rollout.id,
+          outcome: success ? 'succeeded' : 'failed',
+          detail,
+        });
+      }
       return claimed;
     } catch (err) {
       this.logger.warn(
@@ -2319,6 +2341,11 @@ export class CampaignRolloutService {
 
         const target = await tx.campaignRolloutTarget.findUniqueOrThrow({
           where: { id: targetId },
+          // campaign.name แค่ select เดียว — เช็คว่าเป็น Rollout ของคำขอส่ง
+          // Config หน้างานไหม (docs/25 §3.5 ข้อ 5) ไม่ query แยกรอบสอง
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         const pendingCount = await tx.campaignRolloutTarget.count({
           where: { rolloutId: target.rolloutId, status: 'pending' },
@@ -2330,15 +2357,25 @@ export class CampaignRolloutService {
           });
           if (closed.count > 0) completedRolloutId = target.rolloutId;
         }
-        return true;
+        return target;
       });
 
-      if (skipped && completedRolloutId) {
+      if (!skipped) return false;
+      if (completedRolloutId) {
         await this.emitFailureOutcome(completedRolloutId, 'completed', {
           resolveWhenClean: true,
         });
       }
-      return skipped;
+      // docs/25 §3.5 ข้อ 5 (#370) — เครื่องที่ไม่มาดึงงานเลยของคำขอส่ง Config
+      // หน้างาน แจ้งผลกลับให้ config-apply-request ของ B เหมือนกรณีอื่น
+      if (skipped.rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) {
+        this.rolloutEvents.safeEmit(FIELD_APPLY_RESULT_EVENT, {
+          rolloutId: skipped.rolloutId,
+          outcome: 'skipped_offline',
+          detail,
+        });
+      }
+      return true;
     } catch (err) {
       this.logger.warn(
         `ข้ามเครื่องที่ไม่มาดึงงานไม่สำเร็จ (target ${targetId}): ${(err as Error).message}`,
