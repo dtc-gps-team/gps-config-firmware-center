@@ -15,7 +15,10 @@ import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canRegisterDevice } from "@/lib/permissions";
+import { useCentralDevices } from "@/hooks/use-central-devices";
 import { useDevices } from "@/hooks/use-devices";
+import type { CentralDevice } from "@/lib/central-device-api";
+import { onlineByDeviceId } from "@/lib/central-device-display";
 import { type Device } from "@/lib/device-api";
 import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
@@ -26,7 +29,19 @@ function textSort(a: Row<Device>, b: Row<Device>, columnId: string): number {
   return String(a.getValue(columnId)).localeCompare(String(b.getValue(columnId)));
 }
 
-const columns: ColumnDef<Device>[] = [
+const CONNECTION_UNKNOWN = "ไม่ทราบ";
+
+/** คอลัมน์ "การเชื่อมต่อ" จาก Server กลาง — เครื่องที่ Server กลางไม่รู้จัก
+ * (หรือติดต่อ Server กลางไม่ได้) แสดง "ไม่ทราบ" ไม่เดาว่าออฟไลน์ */
+function connectionLabel(central: CentralDevice | undefined): string {
+  if (!central) return CONNECTION_UNKNOWN;
+  return central.online ? "ออนไลน์" : "ออฟไลน์";
+}
+
+function buildColumns(
+  centralById: Map<string, CentralDevice>,
+): ColumnDef<Device>[] {
+  return [
   {
     accessorKey: "deviceId",
     header: "Device ID",
@@ -97,13 +112,38 @@ const columns: ColumnDef<Device>[] = [
         <span className="text-muted-foreground">ไม่ระบุ</span>
       ),
   },
-];
+  {
+    id: "connection",
+    accessorFn: (row) => connectionLabel(centralById.get(row.deviceId)),
+    header: "การเชื่อมต่อ",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "การเชื่อมต่อ" },
+    cell: ({ row }) => {
+      const central = centralById.get(row.original.deviceId);
+      if (!central) {
+        return <span className="text-muted-foreground">{CONNECTION_UNKNOWN}</span>;
+      }
+      return (
+        <StatusPill tone={central.online ? "success" : "neutral"}>
+          {connectionLabel(central)}
+        </StatusPill>
+      );
+    },
+  },
+  ];
+}
 
 export function DeviceSearchView() {
   const router = useRouter();
   const { session } = useAuth();
   const { data, isLoading, error, refetch } = useDevices();
   const devices = useMemo(() => data ?? [], [data]);
+  // ข้อมูลเสริมจาก Server กลาง: โหลดไม่ได้ก็แค่ไม่มีคอลัมน์ข้อมูล ตารางหลักไม่กระทบ
+  const { data: central } = useCentralDevices();
+  const columns = useMemo(
+    () => buildColumns(onlineByDeviceId(central?.devices ?? [])),
+    [central],
+  );
 
   return (
     <div className="flex flex-col gap-5">

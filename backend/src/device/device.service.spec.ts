@@ -101,6 +101,7 @@ const readyFirmware: Firmware = {
   objectKey: 'firmware/gt06n/v2.4.1.bin',
   originalFilename: 'gt06n-v2.4.1.bin',
   fileSizeBytes: 2048,
+  checksumSha256: 'a'.repeat(64),
   uploadedBy: 'user-3',
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'approved',
