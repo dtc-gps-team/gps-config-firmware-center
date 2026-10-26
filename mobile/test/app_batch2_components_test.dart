@@ -402,19 +402,37 @@ void main() {
       expect(find.byType(AppSkeletonBox), findsNWidgets(4));
     });
 
-    testWidgets('กล่องสี muted มุม md', (tester) async {
+    // docs/22 §4.6 — shimmer แทนการกะพริบ: พื้น muted มีแถบ shimmerHighlight วิ่งผ่าน
+    testWidgets('กล่อง muted มุม md มีแถบ shimmer วิ่งจากซ้ายไปขวา', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _wrap(const SizedBox(width: 200, child: AppSkeletonBox(height: 16))),
       );
-      final box = tester.widget<Container>(
-        find.descendant(
-          of: find.byType(AppSkeletonBox),
-          matching: find.byType(Container),
-        ),
-      );
-      final deco = box.decoration! as BoxDecoration;
-      expect(deco.color, AppColors.muted);
-      expect(deco.borderRadius, BorderRadius.circular(AppRadius.md));
+      BoxDecoration deco() =>
+          tester
+                  .widget<Container>(
+                    find.descendant(
+                      of: find.byType(AppSkeletonBox),
+                      matching: find.byType(Container),
+                    ),
+                  )
+                  .decoration!
+              as BoxDecoration;
+
+      expect(deco().borderRadius, BorderRadius.circular(AppRadius.md));
+      final gradient = deco().gradient! as LinearGradient;
+      expect(gradient.colors, [
+        AppColors.muted,
+        AppColors.shimmerHighlight,
+        AppColors.muted,
+      ]);
+      Matrix4 shift() => (deco().gradient! as LinearGradient).transform!
+          .transform(const Rect.fromLTWH(0, 0, 200, 16))!;
+      final start = shift().getTranslation().x;
+      await tester.pump(AppMotion.shimmer ~/ 2);
+      expect(shift().getTranslation().x, greaterThan(start));
+      expect(tester.hasRunningAnimations, isTrue);
     });
 
     testWidgets('screen reader อ่านว่า "กำลังโหลด" ไม่อ่านกล่องทีละอัน', (
@@ -426,7 +444,9 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('ตั้งลดการเคลื่อนไหว -> กล่องหยุดนิ่ง ทึบเต็ม', (tester) async {
+    testWidgets('ตั้งลดการเคลื่อนไหว -> กล่องนิ่งสี muted ไม่มี shimmer', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         MediaQuery(
           data: const MediaQueryData(disableAnimations: true),
@@ -436,13 +456,15 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 500));
-      final fade = tester.widget<FadeTransition>(
+      final box = tester.widget<Container>(
         find.descendant(
           of: find.byType(AppSkeletonBox),
-          matching: find.byType(FadeTransition),
+          matching: find.byType(Container),
         ),
       );
-      expect(fade.opacity.value, 1);
+      final deco = box.decoration! as BoxDecoration;
+      expect(deco.color, AppColors.muted);
+      expect(deco.gradient, isNull);
       expect(tester.hasRunningAnimations, isFalse);
     });
   });
