@@ -146,7 +146,7 @@ model ConfigApplyRequest {
 - response 200 คืนคำขอ (`status: approved`)
 
 ### 5.4 ส่งเข้ากล่อง — `POST /config-apply-requests/{id}/release` (ใหม่)
-- resource `config-apply-request` action ใหม่ **`Release`** — ST, OT (RBAC_Matrix + seed permission)
+- resource `config-apply-request` action **`Create`** (ST, OT — กลุ่มเดียวกับขอ/ยกเลิก · ดู §12.1 ข้อ 1)
 - ผู้เรียกต้องเป็น `Task.assignedTo` **ปัจจุบัน** ไม่งั้น 404 (ไม่เปิดเผยว่ามีคำขอ — pattern เดียวกับ cancel)
 
 ตรวจตามลำดับ (ทุกข้อ 409 ยกเว้นระบุ):
@@ -265,6 +265,14 @@ model ConfigApplyRequest {
 | 6 | **B3** Mobile §9 | B | B1 (config), B2 (firmware) |
 
 ระหว่าง B1 merge แล้วแต่ A2 ยังไม่เสร็จ: อนุมัติผ่าน API ได้ (Postman) เหมือนตอนนี้
+
+### 12.1 ที่ปรับตอน implement B1 (#381)
+1. **ไม่เพิ่ม action `Release`** — ใช้ `Create` แทน (§5.4) เพราะ `ActionType` เป็น enum ทั้งระบบ เพิ่มค่าแล้วกระทบ RBAC
+   ทุก resource · กลุ่มคนที่ได้สิทธิ์เท่ากันพอดี (ST/OT) และ service เช็คผู้ถือ Task อีกชั้นเหมือน cancel
+2. **คอลัมน์ฝั่ง Firmware ของ §4** (`kind`, `firmwareId`, `fromFirmwareVersion`, `isDowngrade`, `configId`/`configAssignedBy`
+   nullable) **ย้ายไป B2** — B1 ยังไม่ใช้ ใส่ก่อนต้องเปลี่ยน `configId` เป็น nullable ทั่วโมดูลโดยไม่จำเป็น
+3. **Mobile ส่วน Config (§9 แถว `approved`/ปุ่ม "ส่งเข้ากล่อง"/poll 5 วินาที) อยู่ใน B1 เลย** — parser ของ Mobile
+   throw กับสถานะที่ไม่รู้จัก ถ้า backend deploy ก่อน หน้า Task พังทันที · B3 เหลือเฉพาะส่วน Firmware และซ่อนปุ่มโหมด central
 
 ## 13. เทสที่ต้องมี
 - **SoD:** ผู้ผูก Config อนุมัติเอง 403 · ผู้ขออนุมัติเอง 403 (ทั้ง 2 ชนิด)
