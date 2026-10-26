@@ -30,6 +30,7 @@ import {
   type DeviceHistoryItem,
   type DeviceHistoryType,
 } from "@/lib/device-history-api";
+import { rolloutTargetStatusLabel } from "@/lib/rollout-target-display";
 import {
   CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE,
   DEVICE_STATUS_TONE,
@@ -47,18 +48,6 @@ const OVERRIDE_STATUS_TONE: Record<string, PillTone> = {
   pending: "progress",
   approved: "success",
   rejected: "danger",
-};
-
-/** ป้ายสถานะผลของ rollout ต่อเครื่อง — ซ้ำกับ `rolloutTargetStatusLabel` ของ
- * `rollout-target-display.ts` (#374) ตรงๆ ตั้งใจ: ไฟล์นั้นยังไม่ merge เข้า
- * main ตอนเขียนนี้ จึง inline คำแปลไว้ที่เดียว เอาออกแล้วเรียกไฟล์นั้นแทนได้
- * ทันทีที่ #374 merge (ไม่ใช้ `statusLabel` กลางเพราะ success/failed/pending
- * ไม่มีคำแปลไทยอยู่ในนั้น) */
-const ROLLOUT_TARGET_STATUS_LABEL: Record<string, string> = {
-  pending: "รอผล",
-  success: "สำเร็จ",
-  failed: "ล้มเหลว",
-  skipped_offline: "ข้าม (ออฟไลน์)",
 };
 
 const TYPE_LABEL: Record<DeviceHistoryType, string> = {
@@ -103,13 +92,12 @@ function statusTone(type: string, status: string): PillTone {
   }
 }
 
-/** ป้ายข้อความของสถานะ — rollout ใช้คำแปลไทยเฉพาะ (ดู
- * `ROLLOUT_TARGET_STATUS_LABEL`) ชนิดอื่น fallback เป็น `statusLabel` กลาง
- * เหมือนหน้าอื่นในระบบ (Incident/Task บางสถานะยังไม่มีคำแปลไทย ไม่ใช่ที่นี่
- * ที่ควรไปแก้) */
+/** ป้ายข้อความของสถานะ — rollout ใช้คำแปลไทยเฉพาะของ `rollout-target-display.ts`
+ * (#374) ชนิดอื่น fallback เป็น `statusLabel` กลางเหมือนหน้าอื่นในระบบ
+ * (Incident/Task บางสถานะยังไม่มีคำแปลไทย ไม่ใช่ที่นี่ที่ควรไปแก้) */
 function itemStatusLabel(type: string, status: string): string {
   if (type === "rollout") {
-    return ROLLOUT_TARGET_STATUS_LABEL[status] ?? status;
+    return rolloutTargetStatusLabel(status);
   }
   return statusLabel(status);
 }
