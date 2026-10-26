@@ -3,11 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertOctagonIcon,
   BoxIcon,
   ClockIcon,
+  GitCompareIcon,
   RocketIcon,
   SlidersHorizontalIcon,
   TriangleAlertIcon,
+  WifiOffIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,26 +24,33 @@ import {
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useCampaigns } from "@/hooks/use-campaigns";
+import { useAllCampaignRollouts } from "@/hooks/use-all-campaign-rollouts";
+import { useCentralDevices } from "@/hooks/use-central-devices";
+import { useIncidents } from "@/hooks/use-incidents";
 import { usePausedCampaignRollouts } from "@/hooks/use-paused-campaign-rollouts";
-import { DEMO_DEVICE_OVERVIEW, DEMO_RISK_DASHBOARD } from "@/lib/demo-data";
+import {
+  activeIncidentCount,
+  configDriftCount,
+  connectionSummary,
+  deployTotals,
+} from "@/lib/dashboard-metrics";
 import { toneColorClass, type PillTone } from "@/lib/status-pill";
 
 /**
  * Dashboard — จัดเป็น 3 กลุ่มตาม docs/planning §12.1 (Device Overview /
- * Deployment Overview / Risk Dashboard) — Customer Priority กับ Capacity
- * ไม่มีในนี้ตั้งใจ (ดู comment ที่ demo-data.ts): Customer Priority ไม่เคย
- * ถูกออกแบบไว้ในระบบนี้เลย (ไม่มี field/RBAC รองรับ), Capacity เป็น infra
- * metric ของ config-sync-writer ที่ตัดออกจาก scope งาน A แล้ว
+ * Deployment Overview / Risk Dashboard) · **ทุกตัวเลขมาจากข้อมูลจริง** (ระบบของเราเอง และสถานะ
+ * จริงของกล่องจาก Server กลาง) ไม่มีตัวเลขตายตัว: metric ที่ยังไม่มีแหล่งข้อมูลจริง (Reboot
+ * Loop, Firmware Suspended ฯลฯ) ไม่แสดง แทนที่จะแสดงตัวเลขตัวอย่าง
  *
- * แต่ละกลุ่มผสมการ์ดจริง (ต่อ API แล้ว, มี href คลิกไปหน้าที่เกี่ยวข้องได้) กับ
- * การ์ดตัวอย่าง (มี badge "ตัวอย่าง" กำกับชัดเจน — รอ backend module ที่ยัง
- * ไม่ตัดสินใจ ไม่ใช่ของปลอมที่แกล้งทำเหมือนของจริง)
- *
- * icon badge มุมขวาบน — เทียบกับ mockup UX/UI Design ต้นฉบับที่มี icon badge
- * สีต่างกันทุกการ์ดสรุป แต่ของจริงเป็น label+ตัวเลขเปล่าๆ มาตลอด สีของ badge
- * ใช้ชุดสีเดียวกับ StatusPill (toneColorClass) ไม่คิดสีชุดใหม่แยก
+ * icon badge มุมขวาบนใช้ชุดสีเดียวกับ StatusPill (toneColorClass)
  */
-function CardIconBadge({ icon: Icon, tone }: { icon: LucideIcon; tone: PillTone }) {
+function CardIconBadge({
+  icon: Icon,
+  tone,
+}: {
+  icon: LucideIcon;
+  tone: PillTone;
+}) {
   return (
     <div
       className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneColorClass(tone)}`}
@@ -57,6 +67,7 @@ function LiveSummaryCard({
   error,
   icon,
   tone,
+  unavailable = false,
 }: {
   label: string;
   href: string;
@@ -65,6 +76,8 @@ function LiveSummaryCard({
   error: string | null;
   icon: LucideIcon;
   tone: PillTone;
+  /** แหล่งข้อมูลติดต่อไม่ได้ (เช่น Server กลาง) แสดง "ไม่ทราบ" ไม่ใช่เลข 0 ที่ดูเหมือนปกติ */
+  unavailable?: boolean;
 }) {
   return (
     <Link
@@ -79,6 +92,13 @@ function LiveSummaryCard({
               <span className="text-base font-normal text-destructive">
                 โหลดไม่สำเร็จ
               </span>
+            ) : unavailable ? (
+              <span
+                className="text-base font-normal text-muted-foreground"
+                title="ติดต่อ Server กลางไม่ได้ตอนนี้"
+              >
+                ไม่ทราบ
+              </span>
             ) : value === null ? (
               <span className="text-muted-foreground">…</span>
             ) : (
@@ -91,45 +111,6 @@ function LiveSummaryCard({
         </CardHeader>
       </Card>
     </Link>
-  );
-}
-
-/**
- * หน้าตาการ์ดตัวอย่าง — แบน (ไม่มีเงา) + พื้นจางกว่าการ์ดจริงเล็กน้อย พอให้แยก
- * ออกจากการ์ดที่ต่อ API แล้วได้ โดยมี badge "ตัวอย่าง" เป็นตัวบอกหลัก · เดิมใช้
- * เส้นประสีส้มรอบการ์ด พอการ์ดตัวอย่างมีหลายใบเรียงกันทั้งหน้า เส้นประเยอะจน
- * หน้า Dashboard ดูรก (รายการแก้ UI เว็บข้อ 9)
- */
-const DEMO_CARD_CLASS = "bg-muted/40 shadow-none";
-
-function DemoSummaryCard({
-  label,
-  value,
-  icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  icon: LucideIcon;
-  tone: PillTone;
-}) {
-  return (
-    <Card className={`h-full ${DEMO_CARD_CLASS}`}>
-      <CardHeader>
-        <CardDescription className="flex items-center gap-1.5">
-          {label}
-          <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            ตัวอย่าง
-          </span>
-        </CardDescription>
-        <CardTitle className="text-3xl tabular-nums text-muted-foreground">
-          {value}
-        </CardTitle>
-        <CardAction>
-          <CardIconBadge icon={icon} tone={tone} />
-        </CardAction>
-      </CardHeader>
-    </Card>
   );
 }
 
@@ -150,81 +131,107 @@ type MiniBarSegment = {
 const MINI_BAR_INLINE_LABEL_MIN_PERCENT = 12;
 
 /**
- * การ์ดมินิชาร์ต stacked bar แนวนอน — ใช้แทนการ์ดตัวเลขเดี่ยวๆ หลายใบที่เป็น
- * ข้อมูล part-to-whole เดียวกัน (Online/Offline, สำเร็จ/ล้มเหลว/Rollback)
- * เพื่อลดจำนวนการ์ดสี่เหลี่ยมและใช้พื้นที่คุ้มขึ้น (feedback A 2026-10-07 —
- * การ์ดเดี่ยวๆ เยอะเกินไปเมื่อเทียบกับการ์ด Config status chart ที่มีอยู่แล้ว)
- * — ยังเป็นข้อมูลตัวอย่าง (badge "ตัวอย่าง" เหมือน `DemoSummaryCard`) ไม่ใช่
- * ของจริง ต่างจาก `DashboardConfigStatusChart` ที่ต่อ API แล้ว
+ * การ์ดมินิชาร์ต stacked bar แนวนอน — ใช้แทนการ์ดตัวเลขเดี่ยวๆ หลายใบที่เป็นข้อมูล
+ * part-to-whole เดียวกัน (ออนไลน์/ออฟไลน์/ไม่ทราบ, สำเร็จ/ล้มเหลว) · `segments` มาจากข้อมูลจริง
+ * · `value` เป็น null = ยังโหลดอยู่ · รวมเป็น 0 = ยังไม่มีข้อมูลให้แสดงสัดส่วน (บอกตรงๆ ไม่วาดแท่งเปล่า)
  */
 function MiniStackedBarCard({
   label,
+  href,
   segments,
+  loading,
+  error,
+  emptyText,
+  badge,
 }: {
   label: string;
+  href: string;
   segments: MiniBarSegment[];
+  loading: boolean;
+  error: string | null;
+  emptyText: string;
+  /** ป้ายเล็กข้างหัวข้อ เช่น "ข้อมูลตัวอย่าง" เมื่อแหล่งข้อมูลอยู่ในโหมด mock */
+  badge?: string | null;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const total = segments.reduce((sum, s) => sum + s.value, 0);
 
   return (
-    <Card className={`col-span-2 h-full ${DEMO_CARD_CLASS}`}>
+    <Card className="col-span-2 h-full">
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
-          {label}
-          <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            ตัวอย่าง
-          </span>
+          <Link href={href} className="hover:underline">
+            {label}
+          </Link>
+          {badge && (
+            <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              {badge}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
-      <div className="flex flex-col gap-2 px-6 pb-5">
-        <div className="mt-1 flex h-5 w-full gap-0.5">
-          {segments.map((s, i) => {
-            const percent = total > 0 ? (s.value / total) * 100 : 0;
-            const isFirst = i === 0;
-            const isLast = i === segments.length - 1;
-            return (
-              <button
-                key={s.key}
-                type="button"
-                className={[
-                  "group relative flex items-center justify-center transition-[filter] outline-none",
-                  s.colorClass,
-                  isFirst ? "rounded-l" : "",
-                  isLast ? "rounded-r" : "",
-                  hovered === s.key ? "brightness-110" : "",
-                ].join(" ")}
-                style={{ width: `${percent}%` }}
-                onMouseEnter={() => setHovered(s.key)}
-                onMouseLeave={() => setHovered(null)}
-                onFocus={() => setHovered(s.key)}
-                onBlur={() => setHovered(null)}
-              >
-                {percent >= MINI_BAR_INLINE_LABEL_MIN_PERCENT && (
-                  <span className="text-[#0b0b0b] text-xs font-medium tabular-nums">
-                    {s.value}
-                  </span>
-                )}
-                {hovered === s.key && (
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-md bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md ring-1 ring-foreground/10">
-                    <span className="font-semibold tabular-nums">{s.value}</span>{" "}
-                    <span className="text-muted-foreground">{s.label}</span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
+      {error ? (
+        <p className="px-6 pb-5 text-sm text-destructive">โหลดไม่สำเร็จ</p>
+      ) : loading ? (
+        <div className="px-6 pb-5">
+          <div className="h-5 w-full animate-pulse rounded bg-muted" />
         </div>
-        <dl className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          {segments.map((s) => (
-            <div key={s.key} className="flex items-center gap-1.5">
-              <span className={`size-2.5 shrink-0 rounded-sm ${s.colorClass}`} />
-              <dt className="text-muted-foreground">{s.label}</dt>
-              <dd className="font-medium tabular-nums">{s.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
+      ) : total === 0 ? (
+        <p className="px-6 pb-5 text-sm text-muted-foreground">{emptyText}</p>
+      ) : (
+        <div className="flex flex-col gap-2 px-6 pb-5">
+          <div className="mt-1 flex h-5 w-full gap-0.5">
+            {segments.map((s, i) => {
+              const percent = total > 0 ? (s.value / total) * 100 : 0;
+              const isFirst = i === 0;
+              const isLast = i === segments.length - 1;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={[
+                    "group relative flex items-center justify-center transition-[filter] outline-none",
+                    s.colorClass,
+                    isFirst ? "rounded-l" : "",
+                    isLast ? "rounded-r" : "",
+                    hovered === s.key ? "brightness-110" : "",
+                  ].join(" ")}
+                  style={{ width: `${percent}%` }}
+                  onMouseEnter={() => setHovered(s.key)}
+                  onMouseLeave={() => setHovered(null)}
+                  onFocus={() => setHovered(s.key)}
+                  onBlur={() => setHovered(null)}
+                >
+                  {percent >= MINI_BAR_INLINE_LABEL_MIN_PERCENT && (
+                    <span className="text-[#0b0b0b] text-xs font-medium tabular-nums">
+                      {s.value}
+                    </span>
+                  )}
+                  {hovered === s.key && (
+                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded-md bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md ring-1 ring-foreground/10">
+                      <span className="font-semibold tabular-nums">
+                        {s.value}
+                      </span>{" "}
+                      <span className="text-muted-foreground">{s.label}</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <dl className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {segments.map((s) => (
+              <div key={s.key} className="flex items-center gap-1.5">
+                <span
+                  className={`size-2.5 shrink-0 rounded-sm ${s.colorClass}`}
+                />
+                <dt className="text-muted-foreground">{s.label}</dt>
+                <dd className="font-medium tabular-nums">{s.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
     </Card>
   );
 }
@@ -237,16 +244,9 @@ function MiniStackedBarCard({
  * all-checks มี WARN เดียว (CVD 6-8 band, light mode) ซึ่งชดเชยด้วย legend +
  * ตัวเลขในแท่ง (secondary encoding) ตามกฎของ skill
  */
-const ONLINE_OFFLINE_SEGMENTS: MiniBarSegment[] = [
-  { key: "online", label: "Online", value: 142, colorClass: "bg-[#008300] dark:bg-[#008300]" },
-  { key: "offline", label: "Offline", value: 8, colorClass: "bg-[#e34948] dark:bg-[#e66767]" },
-];
-
-const DEPLOY_RESULT_SEGMENTS: MiniBarSegment[] = [
-  { key: "success", label: "สำเร็จ", value: 128, colorClass: "bg-[#008300] dark:bg-[#008300]" },
-  { key: "failed", label: "ล้มเหลว", value: 4, colorClass: "bg-[#e34948] dark:bg-[#e66767]" },
-  { key: "rollback", label: "Rollback", value: 1, colorClass: "bg-[#2a78d6] dark:bg-[#3987e5]" },
-];
+const GREEN = "bg-[#008300] dark:bg-[#008300]";
+const RED = "bg-[#e34948] dark:bg-[#e66767]";
+const GREY = "bg-[#8b95a5] dark:bg-[#6b7686]";
 
 function DashboardSection({
   title,
@@ -273,6 +273,10 @@ export function DashboardSummary() {
   const configs = useConfigs();
   const campaigns = useCampaigns();
   const pausedRollouts = usePausedCampaignRollouts();
+  const allRollouts = useAllCampaignRollouts();
+  const incidents = useIncidents();
+  // สถานะจริงของกล่องจาก Server กลาง (ข้อมูลเสริม: ติดต่อไม่ได้ก็ไม่ทำให้การ์ดอื่นพัง)
+  const central = useCentralDevices();
 
   const deviceCount: number | null = devices.data ? devices.data.length : null;
   const modelCount: number | null = useMemo(
@@ -304,6 +308,71 @@ export function DashboardSummary() {
     ? pausedRollouts.data.length
     : null;
 
+  const activeIncidents: number | null = incidents.data
+    ? activeIncidentCount(incidents.data)
+    : null;
+
+  // ข้อมูลจาก Server กลางใช้ได้ต่อเมื่อโหลดสำเร็จและติดต่อได้ (reachable)
+  const centralReady = central.data?.reachable === true;
+  const centralUnavailable = central.data?.reachable === false;
+  const centralLoading = central.data === null && central.isLoading;
+  const centralBadge = central.data?.mode === "mock" ? "ข้อมูลตัวอย่าง" : null;
+
+  const connection = useMemo(
+    () =>
+      devices.data && centralReady && central.data
+        ? connectionSummary(devices.data, central.data.devices)
+        : null,
+    [devices.data, centralReady, central.data],
+  );
+  const driftCount: number | null =
+    devices.data && centralReady && central.data
+      ? configDriftCount(devices.data, central.data.devices)
+      : null;
+
+  const deploy = useMemo(
+    () => (allRollouts.data ? deployTotals(allRollouts.data) : null),
+    [allRollouts.data],
+  );
+  const connectionSegments: MiniBarSegment[] = connection
+    ? [
+        {
+          key: "online",
+          label: "ออนไลน์",
+          value: connection.online,
+          colorClass: GREEN,
+        },
+        {
+          key: "offline",
+          label: "ออฟไลน์",
+          value: connection.offline,
+          colorClass: RED,
+        },
+        {
+          key: "unknown",
+          label: "ไม่ทราบ",
+          value: connection.unknown,
+          colorClass: GREY,
+        },
+      ]
+    : [];
+  const deploySegments: MiniBarSegment[] = deploy
+    ? [
+        {
+          key: "success",
+          label: "สำเร็จ",
+          value: deploy.success,
+          colorClass: GREEN,
+        },
+        {
+          key: "failed",
+          label: "ล้มเหลว",
+          value: deploy.failed,
+          colorClass: RED,
+        },
+      ]
+    : [];
+
   return (
     <div className="flex flex-col gap-8">
       {/* ความเสี่ยงขึ้นก่อน Device/Deployment Overview โดยตั้งใจ (แก้ครั้งที่
@@ -324,19 +393,39 @@ export function DashboardSummary() {
             icon={TriangleAlertIcon}
             tone="danger"
           />
-          {DEMO_RISK_DASHBOARD.map((card) => (
-            <DemoSummaryCard
-              key={card.label}
-              label={card.label}
-              value={card.value}
-              icon={card.icon}
-              tone={card.tone}
-            />
-          ))}
+          <LiveSummaryCard
+            label="Incident ที่ยังต้องตาม"
+            href="/incidents"
+            value={activeIncidents}
+            error={incidents.error}
+            icon={AlertOctagonIcon}
+            tone="danger"
+          />
+          <LiveSummaryCard
+            label="อุปกรณ์ออฟไลน์"
+            href="/devices"
+            value={connection ? connection.offline : null}
+            error={devices.error}
+            unavailable={centralUnavailable}
+            icon={WifiOffIcon}
+            tone="danger"
+          />
+          <LiveSummaryCard
+            label="Config ไม่ตรงกับที่ตั้งไว้"
+            href="/devices"
+            value={driftCount}
+            error={devices.error}
+            unavailable={centralUnavailable}
+            icon={GitCompareIcon}
+            tone="progress"
+          />
         </div>
       </DashboardSection>
 
-      <DashboardSection title="ภาพรวมการ Deploy" description="Deployment Overview">
+      <DashboardSection
+        title="ภาพรวมการ Deploy"
+        description="Deployment Overview"
+      >
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <LiveSummaryCard
             label="Config รออนุมัติ"
@@ -354,7 +443,14 @@ export function DashboardSummary() {
             icon={RocketIcon}
             tone="progress"
           />
-          <MiniStackedBarCard label="ผลการ Deploy" segments={DEPLOY_RESULT_SEGMENTS} />
+          <MiniStackedBarCard
+            label="ผลการ Deploy"
+            href="/campaigns"
+            segments={deploySegments}
+            loading={allRollouts.data === null && allRollouts.isLoading}
+            error={allRollouts.error}
+            emptyText="ยังไม่มีการ Deploy"
+          />
         </div>
       </DashboardSection>
 
@@ -376,16 +472,21 @@ export function DashboardSummary() {
             icon={SlidersHorizontalIcon}
             tone="neutral"
           />
-          <MiniStackedBarCard label="Online / Offline" segments={ONLINE_OFFLINE_SEGMENTS} />
-          {DEMO_DEVICE_OVERVIEW.map((card) => (
-            <DemoSummaryCard
-              key={card.label}
-              label={card.label}
-              value={card.value}
-              icon={card.icon}
-              tone={card.tone}
-            />
-          ))}
+          <MiniStackedBarCard
+            label="การเชื่อมต่อ (Online / Offline)"
+            href="/devices"
+            segments={connectionSegments}
+            loading={
+              centralLoading || (devices.data === null && devices.isLoading)
+            }
+            error={devices.error}
+            emptyText={
+              centralUnavailable
+                ? "ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบสถานะการเชื่อมต่อ"
+                : "ยังไม่มีอุปกรณ์"
+            }
+            badge={centralBadge}
+          />
         </div>
       </DashboardSection>
     </div>

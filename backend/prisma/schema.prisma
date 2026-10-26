@@ -1114,6 +1114,8 @@ model CampaignRollout {
   //   'mock' = backend apply ให้ทุกเครื่องทันที (พฤติกรรมเดิม)
   //   'real' = รอให้อุปกรณ์ดึงงานเอง (`GET /device-sync/{deviceId}/jobs`) แล้ว
   //            รายงานผลกลับ (`POST .../result`)
+  //   'central' = ส่ง Config ไปที่ Server กลาง (ESP32 Central Management) ทีละเครื่อง
+  //            แล้วถามผลคำสั่งเป็นระยะ (`CampaignRolloutTarget.centralCommandId`)
   // บันทึกไว้ที่ Rollout แทนการอ่าน env ใหม่ทุกครั้ง เพื่อให้ Rollout ที่ปล่อย
   // ตอน `real` ยังรอเครื่องต่อได้แม้ภายหลังเปลี่ยน env กลับเป็น `mock` · null =
   // Rollout ก่อนมีคอลัมน์นี้ (ถือเป็น mock) หรือยังไม่เคยถูกปล่อย · Firmware
@@ -1189,6 +1191,10 @@ model CampaignRolloutTarget {
   // Rollback ใช้เลือกเครื่องที่ต้องส่ง Config เก่าคืน (ดึงไปแล้วแต่ยังไม่
   // รายงานผลก็อาจใช้ Config ที่มีปัญหาไปแล้ว) · คงค่าครั้งแรกไว้เสมอ
   pulledAt     DateTime?
+  // รหัสคำสั่งที่ Server กลางออกให้ตอนสั่งส่ง Config (โหมด `central` เท่านั้น) ใช้ถาม
+  // ผลคำสั่งเป็นระยะจนจบ · null = ยังไม่เคยสั่ง (หรือไม่ใช่โหมด central) · เป็นคอลัมน์
+  // ของโปรเจกต์เอง ไม่มีใน Data Dictionary
+  centralCommandId String?
   createdAt    DateTime                    @default(now())
   updatedAt    DateTime                    @updatedAt
 

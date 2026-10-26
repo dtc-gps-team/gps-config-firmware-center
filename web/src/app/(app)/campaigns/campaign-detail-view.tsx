@@ -23,7 +23,7 @@ import {
   CAMPAIGN_ROLLOUT_STATUS_TONE,
   StatusPill,
   getRolloutStatusExplanation,
-  statusLabel,
+  rolloutStatusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -117,7 +117,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
             <StatusPill
               tone={CAMPAIGN_ROLLOUT_STATUS_TONE[latestRollout.status] ?? "neutral"}
             >
-              {statusLabel(latestRollout.status)}
+              {rolloutStatusLabel(latestRollout.status)}
             </StatusPill>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -281,7 +281,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                           "neutral"
                         }
                       >
-                        {statusLabel(rollout.status)}
+                        {rolloutStatusLabel(rollout.status)}
                       </StatusPill>
                     </TableCell>
                     <TableCell>{rollout.payloadType}</TableCell>
