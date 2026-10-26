@@ -9,7 +9,12 @@ import { Task } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ActingUser, resolveChangedAt, TaskService } from './task.service';
+import {
+  ActingUser,
+  configAssignment,
+  resolveChangedAt,
+  TaskService,
+} from './task.service';
 
 /** จำลอง Prisma error ให้ตรงกับ shape จริงของ PrismaClientKnownRequestError
  * (ต้องมี code + clientVersion) — default เป็น P2025 ("Record to update not
@@ -41,6 +46,8 @@ const sampleTask: Task = {
   deviceId: null,
   configId: null,
   campaignId: null,
+  configAssignedBy: null,
+  configAssignedAt: null,
   status: 'pending',
   dueDate: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -77,6 +84,8 @@ describe('TaskService', () => {
   // `SELECT ... FOR UPDATE` ของ lockTask() — default คืนแถวของ sampleTask
   // (สถานะ pending) เทสไหนต้องการสถานะก่อนหน้าอื่นค่อย mock ทับ
   let queryRaw: jest.Mock;
+  // docs/25 §3.9 — ยกเลิกงานแล้วปิดคำขอส่ง Config ที่ pending ตาม
+  let configApplyRequest: { updateMany: jest.Mock };
 
   beforeEach(async () => {
     task = {
@@ -97,6 +106,9 @@ describe('TaskService', () => {
       // event เปลี่ยนสถานะล่าสุด (ขอบล่างของ changedAt) — default ไม่มี
       findFirst: jest.fn().mockResolvedValue(null),
     };
+    configApplyRequest = {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    };
     queryRaw = jest
       .fn()
       .mockResolvedValue([
@@ -110,6 +122,7 @@ describe('TaskService', () => {
       device,
       auditLog,
       taskEvent,
+      configApplyRequest,
       $queryRaw: queryRaw,
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
@@ -183,6 +196,8 @@ describe('TaskService', () => {
             assignedTo: 'tech-1',
             deviceId: undefined,
             configId: CONFIG_ID,
+            configAssignedBy: operation.id,
+            configAssignedAt: expect.any(Date) as unknown,
             dueDate: undefined,
           },
         });
@@ -444,6 +459,8 @@ describe('TaskService', () => {
               assignedTo: undefined,
               deviceId: undefined,
               configId: CONFIG_ID,
+              configAssignedBy: operation.id,
+              configAssignedAt: expect.any(Date) as unknown,
               status: undefined,
               dueDate: undefined,
             },
@@ -491,6 +508,8 @@ describe('TaskService', () => {
               assignedTo: undefined,
               deviceId: undefined,
               configId: null,
+              configAssignedBy: null,
+              configAssignedAt: null,
               status: undefined,
               dueDate: undefined,
             },
@@ -1300,6 +1319,89 @@ describe('TaskService', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(taskEvent.create).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('docs/25 — ผู้ผูก Config เข้างาน + ยกเลิกคำขอส่ง Config ตามงาน', () => {
+    describe('configAssignment()', () => {
+      const at = new Date('2026-10-22T00:00:00.000Z');
+
+      it('ไม่ส่ง configId: ไม่แตะผู้ผูก', () => {
+        expect(configAssignment(undefined, operation, at)).toEqual({});
+      });
+
+      it('ตั้ง configId: ผู้ผูก = ผู้เรียก + เวลา', () => {
+        expect(configAssignment(CONFIG_ID, operation, at)).toEqual({
+          configAssignedBy: operation.id,
+          configAssignedAt: at,
+        });
+      });
+
+      it('ล้าง configId (null): ล้างผู้ผูกด้วย', () => {
+        expect(configAssignment(null, operation, at)).toEqual({
+          configAssignedBy: null,
+          configAssignedAt: null,
+        });
+      });
+    });
+
+    it('Operation แก้ title อย่างเดียว: ไม่เขียนผู้ผูก Config (ไม่ทับค่าเดิม)', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      task.update.mockResolvedValue({ ...sampleTask, title: 'ใหม่' });
+
+      await service.update(sampleTask.id, { title: 'ใหม่' }, operation);
+
+      const call = task.update.mock.calls[0] as [{ data: object }];
+      expect(call[0].data).not.toHaveProperty('configAssignedBy');
+      expect(call[0].data).not.toHaveProperty('configAssignedAt');
+    });
+
+    it('Operation ยกเลิกงาน: ปิดคำขอส่ง Config ที่ pending/approved ของงานนี้ในทรานแซกชันเดียวกัน (Q9, docs/27)', async () => {
+      queryRaw.mockResolvedValue([
+        { status: 'in_progress', createdAt: sampleTask.createdAt },
+      ]);
+      task.findUnique.mockResolvedValue({
+        ...sampleTask,
+        status: 'in_progress',
+      });
+      task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+
+      await service.update(sampleTask.id, { status: 'cancelled' }, operation);
+
+      expect(configApplyRequest.updateMany).toHaveBeenCalledWith({
+        where: {
+          taskId: sampleTask.id,
+          status: { in: ['pending', 'approved'] },
+        },
+        data: expect.objectContaining({
+          status: 'cancelled',
+          completedAt: expect.any(Date) as unknown,
+        }) as unknown,
+      });
+    });
+
+    it('Operation เปลี่ยนสถานะอื่น (ไม่ใช่ยกเลิก): ไม่แตะคำขอ', async () => {
+      queryRaw.mockResolvedValue([
+        { status: 'pending', createdAt: sampleTask.createdAt },
+      ]);
+      task.findUnique.mockResolvedValue(sampleTask);
+      task.update.mockResolvedValue({ ...sampleTask, status: 'in_progress' });
+
+      await service.update(sampleTask.id, { status: 'in_progress' }, operation);
+
+      expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('งานที่ยกเลิกไปแล้ว ส่ง cancelled ซ้ำ: ไม่แตะคำขออีก', async () => {
+      queryRaw.mockResolvedValue([
+        { status: 'cancelled', createdAt: sampleTask.createdAt },
+      ]);
+      task.findUnique.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+      task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+
+      await service.update(sampleTask.id, { status: 'cancelled' }, operation);
+
+      expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
     });
   });
 });

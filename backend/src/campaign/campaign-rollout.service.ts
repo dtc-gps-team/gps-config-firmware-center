@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   CampaignPayloadType,
@@ -13,6 +14,7 @@ import {
   CampaignRolloutStatus,
   CampaignRolloutTarget,
   Device,
+  Firmware,
   Prisma,
 } from '@prisma/client';
 import {
@@ -38,7 +40,16 @@ import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
+import {
+  CentralDeviceService,
+  type PushFirmwareOutcome,
+} from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import {
+  FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+  getOrCreateFieldApplySystemCampaign,
+} from './field-apply-system-campaign';
+import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import {
@@ -47,6 +58,7 @@ import {
 } from './dto/create-campaign-rollout.dto';
 import { CreateCampaignRollbackDto } from './dto/create-campaign-rollback.dto';
 import {
+  FIELD_APPLY_RESULT_EVENT,
   MAX_EVENT_FAILED_DEVICE_IDS,
   MAX_EVENT_SAMPLE_ERRORS,
   ROLLOUT_FAILED_EVENT,
@@ -118,12 +130,17 @@ export class CampaignRolloutService {
     @Inject(CONFIG_APPLIER)
     private readonly configApplier: ConfigApplier,
     private readonly configDefinitionService: ConfigDefinitionService,
+    private readonly firmwareStorage: FirmwareStorageService,
     // โหมดตอนนี้ของ env `DEVICE_CONFIG_APPLY_MODE` — ใช้ตอน `release()` เพื่อ
     // บันทึกลง `CampaignRollout.applyMode` เท่านั้น ที่อื่นอ่านจาก Rollout เอง
     @Inject(CONFIG_APPLY_MODE)
     private readonly configApplyMode: ConfigApplyMode,
     // event ที่โมดูล incident (A) และ notification (B) ฟัง — docs/19 §15.5
     private readonly rolloutEvents: RolloutEvents,
+    // ส่ง Config ไป Server กลาง (โหมด `central`) · @Optional เพื่อให้ module/เทสที่ไม่ได้
+    // ต่อ Server กลางสร้างได้ตามเดิม · `CampaignModule` import ให้เสมอ ถ้าไม่มีแล้ว
+    // Rollout โหมด central จะนับเป็นล้มเหลวพร้อมเหตุผล ไม่ค้างเงียบๆ
+    @Optional() private readonly central?: CentralDeviceService,
   ) {}
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
@@ -503,16 +520,21 @@ export class CampaignRolloutService {
   async release(id: string, actor: ActingUser): Promise<CampaignRollout> {
     const existing = await this.findOne(id); // 404 ถ้าไม่พบ
 
-    // โหมดของ Rollout นี้ (docs/19 §3): Config ตามโหมดของระบบตอนปล่อย ส่วน
-    // Firmware เป็น 'mock' เสมอในรอบนี้ (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)
-    // Rollback สืบทอดค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้
-    // ค่าที่มีอยู่ก่อน
+    // โหมดของ Rollout นี้ (docs/19 §3): Config ตามโหมดของระบบตอนปล่อยตรงๆ ส่วน
+    // Firmware ไม่มีเส้นทาง `real` (ไม่มี PULL ให้อุปกรณ์ดึง Firmware เองเลย
+    // ต่างจาก Config) จึงตามโหมดระบบได้แค่กรณี `central` เท่านั้น (ส่งผ่าน
+    // Server กลางจริงตั้งแต่ #362) นอกนั้นเป็น `mock` เสมอ — Rollback สืบทอด
+    // ค่าจากรอบต้นเรื่องมาตั้งแต่ตอนสร้าง (`rollback()`) จึงใช้ค่าที่มีอยู่ก่อน
     const applyMode: ConfigApplyMode =
-      existing.applyMode === 'real' || existing.applyMode === 'mock'
+      existing.applyMode === 'real' ||
+      existing.applyMode === 'mock' ||
+      existing.applyMode === 'central'
         ? existing.applyMode
         : existing.payloadType === 'Config'
           ? this.configApplyMode
-          : 'mock';
+          : this.configApplyMode === 'central'
+            ? 'central'
+            : 'mock';
 
     // race condition — mirror approve()/resume() ทุกประการ กดปล่อยซ้ำ (เช่น
     // double-click หรือ client retry หลัง timeout) จะวน dispatchAutoApply()
@@ -829,6 +851,17 @@ export class CampaignRolloutService {
    * จริงตอนเรียกจาก `resume()` เพราะ `executeFirmwarePartitionRollback()` ไม่
    * เคยพา Rollout ไป `paused` เลย (ไม่ผ่าน `recordTargetResult()`) แต่เช็คไว้
    * เพื่อความสมมาตรกับ `approve()` เผื่อกรณีข้อมูลผิดปกติ
+   *
+   * **โหมด `central` ไม่ใช้ fast-path นี้** (แก้ไข #362 ส่วนขยาย Rollback) —
+   * `FirmwareRollbackExecutor`/`switchPartition()` จำลองแค่ "สลับพาร์ทิชันที่
+   * มีของเก่าอยู่แล้ว" ซึ่งเป็นกลไกภายในตัวอุปกรณ์เอง Server กลางไม่มีช่องให้
+   * สั่งสลับพาร์ทิชันจากนอกเลย (เช็คโค้ด delivery-server แล้ว) มีแต่ช่องทาง
+   * ยิง firmware-update ซ้ำแบบเดียวกับการอัปเปิดปกติ (ต้องแนบ
+   * `X-Allow-Downgrade` เพราะเวอร์ชันที่ rollback ไปมักต่ำกว่าที่กล่องรันอยู่)
+   * จึงปล่อยให้ตกไปที่ `autoApplyFirmware()` เส้นทางเดิม (มี branch `central`
+   * อยู่แล้วที่ `pushFirmwareToCentral()`) ต่างจาก mock ที่ "ของเก่ายังอยู่บน
+   * พาร์ทิชันเดิม" ไม่ต้องส่งไฟล์ใหม่เลย — ของจริงกับ Server กลางไม่มี fast
+   * path แบบนั้น ต้องส่งไฟล์ใหม่ทุกครั้งเหมือนการอัปเดตปกติ
    */
   private dispatchAutoApply(
     rollout: CampaignRollout,
@@ -841,7 +874,11 @@ export class CampaignRolloutService {
     if (rollout.applyMode === 'real') {
       return Promise.resolve(rollout);
     }
-    if (rollout.isRollback && rollout.payloadType === 'Firmware') {
+    if (
+      rollout.isRollback &&
+      rollout.payloadType === 'Firmware' &&
+      rollout.applyMode !== 'central'
+    ) {
       return this.executeFirmwarePartitionRollback(rollout);
     }
     if (rollout.payloadType === 'Config') {
@@ -970,6 +1007,22 @@ export class CampaignRolloutService {
    * แก้ปัญหารอบที่ค้างอยู่นี้เอง ไม่ใช่การเริ่มงานใหม่ (ดู comment เหนือ
    * `OPEN_CAMPAIGN_ROLLOUT_STATUSES`) — เช็คแค่ว่า rollout เป้าหมายอยู่ใน
    * สถานะที่เคยส่ง payload ไปแล้วจริง (`ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES`)
+   *
+   * **Firmware ไม่ใช้ประวัติ Campaign หา "ของเก่า" อีกต่อไป** (แก้ไข #362
+   * ส่วนขยาย Rollback — เจอตอนทดสอบกับกล่องจริง) เดิมค้นหา Rollout ที่
+   * `completed` ล่าสุดของ payloadType เดียวกันในกลุ่มนี้ ซึ่งพังเมื่อ Campaign
+   * เคย retry ปล่อย Firmware เวอร์ชันเดิมซ้ำหลายรอบ (เช่นพังแล้วลองใหม่) —
+   * "รอบก่อนหน้าที่สำเร็จ" ที่เจอก็กลายเป็นเวอร์ชันเดียวกับที่กำลังจะ rollback
+   * ไม่ใช่ของเก่าจริง แถมไม่มีทางรู้จัก Firmware ที่กล่องมีมาก่อนเข้าระบบเรา
+   * เลย (เช่น Firmware ติดเครื่องมาจากโรงงาน) เปลี่ยนมาอ่านจาก **Dual
+   * Partition bookkeeping ของอุปกรณ์เอง** (`partitionAFirmwareId`/
+   * `partitionBFirmwareId` — พาร์ทิชันที่ไม่ active ตอนนี้มี Firmware อะไร)
+   * แทน ตรงกับความเป็นจริงทางฮาร์ดแวร์เสมอ ไม่ว่า Campaign จะ retry กี่รอบก็
+   * ตาม ใช้เครื่องตัวแทนตัวแรกในกลุ่มเป้าหมาย (สมมติว่าทุกเครื่องในกลุ่ม
+   * เดียวกันมีประวัติ Firmware ตรงกัน — simplification เดียวกับที่ Config
+   * ใช้ payload เดียวทั้งกลุ่มอยู่แล้ว) · Config ยังใช้ประวัติ Campaign เหมือน
+   * เดิม เพราะ Config ไม่มี concept "ของเก่ายังอยู่บนอุปกรณ์" ให้อ่านจาก
+   * อุปกรณ์ตรงๆ แบบ Firmware
    */
   async rollback(
     campaignId: string,
@@ -986,27 +1039,6 @@ export class CampaignRolloutService {
     if (!ROLLBACKABLE_CAMPAIGN_ROLLOUT_STATUSES.includes(badRollout.status)) {
       throw new ConflictException(
         `สถานะ Rollout ปัจจุบัน (${badRollout.status}) ยังไม่เคยส่ง payload ไปอุปกรณ์เลย ไม่มีอะไรให้ rollback`,
-      );
-    }
-
-    // ต้อง `completed` เท่านั้น (ไม่ใช่แค่ createdAt ก่อนหน้า) เพราะกลุ่มหนึ่ง
-    // รัน rollout ได้ทีละรอบ — รอบก่อนหน้าที่ `rejected`/`cancelled` ไม่เคยส่ง
-    // อะไรจริง ไม่ใช่เป้าหมาย rollback ที่ถูกต้อง · payloadType ต้องตรงกัน
-    // เท่านั้น (Config rollback กลับไป Config เดิม, Firmware กลับไป Firmware
-    // เดิม ห้ามข้ามชนิด)
-    const previousRollout = await this.prisma.campaignRollout.findFirst({
-      where: {
-        campaignId,
-        id: { not: rolloutId },
-        createdAt: { lt: badRollout.createdAt },
-        status: 'completed',
-        payloadType: badRollout.payloadType,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!previousRollout) {
-      throw new BadRequestException(
-        'ไม่มี Rollout รอบก่อนหน้าที่สำเร็จให้ย้อนกลับไป (นี่คือรอบแรกของ payload ประเภทนี้ในกลุ่มนี้)',
       );
     }
 
@@ -1041,6 +1073,73 @@ export class CampaignRolloutService {
       throw new BadRequestException(
         'ไม่มีอุปกรณ์เหลือให้ rollback (ไม่มีเครื่องไหนได้รับ payload ของรอบนี้สำเร็จ หรือเอาออกหมดแล้ว)',
       );
+    }
+
+    // payloadType/configId/firmwareId ของรอบ rollback ใหม่ — Config หาจาก
+    // ประวัติ Campaign (ไม่เปลี่ยนพฤติกรรมเดิม) ส่วน Firmware หาจาก Dual
+    // Partition bookkeeping ของอุปกรณ์ตัวแทน (ดู comment เหนือฟังก์ชันนี้)
+    let configId: string | null = null;
+    let firmwareId: string | null = null;
+    if (badRollout.payloadType === 'Config') {
+      // ต้อง `completed` เท่านั้น (ไม่ใช่แค่ createdAt ก่อนหน้า) เพราะกลุ่มหนึ่ง
+      // รัน rollout ได้ทีละรอบ — รอบก่อนหน้าที่ `rejected`/`cancelled` ไม่เคยส่ง
+      // อะไรจริง ไม่ใช่เป้าหมาย rollback ที่ถูกต้อง
+      const previousRollout = await this.prisma.campaignRollout.findFirst({
+        where: {
+          campaignId,
+          id: { not: rolloutId },
+          createdAt: { lt: badRollout.createdAt },
+          status: 'completed',
+          payloadType: 'Config',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!previousRollout) {
+        throw new BadRequestException(
+          'ไม่มี Rollout รอบก่อนหน้าที่สำเร็จให้ย้อนกลับไป (นี่คือรอบแรกของ payload ประเภทนี้ในกลุ่มนี้)',
+        );
+      }
+      configId = previousRollout.configId;
+    } else {
+      const representativeDeviceId = rollbackDeviceIds[0];
+      const representativeDevice = await this.prisma.device.findUnique({
+        where: { deviceId: representativeDeviceId },
+      });
+      let resolvedFirmwareId = representativeDevice
+        ? representativeDevice.activePartition === 'A'
+          ? representativeDevice.partitionBFirmwareId
+          : representativeDevice.partitionAFirmwareId
+        : null;
+
+      // fallback: บันทึกของเราไม่มีของเก่าเลย (เช่นอุปกรณ์ลงทะเบียนก่อนมี
+      // `initialFirmwareId`) — ลองถามประวัติคำสั่งจาก Server กลางตรงๆ
+      // (ground truth จริง) แทนที่จะยอมแพ้เลย · `this.central` เป็น Optional
+      // (มีแค่ตอน CentralDeviceModule ถูก import จริง — ปกติใช่เสมอ)
+      if (!resolvedFirmwareId && representativeDevice && this.central) {
+        const previousVersion =
+          await this.central.findPreviousSuccessfulFirmwareVersion(
+            representativeDeviceId,
+          );
+        if (previousVersion) {
+          const matchedFirmware = await this.prisma.firmware.findFirst({
+            where: {
+              version: previousVersion,
+              deviceModelCompatibility: {
+                has: representativeDevice.deviceModel,
+              },
+            },
+            select: { id: true },
+          });
+          resolvedFirmwareId = matchedFirmware?.id ?? null;
+        }
+      }
+
+      if (!resolvedFirmwareId) {
+        throw new BadRequestException(
+          `ไม่พบ Firmware เดิมให้ย้อนกลับไปสำหรับอุปกรณ์ ${representativeDeviceId} (ไม่เคยบันทึกไว้ในระบบ, กล่องยังไม่เคยเปลี่ยน Firmware ผ่านระบบมาก่อน, และหาจากประวัติ Server กลางไม่เจอ)`,
+        );
+      }
+      firmwareId = resolvedFirmwareId;
     }
 
     const rollback = await this.prisma.$transaction(async (tx) => {
@@ -1085,9 +1184,9 @@ export class CampaignRolloutService {
       const created = await tx.campaignRollout.create({
         data: {
           campaignId,
-          payloadType: previousRollout.payloadType,
-          configId: previousRollout.configId,
-          firmwareId: previousRollout.firmwareId,
+          payloadType: badRollout.payloadType,
+          configId,
+          firmwareId,
           status: 'pending_approval',
           targetCount: rollbackDeviceIds.length,
           createdBy: actor.id,
@@ -1135,6 +1234,11 @@ export class CampaignRolloutService {
    * `FirmwareRollbackExecutor.switchPartition()` ทีละเครื่อง แล้วปิด Rollout
    * เป็น `completed` เสมอ (ไม่มีอะไรค้าง `pending` ต่อ — ต่างจาก Config ที่
    * รอ `recordTargetResult()` จาก field จริง)
+   *
+   * **เรียกเฉพาะโหมด `mock` (และ `real` ซึ่งไม่เข้ามาถึงจุดนี้อยู่แล้ว)** —
+   * โหมด `central` ไม่ผ่านฟังก์ชันนี้ ไปที่ `autoApplyFirmware()`/
+   * `pushFirmwareToCentral()` แทน เพราะ Server กลางไม่มีช่องสั่งสลับพาร์ทิชัน
+   * จากนอกเลย ดู comment เหนือ `dispatchAutoApply`
    */
   private async executeFirmwarePartitionRollback(
     rollout: CampaignRollout,
@@ -1241,7 +1345,13 @@ export class CampaignRolloutService {
     });
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
-      where: { rolloutId: rollout.id, status: 'pending' },
+      where: {
+        rolloutId: rollout.id,
+        status: 'pending',
+        // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
+        // ตอน resume() หลัง Auto Pause
+        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -1364,6 +1474,17 @@ export class CampaignRolloutService {
         // ตอนนี้ไม่กระทบเพราะ ConfigApplier ยังเป็น mock แต่ก่อนเปลี่ยนเป็น
         // implementation จริง (docker/production) ต้องย้าย claim ไปก่อน apply
         // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
+        if (rollout.applyMode === 'central') {
+          await this.pushToCentral(
+            rollout,
+            target.id,
+            device.deviceId,
+            config.id,
+            fields,
+            actorId,
+          );
+          continue;
+        }
         const result = await this.configApplier.applyConfig({
           deviceId: device.deviceId,
           deviceModel: device.deviceModel,
@@ -1424,6 +1545,61 @@ export class CampaignRolloutService {
   }
 
   /**
+   * โหมด `central`: สั่ง Server กลางส่ง Config ให้กล่องหนึ่งเครื่อง
+   * - สั่งสำเร็จ: เก็บรหัสคำสั่งไว้ที่ target (ยังเป็น `pending`) ให้ `CentralRolloutPollService`
+   *   ถามผลจนจบ · ลง AuditLog `apply-config` ตอนสั่ง (การนำ Config ไปใช้เกิดขึ้นตอนนี้)
+   * - ส่งไม่ได้ (ไม่รู้จักกล่อง, ไม่ผ่าน schema, ติดต่อ Server กลางไม่ได้): นับเป็นล้มเหลวทันที
+   *   ผ่าน `recordTargetResult()` จึงได้ Auto Pause และ Incident ตามกฎเดิม
+   */
+  private async pushToCentral(
+    rollout: CampaignRollout,
+    targetId: string,
+    deviceId: string,
+    configId: string,
+    fields: Record<string, unknown>,
+    actorId: string,
+  ): Promise<void> {
+    const outcome = this.central
+      ? await this.central.pushConfig(deviceId, fields)
+      : ({
+          kind: 'unavailable',
+          reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
+        } as const);
+
+    if (outcome.kind === 'sent') {
+      await this.prisma.campaignRolloutTarget.update({
+        where: { id: targetId },
+        data: {
+          centralCommandId: outcome.commandId,
+          resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Config เวอร์ชัน ${outcome.configVersion}) รอกล่องยืนยัน`,
+        },
+      });
+      await this.logAudit('apply-config', actorId, {
+        deviceId,
+        configId,
+        fieldNames: Object.keys(fields),
+        centralCommandId: outcome.commandId,
+      });
+      return;
+    }
+
+    const claimed = await this.recordTargetResult(
+      deviceId,
+      { configId },
+      false,
+      outcome.reason,
+      rollout.id,
+    );
+    if (claimed) {
+      await this.logAudit('apply-config', actorId, {
+        deviceId,
+        configId,
+        fieldNames: Object.keys(fields),
+      });
+    }
+  }
+
+  /**
    * Auto-apply Firmware (ปกติ ไม่ใช่ Rollback) ให้ทุกเครื่องเป้าหมายทันทีตอน
    * `active` — เหตุผล/วิธีรักษา Auto Pause เดียวกับ `autoApplyConfig` (มติ
    * 2026-09-29: กล่องดึง Firmware เองจาก server กลางเหมือน Config ทุกประการ
@@ -1449,7 +1625,13 @@ export class CampaignRolloutService {
     });
 
     const targets = await this.prisma.campaignRolloutTarget.findMany({
-      where: { rolloutId: rollout.id, status: 'pending' },
+      where: {
+        rolloutId: rollout.id,
+        status: 'pending',
+        // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
+        // ตอน resume() หลัง Auto Pause (เหมือน autoApplyConfig ข้างบน)
+        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -1532,6 +1714,22 @@ export class CampaignRolloutService {
         continue;
       }
 
+      // โหมด central: ส่งไฟล์ให้ Server กลางแล้วรอผลจริงจากกล่องผ่าน poll
+      // (`CentralRolloutPollService`) — **ยังไม่เขียน Dual Partition
+      // bookkeeping ตรงนี้** ต่างจาก mock ที่เขียนทันที เพราะยังไม่รู้ว่ากล่อง
+      // จะติดตั้งสำเร็จจริงไหม เขียนตอน poll ยืนยันสำเร็จแทน (ดู
+      // `CentralRolloutPollService.poll()`)
+      if (rollout.applyMode === 'central') {
+        await this.pushFirmwareToCentral(
+          rollout,
+          target.id,
+          device.deviceId,
+          firmware,
+          actorId,
+        );
+        continue;
+      }
+
       const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
       // #235 review comment ข้อ 4 — เดิม catch แค่ log warn แล้วยังรายงาน
       // success เสมอทั้งที่ bookkeeping เขียนไม่สำเร็จจริง กลายเป็นหลบ Auto
@@ -1589,6 +1787,257 @@ export class CampaignRolloutService {
     return this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rollout.id },
     });
+  }
+
+  /**
+   * โหมด `central` ของ `autoApplyFirmware()`: ดาวน์โหลดไฟล์จาก Object Storage
+   * แล้วส่งให้ Server กลางเครื่องเดียว — mirror `pushToCentral()` (Config) ทุก
+   * ประการ ต่างกันที่ไม่มี schema ให้แปลงค่า (ส่งไฟล์ดิบตรงๆ) และ Server กลาง
+   * ไม่คืนเลขเวอร์ชันมาด้วย
+   *
+   * **`rollout.isRollback` → แนบ `allowDowngrade: true`** — Firmware ที่
+   * rollback ไปมักมีเลขเวอร์ชันต่ำกว่าที่กล่องรันอยู่ตอนนี้ Server กลางปฏิเสธ
+   * การลดเวอร์ชันโดย default (`DOWNGRADE_NOT_ALLOWED`) ต้องส่ง header
+   * `X-Allow-Downgrade` มายืนยันเจตนาเสมอ (ดู comment เหนือ
+   * `dispatchAutoApply` เรื่องทำไม Rollback โหมด central ไม่มี fast-path แบบ
+   * mock แล้วมาตกที่ฟังก์ชันนี้)
+   *
+   * **`downloadObject()` ต้องอยู่ใน try/catch** (review B #362 รอบ 1/2) —
+   * เดิมเรียกตรงๆ ใน argument ของ `pushFirmware()` ถ้า Object Storage ล่ม/
+   * หาไฟล์ไม่เจอตอน `approve()` exception จะหลุดออกจาก `autoApplyFirmware()`
+   * ทำให้ Rollout ค้าง `active` ตลอดไป (approve ซ้ำไม่ได้เพราะไม่ใช่
+   * `pending_approval` แล้ว, `resume()` ใช้ได้แค่ตอน `paused`) ย้ายไปอยู่ใน
+   * `resolvePushFirmwareOutcome()` แปลงเป็น `{ kind: 'unavailable' }` แทน
+   * ไหลเข้า `recordTargetResult(false)` เหมือนกรณีอื่นทั้งหมด
+   */
+  private async pushFirmwareToCentral(
+    rollout: CampaignRollout,
+    targetId: string,
+    deviceId: string,
+    firmware: Firmware,
+    actorId: string,
+  ): Promise<void> {
+    const outcome = await this.resolvePushFirmwareOutcome(
+      rollout,
+      deviceId,
+      firmware,
+    );
+
+    if (outcome.kind === 'sent') {
+      await this.prisma.campaignRolloutTarget.update({
+        where: { id: targetId },
+        data: {
+          centralCommandId: outcome.commandId,
+          resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Firmware v${firmware.version}) รอกล่องยืนยัน`,
+        },
+      });
+      await this.logAudit('confirm-firmware-install', actorId, {
+        deviceId,
+        firmwareId: firmware.id,
+        firmwareVersion: firmware.version,
+        centralCommandId: outcome.commandId,
+      });
+      return;
+    }
+
+    const claimed = await this.recordTargetResult(
+      deviceId,
+      { firmwareId: firmware.id },
+      false,
+      outcome.reason,
+      rollout.id,
+    );
+    if (claimed) {
+      await this.logAudit('confirm-firmware-install', actorId, {
+        deviceId,
+        firmwareId: firmware.id,
+        firmwareVersion: firmware.version,
+      });
+    }
+  }
+
+  /**
+   * ดาวน์โหลดไฟล์ + ส่งให้ Server กลาง — แยกจาก `pushFirmwareToCentral()`
+   * เพื่อห่อ `downloadObject()` ด้วย try/catch ได้ (review B #362) ทุก path
+   * ที่ล้มเหลวคืนรูปร่างเดียวกับ `CentralDeviceService.pushFirmware()` เอง
+   * (`{ kind: 'unavailable' | 'rejected', reason }`) ให้ผู้เรียกจัดการแบบ
+   * เดียวกันหมด ไม่ต้องแยกเคส
+   */
+  private async resolvePushFirmwareOutcome(
+    rollout: CampaignRollout,
+    deviceId: string,
+    firmware: Firmware,
+  ): Promise<PushFirmwareOutcome> {
+    if (!this.central) {
+      return {
+        kind: 'unavailable',
+        reason: 'ไม่ได้เปิดใช้การเชื่อมต่อ Server กลาง (CENTRAL_MODE)',
+      };
+    }
+    let data: Buffer;
+    try {
+      data = await this.firmwareStorage.downloadObject(firmware.objectKey);
+    } catch (err) {
+      return {
+        kind: 'unavailable',
+        reason: `ดาวน์โหลดไฟล์ Firmware ไม่สำเร็จ: ${(err as Error).message}`,
+      };
+    }
+    return this.central.pushFirmware(deviceId, data, {
+      firmwareVersion: firmware.version,
+      ...(rollout.isRollback ? { allowDowngrade: true } : {}),
+    });
+  }
+
+  /**
+   * เรียกจาก `CentralRolloutPollService.poll()` เมื่อ Server กลางยืนยันว่ากล่อง
+   * ติดตั้ง Firmware สำเร็จแล้ว — เขียน Dual Partition bookkeeping ตอนนี้ (ไม่ใช่
+   * ตอนสั่ง `pushFirmwareToCentral()` เพราะตอนนั้นยังไม่รู้ผลจริง) แล้วค่อย
+   * `recordTargetResult()` mirror ขั้นตอนของ mock ใน `autoApplyFirmware()`
+   * ทุกประการ (เขียน partition ไม่สำเร็จ = นับ failed จริง ไม่ใช่ success เงียบๆ)
+   */
+  async confirmCentralFirmwareSuccess(
+    deviceId: string,
+    firmwareId: string,
+    rolloutId: string,
+    detail: string,
+  ): Promise<boolean> {
+    const device = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!device) {
+      return this.recordTargetResult(
+        deviceId,
+        { firmwareId },
+        false,
+        `ไม่พบ Device deviceId ${deviceId}`,
+        rolloutId,
+      );
+    }
+
+    const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
+    let partitionWriteSucceeded = true;
+    try {
+      await this.prisma.device.update({
+        where: { deviceId },
+        data: {
+          activePartition: nextPartition,
+          ...(nextPartition === 'A'
+            ? { partitionAFirmwareId: firmwareId }
+            : { partitionBFirmwareId: firmwareId }),
+        },
+      });
+    } catch (err) {
+      partitionWriteSucceeded = false;
+      this.logger.warn(
+        `อัปเดต Dual Partition ไม่สำเร็จ (deviceId ${deviceId}, โหมด central): ${(err as Error).message}`,
+      );
+    }
+
+    return this.recordTargetResult(
+      deviceId,
+      { firmwareId },
+      partitionWriteSucceeded,
+      partitionWriteSucceeded
+        ? detail
+        : 'เขียน Dual Partition bookkeeping ไม่สำเร็จ — ไม่นับว่าติดตั้งสำเร็จ',
+      rolloutId,
+    );
+  }
+
+  /**
+   * docs/25 §3.2 ทาง ค. (Hybrid) + §3.5 ข้อ 2-3 — สร้าง `CampaignRollout`
+   * เครื่องเดียวให้กับคำขอส่ง Config จากหน้างาน (`ConfigApplyRequest` ของ B,
+   * ยังไม่มี model นี้ ณ ตอนเขียนเมธอดนี้) แล้วเริ่มส่งทันที — **ผู้เรียก
+   * (โมดูล `config-apply-request` ใหม่ของ B) ต้องตรวจซ้ำแบบสดเองก่อนเรียก**
+   * (§3.5 ข้อ 1: Config/Task/Device/เครื่องไม่ชนรอบอื่น) เมธอดนี้ตรวจแค่สิ่งที่
+   * `autoApplyConfig()` ตรวจอยู่แล้วเป็นปกติ (Config ยัง approved/ไม่ถูกลบ,
+   * Device ยัง installed, รุ่นตรงกัน) ไม่รู้จัก Task เลย
+   *
+   * **ข้าม `pending_approval`/`create()` ปกติโดยตั้งใจ** (ไม่ใช่ `approve()`
+   * ซ้อน `approve()` — การอนุมัติคำขอ (เช็ค SoD เต็มที่ `ConfigApplyRequest`
+   * ของ B) เกิดไปแล้วก่อนเรียกเมธอดนี้) และ **ไม่ใช้ `create()` เดิม** เพราะ
+   * `create()` บังคับ "กลุ่มเดียวมี Rollout ค้างได้แค่ 1 รอบ" — ถ้าใช้ร่วมกับ
+   * Campaign ระบบตัวเดียว คำขอหน้างานจากคนละเครื่องจะทำพร้อมกันไม่ได้เลย
+   * (ปัญหาที่เอกสารชั่งน้ำหนักไว้ว่าทำไมไม่เลือกทาง ก.)
+   *
+   * **Auto Pause ไม่ต้องปิดเองตามที่ถามไว้ใน Q4** — `recordTargetResult()`
+   * ปัจจุบัน `shouldAutoPause` ต้อง `pendingCount > 0` เสมอ, target เดียว
+   * resolve แล้ว pendingCount เป็น 0 ทันที เข้า `completed` เสมอ ไม่มีทาง
+   * pause ได้อยู่แล้วโดยไม่ต้องแก้โค้ดเพิ่ม — ส่วน **Incident ต้องกันเอง**
+   * (`completed` ที่มี failure ปกติสร้าง Incident) ดู
+   * `IncidentService.handleRolloutFailed()` ที่เช็ค
+   * `event.campaignName === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` แล้วข้าม
+   *
+   * **ยังไม่ทำ (รอ B): hook ส่งผลกลับเข้า `ConfigApplyRequest`** (§3.5 ข้อ 5)
+   * — ต้องรอ B เพิ่ม model/relation ก่อน จะไปเกี่ยวที่
+   * `recordTargetResult()`/`markTargetSkippedOffline()` ว่าถ้า target.rollout
+   * มี `configApplyRequest` ผูกอยู่ ให้อัปเดตสถานะคำขอ + แจ้งช่าง (never-throw
+   * เหมือน hook เดิมที่มีอยู่แล้วในทั้งสองเมธอดนี้)
+   *
+   * **แยกเป็น 2 เมธอดตามที่ review B #362 รอบ 2 ขอ** (เดิมเมธอดเดียวทำทุก
+   * อย่างรวดเดียว รวม `autoApplyConfig()` ด้วย) — ปัญหาคือฝั่ง B (#370) ต้อง
+   * ผูก `ConfigApplyRequest.rolloutId` ก่อนผลจะไหลกลับไปหาคำขอได้ถูก แต่
+   * ด้วยลำดับเดิม `autoApplyConfig()` (ซึ่งบันทึกผล + ยิง event ในตัว) รันไป
+   * ก่อนที่ B จะได้ `rolloutId` กลับไปผูกเลย (โหมด mock จบงานในตัวทันที) ผล
+   * จึงหาคำขอไม่เจอ เปลี่ยนเป็น:
+   * - `createFieldApplyRollout(tx, input)` — สร้าง Rollout ในทรานแซกชันของ
+   *   ผู้เรียกเอง (docs/25 §3.5 ข้อ 2) ไม่เรียก `autoApplyConfig()` ไม่ส่ง
+   *   อะไรออกไปจนกว่าผู้เรียก commit สำเร็จ
+   * - `startFieldApplyRollout(rolloutId, actorId)` — เรียกหลัง commit (§3.5
+   *   ข้อ 3) ตอนนั้น B ผูก `rolloutId` ไว้กับคำขอแล้วแน่นอน ผลจึงไหลกลับถูก
+   */
+  async createFieldApplyRollout(
+    tx: Prisma.TransactionClient,
+    input: {
+      requestId: string;
+      deviceId: string;
+      configId: string;
+      requestedBy: string;
+      approvedBy: string;
+    },
+  ): Promise<{ rolloutId: string }> {
+    const systemCampaign = await getOrCreateFieldApplySystemCampaign(
+      tx,
+      input.approvedBy,
+    );
+
+    const rollout = await tx.campaignRollout.create({
+      data: {
+        campaignId: systemCampaign.id,
+        payloadType: 'Config',
+        configId: input.configId,
+        status: 'active',
+        targetCount: 1,
+        createdBy: input.requestedBy,
+        approvedBy: input.approvedBy,
+        approvedAt: new Date(),
+        activeWindowStartedAt: new Date(),
+        applyMode: this.configApplyMode,
+      },
+    });
+    await tx.campaignRolloutTarget.create({
+      data: { rolloutId: rollout.id, deviceId: input.deviceId },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: input.requestedBy,
+        auditModule: AUDIT_MODULE,
+        action: 'create',
+      },
+    });
+
+    return { rolloutId: rollout.id };
+  }
+
+  async startFieldApplyRollout(
+    rolloutId: string,
+    actorId: string,
+  ): Promise<CampaignRollout> {
+    const rollout = await this.prisma.campaignRollout.findUniqueOrThrow({
+      where: { id: rolloutId },
+    });
+    return this.autoApplyConfig(rollout, actorId);
   }
 
   /**
@@ -1702,7 +2151,12 @@ export class CampaignRolloutService {
                 : { firmwareId: payload.firmwareId }),
             },
           },
-          include: { rollout: true },
+          // รวม campaign.name มาด้วย (แค่ select name) — ใช้เช็คว่า Rollout
+          // นี้เป็นของคำขอส่ง Config หน้างานไหม (docs/25 §3.5 ข้อ 5) โดยไม่ต้อง
+          // query แยกรอบสอง
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
 
       let target = await findPendingTarget(true);
@@ -1721,6 +2175,34 @@ export class CampaignRolloutService {
         return false;
       }
       const rollout = target.rollout;
+
+      // docs/25 §5/§5.1 (Q7, มติ A) — บั๊ก: ปุ่มเดิมฝั่ง Mobile
+      // (`DeviceService.applyConfig()`/`confirmFirmwareInstall()`, ส่ง
+      // `fallbackToPayload: true` มาเสมอ) ใช้ `MockConfigApplier` เสมอไม่ว่า
+      // applyMode ของ Rollout จะเป็นอะไร ถ้าช่างกดปุ่มนี้ขณะ target เดียวกัน
+      // กำลังรอผลจริงจากกล่องอยู่ (โหมด `central`/`real`) ผลปลอมจาก mock จะมา
+      // ปิด target ก่อนที่ poll/`device-sync` จะได้คำตอบจริง ทำให้ Campaign
+      // Monitor, Auto Pause และ Incident พลาดผลจริงไปเงียบๆ (ไม่ throw เพราะ
+      // never-throw ของเมธอดนี้) — สกัดที่นี่ (ไม่ใช่ที่ caller) เพราะ caller
+      // (`DeviceService`) ไม่รู้ `rollout.applyMode` ของ target ที่จะ match
+      // ได้จนกว่าจะหาเจอในนี้ก่อน · เช็คนี้ไม่กระทบ `autoApplyConfig()`/
+      // `autoApplyFirmware()`/rollback เอง เพราะ call site พวกนั้นไม่เคยส่ง
+      // `fallbackToPayload: true` (เป็น `rollout.id` ของตัวเอง "แน่นอน" อยู่แล้ว
+      // ตามคอมเมนต์ข้างบน) · `applyMode` เป็น `null` ถือว่าเป็น `mock`
+      // (ค่าเริ่มต้นของระบบตาม CLAUDE.md Mock Mode Pattern — ยังไม่เคยตั้งค่า
+      // = mock เสมอ) ไม่ใช่กรณีอันตรายที่ต้องกัน บล็อกเฉพาะที่ตั้งค่าไว้ชัดเจน
+      // เป็น `real`/`central` เท่านั้น
+      if (
+        options?.fallbackToPayload &&
+        rollout.applyMode &&
+        rollout.applyMode !== 'mock'
+      ) {
+        this.logger.warn(
+          `recordTargetResult: target ${target.id} (deviceId ${deviceId}) อยู่ใน Rollout โหมด ${rollout.applyMode ?? 'null'} (ไม่ใช่ mock) — ปุ่มฝั่ง Mobile (mock) ไม่มีสิทธิ์บันทึกผลแทนกล่องจริง ข้าม`,
+        );
+        return false;
+      }
+
       // การเปลี่ยนสถานะของ Rollout ที่เกิดใน transaction นี้ — ใช้ส่ง event หลัง
       // commit เท่านั้น (listener อ่านข้อมูลสดจาก DB ต้องเห็นผลที่ commit แล้ว)
       let transition = null as 'auto-pause' | 'completed' | null;
@@ -1812,6 +2294,19 @@ export class CampaignRolloutService {
           resolveWhenClean: true,
         });
       }
+      // docs/25 §3.5 ข้อ 5 — Rollout เครื่องเดียวของคำขอส่ง Config หน้างาน
+      // (#370) แจ้งผลกลับให้โมดูล config-apply-request ของ B ทาง event แทน
+      // (เช็คชื่อ Campaign ระบบ ไม่ query relation ใหม่ที่ไม่มีฝั่งเรา)
+      if (
+        claimed &&
+        rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME
+      ) {
+        this.rolloutEvents.safeEmit(FIELD_APPLY_RESULT_EVENT, {
+          rolloutId: rollout.id,
+          outcome: success ? 'succeeded' : 'failed',
+          detail,
+        });
+      }
       return claimed;
     } catch (err) {
       this.logger.warn(
@@ -1846,6 +2341,11 @@ export class CampaignRolloutService {
 
         const target = await tx.campaignRolloutTarget.findUniqueOrThrow({
           where: { id: targetId },
+          // campaign.name แค่ select เดียว — เช็คว่าเป็น Rollout ของคำขอส่ง
+          // Config หน้างานไหม (docs/25 §3.5 ข้อ 5) ไม่ query แยกรอบสอง
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         const pendingCount = await tx.campaignRolloutTarget.count({
           where: { rolloutId: target.rolloutId, status: 'pending' },
@@ -1857,15 +2357,25 @@ export class CampaignRolloutService {
           });
           if (closed.count > 0) completedRolloutId = target.rolloutId;
         }
-        return true;
+        return target;
       });
 
-      if (skipped && completedRolloutId) {
+      if (!skipped) return false;
+      if (completedRolloutId) {
         await this.emitFailureOutcome(completedRolloutId, 'completed', {
           resolveWhenClean: true,
         });
       }
-      return skipped;
+      // docs/25 §3.5 ข้อ 5 (#370) — เครื่องที่ไม่มาดึงงานเลยของคำขอส่ง Config
+      // หน้างาน แจ้งผลกลับให้ config-apply-request ของ B เหมือนกรณีอื่น
+      if (skipped.rollout.campaign?.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) {
+        this.rolloutEvents.safeEmit(FIELD_APPLY_RESULT_EVENT, {
+          rolloutId: skipped.rolloutId,
+          outcome: 'skipped_offline',
+          detail,
+        });
+      }
+      return true;
     } catch (err) {
       this.logger.warn(
         `ข้ามเครื่องที่ไม่มาดึงงานไม่สำเร็จ (target ${targetId}): ${(err as Error).message}`,

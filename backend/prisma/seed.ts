@@ -326,6 +326,24 @@ async function main() {
     // (`rejectConfigDeletionRequest` ก็ใช้ action Approve เดียวกับ approve)
     grant('Operation', 'device-config-override', 'Approve'),
 
+    // ---- config-apply-request (docs/25 §3.3–§3.4, PR #364) ----
+    // คำขอส่ง Config ของ Task เข้าเครื่องจริง — ST/OT ขอ (POST
+    // /tasks/{taskId}/config-apply-requests), ยกเลิก (POST .../{id}/cancel) และ
+    // กดส่งเข้ากล่องหลังอนุมัติ (POST .../{id}/release, docs/27) ด้วย action
+    // Create · ใครกดได้ (ผู้ถือ Task) เช็คที่ service · เท่ากับ device-config-apply ตอนนี้
+    grant('ST', 'config-apply-request', 'Create'),
+    grant('OT', 'config-apply-request', 'Create'),
+    // GET /config-apply-requests — คิวคำขอ (Operation ตัดสิน, Auditor/Admin/
+    // SuperAdmin ดูอย่างเดียว)
+    grant('Operation', 'config-apply-request', 'Read'),
+    grant('Auditor', 'config-apply-request', 'Read'),
+    grant('Admin', 'config-apply-request', 'Read'),
+    grant('SuperAdmin', 'config-apply-request', 'Read'),
+    // POST /config-apply-requests/{id}/approve · .../reject — **Operation
+    // เท่านั้น** Admin/SuperAdmin อนุมัติไม่ได้ (RBAC_Matrix §5 ข้อ 5) · SoD ระดับ
+    // user id (≠ ผู้ขอ, ≠ ผู้ผูก Config, ≠ ผู้อนุมัติ Config) เช็คที่ service
+    grant('Operation', 'config-apply-request', 'Approve'),
+
     // ---- device-firmware-override (Sprint 3 แถวที่ 24) ----
     // Firmware Override รายเครื่อง — mirror device-config-override ทุกประการ
     // (ST เท่านั้น ไม่ให้ OT แม้ RBAC_Matrix.md section 2 จะร่าง aspiration ไว้

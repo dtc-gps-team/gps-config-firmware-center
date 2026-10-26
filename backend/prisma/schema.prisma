@@ -53,8 +53,15 @@ model User {
   updatedAt    DateTime @updatedAt
 
   role                          Role                    @relation(fields: [roleId], references: [id])
-  tasks                         Task[]
-  taskEvents                    TaskEvent[]             @relation("TaskEventChangedBy")
+  tasks                         Task[]                  @relation("TaskAssignedTo")
+  // docs/25 §4.2 — งานที่ผู้ใช้คนนี้ (Operation) ผูก Config เข้าไว้
+  tasksConfigAssigned           Task[]                  @relation("TaskConfigAssignedBy")
+  // docs/25 §4.1 — คำขอส่ง Config เข้าเครื่อง: ผู้ขอ / ผู้ผูก Config (snapshot) / ผู้ตัดสิน
+  configApplyRequests           ConfigApplyRequest[]    @relation("ConfigApplyRequestedBy")
+  configApplyRequestsAssigned   ConfigApplyRequest[]    @relation("ConfigApplyConfigAssignedBy")
+  configApplyRequestDecisions   ConfigApplyRequest[]    @relation("ConfigApplyDecidedBy")
+  configApplyRequestReleases    ConfigApplyRequest[]    @relation("ConfigApplyReleasedBy")
+  taskEvents                   TaskEvent[]             @relation("TaskEventChangedBy")
   notifications                 Notification[]
   deviceTokens                  DeviceToken[]
   auditLogs                     AuditLog[]
@@ -140,16 +147,29 @@ model Task {
   // onDelete: SetNull เหมือน configId ด้านบน — ลบ Campaign ไม่ควร cascade
   // ลบ Task ที่เป็นงานปฏิบัติการจริง
   campaignId  String?
+  // ผู้ผูก `configId` เข้างานนี้ (Operation, `req.user.sub`) และเวลาที่ผูก —
+  // docs/25 §4.2: ใช้เช็ค Separation of Duty ของคำขอส่ง Config เข้าเครื่อง
+  // (ผู้ผูก Config อนุมัติการส่งเองไม่ได้) `TaskService.create()`/`update()`
+  // เขียนทุกครั้งที่ตั้งหรือเปลี่ยน `configId` และล้างเป็น null เมื่อ `configId`
+  // ถูกล้าง · **Task เดิมก่อน migration นี้เป็น null และไม่ย้อนเดาค่าจาก
+  // AuditLog** — คำขอส่ง Config ของงานพวกนี้ถูกปฏิเสธ (fail closed) จนกว่า
+  // Operation จะผูก Config ใหม่ · เป็นคอลัมน์ของโปรเจกต์เอง ไม่มีใน Data
+  // Dictionary (DD ไม่มีผู้ผูก Config ของ Task)
+  // onDelete: Restrict — เป็นข้อมูลเชิง audit ไม่ควรหายเงียบๆ
+  configAssignedBy String?
+  configAssignedAt DateTime?
   status      TaskStatus @default(pending)
   dueDate     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   // user id ของผู้รับผิดชอบงาน (ดู docs/api/openapi.yaml Task.assignedTo)
-  assignedUser User      @relation(fields: [assignedTo], references: [id])
+  assignedUser User      @relation("TaskAssignedTo", fields: [assignedTo], references: [id])
+  configAssigner User?   @relation("TaskConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
   config       Config?   @relation(fields: [configId], references: [id])
   campaign     Campaign? @relation(fields: [campaignId], references: [id])
   events       TaskEvent[]
+  configApplyRequests ConfigApplyRequest[]
 
   // ค้นตามรหัสเครื่อง: ประวัติของอุปกรณ์ (`GET /devices/{deviceId}/history`)
   @@index([deviceId])
@@ -223,6 +243,19 @@ enum NotificationType {
   incident_report_resolved
   incident_report_dismissed
   incident_report_promoted
+  // เพิ่มใหม่ (docs/25 §3.6) — คำขอส่ง Config เข้าเครื่องจากหน้างาน: แจ้ง
+  // Operation เมื่อมีคำขอใหม่ + แจ้งช่างผู้ขอเมื่อจบ · ไม่มี
+  // `config_apply_approved` (มติ Q5 — อนุมัติแล้วส่งทันที แจ้งแค่ผลสุดท้าย)
+  // · `config_apply_expired` เพิ่มตอน implement (docs/25 §3.9 ปล่อยให้ตัดสิน
+  // ตอนนั้น) แยกจาก rejected เพราะไม่มี Operation คนไหนปฏิเสธจริง
+  // · `config_apply_approved` เพิ่มใน docs/27 — อนุมัติไม่ส่งทันทีแล้ว ช่างต้อง
+  // รู้ว่ากดส่งได้ (เดิมมติ Q5 ไม่มีเพราะอนุมัติ = ส่ง)
+  config_apply_pending
+  config_apply_approved
+  config_apply_rejected
+  config_apply_succeeded
+  config_apply_failed
+  config_apply_expired
 }
 
 model Notification {
@@ -605,6 +638,7 @@ model Config {
   tasks             Task[]
   deletionRequests  ConfigDeletionRequest[]
   deviceOverrides   DeviceConfigOverride[]
+  applyRequests     ConfigApplyRequest[]
   clonedFrom        Config?                 @relation("ConfigClone", fields: [clonedFromId], references: [id], onDelete: SetNull)
   clones            Config[]                @relation("ConfigClone")
 }
@@ -726,6 +760,94 @@ model DeviceConfigOverride {
   @@unique([deviceId, versionNumber])
   @@index([deviceId])
   @@index([status])
+}
+
+// คำขอส่ง Config เข้าเครื่องจริงจากหน้างาน (docs/25 §4.1):
+//   pending          รอ Operation ตัดสิน
+//   approved         อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง (docs/27 — เดิม
+//                    อนุมัติแล้วส่งทันที เปลี่ยนเพราะช่างต้องอยู่หน้ากล่องตอนส่ง)
+//   sending          ช่างกดส่งแล้ว สร้าง Rollout เครื่องเดียวแล้ว รอผลจากกล่อง
+//   succeeded/failed/skipped_offline  ผลจากกล่อง (ส่งกลับผ่าน hook ของ Rollout)
+//   rejected         Operation ปฏิเสธ
+//   cancelled        ผู้ขอยกเลิกเอง หรือ Task ถูกยกเลิก (§3.9)
+//   expired          ค้าง `pending`/`approved` เกินเวลา (§3.9, docs/27 D2 — แยกจาก
+//                    cancelled เพื่อให้ช่างรู้ว่าไม่มีใครตัดสิน/ไม่ได้กดส่งทัน)
+enum ConfigApplyRequestStatus {
+  pending
+  approved
+  sending
+  succeeded
+  failed
+  skipped_offline
+  rejected
+  cancelled
+  expired
+}
+
+// คำขอ "ส่ง Config ของ Task นี้เข้าเครื่องจริง" จากช่าง (ST/OT) ที่ต้องผ่าน
+// Operation **อีกคน** อนุมัติก่อน (docs/25, PR #364 — A ยืนยัน Q1–Q9) · mirror
+// `DeviceConfigOverride` (#223) · เป็น model ของโปรเจกต์เอง ไม่มีใน Data
+// Dictionary (DD ไม่มีขั้นอนุมัติการส่ง Config รายเครื่อง)
+//
+// Separation of Duty (§3.4) — ผู้ตัดสินต้องเป็น Operation และต้อง ≠ ผู้ขอ,
+// ≠ `configAssignedBy` (snapshot จาก `Task.configAssignedBy` ตอนขอ) และ
+// ≠ `Config.approvedBy` เช็คที่ service ทุกครั้ง ไม่ใช่ DB constraint
+// (mirror `CampaignRollout.approvedBy`)
+//
+// กันคำขอเปิดซ้ำต่อเครื่อง (`pending`/`sending`): Prisma ไม่มี partial unique
+// index จึงเช็คในทรานแซกชันที่ล็อกแถว Task ไว้ (§4.1)
+model ConfigApplyRequest {
+  id               String                   @id @default(uuid())
+  taskId           String
+  // เลขเครื่อง (`Device.deviceId`) snapshot จาก Task ตอนขอ — ไม่ใช่ FK เพราะ
+  // `Task.deviceId` เองก็ไม่ใช่ FK
+  deviceId         String
+  configId         String
+  // snapshot ของ `Task.configAssignedBy` ตอนขอ — ไม่ nullable: คำขอของงานที่
+  // ไม่รู้ผู้ผูก Config ถูกปฏิเสธตั้งแต่ตอนสร้าง (fail closed)
+  configAssignedBy String
+  requestedBy      String
+  requestedAt      DateTime                 @default(now())
+  // ครบกำหนดหมดอายุของขั้นที่รออยู่ (§3.9, docs/27 D2): `pending` = ขอ+24 ชม.,
+  // `approved` = อนุมัติ+24 ชม. (ตั้งใหม่ตอนอนุมัติ) — เก็บเป็นคอลัมน์ ไม่คำนวณจาก
+  // requestedAt ทุกครั้ง เพื่อให้เปลี่ยนระยะเวลาทีหลังได้โดยไม่กระทบคำขอเดิม
+  // และให้ Mobile แสดงเวลาได้ตรงกับ backend
+  expiresAt        DateTime
+  note             String?
+  status           ConfigApplyRequestStatus @default(pending)
+  decidedBy        String?
+  decidedAt        DateTime?
+  // บังคับเมื่อ `rejected` (ตรวจที่ DTO)
+  rejectReason     String?
+  // ConfigVersion.versionNumber ล่าสุดของ Config ตอนอนุมัติ (docs/27 D4) — ตอน
+  // กดส่งต้องยังเท่าเดิม ไม่งั้นค่าที่ส่งไม่ใช่ค่าที่ Operation อนุมัติ · 0 = Config
+  // ที่ยังไม่มีแถว ConfigVersion (seed เก่า) · null = ยังไม่อนุมัติ
+  approvedConfigVersion Int?
+  // ช่างที่ถือ Task ตอนกดส่ง (docs/27 D1 — อาจไม่ใช่ผู้ขอถ้า Task ถูกโอน)
+  releasedBy       String?
+  releasedAt       DateTime?
+  // Rollout เครื่องเดียวที่สร้างตอนช่างกดส่ง (docs/27 — เดิมสร้างตอนอนุมัติ, docs/25
+  // §3.2 ทาง ค.) · @unique = 1:1
+  rolloutId        String?                  @unique
+  // เหตุผล/ผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, Task ถูกยกเลิก)
+  resultDetail     String?
+  completedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  // onDelete: Restrict ทุกตัว — ประวัติคำขอเป็นข้อมูลเชิง audit (mirror
+  // DeviceConfigOverride หลังรีวิว A บน PR #225)
+  task           Task             @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  config         Config           @relation(fields: [configId], references: [id], onDelete: Restrict)
+  requester      User             @relation("ConfigApplyRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
+  configAssigner User             @relation("ConfigApplyConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
+  decider        User?            @relation("ConfigApplyDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
+  releaser       User?            @relation("ConfigApplyReleasedBy", fields: [releasedBy], references: [id], onDelete: Restrict)
+  rollout        CampaignRollout? @relation(fields: [rolloutId], references: [id], onDelete: Restrict)
+
+  @@index([deviceId, status])
+  @@index([taskId])
+  @@index([status, expiresAt])
 }
 
 enum DeviceFirmwareOverrideStatus {
@@ -1117,6 +1239,8 @@ model CampaignRollout {
   //   'mock' = backend apply ให้ทุกเครื่องทันที (พฤติกรรมเดิม)
   //   'real' = รอให้อุปกรณ์ดึงงานเอง (`GET /device-sync/{deviceId}/jobs`) แล้ว
   //            รายงานผลกลับ (`POST .../result`)
+  //   'central' = ส่ง Config ไปที่ Server กลาง (ESP32 Central Management) ทีละเครื่อง
+  //            แล้วถามผลคำสั่งเป็นระยะ (`CampaignRolloutTarget.centralCommandId`)
   // บันทึกไว้ที่ Rollout แทนการอ่าน env ใหม่ทุกครั้ง เพื่อให้ Rollout ที่ปล่อย
   // ตอน `real` ยังรอเครื่องต่อได้แม้ภายหลังเปลี่ยน env กลับเป็น `mock` · null =
   // Rollout ก่อนมีคอลัมน์นี้ (ถือเป็น mock) หรือยังไม่เคยถูกปล่อย · Firmware
@@ -1157,6 +1281,9 @@ model CampaignRollout {
   targets          CampaignRolloutTarget[]
   rollbackOf       CampaignRollout?        @relation("RollbackChain", fields: [rollbackOfId], references: [id])
   rollbackAttempts CampaignRollout[]       @relation("RollbackChain")
+  // docs/25 §3.2 ทาง ค. — คำขอส่ง Config จากหน้างานที่ Rollout เครื่องเดียวนี้
+  // ถูกสร้างมาให้ (null = Rollout ปกติของ Campaign) · relation ฝั่งนี้ไม่มีคอลัมน์
+  configApplyRequest ConfigApplyRequest?
 }
 
 // ผลของ rollout หนึ่งรอบต่ออุปกรณ์หนึ่งเครื่อง (แก้ไข 2026-09-24, Campaign
@@ -1192,6 +1319,10 @@ model CampaignRolloutTarget {
   // Rollback ใช้เลือกเครื่องที่ต้องส่ง Config เก่าคืน (ดึงไปแล้วแต่ยังไม่
   // รายงานผลก็อาจใช้ Config ที่มีปัญหาไปแล้ว) · คงค่าครั้งแรกไว้เสมอ
   pulledAt     DateTime?
+  // รหัสคำสั่งที่ Server กลางออกให้ตอนสั่งส่ง Config (โหมด `central` เท่านั้น) ใช้ถาม
+  // ผลคำสั่งเป็นระยะจนจบ · null = ยังไม่เคยสั่ง (หรือไม่ใช่โหมด central) · เป็นคอลัมน์
+  // ของโปรเจกต์เอง ไม่มีใน Data Dictionary
+  centralCommandId String?
   createdAt    DateTime                    @default(now())
   updatedAt    DateTime                    @updatedAt
 

@@ -11,7 +11,7 @@ Widget _wrap(Widget child) => MaterialApp(
 );
 
 void main() {
-  testWidgets('title เป็นหัวข้อ (header) ตัว xl semibold (มติ B Batch 2)', (
+  testWidgets('title เป็นหัวข้อ (header) ตัว xl หนา ชิดตัวอักษร (docs/22 §4.6)', (
     tester,
   ) async {
     final handle = tester.ensureSemantics();
@@ -19,7 +19,9 @@ void main() {
 
     final title = tester.widget<Text>(find.text('Incidents'));
     expect(title.style!.fontSize, AppTypography.xl);
-    expect(title.style!.fontWeight, FontWeight.w600);
+    // ขนาด xl ตามมติ B Batch 2 · น้ำหนัก / tracking ปรับให้หัวข้อเด่นขึ้น (§4.6)
+    expect(title.style!.fontWeight, FontWeight.w700);
+    expect(title.style!.letterSpacing, AppTypography.headingTracking);
     expect(
       tester.getSemantics(find.text('Incidents')),
       isSemantics(isHeader: true),

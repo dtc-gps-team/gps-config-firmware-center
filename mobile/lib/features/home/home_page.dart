@@ -13,6 +13,7 @@ import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
 import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -176,84 +177,87 @@ class _TaskSections extends ConsumerWidget {
 
         void openTask(Task task) => context.push(AppRoutes.taskDetail(task.id));
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Column(
-              key: openSectionKey,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _SectionTitle(
-                  'ต้องทำ',
-                  count: open.length,
-                  key: const Key('home_open_section'),
-                ),
-                if (open.isEmpty)
-                  const AppEmptyState(
-                    icon: Icons.task_alt,
-                    message: 'ไม่มีงานค้าง',
-                    messageKey: Key('home_open_empty'),
+        // จางเข้าตอนรายการงานโหลดเสร็จ แทนการโผล่ทันทีแทนที่ skeleton
+        return AppFadeIn(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Column(
+                key: openSectionKey,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _SectionTitle(
+                    'ต้องทำ',
+                    count: open.length,
+                    key: const Key('home_open_section'),
                   ),
-                for (final (i, task) in open.indexed)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _TaskCard(
-                      key: Key('my_task_card_$i'),
-                      task: task,
-                      pendingSync: pendingIds.contains(task.id),
-                      onTap: () => openTask(task),
+                  if (open.isEmpty)
+                    const AppEmptyState(
+                      icon: Icons.task_alt,
+                      message: 'ไม่มีงานค้าง',
+                      messageKey: Key('home_open_empty'),
+                    ),
+                  for (final (i, task) in open.indexed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _TaskCard(
+                        key: Key('my_task_card_$i'),
+                        task: task,
+                        pendingSync: pendingIds.contains(task.id),
+                        onTap: () => openTask(task),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const _SectionTitle(
+                'ประวัติงานล่าสุด',
+                key: Key('home_history_section'),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: _StatCard(
+                      value: '$completedThisMonth',
+                      label: 'งานที่เสร็จเดือนนี้',
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const _SectionTitle(
-              'ประวัติงานล่าสุด',
-              key: Key('home_history_section'),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatCard(
-                    value: '$completedThisMonth',
-                    label: 'งานที่เสร็จเดือนนี้',
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _StatCard(
+                      value: '${completed.length}',
+                      label: 'ประวัติงานทั้งหมด',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (history.isEmpty)
+                const AppEmptyState(
+                  icon: Icons.history,
+                  message: 'ยังไม่มีประวัติงาน',
+                  messageKey: Key('home_history_empty'),
+                ),
+              for (final (i, task) in history.take(_historyLimit).indexed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _TaskCard(
+                    key: Key('history_card_$i'),
+                    task: task,
+                    history: true,
+                    pendingSync: pendingIds.contains(task.id),
+                    onTap: () => openTask(task),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _StatCard(
-                    value: '${completed.length}',
-                    label: 'ประวัติงานทั้งหมด',
-                  ),
+              if (history.length > _historyLimit)
+                const Text(
+                  'แสดง $_historyLimit งานล่าสุด',
+                  key: Key('home_history_limit_note'),
+                  textAlign: TextAlign.center,
+                  style: _TaskCard._meta,
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (history.isEmpty)
-              const AppEmptyState(
-                icon: Icons.history,
-                message: 'ยังไม่มีประวัติงาน',
-                messageKey: Key('home_history_empty'),
-              ),
-            for (final (i, task) in history.take(_historyLimit).indexed)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _TaskCard(
-                  key: Key('history_card_$i'),
-                  task: task,
-                  history: true,
-                  pendingSync: pendingIds.contains(task.id),
-                  onTap: () => openTask(task),
-                ),
-              ),
-            if (history.length > _historyLimit)
-              const Text(
-                'แสดง $_historyLimit งานล่าสุด',
-                key: Key('home_history_limit_note'),
-                textAlign: TextAlign.center,
-                style: _TaskCard._meta,
-              ),
-          ],
+            ],
+          ),
         );
       },
     );

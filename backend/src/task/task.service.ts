@@ -124,6 +124,27 @@ function toDbDate(value: string | null | undefined): Date | null | undefined {
 }
 
 /**
+ * ผู้ผูก Config เข้างาน (docs/25 §4.2) — เขียนทุกครั้งที่ PATCH/POST ส่ง
+ * `configId` มา: ตั้งค่า = ผู้เรียก (Operation), ล้าง (`null`) = ล้างผู้ผูกด้วย ·
+ * ไม่ส่ง `configId` (`undefined`) = ไม่แตะทั้งสองคอลัมน์ · ส่งค่าเดิมซ้ำนับเป็น
+ * "ผูกใหม่" โดยตั้งใจ: เป็นทางเดียวที่ Operation ใช้เติมผู้ผูกให้งานเก่าที่เป็น
+ * null (คำขอส่ง Config ของงานพวกนั้นถูกปฏิเสธจนกว่าจะผูกใหม่)
+ */
+export function configAssignment(
+  configId: string | null | undefined,
+  actor: ActingUser,
+  now: Date = new Date(),
+): { configAssignedBy?: string | null; configAssignedAt?: Date | null } {
+  if (configId === undefined) {
+    return {};
+  }
+  if (configId === null) {
+    return { configAssignedBy: null, configAssignedAt: null };
+  }
+  return { configAssignedBy: actor.id, configAssignedAt: now };
+}
+
+/**
  * `TaskEvent.changedAt` ของการเปลี่ยนสถานะ — ใช้เวลาที่ client ส่งมา (เวลาที่
  * ช่างกดจริงตอนเข้าคิว offline, issue #296) ถ้ามี · เวลาในอนาคต (นาฬิกาเครื่อง
  * เดินเร็ว) ปัดลงเป็นเวลา server แทนการตอบ 400 เพื่อไม่ให้คิว offline ของ
@@ -175,6 +196,7 @@ export class TaskService {
           assignedTo: dto.assignedTo,
           deviceId: dto.deviceId,
           configId: dto.configId,
+          ...configAssignment(dto.configId, actor),
           dueDate: toDbDate(dto.dueDate),
         },
       });
@@ -261,11 +283,15 @@ export class TaskService {
               assignedTo: dto.assignedTo,
               deviceId: dto.deviceId,
               configId: dto.configId,
+              ...configAssignment(dto.configId, actor),
               status: dto.status,
               dueDate: toDbDate(dto.dueDate),
             },
           });
           await this.recordStatusChange(tx, previous, task, dto, actor);
+          if (task.status === 'cancelled' && previous.status !== 'cancelled') {
+            await this.cancelPendingConfigApplyRequests(tx, task.id);
+          }
           return task;
         });
       } catch (err) {
@@ -408,6 +434,26 @@ export class TaskService {
     });
     await this.logAudit('add_note', actor);
     return toEventView(event);
+  }
+
+  /**
+   * docs/25 §3.9 (มติ Q9) — งานถูกยกเลิก: ปิดคำขอส่ง Config ของงานนี้ที่ยัง
+   * `pending` หรือ `approved` (docs/27 — อนุมัติแล้วแต่ยังไม่กดส่ง) ตามไปด้วย
+   * ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน · คำขอที่ `sending` แล้วไม่แตะ
+   * (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
+   */
+  private async cancelPendingConfigApplyRequests(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+  ): Promise<void> {
+    await tx.configApplyRequest.updateMany({
+      where: { taskId, status: { in: ['pending', 'approved'] } },
+      data: {
+        status: 'cancelled',
+        resultDetail: 'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
+        completedAt: new Date(),
+      },
+    });
   }
 
   /**

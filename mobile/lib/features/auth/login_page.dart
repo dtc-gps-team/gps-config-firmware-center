@@ -5,7 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/app_tokens.dart';
-import '../../core/ui/app_card.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_v2_theme.dart';
 
 /// App version/build shown at the bottom of Login — read once per app
@@ -76,146 +76,165 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     // เลื่อนขึ้นมาเห็นได้ง่ายกว่าเดิม โดยไม่ต้องเขียนโครง layout ใหม่ทั้งหมด
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    // design system ใหม่ (docs/22 Batch 2) — ฟอร์มอยู่ใน AppCard แบบหน้า login
-    // ของ Web · ไม่มี AppPageHeader (docs/22 §7.1: ทุกหน้ายกเว้น Login)
+    // design system ใหม่ (docs/22 Batch 2) — ไม่มี AppPageHeader (docs/22 §7.1:
+    // ทุกหน้ายกเว้น Login) · ปรับให้พรีเมียมขึ้น (docs/22 §4.6): พื้นไล่สีฟ้าอ่อนจาก
+    // ด้านบน, ฟอร์มอยู่ในแผงลอย (_LoginPanel) มุมมนกว่าการ์ดปกติ เงาลึกกว่า, แผง
+    // ค่อยๆ ปรากฏตอนเปิดหน้า · ตรรกะเหมือนเดิม
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: keyboardOpen ? 16 : 32,
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: AppCard(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (!keyboardOpen) ...[
-                          const SizedBox(height: 8),
-                          const Center(child: _AppMark()),
-                          const SizedBox(height: 16),
-                        ],
-                        const Text(
-                          'GPS Config & Firmware Center',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: AppTypography.xxl,
-                            height: AppTypography.xxlHeight,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.foreground,
-                          ),
-                        ),
-                        if (!keyboardOpen) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: AppTypography.base,
-                              height: AppTypography.baseHeight,
-                              color: AppColors.mutedForeground,
-                            ),
-                          ),
-                        ],
-                        if (AppConfig.apiMockMode && !keyboardOpen) ...[
-                          const SizedBox(height: 16),
-                          const _MockModeBanner(),
-                        ],
-                        SizedBox(height: keyboardOpen ? 16 : 24),
-                        TextFormField(
-                          key: const Key('login_username'),
-                          controller: _usernameController,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          textInputAction: TextInputAction.next,
-                          decoration: _fieldDecoration(
-                            label: 'ชื่อผู้ใช้',
-                            hint: 'กรอกชื่อผู้ใช้ของคุณ',
-                            prefixIcon: const Icon(
-                              Icons.person_outline,
-                              color: AppColors.mutedForeground,
-                            ),
-                          ),
-                          validator: (value) =>
-                              (value == null || value.trim().isEmpty)
-                              ? 'กรุณากรอก Username'
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          key: const Key('login_password'),
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _submit(),
-                          decoration: _fieldDecoration(
-                            label: 'รหัสผ่าน',
-                            hint: 'กรอกรหัสผ่าน',
-                            prefixIcon: const Icon(
-                              Icons.lock_outline,
-                              color: AppColors.mutedForeground,
-                            ),
-                            suffixIcon: IconButton(
-                              key: const Key('login_password_toggle'),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.center,
+              colors: [AppColors.primarySubtle, AppColors.background],
+            ),
+          ),
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: keyboardOpen ? AppSpacing.lg : AppSpacing.xxxl,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: AppFadeIn(
+                    offset: 16,
+                    duration: AppMotion.slow,
+                    child: _LoginPanel(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (!keyboardOpen) ...[
+                              const SizedBox(height: 8),
+                              const Center(child: _AppMark()),
+                              const SizedBox(height: 16),
+                            ],
+                            const Text(
+                              'GPS Config & Firmware Center',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: AppTypography.xxl,
+                                height: AppTypography.xxlHeight,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.foreground,
                               ),
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: AppColors.mutedForeground,
-                              ),
-                              tooltip: _obscurePassword
-                                  ? 'แสดงรหัสผ่าน'
-                                  : 'ซ่อนรหัสผ่าน',
                             ),
-                          ),
-                          validator: (value) => (value == null || value.isEmpty)
-                              ? 'กรุณากรอก Password'
-                              : null,
-                        ),
-                        if (auth.error != null) ...[
-                          const SizedBox(height: 12),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Padding(
-                                padding: EdgeInsets.only(top: 3),
-                                child: Icon(
-                                  Icons.error_outline,
-                                  size: 18,
-                                  color: AppColors.destructive,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  auth.error!,
-                                  key: const Key('login_error'),
-                                  style: const TextStyle(
-                                    color: AppColors.destructive,
-                                    fontSize: AppTypography.sm,
-                                    height: AppTypography.smHeight,
-                                  ),
+                            if (!keyboardOpen) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppTypography.base,
+                                  height: AppTypography.baseHeight,
+                                  color: AppColors.mutedForeground,
                                 ),
                               ),
                             ],
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        _SubmitButton(busy: auth.isBusy, onPressed: _submit),
-                        if (!keyboardOpen) ...[
-                          const SizedBox(height: 16),
-                          const _AppVersionText(),
-                        ],
-                      ],
+                            if (AppConfig.apiMockMode && !keyboardOpen) ...[
+                              const SizedBox(height: 16),
+                              const _MockModeBanner(),
+                            ],
+                            SizedBox(height: keyboardOpen ? 16 : 24),
+                            TextFormField(
+                              key: const Key('login_username'),
+                              controller: _usernameController,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              textInputAction: TextInputAction.next,
+                              decoration: _fieldDecoration(
+                                label: 'ชื่อผู้ใช้',
+                                hint: 'กรอกชื่อผู้ใช้ของคุณ',
+                                prefixIcon: const Icon(
+                                  Icons.person_outline,
+                                  color: AppColors.mutedForeground,
+                                ),
+                              ),
+                              validator: (value) =>
+                                  (value == null || value.trim().isEmpty)
+                                  ? 'กรุณากรอก Username'
+                                  : null,
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              key: const Key('login_password'),
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _submit(),
+                              decoration: _fieldDecoration(
+                                label: 'รหัสผ่าน',
+                                hint: 'กรอกรหัสผ่าน',
+                                prefixIcon: const Icon(
+                                  Icons.lock_outline,
+                                  color: AppColors.mutedForeground,
+                                ),
+                                suffixIcon: IconButton(
+                                  key: const Key('login_password_toggle'),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.mutedForeground,
+                                  ),
+                                  tooltip: _obscurePassword
+                                      ? 'แสดงรหัสผ่าน'
+                                      : 'ซ่อนรหัสผ่าน',
+                                ),
+                              ),
+                              validator: (value) =>
+                                  (value == null || value.isEmpty)
+                                  ? 'กรุณากรอก Password'
+                                  : null,
+                            ),
+                            if (auth.error != null) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 3),
+                                    child: Icon(
+                                      Icons.error_outline,
+                                      size: 18,
+                                      color: AppColors.destructive,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      auth.error!,
+                                      key: const Key('login_error'),
+                                      style: const TextStyle(
+                                        color: AppColors.destructive,
+                                        fontSize: AppTypography.sm,
+                                        height: AppTypography.smHeight,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: 24),
+                            _SubmitButton(
+                              busy: auth.isBusy,
+                              onPressed: _submit,
+                            ),
+                            if (!keyboardOpen) ...[
+                              const SizedBox(height: 16),
+                              const _AppVersionText(),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -228,19 +247,56 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-/// สัญลักษณ์ของระบบแบบ `LogoMark` ของ Web — หมุดตำแหน่งในกรอบสี primary
-/// (`size-14 rounded-xl` = 56 / มุม 14) ไม่มีตัวอักษร
-class _AppMark extends StatelessWidget {
-  const _AppMark();
+/// แผงฟอร์มหน้า Login — การ์ดขาวลอยเด่นกลางจอ: มุม [AppRadius.xxl] เงา
+/// [AppShadows.floating] และ padding กว้างกว่าการ์ดปกติ ([AppCard] มุม xl เงาเบา)
+class _LoginPanel extends StatelessWidget {
+  const _LoginPanel({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56,
-      height: 56,
+      key: const Key('login_panel'),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.xxl,
+        AppSpacing.xxl,
+        AppSpacing.xxl,
+        AppSpacing.xl,
+      ),
       decoration: BoxDecoration(
-        color: AppColors.primary,
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.xxl),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadows.floating,
+      ),
+      child: child,
+    );
+  }
+}
+
+/// สัญลักษณ์ของระบบแบบ `LogoMark` ของ Web — หมุดตำแหน่งในกรอบสี primary
+/// (`size-14 rounded-xl` = 56) ไม่มีตัวอักษร · ต่างจาก Web (§4.6): ไล่สี primary
+/// อ่อน → เข้ม + เงาสีฟ้า ([AppShadows.primaryGlow]) ให้เป็นจุดเน้นของหน้า
+class _AppMark extends StatelessWidget {
+  const _AppMark();
+
+  /// สีอ่อนด้านบนของการไล่สี — primary สว่างขึ้นเล็กน้อย
+  static const _top = Color(0xFF2E86CC);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_top, AppColors.primary],
+        ),
         borderRadius: BorderRadius.circular(AppRadius.xl),
+        boxShadow: AppShadows.primaryGlow,
       ),
       child: const Icon(
         Icons.location_on_outlined,
@@ -260,27 +316,72 @@ class _SubmitButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // สี / มุม / ความสูง 48 มาจาก filledButtonTheme ของ theme v2 · เต็มความกว้าง
-    // เพราะอยู่ใน Column ที่ stretch
-    return FilledButton(
-      key: const Key('login_submit'),
-      onPressed: busy ? null : onPressed,
-      child: busy
-          ? const SizedBox(
-              height: 22,
-              width: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.primaryForeground,
-              ),
-            )
-          : const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('เข้าสู่ระบบ'),
-                SizedBox(width: 8),
-                Icon(Icons.arrow_forward, size: 18),
-              ],
-            ),
+    // เพราะอยู่ใน Column ที่ stretch · micro-interaction: ปุ่มยุบลงนิดตอนกด
+    // (`_PressScale`) และสลับ ข้อความ ↔ วงหมุน แบบจางแทนการกระตุก
+    return _PressScale(
+      enabled: !busy,
+      child: FilledButton(
+        key: const Key('login_submit'),
+        onPressed: busy ? null : onPressed,
+        child: AnimatedSwitcher(
+          duration: AppMotion.fast,
+          child: busy
+              ? const SizedBox(
+                  key: ValueKey('busy'),
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primaryForeground,
+                  ),
+                )
+              : const Row(
+                  key: ValueKey('idle'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('เข้าสู่ระบบ'),
+                    SizedBox(width: 8),
+                    Icon(Icons.arrow_forward, size: 18),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ยุบ [child] ลงเล็กน้อยระหว่างนิ้วแตะค้าง — ไม่รับ gesture เอง (ใช้ [Listener]
+/// ไม่แย่ง tap จากปุ่มข้างใน) · ปิดเมื่อตั้งลดการเคลื่อนไหว
+class _PressScale extends StatefulWidget {
+  const _PressScale({required this.child, this.enabled = true});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  var _down = false;
+
+  void _set(bool value) {
+    if (_down != value) setState(() => _down = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final animate = !MediaQuery.of(context).disableAnimations;
+    return Listener(
+      onPointerDown: (_) => _set(widget.enabled),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedScale(
+        scale: _down && animate ? 0.97 : 1,
+        duration: AppMotion.fast,
+        curve: AppMotion.curve,
+        child: widget.child,
+      ),
     );
   }
 }
@@ -318,17 +419,18 @@ class _MockModeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // tone info แบบ AppNotice (ฟ้าอ่อน ตัวอักษรเข้ม) แทนกล่องเทา ให้แยกจากเนื้อฟอร์ม
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.secondary,
+        color: AppColors.infoSubtle,
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: const Text(
         'โหมด API_MOCK_MODE ล็อกอินด้วย prefix ของ role ได้ทันที (op / st / ot)',
         key: Key('login_mock_hint'),
         style: TextStyle(
-          color: AppColors.mutedForeground,
+          color: AppColors.infoForeground,
           fontSize: AppTypography.sm,
           height: AppTypography.smHeight,
         ),

@@ -82,7 +82,17 @@ enum NotificationType {
   incidentReportPending('incident_report_pending'),
   incidentReportResolved('incident_report_resolved'),
   incidentReportDismissed('incident_report_dismissed'),
-  incidentReportPromoted('incident_report_promoted');
+  incidentReportPromoted('incident_report_promoted'),
+  // เพิ่มใหม่ (docs/25 §3.6) — คำขอส่ง Config เข้าเครื่องจากหน้างาน · payload
+  // `{requestId, taskId, deviceId}` เสมอ (+ `rejectReason` / `outcome`+`detail`)
+  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างที่ถือ Task · `approved`
+  // เพิ่มใน docs/27 (อนุมัติแล้ว ช่างกดส่งเข้ากล่องได้ — payload มี `expiresAt`)
+  configApplyPending('config_apply_pending'),
+  configApplyApproved('config_apply_approved'),
+  configApplyRejected('config_apply_rejected'),
+  configApplySucceeded('config_apply_succeeded'),
+  configApplyFailed('config_apply_failed'),
+  configApplyExpired('config_apply_expired');
 
   const NotificationType(this.wireName);
 
@@ -351,6 +361,112 @@ class DeviceConfigOverride {
   }
 }
 
+/// `ConfigApplyRequest.status` — ตรงกับ `ConfigApplyRequestStatus` ใน
+/// `docs/api/openapi.yaml` (docs/25 §4.1)
+enum ConfigApplyRequestStatus {
+  pending('pending'),
+  // docs/27 — อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง
+  approved('approved'),
+  sending('sending'),
+  succeeded('succeeded'),
+  failed('failed'),
+  skippedOffline('skipped_offline'),
+  rejected('rejected'),
+  cancelled('cancelled'),
+  expired('expired');
+
+  const ConfigApplyRequestStatus(this.wireName);
+
+  final String wireName;
+
+  /// ขอส่งใหม่ได้จากสถานะนี้ไหม (docs/25 §3.3 ตารางการ์ด) — คำขอที่จบแบบไม่สำเร็จ
+  /// · `pending`/`approved`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
+  bool get allowsNewRequest => switch (this) {
+    pending || approved || sending || succeeded => false,
+    failed || skippedOffline || rejected || cancelled || expired => true,
+  };
+
+  /// สถานะที่ยังเปลี่ยนเองได้จากฝั่ง server (Operation ตัดสิน, หมดอายุ, ผลจาก
+  /// กล่อง) — หน้า Task Detail โหลดใหม่เป็นระยะระหว่างอยู่สถานะนี้ (docs/27 §9)
+  bool get isInFlight => switch (this) {
+    pending || approved || sending => true,
+    succeeded ||
+    failed ||
+    skippedOffline ||
+    rejected ||
+    cancelled ||
+    expired => false,
+  };
+
+  static ConfigApplyRequestStatus fromWire(String value) {
+    for (final status in ConfigApplyRequestStatus.values) {
+      if (status.wireName == value) return status;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown config apply status');
+  }
+}
+
+/// คำขอส่ง Config ของ Task เข้าเครื่องจริง (`ConfigApplyRequest` ใน openapi,
+/// docs/25) — Mobile ใช้แค่ field ที่การ์ดใน Task Detail แสดง
+class ConfigApplyRequest {
+  const ConfigApplyRequest({
+    required this.id,
+    required this.taskId,
+    required this.deviceId,
+    required this.configId,
+    required this.status,
+    required this.requestedAt,
+    required this.expiresAt,
+    this.note,
+    this.rejectReason,
+    this.resultDetail,
+    this.decidedAt,
+    this.releasedAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String taskId;
+  final String deviceId;
+  final String configId;
+  final ConfigApplyRequestStatus status;
+  final DateTime requestedAt;
+  final DateTime expiresAt;
+  final String? note;
+  final String? rejectReason;
+
+  /// ผลหรือเหตุผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, งานถูกยกเลิก)
+  final String? resultDetail;
+  final DateTime? decidedAt;
+
+  /// เวลาที่ช่างกดส่งเข้ากล่อง (docs/27) — `null` ก่อนกดส่ง
+  final DateTime? releasedAt;
+  final DateTime? completedAt;
+
+  factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
+    DateTime? optionalDate(String key) {
+      final value = json[key];
+      return value is String ? DateTime.parse(value) : null;
+    }
+
+    return ConfigApplyRequest(
+      id: json['id'] as String,
+      taskId: json['taskId'] as String,
+      deviceId: json['deviceId'] as String,
+      configId: json['configId'] as String,
+      status: ConfigApplyRequestStatus.fromWire(json['status'] as String),
+      requestedAt: DateTime.parse(json['requestedAt'] as String),
+      expiresAt: DateTime.parse(json['expiresAt'] as String),
+      note: json['note'] as String?,
+      rejectReason: json['rejectReason'] as String?,
+      resultDetail: json['resultDetail'] as String?,
+      decidedAt: optionalDate('decidedAt'),
+      releasedAt: optionalDate('releasedAt'),
+      completedAt: optionalDate('completedAt'),
+    );
+  }
+}
+
 /// `Firmware` ใน `GET /firmware` (ทุก Role อ่านได้) — เก็บเฉพาะ field ที่หน้า
 /// Firmware Override ใช้เลือก/กรองตัวที่ติดตั้งได้ (ไม่ต้องใช้ objectKey ฯลฯ)
 class Firmware {
@@ -609,38 +725,6 @@ class DeviceSimulateConfigResult {
           json['connectionCheck'] as Map<String, dynamic>? ?? const {},
         ),
       );
-}
-
-/// Result of `POST /devices/{deviceId}/apply-config` (`ConfigApplyResult`,
-/// Confirm Install — Sprint 3). Fire-and-forget on the backend: there is no
-/// device status in the response because the box only picks up the new
-/// Config on its next power-on (no synchronous ack) — see
-/// `backend/src/device/config-applier.ts`. [applied] can be `false` on a
-/// `200` (not just thrown errors) when the Config's fields fail the backend's
-/// basic pre-flight checks — [details] explains why.
-class ConfigApplyResult {
-  const ConfigApplyResult({
-    required this.applied,
-    required this.details,
-    required this.appliedAt,
-  });
-
-  final bool applied;
-  final List<String> details;
-  final DateTime appliedAt;
-
-  factory ConfigApplyResult.fromJson(Map<String, dynamic> json) {
-    final rawDetails = json['details'] as List<dynamic>?;
-    return ConfigApplyResult(
-      applied: json['applied'] as bool? ?? false,
-      details: rawDetails == null
-          ? const []
-          : rawDetails.map((e) => e.toString()).toList(growable: false),
-      appliedAt:
-          DateTime.tryParse(json['appliedAt'] as String? ?? '') ??
-          DateTime.now(),
-    );
-  }
 }
 
 /// Result of `POST /devices/{deviceId}/confirm-firmware-install`
