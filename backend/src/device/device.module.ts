@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignModule } from '../campaign/campaign.module';
+import { CentralDeviceModule } from '../central-device/central-device.module';
 import { ConfigDefinitionModule } from '../config-definition/config-definition.module';
 import { DeviceModelModule } from '../device-model/device-model.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -41,6 +42,11 @@ import { DeviceService } from './device.service';
   imports: [
     AuthModule,
     CampaignModule,
+    // CentralDeviceModule (#362 ส่วนขยาย Rollback) — `DeviceService.register()`
+    // ลองดึง `reported.firmware_version` จาก Server กลางมา resolve
+    // `initialFirmwareId` ให้เองถ้า client ไม่ได้ส่งมา (อ่านอย่างเดียว ไม่โยน
+    // error ออกมาถ้าติดต่อไม่ได้ — ดู comment เหนือ CentralDeviceService)
+    CentralDeviceModule,
     ConfigDefinitionModule,
     DeviceModelModule,
     NotificationModule,
