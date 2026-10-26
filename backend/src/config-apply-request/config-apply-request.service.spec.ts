@@ -2,7 +2,6 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigApplyRequest, Task } from '@prisma/client';
@@ -16,7 +15,6 @@ import {
   FIELD_APPLY_RESULT_EVENT,
   FIELD_APPLY_ROLLOUT_STARTER,
   type FieldApplyRolloutStarter,
-  PendingFieldApplyRolloutStarter,
 } from './field-apply-rollout';
 
 const TASK_ID = '11111111-1111-4111-8111-111111111111';
@@ -502,14 +500,14 @@ describe('ConfigApplyRequestService', () => {
       );
     });
 
-    it('ตัวแทนชั่วคราวของ campaign (ยังไม่มีเมธอดของ A): 503 และไม่เริ่มส่ง — ทรานแซกชัน rollback คำขอยัง pending', async () => {
-      service = await build(new PendingFieldApplyRolloutStarter());
+    it('สร้าง Rollout ไม่สำเร็จ (ในทรานแซกชัน): error ส่งต่อ ไม่ผูก rolloutId ไม่ลง audit ไม่เริ่มส่ง — ทรานแซกชัน rollback คำขอยัง pending', async () => {
+      const failure = new Error('สร้าง Rollout ไม่สำเร็จ');
+      createRollout.mockRejectedValue(failure);
 
-      await expect(service.approve(REQUEST_ID, decider)).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      await expect(service.approve(REQUEST_ID, decider)).rejects.toBe(failure);
       expect(requests.update).not.toHaveBeenCalled();
       expect(auditLog.create).not.toHaveBeenCalled();
+      expect(startRollout).not.toHaveBeenCalled();
     });
 
     describe('ตรวจซ้ำแบบสด (§3.5 ข้อ 1) — ไม่ผ่าน = 409 ไม่เปลี่ยนสถานะ', () => {

@@ -1226,8 +1226,9 @@ paths:
         ตัว Config (`Config.approvedBy`) · ข้อมูลผู้ผูก Config หรือผู้อนุมัติ
         Config ว่าง = ปฏิเสธ (fail closed) · ตรวจงาน/Config/เครื่องซ้ำแบบสดใน
         ทรานแซกชันเดียวกัน แล้วเปลี่ยนเป็น `sending` สร้าง Rollout เครื่องเดียว
-        (`rolloutId`) และเริ่มส่ง · **ตอนนี้ตอบ 503 เสมอจนกว่าฝั่ง Campaign จะ
-        เพิ่มเมธอดสร้าง Rollout เครื่องเดียว** (คำขอยัง pending)
+        (`rolloutId`) แล้วเริ่มส่งหลัง commit ตามโหมด `DEVICE_CONFIG_APPLY_MODE`
+        (`central` = ส่งผ่าน Server กลาง) · ผลจากกล่องอัปเดตคำขอเป็น
+        `succeeded`/`failed`/`skipped_offline` ทีหลัง (ดู `GET /tasks/{taskId}/config-apply-requests`)
       parameters:
         - in: path
           name: id
@@ -1256,8 +1257,6 @@ paths:
             ไม่ได้ in_progress, ถูกย้ายคน, Config/เครื่อง/ผู้ผูก Config ของงานเปลี่ยน,
             Config ไม่ใช่ approved/synced, เครื่องไม่ installed หรือมี Campaign
             กำลังส่งให้เครื่องนี้ (คำขอยัง pending ให้ปฏิเสธพร้อมเหตุผลแทน)
-        "503":
-          description: ยังสร้าง Rollout เครื่องเดียวไม่ได้ (รอฝั่ง Campaign) — คำขอยัง pending
 
   /config-apply-requests/{id}/reject:
     post:

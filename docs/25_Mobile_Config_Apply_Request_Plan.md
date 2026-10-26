@@ -4,8 +4,10 @@
 > ปรับเนื้อหาส่วนที่เกี่ยวข้องให้ตรงแล้ว
 >
 > **อัปเดต 22 ต.ค. 2569 — implement ส่วนของ B แล้ว** (branch `feat/mobile-config-apply-request`) เรื่องที่เดิมเขียนว่า
-> "ตัดสินตอน implement" B ยืนยันแล้วทั้งหมด บันทึกไว้ที่ §9 · **ยังส่งเข้ากล่องจริงไม่ได้** จนกว่า A จะเติมจุดที่รอใน
-> `backend/src/config-apply-request/field-apply-rollout.ts` (§9.3)
+> "ตัดสินตอน implement" B ยืนยันแล้วทั้งหมด บันทึกไว้ที่ §9
+>
+> **อัปเดต 26 ต.ค. 2569 — ต่อครบแล้ว:** A เพิ่มเมธอดฝั่ง campaign ใน #362 (merge แล้ว) และ B ผูก provider ใน #370 แทน
+> ตัวแทนชั่วคราวที่ตอบ 503 · อนุมัติคำขอแล้วส่งเข้ากล่องจริงได้ (§9.3)
 >
 > **ผู้เขียน/ผู้รีวิว:** ร่างโดย B (kittiphong) วันที่ 21 ต.ค. 2569 · ขอ A (paveekornkwork-dev) ร่วมรีวิว เพราะแผนนี้แตะ
 > `campaign` และ `device` ซึ่งเป็นโมดูลของ A รวมถึง Approval Center บน Web
@@ -443,10 +445,11 @@ migration เดียว แบบ additive ล้วน (CLAUDE.md Shared Pris
 | ผู้ผูก Config ของงานเปลี่ยนระหว่างรอ | ตอนอนุมัติ ถ้า `Task.configAssignedBy` ≠ snapshot ได้ 409 ให้ช่างขอใหม่ | เพิ่มจากแผน (เข้มขึ้น ไม่ผ่อน) |
 | Campaign ระบบ | ไม่ seed — ใช้ของ A ที่หาด้วยชื่อและสร้างเองตอนอนุมัติคำขอแรก (#362) · เดิม B seed ไว้ใน `seed.ts` แต่ชื่อไม่ตรงกับตัวกรองของ A (จะได้ 2 แถวและแถวของ seed โผล่ใน Campaign Monitor) จึงถอนออก | §6 เดิมเป็นงาน A · รีวิว #362 รอบ 2 |
 
-### 9.3 จุดที่รอ A (`backend/src/config-apply-request/field-apply-rollout.ts`)
+### 9.3 จุดต่อกับฝั่ง A (`backend/src/config-apply-request/field-apply-rollout.ts`) — ทำครบแล้ว
 
-ระหว่างนี้ใช้ตัวแทนชั่วคราว `PendingFieldApplyRolloutStarter`: **อนุมัติได้ 503 ทั้งทรานแซกชัน rollback คำขอยัง `pending`**
-ไม่มีสถานะครึ่งๆ กลางๆ
+ข้อ 1–3 A ทำใน #362 (`72ace10`, `86e96e8`) · ข้อ 4 B ทำใน #370 (ผูกด้วย `useFactory` ให้ TypeScript ตรวจว่า
+`CampaignRolloutService` ตรงกับ interface) · ชนิดของ event นิยามที่เดียวใน `campaign/rollout-events.ts` แล้ว
+`field-apply-rollout.ts` re-export · ระหว่างรอ #362 เคยใช้ตัวแทนชั่วคราวที่ตอบ 503 ซึ่งลบไปแล้ว
 
 1. **`createFieldApplyRollout(tx, input)`** — สร้าง Rollout เครื่องเดียวใต้ Campaign ระบบ สถานะ `active` (`createdBy` = ผู้ขอ,
    `approvedBy` = ผู้อนุมัติ, `applyMode` ตาม env) ปิด Auto Pause และไม่สร้าง Incident (Q4) คืน `rolloutId` · เรียกใน
