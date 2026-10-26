@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -207,6 +209,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   String? _requestError;
   bool _cancelling = false;
   String? _cancelError;
+  bool _releasing = false;
+  String? _releaseError;
+
+  // docs/27 §9 — โหลดสถานะคำขอใหม่เป็นระยะระหว่างที่ยังเปลี่ยนได้จากฝั่ง server
+  // (รออนุมัติ / รอกดส่ง / กำลังส่ง) เพราะ push อาจไม่มา (เช่น NOTIFICATION_MODE=
+  // mock) · เริ่ม/หยุดตามสถานะใน build() ผ่าน [_syncRequestPolling]
+  static const _requestPollInterval = Duration(seconds: 5);
+  Timer? _requestPoll;
 
   // ทดสอบกับ Device Simulator ก่อนขอส่ง Config (แถว 26b, ไม่บังคับ) — ผลไม่ผ่าน
   // (`passed == false`) บล็อกปุ่ม "ขอส่ง Config เข้าเครื่อง" ฝั่ง client เท่านั้น
@@ -403,11 +413,59 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     }
   }
 
-  /// `POST /config-apply-requests/{id}/cancel` — ยกเลิกคำขอ `pending` ของตัวเอง
+  /// `POST /config-apply-requests/{id}/release` (docs/27 §5.4) — กดส่งคำขอที่
+  /// อนุมัติแล้วเข้ากล่อง · 409 (กล่องออฟไลน์, หมดอายุ, Config เปลี่ยน ฯลฯ) แสดง
+  /// ข้อความของ backend ตรงๆ แล้วโหลดสถานะใหม่ (บางกรณี backend ปิดคำขอให้แล้ว)
+  Future<void> _releaseRequest(String requestId) async {
+    setState(() {
+      _releasing = true;
+      _releaseError = null;
+      _cancelError = null;
+    });
+    try {
+      await ref.read(configApplyRequestRepositoryProvider).release(requestId);
+      ref.invalidate(latestConfigApplyRequestProvider(widget.taskId));
+      if (!mounted) return;
+      setState(() => _releasing = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน')),
+        );
+    } on ApiException catch (e) {
+      ref.invalidate(latestConfigApplyRequestProvider(widget.taskId));
+      if (!mounted) return;
+      setState(() {
+        _releasing = false;
+        _releaseError = e.message;
+      });
+    }
+  }
+
+  void _syncRequestPolling(bool inFlight) {
+    if (inFlight && _requestPoll == null) {
+      _requestPoll = Timer.periodic(_requestPollInterval, (_) {
+        if (!mounted) return;
+        ref.invalidate(latestConfigApplyRequestProvider(widget.taskId));
+      });
+    } else if (!inFlight && _requestPoll != null) {
+      _requestPoll!.cancel();
+      _requestPoll = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _requestPoll?.cancel();
+    super.dispose();
+  }
+
+  /// `POST /config-apply-requests/{id}/cancel` — ยกเลิกคำขอ `pending`/`approved`
   Future<void> _cancelRequest(String requestId) async {
     setState(() {
       _cancelling = true;
       _cancelError = null;
+      _releaseError = null;
     });
     try {
       await ref.read(configApplyRequestRepositoryProvider).cancel(requestId);
@@ -466,6 +524,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final showRequestButton =
         canConfirmInstall &&
         (latestRequest == null || latestRequest.status.allowsNewRequest);
+    _syncRequestPolling(latestRequest?.status.isInFlight ?? false);
     final canAddNote =
         (canEditStatus || role == UserRole.operation) &&
         task.status != TaskStatus.cancelled;
@@ -632,6 +691,9 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     cancelling: _cancelling,
                     cancelError: _cancelError,
                     onCancel: _cancelRequest,
+                    releasing: _releasing,
+                    releaseError: _releaseError,
+                    onRelease: _releaseRequest,
                     onRetry: () => ref.invalidate(
                       latestConfigApplyRequestProvider(task.id),
                     ),
@@ -939,13 +1001,17 @@ class _ConfirmInstallBar {
 
 /// สถานะคำขอล่าสุดในการ์ด "ส่ง Config เข้าเครื่อง" (docs/25 §3.3 ตารางการ์ด) —
 /// ไม่มีคำขอ = ไม่แสดงอะไร (ปุ่มขอส่งอยู่แถบล่าง) · `pending` มีปุ่มยกเลิก ·
-/// จบแบบไม่สำเร็จบอกเหตุผล แล้วขอส่งอีกครั้งจากแถบล่าง
+/// `approved` (docs/27) มีปุ่มหลัก "ส่งเข้ากล่อง" + ยกเลิก · จบแบบไม่สำเร็จบอก
+/// เหตุผล แล้วขอส่งอีกครั้งจากแถบล่าง
 class _ApplyRequestSection extends StatelessWidget {
   const _ApplyRequestSection({
     required this.request,
     required this.cancelling,
     required this.cancelError,
     required this.onCancel,
+    required this.releasing,
+    required this.releaseError,
+    required this.onRelease,
     required this.onRetry,
   });
 
@@ -953,6 +1019,9 @@ class _ApplyRequestSection extends StatelessWidget {
   final bool cancelling;
   final String? cancelError;
   final ValueChanged<String> onCancel;
+  final bool releasing;
+  final String? releaseError;
+  final ValueChanged<String> onRelease;
   final VoidCallback onRetry;
 
   static const _mutedStyle = TextStyle(
@@ -1015,11 +1084,38 @@ class _ApplyRequestSection extends StatelessWidget {
                       children: [for (final line in lines) Text(line)],
                     ),
             ),
-            if (latest.status == ConfigApplyRequestStatus.pending) ...[
+            if (latest.status == ConfigApplyRequestStatus.approved) ...[
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                key: const Key('release_apply_request_button'),
+                onPressed: releasing || cancelling
+                    ? null
+                    : () => onRelease(latest.id),
+                icon: releasing
+                    ? const _ButtonSpinner(color: AppColors.primaryForeground)
+                    : const Icon(Icons.send),
+                label: const Text('ส่งเข้ากล่อง'),
+              ),
+            ],
+            if (releaseError != null) ...[
+              const SizedBox(height: 8),
+              AppNotice(
+                tone: AppBadgeTone.danger,
+                icon: Icons.error_outline,
+                child: Text(
+                  releaseError!,
+                  key: const Key('release_apply_request_error'),
+                ),
+              ),
+            ],
+            if (latest.status == ConfigApplyRequestStatus.pending ||
+                latest.status == ConfigApplyRequestStatus.approved) ...[
               const SizedBox(height: 8),
               OutlinedButton(
                 key: const Key('cancel_apply_request_button'),
-                onPressed: cancelling ? null : () => onCancel(latest.id),
+                onPressed: cancelling || releasing
+                    ? null
+                    : () => onCancel(latest.id),
                 child: cancelling
                     ? const _ButtonSpinner(color: AppColors.foreground)
                     : const Text('ยกเลิกคำขอ'),
@@ -1050,8 +1146,12 @@ class _ApplyRequestSection extends StatelessWidget {
         'ส่งคำขอเมื่อ ${_formatDate(r.requestedAt)}',
         'หมดอายุ ${_formatDate(r.expiresAt)} ถ้ายังไม่มีใครตัดสิน',
       ],
-      ConfigApplyRequestStatus.sending => [
+      ConfigApplyRequestStatus.approved => [
         if (r.decidedAt != null) 'อนุมัติเมื่อ ${_formatDate(r.decidedAt!)}',
+        'กดส่งได้ถึง ${_formatDate(r.expiresAt)} — อยู่หน้ากล่องและกล่องเปิดอยู่ก่อนกดส่ง',
+      ],
+      ConfigApplyRequestStatus.sending => [
+        if (r.releasedAt != null) 'กดส่งเมื่อ ${_formatDate(r.releasedAt!)}',
       ],
       ConfigApplyRequestStatus.succeeded => [
         if (r.completedAt != null) 'เมื่อ ${_formatDate(r.completedAt!)}',
@@ -1070,6 +1170,7 @@ class _ApplyRequestSection extends StatelessWidget {
 
   static IconData _icon(ConfigApplyRequestStatus status) => switch (status) {
     ConfigApplyRequestStatus.pending => Icons.hourglass_top,
+    ConfigApplyRequestStatus.approved => Icons.task_alt,
     ConfigApplyRequestStatus.sending => Icons.send_outlined,
     ConfigApplyRequestStatus.succeeded => Icons.check_circle_outline,
     ConfigApplyRequestStatus.failed ||

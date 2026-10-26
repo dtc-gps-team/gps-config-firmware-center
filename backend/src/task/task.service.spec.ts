@@ -1356,7 +1356,7 @@ describe('TaskService', () => {
       expect(call[0].data).not.toHaveProperty('configAssignedAt');
     });
 
-    it('Operation ยกเลิกงาน: ปิดคำขอส่ง Config ที่ pending ของงานนี้ในทรานแซกชันเดียวกัน (Q9)', async () => {
+    it('Operation ยกเลิกงาน: ปิดคำขอส่ง Config ที่ pending/approved ของงานนี้ในทรานแซกชันเดียวกัน (Q9, docs/27)', async () => {
       queryRaw.mockResolvedValue([
         { status: 'in_progress', createdAt: sampleTask.createdAt },
       ]);
@@ -1369,7 +1369,10 @@ describe('TaskService', () => {
       await service.update(sampleTask.id, { status: 'cancelled' }, operation);
 
       expect(configApplyRequest.updateMany).toHaveBeenCalledWith({
-        where: { taskId: sampleTask.id, status: 'pending' },
+        where: {
+          taskId: sampleTask.id,
+          status: { in: ['pending', 'approved'] },
+        },
         data: expect.objectContaining({
           status: 'cancelled',
           completedAt: expect.any(Date) as unknown,

@@ -13,7 +13,9 @@ ConfigApplyRequest fakeApplyRequest({
   String? rejectReason,
   String? resultDetail,
   DateTime? decidedAt,
+  DateTime? releasedAt,
   DateTime? completedAt,
+  DateTime? expiresAt,
 }) => ConfigApplyRequest(
   id: id,
   taskId: taskId,
@@ -21,10 +23,11 @@ ConfigApplyRequest fakeApplyRequest({
   configId: configId,
   status: status,
   requestedAt: DateTime.utc(2026, 10, 22, 3),
-  expiresAt: DateTime.utc(2026, 10, 23, 3),
+  expiresAt: expiresAt ?? DateTime.utc(2026, 10, 23, 3),
   rejectReason: rejectReason,
   resultDetail: resultDetail,
   decidedAt: decidedAt,
+  releasedAt: releasedAt,
   completedAt: completedAt,
 );
 
@@ -43,11 +46,14 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   Object? listError;
   Object? createError;
   Object? cancelError;
+  Object? releaseError;
   Completer<ConfigApplyRequest>? createGate;
 
   int listCalls = 0;
   int createCalls = 0;
   int cancelCalls = 0;
+  int releaseCalls = 0;
+  String? lastReleaseId;
   String? lastCreateTaskId;
   String? lastCancelId;
 
@@ -87,5 +93,22 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     );
     if (index >= 0) requests[index] = cancelled;
     return cancelled;
+  }
+
+  @override
+  Future<ConfigApplyRequest> release(String requestId) async {
+    releaseCalls++;
+    lastReleaseId = requestId;
+    final error = releaseError;
+    if (error != null) throw error;
+    final index = requests.indexWhere((r) => r.id == requestId);
+    final sending = fakeApplyRequest(
+      id: requestId,
+      status: ConfigApplyRequestStatus.sending,
+      decidedAt: DateTime.utc(2026, 10, 22, 4),
+      releasedAt: DateTime.utc(2026, 10, 22, 5),
+    );
+    if (index >= 0) requests[index] = sending;
+    return sending;
   }
 }

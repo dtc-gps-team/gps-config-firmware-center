@@ -60,6 +60,7 @@ model User {
   configApplyRequests           ConfigApplyRequest[]    @relation("ConfigApplyRequestedBy")
   configApplyRequestsAssigned   ConfigApplyRequest[]    @relation("ConfigApplyConfigAssignedBy")
   configApplyRequestDecisions   ConfigApplyRequest[]    @relation("ConfigApplyDecidedBy")
+  configApplyRequestReleases    ConfigApplyRequest[]    @relation("ConfigApplyReleasedBy")
   taskEvents                   TaskEvent[]             @relation("TaskEventChangedBy")
   notifications                 Notification[]
   deviceTokens                  DeviceToken[]
@@ -244,7 +245,10 @@ enum NotificationType {
   // `config_apply_approved` (มติ Q5 — อนุมัติแล้วส่งทันที แจ้งแค่ผลสุดท้าย)
   // · `config_apply_expired` เพิ่มตอน implement (docs/25 §3.9 ปล่อยให้ตัดสิน
   // ตอนนั้น) แยกจาก rejected เพราะไม่มี Operation คนไหนปฏิเสธจริง
+  // · `config_apply_approved` เพิ่มใน docs/27 — อนุมัติไม่ส่งทันทีแล้ว ช่างต้อง
+  // รู้ว่ากดส่งได้ (เดิมมติ Q5 ไม่มีเพราะอนุมัติ = ส่ง)
   config_apply_pending
+  config_apply_approved
   config_apply_rejected
   config_apply_succeeded
   config_apply_failed
@@ -757,14 +761,17 @@ model DeviceConfigOverride {
 
 // คำขอส่ง Config เข้าเครื่องจริงจากหน้างาน (docs/25 §4.1):
 //   pending          รอ Operation ตัดสิน
-//   sending          อนุมัติแล้ว สร้าง Rollout เครื่องเดียวแล้ว รอผลจากกล่อง
+//   approved         อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง (docs/27 — เดิม
+//                    อนุมัติแล้วส่งทันที เปลี่ยนเพราะช่างต้องอยู่หน้ากล่องตอนส่ง)
+//   sending          ช่างกดส่งแล้ว สร้าง Rollout เครื่องเดียวแล้ว รอผลจากกล่อง
 //   succeeded/failed/skipped_offline  ผลจากกล่อง (ส่งกลับผ่าน hook ของ Rollout)
 //   rejected         Operation ปฏิเสธ
 //   cancelled        ผู้ขอยกเลิกเอง หรือ Task ถูกยกเลิก (§3.9)
-//   expired          ค้าง `pending` เกินเวลา (§3.9 — สถานะปลายทางตัดสินตอน
-//                    implement: แยกจาก cancelled เพื่อให้ช่างรู้ว่าไม่มีใครตัดสิน)
+//   expired          ค้าง `pending`/`approved` เกินเวลา (§3.9, docs/27 D2 — แยกจาก
+//                    cancelled เพื่อให้ช่างรู้ว่าไม่มีใครตัดสิน/ไม่ได้กดส่งทัน)
 enum ConfigApplyRequestStatus {
   pending
+  approved
   sending
   succeeded
   failed
@@ -798,7 +805,8 @@ model ConfigApplyRequest {
   configAssignedBy String
   requestedBy      String
   requestedAt      DateTime                 @default(now())
-  // ครบกำหนดหมดอายุของคำขอ `pending` (§3.9) — เก็บเป็นคอลัมน์ ไม่คำนวณจาก
+  // ครบกำหนดหมดอายุของขั้นที่รออยู่ (§3.9, docs/27 D2): `pending` = ขอ+24 ชม.,
+  // `approved` = อนุมัติ+24 ชม. (ตั้งใหม่ตอนอนุมัติ) — เก็บเป็นคอลัมน์ ไม่คำนวณจาก
   // requestedAt ทุกครั้ง เพื่อให้เปลี่ยนระยะเวลาทีหลังได้โดยไม่กระทบคำขอเดิม
   // และให้ Mobile แสดงเวลาได้ตรงกับ backend
   expiresAt        DateTime
@@ -808,7 +816,15 @@ model ConfigApplyRequest {
   decidedAt        DateTime?
   // บังคับเมื่อ `rejected` (ตรวจที่ DTO)
   rejectReason     String?
-  // Rollout เครื่องเดียวที่สร้างตอนอนุมัติ (§3.2 ทาง ค.) · @unique = 1:1
+  // ConfigVersion.versionNumber ล่าสุดของ Config ตอนอนุมัติ (docs/27 D4) — ตอน
+  // กดส่งต้องยังเท่าเดิม ไม่งั้นค่าที่ส่งไม่ใช่ค่าที่ Operation อนุมัติ · 0 = Config
+  // ที่ยังไม่มีแถว ConfigVersion (seed เก่า) · null = ยังไม่อนุมัติ
+  approvedConfigVersion Int?
+  // ช่างที่ถือ Task ตอนกดส่ง (docs/27 D1 — อาจไม่ใช่ผู้ขอถ้า Task ถูกโอน)
+  releasedBy       String?
+  releasedAt       DateTime?
+  // Rollout เครื่องเดียวที่สร้างตอนช่างกดส่ง (docs/27 — เดิมสร้างตอนอนุมัติ, docs/25
+  // §3.2 ทาง ค.) · @unique = 1:1
   rolloutId        String?                  @unique
   // เหตุผล/ผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, Task ถูกยกเลิก)
   resultDetail     String?
@@ -823,6 +839,7 @@ model ConfigApplyRequest {
   requester      User             @relation("ConfigApplyRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
   configAssigner User             @relation("ConfigApplyConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
   decider        User?            @relation("ConfigApplyDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
+  releaser       User?            @relation("ConfigApplyReleasedBy", fields: [releasedBy], references: [id], onDelete: Restrict)
   rollout        CampaignRollout? @relation(fields: [rolloutId], references: [id], onDelete: Restrict)
 
   @@index([deviceId, status])
