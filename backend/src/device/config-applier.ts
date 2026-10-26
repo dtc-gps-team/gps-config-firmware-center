@@ -58,13 +58,15 @@ export const CONFIG_APPLIER = Symbol('CONFIG_APPLIER');
  *   `mock` (ค่าเริ่มต้น) = ตอนปล่อย Rollout backend apply ให้ทุกเครื่องทันที
  *   `real`               = ไม่ apply เอง รอให้อุปกรณ์ดึงงานแล้วรายงานผลกลับผ่าน
  *                          `/device-sync/*`
+ *   `central` = ส่ง Config ไปที่ Server กลาง (ESP32 Central Management) ทีละเครื่อง
+ *                          แล้วถามผลคำสั่งเป็นระยะ (ต้องตั้ง `CENTRAL_MODE` ด้วย)
  *
  * **`real` ไม่ได้เปลี่ยน `ConfigApplier`** — ปุ่ม "ยืนยันส่ง Config เข้าเครื่อง"
  * ของช่าง (`DeviceService.applyConfig()`) ยังใช้ `MockConfigApplier` ตามเดิมทั้ง
  * สองโหมด (ยังไม่มีช่องทางเขียน Config เข้ากล่องจากฝั่ง server) ที่ต่างกันคือ
  * เส้นทางของ Campaign Rollout เท่านั้น
  */
-export type ConfigApplyMode = 'mock' | 'real';
+export type ConfigApplyMode = 'mock' | 'real' | 'central';
 
 export const CONFIG_APPLY_MODE = Symbol('CONFIG_APPLY_MODE');
 
@@ -75,8 +77,9 @@ export function resolveConfigApplyMode(
   const value = raw?.trim().toLowerCase() ?? '';
   if (value === '' || value === 'mock') return 'mock';
   if (value === 'real') return 'real';
+  if (value === 'central') return 'central';
   throw new Error(
-    `DEVICE_CONFIG_APPLY_MODE ต้องเป็น "mock" หรือ "real" แต่ได้ "${raw}"`,
+    `DEVICE_CONFIG_APPLY_MODE ต้องเป็น "mock", "real" หรือ "central" แต่ได้ "${raw}"`,
   );
 }
 

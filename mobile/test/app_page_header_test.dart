@@ -11,7 +11,7 @@ Widget _wrap(Widget child) => MaterialApp(
 );
 
 void main() {
-  testWidgets('title เป็นหัวข้อ (header) ตัว xl semibold (มติ B Batch 2)', (
+  testWidgets('title เป็นหัวข้อ (header) ตัว xl หนา ชิดตัวอักษร (docs/22 §4.6)', (
     tester,
   ) async {
     final handle = tester.ensureSemantics();
@@ -19,7 +19,9 @@ void main() {
 
     final title = tester.widget<Text>(find.text('Incidents'));
     expect(title.style!.fontSize, AppTypography.xl);
-    expect(title.style!.fontWeight, FontWeight.w600);
+    // ขนาด xl ตามมติ B Batch 2 · น้ำหนัก / tracking ปรับให้หัวข้อเด่นขึ้น (§4.6)
+    expect(title.style!.fontWeight, FontWeight.w700);
+    expect(title.style!.letterSpacing, AppTypography.headingTracking);
     expect(
       tester.getSemantics(find.text('Incidents')),
       isSemantics(isHeader: true),
@@ -156,6 +158,75 @@ void main() {
     );
     expect(find.text('Config Override'), findsNothing);
     expect(find.text('Field Report'), findsOneWidget);
+  });
+
+  group('ปุ่มตั้งแต่ 3 ปุ่ม: ตารางสองคอลัมน์กว้างเท่ากัน ขอบตรงกับเนื้อหา', () {
+    // เดิม Wrap ชิดขวาความกว้างตามข้อความ — 4 ปุ่มของ Device Detail ขึ้น 2 แถว
+    // ที่เริ่มคนละตำแหน่ง ไม่ตรงทั้งกันเองและกับขอบการ์ด (บั๊กจาก Batch 4)
+    Future<void> pumpActions(WidgetTester tester, List<String> labels) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _wrap(
+          AppPageHeader(
+            title: 'รายละเอียดอุปกรณ์',
+            onBack: () {},
+            actions: [
+              for (final (i, label) in labels.indexed)
+                AppPageHeaderAction(
+                  label: label,
+                  icon: Icons.tune,
+                  primary: i == labels.length - 1,
+                  onPressed: () {},
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Rect rectOf(WidgetTester tester, String label) => tester.getRect(
+      find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+
+    testWidgets('4 ปุ่ม: 2 แถว ซ้าย/ขวาตรงกัน กว้างเท่ากัน ชิดขอบ 16', (
+      tester,
+    ) async {
+      const labels = [
+        'Config Override',
+        'Firmware Override',
+        'Field Report',
+        'ยืนยันติดตั้ง Firmware',
+      ];
+      await pumpActions(tester, labels);
+      final r = [for (final l in labels) rectOf(tester, l)];
+      final width = tester.getSize(find.byType(Scaffold)).width;
+
+      expect(r[0].left, 16);
+      expect(r[2].left, 16);
+      expect(r[1].right, width - 16);
+      expect(r[3].right, width - 16);
+      expect(r[0].top, r[1].top);
+      expect(r[2].top, r[3].top);
+      expect(r[2].top, greaterThan(r[0].bottom));
+      for (final rect in r) {
+        expect(rect.width, closeTo(r[0].width, 0.01));
+      }
+    });
+
+    testWidgets('3 ปุ่ม: ปุ่มสุดท้าย (ปุ่มหลัก) เต็มแถว', (tester) async {
+      const labels = ['Config Override', 'Field Report', 'ยืนยัน'];
+      await pumpActions(tester, labels);
+      final last = rectOf(tester, 'ยืนยัน');
+      final width = tester.getSize(find.byType(Scaffold)).width;
+      expect(last.left, 16);
+      expect(last.right, width - 16);
+      expect(rectOf(tester, 'Field Report').right, width - 16);
+    });
   });
 
   testWidgets('ไม่มีปุ่มที่มองเห็นเลย ไม่เหลือแถว actions ว่าง', (

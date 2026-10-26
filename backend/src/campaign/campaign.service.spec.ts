@@ -9,6 +9,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, CampaignService } from './campaign.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 
 function makeP2002(): PrismaClientKnownRequestError {
   return new PrismaClientKnownRequestError('Unique constraint failed', {
@@ -270,8 +271,21 @@ describe('CampaignService', () => {
 
       expect(result).toEqual([sampleCampaign]);
       expect(campaign.findMany).toHaveBeenCalledWith({
+        where: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
         orderBy: { createdAt: 'desc' },
       });
+    });
+
+    it('ซ่อน Campaign ระบบของคำขอส่ง Config จากหน้างาน (docs/25 §3.2/Q2) — ไม่ query ด้วยชื่อว่าง/ผิด', async () => {
+      campaign.findMany.mockResolvedValue([]);
+
+      await service.findAll();
+
+      const calls = campaign.findMany.mock.calls as unknown[][];
+      const call = calls[0][0] as {
+        where: { name: { not: string } };
+      };
+      expect(call.where.name.not).toBe(FIELD_APPLY_SYSTEM_CAMPAIGN_NAME);
     });
   });
 

@@ -117,7 +117,8 @@ class AppPageHeader extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: AppTypography.xl,
                             height: AppTypography.xlHeight,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: AppTypography.headingTracking,
                             color: AppColors.foreground,
                           ),
                         ),
@@ -151,15 +152,21 @@ class AppPageHeader extends StatelessWidget {
           ],
           if (visibleActions.isNotEmpty) ...[
             const SizedBox(height: 16),
-            Wrap(
-              key: const Key('app_page_header_actions'),
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final action in visibleActions) _ActionButton(action),
-              ],
-            ),
+            if (visibleActions.length >= _gridThreshold)
+              _ActionGrid(
+                key: const Key('app_page_header_actions'),
+                actions: visibleActions,
+              )
+            else
+              Wrap(
+                key: const Key('app_page_header_actions'),
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final action in visibleActions) _ActionButton(action),
+                ],
+              ),
           ],
         ],
       ),
@@ -201,22 +208,65 @@ class _MetaItem extends StatelessWidget {
   }
 }
 
+/// จำนวนปุ่มที่เริ่มเปลี่ยนจาก Wrap ชิดขวา (แบบ Web) เป็นตารางสองคอลัมน์
+const _gridThreshold = 3;
+
+/// ปุ่มตั้งแต่ [_gridThreshold] ปุ่มขึ้นไป — จอมือถือแคบ Wrap ชิดขวาความกว้าง
+/// ตามข้อความทำให้แต่ละแถวเริ่มคนละตำแหน่ง ไม่ตรงทั้งกันเองและกับขอบการ์ดใต้หัว
+/// (4 ปุ่มของ Device Detail, บั๊กจาก Batch 4) · ใช้ตารางสองคอลัมน์กว้างเท่ากันเต็ม
+/// แถวแทน ลำดับเดิม (ปุ่มหลักท้ายสุด = ขวาล่าง) จำนวนคี่ปุ่มสุดท้ายเต็มแถว ·
+/// 1–2 ปุ่มยังเป็น Wrap ชิดขวาตาม Web เหมือนเดิม
+class _ActionGrid extends StatelessWidget {
+  const _ActionGrid({super.key, required this.actions});
+
+  final List<AppPageHeaderAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < actions.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _ActionButton(actions[i], compact: true)),
+              if (i + 1 < actions.length) ...[
+                const SizedBox(width: 8),
+                Expanded(child: _ActionButton(actions[i + 1], compact: true)),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _ActionButton extends StatelessWidget {
-  const _ActionButton(this.action);
+  const _ActionButton(this.action, {this.compact = false});
 
   final AppPageHeaderAction action;
+
+  /// อยู่ในตาราง (ครึ่งจอ) — ลดระยะขอบซ้ายขวาในปุ่มเหลือ 8 ให้ label ยาว (เช่น
+  /// "ยืนยันติดตั้ง Firmware" ~187dp บนจอ 411dp ที่ครึ่งหนึ่งเหลือ ~185dp) ยังพอบรรทัดเดียว
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final reason = action.disabledReason;
     final onPressed = reason == null ? action.onPressed : null;
-    final label = Text(action.label);
+    // ตัวอักษรใหญ่ / label ยาวในตารางครึ่งจอ ตัดขึ้นบรรทัดใหม่ได้ — จัดกลางให้ดูเป็นก้อนเดียว
+    final label = Text(action.label, textAlign: TextAlign.center);
     final icon = action.icon == null ? null : Icon(action.icon, size: 18);
 
     // ตั้ง minimumSize เองไม่พึ่ง theme — หน้าที่ยังใช้ theme เดิม (`light()`) ตั้ง
     // `Size.fromHeight(48)` (กว้าง infinity) ซึ่งจะ throw ใน Wrap · v2 ใช้ค่าเดียวกันนี้แล้ว
-    const style = ButtonStyle(
-      minimumSize: WidgetStatePropertyAll(Size(64, 48)),
+    final style = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(64, 48)),
+      padding: compact
+          ? const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8))
+          : null,
     );
     final Widget button = switch ((action.primary, icon)) {
       (true, null) => FilledButton(

@@ -75,4 +75,14 @@ export class RegisterDeviceDto {
   @IsString()
   @MaxLength(50)
   bootloader?: string;
+
+  // Firmware ที่กล่องมีติดมาก่อนเข้าระบบเรา (เช่นจากโรงงาน) — optional เพราะ
+  // ไม่ใช่ทุกกรณีที่รู้แน่ชัด (issue #362 ส่วนขยาย Rollback, เจอตอนทดสอบกับ
+  // กล่องจริง) ไม่ใส่ไว้ = `DeviceService.register()` ไม่ seed Dual Partition
+  // bookkeeping อะไรให้เลย (เหมือนพฤติกรรมเดิมทุกประการ) — ถ้าไม่ใส่ไว้ตั้งแต่
+  // ตอนนี้ กด "Rollback Firmware" ครั้งแรกในอนาคตจะไม่มีของเก่าให้ย้อนกลับไป
+  // เลย (ดู comment เหนือ `CampaignRolloutService.rollback()`)
+  @IsOptional()
+  @IsUUID()
+  initialFirmwareId?: string;
 }

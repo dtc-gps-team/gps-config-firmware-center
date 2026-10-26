@@ -46,6 +46,10 @@ tags:
       ที่ login แล้ว
   - name: task
     description: มอบหมาย/ติดตามงานให้ทีมช่างหน้างาน (เชื่อมกับ Mobile app)
+  - name: config-apply-request
+    description: >-
+      คำขอส่ง Config ของ Task เข้าเครื่องจริงจากหน้างาน (docs/25) — ช่าง ST/OT ขอ,
+      Operation อีกคนอนุมัติ (Separation of Duty ระดับ user id)
   - name: notification
     description: Notification ของ user ปัจจุบัน — list และ mark อ่านแล้ว
   - name: incident
@@ -1099,6 +1103,232 @@ paths:
         "409":
           description: งานถูกยกเลิก (`cancelled`) แล้ว — เพิ่มบันทึกไม่ได้
 
+  /tasks/{taskId}/config-apply-requests:
+    post:
+      tags: [config-apply-request]
+      operationId: createConfigApplyRequest
+      summary: ช่างขอส่ง Config ของงานนี้เข้าเครื่องจริง (docs/25 §3.3)
+      description: >-
+        **ไม่รับ configId/deviceId จาก client** — backend อ่านจาก Task เอง ·
+        resource `config-apply-request` action `Create` (ST/OT) และต้องเป็นผู้ถูก
+        assign งานนี้ · สร้างคำขอสถานะ `pending` (หมดอายุใน 24 ชั่วโมงถ้าไม่มีใคร
+        ตัดสิน) snapshot ผู้ผูก Config (`Task.configAssignedBy`) ไว้เช็ค Separation
+        of Duty ตอนอนุมัติ · แจ้ง Operation ทุกคนยกเว้นผู้ผูก Config
+        (`config_apply_pending`) · เขียน AuditLog `config_apply_request` ·
+        กดได้เฉพาะตอนออนไลน์ (Mobile ไม่เข้าคิว offline)
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigApplyRequestCreateRequest"
+      responses:
+        "201":
+          description: สร้างคำขอสำเร็จ (status pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequest"
+        "400":
+          description: taskId ไม่ใช่ uuid หรือ note ยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้ขอส่ง Config ไม่ได้ (เฉพาะ ST/OT)
+        "404":
+          description: >-
+            ไม่พบงาน (รวมกรณีไม่ใช่ผู้ถูก assign — ตอบ 404 ไม่เปิดเผยว่ามีงานนี้),
+            ไม่พบ Config (หรือถูกลบแล้ว) หรือไม่พบเครื่อง
+        "409":
+          description: >-
+            งานไม่ได้อยู่ `in_progress` · งานไม่มี configId/deviceId · **งานไม่มี
+            ข้อมูลผู้ผูก Config (งานเก่าก่อน v3.59) — ให้ Operation ผูก Config ใหม่
+            ก่อน (fail closed)** · Config ไม่ใช่ approved/synced · เครื่องยังไม่
+            installed หรือรุ่น/protocol ไม่ตรง · เครื่องมีคำขอที่ยังเปิดอยู่
+            (pending/sending) · เครื่องเป็น target ของ Campaign ที่กำลังส่งอยู่
+    get:
+      tags: [config-apply-request]
+      operationId: listTaskConfigApplyRequests
+      summary: คำขอส่ง Config ทั้งหมดของงานนี้ ใหม่สุดก่อน (docs/25 §3.3)
+      description: >-
+        ใช้กฎการเห็นงานเดียวกับ `GET /tasks/{taskId}` (ST/OT เห็นเฉพาะงานตัวเอง,
+        Operation/Auditor/Admin/SuperAdmin เห็นทุกงาน) — Mobile ใช้คำขอล่าสุด
+        แสดงการ์ดใน Task Detail
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายการคำขอ (เรียงตาม requestedAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfigApplyRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบงาน หรือผู้เรียกไม่มีสิทธิ์เห็นงานนี้
+
+  /config-apply-requests:
+    get:
+      tags: [config-apply-request]
+      operationId: listConfigApplyRequests
+      summary: คิวคำขอส่ง Config สำหรับ Approval Center (docs/25 §3.4)
+      description: >-
+        resource `config-apply-request` action `Read` — Operation, Auditor, Admin,
+        SuperAdmin · filter `status` (ไม่ส่ง = ทุกสถานะ) · แต่ละแถวมีข้อมูลที่การ์ด
+        ต้องใช้ (งาน, Config, ผู้ขอ, ผู้ผูก Config) และ `fieldNames` ที่จะส่ง (รวม
+        Device Config Override ที่ approved แล้ว) **ไม่มีค่าจริงของ field**
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: "#/components/schemas/ConfigApplyRequestStatus"
+      responses:
+        "200":
+          description: รายการคำขอ (เรียงตาม requestedAt desc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ConfigApplyRequestQueueItem"
+        "400":
+          description: status ไม่ใช่ค่าที่รู้จัก
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคิวคำขอ
+
+  /config-apply-requests/{id}/approve:
+    post:
+      tags: [config-apply-request]
+      operationId: approveConfigApplyRequest
+      summary: Operation อนุมัติคำขอส่ง Config (docs/25 §3.4–§3.5)
+      description: >-
+        resource `config-apply-request` action `Approve` — **Operation เท่านั้น**
+        (Admin/SuperAdmin อนุมัติไม่ได้) · Separation of Duty เช็คที่ backend
+        ทุกครั้ง: ผู้อนุมัติต้อง ≠ ผู้ขอ, ≠ ผู้ผูก Config เข้างาน และ ≠ ผู้อนุมัติ
+        ตัว Config (`Config.approvedBy`) · ข้อมูลผู้ผูก Config หรือผู้อนุมัติ
+        Config ว่าง = ปฏิเสธ (fail closed) · ตรวจงาน/Config/เครื่องซ้ำแบบสดใน
+        ทรานแซกชันเดียวกัน แล้วเปลี่ยนเป็น `sending` สร้าง Rollout เครื่องเดียว
+        (`rolloutId`) แล้วเริ่มส่งหลัง commit ตามโหมด `DEVICE_CONFIG_APPLY_MODE`
+        (`central` = ส่งผ่าน Server กลาง) · ผลจากกล่องอัปเดตคำขอเป็น
+        `succeeded`/`failed`/`skipped_offline` ทีหลัง (ดู `GET /tasks/{taskId}/config-apply-requests`)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "อนุมัติสำเร็จ — คืนคำขอ (status: sending, มี rolloutId)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: >-
+            ไม่ใช่ Operation หรือผิด Separation of Duty (เป็นผู้ขอ, ผู้ผูก Config
+            เข้างาน, ผู้อนุมัติตัว Config หรือข้อมูลที่ใช้เช็คว่าง)
+        "404":
+          description: ไม่พบคำขอนี้
+        "409":
+          description: >-
+            คำขอถูกตัดสินไปแล้ว (รวมกดพร้อมกัน) หรือข้อมูลเปลี่ยนตั้งแต่ขอ — งาน
+            ไม่ได้ in_progress, ถูกย้ายคน, Config/เครื่อง/ผู้ผูก Config ของงานเปลี่ยน,
+            Config ไม่ใช่ approved/synced, เครื่องไม่ installed หรือมี Campaign
+            กำลังส่งให้เครื่องนี้ (คำขอยัง pending ให้ปฏิเสธพร้อมเหตุผลแทน)
+
+  /config-apply-requests/{id}/reject:
+    post:
+      tags: [config-apply-request]
+      operationId: rejectConfigApplyRequest
+      summary: Operation ปฏิเสธคำขอส่ง Config (docs/25 §3.4)
+      description: >-
+        action เดียวกับ approve และ Separation of Duty ชุดเดียวกัน · `rejectReason`
+        **บังคับ** · แจ้งผู้ขอ `config_apply_rejected` · AuditLog
+        `config_apply_reject`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigApplyRequestRejectRequest"
+      responses:
+        "200":
+          description: "ปฏิเสธสำเร็จ — คืนคำขอ (status: rejected)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequest"
+        "400":
+          description: ไม่ส่ง rejectReason หรือยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่ใช่ Operation หรือผิด Separation of Duty
+        "404":
+          description: ไม่พบคำขอนี้
+        "409":
+          description: คำขอถูกตัดสินไปแล้ว
+
+  /config-apply-requests/{id}/cancel:
+    post:
+      tags: [config-apply-request]
+      operationId: cancelConfigApplyRequest
+      summary: ผู้ขอยกเลิกคำขอของตัวเอง (docs/25 §3.3)
+      description: >-
+        resource `config-apply-request` action `Create` (ST/OT) · เฉพาะผู้ขอ และ
+        เฉพาะตอน `pending` · AuditLog `config_apply_cancel`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "ยกเลิกสำเร็จ — คืนคำขอ (status: cancelled)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้ยกเลิกคำขอไม่ได้
+        "404":
+          description: ไม่พบคำขอ หรือไม่ใช่ผู้ขอ (ไม่เปิดเผยว่ามีคำขอนี้)
+        "409":
+          description: คำขอไม่ได้อยู่ pending แล้ว
+
   /firmware:
     get:
       tags: [firmware]
@@ -1640,14 +1870,19 @@ paths:
     post:
       tags: [device]
       operationId: applyConfigToDevice
-      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13)
+      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13, deprecated v3.31)
+      deprecated: true
       description: >-
         สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — เลือก Config ที่ผูกกับ Task
         ที่กำลังทำ แล้วส่งให้อุปกรณ์เครื่องนั้น. **ไม่ persist / ไม่แตะสถานะใดๆ**
         (fire-and-forget) — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป
         (../planning/01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
         โหมด mock ตรวจค่าเบื้องต้น (field ≥ 1, Timeout/Interval ไม่ติดลบ)
-        แล้วคืน `applied: true`
+        แล้วคืน `applied: true` · **ใช้ `MockConfigApplier` เสมอไม่ว่า
+        `DEVICE_CONFIG_APPLY_MODE` จะเป็นอะไร ไม่เคยเขียนเข้ากล่องจริง** —
+        ตอน `DEVICE_CONFIG_APPLY_MODE=central` endpoint นี้ตอบ 409 ทันที
+        (docs/25 §3.8/Q6 — กันช่างเข้าใจผิดว่า "สั่งสำเร็จแล้ว" ทั้งที่ไม่มี
+        อะไรเกิดขึ้นจริง) ให้ใช้ทางส่งคำขอ Config ผ่าน Server กลางแทน
       parameters:
         - in: path
           name: deviceId
@@ -1677,8 +1912,10 @@ paths:
           description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Config (configId) นี้
         "409":
           description: >-
-            ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
-            (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
+            ใส่ Config ไม่ได้ — `DEVICE_CONFIG_APPLY_MODE=central` (ปุ่มนี้ใช้ไม่ได้
+            อีกต่อไป ดู description ด้านบน) / Device ยังไม่ installed / Config
+            ยังไม่ผ่านอนุมัติ (ต้อง approved หรือ synced) / Config คนละ
+            deviceModel/protocol กับ Device
 
   /devices/{deviceId}/confirm-firmware-install:
     post:
@@ -3919,12 +4156,16 @@ components:
           description: เหตุผลเดียวกับ successCount ด้านบน (นับจาก status = failed)
         applyMode:
           type: string
-          enum: [mock, real]
+          enum: [mock, real, central]
           nullable: true
           description: >-
             (v3.56, docs/19 §3) โหมดการส่ง Config ตอนปล่อย: `mock` = backend
             apply ให้ทุกเครื่องทันที · `real` = รอให้อุปกรณ์ดึงงานเองผ่าน
-            `/device-sync/*` · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
+            `/device-sync/*` · `central` = backend สั่ง Server กลาง (ESP32
+            Central Management) ส่ง Config ให้กล่องทีละเครื่อง แล้วถามผลคำสั่ง
+            ทุก 4 วินาที (`DEVICE_CONFIG_APPLY_MODE=central`) ผลสำเร็จ/ล้มเหลว
+            นับเข้า Auto Pause ตามเดิม ส่วนกล่องออฟไลน์หรือคำสั่งถูกแทนที่/ยกเลิก
+            นับเป็นข้าม (`skipped_offline`) ไม่นับล้มเหลว · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
             field นี้ (ถือเป็น `mock`) · Firmware เป็น `mock` เสมอ · Rollback
             สืบทอดจากรอบต้นเรื่อง
         pullTimeoutHours:
@@ -4713,6 +4954,19 @@ components:
             Config ที่ Operation ผูกกับงานติดตั้ง/เปลี่ยน config — Mobile อ่านค่านี้
             ส่งเป็น body ของ POST /devices/{deviceId}/apply-config ตอนทำจอ Confirm
             Install · null สำหรับงานประเภทอื่น (เช็คสัญญาณ, เปลี่ยนซิม)
+        configAssignedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Operation ผู้ผูก configId เข้างานนี้ (docs/25 §4.2, v3.59) — ใช้เช็ค
+            Separation of Duty ของคำขอส่ง Config · null เมื่อไม่มี configId หรือ
+            งานเก่าก่อน v3.59 (คำขอส่ง Config ของงานพวกนี้ถูกปฏิเสธจนกว่าจะผูกใหม่)
+        configAssignedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: เวลาที่ผูก configId ล่าสุด (คู่กับ configAssignedBy)
         campaignId:
           type: string
           nullable: true
@@ -4737,6 +4991,182 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    ConfigApplyRequestStatus:
+      type: string
+      description: >-
+        pending รอ Operation ตัดสิน · sending อนุมัติแล้ว รอผลจากกล่อง ·
+        succeeded/failed/skipped_offline ผลจากกล่อง · rejected Operation ปฏิเสธ ·
+        cancelled ผู้ขอยกเลิกหรืองานถูกยกเลิก · expired ไม่มีใครตัดสินภายใน 24 ชม.
+      enum:
+        [
+          pending,
+          sending,
+          succeeded,
+          failed,
+          skipped_offline,
+          rejected,
+          cancelled,
+          expired,
+        ]
+
+    ConfigApplyRequest:
+      type: object
+      description: คำขอส่ง Config ของ Task เข้าเครื่องจริง (Prisma model ConfigApplyRequest, docs/25 §4.1)
+      required:
+        [
+          id,
+          taskId,
+          deviceId,
+          configId,
+          configAssignedBy,
+          requestedBy,
+          requestedAt,
+          expiresAt,
+          status,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          description: เลขเครื่อง (Device.deviceId) snapshot จาก Task ตอนขอ
+        configId:
+          type: string
+          format: uuid
+          description: snapshot จาก Task ตอนขอ
+        configAssignedBy:
+          type: string
+          format: uuid
+          description: ผู้ผูก Config เข้างาน (snapshot) — อนุมัติคำขอนี้ไม่ได้
+        requestedBy:
+          type: string
+          format: uuid
+        requestedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: คำขอ pending หมดอายุเมื่อถึงเวลานี้
+        note:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/ConfigApplyRequestStatus"
+        decidedBy:
+          type: string
+          format: uuid
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectReason:
+          type: string
+          nullable: true
+        rolloutId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Rollout เครื่องเดียวที่สร้างตอนอนุมัติ
+        resultDetail:
+          type: string
+          nullable: true
+          description: ผลหรือเหตุผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ConfigApplyRequestQueueItem:
+      description: แถวในคิวอนุมัติ — คำขอ + ข้อมูลที่การ์ด Approval Center ใช้ (ไม่มีค่าจริงของ field)
+      allOf:
+        - $ref: "#/components/schemas/ConfigApplyRequest"
+        - type: object
+          required: [task, config, requester, configAssigner, fieldNames]
+          properties:
+            task:
+              type: object
+              required: [id, title]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+            config:
+              type: object
+              required: [id, name, deviceModel, protocol]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                deviceModel:
+                  type: string
+                protocol:
+                  type: string
+            requester:
+              $ref: "#/components/schemas/ConfigApplyRequestUser"
+            configAssigner:
+              $ref: "#/components/schemas/ConfigApplyRequestUser"
+            decider:
+              type: object
+              nullable: true
+              description: Operation ผู้ตัดสิน — null ระหว่าง pending
+              required: [id, fullName]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                fullName:
+                  type: string
+            fieldNames:
+              type: array
+              items:
+                type: string
+              description: ชื่อ field ที่จะส่ง (รวม Device Config Override ที่ approved)
+
+    ConfigApplyRequestUser:
+      type: object
+      required: [id, fullName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+
+    ConfigApplyRequestCreateRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          maxLength: 500
+          description: ข้อความถึง Operation (optional)
+
+    ConfigApplyRequestRejectRequest:
+      type: object
+      required: [rejectReason]
+      properties:
+        rejectReason:
+          type: string
+          minLength: 1
+          maxLength: 500
 
     TaskCreateRequest:
       type: object
@@ -4880,6 +5310,7 @@ components:
           objectKey,
           originalFilename,
           fileSizeBytes,
+          checksumSha256,
           uploadedBy,
           uploadedAt,
           approvalStatus,
@@ -4915,6 +5346,13 @@ components:
           type: string
         fileSizeBytes:
           type: integer
+        checksumSha256:
+          type: string
+          nullable: true
+          description: >-
+            SHA-256 ของไฟล์ตอนอัปโหลด (hex, เสมอ 64 ตัวอักษร) — ให้ QA เทียบกับ
+            hash ที่ผู้สร้างไฟล์แจ้งมานอกระบบก่อนอนุมัติ `null` สำหรับ Firmware
+            ที่อัปโหลดไว้ก่อนฟีเจอร์นี้ (ไม่ย้อนคำนวณจากไฟล์เดิม)
         uploadedBy:
           type: string
           format: uuid
@@ -5152,6 +5590,15 @@ components:
           type: string
           maxLength: 50
           nullable: true
+        initialFirmwareId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Firmware ที่กล่องมีติดมาก่อนเข้าระบบ (เช่นจากโรงงาน) — ไม่ใส่ได้
+            ถ้าไม่รู้แน่ชัด แต่ถ้าไม่ใส่ กด "Rollback Firmware" ครั้งแรกในอนาคต
+            จะไม่มีของเก่าให้ย้อนกลับไป (Dual Partition bookkeeping ไม่มีจุด
+            เริ่มต้น)
 
     RegisterDeviceResponse:
       allOf:
@@ -5646,6 +6093,15 @@ components:
             - incident_report_resolved
             - incident_report_dismissed
             - incident_report_promoted
+            # เพิ่มใหม่ (v3.59 — docs/25 คำขอส่ง Config เข้าเครื่อง): แจ้ง
+            # Operation ตอนมีคำขอใหม่ (_pending ยกเว้นผู้ผูก Config) + แจ้งช่าง
+            # ผู้ขอตอนจบ · ไม่มี _approved (มติ Q5) · _failed รวมกล่องออฟไลน์
+            # (payload.outcome = skipped_offline) · _expired = ไม่มีใครตัดสินใน 24 ชม.
+            - config_apply_pending
+            - config_apply_rejected
+            - config_apply_succeeded
+            - config_apply_failed
+            - config_apply_expired
         payload:
           type: object
           additionalProperties: true

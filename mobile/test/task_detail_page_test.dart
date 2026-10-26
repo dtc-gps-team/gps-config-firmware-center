@@ -15,11 +15,12 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
-import 'package:mobile/features/device_search/device_status_repository.dart';
-import 'package:mobile/features/task/confirm_install_repository.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+
+import 'support/fake_config_apply_request_repository.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -123,67 +124,12 @@ class _FakeTaskEventRepository implements TaskEventRepository {
   }
 }
 
-class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
-  _FakeConfirmInstallRepository({this.result, this.error});
-
-  final ConfigApplyResult? result;
-  final Object? error;
-
-  int calls = 0;
-  String? lastDeviceId;
-  String? lastConfigId;
-  String? lastRolloutId;
-
-  @override
-  Future<ConfigApplyResult> applyConfig({
-    required String deviceId,
-    required String configId,
-    String? rolloutId,
-  }) async {
-    calls++;
-    lastDeviceId = deviceId;
-    lastConfigId = configId;
-    lastRolloutId = rolloutId;
-    if (error != null) throw error!;
-    return result ??
-        ConfigApplyResult(
-          applied: true,
-          details: const ['ok'],
-          appliedAt: DateTime(2026, 9, 11),
-        );
-  }
-}
-
-class _FakeDeviceStatusRepository implements DeviceStatusRepository {
-  _FakeDeviceStatusRepository({
-    this.configStatus = DevicePayloadStatus.unknown,
-    this.configRolloutId,
-    this.error,
-  });
-
-  final DevicePayloadStatus configStatus;
-  final String? configRolloutId;
-  final Object? error;
-
-  @override
-  Future<DeviceStatus> getDeviceStatus(String deviceId) async {
-    if (error != null) throw error!;
-    return DeviceStatus(
-      deviceId: deviceId,
-      configStatus: configStatus,
-      firmwareStatus: DevicePayloadStatus.unknown,
-      configRolloutId: configRolloutId,
-    );
-  }
-}
-
 Future<void> _pump(
   WidgetTester tester, {
   required TaskRepository repo,
   UserRole? role = UserRole.st,
   String taskId = 't1',
-  ConfirmInstallRepository? confirmInstallRepo,
-  DeviceStatusRepository? statusRepo,
+  ConfigApplyRequestRepository? applyRepo,
   Set<String> pendingIds = const {},
   TaskEventRepository? eventRepo,
   GoRouter? router,
@@ -211,11 +157,8 @@ Future<void> _pump(
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
         ),
-        confirmInstallRepositoryProvider.overrideWithValue(
-          confirmInstallRepo ?? _FakeConfirmInstallRepository(),
-        ),
-        deviceStatusRepositoryProvider.overrideWithValue(
-          statusRepo ?? _FakeDeviceStatusRepository(),
+        configApplyRequestRepositoryProvider.overrideWithValue(
+          applyRepo ?? FakeConfigApplyRequestRepository(),
         ),
       ],
       child: router == null
@@ -224,6 +167,7 @@ Future<void> _pump(
     ),
   );
   await tester.pump(); // resolve getTask
+  await tester.pump(); // resolve คำขอส่ง Config ล่าสุด (docs/25)
 }
 
 /// go_router จริง: `/tasks/:id` = หน้าจริง, `/devices/:deviceId` = หน้าปลอมที่
@@ -464,7 +408,7 @@ void main() {
 
   group('Confirm Install', () {
     testWidgets(
-      'ST + configId + deviceId + in_progress -> เห็นปุ่มยืนยันติดตั้ง',
+      'ST + configId + deviceId + in_progress -> เห็นปุ่มขอส่ง Config',
       (tester) async {
         await _pump(
           tester,
@@ -548,233 +492,317 @@ void main() {
 
       expect(_confirmInstallButton, findsNothing);
     });
+  });
+
+  // docs/25 — ปุ่มเดิม "ส่ง Config เข้าเครื่อง" (apply-config แบบ mock) เปลี่ยนเป็น
+  // "ขอส่ง" ให้ Operation อีกคนอนุมัติ · การ์ดแสดงสถานะของคำขอล่าสุดตามตาราง §3.3
+  group('คำขอส่ง Config เข้าเครื่อง (docs/25)', () {
+    Task installTask() => _makeTask(
+      status: TaskStatus.inProgress,
+      configId: 'cfg-1',
+      deviceId: 'DVC-1',
+    );
+
+    Future<FakeConfigApplyRequestRepository> pumpWith(
+      WidgetTester tester, {
+      List<ConfigApplyRequest>? requests,
+      Object? createError,
+      Object? cancelError,
+      Object? listError,
+    }) async {
+      // จอสูงพอให้การ์ดสถานะคำขอ + ปุ่มยกเลิกอยู่ในจอ (เนื้อหาหน้านี้ยาวกว่า 600)
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final applyRepo = FakeConfigApplyRequestRepository(
+        requests: requests,
+        createError: createError,
+        cancelError: cancelError,
+        listError: listError,
+      );
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(task: installTask()),
+        role: UserRole.st,
+        applyRepo: applyRepo,
+      );
+      return applyRepo;
+    }
+
+    Finder statusNotice() => find.byKey(const Key('apply_request_status'));
+    Finder cancelButton() =>
+        find.byKey(const Key('cancel_apply_request_button'));
 
     testWidgets(
-      'กดยืนยัน -> เรียก repo ด้วย deviceId/configId ของ task + snackbar + '
-      'ปุ่มเปลี่ยนเป็น disabled ถาวร (กันกดซ้ำ)',
+      'ยังไม่เคยขอ -> ปุ่ม "ขอส่ง Config เข้าเครื่อง" กดได้ ไม่มีการ์ดสถานะ',
       (tester) async {
-        final confirmRepo = _FakeConfirmInstallRepository(
-          result: ConfigApplyResult(
-            applied: true,
-            details: const ['ส่ง Config 3 ฟิลด์ให้ DVC-1 แล้ว'],
-            appliedAt: DateTime(2026, 9, 11),
-          ),
-        );
-        await _pump(
-          tester,
-          repo: _FakeTaskRepository(
-            task: _makeTask(
-              status: TaskStatus.inProgress,
-              configId: 'cfg-1',
-              deviceId: 'DVC-1',
-            ),
-          ),
-          role: UserRole.st,
-          confirmInstallRepo: confirmRepo,
-        );
+        await pumpWith(tester);
 
-        await tester.tap(_confirmInstallButton);
-        await tester.pump(); // kick off _confirmInstall
-        await tester.pump(); // await applyConfig
-
-        expect(confirmRepo.calls, 1);
-        expect(confirmRepo.lastDeviceId, 'DVC-1');
-        expect(confirmRepo.lastConfigId, 'cfg-1');
+        expect(find.text('ขอส่ง Config เข้าเครื่อง'), findsOneWidget);
         expect(
-          find.text(
-            'ส่ง Config เข้าเครื่องแล้ว — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป',
+          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+          isNotNull,
+        );
+        expect(statusNotice(), findsNothing);
+      },
+    );
+
+    testWidgets('กดขอส่ง -> สร้างคำขอด้วย taskId (ไม่ส่ง config/device เอง) + '
+        'snackbar + การ์ดเป็น "รอ Operation อนุมัติ" + ปุ่มขอหายไป', (
+      tester,
+    ) async {
+      final applyRepo = await pumpWith(tester);
+
+      await tester.tap(_confirmInstallButton);
+      await tester.pump(); // create
+      await tester.pump(); // reload คำขอล่าสุด
+      await tester.pump();
+
+      expect(applyRepo.createCalls, 1);
+      expect(applyRepo.lastCreateTaskId, 't1');
+      expect(
+        find.text(
+          'ส่งคำขอแล้ว — รอ Operation อีกคนอนุมัติก่อนระบบส่งเข้ากล่อง',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('รอ Operation อนุมัติ'), findsOneWidget);
+      expect(_confirmInstallButton, findsNothing);
+      expect(cancelButton(), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5)); // snackbar timeout
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('มีคำขอ pending -> เห็นเวลาขอ/หมดอายุ + ปุ่มยกเลิก, '
+        'แถบล่างไม่มีปุ่มขอซ้ำ', (tester) async {
+      await pumpWith(tester, requests: [fakeApplyRequest()]);
+
+      expect(statusNotice(), findsOneWidget);
+      expect(find.textContaining('ส่งคำขอเมื่อ'), findsOneWidget);
+      expect(find.textContaining('หมดอายุ'), findsOneWidget);
+      expect(cancelButton(), findsOneWidget);
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets('กดยกเลิกคำขอ -> เรียก cancel ด้วย id + snackbar + '
+        'กลับมาขอใหม่ได้ด้วยปุ่ม "ขอส่งอีกครั้ง"', (tester) async {
+      final applyRepo = await pumpWith(
+        tester,
+        requests: [fakeApplyRequest(id: 'car-9')],
+      );
+
+      await tester.ensureVisible(cancelButton());
+      await tester.tap(cancelButton());
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(applyRepo.cancelCalls, 1);
+      expect(applyRepo.lastCancelId, 'car-9');
+      expect(find.text('ยกเลิกคำขอแล้ว'), findsWidgets);
+      expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
+      expect(cancelButton(), findsNothing);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('ยกเลิกไม่สำเร็จ (409 ถูกตัดสินไปแล้ว) -> ข้อความจาก backend', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [fakeApplyRequest()],
+        cancelError: ApiException(
+          'ยกเลิกได้เฉพาะคำขอที่รออนุมัติ — สถานะปัจจุบัน: sending',
+          statusCode: 409,
+        ),
+      );
+
+      await tester.ensureVisible(cancelButton());
+      await tester.tap(cancelButton());
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('cancel_apply_request_error')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'sending -> "อนุมัติแล้ว กำลังส่ง รอกล่องยืนยัน" ไม่มีปุ่มขอ/ยกเลิก',
+      (tester) async {
+        await pumpWith(
+          tester,
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.sending,
+              decidedAt: DateTime.utc(2026, 10, 22, 4),
+            ),
+          ],
+        );
+
+        expect(find.text('อนุมัติแล้ว กำลังส่ง รอกล่องยืนยัน'), findsOneWidget);
+        expect(find.textContaining('อนุมัติเมื่อ'), findsOneWidget);
+        expect(_confirmInstallButton, findsNothing);
+        expect(cancelButton(), findsNothing);
+      },
+    );
+
+    testWidgets('succeeded -> "กล่องรับ Config แล้ว" ไม่มีปุ่มขอซ้ำ', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            status: ConfigApplyRequestStatus.succeeded,
+            completedAt: DateTime.utc(2026, 10, 22, 5),
           ),
+        ],
+      );
+
+      expect(find.text('กล่องรับ Config แล้ว'), findsOneWidget);
+      expect(_confirmInstallButton, findsNothing);
+    });
+
+    testWidgets(
+      'rejected -> เหตุผลของ Operation + ปุ่ม "ขอส่งอีกครั้ง" กดได้',
+      (tester) async {
+        await pumpWith(
+          tester,
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.rejected,
+              rejectReason: 'ค่า APN ไม่ตรงกับซิมของลูกค้า',
+            ),
+          ],
+        );
+
+        expect(find.text('Operation ปฏิเสธคำขอ'), findsOneWidget);
+        expect(
+          find.text('เหตุผล: ค่า APN ไม่ตรงกับซิมของลูกค้า'),
           findsOneWidget,
         );
-        expect(find.text('ส่ง Config เข้าเครื่องแล้ว'), findsOneWidget);
+        expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
+        expect(
+          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    for (final (status, detail) in [
+      (ConfigApplyRequestStatus.failed, 'กล่องปฏิเสธค่า SERVER_PORT'),
+      (ConfigApplyRequestStatus.skippedOffline, 'กล่องออฟไลน์เกินเวลาส่ง'),
+      (
+        ConfigApplyRequestStatus.expired,
+        'ไม่มี Operation ตัดสินภายใน 24 ชั่วโมง คำขอหมดอายุ',
+      ),
+      (
+        ConfigApplyRequestStatus.cancelled,
+        'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
+      ),
+    ]) {
+      testWidgets('${status.wireName} -> แสดงเหตุผล + ขอส่งอีกครั้งได้', (
+        tester,
+      ) async {
+        await pumpWith(
+          tester,
+          requests: [fakeApplyRequest(status: status, resultDetail: detail)],
+        );
+
+        expect(find.text(detail), findsOneWidget);
+        expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
+      });
+    }
+
+    testWidgets('409 ตอนขอ (เช่น งานไม่มีข้อมูลผู้ผูก Config) -> ข้อความจาก '
+        'backend เหนือปุ่ม และกดใหม่ได้', (tester) async {
+      await pumpWith(
+        tester,
+        createError: ApiException(
+          'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
+          statusCode: 409,
+        ),
+      );
+
+      await tester.tap(_confirmInstallButton);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
+      expect(
+        find.text(
+          'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('ออฟไลน์ตอนขอ -> ข้อความไทยจาก ApiException (ไม่เข้าคิว offline)', (
+      tester,
+    ) async {
+      final applyRepo = await pumpWith(
+        tester,
+        createError: ApiException(
+          'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+        ),
+      );
+
+      await tester.tap(_confirmInstallButton);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text(
+          'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
+        ),
+        findsOneWidget,
+      );
+      expect(applyRepo.requests, isEmpty);
+    });
+
+    testWidgets(
+      'โหลดสถานะคำขอไม่สำเร็จ -> ปุ่มขอกดไม่ได้ (ไม่รู้ว่ามีคำขอค้าง) '
+      '+ ลองใหม่แล้วโหลดได้',
+      (tester) async {
+        final applyRepo = await pumpWith(
+          tester,
+          listError: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
+        );
+
+        expect(
+          find.byKey(const Key('apply_request_load_error')),
+          findsOneWidget,
+        );
         expect(
           tester.widget<FilledButton>(_confirmInstallButton).onPressed,
           isNull,
         );
 
-        await tester.pump(const Duration(seconds: 5)); // snackbar timeout
-        await tester.pumpAndSettle();
-      },
-    );
-
-    testWidgets(
-      'applied: false (200 แต่ field ไม่ผ่าน pre-flight) -> แสดง details '
-      'เป็น error, ปุ่มกดซ้ำได้',
-      (tester) async {
-        final confirmRepo = _FakeConfirmInstallRepository(
-          result: ConfigApplyResult(
-            applied: false,
-            details: const ['ฟิลด์ "Timeout" ต้องไม่ติดลบ'],
-            appliedAt: DateTime(2026, 9, 11),
-          ),
+        applyRepo.listError = null;
+        await tester.ensureVisible(
+          find.byKey(const Key('apply_request_retry')),
         );
-        await _pump(
-          tester,
-          repo: _FakeTaskRepository(
-            task: _makeTask(
-              status: TaskStatus.inProgress,
-              configId: 'cfg-1',
-              deviceId: 'DVC-1',
-            ),
-          ),
-          role: UserRole.st,
-          confirmInstallRepo: confirmRepo,
-        );
-
-        await tester.tap(_confirmInstallButton);
+        await tester.tap(find.byKey(const Key('apply_request_retry')));
         await tester.pump();
         await tester.pump();
 
-        expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
-        expect(find.text('ฟิลด์ "Timeout" ต้องไม่ติดลบ'), findsOneWidget);
+        expect(find.byKey(const Key('apply_request_load_error')), findsNothing);
         expect(
           tester.widget<FilledButton>(_confirmInstallButton).onPressed,
           isNotNull,
         );
       },
     );
-
-    testWidgets(
-      '409 (device ยังไม่ installed) -> ข้อความจาก backend, ปุ่มกดซ้ำได้',
-      (tester) async {
-        final confirmRepo = _FakeConfirmInstallRepository(
-          error: ApiException(
-            'Device สถานะปัจจุบัน (registered) ยังใส่ Config ไม่ได้ — '
-            'ต้องเป็น installed (ติดตั้งจริงแล้ว) เท่านั้น',
-            statusCode: 409,
-          ),
-        );
-        await _pump(
-          tester,
-          repo: _FakeTaskRepository(
-            task: _makeTask(
-              status: TaskStatus.inProgress,
-              configId: 'cfg-1',
-              deviceId: 'DVC-1',
-            ),
-          ),
-          role: UserRole.st,
-          confirmInstallRepo: confirmRepo,
-        );
-
-        await tester.tap(_confirmInstallButton);
-        await tester.pump();
-        await tester.pump();
-
-        expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
-        expect(
-          find.text(
-            'Device สถานะปัจจุบัน (registered) ยังใส่ Config ไม่ได้ — '
-            'ต้องเป็น installed (ติดตั้งจริงแล้ว) เท่านั้น',
-          ),
-          findsOneWidget,
-        );
-        expect(
-          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
-          isNotNull,
-        );
-      },
-    );
-
-    testWidgets(
-      'backend เข้าไม่ถึง (connection error) -> ข้อความไทยจาก ApiException, '
-      'ไม่ใช่ raw exception',
-      (tester) async {
-        final confirmRepo = _FakeConfirmInstallRepository(
-          error: ApiException(
-            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
-          ),
-        );
-        await _pump(
-          tester,
-          repo: _FakeTaskRepository(
-            task: _makeTask(
-              status: TaskStatus.inProgress,
-              configId: 'cfg-1',
-              deviceId: 'DVC-1',
-            ),
-          ),
-          role: UserRole.st,
-          confirmInstallRepo: confirmRepo,
-        );
-
-        await tester.tap(_confirmInstallButton);
-        await tester.pump();
-        await tester.pump();
-
-        expect(
-          find.text(
-            'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
-          ),
-          findsOneWidget,
-        );
-      },
-    );
-  });
-
-  group('Confirm Install — rolloutId (issue #265)', () {
-    Future<_FakeConfirmInstallRepository> pressConfirm(
-      WidgetTester tester,
-      DeviceStatusRepository statusRepo,
-    ) async {
-      final confirmRepo = _FakeConfirmInstallRepository();
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(
-            status: TaskStatus.inProgress,
-            configId: 'cfg-1',
-            deviceId: 'DVC-1',
-          ),
-        ),
-        role: UserRole.st,
-        confirmInstallRepo: confirmRepo,
-        statusRepo: statusRepo,
-      );
-      await tester.tap(_confirmInstallButton);
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
-      return confirmRepo;
-    }
-
-    testWidgets('configStatus pending + มี configRolloutId -> ส่ง rolloutId', (
-      tester,
-    ) async {
-      final repo = await pressConfirm(
-        tester,
-        _FakeDeviceStatusRepository(
-          configStatus: DevicePayloadStatus.pending,
-          configRolloutId: 'rollout-9',
-        ),
-      );
-      expect(repo.calls, 1);
-      expect(repo.lastRolloutId, 'rollout-9');
-      await tester.pump(const Duration(seconds: 5));
-    });
-
-    testWidgets('ไม่ pending (ไม่มี rollout) -> ไม่ส่ง rolloutId', (
-      tester,
-    ) async {
-      final repo = await pressConfirm(tester, _FakeDeviceStatusRepository());
-      expect(repo.calls, 1);
-      expect(repo.lastRolloutId, isNull);
-      await tester.pump(const Duration(seconds: 5));
-    });
-
-    testWidgets('โหลดสถานะไม่สำเร็จ -> ยังส่ง Config ได้ โดยไม่มี rolloutId', (
-      tester,
-    ) async {
-      final repo = await pressConfirm(
-        tester,
-        _FakeDeviceStatusRepository(
-          error: ApiException('เซิร์ฟเวอร์ล่ม', statusCode: 500),
-        ),
-      );
-      expect(repo.calls, 1);
-      expect(repo.lastRolloutId, isNull);
-      await tester.pump(const Duration(seconds: 5));
-    });
   });
 
   group('Bottom action bar', () {
@@ -851,7 +879,7 @@ void main() {
         expect(confirm.width, greaterThan(save.width));
         // label ทั้งสองอยู่บรรทัดเดียว (ไม่ตัดขึ้นบรรทัดใหม่จนปุ่มสูงเกิน)
         expect(
-          tester.getSize(find.text('ยืนยันส่ง Config เข้าเครื่อง')).height,
+          tester.getSize(find.text('ขอส่ง Config เข้าเครื่อง')).height,
           lessThan(32),
         );
       });

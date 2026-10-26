@@ -10,12 +10,13 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/task/simulator_repository.dart';
-import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
-import 'package:mobile/features/task/confirm_install_repository.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+
+import 'support/fake_config_apply_request_repository.dart';
 
 // แถว 26b — ปุ่ม "ทดสอบกับ Device Simulator" ก่อนส่ง Config เข้าเครื่อง
 // (Config-only). แยกไฟล์จาก task_detail_page_test.dart เพื่อไม่ชนกับ PR อื่น
@@ -49,24 +50,6 @@ class _FakeTaskRepository implements TaskRepository {
   Future<Task> updateStatus(String id, TaskStatus status) async => _task;
 }
 
-class _FakeConfirmInstallRepository implements ConfirmInstallRepository {
-  int calls = 0;
-
-  @override
-  Future<ConfigApplyResult> applyConfig({
-    required String deviceId,
-    required String configId,
-    String? rolloutId,
-  }) async {
-    calls++;
-    return ConfigApplyResult(
-      applied: true,
-      details: const ['ok'],
-      appliedAt: DateTime(2026, 9, 11),
-    );
-  }
-}
-
 DeviceSimulateConfigResult _result({required bool passed}) =>
     DeviceSimulateConfigResult(
       passed: passed,
@@ -85,18 +68,6 @@ DeviceSimulateConfigResult _result({required bool passed}) =>
         testedAt: DateTime(2026, 9, 11),
       ),
     );
-
-/// Scripted: pops the next outcome (a result, or an exception to throw).
-/// ไม่มี rollout ที่ pending — `_confirmInstall` อ่านสถานะก่อนส่ง Config (#265)
-/// ต้อง override ไม่งั้นจะยิง API จริงตอนเทส
-class _NoRolloutStatusRepo implements DeviceStatusRepository {
-  @override
-  Future<DeviceStatus> getDeviceStatus(String deviceId) async => DeviceStatus(
-    deviceId: deviceId,
-    configStatus: DevicePayloadStatus.unknown,
-    firmwareStatus: DevicePayloadStatus.unknown,
-  );
-}
 
 class _FakeSimulatorRepository implements SimulatorRepository {
   _FakeSimulatorRepository(this._outcomes);
@@ -162,7 +133,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required _FakeSimulatorRepository simulator,
   required _FakeIncidentRepository incidents,
-  required _FakeConfirmInstallRepository confirm,
+  required FakeConfigApplyRequestRepository confirm,
 }) async {
   tester.view.physicalSize = const Size(800, 3000);
   tester.view.devicePixelRatio = 1.0;
@@ -192,10 +163,7 @@ Future<void> _pump(
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
         ),
-        confirmInstallRepositoryProvider.overrideWithValue(confirm),
-        deviceStatusRepositoryProvider.overrideWithValue(
-          _NoRolloutStatusRepo(),
-        ),
+        configApplyRequestRepositoryProvider.overrideWithValue(confirm),
         simulatorRepositoryProvider.overrideWithValue(simulator),
         incidentRepositoryProvider.overrideWithValue(incidents),
       ],
@@ -203,6 +171,7 @@ Future<void> _pump(
     ),
   );
   await tester.pump(); // resolve getTask
+  await tester.pump(); // resolve คำขอส่ง Config ล่าสุด (docs/25)
 }
 
 Finder get _simulateButton => find.byKey(const Key('simulate_test_button'));
@@ -230,11 +199,11 @@ class _EmptyTaskEventRepository implements TaskEventRepository {
 
 void main() {
   late _FakeIncidentRepository incidents;
-  late _FakeConfirmInstallRepository confirm;
+  late FakeConfigApplyRequestRepository confirm;
 
   setUp(() {
     incidents = _FakeIncidentRepository();
-    confirm = _FakeConfirmInstallRepository();
+    confirm = FakeConfigApplyRequestRepository();
   });
 
   testWidgets('ข้ามการทดสอบ -> ปุ่มส่ง Config กดได้ปกติ ไม่มีผล/Incident', (
@@ -251,7 +220,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(confirm.calls, 1);
+    expect(confirm.createCalls, 1);
     expect(sim.calls, isEmpty);
     expect(incidents.created, isEmpty);
   });
