@@ -3709,8 +3709,85 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(override?.decision?.byId).toBe(op.id);
     });
 
+    it('กรองตามสิทธิ์ของ actor (แก้ครั้งที่ 97): ST เห็นแค่งาน/คำขอ override ของตัวเอง, QAEngineer ไม่เห็น task เลย', async () => {
+      await makeDevice('HIS-SCOPE', 'installed');
+      const configId = await makeConfig('approved');
+      const stOwner = await makeUser(prisma, { role: 'ST' });
+      const stOther = await makeUser(prisma, { role: 'ST' });
+      const op = await makeUser(prisma, { role: 'Operation' });
+
+      await prisma.task.create({
+        data: {
+          title: 'งานของ stOwner',
+          assignedTo: stOwner.id,
+          deviceId: 'HIS-SCOPE',
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'HIS-SCOPE',
+          configId,
+          versionNumber: 1,
+          fields: { APN: 'x' },
+          reason: 'ของ stOwner',
+          status: 'pending',
+          overriddenBy: stOwner.id,
+        },
+      });
+
+      const ownerToken = tokenFor(stOwner.id, 'ST');
+      const otherToken = tokenFor(stOther.id, 'ST');
+      await grant('ST', ActionType.Read, 'devices');
+      await grant('Operation', ActionType.Read, 'devices');
+      const qaToken = await readerToken('QAEngineer');
+
+      const ownerRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(200);
+      const ownerTitles = (
+        ownerRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(ownerTitles).toContain('งานของ stOwner');
+      expect(ownerTitles).toContain('config-override');
+
+      const otherRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200);
+      const otherTitles = (
+        otherRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(otherTitles).not.toContain('งานของ stOwner');
+      expect(otherTitles).not.toContain('config-override');
+
+      const qaRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${qaToken}`)
+        .expect(200);
+      const qaTitles = (
+        qaRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(qaTitles).not.toContain('งานของ stOwner');
+
+      // Operation เห็นทุกอย่างไม่ว่าใครเป็นคนทำ
+      const opToken = tokenFor(op.id, 'Operation');
+      const opRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${opToken}`)
+        .expect(200);
+      const opTitles = (
+        opRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(opTitles).toContain('งานของ stOwner');
+      expect(opTitles).toContain('config-override');
+    });
+
     it('ชนิดที่ขอ (types) และแบ่งหน้าด้วย cursor: ไม่ข้ามและไม่ซ้ำ', async () => {
-      const token = await readerToken();
+      // ใช้ Operation (เห็นงานของทุกคน) ไม่ใช่ ST ค่าเริ่มต้นของ readerToken()
+      // — เทสนี้ทดสอบ pagination/cursor ไม่ใช่การกรองสิทธิ์ (แก้ครั้งที่ 97
+      // ทำให้ ST ที่ไม่ใช่ `assignedTo` ของ Task เหล่านี้เห็นเป็นรายการว่าง)
+      const token = await readerToken('Operation');
       await makeDevice('HIS-P', 'installed');
       const st = await makeUser(prisma, { role: 'ST' });
       for (let i = 0; i < 5; i += 1) {
