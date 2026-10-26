@@ -2,6 +2,10 @@
 
 > **สถานะ:** แผนเพื่อขอความเห็น — **ยังไม่มีโค้ดใน PR นี้** · ร่างแรก 20 ต.ค. 2569 โดย B (kittiphong)
 >
+> **อัปเดต 26 ต.ค. 2569:** A ตอบ §9 Q1–Q3 แล้ว (บันทึกเป็นมติใน §9) · #362 merge แล้ว และทดสอบส่ง Config กับกล่องจริง
+> `BOX-0001` ผ่าน Server กลางสำเร็จแล้ว · `main` ส่ง Firmware ผ่าน Server กลางจาก Campaign Rollout ได้แล้ว (Phase 1b ไม่ต้องรอ)
+> · คำขอส่งจากหน้างานเปลี่ยนเป็น "อนุมัติแล้วช่างกดส่งเอง" ตาม docs/27 (ไม่กระทบกล่องจำลอง — กล่องรับงานแบบเดียวกัน)
+>
 > **เขียน §1–§9 ใหม่ทั้งหมด (22 ต.ค. 2569)** ตามทิศทางที่ตกลงกับ A ใน #357 (รีวิว A 20 ต.ค. + B ตอบรับวันเดียวกัน):
 > **มือถือ 1 เครื่องเป็นกล่องอีกตัวบน ws-gateway ของพี่เลี้ยง** พูด protocol เดียวกับ ESP32 แทนแผนรุ่นก่อน (กล่องจำลอง
 > หลายตัวที่ดึงงานจาก `/device-sync` ของเรา) · §10–§12 คงเดิม
@@ -9,9 +13,8 @@
 > **ที่มาของข้อมูล:**
 > - ระบบพี่เลี้ยง `arduino_gps`: `ws-gateway/src/{ws.js, commands.js}`, `firmware/esp32_gps_box/mgmt.h`,
 >   `delivery-server/src/*` (อ่านโค้ด 20–22 ต.ค. 2569 ไม่ได้ทดลองต่อจริงจากมือถือ)
-> - ระบบเรา: `main` หลัง #364 merge (`beb09fa`) และ #362 (โหมด `central`, ยังไม่ merge)
-> - **โปรแกรมจำลองกล่องตัวอย่างของ A ยังไม่ได้แชร์** — เนื้อหาโปรโตคอลในเอกสารนี้มาจากโค้ดของพี่เลี้ยงโดยตรง เมื่อได้ตัวอย่างของ A
->   จะเทียบอีกรอบ
+> - ระบบเรา: `main` หลัง #364 merge (`beb09fa`) และ #362 (โหมด `central`, merge แล้ว `c8f4f5c`)
+> - เนื้อหาโปรโตคอลในเอกสารนี้มาจากโค้ดของพี่เลี้ยงโดยตรง — **A แจ้ง 26 ต.ค. ว่าจะไม่ทำโปรแกรมจำลองกล่องตัวอย่างแล้ว** ไม่ต้องรอ
 
 ---
 
@@ -72,8 +75,8 @@ Firmware ใช้ `GET <delivery>/api/device/me/firmware-manifest?target=…&cu
 
 | เรื่อง | ของจริงตอนนี้ | ผลต่อแผน |
 |---|---|---|
-| ส่ง Config ไปกล่อง | #362 (ยังไม่ merge): `DEVICE_CONFIG_APPLY_MODE=central` + `CENTRAL_MODE=real` → หลังปล่อย Rollout backend สั่ง `PUT /api/admin/devices/{id}/config` ทีละเครื่อง แล้ว poll ผล (§12.3) | มือถือรับงานแบบเดียวกับ `BOX-0001` **ไม่ต้องแก้ backend ฝั่งส่งงาน** |
-| ส่ง Firmware | #362 ยังไม่มี (A แจ้งใน #362 ว่ากำลังเพิ่มโหมด `central` ให้ Firmware ในใบเดียวกัน) | Phase 1b รอส่วนนี้ (§5) |
+| ส่ง Config ไปกล่อง | #362 (merge แล้ว · ทดสอบกับ `BOX-0001` ผ่านแล้ว 26 ต.ค.): `DEVICE_CONFIG_APPLY_MODE=central` + `CENTRAL_MODE=real` → หลังปล่อย Rollout backend สั่ง `PUT /api/admin/devices/{id}/config` ทีละเครื่อง แล้ว poll ผล (§12.3) | มือถือรับงานแบบเดียวกับ `BOX-0001` **ไม่ต้องแก้ backend ฝั่งส่งงาน** |
+| ส่ง Firmware | มีแล้วใน `main` — Campaign Rollout แบบ Firmware สั่ง `pushFirmware()` ผ่าน Server กลางในโหมด `central` · คำขอจากหน้างานแบบ Firmware อยู่ใน docs/27 (B2) | Phase 1b เริ่มได้ (§5) |
 | แถวอุปกรณ์ในระบบเรา | Campaign เลือกเป้าหมายจากตาราง `Device` · ลงทะเบียนผ่านเว็บได้ตามปกติ (`POST /devices`, Admin/SuperAdmin) | ลงทะเบียน `deviceId = mobile-sim-001` ให้ตรงกับ `device_id` ของพี่เลี้ยง · **สถานะต้องรับงานได้** — ดู §9 Q2 |
 | สิทธิ์ ST/OT สร้างกล่อง | ไม่มี และ**ไม่ต้องมีแล้ว** — admin ลงทะเบียนกล่องเดียวครั้งเดียว | ตัด endpoint ใหม่ทั้งหมดของแผนรุ่นก่อน |
 | token ของ gateway | ตัดสินแล้วใน §10 (เก็บที่ backend เรา มือถือขอผ่าน staff JWT ไม่เก็บถาวร) | ใช้ตาม §10 |
@@ -120,7 +123,7 @@ Firmware ใช้ `GET <delivery>/api/device/me/firmware-manifest?target=…&cu
   `dart:io` `WebSocket.connect(headers: …)`)
 - คำขอไป `delivery-server` ใช้ Dio อีกตัวที่ไม่มี interceptor ของ staff — กัน 401 ของ gateway ทำให้แอปคิดว่า session ช่างหมดอายุ และ
   กัน JWT ของช่างหลุดไประบบพี่เลี้ยง
-- **cleartext:** server พี่เลี้ยงเป็น `ws://` / `http://` บน LAN — Android ต้องอนุญาต cleartext ให้ host นั้น (ดู §9 Q3) และมือถือ
+- **cleartext:** server พี่เลี้ยงเป็น `ws://` / `http://` บน LAN — Android ต้องอนุญาต cleartext ให้ host นั้น (มติ §9 Q3: เปิดเฉพาะ build ทดสอบ ผ่าน network security config ที่ระบุ host) และมือถือ
   ต้องอยู่ Wi-Fi เดียวกับ server
 
 #### 4.2.4 สถานะของกล่องจำลองที่แอปเก็บเอง
@@ -160,9 +163,10 @@ Firmware ใช้ `GET <delivery>/api/device/me/firmware-manifest?target=…&cu
 
 - A ตั้งข้อสังเกตใน #357: กล่องมือถือปนกับกล่องจริงในหน้าเลือกเป้าหมาย Campaign และ Dashboard อาจทำให้ตัวเลขและเกณฑ์
   Auto Pause (> 5%) เพี้ยน ควรมีป้ายหรือวิธีแยกที่เว็บ
-- แผนรุ่นก่อนใช้ field `isSimulated` ซึ่งตัดไปแล้ว — **วิธีแยกยังไม่ได้ตกลง** ดู §9 Q1
+- แผนรุ่นก่อนใช้ field `isSimulated` ซึ่งตัดไปแล้ว — **มติ (§9 Q1):** ไม่เพิ่ม field ใช้ prefix `mobile-sim-` ของ `deviceId`
+  ติดป้าย "อุปกรณ์ทดสอบ" ที่เว็บ (งานเว็บของ A) ไม่แยกการนับ Auto Pause
 
-## 5. Phase 1b — จำลอง OTA Firmware (รอส่วน Firmware ของ #362)
+## 5. Phase 1b — จำลอง OTA Firmware
 
 - **ไม่ต้องตรวจลายเซ็นหรือ health check เอง** (A อ่านโค้ด `firmware/esp32_gps_box` แล้วยืนยันใน #357) — แค่รายงานขั้นให้ถูกลำดับ
 - ลำดับ:
@@ -200,17 +204,15 @@ Firmware ใช้ `GET <delivery>/api/device/me/firmware-manifest?target=…&cu
 
 > **Q1–Q3 เดิม (endpoint แยก, cap ต่อบัญชี, cleanup) ปิดไปแล้ว** — ไม่มีความหมายเมื่อไม่สร้างกล่องจำลองในระบบเรา (A ระบุใน #357)
 
-**Q1 (ใหม่) — แยกกล่องจำลองที่เว็บ:** ควรแยก `mobile-sim-001` ออกจากกล่องจริงในหน้าเลือกเป้าหมาย Campaign, Dashboard และการนับ
-Auto Pause อย่างไร (§4.2.7) — เช่น ป้ายจากรูปแบบ `deviceId`, field ใหม่ใน `Device`, หรือไม่แยก (กล่องเดียว ใช้ทดสอบอย่างเดียว)
+**มติ Q1–Q3 (A ตอบ 26 ต.ค. บน #357):**
 
-**Q2 (ใหม่) — สถานะของแถว `Device`:** `POST /devices` สร้างเป็น `registered` และยังไม่มี endpoint เปลี่ยนเป็น `installed` (ข้อสังเกต
-เดิมของแผนรุ่นก่อน) — การส่ง Config ของระบบเราต้องการเครื่องที่ `installed` · `BOX-0001` ตั้งสถานะนี้อย่างไร และ `mobile-sim-001`
-ควรใช้วิธีเดียวกันไหม
+| ข้อ | เรื่อง | มติ | เหตุผล |
+|---|---|---|---|
+| Q1 | แยกกล่องจำลองที่เว็บ (§4.2.7) | **ไม่เพิ่ม field ใน `Device`** — เว็บดู prefix `mobile-sim-` ของ `deviceId` แล้วติดป้าย "อุปกรณ์ทดสอบ" ในหน้าเลือกเป้าหมาย Campaign และ Dashboard · ไม่แยกการนับ Auto Pause | มีกล่องจำลองแค่ตัวเดียว ผลต่อเกณฑ์ > 5% น้อยและเห็นชัดว่าเป็นเครื่องไหน · เพิ่ม field จริงเมื่อโตเกิน 1 เครื่อง |
+| Q2 | สถานะ `Device` ให้เป็น `installed` | **ตั้งตรงในฐานข้อมูลด้วยสคริปต์ชั่วคราว** เหมือนที่ทำกับ `BOX-0001` | ยังไม่มี endpoint เปลี่ยนสถานะ — เป็น backlog แยก ไม่อยู่ในแผนนี้ (ไม่ใช่ทางระยะยาว) |
+| Q3 | cleartext บน Android | **เปิดเฉพาะ build ทดสอบ** ผ่าน network security config ที่ระบุ host ของพี่เลี้ยง ไม่เปิดทั้ง build | ไม่เพิ่มความเสี่ยงให้ build จริง |
 
-**Q3 (ใหม่) — cleartext บน Android:** อนุญาต `ws://` / `http://` ไปที่ server พี่เลี้ยงแบบไหน — เปิดเฉพาะ build สำหรับทดสอบ
-(network security config ระบุ host) หรือทุก build
-
-**Q4 — ระบบเราสั่งงานไปที่ delivery-server:** ส่วน Config มีแผนแล้วใน #362 · ส่วน Firmware และการจำกัดสิทธิ์ credential ยังเปิดอยู่ ดู §12.3
+**Q4 — ระบบเราสั่งงานไปที่ delivery-server:** Config และ Firmware ทำแล้ว (#362 และงานต่อใน `main`) · การจำกัดสิทธิ์ credential และการปิดทางสั่งตรงยังเปิดอยู่ ดู §12.3
 
 ---
 
@@ -407,11 +409,11 @@ SUCCESS) · PENDING / DELIVERED / EXPIRED เป็นสถานะของ g
   ตาราง §11.4: SUCCESS → success · FAILED / ROLLED_BACK / DEVICE_NO_RESPONSE → failed (นับ Auto Pause) ·
   DEVICE_OFFLINE / TTL_EXPIRED / SUPERSEDED / CANCELLED → skipped_offline (ไม่นับล้มเหลว)
 - ไม่รู้จักกล่อง / ไม่อยู่ในทะเบียน / ติดต่อ Server กลางไม่ได้ → failed ทันทีพร้อมเหตุผล
-- ยังไม่เคยทดสอบสั่ง Config กับกล่องจริง (BOX-0001) — A จะนัดทดสอบพร้อมทีม
+- **ทดสอบสั่ง Config กับกล่องจริง `BOX-0001` ผ่าน Server กลางจริงสำเร็จแล้ว (26 ต.ค.)** — `CENTRAL_MODE=real` + `DEVICE_CONFIG_APPLY_MODE=central`
 
 **คำถามเปิดที่ยังเหลือ (Q4 ใน §9):**
-1. **Firmware** — #362 ส่งเฉพาะ Config · Rollout แบบ Firmware ยังเป็น `mock` เสมอ ยังไม่มีทางสั่ง
-   `POST /api/admin/devices/{id}/firmware` จากระบบเรา (การอัปโหลด / OTA ให้ ESP32 ยังต้องทำที่ `delivery-server` โดยตรง)
+1. ~~**Firmware**~~ — **ปิดแล้ว:** `main` สั่ง Firmware ผ่าน Server กลางจาก Campaign Rollout ได้แล้ว (`pushFirmware()`) ·
+   คำขอ Firmware จากหน้างานอยู่ใน docs/27
 2. **credential สิทธิ์เต็ม** — ยังใช้บัญชีที่ได้ `ADMIN_TOKEN` ของ `delivery-server` ซึ่งทำได้ทุกอย่าง (ลงทะเบียน / revoke กล่อง,
    อัปโหลด firmware, ส่ง Config) เก็บใน env เท่านั้น ยังไม่มีการจำกัดสิทธิ์เพิ่ม — ตอนนี้ backend ใช้ทั้งอ่านและสั่ง Config ด้วย
    credential ตัวเดียวกัน
