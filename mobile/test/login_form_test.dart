@@ -8,7 +8,6 @@ import 'package:mobile/core/auth/auth_repository.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
-import 'package:mobile/core/ui/app_card.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/auth/login_page.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -40,7 +39,12 @@ ProviderContainer _container(AuthRepository repository) {
   return container;
 }
 
+// จอทดสอบขนาดโทรศัพท์ (360x800) — แผงฟอร์มใหม่ (docs/22 §4.6) เว้นที่ว่างมากขึ้น
+// ปุ่ม login เลยเลยขอบล่างของจอทดสอบเริ่มต้น 800x600 (แนวนอน) ไปเล็กน้อย
 Future<void> _pumpLogin(WidgetTester tester, ProviderContainer container) {
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   return tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -192,25 +196,29 @@ void main() {
   });
 
   group('design system ใหม่ (docs/22 Batch 2)', () {
-    testWidgets('theme v2 + ฟอร์มอยู่ใน AppCard + ไม่มี AppBar', (
-      tester,
-    ) async {
-      await _pumpLogin(tester, _container(_FakeAuthRepository()));
+    testWidgets(
+      'theme v2 + ฟอร์มอยู่ในแผงลอย (มุม xxl เงา floating) + ไม่มี AppBar',
+      (tester) async {
+        await _pumpLogin(tester, _container(_FakeAuthRepository()));
 
-      expect(find.byType(AppV2Theme), findsOneWidget);
-      expect(find.byType(AppBar), findsNothing);
-      expect(
-        find.ancestor(
+        expect(find.byType(AppV2Theme), findsOneWidget);
+        expect(find.byType(AppBar), findsNothing);
+        final panel = find.ancestor(
           of: find.byKey(const Key('login_submit')),
-          matching: find.byType(AppCard),
-        ),
-        findsOneWidget,
-      );
-      final theme = Theme.of(
-        tester.element(find.byKey(const Key('login_submit'))),
-      );
-      expect(theme.colorScheme.primary, AppColors.primary);
-    });
+          matching: find.byKey(const Key('login_panel')),
+        );
+        expect(panel, findsOneWidget);
+        final deco =
+            tester.widget<Container>(panel).decoration! as BoxDecoration;
+        expect(deco.color, AppColors.card);
+        expect(deco.borderRadius, BorderRadius.circular(AppRadius.xxl));
+        expect(deco.boxShadow, AppShadows.floating);
+        final theme = Theme.of(
+          tester.element(find.byKey(const Key('login_submit'))),
+        );
+        expect(theme.colorScheme.primary, AppColors.primary);
+      },
+    );
 
     testWidgets('ช่องกรอกใช้ขอบ inputBorder #576171 จาก theme v2', (
       tester,
@@ -250,15 +258,22 @@ void main() {
       },
     );
 
-    testWidgets('สัญลักษณ์ระบบสี primary ตาม LogoMark ของ Web', (tester) async {
+    testWidgets('สัญลักษณ์ระบบไล่สีลงไปจบที่ primary + เงาสีฟ้า (docs/22 §4.6)', (
+      tester,
+    ) async {
       await _pumpLogin(tester, _container(_FakeAuthRepository()));
+      // Container ที่ใกล้ไอคอนที่สุด (แผงฟอร์มก็เป็น Container ที่ครอบอยู่ชั้นนอก)
       final mark = tester.widget<Container>(
-        find.ancestor(
-          of: find.byIcon(Icons.location_on_outlined),
-          matching: find.byType(Container),
-        ),
+        find
+            .ancestor(
+              of: find.byIcon(Icons.location_on_outlined),
+              matching: find.byType(Container),
+            )
+            .first,
       );
-      expect((mark.decoration! as BoxDecoration).color, AppColors.primary);
+      final deco = mark.decoration! as BoxDecoration;
+      expect((deco.gradient! as LinearGradient).colors.last, AppColors.primary);
+      expect(deco.boxShadow, AppShadows.primaryGlow);
     });
   });
 }

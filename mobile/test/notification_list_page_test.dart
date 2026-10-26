@@ -235,16 +235,18 @@ void main() {
 
   group('ไอคอนเด่นกว่าสำหรับ type ที่เกี่ยวกับ incident ใหม่/ยังไม่จบ '
       '(Mobile UI Roadmap Phase 1)', () {
+    // Container ตัวแรกที่มีสีพื้น — ข้ามกล่องเงาของ AppCard (docs/22 §4.6) ที่ไม่มีสี
     Color iconBgOf(WidgetTester tester, int index) {
-      final container = tester.widget<Container>(
-        find
-            .descendant(
-              of: find.byKey(Key('notification_tile_$index')),
-              matching: find.byType(Container),
-            )
-            .first,
-      );
-      return (container.decoration! as BoxDecoration).color!;
+      return find
+          .descendant(
+            of: find.byKey(Key('notification_tile_$index')),
+            matching: find.byType(Container),
+          )
+          .evaluate()
+          .map((e) => (e.widget as Container).decoration)
+          .whereType<BoxDecoration>()
+          .firstWhere((d) => d.color != null)
+          .color!;
     }
 
     testWidgets('incidentReportPending -> พื้นหลังไอคอนเด่น (ไม่ใช่สีปกติ)', (

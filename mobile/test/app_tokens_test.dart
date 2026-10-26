@@ -22,49 +22,50 @@ double _contrast(Color a, Color b) {
 Color _onto(Color fg, Color bg) => Color.alphaBlend(fg, bg);
 
 void main() {
-  group(
-    'AppColors ตรงกับ oklch จริงของ Web (ไม่ใช่คอมเมนต์ใน globals.css)',
-    () {
-      // ค่าที่แปลงจาก `web/src/app/globals.css` (`:root`) บน main d487763
-      // ยกเว้น mutedForeground = ค่าใหม่จาก #344 ที่ B ตัดสินให้ Mobile ตาม
-      final expected = <String, (Color, int)>{
-        'background': (AppColors.background, 0xFFF7F8FA),
-        'foreground': (AppColors.foreground, 0xFF1B2733),
-        'card': (AppColors.card, 0xFFFFFFFF),
-        'primary': (AppColors.primary, 0xFF1B6FB2),
-        'primaryForeground': (AppColors.primaryForeground, 0xFFFFFFFF),
-        'secondary': (AppColors.secondary, 0xFFEEF1F5),
-        'mutedForeground': (AppColors.mutedForeground, 0xFF576171),
-        'accent': (AppColors.accent, 0xFFECF3F9),
-        'accentForeground': (AppColors.accentForeground, 0xFF12344D),
-        'destructive': (AppColors.destructive, 0xFFE7000B),
-        'success': (AppColors.success, 0xFF4E9B6C),
-        'successForeground': (AppColors.successForeground, 0xFF165E3C),
-        'successSubtle': (AppColors.successSubtle, 0xFFDBF6E6),
-        'warning': (AppColors.warning, 0xFFCB8315),
-        'warningForeground': (AppColors.warningForeground, 0xFF824103),
-        'warningSubtle': (AppColors.warningSubtle, 0xFFFEF3C9),
-        'info': (AppColors.info, 0xFF287CCF),
-        'infoForeground': (AppColors.infoForeground, 0xFF075A8E),
-        'infoSubtle': (AppColors.infoSubtle, 0xFFDFF2FE),
-        'dangerForeground': (AppColors.dangerForeground, 0xFF9D1135),
-        'dangerSubtle': (AppColors.dangerSubtle, 0xFFFFF0F2),
-        'border': (AppColors.border, 0xFFE2E6EB),
-        'inputBorder': (AppColors.inputBorder, 0xFF576171),
-        'ring': (AppColors.ring, 0xFF1B6FB2),
-      };
-      for (final MapEntry(key: name, value: (actual, hex))
-          in expected.entries) {
-        test(name, () => expect(actual, Color(hex)));
-      }
-    },
-  );
+  group('AppColors ตรงกับ oklch จริงของ Web (ไม่ใช่คอมเมนต์ใน globals.css)', () {
+    // ค่าที่แปลงจาก `web/src/app/globals.css` (`:root`) บน main d487763
+    // ยกเว้น mutedForeground = ค่าใหม่จาก #344 ที่ B ตัดสินให้ Mobile ตาม และ
+    // ค่าที่ **ต่างจาก Web แล้วโดยตั้งใจ** (docs/22 §4.6 ปรับดีไซน์ให้พรีเมียมขึ้น):
+    // background, border, *Subtle ทั้ง 4 — คอมเมนต์ค่า Web เดิมไว้ท้ายบรรทัด
+    final expected = <String, (Color, int)>{
+      'background': (AppColors.background, 0xFFF5F7FA), // Web F7F8FA
+      'foreground': (AppColors.foreground, 0xFF1B2733),
+      'card': (AppColors.card, 0xFFFFFFFF),
+      'primary': (AppColors.primary, 0xFF1B6FB2),
+      'primaryForeground': (AppColors.primaryForeground, 0xFFFFFFFF),
+      'secondary': (AppColors.secondary, 0xFFEEF1F5),
+      'mutedForeground': (AppColors.mutedForeground, 0xFF576171),
+      'accent': (AppColors.accent, 0xFFECF3F9),
+      'accentForeground': (AppColors.accentForeground, 0xFF12344D),
+      'destructive': (AppColors.destructive, 0xFFE7000B),
+      'success': (AppColors.success, 0xFF4E9B6C),
+      'successForeground': (AppColors.successForeground, 0xFF165E3C),
+      'successSubtle': (AppColors.successSubtle, 0xFFE3F5EA), // Web DBF6E6
+      'warning': (AppColors.warning, 0xFFCB8315),
+      'warningForeground': (AppColors.warningForeground, 0xFF824103),
+      'warningSubtle': (AppColors.warningSubtle, 0xFFFDF2D8), // Web FEF3C9
+      'info': (AppColors.info, 0xFF287CCF),
+      'infoForeground': (AppColors.infoForeground, 0xFF075A8E),
+      'infoSubtle': (AppColors.infoSubtle, 0xFFE5F1FC), // Web DFF2FE
+      'dangerForeground': (AppColors.dangerForeground, 0xFF9D1135),
+      'dangerSubtle': (AppColors.dangerSubtle, 0xFFFDEDEF), // Web FFF0F2
+      'border': (AppColors.border, 0xFFE7EAEF), // Web E2E6EB
+      'inputBorder': (AppColors.inputBorder, 0xFF576171),
+      'ring': (AppColors.ring, 0xFF1B6FB2),
+    };
+    for (final MapEntry(key: name, value: (actual, hex)) in expected.entries) {
+      test(name, () => expect(actual, Color(hex)));
+    }
+  });
 
-  test('radius และขนาดตัวอักษรตาม Web (--radius 10, text-xs 13 / sm 15)', () {
-    expect(AppRadius.lg, 10);
+  // radius มนกว่า Web แล้วโดยตั้งใจ (docs/22 §4.6: lg 10 → 12, xl 14 → 16) ·
+  // ขนาดตัวอักษรยังตาม Web
+  test('radius (มนกว่า Web) และขนาดตัวอักษรตาม Web (text-xs 13 / sm 15)', () {
+    expect(AppRadius.lg, 12);
     expect(AppRadius.sm, 6);
     expect(AppRadius.md, 8);
-    expect(AppRadius.xl, 14);
+    expect(AppRadius.xl, 16);
+    expect(AppRadius.xxl, 20);
     expect(AppTypography.xs, 13);
     expect(AppTypography.sm, 15);
     expect(AppTypography.base, 16);

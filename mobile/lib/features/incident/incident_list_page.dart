@@ -12,6 +12,7 @@ import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
 import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -69,14 +70,18 @@ class IncidentListPage extends ConsumerWidget {
                     skipLoadingOnRefresh: true,
                     data: (incidents) {
                       if (incidents.isEmpty) return const _IncidentsEmpty();
-                      return ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        itemCount: incidents.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) => _IncidentCard(
-                          key: Key('incident_card_$i'),
-                          incident: incidents[i],
-                          index: i,
+                      // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
+                      return AppFadeIn(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: incidents.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, i) => _IncidentCard(
+                            key: Key('incident_card_$i'),
+                            incident: incidents[i],
+                            index: i,
+                          ),
                         ),
                       );
                     },
