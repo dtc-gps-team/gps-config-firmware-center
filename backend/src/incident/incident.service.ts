@@ -18,6 +18,7 @@ import {
   type RolloutResultUpdatedEvent,
   type RolloutStatusChangedEvent,
 } from '../campaign/rollout-events';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from '../campaign/field-apply-system-campaign';
 import {
   ConfigSyncFailure,
   ConfigSyncSuccess,
@@ -172,6 +173,13 @@ export class IncidentService implements OnModuleInit {
    * ลงครบที่โมดูล campaign อยู่แล้ว
    */
   async handleRolloutFailed(event: RolloutFailedEvent): Promise<void> {
+    // docs/25 §3.5 ข้อ 4/Q4 — Rollout เครื่องเดียวของคำขอส่ง Config จาก
+    // หน้างาน (`CampaignRolloutService.startFieldApplyRollout()`) ไม่สร้าง
+    // Incident แม้ failed/auto-pause — ความล้มเหลวรายคำขอแจ้งผู้ขอผ่าน
+    // notification พอ (ยังไม่มี hook จริงไปอัปเดต ConfigApplyRequest ณ ตอนนี้
+    // รอ B เพิ่ม model — แต่กัน Incident ไว้ก่อนเพราะ Rollout พวกนี้ถูกส่งไปที่
+    // Server กลางจริงแล้ว event นี้ก็ยิงมาได้แล้วตั้งแต่ตอนนี้)
+    if (event.campaignName === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) return;
     try {
       const metadata: IncidentMetadata = {
         rolloutId: event.rolloutId,

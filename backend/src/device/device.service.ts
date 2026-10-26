@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CampaignRolloutStatus,
   CampaignRolloutTargetStatus,
@@ -24,6 +25,7 @@ import { randomBytes } from 'node:crypto';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
+import { CentralDeviceService } from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -42,6 +44,7 @@ import {
   CONFIG_APPLIER,
   type ConfigApplier,
   type ConfigApplyResult,
+  resolveConfigApplyMode,
 } from './config-applier';
 import {
   DEVICE_SIMULATOR,
@@ -196,6 +199,8 @@ export class DeviceService {
     private readonly configDefinitionService: ConfigDefinitionService,
     private readonly notificationService: NotificationService,
     private readonly deviceModelService: DeviceModelService,
+    private readonly nestConfig: NestConfigService,
+    private readonly centralDeviceService: CentralDeviceService,
   ) {}
 
   /**
@@ -375,6 +380,53 @@ export class DeviceService {
       }
     }
 
+    // Firmware ที่กล่องมีติดมาก่อนเข้าระบบเรา (ดู comment เหนือ
+    // `RegisterDeviceDto.initialFirmwareId`) — เช็คมีอยู่จริง + รองรับรุ่น
+    // อุปกรณ์นี้ เหมือนที่ `CampaignRolloutService.autoApplyFirmware()` เช็ค
+    // ตอน apply จริง กัน seed bookkeeping ด้วย Firmware ที่ผิดรุ่น
+    let initialFirmware: Pick<Firmware, 'id'> | null = null;
+    if (dto.initialFirmwareId) {
+      const firmware = await this.prisma.firmware.findUnique({
+        where: { id: dto.initialFirmwareId },
+        select: { id: true, deviceModelCompatibility: true },
+      });
+      if (!firmware) {
+        throw new NotFoundException(
+          `ไม่พบ Firmware id ${dto.initialFirmwareId}`,
+        );
+      }
+      if (!firmware.deviceModelCompatibility.includes(model.name)) {
+        throw new BadRequestException(
+          `Firmware นี้ไม่รองรับรุ่นอุปกรณ์ "${model.name}" (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+        );
+      }
+      initialFirmware = firmware;
+    } else {
+      // staff ไม่ได้ระบุมา — ลองดึง `reported.firmware_version` จาก Server
+      // กลางอัตโนมัติ (พี่เลี้ยงแนะนำ, #362 ส่วนขยาย Rollback) กล่องที่เคย
+      // เชื่อมต่อ Server กลางมาก่อนลงทะเบียนในระบบเรา (auto-register ด้วย
+      // token ร่วม — ดู ws-gateway/src/ws.js) จะมีรายงานเวอร์ชันที่รันอยู่จริง
+      // อยู่แล้ว **เป็น best-effort ล้วนๆ** — ติดต่อไม่ได้/ไม่รู้จักกล่อง/หา
+      // Firmware ที่ตรงในคลังเราไม่เจอ ก็ไม่ throw แค่ไม่ seed ให้ (เหมือนเดิม
+      // ทุกประการ — ไม่ควรทำให้ลงทะเบียนล้มเพราะ Server กลางมีปัญหา)
+      try {
+        const { device: centralDevice } =
+          await this.centralDeviceService.findDevice(dto.deviceId);
+        if (centralDevice?.reportedFirmwareVersion) {
+          initialFirmware = await this.prisma.firmware.findFirst({
+            where: {
+              version: centralDevice.reportedFirmwareVersion,
+              deviceModelCompatibility: { has: model.name },
+            },
+            select: { id: true },
+          });
+        }
+      } catch {
+        // เงียบๆ ตามนโยบาย CentralDeviceService (อ่านอย่างเดียว ไม่โยน error
+        // ออกไปให้ฟีเจอร์อื่น) — ไม่พบก็ไม่เป็นไร ลงทะเบียนต่อตามปกติ
+      }
+    }
+
     const apiKey = randomBytes(32).toString('hex');
     const apiKeyHash = await bcrypt.hash(apiKey, 10);
 
@@ -403,6 +455,12 @@ export class DeviceService {
             bootloader: dto.bootloader,
             modelId: model.id,
             apiKeyHash,
+            // activePartition default เป็น 'A' เสมอตอนสร้างใหม่ (schema.prisma)
+            // seed Firmware เริ่มต้นไว้ที่พาร์ทิชัน A ไปด้วยกัน (ไม่ใช่ B ที่ไม่
+            // active — ของเดียวที่กล่องมีตอนนี้ถือว่า "active" อยู่แล้วจริง)
+            ...(initialFirmware
+              ? { partitionAFirmwareId: initialFirmware.id }
+              : {}),
           },
         });
         const metadata: AuditLogMetadata = { deviceId: created.deviceId };
@@ -546,6 +604,24 @@ export class DeviceService {
     actor: ActingUser,
     rolloutId?: string,
   ): Promise<ConfigApplyResult> {
+    // docs/25 §3.8/Q6 — โหมด central ของ Campaign ปิดช่องทางนี้: ปุ่มนี้ใช้
+    // MockConfigApplier เสมอ (ไม่เคยเขียนเข้ากล่องจริงไม่ว่าโหมดไหน — ดู
+    // comment เหนือ CONFIG_APPLIER ใน device.module.ts) กดแล้ว "สำเร็จ" ปลอม
+    // ทั้งที่ไม่มีอะไรเกิดขึ้นจริงกับกล่อง ทำให้ช่างเข้าใจผิด — โหมด central
+    // ของ Campaign หมายความว่ามีเส้นทางที่เขียนจริงอยู่แล้ว (ผ่าน Server
+    // กลาง) เส้นทางนี้จึงไม่มีความหมายอีกต่อไป ปิดไว้กันสับสน (แผนการ "ขอส่ง
+    // Config" ของ docs/25 จะมาแทนที่ปุ่มนี้) · โหมด `mock`/`real` ยังเปิดใช้
+    // ได้ตามเดิมให้ E2E เดิมผ่าน
+    if (
+      resolveConfigApplyMode(
+        this.nestConfig.get('DEVICE_CONFIG_APPLY_MODE'),
+      ) === 'central'
+    ) {
+      throw new ConflictException(
+        'ระบบตั้งค่าให้ส่ง Config ผ่าน Server กลางแล้ว (โหมด central) — ปุ่มนี้ใช้ไม่ได้อีกต่อไป ใช้ทางส่งคำขอแทน',
+      );
+    }
+
     const device = await this.findByDeviceId(deviceId);
 
     if (device.status !== TESTABLE_DEVICE_STATUS) {
