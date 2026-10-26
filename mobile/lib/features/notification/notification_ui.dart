@@ -56,11 +56,26 @@ class NotificationTypeStyle {
         ];
       case NotificationType.configOverrideRejected:
       case NotificationType.firmwareOverrideRejected:
+      // docs/25 §3.6 — payload `{requestId, taskId, deviceId}` + `rejectReason`
+      // ตอนปฏิเสธ / `detail` ตอนล้มเหลว
+      case NotificationType.configApplyRejected:
         final deviceId = text('deviceId');
         final reason = text('rejectReason');
         return [
           if (deviceId != null) 'อุปกรณ์: $deviceId',
           if (reason != null) 'เหตุผล: $reason',
+        ];
+      case NotificationType.configApplyPending:
+      case NotificationType.configApplySucceeded:
+      case NotificationType.configApplyExpired:
+        final deviceId = text('deviceId');
+        return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
+      case NotificationType.configApplyFailed:
+        final deviceId = text('deviceId');
+        final detail = text('detail');
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          if (detail != null) 'เหตุผล: $detail',
         ];
       default:
         return const [];
@@ -80,6 +95,11 @@ class NotificationTypeStyle {
 
     switch (n.type) {
       case NotificationType.taskAssigned:
+      // docs/25 §3.6 — deep link ไป Task Detail ที่การ์ดแสดงสถานะคำขอ
+      case NotificationType.configApplyRejected:
+      case NotificationType.configApplySucceeded:
+      case NotificationType.configApplyFailed:
+      case NotificationType.configApplyExpired:
         final taskId = idOf('taskId');
         return taskId == null ? null : AppRoutes.taskDetail(taskId);
       case NotificationType.configOverridePending:
@@ -126,6 +146,14 @@ class NotificationTypeStyle {
       'รายงานปัญหาของคุณไม่ถูกดำเนินการ (ไม่ใช่ปัญหา/ซ้ำ)',
     NotificationType.incidentReportPromoted =>
       'รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข',
+    NotificationType.configApplyPending =>
+      'มีคำขอส่ง Config เข้าเครื่องรออนุมัติ',
+    NotificationType.configApplyRejected => 'คำขอส่ง Config ของคุณถูกปฏิเสธ',
+    NotificationType.configApplySucceeded => 'กล่องรับ Config ที่คุณขอส่งแล้ว',
+    NotificationType.configApplyFailed =>
+      'ส่ง Config ที่คุณขอเข้าเครื่องไม่สำเร็จ',
+    NotificationType.configApplyExpired =>
+      'คำขอส่ง Config ของคุณหมดอายุ (ไม่มีใครตัดสินใน 24 ชม.)',
   };
 
   /// เรื่องด่วน (Mobile UI Roadmap Phase 1) — incident ใหม่ที่ยังไม่มีใครจัดการ
@@ -166,5 +194,10 @@ class NotificationTypeStyle {
     NotificationType.incidentReportResolved => Icons.check_circle_outline,
     NotificationType.incidentReportDismissed => Icons.block_outlined,
     NotificationType.incidentReportPromoted => Icons.campaign_outlined,
+    NotificationType.configApplyPending => Icons.send_outlined,
+    NotificationType.configApplyRejected => Icons.cancel_outlined,
+    NotificationType.configApplySucceeded => Icons.check_circle_outline,
+    NotificationType.configApplyFailed => Icons.error_outline,
+    NotificationType.configApplyExpired => Icons.timer_off_outlined,
   };
 }
