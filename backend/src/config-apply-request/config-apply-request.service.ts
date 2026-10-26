@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -99,6 +100,30 @@ export type ConfigApplyRequestView = Omit<RequestWithRelations, 'config'> & {
   fieldNames: string[];
 };
 
+/** 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) */
+export interface ApplyOptionConfig {
+  id: string;
+  name: string;
+  status: ConfigStatus;
+  /** `ConfigVersion.versionNumber` ล่าสุด (0 = ยังไม่มีเวอร์ชัน) — ตัวเดียวกับที่
+   * snapshot ตอนอนุมัติ */
+  latestVersion: number;
+  /** Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ (docs/28 D5) */
+  suggested: boolean;
+}
+
+/** `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — ส่วน Firmware
+ * (`firmwares`, `currentFirmwareVersion`) มาใน B2 ของ docs/27 */
+export interface ApplyOptions {
+  deviceId: string;
+  /** ส่งเข้ากล่องได้เฉพาะเครื่อง `installed` — Mobile ใช้บอกช่างก่อนกดขอ */
+  deviceInstalled: boolean;
+  configs: ApplyOptionConfig[];
+}
+
+// งานที่ยังเปิดอยู่ — ใช้หา Config แนะนำ (mirror `OPEN_TASK_STATUSES` ใน task.service.ts)
+const OPEN_TASK_STATUSES = ['pending', 'in_progress'] as const;
+
 /**
  * คำขอ "ส่ง Config ของ Task เข้าเครื่องจริง" (docs/25, PR #364) — ช่างขอ,
  * Operation **อีกคน** อนุมัติ แล้ว**ช่างที่ถือ Task กดส่งเอง** (docs/27) ระบบจึง
@@ -134,8 +159,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /**
-   * `POST /tasks/{taskId}/config-apply-requests` (§3.3) — Config และเครื่องมาจาก
-   * Task เสมอ ไม่รับจาก client
+   * `POST /tasks/{taskId}/config-apply-requests` (§3.3, docs/28 §5.3) — เครื่อง
+   * มาจาก Task เสมอ · Config = `dto.configId` (ช่างเลือกเอง) หรือ `Task.configId`
+   * ถ้าไม่ส่ง · ขอ Config **ตัวเดียวกับที่ Operation ผูกไว้** = snapshot
+   * `configAssignedBy` (SoD ข้อ 3 ใช้กับคนผูก, ไม่รู้คนผูก = fail closed) · Config
+   * ที่ช่างเลือกเอง = `configAssignedBy` null
    */
   async create(
     taskId: string,
@@ -152,21 +180,27 @@ export class ConfigApplyRequestService implements OnModuleInit {
         `งานต้องอยู่สถานะกำลังทำ (in_progress) ถึงจะขอส่ง Config ได้ — สถานะปัจจุบัน: ${task.status}`,
       );
     }
-    if (!task.configId || !task.deviceId) {
+    if (!task.deviceId) {
       throw new ConflictException(
-        'งานนี้ไม่มี Config หรือเครื่องที่ผูกไว้ ขอส่ง Config ไม่ได้',
+        'งานนี้ไม่มีเครื่องที่ผูกไว้ ขอส่ง Config ไม่ได้',
       );
     }
-    // fail closed (§4.2): งานเก่าก่อนมี configAssignedBy ไม่รู้ว่าใครผูก Config
-    // จึงเช็ค SoD ข้อ 3 ไม่ได้
-    if (!task.configAssignedBy) {
-      throw new ConflictException(
-        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
+    const configId = dto.configId ?? task.configId;
+    if (!configId) {
+      throw new BadRequestException(
+        'เลือก Config ที่จะส่งเข้ากล่องก่อน (งานนี้ไม่มี Config ที่ Operation ผูกไว้)',
       );
     }
-    const configId = task.configId;
+    const usesAssignedConfig = configId === task.configId;
+    // fail closed (§4.2): ขอ Config ที่ผูกไว้กับงานเก่าก่อนมี configAssignedBy —
+    // ไม่รู้ว่าใครผูก จึงเช็ค SoD ข้อ 3 ไม่ได้
+    if (usesAssignedConfig && !task.configAssignedBy) {
+      throw new ConflictException(
+        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน หรือเลือก Config ตัวอื่น',
+      );
+    }
     const deviceId = task.deviceId;
-    const configAssignedBy = task.configAssignedBy;
+    const configAssignedBy = usesAssignedConfig ? task.configAssignedBy : null;
     await this.assertApplicable(this.prisma, configId, deviceId, 'create');
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -215,6 +249,66 @@ export class ConfigApplyRequestService implements OnModuleInit {
       where: { taskId },
       orderBy: { requestedAt: 'desc' },
     });
+  }
+
+  /**
+   * `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่าง
+   * เลือกส่งเข้ากล่องนี้ได้: สถานะ `approved`/`synced` ไม่ถูกลบ รุ่น+โปรโตคอลตรง
+   * กับกล่อง (กฎเดียวกับ `assertApplicable()` ที่ตรวจซ้ำตอนสร้างคำขอ) · ตัวที่
+   * Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อน (`suggested`) ที่
+   * เหลือเรียงตามชื่อ · กล่องไม่พบ 404
+   */
+  async applyOptions(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<ApplyOptions> {
+    const device = await this.prisma.device.findUnique({ where: { deviceId } });
+    if (!device) {
+      throw new NotFoundException(`ไม่พบเครื่อง ${deviceId}`);
+    }
+    const openTask = await this.prisma.task.findFirst({
+      where: {
+        assignedTo: actor.id,
+        deviceId,
+        status: { in: [...OPEN_TASK_STATUSES] },
+        configId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { configId: true },
+    });
+    const suggestedId = openTask?.configId ?? null;
+    const configs = await this.prisma.config.findMany({
+      where: {
+        status: { in: [...APPLICABLE_CONFIG_STATUSES] },
+        deletedAt: null,
+        deviceModel: device.deviceModel,
+        protocol: device.protocol,
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          select: { versionNumber: true },
+        },
+      },
+    });
+    const options = configs.map((config): ApplyOptionConfig => ({
+      id: config.id,
+      name: config.name,
+      status: config.status,
+      latestVersion: config.versions[0]?.versionNumber ?? 0,
+      suggested: config.id === suggestedId,
+    }));
+    options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
+    return {
+      deviceId,
+      deviceInstalled: device.status === INSTALLED_DEVICE_STATUS,
+      configs: options,
+    };
   }
 
   /** `GET /config-apply-requests?status=` — คิวของ Approval Center (§3.4) */
@@ -652,8 +746,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
     }
     if (
-      task.configId !== request.configId ||
-      task.deviceId !== request.deviceId
+      task.deviceId !== request.deviceId ||
+      (request.configAssignedBy !== null && task.configId !== request.configId)
     ) {
       throw new ConflictException(
         'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่อนุมัติ — ยกเลิกคำขอแล้วขอใหม่',
@@ -678,8 +772,12 @@ export class ConfigApplyRequestService implements OnModuleInit {
    * Separation of Duty ของผู้ตัดสิน (§3.4 ข้อ 1–5) — ทุกข้อ 403:
    * 1. ต้องเป็น role Operation
    * 2. ≠ ผู้ขอ
-   * 3. ≠ ผู้ผูก Config เข้า Task (`configAssignedBy` ที่ snapshot ไว้)
-   * 4. `configAssignedBy` ว่าง = ปฏิเสธ (fail closed)
+   * 3. ≠ ผู้ผูก Config เข้า Task (`configAssignedBy` ที่ snapshot ไว้) —
+   *    **เฉพาะคำขอที่ใช้ Config ตัวที่ Operation ผูกไว้** (docs/28 §2.1, A ตอบ
+   *    Q2 บน #382)
+   * 4. `configAssignedBy` ว่าง = ช่างเลือก Config เอง (docs/28 D3) ข้ามข้อ 3 ·
+   *    คำขอของ Config ที่ผูกไว้แต่ไม่รู้คนผูกถูกปฏิเสธตั้งแต่ตอนสร้าง (fail
+   *    closed ที่ `create()`) จึงไม่มีทางมาถึงตรงนี้
    * 5. ≠ ผู้อนุมัติตัว Config (`Config.approvedBy`, มติ Q8) และถ้า
    *    `Config.approvedBy` ว่างก็ปฏิเสธ (fail closed — §3.4 ข้อ 5 ยังไม่ได้ตกลง
    *    กรณีนี้ จึงเลือกทางที่ไม่ผ่อน รอยืนยันกับ A)
@@ -696,11 +794,6 @@ export class ConfigApplyRequestService implements OnModuleInit {
     if (request.requestedBy === actor.id) {
       throw new ForbiddenException(
         'ผู้ขอส่ง Config ตัดสินคำขอของตัวเองไม่ได้ (Separation of Duty)',
-      );
-    }
-    if (!request.configAssignedBy) {
-      throw new ForbiddenException(
-        'คำขอนี้ไม่มีข้อมูลผู้ผูก Config เข้างาน ตรวจ Separation of Duty ไม่ได้ จึงตัดสินไม่ได้',
       );
     }
     if (request.configAssignedBy === actor.id) {
@@ -778,7 +871,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
    *
    * เพิ่มจากแผน: `Task.configAssignedBy` ต้องยังเป็นคนเดียวกับที่ snapshot ไว้
    * — ถ้า Operation คนอื่นผูก Config ใหม่ระหว่างรอ SoD ข้อ 3 ที่เช็คกับ snapshot
-   * จะไม่ครอบคนผูกล่าสุด ให้ช่างขอใหม่แทน (เข้มขึ้น ไม่ผ่อน)
+   * จะไม่ครอบคนผูกล่าสุด ให้ช่างขอใหม่แทน (เข้มขึ้น ไม่ผ่อน) · เช็คเฉพาะคำขอที่ใช้
+   * Config ที่ผูกไว้ — Config ที่ช่างเลือกเอง (docs/28) ไม่ผูกกับ `Task.configId`
    */
   private async assertStillApplicable(
     tx: Prisma.TransactionClient,
@@ -797,9 +891,10 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
     }
     if (
-      task.configId !== request.configId ||
       task.deviceId !== request.deviceId ||
-      task.configAssignedBy !== request.configAssignedBy
+      (request.configAssignedBy !== null &&
+        (task.configId !== request.configId ||
+          task.configAssignedBy !== request.configAssignedBy))
     ) {
       throw new ConflictException(
         'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่ส่งคำขอ — ปฏิเสธคำขอแล้วให้ช่างขอใหม่',
@@ -874,7 +969,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
         where: {
           role: { code: OPERATION_ROLE },
           isActive: true,
-          id: { notIn: [request.configAssignedBy, request.requestedBy] },
+          id: {
+            notIn: [request.configAssignedBy, request.requestedBy].filter(
+              (id): id is string => id !== null,
+            ),
+          },
         },
         select: { id: true },
       });
