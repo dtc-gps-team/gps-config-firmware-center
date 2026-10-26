@@ -19,6 +19,8 @@ export interface AuditLogMetadata {
    * (กันข้อมูลอ่อนไหว เช่น COMMAND_PASSWORD/SOS_NUMBER_1 รั่วผ่าน GET /audit-logs
    * ที่เปิดให้ Operation/ST/OT/Auditor/Admin อ่านได้) */
   fieldNames?: string[];
+  /** รหัสคำสั่งที่ Server กลางออกให้ตอนสั่งส่ง Config (Rollout โหมด central) */
+  centralCommandId?: string;
   /** `Firmware.id` ที่ช่างยืนยันว่าติดตั้งเข้าอุปกรณ์เสร็จแล้ว (issue #181) */
   firmwareId?: string;
   /** `Firmware.version` ณ ตอนยืนยัน — ไม่มีข้อมูลอ่อนไหว ใส่ไว้เพื่อดูง่ายบน

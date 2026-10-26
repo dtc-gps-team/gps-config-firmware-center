@@ -16,6 +16,7 @@ import {
   type RolloutFailedEvent,
   type RolloutResultUpdatedEvent,
 } from '../campaign/rollout-events';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from '../campaign/field-apply-system-campaign';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { INCIDENT_SOURCE } from './incident-metadata';
@@ -147,6 +148,17 @@ describe('IncidentService', () => {
           }) as unknown,
         }) as unknown,
       });
+      expect(incidentUpdate).not.toHaveBeenCalled();
+    });
+
+    it('Rollout เครื่องเดียวของคำขอส่ง Config จากหน้างาน (docs/25 §3.5 ข้อ 4/Q4) -> ไม่สร้าง Incident เลย', async () => {
+      await service.handleRolloutFailed({
+        ...rolloutFailed,
+        campaignName: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+      });
+
+      expect(incidentFindFirst).not.toHaveBeenCalled();
+      expect(incidentCreate).not.toHaveBeenCalled();
       expect(incidentUpdate).not.toHaveBeenCalled();
     });
 
