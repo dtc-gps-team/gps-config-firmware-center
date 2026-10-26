@@ -3,16 +3,39 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
   CENTRAL_DEVICE_CLIENT,
   type CentralDeviceClient,
+  CentralRejectedError,
   CentralUnavailableError,
 } from './central-device.client';
+import {
+  buildCentralSettings,
+  classifyCentralCommand,
+  type CentralCommandOutcome,
+} from './central-config';
 import type {
   CentralDevice,
   CentralDeviceList,
   CentralMode,
   CentralStatus,
+  PushFirmwareOptions,
   RawGatewayDevice,
   RawRegistryDevice,
 } from './central-device.types';
+
+/** ผลการสั่งส่ง Config ให้กล่องหนึ่งเครื่อง */
+export type PushConfigOutcome =
+  /** Server กลางรับคำสั่งแล้ว ผลสำเร็จหรือไม่ต้องตามด้วย `getCommandOutcome` */
+  | { kind: 'sent'; commandId: string; configVersion: number }
+  /** ส่งไม่ได้เพราะข้อมูลหรือสถานะกล่องไม่เหมาะ (ไม่รู้จักกล่อง, ไม่ผ่าน schema ฯลฯ) ลองซ้ำไม่ช่วย */
+  | { kind: 'rejected'; reason: string }
+  /** ติดต่อ Server กลางไม่ได้ */
+  | { kind: 'unavailable'; reason: string };
+
+/** ผลการสั่งอัปเดต Firmware ให้กล่องหนึ่งเครื่อง — รูปร่างเดียวกับ `PushConfigOutcome`
+ * (ไม่มี version ตอน sent เพราะ Server กลางไม่คืน config_version สำหรับ firmware) */
+export type PushFirmwareOutcome =
+  | { kind: 'sent'; commandId: string }
+  | { kind: 'rejected'; reason: string }
+  | { kind: 'unavailable'; reason: string };
 
 /** เก็บผลล่าสุดสั้นๆ กันหน้าเว็บที่ refresh ทุก 5 วินาทีหลายหน้าต่างยิง Server กลางถี่เกินจำเป็น */
 const CACHE_TTL_MS = 3000;
@@ -73,6 +96,181 @@ export class CentralDeviceService {
       list,
       device: list.devices.find((d) => d.deviceId === deviceId) ?? null,
     };
+  }
+
+  /**
+   * สั่งส่ง Config ให้กล่อง: ตรวจว่า Server กลางรู้จักและกล่องอยู่ในทะเบียน, แปลงค่าตาม schema
+   * ที่กล่อง **รายงานว่ารันอยู่จริง**, แล้ว `PUT config` (Server กลางสร้างเวอร์ชันใหม่และส่งทันที
+   * ถ้ากล่องออนไลน์ ถ้าออฟไลน์เขาเก็บคิวไว้ส่งตอนกล่องกลับมา) · ไม่โยน error ออกไป
+   */
+  async pushConfig(
+    deviceId: string,
+    fields: Record<string, unknown>,
+  ): Promise<PushConfigOutcome> {
+    const { list, device } = await this.findDevice(deviceId);
+    if (!list.reachable) {
+      return {
+        kind: 'unavailable',
+        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
+      };
+    }
+    if (!device) {
+      return {
+        kind: 'rejected',
+        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
+      };
+    }
+    if (!device.registered) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงสั่ง Config ไม่ได้`,
+      };
+    }
+    if (!device.hardwareModel || device.reportedSchemaVersion === null) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่รายงานโมเดลหรือ schema ที่รัน (ต้องให้กล่องเชื่อมต่อก่อน)`,
+      };
+    }
+
+    try {
+      const schema = await this.client.getSchema(
+        device.hardwareModel,
+        device.reportedSchemaVersion,
+      );
+      const built = buildCentralSettings(fields, schema);
+      if ('errors' in built) {
+        return { kind: 'rejected', reason: built.errors.join(' | ') };
+      }
+      const result = await this.client.putDeviceConfig(
+        deviceId,
+        built.settings,
+      );
+      // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
+      this.cache = null;
+      const commandId = result.command?.command_id;
+      if (!commandId) {
+        return {
+          kind: 'rejected',
+          reason: 'Server กลางรับ Config แล้วแต่ไม่สร้างคำสั่งส่งให้กล่อง',
+        };
+      }
+      return { kind: 'sent', commandId, configVersion: result.config_version };
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return { kind: 'rejected', reason: err.message };
+      }
+      return {
+        kind: 'unavailable',
+        reason:
+          err instanceof CentralUnavailableError
+            ? err.message
+            : 'ติดต่อ Server กลางไม่สำเร็จ',
+      };
+    }
+  }
+
+  /**
+   * สั่งอัปเดต Firmware ให้กล่อง: ตรวจว่า Server กลางรู้จักและกล่องอยู่ในทะเบียนเหมือน
+   * `pushConfig()` แต่ **ไม่ตรวจ schema เองฝั่งเรา** — Server กลางตรวจรุ่นฮาร์ดแวร์/เวอร์ชัน/
+   * downgrade เองจากไฟล์ที่ส่งไป (`checkHardwareModel`/`VERSION_MISMATCH`/`DOWNGRADE_NOT_ALLOWED`
+   * ใน `admin.js`) ไม่โยน error ออกไปเหมือนกัน
+   */
+  async pushFirmware(
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<PushFirmwareOutcome> {
+    const { list, device } = await this.findDevice(deviceId);
+    if (!list.reachable) {
+      return {
+        kind: 'unavailable',
+        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
+      };
+    }
+    if (!device) {
+      return {
+        kind: 'rejected',
+        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
+      };
+    }
+    if (!device.registered) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงอัปเดต Firmware ไม่ได้`,
+      };
+    }
+
+    try {
+      const result = await this.client.pushFirmware(deviceId, data, options);
+      // สถานะกล่องเปลี่ยนแล้ว ไม่ให้หน้าเว็บเห็นข้อมูลเก่าจาก cache
+      this.cache = null;
+      const commandId = result.command?.command_id;
+      if (!commandId) {
+        return {
+          kind: 'rejected',
+          reason:
+            result.message ??
+            'Server กลางรับไฟล์ Firmware แล้วแต่ไม่สร้างคำสั่งส่งให้กล่อง',
+        };
+      }
+      return { kind: 'sent', commandId };
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return { kind: 'rejected', reason: err.message };
+      }
+      return {
+        kind: 'unavailable',
+        reason:
+          err instanceof CentralUnavailableError
+            ? err.message
+            : 'ติดต่อ Server กลางไม่สำเร็จ',
+      };
+    }
+  }
+
+  /** ผลล่าสุดของคำสั่งที่เคยสั่งไว้ · ถามไม่ได้ = `unavailable` (ไม่ตัดสิน รอถามใหม่) */
+  async getCommandOutcome(commandId: string): Promise<CentralCommandOutcome> {
+    try {
+      return classifyCentralCommand(await this.client.getCommand(commandId));
+    } catch (err) {
+      if (err instanceof CentralRejectedError) {
+        return {
+          kind: 'failed',
+          detail: `Server กลางไม่พบคำสั่ง ${commandId} (${err.message})`,
+        };
+      }
+      return { kind: 'unavailable' };
+    }
+  }
+
+  /**
+   * fallback หา Firmware เดิมตอน Rollback ไม่มีบันทึกในระบบเราเลย (#362
+   * ส่วนขยาย, พี่เลี้ยงแนะนำ) — ไล่ประวัติคำสั่งจาก Server กลางเอง (ground
+   * truth จริง ไม่ต้องพึ่งข้อมูลที่เราบันทึกเอง) หาคำสั่งอัปเดต Firmware
+   * ล่าสุดที่ `SUCCESS` และเวอร์ชันต่างจากที่กล่องรายงานว่ารันอยู่ตอนนี้ ·
+   * **best-effort ล้วนๆ เหมือน method อื่นในคลาสนี้** — ติดต่อไม่ได้/ไม่รู้จัก
+   * กล่อง/ไม่มีประวัติที่เข้าเกณฑ์ -> `null` เสมอ ไม่ throw ให้ผู้เรียกต้อง
+   * ตัดสินเองว่าจะแจ้ง error อะไรต่อ (ดู `CampaignRolloutService.rollback()`)
+   */
+  async findPreviousSuccessfulFirmwareVersion(
+    deviceId: string,
+  ): Promise<string | null> {
+    try {
+      const { device } = await this.findDevice(deviceId);
+      if (!device) return null;
+      const commands = await this.client.listDeviceCommands(deviceId);
+      const match = commands.find(
+        (c) =>
+          c.action === 'UPDATE_FIRMWARE' &&
+          c.status === 'SUCCESS' &&
+          c.target_firmware_version &&
+          c.target_firmware_version !== device.reportedFirmwareVersion,
+      );
+      return match?.target_firmware_version ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async fetchDevices(): Promise<CentralDeviceList> {

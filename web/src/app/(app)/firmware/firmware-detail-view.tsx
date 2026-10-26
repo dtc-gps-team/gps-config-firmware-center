@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarIcon, FileIcon, HardDriveIcon, UserIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  FileIcon,
+  FingerprintIcon,
+  HardDriveIcon,
+  UserIcon,
+} from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -107,6 +113,17 @@ function FirmwareDetailContent({
               </InfoRow>
               <InfoRow label="ขนาดไฟล์" icon={HardDriveIcon}>
                 {formatFileSize(firmware.fileSizeBytes)}
+              </InfoRow>
+              <InfoRow label="SHA-256" icon={FingerprintIcon}>
+                {firmware.checksumSha256 ? (
+                  <span className="break-all font-mono text-xs">
+                    {firmware.checksumSha256}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    ไม่มี (อัปโหลดก่อนมีฟีเจอร์นี้)
+                  </span>
+                )}
               </InfoRow>
               <InfoRow label="สถานะอัปเดตกล่อง">
                 <StatusPill

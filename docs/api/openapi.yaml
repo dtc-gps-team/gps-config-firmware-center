@@ -1871,14 +1871,19 @@ paths:
     post:
       tags: [device]
       operationId: applyConfigToDevice
-      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13)
+      summary: ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (v3.13, deprecated v3.31)
+      deprecated: true
       description: >-
         สำหรับช่างหน้างาน (ST/OT ผ่าน Mobile) — เลือก Config ที่ผูกกับ Task
         ที่กำลังทำ แล้วส่งให้อุปกรณ์เครื่องนั้น. **ไม่ persist / ไม่แตะสถานะใดๆ**
         (fire-and-forget) — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป
         (../planning/01_GPS_Build_Reference.md §4.2) จึงไม่มีสถานะอุปกรณ์หลัง apply ใน response.
         โหมด mock ตรวจค่าเบื้องต้น (field ≥ 1, Timeout/Interval ไม่ติดลบ)
-        แล้วคืน `applied: true`
+        แล้วคืน `applied: true` · **ใช้ `MockConfigApplier` เสมอไม่ว่า
+        `DEVICE_CONFIG_APPLY_MODE` จะเป็นอะไร ไม่เคยเขียนเข้ากล่องจริง** —
+        ตอน `DEVICE_CONFIG_APPLY_MODE=central` endpoint นี้ตอบ 409 ทันที
+        (docs/25 §3.8/Q6 — กันช่างเข้าใจผิดว่า "สั่งสำเร็จแล้ว" ทั้งที่ไม่มี
+        อะไรเกิดขึ้นจริง) ให้ใช้ทางส่งคำขอ Config ผ่าน Server กลางแทน
       parameters:
         - in: path
           name: deviceId
@@ -1908,8 +1913,10 @@ paths:
           description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Config (configId) นี้
         "409":
           description: >-
-            ใส่ Config ไม่ได้ — Device ยังไม่ installed / Config ยังไม่ผ่านอนุมัติ
-            (ต้อง approved หรือ synced) / Config คนละ deviceModel/protocol กับ Device
+            ใส่ Config ไม่ได้ — `DEVICE_CONFIG_APPLY_MODE=central` (ปุ่มนี้ใช้ไม่ได้
+            อีกต่อไป ดู description ด้านบน) / Device ยังไม่ installed / Config
+            ยังไม่ผ่านอนุมัติ (ต้อง approved หรือ synced) / Config คนละ
+            deviceModel/protocol กับ Device
 
   /devices/{deviceId}/confirm-firmware-install:
     post:
@@ -4150,12 +4157,16 @@ components:
           description: เหตุผลเดียวกับ successCount ด้านบน (นับจาก status = failed)
         applyMode:
           type: string
-          enum: [mock, real]
+          enum: [mock, real, central]
           nullable: true
           description: >-
             (v3.56, docs/19 §3) โหมดการส่ง Config ตอนปล่อย: `mock` = backend
             apply ให้ทุกเครื่องทันที · `real` = รอให้อุปกรณ์ดึงงานเองผ่าน
-            `/device-sync/*` · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
+            `/device-sync/*` · `central` = backend สั่ง Server กลาง (ESP32
+            Central Management) ส่ง Config ให้กล่องทีละเครื่อง แล้วถามผลคำสั่ง
+            ทุก 4 วินาที (`DEVICE_CONFIG_APPLY_MODE=central`) ผลสำเร็จ/ล้มเหลว
+            นับเข้า Auto Pause ตามเดิม ส่วนกล่องออฟไลน์หรือคำสั่งถูกแทนที่/ยกเลิก
+            นับเป็นข้าม (`skipped_offline`) ไม่นับล้มเหลว · `null` = ยังไม่เคยปล่อย หรือ Rollout เก่าก่อนมี
             field นี้ (ถือเป็น `mock`) · Firmware เป็น `mock` เสมอ · Rollback
             สืบทอดจากรอบต้นเรื่อง
         pullTimeoutHours:
@@ -5300,6 +5311,7 @@ components:
           objectKey,
           originalFilename,
           fileSizeBytes,
+          checksumSha256,
           uploadedBy,
           uploadedAt,
           approvalStatus,
@@ -5335,6 +5347,13 @@ components:
           type: string
         fileSizeBytes:
           type: integer
+        checksumSha256:
+          type: string
+          nullable: true
+          description: >-
+            SHA-256 ของไฟล์ตอนอัปโหลด (hex, เสมอ 64 ตัวอักษร) — ให้ QA เทียบกับ
+            hash ที่ผู้สร้างไฟล์แจ้งมานอกระบบก่อนอนุมัติ `null` สำหรับ Firmware
+            ที่อัปโหลดไว้ก่อนฟีเจอร์นี้ (ไม่ย้อนคำนวณจากไฟล์เดิม)
         uploadedBy:
           type: string
           format: uuid
@@ -5572,6 +5591,15 @@ components:
           type: string
           maxLength: 50
           nullable: true
+        initialFirmwareId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            Firmware ที่กล่องมีติดมาก่อนเข้าระบบ (เช่นจากโรงงาน) — ไม่ใส่ได้
+            ถ้าไม่รู้แน่ชัด แต่ถ้าไม่ใส่ กด "Rollback Firmware" ครั้งแรกในอนาคต
+            จะไม่มีของเก่าให้ย้อนกลับไป (Dual Partition bookkeeping ไม่มีจุด
+            เริ่มต้น)
 
     RegisterDeviceResponse:
       allOf:
