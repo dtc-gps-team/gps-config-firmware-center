@@ -55,6 +55,27 @@ enum TaskStatus {
   }
 }
 
+/// ที่มาของงาน (`Task.source` ใน openapi, docs/28 §4) — `operation` = Operation
+/// สร้างผ่าน `POST /tasks` · `technician` = ช่างเริ่มเองจากหน้ากล่อง
+/// (`POST /tasks/start`) · ค่าที่ไม่รู้จัก (backend ใหม่กว่าแอป) และ payload ที่ไม่มี
+/// field นี้ (backend ก่อน docs/28 / cache ในเครื่อง) ถือเป็น `operation` — **ไม่
+/// throw** ต่างจาก enum อื่น เพราะแค่ใช้แสดงป้าย ไม่ควรทำให้หน้า Task พัง
+enum TaskSource {
+  operation('operation'),
+  technician('technician');
+
+  const TaskSource(this.wireName);
+
+  final String wireName;
+
+  static TaskSource fromWire(Object? value) {
+    for (final source in TaskSource.values) {
+      if (source.wireName == value) return source;
+    }
+    return TaskSource.operation;
+  }
+}
+
 /// `Notification.type` enum — matches `docs/api/openapi.yaml` `Notification.type`
 /// and the Prisma `NotificationType` enum.
 enum NotificationType {
@@ -467,6 +488,60 @@ class ConfigApplyRequest {
   }
 }
 
+/// 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2)
+class ApplyOptionConfig {
+  const ApplyOptionConfig({
+    required this.id,
+    required this.name,
+    required this.latestVersion,
+    required this.suggested,
+  });
+
+  final String id;
+  final String name;
+
+  /// `ConfigVersion.versionNumber` ล่าสุด (0 = ยังไม่มีเวอร์ชัน)
+  final int latestVersion;
+
+  /// Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ — backend เรียง
+  /// ตัวนี้ขึ้นก่อนแล้ว
+  final bool suggested;
+
+  factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
+      ApplyOptionConfig(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        latestVersion: (json['latestVersion'] as num?)?.toInt() ?? 0,
+        suggested: json['suggested'] as bool? ?? false,
+      );
+}
+
+/// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่างเลือก
+/// ส่งเข้ากล่องนี้ได้ · ส่วน Firmware มาทีหลัง (B2/B3 ของ docs/27)
+class DeviceApplyOptions {
+  const DeviceApplyOptions({
+    required this.deviceId,
+    required this.deviceInstalled,
+    required this.configs,
+  });
+
+  final String deviceId;
+
+  /// ส่งเข้ากล่องได้เฉพาะเครื่องที่ติดตั้งแล้ว — `false` บอกช่างก่อนกดขอ
+  final bool deviceInstalled;
+  final List<ApplyOptionConfig> configs;
+
+  factory DeviceApplyOptions.fromJson(Map<String, dynamic> json) =>
+      DeviceApplyOptions(
+        deviceId: json['deviceId'] as String,
+        deviceInstalled: json['deviceInstalled'] as bool? ?? false,
+        configs: [
+          for (final raw in (json['configs'] as List<dynamic>? ?? const []))
+            ApplyOptionConfig.fromJson(raw as Map<String, dynamic>),
+        ],
+      );
+}
+
 /// `Firmware` ใน `GET /firmware` (ทุก Role อ่านได้) — เก็บเฉพาะ field ที่หน้า
 /// Firmware Override ใช้เลือก/กรองตัวที่ติดตั้งได้ (ไม่ต้องใช้ objectKey ฯลฯ)
 class Firmware {
@@ -769,6 +844,9 @@ class Task {
     this.deviceId,
     this.configId,
     this.dueDate,
+    this.source = TaskSource.operation,
+    this.completedAt,
+    this.autoClosed = false,
   });
 
   final String id;
@@ -788,6 +866,15 @@ class Task {
   final String? configId;
   final DateTime? dueDate;
 
+  /// ช่างเริ่มเองหรือ Operation สร้าง (docs/28) — แสดงเป็นป้ายใน Task Detail
+  final TaskSource source;
+
+  /// เวลาปิดงาน (ช่างกดหรือระบบปิด) — งานที่เสร็จก่อน docs/28 เป็น `null`
+  final DateTime? completedAt;
+
+  /// ระบบปิดให้เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม. (docs/28 §5.4)
+  final bool autoClosed;
+
   factory Task.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -805,8 +892,20 @@ class Task {
       deviceId: json['deviceId'] as String?,
       configId: json['configId'] as String?,
       dueDate: parseDate(json['dueDate']),
+      source: TaskSource.fromWire(json['source']),
+      completedAt: parseDate(json['completedAt']),
+      autoClosed: json['autoClosed'] as bool? ?? false,
     );
   }
+}
+
+/// ผลของ `POST /tasks/start` (docs/28 §5.1) — `created=false` = ได้งานเดิมที่ยัง
+/// เปิดอยู่ของกล่องนี้กลับมา
+class StartTaskResult {
+  const StartTaskResult({required this.task, required this.created});
+
+  final Task task;
+  final bool created;
 }
 
 /// One entry on a task's timeline — mirrors `docs/api/openapi.yaml`

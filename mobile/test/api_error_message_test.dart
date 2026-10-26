@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/features/task/field_task_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
@@ -92,6 +93,8 @@ Future<void> _pumpDeviceDetail(WidgetTester tester, ApiClient client) async {
           _FakeStatusRepository(),
         ),
         authControllerProvider.overrideWith(_FakeAuth.new),
+        // docs/28 — ไม่ให้ไปโหลดรายการงานจริง (cache/DB) ในเทสหน้านี้
+        openTaskForDeviceProvider.overrideWith((ref, _) async => null),
       ],
       child: const MaterialApp(home: DeviceDetailPage(deviceId: 'DEV-1')),
     ),
