@@ -1563,6 +1563,20 @@ export class DeviceService {
     });
   }
 
+  /** หน้ารายละเอียดคำขอ Config Override 1 รายการ — ต่าง
+   * `getPendingOverrideOrThrow()` ตรงที่ดูได้ทุกสถานะ (pending/approved/
+   * rejected) ไม่ใช่แค่ตอนตัดสินใจ สิทธิ์เดียวกับ `listDeviceConfigOverrides`
+   * (resource `device-config-override` action `Read`) */
+  async getDeviceConfigOverride(id: string): Promise<DeviceConfigOverride> {
+    const existing = await this.prisma.deviceConfigOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบคำขอ override id ${id}`);
+    }
+    return existing;
+  }
+
   /**
    * ST ขอให้อุปกรณ์เครื่องนี้ติดตั้ง `dto.firmwareId` ได้ แม้จะไม่ตรงกับ
    * Campaign Rollout (Firmware) ที่ `active` กำหนดไว้ (Sprint 3 แถวที่ 24) —
@@ -1866,5 +1880,17 @@ export class DeviceService {
       where: status ? { status } : undefined,
       orderBy: { overriddenAt: 'desc' },
     });
+  }
+
+  /** หน้ารายละเอียดคำขอ Firmware Override 1 รายการ — ดูได้ทุกสถานะ mirror
+   * `getDeviceConfigOverride()` ทุกประการ */
+  async getDeviceFirmwareOverride(id: string): Promise<DeviceFirmwareOverride> {
+    const existing = await this.prisma.deviceFirmwareOverride.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบคำขอ override id ${id}`);
+    }
+    return existing;
   }
 }

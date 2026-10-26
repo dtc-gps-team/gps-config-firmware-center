@@ -2057,6 +2057,35 @@ paths:
         "403":
           description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
 
+  /device-firmware-overrides/{id}:
+    get:
+      tags: [device]
+      operationId: getDeviceFirmwareOverride
+      summary: รายละเอียดคำขอ Firmware Override 1 รายการ (v3.60)
+      description: >-
+        resource เดียวกับ `listDeviceFirmwareOverrides` (action `Read`) —
+        ดูได้ทุกสถานะ (pending/approved/rejected) ไม่ใช่แค่ตอนรออนุมัติ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายละเอียดคำขอ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceFirmwareOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
+
   /device-firmware-overrides/{id}/approve:
     post:
       tags: [device]
@@ -2328,6 +2357,35 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
           description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
+
+  /device-config-overrides/{id}:
+    get:
+      tags: [device]
+      operationId: getDeviceConfigOverride
+      summary: รายละเอียดคำขอ Config Override 1 รายการ (v3.60)
+      description: >-
+        resource เดียวกับ `listDeviceConfigOverrides` (action `Read`) —
+        ดูได้ทุกสถานะ (pending/approved/rejected) ไม่ใช่แค่ตอนรออนุมัติ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: รายละเอียดคำขอ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfigOverride"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ดูคิวอนุมัติ override — เฉพาะ Role Operation เท่านั้น
+        "404":
+          description: ไม่พบคำขอ override นี้
 
   /device-config-overrides/{id}/approve:
     post:

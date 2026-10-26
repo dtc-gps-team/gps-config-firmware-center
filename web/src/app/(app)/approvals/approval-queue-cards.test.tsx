@@ -197,6 +197,9 @@ describe("DeviceFirmwareOverrideApprovalCard", () => {
     expect(screen.queryByText(/user-st-1/)).not.toBeInTheDocument();
     expect(screen.getByText("Firmware Override")).toBeInTheDocument();
     expect(screen.getByText("v2.5.0")).toBeInTheDocument();
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "ดูรายละเอียด →" })).toHaveAttribute(
+      "href",
+      "/approvals/firmware-override/fo-1",
+    );
   });
 });

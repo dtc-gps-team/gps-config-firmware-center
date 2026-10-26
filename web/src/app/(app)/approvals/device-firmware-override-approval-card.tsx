@@ -9,7 +9,7 @@ import { DeviceFirmwareOverrideApprovalActions } from "./device-firmware-overrid
  * คำขอ Firmware Override รายเครื่อง 1 รายการในคิว Approval Center (Sprint 3
  * แถวที่ 24) — Firmware ไม่มี `fields` ให้แสดง (เป็นเวอร์ชันเดียวทั้งก้อน)
  * จึงสรุปแค่เวอร์ชันที่ขอ · resolve ชื่อเวอร์ชัน firmware เองผ่าน `useFirmware`
- * (backend ไม่ embed) · ยังไม่มีหน้ารายละเอียดของคำขอนี้ จึงไม่มีลิงก์
+ * (backend ไม่ embed) · ลิงก์ไปหน้ารายละเอียดเต็ม (แก้ครั้งที่ 94)
  */
 export function DeviceFirmwareOverrideApprovalCard({
   item,
@@ -30,6 +30,7 @@ export function DeviceFirmwareOverrideApprovalCard({
       title={<span className="font-mono">{item.deviceId}</span>}
       meta={`เวอร์ชัน #${item.versionNumber}`}
       queuedAt={item.overriddenAt}
+      detailHref={`/approvals/firmware-override/${item.id}`}
       description={item.reason}
       requesterName={requesterName}
       summary={

@@ -2916,6 +2916,32 @@ describe('DeviceService', () => {
     });
   });
 
+  describe('getDeviceConfigOverride (หน้ารายละเอียดคำขอ 1 รายการ)', () => {
+    it('พบแถว -> คืนแถวนั้นไม่ว่าสถานะอะไร', async () => {
+      const row = {
+        id: 'cov-1',
+        deviceId: 'DTC-0001',
+        status: 'approved',
+      };
+      deviceConfigOverride.findUnique.mockResolvedValue(row);
+
+      const result = await service.getDeviceConfigOverride('cov-1');
+
+      expect(result).toBe(row);
+      expect(deviceConfigOverride.findUnique).toHaveBeenCalledWith({
+        where: { id: 'cov-1' },
+      });
+    });
+
+    it('ไม่พบ -> NotFoundException', async () => {
+      deviceConfigOverride.findUnique.mockResolvedValue(null);
+
+      await expect(service.getDeviceConfigOverride('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('overrideDeviceFirmware (Firmware Override รายเครื่อง, Sprint 3 แถวที่ 24)', () => {
     const dto = {
       firmwareId: readyFirmware.id,
@@ -3316,6 +3342,32 @@ describe('DeviceService', () => {
         where: { status: 'pending' },
         orderBy: { overriddenAt: 'desc' },
       });
+    });
+  });
+
+  describe('getDeviceFirmwareOverride (หน้ารายละเอียดคำขอ 1 รายการ)', () => {
+    it('พบแถว -> คืนแถวนั้นไม่ว่าสถานะอะไร', async () => {
+      const row = {
+        id: 'fov-1',
+        deviceId: 'DTC-0001',
+        status: 'rejected',
+      };
+      deviceFirmwareOverride.findUnique.mockResolvedValue(row);
+
+      const result = await service.getDeviceFirmwareOverride('fov-1');
+
+      expect(result).toBe(row);
+      expect(deviceFirmwareOverride.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fov-1' },
+      });
+    });
+
+    it('ไม่พบ -> NotFoundException', async () => {
+      deviceFirmwareOverride.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getDeviceFirmwareOverride('missing'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
