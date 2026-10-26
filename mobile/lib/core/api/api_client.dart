@@ -377,12 +377,24 @@ class ApiClient {
     );
   }
 
-  /// `POST /config-apply-requests/{id}/cancel` — ผู้ขอยกเลิกคำขอ `pending` ของ
-  /// ตัวเอง
+  /// `POST /config-apply-requests/{id}/cancel` — ช่างที่ถือ Task ยกเลิกคำขอ
+  /// `pending`/`approved` (docs/27 §5.5)
   Future<ConfigApplyRequest> cancelConfigApplyRequest(String requestId) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/config-apply-requests/$requestId/cancel',
+      ),
+      ConfigApplyRequest.fromJson,
+    );
+  }
+
+  /// `POST /config-apply-requests/{id}/release` — ช่างที่ถือ Task กดส่งคำขอที่
+  /// อนุมัติแล้วเข้ากล่อง (docs/27 §5.4) · 409 เมื่อกล่องออฟไลน์/หมดอายุ/Config
+  /// เปลี่ยน ฯลฯ — ข้อความของ backend ใช้แสดงได้ตรงๆ · 503 = ติดต่อ Server กลางไม่ได้
+  Future<ConfigApplyRequest> releaseConfigApplyRequest(String requestId) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/config-apply-requests/$requestId/release',
       ),
       ConfigApplyRequest.fromJson,
     );

@@ -67,7 +67,11 @@ export class TaskConfigApplyRequestController {
  *   GET  /config-apply-requests?status=       Operation/Auditor/Admin/SuperAdmin
  *   POST /config-apply-requests/:id/approve   Operation (SoD เช็คที่ service)
  *   POST /config-apply-requests/:id/reject    Operation (action เดียวกับ approve)
- *   POST /config-apply-requests/:id/cancel    ผู้ขอ (action Create เดียวกับตอนขอ)
+ *   POST /config-apply-requests/:id/cancel    ช่างที่ถือ Task (action Create เดียวกับตอนขอ)
+ *   POST /config-apply-requests/:id/release   ช่างที่ถือ Task กดส่งเข้ากล่อง (docs/27 §5.4)
+ *        — action Create เหมือน cancel (กลุ่มคนเดียวกัน ST/OT · เช็คผู้ถือ Task ที่
+ *        service) แทน action `Release` ใหม่ในแผน เพราะ `ActionType` เป็น enum ที่ใช้
+ *        ทั้งระบบ เพิ่มค่าแล้วกระทบ RBAC ทุก resource โดยไม่ได้ความปลอดภัยเพิ่ม
  */
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('config-apply-requests')
@@ -111,5 +115,15 @@ export class ConfigApplyRequestController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyRequest> {
     return this.service.cancel(id, toActor(req));
+  }
+
+  @Post(':id/release')
+  @RequirePermission('config-apply-request', ActionType.Create)
+  @HttpCode(HttpStatus.OK)
+  release(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ConfigApplyRequest> {
+    return this.service.release(id, toActor(req));
   }
 }

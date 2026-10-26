@@ -40,7 +40,7 @@ export interface FieldApplyRolloutStarter {
    * `active` (ข้าม `pending_approval` เพราะอนุมัติแล้วที่คำขอ) ปิด Auto Pause
    * และไม่สร้าง Incident (มติ Q4) · `applyMode` ตาม env เดิม
    * `DEVICE_CONFIG_APPLY_MODE` (§3.5 ข้อ 6) — **เรียกในทรานแซกชันของผู้เรียก**
-   * (`tx`) ถ้า throw คำขอจะไม่เปลี่ยนสถานะเลย (ยัง `pending`)
+   * (`tx`) ถ้า throw คำขอจะไม่เปลี่ยนสถานะเลย (ยัง `approved` — เรียกตอนช่างกดส่ง docs/27)
    */
   createFieldApplyRollout(
     tx: Prisma.TransactionClient,
