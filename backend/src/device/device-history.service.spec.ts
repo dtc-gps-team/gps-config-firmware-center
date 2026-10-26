@@ -5,6 +5,11 @@ const DEVICE_ID = 'DEV-0101';
 
 const d = (iso: string) => new Date(iso);
 
+// ค่าเริ่มต้นของเทสเดิมทั้งหมด (ก่อนแก้ #371) — Operation เห็นทุกอย่างเสมอ
+// (`UNSCOPED_TASK_ROLES` + `canReadAll` ของ override) จึงพฤติกรรมเดิมไม่เปลี่ยน
+// เทสสิทธิ์ของ role อื่นแยกไว้ที่ describe('กรองตามสิทธิ์ของ actor') ด้านล่าง
+const operationActor = { id: 'op-actor', role: 'Operation', ipAddress: null };
+
 describe('DeviceHistoryService', () => {
   let service: DeviceHistoryService;
   let prisma: {
@@ -77,9 +82,9 @@ describe('DeviceHistoryService', () => {
   it('เครื่องไม่พบ -> ส่ง 404 ต่อ และไม่ query อะไรเพิ่ม', async () => {
     deviceService.findByDeviceId.mockRejectedValue(new NotFoundException());
 
-    await expect(service.getHistory('nope', {})).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(
+      service.getHistory('nope', {}, operationActor),
+    ).rejects.toThrow(NotFoundException);
     expect(prisma.campaignRolloutTarget.findMany).not.toHaveBeenCalled();
   });
 
@@ -169,7 +174,7 @@ describe('DeviceHistoryService', () => {
       { id: 'camp-2', name: 'เชียงใหม่โลจิสติกส์' },
     ]);
 
-    const result = await service.getHistory(DEVICE_ID, {});
+    const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
     expect(result.items.map((i) => i.id)).toEqual([
       'incident:inc-1',
@@ -241,7 +246,7 @@ describe('DeviceHistoryService', () => {
       installedAt: null,
     });
 
-    const result = await service.getHistory(DEVICE_ID, {});
+    const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
     expect(result.items.map((i) => i.id)).toEqual([
       'lifecycle:DEV-0101:registered',
@@ -263,9 +268,11 @@ describe('DeviceHistoryService', () => {
       },
     ]);
 
-    const result = await service.getHistory(DEVICE_ID, {
-      types: ['config-override'],
-    });
+    const result = await service.getHistory(
+      DEVICE_ID,
+      { types: ['config-override'] },
+      operationActor,
+    );
 
     expect(result.items[0].decision?.note).toBe('เกินเพดานข้อมูลของลูกค้า');
   });
@@ -285,16 +292,18 @@ describe('DeviceHistoryService', () => {
       },
     ]);
 
-    const result = await service.getHistory(DEVICE_ID, {
-      types: ['config-override'],
-    });
+    const result = await service.getHistory(
+      DEVICE_ID,
+      { types: ['config-override'] },
+      operationActor,
+    );
 
     expect(result.items[0].decision).toBeNull();
   });
 
   describe('กรองชนิด (types)', () => {
     it('ระบุชนิดเดียว: query เฉพาะแหล่งนั้น ไม่แตะตารางอื่น', async () => {
-      await service.getHistory(DEVICE_ID, { types: ['task'] });
+      await service.getHistory(DEVICE_ID, { types: ['task'] }, operationActor);
 
       expect(prisma.task.findMany).toHaveBeenCalledTimes(1);
       expect(prisma.campaignRolloutTarget.findMany).not.toHaveBeenCalled();
@@ -304,7 +313,7 @@ describe('DeviceHistoryService', () => {
     });
 
     it('ไม่ระบุ: ทุกแหล่ง', async () => {
-      await service.getHistory(DEVICE_ID, {});
+      await service.getHistory(DEVICE_ID, {}, operationActor);
 
       expect(prisma.task.findMany).toHaveBeenCalledTimes(1);
       expect(prisma.campaignRolloutTarget.findMany).toHaveBeenCalledTimes(1);
@@ -314,14 +323,22 @@ describe('DeviceHistoryService', () => {
     });
 
     it('ไม่รวม lifecycle เมื่อไม่ได้ขอ', async () => {
-      const result = await service.getHistory(DEVICE_ID, { types: ['task'] });
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'] },
+        operationActor,
+      );
 
       expect(result.items).toEqual([]);
     });
   });
 
   it('Incident: ค้นทั้งที่แจ้งกับเครื่องนี้และ Incident จาก Rollout ที่เครื่องนี้อยู่ในรายชื่อเครื่องที่ล้ม', async () => {
-    await service.getHistory(DEVICE_ID, { types: ['incident'] });
+    await service.getHistory(
+      DEVICE_ID,
+      { types: ['incident'] },
+      operationActor,
+    );
 
     expect(prisma.incident.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -362,10 +379,11 @@ describe('DeviceHistoryService', () => {
     it('เกิน limit: คืนแค่ limit รายการ พร้อม nextCursor ของรายการสุดท้าย', async () => {
       prisma.task.findMany.mockResolvedValue(tasks(5));
 
-      const result = await service.getHistory(DEVICE_ID, {
-        types: ['task'],
-        limit: 3,
-      });
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'], limit: 3 },
+        operationActor,
+      );
 
       expect(result.items.map((i) => i.id)).toEqual([
         'task:task-00',
@@ -378,10 +396,11 @@ describe('DeviceHistoryService', () => {
     it('พอดี limit: ไม่มี nextCursor', async () => {
       prisma.task.findMany.mockResolvedValue(tasks(3));
 
-      const result = await service.getHistory(DEVICE_ID, {
-        types: ['task'],
-        limit: 3,
-      });
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'], limit: 3 },
+        operationActor,
+      );
 
       expect(result.items).toHaveLength(3);
       expect(result.nextCursor).toBeNull();
@@ -391,11 +410,15 @@ describe('DeviceHistoryService', () => {
       // DB คืนรายการที่เวลา <= cursor รวมตัวที่เป็น cursor เอง (task-02) ด้วย
       prisma.task.findMany.mockResolvedValue(tasks(5).slice(2));
 
-      const result = await service.getHistory(DEVICE_ID, {
-        types: ['task'],
-        limit: 3,
-        before: '2026-10-09T23:59:58.000Z_task:task-02',
-      });
+      const result = await service.getHistory(
+        DEVICE_ID,
+        {
+          types: ['task'],
+          limit: 3,
+          before: '2026-10-09T23:59:58.000Z_task:task-02',
+        },
+        operationActor,
+      );
 
       expect(prisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -425,17 +448,18 @@ describe('DeviceHistoryService', () => {
       }));
       prisma.task.findMany.mockResolvedValue(sameTime);
 
-      const first = await service.getHistory(DEVICE_ID, {
-        types: ['task'],
-        limit: 2,
-      });
+      const first = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'], limit: 2 },
+        operationActor,
+      );
       expect(first.items.map((i) => i.id)).toEqual(['task:c', 'task:b']);
 
-      const second = await service.getHistory(DEVICE_ID, {
-        types: ['task'],
-        limit: 2,
-        before: first.nextCursor!,
-      });
+      const second = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'], limit: 2, before: first.nextCursor! },
+        operationActor,
+      );
       expect(second.items.map((i) => i.id)).toEqual(['task:a']);
       expect(second.nextCursor).toBeNull();
     });
@@ -443,7 +467,7 @@ describe('DeviceHistoryService', () => {
 
   describe('สรุป (summary)', () => {
     it('ยังไม่มี Config/Firmware ที่ใช้อยู่: เป็น null ทั้งคู่ ไม่ 404', async () => {
-      const result = await service.getHistory(DEVICE_ID, {});
+      const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
       expect(result.summary).toEqual({
         currentConfig: null,
@@ -457,7 +481,7 @@ describe('DeviceHistoryService', () => {
         name: 'GT08-4G/TCP มาตรฐาน',
       });
 
-      const result = await service.getHistory(DEVICE_ID, {});
+      const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
       expect(result.summary.currentConfig).toEqual({
         id: 'cfg-9',
@@ -479,7 +503,7 @@ describe('DeviceHistoryService', () => {
         version: '2.6.0',
       });
 
-      const result = await service.getHistory(DEVICE_ID, {});
+      const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
       expect(prisma.firmware.findUnique).toHaveBeenCalledWith({
         where: { id: 'fw-new' },
@@ -505,7 +529,7 @@ describe('DeviceHistoryService', () => {
         version: '2.4.2',
       });
 
-      const result = await service.getHistory(DEVICE_ID, {});
+      const result = await service.getHistory(DEVICE_ID, {}, operationActor);
 
       expect(result.summary.currentFirmware?.version).toBe('2.4.2');
     });
@@ -525,8 +549,158 @@ describe('DeviceHistoryService', () => {
       },
     ]);
 
-    const result = await service.getHistory(DEVICE_ID, { types: ['task'] });
+    const result = await service.getHistory(
+      DEVICE_ID,
+      { types: ['task'] },
+      operationActor,
+    );
 
     expect(result.items[0].config).toBeNull();
+  });
+
+  // รีวิว B บน #371: endpoint นี้เช็คสิทธิ์แค่ `devices:Read` (ให้ทุก role)
+  // แต่ข้างในรวมข้อมูลจากตารางที่มีสิทธิ์เข้มกว่า (`tasks:Read` ของ ST/OT
+  // scope แค่งานของตัวเอง, `device-config-override:Read`/
+  // `device-firmware-override:Read` ให้ Operation เท่านั้น) — ก่อนแก้ทุก role
+  // เห็นทุกงาน/ทุกคำขอ override ของเครื่องนั้นไม่ว่าใครเป็นคนทำ
+  describe('กรองตามสิทธิ์ของ actor (รีวิว B #371)', () => {
+    const stActor = { id: 'st-1', role: 'ST', ipAddress: null };
+    const otherStActor = { id: 'st-2', role: 'ST', ipAddress: null };
+    const qaActor = { id: 'qa-1', role: 'QAEngineer', ipAddress: null };
+
+    const taskOf = (assignedTo: string) => ({
+      id: 'task-1',
+      title: 'ติดตั้ง Config',
+      description: null,
+      status: 'completed',
+      assignedTo,
+      configId: null,
+      campaignId: null,
+      updatedAt: d('2026-10-09T12:00:00.000Z'),
+    });
+
+    it('ST เห็นงานของตัวเอง — query กรอง assignedTo เป็นตัวเอง', async () => {
+      prisma.task.findMany.mockResolvedValue([taskOf('st-1')]);
+
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'] },
+        stActor,
+      );
+
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deviceId: DEVICE_ID, assignedTo: 'st-1' },
+        }),
+      );
+      expect(result.items.map((i) => i.id)).toEqual(['task:task-1']);
+    });
+
+    it('ST ไม่เห็นงานของช่างคนอื่น — DB ถูกสั่งกรองด้วย assignedTo ของตัวเองไปแล้ว ไม่ใช่กรองทีหลัง', async () => {
+      // mock จำลองว่า DB กรองตาม where.assignedTo ให้แล้ว (คืนว่างเพราะ
+      // 'task-1' เป็นของ st-2 ไม่ใช่ st-1) ยืนยันว่า query ส่ง assignedTo
+      // ของ actor ไปจริง ไม่ได้พึ่งกรองในหน่วยความจำทีหลัง
+      prisma.task.findMany.mockResolvedValue([]);
+
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'] },
+        stActor,
+      );
+
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deviceId: DEVICE_ID, assignedTo: 'st-1' },
+        }),
+      );
+      expect(result.items).toEqual([]);
+    });
+
+    it('QAEngineer ไม่มี tasks:Read เลย — ไม่ query ตาราง Task แม้ขอ type นี้ตรงๆ', async () => {
+      prisma.task.findMany.mockResolvedValue([taskOf('st-1')]);
+
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['task'] },
+        qaActor,
+      );
+
+      expect(prisma.task.findMany).not.toHaveBeenCalled();
+      expect(result.items).toEqual([]);
+    });
+
+    it('Operation เห็นงานของทุกคน — ไม่กรอง assignedTo', async () => {
+      prisma.task.findMany.mockResolvedValue([taskOf('st-2')]);
+
+      await service.getHistory(DEVICE_ID, { types: ['task'] }, operationActor);
+
+      expect(prisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deviceId: DEVICE_ID },
+        }),
+      );
+    });
+
+    const overrideOf = (overriddenBy: string) => ({
+      id: 'o1',
+      configId: 'cfg-1',
+      status: 'pending',
+      reason: 'x',
+      overriddenBy,
+      overriddenAt: d('2026-10-11T05:00:00.000Z'),
+      decidedBy: null,
+      decidedAt: null,
+      rejectReason: null,
+    });
+
+    it('ST เห็นคำขอ Config Override ของตัวเอง — query กรอง overriddenBy เป็นตัวเอง', async () => {
+      prisma.deviceConfigOverride.findMany.mockResolvedValue([
+        overrideOf('st-1'),
+      ]);
+
+      const result = await service.getHistory(
+        DEVICE_ID,
+        { types: ['config-override'] },
+        stActor,
+      );
+
+      expect(prisma.deviceConfigOverride.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deviceId: DEVICE_ID, overriddenBy: 'st-1' },
+        }),
+      );
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('ST ไม่เห็นคำขอ Config Override ของช่างคนอื่น — query กรอง overriddenBy ของตัวเองเท่านั้น ไม่ใช่ของ st-1 ที่เป็นเจ้าของจริง', async () => {
+      prisma.deviceConfigOverride.findMany.mockResolvedValue([]);
+
+      await service.getHistory(
+        DEVICE_ID,
+        { types: ['config-override'] },
+        otherStActor,
+      );
+
+      expect(prisma.deviceConfigOverride.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deviceId: DEVICE_ID, overriddenBy: 'st-2' },
+        }),
+      );
+    });
+
+    it('Operation เห็นคำขอ Config/Firmware Override ของทุกคน — ไม่กรอง overriddenBy', async () => {
+      await service.getHistory(
+        DEVICE_ID,
+        { types: ['config-override', 'firmware-override'] },
+        operationActor,
+      );
+
+      expect(prisma.deviceConfigOverride.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { deviceId: DEVICE_ID } }),
+      );
+      expect(prisma.deviceFirmwareOverride.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { deviceId: DEVICE_ID } }),
+      );
+    });
   });
 });

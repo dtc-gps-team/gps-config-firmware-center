@@ -151,13 +151,17 @@ export class DeviceController {
 
   // ประวัติของเครื่อง (รีวิวพี่เลี้ยง 19 ต.ค. 2569) — เส้นเวลารวมจากตารางเดิม อ่านอย่างเดียว
   // resource/action เดียวกับ Device Detail (ทุก Role ที่ login แล้ว ไม่ต้อง seed grant เพิ่ม)
+  // — แต่ `DeviceHistoryService` กรองรายการ `task`/`config-override`/
+  // `firmware-override` ตามสิทธิ์จริงของ `actor` เองอีกชั้น (รีวิว B บน #371)
+  // เพราะ endpoint นี้รวมข้อมูลจากตารางที่มีสิทธิ์เข้มกว่า `devices:Read`
   @Get(':deviceId/history')
   @RequirePermission('devices', ActionType.Read)
   getHistory(
     @Param('deviceId') deviceId: string,
     @Query() query: QueryDeviceHistoryDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<DeviceHistoryResult> {
-    return this.deviceHistoryService.getHistory(deviceId, query);
+    return this.deviceHistoryService.getHistory(deviceId, query, toActor(req));
   }
 
   // resource `device-connection-test` action Read — grant ให้ ST/OT เท่านั้น

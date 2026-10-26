@@ -70,7 +70,9 @@ const AUDIT_MODULE = 'task';
 const OPERATION_ROLE = 'Operation';
 // ST/OT = ผู้ใช้ Mobile ที่เห็น/แก้ได้เฉพาะงานที่ตัวเองถูก assign เท่านั้น
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
-const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
+// — export ให้ `DeviceHistoryService` (#371) ใช้กฎเดียวกันตอนกรองรายการ
+// ประเภท `task` กันประวัติรวมเปิดเผยงานที่ role นั้นเรียกตรงไม่ได้
+export const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
 
 // Role ที่ตั้งใจให้เห็นงานของ "ทุกคน" ได้ (RBAC_Matrix.md §4.3/ตาราง Section 2
 // แถว Task — grant tasks:Read ของแต่ละ role มี use case ชัดเจนต่างกัน):
@@ -82,7 +84,8 @@ const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
 // ทุกคนจะหลุดเข้ามาเห็นทั้งตารางทันทีโดยไม่มีใครตัดสินใจ — เปลี่ยนเป็น allowlist
 // ชัดเจนแทน role ไหนไม่อยู่ในนี้ fallback เป็น self-scoped เสมอ ตาม IDOR
 // Prevention Pattern ของ CLAUDE.md (default-deny ไม่ใช่ default-allow)
-const UNSCOPED_TASK_ROLES: readonly string[] = [
+// — export เหตุผลเดียวกับ `SELF_SCOPED_ROLES` ด้านบน (ใช้โดย #371)
+export const UNSCOPED_TASK_ROLES: readonly string[] = [
   'Operation',
   'Auditor',
   'Admin',

@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeviceService } from './device.service';
+import type { ActingUser } from './device.service';
+import { SELF_SCOPED_ROLES, UNSCOPED_TASK_ROLES } from '../task/task.service';
 import {
   DEVICE_HISTORY_TYPES,
   type DeviceHistoryConfigRef,
@@ -58,6 +60,7 @@ export class DeviceHistoryService {
   async getHistory(
     deviceId: string,
     query: QueryDeviceHistoryDto,
+    actor: ActingUser,
   ): Promise<DeviceHistoryResult> {
     const device = await this.deviceService.findByDeviceId(deviceId); // 404 ถ้าไม่พบ
     const limit = query.limit ?? DEFAULT_LIMIT;
@@ -122,9 +125,20 @@ export class DeviceHistoryService {
       }
     }
 
+    // config-override/firmware-override: `device-config-override:Read`/
+    // `device-firmware-override:Read` grant ให้ Operation เท่านั้น (seed.ts)
+    // — role อื่นเห็นได้เฉพาะคำขอที่ตัวเองเป็นคนส่ง (`overriddenBy`) เหมือน
+    // เปิดดูคำขอของตัวเองได้เสมอ ไม่ต้องมีสิทธิ์ queue เต็ม (รีวิว B บน #371:
+    // ก่อนแก้ ทุก role เห็นเหตุผล/ผู้ขอ/ผลตัดสินของทุกคำขอ) — role ที่ไม่เคย
+    // ส่งคำขอเลย (ไม่มี grant `Override`) กรองนี้ก็ได้ผลลัพธ์ว่างเองตามธรรมชาติ
     if (types.has('config-override')) {
+      const canReadAll = actor.role === 'Operation';
       const rows = await this.prisma.deviceConfigOverride.findMany({
-        where: { deviceId: id, ...atOrBefore('overriddenAt', cursor) },
+        where: {
+          deviceId: id,
+          ...atOrBefore('overriddenAt', cursor),
+          ...(canReadAll ? {} : { overriddenBy: actor.id }),
+        },
         orderBy: { overriddenAt: 'desc' },
         take,
       });
@@ -146,8 +160,13 @@ export class DeviceHistoryService {
     }
 
     if (types.has('firmware-override')) {
+      const canReadAll = actor.role === 'Operation';
       const rows = await this.prisma.deviceFirmwareOverride.findMany({
-        where: { deviceId: id, ...atOrBefore('overriddenAt', cursor) },
+        where: {
+          deviceId: id,
+          ...atOrBefore('overriddenAt', cursor),
+          ...(canReadAll ? {} : { overriddenBy: actor.id }),
+        },
         orderBy: { overriddenAt: 'desc' },
         take,
       });
@@ -168,9 +187,21 @@ export class DeviceHistoryService {
       }
     }
 
-    if (types.has('task')) {
+    // task: `tasks:Read` ไม่ได้ grant ให้ทุก role (ConfigEngineer/
+    // FirmwareEngineer/QAEngineer ไม่มีเลย) และ ST/OT เห็นเฉพาะงานที่ตัวเอง
+    // ถูก assign (mirror `TaskService.isHiddenFromActor()`) — ก่อนแก้ ทุก
+    // role เห็นทุกงานของเครื่องนี้ไม่ว่าใครเป็นคนทำ (รีวิว B บน #371) ·
+    // role ที่ไม่อยู่ใน 2 ลิสต์เลย (default-deny ตาม IDOR Prevention Pattern)
+    // ข้ามไปเลย ไม่ query
+    const canReadAnyTask = UNSCOPED_TASK_ROLES.includes(actor.role);
+    const canReadOwnTask = SELF_SCOPED_ROLES.includes(actor.role);
+    if (types.has('task') && (canReadAnyTask || canReadOwnTask)) {
       const rows = await this.prisma.task.findMany({
-        where: { deviceId: id, ...atOrBefore('updatedAt', cursor) },
+        where: {
+          deviceId: id,
+          ...atOrBefore('updatedAt', cursor),
+          ...(canReadAnyTask ? {} : { assignedTo: actor.id }),
+        },
         orderBy: { updatedAt: 'desc' },
         take,
       });
