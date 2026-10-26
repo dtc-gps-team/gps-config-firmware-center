@@ -3349,7 +3349,10 @@ describe('CampaignRolloutService', () => {
 
       expect(result).toEqual([sampleRollout]);
       expect(campaignRollout.findMany).toHaveBeenCalledWith({
-        where: { status: undefined },
+        where: {
+          status: undefined,
+          campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+        },
         orderBy: { createdAt: 'desc' },
       });
     });
@@ -3360,7 +3363,10 @@ describe('CampaignRolloutService', () => {
       await service.findAllAcrossCampaigns('pending_approval');
 
       expect(campaignRollout.findMany).toHaveBeenCalledWith({
-        where: { status: 'pending_approval' },
+        where: {
+          status: 'pending_approval',
+          campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+        },
         orderBy: { createdAt: 'desc' },
       });
     });

@@ -156,12 +156,24 @@ export class CampaignRolloutService {
    * ไว้ตั้งแต่แรกแต่ Firmware/Campaign เคยถูกเลื่อนไว้ก่อน) — `status` ไม่ระบุ
    * = คืนทุกสถานะ ใช้ `?status=pending_approval` กรองเฉพาะที่รออนุมัติ mirror
    * `ConfigService.findAll({ status })`
+   *
+   * ตัด Rollout ของ Campaign ระบบ (`FIELD_APPLY_SYSTEM_CAMPAIGN_NAME`,
+   * คำขอส่ง Config จากหน้างาน) ออกเสมอ (รีวิว #362/#373 B, ตัดสินใจ A
+   * 2026-10-26) — เหตุผลเดียวกับที่ `CampaignService.findAll()` ซ่อน Campaign
+   * นี้จาก Campaign Monitor แล้ว: ไม่ใช่ Rollout ที่ Operation วางแผน/ติดตาม
+   * ถ้านับรวมจะปนกับตัวเลข "ผลการ Deploy" บน Dashboard (ช่างขอเร่งด่วนทีละ
+   * เครื่องซ้ำๆ จะดูเหมือนมีการ deploy จำนวนมาก) ไม่กระทบ Approval Center —
+   * Rollout กลุ่มนี้สร้างด้วย `status: 'active'` ตรงเลย ไม่เคยเป็น
+   * `pending_approval`
    */
   findAllAcrossCampaigns(
     status?: CampaignRolloutStatus,
   ): Promise<CampaignRollout[]> {
     return this.prisma.campaignRollout.findMany({
-      where: { status },
+      where: {
+        status,
+        campaign: { name: { not: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
