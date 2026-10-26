@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  PushFirmwareOptions,
+  RawCentralCommand,
+  RawCentralSchema,
   RawGatewayDevice,
+  RawPushFirmwareResult,
+  RawPutConfigResult,
   RawRegistryDevice,
 } from './central-device.types';
 
@@ -15,10 +20,46 @@ export class CentralUnavailableError extends Error {
   }
 }
 
+/**
+ * Server กลางปฏิเสธคำขอเพราะข้อมูลที่เราส่งไปไม่ผ่าน (HTTP 4xx เช่น config ไม่ผ่าน schema,
+ * ไม่รู้จักกล่อง, schema ไม่ตรงกับที่กล่องรัน) ต่างจาก `CentralUnavailableError` ที่หมายถึง
+ * ติดต่อไม่ได้ · ลองซ้ำด้วยข้อมูลเดิมไม่ช่วย
+ */
+export class CentralRejectedError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'CentralRejectedError';
+  }
+}
+
 export interface CentralDeviceClient {
   // property function type — เหตุผลเดียวกับ DeviceConnectionTester (กัน unbound-method ในเทส)
   listGatewayDevices: () => Promise<RawGatewayDevice[]>;
   listRegistryDevices: () => Promise<RawRegistryDevice[]>;
+  /** schema ของโมเดลและเวอร์ชันนั้น (ใช้แปลง Config ของเราเป็นรูปที่ Server กลางรับ) */
+  getSchema: (model: string, version: number) => Promise<RawCentralSchema>;
+  /** ตั้ง Config ใหม่ให้กล่องและสั่งส่งทันที (Server กลางสร้างเวอร์ชันใหม่ทุกครั้งที่เรียก) */
+  putDeviceConfig: (
+    deviceId: string,
+    settings: Record<string, unknown>,
+  ) => Promise<RawPutConfigResult>;
+  /** สถานะปัจจุบันของคำสั่งหนึ่งรายการ */
+  getCommand: (commandId: string) => Promise<RawCentralCommand>;
+  /** อัปโหลดไฟล์ firmware (.bin) ให้กล่องเครื่องเดียว — Server กลางเก็บไฟล์และสั่งอัปเดตทันที
+   * ถ้ากล่องออนไลน์ (ไม่รอผลลัพธ์จริง — ใช้ `getCommand` ตามผลต่อ) */
+  pushFirmware: (
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ) => Promise<RawPushFirmwareResult>;
+  /** ประวัติคำสั่งทั้งหมดของกล่องเครื่องเดียว เรียงล่าสุดก่อน (`GET
+   * /api/gw/devices/{id}/commands` ของ ws-gateway) — ใช้เป็น fallback หา
+   * Firmware เดิมตอน Rollback ไม่มีบันทึกในระบบเราเลย (#362 ส่วนขยาย,
+   * พี่เลี้ยงแนะนำ) */
+  listDeviceCommands: (deviceId: string) => Promise<RawCentralCommand[]>;
 }
 
 /**
@@ -79,6 +120,56 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
     ]);
   };
 
+  // โหมด mock: ทุกคำสั่งสำเร็จทันที (ไม่มีกล่องจริงให้รอ) เก็บคำสั่งไว้ให้ getCommand ตอบ
+  private readonly commands = new Map<string, RawCentralCommand>();
+  private commandSeq = 20000;
+  private configSeq = new Map<string, number>();
+
+  getSchema = (model: string, version: number): Promise<RawCentralSchema> =>
+    Promise.resolve({
+      hardware_model: model,
+      schema_version: version,
+      parameters: [
+        { key: 'led.enabled', type: 'boolean' },
+        { key: 'gps.enabled', type: 'boolean' },
+        { key: 'gps.baud_rate', type: 'enum', options: [4800, 9600, 38400] },
+        { key: 'gps.send_interval_sec', type: 'integer', min: 5, max: 3600 },
+        {
+          key: 'data_server.protocol',
+          type: 'enum',
+          options: ['https', 'http'],
+        },
+        { key: 'data_server.host', type: 'hostname' },
+        { key: 'data_server.port', type: 'integer', min: 1, max: 65535 },
+        { key: 'data_server.path', type: 'string' },
+      ],
+    });
+
+  // mock ไม่ใช้ค่า settings (ทุกคำสั่งสำเร็จทันที) จึงรับแค่ deviceId
+  putDeviceConfig = (deviceId: string): Promise<RawPutConfigResult> => {
+    const version = (this.configSeq.get(deviceId) ?? 0) + 1;
+    this.configSeq.set(deviceId, version);
+    this.commandSeq += 1;
+    const command: RawCentralCommand = {
+      command_id: `CMD-${this.commandSeq}`,
+      device_id: deviceId,
+      action: 'UPDATE_CONFIG',
+      status: 'SUCCESS',
+      target_config_version: version,
+      error_code: null,
+    };
+    this.commands.set(command.command_id, command);
+    return Promise.resolve({ config_version: version, command });
+  };
+
+  getCommand = (commandId: string): Promise<RawCentralCommand> => {
+    const command = this.commands.get(commandId);
+    if (!command) {
+      return Promise.reject(new CentralRejectedError(404, 'ไม่พบคำสั่งนี้'));
+    }
+    return Promise.resolve(command);
+  };
+
   listRegistryDevices = (): Promise<RawRegistryDevice[]> =>
     Promise.resolve([
       {
@@ -103,6 +194,39 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
         config_version_desired: 2,
       },
     ]);
+
+  // โหมด mock: อัปโหลดสำเร็จทันทีเสมอ (ไม่มีกล่องจริงให้ตรวจเวอร์ชัน/ฮาร์ดแวร์)
+  pushFirmware = (
+    deviceId: string,
+    _data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<RawPushFirmwareResult> => {
+    this.commandSeq += 1;
+    const command: RawCentralCommand = {
+      command_id: `CMD-${this.commandSeq}`,
+      device_id: deviceId,
+      action: 'UPDATE_FIRMWARE',
+      status: 'SUCCESS',
+      target_firmware_version: options.firmwareVersion,
+      error_code: null,
+    };
+    this.commands.set(command.command_id, command);
+    return Promise.resolve({
+      ok: true,
+      device_id: deviceId,
+      command,
+      message: `ส่งคำสั่งอัปเดตให้กล่องแล้ว (mock) — v${options.firmwareVersion}`,
+    });
+  };
+
+  // mock ไม่มีประวัติจริงให้ fallback (ไม่เคยเกิดในทางปฏิบัติเพราะ mock ไม่มี
+  // กล่องจริงให้ประวัติหายได้) — คืนค่าว่างเสมอ ปล่อยให้ fallback ไม่พบอะไร
+  listDeviceCommands = (deviceId: string): Promise<RawCentralCommand[]> =>
+    Promise.resolve(
+      [...this.commands.values()]
+        .filter((c) => c.device_id === deviceId)
+        .reverse(),
+    );
 }
 
 export interface HttpCentralClientOptions {
@@ -131,13 +255,76 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
   listRegistryDevices = (): Promise<RawRegistryDevice[]> =>
     this.getJson<RawRegistryDevice[]>('/api/admin/devices');
 
-  private async getJson<T>(path: string): Promise<T> {
+  getSchema = (model: string, version: number): Promise<RawCentralSchema> =>
+    this.getJson<RawCentralSchema>(
+      `/api/admin/schemas/${encodeURIComponent(model)}/${version}`,
+    );
+
+  putDeviceConfig = (
+    deviceId: string,
+    settings: Record<string, unknown>,
+  ): Promise<RawPutConfigResult> =>
+    this.sendJson<RawPutConfigResult>(
+      `/api/admin/devices/${encodeURIComponent(deviceId)}/config`,
+      { method: 'PUT', body: JSON.stringify({ settings }) },
+    );
+
+  getCommand = (commandId: string): Promise<RawCentralCommand> =>
+    this.getJson<RawCentralCommand>(
+      `/api/gw/jobs/${encodeURIComponent(commandId)}`,
+    );
+
+  pushFirmware = (
+    deviceId: string,
+    data: Buffer,
+    options: PushFirmwareOptions,
+  ): Promise<RawPushFirmwareResult> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/octet-stream',
+      'X-Firmware-Version': options.firmwareVersion,
+    };
+    if (options.schemaVersion !== undefined) {
+      headers['X-Schema-Version'] = String(options.schemaVersion);
+    }
+    if (options.signature) headers['X-Firmware-Signature'] = options.signature;
+    if (options.allowDowngrade) headers['X-Allow-Downgrade'] = 'true';
+    return this.sendBinary<RawPushFirmwareResult>(
+      `/api/admin/devices/${encodeURIComponent(deviceId)}/firmware`,
+      data,
+      headers,
+    );
+  };
+
+  listDeviceCommands = (deviceId: string): Promise<RawCentralCommand[]> =>
+    this.getJson<RawCentralCommand[]>(
+      `/api/gw/devices/${encodeURIComponent(deviceId)}/commands`,
+    );
+
+  private getJson<T>(path: string): Promise<T> {
+    return this.sendJson<T>(path, {});
+  }
+
+  /**
+   * ส่งคำขอพร้อม token (single-flight login ใหม่ 1 ครั้งเมื่อ 401 — คำขอขนานที่เจอ 401 พร้อมกัน
+   * รอ login รอบเดียวกัน) · 4xx อื่นๆ = Server กลางปฏิเสธข้อมูล (`CentralRejectedError` พร้อม
+   * เหตุผลจากเขา) · 5xx/เครือข่าย = `CentralUnavailableError`
+   */
+  private async sendJson<T>(
+    path: string,
+    init: { method?: string; body?: string },
+  ): Promise<T> {
     let token = await this.getToken();
-    let res = await this.request(path, token);
+    let res = await this.request(path, token, init);
     if (res.status === 401) {
       // token หมดอายุ/ถูกเปลี่ยน: login ใหม่ 1 ครั้ง (ถ้าคำขอขนานอื่นเพิ่ง login ใหม่ไปแล้ว ใช้ token นั้น)
       token = await this.getToken(token);
-      res = await this.request(path, token);
+      res = await this.request(path, token, init);
+    }
+    if (res.status >= 400 && res.status < 500) {
+      throw new CentralRejectedError(
+        res.status,
+        await this.rejectionMessage(res),
+      );
     }
     if (!res.ok) {
       throw new CentralUnavailableError(
@@ -145,6 +332,105 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
       );
     }
     return this.readJson<T>(res, path);
+  }
+
+  /**
+   * เหมือน `sendJson` แต่ body เป็นไฟล์ดิบ + header กำหนดเอง (POST firmware ไม่ใช่ JSON) —
+   * แยกจาก `sendJson`/`request` เพราะ body/Content-Type คนละแบบ แต่ retry/error ใช้กฎเดียวกัน
+   */
+  private async sendBinary<T>(
+    path: string,
+    data: Buffer,
+    headers: Record<string, string>,
+  ): Promise<T> {
+    let token = await this.getToken();
+    let res = await this.requestBinary(path, token, data, headers);
+    if (res.status === 401) {
+      token = await this.getToken(token);
+      res = await this.requestBinary(path, token, data, headers);
+    }
+    if (res.status >= 400 && res.status < 500) {
+      throw new CentralRejectedError(
+        res.status,
+        await this.rejectionMessage(res),
+      );
+    }
+    if (!res.ok) {
+      throw new CentralUnavailableError(
+        `Server กลางตอบ HTTP ${res.status} ที่ ${path}`,
+      );
+    }
+    return this.readJson<T>(res, path);
+  }
+
+  private async requestBinary(
+    path: string,
+    token: string | null,
+    data: Buffer,
+    extraHeaders: Record<string, string>,
+  ): Promise<Response> {
+    const headers = { ...extraHeaders };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    try {
+      return await fetch(new URL(path, this.options.baseUrl), {
+        method: 'POST',
+        // Buffer ไม่อยู่ใน BodyInit ของ lib.dom.d.ts เวอร์ชันนี้ แต่ undici (fetch ของ
+        // Node) รับ Buffer ได้จริง — cast เฉพาะจุดนี้
+        body: data as unknown as BodyInit,
+        headers,
+        signal: AbortSignal.timeout(this.options.timeoutMs),
+      });
+    } catch (err) {
+      const timedOut =
+        (err as { name?: string } | null)?.name === 'TimeoutError';
+      this.logger.warn(
+        `เรียก Server กลางไม่สำเร็จ ${path}: ${timedOut ? 'timeout' : 'เชื่อมต่อไม่ได้'}`,
+      );
+      throw new CentralUnavailableError(
+        timedOut
+          ? `Server กลางไม่ตอบภายใน ${this.options.timeoutMs} มิลลิวินาที`
+          : 'เชื่อมต่อ Server กลางไม่ได้',
+      );
+    }
+  }
+
+  /** ดึงเหตุผลจาก body ของ Server กลาง (`error` + `details`/`message`) ไม่มีก็บอกแค่ HTTP status */
+  private async rejectionMessage(res: Response): Promise<string> {
+    try {
+      const body = (await res.json()) as {
+        error?: unknown;
+        message?: unknown;
+        details?: unknown;
+      };
+      const parts: string[] = [];
+      if (typeof body.error === 'string') parts.push(body.error);
+      if (typeof body.message === 'string') parts.push(body.message);
+      if (Array.isArray(body.details)) {
+        // delivery-server ส่ง details เป็น `{ key, message }` ไม่ใช่ string
+        // (ดู validateSettings ใน schemas.js) — String(d) ตรงๆ ได้ "[object
+        // Object]" ไม่สื่อความหมาย ต้องดึง key/message ออกมาก่อน
+        parts.push(
+          body.details
+            .map((d) => {
+              if (d && typeof d === 'object') {
+                const { key, message } = d as {
+                  key?: unknown;
+                  message?: unknown;
+                };
+                if (key !== undefined || message !== undefined) {
+                  return `${String(key)}: ${String(message)}`;
+                }
+              }
+              return String(d);
+            })
+            .join('; '),
+        );
+      }
+      if (parts.length > 0) return `${parts.join(': ')} (HTTP ${res.status})`;
+    } catch {
+      // body อ่านไม่ได้ ใช้ข้อความกลางด้านล่าง
+    }
+    return `Server กลางปฏิเสธคำขอ (HTTP ${res.status})`;
   }
 
   /**
