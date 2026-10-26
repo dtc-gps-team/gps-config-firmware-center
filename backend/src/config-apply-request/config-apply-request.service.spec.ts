@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -57,6 +58,9 @@ const task: Task = {
   configAssignedAt: new Date('2026-10-21T00:00:00.000Z'),
   status: 'in_progress',
   dueDate: null,
+  source: 'operation',
+  completedAt: null,
+  autoClosed: false,
   createdAt: new Date('2026-10-20T00:00:00.000Z'),
   updatedAt: new Date('2026-10-20T00:00:00.000Z'),
 };
@@ -304,15 +308,117 @@ describe('ConfigApplyRequestService', () => {
       );
     });
 
-    it('งานไม่มี configId: 409', async () => {
+    it('งานไม่มี configId และช่างไม่ได้เลือก Config: 400', async () => {
       (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
         ...task,
         configId: null,
+        configAssignedBy: null,
+      });
+
+      await expect(service.create(TASK_ID, {}, tech)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(requests.create).not.toHaveBeenCalled();
+    });
+
+    it('งานไม่มีเครื่อง: 409', async () => {
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        deviceId: null,
       });
 
       await expect(service.create(TASK_ID, {}, tech)).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+
+    describe('ช่างเลือก Config เอง (docs/28 §5.3)', () => {
+      const OTHER_CONFIG_ID = '77777777-7777-7777-7777-777777777777';
+
+      it('Config ตัวอื่นจาก body: ใช้ configId นั้น ไม่ snapshot ผู้ผูก และแจ้ง Operation ทุกคนยกเว้นผู้ขอ', async () => {
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        const data = (
+          requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+        )[0].data;
+        expect(data).toMatchObject({
+          configId: OTHER_CONFIG_ID,
+          configAssignedBy: null,
+        });
+        expect(
+          (prisma.config as Record<string, jest.Mock>).findUnique,
+        ).toHaveBeenCalledWith({ where: { id: OTHER_CONFIG_ID } });
+        expect(users.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: { notIn: [tech.id] },
+            }) as unknown,
+          }),
+        );
+      });
+
+      it('งานที่ช่างเริ่มเอง (ไม่มี Config ผูก) ขอได้เมื่อเลือก Config', async () => {
+        (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+          {
+            ...task,
+            configId: null,
+            configAssignedBy: null,
+            source: 'technician',
+          },
+        );
+
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        expect(requests.create).toHaveBeenCalled();
+      });
+
+      it('เลือกตัวเดียวกับที่ Operation ผูกไว้: snapshot ผู้ผูก (SoD ข้อ 3 ยังใช้)', async () => {
+        await service.create(TASK_ID, { configId: CONFIG_ID }, tech);
+
+        const data = (
+          requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+        )[0].data;
+        expect(data.configAssignedBy).toBe(assigner.id);
+      });
+
+      it('งานเก่าไม่รู้ผู้ผูก แต่ช่างเลือก Config ตัวอื่น: ขอได้ (fail closed เฉพาะตัวที่ผูก)', async () => {
+        (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+          { ...task, configAssignedBy: null },
+        );
+
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        expect(requests.create).toHaveBeenCalled();
+      });
+
+      it('Config ที่เลือกยังไม่อนุมัติ (draft): 409 ไม่สร้างคำขอ', async () => {
+        (
+          prisma.config as Record<string, jest.Mock>
+        ).findUnique.mockResolvedValue({
+          ...config,
+          id: OTHER_CONFIG_ID,
+          status: 'draft',
+        });
+
+        await expect(
+          service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it('Config ที่เลือกรุ่นไม่ตรงกับกล่อง: 409', async () => {
+        (
+          prisma.config as Record<string, jest.Mock>
+        ).findUnique.mockResolvedValue({
+          ...config,
+          id: OTHER_CONFIG_ID,
+          deviceModel: 'TK103',
+        });
+
+        await expect(
+          service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech),
+        ).rejects.toThrow('ไม่ตรงกับเครื่อง');
+      });
     });
 
     it('fail closed: งานเก่าไม่มี configAssignedBy -> 409 ให้ Operation ผูก Config ใหม่ ไม่สร้างคำขอ', async () => {
@@ -442,10 +548,25 @@ describe('ConfigApplyRequestService', () => {
         expect(requests.updateMany).not.toHaveBeenCalled();
       });
 
-      it('ข้อ 4: คำขอไม่มีผู้ผูก Config -> 403 (fail closed)', async () => {
+      it('ข้อ 4 (docs/28): ช่างเลือก Config เอง (configAssignedBy null) -> ข้ามข้อ 3 Operation ที่ผูก Config ตัวอื่นไว้กับงานตัดสินได้', async () => {
+        const chosen = { ...pending, configAssignedBy: null };
+        requests.findUnique.mockResolvedValue(chosen);
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...chosen,
+          status: 'approved',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+
+        await decide(service)(assigner);
+
+        expect(requests.updateMany).toHaveBeenCalled();
+      });
+
+      it('ข้อ 4 (docs/28): ช่างเลือก Config เอง แต่ผู้ขอตัดสินเอง -> ยัง 403 (ข้อ 2 ไม่ผ่อน)', async () => {
         requests.findUnique.mockResolvedValue({
           ...pending,
-          configAssignedBy: '',
+          configAssignedBy: null,
+          requestedBy: decider.id,
         });
 
         await expect(decide(service)(decider)).rejects.toBeInstanceOf(
@@ -647,6 +768,35 @@ describe('ConfigApplyRequestService', () => {
       });
       expect(startRollout).toHaveBeenCalledWith(ROLLOUT_ID, tech.id);
       expect(result.rolloutId).toBe(ROLLOUT_ID);
+    });
+
+    it('Config ที่ช่างเลือกเอง (docs/28): งานไม่มี Config ผูกก็กดส่งได้', async () => {
+      requests.findUnique.mockResolvedValue({
+        ...approvedRequest,
+        configAssignedBy: null,
+      });
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        configId: null,
+        configAssignedBy: null,
+        source: 'technician',
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).resolves.toMatchObject({
+        rolloutId: ROLLOUT_ID,
+      });
+    });
+
+    it('Config ที่ผูกไว้ถูก Operation เปลี่ยนหลังอนุมัติ: 409 ไม่สร้าง Rollout', async () => {
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        configId: '77777777-7777-7777-7777-777777777777',
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toThrow(
+        'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่อนุมัติ',
+      );
+      expect(createRollout).not.toHaveBeenCalled();
     });
 
     it('Task ถูกโอน: คนที่ถือ Task ตอนนี้กดส่งได้ ผู้ขอเดิมได้ 404 (D1)', async () => {
@@ -1056,6 +1206,107 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { status: 'pending' } }),
       );
+    });
+  });
+
+  describe('applyOptions (docs/28 §5.2)', () => {
+    const configRow = (id: string, name: string, version?: number) => ({
+      id,
+      name,
+      status: 'approved',
+      versions: version === undefined ? [] : [{ versionNumber: version }],
+    });
+
+    beforeEach(() => {
+      (prisma.task as Record<string, jest.Mock>).findFirst = jest
+        .fn()
+        .mockResolvedValue(null);
+      (prisma.config as Record<string, jest.Mock>).findMany = jest
+        .fn()
+        .mockResolvedValue([
+          configRow('a', 'A มาตรฐาน', 3),
+          configRow(CONFIG_ID, 'B ลูกค้าพิเศษ'),
+        ]);
+    });
+
+    it('กรองตามสถานะ/ไม่ถูกลบ/รุ่น+โปรโตคอลของกล่อง และ latestVersion 0 เมื่อไม่มีเวอร์ชัน', async () => {
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(
+        (prisma.config as Record<string, jest.Mock>).findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: { in: ['approved', 'synced'] },
+            deletedAt: null,
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+          },
+        }),
+      );
+      expect(result).toEqual({
+        deviceId: DEVICE_ID,
+        deviceInstalled: true,
+        configs: [
+          {
+            id: 'a',
+            name: 'A มาตรฐาน',
+            status: 'approved',
+            latestVersion: 3,
+            suggested: false,
+          },
+          {
+            id: CONFIG_ID,
+            name: 'B ลูกค้าพิเศษ',
+            status: 'approved',
+            latestVersion: 0,
+            suggested: false,
+          },
+        ],
+      });
+    });
+
+    it('Config ที่ Operation ผูกกับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อนเป็น suggested', async () => {
+      (prisma.task as Record<string, jest.Mock>).findFirst.mockResolvedValue({
+        configId: CONFIG_ID,
+      });
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.configs.map((c) => [c.id, c.suggested])).toEqual([
+        [CONFIG_ID, true],
+        ['a', false],
+      ]);
+      expect(
+        (prisma.task as Record<string, jest.Mock>).findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assignedTo: tech.id,
+            deviceId: DEVICE_ID,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('กล่องยังไม่ติดตั้ง: deviceInstalled false', async () => {
+      (prisma.device as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+        { ...device, status: 'registered' },
+      );
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.deviceInstalled).toBe(false);
+    });
+
+    it('ไม่พบกล่อง: 404', async () => {
+      (prisma.device as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.applyOptions(DEVICE_ID, tech),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -19,6 +19,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ActingUser } from '../task/task.service';
 import {
   ConfigApplyRequestService,
+  type ApplyOptions,
   type ConfigApplyRequestView,
 } from './config-apply-request.service';
 import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.dto';
@@ -59,6 +60,27 @@ export class TaskConfigApplyRequestController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyRequest[]> {
     return this.service.listForTask(taskId, toActor(req));
+  }
+}
+
+/**
+ * ตัวเลือกที่ช่างส่งเข้ากล่องได้ (docs/28 §5.2):
+ *   GET /devices/:deviceId/apply-options   ST/OT (คนที่ขอส่งได้ — action Create
+ *       เดียวกับตอนขอ) · อยู่ในโมดูลนี้ (ของ B) ไม่ใช่ `device` (ของ A) เพราะกฎ
+ *       "ส่งได้ไหม" ต้องอยู่ที่เดียวกับที่ตรวจตอนสร้างคำขอ
+ */
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@Controller('devices/:deviceId/apply-options')
+export class DeviceApplyOptionsController {
+  constructor(private readonly service: ConfigApplyRequestService) {}
+
+  @Get()
+  @RequirePermission('config-apply-request', ActionType.Create)
+  applyOptions(
+    @Param('deviceId') deviceId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ApplyOptions> {
+    return this.service.applyOptions(deviceId, toActor(req));
   }
 }
 
