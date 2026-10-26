@@ -13,6 +13,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import {
   ConfigApplyRequestController,
+  DeviceApplyOptionsController,
   TaskConfigApplyRequestController,
 } from './config-apply-request.controller';
 import { ConfigApplyRequestExpiryJob } from './config-apply-request.job';
@@ -40,7 +41,11 @@ import {
     NotificationModule,
     TaskModule,
   ],
-  controllers: [TaskConfigApplyRequestController, ConfigApplyRequestController],
+  controllers: [
+    TaskConfigApplyRequestController,
+    ConfigApplyRequestController,
+    DeviceApplyOptionsController,
+  ],
   providers: [
     ConfigApplyRequestService,
     ConfigApplyRequestExpiryJob,
