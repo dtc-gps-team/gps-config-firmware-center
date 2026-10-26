@@ -608,6 +608,7 @@ void main() {
         'incident_report_dismissed',
         'incident_report_promoted',
         'config_apply_pending',
+        'config_apply_approved',
         'config_apply_rejected',
         'config_apply_succeeded',
         'config_apply_failed',
@@ -984,6 +985,7 @@ void _deviceStatusTests() {
     test('wire names match openapi.yaml / Prisma ConfigApplyRequestStatus', () {
       expect(ConfigApplyRequestStatus.values.map((s) => s.wireName).toList(), [
         'pending',
+        'approved',
         'sending',
         'succeeded',
         'failed',

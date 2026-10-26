@@ -59,7 +59,8 @@ String taskStatusLabel(TaskStatus status) => switch (status) {
 String configApplyRequestStatusLabel(ConfigApplyRequestStatus status) =>
     switch (status) {
       ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
-      ConfigApplyRequestStatus.sending => 'อนุมัติแล้ว กำลังส่ง รอกล่องยืนยัน',
+      ConfigApplyRequestStatus.approved => 'อนุมัติแล้ว กดส่งเข้ากล่องได้',
+      ConfigApplyRequestStatus.sending => 'กำลังส่งเข้ากล่อง รอกล่องยืนยัน',
       ConfigApplyRequestStatus.succeeded => 'กล่องรับ Config แล้ว',
       ConfigApplyRequestStatus.failed => 'ส่งไม่สำเร็จ',
       ConfigApplyRequestStatus.skippedOffline => 'กล่องออฟไลน์ ส่งไม่ถึง',

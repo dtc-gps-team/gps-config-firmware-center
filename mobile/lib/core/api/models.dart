@@ -85,8 +85,10 @@ enum NotificationType {
   incidentReportPromoted('incident_report_promoted'),
   // เพิ่มใหม่ (docs/25 §3.6) — คำขอส่ง Config เข้าเครื่องจากหน้างาน · payload
   // `{requestId, taskId, deviceId}` เสมอ (+ `rejectReason` / `outcome`+`detail`)
-  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างผู้ขอ
+  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างที่ถือ Task · `approved`
+  // เพิ่มใน docs/27 (อนุมัติแล้ว ช่างกดส่งเข้ากล่องได้ — payload มี `expiresAt`)
   configApplyPending('config_apply_pending'),
+  configApplyApproved('config_apply_approved'),
   configApplyRejected('config_apply_rejected'),
   configApplySucceeded('config_apply_succeeded'),
   configApplyFailed('config_apply_failed'),
@@ -363,6 +365,8 @@ class DeviceConfigOverride {
 /// `docs/api/openapi.yaml` (docs/25 §4.1)
 enum ConfigApplyRequestStatus {
   pending('pending'),
+  // docs/27 — อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง
+  approved('approved'),
   sending('sending'),
   succeeded('succeeded'),
   failed('failed'),
@@ -376,10 +380,22 @@ enum ConfigApplyRequestStatus {
   final String wireName;
 
   /// ขอส่งใหม่ได้จากสถานะนี้ไหม (docs/25 §3.3 ตารางการ์ด) — คำขอที่จบแบบไม่สำเร็จ
-  /// · `pending`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
+  /// · `pending`/`approved`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
   bool get allowsNewRequest => switch (this) {
-    pending || sending || succeeded => false,
+    pending || approved || sending || succeeded => false,
     failed || skippedOffline || rejected || cancelled || expired => true,
+  };
+
+  /// สถานะที่ยังเปลี่ยนเองได้จากฝั่ง server (Operation ตัดสิน, หมดอายุ, ผลจาก
+  /// กล่อง) — หน้า Task Detail โหลดใหม่เป็นระยะระหว่างอยู่สถานะนี้ (docs/27 §9)
+  bool get isInFlight => switch (this) {
+    pending || approved || sending => true,
+    succeeded ||
+    failed ||
+    skippedOffline ||
+    rejected ||
+    cancelled ||
+    expired => false,
   };
 
   static ConfigApplyRequestStatus fromWire(String value) {
@@ -405,6 +421,7 @@ class ConfigApplyRequest {
     this.rejectReason,
     this.resultDetail,
     this.decidedAt,
+    this.releasedAt,
     this.completedAt,
   });
 
@@ -421,6 +438,9 @@ class ConfigApplyRequest {
   /// ผลหรือเหตุผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, งานถูกยกเลิก)
   final String? resultDetail;
   final DateTime? decidedAt;
+
+  /// เวลาที่ช่างกดส่งเข้ากล่อง (docs/27) — `null` ก่อนกดส่ง
+  final DateTime? releasedAt;
   final DateTime? completedAt;
 
   factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
@@ -441,6 +461,7 @@ class ConfigApplyRequest {
       rejectReason: json['rejectReason'] as String?,
       resultDetail: json['resultDetail'] as String?,
       decidedAt: optionalDate('decidedAt'),
+      releasedAt: optionalDate('releasedAt'),
       completedAt: optionalDate('completedAt'),
     );
   }

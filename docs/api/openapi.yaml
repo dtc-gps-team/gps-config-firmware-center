@@ -1218,17 +1218,17 @@ paths:
     post:
       tags: [config-apply-request]
       operationId: approveConfigApplyRequest
-      summary: Operation อนุมัติคำขอส่ง Config (docs/25 §3.4–§3.5)
+      summary: Operation อนุมัติคำขอส่ง Config (docs/25 §3.4 · docs/27 §5.3 — อนุมัติแล้วรอช่างกดส่ง)
       description: >-
         resource `config-apply-request` action `Approve` — **Operation เท่านั้น**
         (Admin/SuperAdmin อนุมัติไม่ได้) · Separation of Duty เช็คที่ backend
         ทุกครั้ง: ผู้อนุมัติต้อง ≠ ผู้ขอ, ≠ ผู้ผูก Config เข้างาน และ ≠ ผู้อนุมัติ
         ตัว Config (`Config.approvedBy`) · ข้อมูลผู้ผูก Config หรือผู้อนุมัติ
         Config ว่าง = ปฏิเสธ (fail closed) · ตรวจงาน/Config/เครื่องซ้ำแบบสดใน
-        ทรานแซกชันเดียวกัน แล้วเปลี่ยนเป็น `sending` สร้าง Rollout เครื่องเดียว
-        (`rolloutId`) แล้วเริ่มส่งหลัง commit ตามโหมด `DEVICE_CONFIG_APPLY_MODE`
-        (`central` = ส่งผ่าน Server กลาง) · ผลจากกล่องอัปเดตคำขอเป็น
-        `succeeded`/`failed`/`skipped_offline` ทีหลัง (ดู `GET /tasks/{taskId}/config-apply-requests`)
+        ทรานแซกชันเดียวกัน แล้วเปลี่ยนเป็น `approved` **ยังไม่ส่งเข้ากล่อง**
+        (docs/27 — เดิมส่งทันที) · เก็บ `approvedConfigVersion` และตั้ง
+        `expiresAt` = เวลาอนุมัติ + 24 ชม. เป็นเส้นตายให้ช่างที่ถือ Task กดส่งผ่าน
+        `releaseConfigApplyRequest` · แจ้งช่าง `config_apply_approved`
       parameters:
         - in: path
           name: id
@@ -1238,7 +1238,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: "อนุมัติสำเร็จ — คืนคำขอ (status: sending, มี rolloutId)"
+          description: "อนุมัติสำเร็จ — คืนคำขอ (status: approved, ยังไม่มี rolloutId)"
           content:
             application/json:
               schema:
@@ -1302,10 +1302,11 @@ paths:
     post:
       tags: [config-apply-request]
       operationId: cancelConfigApplyRequest
-      summary: ผู้ขอยกเลิกคำขอของตัวเอง (docs/25 §3.3)
+      summary: ช่างที่ถือ Task ยกเลิกคำขอ (docs/25 §3.3 · docs/27 §5.5)
       description: >-
-        resource `config-apply-request` action `Create` (ST/OT) · เฉพาะผู้ขอ และ
-        เฉพาะตอน `pending` · AuditLog `config_apply_cancel`
+        resource `config-apply-request` action `Create` (ST/OT) · เฉพาะช่างที่ถือ
+        Task อยู่ตอนนี้ (docs/27 — เดิมผู้ขอ) และเฉพาะตอน `pending` หรือ `approved`
+        · AuditLog `config_apply_cancel`
       parameters:
         - in: path
           name: id
@@ -1325,9 +1326,57 @@ paths:
         "403":
           description: role นี้ยกเลิกคำขอไม่ได้
         "404":
-          description: ไม่พบคำขอ หรือไม่ใช่ผู้ขอ (ไม่เปิดเผยว่ามีคำขอนี้)
+          description: ไม่พบคำขอ หรือไม่ได้ถือ Task นี้ (ไม่เปิดเผยว่ามีคำขอนี้)
         "409":
-          description: คำขอไม่ได้อยู่ pending แล้ว
+          description: คำขอไม่ได้อยู่ pending/approved แล้ว
+
+  /config-apply-requests/{id}/release:
+    post:
+      tags: [config-apply-request]
+      operationId: releaseConfigApplyRequest
+      summary: ช่างที่ถือ Task กดส่งคำขอที่อนุมัติแล้วเข้ากล่อง (docs/27 §5.4)
+      description: >-
+        resource `config-apply-request` action `Create` (ST/OT — กลุ่มเดียวกับ
+        ขอ/ยกเลิก) · เฉพาะช่างที่ถือ Task อยู่ตอนนี้ (Task ถูกโอน = คนใหม่กด ผู้ขอ
+        เดิมกดไม่ได้) · ตรวจซ้ำแบบสด: คำขอ `approved` และยังไม่เลย `expiresAt`,
+        งาน in_progress, Config/เครื่องของงานไม่เปลี่ยน, Config ยัง approved/synced
+        และเป็นเวอร์ชันเดียวกับ `approvedConfigVersion`, เครื่อง installed, ไม่มี
+        Campaign กำลังส่งให้เครื่องนี้ และโหมด `DEVICE_CONFIG_APPLY_MODE=central`
+        กล่องต้องออนไลน์ใน Server กลาง · ผ่านแล้วเปลี่ยนเป็น `sending` สร้าง
+        Rollout เครื่องเดียว (`rolloutId`) และเริ่มส่งหลัง commit · ผลจากกล่อง
+        อัปเดตคำขอเป็น `succeeded`/`failed`/`skipped_offline` ทีหลัง · AuditLog
+        `config_apply_release`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: "ส่งแล้ว — คืนคำขอ (status: sending, มี rolloutId)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigApplyRequest"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้กดส่งไม่ได้ (เฉพาะ ST/OT)
+        "404":
+          description: ไม่พบคำขอ หรือไม่ได้ถือ Task นี้ (ไม่เปิดเผยว่ามีคำขอนี้)
+        "409":
+          description: >-
+            ส่งไม่ได้ — คำขอไม่ใช่ approved, เลยเส้นตาย (ระบบปิดเป็น expired),
+            Config มีเวอร์ชันใหม่/ถูกถอน/ถูกลบหลังอนุมัติ (ระบบปิดเป็น cancelled
+            ให้ขอใหม่), งานไม่ได้ in_progress หรือ Config/เครื่องของงานเปลี่ยน,
+            เครื่องไม่ installed, มี Campaign กำลังส่ง, **กล่องออฟไลน์** (คำขอยัง
+            approved ลองใหม่ได้) หรือมีการกดส่ง/ยกเลิกพร้อมกัน
+        "503":
+          description: >-
+            โหมด central ติดต่อ Server กลางไม่ได้ ตรวจสถานะกล่องไม่ได้ — ไม่ส่ง
+            คำขอยัง approved ลองใหม่ได้
 
   /firmware:
     get:
@@ -4995,12 +5044,15 @@ components:
     ConfigApplyRequestStatus:
       type: string
       description: >-
-        pending รอ Operation ตัดสิน · sending อนุมัติแล้ว รอผลจากกล่อง ·
+        pending รอ Operation ตัดสิน · approved อนุมัติแล้ว รอช่างที่ถือ Task กดส่ง
+        (docs/27) · sending ช่างกดส่งแล้ว รอผลจากกล่อง ·
         succeeded/failed/skipped_offline ผลจากกล่อง · rejected Operation ปฏิเสธ ·
-        cancelled ผู้ขอยกเลิกหรืองานถูกยกเลิก · expired ไม่มีใครตัดสินภายใน 24 ชม.
+        cancelled ช่างยกเลิก, งานถูกยกเลิก หรือ Config เปลี่ยนหลังอนุมัติ ·
+        expired ไม่มีใครตัดสิน หรืออนุมัติแล้วไม่ได้กดส่งภายใน 24 ชม.
       enum:
         [
           pending,
+          approved,
           sending,
           succeeded,
           failed,
@@ -5071,11 +5123,26 @@ components:
         rejectReason:
           type: string
           nullable: true
+        approvedConfigVersion:
+          type: integer
+          nullable: true
+          description: >-
+            เวอร์ชัน Config (ConfigVersion.versionNumber) ตอนอนุมัติ — ตอนกดส่ง
+            ต้องยังเท่าเดิม · 0 = Config ที่ยังไม่มีประวัติเวอร์ชัน · null = ยังไม่อนุมัติ
+        releasedBy:
+          type: string
+          format: uuid
+          nullable: true
+          description: ช่างที่กดส่งเข้ากล่อง (อาจไม่ใช่ผู้ขอถ้า Task ถูกโอน)
+        releasedAt:
+          type: string
+          format: date-time
+          nullable: true
         rolloutId:
           type: string
           format: uuid
           nullable: true
-          description: Rollout เครื่องเดียวที่สร้างตอนอนุมัติ
+          description: Rollout เครื่องเดียวที่สร้างตอนช่างกดส่ง
         resultDetail:
           type: string
           nullable: true
@@ -5128,6 +5195,17 @@ components:
               type: object
               nullable: true
               description: Operation ผู้ตัดสิน — null ระหว่าง pending
+              required: [id, fullName]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                fullName:
+                  type: string
+            releaser:
+              type: object
+              nullable: true
+              description: ช่างที่กดส่ง — null ก่อนกดส่ง
               required: [id, fullName]
               properties:
                 id:
@@ -6097,7 +6175,10 @@ components:
             # Operation ตอนมีคำขอใหม่ (_pending ยกเว้นผู้ผูก Config) + แจ้งช่าง
             # ผู้ขอตอนจบ · ไม่มี _approved (มติ Q5) · _failed รวมกล่องออฟไลน์
             # (payload.outcome = skipped_offline) · _expired = ไม่มีใครตัดสินใน 24 ชม.
+            # · docs/27: เพิ่ม _approved (อนุมัติแล้ว ช่างที่ถือ Task กดส่งได้ —
+            # payload.expiresAt = เส้นตาย) แทนมติ Q5 · แจ้งช่างที่ถือ Task แทนผู้ขอ
             - config_apply_pending
+            - config_apply_approved
             - config_apply_rejected
             - config_apply_succeeded
             - config_apply_failed

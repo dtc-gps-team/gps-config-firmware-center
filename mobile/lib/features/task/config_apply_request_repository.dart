@@ -15,6 +15,9 @@ abstract class ConfigApplyRequestRepository {
   Future<ConfigApplyRequest> create(String taskId);
 
   Future<ConfigApplyRequest> cancel(String requestId);
+
+  /// ช่างกดส่งคำขอที่อนุมัติแล้วเข้ากล่อง (docs/27)
+  Future<ConfigApplyRequest> release(String requestId);
 }
 
 /// เรียก backend จริงเสมอไม่ว่า `API_MOCK_MODE` จะเป็นอะไร — แบบเดียวกับปุ่ม
@@ -36,6 +39,10 @@ class ApiConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   @override
   Future<ConfigApplyRequest> cancel(String requestId) =>
       _api.cancelConfigApplyRequest(requestId);
+
+  @override
+  Future<ConfigApplyRequest> release(String requestId) =>
+      _api.releaseConfigApplyRequest(requestId);
 }
 
 final configApplyRequestRepositoryProvider =

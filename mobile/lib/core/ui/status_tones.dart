@@ -26,6 +26,7 @@ AppBadgeTone taskUrgencyTone({required bool overdue}) =>
 AppBadgeTone configApplyRequestTone(ConfigApplyRequestStatus status) =>
     switch (status) {
       ConfigApplyRequestStatus.pending => AppBadgeTone.warning,
+      ConfigApplyRequestStatus.approved => AppBadgeTone.success,
       ConfigApplyRequestStatus.sending => AppBadgeTone.info,
       ConfigApplyRequestStatus.succeeded => AppBadgeTone.success,
       ConfigApplyRequestStatus.failed => AppBadgeTone.danger,

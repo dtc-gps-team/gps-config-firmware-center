@@ -438,15 +438,16 @@ export class TaskService {
 
   /**
    * docs/25 §3.9 (มติ Q9) — งานถูกยกเลิก: ปิดคำขอส่ง Config ของงานนี้ที่ยัง
-   * `pending` ตามไปด้วย ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน · คำขอที่
-   * `sending` แล้วไม่แตะ (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
+   * `pending` หรือ `approved` (docs/27 — อนุมัติแล้วแต่ยังไม่กดส่ง) ตามไปด้วย
+   * ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน · คำขอที่ `sending` แล้วไม่แตะ
+   * (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
    */
   private async cancelPendingConfigApplyRequests(
     tx: Prisma.TransactionClient,
     taskId: string,
   ): Promise<void> {
     await tx.configApplyRequest.updateMany({
-      where: { taskId, status: 'pending' },
+      where: { taskId, status: { in: ['pending', 'approved'] } },
       data: {
         status: 'cancelled',
         resultDetail: 'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
