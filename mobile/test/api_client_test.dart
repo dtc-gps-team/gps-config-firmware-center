@@ -1005,11 +1005,6 @@ void main() {
   });
 
   group('rolloutId (issue #265) + confirm-firmware-install (issue #261)', () {
-    const applyOk = {
-      'applied': true,
-      'details': ['ok'],
-      'appliedAt': '2026-10-12T00:00:00.000Z',
-    };
     const confirmOk = {
       'deviceId': 'DEV-0117',
       'firmwareId': 'fw-1',
@@ -1046,35 +1041,6 @@ void main() {
       expect(missing.configRolloutId, isNull);
       expect(missing.firmwareRolloutId, isNull);
     });
-
-    test('applyConfigToDevice มี rolloutId -> ส่งใน body', () async {
-      final (:client, :adapter) = _clientReturning(applyOk);
-      await client.applyConfigToDevice(
-        deviceId: 'DEV-0117',
-        configId: 'cfg-1',
-        rolloutId: 'ro-config',
-      );
-      expect(adapter.lastRequest?.method, 'POST');
-      expect(adapter.lastRequest?.path, '/devices/DEV-0117/apply-config');
-      expect(adapter.lastRequest?.data, {
-        'configId': 'cfg-1',
-        'rolloutId': 'ro-config',
-      });
-    });
-
-    test(
-      'applyConfigToDevice rolloutId เป็น null -> ไม่มี key นี้เลย',
-      () async {
-        final (:client, :adapter) = _clientReturning(applyOk);
-        await client.applyConfigToDevice(
-          deviceId: 'DEV-0117',
-          configId: 'cfg-1',
-        );
-        final body = adapter.lastRequest?.data as Map<String, dynamic>;
-        expect(body, {'configId': 'cfg-1'});
-        expect(body.containsKey('rolloutId'), isFalse);
-      },
-    );
 
     test(
       'confirmFirmwareInstall มี rolloutId -> ส่งใน body + parse result',
@@ -1391,5 +1357,112 @@ void main() {
         ),
       );
     });
+  });
+
+  group('config-apply-request endpoints (docs/25)', () {
+    Map<String, dynamic> requestJson({String status = 'pending'}) => {
+      'id': 'car-1',
+      'taskId': 't1',
+      'deviceId': 'DEV-0117',
+      'configId': 'cfg-1',
+      'configAssignedBy': 'op-1',
+      'requestedBy': 'u1',
+      'requestedAt': '2026-10-22T03:00:00.000Z',
+      'expiresAt': '2026-10-23T03:00:00.000Z',
+      'note': null,
+      'status': status,
+      'decidedBy': null,
+      'decidedAt': null,
+      'rejectReason': null,
+      'rolloutId': null,
+      'resultDetail': null,
+      'completedAt': null,
+      'createdAt': '2026-10-22T03:00:00.000Z',
+      'updatedAt': '2026-10-22T03:00:00.000Z',
+    };
+
+    test(
+      'listTaskConfigApplyRequests: GET ใต้ task + parse ทุกสถานะ',
+      () async {
+        final (:client, :adapter) = _clientReturning([
+          requestJson(status: 'skipped_offline'),
+          requestJson(),
+        ]);
+        final list = await client.listTaskConfigApplyRequests('t1');
+        expect(adapter.lastRequest?.method, 'GET');
+        expect(adapter.lastRequest?.path, '/tasks/t1/config-apply-requests');
+        expect(list.map((r) => r.status), [
+          ConfigApplyRequestStatus.skippedOffline,
+          ConfigApplyRequestStatus.pending,
+        ]);
+        expect(list.last.expiresAt, DateTime.utc(2026, 10, 23, 3));
+      },
+    );
+
+    test(
+      'listTaskConfigApplyRequests: สถานะที่ไม่รู้จัก -> error ไม่ใช่หายเงียบ',
+      () async {
+        final (:client, adapter: _) = _clientReturning([
+          requestJson(status: 'teleported'),
+        ]);
+        await expectLater(
+          client.listTaskConfigApplyRequests('t1'),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test(
+      'createConfigApplyRequest: POST ไม่ส่ง configId/deviceId (backend อ่านจาก Task)',
+      () async {
+        final (:client, :adapter) = _clientReturning(
+          requestJson(),
+          statusCode: 201,
+        );
+        final created = await client.createConfigApplyRequest('t1');
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(adapter.lastRequest?.path, '/tasks/t1/config-apply-requests');
+        expect(adapter.lastRequest?.data, <String, dynamic>{});
+        expect(created.id, 'car-1');
+      },
+    );
+
+    test(
+      'createConfigApplyRequest: 409 -> ApiException พร้อมข้อความจาก backend',
+      () async {
+        final (:client, adapter: _) = _clientReturning({
+          'statusCode': 409,
+          'message': 'เครื่องนี้มีคำขอส่ง Config ที่ยังไม่จบอยู่แล้ว',
+        }, statusCode: 409);
+        await expectLater(
+          client.createConfigApplyRequest('t1'),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'เครื่องนี้มีคำขอส่ง Config ที่ยังไม่จบอยู่แล้ว',
+                ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'cancelConfigApplyRequest: POST /config-apply-requests/{id}/cancel',
+      () async {
+        final (:client, :adapter) = _clientReturning(
+          requestJson(status: 'cancelled'),
+        );
+        final cancelled = await client.cancelConfigApplyRequest('car-1');
+        expect(adapter.lastRequest?.method, 'POST');
+        expect(
+          adapter.lastRequest?.path,
+          '/config-apply-requests/car-1/cancel',
+        );
+        expect(cancelled.status, ConfigApplyRequestStatus.cancelled);
+      },
+    );
   });
 }
