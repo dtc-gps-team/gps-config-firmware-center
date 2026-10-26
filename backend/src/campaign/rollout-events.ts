@@ -15,6 +15,23 @@ import type { IncidentSeverity } from '@prisma/client';
 export const ROLLOUT_FAILED_EVENT = 'rollout-failed';
 export const ROLLOUT_STATUS_CHANGED_EVENT = 'rollout-status-changed';
 export const ROLLOUT_RESULT_UPDATED_EVENT = 'rollout-result-updated';
+/**
+ * `field-apply-result` (docs/25 §3.5 ข้อ 5, #370) — ผลของ Rollout เครื่องเดียวที่
+ * สร้างจากคำขอส่ง Config หน้างาน (`CampaignRolloutService.startFieldApplyRollout()`)
+ * โมดูล `config-apply-request` ของ B ฟัง event นี้เพื่ออัปเดตสถานะ
+ * `ConfigApplyRequest` **ชื่อ event/ชนิดข้อมูลตรงกับ
+ * `config-apply-request/field-apply-rollout.ts` ของ B โดยตั้งใจซ้ำกันตรงๆ ไม่
+ * import ข้ามมา** — กันไม่ให้ `campaign` ต้อง import โมดูลของ B (ทิศทางเดียว
+ * ตามที่ B ออกแบบไว้ในไฟล์นั้น) ถ้าแก้ชื่อ field ฝั่งใดฝั่งหนึ่งต้องแก้อีกฝั่งด้วย
+ */
+export const FIELD_APPLY_RESULT_EVENT = 'field-apply-result';
+export type FieldApplyOutcome = 'succeeded' | 'failed' | 'skipped_offline';
+export interface FieldApplyResultEvent {
+  rolloutId: string;
+  outcome: FieldApplyOutcome;
+  /** `CampaignRolloutTarget.resultDetail` */
+  detail: string;
+}
 
 export type RolloutFailureKind =
   'auto-pause' | 'completed-with-failures' | 'completed-with-skipped';
@@ -88,6 +105,10 @@ export class RolloutEvents extends EventEmitter {
   safeEmit(
     event: typeof ROLLOUT_RESULT_UPDATED_EVENT,
     payload: RolloutResultUpdatedEvent,
+  ): void;
+  safeEmit(
+    event: typeof FIELD_APPLY_RESULT_EVENT,
+    payload: FieldApplyResultEvent,
   ): void;
   safeEmit(event: string, payload: unknown): void {
     try {

@@ -6,16 +6,21 @@ import {
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
+import { CentralDeviceService } from '../central-device/central-device.service';
+import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import { CampaignRolloutService } from './campaign-rollout.service';
 import { CreateCampaignRolloutDto } from './dto/create-campaign-rollout.dto';
+import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 import { FIRMWARE_ROLLBACK_EXECUTOR } from './firmware-rollback-executor';
 import {
+  FIELD_APPLY_RESULT_EVENT,
   ROLLOUT_FAILED_EVENT,
   ROLLOUT_RESULT_UPDATED_EVENT,
   ROLLOUT_STATUS_CHANGED_EVENT,
   RolloutEvents,
+  type FieldApplyResultEvent,
   type RolloutFailedEvent,
   type RolloutResultUpdatedEvent,
   type RolloutStatusChangedEvent,
@@ -73,6 +78,7 @@ const storedFirmware = {
   deviceModelCompatibility: ['GT06N'],
   uploadStatus: 'stored' as const,
   approvalStatus: 'approved' as const,
+  objectKey: 'firmware/fw-1/app.bin',
 };
 
 const sampleRollout: CampaignRollout = {
@@ -116,7 +122,11 @@ function firmwareDto(): CreateCampaignRolloutDto {
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
   let transactionMock: jest.Mock;
-  let campaign: { findUnique: jest.Mock };
+  let campaign: {
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    create: jest.Mock;
+  };
   let campaignTarget: { findMany: jest.Mock };
   let campaignRollout: {
     create: jest.Mock;
@@ -129,6 +139,7 @@ describe('CampaignRolloutService', () => {
     count: jest.Mock;
   };
   let campaignRolloutTarget: {
+    create: jest.Mock;
     createMany: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -138,8 +149,12 @@ describe('CampaignRolloutService', () => {
     findUniqueOrThrow: jest.Mock;
   };
   let config: { findUnique: jest.Mock };
-  let firmware: { findUnique: jest.Mock };
-  let device: { findMany: jest.Mock; update: jest.Mock };
+  let firmware: { findUnique: jest.Mock; findFirst: jest.Mock };
+  let device: {
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
   let deviceConfigOverride: {
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -157,6 +172,14 @@ describe('CampaignRolloutService', () => {
   // beforeEach ไม่ได้ จึงให้ provider อ่านจากตัวแปรนี้ตอนสร้าง service ใหม่
   let configApplyMode: ConfigApplyMode;
   let rolloutEvents: RolloutEvents;
+  // ตัวส่ง Config ไป Server กลาง — null = ไม่ได้ต่อ (provider ถูก @Optional)
+  let central: {
+    pushConfig: jest.Mock;
+    pushFirmware: jest.Mock;
+    findPreviousSuccessfulFirmwareVersion?: jest.Mock;
+  } | null;
+  // ดาวน์โหลดไฟล์ Firmware จาก Object Storage — ใช้แค่ตอน push ให้ Server กลาง
+  let firmwareStorage: { downloadObject: jest.Mock };
 
   async function buildService(): Promise<CampaignRolloutService> {
     const built = await Test.createTestingModule({
@@ -174,6 +197,10 @@ describe('CampaignRolloutService', () => {
           provide: ConfigDefinitionService,
           useValue: configDefinitionService,
         },
+        { provide: FirmwareStorageService, useValue: firmwareStorage },
+        ...(central
+          ? [{ provide: CentralDeviceService, useValue: central }]
+          : []),
       ],
     }).compile();
     rolloutEvents = built.get(RolloutEvents);
@@ -183,7 +210,17 @@ describe('CampaignRolloutService', () => {
 
   beforeEach(async () => {
     configApplyMode = 'mock';
-    campaign = { findUnique: jest.fn().mockResolvedValue(sampleCampaign) };
+    central = null;
+    firmwareStorage = {
+      downloadObject: jest.fn().mockResolvedValue(Buffer.from('fake-bin')),
+    };
+    campaign = {
+      findUnique: jest.fn().mockResolvedValue(sampleCampaign),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'field-apply-system-campaign-id' }),
+    };
     campaignTarget = { findMany: jest.fn().mockResolvedValue(groupTargets) };
     campaignRollout = {
       create: jest.fn().mockResolvedValue(sampleRollout),
@@ -196,6 +233,7 @@ describe('CampaignRolloutService', () => {
       count: jest.fn(),
     };
     campaignRolloutTarget = {
+      create: jest.fn(),
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
@@ -209,11 +247,15 @@ describe('CampaignRolloutService', () => {
       findUniqueOrThrow: jest.fn(),
     };
     config = { findUnique: jest.fn().mockResolvedValue(approvedConfig) };
-    firmware = { findUnique: jest.fn().mockResolvedValue(storedFirmware) };
+    firmware = {
+      findUnique: jest.fn().mockResolvedValue(storedFirmware),
+      findFirst: jest.fn(),
+    };
     device = {
       findMany: jest
         .fn()
         .mockResolvedValue([installedDeviceA, installedDeviceB]),
+      findUnique: jest.fn(),
       update: jest.fn(),
     };
     // ไม่มี per-device override ที่ approved ค้างอยู่ (default) — เทสที่
@@ -579,6 +621,582 @@ describe('CampaignRolloutService', () => {
       });
     });
 
+    describe('applyMode central (ส่ง Config ไป Server กลาง)', () => {
+      const activeFor = (r: CampaignRollout): CampaignRollout => ({
+        ...r,
+        status: 'active',
+      });
+      const pendingTarget = {
+        id: 't-1',
+        rolloutId: approvedRollout.id,
+        deviceId: 'DEV-0001',
+      };
+
+      const centralFields = { 'gps.send_interval_sec': 20 };
+
+      async function releaseInCentralMode() {
+        configApplyMode = 'central';
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        config.findUnique.mockResolvedValue({
+          ...approvedConfig,
+          fields: centralFields,
+        });
+        return service.release(approvedRollout.id, otherOperation);
+      }
+
+      it('บันทึก applyMode "central" สั่ง Server กลางแล้วเก็บรหัสคำสั่งไว้ที่ target (ยังไม่นับผล) โดยไม่ใช้ applier เดิม', async () => {
+        central = {
+          pushConfig: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-10050',
+            configVersion: 7,
+          }),
+          pushFirmware: jest.fn(),
+        };
+
+        await releaseInCentralMode();
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: approvedRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            status: 'active',
+            applyMode: 'central',
+          }) as Partial<CampaignRollout>,
+        });
+        // ถามเฉพาะเครื่อง pending ที่ยังไม่เคยสั่ง Server กลาง
+        expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              rolloutId: approvedRollout.id,
+              status: 'pending',
+              centralCommandId: null,
+            },
+          }),
+        );
+        expect(central.pushConfig).toHaveBeenCalledWith(
+          'DEV-0001',
+          centralFields,
+        );
+        expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+          where: { id: 't-1' },
+          data: expect.objectContaining({
+            centralCommandId: 'CMD-10050',
+          }) as Record<string, unknown>,
+        });
+        expect(configApplier.applyConfig).not.toHaveBeenCalled();
+        // ยังไม่ตัดสินผล: ผลจริงมาจาก poll
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        // ลง AuditLog การนำ Config ไปใช้ พร้อมรหัสคำสั่ง (ไม่เก็บค่า)
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            action: 'apply-config',
+            metadata: expect.objectContaining({
+              deviceId: 'DEV-0001',
+              centralCommandId: 'CMD-10050',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        });
+      });
+
+      it.each([
+        ['rejected', 'กล่อง DEV-0001 ยังไม่อยู่ในทะเบียนของ delivery-server'],
+        ['unavailable', 'Server กลางไม่ตอบภายใน 5000 มิลลิวินาที'],
+      ])(
+        'ส่งไม่ได้ (%s) -> นับเป็นล้มเหลวทันทีพร้อมเหตุผล (เข้า Auto Pause ตามกฎเดิม) ไม่เก็บรหัสคำสั่ง',
+        async (kind, reason) => {
+          central = {
+            pushConfig: jest.fn().mockResolvedValue({ kind, reason }),
+            pushFirmware: jest.fn(),
+          };
+          configApplyMode = 'central';
+          service = await buildService();
+          const record = jest
+            .spyOn(service, 'recordTargetResult')
+            .mockResolvedValue(true);
+          campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+          campaignRollout.findUniqueOrThrow.mockResolvedValue(
+            activeFor({ ...approvedRollout, applyMode: 'central' }),
+          );
+          campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+
+          await service.release(approvedRollout.id, otherOperation);
+
+          expect(record).toHaveBeenCalledWith(
+            'DEV-0001',
+            { configId: approvedConfig.id },
+            false,
+            reason,
+            approvedRollout.id,
+          );
+          expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it('ไม่ได้เปิดการเชื่อมต่อ Server กลาง (ไม่มี provider) -> นับเป็นล้มเหลวพร้อมเหตุผล ไม่ค้างเงียบ', async () => {
+        central = null;
+        configApplyMode = 'central';
+        service = await buildService();
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+        campaignRollout.findUnique.mockResolvedValue(approvedRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+
+        await service.release(approvedRollout.id, otherOperation);
+
+        expect(record).toHaveBeenCalledWith(
+          'DEV-0001',
+          { configId: approvedConfig.id },
+          false,
+          expect.stringContaining('CENTRAL_MODE'),
+          approvedRollout.id,
+        );
+      });
+    });
+
+    describe('applyMode central (ส่ง Firmware ไป Server กลาง)', () => {
+      const activeFor = (r: CampaignRollout): CampaignRollout => ({
+        ...r,
+        status: 'active',
+      });
+      const approvedFirmwareRollout: CampaignRollout = {
+        ...sampleRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: storedFirmware.id,
+        status: 'approved',
+      };
+      const otherOperation: ActingUser = { id: 'op-2', role: 'Operation' };
+      const pendingTarget = {
+        id: 't-1',
+        rolloutId: approvedFirmwareRollout.id,
+        deviceId: installedDeviceB.deviceId,
+      };
+      const firmwareBytes = Buffer.from('fake-bin-content');
+
+      async function releaseInCentralMode() {
+        configApplyMode = 'central';
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(approvedFirmwareRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedFirmwareRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(firmwareBytes);
+        return service.release(approvedFirmwareRollout.id, otherOperation);
+      }
+
+      it('ดาวน์โหลดไฟล์จาก Object Storage แล้วสั่ง Server กลาง เก็บรหัสคำสั่งไว้ที่ target (ยังไม่นับผล, ไม่เขียน Dual Partition)', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-1',
+          }),
+        };
+
+        await releaseInCentralMode();
+
+        expect(firmwareStorage.downloadObject).toHaveBeenCalledWith(
+          storedFirmware.objectKey,
+        );
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          firmwareBytes,
+          { firmwareVersion: storedFirmware.version },
+        );
+        expect(campaignRolloutTarget.update).toHaveBeenCalledWith({
+          where: { id: 't-1' },
+          data: expect.objectContaining({
+            centralCommandId: 'CMD-FW-1',
+          }) as Record<string, unknown>,
+        });
+        // ยังไม่ตัดสินผลหรือเขียน Dual Partition: ผลจริงมาจาก poll
+        expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        expect(device.update).not.toHaveBeenCalled();
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            action: 'confirm-firmware-install',
+            metadata: expect.objectContaining({
+              deviceId: installedDeviceB.deviceId,
+              centralCommandId: 'CMD-FW-1',
+            }) as Record<string, unknown>,
+          }) as Record<string, unknown>,
+        });
+      });
+
+      it('Firmware Rollback โหมด central (isRollback=true) -> แนบ allowDowngrade: true ให้ Server กลาง ไม่ใช้ fast-path switchPartition', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-ROLLBACK-1',
+          }),
+        };
+        configApplyMode = 'central';
+        service = await buildService();
+        const rollbackRollout = {
+          ...approvedFirmwareRollout,
+          isRollback: true,
+          rollbackOfId: 'rollout-bad',
+        };
+        campaignRollout.findUnique.mockResolvedValue(rollbackRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...rollbackRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(firmwareBytes);
+
+        await service.release(rollbackRollout.id, otherOperation);
+
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          firmwareBytes,
+          { firmwareVersion: storedFirmware.version, allowDowngrade: true },
+        );
+        // ไม่ใช่ fast-path mock — Server กลางไม่มีช่องสั่งสลับพาร์ทิชันจากนอก
+        expect(firmwareRollbackExecutor.switchPartition).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['rejected', 'กล่อง DEV-0002 ยังไม่อยู่ในทะเบียนของ delivery-server'],
+        ['unavailable', 'Server กลางไม่ตอบภายใน 5000 มิลลิวินาที'],
+      ])(
+        'ส่งไม่ได้ (%s) -> นับเป็นล้มเหลวทันทีพร้อมเหตุผล ไม่เก็บรหัสคำสั่ง',
+        async (kind, reason) => {
+          central = {
+            pushConfig: jest.fn(),
+            pushFirmware: jest.fn().mockResolvedValue({ kind, reason }),
+          };
+          configApplyMode = 'central';
+          service = await buildService();
+          const record = jest
+            .spyOn(service, 'recordTargetResult')
+            .mockResolvedValue(true);
+          campaignRollout.findUnique.mockResolvedValue(approvedFirmwareRollout);
+          campaignRollout.findUniqueOrThrow.mockResolvedValue(
+            activeFor({ ...approvedFirmwareRollout, applyMode: 'central' }),
+          );
+          campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+          firmware.findUnique.mockResolvedValue(storedFirmware);
+          device.findMany.mockResolvedValue([installedDeviceB]);
+          firmwareStorage.downloadObject.mockResolvedValue(firmwareBytes);
+
+          await service.release(approvedFirmwareRollout.id, otherOperation);
+
+          expect(record).toHaveBeenCalledWith(
+            installedDeviceB.deviceId,
+            { firmwareId: storedFirmware.id },
+            false,
+            reason,
+            approvedFirmwareRollout.id,
+          );
+          expect(campaignRolloutTarget.update).not.toHaveBeenCalled();
+        },
+      );
+
+      // review B #362 รอบ 1/2 — downloadObject() เดิมอยู่นอก try/catch ทำให้
+      // Object Storage ล่ม/หาไฟล์ไม่เจอ -> exception หลุดออกจาก
+      // autoApplyFirmware() -> Rollout ค้าง active ตลอดไป (approve ซ้ำไม่ได้,
+      // resume ใช้ได้แค่ตอน paused) ต้องนับเป็น target failed ตามปกติแทน
+      it('ดาวน์โหลดไฟล์จาก Object Storage ล้มเหลว (throw) -> นับ target failed ทันที ไม่ throw ออกไป ไม่สั่ง Server กลาง', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn(),
+        };
+        configApplyMode = 'central';
+        service = await buildService();
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+        campaignRollout.findUnique.mockResolvedValue(approvedFirmwareRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...approvedFirmwareRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockRejectedValue(
+          new Error('MinIO ไม่ตอบ'),
+        );
+
+        await expect(
+          service.release(approvedFirmwareRollout.id, otherOperation),
+        ).resolves.toBeDefined();
+
+        expect(central.pushFirmware).not.toHaveBeenCalled();
+        expect(record).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          { firmwareId: storedFirmware.id },
+          false,
+          expect.stringContaining('MinIO ไม่ตอบ'),
+          approvedFirmwareRollout.id,
+        );
+      });
+    });
+
+    describe('confirmCentralFirmwareSuccess', () => {
+      it('เขียน Dual Partition bookkeeping สำเร็จ -> recordTargetResult(true, ...)', async () => {
+        device.findUnique.mockResolvedValue({
+          deviceId: installedDeviceB.deviceId,
+          activePartition: 'A',
+        });
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+
+        const claimed = await service.confirmCentralFirmwareSuccess(
+          installedDeviceB.deviceId,
+          storedFirmware.id,
+          'rollout-1',
+          'กล่องยืนยันแล้ว',
+        );
+
+        expect(claimed).toBe(true);
+        expect(device.update).toHaveBeenCalledWith({
+          where: { deviceId: installedDeviceB.deviceId },
+          data: {
+            activePartition: 'B',
+            partitionBFirmwareId: storedFirmware.id,
+          },
+        });
+        expect(record).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          { firmwareId: storedFirmware.id },
+          true,
+          'กล่องยืนยันแล้ว',
+          'rollout-1',
+        );
+      });
+
+      it('เขียน Dual Partition bookkeeping ไม่สำเร็จ -> recordTargetResult(false, ...) ไม่นับว่าติดตั้งสำเร็จ', async () => {
+        device.findUnique.mockResolvedValue({
+          deviceId: installedDeviceB.deviceId,
+          activePartition: 'A',
+        });
+        device.update.mockRejectedValueOnce(new Error('db down'));
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+
+        await service.confirmCentralFirmwareSuccess(
+          installedDeviceB.deviceId,
+          storedFirmware.id,
+          'rollout-1',
+          'กล่องยืนยันแล้ว',
+        );
+
+        expect(record).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          { firmwareId: storedFirmware.id },
+          false,
+          expect.stringContaining('Dual Partition'),
+          'rollout-1',
+        );
+      });
+
+      it('ไม่พบ Device -> recordTargetResult(false, ...) ไม่เขียน partition', async () => {
+        device.findUnique.mockResolvedValue(null);
+        const record = jest
+          .spyOn(service, 'recordTargetResult')
+          .mockResolvedValue(true);
+
+        await service.confirmCentralFirmwareSuccess(
+          'DEV-9999',
+          storedFirmware.id,
+          'rollout-1',
+          'กล่องยืนยันแล้ว',
+        );
+
+        expect(device.update).not.toHaveBeenCalled();
+        expect(record).toHaveBeenCalledWith(
+          'DEV-9999',
+          { firmwareId: storedFirmware.id },
+          false,
+          expect.stringContaining('ไม่พบ Device'),
+          'rollout-1',
+        );
+      });
+    });
+
+    describe('createFieldApplyRollout / startFieldApplyRollout (docs/25 §3.2/§3.5, Q2/Q4)', () => {
+      const requestedBy = 'st-requester-1';
+      const decidedBy = 'op-approver-1';
+      // แยกเป็น 2 เมธอดตาม review B #362 รอบ 2 — createFieldApplyRollout()
+      // รับ tx ของผู้เรียกตรงๆ (ไม่ผ่าน this.prisma.$transaction ของตัวเอง)
+      // ใช้ mock object เดียวกับที่ prismaMock อื่นๆ ใช้ก็ได้เพราะ
+      // getOrCreateFieldApplySystemCampaign() รับแค่ { campaign }
+      const fakeTx = () =>
+        ({
+          campaign,
+          campaignRollout,
+          campaignRolloutTarget,
+          auditLog,
+        }) as unknown as Prisma.TransactionClient;
+
+      describe('createFieldApplyRollout', () => {
+        it('ยังไม่มี Campaign ระบบ -> สร้างใหม่ แล้วสร้าง Rollout เครื่องเดียวข้าม pending_approval ไปเป็น active ทันที (ไม่เรียก autoApplyConfig)', async () => {
+          campaign.findFirst.mockResolvedValue(null);
+          campaign.create.mockResolvedValue({ id: 'new-system-campaign' });
+          campaignRollout.create.mockResolvedValue({
+            id: 'field-rollout-1',
+            campaignId: 'new-system-campaign',
+          });
+          const autoApplyConfig = jest.spyOn(
+            service as unknown as {
+              autoApplyConfig: (
+                r: unknown,
+                a: string,
+              ) => Promise<CampaignRollout>;
+            },
+            'autoApplyConfig',
+          );
+
+          const result = await service.createFieldApplyRollout(fakeTx(), {
+            requestId: 'req-1',
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            requestedBy,
+            approvedBy: decidedBy,
+          });
+
+          expect(campaign.create).toHaveBeenCalledTimes(1);
+          expect(campaignRollout.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              campaignId: 'new-system-campaign',
+              payloadType: 'Config',
+              configId: approvedConfig.id,
+              status: 'active',
+              targetCount: 1,
+              createdBy: requestedBy,
+              approvedBy: decidedBy,
+            }) as Record<string, unknown>,
+          });
+          const createCalls = campaignRollout.create.mock.calls as unknown[][];
+          const createCall = createCalls[0][0] as {
+            data: { approvedAt: unknown; activeWindowStartedAt: unknown };
+          };
+          expect(createCall.data.approvedAt).toBeInstanceOf(Date);
+          expect(createCall.data.activeWindowStartedAt).toBeInstanceOf(Date);
+          expect(campaignRolloutTarget.create).toHaveBeenCalledWith({
+            data: { rolloutId: 'field-rollout-1', deviceId: 'DEV-0001' },
+          });
+          expect(autoApplyConfig).not.toHaveBeenCalled();
+          expect(result).toEqual({ rolloutId: 'field-rollout-1' });
+        });
+
+        it('มี Campaign ระบบอยู่แล้ว -> ใช้ตัวเดิม ไม่สร้างซ้ำ', async () => {
+          campaign.findFirst.mockResolvedValue({
+            id: 'existing-system-campaign',
+          });
+          campaignRollout.create.mockResolvedValue({ id: 'field-rollout-2' });
+
+          await service.createFieldApplyRollout(fakeTx(), {
+            requestId: 'req-2',
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            requestedBy,
+            approvedBy: decidedBy,
+          });
+
+          expect(campaign.create).not.toHaveBeenCalled();
+          const createCalls = campaignRollout.create.mock.calls as unknown[][];
+          const createCall = createCalls[0][0] as {
+            data: { campaignId: string };
+          };
+          expect(createCall.data.campaignId).toBe('existing-system-campaign');
+        });
+
+        it('applyMode ใช้โหมดระบบปัจจุบัน (CONFIG_APPLY_MODE) เหมือน release() ปกติ', async () => {
+          configApplyMode = 'central';
+          service = await buildService();
+          campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
+          campaignRollout.create.mockResolvedValue({ id: 'field-rollout-3' });
+
+          await service.createFieldApplyRollout(fakeTx(), {
+            requestId: 'req-3',
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            requestedBy,
+            approvedBy: decidedBy,
+          });
+
+          const createCalls = campaignRollout.create.mock.calls as unknown[][];
+          const createCall = createCalls[0][0] as {
+            data: { applyMode: string };
+          };
+          expect(createCall.data.applyMode).toBe('central');
+        });
+
+        it('เขียน AuditLog action create ผ่าน tx ของผู้เรียก (ไม่ใช่ this.prisma)', async () => {
+          campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
+          campaignRollout.create.mockResolvedValue({ id: 'field-rollout-4' });
+
+          await service.createFieldApplyRollout(fakeTx(), {
+            requestId: 'req-4',
+            deviceId: 'DEV-0001',
+            configId: approvedConfig.id,
+            requestedBy,
+            approvedBy: decidedBy,
+          });
+
+          expect(auditLog.create).toHaveBeenCalledWith({
+            data: {
+              userId: requestedBy,
+              auditModule: 'campaign',
+              action: 'create',
+            },
+          });
+        });
+      });
+
+      describe('startFieldApplyRollout', () => {
+        it('โหลด Rollout ด้วย id แล้วส่งต่อ autoApplyConfig() ทันที (เรียกหลัง tx ของผู้เรียก commit แล้ว)', async () => {
+          campaignRollout.findUniqueOrThrow.mockResolvedValue({
+            id: 'field-rollout-1',
+            campaignId: 'new-system-campaign',
+          });
+          const autoApplyConfig = jest
+            .spyOn(
+              service as unknown as {
+                autoApplyConfig: (
+                  r: unknown,
+                  a: string,
+                ) => Promise<CampaignRollout>;
+              },
+              'autoApplyConfig',
+            )
+            .mockResolvedValue(sampleRollout);
+
+          const result = await service.startFieldApplyRollout(
+            'field-rollout-1',
+            decidedBy,
+          );
+
+          expect(campaignRollout.findUniqueOrThrow).toHaveBeenCalledWith({
+            where: { id: 'field-rollout-1' },
+          });
+          expect(autoApplyConfig).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'field-rollout-1' }),
+            decidedBy,
+          );
+          expect(result).toBe(sampleRollout);
+        });
+      });
+    });
+
     describe('applyMode (docs/19 §3)', () => {
       const activeFor = (r: CampaignRollout): CampaignRollout => ({
         ...r,
@@ -634,7 +1252,7 @@ describe('CampaignRolloutService', () => {
         expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
       });
 
-      it('Firmware payload เป็น mock เสมอแม้ระบบตั้ง real (ยังไม่มีเส้นทางให้อุปกรณ์ดึง Firmware)', async () => {
+      it('Firmware payload เป็น mock เสมอแม้ระบบตั้ง real (ไม่มีเส้นทาง real ให้อุปกรณ์ดึง Firmware เองเลย)', async () => {
         configApplyMode = 'real';
         service = await buildService();
         const firmwareRollout: CampaignRollout = {
@@ -656,6 +1274,52 @@ describe('CampaignRolloutService', () => {
             applyMode: 'mock',
           }) as Partial<CampaignRollout>,
         });
+      });
+
+      it('Firmware payload ตามโหมดระบบ central ได้จริง (bug ที่เจอตอนทดสอบกับกล่องจริง — ลืมอัปเดต release() ตอนเพิ่ม central push ของ Firmware ใน #362)', async () => {
+        configApplyMode = 'central';
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-REGRESSION',
+          }),
+        };
+        service = await buildService();
+        const firmwareRollout: CampaignRollout = {
+          ...approvedRollout,
+          payloadType: CampaignPayloadType.Firmware,
+          configId: null,
+          firmwareId: storedFirmware.id,
+        };
+        campaignRollout.findUnique.mockResolvedValue(firmwareRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...firmwareRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([
+          {
+            id: 't-fw-1',
+            rolloutId: firmwareRollout.id,
+            deviceId: installedDeviceB.deviceId,
+          },
+        ]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(Buffer.from('bin'));
+
+        await service.release(firmwareRollout.id, otherOperation);
+
+        expect(campaignRollout.updateMany).toHaveBeenCalledWith({
+          where: { id: firmwareRollout.id, status: 'approved' },
+          data: expect.objectContaining({
+            applyMode: 'central',
+          }) as Partial<CampaignRollout>,
+        });
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          expect.any(Buffer),
+          { firmwareVersion: storedFirmware.version },
+        );
       });
 
       it('Rollout ที่มี applyMode อยู่แล้ว (Rollback สืบทอดมา) -> คงค่าเดิม ไม่ใช้โหมดระบบ', async () => {
@@ -2276,6 +2940,152 @@ describe('CampaignRolloutService', () => {
       expect(result.isRollback).toBe(true);
     });
 
+    describe('payloadType Firmware', () => {
+      const badFirmwareRollout: CampaignRollout = {
+        ...badRollout,
+        payloadType: CampaignPayloadType.Firmware,
+        configId: null,
+        firmwareId: 'fw-current',
+      };
+
+      beforeEach(() => {
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
+      });
+
+      it('หา Firmware เดิมจาก Dual Partition bookkeeping ของอุปกรณ์ตัวแทน ไม่ใช่ประวัติ Campaign (#362 ส่วนขยาย)', async () => {
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'B',
+          partitionAFirmwareId: 'fw-old',
+          partitionBFirmwareId: 'fw-current',
+        });
+        campaignRollout.create.mockResolvedValue({
+          ...badFirmwareRollout,
+          id: 'rollout-new',
+          status: 'pending_approval',
+          configId: null,
+          firmwareId: 'fw-old',
+          isRollback: true,
+          rollbackOfId: badFirmwareRollout.id,
+          targetCount: 2,
+          createdBy: operation.id,
+        });
+
+        await service.rollback(
+          campaignId,
+          badFirmwareRollout.id,
+          {},
+          operation,
+        );
+
+        expect(device.findUnique).toHaveBeenCalledWith({
+          where: { deviceId: installedDeviceA.deviceId },
+        });
+        // ไม่ค้นประวัติ Campaign เลยสำหรับ Firmware (ต่างจาก Config)
+        expect(campaignRollout.findFirst).not.toHaveBeenCalled();
+        expect(campaignRollout.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            payloadType: CampaignPayloadType.Firmware,
+            configId: null,
+            firmwareId: 'fw-old',
+          }) as Partial<CampaignRollout>,
+        });
+      });
+
+      it('พาร์ทิชันที่ไม่ active ของอุปกรณ์ตัวแทนไม่มี Firmware เลย -> BadRequestException', async () => {
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+
+        await expect(
+          service.rollback(campaignId, badFirmwareRollout.id, {}, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(campaignRollout.create).not.toHaveBeenCalled();
+      });
+
+      // fallback พี่เลี้ยงแนะนำ — Dual Partition bookkeeping ของเราไม่มีของเก่า
+      // เลย (เช่นอุปกรณ์ลงทะเบียนก่อนมี initialFirmwareId) ไปถามประวัติคำสั่ง
+      // จาก Server กลางตรงๆ แทน
+      it('ไม่มีของเก่าใน Dual Partition bookkeeping เลย -> fallback ถามประวัติ Server กลาง เจอเวอร์ชันเดิม -> ใช้เวอร์ชันนั้น', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn(),
+          findPreviousSuccessfulFirmwareVersion: jest
+            .fn()
+            .mockResolvedValue('1.0.0'),
+        };
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+        firmware.findFirst.mockResolvedValue({ id: 'fw-old-from-central' });
+        campaignRollout.create.mockResolvedValue({
+          ...badFirmwareRollout,
+          id: 'rollout-new',
+          status: 'pending_approval',
+          configId: null,
+          firmwareId: 'fw-old-from-central',
+          isRollback: true,
+          rollbackOfId: badFirmwareRollout.id,
+          targetCount: 2,
+          createdBy: operation.id,
+        });
+
+        await service.rollback(
+          campaignId,
+          badFirmwareRollout.id,
+          {},
+          operation,
+        );
+
+        expect(
+          central.findPreviousSuccessfulFirmwareVersion,
+        ).toHaveBeenCalledWith(installedDeviceA.deviceId);
+        expect(firmware.findFirst).toHaveBeenCalledWith({
+          where: {
+            version: '1.0.0',
+            deviceModelCompatibility: { has: installedDeviceA.deviceModel },
+          },
+          select: { id: true },
+        });
+        expect(campaignRollout.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            firmwareId: 'fw-old-from-central',
+          }) as Partial<CampaignRollout>,
+        });
+      });
+
+      it('fallback ถาม Server กลางแล้วก็ไม่เจออะไรที่ตรงในคลัง Firmware ของเรา -> ยัง BadRequestException', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn(),
+          findPreviousSuccessfulFirmwareVersion: jest
+            .fn()
+            .mockResolvedValue(null),
+        };
+        service = await buildService();
+        campaignRollout.findUnique.mockResolvedValue(badFirmwareRollout);
+        device.findUnique.mockResolvedValue({
+          ...installedDeviceA,
+          activePartition: 'A',
+          partitionAFirmwareId: 'fw-current',
+          partitionBFirmwareId: null,
+        });
+
+        await expect(
+          service.rollback(campaignId, badFirmwareRollout.id, {}, operation),
+        ).rejects.toThrow(BadRequestException);
+        expect(campaignRollout.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('excludeDeviceIds เอาเครื่องออก 1 เครื่อง -> targetCount เหลือ 1', async () => {
       await service.rollback(
         campaignId,
@@ -2604,7 +3414,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
       expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
         where: { id: pendingTarget.id, status: 'pending' },
@@ -2642,7 +3454,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
     });
 
@@ -2672,7 +3486,9 @@ describe('CampaignRolloutService', () => {
             configId: approvedConfig.id,
           },
         },
-        include: { rollout: true },
+        include: {
+          rollout: { include: { campaign: { select: { name: true } } } },
+        },
       });
     });
 
@@ -2713,7 +3529,9 @@ describe('CampaignRolloutService', () => {
               configId: approvedConfig.id,
             },
           },
-          include: { rollout: true },
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         // ครั้งที่สอง (fallback) ไม่มี rolloutId — match ด้วย payload เหมือนก่อน #264
         expect(campaignRolloutTarget.findFirst).toHaveBeenNthCalledWith(2, {
@@ -2725,7 +3543,9 @@ describe('CampaignRolloutService', () => {
               configId: approvedConfig.id,
             },
           },
-          include: { rollout: true },
+          include: {
+            rollout: { include: { campaign: { select: { name: true } } } },
+          },
         });
         expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
           where: { id: pendingTarget.id, status: 'pending' },
@@ -2748,6 +3568,57 @@ describe('CampaignRolloutService', () => {
 
         expect(result).toBe(true);
         expect(campaignRolloutTarget.findFirst).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(['central', 'real'] as const)(
+        'target เป็นของ Rollout โหมด %s + fallbackToPayload (ปุ่มเดิมฝั่ง Mobile) -> ไม่บันทึกผลปลอมจาก mock ทับผลจริงที่กำลังรอ (docs/25 §5/§5.1, Q7)',
+        async (applyMode) => {
+          const centralRollout: CampaignRollout = {
+            ...activeRollout,
+            applyMode,
+          };
+          const centralTarget = {
+            ...pendingTarget,
+            rollout: centralRollout,
+          };
+          campaignRolloutTarget.findFirst.mockResolvedValueOnce(centralTarget);
+
+          const result = await service.recordTargetResult(
+            installedDeviceA.deviceId,
+            { configId: approvedConfig.id },
+            true,
+            'ok',
+            activeRollout.id,
+            { fallbackToPayload: true },
+          );
+
+          expect(result).toBe(false);
+          expect(campaignRolloutTarget.updateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it('target เป็นของ Rollout โหมด central แต่เรียกแบบไม่เปิด fallbackToPayload (path autoApplyConfig/autoApplyFirmware เอง) -> บันทึกผลตามปกติ ไม่ถูกบล็อก', async () => {
+        const centralRollout: CampaignRollout = {
+          ...activeRollout,
+          applyMode: 'central',
+        };
+        const centralTarget = { ...pendingTarget, rollout: centralRollout };
+        campaignRolloutTarget.findFirst.mockResolvedValueOnce(centralTarget);
+        countsForSuccess();
+
+        const result = await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+          activeRollout.id,
+        );
+
+        expect(result).toBe(true);
+        expect(campaignRolloutTarget.updateMany).toHaveBeenCalledWith({
+          where: { id: centralTarget.id, status: 'pending' },
+          data: { status: 'success', resultDetail: 'ok' },
+        });
       });
 
       it('ไม่เปิด fallbackToPayload (path autoApply*/rollback ที่ส่ง rollout.id ของตัวเอง) -> หาด้วย rolloutId ไม่เจอก็คืน false ไม่ไปแย่ง target ของ rollout อื่น', async () => {
@@ -3093,11 +3964,13 @@ describe('CampaignRolloutService', () => {
     let failedEvents: RolloutFailedEvent[];
     let statusEvents: RolloutStatusChangedEvent[];
     let updatedEvents: RolloutResultUpdatedEvent[];
+    let fieldApplyEvents: FieldApplyResultEvent[];
 
     beforeEach(() => {
       failedEvents = [];
       statusEvents = [];
       updatedEvents = [];
+      fieldApplyEvents = [];
       rolloutEvents.on(
         ROLLOUT_RESULT_UPDATED_EVENT,
         (e: RolloutResultUpdatedEvent) => updatedEvents.push(e),
@@ -3108,6 +3981,9 @@ describe('CampaignRolloutService', () => {
       rolloutEvents.on(
         ROLLOUT_STATUS_CHANGED_EVENT,
         (e: RolloutStatusChangedEvent) => statusEvents.push(e),
+      );
+      rolloutEvents.on(FIELD_APPLY_RESULT_EVENT, (e: FieldApplyResultEvent) =>
+        fieldApplyEvents.push(e),
       );
       // ข้อมูลที่อ่านหลัง commit เพื่อประกอบ event
       campaignRollout.findUnique.mockResolvedValue({
@@ -3359,6 +4235,82 @@ describe('CampaignRolloutService', () => {
       expect(statusEvents).toEqual([]);
     });
 
+    describe('field-apply-result (docs/25 §3.5 ข้อ 5, #370)', () => {
+      it('Rollout เป็นของคำขอส่ง Config หน้างาน (Campaign ระบบ) + สำเร็จ -> ส่ง field-apply-result outcome succeeded', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          ...pendingTarget,
+          rollout: {
+            ...activeRollout,
+            campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          },
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'สำเร็จ',
+        );
+
+        expect(fieldApplyEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            outcome: 'succeeded',
+            detail: 'สำเร็จ',
+          },
+        ]);
+      });
+
+      it('Rollout เป็นของคำขอส่ง Config หน้างาน + ล้มเหลว -> ส่ง field-apply-result outcome failed', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          ...pendingTarget,
+          rollout: {
+            ...activeRollout,
+            campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          },
+        });
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          false,
+          'ล้ม',
+        );
+
+        expect(fieldApplyEvents).toEqual([
+          { rolloutId: activeRollout.id, outcome: 'failed', detail: 'ล้ม' },
+        ]);
+      });
+
+      it('Rollout เป็น Campaign ปกติ (ไม่ใช่ระบบคำขอหน้างาน) -> ไม่ส่ง field-apply-result', async () => {
+        campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
+        campaignRolloutTarget.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(9)
+          .mockResolvedValueOnce(0);
+
+        await service.recordTargetResult(
+          installedDeviceA.deviceId,
+          { configId: approvedConfig.id },
+          true,
+          'ok',
+        );
+
+        expect(fieldApplyEvents).toEqual([]);
+      });
+    });
+
     it('listener ที่ throw แบบ sync -> ไม่ทำให้การบันทึกผลล้ม', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(pendingTarget);
       mockCounts({
@@ -3390,6 +4342,7 @@ describe('CampaignRolloutService', () => {
         campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
           id: 'rt-1',
           rolloutId: activeRollout.id,
+          rollout: { campaign: { name: 'กลุ่มรถบรรทุก' } },
         });
         campaignRolloutTarget.count.mockResolvedValueOnce(3); // ยังเหลือ pending
 
@@ -3415,6 +4368,7 @@ describe('CampaignRolloutService', () => {
         campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
           id: 'rt-1',
           rolloutId: activeRollout.id,
+          rollout: { campaign: { name: 'กลุ่มรถบรรทุก' } },
         });
         campaignRolloutTarget.count
           .mockResolvedValueOnce(0) // pending ในทรานแซกชัน
@@ -3443,6 +4397,25 @@ describe('CampaignRolloutService', () => {
 
         expect(result).toBe(false);
         expect(campaignRolloutTarget.count).not.toHaveBeenCalled();
+      });
+
+      it('เป็นของคำขอส่ง Config หน้างาน (Campaign ระบบ) -> ส่ง field-apply-result outcome skipped_offline ด้วย (docs/25 §3.5 ข้อ 5, #370)', async () => {
+        campaignRolloutTarget.findUniqueOrThrow.mockResolvedValue({
+          id: 'rt-1',
+          rolloutId: activeRollout.id,
+          rollout: { campaign: { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } },
+        });
+        campaignRolloutTarget.count.mockResolvedValueOnce(3); // ยังเหลือ pending
+
+        await service.markTargetSkippedOffline('rt-1', 'ข้าม');
+
+        expect(fieldApplyEvents).toEqual([
+          {
+            rolloutId: activeRollout.id,
+            outcome: 'skipped_offline',
+            detail: 'ข้าม',
+          },
+        ]);
       });
     });
 

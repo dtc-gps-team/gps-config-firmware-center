@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
   S3Client,
@@ -87,5 +88,20 @@ export class FirmwareStorageService implements OnModuleInit {
         ContentType: input.contentType,
       }),
     );
+  }
+
+  /** ดึงไฟล์ไบนารีกลับมาทั้งไฟล์ — ใช้ตอนส่ง Firmware ให้ Server กลาง
+   * (`CentralDeviceService.pushFirmware()`) ไฟล์ Firmware ไม่ใหญ่พอที่ต้อง
+   * stream ทีละส่วน (ไม่เหมือนไฟล์วิดีโอ/รูปขนาดใหญ่) โหลดเข้า memory ทั้งก้อน
+   * ง่ายกว่า */
+  async downloadObject(key: string): Promise<Buffer> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.Body as AsyncIterable<Buffer>) {
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
   }
 }

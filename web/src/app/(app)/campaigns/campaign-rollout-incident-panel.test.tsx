@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -99,6 +99,49 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
     expect(
       screen.getByRole("button", { name: "สั่ง Rollback" }),
     ).toBeInTheDocument();
+  });
+
+  it("สถานะปกติ (ไม่ได้หยุด) -> มีแค่ปุ่ม ไม่มีการ์ดและหัวข้อ Incident & Rollback", () => {
+    authState.role = "Operation";
+    render(
+      <CampaignRolloutIncidentPanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "active" })}
+        targets={[]}
+        onResumed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Incident & Rollback")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "สั่ง Rollback" }),
+    ).toBeInTheDocument();
+  });
+
+  it("เปิดแผง Rollback แล้วขึ้นเป็นหน้าต่างยืนยัน ยกเลิกแล้วปิดได้", () => {
+    authState.role = "Operation";
+    render(
+      <CampaignRolloutIncidentPanel
+        campaignId="campaign-1"
+        rollout={makeRollout({ status: "active" })}
+        targets={[]}
+        onResumed={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "สั่ง Rollback" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "ยกเลิก" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("role ST (ไม่ใช่ Operation) -> ไม่เห็นปุ่มไหนเลย ไม่ render อะไร", () => {
