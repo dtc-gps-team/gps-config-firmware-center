@@ -525,11 +525,77 @@ model Device {
   // (ดู prisma.service.ts) กัน `GET /devices`/`GET /devices/{id}` ที่ทุก Role
   // อ่านได้รั่ว hash ออกไปโดยไม่ตั้งใจ
   apiKeyHash           String?
+
+  // docs/23 §3.4 — Deviation จาก GPS_Data_Dictionary.xlsx (ไม่มี telemetry ใน
+  // Dictionary) พี่เลี้ยงให้รับ GPS telemetry จากกล่องใน backend นี้ (docs/23 §1)
+  // key ของ telemetry ต่อกล่อง (SHA-256 hex) — null = ใช้ key กลางจาก env
+  // `TELEMETRY_INGEST_KEY_SHA256` (§7.2) ยังไม่มีทางตั้งค่าในรอบแรก · omit เป็น
+  // default ใน `PrismaService` เหมือน `apiKeyHash`
+  telemetryKeyHash        String?
+  // เวอร์ชัน firmware ที่กล่องรายงานเองผ่าน telemetry (ต่างจาก
+  // partitionA/BFirmwareId ที่ช่างยืนยัน) — §6 · เขียนเมื่อค่าเปลี่ยน หรือเลื่อน
+  // `reportedFirmwareAt` แบบ throttle ≥ 1 นาทีเมื่อค่าเดิม
+  reportedFirmwareVersion String?
+  reportedFirmwareAt      DateTime?
+  telemetry               DeviceTelemetry[]
+  events                  DeviceEvent[]
 }
 
 enum DevicePartitionSlot {
   A
   B
+}
+
+// ---------------------------------------------------------------------------
+// GPS telemetry + เหตุการณ์จากกล่อง (docs/23) — กล่องส่งเองผ่าน
+// `POST /device-sync/:deviceId/telemetry/:key` (`DeviceTelemetryController`)
+//
+// Deviation จาก GPS_Data_Dictionary.xlsx (ไม่มีตาราง telemetry) และจาก
+// Build Reference ข้อ 187 (เดิม telemetry ไประบบเดิม) — พี่เลี้ยงยืนยัน
+// 20 ต.ค. 2569 ให้รับใน backend นี้ · ไม่ลง AuditLog (ผลจากเครื่อง ไม่ใช่การกระทำ
+// ของคน — docs/19 §14 ข้อ 1) · ลบแถวที่ `receivedAt` เก่ากว่า
+// `TELEMETRY_RETENTION_DAYS` วัน (ค่าเริ่มต้น 30 — §3.3)
+// ---------------------------------------------------------------------------
+
+model DeviceTelemetry {
+  id             String   @id @default(uuid())
+  deviceId       String
+  // fix = false กล่องส่งพิกัดเริ่มต้น (ไม่ใช่ null) — UI/กฎที่ใช้ตำแหน่งต้องกรอง fix = true (docs/23 Q7)
+  latitude       Float
+  longitude      Float
+  speedKmh       Float? // กล่องส่ง null ได้ (ไม่มี fix และไม่ใช่โหมดจำลอง)
+  fix            Boolean
+  satellites     Int?
+  locationSource String // "gps" หรือ "default"
+  simulated      Boolean  @default(false) // กล่องส่ง simulated: true เฉพาะโหมดจำลอง
+  recordedAt     DateTime // `timestamp` ของกล่อง · ว่าง/อ่านไม่ได้ -> receivedAt (Q7)
+  receivedAt     DateTime @default(now()) // เวลาที่ backend รับจริง
+  device         Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Restrict)
+
+  @@index([deviceId, recordedAt])
+  @@index([receivedAt]) // ตัวลบข้อมูลเก่า (§3.3)
+}
+
+// เก็บเหตุการณ์จากกล่องไว้ก่อน ยังไม่สร้าง Incident/Notification (docs/23 Q2 — A:
+// Incident ในระบบนี้คือปัญหาเชิงเทคนิคของ Config/Firmware และยังไม่รู้ว่าใคร
+// ควรได้รับแจ้งเรื่องขับเร็ว/ออกนอกเขต)
+model DeviceEvent {
+  id            String   @id @default(uuid())
+  deviceId      String
+  eventType     String // OVERSPEED | GEOFENCE_EXIT | GEOFENCE_ENTER (DEVICE_EVENT_TYPES)
+  latitude      Float?
+  longitude     Float?
+  speedKmh      Float?
+  speedLimitKmh Float? // OVERSPEED
+  distanceM     Float? // GEOFENCE_* (firmware 1.2.0)
+  radiusM       Float? // GEOFENCE_* (firmware 1.2.0)
+  simulated     Boolean  @default(false)
+  occurredAt    DateTime // `timestamp` ของกล่อง · ว่าง -> receivedAt
+  receivedAt    DateTime @default(now())
+  device        Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Restrict)
+
+  @@index([deviceId, occurredAt])
+  @@index([receivedAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,7 +1256,9 @@ model CampaignTarget {
 // เมื่อ Failure เกิน Threshold") เป็น "Auto Pause" ตัวเดียวที่เอกสารต้นฉบับ
 // เรียกชื่อนี้ตรงๆ (เงื่อนไขอื่นในตาราง 11.2 เช่น Reboot Loop/Offline/GPS
 // data gap/Version Verification ใช้คำตอบสนองอื่น ไม่ใช่ Auto Pause — ตัด
-// ออกเพราะต้องพึ่ง telemetry จากอุปกรณ์ที่ระบบนี้ไม่มีช่องทางรับเข้ามาเลย)
+// ออกเพราะต้องพึ่ง telemetry จากอุปกรณ์ที่ระบบนี้ไม่มีช่องทางรับเข้ามาเลย ·
+// ตั้งแต่ docs/23 รับ telemetry ได้แล้ว (`DeviceTelemetry`) แต่กฎเหล่านี้ยังไม่ทำ
+// — อยู่นอกขอบเขต docs/23 §11)
 // นับเป็นสถานะ "ยังไม่จบ" เหมือน active/pending_approval (ดู
 // `OPEN_CAMPAIGN_ROLLOUT_STATUSES`) — resume กลับ active หรือ rollback ได้
 enum CampaignRolloutStatus {

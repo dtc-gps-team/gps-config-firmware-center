@@ -35,7 +35,9 @@ tags:
       endpoint ที่ **อุปกรณ์เรียกเอง** (v3.56, docs/19) ดึงงาน Config ที่รออยู่
       และรายงานผลกลับ ยืนยันตัวตนด้วย header `X-Device-Api-Key`
       (`deviceApiKey`) ไม่ใช่ JWT · ใช้กับ Rollout ที่ปล่อยในโหมด
-      `DEVICE_CONFIG_APPLY_MODE=real` (`CampaignRollout.applyMode = real`)
+      `DEVICE_CONFIG_APPLY_MODE=real` (`CampaignRollout.applyMode = real`) ·
+      (v3.63, docs/23) กล่องส่ง GPS telemetry และเหตุการณ์เข้ามาที่
+      `reportDeviceData` ซึ่งใช้ key ใน path แทน header
   - name: device
     description: การทำงานกับตัวกล่อง — ทดสอบการเชื่อมต่อ/สัญญาณ
   - name: device-model
@@ -203,6 +205,68 @@ paths:
           description: ไม่แนบ `X-Device-Api-Key` หรือ deviceId/key ไม่ถูกต้อง
         "404":
           description: ไม่พบงานนี้ของอุปกรณ์เครื่องนี้
+
+  /device-sync/{deviceId}/telemetry/{key}:
+    post:
+      tags: [device-sync]
+      operationId: reportDeviceData
+      summary: กล่องส่ง GPS telemetry หรือเหตุการณ์ (v3.63, docs/23 §4)
+      description: >-
+        เรียกโดย**กล่อง** (firmware arduino_gps) ที่ตั้ง `data_server` ใน Config
+        ให้ชี้มาที่ URL นี้ · กล่องส่งทั้ง telemetry (ทุก `gps.send_interval_sec`
+        วินาที) และเหตุการณ์มาที่ URL เดียวกัน แยกด้วย `event_type`: ไม่มี =
+        telemetry · มี = เหตุการณ์ (`OVERSPEED`, `GEOFENCE_EXIT`, `GEOFENCE_ENTER`)
+
+        **ยืนยันตัวตนด้วย `key` ใน path** ไม่ใช่ JWT และไม่ใช่ `X-Device-Api-Key`
+        เพราะกล่องไม่แนบ header ยืนยันตัวตนตอนส่งข้อมูล (docs/23 §7) · `key`
+        เป็น**ความลับ** (สุ่ม 32 byte base64url) backend เก็บแค่ SHA-256 · ใช้
+        key ของเครื่อง (`Device.telemetryKeyHash`) ถ้ามี ไม่งั้นใช้ key กลางจาก
+        env `TELEMETRY_INGEST_KEY_SHA256` · ปฏิเสธเครื่อง `decommissioned` ·
+        ไม่เปลี่ยนสถานะเครื่องและไม่เขียน `lastSeenAt`
+
+        จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
+        · `firmware_version` ที่กล่องรายงานเก็บที่ `Device.reportedFirmwareVersion`
+        ไม่เก็บทุกแถว · ไม่ลง AuditLog และยังไม่สร้าง Incident/Notification จาก
+        เหตุการณ์ · ข้อมูลเก่ากว่า `TELEMETRY_RETENTION_DAYS` วัน (30) ถูกลบเอง
+      security: []   # key อยู่ใน path parameter `key` (ไม่ใช่ bearerAuth/deviceApiKey)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+          example: BOX-0001
+        - in: path
+          name: key
+          required: true
+          description: key ลับของ telemetry (base64url 43 ตัวอักษร) — ห้าม log
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceDataReport"
+      responses:
+        "200":
+          description: บันทึกแล้ว (กล่องไม่อ่าน body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceDataReportResponse"
+        "400":
+          description: >-
+            body ผิดรูปแบบ (field ที่ไม่รู้จัก, พิกัดผิด, `event_type` ไม่รู้จัก,
+            telemetry ไม่มี `fix`/`location_source`) หรือ `device_id` ใน body
+            ไม่ตรงกับ `deviceId` ใน path
+        "401":
+          description: >-
+            deviceId หรือ key ไม่ถูกต้อง — ข้อความเดียวกันทุกกรณี (ไม่มีเครื่องนี้,
+            key ผิด, เครื่อง `decommissioned`, ใช้ key กลางกับเครื่องที่มี key
+            ของตัวเอง)
+        "429":
+          description: ส่งถี่เกินกำหนด (ต่อ `deviceId` หรือต่อ IP)
 
   /health:
     get:
@@ -3800,6 +3864,78 @@ components:
           enum: [already-reported, rollout-closed]
           description: มีเฉพาะตอน `accepted` เป็น false
 
+    DeviceDataReport:
+      type: object
+      description: >-
+        (v3.63, docs/23 §5) payload ของ firmware arduino_gps ตามที่ส่งจริง —
+        **snake_case โดยตั้งใจ** (ต่างจาก camelCase ทั้งระบบ — firmware ที่ติดตั้ง
+        แล้วถือว่าแก้ไม่ได้) · field ที่ไม่อยู่ในรายการนี้ได้ 400 ·
+        `fix`/`location_source` บังคับเฉพาะ telemetry (ไม่มี `event_type`)
+      required: [latitude, longitude, timestamp]
+      properties:
+        device_id:
+          type: string
+          maxLength: 50
+          description: ถ้ามีต้องตรงกับ `deviceId` ใน path
+        event_type:
+          type: string
+          enum: [OVERSPEED, GEOFENCE_EXIT, GEOFENCE_ENTER]
+          description: มี = เหตุการณ์ · ไม่มี = telemetry
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: >-
+            `fix = false` เป็นพิกัดเริ่มต้นของกล่อง ไม่ใช่ตำแหน่งจริง — ผู้ใช้ข้อมูล
+            ต้องกรอง `fix = true`
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        speed_kmh:
+          type: number
+          minimum: 0
+          nullable: true
+          description: null เมื่อยังไม่มี fix และไม่ใช่โหมดจำลอง
+        fix:
+          type: boolean
+        location_source:
+          type: string
+          enum: [gps, default]
+        satellites:
+          type: integer
+          minimum: 0
+        firmware_version:
+          type: string
+          maxLength: 32
+        speed_limit_kmh:
+          type: number
+          description: OVERSPEED
+        distance_m:
+          type: number
+          description: GEOFENCE_* (firmware 1.2.0)
+        radius_m:
+          type: number
+          description: GEOFENCE_* (firmware 1.2.0)
+        simulated:
+          type: boolean
+          description: ส่งเฉพาะโหมดจำลองของกล่อง
+        timestamp:
+          type: string
+          maxLength: 40
+          description: >-
+            ISO 8601 UTC จาก GPS · `""` เมื่อกล่องยังไม่มีเวลา GPS (backend ใช้
+            เวลาที่รับแทน)
+          example: "2026-10-27T03:00:05Z"
+
+    DeviceDataReportResponse:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          enum: [true]
+
     HealthStatus:
       type: object
       required: [status, database]
@@ -5894,6 +6030,18 @@ components:
           type: string
           format: date-time
           nullable: true
+        reportedFirmwareVersion:
+          type: string
+          nullable: true
+          description: >-
+            (v3.63, docs/23 §6) เวอร์ชัน Firmware ที่กล่องรายงานเองผ่าน telemetry
+            (ต่างจาก Firmware ที่ช่างยืนยันติดตั้ง) · null = ยังไม่เคยรายงาน
+        reportedFirmwareAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            เวลาล่าสุดที่กล่องรายงาน `reportedFirmwareVersion` (ละเอียดระดับนาที)
         customer:
           type: object
           allOf:
