@@ -21,6 +21,7 @@ import { toLegacyFields } from '../config-sync-writer/legacy-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { type LegacyConfigWrite } from '../config-sync-writer/config-sync-writer.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { flattenFields } from './config-fields';
 import { CreateConfigDto } from './dto/create-config.dto';
 import { QueryConfigDto } from './dto/query-config.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
@@ -213,9 +214,11 @@ export class ConfigService {
    * Stage 2 (#26) — Import Config จากไฟล์ JSON (v3.2 รองรับ JSON เป็นจุดเริ่มต้น
    * ตาม openapi.yaml importConfig summary — CSV/อื่นๆ เป็น scope อนาคต)
    *
-   * เข้า flow เดียวกับฟอร์ม (createConfig) เป๊ะๆ: parse ไฟล์ -> validate ด้วย
-   * CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน ไม่มี
-   * business rule พิเศษแยกสำหรับ import (ตาม openapi.yaml: "แปลงเป็น
+   * เข้า flow เดียวกับฟอร์ม (createConfig) เป๊ะๆ: parse ไฟล์ -> แปลง `settings`
+   * ซ้อนชั้นเป็น `fields` คีย์แบบมีจุดถ้าเป็น format ใหม่ (ดู `flattenFields()`,
+   * รีวิวพี่เลี้ยง 27 ต.ค. — JSON export ต้องตรงกับที่ Server กลางรับจริง) ->
+   * validate ด้วย CreateConfigDto ตัวเดียวกับที่ form ใช้ -> create() ตัวเดียวกัน
+   * ไม่มี business rule พิเศษแยกสำหรับ import อื่น (ตาม openapi.yaml: "แปลงเป็น
    * DeviceConfigDraft แล้ว เข้า flow ทดสอบ/อนุมัติเดียวกับฟอร์ม")
    *
    * จงใจไม่แยก interface `ConfigImporter`/`parseConfigFile` ตาม Build
@@ -264,10 +267,39 @@ export class ConfigService {
       );
     }
 
+    // รองรับไฟล์ import 2 format (ตามที่พี่เลี้ยงขอให้ตรงกับของจริง — JSON ที่
+    // ส่งเข้า Server กลางจริงใช้ wrapper `settings` ซ้อนชั้น ดู
+    // `putDeviceConfig()` central-device.client.ts): `settings` ซ้อนชั้น
+    // (format ใหม่ ตรงกับที่หน้า Config Detail export ให้ตั้งแต่รอบนี้) หรือ
+    // `fields` คีย์แบบมีจุดแบบเดิม (ไฟล์เก่าที่ export ไว้ก่อนหน้านี้ยังใช้ได้) —
+    // มีพร้อมกันทั้งคู่ถือว่ากำกวม ปฏิเสธตรงนี้ไม่เดาให้
+    const hasFields = Object.hasOwn(parsed, 'fields');
+    const hasSettings = Object.hasOwn(parsed, 'settings');
+    if (hasFields && hasSettings) {
+      throw new BadRequestException(
+        'ไฟล์ import มีทั้ง "fields" และ "settings" พร้อมกันไม่ได้ — ใช้อย่างใดอย่างหนึ่ง',
+      );
+    }
+    let normalized: Record<string, unknown> = parsed as Record<string, unknown>;
+    if (hasSettings) {
+      const { settings, ...rest } = normalized;
+      if (
+        settings === null ||
+        typeof settings !== 'object' ||
+        Array.isArray(settings)
+      ) {
+        throw new BadRequestException('"settings" ต้องเป็น object');
+      }
+      normalized = {
+        ...rest,
+        fields: flattenFields(settings as Record<string, unknown>),
+      };
+    }
+
     // `clonedFromId` ใช้ได้เฉพาะตอนสร้างจากฟอร์มโคลน (POST /config) ไม่รับผ่าน
     // import — DTO ตัวเดียวกันกับ createConfig จึง whitelist field นี้ไว้ ต้องดัก
     // เองตรงนี้ ไม่งั้นไฟล์ import จะอ้างต้นทางได้ทั้งที่ไม่ได้ผ่านฟอร์มโคลน
-    if ('clonedFromId' in parsed) {
+    if ('clonedFromId' in normalized) {
       throw new BadRequestException(
         'ไฟล์ import ใส่ clonedFromId ไม่ได้ (ระบุต้นทางได้เฉพาะตอนโคลน Config จากหน้าเว็บ)',
       );
@@ -281,7 +313,7 @@ export class ConfigService {
     // ConfigFieldDefinition (Semantic Validation) เกิดที่ create() ด้านล่าง
     // ผ่าน validateFields() ทีเดียว (ปิด Gap TODO เดิมแล้ว — ตัดสินใจร่วมกับ
     // B และพี่เลี้ยง 2569-09)
-    const dto = plainToInstance(CreateConfigDto, parsed, {
+    const dto = plainToInstance(CreateConfigDto, normalized, {
       excludeExtraneousValues: false,
     });
     const errors = await validate(dto, {

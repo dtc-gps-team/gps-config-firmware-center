@@ -150,6 +150,48 @@ describe("ConfigDetailView — mask ค่า sensitive", () => {
   });
 });
 
+describe("ConfigDetailView — JSON ที่คัดลอกได้เป็น 'settings' ซ้อนชั้น (รีวิวพี่เลี้ยง 27 ต.ค. — ต้องตรงกับ JSON ที่ Server กลางรับจริง)", () => {
+  beforeEach(() => {
+    configState.data = baseConfig;
+    configState.isLoading = false;
+  });
+
+  it("key แบบมีจุด -> JSON ที่โชว์/คัดลอกซ้อนชั้นเป็น settings ไม่ใช่ fields แบน", () => {
+    configState.data = {
+      ...baseConfig,
+      fields: { "gps.enabled": true, "gps.send_interval_sec": 10 },
+    };
+    definitionsState.data = [];
+    definitionsState.isLoading = false;
+
+    const { container } = render(<ConfigDetailView configId="c1" />);
+
+    const json = container.querySelector("pre code")?.textContent ?? "";
+    const parsed = JSON.parse(json);
+    expect(parsed.settings).toEqual({
+      gps: { enabled: true, send_interval_sec: 10 },
+    });
+    expect(parsed.fields).toBeUndefined();
+  });
+
+  it("รุ่นที่ key ไม่มีจุด (เช่น GT06N) -> settings แบนเหมือนเดิม (no-op)", () => {
+    configState.data = {
+      ...baseConfig,
+      fields: { APN1: "internet", MTYP: "1" },
+    };
+    definitionsState.data = [];
+    definitionsState.isLoading = false;
+
+    const { container } = render(<ConfigDetailView configId="c1" />);
+
+    const json = container.querySelector("pre code")?.textContent ?? "";
+    expect(JSON.parse(json).settings).toEqual({
+      APN1: "internet",
+      MTYP: "1",
+    });
+  });
+});
+
 describe("ConfigDetailView — แก้ UUID ดิบที่ 'สร้างโดย'/'ผู้อนุมัติ' (พบจาก UX/UI audit)", () => {
   beforeEach(() => {
     configState.data = baseConfig;

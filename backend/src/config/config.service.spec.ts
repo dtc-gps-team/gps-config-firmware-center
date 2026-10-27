@@ -560,6 +560,95 @@ describe('ConfigService', () => {
       ).rejects.toThrow(BadRequestException);
       expect(config.create).not.toHaveBeenCalled();
     });
+
+    it('format ใหม่ "settings" ซ้อนชั้น -> flatten เป็น "fields" คีย์มีจุดก่อน create() (รีวิวพี่เลี้ยง 27 ต.ค. — ให้ตรงกับ JSON ที่ Server กลางรับจริง)', async () => {
+      config.create.mockResolvedValue(draftConfig);
+      const file = makeMulterFile(
+        JSON.stringify({
+          name: 'ชุดตั้งค่านำเข้าแบบใหม่',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          settings: {
+            gps: { enabled: true, send_interval_sec: 10 },
+            data_server: { protocol: 'https', port: 443 },
+          },
+        }),
+      );
+
+      await service.importFromJson(file, 'json', configEngineer);
+
+      expect(config.create).toHaveBeenCalledWith({
+        data: {
+          name: 'ชุดตั้งค่านำเข้าแบบใหม่',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: {
+            'gps.enabled': true,
+            'gps.send_interval_sec': 10,
+            'data_server.protocol': 'https',
+            'data_server.port': 443,
+          },
+          createdBy: 'ce-1',
+        },
+      });
+    });
+
+    it('มีทั้ง "fields" และ "settings" พร้อมกัน -> BadRequestException (กำกวม ไม่เดาให้)', async () => {
+      const file = makeMulterFile(
+        JSON.stringify({
+          name: 'กำกวม',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          fields: { APN1: 'internet' },
+          settings: { gps: { enabled: true } },
+        }),
+      );
+
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('"settings" ไม่ใช่ object (เช่น string) -> BadRequestException', async () => {
+      const file = makeMulterFile(
+        JSON.stringify({
+          name: 'settings ผิดชนิด',
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          settings: 'not-an-object',
+        }),
+      );
+
+      await expect(
+        service.importFromJson(file, 'json', configEngineer),
+      ).rejects.toThrow(BadRequestException);
+      expect(config.create).not.toHaveBeenCalled();
+    });
+
+    it('"settings" ของรุ่นที่ไม่มี key แบบมีจุด (เช่น SMARTEYEPLUS) -> flatten แบบไม่มีผล (no-op)', async () => {
+      config.create.mockResolvedValue(draftConfig);
+      const file = makeMulterFile(
+        JSON.stringify({
+          name: 'ตัวอย่าง SMARTEYEPLUS',
+          deviceModel: 'SMARTEYEPLUS',
+          protocol: 'TCP',
+          settings: { APN1: 'internet', MTYP: '1', SIM1: '0812345678' },
+        }),
+      );
+
+      await service.importFromJson(file, 'json', configEngineer);
+
+      expect(config.create).toHaveBeenCalledWith({
+        data: {
+          name: 'ตัวอย่าง SMARTEYEPLUS',
+          deviceModel: 'SMARTEYEPLUS',
+          protocol: 'TCP',
+          fields: { APN1: 'internet', MTYP: '1', SIM1: '0812345678' },
+          createdBy: 'ce-1',
+        },
+      });
+    });
   });
 
   describe('simulate', () => {
