@@ -72,7 +72,9 @@ String configApplyRequestStatusLabel(ConfigApplyRequestStatus status) =>
       ConfigApplyRequestStatus.skippedOffline => 'กล่องออฟไลน์ ส่งไม่ถึง',
       ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธคำขอ',
       ConfigApplyRequestStatus.cancelled => 'ยกเลิกคำขอแล้ว',
-      ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ ไม่มีใครตัดสิน',
+      // หมดอายุได้ 2 แบบ (ไม่มีใครตัดสิน / อนุมัติแล้วไม่ได้กดส่ง) — เหตุผลจริง
+      // แสดงจาก `resultDetail` ใต้หัวข้อ
+      ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ',
     };
 
 /// docs/22 §6.2 — ป้าย Role ใช้ชื่อเดียวกับ Web (`ST`, `Operation`) ส่วนคำอธิบาย

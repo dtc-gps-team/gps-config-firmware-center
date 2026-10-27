@@ -272,6 +272,16 @@ class ApiClient {
     );
   }
 
+  /// `GET /devices/{deviceId}/central` — สถานะกล่องจาก Server กลาง (ออนไลน์,
+  /// เวอร์ชันที่กล่องรายงาน) · ทุก role ที่อ่าน device ได้ · ติดต่อ Server กลาง
+  /// ไม่ได้ยังได้ 200 (`reachable: false`)
+  Future<DeviceCentral> getDeviceCentral(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/devices/$deviceId/central'),
+      DeviceCentral.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/config` — Config ปัจจุบันของอุปกรณ์ (Config
   /// Override Phase 2, issue #211). 404 ถ้าอุปกรณ์ไม่มี Task สถานะ `completed`
   /// ที่ผูก `configId` ไว้เลย (ยังไม่เคย confirm install).

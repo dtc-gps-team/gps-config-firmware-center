@@ -979,6 +979,8 @@ class Device {
     this.imei,
     this.serialNumber,
     this.blackboxId,
+    this.hardwareRevisionCode,
+    this.bootloader,
     this.customer,
   });
 
@@ -996,6 +998,12 @@ class Device {
   final String? imei;
   final String? serialNumber;
   final String? blackboxId;
+
+  /// รหัสรุ่นย่อย/รอบผลิต และ Bootloader ของเครื่อง — string อิสระ nullable
+  /// (`Device.hardwareRevisionCode` / `Device.bootloader` ใน openapi) backend
+  /// ส่งมานานแล้ว Mobile เพิ่งนำมาแสดง (issue #386)
+  final String? hardwareRevisionCode;
+  final String? bootloader;
 
   /// ลูกค้าเจ้าของอุปกรณ์ (`customer: {id, companyName}`) — null = ยังไม่ผูก
   final Customer? customer;
@@ -1018,6 +1026,8 @@ class Device {
       imei: json['imei'] as String?,
       serialNumber: json['serialNumber'] as String?,
       blackboxId: json['blackboxId'] as String?,
+      hardwareRevisionCode: json['hardwareRevisionCode'] as String?,
+      bootloader: json['bootloader'] as String?,
       customer: json['customer'] is Map<String, dynamic>
           ? Customer.fromJson(json['customer'] as Map<String, dynamic>)
           : null,
@@ -1050,15 +1060,16 @@ enum DevicePayloadStatus {
 }
 
 /// `GET /devices/{deviceId}/status` — mirrors `DeviceStatus` in
-/// `docs/api/openapi.yaml` (v3.39). There is no online/offline or real
-/// check-in time yet (no `lastSeenAt` design), so [lastCheckInMessage] is
-/// `null` for now.
+/// `docs/api/openapi.yaml` · [lastCheckInMessage] ยังเป็น placeholder (`null`
+/// เสมอ) ฝั่ง backend · ออนไลน์ใช้ [online] / [lastSeenAt] (v3.56)
 class DeviceStatus {
   const DeviceStatus({
     required this.deviceId,
     required this.configStatus,
     required this.firmwareStatus,
     this.lastCheckInMessage,
+    this.lastSeenAt,
+    this.online = false,
     this.pendingFirmwareOverride,
     this.configRolloutId,
     this.firmwareRolloutId,
@@ -1068,6 +1079,14 @@ class DeviceStatus {
   final DevicePayloadStatus configStatus;
   final DevicePayloadStatus firmwareStatus;
   final String? lastCheckInMessage;
+
+  /// เวลาที่เครื่องเรียก `/device-sync/*` สำเร็จล่าสุด — `null` = ไม่เคยติดต่อ ·
+  /// กล่องโหมด central ต่อผ่าน ws-gateway ไม่เรียก endpoint นี้ ค่านี้จึงเป็น
+  /// `null` เสมอสำหรับกล่องพวกนั้น (ใช้ [DeviceCentral] แทน — ดู `DeviceOnline`)
+  final DateTime? lastSeenAt;
+
+  /// [lastSeenAt] อยู่ภายใน 5 นาทีล่าสุด (backend ตัดสิน) · backend เก่า → `false`
+  final bool online;
 
   /// คำขอ Firmware Override ที่ยังรอ Operation ตัดสินใจของเครื่องนี้ (PR #257,
   /// openapi v3.45) — `null` ถ้าไม่มี · เป็นสถานะของ**อุปกรณ์** ไม่ filter ด้วย
@@ -1092,6 +1111,10 @@ class DeviceStatus {
         json['firmwareStatus'] as String?,
       ),
       lastCheckInMessage: json['lastCheckInMessage'] as String?,
+      lastSeenAt: json['lastSeenAt'] is String
+          ? DateTime.tryParse(json['lastSeenAt'] as String)
+          : null,
+      online: json['online'] == true,
       pendingFirmwareOverride: json['pendingFirmwareOverride'] is Map
           ? DeviceFirmwareOverride.fromJson(
               (json['pendingFirmwareOverride'] as Map).cast<String, dynamic>(),
@@ -1101,6 +1124,55 @@ class DeviceStatus {
       firmwareRolloutId: json['firmwareRolloutId'] as String?,
     );
   }
+}
+
+/// กล่องหนึ่งเครื่องตามที่ Server กลางรายงาน — `CentralDevice` ใน openapi
+/// (ตัดเหลือ field ที่ Mobile ใช้)
+class CentralDeviceInfo {
+  const CentralDeviceInfo({
+    required this.online,
+    this.lastSeenAt,
+    this.reportedFirmwareVersion,
+    this.reportedConfigVersion,
+  });
+
+  final bool online;
+  final DateTime? lastSeenAt;
+
+  /// เวอร์ชันที่**กล่องรายงานเอง** (ไม่ใช่ค่าที่ระบบตั้งเป้าไว้)
+  final String? reportedFirmwareVersion;
+  final int? reportedConfigVersion;
+
+  factory CentralDeviceInfo.fromJson(Map<String, dynamic> json) {
+    final config = json['reportedConfigVersion'];
+    return CentralDeviceInfo(
+      online: json['online'] == true,
+      lastSeenAt: json['lastSeenAt'] is String
+          ? DateTime.tryParse(json['lastSeenAt'] as String)
+          : null,
+      reportedFirmwareVersion: json['reportedFirmwareVersion'] as String?,
+      reportedConfigVersion: config is num ? config.toInt() : null,
+    );
+  }
+}
+
+/// `GET /devices/{deviceId}/central` (`DeviceCentralView`) — [reachable]
+/// `false` = ติดต่อ Server กลางไม่ได้ · [device] `null` = Server กลางไม่รู้จัก
+/// กล่องนี้ (ไม่ใช่กล่องโหมด central)
+class DeviceCentral {
+  const DeviceCentral({required this.reachable, this.device});
+
+  final bool reachable;
+  final CentralDeviceInfo? device;
+
+  factory DeviceCentral.fromJson(Map<String, dynamic> json) => DeviceCentral(
+    reachable: json['reachable'] == true,
+    device: json['device'] is Map
+        ? CentralDeviceInfo.fromJson(
+            (json['device'] as Map).cast<String, dynamic>(),
+          )
+        : null,
+  );
 }
 
 /// ลูกค้าแบบย่อ — mirrors `GET /customers` (`CustomerSummary` backend-side,
