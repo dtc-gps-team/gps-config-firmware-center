@@ -158,9 +158,11 @@ DeviceApplyOptions fakeApplyOptions({
   List<ApplyOptionConfig>? configs,
   String? currentFirmwareVersion = '1.2.0',
   List<ApplyOptionFirmware>? firmwares,
+  ApplyOptionOpenRequest? openRequest,
 }) => DeviceApplyOptions(
   deviceId: deviceId,
   deviceInstalled: deviceInstalled,
+  openRequest: openRequest,
   currentFirmwareVersion: currentFirmwareVersion,
   firmwares:
       firmwares ??

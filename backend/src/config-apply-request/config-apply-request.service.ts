@@ -15,6 +15,7 @@ import {
   ConfigApplyRequestStatus,
   ConfigStatus,
   Device,
+  FieldApplyKind,
   Firmware,
   NotificationType,
   Prisma,
@@ -153,6 +154,17 @@ export interface ApplyOptionFirmware {
   isDowngrade: boolean;
 }
 
+/** คำขอที่ยังไม่จบของกล่องนี้ใน `GET /devices/{deviceId}/apply-options` — ขอใหม่
+ * ไม่ได้จนกว่าคำขอนี้จะจบ (create ตอบ 409) Mobile จึงบอกช่างตั้งแต่เปิดหน้าเลือก */
+export interface ApplyOptionOpenRequest {
+  kind: FieldApplyKind;
+  status: ConfigApplyRequestStatus;
+  configName: string | null;
+  firmwareVersion: string | null;
+  /** งานของคำขอนี้ — `null` เมื่อผู้เรียกไม่ได้ถืองานนั้น (ไม่เปิดเผยงานของช่างคนอื่น) */
+  taskId: string | null;
+}
+
 /** `GET /devices/{deviceId}/apply-options` (docs/28 §5.2, docs/27 B2) */
 export interface ApplyOptions {
   deviceId: string;
@@ -165,6 +177,8 @@ export interface ApplyOptions {
   currentFirmwareVersion: string | null;
   /** Firmware ที่ QA อนุมัติแล้ว + อัปโหลดสำเร็จ + รองรับรุ่นกล่อง ใหม่สุดก่อน */
   firmwares: ApplyOptionFirmware[];
+  /** คำขอที่ยังไม่จบของกล่องนี้ (`pending`/`approved`/`sending`) · `null` = ขอใหม่ได้ */
+  openRequest: ApplyOptionOpenRequest | null;
 }
 
 // งานที่ยังเปิดอยู่ — ใช้หา Config แนะนำ (mirror `OPEN_TASK_STATUSES` ใน task.service.ts)
@@ -247,7 +261,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       });
       if (open) {
         throw new ConflictException(
-          'เครื่องนี้มีคำขอส่ง Config ที่ยังไม่จบอยู่แล้ว — รอผลหรือยกเลิกคำขอเดิมก่อน',
+          `เครื่องนี้มีคำขอส่ง ${open.kind === 'firmware' ? 'Firmware' : 'Config'} ที่ยังไม่จบอยู่แล้ว — รอผลหรือยกเลิกคำขอเดิมก่อน`,
         );
       }
       await this.assertNoOpenRolloutTarget(tx, deviceId);
@@ -448,6 +462,34 @@ export class ConfigApplyRequestService implements OnModuleInit {
       configs: options,
       currentFirmwareVersion,
       firmwares: firmwareOptions,
+      openRequest: await this.findOpenRequest(deviceId, actor),
+    };
+  }
+
+  /** คำขอที่ยังไม่จบของกล่อง — เงื่อนไขเดียวกับที่ create ใช้ปฏิเสธคำขอซ้ำ */
+  private async findOpenRequest(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<ApplyOptionOpenRequest | null> {
+    const open = await this.prisma.configApplyRequest.findFirst({
+      where: { deviceId, status: { in: OPEN_CONFIG_APPLY_REQUEST_STATUSES } },
+      orderBy: { requestedAt: 'desc' },
+      select: {
+        kind: true,
+        status: true,
+        taskId: true,
+        config: { select: { name: true } },
+        firmware: { select: { version: true } },
+        task: { select: { assignedTo: true } },
+      },
+    });
+    if (!open) return null;
+    return {
+      kind: open.kind,
+      status: open.status,
+      configName: open.config?.name ?? null,
+      firmwareVersion: open.firmware?.version ?? null,
+      taskId: open.task.assignedTo === actor.id ? open.taskId : null,
     };
   }
 

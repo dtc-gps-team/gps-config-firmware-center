@@ -1308,6 +1308,54 @@ describe('ConfigApplyRequestService', () => {
         // โหมด mock ไม่มี Server กลาง — ไม่รู้เวอร์ชันในกล่อง
         currentFirmwareVersion: null,
         firmwares: [],
+        openRequest: null,
+      });
+    });
+
+    it('มีคำขอค้าง: บอกชนิด/สถานะ/สิ่งที่ขอ + taskId เมื่อผู้เรียกถืองานนั้น', async () => {
+      requests.findFirst.mockResolvedValue({
+        kind: 'firmware',
+        status: 'approved',
+        taskId: TASK_ID,
+        config: null,
+        firmware: { version: '1.0.0' },
+        task: { assignedTo: tech.id },
+      });
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.openRequest).toEqual({
+        kind: 'firmware',
+        status: 'approved',
+        configName: null,
+        firmwareVersion: '1.0.0',
+        taskId: TASK_ID,
+      });
+      expect(requests.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            deviceId: DEVICE_ID,
+            status: { in: ['pending', 'approved', 'sending'] },
+          },
+        }),
+      );
+    });
+
+    it('คำขอค้างเป็นของงานช่างคนอื่น: ไม่เปิดเผย taskId', async () => {
+      requests.findFirst.mockResolvedValue({
+        kind: 'config',
+        status: 'pending',
+        taskId: 'other-task',
+        config: { name: 'B ลูกค้าพิเศษ' },
+        firmware: null,
+        task: { assignedTo: 'someone-else' },
+      });
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.openRequest).toMatchObject({
+        configName: 'B ลูกค้าพิเศษ',
+        taskId: null,
       });
     });
 
