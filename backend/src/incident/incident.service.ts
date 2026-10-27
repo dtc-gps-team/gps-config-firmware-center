@@ -115,6 +115,33 @@ function rolloutIncidentDescription(
   );
 }
 
+/**
+ * ชื่อ/รายละเอียด Incident ของ Rollout เครื่องเดียวจากคำขอส่งเข้ากล่องจากหน้างาน
+ * (docs/27 §8, กลับมติ Q4 ของ docs/25 — เดิมไม่สร้าง Incident เพราะยังไม่มี
+ * hook อัปเดต `ConfigApplyRequest` ตอนนั้น ตอนนี้มีแล้ว) — ไม่ใช้คำว่า
+ * "Campaign"/เปอร์เซ็นต์เหมือน `rolloutIncidentDescription()` เพราะมีเครื่อง
+ * เดียวเสมอ บอกตรงๆ ว่าเครื่องไหนและทำไมถึงไม่สำเร็จ (ข้อความจาก §7.2)
+ */
+function fieldApplyIncidentTitle(
+  event: Pick<RolloutFailedEvent, 'kind' | 'failedDeviceIds'>,
+): string {
+  const deviceId = event.failedDeviceIds[0] ?? 'ไม่ทราบเครื่อง';
+  return event.kind === 'completed-with-skipped'
+    ? `คำขอส่งเข้ากล่องจากหน้างานส่งไม่ถึง (กล่องออฟไลน์): ${deviceId}`
+    : `คำขอส่งเข้ากล่องจากหน้างานล้มเหลว: ${deviceId}`;
+}
+
+function fieldApplyIncidentDescription(
+  event: Pick<RolloutFailedEvent, 'rolloutId' | 'sampleErrors'>,
+): string {
+  const detail = event.sampleErrors[0];
+  return (
+    `คำขอส่ง Config/Firmware จากหน้างานเข้าเครื่องนี้ไม่สำเร็จ` +
+    (detail ? ` — ${detail}` : '') +
+    ` (Rollout ${event.rolloutId})`
+  );
+}
+
 @Injectable()
 export class IncidentService implements OnModuleInit {
   private readonly logger = new Logger(IncidentService.name);
@@ -173,13 +200,15 @@ export class IncidentService implements OnModuleInit {
    * ลงครบที่โมดูล campaign อยู่แล้ว
    */
   async handleRolloutFailed(event: RolloutFailedEvent): Promise<void> {
-    // docs/25 §3.5 ข้อ 4/Q4 — Rollout เครื่องเดียวของคำขอส่ง Config จาก
-    // หน้างาน (`CampaignRolloutService.startFieldApplyRollout()`) ไม่สร้าง
-    // Incident แม้ failed/auto-pause — ความล้มเหลวรายคำขอแจ้งผู้ขอผ่าน
-    // notification พอ (ยังไม่มี hook จริงไปอัปเดต ConfigApplyRequest ณ ตอนนี้
-    // รอ B เพิ่ม model — แต่กัน Incident ไว้ก่อนเพราะ Rollout พวกนี้ถูกส่งไปที่
-    // Server กลางจริงแล้ว event นี้ก็ยิงมาได้แล้วตั้งแต่ตอนนี้)
-    if (event.campaignName === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) return;
+    // docs/27 §8 — กลับมติ Q4 ของ docs/25 §3.5 ข้อ 4: ตอนนั้นไม่สร้าง Incident
+    // ให้ Rollout เครื่องเดียวของคำขอส่งเข้ากล่องจากหน้างานเพราะยังไม่มี hook
+    // อัปเดต `ConfigApplyRequest` ให้ผู้ขอรู้ผลเอง — ตอนนี้มีแล้ว
+    // (`FIELD_APPLY_RESULT_EVENT`) แต่ Operation ที่อนุมัติก็ควรเห็นว่าคำขอที่
+    // ตัวเองอนุมัติไปไม่สำเร็จด้วย ไม่ใช่รู้แค่ฝั่งช่าง — สร้าง Incident ให้
+    // เหมือน Rollout ทั่วไป แค่ชื่อ/คำอธิบายเจาะจงเครื่องเดียว ไม่ใช้คำว่า
+    // "Campaign"/เปอร์เซ็นต์ (ดู `fieldApplyIncidentTitle`/`...Description`)
+    const isFieldApply =
+      event.campaignName === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME;
     try {
       const metadata: IncidentMetadata = {
         rolloutId: event.rolloutId,
@@ -191,11 +220,16 @@ export class IncidentService implements OnModuleInit {
         failedDeviceIds: event.failedDeviceIds,
         sampleErrors: event.sampleErrors,
       };
-      const title =
-        event.kind === 'auto-pause'
+      const title = isFieldApply
+        ? fieldApplyIncidentTitle(event)
+        : event.kind === 'auto-pause'
           ? `Rollout หยุดอัตโนมัติ: ${event.campaignName}`
           : `Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: ${event.campaignName}`;
-      const description = rolloutIncidentDescription(event);
+      const description = isFieldApply
+        ? fieldApplyIncidentDescription(event)
+        : rolloutIncidentDescription(event);
+      // ผูก Device (docs/27 §8) — มีเครื่องเดียวเสมอสำหรับ field-apply
+      const deviceId = isFieldApply ? (event.failedDeviceIds[0] ?? null) : null;
 
       const existing = await this.findRolloutIncident(event.rolloutId);
       if (existing) {
@@ -206,6 +240,7 @@ export class IncidentService implements OnModuleInit {
             description,
             severity: maxSeverity(existing.severity, event.severity),
             status: 'open',
+            deviceId: deviceId ?? existing.deviceId,
             metadata: metadata as Prisma.InputJsonValue,
           },
         });
@@ -223,6 +258,7 @@ export class IncidentService implements OnModuleInit {
           status: 'open',
           relatedConfigId: event.configId,
           relatedFirmwareId: event.firmwareId,
+          deviceId,
           source: INCIDENT_SOURCE.rolloutFailure,
           metadata: metadata as Prisma.InputJsonValue,
         },

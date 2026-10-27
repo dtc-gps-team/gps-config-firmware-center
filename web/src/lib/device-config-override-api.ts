@@ -50,6 +50,17 @@ export function listDeviceConfigOverrides(
   );
 }
 
+/** `GET /device-config-overrides/{id}` — หน้ารายละเอียดคำขอ 1 รายการ
+ * ดูได้ทุกสถานะ ไม่ใช่แค่ pending */
+export function getDeviceConfigOverride(
+  token: string,
+  id: string,
+): Promise<DeviceConfigOverride> {
+  return apiJson<DeviceConfigOverride>(`/device-config-overrides/${id}`, {
+    token,
+  });
+}
+
 /** `POST /device-config-overrides/{id}/approve` — เปลี่ยนเป็น `approved`
  * เท่านั้น ไม่ apply เข้าอุปกรณ์อัตโนมัติ ช่างต้องกด apply-config เองอีกครั้ง */
 export function approveDeviceConfigOverride(

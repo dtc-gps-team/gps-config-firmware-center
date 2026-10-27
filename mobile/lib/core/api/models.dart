@@ -585,6 +585,35 @@ class ApplyOptionFirmware {
       );
 }
 
+/// คำขอที่ยังไม่จบของกล่องใน `GET /devices/{deviceId}/apply-options` (v3.66) —
+/// ขอใหม่ไม่ได้จนกว่าคำขอนี้จะจบ หน้าเลือกจึงบอกช่างตั้งแต่เปิดหน้า
+class ApplyOptionOpenRequest {
+  const ApplyOptionOpenRequest({
+    required this.kind,
+    required this.status,
+    this.configName,
+    this.firmwareVersion,
+    this.taskId,
+  });
+
+  final FieldApplyKind kind;
+  final ConfigApplyRequestStatus status;
+  final String? configName;
+  final String? firmwareVersion;
+
+  /// งานของคำขอนี้ — `null` = เป็นงานของช่างคนอื่น (backend ไม่เปิดเผย)
+  final String? taskId;
+
+  factory ApplyOptionOpenRequest.fromJson(Map<String, dynamic> json) =>
+      ApplyOptionOpenRequest(
+        kind: FieldApplyKind.fromWire(json['kind']),
+        status: ConfigApplyRequestStatus.fromWire(json['status'] as String),
+        configName: json['configName'] as String?,
+        firmwareVersion: json['firmwareVersion'] as String?,
+        taskId: json['taskId'] as String?,
+      );
+}
+
 class DeviceApplyOptions {
   const DeviceApplyOptions({
     required this.deviceId,
@@ -592,6 +621,7 @@ class DeviceApplyOptions {
     required this.configs,
     this.currentFirmwareVersion,
     this.firmwares = const [],
+    this.openRequest,
   });
 
   final String deviceId;
@@ -607,6 +637,10 @@ class DeviceApplyOptions {
   /// (ก่อน v3.62) ไม่ส่ง = ว่าง
   final List<ApplyOptionFirmware> firmwares;
 
+  /// คำขอที่ยังไม่จบของกล่องนี้ · `null` = ขอใหม่ได้ (backend ก่อน v3.66 ไม่ส่ง —
+  /// รู้ตอนกดขอจาก 409 เหมือนเดิม)
+  final ApplyOptionOpenRequest? openRequest;
+
   factory DeviceApplyOptions.fromJson(Map<String, dynamic> json) =>
       DeviceApplyOptions(
         deviceId: json['deviceId'] as String,
@@ -620,6 +654,11 @@ class DeviceApplyOptions {
           for (final raw in (json['firmwares'] as List<dynamic>? ?? const []))
             ApplyOptionFirmware.fromJson(raw as Map<String, dynamic>),
         ],
+        openRequest: json['openRequest'] == null
+            ? null
+            : ApplyOptionOpenRequest.fromJson(
+                json['openRequest'] as Map<String, dynamic>,
+              ),
       );
 }
 

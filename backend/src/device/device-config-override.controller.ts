@@ -34,6 +34,7 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 // `DeviceConfigOverride.id` ตรงๆ ไม่ใช่ device) แต่ยังใช้ `DeviceService`
 // ตัวเดียวกัน (โมดูลเดียวกัน ไม่ต้องแยก provider ใหม่):
 //   GET  /device-config-overrides                — list (filter ?status=)
+//   GET  /device-config-overrides/:id             — รายละเอียดคำขอ 1 รายการ
 //   POST /device-config-overrides/:id/approve     — Operation อนุมัติ
 //   POST /device-config-overrides/:id/reject      — Operation ปฏิเสธ
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -49,6 +50,16 @@ export class DeviceConfigOverrideController {
     @Query() query: QueryDeviceConfigOverrideDto,
   ): Promise<DeviceConfigOverride[]> {
     return this.deviceService.listDeviceConfigOverrides(query.status);
+  }
+
+  // resource เดียวกับ list (action Read) — หน้ารายละเอียดคำขอ 1 รายการ
+  // ดูได้ทุกสถานะ ไม่ใช่แค่ pending (ต่างจาก approve/reject ที่บังคับ pending)
+  @Get(':id')
+  @RequirePermission('device-config-override', ActionType.Read)
+  getOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DeviceConfigOverride> {
+    return this.deviceService.getDeviceConfigOverride(id);
   }
 
   // resource `device-config-override` action Approve — Operation เท่านั้น

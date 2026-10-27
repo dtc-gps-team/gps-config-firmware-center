@@ -1208,6 +1208,36 @@ void _deviceStatusTests() {
   });
 
   test(
+    'DeviceApplyOptions.openRequest (v3.66) · backend เก่าไม่ส่ง = null',
+    () {
+      final options = DeviceApplyOptions.fromJson({
+        'deviceId': 'BOX-0001',
+        'deviceInstalled': true,
+        'configs': <dynamic>[],
+        'openRequest': {
+          'kind': 'firmware',
+          'status': 'approved',
+          'configName': null,
+          'firmwareVersion': '1.0.0',
+          'taskId': 't1',
+        },
+      });
+      final open = options.openRequest!;
+      expect(open.kind, FieldApplyKind.firmware);
+      expect(open.status, ConfigApplyRequestStatus.approved);
+      expect(open.firmwareVersion, '1.0.0');
+      expect(open.taskId, 't1');
+
+      final old = DeviceApplyOptions.fromJson({
+        'deviceId': 'BOX-0001',
+        'deviceInstalled': true,
+        'configs': <dynamic>[],
+      });
+      expect(old.openRequest, isNull);
+    },
+  );
+
+  test(
     'Task.assignee (v3.67 TaskDetail) · endpoint อื่น / backend เก่า = null',
     () {
       final base = {

@@ -127,6 +127,26 @@ function describe(command: RawCentralCommand): string {
 }
 
 /**
+ * ข้อความ `resultDetail` ที่อ่านง่ายกว่า `describe()` ดิบๆ สำหรับ `error_code`
+ * ที่รู้จักแน่ชัดว่าหมายถึงอะไร (docs/27 §7.2) — รหัสอื่นที่ไม่อยู่ในตารางนี้
+ * (รวมรหัสใหม่ที่ gateway อาจเพิ่มในอนาคต) ใช้ `describe()` เดิมเป็น fallback
+ * (ไม่ throw ไม่ว่ารหัสจะเป็นอะไร)
+ */
+const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
+  DEVICE_DISCONNECTED: 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที — ส่งไม่ผ่าน',
+  DEVICE_NO_RESPONSE: 'กล่องไม่ตอบกลับภายในเวลาที่กำหนด',
+  ROLLED_BACK: 'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
+  NEW_FIRMWARE_FAILED_HEALTH_CHECK:
+    'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
+  DOWNLOAD_TIMEOUT: 'ดาวน์โหลด Firmware ค้าง (เน็ตช้าหรือหลุด)',
+};
+
+function describeFailure(command: RawCentralCommand): string {
+  const code = command.error_code ?? '';
+  return FAILED_ERROR_CODE_MESSAGES[code] ?? describe(command);
+}
+
+/**
  * แปลงสถานะคำสั่งของ Server กลางเป็นผลของ Rollout
  * - SUCCESS = สำเร็จ (Server กลางยืนยันจากเวอร์ชันที่กล่องรายงานแล้ว)
  * - ดู `error_code` ก่อนสถานะ เพราะ gateway ตั้งสถานะต่างกันตามรหัส (ตรวจจากโค้ด
@@ -134,7 +154,9 @@ function describe(command: RawCentralCommand): string {
  *   SUPERSEDED/CANCELLED/TTL_EXPIRED ตั้งเป็น EXPIRED
  *   - DEVICE_OFFLINE, TTL_EXPIRED = กล่องไม่ได้รับ (ข้าม ไม่นับล้มเหลว)
  *   - SUPERSEDED, CANCELLED = ถูกแทนที่หรือยกเลิก (ข้าม ไม่นับล้มเหลว)
- * - FAILED / ROLLED_BACK / DEVICE_NO_RESPONSE / รหัสอื่นที่ไม่รู้จัก = ล้มเหลว
+ * - FAILED / ROLLED_BACK / DEVICE_NO_RESPONSE / รหัสอื่นที่ไม่รู้จัก = ล้มเหลว —
+ *   ข้อความอ่านง่ายตาม `error_code` ที่รู้จัก (docs/27 §7.2, ดู
+ *   `FAILED_ERROR_CODE_MESSAGES`) รหัสอื่นที่ไม่รู้จัก fallback เป็น `describe()`
  * - สถานะระหว่างทาง (PENDING ... REBOOTING) = ยังรอ
  */
 export function classifyCentralCommand(
@@ -145,9 +167,11 @@ export function classifyCentralCommand(
 
   const code = command.error_code ?? '';
   if (['DEVICE_OFFLINE', 'TTL_EXPIRED'].includes(code)) {
+    // ข้อความทั่วไปไม่เจาะจง Config/Firmware (docs/27 §7.2 — ใช้กับ payload
+    // ทั้งสองชนิด ฟังก์ชันนี้ไม่รู้ payloadType ของ Rollout)
     return {
       kind: 'skipped',
-      detail: `กล่องออฟไลน์ ไม่ได้รับ Config (${describe(command)})`,
+      detail: `กล่องออฟไลน์ คำสั่งไปไม่ถึง (${describe(command)})`,
     };
   }
   if (['SUPERSEDED', 'CANCELLED'].includes(code)) {
@@ -156,5 +180,5 @@ export function classifyCentralCommand(
       detail: `คำสั่งถูกแทนที่หรือยกเลิกที่ Server กลาง (${describe(command)})`,
     };
   }
-  return { kind: 'failed', detail: describe(command) };
+  return { kind: 'failed', detail: describeFailure(command) };
 }

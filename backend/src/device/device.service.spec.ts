@@ -1388,6 +1388,17 @@ describe('DeviceService', () => {
   });
 
   describe('confirmFirmwareInstall (issue #181)', () => {
+    it('โหมด central (docs/27 §11) -> 409 ทันที ไม่แตะ device/firmware เลย', async () => {
+      deviceConfigApplyMode = 'central';
+
+      await expect(
+        service.confirmFirmwareInstall('DTC-0001', { firmwareId: 'fw-1' }, st),
+      ).rejects.toThrow(ConflictException);
+
+      expect(device.findUnique).not.toHaveBeenCalled();
+      expect(firmware.findUnique).not.toHaveBeenCalled();
+    });
+
     it('device installed + firmware stored/approved + รุ่นตรง -> เขียน AuditLog แล้วคืนผลสำเร็จ', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       firmware.findUnique.mockResolvedValue(readyFirmware);
@@ -2967,6 +2978,32 @@ describe('DeviceService', () => {
     });
   });
 
+  describe('getDeviceConfigOverride (หน้ารายละเอียดคำขอ 1 รายการ)', () => {
+    it('พบแถว -> คืนแถวนั้นไม่ว่าสถานะอะไร', async () => {
+      const row = {
+        id: 'cov-1',
+        deviceId: 'DTC-0001',
+        status: 'approved',
+      };
+      deviceConfigOverride.findUnique.mockResolvedValue(row);
+
+      const result = await service.getDeviceConfigOverride('cov-1');
+
+      expect(result).toBe(row);
+      expect(deviceConfigOverride.findUnique).toHaveBeenCalledWith({
+        where: { id: 'cov-1' },
+      });
+    });
+
+    it('ไม่พบ -> NotFoundException', async () => {
+      deviceConfigOverride.findUnique.mockResolvedValue(null);
+
+      await expect(service.getDeviceConfigOverride('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('overrideDeviceFirmware (Firmware Override รายเครื่อง, Sprint 3 แถวที่ 24)', () => {
     const dto = {
       firmwareId: readyFirmware.id,
@@ -2994,6 +3031,17 @@ describe('DeviceService', () => {
       device.findUnique.mockResolvedValue(installedDevice);
       firmware.findUnique.mockResolvedValue(readyFirmware);
       mockOverrideQueries({});
+    });
+
+    it('โหมด central (docs/27 §11) -> 409 ทันที ไม่แตะ device/firmware เลย', async () => {
+      deviceConfigApplyMode = 'central';
+
+      await expect(
+        service.overrideDeviceFirmware('DTC-0001', dto, st),
+      ).rejects.toThrow(ConflictException);
+
+      expect(device.findUnique).not.toHaveBeenCalled();
+      expect(firmware.findUnique).not.toHaveBeenCalled();
     });
 
     it('ไม่มี override เดิม -> สร้าง versionNumber 1 สถานะ pending, เขียน AuditLog, คืนแถวที่สร้าง', async () => {
@@ -3146,6 +3194,17 @@ describe('DeviceService', () => {
     };
 
     describe('approveDeviceFirmwareOverride', () => {
+      it('โหมด central (docs/27 §11) -> 409 ทันที ไม่แตะคำขอเลย (reject ยังเปิดอยู่ แค่ approve ปิด)', async () => {
+        deviceConfigApplyMode = 'central';
+
+        await expect(
+          service.approveDeviceFirmwareOverride('fov-1', operation),
+        ).rejects.toThrow(ConflictException);
+
+        expect(deviceFirmwareOverride.findUnique).not.toHaveBeenCalled();
+        expect(deviceFirmwareOverride.updateMany).not.toHaveBeenCalled();
+      });
+
       it('คำขอยัง pending -> อัปเดตเป็น approved พร้อม decidedBy/decidedAt + AuditLog (ไม่เช็ค staleness เหมือน config override)', async () => {
         deviceFirmwareOverride.findUnique.mockResolvedValue(pendingRow);
         deviceFirmwareOverride.updateMany.mockResolvedValue({ count: 1 });
@@ -3252,6 +3311,26 @@ describe('DeviceService', () => {
     });
 
     describe('rejectDeviceFirmwareOverride', () => {
+      it('โหมด central (docs/27 §11) -> ยังทำงานได้ตามเดิม (ปิดแค่ approve)', async () => {
+        deviceConfigApplyMode = 'central';
+        deviceFirmwareOverride.findUnique.mockResolvedValue(pendingRow);
+        deviceFirmwareOverride.updateMany.mockResolvedValue({ count: 1 });
+        deviceFirmwareOverride.findUniqueOrThrow.mockResolvedValue({
+          ...pendingRow,
+          status: 'rejected',
+          decidedBy: 'op-1',
+          rejectReason: 'ไม่ต้องแล้ว',
+        });
+
+        await expect(
+          service.rejectDeviceFirmwareOverride(
+            'fov-1',
+            { rejectReason: 'ไม่ต้องแล้ว' },
+            operation,
+          ),
+        ).resolves.toMatchObject({ status: 'rejected' });
+      });
+
       it('คำขอยัง pending -> อัปเดตเป็น rejected พร้อม rejectReason + AuditLog', async () => {
         deviceFirmwareOverride.findUnique.mockResolvedValue(pendingRow);
         deviceFirmwareOverride.updateMany.mockResolvedValue({ count: 1 });
@@ -3367,6 +3446,32 @@ describe('DeviceService', () => {
         where: { status: 'pending' },
         orderBy: { overriddenAt: 'desc' },
       });
+    });
+  });
+
+  describe('getDeviceFirmwareOverride (หน้ารายละเอียดคำขอ 1 รายการ)', () => {
+    it('พบแถว -> คืนแถวนั้นไม่ว่าสถานะอะไร', async () => {
+      const row = {
+        id: 'fov-1',
+        deviceId: 'DTC-0001',
+        status: 'rejected',
+      };
+      deviceFirmwareOverride.findUnique.mockResolvedValue(row);
+
+      const result = await service.getDeviceFirmwareOverride('fov-1');
+
+      expect(result).toBe(row);
+      expect(deviceFirmwareOverride.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fov-1' },
+      });
+    });
+
+    it('ไม่พบ -> NotFoundException', async () => {
+      deviceFirmwareOverride.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.getDeviceFirmwareOverride('missing'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
