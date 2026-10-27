@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAuth } from "@/components/auth/auth-provider";
 import { useConfigs } from "@/hooks/use-configs";
 import { useDevices } from "@/hooks/use-devices";
 import { useCampaigns } from "@/hooks/use-campaigns";
@@ -34,6 +35,7 @@ import {
   connectionSummary,
   deployTotals,
 } from "@/lib/dashboard-metrics";
+import { canReadCampaign } from "@/lib/permissions";
 import { toneColorClass, type PillTone } from "@/lib/status-pill";
 
 /**
@@ -269,11 +271,16 @@ function DashboardSection({
 }
 
 export function DashboardSummary() {
+  const { session } = useAuth();
+  // FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `campaign:Read` (รีวิว #373) —
+  // ข้ามการยิง `GET /campaigns*` ไปเลยแทนที่จะยิงแล้วได้ 403 แล้วซ่อนการ์ด
+  // ที่พึ่งข้อมูลนี้ด้านล่างไปเลย ไม่โชว์ error
+  const hasCampaignAccess = canReadCampaign(session?.role);
   const devices = useDevices();
   const configs = useConfigs();
-  const campaigns = useCampaigns();
-  const pausedRollouts = usePausedCampaignRollouts();
-  const allRollouts = useAllCampaignRollouts();
+  const campaigns = useCampaigns(hasCampaignAccess);
+  const pausedRollouts = usePausedCampaignRollouts(hasCampaignAccess);
+  const allRollouts = useAllCampaignRollouts(hasCampaignAccess);
   const incidents = useIncidents();
   // สถานะจริงของกล่องจาก Server กลาง (ข้อมูลเสริม: ติดต่อไม่ได้ก็ไม่ทำให้การ์ดอื่นพัง)
   const central = useCentralDevices();
@@ -385,14 +392,16 @@ export function DashboardSummary() {
          * เบราว์เซอร์คำนวณความกว้างจากพื้นที่เหลือแบบสุ่มอีกต่อไป (แก้ครั้งที่
          * 73 — เดิมการ์ดจะกว้าง/แคบต่างกันตามพื้นที่เหลือ ไม่สื่อความสำคัญ) */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <LiveSummaryCard
-            label="Rollout หยุดชั่วคราว (Auto Pause)"
-            href="/campaigns"
-            value={pausedRolloutCount}
-            error={pausedRollouts.error}
-            icon={TriangleAlertIcon}
-            tone="danger"
-          />
+          {hasCampaignAccess && (
+            <LiveSummaryCard
+              label="Rollout หยุดชั่วคราว (Auto Pause)"
+              href="/campaigns"
+              value={pausedRolloutCount}
+              error={pausedRollouts.error}
+              icon={TriangleAlertIcon}
+              tone="danger"
+            />
+          )}
           <LiveSummaryCard
             label="Incident ที่ยังต้องตาม"
             href="/incidents"
@@ -435,22 +444,26 @@ export function DashboardSummary() {
             icon={ClockIcon}
             tone="progress"
           />
-          <LiveSummaryCard
-            label="กลุ่มอุปกรณ์ทั้งหมด"
-            href="/campaigns"
-            value={campaignCount}
-            error={campaigns.error}
-            icon={RocketIcon}
-            tone="progress"
-          />
-          <MiniStackedBarCard
-            label="ผลการ Deploy"
-            href="/campaigns"
-            segments={deploySegments}
-            loading={allRollouts.data === null && allRollouts.isLoading}
-            error={allRollouts.error}
-            emptyText="ยังไม่มีการ Deploy"
-          />
+          {hasCampaignAccess && (
+            <LiveSummaryCard
+              label="กลุ่มอุปกรณ์ทั้งหมด"
+              href="/campaigns"
+              value={campaignCount}
+              error={campaigns.error}
+              icon={RocketIcon}
+              tone="progress"
+            />
+          )}
+          {hasCampaignAccess && (
+            <MiniStackedBarCard
+              label="ผลการ Deploy"
+              href="/campaigns"
+              segments={deploySegments}
+              loading={allRollouts.data === null && allRollouts.isLoading}
+              error={allRollouts.error}
+              emptyText="ยังไม่มีการ Deploy"
+            />
+          )}
         </div>
       </DashboardSection>
 
