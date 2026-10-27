@@ -1213,6 +1213,16 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.findMany).not.toHaveBeenCalled();
     });
 
+    it('listForTask: ใหม่สุดก่อน พร้อมเวอร์ชัน Firmware ของคำขอ (docs/27 B2)', async () => {
+      await service.listForTask(TASK_ID, tech);
+
+      expect(requests.findMany).toHaveBeenCalledWith({
+        where: { taskId: TASK_ID },
+        orderBy: { requestedAt: 'desc' },
+        include: { firmware: { select: { id: true, version: true } } },
+      });
+    });
+
     it('list: คืนชื่อ field ที่จะส่ง ไม่คืนค่า field ของ Config', async () => {
       requests.findMany.mockResolvedValue([
         {

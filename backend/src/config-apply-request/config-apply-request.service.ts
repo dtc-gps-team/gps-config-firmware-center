@@ -111,6 +111,16 @@ export type ConfigApplyRequestView = Omit<RequestWithRelations, 'config'> & {
   fieldNames: string[];
 };
 
+/** `GET /tasks/{taskId}/config-apply-requests` — แถวคำขอ + เวอร์ชัน Firmware ให้
+ * Mobile แสดง "Firmware vX" ได้โดยไม่ต้องเรียก API อื่น (docs/27 B2) */
+const TASK_REQUEST_INCLUDE = {
+  firmware: { select: { id: true, version: true } },
+} satisfies Prisma.ConfigApplyRequestInclude;
+
+export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
+  include: typeof TASK_REQUEST_INCLUDE;
+}>;
+
 /** สิ่งที่ต่างกันระหว่างคำขอ 2 ชนิดตอนสร้าง — ที่เหลือ (Task, เครื่อง, เวลา) ใช้ร่วมกัน */
 type RequestPayloadDraft =
   | { kind: 'config'; configId: string; configAssignedBy: string | null }
@@ -342,11 +352,12 @@ export class ConfigApplyRequestService implements OnModuleInit {
   async listForTask(
     taskId: string,
     actor: ActingUser,
-  ): Promise<ConfigApplyRequest[]> {
+  ): Promise<TaskRequestView[]> {
     await this.taskService.findOne(taskId, actor);
     return this.prisma.configApplyRequest.findMany({
       where: { taskId },
       orderBy: { requestedAt: 'desc' },
+      include: TASK_REQUEST_INCLUDE,
     });
   }
 

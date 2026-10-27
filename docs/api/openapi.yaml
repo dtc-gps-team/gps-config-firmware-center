@@ -5242,6 +5242,20 @@ components:
             Firmware ที่ขอต่ำกว่าที่กล่องรันอยู่ (docs/27 D5, v3.62) — ขอได้แต่
             Web/Mobile ต้องเตือนชัด และระบบส่ง allowDowngrade ไปที่ Server กลาง
             ตอนกดส่ง · false เสมอเมื่อ kind=config
+        firmware:
+          type: object
+          nullable: true
+          description: >-
+            Firmware ที่ขอส่ง (v3.62) — มีใน `listTaskConfigApplyRequests` และคิว
+            อนุมัติ ไม่มีใน response ของ create/approve/reject/cancel/release ·
+            null เมื่อ kind=config
+          required: [id, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            version:
+              type: string
         configAssignedBy:
           type: string
           format: uuid
