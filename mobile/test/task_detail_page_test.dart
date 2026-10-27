@@ -1565,6 +1565,163 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   });
+
+  group('คำขอ Firmware (docs/27 B3)', () {
+    testWidgets(
+      'อนุมัติแล้ว + ถอยเวอร์ชัน -> บอกเวอร์ชันที่ขอ + แถบเตือนถอยเวอร์ชัน + ปุ่มส่งเข้ากล่อง',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+          applyRepo: FakeConfigApplyRequestRepository(
+            requests: [
+              fakeApplyRequest(
+                kind: FieldApplyKind.firmware,
+                firmwareVersion: '1.0.0',
+                fromFirmwareVersion: '1.2.0',
+                isDowngrade: true,
+                status: ConfigApplyRequestStatus.approved,
+                decidedAt: DateTime.utc(2026, 10, 22, 4),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Firmware v1.0.0 (กล่องรัน v1.2.0 ตอนขอ)'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apply_request_downgrade')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('release_apply_request_button')),
+          findsOneWidget,
+        );
+        // หยุด poll สถานะคำขอก่อนจบเทส
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets('สำเร็จ -> "กล่องติดตั้ง Firmware แล้ว" ไม่มีแถบถอยเวอร์ชัน', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              kind: FieldApplyKind.firmware,
+              firmwareVersion: '1.0.0',
+              isDowngrade: true,
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('กล่องติดตั้ง Firmware แล้ว'), findsOneWidget);
+      expect(find.byKey(const Key('apply_request_downgrade')), findsNothing);
+    });
+
+    testWidgets(
+      'ปุ่ม "ขออัปเดต Firmware" -> เปิดหน้าเลือกแท็บ Firmware ของงานนี้',
+      (tester) async {
+        // การ์ดยาวขึ้น (ลิงก์ 2 ปุ่ม) — จอสูงพอให้ลิงก์อยู่ในจอ ไม่ติดแถบล่าง
+        tester.view.physicalSize = const Size(1080, 4000);
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          router: router,
+        );
+        await tester.pumpAndSettle();
+
+        final link = find.byKey(const Key('request_firmware_button'));
+        await tester.ensureVisible(link);
+        await tester.tap(link);
+        await tester.pumpAndSettle();
+
+        expect(opened, '/devices/DVC-1/apply?taskId=t1&kind=firmware');
+      },
+    );
+
+    testWidgets(
+      'คำขอ Firmware ล่าสุดไม่สำเร็จ -> ขอส่งอีกครั้งเปิดแท็บ Firmware ไม่ส่ง Config ของงาน',
+      (tester) async {
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        final applyRepo = FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              kind: FieldApplyKind.firmware,
+              firmwareVersion: '1.3.0',
+              status: ConfigApplyRequestStatus.failed,
+              resultDetail: 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที',
+            ),
+          ],
+        );
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          applyRepo: applyRepo,
+          router: router,
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(_confirmInstallButton);
+        await tester.pumpAndSettle();
+
+        expect(opened, '/devices/DVC-1/apply?taskId=t1&kind=firmware');
+        expect(applyRepo.createCalls, 0);
+      },
+    );
+
+    testWidgets('คำขอก่อนหน้าที่เป็น Firmware บอกเวอร์ชันในแถว', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              id: 'car-2',
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+            fakeApplyRequest(
+              id: 'car-1',
+              kind: FieldApplyKind.firmware,
+              firmwareVersion: '1.3.0',
+              status: ConfigApplyRequestStatus.rejected,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Firmware v1.3.0'), findsOneWidget);
+    });
+  });
 }
 
 GoRouter _routerWithApply(void Function(String uri) onOpen) => GoRouter(
