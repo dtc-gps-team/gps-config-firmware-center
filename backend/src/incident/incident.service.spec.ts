@@ -151,15 +151,39 @@ describe('IncidentService', () => {
       expect(incidentUpdate).not.toHaveBeenCalled();
     });
 
-    it('Rollout เครื่องเดียวของคำขอส่ง Config จากหน้างาน (docs/25 §3.5 ข้อ 4/Q4) -> ไม่สร้าง Incident เลย', async () => {
+    it('Rollout เครื่องเดียวของคำขอส่งเข้ากล่องจากหน้างาน (docs/27 §8, กลับมติ Q4 ของ docs/25) -> สร้าง Incident ผูก Device เดียว ไม่ใช้คำว่า Campaign', async () => {
       await service.handleRolloutFailed({
         ...rolloutFailed,
         campaignName: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+        kind: 'completed-with-failures',
+        failedDeviceIds: ['DEV-1'],
       });
 
-      expect(incidentFindFirst).not.toHaveBeenCalled();
-      expect(incidentCreate).not.toHaveBeenCalled();
-      expect(incidentUpdate).not.toHaveBeenCalled();
+      expect(incidentCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          // ไม่ใช้คำว่า "Campaign" (มีเครื่องเดียวเสมอ ไม่ใช่ Campaign จริง)
+          title: 'คำขอส่งเข้ากล่องจากหน้างานล้มเหลว: DEV-1',
+          description: expect.stringContaining('ค่า APN ใช้ไม่ได้') as unknown,
+          deviceId: 'DEV-1',
+          source: INCIDENT_SOURCE.rolloutFailure,
+        }) as unknown,
+      });
+    });
+
+    it('Rollout เครื่องเดียวจากหน้างาน ถูกข้ามเพราะกล่องออฟไลน์ -> ชื่อเรื่องบอกว่าส่งไม่ถึง', async () => {
+      await service.handleRolloutFailed({
+        ...rolloutFailed,
+        campaignName: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+        kind: 'completed-with-skipped',
+        failedDeviceIds: ['DEV-1'],
+      });
+
+      expect(incidentCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          title: 'คำขอส่งเข้ากล่องจากหน้างานส่งไม่ถึง (กล่องออฟไลน์): DEV-1',
+          deviceId: 'DEV-1',
+        }) as unknown,
+      });
     });
 
     it('จบแต่มีเครื่องล้ม -> ใช้ชื่อเรื่อง "จบแต่มีเครื่องที่ไม่สำเร็จ"', async () => {

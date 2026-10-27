@@ -186,4 +186,46 @@ describe('classifyCentralCommand', () => {
       'failed',
     );
   });
+
+  // docs/27 §7.2 — ข้อความอ่านง่ายตาม error_code ที่รู้จัก
+  it.each([
+    ['DEVICE_DISCONNECTED', 'กล่องหลุดการเชื่อมต่อเกิน 1 นาที — ส่งไม่ผ่าน'],
+    ['DEVICE_NO_RESPONSE', 'กล่องไม่ตอบกลับภายในเวลาที่กำหนด'],
+    [
+      'ROLLED_BACK',
+      'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
+    ],
+    [
+      'NEW_FIRMWARE_FAILED_HEALTH_CHECK',
+      'Firmware ใหม่ไม่ผ่านการตรวจหลังรีบูต กล่องย้อนกลับเวอร์ชันเดิม',
+    ],
+    ['DOWNLOAD_TIMEOUT', 'ดาวน์โหลด Firmware ค้าง (เน็ตช้าหรือหลุด)'],
+  ])('error_code %s -> ข้อความอ่านง่าย %s', (error_code, message) => {
+    const r = classifyCentralCommand(cmd({ status: 'FAILED', error_code }));
+    expect(r.kind).toBe('failed');
+    expect((r as { detail: string }).detail).toBe(message);
+  });
+
+  it('error_code ที่ไม่รู้จัก -> fallback เป็นข้อความดิบจาก Server กลาง', () => {
+    const r = classifyCentralCommand(
+      cmd({
+        status: 'FAILED',
+        error_code: 'SOME_NEW_CODE',
+        error_message: 'something',
+      }),
+    );
+    expect(r.kind).toBe('failed');
+    expect((r as { detail: string }).detail).toBe(
+      'Server กลางรายงาน FAILED SOME_NEW_CODE something',
+    );
+  });
+
+  it('DEVICE_OFFLINE -> ข้อความไม่เจาะจง Config (ใช้กับ Firmware ได้ด้วย)', () => {
+    const r = classifyCentralCommand(
+      cmd({ status: 'FAILED', error_code: 'DEVICE_OFFLINE' }),
+    );
+    expect((r as { detail: string }).detail).toContain(
+      'กล่องออฟไลน์ คำสั่งไปไม่ถึง',
+    );
+  });
 });

@@ -2060,7 +2060,10 @@ paths:
         **ไม่คำนวณ `Firmware.deviceUpdateStatus` จริง** (ยังคงเป็น unknown ต่อไป)
         — placeholder ระดับที่ทำได้ในขอบเขตฝึกงาน ต่างจาก Workflow Firmware
         แบบ state machine อัตโนมัติเต็มรูปแบบใน design doc §10.2-10.3 ที่ทำไม่ได้
-        เพราะระบบเป็น PULL model (backend ไม่คุยกับอุปกรณ์ตรงๆ)
+        เพราะระบบเป็น PULL model (backend ไม่คุยกับอุปกรณ์ตรงๆ) ·
+        **(v3.62, docs/27 §11)** ตอน `DEVICE_CONFIG_APPLY_MODE=central`
+        endpoint นี้ตอบ 409 ทันที (เหตุผลเดียวกับ `applyConfigToDevice`) ให้ใช้
+        ทางส่งคำขอเข้ากล่องผ่าน Server กลางแทน
       parameters:
         - in: path
           name: deviceId
@@ -2090,7 +2093,9 @@ paths:
           description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Firmware (firmwareId) นี้
         "409":
           description: >-
-            ยืนยันไม่ได้ — Device ยังไม่ installed / Firmware ยังไม่ผ่านอัปโหลด
+            ยืนยันไม่ได้ — **(v3.62)** `DEVICE_CONFIG_APPLY_MODE=central` (ปุ่มนี้
+            ใช้ไม่ได้อีกต่อไป ดู description ด้านบน) / Device ยังไม่ installed /
+            Firmware ยังไม่ผ่านอัปโหลด
             (ต้อง stored) / Firmware ยังไม่ผ่านอนุมัติคุณภาพ (ต้อง approved) /
             Firmware ไม่รองรับรุ่นอุปกรณ์เครื่องนี้ / **(v3.43, Sprint 3 แถวที่
             24)** firmwareId ที่ขอไม่ตรงกับ Campaign Rollout (Firmware) ที่
@@ -2115,7 +2120,11 @@ paths:
         `approveDeviceFirmwareOverride` ก่อน (Separation of Duty) ถึงจะใช้
         `confirmFirmwareInstall` กับ firmware นี้ได้จริงถ้าขัดกับ Campaign
         Rollout ที่ `active` กำหนดไว้ (ดู 409 ใหม่ของ `confirmFirmwareInstall`)
-        เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ (409 ถ้ามีอยู่แล้ว)
+        เครื่องหนึ่งมีคำขอ `pending` พร้อมกันได้แค่ 1 รายการ (409 ถ้ามีอยู่แล้ว) ·
+        **(v3.62, docs/27 §11)** ตอน `DEVICE_CONFIG_APPLY_MODE=central` endpoint
+        นี้ตอบ 409 ทันที (`confirmFirmwareInstall` ที่คำขอนี้จะปลดล็อกก็ปิดอยู่
+        แล้วในโหมดนี้ — ขอ override ไปก็ใช้ไม่ได้อยู่ดี) ให้ใช้ทางส่งคำขอเข้ากล่อง
+        ผ่าน Server กลางแทน
       parameters:
         - in: path
           name: deviceId
@@ -2155,7 +2164,8 @@ paths:
           description: ไม่พบ Device (deviceId) นี้ หรือไม่พบ Firmware (firmwareId) นี้
         "409":
           description: >-
-            Firmware ยังติดตั้งไม่ได้ (ยังไม่ stored/approved/รองรับรุ่นอุปกรณ์
+            **(v3.62)** `DEVICE_CONFIG_APPLY_MODE=central` (ดู description
+            ด้านบน) / Firmware ยังติดตั้งไม่ได้ (ยังไม่ stored/approved/รองรับรุ่นอุปกรณ์
             นี้) หรืออุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว
 
   /device-firmware-overrides:
@@ -2198,7 +2208,10 @@ paths:
         อัตโนมัติ** ปลดล็อกแค่สิทธิ์ให้ `confirmFirmwareInstall` ยอมรับ
         firmware นี้กับอุปกรณ์เครื่องนี้ได้ resource `device-firmware-override`
         action `Approve` — Operation เท่านั้น (Separation of Duty — ST ผู้ส่ง
-        คำขอเองอนุมัติไม่ได้)
+        คำขอเองอนุมัติไม่ได้) · **(v3.62, docs/27 §11)** ตอน
+        `DEVICE_CONFIG_APPLY_MODE=central` endpoint นี้ตอบ 409 ทันที (อนุมัติไป
+        ก็ปลดล็อกอะไรไม่ได้เพราะ `confirmFirmwareInstall` ปิดอยู่ในโหมดนี้) —
+        **`rejectDeviceFirmwareOverride` ยังเปิดอยู่** เคลียร์คำขอค้างได้ตามเดิม
       parameters:
         - in: path
           name: id
@@ -2220,7 +2233,9 @@ paths:
         "404":
           description: ไม่พบคำขอ override นี้
         "409":
-          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
+          description: >-
+            คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ / **(v3.62)**
+            `DEVICE_CONFIG_APPLY_MODE=central` (ดู description ด้านบน)
 
   /device-firmware-overrides/{id}/reject:
     post:
