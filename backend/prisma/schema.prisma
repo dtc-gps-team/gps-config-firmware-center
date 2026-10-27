@@ -861,25 +861,48 @@ enum ConfigApplyRequestStatus {
   expired
 }
 
+// ชนิดของคำขอส่งเข้ากล่องจากหน้างาน (docs/27 D3, B2) — แถวเดิมทั้งหมดเป็น `config`
+enum FieldApplyKind {
+  config
+  firmware
+}
+
 // คำขอ "ส่ง Config ของ Task นี้เข้าเครื่องจริง" จากช่าง (ST/OT) ที่ต้องผ่าน
 // Operation **อีกคน** อนุมัติก่อน (docs/25, PR #364 — A ยืนยัน Q1–Q9) · mirror
 // `DeviceConfigOverride` (#223) · เป็น model ของโปรเจกต์เอง ไม่มีใน Data
 // Dictionary (DD ไม่มีขั้นอนุมัติการส่ง Config รายเครื่อง)
 //
-// Separation of Duty (§3.4) — ผู้ตัดสินต้องเป็น Operation และต้อง ≠ ผู้ขอ,
-// ≠ `configAssignedBy` (snapshot จาก `Task.configAssignedBy` ตอนขอ) และ
-// ≠ `Config.approvedBy` เช็คที่ service ทุกครั้ง ไม่ใช่ DB constraint
+// **ชื่อเป็น Config แต่ครอบคลุม Firmware ด้วยตั้งแต่ docs/27 (B2)** — `kind`
+// บอกชนิด ไม่เปลี่ยนชื่อ model/path เพราะต้องแก้ทั้ง migration, openapi, Web,
+// Mobile โดยไม่ได้อะไรเพิ่ม (docs/27 §4)
+//
+// Separation of Duty (§3.4) — ผู้ตัดสินต้องเป็น Operation และต้อง ≠ ผู้ขอ ·
+// เฉพาะ `kind=config`: ≠ `configAssignedBy` (snapshot จาก `Task.configAssignedBy`
+// ตอนขอ) และ ≠ `Config.approvedBy` เช็คที่ service ทุกครั้ง ไม่ใช่ DB constraint
 // (mirror `CampaignRollout.approvedBy`)
 //
-// กันคำขอเปิดซ้ำต่อเครื่อง (`pending`/`sending`): Prisma ไม่มี partial unique
-// index จึงเช็คในทรานแซกชันที่ล็อกแถว Task ไว้ (§4.1)
+// กันคำขอเปิดซ้ำต่อเครื่อง (`pending`/`approved`/`sending`): Prisma ไม่มี partial
+// unique index จึงเช็คในทรานแซกชันที่ล็อกระดับเครื่องไว้ (§4.1) — Config และ
+// Firmware ใช้โควตาเดียวกัน (ส่งเข้ากล่องได้ทีละอย่าง)
 model ConfigApplyRequest {
   id               String                   @id @default(uuid())
   taskId           String
   // เลขเครื่อง (`Device.deviceId`) snapshot จาก Task ตอนขอ — ไม่ใช่ FK เพราะ
   // `Task.deviceId` เองก็ไม่ใช่ FK
   deviceId         String
-  configId         String
+  kind             FieldApplyKind           @default(config)
+  // บังคับเมื่อ `kind=config` (ตรวจที่ service) · `null` เมื่อ `kind=firmware`
+  // (docs/27 §4 — เดิม NOT NULL)
+  configId         String?
+  // บังคับเมื่อ `kind=firmware` (ตรวจที่ service) · Firmware ต้อง QA อนุมัติแล้ว +
+  // อัปโหลดสำเร็จ + รองรับรุ่นกล่อง ทั้งตอนขอ อนุมัติ และกดส่ง
+  firmwareId       String?
+  // เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลางตอนขอ (docs/27 §5.1) — ให้
+  // Operation เห็น "จาก → เป็น" · `null` = โหมดที่ไม่มี Server กลาง (mock/real)
+  fromFirmwareVersion String?
+  // เวอร์ชันที่ขอต่ำกว่า `fromFirmwareVersion` (docs/27 D5) — ขอได้แต่เตือนทุกขั้น
+  // และส่ง `allowDowngrade` ไปที่ Server กลางตอนกดส่ง · ตรวจซ้ำตอนกดส่ง
+  isDowngrade      Boolean                  @default(false)
   // snapshot ของ `Task.configAssignedBy` ตอนขอ **เฉพาะเมื่อช่างขอ Config ตัวที่
   // Operation ผูกไว้กับ Task** (docs/28 §2.1 — SoD ข้อ 3 ใช้กับคนผูกเท่านั้น) ·
   // `null` = ช่างเลือก Config เอง (docs/28 D3) · งานที่ผูก Config ไว้แต่ไม่รู้ผู้
@@ -917,7 +940,8 @@ model ConfigApplyRequest {
   // onDelete: Restrict ทุกตัว — ประวัติคำขอเป็นข้อมูลเชิง audit (mirror
   // DeviceConfigOverride หลังรีวิว A บน PR #225)
   task           Task             @relation(fields: [taskId], references: [id], onDelete: Restrict)
-  config         Config           @relation(fields: [configId], references: [id], onDelete: Restrict)
+  config         Config?          @relation(fields: [configId], references: [id], onDelete: Restrict)
+  firmware       Firmware?        @relation(fields: [firmwareId], references: [id], onDelete: Restrict)
   requester      User             @relation("ConfigApplyRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
   configAssigner User?            @relation("ConfigApplyConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
   decider        User?            @relation("ConfigApplyDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
@@ -1156,6 +1180,7 @@ model Firmware {
   devicesOnPartitionA Device[]          @relation("DevicePartitionA")
   devicesOnPartitionB Device[]          @relation("DevicePartitionB")
   deviceOverrides     DeviceFirmwareOverride[]
+  configApplyRequests ConfigApplyRequest[]
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,6 +1370,12 @@ model CampaignRollout {
   // relation รองรับ chain ยาวเท่าไหร่ก็ได้) แค่ไม่คาดว่าจะเกิดบ่อยในทางปฏิบัติ
   isRollback   Boolean               @default(false)
   rollbackOfId String?
+  // ยอมให้ Server กลางติดตั้ง Firmware ที่เก่ากว่าที่กล่องรันอยู่ (header
+  // `X-Allow-Downgrade`) — Rollback ได้อยู่แล้วจาก `isRollback` ตัวนี้สำหรับ Rollout
+  // เครื่องเดียวของคำขอหน้างานที่ช่างขอถอยเวอร์ชันและ Operation อนุมัติแล้ว
+  // (`ConfigApplyRequest.isDowngrade`, docs/27 D5/§6) · คอลัมน์ของโปรเจกต์เอง
+  // ไม่มีใน Data Dictionary
+  allowDowngrade Boolean             @default(false)
   // เหตุผลของค่าเฉพาะเครื่องทั้งรอบ (docs/17 ข้อ 3.3) — Operation กรอกตอนสร้าง
   // Rollout พร้อม `CampaignRolloutTarget.proposedFields` เก็บไว้ตรงนี้เพราะ
   // ต้องคงอยู่ข้ามช่วงรออนุมัติ/ปล่อย แล้วถูกคัดลอกเป็น `reason` ของ

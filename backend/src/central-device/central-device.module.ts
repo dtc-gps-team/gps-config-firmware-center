@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import {
+  CONFIG_APPLY_MODE,
+  type ConfigApplyMode,
+  resolveConfigApplyMode,
+} from '../device/config-applier';
+import {
   CENTRAL_DEVICE_CLIENT,
   type CentralDeviceClient,
   HttpCentralDeviceClient,
@@ -51,6 +56,18 @@ const DEFAULT_TIMEOUT_MS = 5000;
               : DEFAULT_TIMEOUT_MS,
         });
       },
+      inject: [NestConfigService],
+    },
+    // CONFIG_APPLY_MODE: `GET /central/status` คืน `applyMode` (docs/27 §5.6) —
+    // provider เดียวกับใน campaign/device/config-apply-request (env
+    // `DEVICE_CONFIG_APPLY_MODE`) ประกาศซ้ำแทนการ import DeviceModule (DeviceModule
+    // พึ่งโมดูลนี้อยู่แล้ว)
+    {
+      provide: CONFIG_APPLY_MODE,
+      useFactory: (nestConfig: NestConfigService): ConfigApplyMode =>
+        resolveConfigApplyMode(
+          nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE'),
+        ),
       inject: [NestConfigService],
     },
   ],

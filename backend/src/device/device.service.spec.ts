@@ -2029,6 +2029,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           status: 'completed',
           configId: { not: null },
+          configApplyRequests: { none: {} },
         },
         orderBy: { updatedAt: 'desc' },
       });
@@ -2102,6 +2103,29 @@ describe('DeviceService', () => {
         const result = await service.getCurrentConfig('DTC-0001');
 
         expect(result.id).toBe(approvedConfig.id);
+      });
+
+      it('ไม่นับ Task ที่มีคำขอส่ง Config เข้ากล่อง (ผลจริงอยู่ที่ Rollout ของคำขอ)', async () => {
+        task.findFirst.mockResolvedValue(null);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+
+        const result = await service.getCurrentConfig('DTC-0001');
+
+        expect(result.id).toBe(rolloutConfig.id);
+        expect(task.findFirst).toHaveBeenCalledWith({
+          where: {
+            deviceId: 'DTC-0001',
+            status: 'completed',
+            configId: { not: null },
+            configApplyRequests: { none: {} },
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
       });
 
       it('ไม่มี Task เลย แต่มี Rollout ที่สำเร็จ -> ใช้ Config ของ Rollout (ไม่ 404)', async () => {
