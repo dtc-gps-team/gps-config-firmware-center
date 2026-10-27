@@ -5,6 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { DeviceHistorySheet } from "./device-history-sheet";
 import type { DeviceHistoryItem } from "@/lib/device-history-api";
 
+// Operation เห็นทุก pill (task + override ทั้งสองชนิด) — ใช้เป็นค่าเริ่มต้นให้
+// เทสต์เดิมที่ไม่ได้ตั้งใจทดสอบเรื่องสิทธิ์ยังเห็นปุ่มครบ 6 ปุ่มเหมือนก่อนแก้
+const auth = vi.hoisted(() => ({ role: "Operation" as string | null }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { accessToken: "tok", role: auth.role } }),
+}));
+
 const loadMore = vi.fn();
 const { useDeviceHistory } = vi.hoisted(() => ({ useDeviceHistory: vi.fn() }));
 const hookState = vi.hoisted(() => ({
@@ -84,6 +91,7 @@ describe("DeviceHistorySheet", () => {
     useDeviceHistory.mockReset();
     setHook({});
     loadMore.mockReset();
+    auth.role = "Operation";
   });
 
   it("ยังไม่กดดูประวัติ: ไม่โหลดอะไร มีแค่ปุ่ม", () => {
@@ -299,6 +307,64 @@ describe("DeviceHistorySheet", () => {
       expect(
         useDeviceHistory.mock.calls.at(-1)?.[1],
       ).toContain("incident");
+    });
+  });
+
+  // รีวิว B บน #371: ซ่อน pill ของชนิดที่ role นั้นไม่มีสิทธิ์เห็นเลย กัน
+  // "กดปุ่มแล้วไม่มีผล" (backend เงียบๆ ไม่คืนรายการชนิดนั้นมา)
+  describe("ซ่อนปุ่มกรองตามสิทธิ์ของ role", () => {
+    it("QAEngineer ไม่มี tasks:Read และไม่มี override:Read/Create เลย -> ไม่เห็นปุ่มงาน/Config เฉพาะเครื่อง/Firmware เฉพาะเครื่อง", async () => {
+      auth.role = "QAEngineer";
+      const user = userEvent.setup();
+      render(<DeviceHistorySheet deviceId="DEV-0001" />);
+      await openSheet(user);
+
+      expect(
+        screen.queryByRole("button", { name: "งาน" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Config เฉพาะเครื่อง" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Firmware เฉพาะเครื่อง" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Rollout" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Incident" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "ลงทะเบียน/ติดตั้ง" }),
+      ).toBeInTheDocument();
+    });
+
+    it("ST เห็นปุ่มงานและ override ได้ (เห็นแค่ของตัวเอง ฝั่ง backend กรองให้)", async () => {
+      auth.role = "ST";
+      const user = userEvent.setup();
+      render(<DeviceHistorySheet deviceId="DEV-0001" />);
+      await openSheet(user);
+
+      expect(screen.getByRole("button", { name: "งาน" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Config เฉพาะเครื่อง" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Firmware เฉพาะเครื่อง" }),
+      ).toBeInTheDocument();
+    });
+
+    it("OT เห็นปุ่มงานได้ แต่ไม่เห็นปุ่ม override (seed.ts ให้ ST เท่านั้น)", async () => {
+      auth.role = "OT";
+      const user = userEvent.setup();
+      render(<DeviceHistorySheet deviceId="DEV-0001" />);
+      await openSheet(user);
+
+      expect(screen.getByRole("button", { name: "งาน" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Config เฉพาะเครื่อง" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Firmware เฉพาะเครื่อง" }),
+      ).not.toBeInTheDocument();
     });
   });
 });

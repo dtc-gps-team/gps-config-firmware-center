@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -26,10 +27,10 @@ import { useDeviceHistory } from "@/hooks/use-device-history";
 import { useUserNames } from "@/hooks/use-user-names";
 import { formatDateTime } from "@/lib/format-date";
 import {
-  DEVICE_HISTORY_TYPES,
   type DeviceHistoryItem,
   type DeviceHistoryType,
 } from "@/lib/device-history-api";
+import { visibleDeviceHistoryTypes } from "@/lib/permissions";
 import { rolloutTargetStatusLabel } from "@/lib/rollout-target-display";
 import {
   CAMPAIGN_ROLLOUT_TARGET_STATUS_TONE,
@@ -220,13 +221,17 @@ function TypeFilterButton({
 }
 
 function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
+  const { session } = useAuth();
+  // ซ่อน pill ของชนิดที่ role นี้ไม่มีสิทธิ์เห็นเลย (#378 รีวิว B บน #371) —
+  // mirror การกรองฝั่ง backend กัน "กดปุ่มแล้วไม่มีผลอะไร"
+  const [visibleTypes] = useState<DeviceHistoryType[]>(() =>
+    visibleDeviceHistoryTypes(session?.role),
+  );
   const [selectedTypes, setSelectedTypes] = useState<Set<DeviceHistoryType>>(
-    () => new Set(DEVICE_HISTORY_TYPES),
+    () => new Set(visibleTypes),
   );
   const typesFilter =
-    selectedTypes.size === DEVICE_HISTORY_TYPES.length
-      ? undefined
-      : [...selectedTypes];
+    selectedTypes.size === visibleTypes.length ? undefined : [...selectedTypes];
   const { summary, items, nextCursor, isLoading, isLoadingMore, error, loadMore } =
     useDeviceHistory(deviceId, typesFilter);
   const { resolveName } = useUserNames();
@@ -245,7 +250,7 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
 
   const typeFilterBar = (
     <div className="mb-3 flex flex-wrap gap-1.5">
-      {DEVICE_HISTORY_TYPES.map((type) => (
+      {visibleTypes.map((type) => (
         <TypeFilterButton
           key={type}
           active={selectedTypes.has(type)}
@@ -332,7 +337,9 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
  * การ์ดใหญ่ถาวรทำให้หน้า Device Detail เลื่อนยาวเกินไป) โหลดข้อมูลแบบ lazy
  * ตอนเปิด Sheet เท่านั้น (`useDeviceHistory(deviceId, open)`) กันตารางที่มี
  * หลายเครื่องยิงคำขอพร้อมกันทุกแถวทั้งที่ยังไม่ได้เปิดดู · `type` ที่ไม่รู้จัก
- * (backend เพิ่มชนิดใหม่ในอนาคต) แสดง fallback เป็นไอคอน/ข้อความดิบ ไม่พัง
+ * (backend เพิ่มชนิดใหม่ในอนาคต) แสดง fallback เป็นไอคอน/ข้อความดิบ ไม่พัง ·
+ * pill กรองชนิดซ่อนชนิดที่ role ของผู้เรียกไม่มีสิทธิ์เห็นเลยด้วย (#378 รีวิว
+ * B บน #371 — ดู `visibleDeviceHistoryTypes` ใน `lib/permissions.ts`)
  */
 export function DeviceHistorySheet({ deviceId }: { deviceId: string }) {
   const [open, setOpen] = useState(false);
