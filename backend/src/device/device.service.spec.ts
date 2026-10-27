@@ -41,6 +41,9 @@ const installedDevice: Device = {
   blackboxId: null,
   bootloader: null,
   apiKeyHash: null,
+  telemetryKeyHash: null,
+  reportedFirmwareVersion: null,
+  reportedFirmwareAt: null,
   status: 'installed',
   registeredAt: new Date('2026-01-01T00:00:00.000Z'),
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
@@ -145,10 +148,10 @@ const registerDto: RegisterDeviceDto = {
   blackboxId: 'BB-9001',
 };
 
-// `apiKeyHash` ไม่อยู่ใน fixture นี้โดยตั้งใจ — mimic ของจริงที่
+// `apiKeyHash`/`telemetryKeyHash` ไม่อยู่ใน fixture นี้โดยตั้งใจ — mimic ของจริงที่
 // `PrismaService` ตั้ง `omit` default ไว้ (ดู prisma.service.ts) แล้ว
 // `prisma.device.create()` จริงจะไม่คืนค่านี้กลับมาเลย
-const createdDevice: Omit<Device, 'apiKeyHash'> = {
+const createdDevice: Omit<Device, 'apiKeyHash' | 'telemetryKeyHash'> = {
   id: '44444444-4444-4444-4444-444444444444',
   deviceId: registerDto.deviceId,
   simNumber: registerDto.simNumber,
@@ -168,6 +171,8 @@ const createdDevice: Omit<Device, 'apiKeyHash'> = {
   activePartition: 'A',
   partitionAFirmwareId: null,
   partitionBFirmwareId: null,
+  reportedFirmwareVersion: null,
+  reportedFirmwareAt: null,
 };
 
 const simPass = { passed: true, details: ['config ok (mock)'] };
@@ -2024,6 +2029,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           status: 'completed',
           configId: { not: null },
+          configApplyRequests: { none: {} },
         },
         orderBy: { updatedAt: 'desc' },
       });
@@ -2097,6 +2103,29 @@ describe('DeviceService', () => {
         const result = await service.getCurrentConfig('DTC-0001');
 
         expect(result.id).toBe(approvedConfig.id);
+      });
+
+      it('ไม่นับ Task ที่มีคำขอส่ง Config เข้ากล่อง (ผลจริงอยู่ที่ Rollout ของคำขอ)', async () => {
+        task.findFirst.mockResolvedValue(null);
+        campaignRolloutTarget.findFirst.mockResolvedValue({
+          id: 'rt-1',
+          status: 'success',
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          rollout: { configId: rolloutConfig.id },
+        });
+
+        const result = await service.getCurrentConfig('DTC-0001');
+
+        expect(result.id).toBe(rolloutConfig.id);
+        expect(task.findFirst).toHaveBeenCalledWith({
+          where: {
+            deviceId: 'DTC-0001',
+            status: 'completed',
+            configId: { not: null },
+            configApplyRequests: { none: {} },
+          },
+          orderBy: { updatedAt: 'desc' },
+        });
       });
 
       it('ไม่มี Task เลย แต่มี Rollout ที่สำเร็จ -> ใช้ Config ของ Rollout (ไม่ 404)', async () => {
