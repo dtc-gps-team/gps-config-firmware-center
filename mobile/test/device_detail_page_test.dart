@@ -12,6 +12,7 @@ import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
+import 'package:mobile/features/device_search/device_central_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/field_task_repository.dart';
@@ -126,13 +127,30 @@ DeviceStatus _makeStatus({
   DevicePayloadStatus firmware = DevicePayloadStatus.unknown,
   String? message,
   DeviceFirmwareOverride? pendingFirmwareOverride,
+  DateTime? lastSeenAt,
+  bool online = false,
 }) => DeviceStatus(
   deviceId: 'DEV-0117',
   configStatus: config,
   firmwareStatus: firmware,
   lastCheckInMessage: message,
   pendingFirmwareOverride: pendingFirmwareOverride,
+  lastSeenAt: lastSeenAt,
+  online: online,
 );
+
+/// `GET /devices/{id}/central` ปลอม — [central] `null` = โหลดไม่สำเร็จ (throw)
+class _FakeCentralRepository implements DeviceCentralRepository {
+  _FakeCentralRepository([this.central]);
+
+  final DeviceCentral? central;
+
+  @override
+  Future<DeviceCentral> getDeviceCentral(String deviceId) async {
+    if (central == null) throw ApiException('Server กลางล่ม', statusCode: 500);
+    return central!;
+  }
+}
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -145,6 +163,7 @@ Future<void> _pump(
   Task? openTask,
   FieldTaskRepository? fieldTaskRepo,
   bool centralMode = false,
+  DeviceCentralRepository? centralRepo,
 }) async {
   // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
   // ListView สร้างทุก section (สถานะ Config/Firmware, ปุ่มด้านล่าง) ได้ในเทสต์
@@ -168,6 +187,10 @@ Future<void> _pump(
           fieldTaskRepo ?? FakeFieldTaskRepository(),
         ),
         centralApplyModeProvider.overrideWith((ref) async => centralMode),
+        deviceCentralRepositoryProvider.overrideWithValue(
+          centralRepo ??
+              _FakeCentralRepository(const DeviceCentral(reachable: false)),
+        ),
       ],
       child: router == null
           ? MaterialApp(home: DeviceDetailPage(deviceId: deviceId))
@@ -210,6 +233,8 @@ void main() {
             imei: '860000000000117',
             serialNumber: 'SNGT06N000117',
             blackboxId: '7100000117',
+            hardwareRevisionCode: 'RevA',
+            bootloader: 'BL-2.1',
             customer: const Customer(id: 'c1', companyName: 'ขนส่งสมมติ จำกัด'),
           ),
         ),
@@ -220,6 +245,8 @@ void main() {
       expect(_rowValue('IMEI', '860000000000117'), findsOneWidget);
       expect(_rowValue('Serial Number', 'SNGT06N000117'), findsOneWidget);
       expect(_rowValue('Blackbox ID', '7100000117'), findsOneWidget);
+      expect(_rowValue('Hardware revision', 'RevA'), findsOneWidget);
+      expect(_rowValue('Bootloader', 'BL-2.1'), findsOneWidget);
       expect(_rowValue('ชื่อบริษัท', 'ขนส่งสมมติ จำกัด'), findsOneWidget);
     });
 
@@ -665,46 +692,103 @@ void _statusTests() {
       expect(_rowValue('สถานะ Firmware', 'รอติดตั้ง Firmware'), findsOneWidget);
     });
 
-    testWidgets('มี lastCheckInMessage -> แสดงข้อความ', (tester) async {
-      await _pump(
-        tester,
-        repo: _FakeDeviceSearchRepository(),
-        statusRepo: _FakeDeviceStatusRepository(
-          status: _makeStatus(message: 'เช็คอินเมื่อสักครู่'),
-        ),
+    // issue #386 ข้อ 5 — ออนไลน์จาก Server กลางก่อน ไม่งั้นจาก /status
+    group('ออนไลน์/ออฟไลน์', () {
+      testWidgets(
+        'ไม่เคยติดต่อ + Server กลางไม่รู้จัก -> "ยังไม่เคยติดต่อ" (ไม่บอกว่าออฟไลน์)',
+        (tester) async {
+          await _pump(tester, repo: _FakeDeviceSearchRepository());
+          await tester.pump();
+
+          expect(
+            _rowValue('ออนไลน์/ออฟไลน์', 'ยังไม่เคยติดต่อ'),
+            findsOneWidget,
+          );
+          expect(_rowValue('ติดต่อล่าสุด', '-'), findsOneWidget);
+          expect(find.text('Firmware ในกล่อง'), findsNothing);
+        },
       );
-      await tester.pump();
 
-      expect(find.text('เช็คอินเมื่อสักครู่'), findsOneWidget);
-    });
-
-    testWidgets('lastCheckInMessage เป็น null -> แสดง "-"', (tester) async {
-      await _pump(tester, repo: _FakeDeviceSearchRepository());
-      await tester.pump();
-
-      expect(find.text('เช็คอินล่าสุด'), findsOneWidget);
-      expect(_rowValue('เช็คอินล่าสุด', '-'), findsOneWidget);
-    });
-
-    testWidgets('ออนไลน์/ออฟไลน์ เป็น "ไม่ทราบ" คงที่ (placeholder)', (
-      tester,
-    ) async {
-      // แม้ status อื่นๆ จะเป็นค่าที่รู้ ช่อง online/offline ยังเป็น "ไม่ทราบ"
-      await _pump(
+      testWidgets('/status ออนไลน์ -> "ออนไลน์" + เวลาติดต่อล่าสุด', (
         tester,
-        repo: _FakeDeviceSearchRepository(),
-        statusRepo: _FakeDeviceStatusRepository(
-          status: _makeStatus(
-            config: DevicePayloadStatus.upToDate,
-            firmware: DevicePayloadStatus.upToDate,
-            message: 'ok',
+      ) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          statusRepo: _FakeDeviceStatusRepository(
+            status: _makeStatus(
+              online: true,
+              lastSeenAt: DateTime(2026, 10, 26, 17, 2),
+            ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      expect(find.text('ออนไลน์/ออฟไลน์'), findsOneWidget);
-      expect(find.text('ไม่ทราบ'), findsOneWidget);
+        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+        expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
+      });
+
+      testWidgets('/status เคยติดต่อแต่เกิน 5 นาที -> "ออฟไลน์"', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          statusRepo: _FakeDeviceStatusRepository(
+            status: _makeStatus(lastSeenAt: DateTime(2026, 10, 20, 9)),
+          ),
+        );
+        await tester.pump();
+
+        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออฟไลน์'), findsOneWidget);
+      });
+
+      testWidgets(
+        'กล่องโหมด central -> ใช้ค่าจาก Server กลาง แม้ /status บอกไม่เคยติดต่อ + แสดงเวอร์ชันที่กล่องรายงาน',
+        (tester) async {
+          await _pump(
+            tester,
+            repo: _FakeDeviceSearchRepository(),
+            centralRepo: _FakeCentralRepository(
+              DeviceCentral(
+                reachable: true,
+                device: CentralDeviceInfo(
+                  online: true,
+                  lastSeenAt: DateTime(2026, 10, 26, 17, 7),
+                  reportedFirmwareVersion: '1.2.0',
+                  reportedConfigVersion: 12,
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+
+          expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+          expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:07'), findsOneWidget);
+          expect(_rowValue('Firmware ในกล่อง', '1.2.0'), findsOneWidget);
+          expect(_rowValue('เวอร์ชัน Config ในกล่อง', '12'), findsOneWidget);
+        },
+      );
+
+      testWidgets('โหลดจาก Server กลางไม่สำเร็จ -> ใช้ /status ไม่แสดง error', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          statusRepo: _FakeDeviceStatusRepository(
+            status: _makeStatus(
+              online: true,
+              lastSeenAt: DateTime(2026, 10, 26, 17, 2),
+            ),
+          ),
+          centralRepo: _FakeCentralRepository(),
+        );
+        await tester.pump();
+
+        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+        expect(find.byKey(const Key('device_status_error')), findsNothing);
+      });
     });
 
     testWidgets('กำลังโหลด -> แสดง loading ของ status แต่ device ยังแสดง', (

@@ -239,6 +239,49 @@ void main() {
     });
   });
 
+  group('DeviceStatus / DeviceCentral (issue #386)', () {
+    test('DeviceStatus อ่าน online/lastSeenAt · ไม่มี field -> false/null', () {
+      final s = DeviceStatus.fromJson({
+        'deviceId': 'BOX-0001',
+        'configStatus': 'up_to_date',
+        'firmwareStatus': 'unknown',
+        'online': true,
+        'lastSeenAt': '2026-10-26T10:07:10.638Z',
+      });
+      expect(s.online, isTrue);
+      expect(s.lastSeenAt, DateTime.utc(2026, 10, 26, 10, 7, 10, 638));
+
+      final old = DeviceStatus.fromJson({'deviceId': 'X'});
+      expect(old.online, isFalse);
+      expect(old.lastSeenAt, isNull);
+    });
+
+    test('DeviceCentral อ่าน device · device null / unreachable', () {
+      final c = DeviceCentral.fromJson({
+        'mode': 'real',
+        'reachable': true,
+        'error': null,
+        'fetchedAt': '2026-10-26T10:07:14.120Z',
+        'device': {
+          'deviceId': 'BOX-0001',
+          'online': true,
+          'lastSeenAt': '2026-10-26T10:07:10.638Z',
+          'reportedFirmwareVersion': '1.2.0',
+          'reportedConfigVersion': 12,
+          'registered': true,
+        },
+      });
+      expect(c.reachable, isTrue);
+      expect(c.device!.online, isTrue);
+      expect(c.device!.reportedFirmwareVersion, '1.2.0');
+      expect(c.device!.reportedConfigVersion, 12);
+
+      final none = DeviceCentral.fromJson({'reachable': false, 'device': null});
+      expect(none.reachable, isFalse);
+      expect(none.device, isNull);
+    });
+  });
+
   group('Device.fromJson', () {
     test('parses all fields incl. nullable installedAt', () {
       final device = Device.fromJson({
