@@ -48,6 +48,9 @@ void main() {
           builder: (_, state) => ApplyConfigPickerPage(
             deviceId: state.pathParameters['deviceId']!,
             taskId: state.uri.queryParameters['taskId'],
+            initialKind: FieldApplyKind.fromWire(
+              state.uri.queryParameters['kind'],
+            ),
           ),
         ),
         GoRoute(
@@ -207,5 +210,129 @@ void main() {
     await tester.tap(find.byKey(const Key('apply_options_retry')));
     await tester.pumpAndSettle();
     expect(option('cfg-1'), findsOneWidget);
+  });
+
+  group('แท็บ Firmware (docs/27 B3)', () {
+    Finder firmware(String id) => find.byKey(Key('apply_firmware_$id'));
+
+    Future<void> openFirmwareTab(WidgetTester tester) async {
+      await tester.tap(find.text('Firmware'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'แสดงเวอร์ชันที่กล่องรันอยู่ + ป้ายรันอยู่/ถอยเวอร์ชัน · ไม่เลือกให้เอง',
+      (tester) async {
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'),
+        );
+        await openFirmwareTab(tester);
+
+        expect(
+          find.text('กล่องรัน Firmware v1.2.0 อยู่ตอนนี้'),
+          findsOneWidget,
+        );
+        expect(firmware('fw-1.3.0'), findsOneWidget);
+        expect(find.byKey(const Key('apply_firmware_current')), findsOneWidget);
+        expect(
+          find.byKey(const Key('apply_firmware_downgrade')),
+          findsOneWidget,
+        );
+        expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+      },
+    );
+
+    testWidgets('เวอร์ชันที่รันอยู่เลือกไม่ได้', (tester) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+      await openFirmwareTab(tester);
+
+      await tester.tap(firmware('fw-1.2.0'));
+      await tester.pump();
+
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    });
+
+    testWidgets('อัปเกรด -> ขอด้วย firmwareId ไม่ส่ง configId ไม่ถามยืนยัน', (
+      tester,
+    ) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+      await openFirmwareTab(tester);
+
+      await tester.tap(firmware('fw-1.3.0'));
+      await tester.pump();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('confirm_downgrade')), findsNothing);
+      expect(applyRepo.lastCreateTaskId, 't1');
+      expect(applyRepo.lastCreateFirmwareId, 'fw-1.3.0');
+      expect(applyRepo.lastCreateConfigId, isNull);
+    });
+
+    testWidgets(
+      'ถอยเวอร์ชัน -> ถามยืนยันก่อน · กลับไปเลือกใหม่ไม่สร้างคำขอ · ยืนยันแล้วจึงขอ',
+      (tester) async {
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'),
+        );
+        await openFirmwareTab(tester);
+
+        await tester.tap(firmware('fw-1.0.0'));
+        await tester.pump();
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining('ถอยเวอร์ชันจาก v1.2.0 เป็น v1.0.0'),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('กลับไปเลือกใหม่'));
+        await tester.pumpAndSettle();
+        expect(applyRepo.createCalls, 0);
+
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirm_downgrade')));
+        await tester.pumpAndSettle();
+        expect(applyRepo.createCalls, 1);
+        expect(applyRepo.lastCreateFirmwareId, 'fw-1.0.0');
+      },
+    );
+
+    testWidgets('เปิดด้วย ?kind=firmware -> อยู่แท็บ Firmware เลย', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1', firmware: true),
+      );
+
+      expect(firmware('fw-1.3.0'), findsOneWidget);
+      expect(option('cfg-1'), findsNothing);
+    });
+
+    testWidgets(
+      'ไม่รู้เวอร์ชันในกล่อง / ไม่มี Firmware ให้เลือก -> บอกชัด กดขอไม่ได้',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          currentFirmwareVersion: null,
+          firmwares: const [],
+        );
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'),
+        );
+        await openFirmwareTab(tester);
+
+        expect(
+          find.textContaining('ไม่ทราบเวอร์ชัน Firmware ที่กล่องรันอยู่'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('apply_firmware_empty')), findsOneWidget);
+        expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+      },
+    );
   });
 }

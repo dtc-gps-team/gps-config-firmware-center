@@ -1086,4 +1086,81 @@ void _deviceStatusTests() {
       expect(options.configs.single.suggested, isTrue);
     });
   });
+
+  group('คำขอส่งเข้ากล่อง Firmware (docs/27 B3, v3.62)', () {
+    Map<String, dynamic> base() => {
+      'id': 'car-1',
+      'taskId': 't1',
+      'deviceId': 'BOX-0001',
+      'status': 'approved',
+      'requestedAt': '2026-10-27T03:00:00.000Z',
+      'expiresAt': '2026-10-28T03:00:00.000Z',
+    };
+
+    test(
+      'อ่าน kind/firmware/fromFirmwareVersion/isDowngrade · configId null ได้',
+      () {
+        final r = ConfigApplyRequest.fromJson({
+          ...base(),
+          'kind': 'firmware',
+          'configId': null,
+          'firmwareId': 'fw-1',
+          'firmware': {'id': 'fw-1', 'version': '1.0.0'},
+          'fromFirmwareVersion': '1.2.0',
+          'isDowngrade': true,
+        });
+
+        expect(r.kind, FieldApplyKind.firmware);
+        expect(r.configId, isNull);
+        expect(r.firmwareId, 'fw-1');
+        expect(r.firmwareVersion, '1.0.0');
+        expect(r.fromFirmwareVersion, '1.2.0');
+        expect(r.isDowngrade, isTrue);
+      },
+    );
+
+    test(
+      'backend ก่อน v3.62 (ไม่มี kind) / ค่า kind ไม่รู้จัก -> config ไม่ throw',
+      () {
+        final old = ConfigApplyRequest.fromJson({
+          ...base(),
+          'configId': 'cfg-1',
+        });
+        expect(old.kind, FieldApplyKind.config);
+        expect(old.configId, 'cfg-1');
+        expect(old.isDowngrade, isFalse);
+        expect(FieldApplyKind.fromWire('something-new'), FieldApplyKind.config);
+      },
+    );
+
+    test(
+      'DeviceApplyOptions อ่านรายการ Firmware · backend เก่าไม่ส่ง = ว่าง',
+      () {
+        final options = DeviceApplyOptions.fromJson({
+          'deviceId': 'BOX-0001',
+          'deviceInstalled': true,
+          'configs': <dynamic>[],
+          'currentFirmwareVersion': '1.2.0',
+          'firmwares': [
+            {
+              'id': 'fw-1',
+              'version': '1.0.0',
+              'isCurrent': false,
+              'isDowngrade': true,
+            },
+          ],
+        });
+        expect(options.currentFirmwareVersion, '1.2.0');
+        expect(options.firmwares.single.isDowngrade, isTrue);
+
+        final old = DeviceApplyOptions.fromJson({
+          'deviceId': 'BOX-0001',
+          'deviceInstalled': true,
+          'configs': <dynamic>[],
+        });
+        expect(old.firmwares, isEmpty);
+        expect(old.currentFirmwareVersion, isNull);
+      },
+    );
+  });
 }

@@ -20,6 +20,7 @@ import '../../core/widgets/app_error_view.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/pending_config_override_banner.dart';
 import '../firmware_override/pending_firmware_override_banner.dart';
+import '../task/apply_mode_provider.dart';
 import '../task/field_task_repository.dart';
 import '../task/task_repository.dart';
 import 'device_search_repository.dart';
@@ -60,6 +61,12 @@ class DeviceDetailPage extends ConsumerWidget {
     final openTask = isFieldStaff
         ? ref.watch(openTaskForDeviceProvider(deviceId)).valueOrNull
         : null;
+    // docs/27 §9 (B3) — โหมด central ส่ง Firmware ผ่านคำขอ ("อัปโหลด" → แท็บ
+    // Firmware) ปุ่มยืนยันติดตั้ง/Override แบบเดิมไม่ได้ส่งอะไรเข้ากล่องจริง จึงซ่อน
+    // · ยังไม่รู้โหมด = แสดงตามเดิม
+    final centralMode = isFieldStaff
+        ? ref.watch(centralApplyModeProvider).valueOrNull ?? false
+        : false;
 
     return AppV2Theme(
       child: Scaffold(
@@ -108,7 +115,7 @@ class DeviceDetailPage extends ConsumerWidget {
                           key: const Key('device_detail_firmware_override'),
                           label: 'Firmware Override',
                           icon: Icons.system_update_alt,
-                          visible: isSt,
+                          visible: isSt && !centralMode,
                           onPressed: () => _pushThenRefresh(
                             context,
                             ref,
@@ -133,7 +140,7 @@ class DeviceDetailPage extends ConsumerWidget {
                           key: const Key('device_detail_confirm_firmware'),
                           label: 'ยืนยันติดตั้ง Firmware',
                           icon: Icons.check_circle_outline,
-                          visible: isFieldStaff,
+                          visible: isFieldStaff && !centralMode,
                           onPressed: () => context.push(
                             AppRoutes.deviceConfirmFirmware(deviceId),
                           ),
