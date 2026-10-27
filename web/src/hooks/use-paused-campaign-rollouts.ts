@@ -24,13 +24,17 @@ type PausedCampaignRolloutsState = {
  * "จำนวนเครื่องที่ failure" — #238 review comment ข้อ 6) mirror
  * `usePendingCampaignRollouts` แต่ตอนนี้แค่ต้องการนับจำนวน ไม่ต้อง resolve
  * ชื่อกลุ่มเพิ่ม
+ *
+ * `enabled` (default true) — ตั้ง false ให้ข้ามการยิงเลย ไม่ใช่แค่ไม่โชว์ผล
+ * (รีวิว #373: FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `campaign:Read` ยิงไป
+ * ก็ได้ 403 เปล่าๆ) — ใช้ตอนเช็ค role จาก session แล้วรู้ก่อนเลยว่าไม่มีสิทธิ์
  */
-export function usePausedCampaignRollouts() {
+export function usePausedCampaignRollouts(enabled = true) {
   const { session } = useAuth();
-  const token = session?.accessToken ?? null;
+  const token = enabled ? session?.accessToken ?? null : null;
   const [state, setState] = useState<PausedCampaignRolloutsState>({
     data: null,
-    isLoading: true,
+    isLoading: enabled,
     error: null,
   });
 

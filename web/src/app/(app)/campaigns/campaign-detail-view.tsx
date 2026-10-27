@@ -27,12 +27,13 @@ import {
 } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { useAuth } from "@/components/auth/auth-provider";
+import { RoleGuard } from "@/components/auth/role-guard";
 import { useCampaign } from "@/hooks/use-campaign";
 import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useCampaignRollouts } from "@/hooks/use-campaign-rollouts";
 import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets";
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
-import { canCreateCampaign } from "@/lib/permissions";
+import { canCreateCampaign, canReadCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -49,6 +50,9 @@ import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel"
  * ตัวเดียว) — ตอนนี้ Campaign เป็นแค่กลุ่ม ไม่มี payload/status เอง จึงแสดง
  * สมาชิกกลุ่ม + ประวัติ Rollout ที่ push เข้ากลุ่มนี้แทน (คลิกแต่ละ Rollout
  * เพื่อดูผล per-target/failure rate จริง)
+ *
+ * `RoleGuard` กันทั้งหน้า (FirmwareEngineer/QAEngineer เป็น "-" ตาม
+ * RBAC_Matrix.md §2 แถว "Campaign Wizard") — mirror `campaigns-table.tsx`
  */
 export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const router = useRouter();
@@ -71,25 +75,31 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   );
 
   if (isLoading && !data) {
-    return <DetailSkeleton />;
+    return (
+      <RoleGuard allow={canReadCampaign}>
+        <DetailSkeleton />
+      </RoleGuard>
+    );
   }
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">{error ?? "ไม่พบกลุ่มนี้"}</p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            ลองใหม่
-          </Button>
-          <Link
-            href="/campaigns"
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            กลับไปรายการ
-          </Link>
+      <RoleGuard allow={canReadCampaign}>
+        <div className="flex flex-col items-center gap-3 py-16">
+          <p className="text-sm text-destructive">{error ?? "ไม่พบกลุ่มนี้"}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              ลองใหม่
+            </Button>
+            <Link
+              href="/campaigns"
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              กลับไปรายการ
+            </Link>
+          </div>
         </div>
-      </div>
+      </RoleGuard>
     );
   }
 
@@ -100,12 +110,13 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   const canStartRollout = canCreateCampaign(session?.role);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title={data.name}
-        description={data.description ?? undefined}
-        breadcrumb={[{ label: data.name }]}
-      />
+    <RoleGuard allow={canReadCampaign}>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title={data.name}
+          description={data.description ?? undefined}
+          breadcrumb={[{ label: data.name }]}
+        />
 
       {latestRollout && (
         <Card className="gap-4 p-5">
@@ -323,6 +334,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           </div>
         </div>
       </Card>
-    </div>
+      </div>
+    </RoleGuard>
   );
 }
