@@ -45,6 +45,7 @@ import { InfoRow } from "@/components/info-row";
 import { rotateDeviceKey, type Device } from "@/lib/device-api";
 import { PageHeader } from "@/components/page-header";
 import { DeviceCentralCard } from "./device-central-card";
+import { DeviceHistorySheet } from "./device-history-sheet";
 import { DeviceStatusCard } from "./device-status-card";
 
 export function DeviceDetailView({ deviceId }: { deviceId: string }) {
@@ -231,7 +232,12 @@ function DeviceDetailContent({ device }: { device: Device }) {
             )}
           </>
         }
-        actions={<RotateKeyControl deviceId={device.deviceId} />}
+        actions={
+          <>
+            <DeviceHistorySheet deviceId={device.deviceId} />
+            <RotateKeyControl deviceId={device.deviceId} />
+          </>
+        }
       />
 
       {/* สถานะไว้บนสุด — คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
