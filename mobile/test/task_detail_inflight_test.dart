@@ -10,16 +10,17 @@ import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
-import 'package:mobile/features/device_search/device_status_repository.dart';
-import 'package:mobile/features/task/confirm_install_repository.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
+import 'support/fake_config_apply_request_repository.dart';
+
 // UX audit #3 — หน้ารายละเอียดงานถูกสร้างใหม่ทั้งหน้าทุกครั้งที่ task เปลี่ยน
 // (key รวม status/updatedAt + taskDetailProvider watch syncRevisionProvider)
-// ถ้า sync flush เสร็จระหว่างกำลังส่ง apply-config state การส่งจะหาย ปุ่มกดได้
-// อีกครั้ง และผลของคำขอแรกถูกทิ้ง
+// ถ้า sync flush เสร็จระหว่างกำลังขอส่ง Config (docs/25) state การขอจะหาย ปุ่มกด
+// ได้อีกครั้ง และผลของคำขอแรกถูกทิ้ง
 
 class _FakeAuthController extends AuthController {
   @override
@@ -64,35 +65,10 @@ class _FakeTaskEventRepository implements TaskEventRepository {
       throw UnimplementedError();
 }
 
-/// apply-config ที่ค้างอยู่บนสายจนกว่าจะ [complete]
-class _GatedConfirmInstallRepository implements ConfirmInstallRepository {
-  final gate = Completer<ConfigApplyResult>();
-  int calls = 0;
-
-  @override
-  Future<ConfigApplyResult> applyConfig({
-    required String deviceId,
-    required String configId,
-    String? rolloutId,
-  }) {
-    calls++;
-    return gate.future;
-  }
-}
-
-class _FakeDeviceStatusRepository implements DeviceStatusRepository {
-  @override
-  Future<DeviceStatus> getDeviceStatus(String deviceId) async => DeviceStatus(
-    deviceId: deviceId,
-    configStatus: DevicePayloadStatus.unknown,
-    firmwareStatus: DevicePayloadStatus.unknown,
-  );
-}
-
 Future<void> _pump(
   WidgetTester tester, {
   required _FakeTaskRepository repo,
-  ConfirmInstallRepository? confirmRepo,
+  ConfigApplyRequestRepository? applyRepo,
 }) async {
   tester.view.physicalSize = const Size(1080, 4000);
   tester.view.devicePixelRatio = 2;
@@ -120,11 +96,11 @@ Future<void> _pump(
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
         ),
-        confirmInstallRepositoryProvider.overrideWithValue(
-          confirmRepo ?? _GatedConfirmInstallRepository(),
-        ),
-        deviceStatusRepositoryProvider.overrideWithValue(
-          _FakeDeviceStatusRepository(),
+        configApplyRequestRepositoryProvider.overrideWithValue(
+          applyRepo ??
+              FakeConfigApplyRequestRepository(
+                createGate: Completer<ConfigApplyRequest>(),
+              ),
         ),
       ],
       child: const MaterialApp(home: TaskDetailPage(taskId: 't1')),
@@ -157,17 +133,19 @@ ButtonStyleButton _button(WidgetTester tester, String key) =>
 
 void main() {
   group('state การส่ง Config ไม่หายเมื่อ sync flush (UX audit #3)', () {
-    testWidgets('sync เสร็จระหว่างกำลังส่ง apply-config -> ปุ่มยัง disabled + '
+    testWidgets('sync เสร็จระหว่างกำลังขอส่ง Config -> ปุ่มยัง disabled + '
         'spinner, กดซ้ำไม่ยิงซ้ำ, และเห็นผลของคำขอแรก', (tester) async {
       final repo = _FakeTaskRepository();
-      final confirm = _GatedConfirmInstallRepository();
-      await _pump(tester, repo: repo, confirmRepo: confirm);
+      final confirm = FakeConfigApplyRequestRepository(
+        createGate: Completer<ConfigApplyRequest>(),
+      );
+      await _pump(tester, repo: repo, applyRepo: confirm);
 
       await tester.ensureVisible(_confirmButton);
       await tester.tap(_confirmButton);
       await tester.pump();
       await tester.pump();
-      expect(confirm.calls, 1);
+      expect(confirm.createCalls, 1);
       expect(_button(tester, 'confirm_install_button').onPressed, isNull);
 
       // sync flush เสร็จพอดี: server ส่ง task ที่ updatedAt ใหม่มา
@@ -191,24 +169,24 @@ void main() {
       );
       await tester.tap(_confirmButton, warnIfMissed: false);
       await tester.pump();
-      expect(confirm.calls, 1, reason: 'ห้ามยิง apply-config ซ้ำ');
+      expect(confirm.createCalls, 1, reason: 'ห้ามยิงคำขอซ้ำ');
 
-      confirm.gate.complete(
-        ConfigApplyResult(
-          applied: true,
-          details: const ['ok'],
-          appliedAt: DateTime(2026, 9, 3, 10),
-        ),
-      );
+      confirm.createGate!.complete(fakeApplyRequest());
+      await tester.pump();
       await tester.pump();
       await tester.pump();
 
-      expect(find.text('ส่ง Config เข้าเครื่องแล้ว'), findsOneWidget);
       expect(
         find.text(
-          'ส่ง Config เข้าเครื่องแล้ว — กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป',
+          'ส่งคำขอแล้ว — รอ Operation อีกคนอนุมัติก่อนระบบส่งเข้ากล่อง',
         ),
         findsOneWidget,
+      );
+      expect(find.text('รอ Operation อนุมัติ'), findsOneWidget);
+      expect(
+        _confirmButton,
+        findsNothing,
+        reason: 'มีคำขอ pending แล้ว ปุ่มขอส่งหายจากแถบล่าง',
       );
     });
 

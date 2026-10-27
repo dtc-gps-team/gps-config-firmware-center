@@ -10,6 +10,7 @@ import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
 import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -113,15 +114,19 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                           searching: _query.trim().isNotEmpty,
                         );
                       }
-                      return ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) => _DeviceCard(
-                          key: Key('device_card_$i'),
-                          device: filtered[i],
-                          onTap: () => context.push(
-                            AppRoutes.deviceDetail(filtered[i].deviceId),
+                      // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
+                      return AppFadeIn(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, i) => _DeviceCard(
+                            key: Key('device_card_$i'),
+                            device: filtered[i],
+                            onTap: () => context.push(
+                              AppRoutes.deviceDetail(filtered[i].deviceId),
+                            ),
                           ),
                         ),
                       );

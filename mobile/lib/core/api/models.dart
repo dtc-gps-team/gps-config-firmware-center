@@ -55,6 +55,27 @@ enum TaskStatus {
   }
 }
 
+/// ที่มาของงาน (`Task.source` ใน openapi, docs/28 §4) — `operation` = Operation
+/// สร้างผ่าน `POST /tasks` · `technician` = ช่างเริ่มเองจากหน้ากล่อง
+/// (`POST /tasks/start`) · ค่าที่ไม่รู้จัก (backend ใหม่กว่าแอป) และ payload ที่ไม่มี
+/// field นี้ (backend ก่อน docs/28 / cache ในเครื่อง) ถือเป็น `operation` — **ไม่
+/// throw** ต่างจาก enum อื่น เพราะแค่ใช้แสดงป้าย ไม่ควรทำให้หน้า Task พัง
+enum TaskSource {
+  operation('operation'),
+  technician('technician');
+
+  const TaskSource(this.wireName);
+
+  final String wireName;
+
+  static TaskSource fromWire(Object? value) {
+    for (final source in TaskSource.values) {
+      if (source.wireName == value) return source;
+    }
+    return TaskSource.operation;
+  }
+}
+
 /// `Notification.type` enum — matches `docs/api/openapi.yaml` `Notification.type`
 /// and the Prisma `NotificationType` enum.
 enum NotificationType {
@@ -82,7 +103,17 @@ enum NotificationType {
   incidentReportPending('incident_report_pending'),
   incidentReportResolved('incident_report_resolved'),
   incidentReportDismissed('incident_report_dismissed'),
-  incidentReportPromoted('incident_report_promoted');
+  incidentReportPromoted('incident_report_promoted'),
+  // เพิ่มใหม่ (docs/25 §3.6) — คำขอส่ง Config เข้าเครื่องจากหน้างาน · payload
+  // `{requestId, taskId, deviceId}` เสมอ (+ `rejectReason` / `outcome`+`detail`)
+  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างที่ถือ Task · `approved`
+  // เพิ่มใน docs/27 (อนุมัติแล้ว ช่างกดส่งเข้ากล่องได้ — payload มี `expiresAt`)
+  configApplyPending('config_apply_pending'),
+  configApplyApproved('config_apply_approved'),
+  configApplyRejected('config_apply_rejected'),
+  configApplySucceeded('config_apply_succeeded'),
+  configApplyFailed('config_apply_failed'),
+  configApplyExpired('config_apply_expired');
 
   const NotificationType(this.wireName);
 
@@ -351,6 +382,166 @@ class DeviceConfigOverride {
   }
 }
 
+/// `ConfigApplyRequest.status` — ตรงกับ `ConfigApplyRequestStatus` ใน
+/// `docs/api/openapi.yaml` (docs/25 §4.1)
+enum ConfigApplyRequestStatus {
+  pending('pending'),
+  // docs/27 — อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง
+  approved('approved'),
+  sending('sending'),
+  succeeded('succeeded'),
+  failed('failed'),
+  skippedOffline('skipped_offline'),
+  rejected('rejected'),
+  cancelled('cancelled'),
+  expired('expired');
+
+  const ConfigApplyRequestStatus(this.wireName);
+
+  final String wireName;
+
+  /// ขอส่งใหม่ได้จากสถานะนี้ไหม (docs/25 §3.3 ตารางการ์ด) — คำขอที่จบแบบไม่สำเร็จ
+  /// · `pending`/`approved`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
+  bool get allowsNewRequest => switch (this) {
+    pending || approved || sending || succeeded => false,
+    failed || skippedOffline || rejected || cancelled || expired => true,
+  };
+
+  /// สถานะที่ยังเปลี่ยนเองได้จากฝั่ง server (Operation ตัดสิน, หมดอายุ, ผลจาก
+  /// กล่อง) — หน้า Task Detail โหลดใหม่เป็นระยะระหว่างอยู่สถานะนี้ (docs/27 §9)
+  bool get isInFlight => switch (this) {
+    pending || approved || sending => true,
+    succeeded ||
+    failed ||
+    skippedOffline ||
+    rejected ||
+    cancelled ||
+    expired => false,
+  };
+
+  static ConfigApplyRequestStatus fromWire(String value) {
+    for (final status in ConfigApplyRequestStatus.values) {
+      if (status.wireName == value) return status;
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown config apply status');
+  }
+}
+
+/// คำขอส่ง Config ของ Task เข้าเครื่องจริง (`ConfigApplyRequest` ใน openapi,
+/// docs/25) — Mobile ใช้แค่ field ที่การ์ดใน Task Detail แสดง
+class ConfigApplyRequest {
+  const ConfigApplyRequest({
+    required this.id,
+    required this.taskId,
+    required this.deviceId,
+    required this.configId,
+    required this.status,
+    required this.requestedAt,
+    required this.expiresAt,
+    this.note,
+    this.rejectReason,
+    this.resultDetail,
+    this.decidedAt,
+    this.releasedAt,
+    this.completedAt,
+  });
+
+  final String id;
+  final String taskId;
+  final String deviceId;
+  final String configId;
+  final ConfigApplyRequestStatus status;
+  final DateTime requestedAt;
+  final DateTime expiresAt;
+  final String? note;
+  final String? rejectReason;
+
+  /// ผลหรือเหตุผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, งานถูกยกเลิก)
+  final String? resultDetail;
+  final DateTime? decidedAt;
+
+  /// เวลาที่ช่างกดส่งเข้ากล่อง (docs/27) — `null` ก่อนกดส่ง
+  final DateTime? releasedAt;
+  final DateTime? completedAt;
+
+  factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
+    DateTime? optionalDate(String key) {
+      final value = json[key];
+      return value is String ? DateTime.parse(value) : null;
+    }
+
+    return ConfigApplyRequest(
+      id: json['id'] as String,
+      taskId: json['taskId'] as String,
+      deviceId: json['deviceId'] as String,
+      configId: json['configId'] as String,
+      status: ConfigApplyRequestStatus.fromWire(json['status'] as String),
+      requestedAt: DateTime.parse(json['requestedAt'] as String),
+      expiresAt: DateTime.parse(json['expiresAt'] as String),
+      note: json['note'] as String?,
+      rejectReason: json['rejectReason'] as String?,
+      resultDetail: json['resultDetail'] as String?,
+      decidedAt: optionalDate('decidedAt'),
+      releasedAt: optionalDate('releasedAt'),
+      completedAt: optionalDate('completedAt'),
+    );
+  }
+}
+
+/// 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2)
+class ApplyOptionConfig {
+  const ApplyOptionConfig({
+    required this.id,
+    required this.name,
+    required this.latestVersion,
+    required this.suggested,
+  });
+
+  final String id;
+  final String name;
+
+  /// `ConfigVersion.versionNumber` ล่าสุด (0 = ยังไม่มีเวอร์ชัน)
+  final int latestVersion;
+
+  /// Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ — backend เรียง
+  /// ตัวนี้ขึ้นก่อนแล้ว
+  final bool suggested;
+
+  factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
+      ApplyOptionConfig(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        latestVersion: (json['latestVersion'] as num?)?.toInt() ?? 0,
+        suggested: json['suggested'] as bool? ?? false,
+      );
+}
+
+/// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่างเลือก
+/// ส่งเข้ากล่องนี้ได้ · ส่วน Firmware มาทีหลัง (B2/B3 ของ docs/27)
+class DeviceApplyOptions {
+  const DeviceApplyOptions({
+    required this.deviceId,
+    required this.deviceInstalled,
+    required this.configs,
+  });
+
+  final String deviceId;
+
+  /// ส่งเข้ากล่องได้เฉพาะเครื่องที่ติดตั้งแล้ว — `false` บอกช่างก่อนกดขอ
+  final bool deviceInstalled;
+  final List<ApplyOptionConfig> configs;
+
+  factory DeviceApplyOptions.fromJson(Map<String, dynamic> json) =>
+      DeviceApplyOptions(
+        deviceId: json['deviceId'] as String,
+        deviceInstalled: json['deviceInstalled'] as bool? ?? false,
+        configs: [
+          for (final raw in (json['configs'] as List<dynamic>? ?? const []))
+            ApplyOptionConfig.fromJson(raw as Map<String, dynamic>),
+        ],
+      );
+}
+
 /// `Firmware` ใน `GET /firmware` (ทุก Role อ่านได้) — เก็บเฉพาะ field ที่หน้า
 /// Firmware Override ใช้เลือก/กรองตัวที่ติดตั้งได้ (ไม่ต้องใช้ objectKey ฯลฯ)
 class Firmware {
@@ -611,38 +802,6 @@ class DeviceSimulateConfigResult {
       );
 }
 
-/// Result of `POST /devices/{deviceId}/apply-config` (`ConfigApplyResult`,
-/// Confirm Install — Sprint 3). Fire-and-forget on the backend: there is no
-/// device status in the response because the box only picks up the new
-/// Config on its next power-on (no synchronous ack) — see
-/// `backend/src/device/config-applier.ts`. [applied] can be `false` on a
-/// `200` (not just thrown errors) when the Config's fields fail the backend's
-/// basic pre-flight checks — [details] explains why.
-class ConfigApplyResult {
-  const ConfigApplyResult({
-    required this.applied,
-    required this.details,
-    required this.appliedAt,
-  });
-
-  final bool applied;
-  final List<String> details;
-  final DateTime appliedAt;
-
-  factory ConfigApplyResult.fromJson(Map<String, dynamic> json) {
-    final rawDetails = json['details'] as List<dynamic>?;
-    return ConfigApplyResult(
-      applied: json['applied'] as bool? ?? false,
-      details: rawDetails == null
-          ? const []
-          : rawDetails.map((e) => e.toString()).toList(growable: false),
-      appliedAt:
-          DateTime.tryParse(json['appliedAt'] as String? ?? '') ??
-          DateTime.now(),
-    );
-  }
-}
-
 /// Result of `POST /devices/{deviceId}/confirm-firmware-install`
 /// (`ConfirmFirmwareInstallResult`, issue #261). Only records that the
 /// confirmation happened (AuditLog) — nothing is sent to the device and no
@@ -685,6 +844,9 @@ class Task {
     this.deviceId,
     this.configId,
     this.dueDate,
+    this.source = TaskSource.operation,
+    this.completedAt,
+    this.autoClosed = false,
   });
 
   final String id;
@@ -704,6 +866,15 @@ class Task {
   final String? configId;
   final DateTime? dueDate;
 
+  /// ช่างเริ่มเองหรือ Operation สร้าง (docs/28) — แสดงเป็นป้ายใน Task Detail
+  final TaskSource source;
+
+  /// เวลาปิดงาน (ช่างกดหรือระบบปิด) — งานที่เสร็จก่อน docs/28 เป็น `null`
+  final DateTime? completedAt;
+
+  /// ระบบปิดให้เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม. (docs/28 §5.4)
+  final bool autoClosed;
+
   factory Task.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -721,8 +892,20 @@ class Task {
       deviceId: json['deviceId'] as String?,
       configId: json['configId'] as String?,
       dueDate: parseDate(json['dueDate']),
+      source: TaskSource.fromWire(json['source']),
+      completedAt: parseDate(json['completedAt']),
+      autoClosed: json['autoClosed'] as bool? ?? false,
     );
   }
+}
+
+/// ผลของ `POST /tasks/start` (docs/28 §5.1) — `created=false` = ได้งานเดิมที่ยัง
+/// เปิดอยู่ของกล่องนี้กลับมา
+class StartTaskResult {
+  const StartTaskResult({required this.task, required this.created});
+
+  final Task task;
+  final bool created;
 }
 
 /// One entry on a task's timeline — mirrors `docs/api/openapi.yaml`

@@ -225,7 +225,7 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
   let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
-  let centralDeviceService: { findDevice: jest.Mock };
+  let centralDeviceService: { findDevice: jest.Mock; mode: 'real' | 'mock' };
   // ค่าเริ่มต้นเป็น mock เสมอ (CLAUDE.md Mock Mode Pattern) — เทสที่ต้องการ
   // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
   let deviceConfigApplyMode: string | undefined;
@@ -275,8 +275,13 @@ describe('DeviceService', () => {
     // default: ไม่รู้จักกล่อง (เหมือนกล่องที่ยังไม่เคยเชื่อมต่อ Server กลาง) —
     // register() ที่ไม่ใส่ initialFirmwareId จะไม่ seed อะไรให้ตามพฤติกรรม
     // เดิม เว้นแต่เทสตั้ง mockResolvedValue เองเพื่อทดสอบ auto-detect
+    // mode: 'real' ตามค่าเริ่มต้นของเทสกลุ่มนี้ (เทสพฤติกรรม auto-detect เอง)
+    // — เทสโหมด 'mock' แยกตั้งเองด้านล่าง (รีวิว #362: ข้าม auto-detect ถ้า
+    // ไม่ได้ต่อ Server กลางจริง กัน MockCentralDeviceClient คืนข้อมูลตัวอย่าง
+    // ปลอมมาเป็น seed)
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
+      mode: 'real',
     };
     customer = { findUnique: jest.fn() };
 
@@ -785,6 +790,23 @@ describe('DeviceService', () => {
         registerDto.deviceId,
       );
       expect(firmware.findUnique).not.toHaveBeenCalled();
+      const calls = device.create.mock.calls as { data: object }[][];
+      expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
+    });
+
+    // รีวิว #362 (B) — `CENTRAL_MODE=mock` (ค่าเริ่มต้น) ใช้
+    // `MockCentralDeviceClient` ซึ่งคืนข้อมูลตัวอย่างของ DEV-0001/DEV-0002
+    // เสมอไม่ว่ากล่องจริงจะมีหรือไม่ ต้องไม่เอาข้อมูลปลอมนี้มา seed
+    // partitionAFirmwareId ให้ — auto-detect ใช้ได้เฉพาะ `CENTRAL_MODE=real`
+    it('ไม่ส่ง initialFirmwareId มา และอยู่โหมด mock (ไม่ได้ต่อ Server กลางจริง) -> ไม่เรียก findDevice เลย ไม่ seed', async () => {
+      centralDeviceService.mode = 'mock';
+      centralDeviceService.findDevice.mockResolvedValue({
+        device: { reportedFirmwareVersion: readyFirmware.version },
+      });
+
+      await service.register(registerDto, admin);
+
+      expect(centralDeviceService.findDevice).not.toHaveBeenCalled();
       const calls = device.create.mock.calls as { data: object }[][];
       expect(calls[0][0].data).not.toHaveProperty('partitionAFirmwareId');
     });

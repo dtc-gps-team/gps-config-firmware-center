@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
+import { StartTaskDto } from './dto/start-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ */
@@ -68,6 +69,17 @@ function toEventView(event: TaskEventWithChanger): TaskEventView {
 const AUDIT_MODULE = 'task';
 
 const OPERATION_ROLE = 'Operation';
+
+const CANCEL_REASON_TASK_CANCELLED = 'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ';
+const CANCEL_REASON_TASK_COMPLETED =
+  'ช่างปิดงานแล้ว ระบบยกเลิกคำขอให้อัตโนมัติ';
+
+/** แถว Task ที่ `lockTask()` อ่านมาตอนล็อก */
+interface LockedTask {
+  status: TaskStatus;
+  createdAt: Date;
+  assignedTo: string;
+}
 // ST/OT = ผู้ใช้ Mobile ที่เห็น/แก้ได้เฉพาะงานที่ตัวเองถูก assign เท่านั้น
 // (ดู docs/architecture/RBAC_Matrix.md Section 4.3 และ Section 5 ข้อ 8)
 const SELF_SCOPED_ROLES: readonly string[] = ['ST', 'OT'];
@@ -112,6 +124,32 @@ const CONFIG_STATUSES_ASSIGNABLE_TO_TASK: readonly ConfigStatus[] = [
   'synced',
 ];
 
+// งานที่ยัง "เปิด" อยู่ — `POST /tasks/start` ใช้ใบเดิมถ้าช่างมีงานสถานะนี้ของ
+// กล่องเดียวกัน (docs/28 D2)
+const OPEN_TASK_STATUSES: TaskStatus[] = ['pending', 'in_progress'];
+
+/** ปิดงาน `in_progress` ที่ไม่มีความเคลื่อนไหวเกินเท่านี้ (docs/28 D4, §5.4) */
+export const TASK_IDLE_CLOSE_HOURS = 24;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** ชื่องานที่ช่างเริ่มเอง เช่น "BOX-0001 — 26 ต.ค. 2569" (เวลาไทย) */
+export function technicianTaskTitle(deviceId: string, now: Date): string {
+  const date = new Intl.DateTimeFormat('th-TH', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Bangkok',
+  }).format(now);
+  return `${deviceId} — ${date}`;
+}
+
+/** ผลของ `POST /tasks/start` — `created=false` คือได้ใบเดิมกลับไป (200) */
+export interface StartTaskResult {
+  task: Task;
+  created: boolean;
+}
+
 /** แปลงค่าวันที่จาก DTO (ISO string / null / undefined) ให้เป็นรูปแบบที่ Prisma รับ */
 function toDbDate(value: string | null | undefined): Date | null | undefined {
   if (value === undefined) {
@@ -121,6 +159,27 @@ function toDbDate(value: string | null | undefined): Date | null | undefined {
     return null;
   }
   return new Date(value);
+}
+
+/**
+ * ผู้ผูก Config เข้างาน (docs/25 §4.2) — เขียนทุกครั้งที่ PATCH/POST ส่ง
+ * `configId` มา: ตั้งค่า = ผู้เรียก (Operation), ล้าง (`null`) = ล้างผู้ผูกด้วย ·
+ * ไม่ส่ง `configId` (`undefined`) = ไม่แตะทั้งสองคอลัมน์ · ส่งค่าเดิมซ้ำนับเป็น
+ * "ผูกใหม่" โดยตั้งใจ: เป็นทางเดียวที่ Operation ใช้เติมผู้ผูกให้งานเก่าที่เป็น
+ * null (คำขอส่ง Config ของงานพวกนั้นถูกปฏิเสธจนกว่าจะผูกใหม่)
+ */
+export function configAssignment(
+  configId: string | null | undefined,
+  actor: ActingUser,
+  now: Date = new Date(),
+): { configAssignedBy?: string | null; configAssignedAt?: Date | null } {
+  if (configId === undefined) {
+    return {};
+  }
+  if (configId === null) {
+    return { configAssignedBy: null, configAssignedAt: null };
+  }
+  return { configAssignedBy: actor.id, configAssignedAt: now };
 }
 
 /**
@@ -175,6 +234,7 @@ export class TaskService {
           assignedTo: dto.assignedTo,
           deviceId: dto.deviceId,
           configId: dto.configId,
+          ...configAssignment(dto.configId, actor),
           dueDate: toDbDate(dto.dueDate),
         },
       });
@@ -193,6 +253,97 @@ export class TaskService {
     await this.notifyTaskAssigned(created);
     await this.logAudit('create', actor);
     return created;
+  }
+
+  /**
+   * `POST /tasks/start` (docs/28 §5.1) — ช่าง (ST/OT, resource `field-task`)
+   * เริ่มงานกับกล่องเอง · มีงาน `pending`/`in_progress` ของตัวเองกับกล่องนี้อยู่แล้ว
+   * (ไม่ว่า Operation สั่งหรือเริ่มเอง) ใช้ใบเดิม ถ้า `pending` เปลี่ยนเป็น
+   * `in_progress` ให้ · ไม่มีก็สร้างใหม่ `source=technician` เป็นของผู้เรียกเสมอ
+   *
+   * - กล่องไม่พบ 404 · `decommissioned` 409 · ไม่บังคับ `installed` (ไปติดตั้ง
+   *   กล่องใหม่ก็เริ่มงานได้ — การขอส่ง Config ยังบังคับ `installed` เหมือนเดิม)
+   * - advisory lock ต่อ (ช่าง, กล่อง) กันกดซ้ำพร้อมกันได้ 2 ใบ (Prisma ไม่มี
+   *   partial unique index — แบบเดียวกับ `lockDevice()` ของ config-apply-request)
+   * - ไม่แจ้ง `task_assigned` (ช่างสร้างให้ตัวเอง)
+   */
+  async start(dto: StartTaskDto, actor: ActingUser): Promise<StartTaskResult> {
+    if (!SELF_SCOPED_ROLES.includes(actor.role)) {
+      throw new ForbiddenException('เริ่มงานเองได้เฉพาะช่าง (ST/OT)');
+    }
+    const deviceId = dto.deviceId.trim();
+    const device = await this.prisma.device.findUnique({ where: { deviceId } });
+    if (!device) {
+      throw new NotFoundException(`ไม่พบเครื่อง ${deviceId}`);
+    }
+    if (device.status === 'decommissioned') {
+      throw new ConflictException(
+        `เครื่อง ${deviceId} ปลดระวางแล้ว เริ่มงานไม่ได้`,
+      );
+    }
+    const note = dto.note?.trim() || null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`task-start:${actor.id}:${deviceId}`}))::text`;
+      const now = new Date();
+      const existing = await tx.task.findFirst({
+        where: {
+          assignedTo: actor.id,
+          deviceId,
+          status: { in: OPEN_TASK_STATUSES },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      let task: Task;
+      let created: boolean;
+      if (existing) {
+        task = existing;
+        created = false;
+        if (existing.status === 'pending') {
+          task = await tx.task.update({
+            where: { id: existing.id },
+            data: { status: 'in_progress' },
+          });
+          await tx.taskEvent.create({
+            data: {
+              taskId: task.id,
+              fromStatus: 'pending',
+              toStatus: 'in_progress',
+              changedBy: actor.id,
+              changedAt: now,
+            },
+          });
+        }
+      } else {
+        task = await tx.task.create({
+          data: {
+            title: technicianTaskTitle(deviceId, now),
+            assignedTo: actor.id,
+            deviceId,
+            status: 'in_progress',
+            source: 'technician',
+          },
+        });
+        created = true;
+        await tx.taskEvent.create({
+          data: {
+            taskId: task.id,
+            fromStatus: null,
+            toStatus: 'in_progress',
+            changedBy: actor.id,
+            changedAt: task.createdAt,
+          },
+        });
+      }
+      if (note) {
+        await tx.taskEvent.create({
+          data: { taskId: task.id, changedBy: actor.id, note },
+        });
+      }
+      return { task, created };
+    });
+    await this.logAudit(result.created ? 'start' : 'resume', actor);
+    return result;
   }
 
   findAll(query: QueryTaskDto, actor: ActingUser): Promise<Task[]> {
@@ -253,6 +404,11 @@ export class TaskService {
           if (!previous) {
             throw new NotFoundException(`ไม่พบงาน id ${id}`);
           }
+          const completing =
+            dto.status === 'completed' && previous.status !== 'completed';
+          if (completing) {
+            await this.assertNoSendingRequest(tx, id);
+          }
           const task = await tx.task.update({
             where: { id },
             data: {
@@ -261,11 +417,27 @@ export class TaskService {
               assignedTo: dto.assignedTo,
               deviceId: dto.deviceId,
               configId: dto.configId,
+              ...configAssignment(dto.configId, actor),
               status: dto.status,
               dueDate: toDbDate(dto.dueDate),
+              ...(completing ? { completedAt: new Date() } : {}),
             },
           });
           await this.recordStatusChange(tx, previous, task, dto, actor);
+          if (task.status === 'cancelled' && previous.status !== 'cancelled') {
+            await this.cancelPendingConfigApplyRequests(
+              tx,
+              task.id,
+              CANCEL_REASON_TASK_CANCELLED,
+            );
+          }
+          if (completing) {
+            await this.cancelPendingConfigApplyRequests(
+              tx,
+              task.id,
+              CANCEL_REASON_TASK_COMPLETED,
+            );
+          }
           return task;
         });
       } catch (err) {
@@ -318,21 +490,43 @@ export class TaskService {
     //
     // TaskEvent เขียนในทรานแซกชันเดียวกับ updateMany (docs/16 §2) — lockTask
     // ล็อกแถวไว้ก่อน fromStatus จึงเป็นค่าก่อนหน้าจริงเสมอแม้มีคำขอซ้อนกัน
+    //
+    // ปิดงาน (docs/28 §5.4): คำขอที่ `sending` อยู่ → 409 รอผลก่อน · คำขอที่
+    // `pending`/`approved` ถูกยกเลิกในทรานแซกชันเดียวกัน · เช็คเฉพาะงานของตัวเอง
+    // ที่ยังไม่จบ (งานคนอื่น/จบแล้วไปตก 404/409 ด้านล่างตามเดิม ไม่เปิดเผยข้อมูล)
     const updated = await this.prisma.$transaction(async (tx) => {
       const previous = await this.lockTask(tx, id);
+      const completing =
+        dto.status === 'completed' &&
+        previous !== null &&
+        previous.assignedTo === actor.id &&
+        !ST_OT_FINAL_STATUSES.includes(previous.status);
+      if (completing) {
+        await this.assertNoSendingRequest(tx, id);
+      }
       const result = await tx.task.updateMany({
         where: {
           id,
           assignedTo: actor.id,
           status: { notIn: ST_OT_FINAL_STATUSES },
         },
-        data: { status: dto.status },
+        data: {
+          status: dto.status,
+          ...(completing ? { completedAt: new Date() } : {}),
+        },
       });
       if (result.count === 0 || !previous) {
         return null;
       }
       const task = await tx.task.findUniqueOrThrow({ where: { id } });
       await this.recordStatusChange(tx, previous, task, dto, actor);
+      if (completing) {
+        await this.cancelPendingConfigApplyRequests(
+          tx,
+          task.id,
+          CANCEL_REASON_TASK_COMPLETED,
+        );
+      }
       return task;
     });
     if (!updated) {
@@ -411,15 +605,118 @@ export class TaskService {
   }
 
   /**
+   * ปิดงานที่ไม่มีความเคลื่อนไหวเกิน `TASK_IDLE_CLOSE_HOURS` (docs/28 D4, §5.4,
+   * A ตอบ Q3 บน #382) — ใช้กับงานทั้งสอง `source` · เงื่อนไขทั้งหมด:
+   * - สถานะ `in_progress` และ `updatedAt` เก่ากว่าเส้นตัด
+   * - ไม่มี TaskEvent (บันทึก/เปลี่ยนสถานะ) ตั้งแต่เส้นตัด
+   * - ไม่มีคำขอส่ง Config ที่ `sending` อยู่ หรือขยับตั้งแต่เส้นตัด (คำขอที่เพิ่ง
+   *   อนุมัติยังมีเวลากดส่ง)
+   * - `dueDate` ว่างหรือเลยแล้ว (Operation ตั้งกำหนดยาวกว่า 24 ชม. ไว้ตั้งใจ)
+   *
+   * แต่ละงานล็อกแถวแล้วเช็คซ้ำในทรานแซกชันก่อนปิด (ช่างอาจกดอะไรพร้อมกันพอดี)
+   * · คืนจำนวนงานที่ปิด
+   */
+  async autoCloseIdle(now: Date = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - TASK_IDLE_CLOSE_HOURS * HOUR_MS);
+    const idleWhere: Prisma.TaskWhereInput = {
+      status: 'in_progress',
+      updatedAt: { lt: cutoff },
+      events: { none: { changedAt: { gte: cutoff } } },
+      configApplyRequests: {
+        none: { OR: [{ status: 'sending' }, { updatedAt: { gte: cutoff } }] },
+      },
+      OR: [{ dueDate: null }, { dueDate: { lt: now } }],
+    };
+    const candidates = await this.prisma.task.findMany({
+      where: idleWhere,
+      select: { id: true },
+    });
+    let closed = 0;
+    for (const { id } of candidates) {
+      const done = await this.prisma.$transaction(async (tx) => {
+        await this.lockTask(tx, id);
+        const result = await tx.task.updateMany({
+          where: { id, ...idleWhere },
+          data: { status: 'completed', completedAt: now, autoClosed: true },
+        });
+        if (result.count === 0) {
+          return false;
+        }
+        await tx.taskEvent.create({
+          data: {
+            taskId: id,
+            fromStatus: 'in_progress',
+            toStatus: 'completed',
+            changedBy: null,
+            changedAt: now,
+            note: `ระบบปิดงานให้ (ไม่มีความเคลื่อนไหว ${TASK_IDLE_CLOSE_HOURS} ชม.)`,
+          },
+        });
+        await this.cancelPendingConfigApplyRequests(
+          tx,
+          id,
+          CANCEL_REASON_TASK_COMPLETED,
+        );
+        return true;
+      });
+      if (done) {
+        closed += 1;
+      }
+    }
+    return closed;
+  }
+
+  /**
+   * ปิดงานระหว่างที่คำขอส่งเข้ากล่องยัง `sending` อยู่ไม่ได้ (docs/28 §5.4) —
+   * ปิดกลางทางแล้วผลจากกล่องกลับมาจะไม่มีใครเห็นในงานที่เปิดอยู่ · เรียกหลัง
+   * `lockTask` ในทรานแซกชันเดียวกัน
+   */
+  private async assertNoSendingRequest(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+  ): Promise<void> {
+    const sending = await tx.configApplyRequest.findFirst({
+      where: { taskId, status: 'sending' },
+      select: { id: true },
+    });
+    if (sending) {
+      throw new ConflictException(
+        'กำลังส่งเข้ากล่องอยู่ — รอผลจากกล่องก่อนแล้วค่อยกดเสร็จงาน',
+      );
+    }
+  }
+
+  /**
+   * ปิดคำขอส่ง Config ของงานนี้ที่ยัง `pending` หรือ `approved` (docs/27 —
+   * อนุมัติแล้วแต่ยังไม่กดส่ง) ตามไปด้วย ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน
+   * — ตอนงานถูกยกเลิก (docs/25 §3.9 มติ Q9) และตอนปิดงาน (docs/28 §5.4) · คำขอ
+   * ที่ `sending` แล้วไม่แตะ (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
+   */
+  private async cancelPendingConfigApplyRequests(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+    reason: string,
+  ): Promise<void> {
+    await tx.configApplyRequest.updateMany({
+      where: { taskId, status: { in: ['pending', 'approved'] } },
+      data: {
+        status: 'cancelled',
+        resultDetail: reason,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  /**
    * ล็อกแถว Task ไว้จนจบทรานแซกชัน (`SELECT ... FOR UPDATE`) แล้วคืนสถานะก่อน
    * แก้ — ใช้เป็น `fromStatus` ของ event · `null` ถ้าไม่มีงานนี้
    */
   private async lockTask(
     tx: Prisma.TransactionClient,
     id: string,
-  ): Promise<{ status: TaskStatus; createdAt: Date } | null> {
-    const rows = await tx.$queryRaw<{ status: TaskStatus; createdAt: Date }[]>`
-      SELECT "status", "createdAt" FROM "Task" WHERE "id" = ${id} FOR UPDATE
+  ): Promise<LockedTask | null> {
+    const rows = await tx.$queryRaw<LockedTask[]>`
+      SELECT "status", "createdAt", "assignedTo" FROM "Task" WHERE "id" = ${id} FOR UPDATE
     `;
     return rows[0] ?? null;
   }
@@ -434,7 +731,7 @@ export class TaskService {
    */
   private async recordStatusChange(
     tx: Prisma.TransactionClient,
-    previous: { status: TaskStatus; createdAt: Date },
+    previous: LockedTask,
     task: Task,
     dto: UpdateTaskDto,
     actor: ActingUser,

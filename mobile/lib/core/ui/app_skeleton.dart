@@ -4,8 +4,10 @@ import '../theme/app_tokens.dart';
 import 'app_card.dart';
 
 /// กล่องเทาจำลองข้อความระหว่างรอ fetch ครั้งแรก แบบ `Skeleton` ของ Web
-/// (`bg-muted animate-pulse rounded-md`) — กะพริบช้าๆ แทนข้อความ "กำลังโหลด…"
-/// · ปิดการเคลื่อนไหวเมื่อเครื่องตั้งลดการเคลื่อนไหว (`disableAnimations`)
+/// (`bg-muted rounded-md`) — **ต่างจาก Web (docs/22 §4.6):** แทนการกะพริบ
+/// (`animate-pulse`) ด้วย shimmer แถบสว่างวิ่งจากซ้ายไปขวาทุก
+/// [AppMotion.shimmer] · ตั้งลดการเคลื่อนไหวในเครื่อง (`disableAnimations`) =
+/// กล่องนิ่งสี [AppColors.muted] ไม่มี animation ค้าง
 class AppSkeletonBox extends StatefulWidget {
   const AppSkeletonBox({super.key, required this.height, this.widthFactor = 1});
 
@@ -22,19 +24,18 @@ class _AppSkeletonBoxState extends State<AppSkeletonBox>
     with SingleTickerProviderStateMixin {
   late final _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1000),
-    lowerBound: 0.5,
+    duration: AppMotion.shimmer,
   );
+
+  bool get _still => MediaQuery.of(context).disableAnimations;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.of(context).disableAnimations) {
-      _controller
-        ..stop()
-        ..value = 1;
+    if (_still) {
+      _controller.stop();
     } else if (!_controller.isAnimating) {
-      _controller.repeat(reverse: true);
+      _controller.repeat();
     }
   }
 
@@ -46,21 +47,51 @@ class _AppSkeletonBoxState extends State<AppSkeletonBox>
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(AppRadius.md);
     return FractionallySizedBox(
       alignment: Alignment.centerLeft,
       widthFactor: widget.widthFactor,
-      child: FadeTransition(
-        opacity: _controller,
-        child: Container(
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: AppColors.muted,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-        ),
-      ),
+      child: _still
+          ? Container(
+              height: widget.height,
+              decoration: BoxDecoration(
+                color: AppColors.muted,
+                borderRadius: radius,
+              ),
+            )
+          : AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) => Container(
+                height: widget.height,
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  gradient: LinearGradient(
+                    colors: const [
+                      AppColors.muted,
+                      AppColors.shimmerHighlight,
+                      AppColors.muted,
+                    ],
+                    stops: const [0.35, 0.5, 0.65],
+                    // แถบสว่างเริ่มนอกกล่องด้านซ้าย วิ่งออกด้านขวา
+                    transform: _SlideGradient(_controller.value * 2 - 1),
+                  ),
+                ),
+              ),
+            ),
     );
   }
+}
+
+/// เลื่อน gradient ตามแนวนอน [fraction] เท่าของความกว้างกล่อง (-1 = พ้นซ้าย, 1 =
+/// พ้นขวา)
+class _SlideGradient extends GradientTransform {
+  const _SlideGradient(this.fraction);
+
+  final double fraction;
+
+  @override
+  Matrix4 transform(Rect bounds, {TextDirection? textDirection}) =>
+      Matrix4.translationValues(bounds.width * fraction, 0, 0);
 }
 
 /// skeleton ของรายการแบบการ์ด แบบ `CardListSkeleton` ของ Web — การ์ดว่าง [count]

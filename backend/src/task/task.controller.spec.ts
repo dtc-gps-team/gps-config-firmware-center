@@ -1,8 +1,9 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Task } from '@prisma/client';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { JwtAuthGuard, JwtPayload } from '../common/guards/jwt-auth.guard';
+import { PrismaService } from '../prisma/prisma.service';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 
@@ -16,8 +17,13 @@ const sampleTask: Task = {
   deviceId: null,
   configId: null,
   campaignId: null,
+  configAssignedBy: null,
+  configAssignedAt: null,
   status: 'pending',
   dueDate: null,
+  source: 'operation',
+  completedAt: null,
+  autoClosed: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -31,7 +37,7 @@ const operationReq = reqAs({ sub: 'op-1', role: 'Operation' });
 describe('TaskController', () => {
   let controller: TaskController;
   let service: jest.Mocked<
-    Pick<TaskService, 'findAll' | 'create' | 'findOne' | 'update'>
+    Pick<TaskService, 'findAll' | 'create' | 'findOne' | 'update' | 'start'>
   >;
 
   beforeEach(async () => {
@@ -40,6 +46,7 @@ describe('TaskController', () => {
       create: jest.fn(),
       findOne: jest.fn(),
       update: jest.fn(),
+      start: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -53,6 +60,9 @@ describe('TaskController', () => {
           useValue: new JwtService({ secret: JWT_SECRET }),
         },
         JwtAuthGuard,
+        // PermissionGuard ของ POST /tasks/start (docs/28) inject PrismaService —
+        // เทสนี้เรียกเมธอด controller ตรงๆ ไม่ผ่าน guard จึงใช้ค่าว่างพอ
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
 
@@ -105,5 +115,41 @@ describe('TaskController', () => {
       { status: 'completed' },
       { id: 'op-1', role: 'Operation', ipAddress: null },
     );
+  });
+
+  describe('POST /tasks/start (docs/28 §5.1)', () => {
+    const stReq = reqAs({ sub: 'tech-1', role: 'ST' });
+    let status: jest.Mock;
+    let res: Response;
+    beforeEach(() => {
+      status = jest.fn();
+      res = { status } as unknown as Response;
+      status.mockReturnValue(res);
+    });
+
+    it('สร้างใบใหม่ -> 201 พร้อม actor จาก JWT', async () => {
+      service.start.mockResolvedValue({ task: sampleTask, created: true });
+
+      const result = await controller.start(
+        { deviceId: 'BOX-0001' },
+        stReq,
+        res,
+      );
+
+      expect(result).toBe(sampleTask);
+      expect(status).toHaveBeenCalledWith(201);
+      expect(service.start).toHaveBeenCalledWith(
+        { deviceId: 'BOX-0001' },
+        { id: 'tech-1', role: 'ST', ipAddress: null },
+      );
+    });
+
+    it('ได้ใบเดิมที่ยังเปิดอยู่ -> 200', async () => {
+      service.start.mockResolvedValue({ task: sampleTask, created: false });
+
+      await controller.start({ deviceId: 'BOX-0001' }, stReq, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+    });
   });
 });

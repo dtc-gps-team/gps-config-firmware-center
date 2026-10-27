@@ -34,9 +34,22 @@ const _incidentPushTypes = {
   'incident_report_promoted',
 };
 
+/// Notification types whose payload carries a `taskId` and deep-link to the
+/// task detail page (`task_assigned` + ผลของคำขอส่ง Config — docs/25 §3.6) ·
+/// `config_apply_pending` ไปหาผู้อนุมัติ (Operation) ซึ่งตัดสินบน Web ไม่ใช่
+/// ในแอป จึงไม่อยู่ในนี้
+const _taskPushTypes = {
+  'task_assigned',
+  'config_apply_approved',
+  'config_apply_rejected',
+  'config_apply_succeeded',
+  'config_apply_failed',
+  'config_apply_expired',
+};
+
 /// The route to open for an FCM `data` payload (`{'type': ..., 'payload': ...}`).
 ///
-/// Pure + total: never throws, never touches an SDK. `task_assigned` with a
+/// Pure + total: never throws, never touches an SDK. [_taskPushTypes] with a
 /// non-empty string `taskId` deep-links to the task, `incident_report_*` with a
 /// non-empty string `incidentId` deep-links to the incident; anything else
 /// (unknown type, malformed/missing payload, missing id) falls back to the
@@ -46,7 +59,7 @@ String resolvePushDeepLink(Map<String, dynamic> data) {
   final type = data['type'];
   final payload = _decodePayload(data['payload']);
 
-  if (type == NotificationType.taskAssigned.wireName) {
+  if (_taskPushTypes.contains(type)) {
     final taskId = _nonEmptyString(payload['taskId']);
     return taskId == null
         ? AppRoutes.notifications

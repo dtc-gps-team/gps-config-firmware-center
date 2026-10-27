@@ -63,7 +63,8 @@ void main() {
         final text = tester.widget<Text>(find.text('Open'));
         expect(text.style!.color, fg);
         expect(text.style!.fontSize, AppTypography.xs);
-        expect(text.style!.fontWeight, FontWeight.w500);
+        // ต่างจาก Web (font-medium) — หนาขึ้นให้อ่านง่ายบนมือถือ (docs/22 §4.6)
+        expect(text.style!.fontWeight, FontWeight.w600);
       });
 
       testWidgets('มี dot: จุดสีของ tone ขนาด 6 อยู่หน้าข้อความ', (

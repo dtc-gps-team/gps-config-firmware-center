@@ -11,6 +11,7 @@ import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_info_row.dart';
 import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -19,6 +20,8 @@ import '../../core/widgets/app_error_view.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/pending_config_override_banner.dart';
 import '../firmware_override/pending_firmware_override_banner.dart';
+import '../task/field_task_repository.dart';
+import '../task/task_repository.dart';
 import 'device_search_repository.dart';
 import 'device_status_repository.dart';
 
@@ -53,6 +56,10 @@ class DeviceDetailPage extends ConsumerWidget {
     final isFieldStaff = isSt || role == UserRole.ot;
     final navigator = Navigator.of(context);
     final device = deviceAsync.valueOrNull;
+    // docs/28 — งานที่ช่างเปิดอยู่ของกล่องนี้ ("เริ่มงาน" → "ไปที่งาน")
+    final openTask = isFieldStaff
+        ? ref.watch(openTaskForDeviceProvider(deviceId)).valueOrNull
+        : null;
 
     return AppV2Theme(
       child: Scaffold(
@@ -126,21 +133,48 @@ class DeviceDetailPage extends ConsumerWidget {
                           key: const Key('device_detail_confirm_firmware'),
                           label: 'ยืนยันติดตั้ง Firmware',
                           icon: Icons.check_circle_outline,
-                          primary: true,
                           visible: isFieldStaff,
                           onPressed: () => context.push(
                             AppRoutes.deviceConfirmFirmware(deviceId),
                           ),
+                        ),
+                        // docs/28 §6 — ช่างเริ่มงานเอง (บันทึกงานที่ไปทำกับกล่อง)
+                        // · มีงานเปิดอยู่แล้ว = ไปที่งานนั้นเลย
+                        AppPageHeaderAction(
+                          key: const Key('device_detail_start_task'),
+                          label: openTask == null ? 'เริ่มงาน' : 'ไปที่งาน',
+                          icon: openTask == null
+                              ? Icons.play_circle_outline
+                              : Icons.assignment_outlined,
+                          visible: isFieldStaff,
+                          onPressed: () => openTask == null
+                              ? _startTask(context, ref, deviceId)
+                              : context.push(AppRoutes.taskDetail(openTask.id)),
+                        ),
+                        // docs/28 §6 — ปุ่มหลัก: เลือก Config แล้วขออนุมัติ (เริ่มงาน
+                        // ให้อัตโนมัติ)
+                        AppPageHeaderAction(
+                          key: const Key('device_detail_upload'),
+                          label: 'อัปโหลด',
+                          icon: Icons.upload_outlined,
+                          primary: true,
+                          visible: isFieldStaff,
+                          onPressed: () async {
+                            await context.push(AppRoutes.deviceApply(deviceId));
+                            ref.invalidate(openTaskForDeviceProvider(deviceId));
+                          },
                         ),
                       ],
               ),
               Expanded(
                 child: deviceAsync.when(
                   skipLoadingOnRefresh: true,
-                  data: (device) => _DeviceDetailView(
-                    device: device,
-                    deviceId: deviceId,
-                    isSt: isSt,
+                  data: (device) => AppFadeIn(
+                    child: _DeviceDetailView(
+                      device: device,
+                      deviceId: deviceId,
+                      isSt: isSt,
+                    ),
                   ),
                   loading: () => const AppDetailSkeleton(
                     lines: 6,
@@ -241,6 +275,39 @@ class _DeviceDetailView extends StatelessWidget {
         _StatusSection(deviceId: deviceId),
       ],
     );
+  }
+}
+
+/// "เริ่มงาน" (docs/28 §5.1) — `POST /tasks/start` แล้วไปหน้างาน · backend คืน
+/// งานเดิมถ้ายังเปิดอยู่ (กดซ้ำไม่ได้งานซ้ำ) · ต้องออนไลน์ — ผิดพลาดแสดง
+/// ข้อความของ backend ใน snackbar
+Future<void> _startTask(
+  BuildContext context,
+  WidgetRef ref,
+  String deviceId,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final result = await ref.read(fieldTaskRepositoryProvider).start(deviceId);
+    ref.invalidate(taskListProvider);
+    ref.invalidate(openTaskForDeviceProvider(deviceId));
+    if (!context.mounted) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            result.created ? 'เริ่มงานแล้ว' : 'เปิดงานที่ยังทำอยู่ของกล่องนี้',
+          ),
+        ),
+      );
+    await context.push(AppRoutes.taskDetail(result.task.id));
+  } on ApiException catch (e) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('เริ่มงานไม่สำเร็จ: ${e.message}')),
+      );
   }
 }
 

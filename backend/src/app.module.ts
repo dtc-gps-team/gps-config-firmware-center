@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { CampaignModule } from './campaign/campaign.module';
 import { CentralDeviceModule } from './central-device/central-device.module';
 import { ConfigModule } from './config/config.module';
+import { ConfigApplyRequestModule } from './config-apply-request/config-apply-request.module';
 import { ConfigDefinitionModule } from './config-definition/config-definition.module';
 import { ConfigDeletionModule } from './config-deletion/config-deletion.module';
 import { ConfigSyncWriterModule } from './config-sync-writer/config-sync-writer.module';
@@ -40,6 +41,7 @@ import { UserModule } from './user/user.module';
     CampaignModule,
     CentralDeviceModule,
     ConfigModule,
+    ConfigApplyRequestModule,
     ConfigDefinitionModule,
     ConfigDeletionModule,
     ConfigSyncWriterModule,

@@ -12,12 +12,13 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/task/simulator_repository.dart';
-import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
-import 'package:mobile/features/task/confirm_install_repository.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
+
+import 'support/fake_config_apply_request_repository.dart';
 
 // ส่วนเสริมของ task_detail_simulator_test.dart ให้ครบ checklist ของ PR #281:
 // เงื่อนไขที่ปุ่มโผล่, ปุ่มส่ง Config ยิง API ด้วย id ของงานจริงหลังผ่าน/ไม่ถูก
@@ -59,24 +60,6 @@ class _TaskRepo implements TaskRepository {
   Future<Task> updateStatus(String id, TaskStatus status) async => task;
 }
 
-class _ConfirmRepo implements ConfirmInstallRepository {
-  final List<(String, String)> calls = [];
-
-  @override
-  Future<ConfigApplyResult> applyConfig({
-    required String deviceId,
-    required String configId,
-    String? rolloutId,
-  }) async {
-    calls.add((deviceId, configId));
-    return ConfigApplyResult(
-      applied: true,
-      details: const ['ok'],
-      appliedAt: DateTime(2026, 9, 11),
-    );
-  }
-}
-
 DeviceSimulateConfigResult _result({required bool passed}) =>
     DeviceSimulateConfigResult(
       passed: passed,
@@ -95,19 +78,6 @@ DeviceSimulateConfigResult _result({required bool passed}) =>
         testedAt: DateTime(2026, 9, 11),
       ),
     );
-
-/// Pops scripted outcomes (result | Exception); the last one repeats. If
-/// [gate] is set, each call waits for it (request in flight).
-/// ไม่มี rollout ที่ pending — `_confirmInstall` อ่านสถานะก่อนส่ง Config (#265)
-/// ต้อง override ไม่งั้นจะยิง API จริงตอนเทส
-class _NoRolloutStatusRepo implements DeviceStatusRepository {
-  @override
-  Future<DeviceStatus> getDeviceStatus(String deviceId) async => DeviceStatus(
-    deviceId: deviceId,
-    configStatus: DevicePayloadStatus.unknown,
-    firmwareStatus: DevicePayloadStatus.unknown,
-  );
-}
 
 class _SimRepo implements SimulatorRepository {
   _SimRepo(this._outcomes);
@@ -167,7 +137,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required _SimRepo sim,
   required _IncidentRepo incidents,
-  required _ConfirmRepo confirm,
+  required FakeConfigApplyRequestRepository confirm,
   Task? task,
   UserRole role = UserRole.st,
 }) async {
@@ -199,10 +169,7 @@ Future<void> _pump(
         sessionProfileStoreProvider.overrideWithValue(
           InMemorySessionProfileStore(),
         ),
-        confirmInstallRepositoryProvider.overrideWithValue(confirm),
-        deviceStatusRepositoryProvider.overrideWithValue(
-          _NoRolloutStatusRepo(),
-        ),
+        configApplyRequestRepositoryProvider.overrideWithValue(confirm),
         simulatorRepositoryProvider.overrideWithValue(sim),
         incidentRepositoryProvider.overrideWithValue(incidents),
       ],
@@ -237,11 +204,11 @@ class _EmptyTaskEventRepository implements TaskEventRepository {
 
 void main() {
   late _IncidentRepo incidents;
-  late _ConfirmRepo confirm;
+  late FakeConfigApplyRequestRepository confirm;
 
   setUp(() {
     incidents = _IncidentRepo();
-    confirm = _ConfirmRepo();
+    confirm = FakeConfigApplyRequestRepository();
   });
 
   group(
@@ -291,7 +258,11 @@ void main() {
         });
       }
 
-      testWidgets('ไม่มี configId -> ไม่มีปุ่ม', (tester) async {
+      // docs/28: งานที่ไม่มี Config ผูกขอส่งได้ (ปุ่มพาไปหน้าเลือก Config) แต่ทดสอบ
+      // กับ Simulator ไม่ได้เพราะยังไม่รู้ว่าจะส่ง Config ตัวไหน
+      testWidgets('ไม่มี configId -> ไม่มีปุ่มทดสอบ แต่ยังมีปุ่มขอส่ง', (
+        tester,
+      ) async {
         await _pump(
           tester,
           sim: _SimRepo([_result(passed: true)]),
@@ -300,7 +271,7 @@ void main() {
           task: _task(configId: null),
         );
         expect(_simulateButton, findsNothing);
-        expect(_applyButton, findsNothing);
+        expect(_applyButton, findsOneWidget);
       });
 
       testWidgets('ไม่มี deviceId -> ไม่มีปุ่ม', (tester) async {
@@ -350,7 +321,7 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(confirm.calls, isEmpty);
+      expect(confirm.createCalls, 0);
     });
 
     testWidgets('ไม่ผ่าน -> ทดสอบซ้ำผ่าน -> ส่ง Config ด้วย deviceId/configId '
@@ -371,7 +342,9 @@ void main() {
       await tester.tap(_applyButton);
       await tester.pump();
       await tester.pump();
-      expect(confirm.calls, [('DVC-1', 'cfg-1')]);
+      // Config/เครื่องมาจาก Task ที่ backend (docs/25) แอปส่งแค่ taskId
+      expect(confirm.createCalls, 1);
+      expect(confirm.lastCreateTaskId, 't1');
     });
 
     testWidgets('ผ่าน -> กลับมาไม่ผ่านอีกรอบ = ถือเป็นรอบใหม่ สร้าง Incident '

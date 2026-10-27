@@ -20,6 +20,22 @@ AppBadgeTone taskStatusTone(TaskStatus status) => switch (status) {
 AppBadgeTone taskUrgencyTone({required bool overdue}) =>
     overdue ? AppBadgeTone.danger : AppBadgeTone.warning;
 
+/// คำขอส่ง Config (docs/25) — ไม่มีคู่เทียบใน Web · รอคน = warning, รอกล่อง =
+/// info, สำเร็จ = success, ไม่สำเร็จที่ต้องทำอะไรต่อ = danger, ผู้ขอยกเลิกเอง =
+/// neutral
+AppBadgeTone configApplyRequestTone(ConfigApplyRequestStatus status) =>
+    switch (status) {
+      ConfigApplyRequestStatus.pending => AppBadgeTone.warning,
+      ConfigApplyRequestStatus.approved => AppBadgeTone.success,
+      ConfigApplyRequestStatus.sending => AppBadgeTone.info,
+      ConfigApplyRequestStatus.succeeded => AppBadgeTone.success,
+      ConfigApplyRequestStatus.failed => AppBadgeTone.danger,
+      ConfigApplyRequestStatus.skippedOffline => AppBadgeTone.danger,
+      ConfigApplyRequestStatus.rejected => AppBadgeTone.danger,
+      ConfigApplyRequestStatus.cancelled => AppBadgeTone.neutral,
+      ConfigApplyRequestStatus.expired => AppBadgeTone.warning,
+    };
+
 /// ตาม `INCIDENT_STATUS_TONE` ของ Web
 AppBadgeTone incidentStatusTone(IncidentStatus status) => switch (status) {
   IncidentStatus.open => AppBadgeTone.danger,

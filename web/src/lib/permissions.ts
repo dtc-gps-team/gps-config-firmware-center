@@ -160,6 +160,25 @@ export function canRegisterDevice(role: string | null | undefined): boolean {
   return role === "Admin" || role === "SuperAdmin";
 }
 
+/**
+ * เห็นตัวเลข/การ์ดที่อิง Campaign/Rollout ได้ไหม — mirror สิทธิ์ resource
+ * `campaign` action `Read` ตาม `backend/prisma/seed.ts` ตรงๆ (ConfigEngineer,
+ * Operation, ST, OT, Auditor, Admin/SuperAdmin) **FirmwareEngineer/QAEngineer
+ * ไม่มีสิทธิ์นี้** (รีวิว #373 บน PR #362/#373: การ์ด Dashboard ที่อิง
+ * `GET /campaigns*` ขึ้น error 403 ให้ 2 role นี้ตลอด เพราะไม่เช็คสิทธิ์ก่อนยิง)
+ */
+export function canReadCampaign(role: string | null | undefined): boolean {
+  return (
+    role === "ConfigEngineer" ||
+    role === "Operation" ||
+    role === "ST" ||
+    role === "OT" ||
+    role === "Auditor" ||
+    role === "Admin" ||
+    role === "SuperAdmin"
+  );
+}
+
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation";
