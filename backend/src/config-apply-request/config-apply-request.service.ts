@@ -15,8 +15,10 @@ import {
   ConfigApplyRequestStatus,
   ConfigStatus,
   Device,
+  Firmware,
   NotificationType,
   Prisma,
+  Task,
 } from '@prisma/client';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
@@ -26,6 +28,10 @@ import {
   type ConfigApplyMode,
 } from '../device/config-applier';
 import { mergeApprovedOverride } from '../device/config-override-merge';
+import {
+  CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
+  SIMULATABLE_FIRMWARE_STATUS,
+} from '../firmware/firmware-status';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
@@ -40,8 +46,10 @@ import {
   FIELD_APPLY_RESULT_EVENT,
   FIELD_APPLY_ROLLOUT_STARTER,
   type FieldApplyResultEvent,
+  type FieldApplyRolloutPayload,
   type FieldApplyRolloutStarter,
 } from './field-apply-rollout';
+import { compareFirmwareVersions } from './firmware-version';
 
 /** AuditLog.auditModule ของทุกแถวที่โมดูลนี้เขียน (docs/25 §3.7) */
 const AUDIT_MODULE = 'config-apply-request';
@@ -86,6 +94,7 @@ const LIST_INCLUDE = {
   configAssigner: { select: { id: true, fullName: true } },
   decider: { select: { id: true, fullName: true } },
   releaser: { select: { id: true, fullName: true } },
+  firmware: { select: { id: true, version: true } },
 } satisfies Prisma.ConfigApplyRequestInclude;
 
 type RequestWithRelations = Prisma.ConfigApplyRequestGetPayload<{
@@ -94,11 +103,33 @@ type RequestWithRelations = Prisma.ConfigApplyRequestGetPayload<{
 
 /** แถวของคิวอนุมัติ (`GET /config-apply-requests`) — ข้อมูลที่การ์ด Approval
  * Center ใช้ (§3.4) · `fieldNames` เป็นชื่อ field ที่จะส่ง (รวม Device Config
- * Override ที่ approved) **ไม่มีค่าจริง** (หลักเดียวกับ AuditLog metadata) */
+ * Override ที่ approved) **ไม่มีค่าจริง** (หลักเดียวกับ AuditLog metadata) ·
+ * คำขอ Firmware (docs/27 §5.2): `config` null, `fieldNames` ว่าง, ใช้ `firmware`
+ * + `fromFirmwareVersion` + `isDowngrade` แทน */
 export type ConfigApplyRequestView = Omit<RequestWithRelations, 'config'> & {
-  config: Omit<RequestWithRelations['config'], 'fields'>;
+  config: Omit<NonNullable<RequestWithRelations['config']>, 'fields'> | null;
   fieldNames: string[];
 };
+
+/** `GET /tasks/{taskId}/config-apply-requests` — แถวคำขอ + เวอร์ชัน Firmware ให้
+ * Mobile แสดง "Firmware vX" ได้โดยไม่ต้องเรียก API อื่น (docs/27 B2) */
+const TASK_REQUEST_INCLUDE = {
+  firmware: { select: { id: true, version: true } },
+} satisfies Prisma.ConfigApplyRequestInclude;
+
+export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
+  include: typeof TASK_REQUEST_INCLUDE;
+}>;
+
+/** สิ่งที่ต่างกันระหว่างคำขอ 2 ชนิดตอนสร้าง — ที่เหลือ (Task, เครื่อง, เวลา) ใช้ร่วมกัน */
+type RequestPayloadDraft =
+  | { kind: 'config'; configId: string; configAssignedBy: string | null }
+  | {
+      kind: 'firmware';
+      firmwareId: string;
+      fromFirmwareVersion: string | null;
+      isDowngrade: boolean;
+    };
 
 /** 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) */
 export interface ApplyOptionConfig {
@@ -112,13 +143,28 @@ export interface ApplyOptionConfig {
   suggested: boolean;
 }
 
-/** `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — ส่วน Firmware
- * (`firmwares`, `currentFirmwareVersion`) มาใน B2 ของ docs/27 */
+/** 1 ตัวเลือก Firmware ใน `GET /devices/{deviceId}/apply-options` (docs/27 B2) */
+export interface ApplyOptionFirmware {
+  id: string;
+  version: string;
+  /** ตรงกับเวอร์ชันที่กล่องรายงานอยู่ — ขอไม่ได้ (create ตอบ 409) */
+  isCurrent: boolean;
+  /** ต่ำกว่าเวอร์ชันที่กล่องรายงาน — ขอได้แต่ Mobile ต้องถามยืนยันก่อน (D5) */
+  isDowngrade: boolean;
+}
+
+/** `GET /devices/{deviceId}/apply-options` (docs/28 §5.2, docs/27 B2) */
 export interface ApplyOptions {
   deviceId: string;
   /** ส่งเข้ากล่องได้เฉพาะเครื่อง `installed` — Mobile ใช้บอกช่างก่อนกดขอ */
   deviceInstalled: boolean;
   configs: ApplyOptionConfig[];
+  /** เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลาง · `null` = ไม่รู้ (โหมดที่ไม่มี
+   * Server กลาง / ติดต่อไม่ได้ / Server กลางไม่รู้จักกล่อง) — `isCurrent`/
+   * `isDowngrade` เป็น `false` ทั้งหมด และ create ของโหมด central จะตอบ error เอง */
+  currentFirmwareVersion: string | null;
+  /** Firmware ที่ QA อนุมัติแล้ว + อัปโหลดสำเร็จ + รองรับรุ่นกล่อง ใหม่สุดก่อน */
+  firmwares: ApplyOptionFirmware[];
 }
 
 // งานที่ยังเปิดอยู่ — ใช้หา Config แนะนำ (mirror `OPEN_TASK_STATUSES` ใน task.service.ts)
@@ -177,31 +223,22 @@ export class ConfigApplyRequestService implements OnModuleInit {
     }
     if (task.status !== 'in_progress') {
       throw new ConflictException(
-        `งานต้องอยู่สถานะกำลังทำ (in_progress) ถึงจะขอส่ง Config ได้ — สถานะปัจจุบัน: ${task.status}`,
+        `งานต้องอยู่สถานะกำลังทำ (in_progress) ถึงจะขอส่งเข้ากล่องได้ — สถานะปัจจุบัน: ${task.status}`,
       );
     }
     if (!task.deviceId) {
       throw new ConflictException(
-        'งานนี้ไม่มีเครื่องที่ผูกไว้ ขอส่ง Config ไม่ได้',
-      );
-    }
-    const configId = dto.configId ?? task.configId;
-    if (!configId) {
-      throw new BadRequestException(
-        'เลือก Config ที่จะส่งเข้ากล่องก่อน (งานนี้ไม่มี Config ที่ Operation ผูกไว้)',
-      );
-    }
-    const usesAssignedConfig = configId === task.configId;
-    // fail closed (§4.2): ขอ Config ที่ผูกไว้กับงานเก่าก่อนมี configAssignedBy —
-    // ไม่รู้ว่าใครผูก จึงเช็ค SoD ข้อ 3 ไม่ได้
-    if (usesAssignedConfig && !task.configAssignedBy) {
-      throw new ConflictException(
-        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน หรือเลือก Config ตัวอื่น',
+        'งานนี้ไม่มีเครื่องที่ผูกไว้ ขอส่งเข้ากล่องไม่ได้',
       );
     }
     const deviceId = task.deviceId;
-    const configAssignedBy = usesAssignedConfig ? task.configAssignedBy : null;
-    await this.assertApplicable(this.prisma, configId, deviceId, 'create');
+    // `kind=firmware` (docs/27 §5.1, B2) — Firmware ต้องส่งได้ · โหมด central อ่าน
+    // เวอร์ชันที่กล่องรายงานจาก Server กลาง: เท่ากับที่ขอ 409, ต่ำกว่า =
+    // `isDowngrade`, ติดต่อไม่ได้ 503 (fail closed — ไม่รู้ว่าถอยหรือไม่)
+    const draft: RequestPayloadDraft =
+      dto.kind === 'firmware'
+        ? await this.prepareFirmwareRequest(dto, deviceId)
+        : await this.prepareConfigRequest(dto, task, deviceId);
 
     const created = await this.prisma.$transaction(async (tx) => {
       await this.lockDevice(tx, deviceId);
@@ -220,8 +257,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
         data: {
           taskId,
           deviceId,
-          configId,
-          configAssignedBy,
+          ...draft,
           requestedBy: actor.id,
           requestedAt: now,
           expiresAt: new Date(
@@ -238,16 +274,90 @@ export class ConfigApplyRequestService implements OnModuleInit {
     return created;
   }
 
+  /** ส่วน Config ของ `create()` — Config = `dto.configId` หรือ `Task.configId` */
+  private async prepareConfigRequest(
+    dto: CreateConfigApplyRequestDto,
+    task: Task,
+    deviceId: string,
+  ): Promise<RequestPayloadDraft> {
+    if (dto.firmwareId) {
+      throw new BadRequestException(
+        'คำขอส่ง Config ไม่รับ firmwareId — ส่ง kind: firmware ถ้าต้องการส่ง Firmware',
+      );
+    }
+    const configId = dto.configId ?? task.configId;
+    if (!configId) {
+      throw new BadRequestException(
+        'เลือก Config ที่จะส่งเข้ากล่องก่อน (งานนี้ไม่มี Config ที่ Operation ผูกไว้)',
+      );
+    }
+    const usesAssignedConfig = configId === task.configId;
+    // fail closed (§4.2): ขอ Config ที่ผูกไว้กับงานเก่าก่อนมี configAssignedBy —
+    // ไม่รู้ว่าใครผูก จึงเช็ค SoD ข้อ 3 ไม่ได้
+    if (usesAssignedConfig && !task.configAssignedBy) {
+      throw new ConflictException(
+        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน หรือเลือก Config ตัวอื่น',
+      );
+    }
+    await this.assertApplicable(this.prisma, configId, deviceId, 'create');
+    return {
+      kind: 'config',
+      configId,
+      configAssignedBy: usesAssignedConfig ? task.configAssignedBy : null,
+    };
+  }
+
+  /** ส่วน Firmware ของ `create()` (docs/27 §5.1) */
+  private async prepareFirmwareRequest(
+    dto: CreateConfigApplyRequestDto,
+    deviceId: string,
+  ): Promise<RequestPayloadDraft> {
+    if (dto.configId) {
+      throw new BadRequestException(
+        'คำขอส่ง Firmware ไม่รับ configId — ส่งได้ทีละอย่างต่อคำขอ',
+      );
+    }
+    if (!dto.firmwareId) {
+      throw new BadRequestException(
+        'เลือก Firmware ที่จะส่งเข้ากล่องก่อน (firmwareId)',
+      );
+    }
+    const { firmware } = await this.assertFirmwareApplicable(
+      this.prisma,
+      dto.firmwareId,
+      deviceId,
+      'create',
+    );
+    const fromFirmwareVersion =
+      await this.readReportedFirmwareVersion(deviceId);
+    const order =
+      fromFirmwareVersion === null
+        ? null
+        : compareFirmwareVersions(firmware.version, fromFirmwareVersion);
+    if (order === 0) {
+      throw new ConflictException(
+        `กล่องรัน Firmware v${fromFirmwareVersion} อยู่แล้ว ไม่ต้องส่งซ้ำ`,
+      );
+    }
+    return {
+      kind: 'firmware',
+      firmwareId: firmware.id,
+      fromFirmwareVersion,
+      isDowngrade: order !== null && order < 0,
+    };
+  }
+
   /** `GET /tasks/{taskId}/config-apply-requests` — ใครเห็น Task ได้ก็เห็นคำขอของ
    * Task นั้น (กฎเดียวกับ `GET /tasks/{id}`, §3.3) ใหม่สุดขึ้นก่อน */
   async listForTask(
     taskId: string,
     actor: ActingUser,
-  ): Promise<ConfigApplyRequest[]> {
+  ): Promise<TaskRequestView[]> {
     await this.taskService.findOne(taskId, actor);
     return this.prisma.configApplyRequest.findMany({
       where: { taskId },
       orderBy: { requestedAt: 'desc' },
+      include: TASK_REQUEST_INCLUDE,
     });
   }
 
@@ -304,10 +414,40 @@ export class ConfigApplyRequestService implements OnModuleInit {
       suggested: config.id === suggestedId,
     }));
     options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
+
+    // Firmware (docs/27 B2) — เงื่อนไขเดียวกับ `assertFirmwareApplicable()` ·
+    // เวอร์ชันปัจจุบันของกล่องเป็นข้อมูลเสริม อ่านไม่ได้ก็ยังตอบรายการได้
+    const firmwares = await this.prisma.firmware.findMany({
+      where: {
+        uploadStatus: SIMULATABLE_FIRMWARE_STATUS,
+        approvalStatus: CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
+        deviceModelCompatibility: { has: device.deviceModel },
+      },
+      select: { id: true, version: true },
+    });
+    const currentFirmwareVersion =
+      await this.tryReadReportedFirmwareVersion(deviceId);
+    const firmwareOptions = firmwares
+      .map((firmware): ApplyOptionFirmware => {
+        const order =
+          currentFirmwareVersion === null
+            ? null
+            : compareFirmwareVersions(firmware.version, currentFirmwareVersion);
+        return {
+          id: firmware.id,
+          version: firmware.version,
+          isCurrent: order === 0,
+          isDowngrade: order !== null && order < 0,
+        };
+      })
+      .sort((a, b) => compareFirmwareVersions(b.version, a.version));
+
     return {
       deviceId,
       deviceInstalled: device.status === INSTALLED_DEVICE_STATUS,
       configs: options,
+      currentFirmwareVersion,
+      firmwares: firmwareOptions,
     };
   }
 
@@ -322,6 +462,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
     });
     const views: ConfigApplyRequestView[] = [];
     for (const row of rows) {
+      if (!row.config || !row.configId) {
+        // คำขอ Firmware (docs/27 §5.2) — ไม่มีค่า field ให้แสดง
+        views.push({ ...row, config: null, fieldNames: [] });
+        continue;
+      }
       const { fields } = await mergeApprovedOverride(
         this.prisma,
         row.deviceId,
@@ -347,10 +492,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
 
     const approved = await this.prisma.$transaction(async (tx) => {
       await this.assertStillApplicable(tx, existing);
-      const approvedConfigVersion = await this.latestConfigVersion(
-        tx,
-        existing.configId,
-      );
+      // Firmware เป็นไฟล์ก้อนเดียวต่อเวอร์ชัน ไม่มีเวอร์ชันย่อยให้ snapshot (D4)
+      const approvedConfigVersion =
+        existing.kind === 'config'
+          ? await this.latestConfigVersion(tx, requireConfigId(existing))
+          : null;
       const now = new Date();
       const result = await tx.configApplyRequest.updateMany({
         where: { id, status: 'pending' },
@@ -413,7 +559,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
         `คำอนุมัติหมดอายุแล้ว (ต้องกดส่งภายใน ${CONFIG_APPLY_APPROVAL_TTL_HOURS} ชั่วโมงหลังอนุมัติ) — ขอใหม่อีกครั้ง`,
       );
     }
-    await this.closeIfConfigChanged(existing);
+    await this.closeIfPayloadChanged(existing);
     await this.assertDeviceOnline(existing.deviceId);
 
     const released = await this.prisma.$transaction(async (tx) => {
@@ -432,12 +578,20 @@ export class ConfigApplyRequestService implements OnModuleInit {
           'คำขอนี้ถูกส่งหรือปิดไปแล้ว (มีการกดส่ง/ยกเลิกอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
+      const payload: FieldApplyRolloutPayload =
+        existing.kind === 'firmware'
+          ? {
+              kind: 'firmware',
+              firmwareId: requireFirmwareId(existing),
+              allowDowngrade: existing.isDowngrade,
+            }
+          : { kind: 'config', configId: requireConfigId(existing) };
       const { rolloutId } = await this.rolloutStarter.createFieldApplyRollout(
         tx,
         {
+          ...payload,
           requestId: existing.id,
           deviceId: existing.deviceId,
-          configId: existing.configId,
           requestedBy: existing.requestedBy,
           approvedBy: existing.decidedBy as string,
         },
@@ -661,29 +815,23 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /**
-   * Config ที่อนุมัติไว้ยังเป็นเวอร์ชันเดิมและส่งได้อยู่ไหม (docs/27 D4) — ไม่ใช่
+   * ของที่อนุมัติไว้ยังส่งได้เหมือนตอนอนุมัติไหม (docs/27 D4, §5.4 #4/#8) — ไม่ใช่
    * แล้วปิดคำขอเป็น `cancelled` พร้อมเหตุผล แล้ว 409 ให้ช่างขอใหม่ · ทำนอก
    * ทรานแซกชันหลักเพื่อให้การปิดคำขอ commit จริง (`assertReleasable` ตรวจซ้ำใน
    * ทรานแซกชันอีกรอบกัน race)
+   *
+   * - Config: ยังไม่ถูกลบ สถานะยังส่งได้ และเวอร์ชันล่าสุด = ที่อนุมัติ
+   * - Firmware: ยัง QA อนุมัติ + อัปโหลดสำเร็จ และเวอร์ชันในกล่อง (Server กลาง)
+   *   ยังทำให้ `isDowngrade` เป็นค่าเดิม — ไม่ใช่ = Operation อนุมัติภายใต้ข้อมูล
+   *   ที่ไม่จริงแล้ว · ติดต่อ Server กลางไม่ได้ = 503 คำขอยัง `approved`
    */
-  private async closeIfConfigChanged(
+  private async closeIfPayloadChanged(
     request: ConfigApplyRequest,
   ): Promise<void> {
-    const config = await this.prisma.config.findUnique({
-      where: { id: request.configId },
-    });
-    const version = await this.latestConfigVersion(
-      this.prisma,
-      request.configId,
-    );
-    let reason: string | null = null;
-    if (!config || config.deletedAt !== null) {
-      reason = 'Config ของคำขอนี้ถูกลบไปแล้ว';
-    } else if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
-      reason = `Config เปลี่ยนสถานะเป็น ${config.status} หลังอนุมัติ ส่งไม่ได้แล้ว`;
-    } else if (version !== request.approvedConfigVersion) {
-      reason = `Config มีเวอร์ชันใหม่ (v${version}) หลังอนุมัติ (v${request.approvedConfigVersion ?? '-'})`;
-    }
+    const reason =
+      request.kind === 'firmware'
+        ? await this.firmwareChangeReason(request)
+        : await this.configChangeReason(request);
     if (!reason) return;
     const result = await this.prisma.configApplyRequest.updateMany({
       where: { id: request.id, status: 'approved' },
@@ -702,6 +850,91 @@ export class ConfigApplyRequestService implements OnModuleInit {
     throw new ConflictException(
       `${reason} — ระบบปิดคำขอนี้แล้ว ให้ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด`,
     );
+  }
+
+  private async configChangeReason(
+    request: ConfigApplyRequest,
+  ): Promise<string | null> {
+    const configId = requireConfigId(request);
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+    });
+    const version = await this.latestConfigVersion(this.prisma, configId);
+    if (!config || config.deletedAt !== null) {
+      return 'Config ของคำขอนี้ถูกลบไปแล้ว';
+    }
+    if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
+      return `Config เปลี่ยนสถานะเป็น ${config.status} หลังอนุมัติ ส่งไม่ได้แล้ว`;
+    }
+    if (version !== request.approvedConfigVersion) {
+      return `Config มีเวอร์ชันใหม่ (v${version}) หลังอนุมัติ (v${request.approvedConfigVersion ?? '-'})`;
+    }
+    return null;
+  }
+
+  private async firmwareChangeReason(
+    request: ConfigApplyRequest,
+  ): Promise<string | null> {
+    const firmware = await this.prisma.firmware.findUnique({
+      where: { id: requireFirmwareId(request) },
+    });
+    if (
+      !firmware ||
+      firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS ||
+      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
+    ) {
+      return 'Firmware ของคำขอนี้ใช้งานไม่ได้แล้ว (ถูกถอนอนุมัติคุณภาพหรือไฟล์ไม่พร้อม)';
+    }
+    const current = await this.readReportedFirmwareVersion(request.deviceId);
+    if (current === null) return null;
+    const order = compareFirmwareVersions(firmware.version, current);
+    if (order === 0) {
+      return `กล่องเป็น Firmware v${current} อยู่แล้ว`;
+    }
+    if (order < 0 !== request.isDowngrade) {
+      return `เวอร์ชัน Firmware ในกล่องเปลี่ยนจาก v${request.fromFirmwareVersion ?? '-'} เป็น v${current} หลังอนุมัติ`;
+    }
+    return null;
+  }
+
+  /**
+   * เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลาง (docs/27 §5.1) — โหมดอื่นนอกจาก
+   * `central` ไม่มีแหล่งข้อมูล คืน `null` (ไม่ตรวจถอยเวอร์ชัน) · โหมด central
+   * **fail closed**: ติดต่อไม่ได้ 503, Server กลางไม่รู้จักกล่อง/กล่องยังไม่เคย
+   * รายงานเวอร์ชัน 409 (ไม่รู้ว่าถอยหรือไม่ จึงไม่ปล่อยผ่าน)
+   */
+  private async readReportedFirmwareVersion(
+    deviceId: string,
+  ): Promise<string | null> {
+    if (this.applyMode !== 'central') return null;
+    const { list, device } = await this.centralDevices.findDevice(deviceId);
+    if (!list.reachable) {
+      throw new ServiceUnavailableException(
+        'ติดต่อ Server กลางไม่ได้ อ่านเวอร์ชัน Firmware ของกล่องไม่ได้ — ลองใหม่อีกครั้ง',
+      );
+    }
+    if (!device) {
+      throw new ConflictException(
+        `Server กลางไม่รู้จักกล่อง ${deviceId} ส่ง Firmware ผ่าน Server กลางไม่ได้`,
+      );
+    }
+    if (!device.reportedFirmwareVersion) {
+      throw new ConflictException(
+        'กล่องยังไม่เคยรายงานเวอร์ชัน Firmware กับ Server กลาง — เปิดกล่องให้ต่อ Server กลางก่อนแล้วลองใหม่',
+      );
+    }
+    return device.reportedFirmwareVersion;
+  }
+
+  /** แบบไม่ throw สำหรับ `apply-options` (ข้อมูลเสริม) — อ่านไม่ได้ = `null` */
+  private async tryReadReportedFirmwareVersion(
+    deviceId: string,
+  ): Promise<string | null> {
+    try {
+      return await this.readReportedFirmwareVersion(deviceId);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -753,17 +986,22 @@ export class ConfigApplyRequestService implements OnModuleInit {
         'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่อนุมัติ — ยกเลิกคำขอแล้วขอใหม่',
       );
     }
-    await this.assertApplicable(
-      tx,
-      request.configId,
-      request.deviceId,
-      'approve',
-    );
-    const version = await this.latestConfigVersion(tx, request.configId);
-    if (version !== request.approvedConfigVersion) {
-      throw new ConflictException(
-        'Config มีเวอร์ชันใหม่หลังอนุมัติ — ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด',
+    if (request.kind === 'firmware') {
+      await this.assertFirmwareApplicable(
+        tx,
+        requireFirmwareId(request),
+        request.deviceId,
+        'approve',
       );
+    } else {
+      const configId = requireConfigId(request);
+      await this.assertApplicable(tx, configId, request.deviceId, 'approve');
+      const version = await this.latestConfigVersion(tx, configId);
+      if (version !== request.approvedConfigVersion) {
+        throw new ConflictException(
+          'Config มีเวอร์ชันใหม่หลังอนุมัติ — ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด',
+        );
+      }
     }
     await this.assertNoOpenRolloutTarget(tx, request.deviceId);
   }
@@ -781,6 +1019,9 @@ export class ConfigApplyRequestService implements OnModuleInit {
    * 5. ≠ ผู้อนุมัติตัว Config (`Config.approvedBy`, มติ Q8) และถ้า
    *    `Config.approvedBy` ว่างก็ปฏิเสธ (fail closed — §3.4 ข้อ 5 ยังไม่ได้ตกลง
    *    กรณีนี้ จึงเลือกทางที่ไม่ผ่อน รอยืนยันกับ A)
+   *
+   * คำขอ Firmware (docs/27 §5.3) ใช้แค่ข้อ 1–2 — ไม่มีคนผูก/คนอนุมัติ Config ·
+   * ผู้อนุมัติคุณภาพ Firmware เป็น QAEngineer ซึ่งเป็น Operation คนเดียวกันไม่ได้อยู่แล้ว
    */
   private async assertDecider(
     request: ConfigApplyRequest,
@@ -788,21 +1029,22 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<void> {
     if (actor.role !== OPERATION_ROLE) {
       throw new ForbiddenException(
-        'ตัดสินคำขอส่ง Config ได้เฉพาะ Role Operation เท่านั้น',
+        'ตัดสินคำขอส่งเข้ากล่องได้เฉพาะ Role Operation เท่านั้น',
       );
     }
     if (request.requestedBy === actor.id) {
       throw new ForbiddenException(
-        'ผู้ขอส่ง Config ตัดสินคำขอของตัวเองไม่ได้ (Separation of Duty)',
+        'ผู้ขอส่งเข้ากล่องตัดสินคำขอของตัวเองไม่ได้ (Separation of Duty)',
       );
     }
+    if (request.kind === 'firmware') return;
     if (request.configAssignedBy === actor.id) {
       throw new ForbiddenException(
         'ผู้ผูก Config เข้างานนี้อนุมัติการส่งเองไม่ได้ (Separation of Duty)',
       );
     }
     const config = await this.prisma.config.findUnique({
-      where: { id: request.configId },
+      where: { id: requireConfigId(request) },
       select: { approvedBy: true },
     });
     if (!config?.approvedBy) {
@@ -900,13 +1142,72 @@ export class ConfigApplyRequestService implements OnModuleInit {
         'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่ส่งคำขอ — ปฏิเสธคำขอแล้วให้ช่างขอใหม่',
       );
     }
-    await this.assertApplicable(
-      tx,
-      request.configId,
-      request.deviceId,
-      'approve',
-    );
+    if (request.kind === 'firmware') {
+      await this.assertFirmwareApplicable(
+        tx,
+        requireFirmwareId(request),
+        request.deviceId,
+        'approve',
+      );
+    } else {
+      await this.assertApplicable(
+        tx,
+        requireConfigId(request),
+        request.deviceId,
+        'approve',
+      );
+    }
     await this.assertNoOpenRolloutTarget(tx, request.deviceId);
+  }
+
+  /**
+   * Firmware ส่งเข้าเครื่องนี้ได้ไหม (docs/27 §5.1) — mirror เงื่อนไขของ
+   * `DeviceService.assertFirmwareInstallable()` / `autoApplyFirmware()`: Firmware
+   * ไม่พบ 404 · ยังไม่ `stored` หรือ QA ยังไม่ `approved` 409 · เครื่องไม่พบ 404 ·
+   * ยังไม่ installed หรือรุ่นไม่อยู่ใน `deviceModelCompatibility` 409 · ตอนตรวจซ้ำ
+   * (`approve`) ของที่หายไปเป็น 409 เพราะคำขอมีอยู่แล้ว
+   */
+  private async assertFirmwareApplicable(
+    db: Prisma.TransactionClient,
+    firmwareId: string,
+    deviceId: string,
+    phase: 'create' | 'approve',
+  ): Promise<{ firmware: Firmware; device: Device }> {
+    const firmware = await db.firmware.findUnique({
+      where: { id: firmwareId },
+    });
+    if (!firmware) {
+      if (phase === 'approve') {
+        throw new ConflictException('Firmware ของคำขอนี้ไม่มีในระบบแล้ว');
+      }
+      throw new NotFoundException(`ไม่พบ Firmware id ${firmwareId}`);
+    }
+    if (
+      firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS ||
+      firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
+    ) {
+      throw new ConflictException(
+        `Firmware v${firmware.version} ยังส่งเข้ากล่องไม่ได้ (อัปโหลด: ${firmware.uploadStatus}, อนุมัติคุณภาพ: ${firmware.approvalStatus}) — ต้องอัปโหลดสำเร็จและ QA อนุมัติแล้ว`,
+      );
+    }
+    const device = await db.device.findUnique({ where: { deviceId } });
+    if (!device) {
+      if (phase === 'approve') {
+        throw new ConflictException(`ไม่พบเครื่อง ${deviceId} แล้ว`);
+      }
+      throw new NotFoundException(`ไม่พบเครื่อง ${deviceId}`);
+    }
+    if (device.status !== INSTALLED_DEVICE_STATUS) {
+      throw new ConflictException(
+        `เครื่องสถานะปัจจุบัน (${device.status}) ยังส่ง Firmware ไม่ได้ — ต้องเป็น ${INSTALLED_DEVICE_STATUS} (ติดตั้งจริงแล้ว)`,
+      );
+    }
+    if (!firmware.deviceModelCompatibility.includes(device.deviceModel)) {
+      throw new ConflictException(
+        `Firmware v${firmware.version} ไม่รองรับรุ่น ${device.deviceModel} (รองรับ: ${firmware.deviceModelCompatibility.join(', ')})`,
+      );
+    }
+    return { firmware, device };
   }
 
   private async assertNoOpenRolloutTarget(
@@ -948,7 +1249,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<void> {
     const metadata: AuditLogMetadata = {
       deviceId: request.deviceId,
-      configId: request.configId,
+      ...(request.configId ? { configId: request.configId } : {}),
+      ...(request.firmwareId ? { firmwareId: request.firmwareId } : {}),
     };
     await tx.auditLog.create({
       data: {
@@ -1033,7 +1335,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
     }
   }
 
-  /** payload ตาม §3.6 — `taskId` ให้ Mobile เปิด Task Detail จาก notification */
+  /** payload ตาม §3.6 — `taskId` ให้ Mobile เปิด Task Detail จาก notification ·
+   * `kind` ให้ข้อความแจ้งเตือนบอกได้ว่าเป็น Config หรือ Firmware (docs/27 B2) */
   private notificationPayload(
     request: ConfigApplyRequest,
   ): Record<string, string> {
@@ -1041,6 +1344,28 @@ export class ConfigApplyRequestService implements OnModuleInit {
       requestId: request.id,
       taskId: request.taskId,
       deviceId: request.deviceId,
+      kind: request.kind,
     };
   }
+}
+
+/** `configId` ของคำขอ Config — schema เป็น nullable ตั้งแต่ B2 แต่ service บังคับ
+ * มีค่าเสมอเมื่อ `kind=config` · ไม่มี = ข้อมูลเสีย ไม่ปล่อยผ่าน (fail closed) */
+function requireConfigId(request: ConfigApplyRequest): string {
+  if (!request.configId) {
+    throw new ConflictException(
+      `คำขอ ${request.id} ไม่มี Config ที่จะส่ง (ข้อมูลไม่ครบ) — ยกเลิกแล้วขอใหม่`,
+    );
+  }
+  return request.configId;
+}
+
+/** `firmwareId` ของคำขอ Firmware — เหตุผลเดียวกับ `requireConfigId()` */
+function requireFirmwareId(request: ConfigApplyRequest): string {
+  if (!request.firmwareId) {
+    throw new ConflictException(
+      `คำขอ ${request.id} ไม่มี Firmware ที่จะส่ง (ข้อมูลไม่ครบ) — ยกเลิกแล้วขอใหม่`,
+    );
+  }
+  return request.firmwareId;
 }

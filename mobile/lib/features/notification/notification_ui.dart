@@ -123,6 +123,24 @@ class NotificationTypeStyle {
     }
   }
 
+  /// [label] ของแจ้งเตือนหนึ่งรายการ — คำขอส่งเข้ากล่องที่เป็น Firmware (payload
+  /// `kind: firmware`, docs/27 B2) เปลี่ยนคำว่า Config เป็น Firmware
+  static String labelOf(AppNotification n) {
+    final base = label(n.type);
+    final isApplyRequest = switch (n.type) {
+      NotificationType.configApplyPending ||
+      NotificationType.configApplyApproved ||
+      NotificationType.configApplyRejected ||
+      NotificationType.configApplySucceeded ||
+      NotificationType.configApplyFailed ||
+      NotificationType.configApplyExpired => true,
+      _ => false,
+    };
+    return isApplyRequest && n.payload['kind'] == 'firmware'
+        ? base.replaceAll('Config', 'Firmware')
+        : base;
+  }
+
   static String label(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => 'มอบหมายงานใหม่',
     NotificationType.configApproved => 'อนุมัติ Config แล้ว',

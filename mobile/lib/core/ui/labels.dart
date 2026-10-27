@@ -62,18 +62,25 @@ String taskStatusLabel(TaskStatus status) => switch (status) {
 
 /// docs/25 §3.3 — สถานะคำขอส่ง Config ไม่มีคู่เทียบใน Web (การ์ด Approval Center
 /// ยังไม่ทำ) ใช้ไทยตามตารางการ์ดในแผน
-String configApplyRequestStatusLabel(ConfigApplyRequestStatus status) =>
-    switch (status) {
-      ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
-      ConfigApplyRequestStatus.approved => 'อนุมัติแล้ว กดส่งเข้ากล่องได้',
-      ConfigApplyRequestStatus.sending => 'กำลังส่งเข้ากล่อง รอกล่องยืนยัน',
-      ConfigApplyRequestStatus.succeeded => 'กล่องรับ Config แล้ว',
-      ConfigApplyRequestStatus.failed => 'ส่งไม่สำเร็จ',
-      ConfigApplyRequestStatus.skippedOffline => 'กล่องออฟไลน์ ส่งไม่ถึง',
-      ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธคำขอ',
-      ConfigApplyRequestStatus.cancelled => 'ยกเลิกคำขอแล้ว',
-      ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ ไม่มีใครตัดสิน',
-    };
+String configApplyRequestStatusLabel(
+  ConfigApplyRequestStatus status, {
+  FieldApplyKind kind = FieldApplyKind.config,
+}) => switch (status) {
+  ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
+  ConfigApplyRequestStatus.approved => 'อนุมัติแล้ว กดส่งเข้ากล่องได้',
+  ConfigApplyRequestStatus.sending => 'กำลังส่งเข้ากล่อง รอกล่องยืนยัน',
+  ConfigApplyRequestStatus.succeeded =>
+    kind == FieldApplyKind.firmware
+        ? 'กล่องติดตั้ง Firmware แล้ว'
+        : 'กล่องรับ Config แล้ว',
+  ConfigApplyRequestStatus.failed => 'ส่งไม่สำเร็จ',
+  ConfigApplyRequestStatus.skippedOffline => 'กล่องออฟไลน์ ส่งไม่ถึง',
+  ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธคำขอ',
+  ConfigApplyRequestStatus.cancelled => 'ยกเลิกคำขอแล้ว',
+  // หมดอายุได้ 2 แบบ (ไม่มีใครตัดสิน / อนุมัติแล้วไม่ได้กดส่ง) — เหตุผลจริง
+  // แสดงจาก `resultDetail` ใต้หัวข้อ
+  ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ',
+};
 
 /// docs/22 §6.2 — ป้าย Role ใช้ชื่อเดียวกับ Web (`ST`, `Operation`) ส่วนคำอธิบาย
 /// ไทยแยกเป็นบรรทัดย่อย ([roleDescription]) มติ B ข้อ 11 · แยกคำแบบ

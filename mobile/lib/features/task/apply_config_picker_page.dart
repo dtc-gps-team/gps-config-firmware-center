@@ -18,8 +18,11 @@ import 'config_apply_request_repository.dart';
 import 'field_task_repository.dart';
 import 'task_repository.dart';
 
-/// "เลือก Config ที่จะส่งเข้ากล่อง" (docs/28 §6) — ช่างเลือก Config จาก
-/// `GET /devices/{deviceId}/apply-options` แล้วขออนุมัติ
+/// "เลือกสิ่งที่จะส่งเข้ากล่อง" (docs/28 §6, docs/27 B3) — ช่างเลือก Config หรือ
+/// Firmware จาก `GET /devices/{deviceId}/apply-options` แล้วขออนุมัติ
+///
+/// แท็บ Firmware: แสดงเวอร์ชันที่กล่องรันอยู่ (ถ้ารู้) · เวอร์ชันเดียวกับที่รันอยู่
+/// เลือกไม่ได้ · เลือกเวอร์ชันต่ำกว่าต้องยืนยันการถอยเวอร์ชันก่อน (D5)
 ///
 /// - เปิดจากหน้ากล่อง ([taskId] = `null`): เริ่มงานก่อน (`POST /tasks/start` —
 ///   ได้งานเดิมถ้ายังเปิดอยู่) แล้วสร้างคำขอ แล้วแทนหน้านี้ด้วยหน้างาน
@@ -30,10 +33,18 @@ import 'task_repository.dart';
 /// สำเร็จแต่สร้างคำขอไม่ผ่าน (เช่น กล่องมีคำขอค้างของคนอื่น) งานยังอยู่ — แสดง
 /// ข้อความของ backend และลิงก์ไปที่งานได้
 class ApplyConfigPickerPage extends ConsumerStatefulWidget {
-  const ApplyConfigPickerPage({super.key, required this.deviceId, this.taskId});
+  const ApplyConfigPickerPage({
+    super.key,
+    required this.deviceId,
+    this.taskId,
+    this.initialKind = FieldApplyKind.config,
+  });
 
   final String deviceId;
   final String? taskId;
+
+  /// แท็บที่เปิดอยู่ตอนเข้าหน้า — "ขออัปเดต Firmware" จากหน้างานเปิดแท็บ Firmware
+  final FieldApplyKind initialKind;
 
   @override
   ConsumerState<ApplyConfigPickerPage> createState() =>
@@ -42,7 +53,9 @@ class ApplyConfigPickerPage extends ConsumerStatefulWidget {
 
 class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
   final _noteController = TextEditingController();
+  late FieldApplyKind _kind = widget.initialKind;
   String? _selectedId;
+  String? _selectedFirmwareId;
   bool _submitting = false;
   String? _error;
 
@@ -55,7 +68,44 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
     super.dispose();
   }
 
-  Future<void> _submit(String configId) async {
+  /// ถอยเวอร์ชัน (docs/27 D5) — ถามยืนยันก่อนขอ · `true` = ยืนยัน
+  Future<bool> _confirmDowngrade(String? from, String to) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ถอยเวอร์ชัน Firmware?'),
+        content: Text(
+          'ถอยเวอร์ชันจาก v${from ?? '-'} เป็น v$to — ค่าบางอย่างที่ Firmware '
+          'เก่าไม่รู้จักจะใช้ไม่ได้ และ Operation จะเห็นป้ายถอยเวอร์ชันตอนอนุมัติ',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('กลับไปเลือกใหม่'),
+          ),
+          FilledButton(
+            key: const Key('confirm_downgrade'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('ถอยเวอร์ชัน'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _submitFirmware(
+    ApplyOptionFirmware firmware,
+    String? currentVersion,
+  ) async {
+    if (firmware.isDowngrade &&
+        !await _confirmDowngrade(currentVersion, firmware.version)) {
+      return;
+    }
+    await _submit(firmwareId: firmware.id);
+  }
+
+  Future<void> _submit({String? configId, String? firmwareId}) async {
     setState(() {
       _submitting = true;
       _error = null;
@@ -74,7 +124,12 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
       }
       await ref
           .read(configApplyRequestRepositoryProvider)
-          .create(taskId, configId: configId, note: note.isEmpty ? null : note);
+          .create(
+            taskId,
+            configId: configId,
+            firmwareId: firmwareId,
+            note: note.isEmpty ? null : note,
+          );
       ref.invalidate(taskConfigApplyRequestsProvider(taskId));
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -110,11 +165,11 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               AppPageHeader(
-                title: 'เลือก Config ที่จะส่ง',
+                title: 'เลือกสิ่งที่จะส่งเข้ากล่อง',
                 onBack: navigator.canPop() ? navigator.pop : null,
                 description:
-                    'เลือก Config ที่อนุมัติแล้วสำหรับกล่องนี้ — Operation ต้อง'
-                    'อนุมัติคำขอก่อน แล้วคุณจึงกดส่งเข้ากล่องเองจากหน้างาน',
+                    'เลือก Config หรือ Firmware ที่อนุมัติแล้วสำหรับกล่องนี้ — '
+                    'Operation ต้องอนุมัติคำขอก่อน แล้วคุณจึงกดส่งเข้ากล่องเองจากหน้างาน',
                 meta: [
                   AppPageHeaderMeta(
                     label: 'เลขเครื่อง',
@@ -134,7 +189,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
                       AppErrorView(
                         message: error is ApiException
                             ? error.message
-                            : 'โหลดรายการ Config ไม่สำเร็จ',
+                            : 'โหลดตัวเลือกไม่สำเร็จ',
                         messageKey: const Key('apply_options_error'),
                         retryKey: const Key('apply_options_retry'),
                         onRetry: () => ref.invalidate(
@@ -158,46 +213,81 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
     final selectedId =
         _selectedId ??
         options.configs.where((c) => c.suggested).firstOrNull?.id;
+    // Firmware ไม่มีค่าเริ่มต้น — ต้องเลือกเองทุกครั้ง (ไม่เดาให้)
+    final selectedFirmware = options.firmwares
+        .where((f) => f.id == _selectedFirmwareId && !f.isCurrent)
+        .firstOrNull;
+    final isFirmware = _kind == FieldApplyKind.firmware;
     final canSubmit =
-        options.deviceInstalled && selectedId != null && !_submitting;
+        options.deviceInstalled &&
+        !_submitting &&
+        (isFirmware ? selectedFirmware != null : selectedId != null);
     final startedTaskId = _startedTaskId;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
+        SegmentedButton<FieldApplyKind>(
+          key: const Key('apply_kind_selector'),
+          segments: const [
+            ButtonSegment(
+              value: FieldApplyKind.config,
+              label: Text('Config'),
+              icon: Icon(Icons.tune),
+            ),
+            ButtonSegment(
+              value: FieldApplyKind.firmware,
+              label: Text('Firmware'),
+              icon: Icon(Icons.memory),
+            ),
+          ],
+          selected: {_kind},
+          showSelectedIcon: false,
+          onSelectionChanged: _submitting
+              ? null
+              : (selection) => setState(() {
+                  _kind = selection.first;
+                  _error = null;
+                }),
+        ),
+        const SizedBox(height: 16),
         if (!options.deviceInstalled) ...[
           const AppNotice(
             key: Key('apply_device_not_installed'),
             tone: AppBadgeTone.warning,
             icon: Icons.info_outline,
             child: Text(
-              'กล่องนี้ยังไม่ได้บันทึกว่าติดตั้งแล้ว — ส่ง Config เข้ากล่องได้หลัง'
-              'ติดตั้งเท่านั้น (เริ่มงานจากหน้ากล่องเพื่อจดบันทึกได้)',
+              'กล่องนี้ยังไม่ได้บันทึกว่าติดตั้งแล้ว — ส่งเข้ากล่องได้หลังติดตั้ง'
+              'เท่านั้น (เริ่มงานจากหน้ากล่องเพื่อจดบันทึกได้)',
             ),
           ),
           const SizedBox(height: 16),
         ],
-        const AppFieldLabel('Config'),
-        if (options.configs.isEmpty)
-          const AppNotice(
-            key: Key('apply_options_empty'),
-            tone: AppBadgeTone.neutral,
-            child: Text(
-              'ยังไม่มี Config ที่อนุมัติแล้วสำหรับรุ่นของกล่องนี้ — แจ้ง Config '
-              'Engineer',
-            ),
-          )
-        else
-          for (final config in options.configs) ...[
-            _OptionTile(
-              config: config,
-              selected: config.id == selectedId,
-              onTap: _submitting
-                  ? null
-                  : () => setState(() => _selectedId = config.id),
-            ),
-            const SizedBox(height: 8),
-          ],
+        if (isFirmware)
+          ..._firmwareOptions(options)
+        else ...[
+          const AppFieldLabel('Config'),
+          if (options.configs.isEmpty)
+            const AppNotice(
+              key: Key('apply_options_empty'),
+              tone: AppBadgeTone.neutral,
+              child: Text(
+                'ยังไม่มี Config ที่อนุมัติแล้วสำหรับรุ่นของกล่องนี้ — แจ้ง Config '
+                'Engineer',
+              ),
+            )
+          else
+            for (final config in options.configs) ...[
+              _OptionTile(
+                config: config,
+                selected: config.id == selectedId,
+                onTap: _submitting
+                    ? null
+                    : () => setState(() => _selectedId = config.id),
+              ),
+              const SizedBox(height: 8),
+            ],
+        ],
         const SizedBox(height: 12),
         const AppFieldLabel('หมายเหตุถึง Operation', hint: '(ไม่บังคับ)'),
         TextField(
@@ -233,7 +323,14 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
         const SizedBox(height: 16),
         FilledButton(
           key: const Key('apply_submit_button'),
-          onPressed: canSubmit ? () => _submit(selectedId) : null,
+          onPressed: !canSubmit
+              ? null
+              : isFirmware
+              ? () => _submitFirmware(
+                  selectedFirmware!,
+                  options.currentFirmwareVersion,
+                )
+              : () => _submit(configId: selectedId),
           child: _submitting
               ? const SizedBox(
                   height: 20,
@@ -248,6 +345,115 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
               : const Text('ขออนุมัติส่งเข้ากล่อง'),
         ),
       ],
+    );
+  }
+
+  /// เนื้อหาแท็บ Firmware (docs/27 B3)
+  List<Widget> _firmwareOptions(DeviceApplyOptions options) {
+    final current = options.currentFirmwareVersion;
+    return [
+      AppNotice(
+        key: const Key('apply_firmware_current_version'),
+        tone: AppBadgeTone.neutral,
+        icon: Icons.memory,
+        child: Text(
+          current == null
+              ? 'ไม่ทราบเวอร์ชัน Firmware ที่กล่องรันอยู่ — ระบบจะตรวจอีกครั้งตอนส่งคำขอ'
+              : 'กล่องรัน Firmware v$current อยู่ตอนนี้',
+        ),
+      ),
+      const SizedBox(height: 16),
+      const AppFieldLabel('Firmware'),
+      if (options.firmwares.isEmpty)
+        const AppNotice(
+          key: Key('apply_firmware_empty'),
+          tone: AppBadgeTone.neutral,
+          child: Text(
+            'ยังไม่มี Firmware ที่ QA อนุมัติแล้วสำหรับรุ่นของกล่องนี้ — แจ้ง '
+            'Firmware Engineer',
+          ),
+        )
+      else
+        for (final firmware in options.firmwares) ...[
+          _FirmwareTile(
+            firmware: firmware,
+            selected: firmware.id == _selectedFirmwareId,
+            onTap: _submitting
+                ? null
+                : () => setState(() => _selectedFirmwareId = firmware.id),
+          ),
+          const SizedBox(height: 8),
+        ],
+    ];
+  }
+}
+
+/// 1 ตัวเลือก Firmware — เวอร์ชันที่กล่องรันอยู่เลือกไม่ได้ (backend ตอบ 409) ·
+/// เวอร์ชันต่ำกว่ามีป้ายถอยเวอร์ชัน (docs/27 D5)
+class _FirmwareTile extends StatelessWidget {
+  const _FirmwareTile({
+    required this.firmware,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ApplyOptionFirmware firmware;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = firmware.isCurrent;
+    return Semantics(
+      selected: selected,
+      button: true,
+      enabled: !disabled,
+      child: AppCard(
+        key: Key('apply_firmware_${firmware.id}'),
+        onTap: disabled ? null : onTap,
+        highlighted: selected,
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: disabled
+                  ? AppColors.border
+                  : selected
+                  ? AppColors.primary
+                  : AppColors.mutedForeground,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'v${firmware.version}',
+                style: TextStyle(
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  fontWeight: FontWeight.w600,
+                  color: disabled
+                      ? AppColors.mutedForeground
+                      : AppColors.foreground,
+                ),
+              ),
+            ),
+            if (firmware.isCurrent) ...[
+              const SizedBox(width: 8),
+              const AppBadge(
+                key: Key('apply_firmware_current'),
+                label: 'รันอยู่ตอนนี้',
+                tone: AppBadgeTone.neutral,
+              ),
+            ] else if (firmware.isDowngrade) ...[
+              const SizedBox(width: 8),
+              const AppBadge(
+                key: Key('apply_firmware_downgrade'),
+                label: 'ถอยเวอร์ชัน',
+                tone: AppBadgeTone.warning,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
