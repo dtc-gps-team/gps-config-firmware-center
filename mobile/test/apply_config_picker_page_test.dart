@@ -335,4 +335,91 @@ void main() {
       },
     );
   });
+
+  group('คำขอที่ยังไม่จบของกล่อง (apply-options openRequest)', () {
+    final notice = find.byKey(const Key('apply_open_request'));
+    final goToTask = find.byKey(const Key('apply_open_request_go_to_task'));
+
+    testWidgets(
+      'คำขอ Firmware อนุมัติแล้วของงานตัวเอง -> บอกตั้งแต่เปิดหน้า + ปุ่มขอปิด + ไปที่งานได้',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          openRequest: const ApplyOptionOpenRequest(
+            kind: FieldApplyKind.firmware,
+            status: ConfigApplyRequestStatus.approved,
+            firmwareVersion: '1.0.0',
+            taskId: 't-open',
+          ),
+        );
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+        expect(notice, findsOneWidget);
+        expect(
+          find.text(
+            'กล่องนี้มีคำขอส่ง Firmware v1.0.0 ค้างอยู่ (อนุมัติแล้ว กดส่งเข้ากล่องได้)',
+          ),
+          findsOneWidget,
+        );
+        // Config แนะนำถูกเลือกไว้แล้วก็ยังกดขอไม่ได้
+        expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+
+        await tester.tap(goToTask);
+        await tester.pumpAndSettle();
+        expect(find.text('TASK t-open'), findsOneWidget);
+        expect(fieldTasks.startCalls, 0);
+        expect(applyRepo.createCalls, 0);
+      },
+    );
+
+    testWidgets('เปิดจากหน้างานของคำขอนั้นเอง -> ไปที่งาน = ย้อนกลับ', (
+      tester,
+    ) async {
+      applyRepo.options = fakeApplyOptions(
+        openRequest: const ApplyOptionOpenRequest(
+          kind: FieldApplyKind.config,
+          status: ConfigApplyRequestStatus.pending,
+          configName: 'GT06N มาตรฐาน',
+          taskId: 't1',
+        ),
+      );
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+
+      expect(
+        find.text(
+          'กล่องนี้มีคำขอส่ง Config "GT06N มาตรฐาน" ค้างอยู่ (รอ Operation อนุมัติ)',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(goToTask);
+      await tester.pumpAndSettle();
+      expect(find.text('OPEN'), findsOneWidget);
+    });
+
+    testWidgets('คำขอของงานช่างคนอื่น -> บอกให้รอ ไม่มีปุ่มไปที่งาน', (
+      tester,
+    ) async {
+      applyRepo.options = fakeApplyOptions(
+        openRequest: const ApplyOptionOpenRequest(
+          kind: FieldApplyKind.config,
+          status: ConfigApplyRequestStatus.sending,
+        ),
+      );
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      expect(notice, findsOneWidget);
+      expect(
+        find.text('คำขอนี้เป็นของงานช่างคนอื่น — ขอใหม่ได้หลังคำขอนี้จบ'),
+        findsOneWidget,
+      );
+      expect(goToTask, findsNothing);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    });
+
+    testWidgets('ไม่มีคำขอค้าง -> ไม่มีแถบเตือน', (tester) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      expect(notice, findsNothing);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+    });
+  });
 }
