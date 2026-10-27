@@ -284,3 +284,43 @@ export function canCreateFieldDefinition(
 export function canCloseIncident(role: string | null | undefined): boolean {
   return role === "Operation";
 }
+
+/**
+ * ชนิดเหตุการณ์ของ Device History (`DeviceHistorySheet`, #378) ที่ role นี้มี
+ * โอกาสเห็นจริงอย่างน้อย 1 รายการ — mirror การกรองที่ backend ทำใน
+ * `DeviceHistoryService` (แก้ครั้งที่ 98 บน #371): `GET /devices/{id}/history`
+ * ไม่ตอบ 403 กับชนิดที่ไม่มีสิทธิ์ แค่ไม่มีรายการชนิดนั้นกลับมา — ฝั่งนี้ซ่อน
+ * filter pill ของชนิดที่กดแล้วไม่มีผลไปเลย กัน UX งงว่ากดปุ่มแล้วทำไมไม่มี
+ * อะไรขึ้น
+ *
+ * - `task`: ตาม `tasks:Read` (seed.ts) — Operation/Auditor/Admin/SuperAdmin
+ *   เห็นได้ (ไม่กรอง), ST/OT เห็นได้ (เห็นแค่ของตัวเอง) ส่วน ConfigEngineer/
+ *   FirmwareEngineer/QAEngineer ไม่มี `tasks:Read` เลย ไม่เห็น `task`
+ * - `config-override`/`firmware-override`: Operation เห็นทุกคำขอ (`Read`),
+ *   ST เห็นของตัวเองได้เพราะเป็นคนเดียวที่มี `Override` (Create) ของ resource
+ *   นี้ (seed.ts ไม่ให้ OT) — role อื่นไม่มีทางเห็นเลย
+ * - `lifecycle`/`rollout`/`incident`: ทุก Role ที่ login แล้วเห็นได้
+ *   (`devices:Read`/`incidents:Read`) ไม่ต้องกรอง
+ */
+export function visibleDeviceHistoryTypes(
+  role: string | null | undefined,
+): Array<"lifecycle" | "rollout" | "config-override" | "firmware-override" | "task" | "incident"> {
+  const canSeeTask =
+    role === "Operation" ||
+    role === "Auditor" ||
+    role === "Admin" ||
+    role === "SuperAdmin" ||
+    role === "ST" ||
+    role === "OT";
+  const canSeeOverride = role === "Operation" || role === "ST";
+
+  return [
+    "lifecycle",
+    "rollout",
+    "incident",
+    ...(canSeeTask ? (["task"] as const) : []),
+    ...(canSeeOverride
+      ? (["config-override", "firmware-override"] as const)
+      : []),
+  ];
+}

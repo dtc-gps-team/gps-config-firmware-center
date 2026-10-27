@@ -3545,4 +3545,289 @@ describe('DeviceController test-connection (integration — real postgres + guar
       });
     });
   });
+  describe('GET /devices/:deviceId/history', () => {
+    async function readerToken(role: RoleCode = 'ST'): Promise<string> {
+      const user = await makeUser(prisma, { role });
+      await grant(role, ActionType.Read, 'devices');
+      return tokenFor(user.id, role);
+    }
+
+    it('ไม่ส่ง Authorization -> 401', async () => {
+      await makeDevice('HIS-401', 'installed');
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-401/history')
+        .expect(401);
+    });
+
+    it('ไม่พบเครื่อง -> 404', async () => {
+      const token = await readerToken();
+      await request(app.getHttpServer())
+        .get('/api/v1/devices/NOPE/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it.each([
+      ['limit เกิน 100', 'limit=101'],
+      ['limit เป็น 0', 'limit=0'],
+      ['ชนิดที่ไม่รู้จัก', 'types=rollout,whatever'],
+      ['cursor รูปแบบผิด', 'before=not-a-cursor'],
+    ])('query ไม่ถูกต้อง (%s) -> 400', async (_name, qs) => {
+      const token = await readerToken();
+      await makeDevice('HIS-400', 'installed');
+      await request(app.getHttpServer())
+        .get(`/api/v1/devices/HIS-400/history?${qs}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it('เครื่องใหม่ที่ยังไม่มีเหตุการณ์ใด: มีแค่ลงทะเบียน และสรุปเป็น null ไม่ 404', async () => {
+      const token = await readerToken();
+      await makeDevice('HIS-NEW', 'registered');
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-NEW/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as {
+        summary: { currentConfig: unknown; currentFirmware: unknown };
+        items: { type: string; status: string }[];
+        nextCursor: string | null;
+      };
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({
+        type: 'lifecycle',
+        status: 'registered',
+      });
+      expect(body.summary).toEqual({
+        currentConfig: null,
+        currentFirmware: null,
+      });
+      expect(body.nextCursor).toBeNull();
+    });
+
+    it('รวม Task, คำขอแก้ค่า, Incident และ Rollout ของเครื่องนี้ ไม่ปนเครื่องอื่น และเรียงใหม่ไปเก่า', async () => {
+      const token = await readerToken('Operation');
+      await makeDevice('HIS-A', 'installed');
+      await makeDevice('HIS-B', 'installed');
+      const configId = await makeConfig('approved');
+      const st = await makeUser(prisma, { role: 'ST' });
+      const op = await makeUser(prisma, { role: 'Operation' });
+
+      await prisma.task.create({
+        data: {
+          title: 'ติดตั้ง Config',
+          assignedTo: st.id,
+          deviceId: 'HIS-A',
+          configId,
+          status: 'completed',
+        },
+      });
+      await prisma.task.create({
+        data: { title: 'ของเครื่องอื่น', assignedTo: st.id, deviceId: 'HIS-B' },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'HIS-A',
+          configId,
+          versionNumber: 1,
+          fields: { APN: 'x' },
+          reason: 'รถจอดนาน',
+          status: 'approved',
+          overriddenBy: st.id,
+          decidedBy: op.id,
+          decidedAt: new Date(),
+        },
+      });
+      await prisma.incident.create({
+        data: {
+          title: 'เครื่องรีบูต',
+          severity: 'high',
+          status: 'open',
+          source: 'field-report',
+          reportedBy: st.id,
+          deviceId: 'HIS-A',
+        },
+      });
+      // Incident จาก Rollout ที่เครื่องนี้อยู่ในรายชื่อเครื่องที่ล้ม (ไม่ได้ผูก deviceId ตรงๆ)
+      await prisma.incident.create({
+        data: {
+          title: 'Rollout ล้มเหลว',
+          severity: 'high',
+          status: 'open',
+          source: 'rollout-failure',
+          metadata: { failedDeviceIds: ['HIS-A', 'HIS-Z'], failureCount: 2 },
+        },
+      });
+      // Incident จาก Rollout ที่เครื่องนี้ไม่อยู่ในรายชื่อ ต้องไม่โผล่
+      await prisma.incident.create({
+        data: {
+          title: 'Rollout อื่น',
+          severity: 'low',
+          status: 'open',
+          source: 'rollout-failure',
+          metadata: { failedDeviceIds: ['HIS-B'], failureCount: 1 },
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-A/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = res.body as {
+        items: {
+          id: string;
+          type: string;
+          title: string | null;
+          occurredAt: string;
+          config: { name: string } | null;
+          decision: { byId: string | null } | null;
+        }[];
+      };
+      const titles = body.items.map((i) => i.title ?? i.type);
+      expect(titles).toEqual(
+        expect.arrayContaining([
+          'ติดตั้ง Config',
+          'เครื่องรีบูต',
+          'Rollout ล้มเหลว',
+          'config-override',
+          'lifecycle',
+        ]),
+      );
+      expect(titles).not.toContain('ของเครื่องอื่น');
+      expect(titles).not.toContain('Rollout อื่น');
+
+      // เรียงใหม่ไปเก่า
+      const times = body.items.map((i) => i.occurredAt);
+      expect([...times].sort().reverse()).toEqual(times);
+
+      const task = body.items.find((i) => i.title === 'ติดตั้ง Config');
+      expect(task?.config?.name).toMatch(/^cfg-/);
+      const override = body.items.find((i) => i.type === 'config-override');
+      expect(override?.decision?.byId).toBe(op.id);
+    });
+
+    it('กรองตามสิทธิ์ของ actor (แก้ครั้งที่ 97): ST เห็นแค่งาน/คำขอ override ของตัวเอง, QAEngineer ไม่เห็น task เลย', async () => {
+      await makeDevice('HIS-SCOPE', 'installed');
+      const configId = await makeConfig('approved');
+      const stOwner = await makeUser(prisma, { role: 'ST' });
+      const stOther = await makeUser(prisma, { role: 'ST' });
+      const op = await makeUser(prisma, { role: 'Operation' });
+
+      await prisma.task.create({
+        data: {
+          title: 'งานของ stOwner',
+          assignedTo: stOwner.id,
+          deviceId: 'HIS-SCOPE',
+        },
+      });
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'HIS-SCOPE',
+          configId,
+          versionNumber: 1,
+          fields: { APN: 'x' },
+          reason: 'ของ stOwner',
+          status: 'pending',
+          overriddenBy: stOwner.id,
+        },
+      });
+
+      const ownerToken = tokenFor(stOwner.id, 'ST');
+      const otherToken = tokenFor(stOther.id, 'ST');
+      await grant('ST', ActionType.Read, 'devices');
+      await grant('Operation', ActionType.Read, 'devices');
+      const qaToken = await readerToken('QAEngineer');
+
+      const ownerRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(200);
+      const ownerTitles = (
+        ownerRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(ownerTitles).toContain('งานของ stOwner');
+      expect(ownerTitles).toContain('config-override');
+
+      const otherRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200);
+      const otherTitles = (
+        otherRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(otherTitles).not.toContain('งานของ stOwner');
+      expect(otherTitles).not.toContain('config-override');
+
+      const qaRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${qaToken}`)
+        .expect(200);
+      const qaTitles = (
+        qaRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(qaTitles).not.toContain('งานของ stOwner');
+
+      // Operation เห็นทุกอย่างไม่ว่าใครเป็นคนทำ
+      const opToken = tokenFor(op.id, 'Operation');
+      const opRes = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-SCOPE/history')
+        .set('Authorization', `Bearer ${opToken}`)
+        .expect(200);
+      const opTitles = (
+        opRes.body as { items: { title: string | null; type: string }[] }
+      ).items.map((i) => i.title ?? i.type);
+      expect(opTitles).toContain('งานของ stOwner');
+      expect(opTitles).toContain('config-override');
+    });
+
+    it('ชนิดที่ขอ (types) และแบ่งหน้าด้วย cursor: ไม่ข้ามและไม่ซ้ำ', async () => {
+      // ใช้ Operation (เห็นงานของทุกคน) ไม่ใช่ ST ค่าเริ่มต้นของ readerToken()
+      // — เทสนี้ทดสอบ pagination/cursor ไม่ใช่การกรองสิทธิ์ (แก้ครั้งที่ 97
+      // ทำให้ ST ที่ไม่ใช่ `assignedTo` ของ Task เหล่านี้เห็นเป็นรายการว่าง)
+      const token = await readerToken('Operation');
+      await makeDevice('HIS-P', 'installed');
+      const st = await makeUser(prisma, { role: 'ST' });
+      for (let i = 0; i < 5; i += 1) {
+        await prisma.task.create({
+          data: {
+            title: `งาน ${i}`,
+            assignedTo: st.id,
+            deviceId: 'HIS-P',
+            updatedAt: new Date(Date.UTC(2026, 9, 10, 0, 0, i)),
+          },
+        });
+      }
+
+      const first = await request(app.getHttpServer())
+        .get('/api/v1/devices/HIS-P/history?types=task&limit=3')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const firstBody = first.body as {
+        items: { title: string }[];
+        nextCursor: string | null;
+      };
+      expect(firstBody.items.map((i) => i.title)).toEqual([
+        'งาน 4',
+        'งาน 3',
+        'งาน 2',
+      ]);
+      expect(firstBody.nextCursor).not.toBeNull();
+
+      const second = await request(app.getHttpServer())
+        .get(
+          `/api/v1/devices/HIS-P/history?types=task&limit=3&before=${encodeURIComponent(firstBody.nextCursor!)}`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const secondBody = second.body as {
+        items: { title: string }[];
+        nextCursor: string | null;
+      };
+      expect(secondBody.items.map((i) => i.title)).toEqual(['งาน 1', 'งาน 0']);
+      expect(secondBody.nextCursor).toBeNull();
+    });
+  });
 });
