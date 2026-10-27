@@ -45,6 +45,9 @@ import {
   type PushFirmwareOutcome,
 } from '../central-device/central-device.service';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+// type-only — ไม่มี import ตอน runtime จึงไม่เกิด circular dependency กับโมดูล
+// config-apply-request (โมดูลนั้นเป็นฝ่าย inject `FIELD_APPLY_ROLLOUT_STARTER`)
+import type { FieldApplyRolloutInput } from '../config-apply-request/field-apply-rollout';
 import {
   FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
   getOrCreateFieldApplySystemCampaign,
@@ -1800,7 +1803,8 @@ export class CampaignRolloutService {
    * การลดเวอร์ชันโดย default (`DOWNGRADE_NOT_ALLOWED`) ต้องส่ง header
    * `X-Allow-Downgrade` มายืนยันเจตนาเสมอ (ดู comment เหนือ
    * `dispatchAutoApply` เรื่องทำไม Rollback โหมด central ไม่มี fast-path แบบ
-   * mock แล้วมาตกที่ฟังก์ชันนี้)
+   * mock แล้วมาตกที่ฟังก์ชันนี้) · `rollout.allowDowngrade` ก็เช่นกัน — Rollout
+   * เครื่องเดียวของคำขอหน้างานที่ถอยเวอร์ชัน (docs/27 D5)
    *
    * **`downloadObject()` ต้องอยู่ใน try/catch** (review B #362 รอบ 1/2) —
    * เดิมเรียกตรงๆ ใน argument ของ `pushFirmware()` ถ้า Object Storage ล่ม/
@@ -1885,7 +1889,9 @@ export class CampaignRolloutService {
     }
     return this.central.pushFirmware(deviceId, data, {
       firmwareVersion: firmware.version,
-      ...(rollout.isRollback ? { allowDowngrade: true } : {}),
+      ...(rollout.isRollback || rollout.allowDowngrade
+        ? { allowDowngrade: true }
+        : {}),
     });
   }
 
@@ -1986,34 +1992,48 @@ export class CampaignRolloutService {
    *   อะไรออกไปจนกว่าผู้เรียก commit สำเร็จ
    * - `startFieldApplyRollout(rolloutId, actorId)` — เรียกหลัง commit (§3.5
    *   ข้อ 3) ตอนนั้น B ผูก `rolloutId` ไว้กับคำขอแล้วแน่นอน ผลจึงไหลกลับถูก
+   *
+   * **Firmware (docs/27 §6, B2 — ทำแทน A1 ส่วนนี้ ดู issue #388):**
+   * `payloadType = Firmware` + `firmwareId` · `allowDowngrade` เก็บลง Rollout
+   * ให้ `resolvePushFirmwareOutcome()` แนบ header ถอยเวอร์ชันเหมือน Rollback ·
+   * โหมดตามกติกาเดียวกับ `release()`: Firmware ไม่มีเส้นทาง `real` จึงเป็น
+   * `central` เมื่อระบบเป็น central นอกนั้น `mock`
    */
   async createFieldApplyRollout(
     tx: Prisma.TransactionClient,
-    input: {
-      requestId: string;
-      deviceId: string;
-      configId: string;
-      requestedBy: string;
-      approvedBy: string;
-    },
+    input: FieldApplyRolloutInput,
   ): Promise<{ rolloutId: string }> {
     const systemCampaign = await getOrCreateFieldApplySystemCampaign(
       tx,
       input.approvedBy,
     );
 
+    const payload =
+      input.kind === 'firmware'
+        ? {
+            payloadType: 'Firmware' as const,
+            firmwareId: input.firmwareId,
+            allowDowngrade: input.allowDowngrade,
+            applyMode:
+              this.configApplyMode === 'central'
+                ? ('central' as const)
+                : ('mock' as const),
+          }
+        : {
+            payloadType: 'Config' as const,
+            configId: input.configId,
+            applyMode: this.configApplyMode,
+          };
     const rollout = await tx.campaignRollout.create({
       data: {
         campaignId: systemCampaign.id,
-        payloadType: 'Config',
-        configId: input.configId,
+        ...payload,
         status: 'active',
         targetCount: 1,
         createdBy: input.requestedBy,
         approvedBy: input.approvedBy,
         approvedAt: new Date(),
         activeWindowStartedAt: new Date(),
-        applyMode: this.configApplyMode,
       },
     });
     await tx.campaignRolloutTarget.create({
@@ -2037,7 +2057,9 @@ export class CampaignRolloutService {
     const rollout = await this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rolloutId },
     });
-    return this.autoApplyConfig(rollout, actorId);
+    return rollout.payloadType === 'Firmware'
+      ? this.autoApplyFirmware(rollout, actorId)
+      : this.autoApplyConfig(rollout, actorId);
   }
 
   /**
