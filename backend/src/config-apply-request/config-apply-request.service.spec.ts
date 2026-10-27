@@ -76,6 +76,17 @@ const config = {
   fields: { APN: 'internet', SERVER_PORT: 909 },
 };
 
+const FIRMWARE_ID = '55555555-5555-4555-8555-555555555555';
+
+/** Firmware ที่ส่งเข้ากล่องตัวอย่างได้ (stored + QA อนุมัติ + รองรับ GT06N) */
+const firmware = {
+  id: FIRMWARE_ID,
+  version: '2.0.0',
+  deviceModelCompatibility: ['GT06N'],
+  uploadStatus: 'stored',
+  approvalStatus: 'approved',
+};
+
 const device = {
   deviceId: DEVICE_ID,
   deviceModel: 'GT06N',
@@ -87,7 +98,11 @@ const pending: ConfigApplyRequest = {
   id: REQUEST_ID,
   taskId: TASK_ID,
   deviceId: DEVICE_ID,
+  kind: 'config',
   configId: CONFIG_ID,
+  firmwareId: null,
+  fromFirmwareVersion: null,
+  isDowngrade: false,
   configAssignedBy: assigner.id,
   requestedBy: tech.id,
   requestedAt: new Date('2026-10-22T00:00:00.000Z'),
@@ -160,8 +175,16 @@ describe('ConfigApplyRequestService', () => {
       findUnique: jest.fn().mockResolvedValue(pending),
       findUniqueOrThrow: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
-      create: jest.fn((args: { data: object }) =>
-        Promise.resolve({ ...pending, ...args.data, id: REQUEST_ID }),
+      // แถวที่ DB คืน — คำขอ Firmware ไม่ส่ง configId/configAssignedBy (DB เป็น null)
+      create: jest.fn((args: { data: { kind?: string } }) =>
+        Promise.resolve({
+          ...pending,
+          ...(args.data.kind === 'firmware'
+            ? { configId: null, configAssignedBy: null }
+            : {}),
+          ...args.data,
+          id: REQUEST_ID,
+        }),
       ),
       update: jest.fn((args: { data: object }) =>
         Promise.resolve({ ...pending, status: 'sending', ...args.data }),
@@ -194,6 +217,10 @@ describe('ConfigApplyRequestService', () => {
         ),
       },
       device: { findUnique: jest.fn().mockResolvedValue(device) },
+      firmware: {
+        findUnique: jest.fn().mockResolvedValue(firmware),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       configApplyRequest: requests,
       configVersion: configVersions,
       campaignRolloutTarget: rolloutTargets,
@@ -278,6 +305,7 @@ describe('ConfigApplyRequestService', () => {
         type: 'config_apply_pending',
         payload: {
           requestId: REQUEST_ID,
+          kind: 'config',
           taskId: TASK_ID,
           deviceId: DEVICE_ID,
         },
@@ -655,6 +683,7 @@ describe('ConfigApplyRequestService', () => {
         type: 'config_apply_approved',
         payload: {
           requestId: REQUEST_ID,
+          kind: 'config',
           taskId: TASK_ID,
           deviceId: DEVICE_ID,
           expiresAt: approvedRequest.expiresAt.toISOString(),
@@ -751,6 +780,7 @@ describe('ConfigApplyRequestService', () => {
       });
       expect(createRollout).toHaveBeenCalledWith(prisma, {
         requestId: REQUEST_ID,
+        kind: 'config',
         deviceId: DEVICE_ID,
         configId: CONFIG_ID,
         requestedBy: tech.id,
@@ -974,6 +1004,7 @@ describe('ConfigApplyRequestService', () => {
         type: 'config_apply_rejected',
         payload: {
           requestId: REQUEST_ID,
+          kind: 'config',
           taskId: TASK_ID,
           deviceId: DEVICE_ID,
           rejectReason: 'ค่า APN ผิด',
@@ -1118,6 +1149,7 @@ describe('ConfigApplyRequestService', () => {
         type: 'config_apply_failed',
         payload: {
           requestId: REQUEST_ID,
+          kind: 'config',
           taskId: TASK_ID,
           deviceId: DEVICE_ID,
           outcome: 'skipped_offline',
@@ -1179,6 +1211,16 @@ describe('ConfigApplyRequestService', () => {
         service.listForTask(TASK_ID, { id: 'tech-2', role: 'OT' }),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(requests.findMany).not.toHaveBeenCalled();
+    });
+
+    it('listForTask: ใหม่สุดก่อน พร้อมเวอร์ชัน Firmware ของคำขอ (docs/27 B2)', async () => {
+      await service.listForTask(TASK_ID, tech);
+
+      expect(requests.findMany).toHaveBeenCalledWith({
+        where: { taskId: TASK_ID },
+        orderBy: { requestedAt: 'desc' },
+        include: { firmware: { select: { id: true, version: true } } },
+      });
     });
 
     it('list: คืนชื่อ field ที่จะส่ง ไม่คืนค่า field ของ Config', async () => {
@@ -1263,6 +1305,9 @@ describe('ConfigApplyRequestService', () => {
             suggested: false,
           },
         ],
+        // โหมด mock ไม่มี Server กลาง — ไม่รู้เวอร์ชันในกล่อง
+        currentFirmwareVersion: null,
+        firmwares: [],
       });
     });
 
@@ -1307,6 +1352,420 @@ describe('ConfigApplyRequestService', () => {
       await expect(
         service.applyOptions(DEVICE_ID, tech),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('Firmware (docs/27 B2)', () => {
+    const firmwareRequest: ConfigApplyRequest = {
+      ...pending,
+      kind: 'firmware',
+      configId: null,
+      configAssignedBy: null,
+      firmwareId: FIRMWARE_ID,
+      fromFirmwareVersion: '2.1.0',
+      isDowngrade: true,
+    };
+    const approvedFirmwareRequest: ConfigApplyRequest = {
+      ...firmwareRequest,
+      status: 'approved',
+      decidedBy: decider.id,
+      decidedAt: new Date('2026-10-22T01:00:00.000Z'),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
+    const firmwareMock = () => prisma.firmware as Record<string, jest.Mock>;
+
+    /** Server กลางรายงานกล่องนี้ออนไลน์ด้วย Firmware [reported] */
+    function centralReports(reported: string | null): void {
+      central.findDevice.mockResolvedValue({
+        list: { reachable: true },
+        device: {
+          deviceId: DEVICE_ID,
+          online: true,
+          reportedFirmwareVersion: reported,
+        },
+      });
+    }
+
+    function createdData(): ConfigApplyRequest {
+      return (
+        requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+      )[0].data;
+    }
+
+    describe('create', () => {
+      it('โหมด mock: สร้างคำขอ Firmware ไม่มี Config/ผู้ผูก · ไม่รู้เวอร์ชันในกล่อง = ไม่ถอย', async () => {
+        await service.create(
+          TASK_ID,
+          { kind: 'firmware', firmwareId: FIRMWARE_ID },
+          tech,
+        );
+
+        const data = createdData();
+        expect(data.kind).toBe('firmware');
+        expect(data.firmwareId).toBe(FIRMWARE_ID);
+        expect(data).not.toHaveProperty('configId');
+        expect(data).not.toHaveProperty('configAssignedBy');
+        expect(data.fromFirmwareVersion).toBeNull();
+        expect(data.isDowngrade).toBe(false);
+        expect(central.findDevice).not.toHaveBeenCalled();
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            action: 'config_apply_request',
+            metadata: { deviceId: DEVICE_ID, firmwareId: FIRMWARE_ID },
+          }) as unknown,
+        });
+        expect(notification.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'config_apply_pending',
+            payload: expect.objectContaining({ kind: 'firmware' }) as unknown,
+          }),
+        );
+      });
+
+      it.each([
+        [
+          'ส่ง configId มากับ kind=firmware',
+          { kind: 'firmware', firmwareId: FIRMWARE_ID, configId: CONFIG_ID },
+        ],
+        ['kind=firmware แต่ไม่ส่ง firmwareId', { kind: 'firmware' }],
+        ['คำขอ Config แต่ส่ง firmwareId', { firmwareId: FIRMWARE_ID }],
+      ] as const)('%s -> 400', async (_label, dto) => {
+        await expect(service.create(TASK_ID, dto, tech)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['QA ยังไม่อนุมัติ', { approvalStatus: 'pending_review' }],
+        ['อัปโหลดยังไม่สำเร็จ', { uploadStatus: 'pending' }],
+        ['ไม่รองรับรุ่นกล่อง', { deviceModelCompatibility: ['GT08-4G'] }],
+      ])('Firmware %s -> 409', async (_label, patch) => {
+        firmwareMock().findUnique.mockResolvedValue({ ...firmware, ...patch });
+
+        await expect(
+          service.create(
+            TASK_ID,
+            { kind: 'firmware', firmwareId: FIRMWARE_ID },
+            tech,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it('ไม่พบ Firmware -> 404', async () => {
+        firmwareMock().findUnique.mockResolvedValue(null);
+
+        await expect(
+          service.create(
+            TASK_ID,
+            { kind: 'firmware', firmwareId: FIRMWARE_ID },
+            tech,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      describe('โหมด central — เวอร์ชันจาก Server กลาง', () => {
+        beforeEach(async () => {
+          service = await build(starter, 'central');
+        });
+
+        it('กล่องรันเวอร์ชันสูงกว่า -> isDowngrade + เก็บเวอร์ชันต้นทาง', async () => {
+          centralReports('2.1.0');
+
+          await service.create(
+            TASK_ID,
+            { kind: 'firmware', firmwareId: FIRMWARE_ID },
+            tech,
+          );
+
+          expect(createdData().fromFirmwareVersion).toBe('2.1.0');
+          expect(createdData().isDowngrade).toBe(true);
+        });
+
+        it('กล่องรันเวอร์ชันต่ำกว่า -> อัปเกรด ไม่ใช่ถอย', async () => {
+          centralReports('1.9.9');
+
+          await service.create(
+            TASK_ID,
+            { kind: 'firmware', firmwareId: FIRMWARE_ID },
+            tech,
+          );
+
+          expect(createdData().fromFirmwareVersion).toBe('1.9.9');
+          expect(createdData().isDowngrade).toBe(false);
+        });
+
+        it('กล่องรันเวอร์ชันเดียวกันอยู่แล้ว -> 409 ไม่สร้างคำขอ', async () => {
+          centralReports('2.0.0');
+
+          await expect(
+            service.create(
+              TASK_ID,
+              { kind: 'firmware', firmwareId: FIRMWARE_ID },
+              tech,
+            ),
+          ).rejects.toThrow('อยู่แล้ว');
+          expect(requests.create).not.toHaveBeenCalled();
+        });
+
+        it('ติดต่อ Server กลางไม่ได้ -> 503 (fail closed) ไม่สร้างคำขอ', async () => {
+          central.findDevice.mockResolvedValue({
+            list: { reachable: false },
+            device: null,
+          });
+
+          await expect(
+            service.create(
+              TASK_ID,
+              { kind: 'firmware', firmwareId: FIRMWARE_ID },
+              tech,
+            ),
+          ).rejects.toBeInstanceOf(ServiceUnavailableException);
+          expect(requests.create).not.toHaveBeenCalled();
+        });
+
+        it.each([
+          ['Server กลางไม่รู้จักกล่อง', null],
+          [
+            'กล่องยังไม่เคยรายงานเวอร์ชัน',
+            {
+              deviceId: DEVICE_ID,
+              online: true,
+              reportedFirmwareVersion: null,
+            },
+          ],
+        ])('%s -> 409', async (_label, centralDevice) => {
+          central.findDevice.mockResolvedValue({
+            list: { reachable: true },
+            device: centralDevice,
+          });
+
+          await expect(
+            service.create(
+              TASK_ID,
+              { kind: 'firmware', firmwareId: FIRMWARE_ID },
+              tech,
+            ),
+          ).rejects.toBeInstanceOf(ConflictException);
+        });
+      });
+    });
+
+    describe('approve', () => {
+      beforeEach(() => {
+        requests.findUnique.mockResolvedValue(firmwareRequest);
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...firmwareRequest,
+          status: 'approved',
+        });
+      });
+
+      it('ผู้ขออนุมัติเอง -> 403', async () => {
+        await expect(
+          service.approve(REQUEST_ID, { ...tech, role: 'Operation' }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('ไม่ใช้กฎของ Config: Operation ที่ผูก Config เข้างานอนุมัติคำขอ Firmware ได้ · ไม่ snapshot เวอร์ชัน Config', async () => {
+        await service.approve(REQUEST_ID, assigner);
+
+        const update = (
+          requests.updateMany.mock.calls[0] as [
+            { data: { approvedConfigVersion: number | null } },
+          ]
+        )[0];
+        expect(update.data.approvedConfigVersion).toBeNull();
+        expect(configVersions.aggregate).not.toHaveBeenCalled();
+      });
+
+      it('Firmware ถูกถอนอนุมัติระหว่างรอ -> 409 ยัง pending', async () => {
+        firmwareMock().findUnique.mockResolvedValue({
+          ...firmware,
+          approvalStatus: 'rejected',
+        });
+
+        await expect(
+          service.approve(REQUEST_ID, decider),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('release', () => {
+      beforeEach(() => {
+        requests.findUnique.mockResolvedValue(approvedFirmwareRequest);
+      });
+
+      it('โหมด mock: สร้าง Rollout Firmware ส่ง firmwareId + allowDowngrade ตามคำขอ', async () => {
+        await service.release(REQUEST_ID, tech);
+
+        expect(createRollout).toHaveBeenCalledWith(prisma, {
+          kind: 'firmware',
+          firmwareId: FIRMWARE_ID,
+          allowDowngrade: true,
+          requestId: REQUEST_ID,
+          deviceId: DEVICE_ID,
+          requestedBy: tech.id,
+          approvedBy: decider.id,
+        });
+        expect(startRollout).toHaveBeenCalledWith(ROLLOUT_ID, tech.id);
+      });
+
+      it('Firmware ถูกถอนอนุมัติหลังอนุมัติคำขอ -> ปิดเป็น cancelled แล้ว 409', async () => {
+        firmwareMock().findUnique.mockResolvedValue({
+          ...firmware,
+          uploadStatus: 'failed',
+        });
+
+        await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(requests.updateMany).toHaveBeenCalledWith({
+          where: { id: REQUEST_ID, status: 'approved' },
+          data: expect.objectContaining({ status: 'cancelled' }) as unknown,
+        });
+        expect(createRollout).not.toHaveBeenCalled();
+      });
+
+      describe('โหมด central', () => {
+        beforeEach(async () => {
+          service = await build(starter, 'central');
+        });
+
+        it('เวอร์ชันในกล่องยังเหมือนตอนอนุมัติ -> ส่งได้', async () => {
+          centralReports('2.1.0');
+
+          await service.release(REQUEST_ID, tech);
+
+          expect(createRollout).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([
+          ['กล่องถูกอัปเดตเป็นเวอร์ชันเป้าหมายแล้ว', '2.0.0'],
+          ['เวอร์ชันในกล่องเปลี่ยนจนไม่ใช่การถอยแล้ว', '1.5.0'],
+        ])(
+          '%s -> cancelled + 409 (FIRMWARE_STATE_CHANGED)',
+          async (_label, reported) => {
+            centralReports(reported);
+
+            await expect(
+              service.release(REQUEST_ID, tech),
+            ).rejects.toBeInstanceOf(ConflictException);
+            expect(requests.updateMany).toHaveBeenCalledWith({
+              where: { id: REQUEST_ID, status: 'approved' },
+              data: expect.objectContaining({ status: 'cancelled' }) as unknown,
+            });
+            expect(createRollout).not.toHaveBeenCalled();
+          },
+        );
+
+        it('ติดต่อ Server กลางไม่ได้ -> 503 คำขอยัง approved (ไม่ปิด)', async () => {
+          central.findDevice.mockResolvedValue({
+            list: { reachable: false },
+            device: null,
+          });
+
+          await expect(
+            service.release(REQUEST_ID, tech),
+          ).rejects.toBeInstanceOf(ServiceUnavailableException);
+          expect(requests.updateMany).not.toHaveBeenCalled();
+          expect(createRollout).not.toHaveBeenCalled();
+        });
+      });
+    });
+
+    it('คิวอนุมัติ: แถว Firmware ได้ config null และไม่มีชื่อ field', async () => {
+      requests.findMany.mockResolvedValue([
+        {
+          ...firmwareRequest,
+          task: { id: TASK_ID, title: task.title },
+          config: null,
+          firmware: { id: FIRMWARE_ID, version: '2.0.0' },
+          requester: { id: tech.id, fullName: 'ช่าง' },
+          configAssigner: null,
+          decider: null,
+          releaser: null,
+        },
+      ]);
+
+      const [row] = await service.list();
+
+      expect(row.config).toBeNull();
+      expect(row.fieldNames).toEqual([]);
+      expect(row.firmware).toEqual({ id: FIRMWARE_ID, version: '2.0.0' });
+      expect(row.isDowngrade).toBe(true);
+    });
+
+    describe('applyOptions', () => {
+      beforeEach(() => {
+        prisma.task = {
+          ...(prisma.task as Record<string, jest.Mock>),
+          findFirst: jest.fn().mockResolvedValue(null),
+        };
+        (prisma.config as Record<string, jest.Mock>).findMany = jest
+          .fn()
+          .mockResolvedValue([]);
+        firmwareMock().findMany.mockResolvedValue([
+          { id: 'fw-1.0', version: '1.0.0' },
+          { id: 'fw-1.10', version: '1.10.0' },
+          { id: 'fw-1.2', version: '1.2.0' },
+        ]);
+      });
+
+      it('โหมด central: ใหม่สุดก่อน + ธงเวอร์ชันปัจจุบัน/ถอยเวอร์ชันเทียบกับกล่อง', async () => {
+        service = await build(starter, 'central');
+        centralReports('1.2.0');
+
+        const result = await service.applyOptions(DEVICE_ID, tech);
+
+        expect(firmwareMock().findMany).toHaveBeenCalledWith({
+          where: {
+            uploadStatus: 'stored',
+            approvalStatus: 'approved',
+            deviceModelCompatibility: { has: 'GT06N' },
+          },
+          select: { id: true, version: true },
+        });
+        expect(result.currentFirmwareVersion).toBe('1.2.0');
+        expect(result.firmwares).toEqual([
+          {
+            id: 'fw-1.10',
+            version: '1.10.0',
+            isCurrent: false,
+            isDowngrade: false,
+          },
+          {
+            id: 'fw-1.2',
+            version: '1.2.0',
+            isCurrent: true,
+            isDowngrade: false,
+          },
+          {
+            id: 'fw-1.0',
+            version: '1.0.0',
+            isCurrent: false,
+            isDowngrade: true,
+          },
+        ]);
+      });
+
+      it('ติดต่อ Server กลางไม่ได้ -> ยังตอบรายการได้ เวอร์ชันปัจจุบัน null ไม่ติดธง', async () => {
+        service = await build(starter, 'central');
+        central.findDevice.mockResolvedValue({
+          list: { reachable: false },
+          device: null,
+        });
+
+        const result = await service.applyOptions(DEVICE_ID, tech);
+
+        expect(result.currentFirmwareVersion).toBeNull();
+        expect(result.firmwares.map((f) => f.isDowngrade)).toEqual([
+          false,
+          false,
+          false,
+        ]);
+      });
     });
   });
 });
