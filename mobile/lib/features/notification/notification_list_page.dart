@@ -189,7 +189,7 @@ class _NotificationTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  NotificationTypeStyle.label(notification.type),
+                  NotificationTypeStyle.labelOf(notification),
                   style: TextStyle(
                     fontSize: AppTypography.sm,
                     height: AppTypography.smHeight,

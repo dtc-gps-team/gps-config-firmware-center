@@ -278,11 +278,17 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
 
   /// เลือก Config เอง (docs/28 §6) — เปิดหน้าเลือกให้งานนี้ แล้วโหลดคำขอใหม่
   /// เมื่อกลับมา
-  Future<void> _openPicker() async {
+  /// [firmware] = เปิดแท็บ Firmware (docs/27 B3 — "ขออัปเดต Firmware" และขอซ้ำหลัง
+  /// คำขอ Firmware ไม่สำเร็จ)
+  Future<void> _openPicker({bool firmware = false}) async {
     final deviceId = widget.task.deviceId;
     if (deviceId == null) return;
     await context.push<bool>(
-      AppRoutes.deviceApply(deviceId, taskId: widget.taskId),
+      AppRoutes.deviceApply(
+        deviceId,
+        taskId: widget.taskId,
+        firmware: firmware,
+      ),
     );
     if (!mounted) return;
     ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
@@ -715,7 +721,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _CardTitle('ส่ง Config เข้าเครื่อง'),
+                  const _CardTitle('ส่ง Config / Firmware เข้ากล่อง'),
                   Text(
                     hasAssignedConfig
                         ? 'ขอส่ง Config ของงานนี้เข้าอุปกรณ์ ${task.deviceId} — ทำหลัง'
@@ -730,14 +736,26 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                       color: AppColors.mutedForeground,
                     ),
                   ),
-                  if (hasAssignedConfig && showRequestButton)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        key: const Key('choose_other_config_button'),
-                        onPressed: _requesting ? null : _openPicker,
-                        child: const Text('เลือก Config อื่น'),
-                      ),
+                  if (showRequestButton)
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        if (hasAssignedConfig)
+                          TextButton(
+                            key: const Key('choose_other_config_button'),
+                            onPressed: _requesting ? null : _openPicker,
+                            child: const Text('เลือก Config อื่น'),
+                          ),
+                        // docs/27 §9 ปุ่มรอง "ขออัปเดต Firmware" (B3)
+                        TextButton.icon(
+                          key: const Key('request_firmware_button'),
+                          onPressed: _requesting
+                              ? null
+                              : () => _openPicker(firmware: true),
+                          icon: const Icon(Icons.memory, size: 18),
+                          label: const Text('ขออัปเดต Firmware'),
+                        ),
+                      ],
                     ),
                   if (hasAssignedConfig) ...[
                     const SizedBox(height: 12),
@@ -860,6 +878,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                                     _requesting ||
                                     _simulationBlocked)
                                 ? null
+                                // คำขอล่าสุดเป็น Firmware ที่ไม่สำเร็จ — ขอซ้ำ
+                                // ต้องเลือก Firmware ใหม่ ไม่ใช่ส่ง Config ของงาน
+                                : latestRequest?.kind == FieldApplyKind.firmware
+                                ? () => _openPicker(firmware: true)
                                 : hasAssignedConfig
                                 ? _requestApply
                                 : _openPicker,
@@ -1180,6 +1202,10 @@ class _ApplyRequestSection extends StatelessWidget {
       data: (latest) {
         if (latest == null) return const SizedBox.shrink();
         final lines = _lines(latest);
+        final showDowngrade =
+            latest.isDowngrade &&
+            (latest.status == ConfigApplyRequestStatus.pending ||
+                latest.status == ConfigApplyRequestStatus.approved);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1188,7 +1214,10 @@ class _ApplyRequestSection extends StatelessWidget {
               key: const Key('apply_request_status'),
               tone: configApplyRequestTone(latest.status),
               icon: _icon(latest.status),
-              title: configApplyRequestStatusLabel(latest.status),
+              title: configApplyRequestStatusLabel(
+                latest.status,
+                kind: latest.kind,
+              ),
               child: lines.isEmpty
                   ? null
                   : Column(
@@ -1196,6 +1225,20 @@ class _ApplyRequestSection extends StatelessWidget {
                       children: [for (final line in lines) Text(line)],
                     ),
             ),
+            // docs/27 §9 — คำขอถอยเวอร์ชัน: แถบเตือนสีส้มก่อนกดส่ง
+            if (showDowngrade) ...[
+              const SizedBox(height: 8),
+              AppNotice(
+                key: const Key('apply_request_downgrade'),
+                tone: AppBadgeTone.warning,
+                icon: Icons.warning_amber_rounded,
+                child: Text(
+                  'ถอยเวอร์ชัน Firmware จาก v${latest.fromFirmwareVersion ?? '-'} '
+                  'เป็น v${latest.firmwareVersion ?? '-'} — ค่าบางอย่างที่ Firmware '
+                  'เก่าไม่รู้จักจะใช้ไม่ได้',
+                ),
+              ),
+            ],
             if (latest.status == ConfigApplyRequestStatus.approved) ...[
               const SizedBox(height: 8),
               FilledButton.icon(
@@ -1253,6 +1296,24 @@ class _ApplyRequestSection extends StatelessWidget {
   static List<String> _lines(ConfigApplyRequest r) {
     final detail = r.resultDetail?.trim();
     final reason = r.rejectReason?.trim();
+    return [
+      // คำขอ Firmware บอกเวอร์ชันที่ขอเสมอ (docs/27 B3) — คำขอ Config ไม่มีบรรทัดนี้
+      if (r.kind == FieldApplyKind.firmware) _firmwareLine(r),
+      ..._statusLines(r, detail, reason),
+    ];
+  }
+
+  static String _firmwareLine(ConfigApplyRequest r) {
+    final target = 'Firmware v${r.firmwareVersion ?? '-'}';
+    final from = r.fromFirmwareVersion;
+    return from == null ? target : '$target (กล่องรัน v$from ตอนขอ)';
+  }
+
+  static List<String> _statusLines(
+    ConfigApplyRequest r,
+    String? detail,
+    String? reason,
+  ) {
     return switch (r.status) {
       ConfigApplyRequestStatus.pending => [
         'ส่งคำขอเมื่อ ${_formatDate(r.requestedAt)}',
@@ -1311,11 +1372,17 @@ class _EarlierRequests extends StatelessWidget {
           const _CardTitle('คำขอก่อนหน้า'),
           for (final request in requests)
             AppInfoRow(
-              label: _formatDate(request.requestedAt),
+              label: request.kind == FieldApplyKind.firmware
+                  ? '${_formatDate(request.requestedAt)} · Firmware '
+                        'v${request.firmwareVersion ?? '-'}'
+                  : _formatDate(request.requestedAt),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: AppBadge(
-                  label: configApplyRequestStatusLabel(request.status),
+                  label: configApplyRequestStatusLabel(
+                    request.status,
+                    kind: request.kind,
+                  ),
                   tone: configApplyRequestTone(request.status),
                   dot: true,
                 ),

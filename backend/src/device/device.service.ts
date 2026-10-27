@@ -1097,9 +1097,19 @@ export class DeviceService {
     // (หน้ารายละเอียดอุปกรณ์/หน้าขอแก้ค่าในแอปจึงยังโชว์ค่าเก่า) ทั้งโหมด mock
     // และ real · Rollback ที่สำเร็จมี `configId` ของรอบก่อนหน้า Config ปัจจุบัน
     // จึงกลับเป็นค่าเก่าเองโดยอัตโนมัติ
+    //
+    // Task ที่เคยมีคำขอส่ง Config เข้ากล่อง (docs/25/27) ไม่นับเป็น (1) — ผลจริง
+    // ของงานพวกนี้อยู่ที่ Rollout ของคำขอ (นับใน (2) แล้ว) ส่วน `Task.configId`
+    // เป็นแค่ Config ที่ Operation ผูกไว้ ช่างอาจเลือกส่งตัวอื่น (docs/28 D3) หรือ
+    // ส่งไม่สำเร็จ ถ้านับจะโชว์ Config ที่ไม่ได้อยู่ในกล่องจริงหลังปิดงาน
     const [task, rolloutTarget] = await Promise.all([
       this.prisma.task.findFirst({
-        where: { deviceId, status: 'completed', configId: { not: null } },
+        where: {
+          deviceId,
+          status: 'completed',
+          configId: { not: null },
+          configApplyRequests: { none: {} },
+        },
         orderBy: { updatedAt: 'desc' },
       }),
       this.prisma.campaignRolloutTarget.findFirst({
