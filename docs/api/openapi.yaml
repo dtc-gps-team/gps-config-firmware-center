@@ -35,7 +35,9 @@ tags:
       endpoint ที่ **อุปกรณ์เรียกเอง** (v3.56, docs/19) ดึงงาน Config ที่รออยู่
       และรายงานผลกลับ ยืนยันตัวตนด้วย header `X-Device-Api-Key`
       (`deviceApiKey`) ไม่ใช่ JWT · ใช้กับ Rollout ที่ปล่อยในโหมด
-      `DEVICE_CONFIG_APPLY_MODE=real` (`CampaignRollout.applyMode = real`)
+      `DEVICE_CONFIG_APPLY_MODE=real` (`CampaignRollout.applyMode = real`) ·
+      (v3.63, docs/23) กล่องส่ง GPS telemetry และเหตุการณ์เข้ามาที่
+      `reportDeviceData` ซึ่งใช้ key ใน path แทน header
   - name: device
     description: การทำงานกับตัวกล่อง — ทดสอบการเชื่อมต่อ/สัญญาณ
   - name: device-model
@@ -203,6 +205,68 @@ paths:
           description: ไม่แนบ `X-Device-Api-Key` หรือ deviceId/key ไม่ถูกต้อง
         "404":
           description: ไม่พบงานนี้ของอุปกรณ์เครื่องนี้
+
+  /device-sync/{deviceId}/telemetry/{key}:
+    post:
+      tags: [device-sync]
+      operationId: reportDeviceData
+      summary: กล่องส่ง GPS telemetry หรือเหตุการณ์ (v3.63, docs/23 §4)
+      description: >-
+        เรียกโดย**กล่อง** (firmware arduino_gps) ที่ตั้ง `data_server` ใน Config
+        ให้ชี้มาที่ URL นี้ · กล่องส่งทั้ง telemetry (ทุก `gps.send_interval_sec`
+        วินาที) และเหตุการณ์มาที่ URL เดียวกัน แยกด้วย `event_type`: ไม่มี =
+        telemetry · มี = เหตุการณ์ (`OVERSPEED`, `GEOFENCE_EXIT`, `GEOFENCE_ENTER`)
+
+        **ยืนยันตัวตนด้วย `key` ใน path** ไม่ใช่ JWT และไม่ใช่ `X-Device-Api-Key`
+        เพราะกล่องไม่แนบ header ยืนยันตัวตนตอนส่งข้อมูล (docs/23 §7) · `key`
+        เป็น**ความลับ** (สุ่ม 32 byte base64url) backend เก็บแค่ SHA-256 · ใช้
+        key ของเครื่อง (`Device.telemetryKeyHash`) ถ้ามี ไม่งั้นใช้ key กลางจาก
+        env `TELEMETRY_INGEST_KEY_SHA256` · ปฏิเสธเครื่อง `decommissioned` ·
+        ไม่เปลี่ยนสถานะเครื่องและไม่เขียน `lastSeenAt`
+
+        จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
+        · `firmware_version` ที่กล่องรายงานเก็บที่ `Device.reportedFirmwareVersion`
+        ไม่เก็บทุกแถว · ไม่ลง AuditLog และยังไม่สร้าง Incident/Notification จาก
+        เหตุการณ์ · ข้อมูลเก่ากว่า `TELEMETRY_RETENTION_DAYS` วัน (30) ถูกลบเอง
+      security: []   # key อยู่ใน path parameter `key` (ไม่ใช่ bearerAuth/deviceApiKey)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+          example: BOX-0001
+        - in: path
+          name: key
+          required: true
+          description: key ลับของ telemetry (base64url 43 ตัวอักษร) — ห้าม log
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceDataReport"
+      responses:
+        "200":
+          description: บันทึกแล้ว (กล่องไม่อ่าน body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceDataReportResponse"
+        "400":
+          description: >-
+            body ผิดรูปแบบ (field ที่ไม่รู้จัก, พิกัดผิด, `event_type` ไม่รู้จัก,
+            telemetry ไม่มี `fix`/`location_source`) หรือ `device_id` ใน body
+            ไม่ตรงกับ `deviceId` ใน path
+        "401":
+          description: >-
+            deviceId หรือ key ไม่ถูกต้อง — ข้อความเดียวกันทุกกรณี (ไม่มีเครื่องนี้,
+            key ผิด, เครื่อง `decommissioned`, ใช้ key กลางกับเครื่องที่มี key
+            ของตัวเอง)
+        "429":
+          description: ส่งถี่เกินกำหนด (ต่อ `deviceId` หรือต่อ IP)
 
   /health:
     get:
@@ -1152,8 +1216,13 @@ paths:
     post:
       tags: [config-apply-request]
       operationId: createConfigApplyRequest
-      summary: ช่างขอส่ง Config ของงานนี้เข้าเครื่องจริง (docs/25 §3.3)
+      summary: ช่างขอส่ง Config หรือ Firmware ของงานนี้เข้าเครื่องจริง (docs/25 §3.3, docs/27 §5.1)
       description: >-
+        **Firmware (v3.62, docs/27 B2):** `kind: firmware` + `firmwareId` —
+        Firmware ต้องอัปโหลดสำเร็จ + QA อนุมัติ + รองรับรุ่นกล่อง · โหมด central
+        อ่านเวอร์ชันที่กล่องรายงานจาก Server กลาง: เท่ากับที่ขอ 409, ต่ำกว่า =
+        `isDowngrade: true` (ขอได้ แต่เตือนทุกขั้น), ติดต่อ Server กลางไม่ได้ 503
+        (fail closed) · SoD ตอนอนุมัติใช้แค่ "ผู้อนุมัติ ≠ ผู้ขอ" ·
         **เครื่องมาจาก Task เสมอ (ไม่รับ deviceId)** · `configId` ช่างเลือกได้จาก
         `getDeviceApplyOptions` (docs/28 §5.3, v3.61) ไม่ส่ง = ใช้ Config ที่
         Operation ผูกไว้กับ Task · resource `config-apply-request` action `Create`
@@ -1186,8 +1255,10 @@ paths:
                 $ref: "#/components/schemas/ConfigApplyRequest"
         "400":
           description: >-
-            taskId/configId ไม่ใช่ uuid · note ยาวเกิน 500 ตัวอักษร · ไม่ส่ง
-            configId และงานไม่มี Config ที่ Operation ผูกไว้
+            taskId/configId/firmwareId ไม่ใช่ uuid · kind ไม่ใช่ config/firmware ·
+            note ยาวเกิน 500 ตัวอักษร · ไม่ส่ง configId และงานไม่มี Config ที่
+            Operation ผูกไว้ · kind=firmware แต่ไม่ส่ง firmwareId หรือส่ง configId มา
+            ด้วย · kind=config แต่ส่ง firmwareId
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -1202,7 +1273,14 @@ paths:
             กับงานเก่าที่ไม่มีข้อมูลผู้ผูก (ก่อน v3.59) — ให้ Operation ผูก Config ใหม่
             หรือเลือก Config ตัวอื่น (fail closed)** · Config ไม่ใช่ approved/synced · เครื่องยังไม่
             installed หรือรุ่น/protocol ไม่ตรง · เครื่องมีคำขอที่ยังเปิดอยู่
-            (pending/sending) · เครื่องเป็น target ของ Campaign ที่กำลังส่งอยู่
+            (pending/approved/sending — Config และ Firmware ใช้โควตาเดียวกัน) ·
+            เครื่องเป็น target ของ Campaign ที่กำลังส่งอยู่ · Firmware ยังไม่ stored/
+            approved หรือไม่รองรับรุ่นกล่อง · (โหมด central) กล่องรัน Firmware
+            เวอร์ชันนี้อยู่แล้ว, Server กลางไม่รู้จักกล่อง หรือกล่องยังไม่เคยรายงานเวอร์ชัน
+        "503":
+          description: >-
+            (kind=firmware, โหมด central) ติดต่อ Server กลางไม่ได้ — อ่านเวอร์ชัน
+            Firmware ของกล่องไม่ได้จึงไม่สร้างคำขอ (v3.62)
     get:
       tags: [config-apply-request]
       operationId: listTaskConfigApplyRequests
@@ -1454,7 +1532,10 @@ paths:
             Config มีเวอร์ชันใหม่/ถูกถอน/ถูกลบหลังอนุมัติ (ระบบปิดเป็น cancelled
             ให้ขอใหม่), งานไม่ได้ in_progress หรือ Config/เครื่องของงานเปลี่ยน,
             เครื่องไม่ installed, มี Campaign กำลังส่ง, **กล่องออฟไลน์** (คำขอยัง
-            approved ลองใหม่ได้) หรือมีการกดส่ง/ยกเลิกพร้อมกัน
+            approved ลองใหม่ได้) หรือมีการกดส่ง/ยกเลิกพร้อมกัน · kind=firmware
+            (v3.62): Firmware ถูกถอนอนุมัติ/ไฟล์ไม่พร้อม หรือเวอร์ชันในกล่องเปลี่ยน
+            หลังอนุมัติจนกล่องเป็นเวอร์ชันเป้าหมายแล้ว/ไม่ใช่การถอยตามที่อนุมัติ (ระบบปิด
+            เป็น cancelled ให้ขอใหม่)
         "503":
           description: >-
             โหมด central ติดต่อ Server กลางไม่ได้ ตรวจสถานะกล่องไม่ได้ — ไม่ส่ง
@@ -3858,6 +3939,78 @@ components:
           enum: [already-reported, rollout-closed]
           description: มีเฉพาะตอน `accepted` เป็น false
 
+    DeviceDataReport:
+      type: object
+      description: >-
+        (v3.63, docs/23 §5) payload ของ firmware arduino_gps ตามที่ส่งจริง —
+        **snake_case โดยตั้งใจ** (ต่างจาก camelCase ทั้งระบบ — firmware ที่ติดตั้ง
+        แล้วถือว่าแก้ไม่ได้) · field ที่ไม่อยู่ในรายการนี้ได้ 400 ·
+        `fix`/`location_source` บังคับเฉพาะ telemetry (ไม่มี `event_type`)
+      required: [latitude, longitude, timestamp]
+      properties:
+        device_id:
+          type: string
+          maxLength: 50
+          description: ถ้ามีต้องตรงกับ `deviceId` ใน path
+        event_type:
+          type: string
+          enum: [OVERSPEED, GEOFENCE_EXIT, GEOFENCE_ENTER]
+          description: มี = เหตุการณ์ · ไม่มี = telemetry
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: >-
+            `fix = false` เป็นพิกัดเริ่มต้นของกล่อง ไม่ใช่ตำแหน่งจริง — ผู้ใช้ข้อมูล
+            ต้องกรอง `fix = true`
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        speed_kmh:
+          type: number
+          minimum: 0
+          nullable: true
+          description: null เมื่อยังไม่มี fix และไม่ใช่โหมดจำลอง
+        fix:
+          type: boolean
+        location_source:
+          type: string
+          enum: [gps, default]
+        satellites:
+          type: integer
+          minimum: 0
+        firmware_version:
+          type: string
+          maxLength: 32
+        speed_limit_kmh:
+          type: number
+          description: OVERSPEED
+        distance_m:
+          type: number
+          description: GEOFENCE_* (firmware 1.2.0)
+        radius_m:
+          type: number
+          description: GEOFENCE_* (firmware 1.2.0)
+        simulated:
+          type: boolean
+          description: ส่งเฉพาะโหมดจำลองของกล่อง
+        timestamp:
+          type: string
+          maxLength: 40
+          description: >-
+            ISO 8601 UTC จาก GPS · `""` เมื่อกล่องยังไม่มีเวลา GPS (backend ใช้
+            เวลาที่รับแทน)
+          example: "2026-10-27T03:00:05Z"
+
+    DeviceDataReportResponse:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
+          enum: [true]
+
     HealthStatus:
       type: object
       required: [status, database]
@@ -4394,6 +4547,12 @@ components:
             (v3.37, Incident & Rollback #28) — payload คัดลอกมาจากรอบก่อนหน้า
             ที่ `completed` ล่าสุดของ payloadType เดียวกันโดยระบบเอง ไม่ใช่
             จาก request ตรงๆ
+        allowDowngrade:
+          type: boolean
+          description: >-
+            true = ยอมให้ Server กลางติดตั้ง Firmware ที่เก่ากว่าที่กล่องรันอยู่
+            (v3.62) — Rollout เครื่องเดียวของคำขอหน้างานที่ถอยเวอร์ชันและ Operation
+            อนุมัติแล้ว (docs/27 D5) · Rollback ได้สิทธิ์นี้จาก isRollback อยู่แล้ว
         deviceValuesReason:
           type: string
           nullable: true
@@ -5219,13 +5378,19 @@ components:
 
     ConfigApplyRequest:
       type: object
-      description: คำขอส่ง Config ของ Task เข้าเครื่องจริง (Prisma model ConfigApplyRequest, docs/25 §4.1)
+      description: >-
+        คำขอส่ง Config หรือ Firmware ของ Task เข้าเครื่องจริง (Prisma model
+        ConfigApplyRequest, docs/25 §4.1) — ชื่อเป็น Config แต่ครอบคลุม Firmware
+        ตั้งแต่ v3.62 (docs/27 B2) ดู `kind`
       required:
         [
           id,
           taskId,
           deviceId,
+          kind,
           configId,
+          firmwareId,
+          isDowngrade,
           requestedBy,
           requestedAt,
           expiresAt,
@@ -5243,10 +5408,48 @@ components:
         deviceId:
           type: string
           description: เลขเครื่อง (Device.deviceId) snapshot จาก Task ตอนขอ
+        kind:
+          type: string
+          enum: [config, firmware]
+          description: ชนิดของคำขอ (docs/27 D3, v3.62) — แถวก่อน v3.62 เป็น config ทั้งหมด
         configId:
           type: string
           format: uuid
-          description: Config ที่ขอส่ง — ช่างเลือกเอง หรือตัวที่ผูกไว้กับ Task (docs/28)
+          nullable: true
+          description: >-
+            Config ที่ขอส่ง — ช่างเลือกเอง หรือตัวที่ผูกไว้กับ Task (docs/28) ·
+            null เมื่อ kind=firmware (v3.62)
+        firmwareId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Firmware ที่ขอส่ง — มีค่าเฉพาะ kind=firmware (v3.62)
+        fromFirmwareVersion:
+          type: string
+          nullable: true
+          description: >-
+            เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลางตอนขอ (v3.62) — null
+            ในโหมดที่ไม่มี Server กลาง หรือ kind=config
+        isDowngrade:
+          type: boolean
+          description: >-
+            Firmware ที่ขอต่ำกว่าที่กล่องรันอยู่ (docs/27 D5, v3.62) — ขอได้แต่
+            Web/Mobile ต้องเตือนชัด และระบบส่ง allowDowngrade ไปที่ Server กลาง
+            ตอนกดส่ง · false เสมอเมื่อ kind=config
+        firmware:
+          type: object
+          nullable: true
+          description: >-
+            Firmware ที่ขอส่ง (v3.62) — มีใน `listTaskConfigApplyRequests` และคิว
+            อนุมัติ ไม่มีใน response ของ create/approve/reject/cancel/release ·
+            null เมื่อ kind=config
+          required: [id, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            version:
+              type: string
         configAssignedBy:
           type: string
           format: uuid
@@ -5333,6 +5536,8 @@ components:
                   type: string
             config:
               type: object
+              nullable: true
+              description: null เมื่อ kind=firmware (v3.62)
               required: [id, name, deviceModel, protocol]
               properties:
                 id:
@@ -5343,6 +5548,17 @@ components:
                 deviceModel:
                   type: string
                 protocol:
+                  type: string
+            firmware:
+              type: object
+              nullable: true
+              description: Firmware ที่ขอส่ง — null เมื่อ kind=config (v3.62)
+              required: [id, version]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                version:
                   type: string
             requester:
               $ref: "#/components/schemas/ConfigApplyRequestUser"
@@ -5374,7 +5590,9 @@ components:
               type: array
               items:
                 type: string
-              description: ชื่อ field ที่จะส่ง (รวม Device Config Override ที่ approved)
+              description: >-
+                ชื่อ field ที่จะส่ง (รวม Device Config Override ที่ approved) · ว่างเมื่อ
+                kind=firmware
 
     ConfigApplyRequestUser:
       type: object
@@ -5388,13 +5606,26 @@ components:
 
     ConfigApplyRequestCreateRequest:
       type: object
+      description: >-
+        kind=config (ค่าเริ่มต้น) รับ configId (optional) · kind=firmware (v3.62)
+        ต้องส่ง firmwareId และห้ามส่ง configId — ส่งผิดคู่ได้ 400
       properties:
+        kind:
+          type: string
+          enum: [config, firmware]
+          description: ไม่ส่ง = config (เข้ากันได้กับ Mobile รุ่นก่อน v3.62)
         configId:
           type: string
           format: uuid
           description: >-
             Config ที่ช่างเลือก (docs/28 §5.3, v3.61) — ไม่ส่ง = ใช้ Config ที่
             Operation ผูกไว้กับ Task
+        firmwareId:
+          type: string
+          format: uuid
+          description: >-
+            Firmware ที่ช่างเลือกจาก `getDeviceApplyOptions` (docs/27 §5.1,
+            v3.62) — บังคับเมื่อ kind=firmware
         note:
           type: string
           maxLength: 500
@@ -5415,7 +5646,8 @@ components:
 
     DeviceApplyOptions:
       type: object
-      required: [deviceId, deviceInstalled, configs]
+      required:
+        [deviceId, deviceInstalled, configs, currentFirmwareVersion, firmwares]
       properties:
         deviceId:
           type: string
@@ -5442,6 +5674,32 @@ components:
               suggested:
                 type: boolean
                 description: Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้
+        currentFirmwareVersion:
+          type: string
+          nullable: true
+          description: >-
+            เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลาง (v3.62) — null =
+            ไม่รู้ (โหมดที่ไม่มี Server กลาง / ติดต่อไม่ได้ / Server กลางไม่รู้จักกล่อง)
+        firmwares:
+          type: array
+          description: >-
+            Firmware ที่ QA อนุมัติแล้ว + อัปโหลดสำเร็จ + รองรับรุ่นกล่อง ใหม่สุดก่อน
+            (docs/27 B2, v3.62)
+          items:
+            type: object
+            required: [id, version, isCurrent, isDowngrade]
+            properties:
+              id:
+                type: string
+                format: uuid
+              version:
+                type: string
+              isCurrent:
+                type: boolean
+                description: ตรงกับเวอร์ชันที่กล่องรันอยู่ — ขอไม่ได้ (409)
+              isDowngrade:
+                type: boolean
+                description: ต่ำกว่าเวอร์ชันที่กล่องรันอยู่ — ต้องถามยืนยันก่อนขอ (docs/27 D5)
 
     ConfigApplyRequestRejectRequest:
       type: object
@@ -5952,6 +6210,18 @@ components:
           type: string
           format: date-time
           nullable: true
+        reportedFirmwareVersion:
+          type: string
+          nullable: true
+          description: >-
+            (v3.63, docs/23 §6) เวอร์ชัน Firmware ที่กล่องรายงานเองผ่าน telemetry
+            (ต่างจาก Firmware ที่ช่างยืนยันติดตั้ง) · null = ยังไม่เคยรายงาน
+        reportedFirmwareAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            เวลาล่าสุดที่กล่องรายงาน `reportedFirmwareVersion` (ละเอียดระดับนาที)
         customer:
           type: object
           allOf:
@@ -6199,8 +6469,15 @@ components:
 
     CentralStatus:
       type: object
-      required: [mode, reachable, error, checkedAt]
+      required: [mode, reachable, error, checkedAt, applyMode]
       properties:
+        applyMode:
+          type: string
+          enum: [mock, real, central]
+          description: >-
+            ทางที่ระบบส่ง Config/Firmware เข้ากล่อง (env DEVICE_CONFIG_APPLY_MODE,
+            docs/27 §5.6, v3.62) — `central` = ส่งผ่าน Server กลางด้วยคำขอส่งเข้ากล่อง
+            Mobile จึงซ่อนปุ่มยืนยันติดตั้ง/Override Firmware แบบเดิม
         mode:
           type: string
           enum: [mock, real]

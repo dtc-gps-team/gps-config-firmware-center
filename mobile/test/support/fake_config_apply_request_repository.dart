@@ -9,6 +9,10 @@ ConfigApplyRequest fakeApplyRequest({
   String taskId = 't1',
   String deviceId = 'DVC-1',
   String configId = 'cfg-1',
+  FieldApplyKind kind = FieldApplyKind.config,
+  String? firmwareVersion,
+  String? fromFirmwareVersion,
+  bool isDowngrade = false,
   ConfigApplyRequestStatus status = ConfigApplyRequestStatus.pending,
   String? rejectReason,
   String? resultDetail,
@@ -20,7 +24,12 @@ ConfigApplyRequest fakeApplyRequest({
   id: id,
   taskId: taskId,
   deviceId: deviceId,
-  configId: configId,
+  kind: kind,
+  configId: kind == FieldApplyKind.config ? configId : null,
+  firmwareId: kind == FieldApplyKind.firmware ? 'fw-$firmwareVersion' : null,
+  firmwareVersion: firmwareVersion,
+  fromFirmwareVersion: fromFirmwareVersion,
+  isDowngrade: isDowngrade,
   status: status,
   requestedAt: DateTime.utc(2026, 10, 22, 3),
   expiresAt: expiresAt ?? DateTime.utc(2026, 10, 23, 3),
@@ -50,6 +59,7 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   Object? optionsError;
   int optionsCalls = 0;
   String? lastCreateConfigId;
+  String? lastCreateFirmwareId;
   String? lastCreateNote;
 
   final List<ConfigApplyRequest> requests;
@@ -79,11 +89,13 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   Future<ConfigApplyRequest> create(
     String taskId, {
     String? configId,
+    String? firmwareId,
     String? note,
   }) async {
     createCalls++;
     lastCreateTaskId = taskId;
     lastCreateConfigId = configId;
+    lastCreateFirmwareId = firmwareId;
     lastCreateNote = note;
     final error = createError;
     if (error != null) throw error;
@@ -137,14 +149,30 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   }
 }
 
-/// ตัวเลือก Config ตัวอย่าง (docs/28 §5.2) — `cfg-1` แนะนำ, `cfg-2` ไม่แนะนำ
+/// ตัวเลือก Config ตัวอย่าง (docs/28 §5.2) — `cfg-1` แนะนำ, `cfg-2` ไม่แนะนำ ·
+/// Firmware (docs/27 B3): กล่องรัน 1.2.0 → `fw-1.3.0` อัปเกรด, `fw-1.2.0` ตัวที่รันอยู่,
+/// `fw-1.0.0` ถอยเวอร์ชัน
 DeviceApplyOptions fakeApplyOptions({
   String deviceId = 'DVC-1',
   bool deviceInstalled = true,
   List<ApplyOptionConfig>? configs,
+  String? currentFirmwareVersion = '1.2.0',
+  List<ApplyOptionFirmware>? firmwares,
 }) => DeviceApplyOptions(
   deviceId: deviceId,
   deviceInstalled: deviceInstalled,
+  currentFirmwareVersion: currentFirmwareVersion,
+  firmwares:
+      firmwares ??
+      const [
+        ApplyOptionFirmware(id: 'fw-1.3.0', version: '1.3.0'),
+        ApplyOptionFirmware(id: 'fw-1.2.0', version: '1.2.0', isCurrent: true),
+        ApplyOptionFirmware(
+          id: 'fw-1.0.0',
+          version: '1.0.0',
+          isDowngrade: true,
+        ),
+      ],
   configs:
       configs ??
       const [

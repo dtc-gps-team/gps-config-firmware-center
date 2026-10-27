@@ -101,6 +101,11 @@ services:
       TRUST_PROXY: ${APP_TRUST_PROXY:-1}
       DEVICE_CONFIG_APPLY_MODE: ${DEVICE_CONFIG_APPLY_MODE:-mock}
       DEVICE_SIMULATOR_MODE: ${DEVICE_SIMULATOR_MODE:-mock}
+      # GPS telemetry จากกล่อง (docs/23) — ว่าง = ปฏิเสธทั้งหมด / ใช้ค่าเริ่มต้น ดู .env.example
+      TELEMETRY_INGEST_KEY_SHA256: ${TELEMETRY_INGEST_KEY_SHA256:-}
+      TELEMETRY_RETENTION_DAYS: ${TELEMETRY_RETENTION_DAYS:-}
+      TELEMETRY_RATE_LIMIT_PER_DEVICE: ${TELEMETRY_RATE_LIMIT_PER_DEVICE:-}
+      TELEMETRY_RATE_LIMIT_PER_IP: ${TELEMETRY_RATE_LIMIT_PER_IP:-}
       LEGACY_SYNC_MODE: mock
       # mock (ค่าเริ่มต้น) = ไม่ต้องมีไฟล์ใดๆ | fcm = ส่ง push จริง ต้องวางไฟล์ service
       # account ของ Firebase project dev ไว้ที่ ./secrets/ (mount เข้า /app/secrets แบบอ่าน

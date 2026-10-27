@@ -13,12 +13,14 @@ import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/device_search/device_central_repository.dart';
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/task_repository.dart';
 import 'package:mobile/features/task/task_status_ui.dart';
 
@@ -283,6 +285,12 @@ Future<void> _pumpPage(
         // หน้าอุปกรณ์ของ ST อาจโหลด Config ปัจจุบันด้วย (คำขอ override ที่รออยู่)
         configOverrideRepositoryProvider.overrideWithValue(
           _FakeConfigOverrideRepository(),
+        ),
+        // docs/27 B3 — หน้าอุปกรณ์ถาม applyMode จาก backend; ไม่ยิงเครือข่ายจริงในเทส
+        centralApplyModeProvider.overrideWith((ref) async => false),
+        // หน้าอุปกรณ์ถามสถานะจาก Server กลาง; ไม่ยิงเครือข่ายจริงในเทส
+        deviceCentralRepositoryProvider.overrideWithValue(
+          MockDeviceCentralRepository(),
         ),
       ],
       child: MaterialApp(home: page),
