@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { NotificationModule } from '../notification/notification.module';
+import { TaskAutoCloseJob } from './task-auto-close.job';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 
@@ -19,7 +20,7 @@ import { TaskService } from './task.service';
     NotificationModule,
   ],
   controllers: [TaskController],
-  providers: [TaskService, JwtAuthGuard],
+  providers: [TaskService, TaskAutoCloseJob, JwtAuthGuard],
   exports: [TaskService],
 })
 export class TaskModule {}

@@ -948,6 +948,49 @@ paths:
             configId ที่ระบุยังผูกกับงานไม่ได้ — Config ยังไม่ approved/synced
             หรือ deviceModel/protocol ไม่ตรงกับ Device ของงาน
 
+  /tasks/start:
+    post:
+      tags: [task]
+      operationId: startTask
+      summary: ช่างเริ่มงานกับกล่องเอง (docs/28 §5.1, v3.61)
+      description: >-
+        resource `field-task` action `Create` (ST/OT) · ถ้าผู้เรียกมีงาน
+        `pending`/`in_progress` ของกล่องนี้อยู่แล้ว (ไม่ว่า Operation สั่งหรือเริ่ม
+        เอง) คืนใบเดิม **200** (`pending` ถูกเปลี่ยนเป็น `in_progress` ให้) · ไม่มี
+        สร้างใหม่ **201** `source=technician`, `status=in_progress`, `assignedTo`
+        = ผู้เรียกเสมอ (ไม่รับจาก client), ชื่องานสร้างให้ เช่น "BOX-0001 — 26 ต.ค.
+        2569" · ไม่แจ้ง `task_assigned` · ไม่บังคับกล่อง `installed` (การขอส่ง
+        Config ยังบังคับ) · ต้องออนไลน์ (Mobile ไม่เข้าคิว offline)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskStartRequest"
+      responses:
+        "200":
+          description: ใช้งานเดิมที่ยังเปิดอยู่
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "201":
+          description: สร้างงานใหม่
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: deviceId ว่าง หรือ note ยาวเกิน 500 ตัวอักษร
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้เริ่มงานเองไม่ได้ (เฉพาะ ST/OT)
+        "404":
+          description: ไม่พบเครื่อง
+        "409":
+          description: เครื่องปลดระวางแล้ว (`decommissioned`)
+
   /tasks/{taskId}:
     get:
       tags: [task]
@@ -1018,7 +1061,9 @@ paths:
             (เจ้าของงาน) พยายามเปลี่ยนสถานะของงานที่ถูกยกเลิก (`cancelled`)
             หรือเสร็จแล้ว (`completed`) — ทั้งสองเป็นสถานะสุดท้ายสำหรับ ST/OT
             (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ
-            ย้อนงานที่เสร็จแล้วกลับเป็น in_progress — คำตอบ A ใน #303 ข้อ 1)
+            ย้อนงานที่เสร็จแล้วกลับเป็น in_progress — คำตอบ A ใน #303 ข้อ 1) ·
+            หรือปิดงาน (`completed`) ระหว่างที่คำขอส่งเข้ากล่องยัง `sending` อยู่
+            (docs/28 §5.4 — ปิดได้แล้วคำขอ `pending`/`approved` ถูกยกเลิกให้)
 
   /tasks/{taskId}/events:
     get:
@@ -1109,13 +1154,16 @@ paths:
       operationId: createConfigApplyRequest
       summary: ช่างขอส่ง Config ของงานนี้เข้าเครื่องจริง (docs/25 §3.3)
       description: >-
-        **ไม่รับ configId/deviceId จาก client** — backend อ่านจาก Task เอง ·
-        resource `config-apply-request` action `Create` (ST/OT) และต้องเป็นผู้ถูก
-        assign งานนี้ · สร้างคำขอสถานะ `pending` (หมดอายุใน 24 ชั่วโมงถ้าไม่มีใคร
-        ตัดสิน) snapshot ผู้ผูก Config (`Task.configAssignedBy`) ไว้เช็ค Separation
-        of Duty ตอนอนุมัติ · แจ้ง Operation ทุกคนยกเว้นผู้ผูก Config
-        (`config_apply_pending`) · เขียน AuditLog `config_apply_request` ·
-        กดได้เฉพาะตอนออนไลน์ (Mobile ไม่เข้าคิว offline)
+        **เครื่องมาจาก Task เสมอ (ไม่รับ deviceId)** · `configId` ช่างเลือกได้จาก
+        `getDeviceApplyOptions` (docs/28 §5.3, v3.61) ไม่ส่ง = ใช้ Config ที่
+        Operation ผูกไว้กับ Task · resource `config-apply-request` action `Create`
+        (ST/OT) และต้องเป็นผู้ถูก assign งานนี้ · สร้างคำขอสถานะ `pending`
+        (หมดอายุใน 24 ชั่วโมงถ้าไม่มีใครตัดสิน) · ขอ Config **ตัวที่ Operation
+        ผูกไว้** = snapshot ผู้ผูก (`Task.configAssignedBy`) ไว้เช็ค Separation of
+        Duty ตอนอนุมัติ · Config ที่ช่างเลือกเอง = `configAssignedBy` null · แจ้ง
+        Operation ทุกคนยกเว้นผู้ผูก Config และผู้ขอ (`config_apply_pending`) ·
+        เขียน AuditLog `config_apply_request` · กดได้เฉพาะตอนออนไลน์ (Mobile
+        ไม่เข้าคิว offline)
       parameters:
         - in: path
           name: taskId
@@ -1137,7 +1185,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConfigApplyRequest"
         "400":
-          description: taskId ไม่ใช่ uuid หรือ note ยาวเกิน 500 ตัวอักษร
+          description: >-
+            taskId/configId ไม่ใช่ uuid · note ยาวเกิน 500 ตัวอักษร · ไม่ส่ง
+            configId และงานไม่มี Config ที่ Operation ผูกไว้
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -1148,9 +1198,9 @@ paths:
             ไม่พบ Config (หรือถูกลบแล้ว) หรือไม่พบเครื่อง
         "409":
           description: >-
-            งานไม่ได้อยู่ `in_progress` · งานไม่มี configId/deviceId · **งานไม่มี
-            ข้อมูลผู้ผูก Config (งานเก่าก่อน v3.59) — ให้ Operation ผูก Config ใหม่
-            ก่อน (fail closed)** · Config ไม่ใช่ approved/synced · เครื่องยังไม่
+            งานไม่ได้อยู่ `in_progress` · งานไม่มี deviceId · **ขอ Config ที่ผูกไว้
+            กับงานเก่าที่ไม่มีข้อมูลผู้ผูก (ก่อน v3.59) — ให้ Operation ผูก Config ใหม่
+            หรือเลือก Config ตัวอื่น (fail closed)** · Config ไม่ใช่ approved/synced · เครื่องยังไม่
             installed หรือรุ่น/protocol ไม่ตรง · เครื่องมีคำขอที่ยังเปิดอยู่
             (pending/sending) · เครื่องเป็น target ของ Campaign ที่กำลังส่งอยู่
     get:
@@ -1329,6 +1379,38 @@ paths:
           description: ไม่พบคำขอ หรือไม่ได้ถือ Task นี้ (ไม่เปิดเผยว่ามีคำขอนี้)
         "409":
           description: คำขอไม่ได้อยู่ pending/approved แล้ว
+
+  /devices/{deviceId}/apply-options:
+    get:
+      tags: [config-apply-request]
+      operationId: getDeviceApplyOptions
+      summary: Config ที่ช่างเลือกส่งเข้ากล่องนี้ได้ (docs/28 §5.2, v3.61)
+      description: >-
+        resource `config-apply-request` action `Create` (ST/OT — คนที่ขอส่งได้) ·
+        Config สถานะ `approved`/`synced` ไม่ถูกลบ รุ่น+โปรโตคอลตรงกับกล่อง (กฎ
+        เดียวกับที่ตรวจตอน `createConfigApplyRequest`) · ตัวที่ Operation ผูกไว้กับ
+        งานที่ผู้เรียกเปิดอยู่ของกล่องนี้ขึ้นก่อน (`suggested`) ที่เหลือเรียงตามชื่อ ·
+        ส่วน Firmware มาใน B2 ของ docs/27
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          description: เลขเครื่อง (Device.deviceId)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ตัวเลือก
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceApplyOptions"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: role นี้ขอส่ง Config ไม่ได้ (เฉพาะ ST/OT)
+        "404":
+          description: ไม่พบเครื่อง
 
   /config-apply-requests/{id}/release:
     post:
@@ -5101,6 +5183,21 @@ components:
           type: string
           format: date-time
           nullable: true
+        source:
+          type: string
+          enum: [operation, technician]
+          description: >-
+            ที่มาของงาน (docs/28 §4, v3.61) — `operation` = `createTask`,
+            `technician` = ช่างเริ่มเองผ่าน `startTask` · client ควรรับค่าที่ไม่
+            รู้จักได้ (fallback operation)
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: เวลาปิดงาน (ช่างกดหรือระบบปิด) — งานที่เสร็จก่อน v3.61 เป็น null
+        autoClosed:
+          type: boolean
+          description: true = ระบบปิดให้เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม. (docs/28 §5.4)
         createdAt:
           type: string
           format: date-time
@@ -5138,7 +5235,6 @@ components:
           taskId,
           deviceId,
           configId,
-          configAssignedBy,
           requestedBy,
           requestedAt,
           expiresAt,
@@ -5159,11 +5255,14 @@ components:
         configId:
           type: string
           format: uuid
-          description: snapshot จาก Task ตอนขอ
+          description: Config ที่ขอส่ง — ช่างเลือกเอง หรือตัวที่ผูกไว้กับ Task (docs/28)
         configAssignedBy:
           type: string
           format: uuid
-          description: ผู้ผูก Config เข้างาน (snapshot) — อนุมัติคำขอนี้ไม่ได้
+          nullable: true
+          description: >-
+            ผู้ผูก Config เข้างาน (snapshot) — อนุมัติคำขอนี้ไม่ได้ · null = ช่าง
+            เลือก Config เอง (docs/28 §2.1, v3.61 — ไม่ใช้ SoD ข้อ 3)
         requestedBy:
           type: string
           format: uuid
@@ -5299,10 +5398,59 @@ components:
     ConfigApplyRequestCreateRequest:
       type: object
       properties:
+        configId:
+          type: string
+          format: uuid
+          description: >-
+            Config ที่ช่างเลือก (docs/28 §5.3, v3.61) — ไม่ส่ง = ใช้ Config ที่
+            Operation ผูกไว้กับ Task
         note:
           type: string
           maxLength: 500
           description: ข้อความถึง Operation (optional)
+
+    TaskStartRequest:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId:
+          type: string
+          minLength: 1
+          description: เลขเครื่อง (Device.deviceId)
+        note:
+          type: string
+          maxLength: 500
+          description: บันทึกแรกของงาน (optional) — เก็บเป็น TaskEvent ที่มี note
+
+    DeviceApplyOptions:
+      type: object
+      required: [deviceId, deviceInstalled, configs]
+      properties:
+        deviceId:
+          type: string
+        deviceInstalled:
+          type: boolean
+          description: ส่งเข้ากล่องได้เฉพาะเครื่อง installed — false ให้ Mobile บอกช่างก่อนกดขอ
+        configs:
+          type: array
+          items:
+            type: object
+            required: [id, name, status, latestVersion, suggested]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              status:
+                type: string
+                enum: [approved, synced]
+              latestVersion:
+                type: integer
+                description: ConfigVersion.versionNumber ล่าสุด (0 = ยังไม่มีเวอร์ชัน)
+              suggested:
+                type: boolean
+                description: Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้
 
     ConfigApplyRequestRejectRequest:
       type: object

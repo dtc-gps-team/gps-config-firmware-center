@@ -13,7 +13,9 @@ import {
   ActingUser,
   configAssignment,
   resolveChangedAt,
+  TASK_IDLE_CLOSE_HOURS,
   TaskService,
+  technicianTaskTitle,
 } from './task.service';
 
 /** จำลอง Prisma error ให้ตรงกับ shape จริงของ PrismaClientKnownRequestError
@@ -29,6 +31,7 @@ function makePrismaError(code = 'P2025'): PrismaClientKnownRequestError {
 
 type TaskDelegateMock = {
   create: jest.Mock;
+  findFirst: jest.Mock;
   findMany: jest.Mock;
   findUnique: jest.Mock;
   findUniqueOrThrow: jest.Mock;
@@ -50,6 +53,9 @@ const sampleTask: Task = {
   configAssignedAt: null,
   status: 'pending',
   dueDate: null,
+  source: 'operation',
+  completedAt: null,
+  autoClosed: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -85,11 +91,12 @@ describe('TaskService', () => {
   // (สถานะ pending) เทสไหนต้องการสถานะก่อนหน้าอื่นค่อย mock ทับ
   let queryRaw: jest.Mock;
   // docs/25 §3.9 — ยกเลิกงานแล้วปิดคำขอส่ง Config ที่ pending ตาม
-  let configApplyRequest: { updateMany: jest.Mock };
+  let configApplyRequest: { updateMany: jest.Mock; findFirst: jest.Mock };
 
   beforeEach(async () => {
     task = {
       create: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
@@ -108,6 +115,7 @@ describe('TaskService', () => {
     };
     configApplyRequest = {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findFirst: jest.fn().mockResolvedValue(null),
     };
     queryRaw = jest
       .fn()
@@ -1402,6 +1410,321 @@ describe('TaskService', () => {
       await service.update(sampleTask.id, { status: 'cancelled' }, operation);
 
       expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('start (docs/28 §5.1 — ช่างเริ่มงานเอง)', () => {
+    const DEVICE = 'BOX-0001';
+    const installedDevice = { deviceId: DEVICE, status: 'installed' };
+
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.create.mockImplementation((args: { data: Partial<Task> }) =>
+        Promise.resolve({
+          ...sampleTask,
+          ...args.data,
+          id: 'new-task',
+        }),
+      );
+    });
+
+    it('ไม่มีงานเปิดอยู่: สร้างใบใหม่ source=technician เป็นของผู้เรียก in_progress + event สร้างงาน + audit start · ไม่แจ้ง task_assigned', async () => {
+      const result = await service.start({ deviceId: ` ${DEVICE} ` }, owner);
+
+      expect(result.created).toBe(true);
+      expect(task.create).toHaveBeenCalledWith({
+        data: {
+          title: expect.stringContaining(`${DEVICE} — `) as unknown,
+          assignedTo: owner.id,
+          deviceId: DEVICE,
+          status: 'in_progress',
+          source: 'technician',
+        },
+      });
+      expect(taskEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          taskId: 'new-task',
+          fromStatus: null,
+          toStatus: 'in_progress',
+          changedBy: owner.id,
+        }) as unknown,
+      });
+      expect(notification.send).not.toHaveBeenCalled();
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'start' }) as unknown,
+      });
+    });
+
+    it('ล็อกต่อ (ช่าง, กล่อง) ก่อนหา/สร้าง กันกดซ้ำพร้อมกันได้ 2 ใบ', async () => {
+      await service.start({ deviceId: DEVICE }, owner);
+
+      const lockCall = queryRaw.mock.calls[0] as [TemplateStringsArray, string];
+      expect(lockCall[0].join('?')).toContain('pg_advisory_xact_lock');
+      expect(lockCall[1]).toBe(`task-start:${owner.id}:${DEVICE}`);
+      expect(task.findFirst).toHaveBeenCalledWith({
+        where: {
+          assignedTo: owner.id,
+          deviceId: DEVICE,
+          status: { in: ['pending', 'in_progress'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+
+    it('มีงาน in_progress ของกล่องนี้อยู่แล้ว: คืนใบเดิม (created=false) ไม่สร้างใหม่', async () => {
+      const open = { ...sampleTask, deviceId: DEVICE, status: 'in_progress' };
+      task.findFirst.mockResolvedValue(open);
+
+      const result = await service.start({ deviceId: DEVICE }, owner);
+
+      expect(result).toEqual({ task: open, created: false });
+      expect(task.create).not.toHaveBeenCalled();
+      expect(task.update).not.toHaveBeenCalled();
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'resume' }) as unknown,
+      });
+    });
+
+    it('มีงาน pending ที่ Operation สั่งไว้: ใช้ใบนั้นและเปลี่ยนเป็น in_progress พร้อม event', async () => {
+      task.findFirst.mockResolvedValue({ ...sampleTask, deviceId: DEVICE });
+      task.update.mockResolvedValue({
+        ...sampleTask,
+        deviceId: DEVICE,
+        status: 'in_progress',
+      });
+
+      const result = await service.start({ deviceId: DEVICE }, owner);
+
+      expect(result.created).toBe(false);
+      expect(task.update).toHaveBeenCalledWith({
+        where: { id: sampleTask.id },
+        data: { status: 'in_progress' },
+      });
+      expect(taskEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          fromStatus: 'pending',
+          toStatus: 'in_progress',
+        }) as unknown,
+      });
+    });
+
+    it('ส่ง note มา: บันทึกเป็น TaskEvent ที่มี note', async () => {
+      await service.start({ deviceId: DEVICE, note: ' ตรวจสัญญาณ ' }, owner);
+
+      expect(taskEvent.create).toHaveBeenCalledWith({
+        data: { taskId: 'new-task', changedBy: owner.id, note: 'ตรวจสัญญาณ' },
+      });
+    });
+
+    it('กล่องยังไม่ติดตั้ง (registered): เริ่มงานได้', async () => {
+      device.findUnique.mockResolvedValue({
+        ...installedDevice,
+        status: 'registered',
+      });
+
+      await expect(
+        service.start({ deviceId: DEVICE }, owner),
+      ).resolves.toMatchObject({ created: true });
+    });
+
+    it('กล่องปลดระวางแล้ว: 409', async () => {
+      device.findUnique.mockResolvedValue({
+        ...installedDevice,
+        status: 'decommissioned',
+      });
+
+      await expect(
+        service.start({ deviceId: DEVICE }, owner),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(task.create).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบกล่อง: 404', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.start({ deviceId: DEVICE }, owner),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it.each([operation, configEngineer, admin])(
+      'role ที่ไม่ใช่ช่าง ($role): 403',
+      async (actor) => {
+        await expect(
+          service.start({ deviceId: DEVICE }, actor),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(task.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('ชื่องานเป็นเลขเครื่อง + วันที่ไทย', () => {
+      expect(
+        technicianTaskTitle(DEVICE, new Date('2026-10-26T03:00:00.000Z')),
+      ).toBe(`${DEVICE} — 26 ต.ค. 2569`);
+    });
+  });
+
+  describe('ปิดงาน (docs/28 §5.4)', () => {
+    beforeEach(() => {
+      queryRaw.mockResolvedValue([
+        {
+          status: 'in_progress',
+          createdAt: sampleTask.createdAt,
+          assignedTo: owner.id,
+        },
+      ]);
+      task.updateMany.mockResolvedValue({ count: 1 });
+      task.findUniqueOrThrow.mockResolvedValue({
+        ...sampleTask,
+        status: 'completed',
+      });
+      task.update.mockResolvedValue({ ...sampleTask, status: 'completed' });
+      task.findUnique.mockResolvedValue({
+        ...sampleTask,
+        status: 'in_progress',
+      });
+    });
+
+    it('ST กดเสร็จงาน: ตั้ง completedAt และยกเลิกคำขอ pending/approved ด้วยเหตุผลปิดงาน', async () => {
+      await service.update(sampleTask.id, { status: 'completed' }, owner);
+
+      expect(task.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: sampleTask.id,
+          assignedTo: owner.id,
+          status: { notIn: ['cancelled', 'completed'] },
+        },
+        data: { status: 'completed', completedAt: expect.any(Date) as unknown },
+      });
+      expect(configApplyRequest.updateMany).toHaveBeenCalledWith({
+        where: {
+          taskId: sampleTask.id,
+          status: { in: ['pending', 'approved'] },
+        },
+        data: expect.objectContaining({
+          status: 'cancelled',
+          resultDetail: 'ช่างปิดงานแล้ว ระบบยกเลิกคำขอให้อัตโนมัติ',
+        }) as unknown,
+      });
+    });
+
+    it('ST กดเสร็จงานระหว่างคำขอ sending: 409 ไม่เปลี่ยนสถานะงาน', async () => {
+      configApplyRequest.findFirst.mockResolvedValue({ id: 'req-sending' });
+
+      await expect(
+        service.update(sampleTask.id, { status: 'completed' }, owner),
+      ).rejects.toThrow('รอผลจากกล่องก่อน');
+      expect(task.updateMany).not.toHaveBeenCalled();
+      expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ST ที่ไม่ใช่เจ้าของงานกดเสร็จ: ไม่เช็ค/ไม่ยกเลิกคำขอของคนอื่น (404 ตามเดิม)', async () => {
+      configApplyRequest.findFirst.mockResolvedValue({ id: 'req-sending' });
+      task.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.update(sampleTask.id, { status: 'completed' }, otherTech),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(configApplyRequest.findFirst).not.toHaveBeenCalled();
+      expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ST เปลี่ยนเป็น in_progress: ไม่ตั้ง completedAt ไม่แตะคำขอ', async () => {
+      await service.update(sampleTask.id, { status: 'in_progress' }, owner);
+
+      expect(task.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'in_progress' } }),
+      );
+      expect(configApplyRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('Operation ปิดงาน: กติกาเดียวกัน (sending -> 409)', async () => {
+      configApplyRequest.findFirst.mockResolvedValue({ id: 'req-sending' });
+
+      await expect(
+        service.update(sampleTask.id, { status: 'completed' }, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(task.update).not.toHaveBeenCalled();
+    });
+
+    it('Operation ปิดงาน: ตั้ง completedAt + ยกเลิกคำขอ', async () => {
+      await service.update(sampleTask.id, { status: 'completed' }, operation);
+
+      expect(task.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'completed',
+            completedAt: expect.any(Date) as unknown,
+          }) as unknown,
+        }),
+      );
+      expect(configApplyRequest.updateMany).toHaveBeenCalled();
+    });
+  });
+
+  describe('autoCloseIdle (docs/28 D4)', () => {
+    const now = new Date('2026-10-27T12:00:00.000Z');
+    const cutoff = new Date(
+      now.getTime() - TASK_IDLE_CLOSE_HOURS * 60 * 60 * 1000,
+    );
+
+    beforeEach(() => {
+      task.findMany.mockResolvedValue([{ id: 'idle-1' }, { id: 'idle-2' }]);
+      task.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('หางานที่เงียบเกิน 24 ชม. ตามเงื่อนไขครบ (ไม่มี event/คำขอขยับ, ไม่มี sending, dueDate เลยหรือว่าง)', async () => {
+      await service.autoCloseIdle(now);
+
+      expect(task.findMany).toHaveBeenCalledWith({
+        where: {
+          status: 'in_progress',
+          updatedAt: { lt: cutoff },
+          events: { none: { changedAt: { gte: cutoff } } },
+          configApplyRequests: {
+            none: {
+              OR: [{ status: 'sending' }, { updatedAt: { gte: cutoff } }],
+            },
+          },
+          OR: [{ dueDate: null }, { dueDate: { lt: now } }],
+        },
+        select: { id: true },
+      });
+    });
+
+    it('ปิดเป็น completed + autoClosed พร้อม event ของระบบ (changedBy null) และยกเลิกคำขอที่ค้าง · คืนจำนวนที่ปิด', async () => {
+      const closed = await service.autoCloseIdle(now);
+
+      expect(closed).toBe(2);
+      expect(task.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          id: 'idle-1',
+          status: 'in_progress',
+        }) as unknown,
+        data: { status: 'completed', completedAt: now, autoClosed: true },
+      });
+      expect(taskEvent.create).toHaveBeenCalledWith({
+        data: {
+          taskId: 'idle-1',
+          fromStatus: 'in_progress',
+          toStatus: 'completed',
+          changedBy: null,
+          changedAt: now,
+          note: 'ระบบปิดงานให้ (ไม่มีความเคลื่อนไหว 24 ชม.)',
+        },
+      });
+      expect(configApplyRequest.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('งานขยับระหว่างรอ (เช็คซ้ำหลังล็อกไม่ผ่าน): ข้าม ไม่เขียน event', async () => {
+      task.updateMany
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 1 });
+
+      const closed = await service.autoCloseIdle(now);
+
+      expect(closed).toBe(1);
+      expect(taskEvent.create).toHaveBeenCalledTimes(1);
     });
   });
 });

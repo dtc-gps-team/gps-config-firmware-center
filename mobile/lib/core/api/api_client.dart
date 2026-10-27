@@ -366,15 +366,42 @@ class ApiClient {
   /// มีคำขอค้าง, Campaign กำลังส่งให้เครื่องนี้ ฯลฯ) ข้อความจาก backend ใช้แสดงได้
   Future<ConfigApplyRequest> createConfigApplyRequest(
     String taskId, {
+    String? configId,
     String? note,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/tasks/$taskId/config-apply-requests',
-        data: {'note': ?note},
+        data: {'configId': ?configId, 'note': ?note},
       ),
       ConfigApplyRequest.fromJson,
     );
+  }
+
+  /// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่าง
+  /// เลือกส่งเข้ากล่องนี้ได้ (ST/OT)
+  Future<DeviceApplyOptions> getDeviceApplyOptions(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>(
+        '/devices/${Uri.encodeComponent(deviceId)}/apply-options',
+      ),
+      DeviceApplyOptions.fromJson,
+    );
+  }
+
+  /// `POST /tasks/start` (docs/28 §5.1) — ช่างเริ่มงานกับกล่องเอง · backend ตอบ
+  /// 201 = สร้างใบใหม่, 200 = คืนงานที่ยังเปิดอยู่ของกล่องนี้
+  Future<StartTaskResult> startTask(String deviceId, {String? note}) async {
+    var created = false;
+    final task = await _wrap(() async {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/tasks/start',
+        data: {'deviceId': deviceId, 'note': ?note},
+      );
+      created = response.statusCode == 201;
+      return response;
+    }, Task.fromJson);
+    return StartTaskResult(task: task, created: created);
   }
 
   /// `POST /config-apply-requests/{id}/cancel` — ช่างที่ถือ Task ยกเลิกคำขอ

@@ -113,6 +113,14 @@ enum TaskStatus {
   cancelled
 }
 
+// ที่มาของ Task (docs/28 §4) — ไม่มีใน Data Dictionary (DD มีแค่ Task ที่สั่งงาน):
+// หัวหน้าแก้ scope 2026-09-14 ให้การมอบหมายงานเป็นของระบบแยกของบริษัท Task ในระบบ
+// เราจึงเป็น "บันทึกงานที่ช่างไปทำกับกล่อง 1 ครั้ง" ที่ช่างเริ่มเองได้ด้วย
+enum TaskSource {
+  operation  // POST /tasks — แถวเดิมทั้งหมด
+  technician // POST /tasks/start — ช่างเริ่มเองจากหน้ากล่อง
+}
+
 model Task {
   id          String     @id @default(uuid())
   title       String
@@ -160,6 +168,12 @@ model Task {
   configAssignedAt DateTime?
   status      TaskStatus @default(pending)
   dueDate     DateTime?
+  // docs/28 §4 — 3 คอลัมน์ของโปรเจกต์เอง ไม่มีใน Data Dictionary (ดู enum
+  // TaskSource) · `completedAt` เวลาปิดงาน (ช่างกดหรือระบบปิด) · `autoClosed`
+  // = ระบบปิดให้เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม. (`TaskService.autoCloseIdle`)
+  source      TaskSource @default(operation)
+  completedAt DateTime?
+  autoClosed  Boolean    @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -803,9 +817,11 @@ model ConfigApplyRequest {
   // `Task.deviceId` เองก็ไม่ใช่ FK
   deviceId         String
   configId         String
-  // snapshot ของ `Task.configAssignedBy` ตอนขอ — ไม่ nullable: คำขอของงานที่
-  // ไม่รู้ผู้ผูก Config ถูกปฏิเสธตั้งแต่ตอนสร้าง (fail closed)
-  configAssignedBy String
+  // snapshot ของ `Task.configAssignedBy` ตอนขอ **เฉพาะเมื่อช่างขอ Config ตัวที่
+  // Operation ผูกไว้กับ Task** (docs/28 §2.1 — SoD ข้อ 3 ใช้กับคนผูกเท่านั้น) ·
+  // `null` = ช่างเลือก Config เอง (docs/28 D3) · งานที่ผูก Config ไว้แต่ไม่รู้ผู้
+  // ผูกยังถูกปฏิเสธตั้งแต่ตอนสร้าง (fail closed) เหมือนเดิม
+  configAssignedBy String?
   requestedBy      String
   requestedAt      DateTime                 @default(now())
   // ครบกำหนดหมดอายุของขั้นที่รออยู่ (§3.9, docs/27 D2): `pending` = ขอ+24 ชม.,
@@ -840,7 +856,7 @@ model ConfigApplyRequest {
   task           Task             @relation(fields: [taskId], references: [id], onDelete: Restrict)
   config         Config           @relation(fields: [configId], references: [id], onDelete: Restrict)
   requester      User             @relation("ConfigApplyRequestedBy", fields: [requestedBy], references: [id], onDelete: Restrict)
-  configAssigner User             @relation("ConfigApplyConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
+  configAssigner User?            @relation("ConfigApplyConfigAssignedBy", fields: [configAssignedBy], references: [id], onDelete: Restrict)
   decider        User?            @relation("ConfigApplyDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
   releaser       User?            @relation("ConfigApplyReleasedBy", fields: [releasedBy], references: [id], onDelete: Restrict)
   rollout        CampaignRollout? @relation(fields: [rolloutId], references: [id], onDelete: Restrict)
