@@ -5589,7 +5589,14 @@ components:
     DeviceApplyOptions:
       type: object
       required:
-        [deviceId, deviceInstalled, configs, currentFirmwareVersion, firmwares]
+        [
+          deviceId,
+          deviceInstalled,
+          configs,
+          currentFirmwareVersion,
+          firmwares,
+          openRequest,
+        ]
       properties:
         deviceId:
           type: string
@@ -5642,6 +5649,34 @@ components:
               isDowngrade:
                 type: boolean
                 description: ต่ำกว่าเวอร์ชันที่กล่องรันอยู่ — ต้องถามยืนยันก่อนขอ (docs/27 D5)
+        openRequest:
+          type: object
+          nullable: true
+          description: >-
+            (v3.66) คำขอที่ยังไม่จบของกล่องนี้ (`pending`/`approved`/`sending`)
+            — ขอใหม่ไม่ได้จนกว่าคำขอนี้จะจบ (`createConfigApplyRequest` ตอบ 409)
+            Mobile จึงบอกช่างตั้งแต่เปิดหน้าเลือก · null = ขอใหม่ได้
+          required: [kind, status, configName, firmwareVersion, taskId]
+          properties:
+            kind:
+              type: string
+              enum: [config, firmware]
+            status:
+              type: string
+              enum: [pending, approved, sending]
+            configName:
+              type: string
+              nullable: true
+            firmwareVersion:
+              type: string
+              nullable: true
+            taskId:
+              type: string
+              format: uuid
+              nullable: true
+              description: >-
+                งานของคำขอนี้ — null เมื่อผู้เรียกไม่ได้ถืองานนั้น (ไม่เปิดเผยงาน
+                ของช่างคนอื่น)
 
     ConfigApplyRequestRejectRequest:
       type: object
