@@ -22,6 +22,8 @@ import '../config_override/pending_config_override_banner.dart';
 import '../firmware_override/pending_firmware_override_banner.dart';
 import '../task/field_task_repository.dart';
 import '../task/task_repository.dart';
+import 'device_central_repository.dart';
+import 'device_online.dart';
 import 'device_search_repository.dart';
 import 'device_status_repository.dart';
 
@@ -248,6 +250,11 @@ class _DeviceDetailView extends StatelessWidget {
               AppInfoRow(label: 'Serial Number', value: device.serialNumber),
               AppInfoRow(label: 'Blackbox ID', value: device.blackboxId),
               AppInfoRow(
+                label: 'Hardware revision',
+                value: device.hardwareRevisionCode,
+              ),
+              AppInfoRow(label: 'Bootloader', value: device.bootloader),
+              AppInfoRow(
                 label: 'ลงทะเบียนเมื่อ',
                 value: _formatDate(device.registeredAt),
               ),
@@ -361,10 +368,15 @@ class _StatusSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusAsync = ref.watch(deviceStatusProvider(deviceId));
+    // ข้อมูลเสริม — โหลดไม่ได้/ยังโหลดอยู่ใช้ `/status` แทน (DeviceOnline)
+    final central = ref.watch(deviceCentralProvider(deviceId)).valueOrNull;
     return statusAsync.when(
       skipLoadingOnRefresh: true,
       data: (status) {
         final pendingFw = status.pendingFirmwareOverride;
+        final online = DeviceOnline.resolve(status, central);
+        final reported = online.fromCentral ? central?.device : null;
+        final lastSeenAt = online.lastSeenAt;
         final card = AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -380,15 +392,25 @@ class _StatusSection extends ConsumerWidget {
                 status: status.firmwareStatus,
                 firmware: true,
               ),
-              // Placeholder: there is no online/offline signal yet — the
-              // backend has no device check-in / `lastSeenAt` concept (issue
-              // #245; design is tracked separately). Static "ไม่ทราบ" until
-              // that design lands, then drive it from the response.
-              const AppInfoRow(label: 'ออนไลน์/ออฟไลน์', value: 'ไม่ทราบ'),
               AppInfoRow(
-                label: 'เช็คอินล่าสุด',
-                value: status.lastCheckInMessage,
+                key: const Key('device_online_row'),
+                label: 'ออนไลน์/ออฟไลน์',
+                value: online.label,
               ),
+              AppInfoRow(
+                label: 'ติดต่อล่าสุด',
+                value: lastSeenAt == null ? null : _formatDate(lastSeenAt),
+              ),
+              if (reported != null) ...[
+                AppInfoRow(
+                  label: 'Firmware ในกล่อง',
+                  value: reported.reportedFirmwareVersion,
+                ),
+                AppInfoRow(
+                  label: 'เวอร์ชัน Config ในกล่อง',
+                  value: reported.reportedConfigVersion?.toString(),
+                ),
+              ],
             ],
           ),
         );
@@ -411,7 +433,10 @@ class _StatusSection extends ConsumerWidget {
       error: (error, _) => AppErrorView(
         compact: true,
         message: _errorMessage(error),
-        onRetry: () => ref.invalidate(deviceStatusProvider(deviceId)),
+        onRetry: () {
+          ref.invalidate(deviceStatusProvider(deviceId));
+          ref.invalidate(deviceCentralProvider(deviceId));
+        },
         messageKey: const Key('device_status_error'),
         retryKey: const Key('device_status_retry'),
       ),
