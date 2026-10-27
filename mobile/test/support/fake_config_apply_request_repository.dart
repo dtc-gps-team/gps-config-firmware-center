@@ -40,7 +40,17 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     this.createError,
     this.cancelError,
     this.createGate,
-  }) : requests = requests ?? [];
+    DeviceApplyOptions? options,
+    this.optionsError,
+  }) : requests = requests ?? [],
+       options = options ?? fakeApplyOptions();
+
+  /// ผลของ `applyOptions` (docs/28) — ค่าเริ่มต้นมี Config 2 ตัว ตัวแรกแนะนำ
+  DeviceApplyOptions options;
+  Object? optionsError;
+  int optionsCalls = 0;
+  String? lastCreateConfigId;
+  String? lastCreateNote;
 
   final List<ConfigApplyRequest> requests;
   Object? listError;
@@ -66,9 +76,15 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   }
 
   @override
-  Future<ConfigApplyRequest> create(String taskId) async {
+  Future<ConfigApplyRequest> create(
+    String taskId, {
+    String? configId,
+    String? note,
+  }) async {
     createCalls++;
     lastCreateTaskId = taskId;
+    lastCreateConfigId = configId;
+    lastCreateNote = note;
     final error = createError;
     if (error != null) throw error;
     final gate = createGate;
@@ -111,4 +127,38 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     if (index >= 0) requests[index] = sending;
     return sending;
   }
+
+  @override
+  Future<DeviceApplyOptions> applyOptions(String deviceId) async {
+    optionsCalls++;
+    final error = optionsError;
+    if (error != null) throw error;
+    return options;
+  }
 }
+
+/// ตัวเลือก Config ตัวอย่าง (docs/28 §5.2) — `cfg-1` แนะนำ, `cfg-2` ไม่แนะนำ
+DeviceApplyOptions fakeApplyOptions({
+  String deviceId = 'DVC-1',
+  bool deviceInstalled = true,
+  List<ApplyOptionConfig>? configs,
+}) => DeviceApplyOptions(
+  deviceId: deviceId,
+  deviceInstalled: deviceInstalled,
+  configs:
+      configs ??
+      const [
+        ApplyOptionConfig(
+          id: 'cfg-1',
+          name: 'GT06N มาตรฐาน',
+          latestVersion: 3,
+          suggested: true,
+        ),
+        ApplyOptionConfig(
+          id: 'cfg-2',
+          name: 'GT06N ลูกค้าพิเศษ',
+          latestVersion: 0,
+          suggested: false,
+        ),
+      ],
+);

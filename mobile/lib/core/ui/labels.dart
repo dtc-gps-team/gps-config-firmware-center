@@ -47,6 +47,12 @@ String devicePayloadLabel(
 
 /// docs/22 §6 — Task status ไม่มีคู่เทียบใน Web คงไทยเดิม (`TaskStatusStyle.label`
 /// ของหน้าที่ยังไม่ย้ายเรียกฟังก์ชันนี้ ข้อความจึงตรงกันทุกหน้า)
+/// docs/28 — ที่มาของงานในหน้า Task Detail
+String taskSourceLabel(TaskSource source) => switch (source) {
+  TaskSource.operation => 'Operation สั่ง',
+  TaskSource.technician => 'เริ่มเองจากหน้ากล่อง',
+};
+
 String taskStatusLabel(TaskStatus status) => switch (status) {
   TaskStatus.pending => 'รอดำเนินการ',
   TaskStatus.inProgress => 'กำลังทำ',

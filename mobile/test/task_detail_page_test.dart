@@ -13,6 +13,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/ui/labels.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
@@ -422,17 +423,66 @@ void main() {
       },
     );
 
-    testWidgets('configId เป็น null -> ไม่เห็นปุ่ม', (tester) async {
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress),
-        ),
-        role: UserRole.st,
-      );
+    testWidgets(
+      'docs/28: configId เป็น null -> ปุ่มขอส่งยังอยู่ แตะแล้วเปิดหน้าเลือก Config ของงานนี้ ไม่สร้างคำขอทันที',
+      (tester) async {
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        final applyRepo = FakeConfigApplyRequestRepository();
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+          role: UserRole.st,
+          applyRepo: applyRepo,
+          router: router,
+        );
+        await tester.pumpAndSettle();
 
-      expect(_confirmInstallButton, findsNothing);
-    });
+        expect(_confirmInstallButton, findsOneWidget);
+        expect(
+          find.byKey(const Key('choose_other_config_button')),
+          findsNothing,
+        );
+        await tester.tap(_confirmInstallButton);
+        await tester.pumpAndSettle();
+
+        expect(find.text('APPLY_PAGE'), findsOneWidget);
+        expect(opened, '/devices/DVC-1/apply?taskId=t1');
+        expect(applyRepo.createCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'docs/28: มี configId -> ลิงก์ "เลือก Config อื่น" เปิดหน้าเลือกพร้อม taskId',
+      (tester) async {
+        // จอสูงพอให้ลิงก์ในการ์ดไม่ถูกแถบปุ่มล่างบัง
+        tester.view.physicalSize = const Size(1080, 4000);
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.st,
+          router: router,
+        );
+        await tester.pumpAndSettle();
+
+        final link = find.byKey(const Key('choose_other_config_button'));
+        await tester.ensureVisible(link);
+        await tester.tap(link);
+        await tester.pumpAndSettle();
+
+        expect(opened, '/devices/DVC-1/apply?taskId=t1');
+      },
+    );
 
     testWidgets('สถานะงานยัง pending (ยังไม่เริ่ม) -> ไม่เห็นปุ่ม', (
       tester,
@@ -1368,4 +1418,169 @@ void main() {
       expect(_confirmInstallButton, findsNothing);
     });
   });
+
+  group('docs/28 — ที่มาของงาน / คำขอก่อนหน้า / ปิดงาน', () {
+    testWidgets('งานที่ช่างเริ่มเอง -> แถวที่มา "เริ่มเองจากหน้ากล่อง"', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.inProgress,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 26, 8),
+            deviceId: 'DVC-1',
+            source: TaskSource.technician,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('เริ่มเองจากหน้ากล่อง'), findsOneWidget);
+    });
+
+    testWidgets('งานที่ระบบปิดให้ -> แจ้งว่าปิดอัตโนมัติ', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.completed,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 27, 9),
+            deviceId: 'DVC-1',
+            source: TaskSource.technician,
+            completedAt: DateTime(2026, 10, 27, 9),
+            autoClosed: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('task_detail_auto_closed')), findsOneWidget);
+      expect(find.text('ปิดงานเมื่อ'), findsOneWidget);
+    });
+
+    testWidgets('มีคำขอมากกว่า 1 ครั้ง -> แสดงคำขอก่อนหน้าใต้คำขอล่าสุด', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              id: 'car-2',
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+            fakeApplyRequest(
+              id: 'car-1',
+              status: ConfigApplyRequestStatus.rejected,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final history = find.byKey(const Key('apply_request_history'));
+      expect(history, findsOneWidget);
+      expect(
+        find.descendant(
+          of: history,
+          matching: find.text(
+            configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'คำขอล่าสุดกำลังส่งเข้ากล่อง -> เลือกเสร็จแล้วกดบันทึกไม่ได้ พร้อมเหตุผล',
+      (tester) async {
+        final repo = _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        );
+        await _pump(
+          tester,
+          repo: repo,
+          applyRepo: FakeConfigApplyRequestRepository(
+            requests: [
+              fakeApplyRequest(status: ConfigApplyRequestStatus.sending),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
+
+        expect(find.byKey(const Key('task_complete_blocked')), findsOneWidget);
+        final save = tester.widget<ButtonStyleButton>(
+          find.byKey(const Key('task_status_save')),
+        );
+        expect(save.onPressed, isNull);
+        // หยุด poll สถานะคำขอก่อนจบเทส
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets('มีคำขอรออนุมัติ -> กดปิดงานถามยืนยันก่อน แล้วค่อยบันทึก', (
+      tester,
+    ) async {
+      final repo = _FakeTaskRepository(
+        task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+      );
+      await _pump(
+        tester,
+        repo: repo,
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(status: ConfigApplyRequestStatus.pending),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('status_choice_completed')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task_status_save')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ปิดงานนี้?'), findsOneWidget);
+      expect(repo.updateCalls, 0);
+      await tester.tap(find.byKey(const Key('confirm_complete_task')));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateCalls, 1);
+      expect(repo.lastStatus, TaskStatus.completed);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
 }
+
+GoRouter _routerWithApply(void Function(String uri) onOpen) => GoRouter(
+  initialLocation: AppRoutes.taskDetail('t1'),
+  routes: [
+    GoRoute(
+      path: AppRoutes.taskDetailPattern,
+      builder: (_, state) =>
+          TaskDetailPage(taskId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: AppRoutes.deviceApplyPattern,
+      builder: (_, state) {
+        onOpen(state.uri.toString());
+        return const Text('APPLY_PAGE');
+      },
+    ),
+  ],
+);

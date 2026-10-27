@@ -13,6 +13,7 @@ import '../../features/incident/incident_detail_page.dart';
 import '../../features/incident/field_report_page.dart';
 import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
+import '../../features/task/apply_config_picker_page.dart';
 import '../../features/task/task_detail_page.dart';
 import '../auth/auth_controller.dart';
 import 'app_shell.dart';
@@ -69,6 +70,15 @@ class AppRoutes {
       '/devices/:deviceId/confirm-firmware';
   static String deviceConfirmFirmware(String deviceId) =>
       '/devices/$deviceId/confirm-firmware';
+
+  /// เลือก Config ที่จะส่งเข้ากล่อง (docs/28 §6) — `/devices/:deviceId/apply`
+  /// · `?taskId=` = ขอให้งานนี้ (เปิดจากหน้างาน) · ไม่ส่ง = เริ่มงานให้ก่อน
+  /// (เปิดจากหน้ากล่อง)
+  static const deviceApplyPattern = '/devices/:deviceId/apply';
+  static String deviceApply(String deviceId, {String? taskId}) => Uri(
+    path: '/devices/$deviceId/apply',
+    queryParameters: taskId == null ? null : {'taskId': taskId},
+  ).toString();
 
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
@@ -192,6 +202,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.deviceConfirmFirmwarePattern,
         builder: (context, state) => ConfirmFirmwareInstallPage(
           deviceId: state.pathParameters['deviceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceApplyPattern,
+        builder: (context, state) => ApplyConfigPickerPage(
+          deviceId: state.pathParameters['deviceId']!,
+          taskId: state.uri.queryParameters['taskId'],
         ),
       ),
       GoRoute(
