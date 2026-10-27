@@ -1236,4 +1236,23 @@ void _deviceStatusTests() {
       expect(old.openRequest, isNull);
     },
   );
+
+  test('Incident.reporter/reviewer (v3.68 IncidentDetail) · ไม่ส่ง = null', () {
+    final base = {
+      'id': 'inc-1',
+      'title': 'x',
+      'severity': 'low',
+      'status': 'open',
+      'createdAt': '2026-10-27T00:00:00.000Z',
+      'updatedAt': '2026-10-27T00:00:00.000Z',
+    };
+    final detail = Incident.fromJson({
+      ...base,
+      'reporter': {'username': 'st.test', 'fullName': 'ช่าง ทดสอบ'},
+      'reviewer': null,
+    });
+    expect(detail.reporter!.label, 'ช่าง ทดสอบ (st.test)');
+    expect(detail.reviewer, isNull);
+    expect(Incident.fromJson(base).reporter, isNull);
+  });
 }
