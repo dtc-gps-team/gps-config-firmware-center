@@ -1,11 +1,19 @@
 import { Module } from '@nestjs/common';
+import { ConfigService as NestConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CampaignModule } from '../campaign/campaign.module';
+import { CentralDeviceModule } from '../central-device/central-device.module';
+import {
+  CONFIG_APPLY_MODE,
+  type ConfigApplyMode,
+  resolveConfigApplyMode,
+} from '../device/config-applier';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import {
   ConfigApplyRequestController,
+  DeviceApplyOptionsController,
   TaskConfigApplyRequestController,
 } from './config-apply-request.controller';
 import { ConfigApplyRequestExpiryJob } from './config-apply-request.job';
@@ -24,9 +32,20 @@ import {
 //     และ `RolloutEvents` สำหรับฟังผล (ทิศทางเดียว: campaign ไม่ import โมดูลนี้)
 //   - NotificationModule — config_apply_*
 //   - TaskModule — `TaskService.findOne()` ใช้กฎเห็นงานชุดเดียวกับ GET /tasks/{id}
+//   - CentralDeviceModule — เช็คว่ากล่องออนไลน์ตอนช่างกดส่ง (docs/27 D6)
 @Module({
-  imports: [AuthModule, CampaignModule, NotificationModule, TaskModule],
-  controllers: [TaskConfigApplyRequestController, ConfigApplyRequestController],
+  imports: [
+    AuthModule,
+    CampaignModule,
+    CentralDeviceModule,
+    NotificationModule,
+    TaskModule,
+  ],
+  controllers: [
+    TaskConfigApplyRequestController,
+    ConfigApplyRequestController,
+    DeviceApplyOptionsController,
+  ],
   providers: [
     ConfigApplyRequestService,
     ConfigApplyRequestExpiryJob,
@@ -40,6 +59,16 @@ import {
         rollouts: CampaignRolloutService,
       ): FieldApplyRolloutStarter => rollouts,
       inject: [CampaignRolloutService],
+    },
+    // โหมดส่ง (env `DEVICE_CONFIG_APPLY_MODE`) — เช็คกล่องออนไลน์เฉพาะ `central`
+    // (docs/27 D6) · อ่านแบบเดียวกับ `CONFIG_APPLY_MODE` ใน campaign.module.ts
+    {
+      provide: CONFIG_APPLY_MODE,
+      useFactory: (nestConfig: NestConfigService): ConfigApplyMode =>
+        resolveConfigApplyMode(
+          nestConfig.get<string>('DEVICE_CONFIG_APPLY_MODE'),
+        ),
+      inject: [NestConfigService],
     },
   ],
   exports: [ConfigApplyRequestService],

@@ -366,23 +366,62 @@ class ApiClient {
   /// มีคำขอค้าง, Campaign กำลังส่งให้เครื่องนี้ ฯลฯ) ข้อความจาก backend ใช้แสดงได้
   Future<ConfigApplyRequest> createConfigApplyRequest(
     String taskId, {
+    String? configId,
     String? note,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/tasks/$taskId/config-apply-requests',
-        data: {'note': ?note},
+        data: {'configId': ?configId, 'note': ?note},
       ),
       ConfigApplyRequest.fromJson,
     );
   }
 
-  /// `POST /config-apply-requests/{id}/cancel` — ผู้ขอยกเลิกคำขอ `pending` ของ
-  /// ตัวเอง
+  /// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่าง
+  /// เลือกส่งเข้ากล่องนี้ได้ (ST/OT)
+  Future<DeviceApplyOptions> getDeviceApplyOptions(String deviceId) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>(
+        '/devices/${Uri.encodeComponent(deviceId)}/apply-options',
+      ),
+      DeviceApplyOptions.fromJson,
+    );
+  }
+
+  /// `POST /tasks/start` (docs/28 §5.1) — ช่างเริ่มงานกับกล่องเอง · backend ตอบ
+  /// 201 = สร้างใบใหม่, 200 = คืนงานที่ยังเปิดอยู่ของกล่องนี้
+  Future<StartTaskResult> startTask(String deviceId, {String? note}) async {
+    var created = false;
+    final task = await _wrap(() async {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/tasks/start',
+        data: {'deviceId': deviceId, 'note': ?note},
+      );
+      created = response.statusCode == 201;
+      return response;
+    }, Task.fromJson);
+    return StartTaskResult(task: task, created: created);
+  }
+
+  /// `POST /config-apply-requests/{id}/cancel` — ช่างที่ถือ Task ยกเลิกคำขอ
+  /// `pending`/`approved` (docs/27 §5.5)
   Future<ConfigApplyRequest> cancelConfigApplyRequest(String requestId) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/config-apply-requests/$requestId/cancel',
+      ),
+      ConfigApplyRequest.fromJson,
+    );
+  }
+
+  /// `POST /config-apply-requests/{id}/release` — ช่างที่ถือ Task กดส่งคำขอที่
+  /// อนุมัติแล้วเข้ากล่อง (docs/27 §5.4) · 409 เมื่อกล่องออฟไลน์/หมดอายุ/Config
+  /// เปลี่ยน ฯลฯ — ข้อความของ backend ใช้แสดงได้ตรงๆ · 503 = ติดต่อ Server กลางไม่ได้
+  Future<ConfigApplyRequest> releaseConfigApplyRequest(String requestId) async {
+    return _wrap(
+      () => _dio.post<Map<String, dynamic>>(
+        '/config-apply-requests/$requestId/release',
       ),
       ConfigApplyRequest.fromJson,
     );

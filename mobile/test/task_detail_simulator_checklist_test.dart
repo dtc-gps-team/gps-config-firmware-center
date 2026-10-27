@@ -258,7 +258,11 @@ void main() {
         });
       }
 
-      testWidgets('ไม่มี configId -> ไม่มีปุ่ม', (tester) async {
+      // docs/28: งานที่ไม่มี Config ผูกขอส่งได้ (ปุ่มพาไปหน้าเลือก Config) แต่ทดสอบ
+      // กับ Simulator ไม่ได้เพราะยังไม่รู้ว่าจะส่ง Config ตัวไหน
+      testWidgets('ไม่มี configId -> ไม่มีปุ่มทดสอบ แต่ยังมีปุ่มขอส่ง', (
+        tester,
+      ) async {
         await _pump(
           tester,
           sim: _SimRepo([_result(passed: true)]),
@@ -267,7 +271,7 @@ void main() {
           task: _task(configId: null),
         );
         expect(_simulateButton, findsNothing);
-        expect(_applyButton, findsNothing);
+        expect(_applyButton, findsOneWidget);
       });
 
       testWidgets('ไม่มี deviceId -> ไม่มีปุ่ม', (tester) async {

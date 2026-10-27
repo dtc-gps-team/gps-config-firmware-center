@@ -13,6 +13,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/core/ui/labels.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
@@ -422,17 +423,66 @@ void main() {
       },
     );
 
-    testWidgets('configId เป็น null -> ไม่เห็นปุ่ม', (tester) async {
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress),
-        ),
-        role: UserRole.st,
-      );
+    testWidgets(
+      'docs/28: configId เป็น null -> ปุ่มขอส่งยังอยู่ แตะแล้วเปิดหน้าเลือก Config ของงานนี้ ไม่สร้างคำขอทันที',
+      (tester) async {
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        final applyRepo = FakeConfigApplyRequestRepository();
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+          role: UserRole.st,
+          applyRepo: applyRepo,
+          router: router,
+        );
+        await tester.pumpAndSettle();
 
-      expect(_confirmInstallButton, findsNothing);
-    });
+        expect(_confirmInstallButton, findsOneWidget);
+        expect(
+          find.byKey(const Key('choose_other_config_button')),
+          findsNothing,
+        );
+        await tester.tap(_confirmInstallButton);
+        await tester.pumpAndSettle();
+
+        expect(find.text('APPLY_PAGE'), findsOneWidget);
+        expect(opened, '/devices/DVC-1/apply?taskId=t1');
+        expect(applyRepo.createCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'docs/28: มี configId -> ลิงก์ "เลือก Config อื่น" เปิดหน้าเลือกพร้อม taskId',
+      (tester) async {
+        // จอสูงพอให้ลิงก์ในการ์ดไม่ถูกแถบปุ่มล่างบัง
+        tester.view.physicalSize = const Size(1080, 4000);
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.st,
+          router: router,
+        );
+        await tester.pumpAndSettle();
+
+        final link = find.byKey(const Key('choose_other_config_button'));
+        await tester.ensureVisible(link);
+        await tester.tap(link);
+        await tester.pumpAndSettle();
+
+        expect(opened, '/devices/DVC-1/apply?taskId=t1');
+      },
+    );
 
     testWidgets('สถานะงานยัง pending (ยังไม่เริ่ม) -> ไม่เห็นปุ่ม', (
       tester,
@@ -508,6 +558,7 @@ void main() {
       List<ConfigApplyRequest>? requests,
       Object? createError,
       Object? cancelError,
+      Object? releaseError,
       Object? listError,
     }) async {
       // จอสูงพอให้การ์ดสถานะคำขอ + ปุ่มยกเลิกอยู่ในจอ (เนื้อหาหน้านี้ยาวกว่า 600)
@@ -519,7 +570,7 @@ void main() {
         createError: createError,
         cancelError: cancelError,
         listError: listError,
-      );
+      )..releaseError = releaseError;
       await _pump(
         tester,
         repo: _FakeTaskRepository(task: installTask()),
@@ -532,6 +583,8 @@ void main() {
     Finder statusNotice() => find.byKey(const Key('apply_request_status'));
     Finder cancelButton() =>
         find.byKey(const Key('cancel_apply_request_button'));
+    Finder releaseButton() =>
+        find.byKey(const Key('release_apply_request_button'));
 
     testWidgets(
       'ยังไม่เคยขอ -> ปุ่ม "ขอส่ง Config เข้าเครื่อง" กดได้ ไม่มีการ์ดสถานะ',
@@ -632,7 +685,7 @@ void main() {
     });
 
     testWidgets(
-      'sending -> "อนุมัติแล้ว กำลังส่ง รอกล่องยืนยัน" ไม่มีปุ่มขอ/ยกเลิก',
+      'sending -> "กำลังส่งเข้ากล่อง รอกล่องยืนยัน" ไม่มีปุ่มขอ/ยกเลิก/ส่ง',
       (tester) async {
         await pumpWith(
           tester,
@@ -640,16 +693,82 @@ void main() {
             fakeApplyRequest(
               status: ConfigApplyRequestStatus.sending,
               decidedAt: DateTime.utc(2026, 10, 22, 4),
+              releasedAt: DateTime.utc(2026, 10, 22, 5),
             ),
           ],
         );
 
-        expect(find.text('อนุมัติแล้ว กำลังส่ง รอกล่องยืนยัน'), findsOneWidget);
-        expect(find.textContaining('อนุมัติเมื่อ'), findsOneWidget);
+        expect(find.text('กำลังส่งเข้ากล่อง รอกล่องยืนยัน'), findsOneWidget);
+        expect(find.textContaining('กดส่งเมื่อ'), findsOneWidget);
         expect(_confirmInstallButton, findsNothing);
         expect(cancelButton(), findsNothing);
+        expect(releaseButton(), findsNothing);
       },
     );
+
+    group('อนุมัติแล้ว รอช่างกดส่ง (docs/27)', () {
+      ConfigApplyRequest approvedRequest() => fakeApplyRequest(
+        status: ConfigApplyRequestStatus.approved,
+        decidedAt: DateTime.utc(2026, 10, 22, 4),
+        expiresAt: DateTime.utc(2026, 10, 23, 4),
+      );
+
+      testWidgets(
+        'approved -> บอกว่ากดส่งได้ถึงเมื่อไหร่ + ปุ่ม "ส่งเข้ากล่อง" + ยกเลิก '
+        'ไม่มีปุ่มขอใหม่',
+        (tester) async {
+          await pumpWith(tester, requests: [approvedRequest()]);
+
+          expect(find.text('อนุมัติแล้ว กดส่งเข้ากล่องได้'), findsOneWidget);
+          expect(find.textContaining('อนุมัติเมื่อ'), findsOneWidget);
+          expect(find.textContaining('กดส่งได้ถึง'), findsOneWidget);
+          expect(releaseButton(), findsOneWidget);
+          expect(cancelButton(), findsOneWidget);
+          expect(_confirmInstallButton, findsNothing);
+        },
+      );
+
+      testWidgets('กดส่งเข้ากล่อง -> เรียก release ด้วย id + snackbar + '
+          'การ์ดเปลี่ยนเป็นกำลังส่ง', (tester) async {
+        final applyRepo = await pumpWith(tester, requests: [approvedRequest()]);
+
+        await tester.ensureVisible(releaseButton());
+        await tester.tap(releaseButton());
+        await tester.pumpAndSettle();
+
+        expect(applyRepo.releaseCalls, 1);
+        expect(applyRepo.lastReleaseId, 'car-1');
+        expect(find.text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน'), findsOneWidget);
+        expect(find.text('กำลังส่งเข้ากล่อง รอกล่องยืนยัน'), findsOneWidget);
+        expect(releaseButton(), findsNothing);
+      });
+
+      testWidgets('กดส่งไม่ได้ (409 กล่องออฟไลน์) -> ข้อความจาก backend '
+          'คำขอยังอนุมัติอยู่ กดใหม่ได้', (tester) async {
+        await pumpWith(
+          tester,
+          requests: [approvedRequest()],
+          releaseError: ApiException(
+            'กล่องยังไม่ออนไลน์ — ตรวจไฟและสัญญาณของกล่องแล้วลองกดส่งใหม่',
+            statusCode: 409,
+          ),
+        );
+
+        await tester.ensureVisible(releaseButton());
+        await tester.tap(releaseButton());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('release_apply_request_error')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('กล่องยังไม่ออนไลน์'), findsOneWidget);
+        expect(
+          tester.widget<FilledButton>(releaseButton()).onPressed,
+          isNotNull,
+        );
+      });
+    });
 
     testWidgets('succeeded -> "กล่องรับ Config แล้ว" ไม่มีปุ่มขอซ้ำ', (
       tester,
@@ -1299,4 +1418,169 @@ void main() {
       expect(_confirmInstallButton, findsNothing);
     });
   });
+
+  group('docs/28 — ที่มาของงาน / คำขอก่อนหน้า / ปิดงาน', () {
+    testWidgets('งานที่ช่างเริ่มเอง -> แถวที่มา "เริ่มเองจากหน้ากล่อง"', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.inProgress,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 26, 8),
+            deviceId: 'DVC-1',
+            source: TaskSource.technician,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('เริ่มเองจากหน้ากล่อง'), findsOneWidget);
+    });
+
+    testWidgets('งานที่ระบบปิดให้ -> แจ้งว่าปิดอัตโนมัติ', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.completed,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 27, 9),
+            deviceId: 'DVC-1',
+            source: TaskSource.technician,
+            completedAt: DateTime(2026, 10, 27, 9),
+            autoClosed: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('task_detail_auto_closed')), findsOneWidget);
+      expect(find.text('ปิดงานเมื่อ'), findsOneWidget);
+    });
+
+    testWidgets('มีคำขอมากกว่า 1 ครั้ง -> แสดงคำขอก่อนหน้าใต้คำขอล่าสุด', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              id: 'car-2',
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+            fakeApplyRequest(
+              id: 'car-1',
+              status: ConfigApplyRequestStatus.rejected,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final history = find.byKey(const Key('apply_request_history'));
+      expect(history, findsOneWidget);
+      expect(
+        find.descendant(
+          of: history,
+          matching: find.text(
+            configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'คำขอล่าสุดกำลังส่งเข้ากล่อง -> เลือกเสร็จแล้วกดบันทึกไม่ได้ พร้อมเหตุผล',
+      (tester) async {
+        final repo = _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        );
+        await _pump(
+          tester,
+          repo: repo,
+          applyRepo: FakeConfigApplyRequestRepository(
+            requests: [
+              fakeApplyRequest(status: ConfigApplyRequestStatus.sending),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
+
+        expect(find.byKey(const Key('task_complete_blocked')), findsOneWidget);
+        final save = tester.widget<ButtonStyleButton>(
+          find.byKey(const Key('task_status_save')),
+        );
+        expect(save.onPressed, isNull);
+        // หยุด poll สถานะคำขอก่อนจบเทส
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets('มีคำขอรออนุมัติ -> กดปิดงานถามยืนยันก่อน แล้วค่อยบันทึก', (
+      tester,
+    ) async {
+      final repo = _FakeTaskRepository(
+        task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+      );
+      await _pump(
+        tester,
+        repo: repo,
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(status: ConfigApplyRequestStatus.pending),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('status_choice_completed')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('task_status_save')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ปิดงานนี้?'), findsOneWidget);
+      expect(repo.updateCalls, 0);
+      await tester.tap(find.byKey(const Key('confirm_complete_task')));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateCalls, 1);
+      expect(repo.lastStatus, TaskStatus.completed);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
 }
+
+GoRouter _routerWithApply(void Function(String uri) onOpen) => GoRouter(
+  initialLocation: AppRoutes.taskDetail('t1'),
+  routes: [
+    GoRoute(
+      path: AppRoutes.taskDetailPattern,
+      builder: (_, state) =>
+          TaskDetailPage(taskId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: AppRoutes.deviceApplyPattern,
+      builder: (_, state) {
+        onOpen(state.uri.toString());
+        return const Text('APPLY_PAGE');
+      },
+    ),
+  ],
+);

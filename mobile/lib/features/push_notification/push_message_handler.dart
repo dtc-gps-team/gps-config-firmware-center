@@ -40,6 +40,7 @@ const _incidentPushTypes = {
 /// ในแอป จึงไม่อยู่ในนี้
 const _taskPushTypes = {
   'task_assigned',
+  'config_apply_approved',
   'config_apply_rejected',
   'config_apply_succeeded',
   'config_apply_failed',

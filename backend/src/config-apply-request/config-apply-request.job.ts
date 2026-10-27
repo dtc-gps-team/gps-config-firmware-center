@@ -3,7 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigApplyRequestService } from './config-apply-request.service';
 
 /**
- * ปิดคำขอส่ง Config ที่ค้าง `pending` เกินเวลา (docs/25 §3.9) — แยกจาก service
+ * ปิดคำขอส่ง Config ที่ค้าง `pending`/`approved` เกินเวลา (docs/25 §3.9, docs/27 D2) — แยกจาก service
  * เพื่อให้ `expireOverdue()` เทสได้ตรงๆ (รูปแบบเดียวกับ `RolloutTimeoutJob`)
  * ทุก 5 นาที เพียงพอเพราะอายุคำขอเป็นหลักชั่วโมง
  */
