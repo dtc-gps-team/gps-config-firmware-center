@@ -47,12 +47,33 @@ String devicePayloadLabel(
 
 /// docs/22 §6 — Task status ไม่มีคู่เทียบใน Web คงไทยเดิม (`TaskStatusStyle.label`
 /// ของหน้าที่ยังไม่ย้ายเรียกฟังก์ชันนี้ ข้อความจึงตรงกันทุกหน้า)
+/// docs/28 — ที่มาของงานในหน้า Task Detail
+String taskSourceLabel(TaskSource source) => switch (source) {
+  TaskSource.operation => 'Operation สั่ง',
+  TaskSource.technician => 'เริ่มเองจากหน้ากล่อง',
+};
+
 String taskStatusLabel(TaskStatus status) => switch (status) {
   TaskStatus.pending => 'รอดำเนินการ',
   TaskStatus.inProgress => 'กำลังทำ',
   TaskStatus.completed => 'เสร็จแล้ว',
   TaskStatus.cancelled => 'ยกเลิก',
 };
+
+/// docs/25 §3.3 — สถานะคำขอส่ง Config ไม่มีคู่เทียบใน Web (การ์ด Approval Center
+/// ยังไม่ทำ) ใช้ไทยตามตารางการ์ดในแผน
+String configApplyRequestStatusLabel(ConfigApplyRequestStatus status) =>
+    switch (status) {
+      ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
+      ConfigApplyRequestStatus.approved => 'อนุมัติแล้ว กดส่งเข้ากล่องได้',
+      ConfigApplyRequestStatus.sending => 'กำลังส่งเข้ากล่อง รอกล่องยืนยัน',
+      ConfigApplyRequestStatus.succeeded => 'กล่องรับ Config แล้ว',
+      ConfigApplyRequestStatus.failed => 'ส่งไม่สำเร็จ',
+      ConfigApplyRequestStatus.skippedOffline => 'กล่องออฟไลน์ ส่งไม่ถึง',
+      ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธคำขอ',
+      ConfigApplyRequestStatus.cancelled => 'ยกเลิกคำขอแล้ว',
+      ConfigApplyRequestStatus.expired => 'คำขอหมดอายุ ไม่มีใครตัดสิน',
+    };
 
 /// docs/22 §6.2 — ป้าย Role ใช้ชื่อเดียวกับ Web (`ST`, `Operation`) ส่วนคำอธิบาย
 /// ไทยแยกเป็นบรรทัดย่อย ([roleDescription]) มติ B ข้อ 11 · แยกคำแบบ
