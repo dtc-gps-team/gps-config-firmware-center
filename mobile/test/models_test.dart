@@ -421,6 +421,41 @@ void main() {
   });
 
   group('Task.fromJson', () {
+    test('docs/28: source/completedAt/autoClosed', () {
+      final task = Task.fromJson({
+        'id': 't1',
+        'title': 'BOX-0001 — 26 ต.ค. 2569',
+        'assignedTo': 'u1',
+        'status': 'completed',
+        'createdAt': '2026-10-26T03:00:00.000Z',
+        'updatedAt': '2026-10-27T03:00:00.000Z',
+        'source': 'technician',
+        'completedAt': '2026-10-27T03:00:00.000Z',
+        'autoClosed': true,
+      });
+      expect(task.source, TaskSource.technician);
+      expect(task.completedAt, DateTime.utc(2026, 10, 27, 3));
+      expect(task.autoClosed, isTrue);
+    });
+
+    test(
+      'docs/28: ไม่มี source (backend เก่า) หรือค่าไม่รู้จัก -> operation ไม่ throw',
+      () {
+        Map<String, dynamic> json(Object? source) => {
+          'id': 't1',
+          'title': 'x',
+          'assignedTo': 'u1',
+          'status': 'pending',
+          'createdAt': '2026-10-26T03:00:00.000Z',
+          'updatedAt': '2026-10-26T03:00:00.000Z',
+          'source': ?source,
+        };
+        expect(Task.fromJson(json(null)).source, TaskSource.operation);
+        expect(Task.fromJson(json('campaign')).source, TaskSource.operation);
+        expect(Task.fromJson(json(null)).autoClosed, isFalse);
+      },
+    );
+
     test('parses a full payload', () {
       final task = Task.fromJson({
         'id': 'task-1',
@@ -608,6 +643,7 @@ void main() {
         'incident_report_dismissed',
         'incident_report_promoted',
         'config_apply_pending',
+        'config_apply_approved',
         'config_apply_rejected',
         'config_apply_succeeded',
         'config_apply_failed',
@@ -984,6 +1020,7 @@ void _deviceStatusTests() {
     test('wire names match openapi.yaml / Prisma ConfigApplyRequestStatus', () {
       expect(ConfigApplyRequestStatus.values.map((s) => s.wireName).toList(), [
         'pending',
+        'approved',
         'sending',
         'succeeded',
         'failed',
@@ -1024,6 +1061,29 @@ void _deviceStatusTests() {
         () => ConfigApplyRequestStatus.fromWire('teleported'),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('DeviceApplyOptions.fromJson (docs/28 §5.2)', () {
+    test('แปลง configs ครบ', () {
+      final options = DeviceApplyOptions.fromJson({
+        'deviceId': 'BOX-0001',
+        'deviceInstalled': true,
+        'configs': [
+          {
+            'id': 'cfg-1',
+            'name': 'มาตรฐาน',
+            'status': 'approved',
+            'latestVersion': 12,
+            'suggested': true,
+          },
+        ],
+      });
+      expect(options.deviceId, 'BOX-0001');
+      expect(options.deviceInstalled, isTrue);
+      expect(options.configs.single.id, 'cfg-1');
+      expect(options.configs.single.latestVersion, 12);
+      expect(options.configs.single.suggested, isTrue);
     });
   });
 }

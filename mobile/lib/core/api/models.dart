@@ -55,6 +55,27 @@ enum TaskStatus {
   }
 }
 
+/// ที่มาของงาน (`Task.source` ใน openapi, docs/28 §4) — `operation` = Operation
+/// สร้างผ่าน `POST /tasks` · `technician` = ช่างเริ่มเองจากหน้ากล่อง
+/// (`POST /tasks/start`) · ค่าที่ไม่รู้จัก (backend ใหม่กว่าแอป) และ payload ที่ไม่มี
+/// field นี้ (backend ก่อน docs/28 / cache ในเครื่อง) ถือเป็น `operation` — **ไม่
+/// throw** ต่างจาก enum อื่น เพราะแค่ใช้แสดงป้าย ไม่ควรทำให้หน้า Task พัง
+enum TaskSource {
+  operation('operation'),
+  technician('technician');
+
+  const TaskSource(this.wireName);
+
+  final String wireName;
+
+  static TaskSource fromWire(Object? value) {
+    for (final source in TaskSource.values) {
+      if (source.wireName == value) return source;
+    }
+    return TaskSource.operation;
+  }
+}
+
 /// `Notification.type` enum — matches `docs/api/openapi.yaml` `Notification.type`
 /// and the Prisma `NotificationType` enum.
 enum NotificationType {
@@ -85,8 +106,10 @@ enum NotificationType {
   incidentReportPromoted('incident_report_promoted'),
   // เพิ่มใหม่ (docs/25 §3.6) — คำขอส่ง Config เข้าเครื่องจากหน้างาน · payload
   // `{requestId, taskId, deviceId}` เสมอ (+ `rejectReason` / `outcome`+`detail`)
-  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างผู้ขอ
+  // · `pending` ส่งให้ Operation · ที่เหลือส่งให้ช่างที่ถือ Task · `approved`
+  // เพิ่มใน docs/27 (อนุมัติแล้ว ช่างกดส่งเข้ากล่องได้ — payload มี `expiresAt`)
   configApplyPending('config_apply_pending'),
+  configApplyApproved('config_apply_approved'),
   configApplyRejected('config_apply_rejected'),
   configApplySucceeded('config_apply_succeeded'),
   configApplyFailed('config_apply_failed'),
@@ -363,6 +386,8 @@ class DeviceConfigOverride {
 /// `docs/api/openapi.yaml` (docs/25 §4.1)
 enum ConfigApplyRequestStatus {
   pending('pending'),
+  // docs/27 — อนุมัติแล้ว รอช่างที่ถือ Task กดส่งเข้ากล่อง
+  approved('approved'),
   sending('sending'),
   succeeded('succeeded'),
   failed('failed'),
@@ -376,10 +401,22 @@ enum ConfigApplyRequestStatus {
   final String wireName;
 
   /// ขอส่งใหม่ได้จากสถานะนี้ไหม (docs/25 §3.3 ตารางการ์ด) — คำขอที่จบแบบไม่สำเร็จ
-  /// · `pending`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
+  /// · `pending`/`approved`/`sending` ยังเปิดอยู่ · `succeeded` กล่องรับแล้ว ไม่ต้องขอซ้ำ
   bool get allowsNewRequest => switch (this) {
-    pending || sending || succeeded => false,
+    pending || approved || sending || succeeded => false,
     failed || skippedOffline || rejected || cancelled || expired => true,
+  };
+
+  /// สถานะที่ยังเปลี่ยนเองได้จากฝั่ง server (Operation ตัดสิน, หมดอายุ, ผลจาก
+  /// กล่อง) — หน้า Task Detail โหลดใหม่เป็นระยะระหว่างอยู่สถานะนี้ (docs/27 §9)
+  bool get isInFlight => switch (this) {
+    pending || approved || sending => true,
+    succeeded ||
+    failed ||
+    skippedOffline ||
+    rejected ||
+    cancelled ||
+    expired => false,
   };
 
   static ConfigApplyRequestStatus fromWire(String value) {
@@ -405,6 +442,7 @@ class ConfigApplyRequest {
     this.rejectReason,
     this.resultDetail,
     this.decidedAt,
+    this.releasedAt,
     this.completedAt,
   });
 
@@ -421,6 +459,9 @@ class ConfigApplyRequest {
   /// ผลหรือเหตุผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, งานถูกยกเลิก)
   final String? resultDetail;
   final DateTime? decidedAt;
+
+  /// เวลาที่ช่างกดส่งเข้ากล่อง (docs/27) — `null` ก่อนกดส่ง
+  final DateTime? releasedAt;
   final DateTime? completedAt;
 
   factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
@@ -441,9 +482,64 @@ class ConfigApplyRequest {
       rejectReason: json['rejectReason'] as String?,
       resultDetail: json['resultDetail'] as String?,
       decidedAt: optionalDate('decidedAt'),
+      releasedAt: optionalDate('releasedAt'),
       completedAt: optionalDate('completedAt'),
     );
   }
+}
+
+/// 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2)
+class ApplyOptionConfig {
+  const ApplyOptionConfig({
+    required this.id,
+    required this.name,
+    required this.latestVersion,
+    required this.suggested,
+  });
+
+  final String id;
+  final String name;
+
+  /// `ConfigVersion.versionNumber` ล่าสุด (0 = ยังไม่มีเวอร์ชัน)
+  final int latestVersion;
+
+  /// Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ — backend เรียง
+  /// ตัวนี้ขึ้นก่อนแล้ว
+  final bool suggested;
+
+  factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
+      ApplyOptionConfig(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        latestVersion: (json['latestVersion'] as num?)?.toInt() ?? 0,
+        suggested: json['suggested'] as bool? ?? false,
+      );
+}
+
+/// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่างเลือก
+/// ส่งเข้ากล่องนี้ได้ · ส่วน Firmware มาทีหลัง (B2/B3 ของ docs/27)
+class DeviceApplyOptions {
+  const DeviceApplyOptions({
+    required this.deviceId,
+    required this.deviceInstalled,
+    required this.configs,
+  });
+
+  final String deviceId;
+
+  /// ส่งเข้ากล่องได้เฉพาะเครื่องที่ติดตั้งแล้ว — `false` บอกช่างก่อนกดขอ
+  final bool deviceInstalled;
+  final List<ApplyOptionConfig> configs;
+
+  factory DeviceApplyOptions.fromJson(Map<String, dynamic> json) =>
+      DeviceApplyOptions(
+        deviceId: json['deviceId'] as String,
+        deviceInstalled: json['deviceInstalled'] as bool? ?? false,
+        configs: [
+          for (final raw in (json['configs'] as List<dynamic>? ?? const []))
+            ApplyOptionConfig.fromJson(raw as Map<String, dynamic>),
+        ],
+      );
 }
 
 /// `Firmware` ใน `GET /firmware` (ทุก Role อ่านได้) — เก็บเฉพาะ field ที่หน้า
@@ -748,6 +844,9 @@ class Task {
     this.deviceId,
     this.configId,
     this.dueDate,
+    this.source = TaskSource.operation,
+    this.completedAt,
+    this.autoClosed = false,
   });
 
   final String id;
@@ -767,6 +866,15 @@ class Task {
   final String? configId;
   final DateTime? dueDate;
 
+  /// ช่างเริ่มเองหรือ Operation สร้าง (docs/28) — แสดงเป็นป้ายใน Task Detail
+  final TaskSource source;
+
+  /// เวลาปิดงาน (ช่างกดหรือระบบปิด) — งานที่เสร็จก่อน docs/28 เป็น `null`
+  final DateTime? completedAt;
+
+  /// ระบบปิดให้เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม. (docs/28 §5.4)
+  final bool autoClosed;
+
   factory Task.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -784,8 +892,20 @@ class Task {
       deviceId: json['deviceId'] as String?,
       configId: json['configId'] as String?,
       dueDate: parseDate(json['dueDate']),
+      source: TaskSource.fromWire(json['source']),
+      completedAt: parseDate(json['completedAt']),
+      autoClosed: json['autoClosed'] as bool? ?? false,
     );
   }
+}
+
+/// ผลของ `POST /tasks/start` (docs/28 §5.1) — `created=false` = ได้งานเดิมที่ยัง
+/// เปิดอยู่ของกล่องนี้กลับมา
+class StartTaskResult {
+  const StartTaskResult({required this.task, required this.created});
+
+  final Task task;
+  final bool created;
 }
 
 /// One entry on a task's timeline — mirrors `docs/api/openapi.yaml`

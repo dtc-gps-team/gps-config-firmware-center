@@ -66,6 +66,7 @@ class NotificationTypeStyle {
           if (reason != null) 'เหตุผล: $reason',
         ];
       case NotificationType.configApplyPending:
+      case NotificationType.configApplyApproved:
       case NotificationType.configApplySucceeded:
       case NotificationType.configApplyExpired:
         final deviceId = text('deviceId');
@@ -96,6 +97,7 @@ class NotificationTypeStyle {
     switch (n.type) {
       case NotificationType.taskAssigned:
       // docs/25 §3.6 — deep link ไป Task Detail ที่การ์ดแสดงสถานะคำขอ
+      case NotificationType.configApplyApproved:
       case NotificationType.configApplyRejected:
       case NotificationType.configApplySucceeded:
       case NotificationType.configApplyFailed:
@@ -148,12 +150,14 @@ class NotificationTypeStyle {
       'รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข',
     NotificationType.configApplyPending =>
       'มีคำขอส่ง Config เข้าเครื่องรออนุมัติ',
+    NotificationType.configApplyApproved =>
+      'คำขอส่ง Config อนุมัติแล้ว — กดส่งเข้ากล่องได้',
     NotificationType.configApplyRejected => 'คำขอส่ง Config ของคุณถูกปฏิเสธ',
     NotificationType.configApplySucceeded => 'กล่องรับ Config ที่คุณขอส่งแล้ว',
     NotificationType.configApplyFailed =>
       'ส่ง Config ที่คุณขอเข้าเครื่องไม่สำเร็จ',
     NotificationType.configApplyExpired =>
-      'คำขอส่ง Config ของคุณหมดอายุ (ไม่มีใครตัดสินใน 24 ชม.)',
+      'คำขอส่ง Config ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)',
   };
 
   /// เรื่องด่วน (Mobile UI Roadmap Phase 1) — incident ใหม่ที่ยังไม่มีใครจัดการ
@@ -195,6 +199,7 @@ class NotificationTypeStyle {
     NotificationType.incidentReportDismissed => Icons.block_outlined,
     NotificationType.incidentReportPromoted => Icons.campaign_outlined,
     NotificationType.configApplyPending => Icons.send_outlined,
+    NotificationType.configApplyApproved => Icons.task_alt,
     NotificationType.configApplyRejected => Icons.cancel_outlined,
     NotificationType.configApplySucceeded => Icons.check_circle_outline,
     NotificationType.configApplyFailed => Icons.error_outline,

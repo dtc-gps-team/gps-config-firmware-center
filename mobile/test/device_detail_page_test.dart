@@ -13,6 +13,9 @@ import 'package:mobile/features/config_override/config_override_repository.dart'
 import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
+import 'package:mobile/features/task/field_task_repository.dart';
+
+import 'support/fake_field_task_repository.dart';
 
 class _FakeAuthController extends AuthController {
   _FakeAuthController(this._role);
@@ -138,6 +141,8 @@ Future<void> _pump(
   UserRole? role,
   ConfigOverrideRepository? overrideRepo,
   GoRouter? router,
+  Task? openTask,
+  FieldTaskRepository? fieldTaskRepo,
 }) async {
   // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
   // ListView สร้างทุก section (สถานะ Config/Firmware, ปุ่มด้านล่าง) ได้ในเทสต์
@@ -154,6 +159,11 @@ Future<void> _pump(
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
         configOverrideRepositoryProvider.overrideWithValue(
           overrideRepo ?? _FakeConfigOverrideRepository(),
+        ),
+        // docs/28 — ไม่ให้ไปโหลดรายการงานจริง (cache/DB) ในเทสหน้านี้
+        openTaskForDeviceProvider.overrideWith((ref, _) async => openTask),
+        fieldTaskRepositoryProvider.overrideWithValue(
+          fieldTaskRepo ?? FakeFieldTaskRepository(),
         ),
       ],
       child: router == null
@@ -835,6 +845,163 @@ void _pendingConfigOverrideTests() {
         await tester.pumpAndSettle();
 
         expect(find.byKey(_pendingBanner), findsOneWidget);
+      },
+    );
+  });
+
+  group('docs/28 — อัปโหลด / เริ่มงาน (ST + OT)', () {
+    GoRouter routerWith(void Function(String path) onOpen) => GoRouter(
+      initialLocation: AppRoutes.deviceDetail('DEV-0117'),
+      routes: [
+        GoRoute(
+          path: AppRoutes.deviceDetailPattern,
+          builder: (_, state) =>
+              DeviceDetailPage(deviceId: state.pathParameters['deviceId']!),
+        ),
+        GoRoute(
+          path: AppRoutes.deviceApplyPattern,
+          builder: (_, state) {
+            onOpen(state.uri.toString());
+            return const Text('APPLY_PAGE');
+          },
+        ),
+        GoRoute(
+          path: AppRoutes.taskDetailPattern,
+          builder: (_, state) {
+            onOpen(state.uri.toString());
+            return const Text('TASK_PAGE');
+          },
+        ),
+      ],
+    );
+
+    for (final role in [UserRole.st, UserRole.ot]) {
+      testWidgets('role $role -> เห็นปุ่มอัปโหลด (ปุ่มหลัก) และเริ่มงาน', (
+        tester,
+      ) async {
+        await _pump(tester, repo: _FakeDeviceSearchRepository(), role: role);
+
+        expect(find.byKey(const Key('device_detail_upload')), findsOneWidget);
+        expect(
+          find.byKey(const Key('device_detail_start_task')),
+          findsOneWidget,
+        );
+        expect(find.text('เริ่มงาน'), findsOneWidget);
+      });
+    }
+
+    testWidgets('Operation -> ไม่เห็นปุ่มอัปโหลด/เริ่มงาน', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.operation,
+      );
+
+      expect(find.byKey(const Key('device_detail_upload')), findsNothing);
+      expect(find.byKey(const Key('device_detail_start_task')), findsNothing);
+    });
+
+    testWidgets(
+      'แตะอัปโหลด -> เปิดหน้าเลือก Config ของเครื่องนี้ (ไม่มี taskId)',
+      (tester) async {
+        String? opened;
+        final router = routerWith((path) => opened = path);
+        addTearDown(router.dispose);
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          router: router,
+        );
+
+        await tester.tap(find.byKey(const Key('device_detail_upload')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('APPLY_PAGE'), findsOneWidget);
+        expect(opened, '/devices/DEV-0117/apply');
+      },
+    );
+
+    testWidgets('แตะเริ่มงาน -> POST /tasks/start แล้วไปหน้างานที่ได้', (
+      tester,
+    ) async {
+      String? opened;
+      final router = routerWith((path) => opened = path);
+      addTearDown(router.dispose);
+      final fieldTasks = FakeFieldTaskRepository();
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+        router: router,
+        fieldTaskRepo: fieldTasks,
+      );
+
+      await tester.tap(find.byKey(const Key('device_detail_start_task')));
+      await tester.pumpAndSettle();
+
+      expect(fieldTasks.startCalls, 1);
+      expect(fieldTasks.lastDeviceId, 'DEV-0117');
+      expect(find.text('TASK_PAGE'), findsOneWidget);
+      expect(opened, '/tasks/t-new');
+    });
+
+    testWidgets(
+      'เริ่มงานไม่สำเร็จ -> snackbar ข้อความของ backend อยู่หน้าเดิม',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          fieldTaskRepo: FakeFieldTaskRepository(
+            error: ApiException(
+              'เครื่อง DEV-0117 ปลดระวางแล้ว',
+              statusCode: 409,
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('device_detail_start_task')));
+        await tester.pump();
+
+        expect(
+          find.text('เริ่มงานไม่สำเร็จ: เครื่อง DEV-0117 ปลดระวางแล้ว'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'มีงานเปิดอยู่แล้ว -> ปุ่มเป็น "ไปที่งาน" แตะแล้วไปงานนั้นโดยไม่เรียก start',
+      (tester) async {
+        String? opened;
+        final router = routerWith((path) => opened = path);
+        addTearDown(router.dispose);
+        final fieldTasks = FakeFieldTaskRepository();
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          router: router,
+          fieldTaskRepo: fieldTasks,
+          openTask: Task(
+            id: 't-open',
+            title: 'งานเดิม',
+            assignedTo: 'tech-1',
+            status: TaskStatus.inProgress,
+            createdAt: DateTime.utc(2026, 10, 26),
+            updatedAt: DateTime.utc(2026, 10, 26),
+            deviceId: 'DEV-0117',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('ไปที่งาน'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('device_detail_start_task')));
+        await tester.pumpAndSettle();
+
+        expect(fieldTasks.startCalls, 0);
+        expect(opened, '/tasks/t-open');
       },
     );
   });

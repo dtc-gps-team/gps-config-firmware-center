@@ -1,15 +1,25 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigApplyRequest, Task } from '@prisma/client';
 import { RolloutEvents } from '../campaign/rollout-events';
+import { CentralDeviceService } from '../central-device/central-device.service';
+import {
+  CONFIG_APPLY_MODE,
+  type ConfigApplyMode,
+} from '../device/config-applier';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
-import { CONFIG_APPLY_REQUEST_TTL_HOURS } from './config-apply-request-status';
+import {
+  CONFIG_APPLY_APPROVAL_TTL_HOURS,
+  CONFIG_APPLY_REQUEST_TTL_HOURS,
+} from './config-apply-request-status';
 import { ConfigApplyRequestService } from './config-apply-request.service';
 import {
   FIELD_APPLY_RESULT_EVENT,
@@ -22,6 +32,8 @@ const CONFIG_ID = '22222222-2222-4222-8222-222222222222';
 const REQUEST_ID = '33333333-3333-4333-8333-333333333333';
 const ROLLOUT_ID = '44444444-4444-4444-8444-444444444444';
 const DEVICE_ID = 'BOX-0001';
+/** ConfigVersion.versionNumber ล่าสุดของ Config ตัวอย่าง */
+const CONFIG_VERSION = 3;
 
 // คนในเรื่อง: ช่างผู้ขอ, Operation ผู้ผูก Config, Operation ผู้อนุมัติตัว Config,
 // และ Operation คนที่ไม่เกี่ยวข้องเลย (คนเดียวที่ตัดสินคำขอได้)
@@ -46,6 +58,9 @@ const task: Task = {
   configAssignedAt: new Date('2026-10-21T00:00:00.000Z'),
   status: 'in_progress',
   dueDate: null,
+  source: 'operation',
+  completedAt: null,
+  autoClosed: false,
   createdAt: new Date('2026-10-20T00:00:00.000Z'),
   updatedAt: new Date('2026-10-20T00:00:00.000Z'),
 };
@@ -85,8 +100,21 @@ const pending: ConfigApplyRequest = {
   rolloutId: null,
   resultDetail: null,
   completedAt: null,
+  approvedConfigVersion: null,
+  releasedBy: null,
+  releasedAt: null,
   createdAt: new Date('2026-10-22T00:00:00.000Z'),
   updatedAt: new Date('2026-10-22T00:00:00.000Z'),
+};
+
+/** อนุมัติแล้ว รอช่างกดส่ง (docs/27) — เส้นตายอยู่ในอนาคตเสมอ */
+const approvedRequest: ConfigApplyRequest = {
+  ...pending,
+  status: 'approved',
+  decidedBy: decider.id,
+  decidedAt: new Date('2026-10-22T01:00:00.000Z'),
+  approvedConfigVersion: CONFIG_VERSION,
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000),
 };
 
 describe('ConfigApplyRequestService', () => {
@@ -98,6 +126,8 @@ describe('ConfigApplyRequestService', () => {
   let users: { findMany: jest.Mock };
   let notification: { send: jest.Mock };
   let taskService: { findOne: jest.Mock };
+  let configVersions: { aggregate: jest.Mock };
+  let central: { findDevice: jest.Mock };
   let createRollout: jest.Mock;
   let startRollout: jest.Mock;
   let starter: FieldApplyRolloutStarter;
@@ -105,6 +135,7 @@ describe('ConfigApplyRequestService', () => {
 
   async function build(
     rolloutStarter: FieldApplyRolloutStarter,
+    applyMode: ConfigApplyMode = 'mock',
   ): Promise<ConfigApplyRequestService> {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -114,6 +145,8 @@ describe('ConfigApplyRequestService', () => {
         { provide: TaskService, useValue: taskService },
         { provide: FIELD_APPLY_ROLLOUT_STARTER, useValue: rolloutStarter },
         { provide: RolloutEvents, useValue: events },
+        { provide: CentralDeviceService, useValue: central },
+        { provide: CONFIG_APPLY_MODE, useValue: applyMode },
       ],
     }).compile();
     const built = module.get(ConfigApplyRequestService);
@@ -136,6 +169,17 @@ describe('ConfigApplyRequestService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
     rolloutTargets = { findFirst: jest.fn().mockResolvedValue(null) };
+    configVersions = {
+      aggregate: jest
+        .fn()
+        .mockResolvedValue({ _max: { versionNumber: CONFIG_VERSION } }),
+    };
+    central = {
+      findDevice: jest.fn().mockResolvedValue({
+        list: { reachable: true },
+        device: { deviceId: DEVICE_ID, online: true },
+      }),
+    };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     users = {
       findMany: jest.fn().mockResolvedValue([{ id: decider.id }]),
@@ -151,6 +195,7 @@ describe('ConfigApplyRequestService', () => {
       },
       device: { findUnique: jest.fn().mockResolvedValue(device) },
       configApplyRequest: requests,
+      configVersion: configVersions,
       campaignRolloutTarget: rolloutTargets,
       deviceConfigOverride: { findFirst: jest.fn().mockResolvedValue(null) },
       auditLog,
@@ -263,15 +308,117 @@ describe('ConfigApplyRequestService', () => {
       );
     });
 
-    it('งานไม่มี configId: 409', async () => {
+    it('งานไม่มี configId และช่างไม่ได้เลือก Config: 400', async () => {
       (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
         ...task,
         configId: null,
+        configAssignedBy: null,
+      });
+
+      await expect(service.create(TASK_ID, {}, tech)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(requests.create).not.toHaveBeenCalled();
+    });
+
+    it('งานไม่มีเครื่อง: 409', async () => {
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        deviceId: null,
       });
 
       await expect(service.create(TASK_ID, {}, tech)).rejects.toBeInstanceOf(
         ConflictException,
       );
+    });
+
+    describe('ช่างเลือก Config เอง (docs/28 §5.3)', () => {
+      const OTHER_CONFIG_ID = '77777777-7777-7777-7777-777777777777';
+
+      it('Config ตัวอื่นจาก body: ใช้ configId นั้น ไม่ snapshot ผู้ผูก และแจ้ง Operation ทุกคนยกเว้นผู้ขอ', async () => {
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        const data = (
+          requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+        )[0].data;
+        expect(data).toMatchObject({
+          configId: OTHER_CONFIG_ID,
+          configAssignedBy: null,
+        });
+        expect(
+          (prisma.config as Record<string, jest.Mock>).findUnique,
+        ).toHaveBeenCalledWith({ where: { id: OTHER_CONFIG_ID } });
+        expect(users.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: { notIn: [tech.id] },
+            }) as unknown,
+          }),
+        );
+      });
+
+      it('งานที่ช่างเริ่มเอง (ไม่มี Config ผูก) ขอได้เมื่อเลือก Config', async () => {
+        (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+          {
+            ...task,
+            configId: null,
+            configAssignedBy: null,
+            source: 'technician',
+          },
+        );
+
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        expect(requests.create).toHaveBeenCalled();
+      });
+
+      it('เลือกตัวเดียวกับที่ Operation ผูกไว้: snapshot ผู้ผูก (SoD ข้อ 3 ยังใช้)', async () => {
+        await service.create(TASK_ID, { configId: CONFIG_ID }, tech);
+
+        const data = (
+          requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+        )[0].data;
+        expect(data.configAssignedBy).toBe(assigner.id);
+      });
+
+      it('งานเก่าไม่รู้ผู้ผูก แต่ช่างเลือก Config ตัวอื่น: ขอได้ (fail closed เฉพาะตัวที่ผูก)', async () => {
+        (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+          { ...task, configAssignedBy: null },
+        );
+
+        await service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech);
+
+        expect(requests.create).toHaveBeenCalled();
+      });
+
+      it('Config ที่เลือกยังไม่อนุมัติ (draft): 409 ไม่สร้างคำขอ', async () => {
+        (
+          prisma.config as Record<string, jest.Mock>
+        ).findUnique.mockResolvedValue({
+          ...config,
+          id: OTHER_CONFIG_ID,
+          status: 'draft',
+        });
+
+        await expect(
+          service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it('Config ที่เลือกรุ่นไม่ตรงกับกล่อง: 409', async () => {
+        (
+          prisma.config as Record<string, jest.Mock>
+        ).findUnique.mockResolvedValue({
+          ...config,
+          id: OTHER_CONFIG_ID,
+          deviceModel: 'TK103',
+        });
+
+        await expect(
+          service.create(TASK_ID, { configId: OTHER_CONFIG_ID }, tech),
+        ).rejects.toThrow('ไม่ตรงกับเครื่อง');
+      });
     });
 
     it('fail closed: งานเก่าไม่มี configAssignedBy -> 409 ให้ Operation ผูก Config ใหม่ ไม่สร้างคำขอ', async () => {
@@ -345,7 +492,10 @@ describe('ConfigApplyRequestService', () => {
         ConflictException,
       );
       expect(requests.findFirst).toHaveBeenCalledWith({
-        where: { deviceId: DEVICE_ID, status: { in: ['pending', 'sending'] } },
+        where: {
+          deviceId: DEVICE_ID,
+          status: { in: ['pending', 'approved', 'sending'] },
+        },
       });
       expect(requests.create).not.toHaveBeenCalled();
     });
@@ -398,10 +548,25 @@ describe('ConfigApplyRequestService', () => {
         expect(requests.updateMany).not.toHaveBeenCalled();
       });
 
-      it('ข้อ 4: คำขอไม่มีผู้ผูก Config -> 403 (fail closed)', async () => {
+      it('ข้อ 4 (docs/28): ช่างเลือก Config เอง (configAssignedBy null) -> ข้ามข้อ 3 Operation ที่ผูก Config ตัวอื่นไว้กับงานตัดสินได้', async () => {
+        const chosen = { ...pending, configAssignedBy: null };
+        requests.findUnique.mockResolvedValue(chosen);
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...chosen,
+          status: 'approved',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+
+        await decide(service)(assigner);
+
+        expect(requests.updateMany).toHaveBeenCalled();
+      });
+
+      it('ข้อ 4 (docs/28): ช่างเลือก Config เอง แต่ผู้ขอตัดสินเอง -> ยัง 403 (ข้อ 2 ไม่ผ่อน)', async () => {
         requests.findUnique.mockResolvedValue({
           ...pending,
-          configAssignedBy: '',
+          configAssignedBy: null,
+          requestedBy: decider.id,
         });
 
         await expect(decide(service)(decider)).rejects.toBeInstanceOf(
@@ -456,58 +621,63 @@ describe('ConfigApplyRequestService', () => {
     });
   });
 
-  describe('approve (§3.5)', () => {
-    it('ผ่านทุกข้อ: sending + decidedBy, สร้าง Rollout เครื่องเดียวผ่าน campaign แล้วผูก rolloutId, เริ่มส่งหลัง commit', async () => {
+  describe('approve (docs/27 §5.3 — อนุมัติแล้วยังไม่ส่ง)', () => {
+    it('ผ่านทุกข้อ: approved + decidedBy + snapshot เวอร์ชัน Config + เส้นตายกดส่ง 24 ชม. · ไม่สร้าง Rollout · แจ้งช่าง config_apply_approved', async () => {
+      requests.findUniqueOrThrow.mockResolvedValue(approvedRequest);
+
       const result = await service.approve(REQUEST_ID, decider);
 
-      expect(requests.updateMany).toHaveBeenCalledWith({
-        where: { id: REQUEST_ID, status: 'pending' },
-        data: expect.objectContaining({
-          status: 'sending',
-          decidedBy: decider.id,
-        }) as unknown,
+      const call = requests.updateMany.mock.calls[0] as [
+        {
+          where: object;
+          data: { decidedAt: Date; expiresAt: Date } & Record<string, unknown>;
+        },
+      ];
+      expect(call[0].where).toEqual({ id: REQUEST_ID, status: 'pending' });
+      expect(call[0].data).toMatchObject({
+        status: 'approved',
+        decidedBy: decider.id,
+        approvedConfigVersion: CONFIG_VERSION,
       });
-      expect(createRollout).toHaveBeenCalledWith(prisma, {
-        requestId: REQUEST_ID,
-        deviceId: DEVICE_ID,
-        configId: CONFIG_ID,
-        requestedBy: tech.id,
-        approvedBy: decider.id,
-      });
-      expect(requests.update).toHaveBeenCalledWith({
-        where: { id: REQUEST_ID },
-        data: { rolloutId: ROLLOUT_ID },
-      });
+      expect(
+        call[0].data.expiresAt.getTime() - call[0].data.decidedAt.getTime(),
+      ).toBe(CONFIG_APPLY_APPROVAL_TTL_HOURS * 60 * 60 * 1000);
+      expect(createRollout).not.toHaveBeenCalled();
+      expect(startRollout).not.toHaveBeenCalled();
       expect(auditLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           action: 'config_apply_approve',
           userId: decider.id,
         }) as unknown,
       });
-      expect(startRollout).toHaveBeenCalledWith(ROLLOUT_ID, decider.id);
-      expect(result.rolloutId).toBe(ROLLOUT_ID);
-      // ไม่มี config_apply_approved (มติ Q5)
-      expect(notification.send).not.toHaveBeenCalled();
-    });
-
-    it('เริ่มส่งไม่สำเร็จหลัง commit: ยังคืนผลอนุมัติ (ฝั่ง campaign รายงานผลล้มเหลวเอง)', async () => {
-      startRollout.mockRejectedValue(new Error('central down'));
-
-      await expect(service.approve(REQUEST_ID, decider)).resolves.toMatchObject(
-        {
-          rolloutId: ROLLOUT_ID,
+      expect(notification.send).toHaveBeenCalledWith({
+        userId: tech.id,
+        type: 'config_apply_approved',
+        payload: {
+          requestId: REQUEST_ID,
+          taskId: TASK_ID,
+          deviceId: DEVICE_ID,
+          expiresAt: approvedRequest.expiresAt.toISOString(),
         },
-      );
+      });
+      expect(result.status).toBe('approved');
     });
 
-    it('สร้าง Rollout ไม่สำเร็จ (ในทรานแซกชัน): error ส่งต่อ ไม่ผูก rolloutId ไม่ลง audit ไม่เริ่มส่ง — ทรานแซกชัน rollback คำขอยัง pending', async () => {
-      const failure = new Error('สร้าง Rollout ไม่สำเร็จ');
-      createRollout.mockRejectedValue(failure);
+    it('Config ที่ยังไม่มีแถว ConfigVersion (seed เก่า): snapshot เป็น 0', async () => {
+      configVersions.aggregate.mockResolvedValue({
+        _max: { versionNumber: null },
+      });
+      requests.findUniqueOrThrow.mockResolvedValue(approvedRequest);
 
-      await expect(service.approve(REQUEST_ID, decider)).rejects.toBe(failure);
-      expect(requests.update).not.toHaveBeenCalled();
-      expect(auditLog.create).not.toHaveBeenCalled();
-      expect(startRollout).not.toHaveBeenCalled();
+      await service.approve(REQUEST_ID, decider);
+
+      expect(requests.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            approvedConfigVersion: 0,
+          }) as unknown,
+        }),
+      );
     });
 
     describe('ตรวจซ้ำแบบสด (§3.5 ข้อ 1) — ไม่ผ่าน = 409 ไม่เปลี่ยนสถานะ', () => {
@@ -534,7 +704,6 @@ describe('ConfigApplyRequestService', () => {
           service.approve(REQUEST_ID, decider),
         ).rejects.toBeInstanceOf(ConflictException);
         expect(requests.updateMany).not.toHaveBeenCalled();
-        expect(createRollout).not.toHaveBeenCalled();
       });
 
       it('Config ถูกถอนเป็น testing ระหว่างรอ', async () => {
@@ -565,8 +734,221 @@ describe('ConfigApplyRequestService', () => {
     });
   });
 
+  describe('release (docs/27 §5.4 — ช่างกดส่งเข้ากล่อง)', () => {
+    beforeEach(() => {
+      requests.findUnique.mockResolvedValue(approvedRequest);
+    });
+
+    it('ผ่านทุกข้อ: sending + releasedBy, สร้าง Rollout (approvedBy = ผู้อนุมัติ) แล้วผูก rolloutId, ลง audit, เริ่มส่งหลัง commit', async () => {
+      const result = await service.release(REQUEST_ID, tech);
+
+      expect(requests.updateMany).toHaveBeenCalledWith({
+        where: { id: REQUEST_ID, status: 'approved' },
+        data: expect.objectContaining({
+          status: 'sending',
+          releasedBy: tech.id,
+        }) as unknown,
+      });
+      expect(createRollout).toHaveBeenCalledWith(prisma, {
+        requestId: REQUEST_ID,
+        deviceId: DEVICE_ID,
+        configId: CONFIG_ID,
+        requestedBy: tech.id,
+        approvedBy: decider.id,
+      });
+      expect(requests.update).toHaveBeenCalledWith({
+        where: { id: REQUEST_ID },
+        data: { rolloutId: ROLLOUT_ID },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'config_apply_release',
+          userId: tech.id,
+        }) as unknown,
+      });
+      expect(startRollout).toHaveBeenCalledWith(ROLLOUT_ID, tech.id);
+      expect(result.rolloutId).toBe(ROLLOUT_ID);
+    });
+
+    it('Config ที่ช่างเลือกเอง (docs/28): งานไม่มี Config ผูกก็กดส่งได้', async () => {
+      requests.findUnique.mockResolvedValue({
+        ...approvedRequest,
+        configAssignedBy: null,
+      });
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        configId: null,
+        configAssignedBy: null,
+        source: 'technician',
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).resolves.toMatchObject({
+        rolloutId: ROLLOUT_ID,
+      });
+    });
+
+    it('Config ที่ผูกไว้ถูก Operation เปลี่ยนหลังอนุมัติ: 409 ไม่สร้าง Rollout', async () => {
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        configId: '77777777-7777-7777-7777-777777777777',
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toThrow(
+        'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่อนุมัติ',
+      );
+      expect(createRollout).not.toHaveBeenCalled();
+    });
+
+    it('Task ถูกโอน: คนที่ถือ Task ตอนนี้กดส่งได้ ผู้ขอเดิมได้ 404 (D1)', async () => {
+      const newHolder: ActingUser = { id: 'tech-2', role: 'OT' };
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        assignedTo: newHolder.id,
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        service.release(REQUEST_ID, newHolder),
+      ).resolves.toMatchObject({ rolloutId: ROLLOUT_ID });
+    });
+
+    it('ยังไม่ได้อนุมัติ (pending): 409 ไม่สร้าง Rollout', async () => {
+      requests.findUnique.mockResolvedValue(pending);
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(createRollout).not.toHaveBeenCalled();
+    });
+
+    it('เลยเส้นตาย 24 ชม.: ปิดเป็น expired + แจ้งช่าง แล้ว 409', async () => {
+      requests.findUnique.mockResolvedValue({
+        ...approvedRequest,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(requests.updateMany).toHaveBeenCalledWith({
+        where: { id: REQUEST_ID, status: 'approved' },
+        data: expect.objectContaining({ status: 'expired' }) as unknown,
+      });
+      expect(notification.send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'config_apply_expired' }),
+      );
+      expect(createRollout).not.toHaveBeenCalled();
+    });
+
+    it('Config มีเวอร์ชันใหม่หลังอนุมัติ: ปิดเป็น cancelled พร้อมเหตุผล แล้ว 409 (D4)', async () => {
+      configVersions.aggregate.mockResolvedValue({
+        _max: { versionNumber: CONFIG_VERSION + 1 },
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(requests.updateMany).toHaveBeenCalledWith({
+        where: { id: REQUEST_ID, status: 'approved' },
+        data: expect.objectContaining({ status: 'cancelled' }) as unknown,
+      });
+      expect(notification.send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'config_apply_failed' }),
+      );
+      expect(createRollout).not.toHaveBeenCalled();
+    });
+
+    it('งานไม่ได้ in_progress แล้ว: 409 คำขอยัง approved', async () => {
+      (prisma.task as Record<string, jest.Mock>).findUnique.mockResolvedValue({
+        ...task,
+        status: 'completed',
+      });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(requests.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('race: มีคนกดส่ง/ยกเลิกไปก่อน (updateMany count 0) -> 409 ไม่สร้าง Rollout', async () => {
+      requests.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(createRollout).not.toHaveBeenCalled();
+    });
+
+    it('เริ่มส่งไม่สำเร็จหลัง commit: ยังคืนผลกดส่ง (ฝั่ง campaign รายงานผลล้มเหลวเอง)', async () => {
+      startRollout.mockRejectedValue(new Error('central down'));
+
+      await expect(service.release(REQUEST_ID, tech)).resolves.toMatchObject({
+        rolloutId: ROLLOUT_ID,
+      });
+    });
+
+    it('สร้าง Rollout ไม่สำเร็จ (ในทรานแซกชัน): error ส่งต่อ ไม่ผูก rolloutId ไม่ลง audit ไม่เริ่มส่ง', async () => {
+      const failure = new Error('สร้าง Rollout ไม่สำเร็จ');
+      createRollout.mockRejectedValue(failure);
+
+      await expect(service.release(REQUEST_ID, tech)).rejects.toBe(failure);
+      expect(requests.update).not.toHaveBeenCalled();
+      expect(auditLog.create).not.toHaveBeenCalled();
+      expect(startRollout).not.toHaveBeenCalled();
+    });
+
+    describe('กล่องออนไลน์ (D6)', () => {
+      it('โหมด mock: ไม่ถาม Server กลาง', async () => {
+        await service.release(REQUEST_ID, tech);
+
+        expect(central.findDevice).not.toHaveBeenCalled();
+      });
+
+      it('โหมด central + กล่องออนไลน์: ส่งได้', async () => {
+        service = await build(starter, 'central');
+        requests.findUnique.mockResolvedValue(approvedRequest);
+
+        await expect(service.release(REQUEST_ID, tech)).resolves.toMatchObject({
+          rolloutId: ROLLOUT_ID,
+        });
+        expect(central.findDevice).toHaveBeenCalledWith(DEVICE_ID);
+      });
+
+      it('โหมด central + กล่องออฟไลน์: 409 คำขอยัง approved ไม่สร้าง Rollout', async () => {
+        service = await build(starter, 'central');
+        requests.findUnique.mockResolvedValue(approvedRequest);
+        central.findDevice.mockResolvedValue({
+          list: { reachable: true },
+          device: { deviceId: DEVICE_ID, online: false },
+        });
+
+        await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(requests.updateMany).not.toHaveBeenCalled();
+        expect(createRollout).not.toHaveBeenCalled();
+      });
+
+      it('โหมด central + Server กลางติดต่อไม่ได้: 503 ไม่ส่ง', async () => {
+        service = await build(starter, 'central');
+        requests.findUnique.mockResolvedValue(approvedRequest);
+        central.findDevice.mockResolvedValue({
+          list: { reachable: false },
+          device: null,
+        });
+
+        await expect(service.release(REQUEST_ID, tech)).rejects.toBeInstanceOf(
+          ServiceUnavailableException,
+        );
+        expect(createRollout).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('reject', () => {
-    it('rejected + เหตุผล + แจ้งผู้ขอ config_apply_rejected', async () => {
+    it('rejected + เหตุผล + แจ้งช่างที่ถือ Task config_apply_rejected', async () => {
       requests.findUniqueOrThrow.mockResolvedValue({
         ...pending,
         status: 'rejected',
@@ -601,17 +983,21 @@ describe('ConfigApplyRequestService', () => {
     });
   });
 
-  describe('cancel (ผู้ขอเท่านั้น)', () => {
-    it('ผู้ขอยกเลิกคำขอ pending ได้', async () => {
+  describe('cancel (ช่างที่ถือ Task — docs/27 §5.5)', () => {
+    it.each([
+      ['pending', pending],
+      ['approved', approvedRequest],
+    ])('ยกเลิกคำขอ %s ได้', async (_name, request) => {
+      requests.findUnique.mockResolvedValue(request);
       requests.findUniqueOrThrow.mockResolvedValue({
-        ...pending,
+        ...request,
         status: 'cancelled',
       });
 
       const result = await service.cancel(REQUEST_ID, tech);
 
       expect(requests.updateMany).toHaveBeenCalledWith({
-        where: { id: REQUEST_ID, requestedBy: tech.id, status: 'pending' },
+        where: { id: REQUEST_ID, status: { in: ['pending', 'approved'] } },
         data: expect.objectContaining({ status: 'cancelled' }) as unknown,
       });
       expect(result.status).toBe('cancelled');
@@ -622,7 +1008,7 @@ describe('ConfigApplyRequestService', () => {
       });
     });
 
-    it('ไม่ใช่ผู้ขอ: 404 (IDOR)', async () => {
+    it('ไม่ใช่ผู้ถือ Task: 404 (IDOR)', async () => {
       await expect(
         service.cancel(REQUEST_ID, { id: 'tech-2', role: 'OT' }),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -638,15 +1024,18 @@ describe('ConfigApplyRequestService', () => {
     });
   });
 
-  describe('expireOverdue (Q9 หมดอายุอัตโนมัติ)', () => {
-    it('ปิดคำขอ pending ที่เลยเวลาเป็น expired และแจ้งผู้ขอ', async () => {
+  describe('expireOverdue (Q9 + docs/27 D2 หมดอายุอัตโนมัติ)', () => {
+    it('ปิดคำขอ pending ที่เลยเวลาเป็น expired และแจ้งช่าง', async () => {
       const now = new Date('2026-10-23T00:05:00.000Z');
       requests.findMany.mockResolvedValue([pending]);
 
       const expired = await service.expireOverdue(now);
 
       expect(requests.findMany).toHaveBeenCalledWith({
-        where: { status: 'pending', expiresAt: { lte: now } },
+        where: {
+          status: { in: ['pending', 'approved'] },
+          expiresAt: { lte: now },
+        },
       });
       expect(requests.updateMany).toHaveBeenCalledWith({
         where: { id: REQUEST_ID, status: 'pending' },
@@ -662,6 +1051,19 @@ describe('ConfigApplyRequestService', () => {
         }),
       );
       expect(expired).toBe(1);
+    });
+
+    it('คำขอ approved ที่ไม่ได้กดส่งทันเวลา: expired พร้อมเหตุผลว่าไม่ได้กดส่ง', async () => {
+      requests.findMany.mockResolvedValue([approvedRequest]);
+
+      await expect(service.expireOverdue()).resolves.toBe(1);
+      expect(requests.updateMany).toHaveBeenCalledWith({
+        where: { id: REQUEST_ID, status: 'approved' },
+        data: expect.objectContaining({
+          status: 'expired',
+          resultDetail: expect.stringContaining('ไม่ได้กดส่ง') as unknown,
+        }) as unknown,
+      });
     });
 
     it('มีคนตัดสินไปก่อนพอดี (count 0): ไม่นับ ไม่แจ้ง', async () => {
@@ -804,6 +1206,107 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { status: 'pending' } }),
       );
+    });
+  });
+
+  describe('applyOptions (docs/28 §5.2)', () => {
+    const configRow = (id: string, name: string, version?: number) => ({
+      id,
+      name,
+      status: 'approved',
+      versions: version === undefined ? [] : [{ versionNumber: version }],
+    });
+
+    beforeEach(() => {
+      (prisma.task as Record<string, jest.Mock>).findFirst = jest
+        .fn()
+        .mockResolvedValue(null);
+      (prisma.config as Record<string, jest.Mock>).findMany = jest
+        .fn()
+        .mockResolvedValue([
+          configRow('a', 'A มาตรฐาน', 3),
+          configRow(CONFIG_ID, 'B ลูกค้าพิเศษ'),
+        ]);
+    });
+
+    it('กรองตามสถานะ/ไม่ถูกลบ/รุ่น+โปรโตคอลของกล่อง และ latestVersion 0 เมื่อไม่มีเวอร์ชัน', async () => {
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(
+        (prisma.config as Record<string, jest.Mock>).findMany,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: { in: ['approved', 'synced'] },
+            deletedAt: null,
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+          },
+        }),
+      );
+      expect(result).toEqual({
+        deviceId: DEVICE_ID,
+        deviceInstalled: true,
+        configs: [
+          {
+            id: 'a',
+            name: 'A มาตรฐาน',
+            status: 'approved',
+            latestVersion: 3,
+            suggested: false,
+          },
+          {
+            id: CONFIG_ID,
+            name: 'B ลูกค้าพิเศษ',
+            status: 'approved',
+            latestVersion: 0,
+            suggested: false,
+          },
+        ],
+      });
+    });
+
+    it('Config ที่ Operation ผูกกับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อนเป็น suggested', async () => {
+      (prisma.task as Record<string, jest.Mock>).findFirst.mockResolvedValue({
+        configId: CONFIG_ID,
+      });
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.configs.map((c) => [c.id, c.suggested])).toEqual([
+        [CONFIG_ID, true],
+        ['a', false],
+      ]);
+      expect(
+        (prisma.task as Record<string, jest.Mock>).findFirst,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assignedTo: tech.id,
+            deviceId: DEVICE_ID,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('กล่องยังไม่ติดตั้ง: deviceInstalled false', async () => {
+      (prisma.device as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+        { ...device, status: 'registered' },
+      );
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.deviceInstalled).toBe(false);
+    });
+
+    it('ไม่พบกล่อง: 404', async () => {
+      (prisma.device as Record<string, jest.Mock>).findUnique.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.applyOptions(DEVICE_ID, tech),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
