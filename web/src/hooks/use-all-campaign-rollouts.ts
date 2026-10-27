@@ -23,13 +23,16 @@ type State = {
  * Rollout ทุกสถานะข้ามทุกกลุ่ม — `GET /campaigns/rollouts` — ใช้คำนวณ "ผลการ Deploy" รวมบน
  * Dashboard จาก `successCount`/`failureCount` จริงของแต่ละ Rollout (mirror
  * `usePausedCampaignRollouts` แต่ไม่กรองสถานะ)
+ *
+ * `enabled` (default true) — ตั้ง false ให้ข้ามการยิงเลย (รีวิว #373:
+ * FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `campaign:Read` ยิงไปก็ได้ 403 เปล่าๆ)
  */
-export function useAllCampaignRollouts() {
+export function useAllCampaignRollouts(enabled = true) {
   const { session } = useAuth();
-  const token = session?.accessToken ?? null;
+  const token = enabled ? session?.accessToken ?? null : null;
   const [state, setState] = useState<State>({
     data: null,
-    isLoading: true,
+    isLoading: enabled,
     error: null,
   });
 
