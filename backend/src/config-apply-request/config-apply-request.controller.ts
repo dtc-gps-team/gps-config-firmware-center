@@ -19,6 +19,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
 import type { ActingUser } from '../task/task.service';
 import {
   ConfigApplyRequestService,
+  type ApplyOptions,
   type ConfigApplyRequestView,
 } from './config-apply-request.service';
 import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.dto';
@@ -63,11 +64,36 @@ export class TaskConfigApplyRequestController {
 }
 
 /**
+ * ตัวเลือกที่ช่างส่งเข้ากล่องได้ (docs/28 §5.2):
+ *   GET /devices/:deviceId/apply-options   ST/OT (คนที่ขอส่งได้ — action Create
+ *       เดียวกับตอนขอ) · อยู่ในโมดูลนี้ (ของ B) ไม่ใช่ `device` (ของ A) เพราะกฎ
+ *       "ส่งได้ไหม" ต้องอยู่ที่เดียวกับที่ตรวจตอนสร้างคำขอ
+ */
+@UseGuards(JwtAuthGuard, PermissionGuard)
+@Controller('devices/:deviceId/apply-options')
+export class DeviceApplyOptionsController {
+  constructor(private readonly service: ConfigApplyRequestService) {}
+
+  @Get()
+  @RequirePermission('config-apply-request', ActionType.Create)
+  applyOptions(
+    @Param('deviceId') deviceId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ApplyOptions> {
+    return this.service.applyOptions(deviceId, toActor(req));
+  }
+}
+
+/**
  * ฝั่งคิวอนุมัติ (docs/25 §3.4, Q1):
  *   GET  /config-apply-requests?status=       Operation/Auditor/Admin/SuperAdmin
  *   POST /config-apply-requests/:id/approve   Operation (SoD เช็คที่ service)
  *   POST /config-apply-requests/:id/reject    Operation (action เดียวกับ approve)
- *   POST /config-apply-requests/:id/cancel    ผู้ขอ (action Create เดียวกับตอนขอ)
+ *   POST /config-apply-requests/:id/cancel    ช่างที่ถือ Task (action Create เดียวกับตอนขอ)
+ *   POST /config-apply-requests/:id/release   ช่างที่ถือ Task กดส่งเข้ากล่อง (docs/27 §5.4)
+ *        — action Create เหมือน cancel (กลุ่มคนเดียวกัน ST/OT · เช็คผู้ถือ Task ที่
+ *        service) แทน action `Release` ใหม่ในแผน เพราะ `ActionType` เป็น enum ที่ใช้
+ *        ทั้งระบบ เพิ่มค่าแล้วกระทบ RBAC ทุก resource โดยไม่ได้ความปลอดภัยเพิ่ม
  */
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('config-apply-requests')
@@ -111,5 +137,15 @@ export class ConfigApplyRequestController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigApplyRequest> {
     return this.service.cancel(id, toActor(req));
+  }
+
+  @Post(':id/release')
+  @RequirePermission('config-apply-request', ActionType.Create)
+  @HttpCode(HttpStatus.OK)
+  release(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ConfigApplyRequest> {
+    return this.service.release(id, toActor(req));
   }
 }

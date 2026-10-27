@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -6,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   Config,
@@ -18,11 +20,17 @@ import {
 } from '@prisma/client';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
+import { CentralDeviceService } from '../central-device/central-device.service';
+import {
+  CONFIG_APPLY_MODE,
+  type ConfigApplyMode,
+} from '../device/config-applier';
 import { mergeApprovedOverride } from '../device/config-override-merge';
 import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
 import {
+  CONFIG_APPLY_APPROVAL_TTL_HOURS,
   CONFIG_APPLY_REQUEST_TTL_HOURS,
   OPEN_CONFIG_APPLY_REQUEST_STATUSES,
 } from './config-apply-request-status';
@@ -50,6 +58,15 @@ const APPLICABLE_CONFIG_STATUSES: readonly ConfigStatus[] = [
 ];
 const INSTALLED_DEVICE_STATUS = 'installed';
 
+/** ยกเลิกได้ตอนยังไม่ส่ง (docs/27 §5.5) / หมดอายุได้ (docs/27 D2) */
+const CANCELLABLE_STATUSES: ConfigApplyRequestStatus[] = [
+  'pending',
+  'approved',
+];
+const EXPIRABLE_STATUSES = CANCELLABLE_STATUSES;
+
+const HOUR_MS = 60 * 60 * 1000;
+
 /** Rollout ที่ "ค้างอยู่" — เครื่องที่เป็น target `pending` ของ Rollout พวกนี้
  * ขอส่งซ้อนไม่ได้ (docs/25 §3.3 กันชนกับ Campaign) */
 const OPEN_ROLLOUT_STATUSES = ['active', 'paused'] as const;
@@ -68,6 +85,7 @@ const LIST_INCLUDE = {
   requester: { select: { id: true, fullName: true } },
   configAssigner: { select: { id: true, fullName: true } },
   decider: { select: { id: true, fullName: true } },
+  releaser: { select: { id: true, fullName: true } },
 } satisfies Prisma.ConfigApplyRequestInclude;
 
 type RequestWithRelations = Prisma.ConfigApplyRequestGetPayload<{
@@ -82,10 +100,34 @@ export type ConfigApplyRequestView = Omit<RequestWithRelations, 'config'> & {
   fieldNames: string[];
 };
 
+/** 1 ตัวเลือก Config ใน `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) */
+export interface ApplyOptionConfig {
+  id: string;
+  name: string;
+  status: ConfigStatus;
+  /** `ConfigVersion.versionNumber` ล่าสุด (0 = ยังไม่มีเวอร์ชัน) — ตัวเดียวกับที่
+   * snapshot ตอนอนุมัติ */
+  latestVersion: number;
+  /** Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ (docs/28 D5) */
+  suggested: boolean;
+}
+
+/** `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — ส่วน Firmware
+ * (`firmwares`, `currentFirmwareVersion`) มาใน B2 ของ docs/27 */
+export interface ApplyOptions {
+  deviceId: string;
+  /** ส่งเข้ากล่องได้เฉพาะเครื่อง `installed` — Mobile ใช้บอกช่างก่อนกดขอ */
+  deviceInstalled: boolean;
+  configs: ApplyOptionConfig[];
+}
+
+// งานที่ยังเปิดอยู่ — ใช้หา Config แนะนำ (mirror `OPEN_TASK_STATUSES` ใน task.service.ts)
+const OPEN_TASK_STATUSES = ['pending', 'in_progress'] as const;
+
 /**
  * คำขอ "ส่ง Config ของ Task เข้าเครื่องจริง" (docs/25, PR #364) — ช่างขอ,
- * Operation **อีกคน** อนุมัติ แล้วระบบสร้าง Rollout เครื่องเดียวส่งผ่านเส้นทาง
- * เดียวกับ Campaign (ทาง ค.)
+ * Operation **อีกคน** อนุมัติ แล้ว**ช่างที่ถือ Task กดส่งเอง** (docs/27) ระบบจึง
+ * สร้าง Rollout เครื่องเดียวส่งผ่านเส้นทางเดียวกับ Campaign (ทาง ค.)
  *
  * Separation of Duty (§3.4) เช็คที่นี่ทุกครั้ง ไม่พึ่ง UI ซ่อนปุ่ม และ **fail
  * closed**: ข้อมูลที่ต้องใช้เช็คหายไป = ปฏิเสธ ไม่ปล่อยผ่าน
@@ -101,6 +143,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
     @Inject(FIELD_APPLY_ROLLOUT_STARTER)
     private readonly rolloutStarter: FieldApplyRolloutStarter,
     private readonly rolloutEvents: RolloutEvents,
+    private readonly centralDevices: CentralDeviceService,
+    @Inject(CONFIG_APPLY_MODE) private readonly applyMode: ConfigApplyMode,
   ) {}
 
   /** ฟังผลจาก Rollout เครื่องเดียว (§3.5 ข้อ 5) — listener จัดการ error เอง
@@ -115,8 +159,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /**
-   * `POST /tasks/{taskId}/config-apply-requests` (§3.3) — Config และเครื่องมาจาก
-   * Task เสมอ ไม่รับจาก client
+   * `POST /tasks/{taskId}/config-apply-requests` (§3.3, docs/28 §5.3) — เครื่อง
+   * มาจาก Task เสมอ · Config = `dto.configId` (ช่างเลือกเอง) หรือ `Task.configId`
+   * ถ้าไม่ส่ง · ขอ Config **ตัวเดียวกับที่ Operation ผูกไว้** = snapshot
+   * `configAssignedBy` (SoD ข้อ 3 ใช้กับคนผูก, ไม่รู้คนผูก = fail closed) · Config
+   * ที่ช่างเลือกเอง = `configAssignedBy` null
    */
   async create(
     taskId: string,
@@ -133,21 +180,27 @@ export class ConfigApplyRequestService implements OnModuleInit {
         `งานต้องอยู่สถานะกำลังทำ (in_progress) ถึงจะขอส่ง Config ได้ — สถานะปัจจุบัน: ${task.status}`,
       );
     }
-    if (!task.configId || !task.deviceId) {
+    if (!task.deviceId) {
       throw new ConflictException(
-        'งานนี้ไม่มี Config หรือเครื่องที่ผูกไว้ ขอส่ง Config ไม่ได้',
+        'งานนี้ไม่มีเครื่องที่ผูกไว้ ขอส่ง Config ไม่ได้',
       );
     }
-    // fail closed (§4.2): งานเก่าก่อนมี configAssignedBy ไม่รู้ว่าใครผูก Config
-    // จึงเช็ค SoD ข้อ 3 ไม่ได้
-    if (!task.configAssignedBy) {
-      throw new ConflictException(
-        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
+    const configId = dto.configId ?? task.configId;
+    if (!configId) {
+      throw new BadRequestException(
+        'เลือก Config ที่จะส่งเข้ากล่องก่อน (งานนี้ไม่มี Config ที่ Operation ผูกไว้)',
       );
     }
-    const configId = task.configId;
+    const usesAssignedConfig = configId === task.configId;
+    // fail closed (§4.2): ขอ Config ที่ผูกไว้กับงานเก่าก่อนมี configAssignedBy —
+    // ไม่รู้ว่าใครผูก จึงเช็ค SoD ข้อ 3 ไม่ได้
+    if (usesAssignedConfig && !task.configAssignedBy) {
+      throw new ConflictException(
+        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน หรือเลือก Config ตัวอื่น',
+      );
+    }
     const deviceId = task.deviceId;
-    const configAssignedBy = task.configAssignedBy;
+    const configAssignedBy = usesAssignedConfig ? task.configAssignedBy : null;
     await this.assertApplicable(this.prisma, configId, deviceId, 'create');
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -172,7 +225,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
           requestedBy: actor.id,
           requestedAt: now,
           expiresAt: new Date(
-            now.getTime() + CONFIG_APPLY_REQUEST_TTL_HOURS * 60 * 60 * 1000,
+            now.getTime() + CONFIG_APPLY_REQUEST_TTL_HOURS * HOUR_MS,
           ),
           note: dto.note?.trim() || null,
         },
@@ -196,6 +249,66 @@ export class ConfigApplyRequestService implements OnModuleInit {
       where: { taskId },
       orderBy: { requestedAt: 'desc' },
     });
+  }
+
+  /**
+   * `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่าง
+   * เลือกส่งเข้ากล่องนี้ได้: สถานะ `approved`/`synced` ไม่ถูกลบ รุ่น+โปรโตคอลตรง
+   * กับกล่อง (กฎเดียวกับ `assertApplicable()` ที่ตรวจซ้ำตอนสร้างคำขอ) · ตัวที่
+   * Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อน (`suggested`) ที่
+   * เหลือเรียงตามชื่อ · กล่องไม่พบ 404
+   */
+  async applyOptions(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<ApplyOptions> {
+    const device = await this.prisma.device.findUnique({ where: { deviceId } });
+    if (!device) {
+      throw new NotFoundException(`ไม่พบเครื่อง ${deviceId}`);
+    }
+    const openTask = await this.prisma.task.findFirst({
+      where: {
+        assignedTo: actor.id,
+        deviceId,
+        status: { in: [...OPEN_TASK_STATUSES] },
+        configId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { configId: true },
+    });
+    const suggestedId = openTask?.configId ?? null;
+    const configs = await this.prisma.config.findMany({
+      where: {
+        status: { in: [...APPLICABLE_CONFIG_STATUSES] },
+        deletedAt: null,
+        deviceModel: device.deviceModel,
+        protocol: device.protocol,
+      },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        versions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          select: { versionNumber: true },
+        },
+      },
+    });
+    const options = configs.map((config): ApplyOptionConfig => ({
+      id: config.id,
+      name: config.name,
+      status: config.status,
+      latestVersion: config.versions[0]?.versionNumber ?? 0,
+      suggested: config.id === suggestedId,
+    }));
+    options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
+    return {
+      deviceId,
+      deviceInstalled: device.status === INSTALLED_DEVICE_STATUS,
+      configs: options,
+    };
   }
 
   /** `GET /config-apply-requests?status=` — คิวของ Approval Center (§3.4) */
@@ -223,12 +336,10 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /**
-   * `POST /config-apply-requests/{id}/approve` (§3.4–§3.5) — SoD ครบทุกข้อ →
-   * ตรวจซ้ำแบบสดในทรานแซกชัน → `sending` + สร้าง Rollout เครื่องเดียว (ผ่าน
-   * `FieldApplyRolloutStarter` ของ campaign) → เริ่มส่งหลัง commit
-   *
-   * ถ้าฝั่ง campaign สร้าง Rollout ไม่ได้ (รวมตอนที่ยังเป็นตัวแทนชั่วคราว) ทั้ง
-   * ทรานแซกชัน rollback คำขอยัง `pending`
+   * `POST /config-apply-requests/{id}/approve` (§3.4, docs/27 §5.3) — SoD ครบทุก
+   * ข้อ → ตรวจซ้ำแบบสดในทรานแซกชัน → `approved` (**ยังไม่ส่ง** — ช่างที่ถือ Task
+   * กดส่งเองผ่าน `release()`) · snapshot เวอร์ชัน Config ที่อนุมัติ และตั้ง
+   * `expiresAt` ใหม่เป็นเส้นตายของการกดส่ง
    */
   async approve(id: string, actor: ActingUser): Promise<ConfigApplyRequest> {
     const existing = await this.getPendingOrThrow(id);
@@ -236,13 +347,89 @@ export class ConfigApplyRequestService implements OnModuleInit {
 
     const approved = await this.prisma.$transaction(async (tx) => {
       await this.assertStillApplicable(tx, existing);
+      const approvedConfigVersion = await this.latestConfigVersion(
+        tx,
+        existing.configId,
+      );
+      const now = new Date();
       const result = await tx.configApplyRequest.updateMany({
         where: { id, status: 'pending' },
-        data: { status: 'sending', decidedBy: actor.id, decidedAt: new Date() },
+        data: {
+          status: 'approved',
+          decidedBy: actor.id,
+          decidedAt: now,
+          approvedConfigVersion,
+          expiresAt: new Date(
+            now.getTime() + CONFIG_APPLY_APPROVAL_TTL_HOURS * HOUR_MS,
+          ),
+        },
       });
       if (result.count === 0) {
         throw new ConflictException(
           'คำขอนี้ถูกตัดสินใจไปแล้ว (มีการอนุมัติ/ปฏิเสธอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
+        );
+      }
+      const row = await tx.configApplyRequest.findUniqueOrThrow({
+        where: { id },
+      });
+      await this.writeAudit(tx, 'config_apply_approve', actor, row);
+      return row;
+    });
+
+    await this.notifyTaskHolder(approved, 'config_apply_approved', {
+      expiresAt: approved.expiresAt.toISOString(),
+    });
+    return approved;
+  }
+
+  /**
+   * `POST /config-apply-requests/{id}/release` (docs/27 §5.4) — ช่างที่**ถือ Task
+   * อยู่ตอนนี้**กดส่งคำขอที่อนุมัติแล้วเข้ากล่อง · ตรวจทุกข้อซ้ำแบบสด แล้วค่อย
+   * สร้าง Rollout เครื่องเดียว (เดิมทำตอนอนุมัติ) และเริ่มส่งหลัง commit
+   *
+   * - ไม่ใช่ผู้ถือ Task = 404 (IDOR เหมือน cancel)
+   * - เลยเส้นตาย → ปิดเป็น `expired` แล้ว 409
+   * - Config เปลี่ยนเวอร์ชัน/ใช้ไม่ได้แล้ว → ปิดเป็น `cancelled` แล้ว 409 (D4)
+   * - กล่องออฟไลน์ (โหมด central) → 409 คำขอยัง `approved` ให้ลองใหม่ (D6)
+   */
+  async release(id: string, actor: ActingUser): Promise<ConfigApplyRequest> {
+    const existing = await this.prisma.configApplyRequest.findUnique({
+      where: { id },
+    });
+    const task = existing
+      ? await this.prisma.task.findUnique({ where: { id: existing.taskId } })
+      : null;
+    if (!existing || !task || task.assignedTo !== actor.id) {
+      throw new NotFoundException(`ไม่พบคำขอ id ${id}`);
+    }
+    if (existing.status !== 'approved') {
+      throw new ConflictException(
+        `ส่งเข้ากล่องได้เฉพาะคำขอที่อนุมัติแล้ว — สถานะปัจจุบัน: ${existing.status}`,
+      );
+    }
+    if (existing.expiresAt.getTime() <= Date.now()) {
+      await this.expireOne(existing, new Date());
+      throw new ConflictException(
+        `คำอนุมัติหมดอายุแล้ว (ต้องกดส่งภายใน ${CONFIG_APPLY_APPROVAL_TTL_HOURS} ชั่วโมงหลังอนุมัติ) — ขอใหม่อีกครั้ง`,
+      );
+    }
+    await this.closeIfConfigChanged(existing);
+    await this.assertDeviceOnline(existing.deviceId);
+
+    const released = await this.prisma.$transaction(async (tx) => {
+      await this.lockDevice(tx, existing.deviceId);
+      await this.assertReleasable(tx, existing, actor);
+      const result = await tx.configApplyRequest.updateMany({
+        where: { id, status: 'approved' },
+        data: {
+          status: 'sending',
+          releasedBy: actor.id,
+          releasedAt: new Date(),
+        },
+      });
+      if (result.count === 0) {
+        throw new ConflictException(
+          'คำขอนี้ถูกส่งหรือปิดไปแล้ว (มีการกดส่ง/ยกเลิกอื่นเข้ามาพร้อมกัน) — กรุณาโหลดข้อมูลใหม่',
         );
       }
       const { rolloutId } = await this.rolloutStarter.createFieldApplyRollout(
@@ -252,31 +439,31 @@ export class ConfigApplyRequestService implements OnModuleInit {
           deviceId: existing.deviceId,
           configId: existing.configId,
           requestedBy: existing.requestedBy,
-          approvedBy: actor.id,
+          approvedBy: existing.decidedBy as string,
         },
       );
       const row = await tx.configApplyRequest.update({
         where: { id },
         data: { rolloutId },
       });
-      await this.writeAudit(tx, 'config_apply_approve', actor, row);
+      await this.writeAudit(tx, 'config_apply_release', actor, row);
       return row;
     });
 
     // ส่งจริงหลัง commit (§3.5 ข้อ 3) — ส่งไม่ได้ให้ฝั่ง campaign บันทึกเป็นผล
     // ล้มเหลวของ target แล้วส่งกลับมาทาง FIELD_APPLY_RESULT_EVENT ไม่ throw ที่นี่
-    // เพราะการอนุมัติ commit ไปแล้ว
+    // เพราะการกดส่ง commit ไปแล้ว
     try {
       await this.rolloutStarter.startFieldApplyRollout(
-        approved.rolloutId as string,
+        released.rolloutId as string,
         actor.id,
       );
     } catch (err) {
       this.logger.error(
-        `เริ่มส่ง Rollout ของคำขอ ${approved.id} ไม่สำเร็จ (rollout ${approved.rolloutId}): ${(err as Error).message}`,
+        `เริ่มส่ง Rollout ของคำขอ ${released.id} ไม่สำเร็จ (rollout ${released.rolloutId}): ${(err as Error).message}`,
       );
     }
-    return approved;
+    return released;
   }
 
   /** `POST /config-apply-requests/{id}/reject` — SoD ชุดเดียวกับ approve (§3.4
@@ -313,39 +500,43 @@ export class ConfigApplyRequestService implements OnModuleInit {
       return row;
     });
 
-    await this.notifyRequester(rejected, 'config_apply_rejected', {
+    await this.notifyTaskHolder(rejected, 'config_apply_rejected', {
       rejectReason: rejected.rejectReason,
     });
     return rejected;
   }
 
-  /** `POST /config-apply-requests/{id}/cancel` — ผู้ขอเท่านั้น เฉพาะตอน
-   * `pending` (§3.3) · ไม่ใช่ผู้ขอ = 404 (IDOR) */
+  /** `POST /config-apply-requests/{id}/cancel` — ช่างที่ถือ Task อยู่ตอนนี้
+   * (docs/27 D1 — เดิมผู้ขอ) ตอน `pending` หรือ `approved` · ไม่ใช่ผู้ถือ Task =
+   * 404 (IDOR) */
   async cancel(id: string, actor: ActingUser): Promise<ConfigApplyRequest> {
     const existing = await this.prisma.configApplyRequest.findUnique({
       where: { id },
     });
-    if (!existing || existing.requestedBy !== actor.id) {
+    const task = existing
+      ? await this.prisma.task.findUnique({ where: { id: existing.taskId } })
+      : null;
+    if (!existing || !task || task.assignedTo !== actor.id) {
       throw new NotFoundException(`ไม่พบคำขอ id ${id}`);
     }
-    if (existing.status !== 'pending') {
+    if (!CANCELLABLE_STATUSES.includes(existing.status)) {
       throw new ConflictException(
-        `ยกเลิกได้เฉพาะคำขอที่รออนุมัติ — สถานะปัจจุบัน: ${existing.status}`,
+        `ยกเลิกได้เฉพาะคำขอที่รออนุมัติหรืออนุมัติแล้วแต่ยังไม่ส่ง — สถานะปัจจุบัน: ${existing.status}`,
       );
     }
 
     return this.prisma.$transaction(async (tx) => {
       const result = await tx.configApplyRequest.updateMany({
-        where: { id, requestedBy: actor.id, status: 'pending' },
+        where: { id, status: { in: CANCELLABLE_STATUSES } },
         data: {
           status: 'cancelled',
-          resultDetail: 'ผู้ขอยกเลิกคำขอเอง',
+          resultDetail: 'ช่างยกเลิกคำขอเอง',
           completedAt: new Date(),
         },
       });
       if (result.count === 0) {
         throw new ConflictException(
-          'คำขอนี้ถูกตัดสินใจไปแล้วระหว่างที่ยกเลิก — กรุณาโหลดข้อมูลใหม่',
+          'คำขอนี้ถูกตัดสินหรือส่งไปแล้วระหว่างที่ยกเลิก — กรุณาโหลดข้อมูลใหม่',
         );
       }
       const row = await tx.configApplyRequest.findUniqueOrThrow({
@@ -357,28 +548,18 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /**
-   * ปิดคำขอ `pending` ที่เลย `expiresAt` (§3.9, มติ Q9) เป็น `expired` แล้วแจ้ง
-   * ผู้ขอ — เรียกจาก `ConfigApplyRequestExpiryJob` · claim ทีละแถวด้วย
-   * `updateMany` เงื่อนไข `pending` กันชนกับ Operation ที่กดตัดสินพร้อมกัน ·
-   * คืนจำนวนที่ปิดได้
+   * ปิดคำขอ `pending`/`approved` ที่เลย `expiresAt` (§3.9, docs/27 D2) เป็น
+   * `expired` แล้วแจ้งช่างที่ถือ Task — เรียกจาก `ConfigApplyRequestExpiryJob` ·
+   * claim ทีละแถวด้วย `updateMany` เงื่อนไขสถานะเดิม กันชนกับการตัดสิน/กดส่งที่
+   * เข้ามาพร้อมกัน · คืนจำนวนที่ปิดได้
    */
   async expireOverdue(now: Date = new Date()): Promise<number> {
     const overdue = await this.prisma.configApplyRequest.findMany({
-      where: { status: 'pending', expiresAt: { lte: now } },
+      where: { status: { in: EXPIRABLE_STATUSES }, expiresAt: { lte: now } },
     });
     let expired = 0;
     for (const request of overdue) {
-      const result = await this.prisma.configApplyRequest.updateMany({
-        where: { id: request.id, status: 'pending' },
-        data: {
-          status: 'expired',
-          resultDetail: `ไม่มี Operation ตัดสินภายใน ${CONFIG_APPLY_REQUEST_TTL_HOURS} ชั่วโมง คำขอหมดอายุ`,
-          completedAt: now,
-        },
-      });
-      if (result.count === 0) continue;
-      expired += 1;
-      await this.notifyRequester(request, 'config_apply_expired');
+      if (await this.expireOne(request, now)) expired += 1;
     }
     return expired;
   }
@@ -405,15 +586,19 @@ export class ConfigApplyRequestService implements OnModuleInit {
       const request = await this.prisma.configApplyRequest.findUniqueOrThrow({
         where: { rolloutId: event.rolloutId },
       });
-      await this.notifyRequester(
-        request,
+      const type: NotificationType =
         event.outcome === 'succeeded'
           ? 'config_apply_succeeded'
-          : 'config_apply_failed',
+          : 'config_apply_failed';
+      const extra: Record<string, string | null> =
         event.outcome === 'succeeded'
           ? {}
-          : { outcome: event.outcome, detail: event.detail },
-      );
+          : { outcome: event.outcome, detail: event.detail };
+      await this.notifyTaskHolder(request, type, extra);
+      // Operation ที่อนุมัติรู้ผลด้วย (docs/27 §8) — การแสดงผลบน Web เป็นงาน A
+      if (request.decidedBy) {
+        await this.notifyUser(request.decidedBy, request, type, extra);
+      }
       return true;
     } catch (err) {
       this.logger.error(
@@ -440,12 +625,159 @@ export class ConfigApplyRequestService implements OnModuleInit {
     return existing;
   }
 
+  /** ปิดคำขอหนึ่งรายการเป็น `expired` (ถ้ายังอยู่สถานะเดิม) แล้วแจ้งช่าง ·
+   * คืน `true` เมื่อปิดได้จริง */
+  private async expireOne(
+    request: ConfigApplyRequest,
+    now: Date,
+  ): Promise<boolean> {
+    const wasApproved = request.status === 'approved';
+    const result = await this.prisma.configApplyRequest.updateMany({
+      where: { id: request.id, status: request.status },
+      data: {
+        status: 'expired',
+        resultDetail: wasApproved
+          ? `อนุมัติแล้วแต่ไม่ได้กดส่งเข้ากล่องภายใน ${CONFIG_APPLY_APPROVAL_TTL_HOURS} ชั่วโมง คำอนุมัติหมดอายุ`
+          : `ไม่มี Operation ตัดสินภายใน ${CONFIG_APPLY_REQUEST_TTL_HOURS} ชั่วโมง คำขอหมดอายุ`,
+        completedAt: now,
+      },
+    });
+    if (result.count === 0) return false;
+    await this.notifyTaskHolder(request, 'config_apply_expired');
+    return true;
+  }
+
+  /** `versionNumber` ล่าสุดของ Config (docs/27 D4) · 0 = ยังไม่มีแถว
+   * ConfigVersion (Config จาก seed เก่า) */
+  private async latestConfigVersion(
+    db: Prisma.TransactionClient,
+    configId: string,
+  ): Promise<number> {
+    const latest = await db.configVersion.aggregate({
+      where: { configId },
+      _max: { versionNumber: true },
+    });
+    return latest._max.versionNumber ?? 0;
+  }
+
+  /**
+   * Config ที่อนุมัติไว้ยังเป็นเวอร์ชันเดิมและส่งได้อยู่ไหม (docs/27 D4) — ไม่ใช่
+   * แล้วปิดคำขอเป็น `cancelled` พร้อมเหตุผล แล้ว 409 ให้ช่างขอใหม่ · ทำนอก
+   * ทรานแซกชันหลักเพื่อให้การปิดคำขอ commit จริง (`assertReleasable` ตรวจซ้ำใน
+   * ทรานแซกชันอีกรอบกัน race)
+   */
+  private async closeIfConfigChanged(
+    request: ConfigApplyRequest,
+  ): Promise<void> {
+    const config = await this.prisma.config.findUnique({
+      where: { id: request.configId },
+    });
+    const version = await this.latestConfigVersion(
+      this.prisma,
+      request.configId,
+    );
+    let reason: string | null = null;
+    if (!config || config.deletedAt !== null) {
+      reason = 'Config ของคำขอนี้ถูกลบไปแล้ว';
+    } else if (!APPLICABLE_CONFIG_STATUSES.includes(config.status)) {
+      reason = `Config เปลี่ยนสถานะเป็น ${config.status} หลังอนุมัติ ส่งไม่ได้แล้ว`;
+    } else if (version !== request.approvedConfigVersion) {
+      reason = `Config มีเวอร์ชันใหม่ (v${version}) หลังอนุมัติ (v${request.approvedConfigVersion ?? '-'})`;
+    }
+    if (!reason) return;
+    const result = await this.prisma.configApplyRequest.updateMany({
+      where: { id: request.id, status: 'approved' },
+      data: {
+        status: 'cancelled',
+        resultDetail: `${reason} — ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด`,
+        completedAt: new Date(),
+      },
+    });
+    if (result.count > 0) {
+      await this.notifyTaskHolder(request, 'config_apply_failed', {
+        outcome: 'cancelled',
+        detail: reason,
+      });
+    }
+    throw new ConflictException(
+      `${reason} — ระบบปิดคำขอนี้แล้ว ให้ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด`,
+    );
+  }
+
+  /**
+   * กล่องต้องออนไลน์ตอนกดส่ง (docs/27 D6) — เช็คเฉพาะโหมด `central` (Server
+   * กลางเป็นคนส่งเข้ากล่องจริง) · โหมด mock/real ไม่มีข้อมูลออนไลน์ให้เช็ค ·
+   * ติดต่อ Server กลางไม่ได้ = 503 (ไม่รู้สถานะ ไม่ส่ง) · คำขอยัง `approved`
+   */
+  private async assertDeviceOnline(deviceId: string): Promise<void> {
+    if (this.applyMode !== 'central') return;
+    const { list, device } = await this.centralDevices.findDevice(deviceId);
+    if (!list.reachable) {
+      throw new ServiceUnavailableException(
+        'ติดต่อ Server กลางไม่ได้ ตรวจสถานะกล่องไม่ได้ — ลองใหม่อีกครั้ง',
+      );
+    }
+    if (!device?.online) {
+      throw new ConflictException(
+        'กล่องยังไม่ออนไลน์ — ตรวจไฟและสัญญาณของกล่องแล้วลองกดส่งใหม่',
+      );
+    }
+  }
+
+  /**
+   * ตรวจซ้ำแบบสดตอนกดส่ง ในทรานแซกชันเดียวกับการเปลี่ยนสถานะ (docs/27 §5.4) —
+   * mirror `assertStillApplicable()` ของตอนอนุมัติ แต่ผู้ถือ Task ต้องเป็นผู้กด
+   * ส่ง (อาจไม่ใช่ผู้ขอ) และ Config ต้องยังเป็นเวอร์ชันที่อนุมัติ · ไม่ผ่าน = 409
+   * คำขอยัง `approved`
+   */
+  private async assertReleasable(
+    tx: Prisma.TransactionClient,
+    request: ConfigApplyRequest,
+    actor: ActingUser,
+  ): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "Task" WHERE "id" = ${request.taskId} FOR UPDATE`;
+    const task = await tx.task.findUnique({ where: { id: request.taskId } });
+    if (!task || task.assignedTo !== actor.id) {
+      throw new NotFoundException(`ไม่พบคำขอ id ${request.id}`);
+    }
+    if (task.status !== 'in_progress') {
+      throw new ConflictException(
+        `งานต้องอยู่สถานะกำลังทำ (in_progress) ถึงจะส่งเข้ากล่องได้ — สถานะปัจจุบัน: ${task.status}`,
+      );
+    }
+    if (
+      task.deviceId !== request.deviceId ||
+      (request.configAssignedBy !== null && task.configId !== request.configId)
+    ) {
+      throw new ConflictException(
+        'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่อนุมัติ — ยกเลิกคำขอแล้วขอใหม่',
+      );
+    }
+    await this.assertApplicable(
+      tx,
+      request.configId,
+      request.deviceId,
+      'approve',
+    );
+    const version = await this.latestConfigVersion(tx, request.configId);
+    if (version !== request.approvedConfigVersion) {
+      throw new ConflictException(
+        'Config มีเวอร์ชันใหม่หลังอนุมัติ — ขอใหม่เพื่อให้ Operation อนุมัติค่าล่าสุด',
+      );
+    }
+    await this.assertNoOpenRolloutTarget(tx, request.deviceId);
+  }
+
   /**
    * Separation of Duty ของผู้ตัดสิน (§3.4 ข้อ 1–5) — ทุกข้อ 403:
    * 1. ต้องเป็น role Operation
    * 2. ≠ ผู้ขอ
-   * 3. ≠ ผู้ผูก Config เข้า Task (`configAssignedBy` ที่ snapshot ไว้)
-   * 4. `configAssignedBy` ว่าง = ปฏิเสธ (fail closed)
+   * 3. ≠ ผู้ผูก Config เข้า Task (`configAssignedBy` ที่ snapshot ไว้) —
+   *    **เฉพาะคำขอที่ใช้ Config ตัวที่ Operation ผูกไว้** (docs/28 §2.1, A ตอบ
+   *    Q2 บน #382)
+   * 4. `configAssignedBy` ว่าง = ช่างเลือก Config เอง (docs/28 D3) ข้ามข้อ 3 ·
+   *    คำขอของ Config ที่ผูกไว้แต่ไม่รู้คนผูกถูกปฏิเสธตั้งแต่ตอนสร้าง (fail
+   *    closed ที่ `create()`) จึงไม่มีทางมาถึงตรงนี้
    * 5. ≠ ผู้อนุมัติตัว Config (`Config.approvedBy`, มติ Q8) และถ้า
    *    `Config.approvedBy` ว่างก็ปฏิเสธ (fail closed — §3.4 ข้อ 5 ยังไม่ได้ตกลง
    *    กรณีนี้ จึงเลือกทางที่ไม่ผ่อน รอยืนยันกับ A)
@@ -462,11 +794,6 @@ export class ConfigApplyRequestService implements OnModuleInit {
     if (request.requestedBy === actor.id) {
       throw new ForbiddenException(
         'ผู้ขอส่ง Config ตัดสินคำขอของตัวเองไม่ได้ (Separation of Duty)',
-      );
-    }
-    if (!request.configAssignedBy) {
-      throw new ForbiddenException(
-        'คำขอนี้ไม่มีข้อมูลผู้ผูก Config เข้างาน ตรวจ Separation of Duty ไม่ได้ จึงตัดสินไม่ได้',
       );
     }
     if (request.configAssignedBy === actor.id) {
@@ -544,7 +871,8 @@ export class ConfigApplyRequestService implements OnModuleInit {
    *
    * เพิ่มจากแผน: `Task.configAssignedBy` ต้องยังเป็นคนเดียวกับที่ snapshot ไว้
    * — ถ้า Operation คนอื่นผูก Config ใหม่ระหว่างรอ SoD ข้อ 3 ที่เช็คกับ snapshot
-   * จะไม่ครอบคนผูกล่าสุด ให้ช่างขอใหม่แทน (เข้มขึ้น ไม่ผ่อน)
+   * จะไม่ครอบคนผูกล่าสุด ให้ช่างขอใหม่แทน (เข้มขึ้น ไม่ผ่อน) · เช็คเฉพาะคำขอที่ใช้
+   * Config ที่ผูกไว้ — Config ที่ช่างเลือกเอง (docs/28) ไม่ผูกกับ `Task.configId`
    */
   private async assertStillApplicable(
     tx: Prisma.TransactionClient,
@@ -563,9 +891,10 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
     }
     if (
-      task.configId !== request.configId ||
       task.deviceId !== request.deviceId ||
-      task.configAssignedBy !== request.configAssignedBy
+      (request.configAssignedBy !== null &&
+        (task.configId !== request.configId ||
+          task.configAssignedBy !== request.configAssignedBy))
     ) {
       throw new ConflictException(
         'Config หรือเครื่องของงานถูกเปลี่ยนแล้วตั้งแต่ส่งคำขอ — ปฏิเสธคำขอแล้วให้ช่างขอใหม่',
@@ -640,7 +969,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
         where: {
           role: { code: OPERATION_ROLE },
           isActive: true,
-          id: { notIn: [request.configAssignedBy, request.requestedBy] },
+          id: {
+            notIn: [request.configAssignedBy, request.requestedBy].filter(
+              (id): id is string => id !== null,
+            ),
+          },
         },
         select: { id: true },
       });
@@ -658,15 +991,38 @@ export class ConfigApplyRequestService implements OnModuleInit {
     }
   }
 
-  /** แจ้งผู้ขอ · never-throw */
-  private async notifyRequester(
+  /** แจ้งช่างที่ถือ Task อยู่ตอนนี้ (docs/27 D1 — ถ้า Task ถูกโอน คนใหม่คือคนที่
+   * ต้องกดส่ง) · หา Task ไม่เจอแจ้งผู้ขอแทน · never-throw */
+  private async notifyTaskHolder(
+    request: ConfigApplyRequest,
+    type: NotificationType,
+    extra: Record<string, string | null> = {},
+  ): Promise<void> {
+    let userId = request.requestedBy;
+    try {
+      const task = await this.prisma.task.findUnique({
+        where: { id: request.taskId },
+        select: { assignedTo: true },
+      });
+      if (task) userId = task.assignedTo;
+    } catch (err) {
+      this.logger.warn(
+        `หาผู้ถือ Task ของคำขอ ${request.id} ไม่ได้ แจ้งผู้ขอแทน: ${(err as Error).message}`,
+      );
+    }
+    await this.notifyUser(userId, request, type, extra);
+  }
+
+  /** never-throw */
+  private async notifyUser(
+    userId: string,
     request: ConfigApplyRequest,
     type: NotificationType,
     extra: Record<string, string | null> = {},
   ): Promise<void> {
     try {
       await this.notificationService.send({
-        userId: request.requestedBy,
+        userId,
         type,
         payload: { ...this.notificationPayload(request), ...extra },
       });

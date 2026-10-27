@@ -328,10 +328,18 @@ async function main() {
 
     // ---- config-apply-request (docs/25 §3.3–§3.4, PR #364) ----
     // คำขอส่ง Config ของ Task เข้าเครื่องจริง — ST/OT ขอ (POST
-    // /tasks/{taskId}/config-apply-requests) และยกเลิกคำขอของตัวเอง (POST
-    // .../{id}/cancel) ด้วย action Create · เท่ากับ device-config-apply ตอนนี้
+    // /tasks/{taskId}/config-apply-requests), ยกเลิก (POST .../{id}/cancel) และ
+    // กดส่งเข้ากล่องหลังอนุมัติ (POST .../{id}/release, docs/27) ด้วย action
+    // Create · ใครกดได้ (ผู้ถือ Task) เช็คที่ service · เท่ากับ device-config-apply ตอนนี้
     grant('ST', 'config-apply-request', 'Create'),
     grant('OT', 'config-apply-request', 'Create'),
+    // ---- field-task (docs/28 §5.1, A ตอบ Q1 บน #382) ----
+    // POST /tasks/start — ช่างเริ่มงานกับกล่องเอง (Task เป็นของผู้เรียกเสมอ) ·
+    // แยกจาก tasks:Create (POST /tasks ของ Operation ที่ระบุ assignedTo เป็นคน
+    // อื่นได้) · GET /devices/{deviceId}/apply-options ใช้ config-apply-request:
+    // Create ด้านบน (คนที่ขอส่งได้เท่านั้น)
+    grant('ST', 'field-task', 'Create'),
+    grant('OT', 'field-task', 'Create'),
     // GET /config-apply-requests — คิวคำขอ (Operation ตัดสิน, Auditor/Admin/
     // SuperAdmin ดูอย่างเดียว)
     grant('Operation', 'config-apply-request', 'Read'),
