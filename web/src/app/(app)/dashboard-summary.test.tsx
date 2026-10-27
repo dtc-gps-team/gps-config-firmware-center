@@ -19,6 +19,9 @@ const state = vi.hoisted(() => ({
   allRollouts: {} as Q<unknown>,
   incidents: {} as Q<unknown>,
   central: {} as Q<unknown>,
+  // ค่าเริ่มต้นเป็น role ที่มีสิทธิ์ `campaign:Read` อยู่แล้ว (Operation) —
+  // เทส role ที่ไม่มีสิทธิ์ (รีวิว #373) ตั้งเองในกลุ่มทดสอบของตัวเอง
+  role: "Operation" as string | null,
 }));
 
 vi.mock("@/hooks/use-devices", () => ({ useDevices: () => state.devices }));
@@ -37,6 +40,9 @@ vi.mock("@/hooks/use-incidents", () => ({
 }));
 vi.mock("@/hooks/use-central-devices", () => ({
   useCentralDevices: () => state.central,
+}));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { role: state.role } }),
 }));
 
 const device = (deviceId: string, deviceModel = "ESP32-DEVKIT-V1") => ({
@@ -62,6 +68,7 @@ function card(label: string): HTMLElement {
 
 describe("DashboardSummary: ทุกตัวเลขมาจากข้อมูลจริง", () => {
   beforeEach(() => {
+    state.role = "Operation";
     state.devices = q([device("BOX-1"), device("BOX-2"), device("BOX-3")]);
     state.configs = q([{ status: "testing" }, { status: "approved" }]);
     state.campaigns = q([{ id: "c1" }]);
@@ -163,5 +170,39 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     render(<DashboardSummary />);
 
     expect(screen.getByText("ข้อมูลตัวอย่าง")).toBeInTheDocument();
+  });
+
+  // รีวิว #373 (B) บน PR #362/#373: FirmwareEngineer/QAEngineer ไม่มีสิทธิ์
+  // `campaign:Read` (ดู backend/prisma/seed.ts) — การ์ดที่พึ่งข้อมูล Campaign
+  // ควรหายไปเงียบๆ ไม่ใช่โชว์ error 403
+  describe("role ที่ไม่มีสิทธิ์ campaign:Read", () => {
+    it.each(["FirmwareEngineer", "QAEngineer"])(
+      "%s ไม่เห็นการ์ดที่พึ่งข้อมูล Campaign เลย",
+      (role) => {
+        state.role = role;
+        render(<DashboardSummary />);
+
+        expect(
+          screen.queryByText("Rollout หยุดชั่วคราว (Auto Pause)"),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByText("กลุ่มอุปกรณ์ทั้งหมด")).not.toBeInTheDocument();
+        expect(screen.queryByText("ผลการ Deploy")).not.toBeInTheDocument();
+        // การ์ดอื่นที่ไม่พึ่ง Campaign ต้องยังอยู่ตามปกติ
+        expect(
+          within(card("Incident ที่ยังต้องตาม")).getByText("2"),
+        ).toBeInTheDocument();
+      },
+    );
+
+    it("role ที่มีสิทธิ์ (เช่น ST) ยังเห็นการ์ด Campaign ตามปกติ", () => {
+      state.role = "ST";
+      render(<DashboardSummary />);
+
+      expect(
+        screen.getByText("Rollout หยุดชั่วคราว (Auto Pause)"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("กลุ่มอุปกรณ์ทั้งหมด")).toBeInTheDocument();
+      expect(screen.getByText("ผลการ Deploy")).toBeInTheDocument();
+    });
   });
 });
