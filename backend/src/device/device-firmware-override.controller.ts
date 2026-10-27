@@ -34,6 +34,7 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 // `/devices/:deviceId` (endpoint พวกนี้ทำงานกับ `DeviceFirmwareOverride.id`
 // ตรงๆ ไม่ใช่ device) แต่ยังใช้ `DeviceService` ตัวเดียวกัน:
 //   GET  /device-firmware-overrides                — list (filter ?status=)
+//   GET  /device-firmware-overrides/:id             — รายละเอียดคำขอ 1 รายการ
 //   POST /device-firmware-overrides/:id/approve     — Operation อนุมัติ
 //   POST /device-firmware-overrides/:id/reject      — Operation ปฏิเสธ
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -49,6 +50,16 @@ export class DeviceFirmwareOverrideController {
     @Query() query: QueryDeviceFirmwareOverrideDto,
   ): Promise<DeviceFirmwareOverride[]> {
     return this.deviceService.listDeviceFirmwareOverrides(query.status);
+  }
+
+  // resource เดียวกับ list (action Read) — หน้ารายละเอียดคำขอ 1 รายการ
+  // ดูได้ทุกสถานะ mirror `device-config-override.controller.ts`
+  @Get(':id')
+  @RequirePermission('device-firmware-override', ActionType.Read)
+  getOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<DeviceFirmwareOverride> {
+    return this.deviceService.getDeviceFirmwareOverride(id);
   }
 
   // resource `device-firmware-override` action Approve — Operation เท่านั้น

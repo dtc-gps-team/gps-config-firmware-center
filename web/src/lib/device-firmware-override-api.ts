@@ -55,6 +55,17 @@ export function listDeviceFirmwareOverrides(
   );
 }
 
+/** `GET /device-firmware-overrides/{id}` — หน้ารายละเอียดคำขอ 1 รายการ
+ * ดูได้ทุกสถานะ ไม่ใช่แค่ pending */
+export function getDeviceFirmwareOverride(
+  token: string,
+  id: string,
+): Promise<DeviceFirmwareOverride> {
+  return apiJson<DeviceFirmwareOverride>(`/device-firmware-overrides/${id}`, {
+    token,
+  });
+}
+
 /** `POST /device-firmware-overrides/{id}/approve` — เปลี่ยนเป็น `approved`
  * เท่านั้น ปลดล็อกให้ `confirmFirmwareInstall` ยอมรับ firmware นี้กับ
  * อุปกรณ์เครื่องนี้ได้ ไม่ apply เข้าอุปกรณ์อัตโนมัติ */
