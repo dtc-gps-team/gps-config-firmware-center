@@ -184,6 +184,9 @@ model Task {
   campaign     Campaign? @relation(fields: [campaignId], references: [id])
   events       TaskEvent[]
   configApplyRequests ConfigApplyRequest[]
+
+  // ค้นตามรหัสเครื่อง: ประวัติของอุปกรณ์ (`GET /devices/{deviceId}/history`)
+  @@index([deviceId])
 }
 
 // Task Event History (issue #296, docs/16_Task_Event_History_Proposal.md) —
@@ -1442,6 +1445,9 @@ model CampaignRolloutTarget {
 
   @@unique([rolloutId, deviceId])
   @@index([rolloutId])
+  // ค้นตามรหัสเครื่อง: ประวัติของอุปกรณ์ (`GET /devices/{deviceId}/history`) และสถานะ
+  // ของเครื่อง · เดิมมี index แค่ตาม rolloutId
+  @@index([deviceId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1523,4 +1529,7 @@ model Incident {
   // `Campaign.sourceIncidentId` ทำให้เป็น 1:1 โดยอัตโนมัติ (incident หนึ่ง
   // promote ได้ Campaign เดียว กันคำขอ promote ซ้ำสร้าง Campaign คนละตัว)
   promotedCampaign Campaign? @relation("IncidentPromotedCampaign")
+
+  // ค้นตามรหัสเครื่อง: ประวัติของอุปกรณ์ (`GET /devices/{deviceId}/history`)
+  @@index([deviceId])
 }
