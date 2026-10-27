@@ -13,6 +13,7 @@ import '../../core/ui/app_notice.dart';
 import '../../core/ui/app_page_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
+import '../../core/ui/labels.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'config_apply_request_repository.dart';
 import 'field_task_repository.dart';
@@ -218,8 +219,10 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
         .where((f) => f.id == _selectedFirmwareId && !f.isCurrent)
         .firstOrNull;
     final isFirmware = _kind == FieldApplyKind.firmware;
+    final openRequest = options.openRequest;
     final canSubmit =
         options.deviceInstalled &&
+        openRequest == null &&
         !_submitting &&
         (isFirmware ? selectedFirmware != null : selectedId != null);
     final startedTaskId = _startedTaskId;
@@ -251,6 +254,15 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
                 }),
         ),
         const SizedBox(height: 16),
+        if (openRequest != null) ...[
+          _OpenRequestNotice(
+            request: openRequest,
+            onGoToTask: openRequest.taskId == null
+                ? null
+                : () => _goToTask(openRequest.taskId!),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (!options.deviceInstalled) ...[
           const AppNotice(
             key: Key('apply_device_not_installed'),
@@ -348,6 +360,15 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
     );
   }
 
+  /// ไปหน้างานของคำขอที่ค้าง — เปิดมาจากหน้างานนั้นเองให้ย้อนกลับ ไม่ซ้อนหน้า
+  void _goToTask(String taskId) {
+    if (widget.taskId == taskId) {
+      context.pop();
+    } else {
+      context.pushReplacement(AppRoutes.taskDetail(taskId));
+    }
+  }
+
   /// เนื้อหาแท็บ Firmware (docs/27 B3)
   List<Widget> _firmwareOptions(DeviceApplyOptions options) {
     final current = options.currentFirmwareVersion;
@@ -385,6 +406,60 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
           const SizedBox(height: 8),
         ],
     ];
+  }
+}
+
+/// กล่องมีคำขอที่ยังไม่จบ — ขอใหม่ไม่ได้ (backend ตอบ 409) บอกตั้งแต่เปิดหน้า
+/// ว่าค้างอะไรอยู่และต้องทำอะไรต่อ แทนที่จะรู้หลังกดขอ
+class _OpenRequestNotice extends StatelessWidget {
+  const _OpenRequestNotice({required this.request, required this.onGoToTask});
+
+  final ApplyOptionOpenRequest request;
+
+  /// `null` = คำขอของงานช่างคนอื่น — ไปที่งานไม่ได้ ต้องรอให้จบ
+  final VoidCallback? onGoToTask;
+
+  @override
+  Widget build(BuildContext context) {
+    final firmwareVersion = request.firmwareVersion;
+    final configName = request.configName;
+    final subject = request.kind == FieldApplyKind.firmware
+        ? (firmwareVersion == null ? 'Firmware' : 'Firmware v$firmwareVersion')
+        : (configName == null ? 'Config' : 'Config "$configName"');
+    final status = configApplyRequestStatusLabel(
+      request.status,
+      kind: request.kind,
+    );
+    final next = onGoToTask == null
+        ? 'คำขอนี้เป็นของงานช่างคนอื่น — ขอใหม่ได้หลังคำขอนี้จบ'
+        : request.status == ConfigApplyRequestStatus.sending
+        ? 'รอผลจากกล่องที่หน้างาน แล้วจึงขอใหม่ได้'
+        : 'กดส่งหรือยกเลิกคำขอนี้ที่หน้างานก่อน แล้วจึงขอใหม่ได้';
+    return AppNotice(
+      key: const Key('apply_open_request'),
+      tone: AppBadgeTone.warning,
+      icon: Icons.pending_actions,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'กล่องนี้มีคำขอส่ง $subject ค้างอยู่ ($status)',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(next),
+          if (onGoToTask != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('apply_open_request_go_to_task'),
+                onPressed: onGoToTask,
+                child: const Text('ไปที่งานของคำขอนี้'),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

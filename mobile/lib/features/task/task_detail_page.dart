@@ -724,12 +724,13 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                   const _CardTitle('ส่ง Config / Firmware เข้ากล่อง'),
                   Text(
                     hasAssignedConfig
-                        ? 'ขอส่ง Config ของงานนี้เข้าอุปกรณ์ ${task.deviceId} — ทำหลัง'
-                              'ติดตั้งกล่อง GPS เสร็จแล้ว · Operation อีกคนต้องอนุมัติก่อน '
-                              'ระบบจึงส่งเข้ากล่องจริง'
-                        : 'เลือก Config ที่อนุมัติแล้วสำหรับอุปกรณ์ ${task.deviceId} '
-                              'แล้วขอส่ง · Operation อีกคนต้องอนุมัติก่อน แล้วคุณกด'
-                              'ส่งเข้ากล่องเองจากหน้านี้',
+                        ? 'ขอส่ง Config ของงานนี้ หรือขออัปเดต Firmware เข้าอุปกรณ์ '
+                              '${task.deviceId} — ทำหลังติดตั้งกล่อง GPS เสร็จแล้ว · '
+                              'Operation อีกคนต้องอนุมัติก่อน แล้วคุณกดส่งเข้ากล่องเอง'
+                              'จากหน้านี้'
+                        : 'เลือก Config หรือ Firmware ที่อนุมัติแล้วสำหรับอุปกรณ์ '
+                              '${task.deviceId} แล้วขอส่ง · Operation อีกคนต้องอนุมัติ'
+                              'ก่อน แล้วคุณกดส่งเข้ากล่องเองจากหน้านี้',
                     style: const TextStyle(
                       fontSize: AppTypography.xs,
                       height: AppTypography.xsHeight,

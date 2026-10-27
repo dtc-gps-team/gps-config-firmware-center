@@ -592,6 +592,26 @@ export class DeviceService {
   }
 
   /**
+   * ปิดช่องทางเดิมที่ไม่เขียนเข้ากล่องจริงในโหมด `central` (docs/27 §11 —
+   * ขยายจาก docs/25 §3.8/Q6 ที่ปิด `applyConfig` ไว้ก่อนแล้ว): ตอนนี้มีเส้นทาง
+   * ที่เขียนจริงผ่าน Server กลางอยู่แล้ว (คำขอส่งเข้ากล่องจากหน้างาน) ปุ่ม/
+   * endpoint เดิมเหล่านี้ไม่มีความหมายอีกต่อไป ปิดไว้กันช่างเข้าใจผิดว่า
+   * "สำเร็จ" ทั้งที่ไม่มีอะไรเกิดกับกล่องจริง · โหมด `mock`/`real` ยังเปิดใช้
+   * ได้ตามเดิม
+   */
+  private assertNotCentralApplyMode(subject: string): void {
+    if (
+      resolveConfigApplyMode(
+        this.nestConfig.get('DEVICE_CONFIG_APPLY_MODE'),
+      ) === 'central'
+    ) {
+      throw new ConflictException(
+        `ระบบตั้งค่าให้ส่งเข้ากล่องผ่าน Server กลางแล้ว (โหมด central) — ${subject}ใช้ไม่ได้อีกต่อไป ใช้ทางส่งคำขอแทน`,
+      );
+    }
+  }
+
+  /**
    * ใส่ Config ที่อนุมัติแล้วให้อุปกรณ์ที่ติดตั้งจริง (ช่างหน้างาน ST/OT ผ่าน
    * Mobile — เลือกจาก Task ที่กำลังทำ) — **ไม่ persist / ไม่แตะ state ใดๆ**
    * (fire-and-forget) กล่องจะรับค่าเมื่อเปิดเครื่องครั้งถัดไป (Build Reference
@@ -618,15 +638,7 @@ export class DeviceService {
     // กลาง) เส้นทางนี้จึงไม่มีความหมายอีกต่อไป ปิดไว้กันสับสน (แผนการ "ขอส่ง
     // Config" ของ docs/25 จะมาแทนที่ปุ่มนี้) · โหมด `mock`/`real` ยังเปิดใช้
     // ได้ตามเดิมให้ E2E เดิมผ่าน
-    if (
-      resolveConfigApplyMode(
-        this.nestConfig.get('DEVICE_CONFIG_APPLY_MODE'),
-      ) === 'central'
-    ) {
-      throw new ConflictException(
-        'ระบบตั้งค่าให้ส่ง Config ผ่าน Server กลางแล้ว (โหมด central) — ปุ่มนี้ใช้ไม่ได้อีกต่อไป ใช้ทางส่งคำขอแทน',
-      );
-    }
+    this.assertNotCentralApplyMode('ปุ่มนี้');
 
     const device = await this.findByDeviceId(deviceId);
 
@@ -834,6 +846,9 @@ export class DeviceService {
     dto: ConfirmFirmwareInstallDto,
     actor: ActingUser,
   ): Promise<ConfirmFirmwareInstallResult> {
+    // docs/27 §11 — ดู comment เหนือ assertNotCentralApplyMode()
+    this.assertNotCentralApplyMode('ปุ่มยืนยันติดตั้ง Firmware');
+
     const device = await this.findByDeviceId(deviceId);
 
     if (device.status !== TESTABLE_DEVICE_STATUS) {
@@ -1634,6 +1649,9 @@ export class DeviceService {
     dto: DeviceFirmwareOverrideDto,
     actor: ActingUser,
   ): Promise<DeviceFirmwareOverride> {
+    // docs/27 §11 — ดู comment เหนือ assertNotCentralApplyMode()
+    this.assertNotCentralApplyMode('การขอ Firmware Override');
+
     const device = await this.findByDeviceId(deviceId);
 
     const firmware = await this.prisma.firmware.findUnique({
@@ -1807,6 +1825,10 @@ export class DeviceService {
     id: string,
     actor: ActingUser,
   ): Promise<DeviceFirmwareOverride> {
+    // docs/27 §11 — ดู comment เหนือ assertNotCentralApplyMode() · reject ยัง
+    // เปิดอยู่ (เคลียร์คำขอค้างได้ แค่อนุมัติไม่ได้)
+    this.assertNotCentralApplyMode('การอนุมัติ Firmware Override');
+
     const existing = await this.getPendingFirmwareOverrideOrThrow(id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
