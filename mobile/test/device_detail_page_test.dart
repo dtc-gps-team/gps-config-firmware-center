@@ -14,6 +14,7 @@ import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_central_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/field_task_repository.dart';
 
 import 'support/fake_field_task_repository.dart';
@@ -161,6 +162,7 @@ Future<void> _pump(
   GoRouter? router,
   Task? openTask,
   FieldTaskRepository? fieldTaskRepo,
+  bool centralMode = false,
   DeviceCentralRepository? centralRepo,
 }) async {
   // หน้านี้ยาวขึ้นหลังเพิ่ม section "ข้อมูลอุปกรณ์"/"ลูกค้า" — ใช้จอสูงพอให้
@@ -184,6 +186,7 @@ Future<void> _pump(
         fieldTaskRepositoryProvider.overrideWithValue(
           fieldTaskRepo ?? FakeFieldTaskRepository(),
         ),
+        centralApplyModeProvider.overrideWith((ref) async => centralMode),
         deviceCentralRepositoryProvider.overrideWithValue(
           centralRepo ??
               _FakeCentralRepository(const DeviceCentral(reachable: false)),
@@ -413,6 +416,65 @@ void main() {
         },
       );
     }
+  });
+
+  // docs/27 §9 (B3) — โหมด central ส่ง Firmware ผ่านคำขอ ("อัปโหลด" แท็บ Firmware)
+  group('โหมด central (applyMode = central)', () {
+    testWidgets(
+      'ซ่อน Firmware Override และยืนยันติดตั้ง Firmware · ปุ่มอื่นยังอยู่',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          centralMode: true,
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(
+            const Key('device_detail_firmware_override'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(
+          find.byKey(
+            const Key('device_detail_confirm_firmware'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('device_detail_upload'), skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const Key('device_detail_config_override'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('ไม่ใช่โหมด central -> ปุ่มเดิมอยู่ครบ', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(),
+        role: UserRole.st,
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(
+          const Key('device_detail_confirm_firmware'),
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+    });
   });
 
   // docs/22 §7.2 / §8 (Batch 4) — ปุ่ม Field Report ในหน้า Device Detail สำหรับ ST/OT

@@ -374,17 +374,35 @@ class ApiClient {
   /// เข้าเครื่องจริง (docs/25 §3.3) · **ไม่ส่ง configId/deviceId** backend อ่าน
   /// จาก Task เอง · 409 หลายกรณี (งานไม่ได้ in_progress, ไม่มีผู้ผูก Config,
   /// มีคำขอค้าง, Campaign กำลังส่งให้เครื่องนี้ ฯลฯ) ข้อความจาก backend ใช้แสดงได้
+  /// [firmwareId] มีค่า = คำขอส่ง Firmware (`kind: firmware`, docs/27 B2) ห้ามส่ง
+  /// [configId] คู่กัน · ไม่มี = คำขอ Config แบบเดิม
   Future<ConfigApplyRequest> createConfigApplyRequest(
     String taskId, {
     String? configId,
+    String? firmwareId,
     String? note,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/tasks/$taskId/config-apply-requests',
-        data: {'configId': ?configId, 'note': ?note},
+        data: {
+          if (firmwareId != null) 'kind': 'firmware',
+          'configId': ?configId,
+          'firmwareId': ?firmwareId,
+          'note': ?note,
+        },
       ),
       ConfigApplyRequest.fromJson,
+    );
+  }
+
+  /// `GET /central/status` — ใช้แค่ `applyMode` (docs/27 §5.6): `central` = ระบบ
+  /// ส่งเข้ากล่องผ่าน Server กลางด้วยคำขอ ปุ่มยืนยันติดตั้ง/Override Firmware แบบเดิม
+  /// ใช้ไม่ได้ · backend เก่าที่ไม่มี field นี้ = `null`
+  Future<String?> getApplyMode() async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>('/central/status'),
+      (json) => json['applyMode'] as String?,
     );
   }
 

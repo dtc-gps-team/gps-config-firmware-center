@@ -74,4 +74,25 @@ void main() {
       isNull,
     );
   });
+
+  test(
+    'คำขอ Firmware (payload kind: firmware, docs/27 B3) -> label พูดถึง Firmware',
+    () {
+      final firmware = _n(NotificationType.configApplySucceeded, {
+        ...base,
+        'kind': 'firmware',
+      });
+      final config = _n(NotificationType.configApplySucceeded, base);
+
+      expect(NotificationTypeStyle.labelOf(firmware), contains('Firmware'));
+      expect(
+        NotificationTypeStyle.labelOf(firmware),
+        isNot(contains('Config')),
+      );
+      expect(
+        NotificationTypeStyle.labelOf(config),
+        NotificationTypeStyle.label(NotificationType.configApplySucceeded),
+      );
+    },
+  );
 }
