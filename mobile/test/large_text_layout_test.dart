@@ -19,6 +19,7 @@ import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/home/home_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/task_repository.dart';
 import 'package:mobile/features/task/task_status_ui.dart';
 
@@ -284,6 +285,8 @@ Future<void> _pumpPage(
         configOverrideRepositoryProvider.overrideWithValue(
           _FakeConfigOverrideRepository(),
         ),
+        // docs/27 B3 — หน้าอุปกรณ์ถาม applyMode จาก backend; ไม่ยิงเครือข่ายจริงในเทส
+        centralApplyModeProvider.overrideWith((ref) async => false),
       ],
       child: MaterialApp(home: page),
     ),
