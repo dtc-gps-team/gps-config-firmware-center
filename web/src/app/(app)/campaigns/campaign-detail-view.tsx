@@ -37,6 +37,7 @@ import { canCreateCampaign, canReadCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { DeviceHistorySheet } from "../devices/device-history-sheet";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
@@ -193,6 +194,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>เลขเครื่อง</TableHead>
                   <TableHead className="text-right">เพิ่มเข้ากลุ่มเมื่อ</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -206,6 +208,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                       title={formatDateTime(target.createdAt)}
                     >
                       {formatRelativeTime(target.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DeviceHistorySheet deviceId={target.deviceId} />
                     </TableCell>
                   </TableRow>
                 ))}

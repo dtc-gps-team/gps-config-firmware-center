@@ -1156,6 +1156,17 @@ export class DeviceService {
     return config;
   }
 
+  /** Config ที่ใช้อยู่ตอนนี้ของเครื่อง หรือ null ถ้ายังไม่เคยมี Config ที่ยืนยันติดตั้ง
+   * (ใช้กับประวัติของอุปกรณ์ ที่ไม่ควร 404 เพียงเพราะเครื่องยังไม่เคยมี Config) */
+  async findCurrentConfigOrNull(deviceId: string): Promise<Config | null> {
+    try {
+      return await this.getBaseConfigForDevice(deviceId);
+    } catch (err) {
+      if (err instanceof NotFoundException) return null;
+      throw err;
+    }
+  }
+
   async getCurrentConfig(deviceId: string): Promise<ConfigWithDeviceOverride> {
     await this.findByDeviceId(deviceId);
     const baseConfig = await this.getBaseConfigForDevice(deviceId);

@@ -26,6 +26,7 @@ import { ConfirmFirmwareInstallDto } from './dto/confirm-firmware-install.dto';
 import { DeviceConfigOverrideDto } from './dto/device-config-override.dto';
 import { DeviceFirmwareOverrideDto } from './dto/device-firmware-override.dto';
 import { QueryDeviceDto } from './dto/query-device.dto';
+import { QueryDeviceHistoryDto } from './dto/query-device-history.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { SimulateConfigOnDeviceDto } from './dto/simulate-config-on-device.dto';
 import type {
@@ -36,6 +37,8 @@ import type {
   DeviceWithCustomer,
   RegisterDeviceResult,
 } from './device.service';
+import { DeviceHistoryService } from './device-history.service';
+import type { DeviceHistoryResult } from './device-history.types';
 import { DeviceService } from './device.service';
 import type { DeviceSimulateConfigResult } from './simulate-config-result';
 
@@ -86,7 +89,10 @@ function toActor(req: AuthenticatedRequest): ActingUser {
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('devices')
 export class DeviceController {
-  constructor(private readonly deviceService: DeviceService) {}
+  constructor(
+    private readonly deviceService: DeviceService,
+    private readonly deviceHistoryService: DeviceHistoryService,
+  ) {}
 
   // issue #157 PR 1 — ลงทะเบียนอุปกรณ์ใหม่ resource `device-registration`
   // action Create · grant ให้ Admin เท่านั้น (SuperAdmin inherit อัตโนมัติผ่าน
@@ -141,6 +147,21 @@ export class DeviceController {
   @RequirePermission('devices', ActionType.Read)
   getStatus(@Param('deviceId') deviceId: string): Promise<DeviceStatusResult> {
     return this.deviceService.getStatus(deviceId);
+  }
+
+  // ประวัติของเครื่อง (รีวิวพี่เลี้ยง 19 ต.ค. 2569) — เส้นเวลารวมจากตารางเดิม อ่านอย่างเดียว
+  // resource/action เดียวกับ Device Detail (ทุก Role ที่ login แล้ว ไม่ต้อง seed grant เพิ่ม)
+  // — แต่ `DeviceHistoryService` กรองรายการ `task`/`config-override`/
+  // `firmware-override` ตามสิทธิ์จริงของ `actor` เองอีกชั้น (รีวิว B บน #371)
+  // เพราะ endpoint นี้รวมข้อมูลจากตารางที่มีสิทธิ์เข้มกว่า `devices:Read`
+  @Get(':deviceId/history')
+  @RequirePermission('devices', ActionType.Read)
+  getHistory(
+    @Param('deviceId') deviceId: string,
+    @Query() query: QueryDeviceHistoryDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceHistoryResult> {
+    return this.deviceHistoryService.getHistory(deviceId, query, toActor(req));
   }
 
   // resource `device-connection-test` action Read — grant ให้ ST/OT เท่านั้น

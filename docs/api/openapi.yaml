@@ -1977,6 +1977,73 @@ paths:
         "404":
           description: ไม่พบ Device นี้
 
+  /devices/{deviceId}/history:
+    get:
+      tags: [device]
+      operationId: getDeviceHistory
+      summary: ประวัติของอุปกรณ์เครื่องเดียว เส้นเวลาเหตุการณ์ใหม่ไปเก่า
+      description: >-
+        ทุก Role ที่ login แล้วเรียกได้ (resource `devices` action `Read` เดียวกับ
+        Device Detail) · รวมเหตุการณ์จากตารางเดิมเป็นเส้นเวลาเดียว **ไม่มีตารางประวัติ
+        ใหม่**: ลงทะเบียน/ติดตั้ง (`lifecycle`), การถูกรวมใน Rollout ทั้ง Config และ
+        Firmware พร้อมผลรายเครื่อง (`rollout`), คำขอแก้ค่าเฉพาะเครื่อง
+        (`config-override`), คำขอติดตั้ง Firmware ที่ไม่ตรงกับ Campaign
+        (`firmware-override`), งานที่ช่างได้รับ (`task`), และ Incident ที่แจ้งกับเครื่อง
+        นี้หรือ Incident จาก Rollout ที่เครื่องนี้อยู่ในรายชื่อเครื่องที่ล้ม (`incident`)
+        · `summary` บอก Config และ Firmware ที่ใช้อยู่ตอนนี้ (`null` ถ้ายังไม่เคยมี
+        ไม่ใช่ error) · แบ่งหน้าแบบ cursor (เหตุการณ์ใหม่เข้ามาได้ระหว่างเลื่อนดู): ส่ง
+        `nextCursor` ของหน้าก่อนกลับมาเป็น `before` · เรียงตาม `occurredAt` มากไปน้อย
+        ตามด้วย `id` · `config.versionNumber` ของ Rollout/Task เป็นการประมาณ
+        (เวอร์ชันที่อนุมัติล่าสุดก่อนเวลาเหตุการณ์ เพราะ Rollout ไม่ได้เก็บเลขเวอร์ชัน) ·
+        ชนิดรายการเพิ่มได้ในอนาคต ผู้เรียกต้องรับชนิดที่ไม่รู้จักได้ · **กรองตามสิทธิ์จริง
+        ของผู้เรียกอีกชั้นหนึ่ง (แก้ครั้งที่ 371 รีวิว):** แม้ endpoint นี้เปิดให้ทุก Role
+        เรียกได้ แต่ชนิด `task` และ `config-override`/`firmware-override` เข้มกว่านั้น
+        ตาม resource เดิมของแต่ละตาราง (`tasks:Read`, `device-config-override:Read`,
+        `device-firmware-override:Read`) — `task` คืนเฉพาะงานที่ผู้เรียกเห็นได้ (ST/OT
+        เห็นแค่ของตัวเอง, Role ที่ไม่มี `tasks:Read` เลยไม่เห็น `task` ใดๆ) ส่วน override
+        ทั้งสองชนิดคืนเฉพาะที่ Operation (เห็นทุกคำขอ) หรือผู้เรียกเป็นผู้ส่งคำขอเอง
+        (`overriddenBy`) — **ไม่ตอบ 403** ถ้าขอชนิดที่ไม่มีสิทธิ์ แค่ไม่มีรายการชนิดนั้น
+        กลับมา (เงียบๆ เหมือนไม่มีข้อมูล)
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+        - in: query
+          name: before
+          description: cursor จาก `nextCursor` ของหน้าก่อนหน้า (รูปแบบ `<ISO เวลา>_<id>`)
+          schema:
+            type: string
+        - in: query
+          name: types
+          description: >-
+            กรองชนิดรายการ คั่นด้วยจุลภาค ไม่ส่ง = ทุกชนิดที่มีสิทธิ์ดู · ชนิดที่ผู้เรียก
+            ไม่มีสิทธิ์ (ดู description ด้านบน) ไม่ถูกตอบ 403 แค่ไม่มีรายการของชนิดนั้น
+          schema:
+            type: string
+            example: rollout,task
+      responses:
+        "200":
+          description: ประวัติของอุปกรณ์
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceHistory"
+        "400":
+          description: limit อยู่นอก 1 ถึง 100, types มีชนิดที่ไม่รู้จัก หรือ before รูปแบบไม่ถูกต้อง
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบ Device นี้
+
   /central/status:
     get:
       tags: [device]
@@ -6348,6 +6415,150 @@ components:
                   type: string
                 protocol:
                   type: string
+
+    DeviceHistory:
+      type: object
+      required: [summary, items, nextCursor]
+      properties:
+        summary:
+          type: object
+          required: [currentConfig, currentFirmware]
+          properties:
+            currentConfig:
+              type: object
+              nullable: true
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+            currentFirmware:
+              type: object
+              nullable: true
+              required: [id, version]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                version:
+                  type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceHistoryItem"
+        nextCursor:
+          type: string
+          nullable: true
+          description: ส่งกลับมาเป็น `before` เพื่อดึงหน้าถัดไป `null` = หมดแล้ว
+
+    DeviceHistoryItem:
+      type: object
+      required:
+        [id, type, occurredAt, status, title, detail, actorId, payloadType, isRollback, severity, config, firmware, decision, refs]
+      properties:
+        id:
+          type: string
+          description: คีย์เฉพาะของรายการ เช่น `rollout:<targetId>`
+        type:
+          type: string
+          enum: [lifecycle, rollout, config-override, firmware-override, task, incident]
+        occurredAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          nullable: true
+          description: >-
+            ตามชนิด: rollout = pending/success/failed/skipped_offline, override =
+            pending/approved/rejected, task/incident = สถานะของรายการนั้น,
+            lifecycle = registered/installed
+        title:
+          type: string
+          nullable: true
+          description: ชื่อแคมเปญ (rollout), ชื่อ Task, ชื่อ Incident
+        detail:
+          type: string
+          nullable: true
+          description: ข้อผิดพลาดของ Rollout, เหตุผลของคำขอ, คำอธิบาย Task/Incident
+        actorId:
+          type: string
+          nullable: true
+          description: ผู้ขอแก้ค่า, ช่างที่ได้รับงาน, ผู้แจ้ง Incident
+        payloadType:
+          type: string
+          nullable: true
+          enum: [Config, Firmware]
+          description: เฉพาะ rollout
+        isRollback:
+          type: boolean
+          nullable: true
+          description: เฉพาะ rollout
+        severity:
+          type: string
+          nullable: true
+          description: เฉพาะ incident
+        config:
+          type: object
+          nullable: true
+          required: [id, name, versionNumber]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            versionNumber:
+              type: integer
+              nullable: true
+              description: เวอร์ชันที่อนุมัติล่าสุดก่อนเวลาเหตุการณ์ (ประมาณ) `null` ถ้าหาไม่ได้
+        firmware:
+          type: object
+          nullable: true
+          required: [id, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            version:
+              type: string
+        decision:
+          type: object
+          nullable: true
+          description: "เฉพาะ override: การตัดสินใจของ Operation (`null` จนกว่าจะตัดสินใจ)"
+          required: [byId, at, note]
+          properties:
+            byId:
+              type: string
+              nullable: true
+            at:
+              type: string
+              format: date-time
+              nullable: true
+            note:
+              type: string
+              nullable: true
+              description: เหตุผลที่ปฏิเสธ
+        refs:
+          type: object
+          required: [campaignId, rolloutId, taskId, incidentId, overrideId]
+          properties:
+            campaignId:
+              type: string
+              nullable: true
+            rolloutId:
+              type: string
+              nullable: true
+            taskId:
+              type: string
+              nullable: true
+            incidentId:
+              type: string
+              nullable: true
+            overrideId:
+              type: string
+              nullable: true
 
     CentralLastCommand:
       type: object
