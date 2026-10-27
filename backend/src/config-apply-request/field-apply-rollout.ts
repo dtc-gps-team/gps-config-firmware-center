@@ -22,17 +22,23 @@ export {
   type FieldApplyResultEvent,
 } from '../campaign/rollout-events';
 
-export interface FieldApplyRolloutInput {
+/** payload ของ Rollout เครื่องเดียว (docs/27 §6) — `kind` ไม่ส่ง = Config
+ * (ผู้เรียกเดิมก่อน B2) · Firmware: `allowDowngrade` = คำขอถอยเวอร์ชันที่
+ * Operation อนุมัติแล้ว → `CampaignRollout.allowDowngrade` */
+export type FieldApplyRolloutPayload =
+  | { kind?: 'config'; configId: string }
+  | { kind: 'firmware'; firmwareId: string; allowDowngrade: boolean };
+
+export type FieldApplyRolloutInput = FieldApplyRolloutPayload & {
   /** `ConfigApplyRequest.id` ที่ Rollout นี้ถูกสร้างมาให้ */
   requestId: string;
   /** `Device.deviceId` เครื่องเดียวของ Rollout */
   deviceId: string;
-  configId: string;
   /** ช่างผู้ขอ → `CampaignRollout.createdBy` (§3.2) */
   requestedBy: string;
   /** Operation ผู้อนุมัติคำขอ (ผ่าน SoD แล้ว) → `CampaignRollout.approvedBy` */
   approvedBy: string;
-}
+};
 
 export interface FieldApplyRolloutStarter {
   /**
@@ -49,7 +55,8 @@ export interface FieldApplyRolloutStarter {
   ): Promise<{ rolloutId: string }>;
 
   /**
-   * เริ่มส่งหลัง commit แล้ว (`autoApplyConfig()` → `pushToCentral()`/mock) —
+   * เริ่มส่งหลัง commit แล้ว (`autoApplyConfig()` / `autoApplyFirmware()` ตาม
+   * `payloadType` → Server กลาง/mock) —
    * ผลส่งไม่ได้ให้จบผ่าน `recordTargetResult()` ตามเดิม แล้วส่งผลกลับด้วย
    * `FIELD_APPLY_RESULT_EVENT` · ผู้เรียกห่อ try/catch ไว้แล้ว · ค่าที่คืนไม่ได้ใช้
    */

@@ -99,6 +99,7 @@ const sampleRollout: CampaignRollout = {
   pullTimeoutHours: null,
   applyTimeoutMinutes: null,
   isRollback: false,
+  allowDowngrade: false,
   rollbackOfId: null,
   deviceValuesReason: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -870,6 +871,38 @@ describe('CampaignRolloutService', () => {
         expect(firmwareRollbackExecutor.switchPartition).not.toHaveBeenCalled();
       });
 
+      it('Rollout ที่ allowDowngrade=true (คำขอหน้างานถอยเวอร์ชัน, docs/27 D5) -> แนบ allowDowngrade: true เหมือน Rollback', async () => {
+        central = {
+          pushConfig: jest.fn(),
+          pushFirmware: jest.fn().mockResolvedValue({
+            kind: 'sent',
+            commandId: 'CMD-FW-DOWNGRADE-1',
+          }),
+        };
+        configApplyMode = 'central';
+        service = await buildService();
+        const downgradeRollout = {
+          ...approvedFirmwareRollout,
+          allowDowngrade: true,
+        };
+        campaignRollout.findUnique.mockResolvedValue(downgradeRollout);
+        campaignRollout.findUniqueOrThrow.mockResolvedValue(
+          activeFor({ ...downgradeRollout, applyMode: 'central' }),
+        );
+        campaignRolloutTarget.findMany.mockResolvedValue([pendingTarget]);
+        firmware.findUnique.mockResolvedValue(storedFirmware);
+        device.findMany.mockResolvedValue([installedDeviceB]);
+        firmwareStorage.downloadObject.mockResolvedValue(firmwareBytes);
+
+        await service.release(downgradeRollout.id, otherOperation);
+
+        expect(central.pushFirmware).toHaveBeenCalledWith(
+          installedDeviceB.deviceId,
+          firmwareBytes,
+          { firmwareVersion: storedFirmware.version, allowDowngrade: true },
+        );
+      });
+
       it.each([
         ['rejected', 'กล่อง DEV-0002 ยังไม่อยู่ในทะเบียนของ delivery-server'],
         ['unavailable', 'Server กลางไม่ตอบภายใน 5000 มิลลิวินาที'],
@@ -1140,6 +1173,52 @@ describe('CampaignRolloutService', () => {
           expect(createCall.data.applyMode).toBe('central');
         });
 
+        it.each([
+          ['central', 'central'],
+          ['mock', 'mock'],
+          // Firmware ไม่มีเส้นทาง real (ไม่มี PULL ให้กล่องดึง Firmware เอง) — กติกาเดียวกับ release()
+          ['real', 'mock'],
+        ] as const)(
+          'Firmware (docs/27 §6, B2): payloadType Firmware + firmwareId + allowDowngrade · โหมดระบบ %s -> applyMode %s',
+          async (systemMode, expectedMode) => {
+            configApplyMode = systemMode;
+            service = await buildService();
+            campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
+            campaignRollout.create.mockResolvedValue({
+              id: 'field-rollout-fw',
+            });
+
+            const result = await service.createFieldApplyRollout(fakeTx(), {
+              kind: 'firmware',
+              firmwareId: 'fw-1',
+              allowDowngrade: true,
+              requestId: 'req-fw',
+              deviceId: 'DEV-0001',
+              requestedBy,
+              approvedBy: decidedBy,
+            });
+
+            const createCalls = campaignRollout.create.mock
+              .calls as unknown[][];
+            const createCall = createCalls[0][0] as {
+              data: Record<string, unknown>;
+            };
+            expect(createCall.data).toEqual(
+              expect.objectContaining({
+                campaignId: 'sys-campaign',
+                payloadType: 'Firmware',
+                firmwareId: 'fw-1',
+                allowDowngrade: true,
+                applyMode: expectedMode,
+                status: 'active',
+                targetCount: 1,
+              }),
+            );
+            expect(createCall.data).not.toHaveProperty('configId');
+            expect(result).toEqual({ rolloutId: 'field-rollout-fw' });
+          },
+        );
+
         it('เขียน AuditLog action create ผ่าน tx ของผู้เรียก (ไม่ใช่ this.prisma)', async () => {
           campaign.findFirst.mockResolvedValue({ id: 'sys-campaign' });
           campaignRollout.create.mockResolvedValue({ id: 'field-rollout-4' });
@@ -1193,6 +1272,32 @@ describe('CampaignRolloutService', () => {
             decidedBy,
           );
           expect(result).toBe(sampleRollout);
+        });
+
+        it('Rollout Firmware (docs/27 B2) -> autoApplyFirmware() ไม่ใช่ autoApplyConfig()', async () => {
+          campaignRollout.findUniqueOrThrow.mockResolvedValue({
+            id: 'field-rollout-fw',
+            payloadType: 'Firmware',
+          });
+          type Apply = (r: unknown, a: string) => Promise<CampaignRollout>;
+          const autoApplyFirmware = jest
+            .spyOn(
+              service as unknown as { autoApplyFirmware: Apply },
+              'autoApplyFirmware',
+            )
+            .mockResolvedValue(sampleRollout);
+          const autoApplyConfig = jest.spyOn(
+            service as unknown as { autoApplyConfig: Apply },
+            'autoApplyConfig',
+          );
+
+          await service.startFieldApplyRollout('field-rollout-fw', decidedBy);
+
+          expect(autoApplyFirmware).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'field-rollout-fw' }),
+            decidedBy,
+          );
+          expect(autoApplyConfig).not.toHaveBeenCalled();
         });
       });
     });

@@ -429,15 +429,34 @@ enum ConfigApplyRequestStatus {
 
 /// คำขอส่ง Config ของ Task เข้าเครื่องจริง (`ConfigApplyRequest` ใน openapi,
 /// docs/25) — Mobile ใช้แค่ field ที่การ์ดใน Task Detail แสดง
+/// ชนิดของคำขอส่งเข้ากล่อง (docs/27 B2, openapi v3.62) — backend เก่าที่ไม่ส่ง
+/// `kind` หรือค่าที่ไม่รู้จัก = [config] (แถวก่อน v3.62 เป็น Config ทั้งหมด) ไม่ throw
+enum FieldApplyKind {
+  config('config'),
+  firmware('firmware');
+
+  const FieldApplyKind(this.wireName);
+
+  final String wireName;
+
+  static FieldApplyKind fromWire(Object? value) =>
+      value == firmware.wireName ? firmware : config;
+}
+
 class ConfigApplyRequest {
   const ConfigApplyRequest({
     required this.id,
     required this.taskId,
     required this.deviceId,
-    required this.configId,
     required this.status,
     required this.requestedAt,
     required this.expiresAt,
+    this.kind = FieldApplyKind.config,
+    this.configId,
+    this.firmwareId,
+    this.firmwareVersion,
+    this.fromFirmwareVersion,
+    this.isDowngrade = false,
     this.note,
     this.rejectReason,
     this.resultDetail,
@@ -449,7 +468,22 @@ class ConfigApplyRequest {
   final String id;
   final String taskId;
   final String deviceId;
-  final String configId;
+  final FieldApplyKind kind;
+
+  /// Config ที่ขอส่ง — `null` เมื่อ [kind] เป็น Firmware (v3.62)
+  final String? configId;
+
+  /// Firmware ที่ขอส่ง และเวอร์ชันของมัน (`firmware.version` — มีในรายการคำขอของ
+  /// งาน ไม่มีใน response ของ create/cancel/release) · `null` เมื่อเป็น Config
+  final String? firmwareId;
+  final String? firmwareVersion;
+
+  /// เวอร์ชันที่กล่องรายงานกับ Server กลางตอนขอ — `null` = ไม่รู้ (โหมดที่ไม่มี
+  /// Server กลาง)
+  final String? fromFirmwareVersion;
+
+  /// ขอ Firmware ที่ต่ำกว่าที่กล่องรันอยู่ (docs/27 D5) — ต้องเตือนชัด
+  final bool isDowngrade;
   final ConfigApplyRequestStatus status;
   final DateTime requestedAt;
   final DateTime expiresAt;
@@ -470,11 +504,17 @@ class ConfigApplyRequest {
       return value is String ? DateTime.parse(value) : null;
     }
 
+    final firmware = json['firmware'];
     return ConfigApplyRequest(
       id: json['id'] as String,
       taskId: json['taskId'] as String,
       deviceId: json['deviceId'] as String,
-      configId: json['configId'] as String,
+      kind: FieldApplyKind.fromWire(json['kind']),
+      configId: json['configId'] as String?,
+      firmwareId: json['firmwareId'] as String?,
+      firmwareVersion: firmware is Map ? firmware['version'] as String? : null,
+      fromFirmwareVersion: json['fromFirmwareVersion'] as String?,
+      isDowngrade: json['isDowngrade'] == true,
       status: ConfigApplyRequestStatus.fromWire(json['status'] as String),
       requestedAt: DateTime.parse(json['requestedAt'] as String),
       expiresAt: DateTime.parse(json['expiresAt'] as String),
@@ -518,11 +558,40 @@ class ApplyOptionConfig {
 
 /// `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่างเลือก
 /// ส่งเข้ากล่องนี้ได้ · ส่วน Firmware มาทีหลัง (B2/B3 ของ docs/27)
+/// 1 ตัวเลือก Firmware ใน `GET /devices/{deviceId}/apply-options` (docs/27 B2)
+class ApplyOptionFirmware {
+  const ApplyOptionFirmware({
+    required this.id,
+    required this.version,
+    this.isCurrent = false,
+    this.isDowngrade = false,
+  });
+
+  final String id;
+  final String version;
+
+  /// ตรงกับเวอร์ชันที่กล่องรันอยู่ — ขอไม่ได้ (backend ตอบ 409)
+  final bool isCurrent;
+
+  /// ต่ำกว่าเวอร์ชันที่กล่องรันอยู่ — ขอได้แต่ต้องถามยืนยันก่อน (D5)
+  final bool isDowngrade;
+
+  factory ApplyOptionFirmware.fromJson(Map<String, dynamic> json) =>
+      ApplyOptionFirmware(
+        id: json['id'] as String,
+        version: json['version'] as String,
+        isCurrent: json['isCurrent'] == true,
+        isDowngrade: json['isDowngrade'] == true,
+      );
+}
+
 class DeviceApplyOptions {
   const DeviceApplyOptions({
     required this.deviceId,
     required this.deviceInstalled,
     required this.configs,
+    this.currentFirmwareVersion,
+    this.firmwares = const [],
   });
 
   final String deviceId;
@@ -531,6 +600,13 @@ class DeviceApplyOptions {
   final bool deviceInstalled;
   final List<ApplyOptionConfig> configs;
 
+  /// เวอร์ชัน Firmware ที่กล่องรายงานกับ Server กลาง — `null` = ไม่รู้
+  final String? currentFirmwareVersion;
+
+  /// Firmware ที่ขอได้ (QA อนุมัติ + รองรับรุ่นกล่อง) ใหม่สุดก่อน · backend เก่า
+  /// (ก่อน v3.62) ไม่ส่ง = ว่าง
+  final List<ApplyOptionFirmware> firmwares;
+
   factory DeviceApplyOptions.fromJson(Map<String, dynamic> json) =>
       DeviceApplyOptions(
         deviceId: json['deviceId'] as String,
@@ -538,6 +614,11 @@ class DeviceApplyOptions {
         configs: [
           for (final raw in (json['configs'] as List<dynamic>? ?? const []))
             ApplyOptionConfig.fromJson(raw as Map<String, dynamic>),
+        ],
+        currentFirmwareVersion: json['currentFirmwareVersion'] as String?,
+        firmwares: [
+          for (final raw in (json['firmwares'] as List<dynamic>? ?? const []))
+            ApplyOptionFirmware.fromJson(raw as Map<String, dynamic>),
         ],
       );
 }

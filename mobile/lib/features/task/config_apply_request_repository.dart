@@ -13,10 +13,12 @@ abstract class ConfigApplyRequestRepository {
   Future<List<ConfigApplyRequest>> listForTask(String taskId);
 
   /// [configId] = Config ที่ช่างเลือก (docs/28 §5.3) · `null` = ใช้ Config ที่
-  /// Operation ผูกไว้กับงาน (พฤติกรรมเดิมของ docs/25)
+  /// Operation ผูกไว้กับงาน (พฤติกรรมเดิมของ docs/25) · [firmwareId] = ขอส่ง
+  /// Firmware แทน (docs/27 B2 — ส่งอย่างใดอย่างหนึ่ง)
   Future<ConfigApplyRequest> create(
     String taskId, {
     String? configId,
+    String? firmwareId,
     String? note,
   });
 
@@ -45,8 +47,14 @@ class ApiConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   Future<ConfigApplyRequest> create(
     String taskId, {
     String? configId,
+    String? firmwareId,
     String? note,
-  }) => _api.createConfigApplyRequest(taskId, configId: configId, note: note);
+  }) => _api.createConfigApplyRequest(
+    taskId,
+    configId: configId,
+    firmwareId: firmwareId,
+    note: note,
+  );
 
   @override
   Future<ConfigApplyRequest> cancel(String requestId) =>

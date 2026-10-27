@@ -81,6 +81,9 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   // Device ก่อน DeviceModel ด้วย (issue #209) — Device.modelId มี FK ไป
   // DeviceModel แบบ onDelete: Restrict (บังคับ NOT NULL) ลบ DeviceModel ก่อน
   // Device ยังมีอยู่จะโดน FK constraint บล็อกทันที
+  // docs/23 — telemetry/event มี FK ไป Device แบบ onDelete: Restrict ลบก่อน Device
+  await prisma.deviceTelemetry.deleteMany();
+  await prisma.deviceEvent.deleteMany();
   await prisma.device.deleteMany();
   await prisma.deviceModel.deleteMany();
   await prisma.customer.deleteMany();

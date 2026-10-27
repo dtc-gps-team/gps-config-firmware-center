@@ -14,7 +14,9 @@ export class PrismaService
     // ไม่ตั้งใจเวลามี field credential ใหม่ — จุดเดียวที่ต้องอ่านค่าจริง
     // (`DeviceApiKeyGuard`) override กลับเป็น query เดียวด้วย
     // `omit: { apiKeyHash: false }`
-    super({ omit: { device: { apiKeyHash: true } } });
+    // docs/23 — `Device.telemetryKeyHash` (hash ของ key telemetry ต่อกล่อง) ใช้หลัก
+    // เดียวกัน อ่านเฉพาะใน `TelemetryKeyGuard` (`select` ระบุ field ตรงๆ)
+    super({ omit: { device: { apiKeyHash: true, telemetryKeyHash: true } } });
   }
 
   async onModuleInit(): Promise<void> {
