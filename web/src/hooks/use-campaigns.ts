@@ -15,13 +15,18 @@ type CampaignsState = {
 /**
  * โหลดรายการ Campaign จาก `GET /campaigns` (ทุก status) — pattern เดียวกับ
  * `useConfigs`/`useDevices` (token จาก session, คืน `refetch`)
+ *
+ * `enabled` (default true) — ตั้ง false ให้ข้ามการยิงเลย (รีวิว #373:
+ * FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `campaign:Read` ยิงไปก็ได้ 403 เปล่าๆ)
+ * — หน้า Campaign list เองใช้ค่า default เดิมต่อไป เพราะหน้านั้น role ที่เข้า
+ * ได้ก็มีสิทธิ์อ่านอยู่แล้ว
  */
-export function useCampaigns() {
+export function useCampaigns(enabled = true) {
   const { session } = useAuth();
-  const token = session?.accessToken ?? null;
+  const token = enabled ? session?.accessToken ?? null : null;
   const [state, setState] = useState<CampaignsState>({
     data: null,
-    isLoading: true,
+    isLoading: enabled,
     error: null,
   });
 
