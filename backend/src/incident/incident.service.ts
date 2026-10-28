@@ -51,6 +51,18 @@ export type DecideIncidentResult = Incident & {
   device: { deviceId: string; deviceModel: string; protocol: string } | null;
 };
 
+/** ชื่อผู้แจ้ง/ผู้ตรวจสอบที่ join มากับ `GET /incidents/{id}` ให้ Mobile แสดงชื่อแทน
+ * user id ดิบ (ST/OT ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้เอง) — เฉพาะ 2 field นี้ */
+const INCIDENT_PEOPLE_INCLUDE = {
+  reporter: { select: { username: true, fullName: true } },
+  reviewer: { select: { username: true, fullName: true } },
+} satisfies Prisma.IncidentInclude;
+
+/** `GET /incidents/{id}` — mirror `IncidentDetail` ใน openapi.yaml (v3.68) */
+export type IncidentDetail = Prisma.IncidentGetPayload<{
+  include: typeof INCIDENT_PEOPLE_INCLUDE;
+}>;
+
 /** AuditLog.auditModule ของแถวที่โมดูลนี้เขียน (issue #236 — ก่อนหน้านี้โมดูล
  * นี้ไม่เคยเขียน AuditLog เลยเพราะเป็น read-only ล้วน) */
 const AUDIT_MODULE = 'incident';
@@ -646,8 +658,14 @@ export class IncidentService implements OnModuleInit {
    * (mirror `TaskService.findOne()` — ST/OT ที่ไม่ใช่เจ้าของ field report
    * ได้ 404 แทน 403 กันเปิดเผยว่ามี record นี้อยู่ ตาม IDOR Prevention
    * Pattern ใน CLAUDE.md) */
-  async findIncidentById(id: string, actor: ActingUser): Promise<Incident> {
-    const incident = await this.prisma.incident.findUnique({ where: { id } });
+  async findIncidentById(
+    id: string,
+    actor: ActingUser,
+  ): Promise<IncidentDetail> {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id },
+      include: INCIDENT_PEOPLE_INCLUDE,
+    });
     if (!incident || this.isHiddenFromActor(incident, actor)) {
       throw new NotFoundException(`ไม่พบ Incident id ${id}`);
     }

@@ -2889,11 +2889,11 @@ paths:
             format: uuid
       responses:
         "200":
-          description: ข้อมูล Incident
+          description: ข้อมูล Incident พร้อมชื่อผู้แจ้ง/ผู้ตรวจสอบ (v3.68)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Incident"
+                $ref: "#/components/schemas/IncidentDetail"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
@@ -6545,6 +6545,37 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    IncidentDetail:
+      description: >-
+        (v3.68) `getIncident` — `Incident` + ชื่อของ `reportedBy`/`reviewedBy`
+        ให้ Mobile แสดงชื่อแทน user id ดิบ · endpoint อื่นที่คืน `Incident`
+        ไม่มี 2 field นี้
+      allOf:
+        - $ref: "#/components/schemas/Incident"
+        - type: object
+          required: [reporter, reviewer]
+          properties:
+            reporter:
+              type: object
+              nullable: true
+              description: ผู้แจ้ง (`reportedBy`) · null = incident auto-detect หรือหาบัญชีไม่เจอ
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
+            reviewer:
+              type: object
+              nullable: true
+              description: ผู้ตรวจสอบ (`reviewedBy`) · null = ยังไม่มีใครตัดสิน
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
 
     CreateIncidentInput:
       type: object

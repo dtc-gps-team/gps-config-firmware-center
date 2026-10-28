@@ -245,6 +245,40 @@ describe('IncidentController (integration — real postgres + guard chain)', () 
       expect(body.source).toBe('config-sync-writer');
     });
 
+    it('แนบชื่อผู้แจ้ง/ผู้ตรวจสอบ (v3.68) — auto-detect ไม่มีผู้แจ้ง = null', async () => {
+      const reporter = await makeUser(prisma, {
+        role: 'ST',
+        fullName: 'ช่างผู้แจ้ง',
+      });
+      const withReporter = await prisma.incident.create({
+        data: {
+          title: 'มีผู้แจ้ง',
+          severity: 'medium',
+          source: 'field-report',
+          reportedBy: reporter.id,
+        },
+      });
+      const autoId = await makeIncident({ title: 'auto' });
+      const token = await auditorToken();
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/incidents/${withReporter.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const body = res.body as { reporter: unknown; reviewer: unknown };
+      expect(body.reporter).toEqual({
+        username: reporter.username,
+        fullName: 'ช่างผู้แจ้ง',
+      });
+      expect(body.reviewer).toBeNull();
+
+      const auto = await request(app.getHttpServer())
+        .get(`/api/v1/incidents/${autoId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((auto.body as { reporter: unknown }).reporter).toBeNull();
+    });
+
     it('ไม่พบ -> 404', async () => {
       const token = await auditorToken();
 

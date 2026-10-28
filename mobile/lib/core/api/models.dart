@@ -1401,6 +1401,8 @@ class Incident {
     this.reviewedBy,
     this.reviewedAt,
     this.reviewNote,
+    this.reporter,
+    this.reviewer,
   });
 
   final String id;
@@ -1429,6 +1431,11 @@ class Incident {
   final DateTime? reviewedAt;
   final String? reviewNote;
 
+  /// ชื่อของ [reportedBy] / [reviewedBy] — มาเฉพาะ `GET /incidents/{id}`
+  /// (`IncidentDetail`, v3.68) · `null` จาก endpoint อื่น / backend เก่า
+  final IncidentPerson? reporter;
+  final IncidentPerson? reviewer;
+
   // ไม่มี `promotedCampaignId` — backend (PR #267) ไม่มี column นี้ ใช้ FK ฝั่ง
   // `Campaign.sourceIncidentId @unique` แทน (ยังไม่มี endpoint query กลับทาง)
 
@@ -1453,12 +1460,32 @@ class Incident {
       reviewedBy: json['reviewedBy'] as String?,
       reviewedAt: parseDate(json['reviewedAt']),
       reviewNote: json['reviewNote'] as String?,
+      reporter: IncidentPerson.tryParse(json['reporter']),
+      reviewer: IncidentPerson.tryParse(json['reviewer']),
       // spec marks createdAt/updatedAt required, but decode defensively
       // so a slightly-off payload renders instead of throwing (same as Task).
       createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
       updatedAt: parseDate(json['updatedAt']) ?? DateTime.now(),
     );
   }
+}
+
+/// `IncidentDetail.reporter` / `.reviewer` (v3.68)
+class IncidentPerson {
+  const IncidentPerson({required this.username, required this.fullName});
+
+  final String username;
+  final String fullName;
+
+  static IncidentPerson? tryParse(Object? json) => json is Map<String, dynamic>
+      ? IncidentPerson(
+          username: json['username'] as String? ?? '',
+          fullName: json['fullName'] as String? ?? '',
+        )
+      : null;
+
+  /// "ชื่อ-นามสกุล (username)" · ชื่อว่าง = username อย่างเดียว
+  String get label => fullName.isEmpty ? username : '$fullName ($username)';
 }
 
 /// A user notification — mirrors `docs/api/openapi.yaml` `Notification`

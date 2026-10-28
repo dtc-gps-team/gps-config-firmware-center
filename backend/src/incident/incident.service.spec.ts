@@ -625,7 +625,24 @@ describe('IncidentService', () => {
       );
       expect(incidentFindUnique).toHaveBeenCalledWith({
         where: { id: 'inc-9' },
+        include: {
+          reporter: { select: { username: true, fullName: true } },
+          reviewer: { select: { username: true, fullName: true } },
+        },
       });
+    });
+
+    it('คืนชื่อผู้แจ้ง/ผู้ตรวจสอบที่ join มา (ไม่มีคน = null)', async () => {
+      const row = {
+        id: 'inc-9',
+        source: 'field-report',
+        reportedBy: 'st-1',
+        reporter: { username: 'st.test', fullName: 'ช่าง ทดสอบ' },
+        reviewer: null,
+      };
+      incidentFindUnique.mockResolvedValue(row);
+
+      await expect(service.findIncidentById('inc-9', st)).resolves.toEqual(row);
     });
 
     it('ไม่พบ -> NotFoundException', async () => {
