@@ -22,7 +22,12 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
 import { StartTaskDto } from './dto/start-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
-import { ActingUser, TaskEventView, TaskService } from './task.service';
+import {
+  ActingUser,
+  TaskEventView,
+  TaskService,
+  TaskWithAssignee,
+} from './task.service';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -75,8 +80,8 @@ export class TaskController {
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<Task> {
-    return this.taskService.findOne(id, toActor(req));
+  ): Promise<TaskWithAssignee> {
+    return this.taskService.findOneWithAssignee(id, toActor(req));
   }
 
   /** Task Event History (issue #296) — timeline เรียงเวลาเก่าไปใหม่ */

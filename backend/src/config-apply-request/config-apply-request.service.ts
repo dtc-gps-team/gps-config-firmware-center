@@ -96,6 +96,9 @@ const LIST_INCLUDE = {
   decider: { select: { id: true, fullName: true } },
   releaser: { select: { id: true, fullName: true } },
   firmware: { select: { id: true, version: true } },
+  // docs/30 — Override ที่คำขอนี้พาเข้ากล่อง · ค่าจริงไม่ออกในคิว (แค่ชื่อ field
+  // ผ่าน `fieldNames` ของ view) Web ดูค่าผ่าน GET /device-config-overrides/{id}
+  override: { select: { id: true, reason: true, fields: true } },
 } satisfies Prisma.ConfigApplyRequestInclude;
 
 type RequestWithRelations = Prisma.ConfigApplyRequestGetPayload<{
@@ -107,15 +110,22 @@ type RequestWithRelations = Prisma.ConfigApplyRequestGetPayload<{
  * Override ที่ approved) **ไม่มีค่าจริง** (หลักเดียวกับ AuditLog metadata) ·
  * คำขอ Firmware (docs/27 §5.2): `config` null, `fieldNames` ว่าง, ใช้ `firmware`
  * + `fromFirmwareVersion` + `isDowngrade` แทน */
-export type ConfigApplyRequestView = Omit<RequestWithRelations, 'config'> & {
+export type ConfigApplyRequestView = Omit<
+  RequestWithRelations,
+  'config' | 'override'
+> & {
   config: Omit<NonNullable<RequestWithRelations['config']>, 'fields'> | null;
   fieldNames: string[];
+  /** docs/30 — null = คำขอปกติ · `fieldNames` = field ที่ Override แก้ */
+  override: { id: string; reason: string; fieldNames: string[] } | null;
 };
 
 /** `GET /tasks/{taskId}/config-apply-requests` — แถวคำขอ + เวอร์ชัน Firmware ให้
  * Mobile แสดง "Firmware vX" ได้โดยไม่ต้องเรียก API อื่น (docs/27 B2) */
 const TASK_REQUEST_INCLUDE = {
   firmware: { select: { id: true, version: true } },
+  // docs/30 — ค่าที่ช่างขอ Override (ช่างกรอกเอง ดูค่าได้) ให้การ์ดหน้างานแสดง
+  override: { select: { id: true, reason: true, fields: true } },
 } satisfies Prisma.ConfigApplyRequestInclude;
 
 export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
@@ -254,38 +264,128 @@ export class ConfigApplyRequestService implements OnModuleInit {
         ? await this.prepareFirmwareRequest(dto, deviceId)
         : await this.prepareConfigRequest(dto, task, deviceId);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      await this.lockDevice(tx, deviceId);
-      const open = await tx.configApplyRequest.findFirst({
-        where: { deviceId, status: { in: OPEN_CONFIG_APPLY_REQUEST_STATUSES } },
-      });
-      if (open) {
-        throw new ConflictException(
-          `เครื่องนี้มีคำขอส่ง ${open.kind === 'firmware' ? 'Firmware' : 'Config'} ที่ยังไม่จบอยู่แล้ว — รอผลหรือยกเลิกคำขอเดิมก่อน`,
-        );
-      }
-      await this.assertNoOpenRolloutTarget(tx, deviceId);
-
-      const now = new Date();
-      const request = await tx.configApplyRequest.create({
-        data: {
-          taskId,
-          deviceId,
-          ...draft,
-          requestedBy: actor.id,
-          requestedAt: now,
-          expiresAt: new Date(
-            now.getTime() + CONFIG_APPLY_REQUEST_TTL_HOURS * HOUR_MS,
-          ),
-          note: dto.note?.trim() || null,
-        },
-      });
-      await this.writeAudit(tx, 'config_apply_request', actor, request);
-      return request;
-    });
+    const created = await this.prisma.$transaction((tx) =>
+      this.insertRequest(
+        tx,
+        { taskId, deviceId, ...draft, note: dto.note?.trim() || null },
+        actor,
+      ),
+    );
 
     await this.notifyOperations(created);
     return created;
+  }
+
+  /**
+   * docs/30 — ช่างขอ Config Override ในโหมด central = สร้างคำขอส่งเข้ากล่องผูกกัน
+   * **ในทรานแซกชันเดียวกับ Override** (`DeviceService.overrideDeviceConfig()`
+   * ส่ง `tx` มา) · Config = Config ปัจจุบันของเครื่อง (base ของ Override) · กฎ
+   * เดียวกับ `create()`: งานต้องเป็นของช่างและกำลังทำ, Config ส่งเข้ากล่องนี้ได้,
+   * เครื่องไม่มีคำขอค้าง (409 → Override rollback ไปด้วย) · ผู้เรียกต้องเรียก
+   * `notifyCreated()` หลัง commit
+   */
+  async createForOverride(
+    tx: Prisma.TransactionClient,
+    args: { task: Task; configId: string; overrideId: string },
+    actor: ActingUser,
+  ): Promise<ConfigApplyRequest> {
+    const { task, configId, overrideId } = args;
+    if (task.assignedTo !== actor.id || task.status !== 'in_progress') {
+      throw new ConflictException(
+        'งานของกล่องนี้ต้องเป็นของคุณและอยู่สถานะกำลังทำ ถึงจะขอแก้ค่าได้',
+      );
+    }
+    if (!task.deviceId) {
+      throw new ConflictException('งานนี้ไม่มีเครื่องที่ผูกไว้');
+    }
+    const usesAssignedConfig = configId === task.configId;
+    if (usesAssignedConfig && !task.configAssignedBy) {
+      throw new ConflictException(
+        'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
+      );
+    }
+    await this.assertApplicable(tx, configId, task.deviceId, 'create');
+    return this.insertRequest(
+      tx,
+      {
+        taskId: task.id,
+        deviceId: task.deviceId,
+        kind: 'config',
+        configId,
+        configAssignedBy: usesAssignedConfig ? task.configAssignedBy : null,
+        overrideId,
+        note: null,
+      },
+      actor,
+    );
+  }
+
+  /** แจ้ง Operation ว่ามีคำขอใหม่ — ใช้หลัง `createForOverride()` commit แล้ว */
+  async notifyCreated(request: ConfigApplyRequest): Promise<void> {
+    await this.notifyOperations(request);
+  }
+
+  /** ส่วนในทรานแซกชันของการสร้างคำขอ — lock เครื่อง, ห้ามมีคำขอ/Rollout ค้าง,
+   * ตั้งเส้นตาย, AuditLog · ใช้ร่วมกันโดย `create()` และ `createForOverride()` */
+  private async insertRequest(
+    tx: Prisma.TransactionClient,
+    data: RequestPayloadDraft & {
+      taskId: string;
+      deviceId: string;
+      note: string | null;
+      overrideId?: string;
+    },
+    actor: ActingUser,
+  ): Promise<ConfigApplyRequest> {
+    const { deviceId } = data;
+    await this.lockDevice(tx, deviceId);
+    const open = await tx.configApplyRequest.findFirst({
+      where: { deviceId, status: { in: OPEN_CONFIG_APPLY_REQUEST_STATUSES } },
+    });
+    if (open) {
+      throw new ConflictException(
+        `เครื่องนี้มีคำขอส่ง ${open.kind === 'firmware' ? 'Firmware' : 'Config'} ที่ยังไม่จบอยู่แล้ว — รอผลหรือยกเลิกคำขอเดิมก่อน`,
+      );
+    }
+    await this.assertNoOpenRolloutTarget(tx, deviceId);
+
+    const now = new Date();
+    const request = await tx.configApplyRequest.create({
+      data: {
+        ...data,
+        requestedBy: actor.id,
+        requestedAt: now,
+        expiresAt: new Date(
+          now.getTime() + CONFIG_APPLY_REQUEST_TTL_HOURS * HOUR_MS,
+        ),
+      },
+    });
+    await this.writeAudit(tx, 'config_apply_request', actor, request);
+    return request;
+  }
+
+  /**
+   * docs/30 §3 — ปิด Override ที่ผูกกับคำขอที่จบก่อนได้รับอนุมัติ (ปฏิเสธ /
+   * ช่างยกเลิก / หมดอายุ) เป็น `rejected` ในทรานแซกชันเดียวกัน · คำขอที่อนุมัติ
+   * แล้ว Override เป็น approved ไปแล้ว ไม่แตะ (ค่าถูกอนุมัติแล้ว จะติดไปกับการ
+   * ส่ง Config ตัวนี้ครั้งถัดไปตามพฤติกรรม merge เดิม)
+   */
+  private async closeLinkedOverride(
+    tx: Prisma.TransactionClient,
+    request: ConfigApplyRequest,
+    reason: string,
+    decidedBy: string | null,
+  ): Promise<void> {
+    if (!request.overrideId) return;
+    await tx.deviceConfigOverride.updateMany({
+      where: { id: request.overrideId, status: 'pending' },
+      data: {
+        status: 'rejected',
+        rejectReason: reason,
+        decidedBy,
+        decidedAt: new Date(),
+      },
+    });
   }
 
   /** ส่วน Config ของ `create()` — Config = `dto.configId` หรือ `Task.configId` */
@@ -504,9 +604,18 @@ export class ConfigApplyRequestService implements OnModuleInit {
     });
     const views: ConfigApplyRequestView[] = [];
     for (const row of rows) {
+      const override = row.override
+        ? {
+            id: row.override.id,
+            reason: row.override.reason,
+            fieldNames: Object.keys(
+              (row.override.fields as Record<string, unknown>) ?? {},
+            ),
+          }
+        : null;
       if (!row.config || !row.configId) {
         // คำขอ Firmware (docs/27 §5.2) — ไม่มีค่า field ให้แสดง
-        views.push({ ...row, config: null, fieldNames: [] });
+        views.push({ ...row, config: null, fieldNames: [], override });
         continue;
       }
       const { fields } = await mergeApprovedOverride(
@@ -517,7 +626,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
       const { fields: _baseFields, ...config } = row.config;
       void _baseFields;
-      views.push({ ...row, config, fieldNames: Object.keys(fields) });
+      views.push({ ...row, config, fieldNames: Object.keys(fields), override });
     }
     return views;
   }
@@ -560,6 +669,18 @@ export class ConfigApplyRequestService implements OnModuleInit {
       const row = await tx.configApplyRequest.findUniqueOrThrow({
         where: { id },
       });
+      // docs/30 มติ 1 — อนุมัติคำขอ = อนุมัติ Override ที่ผูกกัน (รอบเดียว)
+      if (row.overrideId) {
+        const linked = await tx.deviceConfigOverride.updateMany({
+          where: { id: row.overrideId, status: 'pending' },
+          data: { status: 'approved', decidedBy: actor.id, decidedAt: now },
+        });
+        if (linked.count === 0) {
+          throw new ConflictException(
+            'คำขอแก้ค่า (Override) ที่ผูกกับคำขอนี้ถูกตัดสินไปแล้ว — กรุณาโหลดข้อมูลใหม่',
+          );
+        }
+      }
       await this.writeAudit(tx, 'config_apply_approve', actor, row);
       return row;
     });
@@ -692,6 +813,12 @@ export class ConfigApplyRequestService implements OnModuleInit {
       const row = await tx.configApplyRequest.findUniqueOrThrow({
         where: { id },
       });
+      await this.closeLinkedOverride(
+        tx,
+        row,
+        dto.rejectReason.trim(),
+        actor.id,
+      );
       await this.writeAudit(tx, 'config_apply_reject', actor, row);
       return row;
     });
@@ -738,6 +865,9 @@ export class ConfigApplyRequestService implements OnModuleInit {
       const row = await tx.configApplyRequest.findUniqueOrThrow({
         where: { id },
       });
+      if (existing.status === 'pending') {
+        await this.closeLinkedOverride(tx, row, 'ช่างยกเลิกคำขอ', null);
+      }
       await this.writeAudit(tx, 'config_apply_cancel', actor, row);
       return row;
     });
@@ -828,17 +958,21 @@ export class ConfigApplyRequestService implements OnModuleInit {
     now: Date,
   ): Promise<boolean> {
     const wasApproved = request.status === 'approved';
-    const result = await this.prisma.configApplyRequest.updateMany({
-      where: { id: request.id, status: request.status },
-      data: {
-        status: 'expired',
-        resultDetail: wasApproved
-          ? `อนุมัติแล้วแต่ไม่ได้กดส่งเข้ากล่องภายใน ${CONFIG_APPLY_APPROVAL_TTL_HOURS} ชั่วโมง คำอนุมัติหมดอายุ`
-          : `ไม่มี Operation ตัดสินภายใน ${CONFIG_APPLY_REQUEST_TTL_HOURS} ชั่วโมง คำขอหมดอายุ`,
-        completedAt: now,
-      },
+    const resultDetail = wasApproved
+      ? `อนุมัติแล้วแต่ไม่ได้กดส่งเข้ากล่องภายใน ${CONFIG_APPLY_APPROVAL_TTL_HOURS} ชั่วโมง คำอนุมัติหมดอายุ`
+      : `ไม่มี Operation ตัดสินภายใน ${CONFIG_APPLY_REQUEST_TTL_HOURS} ชั่วโมง คำขอหมดอายุ`;
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.configApplyRequest.updateMany({
+        where: { id: request.id, status: request.status },
+        data: { status: 'expired', resultDetail, completedAt: now },
+      });
+      if (result.count === 0) return false;
+      if (!wasApproved) {
+        await this.closeLinkedOverride(tx, request, resultDetail, null);
+      }
+      return true;
     });
-    if (result.count === 0) return false;
+    if (!claimed) return false;
     await this.notifyTaskHolder(request, 'config_apply_expired');
     return true;
   }

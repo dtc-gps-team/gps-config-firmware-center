@@ -160,7 +160,8 @@ class _IncidentDetailView extends StatelessWidget {
               AppInfoRow(
                 label: 'ผู้แจ้ง',
                 valueKey: const Key('incident_detail_reported_by'),
-                value: incident.reportedBy,
+                // ชื่อมากับ GET /incidents/{id} (v3.68) · ไม่มี = user id เดิม
+                value: incident.reporter?.label ?? incident.reportedBy,
                 selectable: true,
               ),
               AppInfoRow(
@@ -200,7 +201,7 @@ class _IncidentDetailView extends StatelessWidget {
                 AppInfoRow(
                   label: 'ผู้ตรวจสอบ',
                   valueKey: const Key('incident_detail_reviewed_by'),
-                  value: incident.reviewedBy,
+                  value: incident.reviewer?.label ?? incident.reviewedBy,
                   selectable: true,
                 ),
                 AppInfoRow(

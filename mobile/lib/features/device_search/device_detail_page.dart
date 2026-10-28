@@ -357,9 +357,10 @@ class _PendingConfigOverride extends ConsumerWidget {
     if (pending == null || pending.status != 'pending') {
       return const SizedBox.shrink();
     }
+    final central = ref.watch(centralApplyModeProvider).valueOrNull ?? false;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: PendingConfigOverrideBanner(pending: pending),
+      child: PendingConfigOverrideBanner(pending: pending, central: central),
     );
   }
 }

@@ -836,6 +836,9 @@ model DeviceConfigOverride {
   config    Config @relation(fields: [configId], references: [id], onDelete: Restrict)
   overrider User   @relation("DeviceConfigOverrideBy", fields: [overriddenBy], references: [id])
   decider   User?  @relation("DeviceConfigOverrideDecidedBy", fields: [decidedBy], references: [id])
+  // คำขอส่งเข้ากล่องที่พา Override นี้เข้ากล่องจริงในโหมด central (docs/30) —
+  // null = Override แบบเดิม (อนุมัติแล้วกด apply-config เอง)
+  applyRequest ConfigApplyRequest?
 
   @@unique([deviceId, versionNumber])
   @@index([deviceId])
@@ -934,6 +937,9 @@ model ConfigApplyRequest {
   // Rollout เครื่องเดียวที่สร้างตอนช่างกดส่ง (docs/27 — เดิมสร้างตอนอนุมัติ, docs/25
   // §3.2 ทาง ค.) · @unique = 1:1
   rolloutId        String?                  @unique
+  // Override ที่คำขอนี้พาเข้ากล่อง (docs/30 — ช่างขอ Override ในโหมด central =
+  // สร้างคำขอผูกกัน อนุมัติคำขอ = อนุมัติ Override) · null = คำขอปกติ · @unique = 1:1
+  overrideId       String?                  @unique
   // เหตุผล/ผลจากกล่อง หรือเหตุที่ระบบปิดคำขอเอง (หมดอายุ, Task ถูกยกเลิก)
   resultDetail     String?
   completedAt      DateTime?
@@ -950,6 +956,7 @@ model ConfigApplyRequest {
   decider        User?            @relation("ConfigApplyDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
   releaser       User?            @relation("ConfigApplyReleasedBy", fields: [releasedBy], references: [id], onDelete: Restrict)
   rollout        CampaignRollout? @relation(fields: [rolloutId], references: [id], onDelete: Restrict)
+  override       DeviceConfigOverride? @relation(fields: [overrideId], references: [id], onDelete: Restrict)
 
   @@index([deviceId, status])
   @@index([taskId])
@@ -1090,6 +1097,12 @@ model ConfigFieldDefinition {
   // ต้อง Restart กล่องหลังเปลี่ยนค่า field นี้ไหม — metadata แสดงผล/เตือนผู้ใช้
   // เท่านั้น ยังไม่ผูกกับ logic ใดใน backend (เช่น บังคับ Task แยกสำหรับ restart)
   restartRequired Boolean  @default(false)
+  // ขอบเขตค่าตัวเลข (docs/30) — ใช้กับ dataType integer/decimal เท่านั้น ·
+  // null = ไม่จำกัด · ตรวจใน validateFields() ทุกจุด (สร้าง Config, Override)
+  // ให้ตรงกับที่ Firmware รับ (เช่น speed_limit.max_kmh 1–200 ใน schema ESP32)
+  // · Data Dictionary ไม่มีคอลัมน์นี้ — เพิ่มโดยตั้งใจตาม docs/30 §4
+  minValue        Float?
+  maxValue        Float?
   // ค่าเริ่มต้นของ field นี้ (issue #202, feedback พี่เลี้ยง) — เก็บเป็น
   // String? เหมือน pattern ของ unit/category ด้านบน (parse ตาม dataType
   // ตอนใช้งานจริง ฝั่ง Web ที่ ConfigWizard ตอนสร้าง Config ใหม่ — ไม่ใช่ตอน

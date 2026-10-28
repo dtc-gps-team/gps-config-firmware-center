@@ -21,6 +21,7 @@ import { QueryIncidentDto } from './dto/query-incident.dto';
 import {
   ActingUser,
   DecideIncidentResult,
+  IncidentDetail,
   IncidentService,
 } from './incident.service';
 
@@ -66,7 +67,7 @@ export class IncidentController {
   findOne(
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<Incident> {
+  ): Promise<IncidentDetail> {
     return this.incidentService.findIncidentById(id, toActor(req));
   }
 

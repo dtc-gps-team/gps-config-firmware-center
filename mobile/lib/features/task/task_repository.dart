@@ -165,6 +165,10 @@ class CachedApiTaskRepository implements TaskRepository {
       deviceId: task.deviceId,
       configId: task.configId,
       dueDate: task.dueDate,
+      source: task.source,
+      completedAt: task.completedAt,
+      autoClosed: task.autoClosed,
+      assignee: task.assignee,
     );
   }
 }

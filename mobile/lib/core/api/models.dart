@@ -248,6 +248,8 @@ class ConfigFieldDefinition {
     this.unit,
     this.category,
     this.defaultValue,
+    this.minValue,
+    this.maxValue,
   });
 
   final String id;
@@ -269,6 +271,11 @@ class ConfigFieldDefinition {
   final String? unit;
   final String? category;
   final String? defaultValue;
+
+  /// ขอบเขตค่าตัวเลข (docs/30, v3.70) — เฉพาะ integer/decimal · `null` = ไม่จำกัด
+  /// backend ตรวจซ้ำเสมอ ฝั่งนี้ใช้บอกช่วงและตรวจก่อนส่ง
+  final num? minValue;
+  final num? maxValue;
 
   factory ConfigFieldDefinition.fromJson(Map<String, dynamic> json) {
     final rawAllowedValues = json['allowedValues'] as List<dynamic>?;
@@ -297,6 +304,8 @@ class ConfigFieldDefinition {
       unit: json['unit'] as String?,
       category: json['category'] as String?,
       defaultValue: json['defaultValue'] as String?,
+      minValue: json['minValue'] as num?,
+      maxValue: json['maxValue'] as num?,
     );
   }
 }
@@ -463,6 +472,7 @@ class ConfigApplyRequest {
     this.decidedAt,
     this.releasedAt,
     this.completedAt,
+    this.override,
   });
 
   final String id;
@@ -498,6 +508,10 @@ class ConfigApplyRequest {
   final DateTime? releasedAt;
   final DateTime? completedAt;
 
+  /// Config Override ที่คำขอนี้นำค่าไปส่ง (docs/30, v3.70) — `null` = คำขอปกติ ·
+  /// มีค่าที่ขอแก้เฉพาะในรายการคำขอของงาน
+  final ApplyRequestOverride? override;
+
   factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
     DateTime? optionalDate(String key) {
       final value = json[key];
@@ -505,6 +519,7 @@ class ConfigApplyRequest {
     }
 
     final firmware = json['firmware'];
+    final override = json['override'];
     return ConfigApplyRequest(
       id: json['id'] as String,
       taskId: json['taskId'] as String,
@@ -524,6 +539,32 @@ class ConfigApplyRequest {
       decidedAt: optionalDate('decidedAt'),
       releasedAt: optionalDate('releasedAt'),
       completedAt: optionalDate('completedAt'),
+      override: override is Map
+          ? ApplyRequestOverride.fromJson(override.cast<String, dynamic>())
+          : null,
+    );
+  }
+}
+
+/// `ConfigApplyRequest.override` (docs/30, v3.70) — ค่าที่ช่างขอแก้ (ช่างกรอกเอง
+/// จึงดูค่าได้) · `fields` ว่างเมื่อ response ไม่มีค่า
+class ApplyRequestOverride {
+  const ApplyRequestOverride({
+    required this.id,
+    required this.reason,
+    this.fields = const {},
+  });
+
+  final String id;
+  final String reason;
+  final Map<String, dynamic> fields;
+
+  factory ApplyRequestOverride.fromJson(Map<String, dynamic> json) {
+    final fields = json['fields'];
+    return ApplyRequestOverride(
+      id: json['id'] as String,
+      reason: json['reason'] as String? ?? '',
+      fields: fields is Map ? fields.cast<String, dynamic>() : const {},
     );
   }
 }
@@ -967,6 +1008,7 @@ class Task {
     this.source = TaskSource.operation,
     this.completedAt,
     this.autoClosed = false,
+    this.assignee,
   });
 
   final String id;
@@ -974,6 +1016,10 @@ class Task {
 
   /// user id of the assignee (`Task.assignedTo`).
   final String assignedTo;
+
+  /// ชื่อผู้รับผิดชอบ — มาเฉพาะ `GET /tasks/{taskId}` (`TaskDetail`, v3.67) ·
+  /// `null` เมื่อมาจาก endpoint อื่น, cache ในเครื่อง หรือ backend เก่า
+  final TaskAssignee? assignee;
   final TaskStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1015,8 +1061,27 @@ class Task {
       source: TaskSource.fromWire(json['source']),
       completedAt: parseDate(json['completedAt']),
       autoClosed: json['autoClosed'] as bool? ?? false,
+      assignee: json['assignee'] is Map<String, dynamic>
+          ? TaskAssignee.fromJson(json['assignee'] as Map<String, dynamic>)
+          : null,
     );
   }
+}
+
+/// `TaskDetail.assignee` (v3.67) — ชื่อของ `Task.assignedTo`
+class TaskAssignee {
+  const TaskAssignee({required this.username, required this.fullName});
+
+  final String username;
+  final String fullName;
+
+  factory TaskAssignee.fromJson(Map<String, dynamic> json) => TaskAssignee(
+    username: json['username'] as String? ?? '',
+    fullName: json['fullName'] as String? ?? '',
+  );
+
+  /// "ชื่อ-นามสกุล (username)" · ชื่อว่าง = username อย่างเดียว
+  String get label => fullName.isEmpty ? username : '$fullName ($username)';
 }
 
 /// ผลของ `POST /tasks/start` (docs/28 §5.1) — `created=false` = ได้งานเดิมที่ยัง
@@ -1336,6 +1401,8 @@ class Incident {
     this.reviewedBy,
     this.reviewedAt,
     this.reviewNote,
+    this.reporter,
+    this.reviewer,
   });
 
   final String id;
@@ -1364,6 +1431,11 @@ class Incident {
   final DateTime? reviewedAt;
   final String? reviewNote;
 
+  /// ชื่อของ [reportedBy] / [reviewedBy] — มาเฉพาะ `GET /incidents/{id}`
+  /// (`IncidentDetail`, v3.68) · `null` จาก endpoint อื่น / backend เก่า
+  final IncidentPerson? reporter;
+  final IncidentPerson? reviewer;
+
   // ไม่มี `promotedCampaignId` — backend (PR #267) ไม่มี column นี้ ใช้ FK ฝั่ง
   // `Campaign.sourceIncidentId @unique` แทน (ยังไม่มี endpoint query กลับทาง)
 
@@ -1388,12 +1460,32 @@ class Incident {
       reviewedBy: json['reviewedBy'] as String?,
       reviewedAt: parseDate(json['reviewedAt']),
       reviewNote: json['reviewNote'] as String?,
+      reporter: IncidentPerson.tryParse(json['reporter']),
+      reviewer: IncidentPerson.tryParse(json['reviewer']),
       // spec marks createdAt/updatedAt required, but decode defensively
       // so a slightly-off payload renders instead of throwing (same as Task).
       createdAt: parseDate(json['createdAt']) ?? DateTime.now(),
       updatedAt: parseDate(json['updatedAt']) ?? DateTime.now(),
     );
   }
+}
+
+/// `IncidentDetail.reporter` / `.reviewer` (v3.68)
+class IncidentPerson {
+  const IncidentPerson({required this.username, required this.fullName});
+
+  final String username;
+  final String fullName;
+
+  static IncidentPerson? tryParse(Object? json) => json is Map<String, dynamic>
+      ? IncidentPerson(
+          username: json['username'] as String? ?? '',
+          fullName: json['fullName'] as String? ?? '',
+        )
+      : null;
+
+  /// "ชื่อ-นามสกุล (username)" · ชื่อว่าง = username อย่างเดียว
+  String get label => fullName.isEmpty ? username : '$fullName ($username)';
 }
 
 /// A user notification — mirrors `docs/api/openapi.yaml` `Notification`

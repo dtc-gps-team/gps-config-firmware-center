@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsNumber,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -103,6 +104,16 @@ export class CreateConfigDefinitionDto {
   @IsOptional()
   @IsBoolean()
   restartRequired?: boolean;
+
+  /** ขอบเขตค่าตัวเลข (docs/30) — ใช้กับ dataType `integer`/`decimal` เท่านั้น ·
+   * ไม่ส่ง = ไม่จำกัด · ตรวจ min ≤ max และชนิดที่ `ConfigDefinitionService` */
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  minValue?: number;
+
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  maxValue?: number;
 
   /** ค่าเริ่มต้นของ field นี้ (issue #202) — เก็บเป็น string ดิบ parse ตาม
    * dataType ตอนใช้งานจริงฝั่ง Web (ConfigWizard auto-fill ตอนสร้าง Config

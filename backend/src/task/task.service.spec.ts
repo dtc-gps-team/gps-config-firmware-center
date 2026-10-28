@@ -92,6 +92,9 @@ describe('TaskService', () => {
   let queryRaw: jest.Mock;
   // docs/25 §3.9 — ยกเลิกงานแล้วปิดคำขอส่ง Config ที่ pending ตาม
   let configApplyRequest: { updateMany: jest.Mock; findFirst: jest.Mock };
+  // docs/30 §3 — Override ที่ผูกคำขอซึ่งถูกยกเลิกตามงานต้องปิดเป็น rejected ด้วย
+  let deviceConfigOverride: { updateMany: jest.Mock };
+  let user: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     task = {
@@ -117,6 +120,10 @@ describe('TaskService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findFirst: jest.fn().mockResolvedValue(null),
     };
+    deviceConfigOverride = {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    };
+    user = { findUnique: jest.fn().mockResolvedValue(null) };
     queryRaw = jest
       .fn()
       .mockResolvedValue([
@@ -131,6 +138,8 @@ describe('TaskService', () => {
       auditLog,
       taskEvent,
       configApplyRequest,
+      deviceConfigOverride,
+      user,
       $queryRaw: queryRaw,
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
@@ -340,6 +349,41 @@ describe('TaskService', () => {
         where: { status: undefined, assignedTo: configEngineer.id },
         orderBy: { createdAt: 'desc' },
       });
+    });
+  });
+
+  describe('findOneWithAssignee', () => {
+    it('แนบชื่อผู้รับผิดชอบ (username + fullName) จาก Task.assignedTo', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      user.findUnique.mockResolvedValue({
+        username: 'st.test',
+        fullName: 'ช่าง ทดสอบ',
+      });
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, owner),
+      ).resolves.toEqual({
+        ...sampleTask,
+        assignee: { username: 'st.test', fullName: 'ช่าง ทดสอบ' },
+      });
+      expect(user.findUnique).toHaveBeenCalledWith({
+        where: { id: sampleTask.assignedTo },
+        select: { username: true, fullName: true },
+      });
+    });
+
+    it('หาบัญชีไม่เจอ -> assignee เป็น null (ไม่ throw)', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, operation),
+      ).resolves.toEqual({ ...sampleTask, assignee: null });
+    });
+
+    it('กฎเห็นงานเดียวกับ findOne: ST/OT ที่ไม่ใช่เจ้าของ -> 404 ไม่ query ผู้ใช้', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, otherTech),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(user.findUnique).not.toHaveBeenCalled();
     });
   });
 
@@ -1388,6 +1432,38 @@ describe('TaskService', () => {
       });
     });
 
+    it('docs/30: Operation ยกเลิกงาน → Override ที่ผูกคำขอ pending ของงานนี้ปิดเป็น rejected', async () => {
+      queryRaw.mockResolvedValue([
+        { status: 'in_progress', createdAt: sampleTask.createdAt },
+      ]);
+      task.findUnique.mockResolvedValue({
+        ...sampleTask,
+        status: 'in_progress',
+      });
+      task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+
+      await service.update(sampleTask.id, { status: 'cancelled' }, operation);
+
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'pending',
+          applyRequest: { is: { taskId: sampleTask.id } },
+        },
+        data: {
+          status: 'rejected',
+          rejectReason: 'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
+          decidedBy: null,
+          decidedAt: expect.any(Date) as unknown,
+        },
+      });
+      // ยกเลิกคำขอก่อน แล้วค่อยปิด Override (Override ของคำขอที่อนุมัติแล้วเป็น approved ไม่ถูกแตะ)
+      expect(
+        configApplyRequest.updateMany.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        deviceConfigOverride.updateMany.mock.invocationCallOrder[0],
+      );
+    });
+
     it('Operation เปลี่ยนสถานะอื่น (ไม่ใช่ยกเลิก): ไม่แตะคำขอ', async () => {
       queryRaw.mockResolvedValue([
         { status: 'pending', createdAt: sampleTask.createdAt },
@@ -1608,6 +1684,23 @@ describe('TaskService', () => {
       });
     });
 
+    it('docs/30: ST กดเสร็จงาน → Override ที่ผูกคำขอ pending ของงานนี้ปิดเป็น rejected', async () => {
+      await service.update(sampleTask.id, { status: 'completed' }, owner);
+
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'pending',
+          applyRequest: { is: { taskId: sampleTask.id } },
+        },
+        data: {
+          status: 'rejected',
+          rejectReason: 'ช่างปิดงานแล้ว ระบบยกเลิกคำขอให้อัตโนมัติ',
+          decidedBy: null,
+          decidedAt: expect.any(Date) as unknown,
+        },
+      });
+    });
+
     it('ST กดเสร็จงานระหว่างคำขอ sending: 409 ไม่เปลี่ยนสถานะงาน', async () => {
       configApplyRequest.findFirst.mockResolvedValue({ id: 'req-sending' });
 
@@ -1714,6 +1807,7 @@ describe('TaskService', () => {
         },
       });
       expect(configApplyRequest.updateMany).toHaveBeenCalledTimes(2);
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledTimes(2);
     });
 
     it('งานขยับระหว่างรอ (เช็คซ้ำหลังล็อกไม่ผ่าน): ข้าม ไม่เขียน event', async () => {

@@ -19,6 +19,8 @@ import {
   DeviceConnectionTester,
 } from './device-connection-tester';
 import { CentralDeviceService } from '../central-device/central-device.service';
+import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
+import { TaskService } from '../task/task.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { ActingUser, DeviceService } from './device.service';
@@ -235,6 +237,13 @@ describe('DeviceService', () => {
   // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
   let deviceConfigApplyMode: string | undefined;
   let customer: { findUnique: jest.Mock };
+  // docs/30 — Config Override ในโหมด central สร้างคำขอส่งเข้ากล่องผูกกัน
+  let taskService: { start: jest.Mock };
+  let configApplyRequestService: {
+    createForOverride: jest.Mock;
+    notifyCreated: jest.Mock;
+  };
+  let configApplyRequest: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     deviceConfigApplyMode = 'mock';
@@ -289,6 +298,23 @@ describe('DeviceService', () => {
       mode: 'real',
     };
     customer = { findUnique: jest.fn() };
+    taskService = {
+      start: jest.fn().mockResolvedValue({
+        task: {
+          id: 'task-ov',
+          deviceId: 'DTC-0001',
+          assignedTo: 'st-1',
+          status: 'in_progress',
+        },
+        created: false,
+      }),
+    };
+    configApplyRequestService = {
+      createForOverride: jest.fn().mockResolvedValue({ id: 'car-ov' }),
+      notifyCreated: jest.fn().mockResolvedValue(undefined),
+    };
+    // default: Override ไม่ผูกคำขอส่งเข้ากล่อง (พฤติกรรมเดิม)
+    configApplyRequest = { findUnique: jest.fn().mockResolvedValue(null) };
 
     // `overrideDeviceConfig()`/`approveDeviceConfigOverride()`/
     // `rejectDeviceConfigOverride()` (issue #223) เขียนผ่าน `$transaction` —
@@ -332,6 +358,7 @@ describe('DeviceService', () => {
             customer,
             auditLog,
             campaignRolloutTarget,
+            configApplyRequest,
             $transaction: transaction,
           },
         },
@@ -346,6 +373,11 @@ describe('DeviceService', () => {
         { provide: NotificationService, useValue: notificationService },
         { provide: DeviceModelService, useValue: deviceModelService },
         { provide: CentralDeviceService, useValue: centralDeviceService },
+        { provide: TaskService, useValue: taskService },
+        {
+          provide: ConfigApplyRequestService,
+          useValue: configApplyRequestService,
+        },
         {
           provide: NestConfigService,
           useValue: {
@@ -2399,6 +2431,74 @@ describe('DeviceService', () => {
       expect(result.fields).toEqual({ APN: 'new-apn' });
     });
 
+    describe('docs/30 — โหมด central: Override สร้างคำขอส่งเข้ากล่องผูกกัน', () => {
+      const created = {
+        id: 'ov-c1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 1,
+        fields: dto.fields,
+        reason: dto.reason,
+        status: 'pending',
+        overriddenBy: 'st-1',
+      };
+
+      beforeEach(() => {
+        deviceConfigApplyMode = 'central';
+        deviceConfigOverride.create.mockResolvedValue(created);
+      });
+
+      it('ใช้/เริ่มงานของช่าง แล้วสร้างคำขอผูก Override ในทรานแซกชันเดียวกัน แจ้งผ่านคำขอแทน', async () => {
+        await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+        expect(taskService.start).toHaveBeenCalledWith(
+          { deviceId: 'DTC-0001' },
+          st,
+        );
+        const [txArg, args, actorArg] = configApplyRequestService
+          .createForOverride.mock.calls[0] as [
+          unknown,
+          { task: { id: string }; configId: string; overrideId: string },
+          unknown,
+        ];
+        expect(transaction).toHaveBeenCalledTimes(1);
+        expect(txArg).toBeDefined();
+        expect(args.task.id).toBe('task-ov');
+        expect(args.configId).toBe(approvedConfig.id);
+        expect(args.overrideId).toBe('ov-c1');
+        expect(actorArg).toBe(st);
+        expect(configApplyRequestService.notifyCreated).toHaveBeenCalledWith({
+          id: 'car-ov',
+        });
+        // ไม่แจ้ง "มีคำขอ Override" แยก (Operation ตัดสินที่คำขอ)
+        expect(notificationService.send).not.toHaveBeenCalled();
+      });
+
+      it('สร้างคำขอไม่ได้ (เช่น มีคำขอค้าง 409) -> error ส่งต่อ ไม่แจ้งใคร', async () => {
+        configApplyRequestService.createForOverride.mockRejectedValue(
+          new ConflictException(
+            'เครื่องนี้มีคำขอส่ง Config ที่ยังไม่จบอยู่แล้ว',
+          ),
+        );
+
+        await expect(
+          service.overrideDeviceConfig('DTC-0001', dto, st),
+        ).rejects.toThrow(ConflictException);
+        expect(configApplyRequestService.notifyCreated).not.toHaveBeenCalled();
+      });
+
+      it('โหมด mock -> พฤติกรรมเดิม ไม่เริ่มงาน ไม่สร้างคำขอ', async () => {
+        deviceConfigApplyMode = 'mock';
+
+        await service.overrideDeviceConfig('DTC-0001', dto, st);
+
+        expect(taskService.start).not.toHaveBeenCalled();
+        expect(
+          configApplyRequestService.createForOverride,
+        ).not.toHaveBeenCalled();
+      });
+    });
+
     it('มีคำขอ pending ของเครื่องนี้อยู่แล้ว (configId เดียวกัน) -> ConflictException (409), ไม่สร้างแถวใหม่/AuditLog', async () => {
       mockOverrideQueries({
         existingPending: { id: 'ov-pending', status: 'pending' },
@@ -2688,6 +2788,16 @@ describe('DeviceService', () => {
     };
 
     describe('approveDeviceConfigOverride', () => {
+      it('docs/30 — Override ผูกกับคำขอส่งเข้ากล่อง -> ConflictException (409) ตัดสินที่คำขอแทน ไม่อัปเดต', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        configApplyRequest.findUnique.mockResolvedValue({ id: 'car-1' });
+
+        await expect(
+          service.approveDeviceConfigOverride('ov-1', operation),
+        ).rejects.toThrow(ConflictException);
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
+      });
+
       /** approve เรียก `getBaseConfigForDevice()` เพิ่ม (comment A รอบ 2 บน
        * PR #225 — เช็ค configId staleness) mock ให้ resolve เป็น Config
        * เดียวกับ `pendingRow.configId` เป็นค่า default ของกลุ่มนี้ */
@@ -2834,6 +2944,20 @@ describe('DeviceService', () => {
     });
 
     describe('rejectDeviceConfigOverride', () => {
+      it('docs/30 — Override ผูกกับคำขอส่งเข้ากล่อง -> ConflictException (409) ตัดสินที่คำขอแทน ไม่อัปเดต', async () => {
+        deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
+        configApplyRequest.findUnique.mockResolvedValue({ id: 'car-1' });
+
+        await expect(
+          service.rejectDeviceConfigOverride(
+            'ov-1',
+            { rejectReason: 'x' },
+            operation,
+          ),
+        ).rejects.toThrow(ConflictException);
+        expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
+      });
+
       it('คำขอยัง pending -> อัปเดตเป็น rejected พร้อม rejectReason + AuditLog', async () => {
         deviceConfigOverride.findUnique.mockResolvedValue(pendingRow);
         deviceConfigOverride.updateMany.mockResolvedValue({ count: 1 });
@@ -2960,8 +3084,9 @@ describe('DeviceService', () => {
 
       await service.listDeviceConfigOverrides();
 
+      // docs/30 — Override pending ที่ผูกคำขอส่งเข้ากล่องตัดสินที่คำขอ ไม่แสดงซ้ำในคิวนี้
       expect(deviceConfigOverride.findMany).toHaveBeenCalledWith({
-        where: undefined,
+        where: { NOT: { status: 'pending', applyRequest: { isNot: null } } },
         orderBy: { overriddenAt: 'desc' },
       });
     });
@@ -2972,7 +3097,10 @@ describe('DeviceService', () => {
       await service.listDeviceConfigOverrides('pending');
 
       expect(deviceConfigOverride.findMany).toHaveBeenCalledWith({
-        where: { status: 'pending' },
+        where: {
+          status: 'pending',
+          NOT: { status: 'pending', applyRequest: { isNot: null } },
+        },
         orderBy: { overriddenAt: 'desc' },
       });
     });

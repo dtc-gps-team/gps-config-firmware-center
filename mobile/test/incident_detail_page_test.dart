@@ -25,10 +25,14 @@ Incident _incident({
   String? reviewedBy,
   DateTime? reviewedAt,
   String? reviewNote,
+  IncidentPerson? reporter,
+  IncidentPerson? reviewer,
 }) => Incident(
   deviceId: deviceId,
   reportedBy: reportedBy,
   reviewedBy: reviewedBy,
+  reporter: reporter,
+  reviewer: reviewer,
   reviewedAt: reviewedAt,
   reviewNote: reviewNote,
   id: id,
@@ -312,6 +316,35 @@ void _fieldReportTests() {
         'DEV-0101',
       );
       expect(find.text('user-st-1'), findsOneWidget);
+    });
+
+    testWidgets('มีชื่อผู้แจ้ง/ผู้ตรวจสอบ (v3.68) -> แสดงชื่อแทน user id ดิบ', (
+      tester,
+    ) async {
+      final repo = _FakeIncidentRepository(
+        incidents: [
+          _incident(
+            source: 'field-report',
+            reportedBy: 'user-st-1',
+            reporter: const IncidentPerson(
+              username: 'st.test',
+              fullName: 'ช่าง ทดสอบ',
+            ),
+            reviewedBy: 'user-op-1',
+            reviewer: const IncidentPerson(
+              username: 'operation2.test',
+              fullName: '',
+            ),
+            reviewNote: 'ตรวจแล้ว',
+          ),
+        ],
+      );
+      await _pumpDetail(tester, repo);
+
+      expect(find.text('ช่าง ทดสอบ (st.test)'), findsOneWidget);
+      expect(find.text('operation2.test'), findsOneWidget);
+      expect(find.text('user-st-1'), findsNothing);
+      expect(find.text('user-op-1'), findsNothing);
     });
 
     testWidgets('แตะเลขอุปกรณ์ -> ไปหน้า Device Detail ของเครื่องนั้น', (

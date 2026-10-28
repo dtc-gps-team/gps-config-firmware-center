@@ -35,6 +35,9 @@ export interface DefinitionSeed {
   defaultValue: string | null;
   restartRequired: boolean;
   sensitive: boolean;
+  /** ขอบเขตจาก `min`/`max` ของ schema (docs/30) — เฉพาะชนิดตัวเลข · null = ไม่จำกัด */
+  minValue: number | null;
+  maxValue: number | null;
 }
 
 export interface ImportPlan {
@@ -121,7 +124,17 @@ export function mapCentralParameter(
     defaultValue: defaultAsText(p.default),
     restartRequired: false,
     sensitive: false,
+    minValue: numericBound(dataType, p.min),
+    maxValue: numericBound(dataType, p.max),
   };
+}
+
+/** `min`/`max` ใช้กับชนิดตัวเลขเท่านั้น (ของชนิดอื่น เช่น string ไม่มีความหมาย) */
+function numericBound(dataType: string, bound: unknown): number | null {
+  const numeric = dataType === 'integer' || dataType === 'decimal';
+  return numeric && typeof bound === 'number' && Number.isFinite(bound)
+    ? bound
+    : null;
 }
 
 /** แผนนำเข้าทั้ง schema: key ซ้ำในไฟล์เดียวใช้ตัวหลังสุด · ชนิดที่แปลงไม่ได้ถูกข้ามพร้อมเหตุผล */

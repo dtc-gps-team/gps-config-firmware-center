@@ -96,6 +96,7 @@ const device = {
 
 const pending: ConfigApplyRequest = {
   id: REQUEST_ID,
+  overrideId: null,
   taskId: TASK_ID,
   deviceId: DEVICE_ID,
   kind: 'config',
@@ -1106,6 +1107,230 @@ describe('ConfigApplyRequestService', () => {
     });
   });
 
+  describe('docs/30 — คำขอที่ผูก Config Override', () => {
+    const OVERRIDE_ID = '77777777-7777-4777-8777-777777777777';
+    let overrides: { findFirst: jest.Mock; updateMany: jest.Mock };
+
+    beforeEach(() => {
+      overrides = {
+        findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      };
+      prisma.deviceConfigOverride = overrides;
+    });
+
+    describe('approve', () => {
+      it('อนุมัติคำขอ = อนุมัติ Override ที่ผูกในทรานแซกชันเดียวกัน', async () => {
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...approvedRequest,
+          overrideId: OVERRIDE_ID,
+        });
+
+        await service.approve(REQUEST_ID, decider);
+
+        expect(overrides.updateMany).toHaveBeenCalledWith({
+          where: { id: OVERRIDE_ID, status: 'pending' },
+          data: expect.objectContaining({
+            status: 'approved',
+            decidedBy: decider.id,
+          }) as unknown,
+        });
+      });
+
+      it('Override ถูกตัดสินไปแล้ว (count 0): 409 ไม่แจ้งช่าง', async () => {
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...approvedRequest,
+          overrideId: OVERRIDE_ID,
+        });
+        overrides.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.approve(REQUEST_ID, decider),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(notification.send).not.toHaveBeenCalled();
+      });
+
+      it('คำขอไม่ผูก Override: ไม่แตะตาราง Override', async () => {
+        requests.findUniqueOrThrow.mockResolvedValue(approvedRequest);
+
+        await service.approve(REQUEST_ID, decider);
+
+        expect(overrides.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
+    it('reject: ปิด Override ที่ผูกเป็น rejected พร้อมเหตุผลเดียวกัน', async () => {
+      requests.findUniqueOrThrow.mockResolvedValue({
+        ...pending,
+        status: 'rejected',
+        overrideId: OVERRIDE_ID,
+      });
+
+      await service.reject(
+        REQUEST_ID,
+        { rejectReason: ' เกินค่าที่ลูกค้าอนุญาต ' },
+        decider,
+      );
+
+      expect(overrides.updateMany).toHaveBeenCalledWith({
+        where: { id: OVERRIDE_ID, status: 'pending' },
+        data: expect.objectContaining({
+          status: 'rejected',
+          rejectReason: 'เกินค่าที่ลูกค้าอนุญาต',
+          decidedBy: decider.id,
+        }) as unknown,
+      });
+    });
+
+    describe('cancel', () => {
+      it('ยกเลิกคำขอ pending: ปิด Override ที่ผูกด้วย', async () => {
+        const linked = { ...pending, overrideId: OVERRIDE_ID };
+        requests.findUnique.mockResolvedValue(linked);
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...linked,
+          status: 'cancelled',
+        });
+
+        await service.cancel(REQUEST_ID, tech);
+
+        expect(overrides.updateMany).toHaveBeenCalledWith({
+          where: { id: OVERRIDE_ID, status: 'pending' },
+          data: expect.objectContaining({
+            status: 'rejected',
+            decidedBy: null,
+          }) as unknown,
+        });
+      });
+
+      it('ยกเลิกคำขอที่อนุมัติแล้ว: Override อนุมัติไปแล้ว ไม่แตะ', async () => {
+        const linked = { ...approvedRequest, overrideId: OVERRIDE_ID };
+        requests.findUnique.mockResolvedValue(linked);
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...linked,
+          status: 'cancelled',
+        });
+
+        await service.cancel(REQUEST_ID, tech);
+
+        expect(overrides.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('expireOverdue', () => {
+      it('คำขอ pending หมดอายุ: ปิด Override ที่ผูกพร้อมเหตุผลเดียวกับคำขอ', async () => {
+        requests.findMany.mockResolvedValue([
+          { ...pending, overrideId: OVERRIDE_ID },
+        ]);
+
+        await expect(service.expireOverdue()).resolves.toBe(1);
+        expect(overrides.updateMany).toHaveBeenCalledWith({
+          where: { id: OVERRIDE_ID, status: 'pending' },
+          data: expect.objectContaining({
+            status: 'rejected',
+            rejectReason: expect.stringContaining('หมดอายุ') as unknown,
+          }) as unknown,
+        });
+      });
+
+      it('คำขอ approved หมดอายุ: Override อนุมัติไปแล้ว ไม่แตะ', async () => {
+        requests.findMany.mockResolvedValue([
+          { ...approvedRequest, overrideId: OVERRIDE_ID },
+        ]);
+
+        await expect(service.expireOverdue()).resolves.toBe(1);
+        expect(overrides.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('มีคนตัดสินไปก่อนพอดี (count 0): ไม่ปิด Override', async () => {
+        requests.findMany.mockResolvedValue([
+          { ...pending, overrideId: OVERRIDE_ID },
+        ]);
+        requests.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(service.expireOverdue()).resolves.toBe(0);
+        expect(overrides.updateMany).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('createForOverride', () => {
+      it('Config ของงาน: สร้างคำขอ config ผูก Override พร้อมผู้ผูก Config ของงาน · ไม่แจ้งเอง', async () => {
+        const created = await service.createForOverride(
+          prisma as never,
+          { task, configId: CONFIG_ID, overrideId: OVERRIDE_ID },
+          tech,
+        );
+
+        expect(requests.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            taskId: TASK_ID,
+            deviceId: DEVICE_ID,
+            kind: 'config',
+            configId: CONFIG_ID,
+            configAssignedBy: assigner.id,
+            overrideId: OVERRIDE_ID,
+            requestedBy: tech.id,
+          }) as unknown,
+        });
+        expect(created.overrideId).toBe(OVERRIDE_ID);
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            action: 'config_apply_request',
+          }) as unknown,
+        });
+        // ผู้เรียกแจ้งหลัง commit ผ่าน notifyCreated()
+        expect(notification.send).not.toHaveBeenCalled();
+      });
+
+      it('Config ปัจจุบันไม่ใช่ Config ของงาน: configAssignedBy = null', async () => {
+        await service.createForOverride(
+          prisma as never,
+          {
+            task: { ...task, configId: null },
+            configId: CONFIG_ID,
+            overrideId: OVERRIDE_ID,
+          },
+          tech,
+        );
+
+        expect(requests.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            configAssignedBy: null,
+          }) as unknown,
+        });
+      });
+
+      it('งานไม่ใช่ของช่างคนนี้: 409 ไม่สร้าง', async () => {
+        await expect(
+          service.createForOverride(
+            prisma as never,
+            { task, configId: CONFIG_ID, overrideId: OVERRIDE_ID },
+            { id: 'tech-2', role: 'ST' },
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it('เครื่องมีคำขอค้าง: 409 ไม่สร้าง (Override rollback ไปด้วยในทรานแซกชันของผู้เรียก)', async () => {
+        requests.findFirst.mockResolvedValue(approvedRequest);
+
+        await expect(
+          service.createForOverride(
+            prisma as never,
+            { task, configId: CONFIG_ID, overrideId: OVERRIDE_ID },
+            tech,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
+
+      it('notifyCreated: แจ้ง Operation เหมือนคำขอปกติ', async () => {
+        await service.notifyCreated({ ...pending, overrideId: OVERRIDE_ID });
+
+        expect(notification.send).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('ผลจาก Rollout เครื่องเดียว (§3.5 ข้อ 5)', () => {
     const sending = { ...pending, status: 'sending', rolloutId: ROLLOUT_ID };
 
@@ -1219,7 +1444,11 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.findMany).toHaveBeenCalledWith({
         where: { taskId: TASK_ID },
         orderBy: { requestedAt: 'desc' },
-        include: { firmware: { select: { id: true, version: true } } },
+        include: {
+          firmware: { select: { id: true, version: true } },
+          // docs/30 — การ์ดหน้างานแสดงค่าที่ช่างขอ Override
+          override: { select: { id: true, reason: true, fields: true } },
+        },
       });
     });
 

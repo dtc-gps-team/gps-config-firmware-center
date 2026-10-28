@@ -627,6 +627,57 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('docs/30 — คำขอจาก Config Override แสดงค่าที่ขอแก้และเหตุผล', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            override: const ApplyRequestOverride(
+              id: 'ov-1',
+              reason: 'ลูกค้าขอจำกัดความเร็ว',
+              fields: {'speed_limit.max_kmh': 60},
+            ),
+          ),
+        ],
+      );
+
+      expect(find.text('ขอแก้ speed_limit.max_kmh → 60'), findsOneWidget);
+      expect(
+        find.text('เหตุผลที่ขอแก้: ลูกค้าขอจำกัดความเร็ว'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('จะติดไปกับการส่ง Config'), findsNothing);
+    });
+
+    testWidgets(
+      'docs/30 — ยกเลิกคำขอ Override หลังอนุมัติ -> บอกว่าค่าจะติดไปกับการส่งครั้งถัดไป',
+      (tester) async {
+        await pumpWith(
+          tester,
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.cancelled,
+              decidedAt: DateTime.utc(2026, 10, 22, 4),
+              override: const ApplyRequestOverride(
+                id: 'ov-1',
+                reason: 'ลูกค้าขอ',
+                fields: {'speed_limit.max_kmh': 60},
+              ),
+            ),
+          ],
+        );
+
+        expect(
+          find.text(
+            'ค่าที่ขอแก้อนุมัติแล้ว จะติดไปกับการส่ง Config ตัวนี้ครั้งถัดไป',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('มีคำขอ pending -> เห็นเวลาขอ/หมดอายุ + ปุ่มยกเลิก, '
         'แถบล่างไม่มีปุ่มขอซ้ำ', (tester) async {
       await pumpWith(tester, requests: [fakeApplyRequest()]);
@@ -1441,6 +1492,33 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('เริ่มเองจากหน้ากล่อง'), findsOneWidget);
+    });
+
+    testWidgets('มีชื่อผู้รับผิดชอบ (v3.67) -> แสดงชื่อแทน user id ดิบ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.inProgress,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 26, 8),
+            deviceId: 'DVC-1',
+            assignee: const TaskAssignee(
+              username: 'st.test',
+              fullName: 'ช่าง ทดสอบ',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('ช่าง ทดสอบ (st.test)'), findsOneWidget);
+      expect(find.text('u1'), findsNothing);
     });
 
     testWidgets('งานที่ระบบปิดให้ -> แจ้งว่าปิดอัตโนมัติ', (tester) async {

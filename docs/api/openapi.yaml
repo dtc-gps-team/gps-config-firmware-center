@@ -1080,11 +1080,11 @@ paths:
             format: uuid
       responses:
         "200":
-          description: รายละเอียดงาน
+          description: รายละเอียดงาน พร้อมชื่อผู้รับผิดชอบ (v3.67)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Task"
+                $ref: "#/components/schemas/TaskDetail"
         "400":
           description: taskId ไม่ใช่ uuid ที่ถูกต้อง
         "404":
@@ -1138,7 +1138,9 @@ paths:
             (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ
             ย้อนงานที่เสร็จแล้วกลับเป็น in_progress — คำตอบ A ใน #303 ข้อ 1) ·
             หรือปิดงาน (`completed`) ระหว่างที่คำขอส่งเข้ากล่องยัง `sending` อยู่
-            (docs/28 §5.4 — ปิดได้แล้วคำขอ `pending`/`approved` ถูกยกเลิกให้)
+            (docs/28 §5.4 — ปิดได้แล้วคำขอ `pending`/`approved` ถูกยกเลิกให้ ·
+            Config Override ที่ผูกกับคำขอที่ยัง `pending` ปิดเป็น `rejected` ด้วย
+            เหมือนตอนช่างยกเลิกคำขอ — docs/30 §3)
 
   /tasks/{taskId}/events:
     get:
@@ -1368,6 +1370,10 @@ paths:
         (docs/27 — เดิมส่งทันที) · เก็บ `approvedConfigVersion` และตั้ง
         `expiresAt` = เวลาอนุมัติ + 24 ชม. เป็นเส้นตายให้ช่างที่ถือ Task กดส่งผ่าน
         `releaseConfigApplyRequest` · แจ้งช่าง `config_apply_approved`
+
+        **v3.70 (docs/30):** คำขอที่ผูก Config Override (`overrideId` ไม่ null)
+        อนุมัติครั้งเดียว = อนุมัติ Override นั้นด้วยในทรานแซกชันเดียวกัน
+        (`DeviceConfigOverride.status` → `approved`, `decidedBy` = ผู้อนุมัติ)
       parameters:
         - in: path
           name: id
@@ -1395,7 +1401,8 @@ paths:
             คำขอถูกตัดสินไปแล้ว (รวมกดพร้อมกัน) หรือข้อมูลเปลี่ยนตั้งแต่ขอ — งาน
             ไม่ได้ in_progress, ถูกย้ายคน, Config/เครื่อง/ผู้ผูก Config ของงานเปลี่ยน,
             Config ไม่ใช่ approved/synced, เครื่องไม่ installed หรือมี Campaign
-            กำลังส่งให้เครื่องนี้ (คำขอยัง pending ให้ปฏิเสธพร้อมเหตุผลแทน)
+            กำลังส่งให้เครื่องนี้ (คำขอยัง pending ให้ปฏิเสธพร้อมเหตุผลแทน) ·
+            (v3.70) Override ที่ผูกกับคำขอนี้ไม่ใช่ `pending` แล้ว
 
   /config-apply-requests/{id}/reject:
     post:
@@ -1405,7 +1412,8 @@ paths:
       description: >-
         action เดียวกับ approve และ Separation of Duty ชุดเดียวกัน · `rejectReason`
         **บังคับ** · แจ้งผู้ขอ `config_apply_rejected` · AuditLog
-        `config_apply_reject`
+        `config_apply_reject` · **v3.70 (docs/30):** Override ที่ผูกกับคำขอนี้
+        ถูกปิดเป็น `rejected` ด้วยเหตุผลเดียวกัน
       parameters:
         - in: path
           name: id
@@ -1445,7 +1453,10 @@ paths:
       description: >-
         resource `config-apply-request` action `Create` (ST/OT) · เฉพาะช่างที่ถือ
         Task อยู่ตอนนี้ (docs/27 — เดิมผู้ขอ) และเฉพาะตอน `pending` หรือ `approved`
-        · AuditLog `config_apply_cancel`
+        · AuditLog `config_apply_cancel` · **v3.70 (docs/30):** ยกเลิกตอน
+        `pending` ปิด Override ที่ผูกเป็น `rejected` ด้วย · ยกเลิกตอน `approved`
+        ไม่แตะ Override (อนุมัติไปแล้ว ค่าจะติดไปกับการส่ง Config ตัวนี้ครั้งถัดไป)
+        · คำขอ `pending` ที่หมดอายุเองก็ปิด Override ที่ผูกแบบเดียวกัน
       parameters:
         - in: path
           name: id
@@ -2582,6 +2593,17 @@ paths:
         นี้ (merge `fields` ที่ส่งมารอบนี้ทับของแถว **`approved`** ล่าสุดของ
         Config เดียวกัน ถ้ามี) ไม่ใช่แค่ delta ของรอบนี้เฉยๆ — field ที่
         override ไว้ในรอบก่อนหน้าจึงไม่หายไปถ้ารอบนี้ override field อื่น
+
+        **v3.70 (docs/30) — โหมด `DEVICE_CONFIG_APPLY_MODE=central`:** ค่าที่
+        override ต้องไปถึงกล่องผ่านคำขอส่งเข้ากล่องเท่านั้น (apply-config ปิดแล้ว
+        docs/25 §3.8) endpoint นี้จึง (1) ใช้งานที่ช่างเปิดอยู่กับกล่องนี้ หรือเริ่ม
+        ให้ (กฎเดียวกับ `startTask`) (2) สร้าง `ConfigApplyRequest` ชนิด
+        `config` ที่ผูก `overrideId` **ในทรานแซกชันเดียวกับ Override** (Config =
+        Config ปัจจุบันของเครื่อง) แล้วแจ้ง Operation ผ่านคำขอแทนการแจ้งแยก
+        Operation อนุมัติครั้งเดียวที่คำขอ (`approveConfigApplyRequest`) แล้ว
+        ช่างที่ถือ Task กดส่งเอง (`releaseConfigApplyRequest`) · ช่วงค่า
+        `minValue`/`maxValue` ของ `ConfigFieldDefinition` ตรวจทุกโหมด · โหมดอื่น
+        พฤติกรรมเดิม
       parameters:
         - in: path
           name: deviceId
@@ -2621,7 +2643,8 @@ paths:
             ไม่ส่ง reason มา · หรือมี field ที่ไม่รู้จัก/ไม่รองรับรุ่นอุปกรณ์นี้
             และไม่อยู่ใน Config ของเครื่อง (v3.54 field นอกชุดของรุ่นที่อยู่ใน
             Config template แล้วขอแก้ได้)/stOverridable: false/ชนิดข้อมูลไม่ตรง/
-            ค่าไม่อยู่ใน allowedValues
+            ค่าไม่อยู่ใน allowedValues · (v3.70) ค่าตัวเลขนอกช่วง
+            minValue/maxValue
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -2631,7 +2654,11 @@ paths:
             ไม่พบ Device (deviceId) นี้ หรืออุปกรณ์นี้ยังไม่มี Config ที่ยืนยัน
             ติดตั้งแล้ว (ไม่มี Task สถานะ completed ที่ผูก configId กับอุปกรณ์นี้)
         "409":
-          description: อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อนส่งคำขอใหม่
+          description: >-
+            อุปกรณ์นี้มีคำขอ override ที่รอ Operation อนุมัติอยู่แล้ว — รอผลก่อน
+            ส่งคำขอใหม่ · (v3.70, โหมด central) เครื่องมีคำขอส่งเข้ากล่องที่ยังไม่จบ
+            หรือ Campaign กำลังส่งให้เครื่องนี้ หรืองานของกล่องนี้เป็นของช่างคนอื่น
+            — ไม่สร้างทั้ง Override และคำขอ
 
   /device-config-overrides:
     get:
@@ -2641,7 +2668,10 @@ paths:
       description: >-
         คิวอนุมัติของ Operation — filter ตาม `status` (optional, ไม่ส่ง = ทุก
         สถานะ) เรียงคำขอใหม่สุดก่อน (`overriddenAt` desc) resource
-        `device-config-override` action `Read` — Operation เท่านั้น
+        `device-config-override` action `Read` — Operation เท่านั้น ·
+        **v3.70 (docs/30):** ไม่คืนแถว `pending` ที่ผูกกับคำขอส่งเข้ากล่อง
+        (ตัดสินที่คำขอใน `listConfigApplyRequests` การ์ดเดียว) — แถวที่ตัดสิน
+        แล้วยังคืนตามเดิม
       parameters:
         - in: query
           name: status
@@ -2724,7 +2754,10 @@ paths:
         "404":
           description: ไม่พบคำขอ override นี้
         "409":
-          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
+          description: >-
+            คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ ·
+            (v3.70, docs/30) Override ผูกกับคำขอส่งเข้ากล่อง — อนุมัติที่
+            `approveConfigApplyRequest` แทน
 
   /device-config-overrides/{id}/reject:
     post:
@@ -2768,7 +2801,10 @@ paths:
         "404":
           description: ไม่พบคำขอ override นี้
         "409":
-          description: คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ
+          description: >-
+            คำขอนี้ถูกตัดสินใจไปแล้ว (approved/rejected) — กันตัดสินใจซ้ำ ·
+            (v3.70, docs/30) Override ผูกกับคำขอส่งเข้ากล่อง — ปฏิเสธที่
+            `rejectConfigApplyRequest` แทน
 
   /incidents:
     get:
@@ -2864,11 +2900,11 @@ paths:
             format: uuid
       responses:
         "200":
-          description: ข้อมูล Incident
+          description: ข้อมูล Incident พร้อมชื่อผู้แจ้ง/ผู้ตรวจสอบ (v3.68)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Incident"
+                $ref: "#/components/schemas/IncidentDetail"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
@@ -5235,6 +5271,17 @@ components:
             dataType ตอนใช้งานจริง ฝั่ง Web ที่ ConfigWizard auto-fill ตอน
             สร้าง Config ใหม่เท่านั้น (v3.26) — ไม่ใช้ตอน Clone ที่ยังใช้ค่า
             จาก Config ต้นทางเหมือนเดิม
+        minValue:
+          type: number
+          nullable: true
+          description: >-
+            (v3.70, docs/30) ค่าต่ำสุดที่ยอมรับ — เฉพาะ dataType integer/decimal ·
+            ตรวจตอนสร้าง/แก้ Config และตอนช่างขอ override · null = ไม่จำกัด
+        maxValue:
+          type: number
+          nullable: true
+          description: >-
+            (v3.70, docs/30) ค่าสูงสุดที่ยอมรับ — เงื่อนไขเดียวกับ minValue
         supportedModels:
           type: array
           description: >-
@@ -5321,6 +5368,14 @@ components:
           description: >-
             ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ (v3.26) ต้องตรงกับ
             `dataType` ที่ประกาศ ไม่งั้น 400 (v3.42, มติ issue #201)
+        minValue:
+          type: number
+          description: >-
+            (v3.70) ไม่บังคับ — ใช้ได้กับ dataType integer/decimal เท่านั้น และต้อง
+            ≤ maxValue ไม่งั้น 400
+        maxValue:
+          type: number
+          description: (v3.70) ไม่บังคับ — เงื่อนไขเดียวกับ minValue
         supportedModels:
           type: array
           minItems: 1
@@ -5448,6 +5503,27 @@ components:
           type: string
           format: date-time
 
+    TaskDetail:
+      description: >-
+        (v3.67) `getTask` — `Task` + ชื่อผู้รับผิดชอบ ให้ Mobile แสดงชื่อแทน user id
+        ดิบ (ST/OT ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้เอง เหตุผลเดียวกับ
+        `TaskEvent.changedByName`) · endpoint อื่นที่คืน `Task` ไม่มี field นี้
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          required: [assignee]
+          properties:
+            assignee:
+              type: object
+              nullable: true
+              description: ผู้รับผิดชอบ (`assignedTo`) · null เมื่อหาบัญชีไม่เจอ
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
+
     ConfigApplyRequestStatus:
       type: string
       description: >-
@@ -5517,6 +5593,36 @@ components:
           format: uuid
           nullable: true
           description: Firmware ที่ขอส่ง — มีค่าเฉพาะ kind=firmware (v3.62)
+        overrideId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            (v3.70, docs/30) Config Override ที่คำขอนี้นำค่าไปส่ง — null = คำขอ
+            ปกติ · 1 Override ผูกได้ 1 คำขอ
+        override:
+          type: object
+          nullable: true
+          description: >-
+            (v3.70, docs/30) Override ที่ผูก — มีใน `listTaskConfigApplyRequests`
+            (พร้อม `fields` ค่าที่ช่างขอเอง) และคิวอนุมัติ (`fieldNames` เท่านั้น
+            ไม่มีค่า — Web ดูค่าที่ `getDeviceConfigOverride`) · null = คำขอปกติ
+          required: [id, reason]
+          properties:
+            id:
+              type: string
+              format: uuid
+            reason:
+              type: string
+            fields:
+              type: object
+              additionalProperties: true
+              description: เฉพาะ listTaskConfigApplyRequests
+            fieldNames:
+              type: array
+              items:
+                type: string
+              description: เฉพาะ listConfigApplyRequests
         fromFirmwareVersion:
           type: string
           nullable: true
@@ -6450,6 +6556,37 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    IncidentDetail:
+      description: >-
+        (v3.68) `getIncident` — `Incident` + ชื่อของ `reportedBy`/`reviewedBy`
+        ให้ Mobile แสดงชื่อแทน user id ดิบ · endpoint อื่นที่คืน `Incident`
+        ไม่มี 2 field นี้
+      allOf:
+        - $ref: "#/components/schemas/Incident"
+        - type: object
+          required: [reporter, reviewer]
+          properties:
+            reporter:
+              type: object
+              nullable: true
+              description: ผู้แจ้ง (`reportedBy`) · null = incident auto-detect หรือหาบัญชีไม่เจอ
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
+            reviewer:
+              type: object
+              nullable: true
+              description: ผู้ตรวจสอบ (`reviewedBy`) · null = ยังไม่มีใครตัดสิน
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
 
     CreateIncidentInput:
       type: object

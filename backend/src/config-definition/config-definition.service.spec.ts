@@ -35,6 +35,8 @@ const apnDef: ConfigFieldDefinition & {
   sensitive: false,
   restartRequired: true,
   defaultValue: null,
+  minValue: null,
+  maxValue: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -56,6 +58,8 @@ const modeDef: ConfigFieldDefinition & {
   sensitive: false,
   restartRequired: false,
   defaultValue: null,
+  minValue: null,
+  maxValue: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -210,6 +214,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -241,6 +247,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -268,6 +276,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -295,6 +305,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -327,6 +339,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: true,
           restartRequired: true,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -354,6 +368,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: 'internet',
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -381,6 +397,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: false,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -420,6 +438,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: true,
           restartRequired: false,
           defaultValue: undefined,
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -447,6 +467,8 @@ describe('ConfigDefinitionService', () => {
           sensitive: true,
           restartRequired: false,
           defaultValue: '',
+          minValue: null,
+          maxValue: null,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -715,6 +737,139 @@ describe('ConfigDefinitionService', () => {
         await expect(
           service.validateFields('GT06N', 'TCP', { FIELD: '909' }),
         ).rejects.toThrow(BadRequestException);
+      });
+    });
+  });
+
+  describe('minValue / maxValue (docs/30)', () => {
+    const speedDef = {
+      ...apnDef,
+      id: '33333333-3333-3333-3333-333333333333',
+      fieldName: 'speed_limit.max_kmh',
+      dataType: 'integer',
+      required: false,
+      unit: 'km/h',
+      minValue: 1,
+      maxValue: 200,
+    };
+
+    /** ข้อความ error ทั้งหมดใน BadRequestException ({ message, errors }) */
+    async function errorsOf(promise: Promise<unknown>): Promise<string[]> {
+      try {
+        await promise;
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        const body = (e as BadRequestException).getResponse() as {
+          errors?: string[];
+        };
+        return body.errors ?? [];
+      }
+      throw new Error('คาดว่าจะ throw แต่ไม่ throw');
+    }
+
+    it.each([1, 80, 200])(
+      'ช่างขอ override ค่าในช่วง (%s) -> ผ่าน',
+      async (value) => {
+        findMany.mockResolvedValue([speedDef]);
+
+        await expect(
+          service.validateOverridableFields('GT06N', 'TCP', {
+            'speed_limit.max_kmh': value,
+          }),
+        ).resolves.toBeUndefined();
+      },
+    );
+
+    it.each([0, 201])(
+      'ช่างขอ override ค่านอกช่วง (%s) -> BadRequestException บอกช่วงพร้อมหน่วย',
+      async (value) => {
+        findMany.mockResolvedValue([speedDef]);
+
+        const errors = await errorsOf(
+          service.validateOverridableFields('GT06N', 'TCP', {
+            'speed_limit.max_kmh': value,
+          }),
+        );
+
+        expect(errors).toEqual([
+          'field "speed_limit.max_kmh" ต้องอยู่ระหว่าง 1–200 km/h',
+        ]);
+      },
+    );
+
+    it('มีแต่ minValue -> ข้อความ "ต้องไม่น้อยกว่า"', async () => {
+      findMany.mockResolvedValue([{ ...speedDef, maxValue: null }]);
+
+      const errors = await errorsOf(
+        service.validateOverridableFields('GT06N', 'TCP', {
+          'speed_limit.max_kmh': 0,
+        }),
+      );
+
+      expect(errors).toEqual([
+        'field "speed_limit.max_kmh" ต้องไม่น้อยกว่า 1 km/h',
+      ]);
+    });
+
+    it('validateFields (สร้าง/แก้ Config) ใช้ช่วงเดียวกัน', async () => {
+      findMany.mockResolvedValue([speedDef]);
+
+      const errors = await errorsOf(
+        service.validateFields('GT06N', 'TCP', { 'speed_limit.max_kmh': 500 }),
+      );
+
+      expect(errors).toContain(
+        'field "speed_limit.max_kmh" ต้องอยู่ระหว่าง 1–200 km/h',
+      );
+    });
+
+    it('ไม่มีช่วง (null ทั้งคู่) -> ไม่จำกัดเหมือนเดิม', async () => {
+      findMany.mockResolvedValue([
+        { ...speedDef, minValue: null, maxValue: null },
+      ]);
+
+      await expect(
+        service.validateOverridableFields('GT06N', 'TCP', {
+          'speed_limit.max_kmh': 9999,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    describe('create', () => {
+      const base: CreateConfigDefinitionDto = {
+        fieldName: 'speed_limit.max_kmh',
+        dataType: 'integer',
+        required: false,
+        supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
+      };
+
+      it('integer + ช่วงถูกต้อง -> บันทึก minValue/maxValue', async () => {
+        create.mockResolvedValue(speedDef);
+
+        await createDefinition({ ...base, minValue: 1, maxValue: 200 });
+
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              minValue: 1,
+              maxValue: 200,
+            }) as unknown,
+          }),
+        );
+      });
+
+      it('dataType ไม่ใช่ตัวเลข + มีช่วง -> BadRequestException ไม่สร้าง', async () => {
+        await expect(
+          createDefinition({ ...base, dataType: 'string', minValue: 1 }),
+        ).rejects.toThrow(BadRequestException);
+        expect(create).not.toHaveBeenCalled();
+      });
+
+      it('minValue > maxValue -> BadRequestException ไม่สร้าง', async () => {
+        await expect(
+          createDefinition({ ...base, minValue: 10, maxValue: 5 }),
+        ).rejects.toThrow(BadRequestException);
+        expect(create).not.toHaveBeenCalled();
       });
     });
   });
