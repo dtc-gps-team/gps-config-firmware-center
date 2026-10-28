@@ -15,9 +15,16 @@ import '../../core/ui/app_notice.dart';
 /// design system ใหม่ (docs/22 Batch 4): `AppNotice` tone warning แทนกล่องสี
 /// `mockAccentSoft` เดิม
 class PendingConfigOverrideBanner extends StatelessWidget {
-  const PendingConfigOverrideBanner({super.key, required this.pending});
+  const PendingConfigOverrideBanner({
+    super.key,
+    required this.pending,
+    this.central = false,
+  });
 
   final DeviceConfigOverride pending;
+
+  /// โหมด central (docs/30 §6) — Override ไปถึงกล่องผ่านคำขอส่งเข้ากล่องในงาน
+  final bool central;
 
   @override
   Widget build(BuildContext context) {
@@ -33,8 +40,10 @@ class PendingConfigOverrideBanner extends StatelessWidget {
           if (requested.isNotEmpty) Text('ขอแก้: $requested'),
           Text('เหตุผล: ${pending.reason}'),
           const SizedBox(height: 2),
-          const Text(
-            'ยังไม่มีผลกับเครื่องจนกว่าจะอนุมัติและใส่ Config เข้าเครื่องอีกครั้ง',
+          Text(
+            central
+                ? 'ยังไม่มีผลกับเครื่องจนกว่าจะอนุมัติและกดส่งเข้ากล่องจากหน้างาน'
+                : 'ยังไม่มีผลกับเครื่องจนกว่าจะอนุมัติและใส่ Config เข้าเครื่องอีกครั้ง',
           ),
         ],
       ),

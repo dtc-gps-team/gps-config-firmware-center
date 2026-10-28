@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
@@ -14,6 +16,8 @@ import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/text_scale.dart';
+import '../task/apply_mode_provider.dart';
+import '../task/config_apply_request_repository.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
 
@@ -39,6 +43,10 @@ class ConfigOverridePage extends ConsumerStatefulWidget {
   const ConfigOverridePage({super.key, required this.deviceId});
 
   final String deviceId;
+
+  /// docs/30 §6 — ข้อความหลังส่งในโหมด central (Override = คำขอส่งเข้ากล่อง)
+  static const centralSubmittedMessage =
+      'ส่งคำขอแล้ว รอ Operation อนุมัติ แล้วกดส่งเข้ากล่องจากหน้างาน';
 
   @override
   ConsumerState<ConfigOverridePage> createState() => _ConfigOverridePageState();
@@ -101,10 +109,21 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       // parse ตาม dataType — ไม่ผ่านต้องขึ้น error ที่ฟอร์ม ไม่ throw และไม่
       // ส่งค่าดิบ (string) ไปให้ backend ตีกลับ 400
       final parsed = parseConfigValue(rawEdit, def.dataType);
-      if (parsed.isOk) {
-        changed[entry.key] = parsed.value;
-      } else {
+      if (!parsed.isOk) {
         fieldErrors[entry.key] = parsed.error!;
+        continue;
+      }
+      // docs/30 — ช่วงค่าตัวเลขจากคลัง Parameter (backend ตรวจซ้ำ)
+      final outOfRange = configRangeError(
+        parsed.value,
+        def.minValue,
+        def.maxValue,
+        def.unit,
+      );
+      if (outOfRange != null) {
+        fieldErrors[entry.key] = outOfRange;
+      } else {
+        changed[entry.key] = parsed.value;
       }
     }
 
@@ -127,6 +146,7 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
       return;
     }
 
+    final central = ref.read(centralApplyModeProvider).valueOrNull ?? false;
     setState(() => _submitting = true);
     try {
       await ref
@@ -143,6 +163,10 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
         _reasonController.clear();
       });
       ref.invalidate(currentConfigProvider(widget.deviceId));
+      if (central) {
+        await _goToRequestTask();
+        return;
+      }
       // มติ 2026-09-24 (PR #225): ส่งคำขอสำเร็จเท่านั้น ยังไม่มีผลจริง —
       // ข้อความจึงเปลี่ยนจาก "Override สำเร็จ" เดิม (ตอนที่ยัง apply ทันที)
       // เป็นสถานะ "รอ Operation อนุมัติ" แทน ไม่ให้ ST เข้าใจผิดว่าเสร็จแล้ว
@@ -160,8 +184,32 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
     }
   }
 
+  /// docs/30 §6 — โหมด central: Override กลายเป็นคำขอส่งเข้ากล่องในงานของช่าง
+  /// ไปที่หน้างานนั้นเลย (ติดตาม/กดส่งที่นั่น) · งานหาจาก `openRequest` ของ
+  /// apply-options (backend ไม่คืน taskId ใน response ของ Override) · หาไม่เจอ
+  /// หรือโหลดไม่ได้ = อยู่หน้าเดิมพร้อมข้อความ ไม่ถือว่าส่งไม่สำเร็จ
+  Future<void> _goToRequestTask() async {
+    String? taskId;
+    try {
+      final options = await ref
+          .read(configApplyRequestRepositoryProvider)
+          .applyOptions(widget.deviceId);
+      taskId = options.openRequest?.taskId;
+    } on Object {
+      taskId = null;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(ConfigOverridePage.centralSubmittedMessage)),
+    );
+    if (taskId != null) {
+      context.pushReplacement(AppRoutes.taskDetail(taskId));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final central = ref.watch(centralApplyModeProvider).valueOrNull ?? false;
     final configAsync = ref.watch(currentConfigProvider(widget.deviceId));
     final definitionsAsync = ref.watch(configFieldDefinitionListProvider);
     final navigator = Navigator.of(context);
@@ -183,10 +231,14 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
                 // เปลี่ยนจากข้อความเดิมที่บอกว่า override มีผลทันที เป็นบอกตรงๆ ว่า
                 // ต้องผ่าน Operation อนุมัติก่อน แล้วช่างต้องกด "ใส่ Config เข้าเครื่อง"
                 // ต่อเองอีกครั้ง (apply-config ยังไม่ automation ในรอบนี้)
-                description:
-                    'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
-                    'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
-                    'Audit Log ทุกครั้ง',
+                // docs/30 §6 — โหมด central ค่าไปถึงกล่องผ่านคำขอส่งเข้ากล่อง
+                description: central
+                    ? 'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ส่งแล้วเป็นคำขอส่งเข้ากล่อง รอ '
+                          'Operation อนุมัติ แล้วกดส่งเข้ากล่องจากหน้างาน · ต้องระบุ'
+                          'เหตุผลและถูกบันทึกลง Audit Log ทุกครั้ง'
+                    : 'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
+                          'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
+                          'Audit Log ทุกครั้ง',
                 // issue #223 — ค่าที่เห็นในฟอร์มไม่ใช่ base Config ล้วนๆ
                 // (`hasDeviceOverride` = true เฉพาะคำขอที่ Operation อนุมัติแล้ว)
                 status: config != null && config.hasDeviceOverride
@@ -239,6 +291,7 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
                         for (final d in definitions) d.fieldName: d,
                       };
                       return _OverrideForm(
+                        central: central,
                         config: config,
                         defByName: defByName,
                         edits: _edits,
@@ -290,6 +343,7 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
 
 class _OverrideForm extends StatelessWidget {
   const _OverrideForm({
+    required this.central,
     required this.config,
     required this.defByName,
     required this.edits,
@@ -306,6 +360,7 @@ class _OverrideForm extends StatelessWidget {
     required this.onSubmit,
   });
 
+  final bool central;
   final DeviceConfigDraft config;
   final Map<String, ConfigFieldDefinition> defByName;
   final Map<String, String> edits;
@@ -330,7 +385,10 @@ class _OverrideForm extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
         if (config.pendingOverride != null) ...[
-          _PendingOverrideBanner(pending: config.pendingOverride!),
+          _PendingOverrideBanner(
+            pending: config.pendingOverride!,
+            central: central,
+          ),
           const SizedBox(height: 16),
         ],
         AppCard(
@@ -392,7 +450,9 @@ class _OverrideForm extends StatelessWidget {
                     ),
                   ),
                 )
-              : const Text('ยืนยัน Override'),
+              : Text(
+                  central ? 'ขออนุมัติและรอส่งเข้ากล่อง' : 'ยืนยัน Override',
+                ),
         ),
       ],
     );
@@ -577,6 +637,8 @@ class _FieldRowState extends State<_FieldRow> {
       decoration: InputDecoration(
         isDense: true,
         hintText: _hintFor(dataType),
+        // docs/30 §6 — บอกช่วงค่าที่ยอมรับ เช่น "ช่วง 1–200 km/h"
+        helperText: _rangeHelper(def),
         errorText: widget.errorText,
         suffixIcon: def.sensitive
             ? AppRevealToggle(
@@ -605,6 +667,11 @@ class _FieldRowState extends State<_FieldRow> {
     return TextInputType.text;
   }
 
+  static String? _rangeHelper(ConfigFieldDefinition def) {
+    final label = configRangeLabel(def.minValue, def.maxValue, def.unit);
+    return label == null ? null : 'ช่วง $label';
+  }
+
   static String? _hintFor(String dataType) {
     switch (dataType) {
       case 'json':
@@ -629,9 +696,10 @@ class _FieldRowState extends State<_FieldRow> {
 /// ตอนนี้จะโดน 409 (แสดง error ปกติผ่าน `_error`/`_errorList` ถ้า ST กด submit
 /// ซ้ำ ไม่ block ปุ่มไว้ล่วงหน้า — mirror การจัดการ error อื่นในหน้านี้).
 class _PendingOverrideBanner extends StatelessWidget {
-  const _PendingOverrideBanner({required this.pending});
+  const _PendingOverrideBanner({required this.pending, required this.central});
 
   final DeviceConfigOverride pending;
+  final bool central;
 
   @override
   Widget build(BuildContext context) {
@@ -640,7 +708,13 @@ class _PendingOverrideBanner extends StatelessWidget {
       tone: AppBadgeTone.warning,
       icon: Icons.hourglass_top,
       title: 'มีคำขอ override รอ Operation อนุมัติอยู่',
-      child: Text('เหตุผล: ${pending.reason}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('เหตุผล: ${pending.reason}'),
+          if (central) const Text('ติดตามและกดส่งเข้ากล่องได้จากหน้างาน'),
+        ],
+      ),
     );
   }
 }

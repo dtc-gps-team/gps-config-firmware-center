@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_sensitive_value.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
+
+import 'support/fake_config_apply_request_repository.dart';
 
 const _apnDef = ConfigFieldDefinition(
   id: 'def-apn',
@@ -834,4 +839,159 @@ void main() {
       );
     },
   );
+
+  // docs/30 §6 — ช่วงค่าตัวเลข + โหมด central (Override = คำขอส่งเข้ากล่อง)
+  group('docs/30 — ช่วงค่าและโหมด central', () {
+    const speedDef = ConfigFieldDefinition(
+      id: 'def-speed',
+      fieldName: 'speed_limit.max_kmh',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      unit: 'km/h',
+      minValue: 1,
+      maxValue: 200,
+    );
+    const speedConfig = DeviceConfigDraft(
+      id: 'cfg-1',
+      name: 'BOX · มาตรฐาน',
+      deviceModel: 'ESP32-DEVKIT-V1',
+      protocol: 'HTTP',
+      status: ConfigStatus.approved,
+      fields: {'speed_limit.max_kmh': 80},
+    );
+    const speedInput = Key('config_override_input_speed_limit.max_kmh');
+
+    Future<_FakeConfigOverrideRepository> pumpMode(
+      WidgetTester tester, {
+      required bool central,
+      FakeConfigApplyRequestRepository? applyRepo,
+    }) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: speedConfig,
+        definitions: const [speedDef],
+      );
+      tester.view.physicalSize = const Size(400 * 3, 1200 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const ConfigOverridePage(deviceId: 'DEV-0117'),
+          ),
+          GoRoute(
+            path: '/tasks/:id',
+            builder: (_, state) =>
+                Text('task-page-${state.pathParameters['id']}'),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            configOverrideRepositoryProvider.overrideWithValue(fake),
+            centralApplyModeProvider.overrideWith((ref) async => central),
+            configApplyRequestRepositoryProvider.overrideWithValue(
+              applyRepo ?? FakeConfigApplyRequestRepository(),
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return fake;
+    }
+
+    Future<void> fillAndSubmit(WidgetTester tester, String value) async {
+      await tester.enterText(find.byKey(speedInput), value);
+      await tester.enterText(
+        find.byKey(const Key('config_override_reason_input')),
+        'ลูกค้าขอจำกัดความเร็ว',
+      );
+      final submit = find.byKey(const Key('config_override_submit'));
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('ช่องตัวเลขที่มีช่วง -> บอกช่วงพร้อมหน่วยใต้ช่อง', (
+      tester,
+    ) async {
+      await pumpMode(tester, central: false);
+
+      expect(find.text('ช่วง 1–200 km/h'), findsOneWidget);
+    });
+
+    testWidgets('ค่านอกช่วง -> error ใต้ช่อง ไม่ส่งคำขอ', (tester) async {
+      final fake = await pumpMode(tester, central: false);
+
+      await fillAndSubmit(tester, '250');
+
+      expect(fake.lastFields, isNull);
+      expect(find.text('ต้องอยู่ระหว่าง 1–200 km/h'), findsWidgets);
+    });
+
+    testWidgets('โหมดเดิม: ส่งสำเร็จอยู่หน้าเดิม ไม่ถามหางาน', (tester) async {
+      final applyRepo = FakeConfigApplyRequestRepository();
+      final fake = await pumpMode(tester, central: false, applyRepo: applyRepo);
+
+      expect(find.text('ยืนยัน Override'), findsOneWidget);
+      await fillAndSubmit(tester, '60');
+
+      expect(fake.lastFields, {'speed_limit.max_kmh': 60});
+      expect(applyRepo.optionsCalls, 0);
+      expect(find.text('ส่งคำขอแล้ว รอ Operation อนุมัติ'), findsOneWidget);
+    });
+
+    testWidgets(
+      'โหมด central: ปุ่ม/คำอธิบายบอกว่าเป็นคำขอส่งเข้ากล่อง · ส่งแล้วไปหน้างานของคำขอ',
+      (tester) async {
+        final applyRepo = FakeConfigApplyRequestRepository(
+          options: fakeApplyOptions(
+            deviceId: 'DEV-0117',
+            openRequest: const ApplyOptionOpenRequest(
+              kind: FieldApplyKind.config,
+              status: ConfigApplyRequestStatus.pending,
+              taskId: 'task-9',
+            ),
+          ),
+        );
+        final fake = await pumpMode(
+          tester,
+          central: true,
+          applyRepo: applyRepo,
+        );
+
+        expect(find.text('ขออนุมัติและรอส่งเข้ากล่อง'), findsOneWidget);
+        expect(find.textContaining('กดส่งเข้ากล่องจากหน้างาน'), findsOneWidget);
+        await fillAndSubmit(tester, '60');
+
+        expect(fake.lastFields, {'speed_limit.max_kmh': 60});
+        expect(applyRepo.optionsCalls, 1);
+        expect(find.text('task-page-task-9'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'โหมด central แต่หางานของคำขอไม่เจอ -> อยู่หน้าเดิม พร้อมข้อความบอกไปกดส่งที่หน้างาน',
+      (tester) async {
+        final applyRepo = FakeConfigApplyRequestRepository(
+          options: fakeApplyOptions(deviceId: 'DEV-0117'),
+        );
+        await pumpMode(tester, central: true, applyRepo: applyRepo);
+
+        await fillAndSubmit(tester, '60');
+
+        expect(find.byType(ConfigOverridePage), findsOneWidget);
+        expect(
+          find.text(ConfigOverridePage.centralSubmittedMessage),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 }
