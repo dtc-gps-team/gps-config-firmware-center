@@ -841,6 +841,49 @@ void main() {
   );
 
   // docs/30 §6 — ช่วงค่าตัวเลข + โหมด central (Override = คำขอส่งเข้ากล่อง)
+  testWidgets(
+    'มีคำอธิบาย -> แสดงชื่อเรียกง่ายเป็นหัว และชื่อพารามิเตอร์จริงตัวเล็กด้านล่าง',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · มาตรฐาน',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10, 'gps.baud_rate': 9600},
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+            description: 'รอบส่ง GPS (วินาที)',
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      expect(
+        find.byKey(const Key('config_override_label_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      expect(find.text('รอบส่ง GPS (วินาที)'), findsOneWidget);
+      expect(find.text('gps.send_interval_sec'), findsOneWidget);
+      // ไม่มีคำอธิบาย -> ใช้ชื่อพารามิเตอร์อย่างเดียว ไม่มีหัวซ้ำ
+      expect(
+        find.byKey(const Key('config_override_label_gps.baud_rate')),
+        findsNothing,
+      );
+      expect(find.text('gps.baud_rate'), findsOneWidget);
+    },
+  );
+
   group('ค่าในกล่องกับค่าที่อนุมัติแล้วรอส่ง (delivery v3.71)', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',

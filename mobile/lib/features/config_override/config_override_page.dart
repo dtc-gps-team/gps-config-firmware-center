@@ -538,7 +538,7 @@ class _FieldRowState extends State<_FieldRow> {
   Widget build(BuildContext context) {
     final currentValue =
         widget.editValue ?? configValueToInput(widget.originalValue);
-    final name = Text(
+    final key = Text(
       widget.fieldKey,
       style: const TextStyle(
         fontSize: AppTypography.xs,
@@ -547,6 +547,27 @@ class _FieldRowState extends State<_FieldRow> {
         color: AppColors.mutedForeground,
       ),
     );
+    // ชื่อเรียกง่ายจาก Parameter Library (`description` เช่น "รอบส่ง GPS
+    // (วินาที)") เป็นหัว ชื่อพารามิเตอร์จริงไว้ใต้ ให้ช่างคุยกับทีมได้ตรงตัว
+    final label = widget.def?.description?.trim();
+    final Widget name = label == null || label.isEmpty
+        ? key
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                key: Key('config_override_label_${widget.fieldKey}'),
+                style: const TextStyle(
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.foreground,
+                ),
+              ),
+              key,
+            ],
+          );
 
     final inBox = widget.inBox;
     final inBoxText = inBox == null
