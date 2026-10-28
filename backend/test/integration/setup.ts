@@ -58,6 +58,9 @@ export async function resetDb(prisma: PrismaClient): Promise<void> {
   // ConfigDeletionRequest — FK ไป Config เป็น onDelete: Cascade (docs/11 Part A)
   // แต่ลบเองก่อนให้ชัดเจน (style เดียวกับ Incident/Campaign ข้างบน)
   await prisma.configDeletionRequest.deleteMany();
+  // ConfigApplyRequest ก่อน DeviceConfigOverride/Config/Task — FK `overrideId`
+  // (docs/30) และ taskId/configId เป็น onDelete: Restrict ทั้งหมด
+  await prisma.configApplyRequest.deleteMany();
   // DeviceConfigOverride ก่อน Config และก่อน Device (issue #223) — FK ไป
   // Config เป็น onDelete: Restrict (mirror ConfigVersion) ลบ Config ทั้งที่ยังมี
   // override อยู่ไม่ได้ (FK ไป Device เป็น Cascade แต่ลบเองก่อนให้ชัดเจนเหมือนกัน)

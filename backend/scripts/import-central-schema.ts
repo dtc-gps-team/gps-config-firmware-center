@@ -24,6 +24,8 @@ loadEnv({ path: path.resolve(__dirname, '../../.env'), quiet: true });
  * - รันซ้ำได้: พารามิเตอร์ที่มีอยู่แล้วอัปเดตป้าย/ค่าเริ่มต้น/ตัวเลือก ไม่สร้างซ้ำ ไม่ลบของเดิม
  *   และไม่แตะบัญชีหรือข้อมูลอื่น · เวอร์ชัน schema ที่สูงกว่ามีพารามิเตอร์เพิ่ม รันอีกครั้งด้วยเวอร์ชันใหม่ได้
  * - ใช้ `--dry-run` เพื่อดูแผนโดยไม่เขียนฐานข้อมูล
+ * - `min`/`max` ของพารามิเตอร์ตัวเลขเก็บเป็น `minValue`/`maxValue` (docs/30) ให้ระบบตรวจขอบเขตตั้งแต่ตอนกรอก
+ * - `--st-overridable a,b` เปิดให้ช่างแก้ field เหล่านั้นผ่าน Override (ไม่ระบุ = ไม่แตะค่าเดิม)
  */
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -70,6 +72,14 @@ async function main(): Promise<void> {
     throw new Error('import-central-schema.ts ห้ามรันบน production');
   }
   const file = arg('file');
+  // docs/30 — field ที่เปิดให้ช่าง (ST) แก้ผ่าน Override คั่นด้วย comma
+  // เช่น --st-overridable speed_limit.max_kmh,speed_limit.enabled
+  const stOverridable = new Set(
+    (arg('st-overridable') ?? '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean),
+  );
   const schema: CentralSchemaDoc = file
     ? (JSON.parse(
         fs.readFileSync(path.resolve(file), 'utf-8'),
@@ -117,8 +127,13 @@ async function main(): Promise<void> {
           unit: def.unit,
           category: def.category,
           defaultValue: def.defaultValue,
+          minValue: def.minValue,
+          maxValue: def.maxValue,
+          // เปิดให้ช่างแก้ผ่าน Override เฉพาะที่ระบุใน --st-overridable (docs/30)
+          // ไม่ระบุ = ไม่แตะค่าที่ตั้งไว้เดิม
+          ...(stOverridable.has(def.fieldName) ? { stOverridable: true } : {}),
         },
-        create: def,
+        create: { ...def, stOverridable: stOverridable.has(def.fieldName) },
       });
       await prisma.configFieldDefinitionModelSupport.upsert({
         where: {

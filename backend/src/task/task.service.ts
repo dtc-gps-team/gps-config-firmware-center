@@ -719,18 +719,33 @@ export class TaskService {
    * อนุมัติแล้วแต่ยังไม่กดส่ง) ตามไปด้วย ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน
    * — ตอนงานถูกยกเลิก (docs/25 §3.9 มติ Q9) และตอนปิดงาน (docs/28 §5.4) · คำขอ
    * ที่ `sending` แล้วไม่แตะ (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
+   *
+   * docs/30 §3 — Override ที่ผูกกับคำขอซึ่งยังไม่อนุมัติ ปิดเป็น `rejected` ตาม
+   * (แบบเดียวกับ `closeLinkedOverride` ตอนช่างยกเลิก/หมดอายุ) ไม่งั้นค้าง pending
+   * ถาวร: คิว Override ซ่อนตัวที่ผูกคำขอ และอนุมัติตรงได้ 409 · Override ของคำขอ
+   * ที่อนุมัติแล้วเป็น approved ไปตั้งแต่ตอนอนุมัติ เงื่อนไข `pending` จึงไม่แตะ
    */
   private async cancelPendingConfigApplyRequests(
     tx: Prisma.TransactionClient,
     taskId: string,
     reason: string,
   ): Promise<void> {
+    const now = new Date();
     await tx.configApplyRequest.updateMany({
       where: { taskId, status: { in: ['pending', 'approved'] } },
       data: {
         status: 'cancelled',
         resultDetail: reason,
-        completedAt: new Date(),
+        completedAt: now,
+      },
+    });
+    await tx.deviceConfigOverride.updateMany({
+      where: { status: 'pending', applyRequest: { is: { taskId } } },
+      data: {
+        status: 'rejected',
+        rejectReason: reason,
+        decidedBy: null,
+        decidedAt: now,
       },
     });
   }

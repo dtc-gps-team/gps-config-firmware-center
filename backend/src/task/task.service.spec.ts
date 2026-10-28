@@ -92,6 +92,8 @@ describe('TaskService', () => {
   let queryRaw: jest.Mock;
   // docs/25 §3.9 — ยกเลิกงานแล้วปิดคำขอส่ง Config ที่ pending ตาม
   let configApplyRequest: { updateMany: jest.Mock; findFirst: jest.Mock };
+  // docs/30 §3 — Override ที่ผูกคำขอซึ่งถูกยกเลิกตามงานต้องปิดเป็น rejected ด้วย
+  let deviceConfigOverride: { updateMany: jest.Mock };
   let user: { findUnique: jest.Mock };
 
   beforeEach(async () => {
@@ -118,6 +120,9 @@ describe('TaskService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findFirst: jest.fn().mockResolvedValue(null),
     };
+    deviceConfigOverride = {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    };
     user = { findUnique: jest.fn().mockResolvedValue(null) };
     queryRaw = jest
       .fn()
@@ -133,6 +138,7 @@ describe('TaskService', () => {
       auditLog,
       taskEvent,
       configApplyRequest,
+      deviceConfigOverride,
       user,
       $queryRaw: queryRaw,
     };
@@ -1426,6 +1432,38 @@ describe('TaskService', () => {
       });
     });
 
+    it('docs/30: Operation ยกเลิกงาน → Override ที่ผูกคำขอ pending ของงานนี้ปิดเป็น rejected', async () => {
+      queryRaw.mockResolvedValue([
+        { status: 'in_progress', createdAt: sampleTask.createdAt },
+      ]);
+      task.findUnique.mockResolvedValue({
+        ...sampleTask,
+        status: 'in_progress',
+      });
+      task.update.mockResolvedValue({ ...sampleTask, status: 'cancelled' });
+
+      await service.update(sampleTask.id, { status: 'cancelled' }, operation);
+
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'pending',
+          applyRequest: { is: { taskId: sampleTask.id } },
+        },
+        data: {
+          status: 'rejected',
+          rejectReason: 'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
+          decidedBy: null,
+          decidedAt: expect.any(Date) as unknown,
+        },
+      });
+      // ยกเลิกคำขอก่อน แล้วค่อยปิด Override (Override ของคำขอที่อนุมัติแล้วเป็น approved ไม่ถูกแตะ)
+      expect(
+        configApplyRequest.updateMany.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        deviceConfigOverride.updateMany.mock.invocationCallOrder[0],
+      );
+    });
+
     it('Operation เปลี่ยนสถานะอื่น (ไม่ใช่ยกเลิก): ไม่แตะคำขอ', async () => {
       queryRaw.mockResolvedValue([
         { status: 'pending', createdAt: sampleTask.createdAt },
@@ -1646,6 +1684,23 @@ describe('TaskService', () => {
       });
     });
 
+    it('docs/30: ST กดเสร็จงาน → Override ที่ผูกคำขอ pending ของงานนี้ปิดเป็น rejected', async () => {
+      await service.update(sampleTask.id, { status: 'completed' }, owner);
+
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: 'pending',
+          applyRequest: { is: { taskId: sampleTask.id } },
+        },
+        data: {
+          status: 'rejected',
+          rejectReason: 'ช่างปิดงานแล้ว ระบบยกเลิกคำขอให้อัตโนมัติ',
+          decidedBy: null,
+          decidedAt: expect.any(Date) as unknown,
+        },
+      });
+    });
+
     it('ST กดเสร็จงานระหว่างคำขอ sending: 409 ไม่เปลี่ยนสถานะงาน', async () => {
       configApplyRequest.findFirst.mockResolvedValue({ id: 'req-sending' });
 
@@ -1752,6 +1807,7 @@ describe('TaskService', () => {
         },
       });
       expect(configApplyRequest.updateMany).toHaveBeenCalledTimes(2);
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledTimes(2);
     });
 
     it('งานขยับระหว่างรอ (เช็คซ้ำหลังล็อกไม่ผ่าน): ข้าม ไม่เขียน event', async () => {
