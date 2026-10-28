@@ -14,14 +14,18 @@ Device _device({
   String deviceId = 'DEV-0001',
   String simNumber = '0812345678',
   DeviceLifecycleStatus status = DeviceLifecycleStatus.registered,
+  String deviceModel = 'GT06N',
+  String protocol = 'TCP',
+  Customer? customer,
 }) => Device(
   id: id,
   deviceId: deviceId,
   simNumber: simNumber,
-  deviceModel: 'GT06N',
-  protocol: 'TCP',
+  deviceModel: deviceModel,
+  protocol: protocol,
   status: status,
   registeredAt: DateTime(2026, 6, 1),
+  customer: customer,
 );
 
 class _FakeDeviceSearchRepository implements DeviceSearchRepository {
@@ -218,5 +222,118 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('DEVICE_DETAIL_STUB DEV-0117'), findsOneWidget);
+  });
+
+  group('ตัวกรอง รุ่น / ลูกค้า / โปรโตคอล / สถานะ', () {
+    const custA = Customer(id: 'c-a', companyName: 'ขนส่ง A');
+    const custB = Customer(id: 'c-b', companyName: 'โลจิสติกส์ B');
+    final fleet = [
+      _device(
+        id: 'u1',
+        deviceId: 'BOX-0001',
+        deviceModel: 'ESP32-DEVKIT-V1',
+        protocol: 'HTTP',
+        status: DeviceLifecycleStatus.installed,
+        customer: custA,
+      ),
+      _device(id: 'u2', deviceId: 'DEV-0092'),
+      _device(
+        id: 'u3',
+        deviceId: 'DEV-0117',
+        status: DeviceLifecycleStatus.installed,
+        customer: custA,
+      ),
+      _device(
+        id: 'u4',
+        deviceId: 'DEV-0231',
+        deviceModel: 'GT06L',
+        status: DeviceLifecycleStatus.decommissioned,
+        customer: custB,
+      ),
+    ];
+
+    Future<void> pick(WidgetTester tester, String chip, String option) async {
+      await tester.tap(find.byKey(Key('device_filter_$chip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('device_filter_option_$option')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('กรองตามรุ่น -> เหลือเฉพาะรุ่นนั้น + ชิปบอกค่าที่เลือก', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await tester.tap(find.byKey(const Key('device_filter_model')));
+      await tester.pumpAndSettle();
+      // ตัวเลือกมาจากรุ่นที่มีจริงในรายการ พร้อมจำนวนเครื่อง
+      expect(find.text('GT06N (2)'), findsOneWidget);
+      expect(find.text('GT06L (1)'), findsOneWidget);
+      expect(find.text('ESP32-DEVKIT-V1 (1)'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('device_filter_option_GT06N')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('DEV-0231'), findsNothing);
+      expect(find.text('รุ่น: GT06N'), findsOneWidget);
+      expect(find.text('แสดง 2 จาก 4 เครื่อง'), findsOneWidget);
+    });
+
+    testWidgets('กรองตามลูกค้า รวมถึง "ยังไม่ผูกลูกค้า"', (tester) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'customer', 'c-a');
+      expect(find.text('BOX-0001'), findsOneWidget);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsNothing);
+      expect(find.text('ลูกค้า: ขนส่ง A'), findsOneWidget);
+
+      await pick(tester, 'customer', 'none');
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('ลูกค้า: ยังไม่ผูกลูกค้า'), findsOneWidget);
+    });
+
+    testWidgets('หลายตัวกรอง + คำค้น ทำงานร่วมกัน · ล้างตัวกรองแล้วกลับครบ', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'protocol', 'TCP');
+      await pick(tester, 'status', 'installed');
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsNothing);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('สถานะ: Installed'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        '0092',
+      );
+      await tester.pump();
+      expect(
+        find.text('ไม่พบอุปกรณ์ที่ตรงกับคำค้นหรือตัวกรอง'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('device_filter_clear')));
+      await tester.pump();
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.byKey(const Key('device_filter_clear')), findsNothing);
+      expect(find.text('รุ่น'), findsOneWidget);
+    });
+
+    testWidgets('เลือก "ทั้งหมด" -> ยกเลิกตัวกรองนั้น', (tester) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'model', 'GT06L');
+      expect(find.text('DEV-0092'), findsNothing);
+      await pick(tester, 'model', 'all');
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.text('รุ่น'), findsOneWidget);
+      expect(find.textContaining('แสดง '), findsNothing);
+    });
   });
 }
