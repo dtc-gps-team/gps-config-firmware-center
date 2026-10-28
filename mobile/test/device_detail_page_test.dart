@@ -736,6 +736,11 @@ void _statusTests() {
         expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
         expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
         expect(onlineTone(tester), AppBadgeTone.success);
+        // ป้ายอยู่บรรทัดเดียวกับชื่อแถว ชิดขวา เหมือนแถวสถานะ Config/Firmware
+        final label = tester.getRect(find.text('การเชื่อมต่อ'));
+        final badge = tester.getRect(find.text('ออนไลน์'));
+        expect((badge.center.dy - label.center.dy).abs(), lessThan(8));
+        expect(badge.left, greaterThan(label.right));
       });
 
       testWidgets('/status เคยติดต่อแต่เกิน 5 นาที -> "ออฟไลน์"', (

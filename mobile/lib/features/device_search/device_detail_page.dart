@@ -403,13 +403,10 @@ class _StatusSection extends ConsumerWidget {
               AppInfoRow(
                 key: const Key('device_online_row'),
                 label: 'การเชื่อมต่อ',
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: AppBadge(
-                    label: online.label,
-                    tone: online.tone,
-                    dot: true,
-                  ),
+                child: AppBadge(
+                  label: online.label,
+                  tone: online.tone,
+                  dot: true,
                 ),
               ),
               AppInfoRow(
