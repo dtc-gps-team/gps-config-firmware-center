@@ -19,6 +19,7 @@ import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/text_scale.dart';
 import '../auth/account_sheet.dart';
 import 'device_search_repository.dart';
+import 'starred_devices.dart';
 
 /// `deviceId` / `simNumber` contains-match, case-insensitive — same behaviour
 /// as the backend `search` param and the Web search box. Filtering is
@@ -101,7 +102,8 @@ List<_FilterOption> _filterOptions(_DeviceFilter filter, List<Device> devices) {
 /// + dot · ตรรกะ/การเรียก API เหมือนเดิม
 ///
 /// ใต้ช่องค้นหามีชิปตัวกรอง รุ่น / ลูกค้า / โปรโตคอล / สถานะ ใช้ร่วมกับคำค้นได้
-/// · ยังไม่พิมพ์และไม่กรอง = ไม่แสดงรายการ (ขึ้นข้อความชวนค้นหาแทน)
+/// · ยังไม่พิมพ์และไม่กรอง = ไม่แสดงรายการทั้งหมด แสดงเฉพาะเครื่องที่ติดดาวไว้
+/// ([starredDevicesProvider]) หรือข้อความชวนค้นหาถ้ายังไม่ติดดาว
 class DeviceSearchPage extends ConsumerStatefulWidget {
   const DeviceSearchPage({super.key});
 
@@ -171,7 +173,17 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(deviceListProvider);
     final allDevices = devicesAsync.valueOrNull ?? const <Device>[];
+    final starred = ref.watch(starredDevicesProvider);
     final navigator = Navigator.of(context);
+
+    Widget card(Device device, Key key) => _DeviceCard(
+      key: key,
+      device: device,
+      starred: starred.contains(device.deviceId),
+      onToggleStar: () =>
+          ref.read(starredDevicesProvider.notifier).toggle(device.deviceId),
+      onTap: () => context.push(AppRoutes.deviceDetail(device.deviceId)),
+    );
 
     return AppV2Theme(
       child: Scaffold(
@@ -245,16 +257,45 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                   child: devicesAsync.when(
                     skipLoadingOnRefresh: true,
                     data: (devices) {
-                      // ยังไม่ค้นหาและไม่กรอง ไม่ต้องเทรายการทั้งหมดออกมา
+                      // ยังไม่ค้นหาและไม่กรอง ไม่ต้องเทรายการทั้งหมดออกมา —
+                      // แสดงเฉพาะเครื่องที่ติดดาวไว้ (ไม่ต้องค้นหาใหม่ทุกรอบ)
                       if (devices.isNotEmpty &&
                           _query.trim().isEmpty &&
                           _filters.isEmpty) {
-                        return _DeviceSearchEmpty(
-                          icon: Icons.search,
-                          messageKey: const Key('device_search_prompt'),
-                          message:
-                              'มีอุปกรณ์ทั้งหมด ${devices.length} เครื่อง\n'
-                              'พิมพ์เลขเครื่องหรือเบอร์ซิม หรือเลือกตัวกรองด้านบน',
+                        final pinned = devices
+                            .where((d) => starred.contains(d.deviceId))
+                            .toList(growable: false);
+                        if (pinned.isEmpty) {
+                          return _DeviceSearchEmpty(
+                            icon: Icons.search,
+                            messageKey: const Key('device_search_prompt'),
+                            message:
+                                'มีอุปกรณ์ทั้งหมด ${devices.length} เครื่อง\n'
+                                'พิมพ์เลขเครื่องหรือเบอร์ซิม หรือเลือกตัวกรองด้านบน\n'
+                                'แตะ ☆ บนการ์ดเพื่อติดดาว ครั้งหน้าจะขึ้นที่นี่เลย',
+                          );
+                        }
+                        return ListView.separated(
+                          key: const Key('device_starred_list'),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: pinned.length + 1,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, row) => row == 0
+                              ? Text(
+                                  'ติดดาวไว้ ${pinned.length} เครื่อง · ค้นหา'
+                                  'หรือกรองเพื่อดูเครื่องอื่น',
+                                  key: const Key('device_starred_title'),
+                                  style: const TextStyle(
+                                    fontSize: AppTypography.sm,
+                                    height: AppTypography.smHeight,
+                                    color: AppColors.mutedForeground,
+                                  ),
+                                )
+                              : card(
+                                  pinned[row - 1],
+                                  Key('device_starred_card_${row - 1}'),
+                                ),
                         );
                       }
                       final filtered = _applyFilters(
@@ -291,13 +332,7 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                               );
                             }
                             final i = counted ? row - 1 : row;
-                            return _DeviceCard(
-                              key: Key('device_card_$i'),
-                              device: filtered[i],
-                              onTap: () => context.push(
-                                AppRoutes.deviceDetail(filtered[i].deviceId),
-                              ),
-                            );
+                            return card(filtered[i], Key('device_card_$i'));
                           },
                         ),
                       );
@@ -324,9 +359,17 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
 }
 
 class _DeviceCard extends StatelessWidget {
-  const _DeviceCard({super.key, required this.device, required this.onTap});
+  const _DeviceCard({
+    super.key,
+    required this.device,
+    required this.starred,
+    required this.onToggleStar,
+    required this.onTap,
+  });
 
   final Device device;
+  final bool starred;
+  final VoidCallback onToggleStar;
   final VoidCallback onTap;
 
   @override
@@ -381,6 +424,16 @@ class _DeviceCard extends StatelessWidget {
             ),
           ),
           if (!largeText) ...[const SizedBox(width: 12), badge],
+          const SizedBox(width: 4),
+          IconButton(
+            key: Key('device_star_${device.deviceId}'),
+            tooltip: starred ? 'เอาดาวออก' : 'ติดดาว',
+            onPressed: onToggleStar,
+            icon: Icon(
+              starred ? Icons.star_rounded : Icons.star_outline_rounded,
+              color: starred ? AppColors.warning : AppColors.mutedForeground,
+            ),
+          ),
         ],
       ),
     );

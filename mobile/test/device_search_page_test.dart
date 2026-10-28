@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
+import 'package:mobile/features/device_search/starred_devices.dart';
 
 Device _device({
   String id = 'uuid',
@@ -49,6 +51,52 @@ class _FakeDeviceSearchRepository implements DeviceSearchRepository {
   @override
   Future<Device> getDevice(String deviceId) async =>
       _devices.firstWhere((d) => d.deviceId == deviceId);
+}
+
+/// ดาวในหน่วยความจำ แยกตาม user แบบเดียวกับของจริง
+class _MemoryStarStore implements StarredDeviceStore {
+  final Map<String, List<String>> byUser = {};
+
+  @override
+  Future<List<String>> load(String user) async => byUser[user] ?? const [];
+
+  @override
+  Future<void> save(String user, List<String> deviceIds) async =>
+      byUser[user] = [...deviceIds];
+}
+
+class _LoggedIn extends AuthController {
+  _LoggedIn(this.username);
+
+  final String username;
+
+  @override
+  AuthState build() => AuthState(
+    status: AuthStatus.authenticated,
+    role: UserRole.st,
+    username: username,
+  );
+}
+
+/// หน้าค้นหาพร้อม login เป็น [user] และที่เก็บดาว [store]
+Future<void> _pumpStarred(
+  WidgetTester tester, {
+  required DeviceSearchRepository repo,
+  required _MemoryStarStore store,
+  String user = 'st.test',
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        deviceSearchRepositoryProvider.overrideWithValue(repo),
+        starredDeviceStoreProvider.overrideWithValue(store),
+        authControllerProvider.overrideWith(() => _LoggedIn(user)),
+      ],
+      child: const MaterialApp(home: DeviceSearchPage()),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
 }
 
 Future<void> _pump(
@@ -94,6 +142,91 @@ Future<void> _pumpRouted(
 }
 
 void main() {
+  group('ติดดาวอุปกรณ์', () {
+    final devices = [
+      _device(deviceId: 'BOX-0001', simNumber: '0811111111'),
+      _device(id: 'uuid2', deviceId: 'BOX-0002', simNumber: '0822222222'),
+    ];
+
+    testWidgets(
+      'ค้นหาแล้วติดดาว -> ล้างคำค้นแล้วเห็นเฉพาะเครื่องที่ติดดาว + บันทึกของ user นี้',
+      (tester) async {
+        final store = _MemoryStarStore();
+        await _pumpStarred(
+          tester,
+          repo: _FakeDeviceSearchRepository(devices: devices),
+          store: store,
+        );
+        // ยังไม่ติดดาว = ข้อความชวนค้นหา บอกวิธีติดดาว
+        expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+        expect(find.textContaining('แตะ ☆'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('device_search_field')),
+          'box',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('device_star_BOX-0001')));
+        await tester.pump();
+        expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+        expect(store.byUser['st.test'], ['BOX-0001']);
+
+        await tester.tap(find.byKey(const Key('device_search_clear')));
+        await tester.pump();
+        expect(find.byKey(const Key('device_starred_title')), findsOneWidget);
+        expect(find.text('BOX-0001'), findsOneWidget);
+        expect(find.text('BOX-0002'), findsNothing);
+      },
+    );
+
+    testWidgets('เปิดหน้าใหม่ -> ดาวที่บันทึกไว้ขึ้นเลยโดยไม่ต้องค้นหา', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+      );
+
+      expect(find.text('BOX-0002'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.byKey(const Key('device_search_prompt')), findsNothing);
+    });
+
+    testWidgets('เอาดาวออกตัวสุดท้าย -> กลับเป็นข้อความชวนค้นหา', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+      );
+
+      await tester.tap(find.byKey(const Key('device_star_BOX-0002')));
+      await tester.pump();
+
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(store.byUser['st.test'], isEmpty);
+    });
+
+    testWidgets('ดาวแยกตาม user — คนอื่นในเครื่องเดียวกันไม่เห็น', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+        user: 'ot.test',
+      );
+
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(find.text('BOX-0002'), findsNothing);
+    });
+  });
+
   testWidgets(
     'กำลังโหลดครั้งแรก -> โชว์ AppListSkeleton (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
     'skeleton หายไปเหลือแต่การ์ดจริง',
