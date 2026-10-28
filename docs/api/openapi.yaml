@@ -222,7 +222,7 @@ paths:
         เป็น**ความลับ** (สุ่ม 32 byte base64url) backend เก็บแค่ SHA-256 · ใช้
         key ของเครื่อง (`Device.telemetryKeyHash`) ถ้ามี ไม่งั้นใช้ key กลางจาก
         env `TELEMETRY_INGEST_KEY_SHA256` · ปฏิเสธเครื่อง `decommissioned` ·
-        ไม่เปลี่ยนสถานะเครื่อง · (v3.72) เลื่อน `Device.lastSeenAt` (เมื่อค่าเดิม
+        ไม่เปลี่ยนสถานะเครื่อง · (v3.73) เลื่อน `Device.lastSeenAt` (เมื่อค่าเดิม
         เก่ากว่า 1 นาที) ให้ `GET /devices/{deviceId}/status` บอกออนไลน์ได้
 
         จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
@@ -6947,7 +6947,7 @@ components:
       description: >-
         เวอร์ชันย่อ (v3.39, issue #245) — configStatus/firmwareStatus · v3.56
         เพิ่ม `lastSeenAt`/`online` จากเวลาที่อุปกรณ์เรียก `/device-sync/*`
-        ล่าสุด (docs/19) · v3.72 รวมเวลาที่กล่องส่ง telemetry/event เข้า
+        ล่าสุด (docs/19) · v3.73 รวมเวลาที่กล่องส่ง telemetry/event เข้า
         `/device-sync/{deviceId}/telemetry/{key}` ด้วย ส่วน `lastCheckInMessage` ยังเป็น placeholder
       required:
         [
@@ -7004,7 +7004,7 @@ components:
           nullable: true
           description: >-
             (v3.56, docs/19 §4.3) เวลาที่อุปกรณ์เรียก `/device-sync/*` สำเร็จ
-            ล่าสุด · v3.72 รวมการส่ง telemetry/event (docs/23 §10.2 ข้อ 4) ·
+            ล่าสุด · v3.73 รวมการส่ง telemetry/event (docs/23 §10.2 ข้อ 4) ·
             ความละเอียดระดับนาที · null = ไม่เคยติดต่อเข้ามา
         online:
           type: boolean
