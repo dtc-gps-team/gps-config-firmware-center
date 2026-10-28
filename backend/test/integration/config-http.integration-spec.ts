@@ -563,6 +563,63 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     expect(body.deviceModel).toBe('GT06N');
   });
 
+  it('POST /config/import ไฟล์ format ใหม่ "settings" ซ้อนชั้น -> 201 (v3.67, รีวิวพี่เลี้ยง 27 ต.ค. — JSON export ต้องตรงกับที่ Server กลางรับจริง)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    await seedApn1();
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(
+          JSON.stringify({
+            name: `cfg-${randomUUID()}`,
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            settings: { APN1: 'internet' },
+          }),
+        ),
+        'config.json',
+      )
+      .expect(201);
+
+    const body = res.body as { fields: Record<string, unknown> };
+    expect(body.fields).toEqual({ APN1: 'internet' });
+  });
+
+  it('POST /config/import มีทั้ง "fields" และ "settings" พร้อมกัน -> 400 (กำกวม ไม่เดาให้)', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Create);
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/config/import')
+      .set('Authorization', `Bearer ${token}`)
+      .field('format', 'json')
+      .attach(
+        'file',
+        Buffer.from(
+          JSON.stringify({
+            name: `cfg-${randomUUID()}`,
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            fields: { APN1: 'internet' },
+            settings: { APN1: 'internet' },
+          }),
+        ),
+        'config.json',
+      )
+      .expect(400);
+  });
+
   it('POST /config/import เนื้อไฟล์เป็น JSON null -> 400 ไม่ใช่ 500', async () => {
     const configEngineerUser = await makeUser(prisma, {
       role: 'ConfigEngineer',

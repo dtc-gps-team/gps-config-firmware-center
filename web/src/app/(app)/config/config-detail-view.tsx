@@ -44,6 +44,7 @@ import {
   statusLabel,
 } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
+import { nestFields } from "@/lib/config-fields";
 import { useConfig } from "@/hooks/use-config";
 import { useConfigVersions } from "@/hooks/use-config-versions";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
@@ -64,21 +65,24 @@ function renderFieldValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-/** โครง object ที่ import กลับได้ (`ConfigWriteInput`) ร่วมกันทั้งของจริงและ
- * ของ mask — รับ `fields` เป็น parameter แยก กันโครงสร้างสองฟังก์ชันเพี้ยนออก
- * จากกันในอนาคต (JSON preview ที่ mask กับที่คัดลอกจริงต้องตรงกันเป๊ะยกเว้น
- * ค่า field) */
+/** โครง object ที่ import กลับได้ ร่วมกันทั้งของจริงและของ mask — รับ `fields`
+ * (คีย์แบบมีจุด) เป็น parameter แยก กันโครงสร้างสองฟังก์ชันเพี้ยนออกจากกันใน
+ * อนาคต (JSON preview ที่ mask กับที่คัดลอกจริงต้องตรงกันเป๊ะยกเว้นค่า field)
+ * — ส่งออกเป็น `settings` ซ้อนชั้น (ไม่ใช่ `fields` แบนเหมือนเดิม) ให้ตรงกับ
+ * JSON ที่ส่งเข้า Server กลางจริงของพี่เลี้ยง เพราะ JSON นี้มีคนเอาไป import
+ * ใช้งานจริง ไม่ใช่แค่ดูเฉยๆ (รีวิวพี่เลี้ยง 27 ต.ค. 2569) — `POST /config/import`
+ * (v3.67) รองรับทั้ง `settings` ซ้อนชั้นนี้และ `fields` แบนแบบเดิม (ไฟล์เก่า) */
 function buildImportPayload(config: Config, fields: Record<string, unknown>) {
   return {
     name: config.name,
     ...(config.description ? { description: config.description } : {}),
     deviceModel: config.deviceModel,
     protocol: config.protocol,
-    fields,
+    settings: nestFields(fields),
   };
 }
 
-/** JSON รูปที่ import กลับได้ (`ConfigWriteInput`) — ใช้กับปุ่มคัดลอก */
+/** JSON รูปที่ import กลับได้ (`settings` ซ้อนชั้น, v3.67) — ใช้กับปุ่มคัดลอก */
 function toImportJson(config: Config): string {
   return JSON.stringify(buildImportPayload(config, config.fields), null, 2);
 }

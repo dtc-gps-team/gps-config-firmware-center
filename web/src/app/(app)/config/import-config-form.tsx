@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { importConfig, type Config } from "@/lib/config-api";
+import { flattenFields } from "@/lib/config-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,16 +17,21 @@ import { Label } from "@/components/ui/label";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** field ที่ backend (`CreateConfigDto`) บังคับ — ใช้เตือนฝั่ง client ก่อนส่ง
- *  ตัว validate จริง (รวม semantic เทียบ ConfigFieldDefinition) อยู่ที่ backend */
-const REQUIRED_KEYS = ["name", "deviceModel", "protocol", "fields"] as const;
+ *  ตัว validate จริง (รวม semantic เทียบ ConfigFieldDefinition) อยู่ที่ backend
+ *  · ไม่รวม `fields`/`settings` เพราะมีได้แค่อย่างใดอย่างหนึ่ง (เช็คแยกด้านล่าง
+ *  — backend v3.67 รองรับทั้งสอง format, รีวิวพี่เลี้ยง 27 ต.ค. 2569) */
+const REQUIRED_KEYS = ["name", "deviceModel", "protocol"] as const;
 
-/** ไฟล์ตัวอย่างให้ดาวน์โหลด — โครงเดียวกับที่ Config Editor (ฟอร์ม) สร้าง */
+/** ไฟล์ตัวอย่างให้ดาวน์โหลด — โครงเดียวกับที่หน้า Config Detail export ให้
+ *  ตั้งแต่ v3.67 (`settings` ซ้อนชั้น ตรงกับ JSON ที่ส่งเข้า Server กลางจริง) —
+ *  รุ่นนี้ key ไม่มีจุดอยู่แล้ว (SMARTEYEPLUS) จึงซ้อนชั้นแบบไม่มีผล (no-op)
+ *  เหมือนไฟล์เดิม ไฟล์เก่าที่ใช้ `fields` แบนยังนำเข้าได้ปกติ */
 const TEMPLATE = {
   name: "ตัวอย่าง Config SMARTEYEPLUS",
   deviceModel: "SMARTEYEPLUS",
   protocol: "TCP",
   description: "อธิบายสั้น ๆ ว่า Config ชุดนี้ทำไว้เพื่ออะไร (ไม่บังคับ)",
-  fields: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
+  settings: { APN1: "internet", MTYP: "1", SIM1: "0812345678" },
 };
 
 type Preview = {
@@ -38,7 +44,7 @@ type Preview = {
 
 type ParseResult = { ok: true; preview: Preview } | { ok: false; error: string };
 
-function parsePreview(text: string): ParseResult {
+export function parsePreview(text: string): ParseResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -55,14 +61,28 @@ function parsePreview(text: string): ParseResult {
   const obj = parsed as Record<string, unknown>;
   const asText = (v: unknown) =>
     typeof v === "string" && v.trim() ? v : null;
-  const fields = obj.fields;
-  const fieldsIsObject =
-    typeof fields === "object" && fields !== null && !Array.isArray(fields);
 
-  const missing = REQUIRED_KEYS.filter((k) => {
-    if (k === "fields") return !fieldsIsObject;
-    return asText(obj[k]) === null;
-  });
+  // รับได้ 2 format (เลือกอย่างใดอย่างหนึ่ง): "settings" ซ้อนชั้น (ของใหม่
+  // ตรงกับที่ Config Detail export ให้ตั้งแต่ v3.67) หรือ "fields" แบนแบบเดิม
+  // — มีพร้อมกันทั้งคู่ถือว่ากำกวม backend ปฏิเสธเหมือนกัน (ไม่เดาให้)
+  const hasFields = Object.hasOwn(obj, "fields");
+  const hasSettings = Object.hasOwn(obj, "settings");
+  if (hasFields && hasSettings) {
+    return {
+      ok: false,
+      error: 'ไฟล์มีทั้ง "fields" และ "settings" พร้อมกันไม่ได้ — ใช้อย่างใดอย่างหนึ่ง',
+    };
+  }
+  const rawFields = hasSettings ? obj.settings : obj.fields;
+  const fieldsIsObject =
+    typeof rawFields === "object" &&
+    rawFields !== null &&
+    !Array.isArray(rawFields);
+
+  const missing: string[] = REQUIRED_KEYS.filter(
+    (k) => asText(obj[k]) === null,
+  );
+  if (!fieldsIsObject) missing.push(hasSettings ? "settings" : "fields");
 
   return {
     ok: true,
@@ -71,7 +91,9 @@ function parsePreview(text: string): ParseResult {
       deviceModel: asText(obj.deviceModel),
       protocol: asText(obj.protocol),
       fieldCount: fieldsIsObject
-        ? Object.keys(fields as Record<string, unknown>).length
+        ? Object.keys(
+            flattenFields(rawFields as Record<string, unknown>),
+          ).length
         : null,
       missing,
     },

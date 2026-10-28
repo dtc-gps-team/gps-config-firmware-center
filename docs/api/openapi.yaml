@@ -428,6 +428,16 @@ paths:
       tags: [config]
       operationId: importConfig
       summary: Import Config จากไฟล์ (v3.2 — รองรับ JSON เป็นจุดเริ่มต้น)
+      description: >-
+        **(v3.67)** เนื้อหาไฟล์ JSON รับ field ค่าได้ 2 format (เลือกอย่างใด
+        อย่างหนึ่ง ส่งมาพร้อมกันทั้งคู่ -> 400): `settings` object ซ้อนชั้น
+        ตรงกับ JSON ที่ส่งเข้า Server กลางจริง (เช่น
+        `{"settings":{"gps":{"send_interval_sec":10}}}` — format นี้คือที่หน้า
+        Config Detail ปุ่ม "คัดลอก JSON" ให้มาตั้งแต่ v3.67, รีวิวพี่เลี้ยง
+        27 ต.ค. 2569) หรือ `fields` คีย์แบบมีจุดแบบเดิม (ไฟล์ที่ export ไว้ก่อน
+        v3.67 ยังใช้ import ได้ปกติ) — backend แปลง `settings` เป็น `fields`
+        ภายในก่อน validate เสมอ (`flattenFields()`) ไม่มีผลต่อ flow
+        ทดสอบ/อนุมัติถัดไป
       requestBody:
         required: true
         content:
@@ -451,7 +461,8 @@ paths:
         "400":
           description: >-
             ไฟล์หรือ format ไม่ถูกต้อง (รองรับเฉพาะ JSON) หรือแปลงเป็น
-            DeviceConfigDraft ไม่สำเร็จ (รวมถึงไฟล์ไม่มี field name)
+            DeviceConfigDraft ไม่สำเร็จ (รวมถึงไฟล์ไม่มี field name, มีทั้ง
+            `fields`/`settings` พร้อมกัน, หรือ `settings` ไม่ใช่ object — v3.67)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
