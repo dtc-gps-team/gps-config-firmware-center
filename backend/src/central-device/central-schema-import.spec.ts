@@ -97,6 +97,32 @@ describe('mapCentralParameter', () => {
     });
   });
 
+  it('min/max ของชนิดตัวเลขเก็บเป็น minValue/maxValue (docs/30) · ชนิดอื่นหรือไม่มี = null', () => {
+    expect(
+      mapCentralParameter({
+        key: 'speed_limit.max_kmh',
+        type: 'number',
+        min: 1,
+        max: 200,
+      }),
+    ).toMatchObject({ dataType: 'decimal', minValue: 1, maxValue: 200 });
+    expect(
+      mapCentralParameter({
+        key: 'gps.send_interval_sec',
+        type: 'integer',
+        min: 5,
+      }),
+    ).toMatchObject({ minValue: 5, maxValue: null });
+    expect(
+      mapCentralParameter({
+        key: 'data_server.host',
+        type: 'hostname',
+        min: 1,
+        max: 10,
+      }),
+    ).toMatchObject({ minValue: null, maxValue: null });
+  });
+
   it('hostname เป็น string และค่าเริ่มต้นว่างเก็บเป็นข้อความว่าง ไม่ใช่ null', () => {
     expect(
       mapCentralParameter({

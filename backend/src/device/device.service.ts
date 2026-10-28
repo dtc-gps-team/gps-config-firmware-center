@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 import {
+  ConfigApplyRequest,
   CampaignRolloutStatus,
   CampaignRolloutTargetStatus,
   Config,
@@ -28,6 +29,8 @@ import { CustomerSummary } from '../customer/customer.service';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
+import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
+import { TaskService } from '../task/task.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -201,7 +204,18 @@ export class DeviceService {
     private readonly deviceModelService: DeviceModelService,
     private readonly nestConfig: NestConfigService,
     private readonly centralDeviceService: CentralDeviceService,
+    private readonly taskService: TaskService,
+    private readonly configApplyRequestService: ConfigApplyRequestService,
   ) {}
+
+  /** โหมดส่งเข้ากล่องผ่าน Server กลาง (`DEVICE_CONFIG_APPLY_MODE=central`) */
+  private isCentralApplyMode(): boolean {
+    return (
+      resolveConfigApplyMode(
+        this.nestConfig.get('DEVICE_CONFIG_APPLY_MODE'),
+      ) === 'central'
+    );
+  }
 
   /**
    * Device Search (Sprint 2 #11) — คืนรายการอุปกรณ์ทั้งหมด กรองตาม query
@@ -1294,6 +1308,15 @@ export class DeviceService {
       Object.keys((baseConfig.fields as Record<string, unknown>) ?? {}),
     );
 
+    // docs/30 — โหมด central: Override ไปถึงกล่องผ่านคำขอส่งเข้ากล่องเท่านั้น
+    // (apply-config ปิดแล้ว docs/25 §3.8) จึงต้องมีงานของช่างกับกล่องนี้ — ใช้งาน
+    // ที่เปิดอยู่หรือเริ่มให้ (กฎเดียวกับ POST /tasks/start)
+    const central = this.isCentralApplyMode();
+    const task = central
+      ? (await this.taskService.start({ deviceId }, actor)).task
+      : null;
+    let linkedRequest: ConfigApplyRequest | null = null;
+
     try {
       const override = await this.prisma.$transaction(async (tx) => {
         // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
@@ -1359,13 +1382,26 @@ export class DeviceService {
           },
         });
 
+        if (task) {
+          linkedRequest =
+            await this.configApplyRequestService.createForOverride(
+              tx,
+              { task, configId: baseConfig.id, overrideId: override.id },
+              actor,
+            );
+        }
         return override;
       });
 
       // แจ้ง Operation ว่ามีคำขอ pending ใหม่ (issue #226) — never-throw,
       // เรียกหลังทรานแซกชันสำเร็จแล้วเท่านั้น ไม่ใช่ core contract ของ
-      // endpoint นี้ (ดู `notifyOperationOfPendingOverride()`)
-      await this.notifyOperationOfPendingOverride(override);
+      // endpoint นี้ (ดู `notifyOperationOfPendingOverride()`) · โหมด central
+      // แจ้งผ่านคำขอส่งเข้ากล่องแทน (Operation ตัดสินที่คำขอ ไม่ใช่ที่ Override)
+      if (linkedRequest) {
+        await this.configApplyRequestService.notifyCreated(linkedRequest);
+      } else {
+        await this.notifyOperationOfPendingOverride(override);
+      }
 
       return override;
     } catch (err) {
@@ -1488,6 +1524,7 @@ export class DeviceService {
     actor: ActingUser,
   ): Promise<DeviceConfigOverride> {
     const existing = await this.getPendingOverrideOrThrow(id);
+    await this.assertNotLinkedToApplyRequest(id);
 
     const baseConfig = await this.getBaseConfigForDevice(existing.deviceId);
     if (baseConfig.id !== existing.configId) {
@@ -1552,6 +1589,7 @@ export class DeviceService {
     actor: ActingUser,
   ): Promise<DeviceConfigOverride> {
     const existing = await this.getPendingOverrideOrThrow(id);
+    await this.assertNotLinkedToApplyRequest(id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.deviceConfigOverride.updateMany({
@@ -1593,6 +1631,22 @@ export class DeviceService {
     return updated;
   }
 
+  /** docs/30 §3 — Override ที่ผูกกับคำขอส่งเข้ากล่องตัดสินที่คำขอเท่านั้น (อนุมัติ
+   * คำขอ = อนุมัติ Override) กันอนุมัติสองที่แล้วสถานะไม่ตรงกัน → 409 */
+  private async assertNotLinkedToApplyRequest(
+    overrideId: string,
+  ): Promise<void> {
+    const linked = await this.prisma.configApplyRequest.findUnique({
+      where: { overrideId },
+      select: { id: true },
+    });
+    if (linked) {
+      throw new ConflictException(
+        `คำขอแก้ค่านี้ผูกกับคำขอส่งเข้ากล่อง ${linked.id} — อนุมัติหรือปฏิเสธที่คำขอส่งเข้ากล่องแทน`,
+      );
+    }
+  }
+
   /** Operation ดูรายการคำขอ override ทั้งหมด — filter ตาม `status` (optional,
    * ไม่ส่ง = ทุกสถานะ) เรียงคำขอใหม่ขึ้นก่อน (`overriddenAt` desc) ให้ดูคิว
    * `pending` ได้ง่าย */
@@ -1600,7 +1654,12 @@ export class DeviceService {
     status?: DeviceConfigOverrideStatus,
   ): Promise<DeviceConfigOverride[]> {
     return this.prisma.deviceConfigOverride.findMany({
-      where: status ? { status } : undefined,
+      where: {
+        ...(status ? { status } : {}),
+        // docs/30 — Override pending ที่ผูกคำขอส่งเข้ากล่อง Operation ตัดสินที่คำขอ
+        // (การ์ดเดียวใน Approval Center) จึงไม่แสดงซ้ำในคิวนี้
+        NOT: { status: 'pending', applyRequest: { isNot: null } },
+      },
       orderBy: { overriddenAt: 'desc' },
     });
   }
