@@ -812,7 +812,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     ),
                   ),
                   if (earlierRequests.isNotEmpty)
-                    _EarlierRequests(requests: earlierRequests),
+                    _RequestHistoryLink(
+                      earlierCount: earlierRequests.length,
+                      onTap: () =>
+                          context.push(AppRoutes.taskRequestHistory(task.id)),
+                    ),
                   if (_incidentNotice != null) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -1377,41 +1381,59 @@ class _ApplyRequestSection extends StatelessWidget {
   };
 }
 
-/// คำขอก่อนหน้าของงานนี้ (docs/28 — งาน 1 ใบขอได้หลายครั้ง) — สถานะกับเวลาขอ
-/// เรียงใหม่ไปเก่า ใต้การ์ดคำขอล่าสุด
-class _EarlierRequests extends StatelessWidget {
-  const _EarlierRequests({required this.requests});
+/// ปุ่มไปหน้าประวัติคำขอ (docs/28 — งาน 1 ใบขอได้หลายครั้ง) ใต้การ์ดคำขอล่าสุด
+/// · เดิมแสดงทุกคำขอในหน้านี้ รายการยาวอัดหน้างาน จึงย้ายไป
+/// [ApplyRequestHistoryPage] · กดได้ทั้งแถว สูงอย่างน้อย 48dp
+class _RequestHistoryLink extends StatelessWidget {
+  const _RequestHistoryLink({required this.earlierCount, required this.onTap});
 
-  final List<ConfigApplyRequest> requests;
+  final int earlierCount;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      key: const Key('apply_request_history'),
       padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const _CardTitle('คำขอก่อนหน้า'),
-          for (final request in requests)
-            AppInfoRow(
-              label: request.kind == FieldApplyKind.firmware
-                  ? '${_formatDate(request.requestedAt)} · Firmware '
-                        'v${request.firmwareVersion ?? '-'}'
-                  : _formatDate(request.requestedAt),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppBadge(
-                  label: configApplyRequestStatusLabel(
-                    request.status,
-                    kind: request.kind,
+      child: InkWell(
+        key: const Key('apply_request_history'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(
+            children: [
+              const Icon(Icons.history, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'ประวัติคำขอ',
+                  style: TextStyle(
+                    fontSize: AppTypography.sm,
+                    height: AppTypography.smHeight,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
                   ),
-                  tone: configApplyRequestTone(request.status),
-                  dot: true,
                 ),
               ),
-            ),
-        ],
+              Text(
+                'ก่อนหน้า $earlierCount ครั้ง',
+                style: const TextStyle(
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  color: AppColors.mutedForeground,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const ExcludeSemantics(
+                child: Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: AppColors.mutedForeground,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
