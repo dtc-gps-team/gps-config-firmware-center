@@ -380,10 +380,26 @@ class _OverrideForm extends StatelessWidget {
   Widget build(BuildContext context) {
     final fieldEntries = (config.fields ?? const <String, dynamic>{}).entries
         .toList(growable: false);
+    final delivery = config.delivery;
+    final undelivered = delivery?.pendingFieldNames.length ?? 0;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
+        // v3.71 — ค่าในช่องคือค่าหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติแล้ว)
+        // ถ้ายังไม่ได้ส่ง ค่าในกล่องจริงยังเป็นค่าเดิม บอกให้ชัดว่าต่างกัน
+        if (undelivered > 0) ...[
+          AppNotice(
+            key: const Key('config_override_undelivered_notice'),
+            tone: AppBadgeTone.warning,
+            child: Text(
+              'มี $undelivered ค่าที่อนุมัติแล้วแต่ยังไม่ได้ส่งเข้ากล่อง · '
+              'ช่องด้านล่างแสดงค่าหลังส่ง ค่าในกล่องตอนนี้อยู่ใต้ช่องนั้น'
+              '${central ? ' · กดส่งเข้ากล่องได้จากหน้างาน' : ''}',
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (config.pendingOverride != null) ...[
           _PendingOverrideBanner(
             pending: config.pendingOverride!,
@@ -404,6 +420,9 @@ class _OverrideForm extends StatelessWidget {
                   originalValue: entry.value,
                   def: defByName[entry.key],
                   editValue: edits[entry.key],
+                  inBox: delivery != null && delivery.isPending(entry.key)
+                      ? _InBoxValue(delivery.fields[entry.key])
+                      : null,
                   errorText: fieldErrors[entry.key],
                   revealed: revealed.contains(entry.key),
                   onToggleReveal: () => onToggleReveal(entry.key),
@@ -459,6 +478,13 @@ class _OverrideForm extends StatelessWidget {
   }
 }
 
+/// ค่าในกล่องของ field หนึ่ง (ห่อไว้แยก "ไม่มีค่า" กับ "ไม่ต้องแสดง")
+class _InBoxValue {
+  const _InBoxValue(this.value);
+
+  final dynamic value;
+}
+
 class _FieldRow extends StatefulWidget {
   const _FieldRow({
     super.key,
@@ -466,6 +492,7 @@ class _FieldRow extends StatefulWidget {
     required this.originalValue,
     required this.def,
     required this.editValue,
+    this.inBox,
     required this.errorText,
     required this.revealed,
     required this.onToggleReveal,
@@ -476,6 +503,9 @@ class _FieldRow extends StatefulWidget {
   final dynamic originalValue;
   final ConfigFieldDefinition? def;
   final String? editValue;
+
+  /// ค่าในกล่องตอนนี้ เมื่อต่างจากค่าที่อนุมัติแล้ว (รอส่ง) · null = ตรงกัน/ไม่ทราบ
+  final _InBoxValue? inBox;
   final String? errorText;
   final bool revealed;
   final VoidCallback onToggleReveal;
@@ -518,29 +548,59 @@ class _FieldRowState extends State<_FieldRow> {
       ),
     );
 
+    final inBox = widget.inBox;
+    final inBoxText = inBox == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'ในกล่องตอนนี้ ${_inBoxLabel(inBox.value)} · รอส่งเข้ากล่อง',
+              key: Key('config_override_in_box_${widget.fieldKey}'),
+              style: const TextStyle(
+                fontSize: AppTypography.xs,
+                height: AppTypography.xsHeight,
+                color: AppColors.mutedForeground,
+              ),
+            ),
+          );
+
+    final row = isLargeTextScale(context)
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              name,
+              const SizedBox(height: 6),
+              _buildValue(currentValue),
+            ],
+          )
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(flex: 2, child: name),
+              const SizedBox(width: 8),
+              Expanded(flex: 3, child: _buildValue(currentValue)),
+            ],
+          );
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       // ตัวอักษรใหญ่: ชื่อ field อยู่เหนือช่องค่า ได้ความกว้างเต็มแถว (UX audit
       // #23) เดิมแบ่ง 2:3 ในแถวเดียว ชื่อยาวอย่าง REPORT_INTERVAL_MOVING ขึ้น
       // บรรทัดใหม่กลางคำหลายครั้ง และช่องกรอกค่าเหลือที่แคบ
-      child: isLargeTextScale(context)
-          ? Column(
+      child: inBoxText == null
+          ? row
+          : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                name,
-                const SizedBox(height: 6),
-                _buildValue(currentValue),
-              ],
-            )
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(flex: 2, child: name),
-                const SizedBox(width: 8),
-                Expanded(flex: 3, child: _buildValue(currentValue)),
-              ],
+              children: [row, inBoxText],
             ),
     );
+  }
+
+  /// ค่าในกล่องของ field ลับซ่อนไว้จนกว่าจะกดดู (เหมือนช่องค่า) · ไม่มีค่า = "—"
+  String _inBoxLabel(dynamic value) {
+    if (value == null) return '—';
+    if (widget.def?.sensitive == true && !widget.revealed) return '••••';
+    return configValueToInput(value);
   }
 
   Widget _buildValue(String currentValue) {

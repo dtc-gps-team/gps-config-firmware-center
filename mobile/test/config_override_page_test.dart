@@ -841,6 +841,100 @@ void main() {
   );
 
   // docs/30 §6 — ช่วงค่าตัวเลข + โหมด central (Override = คำขอส่งเข้ากล่อง)
+  group('ค่าในกล่องกับค่าที่อนุมัติแล้วรอส่ง (delivery v3.71)', () {
+    const speedDef = ConfigFieldDefinition(
+      id: 'def-speed',
+      fieldName: 'speed_limit.max_kmh',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      unit: 'km/h',
+    );
+
+    Future<void> pumpWithDelivery(
+      WidgetTester tester,
+      ConfigDelivery? delivery,
+    ) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · มาตรฐาน',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: const {'speed_limit.max_kmh': 100},
+          hasDeviceOverride: true,
+          delivery: delivery,
+        ),
+        definitions: const [speedDef],
+      );
+      await _pump(tester, repo: fake);
+    }
+
+    testWidgets(
+      'อนุมัติแล้วยังไม่ส่ง -> แถบบอกจำนวนค่าที่รอส่ง + ใต้ช่องบอกค่าในกล่องตอนนี้',
+      (tester) async {
+        await pumpWithDelivery(
+          tester,
+          ConfigDelivery(
+            fields: const {'speed_limit.max_kmh': 80},
+            confirmedAt: DateTime.utc(2026, 10, 27, 9, 31),
+            pendingFieldNames: const ['speed_limit.max_kmh'],
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('config_override_undelivered_notice')),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('1 ค่าที่อนุมัติแล้วแต่ยังไม่ได้ส่งเข้ากล่อง'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('config_override_in_box_speed_limit.max_kmh')),
+          findsOneWidget,
+        );
+        expect(find.text('ในกล่องตอนนี้ 80 · รอส่งเข้ากล่อง'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'ค่าในกล่องตรงกับที่อนุมัติ -> ไม่มีแถบ ไม่มีบรรทัดค่าในกล่อง',
+      (tester) async {
+        await pumpWithDelivery(
+          tester,
+          ConfigDelivery(
+            fields: const {'speed_limit.max_kmh': 100},
+            confirmedAt: DateTime.utc(2026, 10, 27, 9, 31),
+            pendingFieldNames: const [],
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('config_override_undelivered_notice')),
+          findsNothing,
+        );
+        expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+      },
+    );
+
+    testWidgets('ไม่มีข้อมูลการส่ง (delivery = null) -> แสดงแบบเดิม', (
+      tester,
+    ) async {
+      await pumpWithDelivery(tester, null);
+
+      expect(
+        find.byKey(const Key('config_override_undelivered_notice')),
+        findsNothing,
+      );
+      expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+    });
+  });
+
   group('docs/30 — ช่วงค่าและโหมด central', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',

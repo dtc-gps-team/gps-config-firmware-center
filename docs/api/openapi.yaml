@@ -4973,8 +4973,36 @@ components:
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
-          required: [hasDeviceOverride, pendingOverride]
+          required: [hasDeviceOverride, pendingOverride, delivery]
           properties:
+            delivery:
+              type: object
+              nullable: true
+              description: >-
+                (v3.71) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` — `fields`
+                คือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติ
+                แล้วทันที) ซึ่งในโหมด central (docs/30) อนุมัติแล้วยังต้องรอช่างกด
+                ส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน + Override
+                ฉบับล่าสุดที่อนุมัติไม่หลังเวลาที่ Rollout ของเครื่องนี้สำเร็จ ·
+                `null` = ไม่มีหลักฐานการส่ง (Config ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง
+                ไม่ใช่ Rollout)
+              required: [fields, confirmedAt, pendingFieldNames]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด (key = fieldName)
+                confirmedAt:
+                  type: string
+                  format: date-time
+                  description: เวลาที่ Rollout target ของเครื่องนี้สำเร็จ
+                pendingFieldNames:
+                  type: array
+                  items:
+                    type: string
+                  description: >-
+                    field ที่ค่าใน `fields` ของ response ต่างจากค่าในกล่อง
+                    (อนุมัติแล้ว รอส่งเข้ากล่อง) · ว่าง = ตรงกันทั้งหมด
             hasDeviceOverride:
               type: boolean
               description: >-

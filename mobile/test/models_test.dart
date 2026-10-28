@@ -133,6 +133,38 @@ void main() {
   });
 
   group('DeviceConfigDraft.fromJson', () {
+    test('delivery (v3.71): ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', () {
+      final draft = DeviceConfigDraft.fromJson({
+        'id': 'cfg-1',
+        'fields': {'speed_limit.max_kmh': 100},
+        'delivery': {
+          'fields': {'speed_limit.max_kmh': 80},
+          'confirmedAt': '2026-10-27T09:31:34.000Z',
+          'pendingFieldNames': ['speed_limit.max_kmh'],
+        },
+      });
+      final delivery = draft.delivery!;
+      expect(delivery.fields, {'speed_limit.max_kmh': 80});
+      expect(delivery.confirmedAt, DateTime.utc(2026, 10, 27, 9, 31, 34));
+      expect(delivery.pendingFieldNames, ['speed_limit.max_kmh']);
+      expect(delivery.isPending('speed_limit.max_kmh'), isTrue);
+      expect(delivery.isPending('gps.enabled'), isFalse);
+    });
+
+    test(
+      'delivery ไม่มี / null (backend เก่า หรือไม่มีหลักฐานการส่ง) -> null',
+      () {
+        expect(DeviceConfigDraft.fromJson({'id': 'cfg-1'}).delivery, isNull);
+        expect(
+          DeviceConfigDraft.fromJson({
+            'id': 'cfg-1',
+            'delivery': null,
+          }).delivery,
+          isNull,
+        );
+      },
+    );
+
     test('parses status enum and fields map', () {
       final draft = DeviceConfigDraft.fromJson({
         'id': 'cfg-1',
