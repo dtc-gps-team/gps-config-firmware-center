@@ -1127,7 +1127,9 @@ paths:
             (กัน offline queue ของ Mobile ฟื้นงานที่ Operation ยกเลิกไปแล้ว หรือ
             ย้อนงานที่เสร็จแล้วกลับเป็น in_progress — คำตอบ A ใน #303 ข้อ 1) ·
             หรือปิดงาน (`completed`) ระหว่างที่คำขอส่งเข้ากล่องยัง `sending` อยู่
-            (docs/28 §5.4 — ปิดได้แล้วคำขอ `pending`/`approved` ถูกยกเลิกให้)
+            (docs/28 §5.4 — ปิดได้แล้วคำขอ `pending`/`approved` ถูกยกเลิกให้ ·
+            Config Override ที่ผูกกับคำขอที่ยัง `pending` ปิดเป็น `rejected` ด้วย
+            เหมือนตอนช่างยกเลิกคำขอ — docs/30 §3)
 
   /tasks/{taskId}/events:
     get:

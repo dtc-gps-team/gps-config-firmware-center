@@ -14,6 +14,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { DeviceModule } from '../../src/device/device.module';
 import { PrismaModule } from '../../src/prisma/prisma.module';
+import { TaskService } from '../../src/task/task.service';
 import {
   createTestPrisma,
   getOrCreateDeviceModel,
@@ -3460,6 +3461,71 @@ describe('DeviceController test-connection (integration — real postgres + guar
         expect(after.status).toBe('approved');
         expect(ov.status).toBe('approved');
         expect(ov.decidedBy).toBe(after.decidedBy);
+      });
+
+      it('ช่างปิดงานขณะคำขอยัง pending -> คำขอ cancelled + Override ปิดเป็น rejected (ไม่ค้าง pending)', async () => {
+        const { stTok, stId } = await setupCentralDevice('DCO-C-CLOSE');
+        const override = await submit('DCO-C-CLOSE', stTok);
+        const car = await prisma.configApplyRequest.findUniqueOrThrow({
+          where: { overrideId: override.id },
+        });
+
+        // เส้นทางเดียวกับ PATCH /tasks/{id} (TaskController → TaskService.update)
+        await app
+          .get(TaskService)
+          .update(
+            car.taskId,
+            { status: 'completed' },
+            { id: stId, role: 'ST' },
+          );
+
+        const [after, ov] = await Promise.all([
+          prisma.configApplyRequest.findUniqueOrThrow({
+            where: { id: car.id },
+          }),
+          prisma.deviceConfigOverride.findUniqueOrThrow({
+            where: { id: override.id },
+          }),
+        ]);
+        expect(after.status).toBe('cancelled');
+        expect(ov).toMatchObject({
+          status: 'rejected',
+          rejectReason: 'ช่างปิดงานแล้ว ระบบยกเลิกคำขอให้อัตโนมัติ',
+          decidedBy: null,
+        });
+        expect(ov.decidedAt).not.toBeNull();
+      });
+
+      it('ช่างปิดงานหลังคำขออนุมัติแล้ว -> คำขอ cancelled แต่ Override คง approved', async () => {
+        const { stTok, stId, opTok } =
+          await setupCentralDevice('DCO-C-CLOSE-OK');
+        const override = await submit('DCO-C-CLOSE-OK', stTok);
+        const car = await prisma.configApplyRequest.findUniqueOrThrow({
+          where: { overrideId: override.id },
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/config-apply-requests/${car.id}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        await app
+          .get(TaskService)
+          .update(
+            car.taskId,
+            { status: 'completed' },
+            { id: stId, role: 'ST' },
+          );
+
+        const [after, ov] = await Promise.all([
+          prisma.configApplyRequest.findUniqueOrThrow({
+            where: { id: car.id },
+          }),
+          prisma.deviceConfigOverride.findUniqueOrThrow({
+            where: { id: override.id },
+          }),
+        ]);
+        expect(after.status).toBe('cancelled');
+        expect(ov.status).toBe('approved');
       });
 
       it('Operation ปฏิเสธคำขอ -> Override ถูกปิดเป็น rejected ด้วยเหตุผลเดียวกัน', async () => {
