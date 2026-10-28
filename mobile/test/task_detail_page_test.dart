@@ -627,6 +627,57 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('docs/30 — คำขอจาก Config Override แสดงค่าที่ขอแก้และเหตุผล', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            override: const ApplyRequestOverride(
+              id: 'ov-1',
+              reason: 'ลูกค้าขอจำกัดความเร็ว',
+              fields: {'speed_limit.max_kmh': 60},
+            ),
+          ),
+        ],
+      );
+
+      expect(find.text('ขอแก้ speed_limit.max_kmh → 60'), findsOneWidget);
+      expect(
+        find.text('เหตุผลที่ขอแก้: ลูกค้าขอจำกัดความเร็ว'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('จะติดไปกับการส่ง Config'), findsNothing);
+    });
+
+    testWidgets(
+      'docs/30 — ยกเลิกคำขอ Override หลังอนุมัติ -> บอกว่าค่าจะติดไปกับการส่งครั้งถัดไป',
+      (tester) async {
+        await pumpWith(
+          tester,
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.cancelled,
+              decidedAt: DateTime.utc(2026, 10, 22, 4),
+              override: const ApplyRequestOverride(
+                id: 'ov-1',
+                reason: 'ลูกค้าขอ',
+                fields: {'speed_limit.max_kmh': 60},
+              ),
+            ),
+          ],
+        );
+
+        expect(
+          find.text(
+            'ค่าที่ขอแก้อนุมัติแล้ว จะติดไปกับการส่ง Config ตัวนี้ครั้งถัดไป',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('มีคำขอ pending -> เห็นเวลาขอ/หมดอายุ + ปุ่มยกเลิก, '
         'แถบล่างไม่มีปุ่มขอซ้ำ', (tester) async {
       await pumpWith(tester, requests: [fakeApplyRequest()]);

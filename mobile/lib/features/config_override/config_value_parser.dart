@@ -142,3 +142,29 @@ String configValueToInput(dynamic value) {
   if (value is Map || value is List) return jsonEncode(value);
   return value.toString();
 }
+
+/// ข้อความช่วงค่าตัวเลข (docs/30) เช่น "1–200 km/h" · `null` = ไม่มีช่วง —
+/// รูปแบบเดียวกับข้อความ error ของ backend (`rangeError()`)
+String? configRangeLabel(num? min, num? max, String? unit) {
+  if (min == null && max == null) return null;
+  final suffix = unit == null || unit.isEmpty ? '' : ' $unit';
+  if (min != null && max != null) return '${_num(min)}–${_num(max)}$suffix';
+  return min != null ? '≥ ${_num(min)}$suffix' : '≤ ${_num(max!)}$suffix';
+}
+
+/// ตรวจค่าที่ parse แล้วกับช่วง — `null` = ผ่าน (ค่าที่ไม่ใช่ตัวเลขไม่ตรวจ)
+String? configRangeError(dynamic value, num? min, num? max, String? unit) {
+  if (value is! num) return null;
+  if ((min == null || value >= min) && (max == null || value <= max)) {
+    return null;
+  }
+  final suffix = unit == null || unit.isEmpty ? '' : ' $unit';
+  if (min != null && max != null) {
+    return 'ต้องอยู่ระหว่าง ${_num(min)}–${_num(max)}$suffix';
+  }
+  return min != null
+      ? 'ต้องไม่น้อยกว่า ${_num(min)}$suffix'
+      : 'ต้องไม่เกิน ${_num(max!)}$suffix';
+}
+
+String _num(num n) => n == n.roundToDouble() ? n.toInt().toString() : '$n';

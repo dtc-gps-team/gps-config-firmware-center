@@ -23,6 +23,7 @@ import '../../core/ui/status_tones.dart';
 import '../../core/widgets/app_error_view.dart';
 import 'simulation_result_card.dart';
 import 'simulator_repository.dart';
+import '../config_override/config_value_parser.dart';
 import '../incident/incident_repository.dart';
 import '../../core/widgets/sync_status_widgets.dart';
 import 'config_apply_request_repository.dart';
@@ -1300,7 +1301,27 @@ class _ApplyRequestSection extends StatelessWidget {
     return [
       // คำขอ Firmware บอกเวอร์ชันที่ขอเสมอ (docs/27 B3) — คำขอ Config ไม่มีบรรทัดนี้
       if (r.kind == FieldApplyKind.firmware) _firmwareLine(r),
+      ..._overrideLines(r),
       ..._statusLines(r, detail, reason),
+    ];
+  }
+
+  /// docs/30 §6 — คำขอที่มาจาก Config Override: ค่าที่ขอแก้ + เหตุผล · ยกเลิกหรือ
+  /// หมดอายุ**หลัง**อนุมัติ ค่าถูกอนุมัติแล้วจะติดไปกับการส่ง Config ครั้งถัดไป
+  static List<String> _overrideLines(ConfigApplyRequest r) {
+    final override = r.override;
+    if (override == null) return const [];
+    final approvedThenClosed =
+        r.decidedAt != null &&
+        (r.status == ConfigApplyRequestStatus.cancelled ||
+            r.status == ConfigApplyRequestStatus.expired);
+    return [
+      for (final e in override.fields.entries)
+        'ขอแก้ ${e.key} → ${configValueToInput(e.value)}',
+      if (override.reason.trim().isNotEmpty)
+        'เหตุผลที่ขอแก้: ${override.reason.trim()}',
+      if (approvedThenClosed)
+        'ค่าที่ขอแก้อนุมัติแล้ว จะติดไปกับการส่ง Config ตัวนี้ครั้งถัดไป',
     ];
   }
 

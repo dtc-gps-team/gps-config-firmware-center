@@ -248,6 +248,8 @@ class ConfigFieldDefinition {
     this.unit,
     this.category,
     this.defaultValue,
+    this.minValue,
+    this.maxValue,
   });
 
   final String id;
@@ -269,6 +271,11 @@ class ConfigFieldDefinition {
   final String? unit;
   final String? category;
   final String? defaultValue;
+
+  /// ขอบเขตค่าตัวเลข (docs/30, v3.70) — เฉพาะ integer/decimal · `null` = ไม่จำกัด
+  /// backend ตรวจซ้ำเสมอ ฝั่งนี้ใช้บอกช่วงและตรวจก่อนส่ง
+  final num? minValue;
+  final num? maxValue;
 
   factory ConfigFieldDefinition.fromJson(Map<String, dynamic> json) {
     final rawAllowedValues = json['allowedValues'] as List<dynamic>?;
@@ -297,6 +304,8 @@ class ConfigFieldDefinition {
       unit: json['unit'] as String?,
       category: json['category'] as String?,
       defaultValue: json['defaultValue'] as String?,
+      minValue: json['minValue'] as num?,
+      maxValue: json['maxValue'] as num?,
     );
   }
 }
@@ -463,6 +472,7 @@ class ConfigApplyRequest {
     this.decidedAt,
     this.releasedAt,
     this.completedAt,
+    this.override,
   });
 
   final String id;
@@ -498,6 +508,10 @@ class ConfigApplyRequest {
   final DateTime? releasedAt;
   final DateTime? completedAt;
 
+  /// Config Override ที่คำขอนี้นำค่าไปส่ง (docs/30, v3.70) — `null` = คำขอปกติ ·
+  /// มีค่าที่ขอแก้เฉพาะในรายการคำขอของงาน
+  final ApplyRequestOverride? override;
+
   factory ConfigApplyRequest.fromJson(Map<String, dynamic> json) {
     DateTime? optionalDate(String key) {
       final value = json[key];
@@ -505,6 +519,7 @@ class ConfigApplyRequest {
     }
 
     final firmware = json['firmware'];
+    final override = json['override'];
     return ConfigApplyRequest(
       id: json['id'] as String,
       taskId: json['taskId'] as String,
@@ -524,6 +539,32 @@ class ConfigApplyRequest {
       decidedAt: optionalDate('decidedAt'),
       releasedAt: optionalDate('releasedAt'),
       completedAt: optionalDate('completedAt'),
+      override: override is Map
+          ? ApplyRequestOverride.fromJson(override.cast<String, dynamic>())
+          : null,
+    );
+  }
+}
+
+/// `ConfigApplyRequest.override` (docs/30, v3.70) — ค่าที่ช่างขอแก้ (ช่างกรอกเอง
+/// จึงดูค่าได้) · `fields` ว่างเมื่อ response ไม่มีค่า
+class ApplyRequestOverride {
+  const ApplyRequestOverride({
+    required this.id,
+    required this.reason,
+    this.fields = const {},
+  });
+
+  final String id;
+  final String reason;
+  final Map<String, dynamic> fields;
+
+  factory ApplyRequestOverride.fromJson(Map<String, dynamic> json) {
+    final fields = json['fields'];
+    return ApplyRequestOverride(
+      id: json['id'] as String,
+      reason: json['reason'] as String? ?? '',
+      fields: fields is Map ? fields.cast<String, dynamic>() : const {},
     );
   }
 }
