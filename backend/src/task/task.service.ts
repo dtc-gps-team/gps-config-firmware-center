@@ -26,6 +26,15 @@ export interface ActingUser {
 }
 
 /**
+ * `GET /tasks/{id}` — `Task` + ผู้รับผิดชอบ (mirror `Task.assignee` ใน openapi.yaml)
+ * join มาให้เพราะ ST/OT บน Mobile ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้เอง (เหตุผลเดียวกับ
+ * [TaskEventView.changedByName])
+ */
+export type TaskWithAssignee = Task & {
+  assignee: { username: string; fullName: string } | null;
+};
+
+/**
  * 1 รายการบน timeline ของ Task (`GET /tasks/{id}/events`, issue #296) —
  * mirror `TaskEvent` ใน openapi.yaml · `changedByName` คือ `User.fullName`
  * ของผู้ทำรายการ (join มาให้เลย เพราะ ST/OT บน Mobile ไม่มีสิทธิ์อ่านรายชื่อ
@@ -363,6 +372,22 @@ export class TaskService {
       where: { status: query.status, assignedTo },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * GET /tasks/{id} — งานพร้อมชื่อผู้รับผิดชอบ (`assignee`) ให้ Mobile แสดงชื่อแทน
+   * user id ดิบ · กฎเห็นงานเดียวกับ [findOne] · `assignee` เป็น null ถ้าหาบัญชีไม่เจอ
+   */
+  async findOneWithAssignee(
+    id: string,
+    actor: ActingUser,
+  ): Promise<TaskWithAssignee> {
+    const task = await this.findOne(id, actor);
+    const assignee = await this.prisma.user.findUnique({
+      where: { id: task.assignedTo },
+      select: { username: true, fullName: true },
+    });
+    return { ...task, assignee };
   }
 
   async findOne(id: string, actor: ActingUser): Promise<Task> {
