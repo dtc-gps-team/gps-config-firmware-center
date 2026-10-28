@@ -6,6 +6,7 @@ import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
+import 'package:mobile/features/task/apply_config_params_page.dart';
 import 'package:mobile/features/task/apply_config_picker_page.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/field_task_repository.dart';
@@ -79,7 +80,8 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
 }
 
 /// หน้าเลือก Config (docs/28 §6) — เปิดจากหน้ากล่อง (เริ่มงานให้ก่อน) หรือจาก
-/// หน้างาน (`?taskId=`)
+/// หน้างาน (`?taskId=`) · แตะ Config แล้วไปหน้าพารามิเตอร์ (docs/27 §2.2) ซึ่ง
+/// เทสที่นี่ด้วยกันทั้งเส้นทาง
 void main() {
   late FakeConfigApplyRequestRepository applyRepo;
   late FakeFieldTaskRepository fieldTasks;
@@ -91,7 +93,8 @@ void main() {
     overrides = _FakeOverrideRepository();
   });
 
-  /// เส้นทาง: หน้าแรก → หน้าเลือก (push) → หน้างาน · [startAt] = path ของหน้าเลือก
+  /// เส้นทาง: หน้าแรก → หน้าเลือก (push) → หน้าพารามิเตอร์ → หน้างาน ·
+  /// [startAt] = path ของหน้าเลือก
   Future<GoRouter> pump(WidgetTester tester, {required String startAt}) async {
     tester.view.physicalSize = const Size(1080, 4000);
     tester.view.devicePixelRatio = 2;
@@ -118,6 +121,14 @@ void main() {
             initialKind: FieldApplyKind.fromWire(
               state.uri.queryParameters['kind'],
             ),
+          ),
+        ),
+        GoRoute(
+          path: AppRoutes.deviceApplyConfigPattern,
+          builder: (_, state) => ApplyConfigParamsPage(
+            deviceId: state.pathParameters['deviceId']!,
+            configId: state.pathParameters['configId']!,
+            taskId: state.uri.queryParameters['taskId'],
           ),
         ),
         GoRoute(
@@ -148,8 +159,14 @@ void main() {
   Finder option(String id) => find.byKey(Key('apply_option_$id'));
   final submit = find.byKey(const Key('apply_submit_button'));
 
+  /// แตะ Config ในหน้าเลือก -> หน้าพารามิเตอร์ของตัวนั้น
+  Future<void> openParams(WidgetTester tester, String configId) async {
+    await tester.tap(option(configId));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
-    'แสดง Config ทุกตัว · ตัวที่ Operation แนะนำมีป้ายและถูกเลือกไว้ก่อน',
+    'แสดง Config ทุกตัว · ตัวที่ Operation แนะนำมีป้าย · ไม่มีปุ่มส่งบนหน้าเลือก',
     (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
@@ -158,36 +175,38 @@ void main() {
       expect(find.byKey(const Key('apply_option_suggested')), findsOneWidget);
       expect(find.text('เวอร์ชัน 3'), findsOneWidget);
       expect(find.text('ยังไม่มีเวอร์ชันที่บันทึก'), findsOneWidget);
-      expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+      // พารามิเตอร์/ปุ่มส่งอยู่หน้าถัดไป ไม่อัดในหน้านี้
+      expect(submit, findsNothing);
+      expect(find.byKey(const Key('apply_params')), findsNothing);
     },
   );
 
-  testWidgets('ไม่มีตัวแนะนำ -> ต้องเลือกก่อนถึงกดขอได้', (tester) async {
-    applyRepo.options = fakeApplyOptions(
-      configs: const [
-        ApplyOptionConfig(
-          id: 'cfg-2',
-          name: 'GT06N ลูกค้าพิเศษ',
-          latestVersion: 1,
-          suggested: false,
-        ),
-      ],
-    );
-    await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+  testWidgets(
+    'แตะ Config -> หน้าพารามิเตอร์ของตัวนั้น · ย้อนกลับมาเลือกใหม่ได้',
+    (tester) async {
+      final router = await pump(
+        tester,
+        startAt: AppRoutes.deviceApply('DVC-1'),
+      );
 
-    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
-    await tester.tap(option('cfg-2'));
-    await tester.pump();
-    expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
-  });
+      await openParams(tester, 'cfg-2');
+      expect(find.byType(ApplyConfigParamsPage), findsOneWidget);
+      expect(find.text('GT06N ลูกค้าพิเศษ'), findsOneWidget);
+      expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(option('cfg-1'), findsOneWidget);
+      expect(applyRepo.createCalls, 0);
+    },
+  );
 
   testWidgets(
     'เปิดจากหน้ากล่อง ไม่แก้ค่า: เริ่มงาน -> ส่งตรง (direct) -> กดส่งเข้ากล่องให้เลย -> ไปหน้างาน',
     (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
-      await tester.tap(option('cfg-2'));
-      await tester.pump();
+      await openParams(tester, 'cfg-2');
       expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
       // ไม่มีอะไรให้ Operation อนุมัติ -> ไม่มีช่องหมายเหตุ/เหตุผล
       expect(find.byKey(const Key('apply_note_field')), findsNothing);
@@ -207,10 +226,11 @@ void main() {
   );
 
   testWidgets(
-    'เปิดจากหน้างาน (?taskId=): ไม่เริ่มงานใหม่ ส่งตรงให้งานนั้นแล้วปิดหน้า',
+    'เปิดจากหน้างาน (?taskId=): ไม่เริ่มงานใหม่ ส่งตรงให้งานนั้นแล้วปิดทั้งสองหน้า',
     (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
 
+      await openParams(tester, 'cfg-1');
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
@@ -232,6 +252,7 @@ void main() {
       );
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
+      await openParams(tester, 'cfg-1');
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
@@ -242,7 +263,7 @@ void main() {
     },
   );
 
-  group('พารามิเตอร์ของ Config ที่เลือก', () {
+  group('หน้าพารามิเตอร์ของ Config', () {
     setUp(() {
       applyRepo.options = fakeApplyOptions(
         configs: const [
@@ -261,6 +282,7 @@ void main() {
       tester,
     ) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+      await openParams(tester, 'cfg-1');
 
       expect(find.text('รอบส่ง GPS (วินาที)'), findsOneWidget);
       expect(
@@ -283,6 +305,7 @@ void main() {
       'แก้ค่า -> ต้องกรอกเหตุผล แล้วขออนุมัติผ่าน Override ของ Config ที่เลือก (ไม่ส่งตรง)',
       (tester) async {
         await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-1');
 
         await tester.enterText(
           find.byKey(const Key('apply_param_gps.send_interval_sec')),
@@ -316,6 +339,7 @@ void main() {
 
     testWidgets('ค่าที่แก้ไม่ถูกชนิด -> บอกที่ช่อง ไม่ส่ง', (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+      await openParams(tester, 'cfg-1');
 
       await tester.enterText(
         find.byKey(const Key('apply_param_gps.send_interval_sec')),
@@ -338,6 +362,7 @@ void main() {
 
     testWidgets('แก้แล้วแก้กลับเป็นค่าเดิม -> กลับเป็นส่งตรง', (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+      await openParams(tester, 'cfg-1');
 
       final input = find.byKey(const Key('apply_param_gps.send_interval_sec'));
       await tester.enterText(input, '20');
@@ -347,6 +372,18 @@ void main() {
 
       expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
       expect(find.byKey(const Key('apply_reason_field')), findsNothing);
+    });
+
+    testWidgets('Config ไม่อยู่ในรายการของกล่อง -> บอก ไม่มีปุ่มส่ง', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-unknown'),
+      );
+
+      expect(find.byKey(const Key('apply_params_not_found')), findsOneWidget);
+      expect(submit, findsNothing);
     });
   });
 
@@ -359,6 +396,7 @@ void main() {
       );
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
+      await openParams(tester, 'cfg-1');
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
@@ -379,11 +417,15 @@ void main() {
     },
   );
 
-  testWidgets('กล่องยังไม่ติดตั้ง -> เตือนและกดขอไม่ได้', (tester) async {
+  testWidgets('กล่องยังไม่ติดตั้ง -> เตือนทั้งสองหน้าและกดส่งไม่ได้', (
+    tester,
+  ) async {
     applyRepo.options = fakeApplyOptions(deviceInstalled: false);
     await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
     expect(find.byKey(const Key('apply_device_not_installed')), findsOneWidget);
+    await openParams(tester, 'cfg-1');
+    expect(find.byKey(const Key('apply_params_not_installed')), findsOneWidget);
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
   });
 
@@ -394,7 +436,7 @@ void main() {
     await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
     expect(find.byKey(const Key('apply_options_empty')), findsOneWidget);
-    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    expect(submit, findsNothing);
   });
 
   testWidgets('โหลดตัวเลือกไม่สำเร็จ -> error + ลองใหม่', (tester) async {
@@ -550,7 +592,10 @@ void main() {
             taskId: 't-open',
           ),
         );
-        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        final router = await pump(
+          tester,
+          startAt: AppRoutes.deviceApply('DVC-1'),
+        );
 
         expect(notice, findsOneWidget);
         expect(
@@ -559,8 +604,15 @@ void main() {
           ),
           findsOneWidget,
         );
-        // Config แนะนำถูกเลือกไว้แล้วก็ยังกดขอไม่ได้
+        // เข้าไปดูพารามิเตอร์ได้ แต่กดส่งไม่ได้
+        await openParams(tester, 'cfg-1');
+        expect(
+          find.byKey(const Key('apply_params_open_request')),
+          findsOneWidget,
+        );
         expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+        router.pop();
+        await tester.pumpAndSettle();
 
         await tester.tap(goToTask);
         await tester.pumpAndSettle();
@@ -611,13 +663,13 @@ void main() {
         findsOneWidget,
       );
       expect(goToTask, findsNothing);
-      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
     });
 
     testWidgets('ไม่มีคำขอค้าง -> ไม่มีแถบเตือน', (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
       expect(notice, findsNothing);
+      await openParams(tester, 'cfg-1');
       expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
     });
   });
