@@ -101,6 +101,8 @@ export function ParameterCreateForm({
   const [sensitive, setSensitive] = useState(false);
   const [unit, setUnit] = useState("");
   const [defaultValue, setDefaultValue] = useState("");
+  const [minValue, setMinValue] = useState("");
+  const [maxValue, setMaxValue] = useState("");
   const [allowedValues, setAllowedValues] = useState<string[]>([]);
   const [optionDraft, setOptionDraft] = useState("");
   const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(
@@ -116,6 +118,11 @@ export function ParameterCreateForm({
     () => [...deviceModels].sort((a, b) => a.name.localeCompare(b.name)),
     [deviceModels],
   );
+
+  // ช่วงค่า (min/max) ใช้ได้เฉพาะชนิดข้อมูลตัวเลข (docs/30 §2 ข้อ 2 — backend
+  // ปฏิเสธถ้าตั้งกับชนิดอื่น) ซ่อนช่องไปเลยแทนที่จะโชว์ไว้เฉยๆ ไม่ให้สับสนว่า
+  // ใช้กับ string/boolean ได้
+  const isNumericType = dataType === "integer" || dataType === "decimal";
 
   function clearErrors() {
     setNameError(null);
@@ -173,6 +180,25 @@ export function ParameterCreateForm({
       setFormError("ค่าเริ่มต้นยาวเกิน 255 ตัวอักษร");
       return;
     }
+    const trimmedMin = minValue.trim();
+    const trimmedMax = maxValue.trim();
+    const parsedMin = trimmedMin === "" ? undefined : Number(trimmedMin);
+    const parsedMax = trimmedMax === "" ? undefined : Number(trimmedMax);
+    if (
+      (trimmedMin !== "" && !Number.isFinite(parsedMin)) ||
+      (trimmedMax !== "" && !Number.isFinite(parsedMax))
+    ) {
+      setFormError("ค่าต่ำสุด/สูงสุดต้องเป็นตัวเลข");
+      return;
+    }
+    if (
+      parsedMin !== undefined &&
+      parsedMax !== undefined &&
+      parsedMin > parsedMax
+    ) {
+      setFormError("ค่าต่ำสุดต้องไม่มากกว่าค่าสูงสุด");
+      return;
+    }
 
     /** ขยายแต่ละรุ่นที่เลือกเป็นคู่ (deviceModel, protocol) ให้ครบทุก protocol
      * ที่รุ่นนั้นรองรับ (issue #203 approach ข) — ไม่ใช่ให้ผู้ใช้เลือก protocol เอง */
@@ -204,6 +230,14 @@ export function ParameterCreateForm({
         // รั่วผ่าน GET /config-definitions ที่เปิดกว้างหลาย role) ไม่ส่ง defaultValue
         // เลยถ้า sensitive ไว้ตั้งแต่ต้น แทนที่จะปล่อยให้ backend ปฏิเสธ
         ...(!sensitive && trimmedDefault ? { defaultValue: trimmedDefault } : {}),
+        // min/max ซ่อนช่องไว้แล้วถ้าไม่ใช่ชนิดตัวเลข (isNumericType) แต่เช็คซ้ำ
+        // ตรงนี้กันเผื่อ state ค้างจากการสลับชนิดเร็วๆ ก่อน onValueChange เคลียร์ทัน
+        ...(isNumericType && parsedMin !== undefined
+          ? { minValue: parsedMin }
+          : {}),
+        ...(isNumericType && parsedMax !== undefined
+          ? { maxValue: parsedMax }
+          : {}),
         supportedModels,
       });
       toast.success(`สร้าง Parameter "${trimmedName}" แล้ว`);
@@ -255,7 +289,14 @@ export function ParameterCreateForm({
               <Label htmlFor="param-datatype">ชนิดข้อมูล</Label>
               <Select
                 value={dataType}
-                onValueChange={(value) => value && setDataType(value)}
+                onValueChange={(value) => {
+                  if (!value) return;
+                  setDataType(value);
+                  if (value !== "integer" && value !== "decimal") {
+                    setMinValue("");
+                    setMaxValue("");
+                  }
+                }}
               >
                 <SelectTrigger id="param-datatype" className="w-full">
                   <SelectValue>
@@ -346,6 +387,33 @@ export function ParameterCreateForm({
               />
             )}
           </div>
+
+          {isNumericType && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="param-min-value">ค่าต่ำสุด (Min, ไม่บังคับ)</Label>
+                <Input
+                  id="param-min-value"
+                  type="number"
+                  value={minValue}
+                  onChange={(e) => setMinValue(e.target.value)}
+                  placeholder="เช่น 0"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="param-max-value">ค่าสูงสุด (Max, ไม่บังคับ)</Label>
+                <Input
+                  id="param-max-value"
+                  type="number"
+                  value={maxValue}
+                  onChange={(e) => setMaxValue(e.target.value)}
+                  placeholder="เช่น 100"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="param-option-draft">

@@ -39,6 +39,11 @@ export type ConfigFieldDefinition = {
   /** ค่าเริ่มต้นของ field นี้ (issue #202) — string ดิบ, parse ตาม dataType
    * ตอนใช้งานจริง (ConfigWizard auto-fill ตอนสร้าง Config ใหม่เท่านั้น) */
   defaultValue: string | null;
+  /** ขอบเขตค่าต่ำสุด/สูงสุด (docs/30 §2 ข้อ 2) — ใช้ได้เฉพาะ dataType
+   * integer/decimal เท่านั้น backend ปฏิเสธถ้าตั้งกับชนิดอื่น · `null` =
+   * ไม่จำกัด */
+  minValue: number | null;
+  maxValue: number | null;
   supportedModels: ConfigFieldModelSupport[];
   createdAt: string;
   updatedAt: string;
@@ -74,6 +79,10 @@ export type CreateConfigDefinitionInput = {
   restartRequired?: boolean;
   /** ค่าเริ่มต้นของ field นี้ (issue #202) — ไม่บังคับ, maxLength 255 */
   defaultValue?: string;
+  /** ขอบเขตค่าต่ำสุด/สูงสุด (docs/30 §2 ข้อ 2) — ไม่บังคับ ใช้ได้เฉพาะ dataType
+   * integer/decimal เท่านั้น */
+  minValue?: number;
+  maxValue?: number;
   supportedModels: ConfigFieldModelSupport[];
 };
 
