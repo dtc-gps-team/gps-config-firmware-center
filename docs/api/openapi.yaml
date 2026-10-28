@@ -1069,11 +1069,11 @@ paths:
             format: uuid
       responses:
         "200":
-          description: รายละเอียดงาน
+          description: รายละเอียดงาน พร้อมชื่อผู้รับผิดชอบ (v3.67)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Task"
+                $ref: "#/components/schemas/TaskDetail"
         "400":
           description: taskId ไม่ใช่ uuid ที่ถูกต้อง
         "404":
@@ -5436,6 +5436,27 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    TaskDetail:
+      description: >-
+        (v3.67) `getTask` — `Task` + ชื่อผู้รับผิดชอบ ให้ Mobile แสดงชื่อแทน user id
+        ดิบ (ST/OT ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้เอง เหตุผลเดียวกับ
+        `TaskEvent.changedByName`) · endpoint อื่นที่คืน `Task` ไม่มี field นี้
+      allOf:
+        - $ref: "#/components/schemas/Task"
+        - type: object
+          required: [assignee]
+          properties:
+            assignee:
+              type: object
+              nullable: true
+              description: ผู้รับผิดชอบ (`assignedTo`) · null เมื่อหาบัญชีไม่เจอ
+              required: [username, fullName]
+              properties:
+                username:
+                  type: string
+                fullName:
+                  type: string
 
     ConfigApplyRequestStatus:
       type: string

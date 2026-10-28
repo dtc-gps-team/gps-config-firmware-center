@@ -643,11 +643,12 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                   )
                 else
                   const AppInfoRow(label: 'อุปกรณ์', value: null),
-                // raw user id — ยังไม่มี GET /users resolve ชื่อฝั่ง Mobile
-                // (gap เดียวกับ reportedBy/reviewedBy ใน Incident Detail, #306)
+                // ชื่อมากับ GET /tasks/{id} (v3.67) · ไม่มี (cache ในเครื่อง /
+                // backend เก่า) = user id ดิบแบบเดิม
                 AppInfoRow(
+                  key: const Key('task_detail_assignee'),
                   label: 'ผู้รับผิดชอบ',
-                  value: task.assignedTo,
+                  value: task.assignee?.label ?? task.assignedTo,
                   selectable: true,
                 ),
                 AppInfoRow(
