@@ -967,6 +967,7 @@ class Task {
     this.source = TaskSource.operation,
     this.completedAt,
     this.autoClosed = false,
+    this.assignee,
   });
 
   final String id;
@@ -974,6 +975,10 @@ class Task {
 
   /// user id of the assignee (`Task.assignedTo`).
   final String assignedTo;
+
+  /// ชื่อผู้รับผิดชอบ — มาเฉพาะ `GET /tasks/{taskId}` (`TaskDetail`, v3.67) ·
+  /// `null` เมื่อมาจาก endpoint อื่น, cache ในเครื่อง หรือ backend เก่า
+  final TaskAssignee? assignee;
   final TaskStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1015,8 +1020,27 @@ class Task {
       source: TaskSource.fromWire(json['source']),
       completedAt: parseDate(json['completedAt']),
       autoClosed: json['autoClosed'] as bool? ?? false,
+      assignee: json['assignee'] is Map<String, dynamic>
+          ? TaskAssignee.fromJson(json['assignee'] as Map<String, dynamic>)
+          : null,
     );
   }
+}
+
+/// `TaskDetail.assignee` (v3.67) — ชื่อของ `Task.assignedTo`
+class TaskAssignee {
+  const TaskAssignee({required this.username, required this.fullName});
+
+  final String username;
+  final String fullName;
+
+  factory TaskAssignee.fromJson(Map<String, dynamic> json) => TaskAssignee(
+    username: json['username'] as String? ?? '',
+    fullName: json['fullName'] as String? ?? '',
+  );
+
+  /// "ชื่อ-นามสกุล (username)" · ชื่อว่าง = username อย่างเดียว
+  String get label => fullName.isEmpty ? username : '$fullName ($username)';
 }
 
 /// ผลของ `POST /tasks/start` (docs/28 §5.1) — `created=false` = ได้งานเดิมที่ยัง

@@ -1443,6 +1443,33 @@ void main() {
       expect(find.text('เริ่มเองจากหน้ากล่อง'), findsOneWidget);
     });
 
+    testWidgets('มีชื่อผู้รับผิดชอบ (v3.67) -> แสดงชื่อแทน user id ดิบ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: Task(
+            id: 't1',
+            title: 'DVC-1 — 26 ต.ค. 2569',
+            assignedTo: 'u1',
+            status: TaskStatus.inProgress,
+            createdAt: DateTime(2026, 10, 26, 8),
+            updatedAt: DateTime(2026, 10, 26, 8),
+            deviceId: 'DVC-1',
+            assignee: const TaskAssignee(
+              username: 'st.test',
+              fullName: 'ช่าง ทดสอบ',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('ช่าง ทดสอบ (st.test)'), findsOneWidget);
+      expect(find.text('u1'), findsNothing);
+    });
+
     testWidgets('งานที่ระบบปิดให้ -> แจ้งว่าปิดอัตโนมัติ', (tester) async {
       await _pump(
         tester,

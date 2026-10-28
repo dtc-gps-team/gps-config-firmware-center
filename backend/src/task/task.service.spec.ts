@@ -92,6 +92,7 @@ describe('TaskService', () => {
   let queryRaw: jest.Mock;
   // docs/25 §3.9 — ยกเลิกงานแล้วปิดคำขอส่ง Config ที่ pending ตาม
   let configApplyRequest: { updateMany: jest.Mock; findFirst: jest.Mock };
+  let user: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     task = {
@@ -117,6 +118,7 @@ describe('TaskService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       findFirst: jest.fn().mockResolvedValue(null),
     };
+    user = { findUnique: jest.fn().mockResolvedValue(null) };
     queryRaw = jest
       .fn()
       .mockResolvedValue([
@@ -131,6 +133,7 @@ describe('TaskService', () => {
       auditLog,
       taskEvent,
       configApplyRequest,
+      user,
       $queryRaw: queryRaw,
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
@@ -340,6 +343,41 @@ describe('TaskService', () => {
         where: { status: undefined, assignedTo: configEngineer.id },
         orderBy: { createdAt: 'desc' },
       });
+    });
+  });
+
+  describe('findOneWithAssignee', () => {
+    it('แนบชื่อผู้รับผิดชอบ (username + fullName) จาก Task.assignedTo', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      user.findUnique.mockResolvedValue({
+        username: 'st.test',
+        fullName: 'ช่าง ทดสอบ',
+      });
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, owner),
+      ).resolves.toEqual({
+        ...sampleTask,
+        assignee: { username: 'st.test', fullName: 'ช่าง ทดสอบ' },
+      });
+      expect(user.findUnique).toHaveBeenCalledWith({
+        where: { id: sampleTask.assignedTo },
+        select: { username: true, fullName: true },
+      });
+    });
+
+    it('หาบัญชีไม่เจอ -> assignee เป็น null (ไม่ throw)', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, operation),
+      ).resolves.toEqual({ ...sampleTask, assignee: null });
+    });
+
+    it('กฎเห็นงานเดียวกับ findOne: ST/OT ที่ไม่ใช่เจ้าของ -> 404 ไม่ query ผู้ใช้', async () => {
+      task.findUnique.mockResolvedValue(sampleTask);
+      await expect(
+        service.findOneWithAssignee(sampleTask.id, otherTech),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(user.findUnique).not.toHaveBeenCalled();
     });
   });
 
