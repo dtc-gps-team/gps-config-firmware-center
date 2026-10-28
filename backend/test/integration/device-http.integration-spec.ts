@@ -3341,7 +3341,12 @@ describe('DeviceController test-connection (integration — real postgres + guar
         process.env.DEVICE_CONFIG_APPLY_MODE = 'central';
       });
       afterEach(() => {
-        process.env.DEVICE_CONFIG_APPLY_MODE = previousMode;
+        // กำหนด undefined ตรงๆ จะได้สตริง "undefined" (CI ไม่ตั้ง env นี้)
+        if (previousMode === undefined) {
+          delete process.env.DEVICE_CONFIG_APPLY_MODE;
+        } else {
+          process.env.DEVICE_CONFIG_APPLY_MODE = previousMode;
+        }
       });
 
       /** Config ที่อนุมัติแล้วโดย Operation อีกคน (SoD ข้อ Config.approvedBy) +
