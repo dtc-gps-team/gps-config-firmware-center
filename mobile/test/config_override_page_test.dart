@@ -884,6 +884,81 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config -> แสดงด้วยแบบแก้ไม่ได้ ไม่ซ้ำกับค่าใน Config',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · ส่งพิกัดทุก 10 วินาที',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10},
+          boxFields: BoxFields(
+            fields: {'gps.send_interval_sec': 10, 'led.enabled': true},
+            reportedAt: null,
+          ),
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+          ),
+          ConfigFieldDefinition(
+            id: 'def-led',
+            fieldName: 'led.enabled',
+            dataType: 'boolean',
+            allowedValues: [],
+            required: false,
+            // แก้ผ่าน Override ได้ แต่ไม่อยู่ใน Config นี้ -> ยังแก้ไม่ได้
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+            description: 'เปิดไฟ LED',
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      expect(
+        find.byKey(const Key('config_override_field_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_input_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      final led = find.byKey(const Key('config_override_field_led.enabled'));
+      expect(led, findsOneWidget);
+      expect(
+        find.descendant(of: led, matching: find.text('เปิดไฟ LED')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: led, matching: find.text('true')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: led,
+          matching: find.text('(แก้ไขไม่ได้ · ไม่อยู่ใน Config นี้)'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_input_led.enabled')),
+        findsNothing,
+      );
+    },
+  );
+
   group('ค่าในกล่องกับค่าที่อนุมัติแล้วรอส่ง (delivery v3.71)', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',

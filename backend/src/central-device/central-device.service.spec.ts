@@ -11,6 +11,7 @@ const unusedClientMethods = {
   putDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   getCommand: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   pushFirmware: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
+  getDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   listDeviceCommands: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
 };
 
@@ -243,6 +244,7 @@ describe('pushConfig', () => {
       }),
       getCommand: jest.fn(),
       pushFirmware: jest.fn(),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
       ...over,
     };
@@ -370,6 +372,7 @@ describe('getCommandOutcome', () => {
     getSchema: jest.fn(),
     putDeviceConfig: jest.fn(),
     pushFirmware: jest.fn(),
+    getDeviceConfig: jest.fn(),
     listDeviceCommands: jest.fn(),
   };
 
@@ -435,6 +438,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
             firmware_version_reported: '1.1.0',
           },
         ]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn().mockResolvedValue([
         {
           command_id: 'CMD-3',
@@ -472,6 +476,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
     const client: CentralDeviceClient = {
       ...base,
       listGatewayDevices: () => Promise.resolve([]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
     };
 
@@ -487,6 +492,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
       ...base,
       listGatewayDevices: () =>
         Promise.reject(new CentralUnavailableError('x')),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
     };
 
@@ -509,6 +515,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
             firmware_version_reported: '1.0.0',
           },
         ]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn().mockResolvedValue([
         {
           command_id: 'CMD-1',
@@ -526,5 +533,55 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
       );
 
     expect(result).toBeNull();
+  });
+});
+
+describe('readReportedFields (ค่าที่กล่องรายงานว่าใช้อยู่)', () => {
+  const client = (getDeviceConfig: CentralDeviceClient['getDeviceConfig']) =>
+    ({
+      ...unusedClientMethods,
+      listGatewayDevices: () => Promise.resolve([]),
+      listRegistryDevices: () => Promise.resolve([]),
+      getDeviceConfig,
+    }) as CentralDeviceClient;
+
+  it('แปลงเป็นชื่อพารามิเตอร์แบบจุด และซ่อน data_server.path (มี key ส่ง telemetry)', async () => {
+    const out = await makeService(
+      client(() =>
+        Promise.resolve({
+          device_id: 'BOX-1',
+          reported: {
+            config_version: 17,
+            settings: {
+              led: { enabled: true },
+              gps: { send_interval_sec: 10 },
+              data_server: { host: '10.0.0.5', path: '/secret/key' },
+            },
+            reported_at: '2026-10-28T07:17:14.569Z',
+          },
+        }),
+      ),
+    ).readReportedFields('BOX-1');
+    expect(out).toEqual({
+      fields: {
+        'led.enabled': true,
+        'gps.send_interval_sec': 10,
+        'data_server.host': '10.0.0.5',
+      },
+      reportedAt: '2026-10-28T07:17:14.569Z',
+    });
+  });
+
+  it('กล่องยังไม่รายงาน / ติดต่อไม่ได้ -> null ไม่โยน error', async () => {
+    await expect(
+      makeService(
+        client(() => Promise.resolve({ device_id: 'BOX-1', reported: null })),
+      ).readReportedFields('BOX-1'),
+    ).resolves.toBeNull();
+    await expect(
+      makeService(
+        client(() => Promise.reject(new CentralUnavailableError('down'))),
+      ).readReportedFields('BOX-1'),
+    ).resolves.toBeNull();
   });
 });

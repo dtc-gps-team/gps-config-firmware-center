@@ -133,6 +133,35 @@ void main() {
   });
 
   group('DeviceConfigDraft.fromJson', () {
+    test(
+      'boxFields (v3.74): ค่าที่กล่องรายงานว่าใช้อยู่ · ไม่มี/null -> null',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'boxFields': {
+            'fields': {'led.enabled': true, 'gps.send_interval_sec': 10},
+            'reportedAt': '2026-10-28T07:17:14.569Z',
+          },
+        });
+        expect(draft.boxFields!.fields, {
+          'led.enabled': true,
+          'gps.send_interval_sec': 10,
+        });
+        expect(
+          draft.boxFields!.reportedAt,
+          DateTime.utc(2026, 10, 28, 7, 17, 14, 569),
+        );
+        expect(DeviceConfigDraft.fromJson({'id': 'cfg-1'}).boxFields, isNull);
+        expect(
+          DeviceConfigDraft.fromJson({
+            'id': 'cfg-1',
+            'boxFields': null,
+          }).boxFields,
+          isNull,
+        );
+      },
+    );
+
     test('delivery (v3.71): ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', () {
       final draft = DeviceConfigDraft.fromJson({
         'id': 'cfg-1',

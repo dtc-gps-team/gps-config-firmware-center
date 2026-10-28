@@ -26,7 +26,10 @@ import { randomBytes } from 'node:crypto';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
-import { CentralDeviceService } from '../central-device/central-device.service';
+import {
+  CentralDeviceService,
+  type ReportedBoxFields,
+} from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
@@ -82,6 +85,9 @@ export type ConfigWithDeviceOverride = Config & {
   hasDeviceOverride: boolean;
   pendingOverride: DeviceConfigOverride | null;
   delivery: ConfigDelivery | null;
+  /** ค่าที่กล่องรายงานว่าใช้อยู่ทุกพารามิเตอร์ (โหมด central) ให้หน้าขอแก้ค่าแสดงค่าที่ไม่อยู่ใน
+   * Config ด้วย · null = ไม่ใช่โหมด central / ติดต่อ Server กลางไม่ได้ / กล่องยังไม่รายงาน */
+  boxFields: ReportedBoxFields | null;
 };
 
 /** ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด — `fields` ของ response คือค่าที่**จะ**อยู่ในกล่อง
@@ -1248,6 +1254,10 @@ export class DeviceService {
       }),
     ]);
 
+    const boxFields = this.isCentralApplyMode()
+      ? await this.centralDeviceService.readReportedFields(deviceId)
+      : null;
+
     const delivery = deliveredAt
       ? await this.describeDelivery(
           deviceId,
@@ -1264,6 +1274,7 @@ export class DeviceService {
         hasDeviceOverride: false,
         pendingOverride,
         delivery,
+        boxFields,
       };
     }
 
@@ -1273,6 +1284,7 @@ export class DeviceService {
       hasDeviceOverride: true,
       pendingOverride,
       delivery,
+      boxFields,
     };
   }
 

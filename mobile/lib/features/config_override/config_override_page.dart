@@ -378,7 +378,12 @@ class _OverrideForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fieldEntries = (config.fields ?? const <String, dynamic>{}).entries
+    final configFields = config.fields ?? const <String, dynamic>{};
+    final fieldEntries = configFields.entries.toList(growable: false);
+    // v3.74 — ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config นี้ แสดงต่อท้ายแบบแก้ไม่ได้
+    // (Override แก้ได้เฉพาะค่าใน Config) ให้ช่างเห็นค่าในกล่องครบ
+    final boxOnlyEntries = (config.boxFields?.fields ?? const {}).entries
+        .where((e) => !configFields.containsKey(e.key))
         .toList(growable: false);
     final delivery = config.delivery;
     final undelivered = delivery?.pendingFieldNames.length ?? 0;
@@ -427,6 +432,21 @@ class _OverrideForm extends StatelessWidget {
                   revealed: revealed.contains(entry.key),
                   onToggleReveal: () => onToggleReveal(entry.key),
                   onChanged: (v) => onEdit(entry.key, v),
+                ),
+              ],
+              for (final (i, entry) in boxOnlyEntries.indexed) ...[
+                if (i > 0 || fieldEntries.isNotEmpty) const Divider(),
+                _FieldRow(
+                  key: Key('config_override_field_${entry.key}'),
+                  fieldKey: entry.key,
+                  originalValue: entry.value,
+                  def: defByName[entry.key],
+                  editValue: null,
+                  outsideConfig: true,
+                  errorText: null,
+                  revealed: revealed.contains(entry.key),
+                  onToggleReveal: () => onToggleReveal(entry.key),
+                  onChanged: (_) {},
                 ),
               ],
             ],
@@ -493,6 +513,7 @@ class _FieldRow extends StatefulWidget {
     required this.def,
     required this.editValue,
     this.inBox,
+    this.outsideConfig = false,
     required this.errorText,
     required this.revealed,
     required this.onToggleReveal,
@@ -506,6 +527,9 @@ class _FieldRow extends StatefulWidget {
 
   /// ค่าในกล่องตอนนี้ เมื่อต่างจากค่าที่อนุมัติแล้ว (รอส่ง) · null = ตรงกัน/ไม่ทราบ
   final _InBoxValue? inBox;
+
+  /// ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config นี้ — แก้ไม่ได้เสมอ
+  final bool outsideConfig;
   final String? errorText;
   final bool revealed;
   final VoidCallback onToggleReveal;
@@ -629,7 +653,7 @@ class _FieldRowState extends State<_FieldRow> {
     final revealed = widget.revealed;
     final fieldKey = widget.fieldKey;
 
-    if (def == null || !def.stOverridable) {
+    if (widget.outsideConfig || def == null || !def.stOverridable) {
       const valueStyle = TextStyle(
         fontSize: AppTypography.xs,
         height: AppTypography.xsHeight,
@@ -656,9 +680,11 @@ class _FieldRowState extends State<_FieldRow> {
               style: valueStyle,
             ),
           const SizedBox(height: 2),
-          const Text(
-            '(แก้ไขไม่ได้)',
-            style: TextStyle(
+          Text(
+            widget.outsideConfig
+                ? '(แก้ไขไม่ได้ · ไม่อยู่ใน Config นี้)'
+                : '(แก้ไขไม่ได้)',
+            style: const TextStyle(
               fontSize: AppTypography.xs,
               height: AppTypography.xsHeight,
               color: AppColors.mutedForeground,
