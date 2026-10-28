@@ -1167,6 +1167,8 @@ class Device {
     this.hardwareRevisionCode,
     this.bootloader,
     this.customer,
+    this.reportedFirmwareVersion,
+    this.reportedFirmwareAt,
   });
 
   final String id;
@@ -1193,6 +1195,11 @@ class Device {
   /// ลูกค้าเจ้าของอุปกรณ์ (`customer: {id, companyName}`) — null = ยังไม่ผูก
   final Customer? customer;
 
+  /// เวอร์ชัน Firmware ที่กล่องรายงานเองล่าสุดผ่าน telemetry (docs/23) และเวลาที่
+  /// รายงาน — null = กล่องยังไม่เคยรายงาน
+  final String? reportedFirmwareVersion;
+  final DateTime? reportedFirmwareAt;
+
   factory Device.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -1216,6 +1223,8 @@ class Device {
       customer: json['customer'] is Map<String, dynamic>
           ? Customer.fromJson(json['customer'] as Map<String, dynamic>)
           : null,
+      reportedFirmwareVersion: json['reportedFirmwareVersion'] as String?,
+      reportedFirmwareAt: parseDate(json['reportedFirmwareAt']),
     );
   }
 }

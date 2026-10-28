@@ -17,6 +17,7 @@ Device _device({
   String deviceModel = 'GT06N',
   String protocol = 'TCP',
   Customer? customer,
+  String? reportedFirmwareVersion,
 }) => Device(
   id: id,
   deviceId: deviceId,
@@ -26,6 +27,7 @@ Device _device({
   status: status,
   registeredAt: DateTime(2026, 6, 1),
   customer: customer,
+  reportedFirmwareVersion: reportedFirmwareVersion,
 );
 
 class _FakeDeviceSearchRepository implements DeviceSearchRepository {
@@ -131,6 +133,25 @@ void main() {
     expect(find.byKey(const Key('device_card_0')), findsOneWidget);
     expect(find.byKey(const Key('device_card_1')), findsOneWidget);
   });
+
+  testWidgets(
+    'การ์ดบอก Firmware ที่กล่องรายงานล่าสุด · ยังไม่รายงาน = ยังไม่ทราบ',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          devices: [
+            _device(deviceId: 'BOX-0001', reportedFirmwareVersion: '1.0.0'),
+            _device(id: 'uuid2', deviceId: 'DEV-0092'),
+          ],
+        ),
+      );
+
+      expect(find.text('Firmware 1.0.0'), findsOneWidget);
+      expect(find.text('Firmware ยังไม่ทราบ'), findsOneWidget);
+      expect(find.byKey(const Key('device_firmware_BOX-0001')), findsOneWidget);
+    },
+  );
 
   testWidgets('ค้นหาด้วย deviceId -> filter เฉพาะที่ตรง', (tester) async {
     await _pump(
