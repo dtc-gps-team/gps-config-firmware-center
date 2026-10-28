@@ -26,7 +26,10 @@ import { randomBytes } from 'node:crypto';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
-import { CentralDeviceService } from '../central-device/central-device.service';
+import {
+  CentralDeviceService,
+  type CheckConfigOutcome,
+} from '../central-device/central-device.service';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
@@ -52,6 +55,7 @@ import {
 import {
   DEVICE_SIMULATOR,
   type DeviceSimulator,
+  type SimulationResult,
 } from '../config/device-simulator';
 import {
   DEVICE_CONNECTION_TESTER,
@@ -162,6 +166,41 @@ export interface DeviceStatusResult {
  * สร้าง (ค้าง `pending` ตลอดไป เพราะ `reject()`/cancel ไม่แตะ target) ต้อง
  * กรองออกตอนดู "สถานะปัจจุบัน" ของอุปกรณ์ ไม่งั้นจะเห็น pending ผิดๆ */
 const STATUS_IGNORED_ROLLOUT_STATUSES = ['rejected', 'cancelled'] as const;
+
+/** รวมผลตรวจกับ Firmware ในกล่อง (Server กลาง) เข้าผลตรวจ Config ของ simulator ·
+ * ติดต่อไม่ได้ไม่บล็อก (ตอนกดส่งจริงตรวจซ้ำอยู่แล้ว) แต่บอกว่ายังไม่ได้ตรวจ */
+function withCentralCheck(
+  simulated: SimulationResult,
+  central: CheckConfigOutcome | null,
+): SimulationResult {
+  if (!central) return simulated;
+  switch (central.kind) {
+    case 'ok':
+      return {
+        passed: simulated.passed,
+        details: [
+          ...simulated.details,
+          `กล่องรับค่าทุกตัว — ตรวจกับ Firmware ${central.firmwareVersion ?? '(ไม่ทราบเวอร์ชัน)'} (schema ${central.schemaVersion}) ของ ${central.hardwareModel} ที่กล่องรายงานว่ารันอยู่`,
+        ],
+      };
+    case 'rejected':
+      return {
+        passed: false,
+        details: [
+          ...simulated.details,
+          ...central.reasons.map((r) => `กล่องจะไม่รับ Config นี้: ${r}`),
+        ],
+      };
+    case 'unavailable':
+      return {
+        passed: simulated.passed,
+        details: [
+          ...simulated.details,
+          `ยังไม่ได้ตรวจกับ Firmware ในกล่อง (${central.reason}) — ลองทดสอบใหม่อีกครั้ง`,
+        ],
+      };
+  }
+}
 
 /** ถือว่าอุปกรณ์ online ถ้า `Device.lastSeenAt` อยู่ภายในช่วงนี้ (docs/19 §4.3) —
  * รอบดึงงานปกติคือทุก 30 วินาที เผื่อพลาดได้ 10 รอบ */
@@ -1072,7 +1111,7 @@ export class DeviceService {
     // configCheck + connectionCheck รันเสมอ แม้ compatibilityCheck ไม่ผ่าน —
     // ช่างจะได้เห็นภาพรวมครบในครั้งเดียว (configCheck ตรวจตัว Config เอง,
     // connectionCheck ตรวจสัญญาณกล่อง ทั้งคู่ไม่ขึ้นกับผล compat)
-    const [configCheck, connectionCheck] = await Promise.all([
+    const [simulated, connectionCheck, centralCheck] = await Promise.all([
       this.deviceSimulator.simulateConfig({
         deviceModel: config.deviceModel,
         protocol: config.protocol,
@@ -1083,7 +1122,13 @@ export class DeviceService {
         deviceModel: device.deviceModel,
         protocol: device.protocol,
       }),
+      // โหมด central: ตรวจกับ schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ แบบเดียวกับ
+      // ตอนส่งจริง (ไม่ส่ง) — simulator ตรวจแค่กฎทั่วไป ไม่รู้ว่ากล่องรับค่าไหนได้
+      this.isCentralApplyMode()
+        ? this.centralDeviceService.checkConfig(device.deviceId, fields)
+        : Promise.resolve(null),
     ]);
+    const configCheck = withCentralCheck(simulated, centralCheck);
 
     return {
       passed:

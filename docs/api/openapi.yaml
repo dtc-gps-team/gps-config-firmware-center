@@ -2489,7 +2489,11 @@ paths:
         **ไม่ persist / ไม่แตะสถานะใดๆ** ทั้ง Device และ Config. อ้างด้วยเลขเครื่อง
         จริง (`Device.deviceId`). ต่างจาก `applyConfigToDevice`: deviceModel/protocol
         ไม่ตรง **ไม่ใช่ 409** — คืน 200 พร้อม `compatibilityCheck.passed:false`
-        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง
+        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง · (v3.72) โหมด `DEVICE_CONFIG_APPLY_MODE=central`
+        ตรวจ (1) เพิ่มกับ schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ใน Server กลาง
+        แบบเดียวกับตอนส่งจริง (ไม่ส่ง) — กล่องไม่รู้จักค่าไหน `configCheck.passed:false`
+        พร้อมเหตุผลรายค่าใน `details` · ติดต่อ Server กลางไม่ได้ไม่ทำให้ไม่ผ่าน แต่มี
+        `details` บอกว่ายังไม่ได้ตรวจกับกล่อง
       parameters:
         - in: path
           name: deviceId

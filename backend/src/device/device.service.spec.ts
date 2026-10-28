@@ -232,7 +232,11 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
   let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
-  let centralDeviceService: { findDevice: jest.Mock; mode: 'real' | 'mock' };
+  let centralDeviceService: {
+    findDevice: jest.Mock;
+    checkConfig: jest.Mock;
+    mode: 'real' | 'mock';
+  };
   // ค่าเริ่มต้นเป็น mock เสมอ (CLAUDE.md Mock Mode Pattern) — เทสที่ต้องการ
   // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
   let deviceConfigApplyMode: string | undefined;
@@ -295,6 +299,7 @@ describe('DeviceService', () => {
     // ปลอมมาเป็น seed)
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
+      checkConfig: jest.fn(),
       mode: 'real',
     };
     customer = { findUnique: jest.fn() };
@@ -2020,6 +2025,86 @@ describe('DeviceService', () => {
         deviceModel: 'GT06N',
         protocol: 'TCP',
         fields: { APN: 'internet' },
+      });
+    });
+
+    describe('โหมด central — ตรวจกับ Firmware ที่กล่องรันอยู่จริง', () => {
+      beforeEach(() => {
+        deviceConfigApplyMode = 'central';
+        device.findUnique.mockResolvedValue(installedDevice);
+        config.findUnique.mockResolvedValue(approvedConfig);
+        deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+        connectionTester.testConnection.mockResolvedValue(connPass);
+      });
+
+      it('กล่องรับทุกค่า -> configCheck ผ่าน + บอก Firmware/schema ที่ใช้ตรวจ', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'ok',
+          hardwareModel: 'ESP32-DEVKIT-V1',
+          schemaVersion: 1,
+          firmwareVersion: '1.0.0',
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(centralDeviceService.checkConfig).toHaveBeenCalledWith(
+          'DTC-0001',
+          { APN: 'internet' },
+        );
+        expect(result.passed).toBe(true);
+        expect(result.configCheck.passed).toBe(true);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'กล่องรับค่าทุกตัว — ตรวจกับ Firmware 1.0.0 (schema 1) ของ ESP32-DEVKIT-V1 ที่กล่องรายงานว่ารันอยู่',
+        ]);
+      });
+
+      it('Firmware ในกล่องไม่รู้จักบางค่า -> configCheck ไม่ผ่าน พร้อมเหตุผลรายค่า', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'rejected',
+          reasons: [
+            'พารามิเตอร์ "speed_limit.max_kmh" ไม่มีใน schema ของ ESP32-DEVKIT-V1 (schema 1)',
+          ],
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(result.passed).toBe(false);
+        expect(result.configCheck.passed).toBe(false);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'กล่องจะไม่รับ Config นี้: พารามิเตอร์ "speed_limit.max_kmh" ไม่มีใน schema ของ ESP32-DEVKIT-V1 (schema 1)',
+        ]);
+      });
+
+      it('ติดต่อ Server กลางไม่ได้ -> ไม่บล็อก แต่บอกว่ายังไม่ได้ตรวจกับกล่อง', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'unavailable',
+          reason: 'เชื่อมต่อ Server กลางไม่ได้',
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(result.passed).toBe(true);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'ยังไม่ได้ตรวจกับ Firmware ในกล่อง (เชื่อมต่อ Server กลางไม่ได้) — ลองทดสอบใหม่อีกครั้ง',
+        ]);
+      });
+
+      it('โหมดอื่น -> ไม่เรียก Server กลาง', async () => {
+        deviceConfigApplyMode = undefined;
+        await service.simulateConfig('DTC-0001', approvedConfig.id);
+        expect(centralDeviceService.checkConfig).not.toHaveBeenCalled();
       });
     });
   });
