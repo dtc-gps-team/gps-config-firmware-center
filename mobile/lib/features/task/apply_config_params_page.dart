@@ -452,6 +452,74 @@ class _ParamRowState extends State<_ParamRow> {
     text: configValueToInput(widget.value),
   );
 
+  /// ค่าที่เลือกอยู่ของสวิตช์/ตัวเลือก (boolean, allowedValues) — ไม่ต้องพิมพ์เอง
+  late String _choice = configValueToInput(widget.value);
+
+  void _choose(String value) {
+    setState(() => _choice = value);
+    widget.onChanged(value);
+  }
+
+  /// ช่องแก้ค่าตามชนิด: boolean = สวิตช์เปิด/ปิด · มีค่าที่อนุญาต = เลือกจากรายการ ·
+  /// อื่นๆ = พิมพ์
+  Widget _input(ConfigFieldDefinition? def) {
+    final key = Key('apply_param_${widget.field}');
+    if (def?.dataType == 'boolean') {
+      final on = _choice == 'true';
+      return Row(
+        children: [
+          Switch(
+            key: key,
+            value: on,
+            onChanged: widget.enabled ? (v) => _choose('$v') : null,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            on ? 'เปิด' : 'ปิด',
+            style: const TextStyle(
+              fontSize: AppTypography.sm,
+              height: AppTypography.smHeight,
+              color: AppColors.foreground,
+            ),
+          ),
+        ],
+      );
+    }
+    final allowed = def?.allowedValues ?? const <String>[];
+    if (allowed.isNotEmpty) {
+      return DropdownButtonFormField<String>(
+        key: key,
+        initialValue: allowed.contains(_choice) ? _choice : null,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: AppColors.card,
+        ),
+        items: [
+          for (final v in allowed) DropdownMenuItem(value: v, child: Text(v)),
+        ],
+        onChanged: widget.enabled
+            ? (v) {
+                if (v != null) _choose(v);
+              }
+            : null,
+      );
+    }
+    return TextField(
+      key: key,
+      controller: _controller,
+      enabled: widget.enabled,
+      obscureText: def?.sensitive ?? false,
+      onChanged: widget.onChanged,
+      decoration: const InputDecoration(
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.card,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -491,18 +559,7 @@ class _ParamRowState extends State<_ParamRow> {
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
-                key: Key('apply_param_${widget.field}'),
-                controller: _controller,
-                enabled: widget.enabled,
-                obscureText: def?.sensitive ?? false,
-                onChanged: widget.onChanged,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  filled: true,
-                  fillColor: AppColors.card,
-                ),
-              ),
+              _input(def),
               if (widget.error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -520,6 +577,8 @@ class _ParamRowState extends State<_ParamRow> {
               Text(
                 def?.sensitive == true
                     ? '••••'
+                    : def?.dataType == 'boolean' && widget.value is bool
+                    ? (widget.value as bool ? 'เปิด' : 'ปิด')
                     : configValueToInput(widget.value),
                 style: muted.copyWith(
                   fontFamily: AppTypography.monoFamily,

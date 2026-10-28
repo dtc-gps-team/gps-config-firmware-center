@@ -76,6 +76,28 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
       supportedModels: [],
       description: 'เปิดไฟ LED',
     ),
+    ConfigFieldDefinition(
+      id: 'def-speed-on',
+      fieldName: 'speed_limit.enabled',
+      dataType: 'boolean',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      description: 'เปิดตรวจสอบความเร็วเกิน',
+    ),
+    ConfigFieldDefinition(
+      id: 'def-mode',
+      fieldName: 'gps.mode',
+      dataType: 'string',
+      allowedValues: ['normal', 'eco'],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      description: 'โหมด GPS',
+    ),
   ];
 }
 
@@ -295,7 +317,8 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: led, matching: find.text('true')),
+        // ค่าเปิด/ปิดแสดงเป็นคำ ไม่ใช่ true/false
+        find.descendant(of: led, matching: find.text('เปิด')),
         findsOneWidget,
       );
       expect(find.byKey(const Key('apply_param_led.enabled')), findsNothing);
@@ -372,6 +395,69 @@ void main() {
 
       expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
       expect(find.byKey(const Key('apply_reason_field')), findsNothing);
+    });
+
+    testWidgets(
+      'ค่าเปิด/ปิดที่แก้ได้ = สวิตช์ (ไม่ต้องพิมพ์) · สลับแล้วขออนุมัติด้วยค่า boolean',
+      (tester) async {
+        applyRepo.options = fakeApplyOptions(
+          configs: const [
+            ApplyOptionConfig(
+              id: 'cfg-1',
+              name: 'BOX จำกัดความเร็ว',
+              latestVersion: 1,
+              suggested: true,
+              fields: {'speed_limit.enabled': true},
+            ),
+          ],
+        );
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-1');
+
+        final toggle = find.byKey(const Key('apply_param_speed_limit.enabled'));
+        expect(tester.widget<Switch>(toggle).value, isTrue);
+        expect(find.text('เปิด'), findsOneWidget);
+        expect(
+          find.descendant(of: toggle, matching: find.byType(TextField)),
+          findsNothing,
+        );
+
+        await tester.tap(toggle);
+        await tester.pump();
+        expect(find.text('ปิด'), findsOneWidget);
+        expect(find.text('ขออนุมัติค่าที่แก้'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('apply_reason_field')),
+          'ลูกค้าขอปิด',
+        );
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+        expect(overrides.lastFields, {'speed_limit.enabled': false});
+      },
+    );
+
+    testWidgets('ค่าที่มีตัวเลือกกำหนดไว้ = เลือกจากรายการ', (tester) async {
+      applyRepo.options = fakeApplyOptions(
+        configs: const [
+          ApplyOptionConfig(
+            id: 'cfg-1',
+            name: 'BOX โหมด GPS',
+            latestVersion: 1,
+            suggested: true,
+            fields: {'gps.mode': 'normal'},
+          ),
+        ],
+      );
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+      await openParams(tester, 'cfg-1');
+
+      await tester.tap(find.byKey(const Key('apply_param_gps.mode')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('eco').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('ขออนุมัติค่าที่แก้'), findsOneWidget);
     });
 
     testWidgets('Config ไม่อยู่ในรายการของกล่อง -> บอก ไม่มีปุ่มส่ง', (
