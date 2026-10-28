@@ -27,6 +27,8 @@ import { DeviceFirmwareOverrideController } from './device-firmware-override.con
 import { DeviceController } from './device.controller';
 import { DeviceHistoryService } from './device-history.service';
 import { DeviceService } from './device.service';
+import { ConfigApplyRequestModule } from '../config-apply-request/config-apply-request.module';
+import { TaskModule } from '../task/task.module';
 
 // Device module — `POST /devices/:deviceId/test-connection` (ดู device.controller.ts
 // สำหรับเหตุผลที่ยังไม่ทำ `GET /devices/:deviceId/status`)
@@ -51,6 +53,10 @@ import { DeviceService } from './device.service';
     ConfigDefinitionModule,
     DeviceModelModule,
     NotificationModule,
+    // docs/30 — Config Override ในโหมด central สร้างคำขอส่งเข้ากล่องผูกกัน
+    // (ทิศทางเดียว: ทั้งสองโมดูลไม่ import DeviceModule)
+    ConfigApplyRequestModule,
+    TaskModule,
   ],
   controllers: [
     DeviceController,

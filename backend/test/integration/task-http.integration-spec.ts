@@ -184,16 +184,24 @@ describe('TaskController RBAC (integration — real postgres + JwtAuthGuard)', (
 
   it('GET /tasks/:id role Admin -> 200 เห็นงานของคนอื่นได้ (UNSCOPED_TASK_ROLES)', async () => {
     const adminUser = await makeUser(prisma, { role: 'Admin' });
-    const otherUser = await makeUser(prisma, { role: 'OT' });
+    const otherUser = await makeUser(prisma, {
+      role: 'OT',
+      fullName: 'ช่างสมศรี',
+    });
     const task = await prisma.task.create({
       data: { title: 'other', assignedTo: otherUser.id },
     });
     const token = tokenFor(adminUser.id, 'Admin');
 
-    await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .get(`/api/v1/tasks/${task.id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
+    // ชื่อผู้รับผิดชอบมากับงาน (Mobile แสดงแทน user id ดิบ) — เฉพาะ 2 field นี้
+    expect((res.body as { assignee: unknown }).assignee).toEqual({
+      username: otherUser.username,
+      fullName: 'ช่างสมศรี',
+    });
   });
 
   it('PATCH /tasks/:id role ST ตั้งสถานะเป็น cancelled (งานตัวเอง) -> 403 (issue #73 ข้อ 2 — ยกเลิกงานเป็นสิทธิ์ Operation)', async () => {

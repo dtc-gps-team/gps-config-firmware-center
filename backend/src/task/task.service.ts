@@ -26,6 +26,15 @@ export interface ActingUser {
 }
 
 /**
+ * `GET /tasks/{id}` — `Task` + ผู้รับผิดชอบ (mirror `Task.assignee` ใน openapi.yaml)
+ * join มาให้เพราะ ST/OT บน Mobile ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้เอง (เหตุผลเดียวกับ
+ * [TaskEventView.changedByName])
+ */
+export type TaskWithAssignee = Task & {
+  assignee: { username: string; fullName: string } | null;
+};
+
+/**
  * 1 รายการบน timeline ของ Task (`GET /tasks/{id}/events`, issue #296) —
  * mirror `TaskEvent` ใน openapi.yaml · `changedByName` คือ `User.fullName`
  * ของผู้ทำรายการ (join มาให้เลย เพราะ ST/OT บน Mobile ไม่มีสิทธิ์อ่านรายชื่อ
@@ -365,6 +374,22 @@ export class TaskService {
     });
   }
 
+  /**
+   * GET /tasks/{id} — งานพร้อมชื่อผู้รับผิดชอบ (`assignee`) ให้ Mobile แสดงชื่อแทน
+   * user id ดิบ · กฎเห็นงานเดียวกับ [findOne] · `assignee` เป็น null ถ้าหาบัญชีไม่เจอ
+   */
+  async findOneWithAssignee(
+    id: string,
+    actor: ActingUser,
+  ): Promise<TaskWithAssignee> {
+    const task = await this.findOne(id, actor);
+    const assignee = await this.prisma.user.findUnique({
+      where: { id: task.assignedTo },
+      select: { username: true, fullName: true },
+    });
+    return { ...task, assignee };
+  }
+
   async findOne(id: string, actor: ActingUser): Promise<Task> {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task || this.isHiddenFromActor(task, actor)) {
@@ -694,18 +719,33 @@ export class TaskService {
    * อนุมัติแล้วแต่ยังไม่กดส่ง) ตามไปด้วย ในทรานแซกชันเดียวกับการเปลี่ยนสถานะงาน
    * — ตอนงานถูกยกเลิก (docs/25 §3.9 มติ Q9) และตอนปิดงาน (docs/28 §5.4) · คำขอ
    * ที่ `sending` แล้วไม่แตะ (สั่งกล่องไปแล้ว รอผลจากกล่องตามเดิม)
+   *
+   * docs/30 §3 — Override ที่ผูกกับคำขอซึ่งยังไม่อนุมัติ ปิดเป็น `rejected` ตาม
+   * (แบบเดียวกับ `closeLinkedOverride` ตอนช่างยกเลิก/หมดอายุ) ไม่งั้นค้าง pending
+   * ถาวร: คิว Override ซ่อนตัวที่ผูกคำขอ และอนุมัติตรงได้ 409 · Override ของคำขอ
+   * ที่อนุมัติแล้วเป็น approved ไปตั้งแต่ตอนอนุมัติ เงื่อนไข `pending` จึงไม่แตะ
    */
   private async cancelPendingConfigApplyRequests(
     tx: Prisma.TransactionClient,
     taskId: string,
     reason: string,
   ): Promise<void> {
+    const now = new Date();
     await tx.configApplyRequest.updateMany({
       where: { taskId, status: { in: ['pending', 'approved'] } },
       data: {
         status: 'cancelled',
         resultDetail: reason,
-        completedAt: new Date(),
+        completedAt: now,
+      },
+    });
+    await tx.deviceConfigOverride.updateMany({
+      where: { status: 'pending', applyRequest: { is: { taskId } } },
+      data: {
+        status: 'rejected',
+        rejectReason: reason,
+        decidedBy: null,
+        decidedAt: now,
       },
     });
   }

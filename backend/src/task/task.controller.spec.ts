@@ -37,14 +37,17 @@ const operationReq = reqAs({ sub: 'op-1', role: 'Operation' });
 describe('TaskController', () => {
   let controller: TaskController;
   let service: jest.Mocked<
-    Pick<TaskService, 'findAll' | 'create' | 'findOne' | 'update' | 'start'>
+    Pick<
+      TaskService,
+      'findAll' | 'create' | 'findOneWithAssignee' | 'update' | 'start'
+    >
   >;
 
   beforeEach(async () => {
     service = {
       findAll: jest.fn(),
       create: jest.fn(),
-      findOne: jest.fn(),
+      findOneWithAssignee: jest.fn(),
       update: jest.fn(),
       start: jest.fn(),
     };
@@ -93,10 +96,16 @@ describe('TaskController', () => {
     });
   });
 
-  it('GET /tasks/:id -> service.findOne พร้อม actor จาก JWT', async () => {
-    service.findOne.mockResolvedValue(sampleTask);
-    await controller.findOne(sampleTask.id, operationReq);
-    expect(service.findOne).toHaveBeenCalledWith(sampleTask.id, {
+  it('GET /tasks/:id -> service.findOneWithAssignee พร้อม actor จาก JWT', async () => {
+    const withAssignee = {
+      ...sampleTask,
+      assignee: { username: 'st.test', fullName: 'ช่าง ทดสอบ' },
+    };
+    service.findOneWithAssignee.mockResolvedValue(withAssignee);
+    await expect(
+      controller.findOne(sampleTask.id, operationReq),
+    ).resolves.toEqual(withAssignee);
+    expect(service.findOneWithAssignee).toHaveBeenCalledWith(sampleTask.id, {
       id: 'op-1',
       role: 'Operation',
       ipAddress: null,

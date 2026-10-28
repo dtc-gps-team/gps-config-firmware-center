@@ -79,6 +79,31 @@ function isValidCalendarDate(
  * เฉยๆ" — คง case นี้ไว้ explicit ให้ validate เหมือนก่อนแก้ทุกประการ
  * (`typeof value === 'number'`) จนกว่า backfill จะรันจริง ไม่ใช่ alias ของ
  * `decimal` เพราะพฤติกรรมเดิมของ `number` ไม่เคยเข้มงวดเรื่อง integer/float */
+/** ขอบเขตค่าตัวเลข (`minValue`/`maxValue`, docs/30) — เรียกหลังผ่าน
+ * `matchesDataType()` แล้วเท่านั้น · ค่าที่ไม่ใช่ number (ชนิดอื่น) ไม่ตรวจ ·
+ * คืนข้อความต่อท้ายชื่อ field หรือ null ถ้าผ่าน */
+function rangeError(
+  def: {
+    minValue: number | null;
+    maxValue: number | null;
+    unit: string | null;
+  },
+  value: unknown,
+): string | null {
+  if (typeof value !== 'number') return null;
+  const { minValue: min, maxValue: max } = def;
+  if ((min === null || value >= min) && (max === null || value <= max)) {
+    return null;
+  }
+  const unit = def.unit ? ` ${def.unit}` : '';
+  if (min !== null && max !== null) {
+    return `ต้องอยู่ระหว่าง ${min}–${max}${unit}`;
+  }
+  return min !== null
+    ? `ต้องไม่น้อยกว่า ${min}${unit}`
+    : `ต้องไม่เกิน ${max}${unit}`;
+}
+
 function matchesDataType(value: unknown, dataType: string): boolean {
   switch (dataType) {
     case 'number':
@@ -202,6 +227,27 @@ export class ConfigDefinitionService {
     }
   }
 
+  /** `minValue`/`maxValue` (docs/30) ใช้ได้กับชนิดตัวเลขเท่านั้น และ min ≤ max */
+  private assertValidRange(dto: {
+    dataType: string;
+    minValue?: number | null;
+    maxValue?: number | null;
+  }): void {
+    const min = dto.minValue ?? null;
+    const max = dto.maxValue ?? null;
+    if (min === null && max === null) return;
+    if (dto.dataType !== 'integer' && dto.dataType !== 'decimal') {
+      throw new BadRequestException(
+        `minValue/maxValue ใช้ได้กับ dataType integer หรือ decimal เท่านั้น (ได้รับ "${dto.dataType}")`,
+      );
+    }
+    if (min !== null && max !== null && min > max) {
+      throw new BadRequestException(
+        `minValue (${min}) ต้องไม่มากกว่า maxValue (${max})`,
+      );
+    }
+  }
+
   /** เช็คว่า `defaultValue` (ถ้ามี) ตรงกับ `dataType` ที่ประกาศไหม — ปิด
    * TODO(#201) เดิมที่ตั้งใจรอทำพร้อมงานขยายชุด dataType (กัน
    * `dataType: "integer"` + `defaultValue: "abc"` หลุดผ่านไปได้เหมือนก่อนหน้านี้) */
@@ -234,6 +280,7 @@ export class ConfigDefinitionService {
   ): Promise<ConfigFieldDefinitionWithSupport> {
     this.assertNoSensitiveDefaultValue(dto);
     this.assertDefaultValueMatchesDataType(dto);
+    this.assertValidRange(dto);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -251,6 +298,8 @@ export class ConfigDefinitionService {
             sensitive: dto.sensitive ?? false,
             restartRequired: dto.restartRequired ?? false,
             defaultValue: dto.defaultValue,
+            minValue: dto.minValue ?? null,
+            maxValue: dto.maxValue ?? null,
             supportedModels: {
               create: dto.supportedModels.map((m) => ({
                 deviceModel: m.deviceModel,
@@ -335,6 +384,9 @@ export class ConfigDefinitionService {
           `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
         );
       }
+
+      const outOfRange = rangeError(def, value);
+      if (outOfRange) errors.push(`field "${name}" ${outOfRange}`);
     }
 
     const requiredForModel = defs.filter(
@@ -430,6 +482,9 @@ export class ConfigDefinitionService {
           `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
         );
       }
+
+      const outOfRange = rangeError(def, value);
+      if (outOfRange) errors.push(`field "${name}" ${outOfRange}`);
     }
 
     if (errors.length > 0) {
@@ -517,6 +572,9 @@ export class ConfigDefinitionService {
           `field "${name}" ต้องเป็นค่าใดค่าหนึ่งใน [${def.allowedValues.join(', ')}]`,
         );
       }
+
+      const outOfRange = rangeError(def, value);
+      if (outOfRange) errors.push(`field "${name}" ${outOfRange}`);
     }
 
     return errors;

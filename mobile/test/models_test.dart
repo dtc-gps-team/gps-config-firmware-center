@@ -1236,4 +1236,29 @@ void _deviceStatusTests() {
       expect(old.openRequest, isNull);
     },
   );
+
+  test(
+    'Task.assignee (v3.67 TaskDetail) · endpoint อื่น / backend เก่า = null',
+    () {
+      final base = {
+        'id': 't1',
+        'title': 'งาน',
+        'assignedTo': 'u1',
+        'status': 'pending',
+        'createdAt': '2026-10-27T00:00:00.000Z',
+        'updatedAt': '2026-10-27T00:00:00.000Z',
+      };
+      final withName = Task.fromJson({
+        ...base,
+        'assignee': {'username': 'st.test', 'fullName': 'ช่าง ทดสอบ'},
+      });
+      expect(withName.assignee!.label, 'ช่าง ทดสอบ (st.test)');
+      expect(
+        const TaskAssignee(username: 'st.test', fullName: '').label,
+        'st.test',
+      );
+      expect(Task.fromJson({...base, 'assignee': null}).assignee, isNull);
+      expect(Task.fromJson(base).assignee, isNull);
+    },
+  );
 }
