@@ -113,11 +113,20 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
   String _query = '';
   final Map<_DeviceFilter, String> _filters = {};
 
-  List<Device> _applyFilters(List<Device> devices) => devices
-      .where((d) => _filters.entries.every((f) => f.key.valueOf(d) == f.value))
-      .toList(growable: false);
+  /// [except] = ไม่นับตัวกรองนั้น (ใช้หาตัวเลือกของตัวกรองที่กำลังเปิด)
+  List<Device> _applyFilters(List<Device> devices, {_DeviceFilter? except}) =>
+      devices
+          .where(
+            (d) => _filters.entries.every(
+              (f) => f.key == except || f.key.valueOf(d) == f.value,
+            ),
+          )
+          .toList(growable: false);
 
-  Future<void> _openFilter(_DeviceFilter filter, List<Device> devices) async {
+  Future<void> _openFilter(_DeviceFilter filter, List<Device> all) async {
+    // ตัวเลือกและจำนวนนับจากเครื่องที่ผ่านคำค้นและตัวกรองอื่นอยู่แล้ว
+    // ไม่งั้นเลือกแล้วได้ 0 เครื่อง (เช่น เลือกรุ่นแล้วลูกค้าที่ไม่มีรุ่นนั้นยังโผล่)
+    final devices = _applyFilters(_filterDevices(all, _query), except: filter);
     final picked = await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,

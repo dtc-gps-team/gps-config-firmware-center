@@ -325,6 +325,23 @@ void main() {
       expect(find.text('รุ่น'), findsOneWidget);
     });
 
+    testWidgets(
+      'ตัวเลือกนับเฉพาะเครื่องที่ผ่านตัวกรองอื่น -> ไม่มีทางเลือกที่ได้ 0 เครื่อง',
+      (tester) async {
+        await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+        await pick(tester, 'model', 'GT06L');
+        await tester.tap(find.byKey(const Key('device_filter_customer')));
+        await tester.pumpAndSettle();
+
+        // GT06L มีเครื่องเดียว (DEV-0231 ของ โลจิสติกส์ B) — ขนส่ง A ไม่ควรโผล่
+        expect(find.text('ทั้งหมด (1)'), findsOneWidget);
+        expect(find.text('โลจิสติกส์ B (1)'), findsOneWidget);
+        expect(find.textContaining('ขนส่ง A'), findsNothing);
+        expect(find.textContaining('ยังไม่ผูกลูกค้า'), findsNothing);
+      },
+    );
+
     testWidgets('เลือก "ทั้งหมด" -> ยกเลิกตัวกรองนั้น', (tester) async {
       await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
 
