@@ -194,6 +194,17 @@ class _DeviceCard extends StatelessWidget {
                     color: AppColors.mutedForeground,
                   ),
                 ),
+                const SizedBox(height: 2),
+                // เวอร์ชันที่กล่องรายงานเอง (telemetry) ไม่ใช่เวอร์ชันที่สั่งส่ง
+                Text(
+                  'Firmware ${device.reportedFirmwareVersion ?? 'ยังไม่ทราบ'}',
+                  key: Key('device_firmware_${device.deviceId}'),
+                  style: const TextStyle(
+                    fontSize: AppTypography.sm,
+                    height: AppTypography.smHeight,
+                    color: AppColors.mutedForeground,
+                  ),
+                ),
                 if (largeText) ...[const SizedBox(height: 8), badge],
               ],
             ),

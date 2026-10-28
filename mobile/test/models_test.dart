@@ -315,6 +315,25 @@ void main() {
   });
 
   group('Device.fromJson', () {
+    test('reportedFirmwareVersion/At (docs/23 telemetry) · ไม่มี = null', () {
+      final base = {
+        'id': 'd1',
+        'deviceId': 'BOX-0001',
+        'status': 'installed',
+        'registeredAt': '2026-10-01T00:00:00.000Z',
+      };
+      final d = Device.fromJson({
+        ...base,
+        'reportedFirmwareVersion': '1.0.0',
+        'reportedFirmwareAt': '2026-10-28T05:06:39.055Z',
+      });
+      expect(d.reportedFirmwareVersion, '1.0.0');
+      expect(d.reportedFirmwareAt, DateTime.utc(2026, 10, 28, 5, 6, 39, 55));
+      final none = Device.fromJson(base);
+      expect(none.reportedFirmwareVersion, isNull);
+      expect(none.reportedFirmwareAt, isNull);
+    });
+
     test('parses all fields incl. nullable installedAt', () {
       final device = Device.fromJson({
         'id': 'uuid-1',
