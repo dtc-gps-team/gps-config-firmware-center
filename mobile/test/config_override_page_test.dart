@@ -946,10 +946,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(
-          of: led,
-          matching: find.text('(แก้ไขไม่ได้ · ไม่อยู่ใน Config นี้)'),
-        ),
+        find.descendant(of: led, matching: find.text('(แก้ไขไม่ได้)')),
         findsOneWidget,
       );
       expect(

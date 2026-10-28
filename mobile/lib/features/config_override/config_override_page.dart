@@ -680,11 +680,9 @@ class _FieldRowState extends State<_FieldRow> {
               style: valueStyle,
             ),
           const SizedBox(height: 2),
-          Text(
-            widget.outsideConfig
-                ? '(แก้ไขไม่ได้ · ไม่อยู่ใน Config นี้)'
-                : '(แก้ไขไม่ได้)',
-            style: const TextStyle(
+          const Text(
+            '(แก้ไขไม่ได้)',
+            style: TextStyle(
               fontSize: AppTypography.xs,
               height: AppTypography.xsHeight,
               color: AppColors.mutedForeground,
