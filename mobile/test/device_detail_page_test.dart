@@ -119,6 +119,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) => throw UnimplementedError();
 }
 

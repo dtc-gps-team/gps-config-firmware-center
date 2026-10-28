@@ -576,6 +576,7 @@ class ApplyOptionConfig {
     required this.name,
     required this.latestVersion,
     required this.suggested,
+    this.fields = const {},
   });
 
   final String id;
@@ -588,12 +589,17 @@ class ApplyOptionConfig {
   /// ตัวนี้ขึ้นก่อนแล้ว
   final bool suggested;
 
+  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วของกล่อง ·
+  /// backend เก่า = ว่าง
+  final Map<String, dynamic> fields;
+
   factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
       ApplyOptionConfig(
         id: json['id'] as String,
         name: json['name'] as String,
         latestVersion: (json['latestVersion'] as num?)?.toInt() ?? 0,
         suggested: json['suggested'] as bool? ?? false,
+        fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
       );
 }
 

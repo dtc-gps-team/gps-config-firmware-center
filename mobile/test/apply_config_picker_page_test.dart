@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/config_override/config_override_repository.dart';
 import 'package:mobile/features/task/apply_config_picker_page.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/field_task_repository.dart';
@@ -13,15 +14,81 @@ import 'package:mobile/features/task/task_repository.dart';
 import 'support/fake_config_apply_request_repository.dart';
 import 'support/fake_field_task_repository.dart';
 
+/// บันทึกคำขอแก้ค่า (Override) จากหน้าเลือก — ใช้แค่ `overrideConfig`
+class _FakeOverrideRepository implements ConfigOverrideRepository {
+  int calls = 0;
+  String? lastDeviceId;
+  Map<String, dynamic>? lastFields;
+  String? lastReason;
+  String? lastConfigId;
+
+  @override
+  Future<DeviceConfigOverride> overrideConfig({
+    required String deviceId,
+    required Map<String, dynamic> fields,
+    required String reason,
+    String? configId,
+  }) async {
+    calls++;
+    lastDeviceId = deviceId;
+    lastFields = fields;
+    lastReason = reason;
+    lastConfigId = configId;
+    return DeviceConfigOverride(
+      id: 'ov-1',
+      deviceId: deviceId,
+      configId: configId ?? 'cfg-1',
+      versionNumber: 1,
+      fields: fields,
+      reason: reason,
+      status: 'pending',
+      overriddenBy: 'st-1',
+      overriddenAt: '2026-10-28T00:00:00.000Z',
+    );
+  }
+
+  @override
+  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<List<ConfigFieldDefinition>> listDefinitions() async => const [
+    ConfigFieldDefinition(
+      id: 'def-interval',
+      fieldName: 'gps.send_interval_sec',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      description: 'รอบส่ง GPS (วินาที)',
+    ),
+    ConfigFieldDefinition(
+      id: 'def-led',
+      fieldName: 'led.enabled',
+      dataType: 'boolean',
+      allowedValues: [],
+      required: false,
+      stOverridable: false,
+      sensitive: false,
+      supportedModels: [],
+      description: 'เปิดไฟ LED',
+    ),
+  ];
+}
+
 /// หน้าเลือก Config (docs/28 §6) — เปิดจากหน้ากล่อง (เริ่มงานให้ก่อน) หรือจาก
 /// หน้างาน (`?taskId=`)
 void main() {
   late FakeConfigApplyRequestRepository applyRepo;
   late FakeFieldTaskRepository fieldTasks;
+  late _FakeOverrideRepository overrides;
 
   setUp(() {
     applyRepo = FakeConfigApplyRequestRepository();
     fieldTasks = FakeFieldTaskRepository();
+    overrides = _FakeOverrideRepository();
   });
 
   /// เส้นทาง: หน้าแรก → หน้าเลือก (push) → หน้างาน · [startAt] = path ของหน้าเลือก
@@ -64,6 +131,7 @@ void main() {
       ProviderScope(
         overrides: [
           configApplyRequestRepositoryProvider.overrideWithValue(applyRepo),
+          configOverrideRepositoryProvider.overrideWithValue(overrides),
           fieldTaskRepositoryProvider.overrideWithValue(fieldTasks),
           // ไม่ให้ไปโหลดรายการงานจริง (cache/DB) — หน้านี้แค่ invalidate
           taskListProvider.overrideWith((ref) async => const <Task>[]),
@@ -114,15 +182,15 @@ void main() {
   });
 
   testWidgets(
-    'เปิดจากหน้ากล่อง: เริ่มงานก่อน แล้วสร้างคำขอด้วย Config ที่เลือก+หมายเหตุ แล้วไปหน้างาน',
+    'เปิดจากหน้ากล่อง ไม่แก้ค่า: เริ่มงาน -> ส่งตรง (direct) -> กดส่งเข้ากล่องให้เลย -> ไปหน้างาน',
     (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
 
       await tester.tap(option('cfg-2'));
-      await tester.enterText(
-        find.byKey(const Key('apply_note_field')),
-        ' ลูกค้าขอ ',
-      );
+      await tester.pump();
+      expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+      // ไม่มีอะไรให้ Operation อนุมัติ -> ไม่มีช่องหมายเหตุ/เหตุผล
+      expect(find.byKey(const Key('apply_note_field')), findsNothing);
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
@@ -130,13 +198,16 @@ void main() {
       expect(fieldTasks.lastDeviceId, 'DVC-1');
       expect(applyRepo.lastCreateTaskId, 't-new');
       expect(applyRepo.lastCreateConfigId, 'cfg-2');
-      expect(applyRepo.lastCreateNote, 'ลูกค้าขอ');
+      expect(applyRepo.lastCreateDirect, isTrue);
+      expect(applyRepo.releaseCalls, 1);
+      expect(applyRepo.lastReleaseId, 'car-new-1');
+      expect(overrides.calls, 0);
       expect(find.text('TASK t-new'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'เปิดจากหน้างาน (?taskId=): ไม่เริ่มงานใหม่ สร้างคำขอให้งานนั้นแล้วปิดหน้า',
+    'เปิดจากหน้างาน (?taskId=): ไม่เริ่มงานใหม่ ส่งตรงให้งานนั้นแล้วปิดหน้า',
     (tester) async {
       await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
 
@@ -146,10 +217,138 @@ void main() {
       expect(fieldTasks.startCalls, 0);
       expect(applyRepo.lastCreateTaskId, 't1');
       expect(applyRepo.lastCreateConfigId, 'cfg-1');
-      expect(applyRepo.lastCreateNote, isNull);
+      expect(applyRepo.lastCreateDirect, isTrue);
+      expect(applyRepo.releaseCalls, 1);
       expect(find.text('OPEN'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'ส่งตรงแล้วกดส่งเข้ากล่องไม่ผ่าน (กล่องออฟไลน์) -> ยังไปหน้างาน (คำขออนุมัติแล้ว กดส่งใหม่ที่นั่นได้)',
+    (tester) async {
+      applyRepo.releaseError = ApiException(
+        'กล่องออฟไลน์อยู่ ส่งไม่ได้',
+        statusCode: 409,
+      );
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(applyRepo.lastCreateDirect, isTrue);
+      expect(applyRepo.releaseCalls, 1);
+      // หน้างาน (stub ไม่มี Scaffold ให้แสดง SnackBar) — ไปถึงแม้กดส่งไม่ผ่าน
+      expect(find.text('TASK t-new'), findsOneWidget);
+    },
+  );
+
+  group('พารามิเตอร์ของ Config ที่เลือก', () {
+    setUp(() {
+      applyRepo.options = fakeApplyOptions(
+        configs: const [
+          ApplyOptionConfig(
+            id: 'cfg-1',
+            name: 'BOX ส่งพิกัดทุก 10 วินาที',
+            latestVersion: 1,
+            suggested: true,
+            fields: {'gps.send_interval_sec': 10, 'led.enabled': true},
+          ),
+        ],
+      );
+    });
+
+    testWidgets('แสดงทุกค่า · แก้ได้มีช่องกรอก · แก้ไม่ได้บอก (แก้ไขไม่ได้)', (
+      tester,
+    ) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      expect(find.text('รอบส่ง GPS (วินาที)'), findsOneWidget);
+      expect(
+        find.byKey(const Key('apply_param_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      final led = find.byKey(const Key('apply_param_row_led.enabled'));
+      expect(
+        find.descendant(of: led, matching: find.text('(แก้ไขไม่ได้)')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: led, matching: find.text('true')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('apply_param_led.enabled')), findsNothing);
+    });
+
+    testWidgets(
+      'แก้ค่า -> ต้องกรอกเหตุผล แล้วขออนุมัติผ่าน Override ของ Config ที่เลือก (ไม่ส่งตรง)',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+        await tester.enterText(
+          find.byKey(const Key('apply_param_gps.send_interval_sec')),
+          '20',
+        );
+        await tester.pump();
+        expect(find.text('ขออนุมัติค่าที่แก้'), findsOneWidget);
+
+        // ไม่กรอกเหตุผล -> ไม่ส่ง
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+        expect(overrides.calls, 0);
+        expect(find.text('กรอกเหตุผลที่แก้ค่า'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('apply_reason_field')),
+          ' ลูกค้าขอส่งถี่ขึ้น ',
+        );
+        await tester.tap(submit);
+        await tester.pumpAndSettle();
+
+        expect(overrides.calls, 1);
+        expect(overrides.lastDeviceId, 'DVC-1');
+        expect(overrides.lastConfigId, 'cfg-1');
+        expect(overrides.lastFields, {'gps.send_interval_sec': 20});
+        expect(overrides.lastReason, 'ลูกค้าขอส่งถี่ขึ้น');
+        expect(applyRepo.createCalls, 0);
+        expect(find.text('TASK t-new'), findsOneWidget);
+      },
+    );
+
+    testWidgets('ค่าที่แก้ไม่ถูกชนิด -> บอกที่ช่อง ไม่ส่ง', (tester) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      await tester.enterText(
+        find.byKey(const Key('apply_param_gps.send_interval_sec')),
+        'abc',
+      );
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const Key('apply_reason_field')),
+        'ทดสอบ',
+      );
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+
+      expect(overrides.calls, 0);
+      expect(
+        find.byKey(const Key('apply_param_error_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('แก้แล้วแก้กลับเป็นค่าเดิม -> กลับเป็นส่งตรง', (tester) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+
+      final input = find.byKey(const Key('apply_param_gps.send_interval_sec'));
+      await tester.enterText(input, '20');
+      await tester.pump();
+      await tester.enterText(input, '10');
+      await tester.pump();
+
+      expect(find.text('ส่งเข้ากล่อง'), findsOneWidget);
+      expect(find.byKey(const Key('apply_reason_field')), findsNothing);
+    });
+  });
 
   testWidgets(
     'เริ่มงานได้แต่สร้างคำขอไม่ผ่าน -> แสดงข้อความ backend + ลิงก์ไปที่งาน · กดซ้ำไม่เริ่มงานซ้ำ',
