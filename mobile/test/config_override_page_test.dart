@@ -162,7 +162,7 @@ void main() {
   });
 
   testWidgets(
-    'field stOverridable:false -> read-only + label "(override ไม่ได้)" ไม่มี input',
+    'field stOverridable:false -> read-only + label "(แก้ไขไม่ได้)" ไม่มี input',
     (tester) async {
       await _pump(tester);
 
@@ -170,7 +170,7 @@ void main() {
         find.byKey(const Key('config_override_input_COMMAND_PASSWORD')),
         findsNothing,
       );
-      expect(find.textContaining('(override ไม่ได้)'), findsOneWidget);
+      expect(find.textContaining('(แก้ไขไม่ได้)'), findsOneWidget);
     },
   );
 

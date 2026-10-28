@@ -636,7 +636,7 @@ class _FieldRowState extends State<_FieldRow> {
         fontFamily: AppTypography.monoFamily,
         color: AppColors.mutedForeground,
       );
-      // ค่าอยู่บรรทัดบน ป้าย "(override ไม่ได้)" อยู่บรรทัดล่าง (UX audit #8) —
+      // ค่าอยู่บรรทัดบน ป้าย "(แก้ไขไม่ได้)" อยู่บรรทัดล่าง (UX audit #8) —
       // เดิมอยู่ใน Row เดียวกัน ตอนตัวอักษรใหญ่ / จอแคบล้นขอบ และป้ายแย่ง
       // ความกว้างจากค่าที่ช่างต้องอ่าน
       return Column(
@@ -657,7 +657,7 @@ class _FieldRowState extends State<_FieldRow> {
             ),
           const SizedBox(height: 2),
           const Text(
-            '(override ไม่ได้)',
+            '(แก้ไขไม่ได้)',
             style: TextStyle(
               fontSize: AppTypography.xs,
               height: AppTypography.xsHeight,
