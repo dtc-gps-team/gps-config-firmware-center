@@ -117,22 +117,37 @@ void main() {
     },
   );
 
-  testWidgets('loading -> list ของอุปกรณ์จาก repository', (tester) async {
-    await _pump(
-      tester,
-      repo: _FakeDeviceSearchRepository(
-        devices: [
-          _device(deviceId: 'DEV-0117', simNumber: '0811111111'),
-          _device(id: 'uuid2', deviceId: 'DEV-0092', simNumber: '0822222222'),
-        ],
-      ),
-    );
+  testWidgets(
+    'ยังไม่ค้นหาและไม่กรอง -> ไม่แสดงรายการ ขึ้นข้อความชวนค้นหา · พิมพ์แล้วรายการขึ้น',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          devices: [
+            _device(deviceId: 'DEV-0117', simNumber: '0811111111'),
+            _device(id: 'uuid2', deviceId: 'DEV-0092', simNumber: '0822222222'),
+          ],
+        ),
+      );
 
-    expect(find.text('DEV-0117'), findsOneWidget);
-    expect(find.text('DEV-0092'), findsOneWidget);
-    expect(find.byKey(const Key('device_card_0')), findsOneWidget);
-    expect(find.byKey(const Key('device_card_1')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(find.textContaining('ทั้งหมด 2 เครื่อง'), findsOneWidget);
+      expect(find.byKey(const Key('device_card_0')), findsNothing);
+      expect(find.text('DEV-0117'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        'DEV',
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('device_search_prompt')), findsNothing);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.byKey(const Key('device_card_0')), findsOneWidget);
+      expect(find.byKey(const Key('device_card_1')), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'การ์ดบอก Firmware ที่กล่องรายงานล่าสุด · ยังไม่รายงาน = ยังไม่ทราบ',
@@ -146,6 +161,11 @@ void main() {
           ],
         ),
       );
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        '00',
+      );
+      await tester.pump();
 
       expect(find.text('Firmware 1.0.0'), findsOneWidget);
       expect(find.text('Firmware ยังไม่ทราบ'), findsOneWidget);
@@ -238,6 +258,11 @@ void main() {
         devices: [_device(deviceId: 'DEV-0117')],
       ),
     );
+    await tester.enterText(
+      find.byKey(const Key('device_search_field')),
+      '0117',
+    );
+    await tester.pump();
 
     await tester.tap(find.byKey(const Key('device_card_0')));
     await tester.pumpAndSettle();
@@ -369,7 +394,8 @@ void main() {
       await pick(tester, 'model', 'GT06L');
       expect(find.text('DEV-0092'), findsNothing);
       await pick(tester, 'model', 'all');
-      expect(find.text('DEV-0092'), findsOneWidget);
+      // ไม่มีตัวกรองและคำค้นเหลือ -> กลับไปหน้าชวนค้นหา
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
       expect(find.text('รุ่น'), findsOneWidget);
       expect(find.textContaining('แสดง '), findsNothing);
     });

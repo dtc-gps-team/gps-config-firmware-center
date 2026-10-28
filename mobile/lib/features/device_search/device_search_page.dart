@@ -101,6 +101,7 @@ List<_FilterOption> _filterOptions(_DeviceFilter filter, List<Device> devices) {
 /// + dot · ตรรกะ/การเรียก API เหมือนเดิม
 ///
 /// ใต้ช่องค้นหามีชิปตัวกรอง รุ่น / ลูกค้า / โปรโตคอล / สถานะ ใช้ร่วมกับคำค้นได้
+/// · ยังไม่พิมพ์และไม่กรอง = ไม่แสดงรายการ (ขึ้นข้อความชวนค้นหาแทน)
 class DeviceSearchPage extends ConsumerStatefulWidget {
   const DeviceSearchPage({super.key});
 
@@ -244,6 +245,18 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                   child: devicesAsync.when(
                     skipLoadingOnRefresh: true,
                     data: (devices) {
+                      // ยังไม่ค้นหาและไม่กรอง ไม่ต้องเทรายการทั้งหมดออกมา
+                      if (devices.isNotEmpty &&
+                          _query.trim().isEmpty &&
+                          _filters.isEmpty) {
+                        return _DeviceSearchEmpty(
+                          icon: Icons.search,
+                          messageKey: const Key('device_search_prompt'),
+                          message:
+                              'มีอุปกรณ์ทั้งหมด ${devices.length} เครื่อง\n'
+                              'พิมพ์เลขเครื่องหรือเบอร์ซิม หรือเลือกตัวกรองด้านบน',
+                        );
+                      }
                       final filtered = _applyFilters(
                         _filterDevices(devices, _query),
                       );
@@ -488,9 +501,15 @@ class _FilterSheet extends StatelessWidget {
 }
 
 class _DeviceSearchEmpty extends StatelessWidget {
-  const _DeviceSearchEmpty({required this.message});
+  const _DeviceSearchEmpty({
+    required this.message,
+    this.icon = Icons.devices_other_outlined,
+    this.messageKey = const Key('device_search_empty'),
+  });
 
   final String message;
+  final IconData icon;
+  final Key messageKey;
 
   @override
   Widget build(BuildContext context) {
@@ -498,11 +517,7 @@ class _DeviceSearchEmpty extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 48),
-        AppEmptyState(
-          icon: Icons.devices_other_outlined,
-          message: message,
-          messageKey: const Key('device_search_empty'),
-        ),
+        AppEmptyState(icon: icon, message: message, messageKey: messageKey),
       ],
     );
   }
