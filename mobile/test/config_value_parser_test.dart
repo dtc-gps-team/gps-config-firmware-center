@@ -127,4 +127,30 @@ void main() {
       expect(configValueToInput(true), 'true');
     });
   });
+
+  group('configRangeLabel / configRangeError (docs/30)', () {
+    test('ช่วงครบ + หน่วย', () {
+      expect(configRangeLabel(1, 200, 'km/h'), '1–200 km/h');
+      expect(
+        configRangeError(250, 1, 200, 'km/h'),
+        'ต้องอยู่ระหว่าง 1–200 km/h',
+      );
+      expect(configRangeError(0, 1, 200, 'km/h'), 'ต้องอยู่ระหว่าง 1–200 km/h');
+      expect(configRangeError(1, 1, 200, 'km/h'), isNull);
+      expect(configRangeError(200, 1, 200, 'km/h'), isNull);
+    });
+
+    test('มีขอบเดียว / ไม่มีช่วง / ไม่ใช่ตัวเลข', () {
+      expect(configRangeLabel(1, null, null), '≥ 1');
+      expect(configRangeError(0, 1, null, null), 'ต้องไม่น้อยกว่า 1');
+      expect(configRangeError(9, null, 5, 's'), 'ต้องไม่เกิน 5 s');
+      expect(configRangeLabel(null, null, 'km/h'), isNull);
+      expect(configRangeError(9999, null, null, null), isNull);
+      expect(configRangeError('abc', 1, 2, null), isNull);
+    });
+
+    test('ทศนิยมแสดงตามจริง จำนวนเต็มไม่มี .0', () {
+      expect(configRangeLabel(0.5, 2.0, null), '0.5–2');
+    });
+  });
 }

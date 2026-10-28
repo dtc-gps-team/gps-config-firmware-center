@@ -20,6 +20,7 @@ ConfigApplyRequest fakeApplyRequest({
   DateTime? releasedAt,
   DateTime? completedAt,
   DateTime? expiresAt,
+  ApplyRequestOverride? override,
 }) => ConfigApplyRequest(
   id: id,
   taskId: taskId,
@@ -38,6 +39,7 @@ ConfigApplyRequest fakeApplyRequest({
   decidedAt: decidedAt,
   releasedAt: releasedAt,
   completedAt: completedAt,
+  override: override,
 );
 
 /// ใช้แทน [ConfigApplyRequestRepository] ในเทสหน้า Task Detail — เก็บคำขอไว้ใน
