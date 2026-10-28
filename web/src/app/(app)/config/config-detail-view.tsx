@@ -52,6 +52,7 @@ import { useUserNames } from "@/hooks/use-user-names";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CloneSourceLinkLoader } from "@/components/config/clone-source-link";
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { PageHeader, PageHeaderMeta } from "@/components/page-header";
 import { ConfigReviewPanel } from "./config-review-panel";
@@ -168,6 +169,13 @@ function ConfigDetailContent({
       if (d.sensitive) set.add(d.fieldName);
     }
     return set;
+  }, [definitions.data]);
+  const descriptionByField = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of definitions.data ?? []) {
+      if (d.description) map.set(d.fieldName, d.description);
+    }
+    return map;
   }, [definitions.data]);
   /** ก่อน `useConfigDefinitions()` โหลดเสร็จ ยังไม่รู้จริงๆ ว่า field ไหน
    * sensitive — treat ทุก field เป็น sensitive ไว้ก่อน (safe default) แทนที่
@@ -349,11 +357,13 @@ function ConfigDetailContent({
                   return (
                     <div
                       key={key}
-                      className="flex justify-between gap-4 px-3 py-2 text-sm"
+                      className="flex items-start justify-between gap-4 px-3 py-2 text-sm"
                     >
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {key}
-                      </span>
+                      <ConfigFieldLabel
+                        className="shrink-0"
+                        fieldName={key}
+                        description={descriptionByField.get(key)}
+                      />
                       {effectiveSensitiveFieldNames.has(key) ? (
                         <SensitiveValue value={value} />
                       ) : (
