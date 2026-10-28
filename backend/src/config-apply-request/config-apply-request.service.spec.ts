@@ -225,7 +225,10 @@ describe('ConfigApplyRequestService', () => {
       configApplyRequest: requests,
       configVersion: configVersions,
       campaignRolloutTarget: rolloutTargets,
-      deviceConfigOverride: { findFirst: jest.fn().mockResolvedValue(null) },
+      deviceConfigOverride: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       auditLog,
       user: users,
       $queryRaw: jest.fn().mockResolvedValue([]),
@@ -282,6 +285,50 @@ describe('ConfigApplyRequestService', () => {
         }) as unknown,
       });
       expect(result.status).toBe('pending');
+    });
+
+    describe('direct: true — ส่ง Config ที่อนุมัติแล้วโดยไม่แก้ค่า (ไม่ต้องรอ Operation)', () => {
+      it('สร้างเป็น approved ทันที: snapshot เวอร์ชัน Config, เส้นตายแบบอนุมัติแล้ว, ไม่มีผู้อนุมัติ, AuditLog', async () => {
+        const result = await service.create(TASK_ID, { direct: true }, tech);
+
+        const data = (
+          requests.create.mock.calls[0] as [{ data: ConfigApplyRequest }]
+        )[0].data;
+        expect(data).toMatchObject({
+          configId: CONFIG_ID,
+          status: 'approved',
+          decidedBy: null,
+          approvedConfigVersion: CONFIG_VERSION,
+        });
+        expect(data.decidedAt).toEqual(data.requestedAt);
+        expect(data.expiresAt.getTime() - data.requestedAt.getTime()).toBe(
+          CONFIG_APPLY_APPROVAL_TTL_HOURS * 60 * 60 * 1000,
+        );
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            userId: tech.id,
+            action: 'config_apply_direct',
+          }) as unknown,
+        });
+        expect(result.status).toBe('approved');
+      });
+
+      it('ไม่แจ้ง Operation (ไม่มีอะไรให้อนุมัติ)', async () => {
+        await service.create(TASK_ID, { direct: true }, tech);
+
+        expect(notification.send).not.toHaveBeenCalled();
+      });
+
+      it('Firmware ส่งตรงไม่ได้ — ยังต้องรออนุมัติ: 400', async () => {
+        await expect(
+          service.create(
+            TASK_ID,
+            { kind: 'firmware', firmwareId: FIRMWARE_ID, direct: true },
+            tech,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(requests.create).not.toHaveBeenCalled();
+      });
     });
 
     it('ล็อกระดับเครื่องก่อนเช็คคำขอซ้ำ (กันสองงานของเครื่องเดียวกันขอพร้อมกัน)', async () => {
@@ -1485,6 +1532,7 @@ describe('ConfigApplyRequestService', () => {
       id,
       name,
       status: 'approved',
+      fields: { APN: `apn-${id}`, INTERVAL: 30 },
       versions: version === undefined ? [] : [{ versionNumber: version }],
     });
 
@@ -1525,6 +1573,7 @@ describe('ConfigApplyRequestService', () => {
             status: 'approved',
             latestVersion: 3,
             suggested: false,
+            fields: { APN: 'apn-a', INTERVAL: 30 },
           },
           {
             id: CONFIG_ID,
@@ -1532,12 +1581,39 @@ describe('ConfigApplyRequestService', () => {
             status: 'approved',
             latestVersion: 0,
             suggested: false,
+            fields: { APN: `apn-${CONFIG_ID}`, INTERVAL: 30 },
           },
         ],
         // โหมด mock ไม่มี Server กลาง — ไม่รู้เวอร์ชันในกล่อง
         currentFirmwareVersion: null,
         firmwares: [],
         openRequest: null,
+      });
+    });
+
+    it('fields = ค่าที่จะส่งจริง: Config + Override ที่อนุมัติแล้วล่าสุดของกล่องนี้ (ต่อ Config)', async () => {
+      prisma.deviceConfigOverride = {
+        findMany: jest.fn().mockResolvedValue([
+          { configId: 'a', versionNumber: 5, fields: { INTERVAL: 10 } },
+          { configId: 'a', versionNumber: 2, fields: { INTERVAL: 99 } },
+        ]),
+      };
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(prisma.deviceConfigOverride.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceId: DEVICE_ID,
+          status: 'approved',
+          configId: { in: ['a', CONFIG_ID] },
+        },
+        orderBy: { versionNumber: 'desc' },
+        select: { configId: true, fields: true },
+      });
+      expect(result.configs[0].fields).toEqual({ APN: 'apn-a', INTERVAL: 10 });
+      expect(result.configs[1].fields).toEqual({
+        APN: `apn-${CONFIG_ID}`,
+        INTERVAL: 30,
       });
     });
 

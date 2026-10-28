@@ -1299,7 +1299,18 @@ export class DeviceService {
     actor: ActingUser,
   ): Promise<DeviceConfigOverride> {
     await this.findByDeviceId(deviceId);
-    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+    const central = this.isCentralApplyMode();
+    // ช่างเลือก Config อื่นแล้วแก้ค่า (หน้าเลือกสิ่งที่จะส่ง) — ได้เฉพาะโหมด central
+    // เพราะค่าที่แก้ไปกับคำขอส่งเข้ากล่องของ Config นั้น · ส่งได้กับกล่องนี้ไหม
+    // ตรวจต่อใน `createForOverride()` (assertApplicable)
+    if (dto.configId && !central) {
+      throw new BadRequestException(
+        'เลือก Config ที่จะแก้ค่าได้เฉพาะโหมดส่งเข้ากล่องผ่าน Server กลาง',
+      );
+    }
+    const baseConfig = dto.configId
+      ? await this.findLiveConfigOrThrow(dto.configId)
+      : await this.getBaseConfigForDevice(deviceId);
 
     await this.configDefinitionService.validateOverridableFields(
       baseConfig.deviceModel,
@@ -1311,7 +1322,6 @@ export class DeviceService {
     // docs/30 — โหมด central: Override ไปถึงกล่องผ่านคำขอส่งเข้ากล่องเท่านั้น
     // (apply-config ปิดแล้ว docs/25 §3.8) จึงต้องมีงานของช่างกับกล่องนี้ — ใช้งาน
     // ที่เปิดอยู่หรือเริ่มให้ (กฎเดียวกับ POST /tasks/start)
-    const central = this.isCentralApplyMode();
     const task = central
       ? (await this.taskService.start({ deviceId }, actor)).task
       : null;
@@ -1435,6 +1445,17 @@ export class DeviceService {
       );
     }
     return existing;
+  }
+
+  /** Config ที่ยังไม่ถูกลบ ไม่งั้น 404 */
+  private async findLiveConfigOrThrow(configId: string): Promise<Config> {
+    const config = await this.prisma.config.findUnique({
+      where: { id: configId },
+    });
+    if (!config || config.deletedAt !== null) {
+      throw new NotFoundException(`ไม่พบ Config id ${configId}`);
+    }
+    return config;
   }
 
   /** แจ้ง Operation ทุกคนที่ active ว่ามีคำขอ override ใหม่รอตัดสินใจ (issue

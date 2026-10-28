@@ -2487,6 +2487,72 @@ describe('DeviceService', () => {
         expect(configApplyRequestService.notifyCreated).not.toHaveBeenCalled();
       });
 
+      describe('configId — ช่างเลือก Config อื่นแล้วแก้ค่า (หน้าเลือกสิ่งที่จะส่ง)', () => {
+        const otherConfig = {
+          ...approvedConfig,
+          id: 'cfg-other',
+          fields: { APN: 'other', INTERVAL: 30 },
+        };
+
+        beforeEach(() => {
+          config.findUnique.mockImplementation(
+            (args: { where: { id: string } }) =>
+              Promise.resolve(
+                args.where.id === otherConfig.id ? otherConfig : approvedConfig,
+              ),
+          );
+        });
+
+        it('Override และคำขอผูกกับ Config ที่เลือก ไม่ใช่ Config ปัจจุบันของกล่อง', async () => {
+          await service.overrideDeviceConfig(
+            'DTC-0001',
+            { ...dto, configId: otherConfig.id },
+            st,
+          );
+
+          expect(validateOverridableFields).toHaveBeenCalledWith(
+            'GT06N',
+            'TCP',
+            dto.fields,
+            ['APN', 'INTERVAL'],
+          );
+          expect(deviceConfigOverride.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              configId: otherConfig.id,
+            }) as unknown,
+          });
+          const [, args] = configApplyRequestService.createForOverride.mock
+            .calls[0] as [unknown, { configId: string }];
+          expect(args.configId).toBe(otherConfig.id);
+        });
+
+        it('ไม่พบ Config / ถูกลบ -> 404', async () => {
+          config.findUnique.mockResolvedValue(null);
+
+          await expect(
+            service.overrideDeviceConfig(
+              'DTC-0001',
+              { ...dto, configId: 'nope' },
+              st,
+            ),
+          ).rejects.toThrow(NotFoundException);
+          expect(deviceConfigOverride.create).not.toHaveBeenCalled();
+        });
+
+        it('ไม่ใช่โหมด central -> 400 (เลือก Config ได้เฉพาะตอนส่งผ่านคำขอ)', async () => {
+          deviceConfigApplyMode = 'mock';
+
+          await expect(
+            service.overrideDeviceConfig(
+              'DTC-0001',
+              { ...dto, configId: otherConfig.id },
+              st,
+            ),
+          ).rejects.toThrow(BadRequestException);
+          expect(deviceConfigOverride.create).not.toHaveBeenCalled();
+        });
+      });
+
       it('โหมด mock -> พฤติกรรมเดิม ไม่เริ่มงาน ไม่สร้างคำขอ', async () => {
         deviceConfigApplyMode = 'mock';
 
