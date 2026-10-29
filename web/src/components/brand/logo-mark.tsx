@@ -1,53 +1,65 @@
+import { useId } from "react";
+
 import { cn } from "@/lib/utils";
 
 /**
- * สัญลักษณ์ของระบบ: หมุดตำแหน่งสีขาวบนกรอบสีน้ำเงินหลัก กลางหมุดเป็น LED สีเขียว
- * (ลายเซ็นเดียวกับจุดสถานะทั้งระบบ) และคลื่นสัญญาณสองวงที่แผ่ออกด้านขวา สื่อว่า
- * "ตำแหน่งที่มีสัญญาณ" = อุปกรณ์ GPS ที่กำลังรายงาน — ใช้ที่ sidebar และหน้า login
+ * สัญลักษณ์ของระบบ สื่อสามหน้าที่ในรูปเดียว: หมุดตำแหน่ง = GPS, ลูกศรชี้ขึ้นกลางหมุด
+ * = อัปโหลดเฟิร์มแวร์, แถบเลื่อนสองเส้นข้างหมุด = ปรับค่า Config (ปุ่มเลื่อนอันหนึ่งเป็น
+ * สีเขียวสดเหมือน LED ของระบบ) บนกรอบสี่เหลี่ยมมุมโค้งไล่โทนน้ำเงินเดียวกัน
  *
- * `app/icon.svg` (favicon) วาดหมุด + LED เหมือนกัน แต่ตัดคลื่นสัญญาณออกเพราะที่
- * ขนาด 16px เส้นคลื่นเล็กจนเป็นรอยเลอะ — แก้รูปหมุดที่หนึ่งให้แก้อีกที่ด้วย
+ * `app/icon.svg` (favicon) วาดรูปเดียวกัน (สีตายตัวเพราะ favicon ไม่อ่าน CSS variable)
+ * — แก้รูปที่หนึ่งให้แก้อีกที่ด้วย · gradient ใช้ id ต่อ instance (`useId`) เพราะ
+ * sidebar กับ Sheet มือถือวาดโลโก้พร้อมกัน และ svg ที่อยู่ใน `display: none` จะทำให้
+ * gradient ที่ใช้ id ซ้ำกันหายไป
  */
 export function LogoMark({ className }: { className?: string }) {
+  const gradientId = useId();
+
   return (
     <span
       aria-hidden="true"
-      className={cn("inline-flex size-9 shrink-0 text-white", className)}
+      className={cn("inline-flex size-9 shrink-0", className)}
     >
       <svg viewBox="0 0 32 32" className="size-full" fill="none">
-        <rect width="32" height="32" rx="8" className="fill-sidebar-primary" />
+        <defs>
+          <linearGradient id={gradientId} x1="4" y1="0" x2="28" y2="32">
+            <stop offset="0" style={{ stopColor: "var(--brand-500)" }} />
+            <stop offset="1" style={{ stopColor: "var(--brand-700)" }} />
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="10" fill={`url(#${gradientId})`} />
         <rect
           x="0.5"
           y="0.5"
           width="31"
           height="31"
-          rx="7.5"
-          stroke="currentColor"
-          strokeOpacity="0.12"
+          rx="9.5"
+          stroke="white"
+          strokeOpacity="0.16"
         />
-        {/* หมุด (รูกลางเจาะทะลุให้เห็นสีกรอบ) */}
+        {/* GPS: หมุดตำแหน่ง */}
         <path
-          fill="currentColor"
-          fillRule="evenodd"
-          d="M14 26C14 26 7.5 20.6 7.5 14.5a6.5 6.5 0 1 1 13 0C20.5 20.6 14 26 14 26ZM14 11.8a2.7 2.7 0 1 0 0 5.4 2.7 2.7 0 1 0 0-5.4Z"
+          fill="white"
+          d="M12.5 27.5C12.5 27.5 5 21.2 5 14.5a7.5 7.5 0 1 1 15 0C20 21.2 12.5 27.5 12.5 27.5Z"
         />
-        {/* LED กลางหมุด */}
-        <circle cx="14" cy="14.5" r="1.7" className="fill-success" />
-        {/* คลื่นสัญญาณ */}
+        {/* เฟิร์มแวร์: ลูกศรอัปโหลด */}
         <path
-          d="M21.43 7.81A10 10 0 0 1 23.51 17.59"
-          stroke="currentColor"
-          strokeOpacity="0.8"
-          strokeWidth="1.6"
+          d="M12.5 20.2V10.2M9 13.7l3.5-3.7 3.5 3.7"
+          className="stroke-brand-600"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Config: แถบเลื่อนสองเส้น */}
+        <path
+          d="M22 10.8h7.3M22 18.2h7.3"
+          stroke="white"
+          strokeOpacity="0.62"
+          strokeWidth="1.9"
           strokeLinecap="round"
         />
-        <path
-          d="M23.81 5.67A13.2 13.2 0 0 1 26.55 18.58"
-          stroke="currentColor"
-          strokeOpacity="0.45"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
+        <circle cx="26.6" cy="10.8" r="2.25" fill="white" />
+        <circle cx="24.6" cy="18.2" r="2.25" className="fill-brand-accent" />
       </svg>
     </span>
   );

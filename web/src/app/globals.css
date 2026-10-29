@@ -89,6 +89,7 @@
   --color-brand-800: var(--brand-800);
   --color-brand-900: var(--brand-900);
   --color-brand-950: var(--brand-950);
+  --color-brand-accent: var(--brand-accent);
   --color-status-offline: var(--status-offline);
   --color-surface-sunken: var(--surface-sunken);
 
@@ -249,6 +250,7 @@
   --brand-800: oklch(0.39 0.095 247);
   --brand-900: oklch(0.311 0.066 246.6); /* = --sidebar */
   --brand-950: oklch(0.251 0.045 243.8);
+  --brand-accent: oklch(0.8 0.17 157); /* เขียวสดของโลโก้ (จุดเด่นเล็กๆ ไม่ใช้เป็นสีสถานะ) */
   --status-offline: oklch(0.62 0.02 255); /* เทา: ออฟไลน์ */
   --surface-sunken: oklch(0.965 0.005 255);
   --elev-raised: 0 1px 2px oklch(0.27 0.03 249 / 0.08);
