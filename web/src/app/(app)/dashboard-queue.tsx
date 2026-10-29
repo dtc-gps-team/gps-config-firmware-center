@@ -92,7 +92,7 @@ function QueueCard({
           initial="hidden"
           animate="visible"
           variants={staggerContainer}
-          className="grid gap-1.5 lg:grid-cols-2"
+          className="flex flex-col gap-1.5"
         >
           {queue.map((item) => {
             const body = (
