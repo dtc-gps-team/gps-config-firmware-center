@@ -124,8 +124,6 @@ Future<void> _syncFlushed(
   await tester.pump();
 }
 
-Finder get _confirmButton => find.byKey(const Key('confirm_install_button'));
-
 // ปุ่มบันทึกสถานะเป็น OutlinedButton ตอนมีปุ่มส่ง Config ด้วย (docs/21 #11) —
 // helper อ่านแค่ onPressed จึงรับได้ทั้ง Filled / Outlined
 ButtonStyleButton _button(WidgetTester tester, String key) =>
@@ -133,63 +131,6 @@ ButtonStyleButton _button(WidgetTester tester, String key) =>
 
 void main() {
   group('state การส่ง Config ไม่หายเมื่อ sync flush (UX audit #3)', () {
-    testWidgets('sync เสร็จระหว่างกำลังขอส่ง Config -> ปุ่มยัง disabled + '
-        'spinner, กดซ้ำไม่ยิงซ้ำ, และเห็นผลของคำขอแรก', (tester) async {
-      final repo = _FakeTaskRepository();
-      final confirm = FakeConfigApplyRequestRepository(
-        createGate: Completer<ConfigApplyRequest>(),
-      );
-      await _pump(tester, repo: repo, applyRepo: confirm);
-
-      await tester.ensureVisible(_confirmButton);
-      await tester.tap(_confirmButton);
-      await tester.pump();
-      await tester.pump();
-      expect(confirm.createCalls, 1);
-      expect(_button(tester, 'confirm_install_button').onPressed, isNull);
-
-      // sync flush เสร็จพอดี: server ส่ง task ที่ updatedAt ใหม่มา
-      await _syncFlushed(
-        tester,
-        repo,
-        _task(updatedAt: DateTime(2026, 9, 3, 10)),
-      );
-
-      expect(
-        _button(tester, 'confirm_install_button').onPressed,
-        isNull,
-        reason: 'ปุ่มต้องยัง disabled ระหว่างคำขอแรกยังไม่จบ',
-      );
-      expect(
-        find.descendant(
-          of: _confirmButton,
-          matching: find.byType(CircularProgressIndicator),
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(_confirmButton, warnIfMissed: false);
-      await tester.pump();
-      expect(confirm.createCalls, 1, reason: 'ห้ามยิงคำขอซ้ำ');
-
-      confirm.createGate!.complete(fakeApplyRequest());
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
-
-      expect(
-        find.text(
-          'ส่งคำขอแล้ว — รอ Operation อีกคนอนุมัติก่อนระบบส่งเข้ากล่อง',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('รอ Operation อนุมัติ'), findsOneWidget);
-      expect(
-        _confirmButton,
-        findsNothing,
-        reason: 'มีคำขอ pending แล้ว ปุ่มขอส่งหายจากแถบล่าง',
-      );
-    });
-
     testWidgets('ยังไม่ได้เลือกสถานะเอง + server เปลี่ยนสถานะ -> ตัวเลือก'
         'ตามสถานะใหม่ (ปุ่มบันทึกไม่ถูกเปิดค้าง)', (tester) async {
       final repo = _FakeTaskRepository()

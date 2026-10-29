@@ -20,7 +20,11 @@ import 'field_task_repository.dart';
 import 'task_repository.dart';
 
 /// "เลือกสิ่งที่จะส่งเข้ากล่อง" (docs/28 §6, docs/27 B3) — ช่างเลือก Config หรือ
-/// Firmware จาก `GET /devices/{deviceId}/apply-options` แล้วขออนุมัติ
+/// Firmware จาก `GET /devices/{deviceId}/apply-options`
+///
+/// Config (docs/27 §2.2, v3.75): แตะ Config แล้วไปหน้าพารามิเตอร์
+/// ([ApplyConfigParamsPage]) — ดู/แก้ค่า แล้วส่งเข้ากล่องหรือขออนุมัติค่าที่แก้ที่นั่น ·
+/// Firmware ยังต้องขออนุมัติทุกครั้ง
 ///
 /// แท็บ Firmware: แสดงเวอร์ชันที่กล่องรันอยู่ (ถ้ารู้) · เวอร์ชันเดียวกับที่รันอยู่
 /// เลือกไม่ได้ · เลือกเวอร์ชันต่ำกว่าต้องยืนยันการถอยเวอร์ชันก่อน (D5)
@@ -55,7 +59,6 @@ class ApplyConfigPickerPage extends ConsumerStatefulWidget {
 class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
   final _noteController = TextEditingController();
   late FieldApplyKind _kind = widget.initialKind;
-  String? _selectedId;
   String? _selectedFirmwareId;
   bool _submitting = false;
   String? _error;
@@ -106,51 +109,80 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
     await _submit(firmwareId: firmware.id);
   }
 
-  Future<void> _submit({String? configId, String? firmwareId}) async {
+  /// งานของคำขอ — เปิดจากหน้างานใช้งานนั้น ไม่งั้นเริ่มงาน (ได้งานเดิมถ้ายังเปิดอยู่)
+  Future<String> _ensureTask() async {
+    final existing = widget.taskId ?? _startedTaskId;
+    if (existing != null) return existing;
+    final started = await ref
+        .read(fieldTaskRepositoryProvider)
+        .start(widget.deviceId);
+    final taskId = started.task.id;
+    if (mounted) setState(() => _startedTaskId = taskId);
+    ref.invalidate(taskListProvider);
+    ref.invalidate(openTaskForDeviceProvider(widget.deviceId));
+    return taskId;
+  }
+
+  /// ทำงานที่เรียก backend — error ของ backend แสดงใต้ฟอร์ม
+  Future<void> _run(Future<void> Function() action) async {
     setState(() {
       _submitting = true;
       _error = null;
     });
-    final note = _noteController.text.trim();
     try {
-      var taskId = widget.taskId ?? _startedTaskId;
-      if (taskId == null) {
-        final started = await ref
-            .read(fieldTaskRepositoryProvider)
-            .start(widget.deviceId);
-        taskId = started.task.id;
-        if (mounted) setState(() => _startedTaskId = taskId);
-        ref.invalidate(taskListProvider);
-        ref.invalidate(openTaskForDeviceProvider(widget.deviceId));
-      }
-      await ref
-          .read(configApplyRequestRepositoryProvider)
-          .create(
-            taskId,
-            configId: configId,
-            firmwareId: firmwareId,
-            note: note.isEmpty ? null : note,
-          );
-      ref.invalidate(taskConfigApplyRequestsProvider(taskId));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('ส่งคำขอแล้ว — รอ Operation อนุมัติก่อนส่งเข้ากล่อง'),
-          ),
-        );
-      if (widget.taskId != null) {
-        context.pop(true);
-      } else {
-        context.pushReplacement(AppRoutes.taskDetail(taskId));
-      }
+      await action();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
         _error = e.message;
       });
+    }
+  }
+
+  /// แจ้งผลแล้วไปหน้างาน — เปิดจากหน้างานปิดหน้านี้กลับ (`pop(true)` ให้โหลดคำขอใหม่)
+  void _finish(String taskId, String message) {
+    ref.invalidate(taskConfigApplyRequestsProvider(taskId));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+    if (widget.taskId != null) {
+      context.pop(true);
+    } else {
+      context.pushReplacement(AppRoutes.taskDetail(taskId));
+    }
+  }
+
+  /// Firmware — ขออนุมัติเหมือนเดิม
+  Future<void> _submit({String? firmwareId}) => _run(() async {
+    final note = _noteController.text.trim();
+    final taskId = await _ensureTask();
+    await ref
+        .read(configApplyRequestRepositoryProvider)
+        .create(
+          taskId,
+          firmwareId: firmwareId,
+          note: note.isEmpty ? null : note,
+        );
+    _finish(taskId, 'ส่งคำขอแล้ว — รอ Operation อนุมัติก่อนส่งเข้ากล่อง');
+  });
+
+  /// หน้าพารามิเตอร์ของ Config — ส่ง/ขอสำเร็จ หน้านั้นปิดพร้อม id ของงาน แล้วไป
+  /// หน้างานต่อ (เปิดจากหน้างาน = ปิดหน้านี้กลับไปด้วย)
+  Future<void> _openParams(String configId) async {
+    final taskId = await context.push<String>(
+      AppRoutes.deviceApplyConfig(
+        widget.deviceId,
+        configId,
+        taskId: widget.taskId ?? _startedTaskId,
+      ),
+    );
+    if (taskId == null || !mounted) return;
+    if (widget.taskId != null) {
+      context.pop(true);
+    } else {
+      context.pushReplacement(AppRoutes.taskDetail(taskId));
     }
   }
 
@@ -169,8 +201,8 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
                 title: 'เลือกสิ่งที่จะส่งเข้ากล่อง',
                 onBack: navigator.canPop() ? navigator.pop : null,
                 description:
-                    'เลือก Config หรือ Firmware ที่อนุมัติแล้วสำหรับกล่องนี้ — '
-                    'Operation ต้องอนุมัติคำขอก่อน แล้วคุณจึงกดส่งเข้ากล่องเองจากหน้างาน',
+                    'แตะ Config เพื่อดูพารามิเตอร์ แล้วส่งเข้ากล่องได้ทันที · แก้ค่า'
+                    'หรือส่ง Firmware ต้องรอ Operation อนุมัติก่อน',
                 meta: [
                   AppPageHeaderMeta(
                     label: 'เลขเครื่อง',
@@ -210,10 +242,6 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
   }
 
   Widget _buildForm(DeviceApplyOptions options) {
-    // ค่าเริ่มต้น = ตัวที่ Operation แนะนำ (backend เรียงไว้บนสุดแล้ว)
-    final selectedId =
-        _selectedId ??
-        options.configs.where((c) => c.suggested).firstOrNull?.id;
     // Firmware ไม่มีค่าเริ่มต้น — ต้องเลือกเองทุกครั้ง (ไม่เดาให้)
     final selectedFirmware = options.firmwares
         .where((f) => f.id == _selectedFirmwareId && !f.isCurrent)
@@ -224,7 +252,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
         options.deviceInstalled &&
         openRequest == null &&
         !_submitting &&
-        (isFirmware ? selectedFirmware != null : selectedId != null);
+        selectedFirmware != null;
     final startedTaskId = _startedTaskId;
 
     return ListView(
@@ -278,6 +306,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
         if (isFirmware)
           ..._firmwareOptions(options)
         else ...[
+          // Operation แนะนำขึ้นก่อน (backend เรียงไว้แล้ว) · แตะ = ไปหน้าพารามิเตอร์
           const AppFieldLabel('Config'),
           if (options.configs.isEmpty)
             const AppNotice(
@@ -290,29 +319,25 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
             )
           else
             for (final config in options.configs) ...[
-              _OptionTile(
-                config: config,
-                selected: config.id == selectedId,
-                onTap: _submitting
-                    ? null
-                    : () => setState(() => _selectedId = config.id),
-              ),
+              _OptionTile(config: config, onTap: () => _openParams(config.id)),
               const SizedBox(height: 8),
             ],
         ],
-        const SizedBox(height: 12),
-        const AppFieldLabel('หมายเหตุถึง Operation', hint: '(ไม่บังคับ)'),
-        TextField(
-          key: const Key('apply_note_field'),
-          controller: _noteController,
-          enabled: !_submitting,
-          maxLength: 500,
-          decoration: const InputDecoration(
-            hintText: 'เช่น ลูกค้าขอเปลี่ยนรอบส่งพิกัด',
-            filled: true,
-            fillColor: AppColors.card,
+        if (isFirmware) ...[
+          const SizedBox(height: 12),
+          const AppFieldLabel('หมายเหตุถึง Operation', hint: '(ไม่บังคับ)'),
+          TextField(
+            key: const Key('apply_note_field'),
+            controller: _noteController,
+            enabled: !_submitting,
+            maxLength: 500,
+            decoration: const InputDecoration(
+              hintText: 'เช่น ลูกค้าขอเปลี่ยนรอบส่งพิกัด',
+              filled: true,
+              fillColor: AppColors.card,
+            ),
           ),
-        ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: 8),
           AppNotice(
@@ -332,30 +357,30 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
               ),
             ),
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          key: const Key('apply_submit_button'),
-          onPressed: !canSubmit
-              ? null
-              : isFirmware
-              ? () => _submitFirmware(
-                  selectedFirmware!,
-                  options.currentFirmwareVersion,
-                )
-              : () => _submit(configId: selectedId),
-          child: _submitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      AppColors.primaryForeground,
-                    ),
+        if (isFirmware) ...[
+          const SizedBox(height: 16),
+          FilledButton(
+            key: const Key('apply_submit_button'),
+            onPressed: !canSubmit
+                ? null
+                : () => _submitFirmware(
+                    selectedFirmware,
+                    options.currentFirmwareVersion,
                   ),
-                )
-              : const Text('ขออนุมัติส่งเข้ากล่อง'),
-        ),
+            child: _submitting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(
+                        AppColors.primaryForeground,
+                      ),
+                    ),
+                  )
+                : const Text('ขออนุมัติส่งเข้ากล่อง'),
+          ),
+        ],
       ],
     );
   }
@@ -533,34 +558,22 @@ class _FirmwareTile extends StatelessWidget {
   }
 }
 
-/// 1 ตัวเลือก Config — กดทั้งการ์ดเพื่อเลือก (สูงพอสำหรับนิ้วหน้างาน)
+/// 1 ตัวเลือก Config — กดทั้งการ์ดเพื่อไปหน้าพารามิเตอร์ (สูงพอสำหรับนิ้วหน้างาน)
 class _OptionTile extends StatelessWidget {
-  const _OptionTile({
-    required this.config,
-    required this.selected,
-    required this.onTap,
-  });
+  const _OptionTile({required this.config, required this.onTap});
 
   final ApplyOptionConfig config;
-  final bool selected;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      selected: selected,
       button: true,
       child: AppCard(
         key: Key('apply_option_${config.id}'),
         onTap: onTap,
-        highlighted: selected,
         child: Row(
           children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? AppColors.primary : AppColors.mutedForeground,
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -596,6 +609,8 @@ class _OptionTile extends StatelessWidget {
                 tone: AppBadgeTone.info,
               ),
             ],
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: AppColors.mutedForeground),
           ],
         ),
       ),

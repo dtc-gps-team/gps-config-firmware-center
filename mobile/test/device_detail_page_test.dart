@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/ui/app_info_row.dart';
 import 'package:mobile/core/router/app_router.dart';
@@ -119,6 +120,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) => throw UnimplementedError();
 }
 
@@ -693,19 +695,27 @@ void _statusTests() {
     });
 
     // issue #386 ข้อ 5 — ออนไลน์จาก Server กลางก่อน ไม่งั้นจาก /status
-    group('ออนไลน์/ออฟไลน์', () {
+    /// สีของป้ายในแถว "การเชื่อมต่อ"
+    AppBadgeTone onlineTone(WidgetTester tester) => tester
+        .widget<AppBadge>(
+          find.descendant(
+            of: find.byKey(const Key('device_online_row')),
+            matching: find.byType(AppBadge),
+          ),
+        )
+        .tone;
+
+    group('การเชื่อมต่อ (ออนไลน์/ออฟไลน์)', () {
       testWidgets(
         'ไม่เคยติดต่อ + Server กลางไม่รู้จัก -> "ยังไม่เคยติดต่อ" (ไม่บอกว่าออฟไลน์)',
         (tester) async {
           await _pump(tester, repo: _FakeDeviceSearchRepository());
           await tester.pump();
 
-          expect(
-            _rowValue('ออนไลน์/ออฟไลน์', 'ยังไม่เคยติดต่อ'),
-            findsOneWidget,
-          );
+          expect(_rowValue('การเชื่อมต่อ', 'ยังไม่เคยติดต่อ'), findsOneWidget);
           expect(_rowValue('ติดต่อล่าสุด', '-'), findsOneWidget);
           expect(find.text('Firmware ในกล่อง'), findsNothing);
+          expect(onlineTone(tester), AppBadgeTone.neutral);
         },
       );
 
@@ -724,8 +734,14 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+        expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
         expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
+        expect(onlineTone(tester), AppBadgeTone.success);
+        // ป้ายอยู่บรรทัดเดียวกับชื่อแถว ชิดขวา เหมือนแถวสถานะ Config/Firmware
+        final label = tester.getRect(find.text('การเชื่อมต่อ'));
+        final badge = tester.getRect(find.text('ออนไลน์'));
+        expect((badge.center.dy - label.center.dy).abs(), lessThan(8));
+        expect(badge.left, greaterThan(label.right));
       });
 
       testWidgets('/status เคยติดต่อแต่เกิน 5 นาที -> "ออฟไลน์"', (
@@ -740,7 +756,8 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออฟไลน์'), findsOneWidget);
+        expect(_rowValue('การเชื่อมต่อ', 'ออฟไลน์'), findsOneWidget);
+        expect(onlineTone(tester), AppBadgeTone.danger);
       });
 
       testWidgets(
@@ -763,7 +780,7 @@ void _statusTests() {
           );
           await tester.pump();
 
-          expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+          expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
           expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:07'), findsOneWidget);
           expect(_rowValue('Firmware ในกล่อง', '1.2.0'), findsOneWidget);
           expect(_rowValue('เวอร์ชัน Config ในกล่อง', '12'), findsOneWidget);
@@ -786,7 +803,7 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('ออนไลน์/ออฟไลน์', 'ออนไลน์'), findsOneWidget);
+        expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
         expect(find.byKey(const Key('device_status_error')), findsNothing);
       });
     });

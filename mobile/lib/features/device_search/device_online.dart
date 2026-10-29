@@ -1,4 +1,5 @@
 import '../../core/api/models.dart';
+import '../../core/ui/app_badge.dart';
 
 /// สถานะออนไลน์ที่หน้ากล่องแสดง — รวม 2 แหล่งที่ backend มี (issue #386 ข้อ 5):
 ///
@@ -32,5 +33,12 @@ class DeviceOnline {
     true => 'ออนไลน์',
     false => 'ออฟไลน์',
     null => 'ยังไม่เคยติดต่อ',
+  };
+
+  /// สีของป้ายในแถว "การเชื่อมต่อ" — ไม่เคยติดต่อเป็นสีกลาง (ไม่มีข้อมูล ไม่ใช่ออฟไลน์)
+  AppBadgeTone get tone => switch (online) {
+    true => AppBadgeTone.success,
+    false => AppBadgeTone.danger,
+    null => AppBadgeTone.neutral,
   };
 }

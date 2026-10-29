@@ -308,11 +308,12 @@ class ApiClient {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
         '/devices/$deviceId/config-override',
-        data: {'fields': fields, 'reason': reason},
+        data: {'fields': fields, 'reason': reason, 'configId': ?configId},
       ),
       DeviceConfigOverride.fromJson,
     );
@@ -381,6 +382,7 @@ class ApiClient {
     String? configId,
     String? firmwareId,
     String? note,
+    bool direct = false,
   }) async {
     return _wrap(
       () => _dio.post<Map<String, dynamic>>(
@@ -390,6 +392,7 @@ class ApiClient {
           'configId': ?configId,
           'firmwareId': ?firmwareId,
           'note': ?note,
+          if (direct) 'direct': true,
         },
       ),
       ConfigApplyRequest.fromJson,

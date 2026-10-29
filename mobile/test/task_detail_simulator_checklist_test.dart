@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/router/app_router.dart';
+import 'package:go_router/go_router.dart';
 import 'package:drift/native.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/db/providers/database_provider.dart';
@@ -144,6 +146,8 @@ Future<void> _pump(
   tester.view.physicalSize = const Size(800, 3000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
+  final router = _router();
+  addTearDown(router.dispose);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -173,11 +177,28 @@ Future<void> _pump(
         simulatorRepositoryProvider.overrideWithValue(sim),
         incidentRepositoryProvider.overrideWithValue(incidents),
       ],
-      child: const MaterialApp(home: TaskDetailPage(taskId: 't1')),
+      child: MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pump(); // resolve getTask
 }
+
+/// หน้างาน + หน้าพารามิเตอร์ (stub) — ปุ่มส่ง Config พาไปหน้าพารามิเตอร์
+/// (docs/27 §2.2) ซึ่งเป็นที่สร้างคำขอจริง
+GoRouter _router() => GoRouter(
+  initialLocation: AppRoutes.taskDetail('t1'),
+  routes: [
+    GoRoute(
+      path: AppRoutes.taskDetailPattern,
+      builder: (_, state) =>
+          TaskDetailPage(taskId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: AppRoutes.deviceApplyConfigPattern,
+      builder: (_, state) => Text('PARAMS ${state.uri}'),
+    ),
+  ],
+);
 
 Finder get _simulateButton => find.byKey(const Key('simulate_test_button'));
 Finder get _applyButton => find.byKey(const Key('confirm_install_button'));
@@ -340,11 +361,12 @@ void main() {
       expect(find.byKey(const Key('simulate_incident_notice')), findsNothing);
 
       await tester.tap(_applyButton);
-      await tester.pump();
-      await tester.pump();
-      // Config/เครื่องมาจาก Task ที่ backend (docs/25) แอปส่งแค่ taskId
-      expect(confirm.createCalls, 1);
-      expect(confirm.lastCreateTaskId, 't1');
+      await tester.pumpAndSettle();
+      // ไปหน้าพารามิเตอร์ของ Config ที่ผูกกับงาน (docs/27 §2.2)
+      expect(
+        find.text('PARAMS /devices/DVC-1/apply/config/cfg-1?taskId=t1'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('ผ่าน -> กลับมาไม่ผ่านอีกรอบ = ถือเป็นรอบใหม่ สร้าง Incident '

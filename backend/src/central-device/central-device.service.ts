@@ -30,6 +30,51 @@ export type PushConfigOutcome =
   /** ติดต่อ Server กลางไม่ได้ */
   | { kind: 'unavailable'; reason: string };
 
+/** ค่าที่กล่องรายงานว่าใช้อยู่ (`readReportedFields`) เป็นชื่อพารามิเตอร์แบบจุด */
+export interface ReportedBoxFields {
+  fields: Record<string, unknown>;
+  reportedAt: string | null;
+}
+
+/** ไม่ส่งค่าเหล่านี้ออกไป — `data_server.path` มี key ส่ง telemetry อยู่ใน URL (docs/23 §7) */
+const HIDDEN_REPORTED_KEYS = new Set(['data_server.path']);
+
+/** `{gps: {send_interval_sec: 10}}` -> `{'gps.send_interval_sec': 10}` */
+function flattenSettings(
+  settings: Record<string, unknown>,
+  prefix = '',
+  out: Record<string, unknown> = {},
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(settings)) {
+    const name = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      flattenSettings(value as Record<string, unknown>, name, out);
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
+/** ผลการตรวจ Config กับ schema ที่กล่องรันอยู่ โดยไม่ส่ง (`checkConfig`) */
+export type CheckConfigOutcome =
+  /** ทุกค่าผ่าน schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ */
+  | {
+      kind: 'ok';
+      hardwareModel: string;
+      schemaVersion: number;
+      firmwareVersion: string | null;
+    }
+  /** กล่องไม่รับ Config นี้ — เหตุผลแยกรายค่า (หรือเหตุผลเดียวเมื่อตรวจกล่องไม่ผ่านตั้งแต่ต้น) */
+  | { kind: 'rejected'; reasons: string[] }
+  /** ติดต่อ Server กลางไม่ได้ ตรวจไม่ได้ */
+  | { kind: 'unavailable'; reason: string };
+
+/** กล่องที่พร้อมรับ Config: รู้จัก อยู่ในทะเบียน และรายงานโมเดล/schema แล้ว */
+type ConfigTarget = CentralDevice & {
+  hardwareModel: string;
+  reportedSchemaVersion: number;
+};
+
 /** ผลการสั่งอัปเดต Firmware ให้กล่องหนึ่งเครื่อง — รูปร่างเดียวกับ `PushConfigOutcome`
  * (ไม่มี version ตอน sent เพราะ Server กลางไม่คืน config_version สำหรับ firmware) */
 export type PushFirmwareOutcome =
@@ -99,6 +144,26 @@ export class CentralDeviceService {
   }
 
   /**
+   * ค่าที่กล่องรายงานว่าใช้อยู่จริง (ทุกพารามิเตอร์ ไม่ใช่แค่ที่อยู่ใน Config ของเรา) ให้หน้าขอแก้ค่า
+   * แสดงค่าที่แก้ไม่ได้ด้วย · ซ่อน {@link HIDDEN_REPORTED_KEYS} · ติดต่อไม่ได้/กล่องยังไม่รายงาน = null
+   * ไม่โยน error
+   */
+  async readReportedFields(
+    deviceId: string,
+  ): Promise<ReportedBoxFields | null> {
+    try {
+      const raw = await this.client.getDeviceConfig(deviceId);
+      const settings = raw.reported?.settings;
+      if (!settings) return null;
+      const fields = flattenSettings(settings);
+      for (const key of HIDDEN_REPORTED_KEYS) delete fields[key];
+      return { fields, reportedAt: raw.reported?.reported_at ?? null };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * สั่งส่ง Config ให้กล่อง: ตรวจว่า Server กลางรู้จักและกล่องอยู่ในทะเบียน, แปลงค่าตาม schema
    * ที่กล่อง **รายงานว่ารันอยู่จริง**, แล้ว `PUT config` (Server กลางสร้างเวอร์ชันใหม่และส่งทันที
    * ถ้ากล่องออนไลน์ ถ้าออฟไลน์เขาเก็บคิวไว้ส่งตอนกล่องกลับมา) · ไม่โยน error ออกไป
@@ -107,31 +172,9 @@ export class CentralDeviceService {
     deviceId: string,
     fields: Record<string, unknown>,
   ): Promise<PushConfigOutcome> {
-    const { list, device } = await this.findDevice(deviceId);
-    if (!list.reachable) {
-      return {
-        kind: 'unavailable',
-        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
-      };
-    }
-    if (!device) {
-      return {
-        kind: 'rejected',
-        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
-      };
-    }
-    if (!device.registered) {
-      return {
-        kind: 'rejected',
-        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงสั่ง Config ไม่ได้`,
-      };
-    }
-    if (!device.hardwareModel || device.reportedSchemaVersion === null) {
-      return {
-        kind: 'rejected',
-        reason: `กล่อง ${deviceId} ยังไม่รายงานโมเดลหรือ schema ที่รัน (ต้องให้กล่องเชื่อมต่อก่อน)`,
-      };
-    }
+    const target = await this.findConfigTarget(deviceId);
+    if ('kind' in target) return target;
+    const device = target.device;
 
     try {
       const schema = await this.client.getSchema(
@@ -168,6 +211,89 @@ export class CentralDeviceService {
             : 'ติดต่อ Server กลางไม่สำเร็จ',
       };
     }
+  }
+
+  /**
+   * ตรวจ Config กับ schema ของ Firmware ที่กล่อง**รายงานว่ารันอยู่** แบบเดียวกับ `pushConfig()`
+   * แต่ไม่ `PUT` — ให้ปุ่ม "ทดสอบกับ Device Simulator" บอกล่วงหน้าว่ากล่องจะไม่รับค่าไหน
+   * (เช่น Firmware 1.0.0 ไม่รู้จัก `speed_limit.*`) · ไม่โยน error ออกไป
+   */
+  async checkConfig(
+    deviceId: string,
+    fields: Record<string, unknown>,
+  ): Promise<CheckConfigOutcome> {
+    const target = await this.findConfigTarget(deviceId);
+    if ('kind' in target) {
+      return target.kind === 'rejected'
+        ? { kind: 'rejected', reasons: [target.reason] }
+        : target;
+    }
+    const device = target.device;
+    try {
+      const schema = await this.client.getSchema(
+        device.hardwareModel,
+        device.reportedSchemaVersion,
+      );
+      const built = buildCentralSettings(fields, schema);
+      if ('errors' in built) return { kind: 'rejected', reasons: built.errors };
+      return {
+        kind: 'ok',
+        hardwareModel: device.hardwareModel,
+        schemaVersion: device.reportedSchemaVersion,
+        firmwareVersion: device.reportedFirmwareVersion,
+      };
+    } catch (err) {
+      return {
+        kind: 'unavailable',
+        reason:
+          err instanceof CentralUnavailableError ||
+          err instanceof CentralRejectedError
+            ? err.message
+            : 'ติดต่อ Server กลางไม่สำเร็จ',
+      };
+    }
+  }
+
+  /** ตรวจว่ากล่องพร้อมรับ Config (ใช้ร่วม `pushConfig`/`checkConfig`) */
+  private async findConfigTarget(
+    deviceId: string,
+  ): Promise<
+    | { device: ConfigTarget }
+    | { kind: 'rejected'; reason: string }
+    | { kind: 'unavailable'; reason: string }
+  > {
+    const { list, device } = await this.findDevice(deviceId);
+    if (!list.reachable) {
+      return {
+        kind: 'unavailable',
+        reason: list.error ?? 'ติดต่อ Server กลางไม่ได้',
+      };
+    }
+    if (!device) {
+      return {
+        kind: 'rejected',
+        reason: `Server กลางไม่รู้จักกล่อง ${deviceId} (ยังไม่เคยเชื่อมต่อ)`,
+      };
+    }
+    if (!device.registered) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่อยู่ในทะเบียนของ delivery-server จึงสั่ง Config ไม่ได้`,
+      };
+    }
+    if (!device.hardwareModel || device.reportedSchemaVersion === null) {
+      return {
+        kind: 'rejected',
+        reason: `กล่อง ${deviceId} ยังไม่รายงานโมเดลหรือ schema ที่รัน (ต้องให้กล่องเชื่อมต่อก่อน)`,
+      };
+    }
+    return {
+      device: {
+        ...device,
+        hardwareModel: device.hardwareModel,
+        reportedSchemaVersion: device.reportedSchemaVersion,
+      },
+    };
   }
 
   /**

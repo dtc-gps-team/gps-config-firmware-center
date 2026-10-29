@@ -145,9 +145,10 @@ describe('DeviceTelemetryController (integration — real postgres)', () => {
     });
     expect(after.reportedFirmwareVersion).toBe('1.2.0');
     expect(after.reportedFirmwareAt).not.toBeNull();
-    // telemetry ไม่เปลี่ยนสถานะเครื่อง และไม่เขียน lastSeenAt (§7.3, §10.2)
+    // telemetry ไม่เปลี่ยนสถานะเครื่อง แต่นับเป็นการติดต่อ -> เขียน lastSeenAt
+    // ให้ GET /status บอกออนไลน์ได้เมื่อ Server กลางติดต่อไม่ได้ (§10.2 ข้อ 4)
     expect(after.status).toBe('registered');
-    expect(after.lastSeenAt).toBeNull();
+    expect(after.lastSeenAt).not.toBeNull();
   });
 
   it('event ทั้ง 3 ชนิดลง DeviceEvent', async () => {

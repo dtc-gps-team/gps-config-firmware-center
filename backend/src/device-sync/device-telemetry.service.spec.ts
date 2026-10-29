@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
+import { LAST_SEEN_WRITE_INTERVAL_MS } from '../common/guards/device-api-key.guard';
 import {
   DeviceTelemetryService,
   parseDeviceTimestamp,
@@ -215,8 +216,11 @@ describe('DeviceTelemetryService', () => {
         }) as Record<string, unknown>,
       });
       expect(prisma.deviceTelemetry.create).not.toHaveBeenCalled();
-      // event ไม่มี firmware_version -> ไม่แตะ Device
-      expect(prisma.device.updateMany).not.toHaveBeenCalled();
+      // event ไม่มี firmware_version -> แตะ Device แค่ lastSeenAt
+      expect(prisma.device.updateMany).toHaveBeenCalledTimes(1);
+      expect(updateManyArgs(prisma.device.updateMany, 0).data).toEqual({
+        lastSeenAt: expect.any(Date) as Date,
+      });
     });
 
     it('geofence ไม่มี timestamp -> occurredAt = receivedAt', async () => {
@@ -245,8 +249,9 @@ describe('DeviceTelemetryService', () => {
     it('ค่าเปลี่ยน -> เขียนเวอร์ชัน + เวลา ครั้งเดียว', async () => {
       await service.report('BOX-0001', dto(fixTelemetry));
 
-      expect(prisma.device.updateMany).toHaveBeenCalledTimes(1);
-      expect(prisma.device.updateMany).toHaveBeenCalledWith({
+      // ครั้งแรก = firmware · ครั้งที่สอง = lastSeenAt
+      expect(prisma.device.updateMany).toHaveBeenCalledTimes(2);
+      expect(prisma.device.updateMany).toHaveBeenNthCalledWith(1, {
         where: {
           deviceId: 'BOX-0001',
           OR: [
@@ -290,6 +295,41 @@ describe('DeviceTelemetryService', () => {
       ).resolves.toEqual({
         accepted: true,
       });
+    });
+  });
+
+  describe('lastSeenAt — telemetry นับเป็นการติดต่อ (สถานะออนไลน์)', () => {
+    it('telemetry -> เลื่อน Device.lastSeenAt เฉพาะเมื่อเก่ากว่า 1 นาที', async () => {
+      await service.report(
+        'BOX-0001',
+        dto(without(fixTelemetry, 'firmware_version')),
+      );
+
+      expect(prisma.device.updateMany).toHaveBeenCalledTimes(1);
+      const args = updateManyArgs(prisma.device.updateMany, 0) as unknown as {
+        where: unknown;
+        data: { lastSeenAt: Date };
+      };
+      expect(args.where).toEqual({
+        deviceId: 'BOX-0001',
+        OR: [
+          { lastSeenAt: null },
+          {
+            lastSeenAt: {
+              lt: new Date(
+                args.data.lastSeenAt.getTime() - LAST_SEEN_WRITE_INTERVAL_MS,
+              ),
+            },
+          },
+        ],
+      });
+    });
+
+    it('เขียนไม่สำเร็จ -> ยังตอบ accepted (never-throw)', async () => {
+      prisma.device.updateMany.mockRejectedValue(new Error('db down'));
+      await expect(
+        service.report('BOX-0001', dto(overspeedEvent)),
+      ).resolves.toEqual({ accepted: true });
     });
   });
 

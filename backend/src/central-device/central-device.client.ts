@@ -5,6 +5,7 @@ import type {
   RawCentralSchema,
   RawGatewayDevice,
   RawPushFirmwareResult,
+  RawDeviceConfig,
   RawPutConfigResult,
   RawRegistryDevice,
 } from './central-device.types';
@@ -48,6 +49,8 @@ export interface CentralDeviceClient {
   ) => Promise<RawPutConfigResult>;
   /** สถานะปัจจุบันของคำสั่งหนึ่งรายการ */
   getCommand: (commandId: string) => Promise<RawCentralCommand>;
+  /** Config ของกล่อง: ค่าที่ตั้งเป้าไว้และค่าที่กล่องรายงานว่าใช้อยู่ (อ่านอย่างเดียว) */
+  getDeviceConfig: (deviceId: string) => Promise<RawDeviceConfig>;
   /** อัปโหลดไฟล์ firmware (.bin) ให้กล่องเครื่องเดียว — Server กลางเก็บไฟล์และสั่งอัปเดตทันที
    * ถ้ากล่องออนไลน์ (ไม่รอผลลัพธ์จริง — ใช้ `getCommand` ตามผลต่อ) */
   pushFirmware: (
@@ -146,6 +149,19 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
     });
 
   // mock ไม่ใช้ค่า settings (ทุกคำสั่งสำเร็จทันที) จึงรับแค่ deviceId
+  getDeviceConfig = (deviceId: string): Promise<RawDeviceConfig> =>
+    Promise.resolve({
+      device_id: deviceId,
+      reported: {
+        config_version: 1,
+        settings: {
+          led: { enabled: true },
+          gps: { enabled: true, baud_rate: 9600, send_interval_sec: 10 },
+        },
+        reported_at: new Date().toISOString(),
+      },
+    });
+
   putDeviceConfig = (deviceId: string): Promise<RawPutConfigResult> => {
     const version = (this.configSeq.get(deviceId) ?? 0) + 1;
     this.configSeq.set(deviceId, version);
@@ -267,6 +283,11 @@ export class HttpCentralDeviceClient implements CentralDeviceClient {
     this.sendJson<RawPutConfigResult>(
       `/api/admin/devices/${encodeURIComponent(deviceId)}/config`,
       { method: 'PUT', body: JSON.stringify({ settings }) },
+    );
+
+  getDeviceConfig = (deviceId: string): Promise<RawDeviceConfig> =>
+    this.getJson<RawDeviceConfig>(
+      `/api/admin/devices/${encodeURIComponent(deviceId)}/config`,
     );
 
   getCommand = (commandId: string): Promise<RawCentralCommand> =>

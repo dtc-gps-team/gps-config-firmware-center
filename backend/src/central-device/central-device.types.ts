@@ -100,6 +100,16 @@ export interface RawCentralCommand {
   error_message?: string | null;
 }
 
+/** ผลของ `GET /api/admin/devices/{id}/config` — `reported.settings` คือค่าที่กล่องรายงานว่าใช้อยู่จริง */
+export interface RawDeviceConfig {
+  device_id: string;
+  reported: {
+    config_version: number | null;
+    settings: Record<string, unknown> | null;
+    reported_at: string | null;
+  } | null;
+}
+
 /** ผลของ `PUT /api/admin/devices/{id}/config` */
 export interface RawPutConfigResult {
   config_version: number;

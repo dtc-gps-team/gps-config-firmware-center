@@ -14,12 +14,14 @@ abstract class ConfigApplyRequestRepository {
 
   /// [configId] = Config ที่ช่างเลือก (docs/28 §5.3) · `null` = ใช้ Config ที่
   /// Operation ผูกไว้กับงาน (พฤติกรรมเดิมของ docs/25) · [firmwareId] = ขอส่ง
-  /// Firmware แทน (docs/27 B2 — ส่งอย่างใดอย่างหนึ่ง)
+  /// Firmware แทน (docs/27 B2 — ส่งอย่างใดอย่างหนึ่ง) · [direct] = ส่ง Config ที่
+  /// อนุมัติแล้วตามเดิม ได้คำขอ `approved` ทันที ไม่ต้องรอ Operation (v3.75)
   Future<ConfigApplyRequest> create(
     String taskId, {
     String? configId,
     String? firmwareId,
     String? note,
+    bool direct = false,
   });
 
   Future<ConfigApplyRequest> cancel(String requestId);
@@ -49,11 +51,13 @@ class ApiConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     String? configId,
     String? firmwareId,
     String? note,
+    bool direct = false,
   }) => _api.createConfigApplyRequest(
     taskId,
     configId: configId,
     firmwareId: firmwareId,
     note: note,
+    direct: direct,
   );
 
   @override

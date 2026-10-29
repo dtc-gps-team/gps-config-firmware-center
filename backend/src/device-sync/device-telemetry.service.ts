@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LAST_SEEN_WRITE_INTERVAL_MS } from '../common/guards/device-api-key.guard';
 import { DeviceDataReportDto } from './dto/device-data-report.dto';
 
 /** เลื่อน `Device.reportedFirmwareAt` เมื่อค่าเดิมเก่ากว่านี้เท่านั้น — กล่องส่งทุก
@@ -89,7 +90,37 @@ export class DeviceTelemetryService {
         receivedAt,
       );
     }
+    await this.recordLastSeen(deviceId, receivedAt);
     return { accepted: true };
+  }
+
+  /**
+   * telemetry/event นับเป็นการติดต่อของกล่อง — เลื่อน `Device.lastSeenAt` ที่
+   * `GET /devices/{id}/status` ใช้บอกออนไลน์ ไม่งั้นกล่องที่ส่งแค่ telemetry
+   * (ไม่เรียก `/device-sync/*`) จะขึ้น "ยังไม่เคยติดต่อ" เมื่อ Server กลางติดต่อไม่ได้
+   * · throttle เท่ากับ `DeviceApiKeyGuard` · never-throw เหมือน firmware
+   */
+  private async recordLastSeen(deviceId: string, now: Date): Promise<void> {
+    try {
+      await this.prisma.device.updateMany({
+        where: {
+          deviceId,
+          OR: [
+            { lastSeenAt: null },
+            {
+              lastSeenAt: {
+                lt: new Date(now.getTime() - LAST_SEEN_WRITE_INTERVAL_MS),
+              },
+            },
+          ],
+        },
+        data: { lastSeenAt: now },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `บันทึก lastSeenAt ของ ${deviceId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

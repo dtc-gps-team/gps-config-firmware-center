@@ -402,8 +402,12 @@ class _StatusSection extends ConsumerWidget {
               ),
               AppInfoRow(
                 key: const Key('device_online_row'),
-                label: 'ออนไลน์/ออฟไลน์',
-                value: online.label,
+                label: 'การเชื่อมต่อ',
+                child: AppBadge(
+                  label: online.label,
+                  tone: online.tone,
+                  dot: true,
+                ),
               ),
               AppInfoRow(
                 label: 'ติดต่อล่าสุด',

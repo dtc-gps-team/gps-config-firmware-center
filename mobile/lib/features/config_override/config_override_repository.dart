@@ -25,10 +25,14 @@ abstract class ConfigOverrideRepository {
   /// — endpoint นั้นแก้ Config ทั้งชุดทันที กระทบทุกอุปกรณ์ที่ใช้ Config
   /// เดียวกัน Mobile เปลี่ยนมาใช้ endpoint per-device นี้เท่านั้นตั้งแต่ #223
   /// — คืนคำขอสถานะ `pending` เสมอ (มติ 2026-09-24) ไม่ใช่ Config ที่ merge แล้ว
+  ///
+  /// [configId] (v3.75) = Config ที่ช่างเลือกจากหน้าเลือกสิ่งที่จะส่ง · `null` =
+  /// Config ปัจจุบันของกล่อง
   Future<DeviceConfigOverride> overrideConfig({
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   });
 }
 
@@ -51,10 +55,12 @@ class ApiConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) => _api.overrideDeviceConfig(
     deviceId: deviceId,
     fields: fields,
     reason: reason,
+    configId: configId,
   );
 }
 
@@ -152,6 +158,7 @@ class MockConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     if (reason.trim().isEmpty) {

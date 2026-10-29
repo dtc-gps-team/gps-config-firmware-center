@@ -1,5 +1,12 @@
 import { FieldApplyKind } from '@prisma/client';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 export const FIELD_APPLY_KINDS: readonly FieldApplyKind[] = [
   'config',
@@ -30,4 +37,13 @@ export class CreateConfigApplyRequestDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  /**
+   * ส่ง Config ที่อนุมัติแล้วตามเดิม (ไม่แก้ค่า) โดยไม่ต้องรอ Operation อนุมัติคำขอ —
+   * คำขอเกิดเป็น `approved` ทันที ช่างกดส่งเข้ากล่องต่อได้เลย (มติ B 2026-10-28,
+   * docs/27 §2.2) · เฉพาะ `kind=config` · แก้ค่าต้องขอผ่าน Override (ต้องอนุมัติ)
+   */
+  @IsOptional()
+  @IsBoolean()
+  direct?: boolean;
 }

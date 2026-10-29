@@ -1,4 +1,11 @@
-import { IsNotEmpty, IsObject, IsString, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 
 /** Body ของ `POST /devices/{deviceId}/config-override` (issue #223) — ST แก้ค่า
  * บาง field ของ Config ปัจจุบันของ**อุปกรณ์เครื่องนี้เครื่องเดียว** โดยไม่ผ่าน
@@ -19,4 +26,11 @@ export class DeviceConfigOverrideDto {
   @IsNotEmpty()
   @MaxLength(500)
   reason!: string;
+  /**
+   * Config ที่จะแก้ค่า (โหมด central เท่านั้น) — ช่างเลือก Config อื่นจากหน้าเลือก
+   * สิ่งที่จะส่งแล้วแก้ค่า · ไม่ส่ง = Config ปัจจุบันของกล่องตามเดิม
+   */
+  @IsOptional()
+  @IsUUID()
+  configId?: string;
 }
