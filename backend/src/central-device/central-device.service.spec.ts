@@ -361,6 +361,63 @@ describe('pushConfig', () => {
     });
     expect(out.kind).toBe('rejected');
   });
+
+  describe('checkConfig (ตรวจอย่างเดียว ไม่ส่ง — ปุ่มทดสอบหน้างาน)', () => {
+    it('ทุกค่าผ่าน schema ที่กล่องรัน -> ok พร้อมโมเดล/schema/Firmware ไม่ยิง PUT', async () => {
+      const client = clientWith();
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': '20',
+      });
+      expect(out).toEqual({
+        kind: 'ok',
+        hardwareModel: 'ESP32-DEVKIT-V1',
+        schemaVersion: 1,
+        firmwareVersion: '1.0.0',
+      });
+      expect(client.getSchema).toHaveBeenCalledWith('ESP32-DEVKIT-V1', 1);
+      expect(client.putDeviceConfig).not.toHaveBeenCalled();
+    });
+
+    it('มีค่าที่ Firmware ในกล่องไม่รู้จัก -> rejected แยกเหตุผลรายค่า ไม่ยิง PUT', async () => {
+      const client = clientWith();
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+        'speed_limit.max_kmh': 100,
+        'geofence.enabled': true,
+      });
+      expect(out.kind).toBe('rejected');
+      if (out.kind !== 'rejected') return;
+      expect(out.reasons).toHaveLength(2);
+      expect(out.reasons[0]).toContain('speed_limit.max_kmh');
+      expect(out.reasons[1]).toContain('geofence.enabled');
+      expect(client.putDeviceConfig).not.toHaveBeenCalled();
+    });
+
+    it('ติดต่อ Server กลางไม่ได้ -> unavailable', async () => {
+      const client = clientWith({
+        listGatewayDevices: () =>
+          Promise.reject(
+            new CentralUnavailableError('เชื่อมต่อ Server กลางไม่ได้'),
+          ),
+      });
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+      });
+      expect(out.kind).toBe('unavailable');
+    });
+
+    it('ดึง schema ไม่ได้ -> unavailable', async () => {
+      const client = clientWith({
+        getSchema: jest
+          .fn()
+          .mockRejectedValue(new CentralUnavailableError('timeout')),
+      });
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+      });
+      expect(out).toEqual({ kind: 'unavailable', reason: 'timeout' });
+    });
+  });
 });
 
 describe('getCommandOutcome', () => {
