@@ -54,6 +54,17 @@ const targets = {
       await page.locator("#field-REPORT_INTERVAL").fill("45");
     },
   },
+  "config-new-step1": {
+    url: "/config/new",
+    w: 1440,
+    h: 900,
+    extra: ["mobile"],
+    act: async (page) => {
+      await page.getByLabel("ชื่อ Config").fill("ติดตามรถบรรทุกภาคเหนือ");
+      await page.getByRole("combobox", { name: "โมเดล" }).click();
+      await page.getByRole("option", { name: "BB-200" }).click();
+    },
+  },
   "config-edit-json": {
     url: "/config/c3/edit",
     w: 1440,

@@ -647,26 +647,66 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       <WizardStepIndicator steps={CONFIG_WIZARD_STEPS} step={step} />
 
       {step === 1 ? (
-        <Card className="mx-auto w-full max-w-2xl gap-5 p-5">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="config-name">ชื่อ Config</Label>
-            <Input
-              id="config-name"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                clearErrors();
-              }}
-              maxLength={120}
-              placeholder="เช่น GT06N ตั้งค่ามาตรฐานภาคกลาง"
-              aria-invalid={nameError ? true : undefined}
-            />
-            {nameError && (
-              <p className="text-xs text-destructive">{nameError}</p>
-            )}
-          </div>
+        <div className="grid w-full max-w-5xl items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <Card className="gap-5 p-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-base font-semibold">ข้อมูลทั่วไป</h2>
+              <p className="text-sm text-muted-foreground">
+                ตั้งชื่อให้ค้นหาง่าย และบอกว่า Config ชุดนี้ไว้ทำอะไร
+              </p>
+            </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="config-name">ชื่อ Config</Label>
+              <Input
+                id="config-name"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearErrors();
+                }}
+                maxLength={120}
+                placeholder="เช่น GT06N ตั้งค่ามาตรฐานภาคกลาง"
+                aria-invalid={nameError ? true : undefined}
+              />
+              {nameError && (
+                <p className="text-xs text-destructive">{nameError}</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="config-description">
+                คำอธิบาย{" "}
+                <span className="font-normal text-muted-foreground">
+                  (ไม่บังคับ)
+                </span>
+              </Label>
+              <textarea
+                id="config-description"
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  clearErrors();
+                }}
+                maxLength={500}
+                rows={5}
+                placeholder="อธิบายวัตถุประสงค์ของ Config ชุดนี้…"
+                className="min-h-28 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              />
+              <p className="text-right text-xs tabular-nums text-muted-foreground">
+                {description.length} / 500
+              </p>
+            </div>
+          </Card>
+
+          <Card className="gap-4 p-6 lg:sticky lg:top-24">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-base font-semibold">อุปกรณ์เป้าหมาย</h2>
+              <p className="text-sm text-muted-foreground">
+                เลือกแล้วระบบจะแสดงพารามิเตอร์ที่รุ่นนี้ใช้ในขั้นถัดไป
+              </p>
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="config-device-model">โมเดล</Label>
               <Select
@@ -708,61 +748,80 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                 </SelectContent>
               </Select>
             </div>
+
+            {deviceModel && protocol && (
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-surface-sunken p-3 text-center">
+                <div className="flex flex-col">
+                  <span className="text-lg font-semibold tabular-nums">
+                    {applicableDefs.length}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    พารามิเตอร์ของรุ่นนี้
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-lg font-semibold tabular-nums">
+                    {applicableDefs.filter((d) => d.required).length}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    ที่ต้องกรอก
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {editing && (
+              <p className="text-xs text-muted-foreground">
+                แก้โมเดล/โปรโตคอลไม่ได้หลังสร้างแล้ว ถ้าเลือกผิด ให้ลบ draft
+                แล้วสร้างใหม่
+              </p>
+            )}
+          </Card>
+
+          <div className="flex flex-col gap-4 lg:col-span-2">
+            {formError && <ErrorBanner message={formError} list={formErrorList} />}
+
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (confirmLeave()) router.push("/config");
+                }}
+              >
+                ยกเลิก
+              </Button>
+              <Button onClick={goToStep2}>ถัดไป: เลือก Parameter →</Button>
+            </div>
           </div>
-
-          {editing && (
-            <p className="text-xs text-muted-foreground">
-              แก้โมเดล/โปรโตคอลไม่ได้หลังสร้างแล้ว ถ้าเลือกผิด ให้ลบ draft
-              แล้วสร้างใหม่
-            </p>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="config-description">
-              คำอธิบาย{" "}
-              <span className="font-normal text-muted-foreground">
-                (ไม่บังคับ)
-              </span>
-            </Label>
-            <textarea
-              id="config-description"
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                clearErrors();
-              }}
-              maxLength={500}
-              rows={3}
-              placeholder="อธิบายวัตถุประสงค์ของ Config ชุดนี้…"
-              className="min-h-16 resize-y rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-            />
-          </div>
-
-          {formError && <ErrorBanner message={formError} list={formErrorList} />}
-
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (confirmLeave()) router.push("/config");
-              }}
-            >
-              ยกเลิก
-            </Button>
-            <Button onClick={goToStep2}>ถัดไป: เลือก Parameter →</Button>
-          </div>
-        </Card>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{name.trim()}</span>
-            <span>
-              {deviceModel} / {protocol}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-base font-semibold">{name.trim()}</span>
+              <span className="text-xs text-muted-foreground">
+                {deviceModel} / {protocol}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs tabular-nums">
+              <span className="rounded-full bg-secondary px-2.5 py-1 text-secondary-foreground">
+                เลือกแล้ว {chosenDefs.length}
+              </span>
+              {diff && diff.changes.length > 0 && (
+                <span className="rounded-full bg-info-subtle px-2.5 py-1 text-info-foreground">
+                  แก้ไข {diff.changes.length}
+                </span>
+              )}
+              {errorCount > 0 && (
+                <span className="rounded-full bg-danger-subtle px-2.5 py-1 text-danger-foreground">
+                  ผิดพลาด {errorCount}
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-[300px_1fr]">
-            <Card className="max-h-[32rem] gap-0 py-0">
+          <div className="grid items-start gap-4 md:grid-cols-[20rem_minmax(0,1fr)]">
+            <Card className="gap-0 py-0 md:sticky md:top-24 md:max-h-[calc(100vh-10rem)]">
               <div className="border-b px-4 py-3">
                 <p className="text-sm font-medium">คลัง Parameter</p>
                 <p className="text-xs text-muted-foreground">
@@ -802,12 +861,12 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                       key={def.id}
                       type="button"
                       onClick={() => addField(def.fieldName)}
-                      className="flex items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-muted"
+                      className="flex items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left outline-none transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:border-border hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
                       <PlusIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-xs font-medium break-all">
+                          <span className="font-instrument text-xs font-medium break-all">
                             {def.fieldName}
                           </span>
                           <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
@@ -1013,23 +1072,32 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                clearErrors();
-                setStep(1);
-              }}
-            >
-              ← ย้อนกลับ
-            </Button>
-            <Button onClick={handleSubmit} disabled={submitting || rawError !== null}>
-              {submitting
-                ? "กำลังบันทึก…"
-                : editing
-                  ? "บันทึกการแก้ไข"
-                  : "บันทึก Config Draft"}
-            </Button>
+          <div className="sticky bottom-0 z-(--z-sticky) -mx-4 flex flex-wrap items-center justify-between gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            <p className="text-xs text-muted-foreground">
+              {diff
+                ? diff.changes.length > 0
+                  ? `มีการเปลี่ยนแปลง ${diff.changes.length} ค่า ยังไม่ได้บันทึก`
+                  : "ยังไม่ได้แก้ไขอะไร"
+                : `เลือกไว้ ${chosenDefs.length} พารามิเตอร์`}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  clearErrors();
+                  setStep(1);
+                }}
+              >
+                ← ย้อนกลับ
+              </Button>
+              <Button onClick={handleSubmit} disabled={submitting || rawError !== null}>
+                {submitting
+                  ? "กำลังบันทึก…"
+                  : editing
+                    ? "บันทึกการแก้ไข"
+                    : "บันทึก Config Draft"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
