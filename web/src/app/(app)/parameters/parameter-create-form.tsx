@@ -50,14 +50,28 @@ const DATA_TYPES = [
 const DATA_TYPE_LABELS: Record<(typeof DATA_TYPES)[number], string> = {
   integer: "จำนวนเต็ม (integer)",
   decimal: "ทศนิยม (decimal)",
-  string: "ข้อความสั้น (string)",
-  text: "ข้อความยาว (text)",
-  boolean: "เปิด/ปิด (boolean)",
-  date: "วันที่ YYYY-MM-DD (date)",
-  datetime: "วันที่และเวลา ISO 8601 (datetime)",
-  json: "ออบเจกต์ JSON (json)",
-  array: "รายการค่า JSON array (array)",
+  string: "ข้อความ (string)",
+  text: "ข้อความหลายบรรทัด (text)",
+  boolean: "จริง/เท็จ (boolean)",
+  date: "วันที่ (date)",
+  datetime: "วันที่และเวลา (datetime)",
+  json: "ชุดค่าแบบ key-value (json)",
+  array: "รายการหลายค่า (array)",
   uuid: "รหัส UUID (uuid)",
+};
+
+/** ตัวอย่างค่าใต้ช่องเลือกชนิด — รูปแบบตรงกับที่ฟอร์ม Config และ backend ตรวจ */
+const DATA_TYPE_HINTS: Record<(typeof DATA_TYPES)[number], string> = {
+  integer: "เช่น 8080",
+  decimal: "เช่น 0.5",
+  string: "ข้อความบรรทัดเดียว เช่น internet",
+  text: "ข้อความที่ยาวหรือมีหลายบรรทัด",
+  boolean: "ค่า true หรือ false",
+  date: "รูปแบบ YYYY-MM-DD เช่น 2026-10-29",
+  datetime: "รูปแบบ ISO 8601 เช่น 2026-10-29T08:00:00Z",
+  json: 'JSON object เช่น {"key": "value"}',
+  array: "JSON array เช่น [1, 2, 3]",
+  uuid: "รหัส UUID",
 };
 
 type Props = {
@@ -285,6 +299,9 @@ export function ParameterCreateForm({
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {DATA_TYPE_HINTS[dataType as (typeof DATA_TYPES)[number]]}
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">

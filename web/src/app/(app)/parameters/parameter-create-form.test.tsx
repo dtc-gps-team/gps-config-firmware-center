@@ -142,3 +142,22 @@ describe("ParameterCreateForm model picker", () => {
     expect(chips.querySelectorAll("li")).toHaveLength(4);
   });
 });
+
+describe("ParameterCreateForm data type hint", () => {
+  it("shows an example for the selected data type", async () => {
+    const user = userEvent.setup();
+    render(
+      <ParameterCreateForm
+        deviceModels={models}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ข้อความบรรทัดเดียว เช่น internet")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: "ชนิดข้อมูล" }));
+    await user.click(await screen.findByRole("option", { name: "จริง/เท็จ (boolean)" }));
+    expect(screen.getByText("ค่า true หรือ false")).toBeInTheDocument();
+  });
+});
