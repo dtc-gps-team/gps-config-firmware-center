@@ -41,7 +41,9 @@ import { canReadCampaign } from "@/lib/permissions";
  *  lib/status-pill.ts: "ล้มเหลวเกิน 5%") — ใช้เป็นเกณฑ์เตือนที่ Dashboard ด้วย */
 const FAILURE_WARN_PERCENT = 5;
 
-const ACTIVE_BASIS = "flex-[1.5_1_15rem]";
+/** การ์ดที่ต้องลงมือทำและค่า > 0: danger กว้างสุด, warning รองลงมา, ค่า 0 แคบสุด */
+const ACTIVE_DANGER_BASIS = "flex-[2_1_17rem]";
+const ACTIVE_WARNING_BASIS = "flex-[1.4_1_14rem]";
 const CALM_BASIS = "flex-[1_1_11rem]";
 
 function Panel({
@@ -181,7 +183,7 @@ export function DashboardSummary() {
       >
         {hasCampaignAccess && (
           <KpiCard
-            className={(pausedRolloutCount ?? 0) > 0 ? ACTIVE_BASIS : CALM_BASIS}
+            className={(pausedRolloutCount ?? 0) > 0 ? ACTIVE_DANGER_BASIS : CALM_BASIS}
             label="Rollout หยุดชั่วคราว (Auto Pause)"
             href="/campaigns"
             value={pausedRolloutCount}
@@ -192,7 +194,7 @@ export function DashboardSummary() {
           />
         )}
         <KpiCard
-          className={(activeIncidents ?? 0) > 0 ? ACTIVE_BASIS : CALM_BASIS}
+          className={(activeIncidents ?? 0) > 0 ? ACTIVE_DANGER_BASIS : CALM_BASIS}
           label="Incident ที่ยังต้องตาม"
           href="/incidents"
           value={activeIncidents}
@@ -202,7 +204,7 @@ export function DashboardSummary() {
           hint="Incident ที่สถานะเปิดอยู่หรือกำลังตรวจสอบ"
         />
         <KpiCard
-          className={(connection?.offline ?? 0) > 0 ? ACTIVE_BASIS : CALM_BASIS}
+          className={(connection?.offline ?? 0) > 0 ? ACTIVE_WARNING_BASIS : CALM_BASIS}
           label="อุปกรณ์ออฟไลน์"
           href="/devices"
           value={connection ? connection.offline : null}
@@ -213,7 +215,7 @@ export function DashboardSummary() {
           hint="อุปกรณ์ในระบบที่ Server กลางรายงานว่าไม่ได้เชื่อมต่ออยู่"
         />
         <KpiCard
-          className={(driftCount ?? 0) > 0 ? ACTIVE_BASIS : CALM_BASIS}
+          className={(driftCount ?? 0) > 0 ? ACTIVE_WARNING_BASIS : CALM_BASIS}
           label="Config ไม่ตรงกับที่ตั้งไว้"
           href="/devices"
           value={driftCount}
@@ -225,7 +227,7 @@ export function DashboardSummary() {
         />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-12">
+      <div className="grid items-start gap-4 lg:grid-cols-12">
         {hasCampaignAccess && (
           <Panel
             title="ผลการ Deploy"

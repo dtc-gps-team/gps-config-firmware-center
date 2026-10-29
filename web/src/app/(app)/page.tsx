@@ -29,7 +29,7 @@ export default function DashboardPage() {
 
       <DashboardPendingApprovals />
       <DashboardSummary />
-      <div className="grid gap-4 lg:grid-cols-12">
+      <div className="grid items-start gap-4 lg:grid-cols-12">
         <div className="lg:col-span-5">
           <DashboardConfigStatusChart />
         </div>

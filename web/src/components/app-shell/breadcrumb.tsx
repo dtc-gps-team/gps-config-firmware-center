@@ -66,7 +66,9 @@ export function HeaderBreadcrumb() {
     return [...base, ...trail];
   }, [pathname, session?.role, trail]);
 
-  if (crumbs.length === 0) return null;
+  // หน้าหลักของเมนู (มี crumb เดียว) ไม่ต้องมี breadcrumb — ชื่อหน้าอยู่ที่หัวหน้า
+  // อันเดียวแล้ว โชว์ซ้ำที่แถบบนไม่ได้ข้อมูลเพิ่ม
+  if (crumbs.length <= 1) return null;
 
   return (
     <nav aria-label="breadcrumb" className="min-w-0">
