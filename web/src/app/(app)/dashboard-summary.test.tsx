@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import { DashboardSummary } from "./dashboard-summary";
 
@@ -165,6 +165,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     render(<DashboardSummary />);
 
     const queue = within(queueCard());
+    fireEvent.click(queue.getByRole("button", { name: /ดูอีก \d+ รายการ/ }));
     const titles = queue
       .getAllByRole("listitem")
       .map((li) => li.textContent ?? "");
@@ -177,6 +178,24 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
       "href",
       "/approvals",
     );
+  });
+
+  it("คิวมีงานเกิน 3 รายการ: พับเหลือ 3 งานแรก กดเพื่อดูทั้งหมดและพับกลับได้", () => {
+    state.pendingConfigs = q([{ queuedAt: new Date().toISOString() }]);
+    state.pendingRollouts = q([{}]);
+    state.pendingConfigOverrides = q([{}]);
+    state.pendingFirmwareOverrides = q([{}]);
+    render(<DashboardSummary />);
+
+    const queue = within(queueCard());
+    const count = () => queue.getAllByRole("listitem").length;
+    expect(count()).toBe(3);
+    // งานเร่งด่วน (สีแดง) อยู่ในส่วนที่เห็นเสมอ
+    expect(queue.getByText("Rollout ที่ระบบหยุดเอง")).toBeInTheDocument();
+    fireEvent.click(queue.getByRole("button", { name: /ดูอีก \d+ รายการ/ }));
+    expect(count()).toBeGreaterThan(3);
+    fireEvent.click(queue.getByRole("button", { name: /แสดงน้อยลง/ }));
+    expect(count()).toBe(3);
   });
 
   it("ไม่มีงานค้างเลย: บอกว่าเรียบร้อย ไม่ปล่อยการ์ดว่าง", () => {

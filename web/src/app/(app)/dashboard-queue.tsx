@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
 import { ErrorState } from "@/components/error-state";
 import { ChangeFlash } from "@/components/motion/change-flash";
@@ -28,6 +28,9 @@ import type { Firmware } from "@/lib/firmware-api";
 import { listItem, staggerContainer } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Panel } from "./dashboard-panel";
+
+/** งานเกินนี้พับไว้ (งานเร่งด่วนเรียงมาก่อนเสมอ จึงไม่ถูกพับ) */
+const COLLAPSED_LIMIT = 3;
 
 const TONE_LED: Record<QueueTone, LedTone> = {
   danger: "danger",
@@ -66,6 +69,10 @@ function QueueCard({
   className?: string;
 }) {
   const queue = useMemo(() => sortQueue(items), [items]);
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = queue.length > COLLAPSED_LIMIT;
+  const visible = collapsible && !expanded ? queue.slice(0, COLLAPSED_LIMIT) : queue;
+  const hiddenCount = queue.length - visible.length;
 
   return (
     <Panel
@@ -94,7 +101,7 @@ function QueueCard({
           variants={staggerContainer}
           className="flex flex-col gap-1.5"
         >
-          {queue.map((item) => {
+          {visible.map((item) => {
             const body = (
               <>
                 <StatusLed
@@ -147,6 +154,22 @@ function QueueCard({
             );
           })}
         </motion.ul>
+      )}
+      {collapsible && !error && !loading && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-2 flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {expanded ? "แสดงน้อยลง" : `ดูอีก ${hiddenCount} รายการ`}
+          <ChevronDownIcon
+            className={cn(
+              "size-3.5 transition-transform duration-(--duration-fast)",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
       )}
     </Panel>
   );
