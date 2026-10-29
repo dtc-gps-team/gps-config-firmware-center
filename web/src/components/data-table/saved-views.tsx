@@ -84,7 +84,7 @@ export function SavedViewsMenu({
         render={
           <Button type="button" variant="outline" size="sm">
             <BookmarkIcon />
-            ตัวกรองที่บันทึก{views.length > 0 && ` (${views.length})`}
+            ที่บันทึกไว้{views.length > 0 && ` (${views.length})`}
           </Button>
         }
       />
