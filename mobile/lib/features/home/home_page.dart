@@ -565,7 +565,7 @@ class _HomeOverviewDelegate extends MultiChildLayoutDelegate {
     var used = 0.0;
     var count = 0;
     for (var i = 0; i < rowCount; i++) {
-      if (used + h(i) + h(_HomeSlot.caption) > available) break;
+      if (used + h(i) > available) break;
       used += h(i);
       count++;
     }
@@ -575,7 +575,11 @@ class _HomeOverviewDelegate extends MultiChildLayoutDelegate {
       for (var i = 0; i < count; i++) {
         place(i);
       }
-      place(_HomeSlot.caption);
+      // การ์ดสำคัญกว่าบรรทัดสรุป เพราะหัวข้อมีปุ่มดูทั้งหมดอยู่แล้ว
+      // แสดงบรรทัดสรุปเฉพาะเมื่อยังเหลือพื้นที่หลังวางการ์ดครบใบ
+      if (used + h(_HomeSlot.caption) <= available) {
+        place(_HomeSlot.caption);
+      }
     }
   }
 

@@ -176,6 +176,48 @@ void main() {
     expect(find.textContaining(uuid), findsNothing);
   });
 
+  for (final config in [
+    (view: const Size(390, 844), scale: 2.0),
+    (view: const Size(360, 640), scale: 1.0),
+  ]) {
+    testWidgets('การ์ดมาก่อนบรรทัดสรุป ${config.view} / ${config.scale}x', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _Repo([
+          for (var i = 0; i < 8; i++)
+            _task(
+              '$i',
+              TaskStatus.pending,
+              title: 'ติดตั้งกล่อง GPS และตรวจสัญญาณอุปกรณ์ $i',
+            ),
+        ]),
+        viewport: config.view,
+        scale: config.scale,
+      );
+      await tester.pumpAndSettle();
+      final rows = find.byType(HomeTaskRow).hitTestable();
+      expect(rows, findsOneWidget);
+      final body = tester.getRect(find.byKey(const Key('home_overview')));
+      final row = tester.getRect(rows);
+      expect(row.top, greaterThanOrEqualTo(body.top));
+      expect(row.bottom, lessThanOrEqualTo(body.bottom));
+      expect(
+        find.byKey(const Key('home_preview_caption')).hitTestable(),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('home_compact_all')).hitTestable(),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const Key('home_view_all')).hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('home_tasks_search')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final view in [const Size(390, 844), const Size(360, 640)]) {
     for (final scale in [1.0, 2.0]) {
       testWidgets(
