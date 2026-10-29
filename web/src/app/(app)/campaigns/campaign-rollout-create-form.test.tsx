@@ -144,7 +144,9 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     for (const id of ["DEV-0001", "DEV-0002", "DEV-0003"]) {
       expect(checkboxFor(id)).toHaveAttribute("aria-checked", "true");
     }
-    expect(screen.queryByRole("combobox", { name: "Config" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Config" }),
+    ).not.toBeInTheDocument();
   });
 
   it("ยังไม่เลือก Config: ไปขั้นตรวจสอบผลกระทบไม่ได้ และบอกให้เลือก", async () => {
@@ -157,7 +159,7 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     expect(await screen.findByText("เลือก Config ก่อน")).toBeInTheDocument();
   });
 
-  it("ขั้นตรวจสอบ: เครื่องคนละโมเดลถูกข้ามพร้อมเหตุผล", async () => {
+  it("ขั้นตรวจสอบ: เครื่องคนละโมเดลถูกแสดงพร้อมเหตุผล และกดถัดไปไม่ได้", async () => {
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
@@ -169,21 +171,28 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
       screen.getByText(/โมเดล VT300 ไม่ตรงกับ Config นี้ \(ต้องเป็น GT06N\)/),
     ).toBeInTheDocument();
     expect(screen.getByText("DEV-0003")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("ไปต่อไม่ได้");
+    expect(screen.getByRole("button", { name: /ถัดไป/ })).toBeDisabled();
+    expect(createCampaignRollout).not.toHaveBeenCalled();
   });
 
-  it("ขั้นยืนยัน: สรุปจำนวนที่จะได้รับ", async () => {
+  it("เอาเครื่องที่ไม่เข้ากันออกจากรอบ: ปลดล็อกถัดไป และสรุปจำนวนที่จะได้รับ", async () => {
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
     await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
     await next(user);
+    await user.click(
+      screen.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await next(user);
 
     expect(screen.getByText("2 จาก 3 เครื่อง")).toBeInTheDocument();
   });
 
-  it("กดเริ่ม Rollout: ส่งเครื่องที่ไม่เข้ากันไปใน excludeDeviceIds ให้เอง", async () => {
+  it("กดเริ่ม Rollout: ส่งเครื่องที่เอาออกไปใน excludeDeviceIds", async () => {
     createCampaignRollout.mockResolvedValue({ id: "roll-1" });
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
@@ -191,6 +200,9 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
     await next(user);
+    await user.click(
+      screen.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }),
+    );
     await next(user);
     await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
 
@@ -202,12 +214,13 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     });
   });
 
-  it("เอาเครื่องที่เข้ากันออกเองด้วย: excludeDeviceIds รวมทั้งสองกลุ่ม ไม่ซ้ำ", async () => {
+  it("เอาเครื่องที่ไม่เข้ากันออกตั้งแต่ขั้นแรก: ไปต่อได้เลย และ excludeDeviceIds ไม่ซ้ำ", async () => {
     createCampaignRollout.mockResolvedValue({ id: "roll-1" });
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
     await user.click(checkboxFor("DEV-0002"));
+    await user.click(checkboxFor("DEV-0003"));
     await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
     await next(user);
@@ -221,7 +234,7 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     expect([...body.excludeDeviceIds].sort()).toEqual(["DEV-0002", "DEV-0003"]);
   });
 
-  it("ไม่มีเครื่องไหนเข้ากันเลย: ไม่ไปขั้นยืนยัน ไม่ยิง API และบอกให้เลือก payload อื่น", async () => {
+  it("ไม่มีเครื่องไหนเข้ากันเลย: ไปต่อไม่ได้ ไม่ยิง API และบอกให้เลือก payload อื่น", async () => {
     hookState.targets = [{ deviceId: "DEV-0003" }];
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
@@ -229,11 +242,8 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
     await next(user);
-    await next(user);
 
     expect(createCampaignRollout).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText(/ไม่มีเครื่องไหนในกลุ่มที่เข้ากัน/),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ถัดไป/ })).toBeDisabled();
   });
 });

@@ -173,7 +173,7 @@ function RolloutSummary({
               key: "incompatible",
               label: "ข้าม",
               value: incompatible,
-              colorClass: "bg-warning",
+              colorClass: "bg-destructive",
             },
             {
               key: "manual",
@@ -187,8 +187,8 @@ function RolloutSummary({
           <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
             {incompatible > 0 && (
               <li className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-warning" />
-                ข้ามเพราะไม่เข้ากัน {incompatible} เครื่อง
+                <span className="size-2 rounded-full bg-destructive" />
+                ไม่เข้ากัน {incompatible} เครื่อง ต้องแก้ก่อนไปต่อ
               </li>
             )}
             {manual > 0 && (
@@ -304,6 +304,22 @@ export function CampaignRolloutCreateForm({
     (id) => !excludedDeviceIds.has(id) && !incompatibleReasons.has(id),
   );
 
+  /** เครื่องที่ไม่เข้ากับ payload และยังไม่ถูกเอาออก = ขวางไม่ให้ไปต่อ (ไม่ข้ามให้เงียบๆ
+   * เพราะผู้ใช้ต้องรู้และตัดสินใจเองว่าจะเอาออกหรือเปลี่ยน payload) */
+  const blocking = [...incompatibleReasons].filter(
+    ([id]) => !excludedDeviceIds.has(id),
+  );
+  const payloadKind = payloadType === "Config" ? "Config" : "Firmware";
+
+  function removeBlocking() {
+    setExcludedDeviceIds((prev) => {
+      const next = new Set(prev);
+      for (const [id] of blocking) next.add(id);
+      return next;
+    });
+    setFormError(null);
+  }
+
   function toggleExcluded(deviceId: string, included: boolean) {
     setExcludedDeviceIds((prev) => {
       const next = new Set(prev);
@@ -327,10 +343,13 @@ export function CampaignRolloutCreateForm({
       if (payloadType === "Firmware" && !firmwareId)
         return "เลือก Firmware ก่อน";
     }
+    if (n === 3 && blocking.length > 0) {
+      return includedDeviceIds.length === 0
+        ? `ไม่มีเครื่องไหนในกลุ่มที่เข้ากันกับ ${payloadKind} นี้ ย้อนกลับไปเลือกตัวอื่น`
+        : `มี ${blocking.length} เครื่องที่ไม่เข้ากับ ${payloadKind} นี้ เอาออกจากรอบนี้หรือย้อนกลับไปเลือกตัวอื่นก่อนไปต่อ`;
+    }
     if (n === 3 && includedDeviceIds.length === 0) {
-      return incompatibleReasons.size > 0
-        ? "ไม่มีเครื่องไหนในกลุ่มที่เข้ากันกับ payload นี้ เลือก payload อื่น"
-        : "ต้องเหลืออุปกรณ์อย่างน้อย 1 เครื่องใน Rollout นี้";
+      return "ต้องเหลืออุปกรณ์อย่างน้อย 1 เครื่องใน Rollout นี้";
     }
     return null;
   }
@@ -361,9 +380,7 @@ export function CampaignRolloutCreateForm({
 
     // เครื่องที่ไม่เข้ากันถูกปิดไม่ให้ติ๊กไว้แล้ว แต่ backend ยังต้องได้รับ
     // ใน excludeDeviceIds (ไม่งั้นตอบ 409 เพราะเครื่องพวกนี้ยังเป็นสมาชิก)
-    const excludeDeviceIds = [
-      ...new Set([...excludedDeviceIds, ...incompatibleReasons.keys()]),
-    ];
+    const excludeDeviceIds = [...excludedDeviceIds];
 
     setSubmitting(true);
     try {
@@ -426,8 +443,8 @@ export function CampaignRolloutCreateForm({
       : selectedFirmware
         ? `v${selectedFirmware.version}`
         : "-";
-  const manuallyExcluded = memberDeviceIds.filter(
-    (id) => excludedDeviceIds.has(id) && !incompatibleReasons.has(id),
+  const manuallyExcluded = memberDeviceIds.filter((id) =>
+    excludedDeviceIds.has(id),
   );
 
   return (
@@ -639,11 +656,10 @@ export function CampaignRolloutCreateForm({
                 </div>
               )}
               {(payloadType === "Config" ? selectedConfig : selectedFirmware) &&
-                incompatibleReasons.size > 0 && (
+                blocking.length > 0 && (
                   <Notice tone="warning">
-                    {incompatibleReasons.size}{" "}
-                    เครื่องในกลุ่มไม่เข้ากับตัวที่เลือก และจะถูกข้ามในรอบนี้
-                    ดูรายชื่อในขั้นตรวจสอบผลกระทบ
+                    {blocking.length} เครื่องในกลุ่มไม่เข้ากับตัวที่เลือก
+                    ต้องเอาออกจากรอบนี้หรือเลือกตัวอื่นก่อนไปต่อ
                   </Notice>
                 )}
             </Card>
@@ -654,9 +670,7 @@ export function CampaignRolloutCreateForm({
               <div>
                 <p className="text-sm font-medium">ผลกระทบของ Rollout นี้</p>
                 <p className="text-xs text-muted-foreground">
-                  เครื่องที่ไม่เข้ากันกับ{" "}
-                  {payloadType === "Config" ? "Config" : "Firmware"}{" "}
-                  ที่เลือกถูกเอาออกจากรอบนี้ให้อัตโนมัติ
+                  ทุกเครื่องในรอบนี้ต้องเข้ากับ {payloadKind} ที่เลือก
                 </p>
               </div>
 
@@ -670,9 +684,9 @@ export function CampaignRolloutCreateForm({
                   },
                   {
                     key: "incompatible",
-                    label: "ไม่เข้ากัน (ข้าม)",
-                    value: incompatibleReasons.size,
-                    colorClass: "bg-warning",
+                    label: "ไม่เข้ากัน",
+                    value: blocking.length,
+                    colorClass: "bg-destructive",
                   },
                   {
                     key: "manual",
@@ -683,13 +697,17 @@ export function CampaignRolloutCreateForm({
                 ]}
               />
 
-              {incompatibleReasons.size > 0 && (
-                <div className="flex flex-col gap-2">
+              {blocking.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <Notice tone="danger">
+                    ไปต่อไม่ได้: มี {blocking.length} เครื่องที่ไม่เข้ากับ{" "}
+                    {payloadKind} นี้ ถ้าส่งไป เครื่องจะไม่รับค่า
+                  </Notice>
                   <p className="label-caps text-muted-foreground">
-                    เครื่องที่ถูกข้าม
+                    เครื่องที่ไม่เข้ากัน
                   </p>
                   <ul className="divide-y rounded-lg border">
-                    {[...incompatibleReasons].map(([deviceId, reason]) => (
+                    {blocking.map(([deviceId, reason]) => (
                       <li
                         key={deviceId}
                         className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2 text-sm"
@@ -697,17 +715,23 @@ export function CampaignRolloutCreateForm({
                         <span className="font-instrument text-xs">
                           {deviceId}
                         </span>
-                        <span className="text-warning-foreground">
-                          {reason}
-                        </span>
+                        <span className="text-danger-foreground">{reason}</span>
                       </li>
                     ))}
                   </ul>
-                  <p className="text-xs text-muted-foreground">
-                    เครื่องเหล่านี้ต้องส่งในรอบอื่นด้วย{" "}
-                    {payloadType === "Config" ? "Config" : "Firmware"}{" "}
-                    ที่ตรงกับโมเดลของเครื่อง
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      เครื่องเหล่านี้ต้องส่งในรอบอื่นด้วย {payloadKind}{" "}
+                      ที่ตรงกับโมเดลของเครื่อง
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={removeBlocking}
+                    >
+                      เอาเครื่องเหล่านี้ออกจากรอบนี้
+                    </Button>
+                  </div>
                 </div>
               )}
             </Card>
@@ -764,7 +788,10 @@ export function CampaignRolloutCreateForm({
                 </Button>
               )}
               {step < STEPS.length ? (
-                <Button onClick={goNext}>
+                <Button
+                  onClick={goNext}
+                  disabled={step === 3 && blocking.length > 0}
+                >
                   ถัดไป
                   <ArrowRightIcon />
                 </Button>
@@ -785,7 +812,7 @@ export function CampaignRolloutCreateForm({
           payloadName={payloadName === "-" ? null : payloadName}
           total={memberDeviceIds.length}
           included={includedDeviceIds.length}
-          incompatible={incompatibleReasons.size}
+          incompatible={blocking.length}
           manual={manuallyExcluded.length}
         />
       </div>
