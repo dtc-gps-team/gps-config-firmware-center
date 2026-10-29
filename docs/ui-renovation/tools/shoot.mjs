@@ -73,6 +73,8 @@ const targets = {
       await page.getByRole("button", { name: /ถัดไป/ }).click();
       await page.locator("#field-SERVER_PORT").fill("9100");
       await page.getByRole("button", { name: "JSON" }).click();
+      await page.locator("#config-raw").click();
+      await page.keyboard.press("Control+A");
     },
   },
   parameters: {

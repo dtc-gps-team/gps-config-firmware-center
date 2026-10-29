@@ -35,13 +35,8 @@ import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
 import { ErrorState } from "@/components/error-state";
 import { diffConfigFields } from "@/lib/config-diff";
 import { validateFieldValue } from "@/lib/config-field-validation";
-import {
-  maskSensitiveFields,
-  parseRawFields,
-  SENSITIVE_MASK,
-  tokenizeJson,
-  type JsonTokenKind,
-} from "@/lib/config-raw";
+import { maskSensitiveFields, parseRawFields, SENSITIVE_MASK } from "@/lib/config-raw";
+import { JsonEditor } from "@/components/json-editor";
 import { cn } from "@/lib/utils";
 
 type FieldValue = string | boolean;
@@ -133,31 +128,6 @@ function initialValuesOf(source: Config | null): Record<string, FieldValue> {
 }
 
 const UNCATEGORIZED = "อื่นๆ";
-
-const JSON_TOKEN_CLASS: Record<JsonTokenKind, string> = {
-  key: "text-info-foreground",
-  string: "text-success-foreground",
-  number: "text-warning-foreground",
-  literal: "text-primary",
-  punct: "text-muted-foreground",
-  space: "",
-};
-
-/** ข้อความ JSON ระบายสีตามชนิด (อ่านอย่างเดียว) */
-function HighlightedJson({ text }: { text: string }) {
-  return (
-    <pre
-      aria-label="ตัวอย่าง JSON ที่ไฮไลต์"
-      className="max-h-96 overflow-auto rounded-lg border bg-surface-sunken p-3 font-instrument text-xs leading-relaxed"
-    >
-      {tokenizeJson(text).map((t, i) => (
-        <span key={i} className={JSON_TOKEN_CLASS[t.kind]}>
-          {t.text}
-        </span>
-      ))}
-    </pre>
-  );
-}
 
 /**
  * ฟอร์มสร้าง/แก้ Config แบบ 2 ขั้น (ตาม wireframe frame 07–08 ที่พี่เลี้ยง
@@ -943,32 +913,23 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                 </div>
               </div>
               {editorMode === "raw" ? (
-                <div className="grid gap-3 p-4 lg:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="config-raw">JSON ของ field และค่า</Label>
-                    <textarea
-                      id="config-raw"
-                      value={rawText}
-                      onChange={(e) => onRawChange(e.target.value)}
-                      spellCheck={false}
-                      rows={16}
-                      aria-invalid={rawError ? true : undefined}
-                      className="min-h-64 resize-y rounded-lg border border-input bg-transparent p-3 font-instrument text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
-                    />
-                    {rawError ? (
-                      <p role="alert" className="text-xs text-destructive">
-                        {rawError}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        แก้แล้วซิงก์เข้าฟอร์มทันที ใช้ได้เฉพาะ field ที่มีในคลัง Parameter
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-sm font-medium">ตัวอย่างที่ไฮไลต์</span>
-                    <HighlightedJson text={rawText} />
-                  </div>
+                <div className="flex flex-col gap-1.5 p-4">
+                  <Label htmlFor="config-raw">JSON ของ field และค่า</Label>
+                  <JsonEditor
+                    id="config-raw"
+                    value={rawText}
+                    onChange={onRawChange}
+                    invalid={rawError !== null}
+                  />
+                  {rawError ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      {rawError}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      แก้แล้วซิงก์เข้าฟอร์มทันที ใช้ได้เฉพาะ field ที่มีในคลัง Parameter
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-4 p-4">
