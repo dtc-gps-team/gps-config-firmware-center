@@ -133,7 +133,19 @@ function buildColumns(
   ];
 }
 
-export function DeviceSearchView() {
+/** ค่าของ `?connection=` ที่หน้านี้รองรับ → ค่าในคอลัมน์ "การเชื่อมต่อ"
+ *  (ใช้จากการ์ดบน Dashboard) · ค่าอื่นถูกเมินเงียบๆ */
+const CONNECTION_QUERY: Record<string, string> = {
+  online: "ออนไลน์",
+  offline: "ออฟไลน์",
+  unknown: CONNECTION_UNKNOWN,
+};
+
+export function DeviceSearchView({
+  initialConnection,
+}: {
+  initialConnection?: string;
+}) {
   const router = useRouter();
   const { session } = useAuth();
   const { data, isLoading, error, refetch } = useDevices();
@@ -191,6 +203,16 @@ export function DeviceSearchView() {
             <DataTable
               columns={columns}
               data={devices}
+              initialColumnFilters={
+                initialConnection && CONNECTION_QUERY[initialConnection]
+                  ? [
+                      {
+                        id: "connection",
+                        value: [CONNECTION_QUERY[initialConnection]],
+                      },
+                    ]
+                  : []
+              }
               searchPlaceholder="ค้นหา Device ID / SIM…"
               emptyMessage="ไม่พบอุปกรณ์ที่ตรงกับเงื่อนไข"
               onRowClick={(device) =>

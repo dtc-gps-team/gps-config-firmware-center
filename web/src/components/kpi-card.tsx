@@ -65,7 +65,8 @@ export function KpiCard({
   className,
 }: {
   label: string;
-  href: string;
+  /** ไม่ใส่ = การ์ดไม่กดได้ (ไม่มีหน้าปลายทางที่ตรงกับตัวเลขนี้จริง) */
+  href?: string;
   /** null = ยังโหลดอยู่ */
   value: number | null;
   error: string | null;
@@ -81,12 +82,12 @@ export function KpiCard({
   const active = emphasis === "action" && value !== null && value > 0 && !error && !unavailable;
   const calm = emphasis === "action" && value === 0 && !error && !unavailable;
 
-  const card = (
-    <Link
-      href={href}
-      data-slot="kpi-card"
-      data-active={active || undefined}
-      className={cn(
+  const common = {
+    "data-slot": "kpi-card",
+    "data-active": active || undefined,
+  };
+  const rawSurfaceClass = cn(
+
         "group/kpi flex h-full min-w-0 flex-col gap-2 rounded-lg px-4 py-3.5 ring-1 transition-[box-shadow,background-color] duration-(--duration-base) ease-(--ease-standard) outline-none focus-visible:ring-2 focus-visible:ring-ring",
         plain
           ? cn(
@@ -96,8 +97,14 @@ export function KpiCard({
           : active
             ? TONE_ACTIVE[tone]
             : "bg-card ring-foreground/20 hover:ring-foreground/40",
-      )}
-    >
+      
+  );
+  // ไม่ใช่ลิงก์ = ไม่มีอาการ hover (ไม่หลอกว่ากดได้)
+  const surfaceClass = href
+    ? rawSurfaceClass
+    : rawSurfaceClass.replace(/hover:\S+/g, "");
+  const inner = (
+    <>
       <span className="flex items-center gap-2 text-sm text-muted-foreground">
         {emphasis === "action" && !error && !unavailable && value !== null && (
           <StatusLed
@@ -132,12 +139,21 @@ export function KpiCard({
         )}
       </span>
       {calm && <span className="text-xs text-muted-foreground">ปกติ</span>}
+    </>
+  );
+  const card = href ? (
+    <Link href={href} {...common} className={surfaceClass}>
+      {inner}
     </Link>
+  ) : (
+    <div {...common} className={surfaceClass}>
+      {inner}
+    </div>
   );
 
   return (
     <motion.div
-      whileHover={plain ? undefined : lift}
+      whileHover={plain || !href ? undefined : lift}
       transition={transition.fast}
       className={cn("min-w-0", className)}
     >

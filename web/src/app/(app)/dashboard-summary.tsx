@@ -24,7 +24,7 @@ import {
   deployTotals,
 } from "@/lib/dashboard-metrics";
 import { cn } from "@/lib/utils";
-import { canReadCampaign } from "@/lib/permissions";
+import { canManageDeviceModels, canReadCampaign } from "@/lib/permissions";
 import {
   dashboardView,
   spanClass,
@@ -196,7 +196,7 @@ export function DashboardSummary() {
       <KpiCard
         plain
         label="อุปกรณ์ออฟไลน์"
-        href="/devices"
+        href="/devices?connection=offline"
         value={connection ? connection.offline : null}
         error={devices.error}
         unavailable={centralUnavailable}
@@ -209,7 +209,8 @@ export function DashboardSummary() {
       <KpiCard
         plain
         label="อุปกรณ์ที่ Config ยังไม่อัปเดต"
-        href="/devices"
+        // ไม่ใส่ href: ยังไม่มีหน้าไหนกรองอุปกรณ์ตามเวอร์ชัน Config ที่ไม่ตรงได้
+        // (ลิงก์ไป Device Search เฉยๆ จะแสดงเครื่องทั้งหมดซึ่งไม่ตรงกับตัวเลข)
         value={driftCount}
         error={devices.error}
         unavailable={centralUnavailable}
@@ -234,7 +235,9 @@ export function DashboardSummary() {
       <KpiCard
         plain
         label="โมเดล"
-        href="/devices"
+        // หน้าที่แสดงโมเดลโดยตรงคือจัดการ Device Model (Admin) · role อื่นไม่มี
+        // หน้าปลายทางที่ตรง จึงไม่เป็นลิงก์
+        href={canManageDeviceModels(session?.role) ? "/device-models" : undefined}
         value={modelCount}
         error={devices.error}
       />

@@ -63,7 +63,7 @@ const central = (
 });
 
 function card(label: string): HTMLElement {
-  return screen.getByText(label).closest("a, [data-slot='card']") as HTMLElement;
+  return screen.getByText(label).closest("a, [data-slot='kpi-card'], [data-slot='card']") as HTMLElement;
 }
 
 describe("DashboardSummary: ทุกตัวเลขมาจากข้อมูลจริง", () => {
@@ -114,6 +114,23 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     // BOX-2 กล่องรายงาน v8 แต่เป้าหมาย v9
     expect(within(card("อุปกรณ์ที่ Config ยังไม่อัปเดต")).getByText("1")).toBeInTheDocument();
     expect(within(card("อุปกรณ์ทั้งหมด")).getByText("3")).toBeInTheDocument();
+  });
+
+  it("ลิงก์การ์ดตรงกับหน้าปลายทาง", () => {
+    render(<DashboardSummary />);
+
+    expect(card("อุปกรณ์ออฟไลน์")).toHaveAttribute("href", "/devices?connection=offline");
+    // ไม่มีหน้าที่กรองตาม Config ไม่ตรงได้ → ไม่เป็นลิงก์
+    expect(card("อุปกรณ์ที่ Config ยังไม่อัปเดต").tagName).not.toBe("A");
+    // Operation ไม่มีสิทธิ์หน้า Device Model → การ์ดโมเดลไม่เป็นลิงก์
+    expect(card("โมเดล").tagName).not.toBe("A");
+  });
+
+  it("Admin กดการ์ดโมเดลไปหน้า Device Model ได้", () => {
+    state.role = "Admin";
+    render(<DashboardSummary />);
+
+    expect(card("โมเดล")).toHaveAttribute("href", "/device-models");
   });
 
   it("กราฟการเชื่อมต่อแยกออนไลน์ ออฟไลน์ และไม่ทราบ", () => {
