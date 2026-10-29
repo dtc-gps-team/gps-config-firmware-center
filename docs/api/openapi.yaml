@@ -222,7 +222,8 @@ paths:
         เป็น**ความลับ** (สุ่ม 32 byte base64url) backend เก็บแค่ SHA-256 · ใช้
         key ของเครื่อง (`Device.telemetryKeyHash`) ถ้ามี ไม่งั้นใช้ key กลางจาก
         env `TELEMETRY_INGEST_KEY_SHA256` · ปฏิเสธเครื่อง `decommissioned` ·
-        ไม่เปลี่ยนสถานะเครื่องและไม่เขียน `lastSeenAt`
+        ไม่เปลี่ยนสถานะเครื่อง · (v3.73) เลื่อน `Device.lastSeenAt` (เมื่อค่าเดิม
+        เก่ากว่า 1 นาที) ให้ `GET /devices/{deviceId}/status` บอกออนไลน์ได้
 
         จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
         · `firmware_version` ที่กล่องรายงานเก็บที่ `Device.reportedFirmwareVersion`
@@ -2489,7 +2490,11 @@ paths:
         **ไม่ persist / ไม่แตะสถานะใดๆ** ทั้ง Device และ Config. อ้างด้วยเลขเครื่อง
         จริง (`Device.deviceId`). ต่างจาก `applyConfigToDevice`: deviceModel/protocol
         ไม่ตรง **ไม่ใช่ 409** — คืน 200 พร้อม `compatibilityCheck.passed:false`
-        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง
+        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง · (v3.72) โหมด `DEVICE_CONFIG_APPLY_MODE=central`
+        ตรวจ (1) เพิ่มกับ schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ใน Server กลาง
+        แบบเดียวกับตอนส่งจริง (ไม่ส่ง) — กล่องไม่รู้จักค่าไหน `configCheck.passed:false`
+        พร้อมเหตุผลรายค่าใน `details` · ติดต่อ Server กลางไม่ได้ไม่ทำให้ไม่ผ่าน แต่มี
+        `details` บอกว่ายังไม่ได้ตรวจกับกล่อง
       parameters:
         - in: path
           name: deviceId
@@ -2628,6 +2633,14 @@ paths:
                   type: string
                   maxLength: 500
                   description: เหตุผลของการ override — บังคับกรอกเสมอ
+                configId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    (v3.75) Config ที่จะแก้ค่า — ช่างเลือก Config อื่นจากหน้าเลือกสิ่งที่จะส่ง
+                    แล้วแก้ค่า · เฉพาะโหมด `DEVICE_CONFIG_APPLY_MODE=central` (ไม่ใช่ = 400)
+                    · ไม่พบ/ถูกลบ = 404 · ไม่ส่ง = Config ปัจจุบันของกล่องตามเดิม ·
+                    Override และคำขอส่งเข้ากล่องที่ผูกกันใช้ Config นี้
       responses:
         "200":
           description: >-
@@ -4973,8 +4986,28 @@ components:
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
-          required: [hasDeviceOverride, pendingOverride, delivery]
+          required: [hasDeviceOverride, pendingOverride, delivery, boxFields]
           properties:
+            boxFields:
+              type: object
+              nullable: true
+              description: >-
+                (v3.74) ค่าที่กล่องรายงานว่าใช้อยู่จริง**ทุกพารามิเตอร์** จาก Server กลาง
+                (`reported.settings` ของกล่อง) ไม่ใช่แค่ที่อยู่ใน Config — ให้หน้าขอแก้ค่า
+                แสดงค่าที่ไม่อยู่ใน Config เป็นแบบแก้ไม่ได้ · ไม่มี `data_server.path`
+                (มี key ส่ง telemetry ใน URL) · `null` = ไม่ใช่โหมด
+                `DEVICE_CONFIG_APPLY_MODE=central`, ติดต่อ Server กลางไม่ได้ หรือกล่องยังไม่รายงาน
+              required: [fields, reportedAt]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: ค่าที่กล่องใช้อยู่ (key = fieldName แบบจุด เช่น `gps.send_interval_sec`)
+                reportedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: เวลาที่กล่องรายงานล่าสุด
             delivery:
               type: object
               nullable: true
@@ -5857,6 +5890,16 @@ components:
           type: string
           maxLength: 500
           description: ข้อความถึง Operation (optional)
+        direct:
+          type: boolean
+          description: >-
+            (v3.75) ส่ง Config ที่อนุมัติแล้วตามเดิม (ไม่แก้ค่า) โดยไม่ต้องรอ Operation —
+            คำขอเกิดเป็น `approved` ทันที (`decidedBy` null, snapshot
+            `approvedConfigVersion`, เส้นตายแบบอนุมัติแล้ว) แล้วช่างกด `release` ต่อได้เลย
+            · ไม่แจ้ง Operation · AuditLog `config_apply_direct` · ใช้กับ kind=firmware
+            ไม่ได้ (400 — Firmware ยังต้องอนุมัติ) · แก้ค่าต้องขอผ่าน
+            `POST /devices/{deviceId}/config-override` (ต้องอนุมัติ) · มติ B 2026-10-28
+            (docs/27 §2.2)
 
     TaskStartRequest:
       type: object
@@ -5892,7 +5935,7 @@ components:
           type: array
           items:
             type: object
-            required: [id, name, status, latestVersion, suggested]
+            required: [id, name, status, latestVersion, suggested, fields]
             properties:
               id:
                 type: string
@@ -5908,6 +5951,12 @@ components:
               suggested:
                 type: boolean
                 description: Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้
+              fields:
+                type: object
+                additionalProperties: true
+                description: >-
+                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของ
+                  กล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อนเลือก
         currentFirmwareVersion:
           type: string
           nullable: true
@@ -6974,7 +7023,8 @@ components:
       description: >-
         เวอร์ชันย่อ (v3.39, issue #245) — configStatus/firmwareStatus · v3.56
         เพิ่ม `lastSeenAt`/`online` จากเวลาที่อุปกรณ์เรียก `/device-sync/*`
-        ล่าสุด (docs/19) ส่วน `lastCheckInMessage` ยังเป็น placeholder
+        ล่าสุด (docs/19) · v3.73 รวมเวลาที่กล่องส่ง telemetry/event เข้า
+        `/device-sync/{deviceId}/telemetry/{key}` ด้วย ส่วน `lastCheckInMessage` ยังเป็น placeholder
       required:
         [
           deviceId,
@@ -7030,7 +7080,8 @@ components:
           nullable: true
           description: >-
             (v3.56, docs/19 §4.3) เวลาที่อุปกรณ์เรียก `/device-sync/*` สำเร็จ
-            ล่าสุด · null = ไม่เคยติดต่อเข้ามา
+            ล่าสุด · v3.73 รวมการส่ง telemetry/event (docs/23 §10.2 ข้อ 4) ·
+            ความละเอียดระดับนาที · null = ไม่เคยติดต่อเข้ามา
         online:
           type: boolean
           description: >-
