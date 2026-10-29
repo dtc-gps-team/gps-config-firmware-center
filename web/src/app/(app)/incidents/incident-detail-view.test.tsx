@@ -84,9 +84,10 @@ describe("IncidentDetailView", () => {
 
     expect(screen.getByText("ไม่พบรายงานปัญหา")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "ลองใหม่" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "กลับไปรายการ" }),
-    ).toHaveAttribute("href", "/incidents");
+    expect(screen.getByRole("link", { name: "กลับไปรายการ" })).toHaveAttribute(
+      "href",
+      "/incidents",
+    );
   });
 
   it("Field Report: แสดงรายละเอียด ที่มา อุปกรณ์ (ลิงก์) และชื่อผู้แจ้ง ไม่ใช่ UUID", () => {

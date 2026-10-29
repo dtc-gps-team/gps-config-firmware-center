@@ -75,6 +75,15 @@ export const incidents = [
     description: "ระบบหยุด Rollout เพราะอัตราล้มเหลวเกินเกณฑ์",
     metadata: { kind: "auto-pause", failureCount: 6, targetCount: 25, skippedCount: 2, failedDeviceIds: ["BB-200-20481", "BB-200-20488", "BB-310-20495", "BB-310-20502", "TK-50-20509", "BB-200-20544"], sampleErrors: ["อุปกรณ์ตอบกลับไม่ทันเวลา", "Checksum ไม่ตรง"], campaignId: "camp1", rolloutId: "r2" },
   },
+  ...[1, 2, 3, 4].map((n) => ({
+    id: `i1d${n}`,
+    title: "Rollout จบแต่มีเครื่องที่ไม่สำเร็จ: ทดสอบอุปกรณ์ BOX-0001 รอบ3",
+    severity: "high",
+    status: "open",
+    source: "rollout-failure",
+    createdAt: iso(300 + n * 90),
+    metadata: { kind: "completed-with-failures", failureCount: 1, targetCount: 1, failedDeviceIds: ["BOX-0001"], campaignId: "camp1", rolloutId: "r9" },
+  })),
   { id: "i2", title: "เขียน Config ไม่สำเร็จ", severity: "medium", status: "investigating", source: "config-sync-writer", description: null, metadata: { attempts: 3, lastError: "connection timeout" } },
   { id: "i3", title: "แจ้งจากช่างหน้างาน", severity: "low", status: "resolved", source: "field-report", description: "อุปกรณ์ไม่ส่งตำแหน่งหลังเปลี่ยนซิม", deviceId: "BB-200-20481", reportedBy: "u2", reviewedBy: "u1", reviewedAt: iso(120), reviewNote: "ตรวจสอบแล้ว ซิมใช้งานได้ปกติ", metadata: null },
 ].map((x) => ({

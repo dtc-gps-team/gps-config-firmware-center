@@ -62,7 +62,8 @@ export function RolloutImpactCard({ incident }: { incident: Incident }) {
           </ul>
           {sample.remaining > 0 && (
             <p className="mt-1.5 text-xs text-muted-foreground">
-              และอีก {sample.remaining} เครื่อง (ดูรายชื่อทั้งหมดที่หน้า Rollout)
+              และอีก {sample.remaining} เครื่อง (ดูรายชื่อทั้งหมดที่หน้า
+              Rollout)
             </p>
           )}
         </div>
