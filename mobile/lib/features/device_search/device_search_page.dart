@@ -19,6 +19,7 @@ import '../../core/widgets/app_error_view.dart';
 import '../../core/widgets/text_scale.dart';
 import '../auth/account_sheet.dart';
 import 'device_search_repository.dart';
+import 'starred_devices.dart';
 
 /// `deviceId` / `simNumber` contains-match, case-insensitive — same behaviour
 /// as the backend `search` param and the Web search box. Filtering is
@@ -36,6 +37,62 @@ List<Device> _filterDevices(List<Device> devices, String query) {
       .toList(growable: false);
 }
 
+/// ค่าใน filter "ลูกค้า" ของเครื่องที่ยังไม่ผูกบริษัท (`customer` null)
+const _noCustomer = 'none';
+
+/// ตัวกรองของหน้าค้นหาอุปกรณ์ — ค่าตรงตัวแบบเดียวกับ filter ของ `GET /devices`
+/// (`deviceModel` / `customerId` / `protocol` / `status`) แต่กรองฝั่ง client
+/// เหมือนช่องค้นหา · ตัวเลือกมาจากค่าที่มีจริงในรายการ (ไม่มีรายการรุ่น/ลูกค้า
+/// แยกให้ดึง)
+enum _DeviceFilter {
+  model('model', 'รุ่น'),
+  customer('customer', 'ลูกค้า'),
+  protocol('protocol', 'โปรโตคอล'),
+  status('status', 'สถานะ');
+
+  const _DeviceFilter(this.keyName, this.title);
+
+  final String keyName;
+  final String title;
+
+  String valueOf(Device d) => switch (this) {
+    _DeviceFilter.model => d.deviceModel,
+    _DeviceFilter.customer => d.customer?.id ?? _noCustomer,
+    _DeviceFilter.protocol => d.protocol,
+    _DeviceFilter.status => d.status.wireName,
+  };
+
+  String labelOf(Device d) => switch (this) {
+    _DeviceFilter.customer => d.customer?.companyName ?? 'ยังไม่ผูกลูกค้า',
+    _DeviceFilter.status => deviceLifecycleLabel(d.status),
+    _ => valueOf(d),
+  };
+}
+
+class _FilterOption {
+  _FilterOption(this.value, this.label);
+
+  final String value;
+  final String label;
+  int count = 0;
+}
+
+/// ตัวเลือกของ [filter] จากทุกเครื่องในรายการ เรียงตามชื่อ · "ยังไม่ผูกลูกค้า" ไว้ท้าย
+List<_FilterOption> _filterOptions(_DeviceFilter filter, List<Device> devices) {
+  final byValue = <String, _FilterOption>{};
+  for (final d in devices) {
+    final value = filter.valueOf(d);
+    byValue
+        .putIfAbsent(value, () => _FilterOption(value, filter.labelOf(d)))
+        .count++;
+  }
+  return byValue.values.toList()..sort((a, b) {
+    if (a.value == _noCustomer) return 1;
+    if (b.value == _noCustomer) return -1;
+    return a.label.compareTo(b.label);
+  });
+}
+
 /// "Device Search" — แท็บค้นหาอุปกรณ์ (ทุก role) · Lists `GET /devices` (every
 /// role may read it) and filters client-side by `deviceId` / `simNumber`.
 /// Tapping a row opens the detail screen.
@@ -43,6 +100,10 @@ List<Device> _filterDevices(List<Device> devices, String query) {
 /// design system ใหม่ (docs/22 Batch 4): หัวหน้าจอ "Device Search" ตาม Web
 /// (§6.2) + ปุ่มบัญชีผู้ใช้ (หน้าระดับแท็บ) · การ์ด `AppCard` · ป้ายสถานะ `AppBadge`
 /// + dot · ตรรกะ/การเรียก API เหมือนเดิม
+///
+/// ใต้ช่องค้นหามีชิปตัวกรอง รุ่น / ลูกค้า / โปรโตคอล / สถานะ ใช้ร่วมกับคำค้นได้
+/// · ยังไม่พิมพ์และไม่กรอง = ไม่แสดงรายการทั้งหมด แสดงเฉพาะเครื่องที่ติดดาวไว้
+/// ([starredDevicesProvider]) หรือข้อความชวนค้นหาถ้ายังไม่ติดดาว
 class DeviceSearchPage extends ConsumerStatefulWidget {
   const DeviceSearchPage({super.key});
 
@@ -53,6 +114,54 @@ class DeviceSearchPage extends ConsumerStatefulWidget {
 class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
   final _controller = TextEditingController();
   String _query = '';
+  final Map<_DeviceFilter, String> _filters = {};
+
+  /// [except] = ไม่นับตัวกรองนั้น (ใช้หาตัวเลือกของตัวกรองที่กำลังเปิด)
+  List<Device> _applyFilters(List<Device> devices, {_DeviceFilter? except}) =>
+      devices
+          .where(
+            (d) => _filters.entries.every(
+              (f) => f.key == except || f.key.valueOf(d) == f.value,
+            ),
+          )
+          .toList(growable: false);
+
+  Future<void> _openFilter(_DeviceFilter filter, List<Device> all) async {
+    // ตัวเลือกและจำนวนนับจากเครื่องที่ผ่านคำค้นและตัวกรองอื่นอยู่แล้ว
+    // ไม่งั้นเลือกแล้วได้ 0 เครื่อง (เช่น เลือกรุ่นแล้วลูกค้าที่ไม่มีรุ่นนั้นยังโผล่)
+    final devices = _applyFilters(_filterDevices(all, _query), except: filter);
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.card,
+      showDragHandle: true,
+      builder: (_) => AppV2Theme(
+        child: _FilterSheet(
+          filter: filter,
+          options: _filterOptions(filter, devices),
+          selected: _filters[filter],
+          total: devices.length,
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (picked.isEmpty) {
+        _filters.remove(filter);
+      } else {
+        _filters[filter] = picked;
+      }
+    });
+  }
+
+  /// ชื่อที่แสดงบนชิปของค่าที่เลือก · หาไม่เจอ (เครื่องหายหลังรีเฟรช) = ค่าดิบ
+  String _selectedLabel(_DeviceFilter filter, List<Device> devices) {
+    final value = _filters[filter]!;
+    for (final d in devices) {
+      if (filter.valueOf(d) == value) return filter.labelOf(d);
+    }
+    return value;
+  }
 
   @override
   void dispose() {
@@ -63,7 +172,18 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
   @override
   Widget build(BuildContext context) {
     final devicesAsync = ref.watch(deviceListProvider);
+    final allDevices = devicesAsync.valueOrNull ?? const <Device>[];
+    final starred = ref.watch(starredDevicesProvider);
     final navigator = Navigator.of(context);
+
+    Widget card(Device device, Key key) => _DeviceCard(
+      key: key,
+      device: device,
+      starred: starred.contains(device.deviceId),
+      onToggleStar: () =>
+          ref.read(starredDevicesProvider.notifier).toggle(device.deviceId),
+      onTap: () => context.push(AppRoutes.deviceDetail(device.deviceId)),
+    );
 
     return AppV2Theme(
       child: Scaffold(
@@ -102,32 +222,118 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                   ),
                 ),
               ),
+              // ตัดบรรทัดแทนเลื่อนแนวนอน ให้เห็นค่าที่เลือกและปุ่มล้างครบเสมอ
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final filter in _DeviceFilter.values)
+                      _FilterChipButton(
+                        key: Key('device_filter_${filter.keyName}'),
+                        label: _filters.containsKey(filter)
+                            ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
+                            : filter.title,
+                        active: _filters.containsKey(filter),
+                        onTap: allDevices.isEmpty
+                            ? null
+                            : () => _openFilter(filter, allDevices),
+                      ),
+                    if (_filters.isNotEmpty)
+                      TextButton(
+                        key: const Key('device_filter_clear'),
+                        onPressed: () => setState(_filters.clear),
+                        child: const Text('ล้างตัวกรอง'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () => ref.refresh(deviceListProvider.future),
                   child: devicesAsync.when(
                     skipLoadingOnRefresh: true,
                     data: (devices) {
-                      final filtered = _filterDevices(devices, _query);
-                      if (filtered.isEmpty) {
-                        return _DeviceSearchEmpty(
-                          searching: _query.trim().isNotEmpty,
+                      // ยังไม่ค้นหาและไม่กรอง ไม่ต้องเทรายการทั้งหมดออกมา —
+                      // แสดงเฉพาะเครื่องที่ติดดาวไว้ (ไม่ต้องค้นหาใหม่ทุกรอบ)
+                      if (devices.isNotEmpty &&
+                          _query.trim().isEmpty &&
+                          _filters.isEmpty) {
+                        final pinned = devices
+                            .where((d) => starred.contains(d.deviceId))
+                            .toList(growable: false);
+                        if (pinned.isEmpty) {
+                          return _DeviceSearchEmpty(
+                            icon: Icons.search,
+                            messageKey: const Key('device_search_prompt'),
+                            message:
+                                'มีอุปกรณ์ทั้งหมด ${devices.length} เครื่อง\n'
+                                'พิมพ์เลขเครื่องหรือเบอร์ซิม หรือเลือกตัวกรองด้านบน\n'
+                                'แตะ ☆ บนการ์ดเพื่อติดดาว ครั้งหน้าจะขึ้นที่นี่เลย',
+                          );
+                        }
+                        return ListView.separated(
+                          key: const Key('device_starred_list'),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: pinned.length + 1,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, row) => row == 0
+                              ? Text(
+                                  'ติดดาวไว้ ${pinned.length} เครื่อง · ค้นหา'
+                                  'หรือกรองเพื่อดูเครื่องอื่น',
+                                  key: const Key('device_starred_title'),
+                                  style: const TextStyle(
+                                    fontSize: AppTypography.sm,
+                                    height: AppTypography.smHeight,
+                                    color: AppColors.mutedForeground,
+                                  ),
+                                )
+                              : card(
+                                  pinned[row - 1],
+                                  Key('device_starred_card_${row - 1}'),
+                                ),
                         );
                       }
+                      final filtered = _applyFilters(
+                        _filterDevices(devices, _query),
+                      );
+                      if (filtered.isEmpty) {
+                        return _DeviceSearchEmpty(
+                          message: _filters.isNotEmpty
+                              ? 'ไม่พบอุปกรณ์ที่ตรงกับคำค้นหรือตัวกรอง'
+                              : _query.trim().isNotEmpty
+                              ? 'ไม่พบอุปกรณ์ที่ตรงกับคำค้น'
+                              : 'ยังไม่มีอุปกรณ์ในระบบ',
+                        );
+                      }
+                      final counted = _filters.isNotEmpty;
                       // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
                       return AppFadeIn(
                         child: ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                          itemCount: filtered.length,
+                          // แถวแรกบอกจำนวนที่เหลือเมื่อมีตัวกรอง
+                          itemCount: filtered.length + (counted ? 1 : 0),
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: 12),
-                          itemBuilder: (context, i) => _DeviceCard(
-                            key: Key('device_card_$i'),
-                            device: filtered[i],
-                            onTap: () => context.push(
-                              AppRoutes.deviceDetail(filtered[i].deviceId),
-                            ),
-                          ),
+                          itemBuilder: (context, row) {
+                            if (counted && row == 0) {
+                              return Text(
+                                'แสดง ${filtered.length} จาก ${devices.length} เครื่อง',
+                                key: const Key('device_search_count'),
+                                style: const TextStyle(
+                                  fontSize: AppTypography.sm,
+                                  height: AppTypography.smHeight,
+                                  color: AppColors.mutedForeground,
+                                ),
+                              );
+                            }
+                            final i = counted ? row - 1 : row;
+                            return card(filtered[i], Key('device_card_$i'));
+                          },
                         ),
                       );
                     },
@@ -153,9 +359,17 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
 }
 
 class _DeviceCard extends StatelessWidget {
-  const _DeviceCard({super.key, required this.device, required this.onTap});
+  const _DeviceCard({
+    super.key,
+    required this.device,
+    required this.starred,
+    required this.onToggleStar,
+    required this.onTap,
+  });
 
   final Device device;
+  final bool starred;
+  final VoidCallback onToggleStar;
   final VoidCallback onTap;
 
   @override
@@ -210,6 +424,129 @@ class _DeviceCard extends StatelessWidget {
             ),
           ),
           if (!largeText) ...[const SizedBox(width: 12), badge],
+          const SizedBox(width: 4),
+          IconButton(
+            key: Key('device_star_${device.deviceId}'),
+            tooltip: starred ? 'เอาดาวออก' : 'ติดดาว',
+            onPressed: onToggleStar,
+            icon: Icon(
+              starred ? Icons.star_rounded : Icons.star_outline_rounded,
+              color: starred ? AppColors.warning : AppColors.mutedForeground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ชิปตัวกรองหนึ่งตัว — แตะเปิดแผ่นเลือกค่า · [active] = เลือกค่าไว้แล้ว
+class _FilterChipButton extends StatelessWidget {
+  const _FilterChipButton({
+    super.key,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppColors.primary : AppColors.foreground;
+    return Material(
+      color: active ? AppColors.primarySubtle : AppColors.card,
+      shape: StadiumBorder(
+        side: BorderSide(color: active ? AppColors.primary : AppColors.border),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: AppTypography.sm,
+                  height: AppTypography.smHeight,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Icon(Icons.expand_more, size: 18, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// แผ่นเลือกค่าของตัวกรอง · คืน `''` = ทั้งหมด (ยกเลิกตัวกรองนี้) · ปิดแผ่น = null
+class _FilterSheet extends StatelessWidget {
+  const _FilterSheet({
+    required this.filter,
+    required this.options,
+    required this.selected,
+    required this.total,
+  });
+
+  final _DeviceFilter filter;
+  final List<_FilterOption> options;
+  final String? selected;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile(String keyValue, String value, String label, bool isSelected) {
+      return ListTile(
+        key: Key('device_filter_option_$keyValue'),
+        title: Text(label),
+        trailing: isSelected
+            ? const Icon(Icons.check, color: AppColors.primary)
+            : null,
+        onTap: () => Navigator.of(context).pop(value),
+      );
+    }
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'กรองตาม${filter.title}',
+              style: const TextStyle(
+                fontSize: AppTypography.lg,
+                height: AppTypography.lgHeight,
+                fontWeight: FontWeight.w600,
+                color: AppColors.foreground,
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                tile('all', '', 'ทั้งหมด ($total)', selected == null),
+                for (final o in options)
+                  tile(
+                    o.value,
+                    o.value,
+                    '${o.label} (${o.count})',
+                    selected == o.value,
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -217,9 +554,15 @@ class _DeviceCard extends StatelessWidget {
 }
 
 class _DeviceSearchEmpty extends StatelessWidget {
-  const _DeviceSearchEmpty({required this.searching});
+  const _DeviceSearchEmpty({
+    required this.message,
+    this.icon = Icons.devices_other_outlined,
+    this.messageKey = const Key('device_search_empty'),
+  });
 
-  final bool searching;
+  final String message;
+  final IconData icon;
+  final Key messageKey;
 
   @override
   Widget build(BuildContext context) {
@@ -227,13 +570,7 @@ class _DeviceSearchEmpty extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 48),
-        AppEmptyState(
-          icon: Icons.devices_other_outlined,
-          message: searching
-              ? 'ไม่พบอุปกรณ์ที่ตรงกับคำค้น'
-              : 'ยังไม่มีอุปกรณ์ในระบบ',
-          messageKey: const Key('device_search_empty'),
-        ),
+        AppEmptyState(icon: icon, message: message, messageKey: messageKey),
       ],
     );
   }
