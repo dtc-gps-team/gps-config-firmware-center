@@ -74,6 +74,8 @@
   --animate-device-glow: device-glow 2.4s ease-in-out infinite;
   --animate-radar-spin: radar-spin 9s linear infinite;
   --animate-led: led-ping 2s var(--ease-standard) infinite;
+  --animate-orbit: orbit 34s linear infinite;
+  --animate-packet: packet 6.5s ease-in-out infinite;
   --animate-bg-in: bg-in 700ms var(--ease-standard) both;
   --animate-dot-in: dot-in var(--duration-base) var(--ease-emphasized) backwards;
   --animate-shimmer: shimmer 1.6s var(--ease-standard) infinite;
@@ -161,6 +163,30 @@
     opacity: 0;
   }
 }
+/* ดาวเทียมวิ่งตามวงโคจร (offset-path ตั้งที่ element) */
+@keyframes orbit {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+/* จุดข้อมูลวิ่งจากอุปกรณ์หนึ่งไปอีกเครื่องตามเส้นทาง (ระยะวิ่งส่งผ่าน --dx/--dy) */
+@keyframes packet {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy));
+    opacity: 0;
+  }
+}
 /* พื้นหลังหน้า Login จางเข้าก่อนเนื้อหา (opacity ล้วน) */
 @keyframes bg-in {
   from {
@@ -189,6 +215,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .animate-orbit,
+  .animate-packet,
   .animate-led,
   .animate-dot-in,
   .animate-bg-in,

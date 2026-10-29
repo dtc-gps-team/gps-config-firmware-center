@@ -8,8 +8,10 @@
  *   4. จุด "อุปกรณ์" กระจายบนแผนที่ (สีเดียวกันหมด — primary) มี 2 จุดที่มี
  *      ping ring (สื่อว่ากำลังส่งสัญญาณสด) จุดที่เหลือเรือง/หรี่สลับเบาๆ
  *      แบบ stagger (ไม่พร้อมกัน) ให้ความรู้สึกทยอยรายงานเข้ามา
- *   5. วงแสงเรดาร์กวาดช้าๆ รอบจุดอุปกรณ์จุดหนึ่ง (conic-gradient หมุน) —
- *      ใส่แค่จุดเดียวตามที่แนะนำ กันดูรกเกินไป
+ *   5. วงโคจรดาวเทียมเส้นบางเอียงรอบจุดอุปกรณ์จุดหนึ่ง พร้อมดาวเทียมจุดเดียววิ่งช้าๆ
+ *      (เดิมเป็นลำแสงเรดาร์ไล่สีทึบ ซึ่งเด่นและสว่างเกินจนแย่งสายตาจากการ์ด Login
+ *      และไม่ได้สื่อ GPS — เปลี่ยนเป็นเส้นบางล้วน ไม่มีพื้นทึบ)
+ *   6. จุดข้อมูลเล็กๆ วิ่งตามเส้นทางระหว่างอุปกรณ์ สื่อว่าอุปกรณ์รายงานเข้ามา
  *
  * ทั้งหมดใช้ transform/opacity ล้วน เพื่อ perf และเคารพ prefers-reduced-motion
  * (ปิด animation ทั้งหมดไว้ใน globals.css แล้ว)
@@ -34,8 +36,8 @@ const MAP_POINTS: { x: number; y: number }[] = [
  *  ตั้งใจให้แค่ 2 จุด ไม่ใช่ทุกจุด กันดูรกเกินไป */
 const PINGING_POINT_INDEXES = new Set([0, 3]);
 
-/** index ของจุดที่ให้มีวงแสงเรดาร์กวาดล้อมรอบ — ใส่แค่จุดเดียว */
-const RADAR_POINT_INDEX = 2;
+/** index ของจุดที่เป็นศูนย์กลางวงโคจรดาวเทียม — ใส่แค่จุดเดียว */
+const ORBIT_HUB_INDEX = 2;
 
 /** คู่จุดที่ลากเส้นประเชื่อมกัน (อ้าง index ใน MAP_POINTS) — เป็นทางต่อเนื่องเดียว
  *  ซ้ายบน → ซ้ายล่าง → ขวาล่าง → ขวาบน คล้ายเส้นทาง vehicle วิ่งระหว่างอุปกรณ์ ·
@@ -49,7 +51,7 @@ const ROUTE_LINES: readonly [number, number][] = [
 ];
 
 export function LoginBackground() {
-  const radarPoint = MAP_POINTS[RADAR_POINT_INDEX];
+  const orbitHub = MAP_POINTS[ORBIT_HUB_INDEX];
 
   return (
     <div aria-hidden className="animate-bg-in pointer-events-none absolute inset-0 overflow-hidden bg-sidebar">
@@ -65,28 +67,26 @@ export function LoginBackground() {
         }}
       />
 
-      {/* วง "ระยะเรดาร์" นิ่งๆ — เป็น anchor ให้สายตาเห็นตำแหน่งตลอดเวลา
-          แม้ตอนที่ลำแสงกวาดไปอยู่อีกด้านหนึ่ง */}
+      {/* วงโคจรดาวเทียม: วงรีเส้นบางสองวงเอียงสวนกัน + ดาวเทียมหนึ่งจุดบนวงแรก
+          (ซ่อนบนจอเล็กที่การ์ดกินเกือบทั้งจอ) */}
       <div
-        className="absolute hidden size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/30 md:block"
-        style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
-      />
-      <div
-        className="absolute hidden size-64 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/20 md:block"
-        style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
-      />
-      <div
-        className="animate-radar-spin absolute hidden size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full md:block"
-        style={{
-          left: `${radarPoint.x}%`,
-          top: `${radarPoint.y}%`,
-          background:
-            "conic-gradient(from 0deg, transparent 0deg, rgba(120,190,255,0.55) 55deg, transparent 100deg)",
-          maskImage: "radial-gradient(circle, black 75%, transparent 100%)",
-          WebkitMaskImage:
-            "radial-gradient(circle, black 75%, transparent 100%)",
-        }}
-      />
+        className="absolute hidden size-[26rem] -translate-x-1/2 -translate-y-1/2 md:block"
+        style={{ left: `${orbitHub.x}%`, top: `${orbitHub.y}%` }}
+      >
+        <div className="absolute inset-0 -rotate-[24deg]">
+          <div className="absolute inset-x-0 top-1/2 h-[9rem] -translate-y-1/2 rounded-[50%] border border-white/12" />
+          <span
+            className="animate-orbit absolute top-0 left-0 size-2 rounded-full bg-sidebar-primary shadow-[0_0_10px_2px] shadow-sidebar-primary/60"
+            style={{
+              offsetPath: `path("M 0 208 A 208 72 0 1 1 416 208 A 208 72 0 1 1 0 208")`,
+              offsetRotate: "0deg",
+            }}
+          />
+        </div>
+        <div className="absolute inset-0 rotate-[22deg]">
+          <div className="absolute inset-x-6 top-1/2 h-[7rem] -translate-y-1/2 rounded-[50%] border border-white/8" />
+        </div>
+      </div>
 
       <svg
         className="absolute inset-0 size-full"
@@ -109,6 +109,23 @@ export function LoginBackground() {
           />
         ))}
       </svg>
+
+      {/* จุดข้อมูลวิ่งตามเส้นทาง (translate เป็นหน่วย vw/vh ตามพิกัด % ของจอ) */}
+      {ROUTE_LINES.map(([a, b], i) => (
+        <span
+          key={`packet-${i}`}
+          className="animate-packet absolute hidden size-1.5 rounded-full bg-sky-200/80 md:block"
+          style={
+            {
+              left: `${MAP_POINTS[a].x}%`,
+              top: `${MAP_POINTS[a].y}%`,
+              "--dx": `${MAP_POINTS[b].x - MAP_POINTS[a].x}vw`,
+              "--dy": `${MAP_POINTS[b].y - MAP_POINTS[a].y}vh`,
+              animationDelay: `${i * 1.3}s`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
 
       {MAP_POINTS.map((p, i) => {
         const pinging = PINGING_POINT_INDEXES.has(i);
