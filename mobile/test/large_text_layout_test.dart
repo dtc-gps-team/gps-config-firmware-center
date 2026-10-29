@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/task/config_apply_request_repository.dart';
+import 'package:mobile/features/device_search/device_history_repository.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
@@ -292,6 +294,17 @@ Future<void> _pumpPage(
         // หน้าอุปกรณ์ถามสถานะจาก Server กลาง; ไม่ยิงเครือข่ายจริงในเทส
         deviceCentralRepositoryProvider.overrideWithValue(
           MockDeviceCentralRepository(),
+        ),
+        // R4-04 — หน้าอุปกรณ์อ่าน summary ของประวัติ และคำขอค้างจาก apply-options
+        deviceHistoryProvider.overrideWith(
+          (ref, _) async => const DeviceHistoryResult(items: []),
+        ),
+        deviceApplyOptionsProvider.overrideWith(
+          (ref, id) async => DeviceApplyOptions(
+            deviceId: id,
+            deviceInstalled: true,
+            configs: const [],
+          ),
         ),
       ],
       child: MaterialApp(home: page),
