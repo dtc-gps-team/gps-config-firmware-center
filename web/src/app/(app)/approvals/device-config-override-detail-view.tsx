@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/components/auth/auth-provider";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
@@ -15,6 +15,7 @@ import { useUserNames } from "@/hooks/use-user-names";
 import { formatDateTime } from "@/lib/format-date";
 import { canDecideDeviceConfigOverride } from "@/lib/permissions";
 import { EntityTypeTag, StatusPill, type PillTone } from "@/lib/status-pill";
+import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
 import { DeviceConfigOverrideApprovalActions } from "./device-config-override-approval-actions";
 
@@ -50,21 +51,14 @@ export function DeviceConfigOverrideDetailView({ id }: { id: string }) {
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">
-          {error ?? "ไม่พบคำขอนี้"}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            ลองใหม่
-          </Button>
-          <Link
-            href="/approvals"
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            กลับไป Approval Center
-          </Link>
-        </div>
+      <div className="flex flex-col gap-3 py-8">
+        <ErrorState message={error ?? "ไม่พบคำขอนี้"} onRetry={() => void refetch()} />
+        <Link
+          href="/approvals"
+          className={buttonVariants({ variant: "ghost", size: "sm", className: "w-fit" })}
+        >
+          กลับไป Approval Center
+        </Link>
       </div>
     );
   }
@@ -106,7 +100,7 @@ function Content({
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={<span className="font-mono">{item.deviceId}</span>}
+        title={<span className="font-instrument">{item.deviceId}</span>}
         breadcrumb={[{ label: item.deviceId }]}
         status={
           <>
@@ -186,11 +180,11 @@ function Content({
                 key={key}
                 className="flex flex-wrap justify-between gap-4 px-3 py-2 text-sm"
               >
-                <span className="font-mono text-muted-foreground">{key}</span>
+                <span className="font-instrument text-muted-foreground">{key}</span>
                 {isMasked(key) ? (
                   <SensitiveValue value={value} />
                 ) : (
-                  <span className="min-w-0 font-mono break-words">
+                  <span className="min-w-0 font-instrument break-words">
                     {fieldValueText(value)}
                   </span>
                 )}

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { CheckIcon, CopyIcon, TriangleAlertIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { canRegisterDevice } from "@/lib/permissions";
@@ -18,6 +18,7 @@ import { useCentralDevices } from "@/hooks/use-central-devices";
 import { useDevices } from "@/hooks/use-devices";
 import { StatusPill } from "@/lib/status-pill";
 import { matchModelIdByHardwareModel } from "@/lib/central-device-display";
+import { CopyButton } from "@/components/copy-button";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -214,7 +215,7 @@ export function RegisterDeviceForm() {
        * device-models/new) กันพื้นที่ว่างเปล่าตอนจอกว้าง (แก้ครั้งที่ 71
        * ครอบคลุมหน้าอื่นไปแล้ว หน้านี้ตกหล่นเพราะพัฒนาคนละ branch ขนานกัน) */}
       {central && (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-2 rounded-lg border bg-surface-sunken p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor="central-pick">
               เลือกจาก Server กลาง{" "}
@@ -265,18 +266,7 @@ export function RegisterDeviceForm() {
       )}
       <section className="flex flex-col gap-4">
         <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลตัวเครื่อง</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-blackbox">
-              Blackbox ID
-            </Label>
-            <Input
-              id="device-blackbox"
-              value={blackboxId}
-              disabled={submitting}
-              onChange={(e) => setBlackboxId(e.target.value)}
-            />
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-id">Device ID</Label>
             <Input
@@ -285,6 +275,15 @@ export function RegisterDeviceForm() {
               disabled={submitting}
               placeholder="เช่น DEV-0099"
               onChange={(e) => setDeviceId(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device-sim">SIM Number</Label>
+            <Input
+              id="device-sim"
+              value={simNumber}
+              disabled={submitting}
+              onChange={(e) => setSimNumber(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -310,12 +309,14 @@ export function RegisterDeviceForm() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-sim">SIM Number</Label>
+            <Label htmlFor="device-blackbox">
+              Blackbox ID
+            </Label>
             <Input
-              id="device-sim"
-              value={simNumber}
+              id="device-blackbox"
+              value={blackboxId}
               disabled={submitting}
-              onChange={(e) => setSimNumber(e.target.value)}
+              onChange={(e) => setBlackboxId(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -334,7 +335,7 @@ export function RegisterDeviceForm() {
       </section>
       <section className="flex flex-col gap-4">
         <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลโมเดล</h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="device-model">โมเดล</Label>
             <Select
@@ -381,7 +382,7 @@ export function RegisterDeviceForm() {
               </SelectContent>
             </Select>
           </div>
-          <div className="col-span-2 flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="device-hw-revision">
               รหัสรุ่นย่อย (Hardware Revision){" "}
               <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
@@ -398,8 +399,8 @@ export function RegisterDeviceForm() {
       </section>
       <section className="flex flex-col gap-4">
         <h2 className="border-b pb-2 text-base font-semibold">การใช้งาน</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2 flex flex-col gap-1.5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="device-customer">
               ลูกค้า{" "}
               <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
@@ -432,14 +433,22 @@ export function RegisterDeviceForm() {
       </section>
 
       {formError && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           {formError}
         </div>
       )}
 
-      <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
-        {submitting ? "กำลังลงทะเบียน…" : "ลงทะเบียนอุปกรณ์"}
-      </Button>
+      <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+        <Link
+          href="/devices"
+          className={buttonVariants({ variant: "outline" })}
+        >
+          ยกเลิก
+        </Link>
+        <Button disabled={!canSubmit} loading={submitting} onClick={() => void onSubmit()}>
+          {submitting ? "กำลังลงทะเบียน…" : "ลงทะเบียนอุปกรณ์"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -449,24 +458,12 @@ export function RegisterDeviceForm() {
  * ถูก disable จริง แค่เตือนด้วยสีให้เห็นชัด — ผู้ใช้ตัดสินใจเองได้ว่าจด apiKey
  * ไว้แล้วหรือยัง) */
 function RegisterDeviceSuccess({ result }: { result: RegisterDeviceResult }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyApiKey() {
-    try {
-      await navigator.clipboard.writeText(result.apiKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning-foreground">
         <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
         <p>
-          ลงทะเบียน <strong className="font-mono">{result.deviceId}</strong>{" "}
+          ลงทะเบียน <strong className="font-instrument">{result.deviceId}</strong>{" "}
           สำเร็จแล้ว เก็บ API key ด้านล่างไว้ให้ดี{" "}
           <strong>ดูซ้ำไม่ได้อีกแล้ว</strong> หลังออกจากหน้านี้
         </p>
@@ -475,19 +472,8 @@ function RegisterDeviceSuccess({ result }: { result: RegisterDeviceResult }) {
       <div className="flex flex-col gap-1.5">
         <Label>API Key</Label>
         <div className="flex items-center gap-2">
-          <Input readOnly value={result.apiKey} className="font-mono text-xs" />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void copyApiKey()}
-          >
-            {copied ? (
-              <CheckIcon className="size-4" />
-            ) : (
-              <CopyIcon className="size-4" />
-            )}
-          </Button>
+          <Input readOnly value={result.apiKey} className="font-instrument text-xs" />
+          <CopyButton value={result.apiKey} label="คัดลอก API Key" />
         </div>
       </div>
 

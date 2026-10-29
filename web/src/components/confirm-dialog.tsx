@@ -29,6 +29,7 @@ export function ConfirmDialog({
   confirmText,
   destructive = false,
   onConfirm,
+  children,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,6 +39,8 @@ export function ConfirmDialog({
   confirmText?: string;
   destructive?: boolean;
   onConfirm: () => void | Promise<void>;
+  /** เนื้อหาเพิ่มระหว่างคำอธิบายกับปุ่ม เช่นช่องกรอกเหตุผล */
+  children?: React.ReactNode;
 }) {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,6 +71,7 @@ export function ConfirmDialog({
             <AlertDialogDescription>{description}</AlertDialogDescription>
           )}
         </AlertDialogHeader>
+        {children}
         {confirmText !== undefined && (
           <label className="flex flex-col gap-1.5 text-sm">
             <span>
