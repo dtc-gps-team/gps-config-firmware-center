@@ -33,7 +33,7 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
       aria-label="GPS Center หน้าแรก"
       className="flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
     >
-      <LogoMark />
+      <LogoMark tone="dark" className="size-10" />
       {!collapsed && (
         <span className="flex flex-col leading-tight">
           <span className="text-[15px] font-medium tracking-wide text-white">

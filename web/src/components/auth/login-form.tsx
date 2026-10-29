@@ -54,7 +54,7 @@ export function LoginForm() {
   return (
     <Card className="w-full [--card-spacing:--spacing(6)] shadow-2xl">
       <CardHeader className="items-center gap-2 text-center">
-        <LogoMark className="mb-1 size-14 justify-self-center" />
+        <LogoMark className="mb-1 size-20 justify-self-center" />
         <CardTitle className="text-2xl font-semibold">เข้าสู่ระบบ</CardTitle>
         <CardDescription className="text-base">
           GPS Config &amp; Firmware Center
