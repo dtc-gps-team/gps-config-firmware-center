@@ -130,6 +130,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) => throw UnimplementedError();
 }
 
@@ -487,6 +488,12 @@ void main() {
     ) async {
       useLargeTextNarrowScreen(tester);
       await _pumpPage(tester, const DeviceSearchPage());
+      // รายการขึ้นเมื่อค้นหาแล้วเท่านั้น
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        'DEV',
+      );
+      await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       // ป้ายสถานะอยู่ใต้รายละเอียด รายละเอียดจึงได้ความกว้างเต็มการ์ด

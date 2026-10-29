@@ -4,25 +4,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
+import 'package:mobile/features/device_search/starred_devices.dart';
 
 Device _device({
   String id = 'uuid',
   String deviceId = 'DEV-0001',
   String simNumber = '0812345678',
   DeviceLifecycleStatus status = DeviceLifecycleStatus.registered,
+  String deviceModel = 'GT06N',
+  String protocol = 'TCP',
+  Customer? customer,
   String? reportedFirmwareVersion,
 }) => Device(
   id: id,
   deviceId: deviceId,
   simNumber: simNumber,
-  deviceModel: 'GT06N',
-  protocol: 'TCP',
+  deviceModel: deviceModel,
+  protocol: protocol,
   status: status,
   registeredAt: DateTime(2026, 6, 1),
+  customer: customer,
   reportedFirmwareVersion: reportedFirmwareVersion,
 );
 
@@ -45,6 +51,52 @@ class _FakeDeviceSearchRepository implements DeviceSearchRepository {
   @override
   Future<Device> getDevice(String deviceId) async =>
       _devices.firstWhere((d) => d.deviceId == deviceId);
+}
+
+/// ดาวในหน่วยความจำ แยกตาม user แบบเดียวกับของจริง
+class _MemoryStarStore implements StarredDeviceStore {
+  final Map<String, List<String>> byUser = {};
+
+  @override
+  Future<List<String>> load(String user) async => byUser[user] ?? const [];
+
+  @override
+  Future<void> save(String user, List<String> deviceIds) async =>
+      byUser[user] = [...deviceIds];
+}
+
+class _LoggedIn extends AuthController {
+  _LoggedIn(this.username);
+
+  final String username;
+
+  @override
+  AuthState build() => AuthState(
+    status: AuthStatus.authenticated,
+    role: UserRole.st,
+    username: username,
+  );
+}
+
+/// หน้าค้นหาพร้อม login เป็น [user] และที่เก็บดาว [store]
+Future<void> _pumpStarred(
+  WidgetTester tester, {
+  required DeviceSearchRepository repo,
+  required _MemoryStarStore store,
+  String user = 'st.test',
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        deviceSearchRepositoryProvider.overrideWithValue(repo),
+        starredDeviceStoreProvider.overrideWithValue(store),
+        authControllerProvider.overrideWith(() => _LoggedIn(user)),
+      ],
+      child: const MaterialApp(home: DeviceSearchPage()),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
 }
 
 Future<void> _pump(
@@ -90,6 +142,91 @@ Future<void> _pumpRouted(
 }
 
 void main() {
+  group('ติดดาวอุปกรณ์', () {
+    final devices = [
+      _device(deviceId: 'BOX-0001', simNumber: '0811111111'),
+      _device(id: 'uuid2', deviceId: 'BOX-0002', simNumber: '0822222222'),
+    ];
+
+    testWidgets(
+      'ค้นหาแล้วติดดาว -> ล้างคำค้นแล้วเห็นเฉพาะเครื่องที่ติดดาว + บันทึกของ user นี้',
+      (tester) async {
+        final store = _MemoryStarStore();
+        await _pumpStarred(
+          tester,
+          repo: _FakeDeviceSearchRepository(devices: devices),
+          store: store,
+        );
+        // ยังไม่ติดดาว = ข้อความชวนค้นหา บอกวิธีติดดาว
+        expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+        expect(find.textContaining('แตะ ☆'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('device_search_field')),
+          'box',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('device_star_BOX-0001')));
+        await tester.pump();
+        expect(find.byIcon(Icons.star_rounded), findsOneWidget);
+        expect(store.byUser['st.test'], ['BOX-0001']);
+
+        await tester.tap(find.byKey(const Key('device_search_clear')));
+        await tester.pump();
+        expect(find.byKey(const Key('device_starred_title')), findsOneWidget);
+        expect(find.text('BOX-0001'), findsOneWidget);
+        expect(find.text('BOX-0002'), findsNothing);
+      },
+    );
+
+    testWidgets('เปิดหน้าใหม่ -> ดาวที่บันทึกไว้ขึ้นเลยโดยไม่ต้องค้นหา', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+      );
+
+      expect(find.text('BOX-0002'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.byKey(const Key('device_search_prompt')), findsNothing);
+    });
+
+    testWidgets('เอาดาวออกตัวสุดท้าย -> กลับเป็นข้อความชวนค้นหา', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+      );
+
+      await tester.tap(find.byKey(const Key('device_star_BOX-0002')));
+      await tester.pump();
+
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(store.byUser['st.test'], isEmpty);
+    });
+
+    testWidgets('ดาวแยกตาม user — คนอื่นในเครื่องเดียวกันไม่เห็น', (
+      tester,
+    ) async {
+      final store = _MemoryStarStore()..byUser['st.test'] = ['BOX-0002'];
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: store,
+        user: 'ot.test',
+      );
+
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(find.text('BOX-0002'), findsNothing);
+    });
+  });
+
   testWidgets(
     'กำลังโหลดครั้งแรก -> โชว์ AppListSkeleton (ไม่ใช่ spinner), พอข้อมูลมาแล้ว '
     'skeleton หายไปเหลือแต่การ์ดจริง',
@@ -113,22 +250,37 @@ void main() {
     },
   );
 
-  testWidgets('loading -> list ของอุปกรณ์จาก repository', (tester) async {
-    await _pump(
-      tester,
-      repo: _FakeDeviceSearchRepository(
-        devices: [
-          _device(deviceId: 'DEV-0117', simNumber: '0811111111'),
-          _device(id: 'uuid2', deviceId: 'DEV-0092', simNumber: '0822222222'),
-        ],
-      ),
-    );
+  testWidgets(
+    'ยังไม่ค้นหาและไม่กรอง -> ไม่แสดงรายการ ขึ้นข้อความชวนค้นหา · พิมพ์แล้วรายการขึ้น',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeDeviceSearchRepository(
+          devices: [
+            _device(deviceId: 'DEV-0117', simNumber: '0811111111'),
+            _device(id: 'uuid2', deviceId: 'DEV-0092', simNumber: '0822222222'),
+          ],
+        ),
+      );
 
-    expect(find.text('DEV-0117'), findsOneWidget);
-    expect(find.text('DEV-0092'), findsOneWidget);
-    expect(find.byKey(const Key('device_card_0')), findsOneWidget);
-    expect(find.byKey(const Key('device_card_1')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(find.textContaining('ทั้งหมด 2 เครื่อง'), findsOneWidget);
+      expect(find.byKey(const Key('device_card_0')), findsNothing);
+      expect(find.text('DEV-0117'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        'DEV',
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('device_search_prompt')), findsNothing);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.byKey(const Key('device_card_0')), findsOneWidget);
+      expect(find.byKey(const Key('device_card_1')), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'การ์ดบอก Firmware ที่กล่องรายงานล่าสุด · ยังไม่รายงาน = ยังไม่ทราบ',
@@ -142,6 +294,11 @@ void main() {
           ],
         ),
       );
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        '00',
+      );
+      await tester.pump();
 
       expect(find.text('Firmware 1.0.0'), findsOneWidget);
       expect(find.text('Firmware ยังไม่ทราบ'), findsOneWidget);
@@ -234,10 +391,146 @@ void main() {
         devices: [_device(deviceId: 'DEV-0117')],
       ),
     );
+    await tester.enterText(
+      find.byKey(const Key('device_search_field')),
+      '0117',
+    );
+    await tester.pump();
 
     await tester.tap(find.byKey(const Key('device_card_0')));
     await tester.pumpAndSettle();
 
     expect(find.text('DEVICE_DETAIL_STUB DEV-0117'), findsOneWidget);
+  });
+
+  group('ตัวกรอง รุ่น / ลูกค้า / โปรโตคอล / สถานะ', () {
+    const custA = Customer(id: 'c-a', companyName: 'ขนส่ง A');
+    const custB = Customer(id: 'c-b', companyName: 'โลจิสติกส์ B');
+    final fleet = [
+      _device(
+        id: 'u1',
+        deviceId: 'BOX-0001',
+        deviceModel: 'ESP32-DEVKIT-V1',
+        protocol: 'HTTP',
+        status: DeviceLifecycleStatus.installed,
+        customer: custA,
+      ),
+      _device(id: 'u2', deviceId: 'DEV-0092'),
+      _device(
+        id: 'u3',
+        deviceId: 'DEV-0117',
+        status: DeviceLifecycleStatus.installed,
+        customer: custA,
+      ),
+      _device(
+        id: 'u4',
+        deviceId: 'DEV-0231',
+        deviceModel: 'GT06L',
+        status: DeviceLifecycleStatus.decommissioned,
+        customer: custB,
+      ),
+    ];
+
+    Future<void> pick(WidgetTester tester, String chip, String option) async {
+      await tester.tap(find.byKey(Key('device_filter_$chip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('device_filter_option_$option')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('กรองตามรุ่น -> เหลือเฉพาะรุ่นนั้น + ชิปบอกค่าที่เลือก', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await tester.tap(find.byKey(const Key('device_filter_model')));
+      await tester.pumpAndSettle();
+      // ตัวเลือกมาจากรุ่นที่มีจริงในรายการ พร้อมจำนวนเครื่อง
+      expect(find.text('GT06N (2)'), findsOneWidget);
+      expect(find.text('GT06L (1)'), findsOneWidget);
+      expect(find.text('ESP32-DEVKIT-V1 (1)'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('device_filter_option_GT06N')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('DEV-0231'), findsNothing);
+      expect(find.text('รุ่น: GT06N'), findsOneWidget);
+      expect(find.text('แสดง 2 จาก 4 เครื่อง'), findsOneWidget);
+    });
+
+    testWidgets('กรองตามลูกค้า รวมถึง "ยังไม่ผูกลูกค้า"', (tester) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'customer', 'c-a');
+      expect(find.text('BOX-0001'), findsOneWidget);
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsNothing);
+      expect(find.text('ลูกค้า: ขนส่ง A'), findsOneWidget);
+
+      await pick(tester, 'customer', 'none');
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('ลูกค้า: ยังไม่ผูกลูกค้า'), findsOneWidget);
+    });
+
+    testWidgets('หลายตัวกรอง + คำค้น ทำงานร่วมกัน · ล้างตัวกรองแล้วกลับครบ', (
+      tester,
+    ) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'protocol', 'TCP');
+      await pick(tester, 'status', 'installed');
+      expect(find.text('DEV-0117'), findsOneWidget);
+      expect(find.text('DEV-0092'), findsNothing);
+      expect(find.text('BOX-0001'), findsNothing);
+      expect(find.text('สถานะ: Installed'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        '0092',
+      );
+      await tester.pump();
+      expect(
+        find.text('ไม่พบอุปกรณ์ที่ตรงกับคำค้นหรือตัวกรอง'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('device_filter_clear')));
+      await tester.pump();
+      expect(find.text('DEV-0092'), findsOneWidget);
+      expect(find.byKey(const Key('device_filter_clear')), findsNothing);
+      expect(find.text('รุ่น'), findsOneWidget);
+    });
+
+    testWidgets(
+      'ตัวเลือกนับเฉพาะเครื่องที่ผ่านตัวกรองอื่น -> ไม่มีทางเลือกที่ได้ 0 เครื่อง',
+      (tester) async {
+        await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+        await pick(tester, 'model', 'GT06L');
+        await tester.tap(find.byKey(const Key('device_filter_customer')));
+        await tester.pumpAndSettle();
+
+        // GT06L มีเครื่องเดียว (DEV-0231 ของ โลจิสติกส์ B) — ขนส่ง A ไม่ควรโผล่
+        expect(find.text('ทั้งหมด (1)'), findsOneWidget);
+        expect(find.text('โลจิสติกส์ B (1)'), findsOneWidget);
+        expect(find.textContaining('ขนส่ง A'), findsNothing);
+        expect(find.textContaining('ยังไม่ผูกลูกค้า'), findsNothing);
+      },
+    );
+
+    testWidgets('เลือก "ทั้งหมด" -> ยกเลิกตัวกรองนั้น', (tester) async {
+      await _pump(tester, repo: _FakeDeviceSearchRepository(devices: fleet));
+
+      await pick(tester, 'model', 'GT06L');
+      expect(find.text('DEV-0092'), findsNothing);
+      await pick(tester, 'model', 'all');
+      // ไม่มีตัวกรองและคำค้นเหลือ -> กลับไปหน้าชวนค้นหา
+      expect(find.byKey(const Key('device_search_prompt')), findsOneWidget);
+      expect(find.text('รุ่น'), findsOneWidget);
+      expect(find.textContaining('แสดง '), findsNothing);
+    });
   });
 }
