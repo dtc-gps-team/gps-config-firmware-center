@@ -136,6 +136,15 @@ const targets = {
   "incident-detail-reviewed": { url: "/incidents/i3", w: 1440, h: 900 },
   campaigns: { url: "/campaigns", w: 1440, h: 900, extra: ["mobile"] },
   "campaign-detail": { url: "/campaigns/camp1", w: 1440, h: 900, extra: ["mobile"] },
+  "device-history": {
+    url: "/campaigns/camp1",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: "ดูประวัติ" }).first().click();
+      await page.waitForTimeout(600);
+    },
+  },
   "rollout-new-1": { url: "/campaigns/camp1/rollouts/new", w: 1440, h: 900, extra: ["mobile"] },
   "rollout-new-3": {
     url: "/campaigns/camp1/rollouts/new",
