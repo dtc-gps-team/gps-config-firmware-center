@@ -144,8 +144,8 @@ export const configDefinitions = [
 }));
 
 export const deviceModels = [
-  { id: "m1", name: "BB-200", supportedProtocols: ["mqtt"], active: true },
-  { id: "m2", name: "BB-310", supportedProtocols: ["mqtt"], active: true },
+  { id: "m1", name: "BB-200", supportedProtocols: ["mqtt"], status: "active", active: true },
+  { id: "m2", name: "BB-310", supportedProtocols: ["mqtt"], status: "active", active: true },
 ];
 
 export const campaigns = [{ id: "camp1", name: "ปรับค่ารถบรรทุกภาคเหนือ", createdAt: iso(900) }];

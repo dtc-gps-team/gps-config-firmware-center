@@ -8,12 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -225,13 +220,18 @@ export function ParameterCreateForm({
     }
   }
 
+  const numeric = dataType === "integer" || dataType === "decimal";
+  const previewName = fieldName.trim() || "field_name";
+  const selectedCount = selectedModelNames.size;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">เพิ่ม Parameter ใหม่</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+    <form
+      className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"
+      onSubmit={handleSubmit}
+    >
+      <div className="flex min-w-0 flex-col gap-6">
+        <Card className="gap-5 p-6">
+          <SectionHeading title="ข้อมูลหลัก" hint="ชื่อ ชนิดข้อมูล และคำอธิบายที่ผู้สร้าง Config จะเห็น" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="param-name">ชื่อ field</Label>
@@ -244,6 +244,7 @@ export function ParameterCreateForm({
                 }}
                 placeholder="เช่น max_speed_alert"
                 autoComplete="off"
+                className="font-instrument"
                 aria-invalid={nameError ? true : undefined}
               />
               {nameError && (
@@ -298,7 +299,10 @@ export function ParameterCreateForm({
               className="sm:max-w-56"
             />
           </div>
+        </Card>
 
+        <Card className="gap-5 p-6">
+          <SectionHeading title="ค่า" hint="ค่าเริ่มต้นที่เติมให้ตอนสร้าง Config ใหม่ และชุดค่าที่ยอมรับ" />
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="param-default-value">
               ค่าเริ่มต้น (Default Value, ไม่บังคับ)
@@ -332,17 +336,13 @@ export function ParameterCreateForm({
                 // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
                 // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
                 // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
-                type={
-                  dataType === "integer" || dataType === "decimal"
-                    ? "number"
-                    : "text"
-                }
+                type={numeric ? "number" : "text"}
                 value={defaultValue}
                 onChange={(e) => setDefaultValue(e.target.value)}
                 placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"
                 maxLength={255}
                 autoComplete="off"
-                className="sm:max-w-56"
+                className="font-instrument sm:max-w-56"
               />
             )}
           </div>
@@ -356,13 +356,13 @@ export function ParameterCreateForm({
                 {allowedValues.map((v) => (
                   <span
                     key={v}
-                    className="inline-flex items-center gap-1 rounded-md border border-input bg-muted px-2 py-0.5 font-mono text-xs"
+                    className="inline-flex items-center gap-1 rounded-md border border-input bg-surface-sunken px-2 py-0.5 font-instrument text-xs"
                   >
                     {v}
                     <button
                       type="button"
                       onClick={() => removeOption(v)}
-                      className="text-muted-foreground hover:text-foreground"
+                      className="rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                       aria-label={`ลบตัวเลือก ${v}`}
                     >
                       <XIcon className="size-3" />
@@ -396,29 +396,41 @@ export function ParameterCreateForm({
               </Button>
             </div>
           </div>
+        </Card>
 
+        <Card className="gap-4 p-6">
+          <SectionHeading
+            title="โมเดลที่รองรับ"
+            hint={
+              selectedCount > 0
+                ? `เลือกแล้ว ${selectedCount} จาก ${sortedModels.length} โมเดล`
+                : "เลือกอย่างน้อย 1 โมเดล"
+            }
+          />
           <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-medium">โมเดลที่รองรับ</legend>
+            <legend className="sr-only">โมเดลที่รองรับ</legend>
             {sortedModels.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 ยังไม่มีโมเดลในระบบ เพิ่มโมเดลก่อน
               </p>
             ) : (
-              <div className="flex flex-wrap gap-x-4 gap-y-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {sortedModels.map((m) => (
                   <label
                     key={m.id}
-                    className="flex items-center gap-2 text-sm"
                     htmlFor={`param-model-${m.id}`}
+                    className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:bg-muted/60 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
                   >
                     <Checkbox
                       id={`param-model-${m.id}`}
                       checked={selectedModelNames.has(m.name)}
                       onCheckedChange={() => toggleModel(m.name)}
                     />
-                    <span className="font-mono">{m.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      ({m.supportedProtocols.join(", ")})
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="font-instrument">{m.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({m.supportedProtocols.join(", ")})
+                      </span>
                     </span>
                     {m.status === "discontinued" && (
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground">
@@ -430,82 +442,155 @@ export function ParameterCreateForm({
               </div>
             )}
           </fieldset>
+        </Card>
+      </div>
 
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            <label
-              className="flex items-center gap-2 text-sm"
-              htmlFor="param-required"
-            >
-              <Checkbox
-                id="param-required"
-                checked={required}
-                onCheckedChange={(c) => setRequired(c === true)}
-              />
-              บังคับกรอก (required)
-            </label>
-            <label
-              className="flex items-center gap-2 text-sm"
-              htmlFor="param-unknown-spec"
-            >
-              <Checkbox
-                id="param-unknown-spec"
-                checked={unknownSpec}
-                onCheckedChange={(c) => setUnknownSpec(c === true)}
-              />
-              ยังไม่มี spec ครบ (รู้แค่ชื่อ + ชนิดข้อมูล)
-            </label>
-            <label
-              className="flex items-center gap-2 text-sm"
-              htmlFor="param-st-overridable"
-            >
-              <Checkbox
-                id="param-st-overridable"
-                checked={stOverridable}
-                onCheckedChange={(c) => setStOverridable(c === true)}
-              />
-              ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้, OT ไม่มีสิทธิ์นี้)
-            </label>
-            <label
-              className="flex items-center gap-2 text-sm"
-              htmlFor="param-sensitive"
-            >
-              <Checkbox
-                id="param-sensitive"
-                checked={sensitive}
-                onCheckedChange={(c) => setSensitive(c === true)}
-              />
-              ค่าอ่อนไหว (Sensitive: เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)
-            </label>
-          </div>
+      <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
+        <Card className="gap-3 p-5">
+          <SectionHeading title="ตัวเลือก" hint="กำหนดพฤติกรรมของ field นี้" />
+          <FlagRow
+            id="param-required"
+            checked={required}
+            onChange={setRequired}
+            label="บังคับกรอก (required)"
+            hint="ผู้สร้าง Config ต้องใส่ค่านี้ทุกครั้ง"
+          />
+          <FlagRow
+            id="param-unknown-spec"
+            checked={unknownSpec}
+            onChange={setUnknownSpec}
+            label="ยังไม่มี spec ครบ (รู้แค่ชื่อ + ชนิดข้อมูล)"
+            hint="ติดป้ายไว้ให้รู้ว่ายังไม่ยืนยันรายละเอียด"
+          />
+          <FlagRow
+            id="param-st-overridable"
+            checked={stOverridable}
+            onChange={setStOverridable}
+            label="ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้, OT ไม่มีสิทธิ์นี้)"
+          />
+          <FlagRow
+            id="param-sensitive"
+            checked={sensitive}
+            onChange={setSensitive}
+            label="ค่าอ่อนไหว (Sensitive: เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)"
+          />
+        </Card>
 
-          {formError && (
-            <div className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              <span>{formError}</span>
-              {formErrorList.length > 0 && (
-                <ul className="list-disc pl-5 text-xs">
-                  {formErrorList.map((msg, i) => (
-                    <li key={i}>{msg}</li>
-                  ))}
-                </ul>
+        <Card className="gap-3 p-5" aria-hidden>
+          <SectionHeading title="พรีวิวในหน้าสร้าง Config" hint="ช่องกรอกจะหน้าตาประมาณนี้" />
+          <div className="flex flex-col gap-1.5 rounded-lg border p-3">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="font-instrument text-xs">
+                {previewName}
+                {required && <span className="text-destructive"> *</span>}
+              </span>
+              {sensitive && (
+                <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
+                  อ่อนไหว
+                </span>
               )}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={submitting}
-            >
-              ยกเลิก
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
-            </Button>
+            </span>
+            {description.trim() && (
+              <span className="text-xs text-muted-foreground">
+                {description.trim()}
+              </span>
+            )}
+            {dataType === "boolean" ? (
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="inline-block size-4 rounded-[4px] border border-muted-foreground/60" />
+                เปิดใช้งาน
+              </span>
+            ) : allowedValues.length > 0 ? (
+              <span className="flex h-8 items-center justify-between rounded-lg border border-input px-2.5 text-sm text-muted-foreground">
+                {defaultValue && allowedValues.includes(defaultValue)
+                  ? defaultValue
+                  : "- เลือก -"}
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <span className="flex h-8 flex-1 items-center rounded-lg border border-input px-2.5 font-instrument text-sm text-muted-foreground">
+                  {sensitive ? "••••••" : defaultValue || " "}
+                </span>
+                {unit.trim() && (
+                  <span className="text-xs text-muted-foreground">
+                    {unit.trim()}
+                  </span>
+                )}
+              </span>
+            )}
           </div>
-        </form>
-      </CardContent>
-    </Card>
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-4 lg:col-span-2">
+        {formError && (
+          <div role="alert" className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <span>{formError}</span>
+            {formErrorList.length > 0 && (
+              <ul className="list-disc pl-5 text-xs">
+                {formErrorList.map((msg, i) => (
+                  <li key={i}>{msg}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 border-t pt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            ยกเลิก
+          </Button>
+          <Button type="submit" loading={submitting}>
+            {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function SectionHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="text-sm text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+function FlagRow({
+  id,
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  id: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <label
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:bg-muted/60 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
+    >
+      <Checkbox
+        id={id}
+        className="mt-0.5"
+        checked={checked}
+        onCheckedChange={(c) => onChange(c === true)}
+      />
+      <span className="flex flex-col gap-0.5">
+        <span>{label}</span>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      </span>
+    </label>
   );
 }
