@@ -75,6 +75,7 @@ const targets = {
   firmware: { url: "/firmware", w: 1440, h: 900 },
   "config-detail": { url: "/config/c2?tab=versions", w: 1440, h: 900, extra: ["mobile"] },
   "config-detail-params": { url: "/config/c2", w: 1440, h: 900 },
+  "config-detail-draft": { url: "/config/c3", w: 1440, h: 900, extra: ["mobile"] },
   "firmware-detail": { url: "/firmware/f1", w: 1440, h: 900, extra: ["mobile"] },
   "device-new": { url: "/devices/new", w: 1440, h: 900, extra: ["mobile"] },
   "firmware-compare": {
