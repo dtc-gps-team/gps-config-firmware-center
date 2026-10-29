@@ -18,7 +18,7 @@ import 'package:mobile/features/device_search/device_detail_page.dart';
 import 'package:mobile/features/device_search/device_search_page.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/device_search/device_status_repository.dart';
-import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/home/home_tasks_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -389,7 +389,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: _taskOverrides(_tasksForEveryBadge()),
-          child: const MaterialApp(home: HomePage()),
+          child: const MaterialApp(home: HomeTasksPage(initialOpenOnly: true)),
         ),
       );
       await tester.pump();
@@ -399,61 +399,67 @@ void main() {
       for (final urgency in [TaskUrgency.overdue, TaskUrgency.dueSoon]) {
         expectFullyVisible(tester, TaskUrgencyStyle.label(urgency));
       }
-      for (final status in TaskStatus.values) {
+      for (final status in [TaskStatus.pending, TaskStatus.inProgress]) {
         expectFullyVisible(tester, TaskStatusStyle.label(status));
       }
     });
   });
 
   group('ข้อความถูกตัดสั้นเกิน / ตัดกลางคำ (UX audit #23)', () {
-    testWidgets('Home: ชื่องานแสดง 2 บรรทัด ป้ายย้ายลงใต้ชื่อ ไม่ล้น', (
-      tester,
-    ) async {
-      useLargeTextNarrowScreen(tester);
-      await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
+    testWidgets(
+      'รายการเต็มของ Home: ชื่องานแสดง 2 บรรทัด ป้ายย้ายลงใต้ชื่อ ไม่ล้น',
+      (tester) async {
+        useLargeTextNarrowScreen(tester);
+        await _pumpPage(tester, const HomeTasksPage(), tasks: _homeTasks());
 
-      expect(tester.takeException(), isNull);
-      for (final key in ['my_task_card_0', 'history_card_0']) {
-        final card = find.byKey(Key(key));
-        final title = find.descendant(
-          of: card,
-          matching: find.text(_longTitle),
-        );
-        expect(_lineCount(tester, title), 2, reason: '$key ชื่องาน 2 บรรทัด');
-        // ป้าย (เลยกำหนด / เสร็จแล้ว) อยู่ใต้ชื่องาน ไม่แย่งความกว้างด้านข้าง
-        final badge = find.descendant(
-          of: card,
-          matching: find.text(
-            key.startsWith('my_task') ? 'เลยกำหนด' : 'เสร็จแล้ว',
-          ),
-        );
+        expect(tester.takeException(), isNull);
+        for (final key in ['home_all_u1', 'home_all_h1']) {
+          final card = find.byKey(Key(key));
+          final title = find.descendant(
+            of: card,
+            matching: find.text(_longTitle),
+          );
+          expect(_lineCount(tester, title), 2, reason: '$key ชื่องาน 2 บรรทัด');
+          // ป้าย (เลยกำหนด / เสร็จแล้ว) อยู่ใต้ชื่องาน ไม่แย่งความกว้างด้านข้าง
+          final badge = find.descendant(
+            of: card,
+            matching: find.text(
+              key.endsWith('u1') ? 'รอดำเนินการ' : 'เสร็จแล้ว',
+            ),
+          );
+          expect(
+            tester.getTopLeft(badge).dy,
+            greaterThanOrEqualTo(tester.getBottomLeft(title).dy),
+            reason: key,
+          );
+        }
+        // เลขเครื่องได้ความกว้างเกือบเต็มการ์ด ไม่ขึ้นบรรทัดใหม่ทีละ 1-2 ตัวอักษร
+        // (เดิม "G|PS-…") · ฟอนต์ทดสอบกว้าง 1em จึงยอมให้ 2 บรรทัด ฟอนต์ Android
+        // จริงอยู่บรรทัดเดียว
         expect(
-          tester.getTopLeft(badge).dy,
-          greaterThanOrEqualTo(tester.getBottomLeft(title).dy),
-          reason: key,
+          _lineCount(tester, find.textContaining('DEV-0410')),
+          lessThanOrEqualTo(2),
         );
-      }
-      // เลขเครื่องได้ความกว้างเกือบเต็มการ์ด ไม่ขึ้นบรรทัดใหม่ทีละ 1-2 ตัวอักษร
-      // (เดิม "G|PS-…") · ฟอนต์ทดสอบกว้าง 1em จึงยอมให้ 2 บรรทัด ฟอนต์ Android
-      // จริงอยู่บรรทัดเดียว
-      expect(
-        _lineCount(tester, find.text('อุปกรณ์: DEV-0410')),
-        lessThanOrEqualTo(2),
-      );
-    });
+      },
+    );
 
     // การ์ดงานแบบใหม่ (docs/22 Batch 3) วางป้ายใต้ชื่องานทุกขนาดตัวอักษร (แบบ
     // การ์ดของ Web) — เดิมตัวอักษรปกติป้ายอยู่ด้านขวา
-    testWidgets('Home ตัวอักษรปกติ: ป้ายอยู่ใต้ชื่องาน ไม่ล้น', (tester) async {
+    testWidgets('รายการเต็มของ Home ตัวอักษรปกติ: ป้ายอยู่ใต้ชื่องาน ไม่ล้น', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(430 * 3, 3000 * 3);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.reset);
-      await _pumpPage(tester, const HomePage(), tasks: _homeTasks());
+      await _pumpPage(tester, const HomeTasksPage(), tasks: _homeTasks());
 
       expect(tester.takeException(), isNull);
-      final card = find.byKey(const Key('my_task_card_0'));
+      final card = find.byKey(const Key('home_all_u1'));
       final title = find.descendant(of: card, matching: find.text(_longTitle));
-      final badge = find.descendant(of: card, matching: find.text('เลยกำหนด'));
+      final badge = find.descendant(
+        of: card,
+        matching: find.text('รอดำเนินการ'),
+      );
       expect(
         tester.getTopLeft(badge).dy,
         greaterThanOrEqualTo(tester.getBottomLeft(title).dy),

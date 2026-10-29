@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/models.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_tokens.dart';
-import '../../core/ui/app_card.dart';
+
 import '../../core/widgets/sync_status_widgets.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
@@ -14,11 +14,16 @@ import '../task/task_status_ui.dart';
 /// - แถบออฟไลน์เมื่อกำลังแสดงข้อมูลงานจาก cache (UX audit #14)
 /// - banner session หมดอายุ / ซิงค์ไม่สำเร็จ (UX audit #15)
 /// - แถบสรุป "ค้าง N งาน ด่วน M งาน" — หน้า "งานของฉัน" ถูกรวมเข้าหน้าแรกแล้ว
-///   (docs/22 §7.2) แตะแล้วเลื่อนไปส่วน "ต้องทำ" บนหน้าเดียวกัน ([onSummaryTap])
+///   (docs/22 §7.2) แตะเพื่อเปิดรายการเต็มที่กรองงานยังไม่เสร็จ ([onSummaryTap])
 class HomeStatusBanners extends ConsumerWidget {
-  const HomeStatusBanners({super.key, this.onSummaryTap});
+  const HomeStatusBanners({
+    super.key,
+    this.onSummaryTap,
+    this.showSummary = true,
+  });
 
   final VoidCallback? onSummaryTap;
+  final bool showSummary;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,7 +39,14 @@ class HomeStatusBanners extends ConsumerWidget {
       if (offline != null) OfflineCacheBanner(cachedAt: offline.cachedAt),
       if (authExpired) const SyncAuthExpiredBanner(),
       if (failedCount > 0) SyncFailedBanner(count: failedCount),
-      if (tasks != null) _TaskSummary(tasks: tasks, onTap: onSummaryTap),
+      if (tasks != null &&
+          showSummary &&
+          tasks.any(
+            (t) =>
+                t.status == TaskStatus.pending ||
+                t.status == TaskStatus.inProgress,
+          ))
+        _TaskSummary(tasks: tasks, onTap: onSummaryTap),
     ];
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -70,32 +82,59 @@ class _TaskSummary extends StatelessWidget {
         )
         .toList();
     final urgent = open.where(TaskUrgencyStyle.isUrgent).length;
-    return AppCard(
+    if (open.isEmpty) return const SizedBox.shrink();
+    return Material(
       key: const Key('home_task_summary'),
-      size: AppCardSize.small,
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 24),
-        child: Row(
-          children: [
-            Icon(
-              Icons.assignment_outlined,
-              color: urgent > 0 ? AppColors.destructive : AppColors.primary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'ค้าง ${open.length} งาน ด่วน $urgent งาน',
-                style: const TextStyle(
-                  fontSize: AppTypography.sm,
-                  height: AppTypography.smHeight,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.foreground,
+      color: AppColors.accent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.schedule,
+                size: 20,
+                color: AppColors.accentForeground,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'มี ${open.length} งานที่ยังไม่เสร็จ',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accentForeground,
+                      ),
+                    ),
+                    Text(
+                      'ค้าง ${open.length} งาน ด่วน $urgent งาน',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: AppColors.mutedForeground,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const Icon(Icons.arrow_downward, color: AppColors.mutedForeground),
-          ],
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.accentForeground,
+              ),
+            ],
+          ),
         ),
       ),
     );
