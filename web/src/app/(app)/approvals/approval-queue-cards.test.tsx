@@ -160,7 +160,7 @@ describe("CampaignRolloutApprovalCard", () => {
     expect(screen.queryByText("อนุมัติ Rollout")).not.toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "ดูรายละเอียด →" }),
-    ).toHaveAttribute("href", "/campaigns/c1/rollouts/r1");
+    ).toHaveAttribute("href", "/campaigns/c1");
   });
 
   it("เป็นผู้สร้างเอง: ปุ่มยังอยู่แต่กดไม่ได้ พร้อมเหตุผลให้ screen reader อ่าน", () => {

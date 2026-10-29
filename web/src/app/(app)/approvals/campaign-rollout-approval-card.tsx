@@ -28,7 +28,7 @@ export function CampaignRolloutApprovalCard({
       title={campaignName}
       meta={`${rollout.payloadType} จำนวน ${rollout.targetCount} เครื่อง`}
       queuedAt={rollout.createdAt}
-      detailHref={`/campaigns/${rollout.campaignId}/rollouts/${rollout.id}`}
+      detailHref={`/campaigns/${rollout.campaignId}`}
       requesterLabel="ผู้สร้าง"
       requesterName={creatorName}
       actions={
