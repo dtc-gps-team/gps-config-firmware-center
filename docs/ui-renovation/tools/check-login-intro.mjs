@@ -75,7 +75,7 @@ const cardOpacity = (page) =>
   await p3.goto(base + "/login", { waitUntil: "networkidle" });
   await p3.waitForTimeout(500);
   const replayFade = await fadeFrames(p3);
-  check("repeat visit: card appears without a fade (no replay)", (await cardOpacity(p3)) === 1 && replayFade === 0, `fade frames ${replayFade}`);
+  check("repeat visit / refresh: intro plays again", (await cardOpacity(p3)) === 1 && replayFade >= 5, `fade frames ${replayFade}`);
   // the very first load does fade
   const p4ctx = await browser.newContext({ viewport: { width: 700, height: 560 } });
   const p4 = await p4ctx.newPage();

@@ -37,7 +37,7 @@ node docs/ui-renovation/tools/check-motion.mjs http://localhost:3100
 - `shoot.mjs <label> <url> <หน้า,...>`: ถ่าย 1440 light/dark (`THEMES=dark` เลือกธีมเดียว) และ (เฉพาะ dashboard) มือถือ 390 + เมนู หน้าที่ระบุ `extra: ["mobile","light"]` ถ่าย 390 light เพิ่มด้วย ชื่อหน้าที่รองรับ: `dashboard`, `config`, `config-edit`, `config-edit-json`, `devices`, `devices-select`, `device-detail`, `device-config-tab`, `approvals`, `approvals-diff`, `parameters`, `firmware`, `firmware-compare` เพิ่มได้ในตัวแปร `targets` (แต่ละหน้ามี `act` ทำขั้นก่อนถ่ายได้) หน้าแก้ Config ต้องใช้ `ROLE=ConfigEngineer`
 - `check-flows.mjs [url]`: เดินงานหลัก 2 งานด้วย API จำลอง (A: หาอุปกรณ์ → แก้ Config → ทดสอบ → ส่งขออนุมัติ, B: ดู diff → เลือกทั้งหมด → อนุมัติหลายรายการ) นับคลิกและตรวจผล 15 ข้อ
 - `check-virtual.mjs [url]`: `FLEET=300` ตรวจว่า Device Search ทำ windowing เมื่อเกิน 200 แถว (ไม่เกินไม่ทำ)
-- `check-login-intro.mjs`: ตรวจแอนิเมชันเปิดหน้า Login (การ์ดค่อยๆ เข้า, ช่องกรอกโฟกัสทันที, สั่นเมื่อกรอกผิด, ไม่เล่นซ้ำภายใน 8 ชั่วโมง, ลดการเคลื่อนไหวแล้วไม่มี fade) และถ่ายเฟรมไทม์ไลน์ไว้ดู
+- `check-login-intro.mjs`: ตรวจแอนิเมชันเปิดหน้า Login (การ์ดค่อยๆ เข้า, ช่องกรอกโฟกัสทันที, สั่นเมื่อกรอกผิด, เล่นซ้ำทุกครั้งที่เข้า/รีเฟรช, ลดการเคลื่อนไหวแล้วไม่มี fade) และถ่ายเฟรมไทม์ไลน์ไว้ดู
 - `check-motion.mjs`: ตรวจ page transition, ไม่มี layout shift, command palette เปิด/ปิด, sidebar ยุบ/ขยาย, สลับธีมและจำค่า, hover ไม่กระตุก, reduced-motion เหลือ fade
 - ข้อจำกัด: fixture คืน `[]` สำหรับ endpoint ที่ไม่ได้ระบุ รอบ 2 เพิ่ม fixture ของ config (มี `fields`), `/config-definitions`, `/device-models`, `/devices/:id` (+ central/status/history), firmware (มี checksum) แล้ว หน้าใหม่ที่เรียก endpoint อื่นต้องเพิ่มให้ตรง shape ก่อนถ่าย
 - ถ้า `:3000` ของเจ้าของรันอยู่ (dev server ตัวเดียวต่อโฟลเดอร์ `web/`) ใช้ `:3000` ถ่ายได้เลย (ดึงโค้ดชุดเดียวกัน API ถูก mock ใน Playwright) และห้ามรัน `next build` ใน `web/` ให้ copy `web/` (ไม่เอา `node_modules`/`.next`) ไปที่อื่นแล้วทำ junction `node_modules` + `next build --webpack` (Turbopack ไม่ยอม symlink ออกนอก root)
@@ -120,7 +120,7 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 
 ### แอนิเมชันเปิดหน้า Login
 
-ไทม์ไลน์ราว 1.4 วินาที (ช่องกรอกใช้งานได้ตั้งแต่เฟรมแรก): พื้นหลังจางเข้า → การ์ดลอยขึ้น → โลโก้ประกอบตัว (หมุดตกเด้ง, LED ผุด, วงโคจรวาด, ดาวเทียมวิ่งหนึ่งรอบแล้วจอดตรงตำแหน่งโลโก้นิ่ง) → ข้อความและช่องกรอกเข้าทีละช่อง · กรอกผิด = การ์ดสั่น + ข้อความ error จางเข้า · สำเร็จ = การ์ดเลื่อนจางออกพร้อมเปลี่ยนหน้า · เล่นเต็มครั้งเดียวต่อ 8 ชั่วโมง (`components/auth/login-intro.ts` เก็บเวลาใน localStorage) ที่เหลือแสดงภาพสุดท้ายทันที · ปิดเมื่อ prefers-reduced-motion · โลโก้เคลื่อนไหวคือ `components/brand/animated-logo-mark.tsx` ใช้เรขาคณิตชุดเดียวกับ `logo-mark.tsx`
+ไทม์ไลน์ราว 1.4 วินาที (ช่องกรอกใช้งานได้ตั้งแต่เฟรมแรก): พื้นหลังจางเข้า → การ์ดลอยขึ้น → โลโก้ประกอบตัว (หมุดตกเด้ง, LED ผุด, วงโคจรวาด, ดาวเทียมวิ่งหนึ่งรอบแล้วจอดตรงตำแหน่งโลโก้นิ่ง) → ข้อความและช่องกรอกเข้าทีละช่อง · กรอกผิด = การ์ดสั่น + ข้อความ error จางเข้า · สำเร็จ = การ์ดเลื่อนจางออกพร้อมเปลี่ยนหน้า · เล่นทุกครั้งที่เปิดหน้าหรือรีเฟรช (`components/auth/login-intro.ts` ข้ามเฉพาะเมื่อตั้ง reduced-motion) · ปิดเมื่อ prefers-reduced-motion · โลโก้เคลื่อนไหวคือ `components/brand/animated-logo-mark.tsx` ใช้เรขาคณิตชุดเดียวกับ `logo-mark.tsx`
 
 ## 9. Component กลาง
 
