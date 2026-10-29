@@ -191,7 +191,11 @@ export function DashboardSummary() {
       />
     ),
   };
-  const healthRows = view.health;
+  // คิวงานของ Operation/ช่างหน้างานมีแถว Incident อยู่แล้ว ไม่แสดงซ้ำในสถานะระบบ
+  const queueHasIncident = view.queue === "operation" || view.queue === "field";
+  const healthRows = view.health.filter(
+    (id) => !(id === "incident" && queueHasIncident),
+  );
 
   // ---- แผงรายละเอียดด้านล่าง
   const panel: Record<PanelId, React.ReactNode> = {
@@ -258,7 +262,7 @@ export function DashboardSummary() {
         </Notice>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-12 [&>*>*]:h-full">
+      <div className="grid items-start gap-4 lg:grid-cols-12">
         <div className="lg:col-span-8">{lead}</div>
         <div className="lg:col-span-4">
           <HealthCard>{healthRows.map((id) => healthRow[id])}</HealthCard>

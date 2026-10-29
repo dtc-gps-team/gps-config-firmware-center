@@ -148,7 +148,9 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
   it("สถานะระบบคำนวณจากข้อมูลจริง", () => {
     render(<DashboardSummary />);
 
-    expect(within(health("Incident ที่ยังเปิดอยู่")).getByText("2")).toBeInTheDocument();
+    // Incident อยู่ในคิวงานแล้ว ไม่แสดงซ้ำในสถานะระบบ
+    expect(within(queueCard()).getByText("Incident ที่ยังเปิดอยู่")).toBeInTheDocument();
+    expect(within(healthCard()).queryByText("Incident ที่ยังเปิดอยู่")).not.toBeInTheDocument();
     // BOX-2 ออฟไลน์ที่เดียว (BOX-3 ไม่อยู่ใน Server กลาง จึงไม่ทราบ ไม่นับเป็นออฟไลน์)
     expect(within(health("อุปกรณ์ออฟไลน์")).getByText("1")).toBeInTheDocument();
     // BOX-2 กล่องรายงาน v8 แต่เป้าหมาย v9
@@ -263,8 +265,8 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     expect(
       screen.getByText(/ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบสถานะการเชื่อมต่อ/),
     ).toBeInTheDocument();
-    // แถวอื่นไม่กระทบ
-    expect(within(health("Incident ที่ยังเปิดอยู่")).getByText("2")).toBeInTheDocument();
+    // คิวงานไม่กระทบ
+    expect(within(queueCard()).getByText("Incident ที่ยังเปิดอยู่")).toBeInTheDocument();
   });
 
   it("Server กลางอยู่ในโหมด mock: มีแถบแจ้งข้อมูลตัวอย่างระดับหน้า (ซื่อตรงว่าเป็นข้อมูลตัวอย่าง)", () => {

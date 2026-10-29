@@ -21,7 +21,7 @@ export function HealthCard({
 }) {
   return (
     <Panel title="สถานะระบบ" className={className}>
-      <ul className="flex flex-1 flex-col divide-y">{children}</ul>
+      <ul className="flex flex-col divide-y">{children}</ul>
     </Panel>
   );
 }
@@ -93,9 +93,9 @@ export function HealthRow({
   );
 
   const rowClass =
-    "relative flex h-full min-h-14 flex-col justify-center overflow-hidden rounded-md px-1 py-2.5";
+    "relative flex min-h-14 flex-col justify-center overflow-hidden rounded-md px-1 py-2.5";
   return (
-    <li title={hint} className="flex-1">
+    <li title={hint}>
       {href ? (
         <Link
           href={href}
