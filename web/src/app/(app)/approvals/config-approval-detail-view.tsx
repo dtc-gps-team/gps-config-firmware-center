@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CloneSourceLink } from "@/components/config/clone-source-link";
 import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -54,6 +55,7 @@ type FieldMeta = {
   category: string;
   sensitive: boolean;
   restartRequired: boolean;
+  description: string | null;
 };
 
 export function ConfigApprovalDetailView({ configId }: { configId: string }) {
@@ -117,6 +119,7 @@ function Content({
         category: d.category ?? UNCATEGORIZED,
         sensitive: d.sensitive,
         restartRequired: d.restartRequired,
+        description: d.description,
       });
     }
     return map;
@@ -348,6 +351,7 @@ function Content({
                     ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
                     : "ค่าอ่อนไหว";
                 }}
+                descriptionFor={(name) => metaByField.get(name)?.description}
               />
             )}
             <p className="text-xs text-muted-foreground">
@@ -400,12 +404,15 @@ function Content({
                 {names.map((name) => (
                   <div
                     key={name}
-                    className="flex justify-between gap-4 px-3 py-1.5 text-xs"
+                    className="flex items-start justify-between gap-4 px-3 py-1.5 text-xs"
                   >
-                    <span className="flex shrink-0 items-center gap-1.5 font-instrument text-muted-foreground">
-                      {name}
+                    <span className="flex min-w-0 max-w-[60%] flex-col gap-0.5">
+                      <ConfigFieldLabel
+                        fieldName={name}
+                        description={metaByField.get(name)?.description}
+                      />
                       {changedNames.has(name) && (
-                        <span className="rounded bg-info-subtle px-1 text-[10px] text-info-foreground">
+                        <span className="w-fit rounded bg-info-subtle px-1 text-[10px] text-info-foreground">
                           เปลี่ยน
                         </span>
                       )}

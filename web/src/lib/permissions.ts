@@ -257,6 +257,19 @@ export function canDecideFirmwareOverride(
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิวคำขอส่ง Config/Firmware เข้ากล่องจากหน้างาน —
+ * RBAC_Matrix.md ตาราง 4.1 `POST /config-apply-requests/{id}/approve` /
+ * `.../reject`: resource `config-apply-request` action `Approve` — Operation
+ * เท่านั้น (seed.ts ให้ Read กับ Auditor/Admin/SuperAdmin ด้วย แต่ Approve ให้
+ * Operation คนเดียว) mirror `canDecideDeviceConfigOverride` ทุกประการ
+ */
+export function canDecideFieldApplyRequest(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * หน้าคลัง Parameter (Config Definition Lookup) — RBAC_Matrix.md ตาราง 4.1
  * `GET /config-definitions`: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม
  * SW ก่อนแยก role — docs/13 §3.1 · FirmwareEngineer/QAEngineer ไม่ได้ เพราะ

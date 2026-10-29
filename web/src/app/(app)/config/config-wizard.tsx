@@ -835,8 +835,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                     >
                       <PlusIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       <span className="flex min-w-0 flex-col gap-0.5">
+                        {def.description && (
+                          <span className="text-xs">{def.description}</span>
+                        )}
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-instrument text-xs font-medium break-all">
+                          <span className="font-instrument text-xs text-muted-foreground break-all">
                             {def.fieldName}
                           </span>
                           <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
@@ -844,14 +847,6 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                           </span>
                           {!isInModelSet(def) && <OutsideSetBadge />}
                         </span>
-                        {def.description && (
-                          <span
-                            className="line-clamp-2 text-xs text-muted-foreground"
-                            title={def.description}
-                          >
-                            {def.description}
-                          </span>
-                        )}
                       </span>
                     </button>
                   ))
@@ -1129,7 +1124,6 @@ function TemplateRow({
   onRemove?: () => void;
 }) {
   const id = `field-${def.fieldName}`;
-  const hint = def.description ?? formatModelSupport(def.supportedModels);
   const errorId = `${id}-error`;
   const [expanded, setExpanded] = useState(false);
   const originalText =
@@ -1138,6 +1132,13 @@ function TemplateRow({
       : typeof originalValue === "string"
         ? originalValue
         : JSON.stringify(originalValue);
+  // คำอธิบาย (ถ้ามี) ขึ้นเป็นหัวแทน fieldName — รีวิวพี่เลี้ยง: อยากรู้
+  // "ค่านี้คืออะไร" ก่อนชื่อตัวแปรดิบ (สลับจากหน้าคลัง Parameter ด้านซ้ายที่
+  // fieldName ขึ้นก่อน) · ไม่มีคำอธิบาย = hint ล่างใช้ formatModelSupport แทน
+  const description = def.description?.trim();
+  const supportHint = description
+    ? null
+    : formatModelSupport(def.supportedModels);
 
   return (
     <div
@@ -1148,27 +1149,48 @@ function TemplateRow({
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <Label htmlFor={id} className="font-instrument text-xs">
-            {def.fieldName}
-            {required ? <span className="text-destructive"> *</span> : null}
-          </Label>
-          {def.restartRequired && (
-            <span className="rounded-full bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
-              ต้อง Restart
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {description && (
+            <span className="flex flex-col items-start gap-0.5">
+              <span
+                className={cn("text-sm", !expanded && "line-clamp-2")}
+              >
+                {description}
+              </span>
+              {description.length > 90 && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  aria-expanded={expanded}
+                  className="rounded text-xs text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  {expanded ? "ย่อ" : "อ่านเพิ่ม"}
+                </button>
+              )}
             </span>
           )}
-          {def.sensitive && (
-            <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] whitespace-nowrap text-secondary-foreground">
-              อ่อนไหว
-            </span>
-          )}
-          {changed && (
-            <span className="rounded-full bg-info-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-info-foreground">
-              {hasOriginal ? "แก้ไขแล้ว" : "เพิ่มใหม่"}
-            </span>
-          )}
-          {outsideSet && <OutsideSetBadge />}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Label htmlFor={id} className="font-instrument text-xs text-muted-foreground">
+              {def.fieldName}
+              {required ? <span className="text-destructive"> *</span> : null}
+            </Label>
+            {def.restartRequired && (
+              <span className="rounded-full bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
+                ต้อง Restart
+              </span>
+            )}
+            {def.sensitive && (
+              <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] whitespace-nowrap text-secondary-foreground">
+                อ่อนไหว
+              </span>
+            )}
+            {changed && (
+              <span className="rounded-full bg-info-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-info-foreground">
+                {hasOriginal ? "แก้ไขแล้ว" : "เพิ่มใหม่"}
+              </span>
+            )}
+            {outsideSet && <OutsideSetBadge />}
+          </span>
         </span>
         {onRemove ? (
           <button
@@ -1183,27 +1205,8 @@ function TemplateRow({
           <span className="text-[0.65rem] text-muted-foreground">บังคับ</span>
         )}
       </div>
-      {hint && (
-        <div className="flex flex-col items-start gap-0.5">
-          <p
-            className={cn(
-              "text-xs text-muted-foreground",
-              !expanded && "line-clamp-2",
-            )}
-          >
-            {hint}
-          </p>
-          {hint.length > 90 && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-              className="rounded text-xs text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              {expanded ? "ย่อ" : "อ่านเพิ่ม"}
-            </button>
-          )}
-        </div>
+      {supportHint && (
+        <p className="text-xs text-muted-foreground">{supportHint}</p>
       )}
       {(def.defaultValue !== null && !def.sensitive) && (
         <p className="text-xs text-muted-foreground">

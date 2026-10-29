@@ -18,6 +18,7 @@ import { approveConfig } from "@/lib/config-api";
 import {
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
+  canDecideFieldApplyRequest,
   canDecideFirmwareOverride,
 } from "@/lib/permissions";
 import { getTokenSubject } from "@/lib/jwt";
@@ -39,6 +40,7 @@ import { useUserNames } from "@/hooks/use-user-names";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
 import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
+import { usePendingFieldApplyRequests } from "@/hooks/use-pending-field-apply-requests";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -49,18 +51,21 @@ import { ApprovalCard } from "./approval-card";
 import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 import { DeviceConfigOverrideApprovalCard } from "./device-config-override-approval-card";
 import { DeviceFirmwareOverrideApprovalCard } from "./device-firmware-override-approval-card";
+import { FieldApplyRequestApprovalCard } from "./field-apply-request-approval-card";
 
 type ApprovalCategory =
   | "config"
   | "rollout"
   | "config-override"
-  | "firmware-override";
+  | "firmware-override"
+  | "field-apply";
 
 export function ApprovalCenterView() {
   const { session } = useAuth();
   const canDecide = canDecideConfigApproval(session?.role);
   const canDecideOverride = canDecideDeviceConfigOverride(session?.role);
   const canDecideFirmwareOv = canDecideFirmwareOverride(session?.role);
+  const canDecideFieldApply = canDecideFieldApplyRequest(session?.role);
   const myUserId = session?.accessToken
     ? getTokenSubject(session.accessToken)
     : null;
@@ -79,11 +84,20 @@ export function ApprovalCenterView() {
     error: firmwareOverrideError,
     refetch: refetchFirmwareOverrides,
   } = usePendingDeviceFirmwareOverrides(canDecideFirmwareOv);
+  const {
+    data: fieldApplyData,
+    isLoading: fieldApplyLoading,
+    error: fieldApplyError,
+    refetch: refetchFieldApply,
+  } = usePendingFieldApplyRequests(canDecideFieldApply);
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideNotice, setOverrideNotice] = useState<string | null>(null);
   const [firmwareOverrideNotice, setFirmwareOverrideNotice] = useState<
     string | null
   >(null);
+  const [fieldApplyNotice, setFieldApplyNotice] = useState<string | null>(
+    null,
+  );
   const [rolloutNotice, setRolloutNotice] = useState<string | null>(null);
   // มุมมองย่อยของหมวด Config ("ทั้งหมด"/"เจาะจงถึงฉัน") เก็บใน URL (`?view=mine`) แชร์ลิงก์ได้
   const [tab, setTabState] = useState<"all" | "mine">(() =>
@@ -156,12 +170,22 @@ export function ApprovalCenterView() {
           },
         ]
       : []),
+    ...(canDecideFieldApply
+      ? [
+          {
+            key: "field-apply" as const,
+            label: "ส่งเข้ากล่องจากหน้างาน",
+            count: fieldApplyData?.length ?? null,
+          },
+        ]
+      : []),
   ];
   const notices: Record<ApprovalCategory, string | null> = {
     config: notice,
     rollout: rolloutNotice,
     "config-override": overrideNotice,
     "firmware-override": firmwareOverrideNotice,
+    "field-apply": fieldApplyNotice,
   };
 
   // อนุมัติหลายรายการ: เลือกได้เฉพาะ Config ที่ไม่ใช่ของตัวเอง (Separation of Duty)
@@ -458,6 +482,59 @@ export function ApprovalCenterView() {
                         : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
                     );
                     void refetchFirmwareOverrides();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+    ),
+    /* section แยกจากทุกหมวดด้านบน (docs/25 §3.3–§3.4 · docs/30 P1) — ครอบทั้ง
+     * kind=config (ส่ง Config ของ Task เข้าเครื่องจริง) และ kind=firmware
+     * (docs/27 B2) เพราะ backend เป็น resource `config-apply-request` ตัวเดียวกัน
+     * · gate ด้วย canDecideFieldApply (= role Operation เท่านั้น ตรงกับ grant
+     * Approve ของ resource นี้ใน seed.ts — Read ให้ Auditor/Admin/SuperAdmin
+     * ด้วยแต่ Approve ให้ Operation คนเดียว) mirror section Config/Firmware
+     * Override ทุกประการ */
+    "field-apply": (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              ส่งเข้ากล่องจากหน้างาน รออนุมัติ{" "}
+              <span className="text-muted-foreground">
+                ({fieldApplyData?.length ?? 0})
+              </span>
+            </CardTitle>
+            <CardDescription>
+              คำขอส่ง Config หรือ Firmware เข้าอุปกรณ์จริง (ST/OT ส่งจาก
+              Mobile) อนุมัติแล้วรอช่างที่ถืองานกดส่งเข้ากล่องเองอีกครั้ง
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {fieldApplyLoading && fieldApplyData === null ? (
+              <CardListSkeleton />
+            ) : fieldApplyError ? (
+              <ErrorState message={fieldApplyError} onRetry={() => void refetchFieldApply()} />
+            ) : (fieldApplyData?.length ?? 0) === 0 ? (
+              <EmptyState
+                icon={ClipboardCheckIcon}
+                message="ไม่มีคำขอส่งเข้ากล่องจากหน้างานรออนุมัติ"
+              />
+            ) : (
+              fieldApplyData?.map((item) => (
+                <FieldApplyRequestApprovalCard
+                  key={item.id}
+                  item={item}
+                  requesterName={item.requester.fullName}
+                  canDecide={canDecideFieldApply}
+                  myUserId={myUserId}
+                  onDecided={(action) => {
+                    setFieldApplyNotice(
+                      action === "approve"
+                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                    );
+                    void refetchFieldApply();
                   }}
                 />
               ))

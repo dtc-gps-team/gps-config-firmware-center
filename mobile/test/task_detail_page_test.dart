@@ -17,6 +17,7 @@ import 'package:mobile/core/ui/labels.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
+import 'package:mobile/features/task/apply_request_history_page.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -544,8 +545,8 @@ void main() {
     });
   });
 
-  // docs/25 — ปุ่มเดิม "ส่ง Config เข้าเครื่อง" (apply-config แบบ mock) เปลี่ยนเป็น
-  // "ขอส่ง" ให้ Operation อีกคนอนุมัติ · การ์ดแสดงสถานะของคำขอล่าสุดตามตาราง §3.3
+  // docs/25 — การ์ดแสดงสถานะของคำขอล่าสุดตามตาราง §3.3 · docs/27 §2.2 — ปุ่ม
+  // "ส่ง Config เข้าเครื่อง" พาไปหน้าพารามิเตอร์ของ Config ที่ผูกกับงาน (ส่ง/ขอที่นั่น)
   group('คำขอส่ง Config เข้าเครื่อง (docs/25)', () {
     Task installTask() => _makeTask(
       status: TaskStatus.inProgress,
@@ -560,6 +561,7 @@ void main() {
       Object? cancelError,
       Object? releaseError,
       Object? listError,
+      GoRouter? router,
     }) async {
       // จอสูงพอให้การ์ดสถานะคำขอ + ปุ่มยกเลิกอยู่ในจอ (เนื้อหาหน้านี้ยาวกว่า 600)
       tester.view.physicalSize = const Size(1080, 4000);
@@ -576,7 +578,9 @@ void main() {
         repo: _FakeTaskRepository(task: installTask()),
         role: UserRole.st,
         applyRepo: applyRepo,
+        router: router,
       );
+      if (router != null) await tester.pumpAndSettle();
       return applyRepo;
     }
 
@@ -587,11 +591,11 @@ void main() {
         find.byKey(const Key('release_apply_request_button'));
 
     testWidgets(
-      'ยังไม่เคยขอ -> ปุ่ม "ขอส่ง Config เข้าเครื่อง" กดได้ ไม่มีการ์ดสถานะ',
+      'ยังไม่เคยขอ -> ปุ่ม "ส่ง Config เข้าเครื่อง" กดได้ ไม่มีการ์ดสถานะ',
       (tester) async {
         await pumpWith(tester);
 
-        expect(find.text('ขอส่ง Config เข้าเครื่อง'), findsOneWidget);
+        expect(find.text('ส่ง Config เข้าเครื่อง'), findsOneWidget);
         expect(
           tester.widget<FilledButton>(_confirmInstallButton).onPressed,
           isNotNull,
@@ -600,32 +604,23 @@ void main() {
       },
     );
 
-    testWidgets('กดขอส่ง -> สร้างคำขอด้วย taskId (ไม่ส่ง config/device เอง) + '
-        'snackbar + การ์ดเป็น "รอ Operation อนุมัติ" + ปุ่มขอหายไป', (
-      tester,
-    ) async {
-      final applyRepo = await pumpWith(tester);
+    testWidgets(
+      'กดส่ง Config เข้าเครื่อง -> ไปหน้าพารามิเตอร์ของ Config ที่ผูกกับ'
+      'งาน พร้อม taskId (ไม่สร้างคำขอเองในหน้านี้)',
+      (tester) async {
+        String? opened;
+        final router = _routerWithApply((uri) => opened = uri);
+        addTearDown(router.dispose);
+        final applyRepo = await pumpWith(tester, router: router);
 
-      await tester.tap(_confirmInstallButton);
-      await tester.pump(); // create
-      await tester.pump(); // reload คำขอล่าสุด
-      await tester.pump();
+        await tester.tap(_confirmInstallButton);
+        await tester.pumpAndSettle();
 
-      expect(applyRepo.createCalls, 1);
-      expect(applyRepo.lastCreateTaskId, 't1');
-      expect(
-        find.text(
-          'ส่งคำขอแล้ว — รอ Operation อีกคนอนุมัติก่อนระบบส่งเข้ากล่อง',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('รอ Operation อนุมัติ'), findsOneWidget);
-      expect(_confirmInstallButton, findsNothing);
-      expect(cancelButton(), findsOneWidget);
-
-      await tester.pump(const Duration(seconds: 5)); // snackbar timeout
-      await tester.pumpAndSettle();
-    });
+        expect(opened, '/devices/DVC-1/apply/config/cfg-1?taskId=t1');
+        expect(find.text('PARAMS_PAGE'), findsOneWidget);
+        expect(applyRepo.createCalls, 0);
+      },
+    );
 
     testWidgets('docs/30 — คำขอจาก Config Override แสดงค่าที่ขอแก้และเหตุผล', (
       tester,
@@ -690,7 +685,7 @@ void main() {
     });
 
     testWidgets('กดยกเลิกคำขอ -> เรียก cancel ด้วย id + snackbar + '
-        'กลับมาขอใหม่ได้ด้วยปุ่ม "ขอส่งอีกครั้ง"', (tester) async {
+        'กลับมาขอใหม่ได้ด้วยปุ่ม "ส่งอีกครั้ง"', (tester) async {
       final applyRepo = await pumpWith(
         tester,
         requests: [fakeApplyRequest(id: 'car-9')],
@@ -705,7 +700,7 @@ void main() {
       expect(applyRepo.cancelCalls, 1);
       expect(applyRepo.lastCancelId, 'car-9');
       expect(find.text('ยกเลิกคำขอแล้ว'), findsWidgets);
-      expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
+      expect(find.text('ส่งอีกครั้ง'), findsOneWidget);
       expect(cancelButton(), findsNothing);
 
       await tester.pump(const Duration(seconds: 5));
@@ -838,31 +833,30 @@ void main() {
       expect(_confirmInstallButton, findsNothing);
     });
 
-    testWidgets(
-      'rejected -> เหตุผลของ Operation + ปุ่ม "ขอส่งอีกครั้ง" กดได้',
-      (tester) async {
-        await pumpWith(
-          tester,
-          requests: [
-            fakeApplyRequest(
-              status: ConfigApplyRequestStatus.rejected,
-              rejectReason: 'ค่า APN ไม่ตรงกับซิมของลูกค้า',
-            ),
-          ],
-        );
+    testWidgets('rejected -> เหตุผลของ Operation + ปุ่ม "ส่งอีกครั้ง" กดได้', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            status: ConfigApplyRequestStatus.rejected,
+            rejectReason: 'ค่า APN ไม่ตรงกับซิมของลูกค้า',
+          ),
+        ],
+      );
 
-        expect(find.text('Operation ปฏิเสธคำขอ'), findsOneWidget);
-        expect(
-          find.text('เหตุผล: ค่า APN ไม่ตรงกับซิมของลูกค้า'),
-          findsOneWidget,
-        );
-        expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
-        expect(
-          tester.widget<FilledButton>(_confirmInstallButton).onPressed,
-          isNotNull,
-        );
-      },
-    );
+      expect(find.text('Operation ปฏิเสธคำขอ'), findsOneWidget);
+      expect(
+        find.text('เหตุผล: ค่า APN ไม่ตรงกับซิมของลูกค้า'),
+        findsOneWidget,
+      );
+      expect(find.text('ส่งอีกครั้ง'), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(_confirmInstallButton).onPressed,
+        isNotNull,
+      );
+    });
 
     for (final (status, detail) in [
       (ConfigApplyRequestStatus.failed, 'กล่องปฏิเสธค่า SERVER_PORT'),
@@ -876,7 +870,7 @@ void main() {
         'งานถูกยกเลิก ระบบยกเลิกคำขอให้อัตโนมัติ',
       ),
     ]) {
-      testWidgets('${status.wireName} -> แสดงเหตุผล + ขอส่งอีกครั้งได้', (
+      testWidgets('${status.wireName} -> แสดงเหตุผล + ส่งอีกครั้งได้', (
         tester,
       ) async {
         await pumpWith(
@@ -885,60 +879,9 @@ void main() {
         );
 
         expect(find.text(detail), findsOneWidget);
-        expect(find.text('ขอส่งอีกครั้ง'), findsOneWidget);
+        expect(find.text('ส่งอีกครั้ง'), findsOneWidget);
       });
     }
-
-    testWidgets('409 ตอนขอ (เช่น งานไม่มีข้อมูลผู้ผูก Config) -> ข้อความจาก '
-        'backend เหนือปุ่ม และกดใหม่ได้', (tester) async {
-      await pumpWith(
-        tester,
-        createError: ApiException(
-          'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
-          statusCode: 409,
-        ),
-      );
-
-      await tester.tap(_confirmInstallButton);
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
-
-      expect(find.byKey(const Key('confirm_install_error')), findsOneWidget);
-      expect(
-        find.text(
-          'งานนี้ยังไม่มีข้อมูลผู้ผูก Config ให้ Operation ผูก Config ใหม่ก่อน',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        tester.widget<FilledButton>(_confirmInstallButton).onPressed,
-        isNotNull,
-      );
-    });
-
-    testWidgets('ออฟไลน์ตอนขอ -> ข้อความไทยจาก ApiException (ไม่เข้าคิว offline)', (
-      tester,
-    ) async {
-      final applyRepo = await pumpWith(
-        tester,
-        createError: ApiException(
-          'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
-        ),
-      );
-
-      await tester.tap(_confirmInstallButton);
-      await tester.pump();
-      await tester.pump();
-
-      expect(
-        find.text(
-          'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต/เซิร์ฟเวอร์แล้วลองใหม่อีกครั้ง',
-        ),
-        findsOneWidget,
-      );
-      expect(applyRepo.requests, isEmpty);
-    });
 
     testWidgets(
       'โหลดสถานะคำขอไม่สำเร็จ -> ปุ่มขอกดไม่ได้ (ไม่รู้ว่ามีคำขอค้าง) '
@@ -1049,7 +992,7 @@ void main() {
         expect(confirm.width, greaterThan(save.width));
         // label ทั้งสองอยู่บรรทัดเดียว (ไม่ตัดขึ้นบรรทัดใหม่จนปุ่มสูงเกิน)
         expect(
-          tester.getSize(find.text('ขอส่ง Config เข้าเครื่อง')).height,
+          tester.getSize(find.text('ส่ง Config เข้าเครื่อง')).height,
           lessThan(32),
         );
       });
@@ -1568,17 +1511,75 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final history = find.byKey(const Key('apply_request_history'));
-      expect(history, findsOneWidget);
+      // ไม่อัดรายการไว้ในหน้างาน — เป็นปุ่มบอกจำนวนแล้วกดไปหน้าประวัติ
       expect(
-        find.descendant(
-          of: history,
-          matching: find.text(
-            configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
-          ),
+        find.text(
+          configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
         ),
+        findsNothing,
+      );
+      final button = find.byKey(const Key('apply_request_history'));
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(of: button, matching: find.text('ประวัติคำขอ')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: button, matching: find.text('ก่อนหน้า 1 ครั้ง')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('กดปุ่มประวัติคำขอ -> ไปหน้าประวัติคำขอของงานนี้', (
+      tester,
+    ) async {
+      // ปุ่มอยู่ท้ายหน้างาน ใต้ขอบจอเทส 800x600
+      await tester.binding.setSurfaceSize(const Size(800, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final router = GoRouter(
+        initialLocation: AppRoutes.taskDetail('t1'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.taskDetailPattern,
+            builder: (_, state) =>
+                TaskDetailPage(taskId: state.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: AppRoutes.taskRequestHistoryPattern,
+            builder: (_, state) => Scaffold(
+              body: Text('HISTORY_STUB ${state.pathParameters['id']}'),
+            ),
+          ),
+        ],
+      );
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              id: 'car-2',
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+            fakeApplyRequest(
+              id: 'car-1',
+              status: ConfigApplyRequestStatus.rejected,
+            ),
+          ],
+        ),
+        router: router,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const Key('apply_request_history')),
+      );
+      await tester.tap(find.byKey(const Key('apply_request_history')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('HISTORY_STUB t1'), findsOneWidget);
     });
 
     testWidgets(
@@ -1739,7 +1740,7 @@ void main() {
     );
 
     testWidgets(
-      'คำขอ Firmware ล่าสุดไม่สำเร็จ -> ขอส่งอีกครั้งเปิดแท็บ Firmware ไม่ส่ง Config ของงาน',
+      'คำขอ Firmware ล่าสุดไม่สำเร็จ -> ส่งอีกครั้งเปิดแท็บ Firmware ไม่ส่ง Config ของงาน',
       (tester) async {
         String? opened;
         final router = _routerWithApply((uri) => opened = uri);
@@ -1772,9 +1773,12 @@ void main() {
       },
     );
 
-    testWidgets('คำขอก่อนหน้าที่เป็น Firmware บอกเวอร์ชันในแถว', (
+    testWidgets('หน้าประวัติคำขอ: ทุกคำขอใหม่ไปเก่า + Firmware บอกเวอร์ชัน', (
       tester,
     ) async {
+      // ปุ่มอยู่ท้ายหน้างาน ใต้ขอบจอเทส 800x600
+      await tester.binding.setSurfaceSize(const Size(800, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(
         tester,
         repo: _FakeTaskRepository(
@@ -1794,10 +1798,40 @@ void main() {
             ),
           ],
         ),
+        router: GoRouter(
+          initialLocation: AppRoutes.taskDetail('t1'),
+          routes: [
+            GoRoute(
+              path: AppRoutes.taskDetailPattern,
+              builder: (_, state) =>
+                  TaskDetailPage(taskId: state.pathParameters['id']!),
+            ),
+            GoRoute(
+              path: AppRoutes.taskRequestHistoryPattern,
+              builder: (_, state) =>
+                  ApplyRequestHistoryPage(taskId: state.pathParameters['id']!),
+            ),
+          ],
+        ),
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('apply_request_history')),
+      );
+      await tester.tap(find.byKey(const Key('apply_request_history')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ประวัติคำขอ'), findsWidgets);
       expect(find.textContaining('Firmware v1.3.0'), findsOneWidget);
+      expect(
+        find.text(
+          configApplyRequestStatusLabel(ConfigApplyRequestStatus.succeeded),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('request_history_row_0')), findsOneWidget);
+      expect(find.byKey(const Key('request_history_row_1')), findsOneWidget);
     });
   });
 }
@@ -1815,6 +1849,13 @@ GoRouter _routerWithApply(void Function(String uri) onOpen) => GoRouter(
       builder: (_, state) {
         onOpen(state.uri.toString());
         return const Text('APPLY_PAGE');
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.deviceApplyConfigPattern,
+      builder: (_, state) {
+        onOpen(state.uri.toString());
+        return const Text('PARAMS_PAGE');
       },
     ),
   ],

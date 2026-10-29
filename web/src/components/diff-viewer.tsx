@@ -1,5 +1,6 @@
 import { TriangleAlertIcon } from "lucide-react";
 
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
 import { SensitiveValue } from "@/components/sensitive-value";
 import type { FieldChange, FieldChangeKind } from "@/lib/config-diff";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,9 @@ export function DiffCounts({
  * - ค่าเดิมพื้นแดงอ่อน ค่าใหม่พื้นเขียวอ่อน และมีป้ายประเภท (เพิ่ม/แก้ไข/ลบ)
  *   จึงไม่พึ่งสีอย่างเดียว
  * - `isMasked` = ปิดค่าอ่อนไหว · `attention` = ข้อความเตือนต่อ field (ถ้ามี)
+ * - `descriptionFor` = คำอธิบายจากคลัง Parameter (ถ้ามี) ใช้ `ConfigFieldLabel`
+ *   แสดงคำอธิบายขึ้นก่อนชื่อ field เหมือนจุดอื่นที่แสดงค่า field บนเว็บ (#407)
+ *   — ไม่ส่ง = แสดงชื่อ field เดี่ยวๆ เหมือนเดิม
  * - จอแคบจัดเป็นบล็อกต่อ field แทนคอลัมน์
  */
 export function DiffViewer({
@@ -68,6 +72,7 @@ export function DiffViewer({
   afterLabel,
   isMasked = () => false,
   attention = () => null,
+  descriptionFor,
   className,
 }: {
   changes: FieldChange[];
@@ -75,6 +80,7 @@ export function DiffViewer({
   afterLabel: string;
   isMasked?: (fieldName: string) => boolean;
   attention?: (fieldName: string) => string | null;
+  descriptionFor?: (fieldName: string) => string | null | undefined;
   className?: string;
 }) {
   return (
@@ -102,10 +108,14 @@ export function DiffViewer({
                 GRID,
               )}
             >
-              <span className="flex items-center gap-1 font-instrument text-muted-foreground">
-                {c.fieldName}
+              <span className="flex min-w-0 items-start gap-1">
+                <ConfigFieldLabel
+                  className="min-w-0"
+                  fieldName={c.fieldName}
+                  description={descriptionFor?.(c.fieldName)}
+                />
                 {warn && (
-                  <span title={warn}>
+                  <span title={warn} className="mt-0.5 shrink-0">
                     <TriangleAlertIcon
                       className="size-3.5 text-warning"
                       aria-label={warn}

@@ -63,6 +63,7 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   String? lastCreateConfigId;
   String? lastCreateFirmwareId;
   String? lastCreateNote;
+  bool? lastCreateDirect;
 
   final List<ConfigApplyRequest> requests;
   Object? listError;
@@ -93,9 +94,11 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     String? configId,
     String? firmwareId,
     String? note,
+    bool direct = false,
   }) async {
     createCalls++;
     lastCreateTaskId = taskId;
+    lastCreateDirect = direct;
     lastCreateConfigId = configId;
     lastCreateFirmwareId = firmwareId;
     lastCreateNote = note;
@@ -104,7 +107,14 @@ class FakeConfigApplyRequestRepository implements ConfigApplyRequestRepository {
     final gate = createGate;
     final created = gate != null
         ? await gate.future
-        : fakeApplyRequest(id: 'car-new-$createCalls', taskId: taskId);
+        : fakeApplyRequest(
+            id: 'car-new-$createCalls',
+            taskId: taskId,
+            // ส่งตรง = อนุมัติแล้วทันที (v3.75)
+            status: direct
+                ? ConfigApplyRequestStatus.approved
+                : ConfigApplyRequestStatus.pending,
+          );
     requests.insert(0, created);
     return created;
   }
