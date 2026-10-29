@@ -232,7 +232,11 @@ describe('DeviceService', () => {
   let notificationService: { send: jest.Mock };
   let campaignRolloutTarget: { findFirst: jest.Mock };
   let deviceModelService: { findOne: jest.Mock };
-  let centralDeviceService: { findDevice: jest.Mock; mode: 'real' | 'mock' };
+  let centralDeviceService: {
+    findDevice: jest.Mock;
+    checkConfig: jest.Mock;
+    mode: 'real' | 'mock';
+  };
   // ค่าเริ่มต้นเป็น mock เสมอ (CLAUDE.md Mock Mode Pattern) — เทสที่ต้องการ
   // โหมด central ค่อยตั้ง deviceConfigApplyMode ก่อน buildService()/beforeEach
   let deviceConfigApplyMode: string | undefined;
@@ -295,6 +299,7 @@ describe('DeviceService', () => {
     // ปลอมมาเป็น seed)
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
+      checkConfig: jest.fn(),
       mode: 'real',
     };
     customer = { findUnique: jest.fn() };
@@ -2022,6 +2027,86 @@ describe('DeviceService', () => {
         fields: { APN: 'internet' },
       });
     });
+
+    describe('โหมด central — ตรวจกับ Firmware ที่กล่องรันอยู่จริง', () => {
+      beforeEach(() => {
+        deviceConfigApplyMode = 'central';
+        device.findUnique.mockResolvedValue(installedDevice);
+        config.findUnique.mockResolvedValue(approvedConfig);
+        deviceSimulator.simulateConfig.mockResolvedValue(simPass);
+        connectionTester.testConnection.mockResolvedValue(connPass);
+      });
+
+      it('กล่องรับทุกค่า -> configCheck ผ่าน + บอก Firmware/schema ที่ใช้ตรวจ', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'ok',
+          hardwareModel: 'ESP32-DEVKIT-V1',
+          schemaVersion: 1,
+          firmwareVersion: '1.0.0',
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(centralDeviceService.checkConfig).toHaveBeenCalledWith(
+          'DTC-0001',
+          { APN: 'internet' },
+        );
+        expect(result.passed).toBe(true);
+        expect(result.configCheck.passed).toBe(true);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'กล่องรับค่าทุกตัว — ตรวจกับ Firmware 1.0.0 (schema 1) ของ ESP32-DEVKIT-V1 ที่กล่องรายงานว่ารันอยู่',
+        ]);
+      });
+
+      it('Firmware ในกล่องไม่รู้จักบางค่า -> configCheck ไม่ผ่าน พร้อมเหตุผลรายค่า', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'rejected',
+          reasons: [
+            'พารามิเตอร์ "speed_limit.max_kmh" ไม่มีใน schema ของ ESP32-DEVKIT-V1 (schema 1)',
+          ],
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(result.passed).toBe(false);
+        expect(result.configCheck.passed).toBe(false);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'กล่องจะไม่รับ Config นี้: พารามิเตอร์ "speed_limit.max_kmh" ไม่มีใน schema ของ ESP32-DEVKIT-V1 (schema 1)',
+        ]);
+      });
+
+      it('ติดต่อ Server กลางไม่ได้ -> ไม่บล็อก แต่บอกว่ายังไม่ได้ตรวจกับกล่อง', async () => {
+        centralDeviceService.checkConfig.mockResolvedValue({
+          kind: 'unavailable',
+          reason: 'เชื่อมต่อ Server กลางไม่ได้',
+        });
+
+        const result = await service.simulateConfig(
+          'DTC-0001',
+          approvedConfig.id,
+        );
+
+        expect(result.passed).toBe(true);
+        expect(result.configCheck.details).toEqual([
+          ...simPass.details,
+          'ยังไม่ได้ตรวจกับ Firmware ในกล่อง (เชื่อมต่อ Server กลางไม่ได้) — ลองทดสอบใหม่อีกครั้ง',
+        ]);
+      });
+
+      it('โหมดอื่น -> ไม่เรียก Server กลาง', async () => {
+        deviceConfigApplyMode = undefined;
+        await service.simulateConfig('DTC-0001', approvedConfig.id);
+        expect(centralDeviceService.checkConfig).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('getCurrentConfig', () => {
@@ -2066,6 +2151,8 @@ describe('DeviceService', () => {
         ...approvedConfig,
         hasDeviceOverride: false,
         pendingOverride: null,
+        // Config ฐานมาจากงานที่ช่างปิด (ยืนยันติดตั้งเอง) ไม่มีหลักฐานว่าส่งค่าอะไรเข้ากล่อง
+        delivery: null,
       });
       expect(task.findFirst).toHaveBeenCalledWith({
         where: {
@@ -2183,6 +2270,144 @@ describe('DeviceService', () => {
         const result = await service.getCurrentConfig('DTC-0001');
 
         expect(result.id).toBe(rolloutConfig.id);
+      });
+
+      describe('delivery — ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับค่าที่อนุมัติแล้ว', () => {
+        const deliveredAt = new Date('2026-10-27T09:31:34.000Z');
+        const base = {
+          ...rolloutConfig,
+          fields: { 'speed_limit.max_kmh': 80, 'gps.send_interval_sec': 15 },
+        };
+        const override = (
+          versionNumber: number,
+          decidedAt: Date | null,
+          fields: Record<string, unknown>,
+        ) => ({
+          id: `ov-${versionNumber}`,
+          deviceId: 'DTC-0001',
+          configId: base.id,
+          versionNumber,
+          fields,
+          status: 'approved',
+          decidedAt,
+        });
+
+        /** approved ล่าสุด = `latest` · approved ที่ตัดสินไม่หลังเวลาส่ง = `delivered` */
+        function mockApproved(latest: unknown, delivered: unknown = latest) {
+          deviceConfigOverride.findFirst.mockImplementation(
+            (args: { where?: { status?: string; OR?: unknown } }) => {
+              if (args?.where?.status !== 'approved')
+                return Promise.resolve(null);
+              return Promise.resolve(args.where.OR ? delivered : latest);
+            },
+          );
+        }
+
+        beforeEach(() => {
+          task.findFirst.mockResolvedValue(null);
+          config.findUnique.mockResolvedValue(base);
+          campaignRolloutTarget.findFirst.mockResolvedValue({
+            id: 'rt-1',
+            status: 'success',
+            updatedAt: deliveredAt,
+            rollout: { configId: base.id },
+          });
+        });
+
+        it('ไม่มี override -> delivery = ค่าฐาน ไม่มีค่ารอส่ง', async () => {
+          mockApproved(null);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery).toEqual({
+            fields: base.fields,
+            confirmedAt: deliveredAt,
+            pendingFieldNames: [],
+          });
+        });
+
+        it('override อนุมัติหลังส่งล่าสุด -> fields = ค่าหลังส่งครั้งถัดไป · delivery = ค่าในกล่อง + field ที่รอส่ง', async () => {
+          mockApproved(
+            override(1, new Date('2026-10-28T04:32:34.000Z'), {
+              'speed_limit.max_kmh': 100,
+            }),
+            null,
+          );
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.fields).toEqual({
+            'speed_limit.max_kmh': 100,
+            'gps.send_interval_sec': 15,
+          });
+          expect(result.delivery).toEqual({
+            fields: base.fields,
+            confirmedAt: deliveredAt,
+            pendingFieldNames: ['speed_limit.max_kmh'],
+          });
+          expect(deviceConfigOverride.findFirst).toHaveBeenCalledWith({
+            where: {
+              deviceId: 'DTC-0001',
+              configId: base.id,
+              status: 'approved',
+              OR: [{ decidedAt: null }, { decidedAt: { lte: deliveredAt } }],
+            },
+            orderBy: { versionNumber: 'desc' },
+          });
+        });
+
+        it('override อนุมัติก่อนส่ง -> ส่งเข้ากล่องไปแล้ว ไม่มีค่ารอส่ง (ไม่ query ซ้ำ)', async () => {
+          const ov = override(1, new Date('2026-10-27T08:00:00.000Z'), {
+            'speed_limit.max_kmh': 100,
+          });
+          mockApproved(ov);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery).toEqual({
+            fields: { 'speed_limit.max_kmh': 100, 'gps.send_interval_sec': 15 },
+            confirmedAt: deliveredAt,
+            pendingFieldNames: [],
+          });
+          const approvedCalls =
+            deviceConfigOverride.findFirst.mock.calls.filter(
+              ([a]: [{ where?: { status?: string } }]) =>
+                a?.where?.status === 'approved',
+            );
+          expect(approvedCalls).toHaveLength(1);
+        });
+
+        it('v1 ส่งแล้ว v2 (สะสม) อนุมัติหลังส่ง -> ค่าในกล่อง = v1 · รอส่งเฉพาะ field ที่ต่าง', async () => {
+          mockApproved(
+            override(2, new Date('2026-10-28T04:00:00.000Z'), {
+              'speed_limit.max_kmh': 60,
+              'gps.send_interval_sec': 10,
+            }),
+            override(1, new Date('2026-10-27T08:00:00.000Z'), {
+              'speed_limit.max_kmh': 60,
+            }),
+          );
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery).toEqual({
+            fields: { 'speed_limit.max_kmh': 60, 'gps.send_interval_sec': 15 },
+            confirmedAt: deliveredAt,
+            pendingFieldNames: ['gps.send_interval_sec'],
+          });
+        });
+
+        it('Config ฐานมาจากงานที่ช่างปิด (ใหม่กว่า Rollout) -> delivery = null', async () => {
+          task.findFirst.mockResolvedValue({
+            ...completedTask,
+            updatedAt: new Date('2026-10-28T00:00:00.000Z'),
+          });
+          mockApproved(null);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery).toBeNull();
+        });
       });
 
       it('Config ของ Rollout ที่สำเร็จถูกลบ (soft-delete) แล้ว -> NotFoundException เหมือน Task', async () => {
