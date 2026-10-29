@@ -15,13 +15,19 @@
  * (ปิด animation ทั้งหมดไว้ใน globals.css แล้ว)
  */
 
+/**
+ * ตำแหน่งจุดอุปกรณ์ (% ของจอ) วางไว้ **นอกพื้นที่การ์ด Login** (การ์ดอยู่กลางจอราว
+ * x 35-65%) เพื่อให้ทุกจุด เส้นทาง และวงเรดาร์เห็นเต็มๆ ไม่ถูกการ์ดบัง — รอบแรกวาง
+ * เรดาร์ไว้กลางจอ ขอบวงเลยโผล่เป็นเส้นโค้งเหนือการ์ดแต่ตัวกวาดถูกบังหมด · แบ่งเป็น
+ * กลุ่มซ้าย (0, 1, 5) กับกลุ่มขวา (2, 3, 4) ต่อกันด้วยเส้นทางที่วิ่งใต้การ์ด
+ */
 const MAP_POINTS: { x: number; y: number }[] = [
-  { x: 12, y: 22 },
-  { x: 76, y: 16 },
-  { x: 54, y: 42 },
-  { x: 88, y: 62 },
-  { x: 30, y: 72 },
-  { x: 16, y: 88 },
+  { x: 9, y: 20 },
+  { x: 24, y: 44 },
+  { x: 84, y: 28 },
+  { x: 93, y: 64 },
+  { x: 74, y: 84 },
+  { x: 14, y: 80 },
 ];
 
 /** index ใน MAP_POINTS ที่ให้มี ping ring (สื่อว่ากำลังส่งสัญญาณสด) —
@@ -31,14 +37,15 @@ const PINGING_POINT_INDEXES = new Set([0, 3]);
 /** index ของจุดที่ให้มีวงแสงเรดาร์กวาดล้อมรอบ — ใส่แค่จุดเดียว */
 const RADAR_POINT_INDEX = 2;
 
-/** คู่จุดที่ลากเส้นประเชื่อมกัน (อ้าง index ใน MAP_POINTS) — คล้ายเส้นทาง
- *  vehicle วิ่งระหว่างอุปกรณ์ */
+/** คู่จุดที่ลากเส้นประเชื่อมกัน (อ้าง index ใน MAP_POINTS) — เป็นทางต่อเนื่องเดียว
+ *  ซ้ายบน → ซ้ายล่าง → ขวาล่าง → ขวาบน คล้ายเส้นทาง vehicle วิ่งระหว่างอุปกรณ์ ·
+ *  ช่วงล่าง (5→4) วิ่งใต้ขอบล่างของการ์ด */
 const ROUTE_LINES: readonly [number, number][] = [
-  [0, 2],
-  [2, 1],
-  [2, 4],
-  [4, 5],
-  [2, 3],
+  [0, 1],
+  [1, 5],
+  [5, 4],
+  [4, 3],
+  [3, 2],
 ];
 
 export function LoginBackground() {
@@ -61,15 +68,15 @@ export function LoginBackground() {
       {/* วง "ระยะเรดาร์" นิ่งๆ — เป็น anchor ให้สายตาเห็นตำแหน่งตลอดเวลา
           แม้ตอนที่ลำแสงกวาดไปอยู่อีกด้านหนึ่ง */}
       <div
-        className="absolute size-80 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/30"
+        className="absolute hidden size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/30 md:block"
         style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
       />
       <div
-        className="absolute size-52 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/20"
+        className="absolute hidden size-64 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sidebar-primary/20 md:block"
         style={{ left: `${radarPoint.x}%`, top: `${radarPoint.y}%` }}
       />
       <div
-        className="animate-radar-spin absolute size-80 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        className="animate-radar-spin absolute hidden size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full md:block"
         style={{
           left: `${radarPoint.x}%`,
           top: `${radarPoint.y}%`,
