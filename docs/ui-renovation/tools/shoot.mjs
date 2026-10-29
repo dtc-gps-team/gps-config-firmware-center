@@ -229,6 +229,17 @@ const targets = {
   forbidden: { url: "/audit-log", w: 1440, h: 900, role: "ConfigEngineer" },
   "not-found": { url: "/no-such-page", w: 1440, h: 900 },
   login: { url: "/login", w: 1440, h: 900, anon: true, extra: ["mobile"] },
+  "config-compare": {
+    url: "/config",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(0).click();
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(1).click();
+      await page.getByRole("button", { name: /เปรียบเทียบ 2 Config/ }).click();
+      await page.waitForTimeout(500);
+    },
+  },
   "firmware-compare": {
     url: "/firmware",
     w: 1440,

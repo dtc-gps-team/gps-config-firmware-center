@@ -53,6 +53,7 @@ export function FirmwareCompareDialog({
                 changes={diff.changes}
                 beforeLabel={older.version}
                 afterLabel={newer.version}
+                showKind={false}
               />
             )}
           </div>

@@ -3,23 +3,22 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { GitCompareIcon, SlidersHorizontalIcon } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import {
   dateRangeFilterFn,
   multiSelectFilterFn,
 } from "@/components/data-table/filter-fns";
 import { useConfigs } from "@/hooks/use-configs";
-import { type Config } from "@/lib/config-api";
+import type { Config } from "@/lib/config-api";
 import { CONFIG_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
+import { ConfigCompareDialog } from "./config-compare-dialog";
 import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
@@ -100,6 +99,7 @@ export function ConfigTableCard({
   const { data, isLoading, error, refetch } = useConfigs();
   const configs = useMemo(() => data ?? [], [data]);
   const [dismissedBanner, setDismissedBanner] = useState(false);
+  const [comparing, setComparing] = useState<[Config, Config] | null>(null);
   // "สร้างจาก Config Wizard" มาจาก URL (?saved=id, navigate จริง) — "นำเข้า
   // จากไฟล์" มาจาก Dialog (แก้ครั้งที่ 71) ไม่มีการ navigate เลยใช้ local
   // state แทน · local state ชนะถ้ามีค่าใหม่กว่า (import ล่าสุดหลังเปิดหน้ามา)
@@ -119,7 +119,7 @@ export function ConfigTableCard({
 
   const savedConfig =
     effectiveJustSavedId != null
-      ? configs.find((c) => c.id === effectiveJustSavedId) ?? null
+      ? (configs.find((c) => c.id === effectiveJustSavedId) ?? null)
       : null;
 
   return (
@@ -138,7 +138,9 @@ export function ConfigTableCard({
         <Notice tone="success" onDismiss={() => setDismissedBanner(true)}>
           <span className="flex flex-wrap items-center gap-1">
             บันทึก Config &ldquo;{savedConfig.name}&rdquo; แล้ว สถานะ{" "}
-            <StatusPill tone={CONFIG_STATUS_TONE[savedConfig.status] ?? "neutral"}>
+            <StatusPill
+              tone={CONFIG_STATUS_TONE[savedConfig.status] ?? "neutral"}
+            >
               {statusLabel(savedConfig.status)}
             </StatusPill>
           </span>
@@ -165,11 +167,32 @@ export function ConfigTableCard({
               searchPlaceholder="ค้นหาชื่อ / โมเดล / โปรโตคอล…"
               emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข ลองล้างตัวกรองบางตัว"
               onRowClick={(config) => router.push(`/config/${config.id}`)}
+              selectable={{
+                getRowId: (config) => config.id,
+                bulkActions: (selected) =>
+                  selected.length === 2 ? (
+                    <Button
+                      size="sm"
+                      onClick={() => setComparing([selected[0], selected[1]])}
+                    >
+                      <GitCompareIcon />
+                      เปรียบเทียบ 2 Config
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      เลือก 2 Config เพื่อเปรียบเทียบ
+                    </span>
+                  ),
+              }}
               renderCard={(config) => (
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium break-words">{config.name}</span>
-                    <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
+                    <span className="font-medium break-words">
+                      {config.name}
+                    </span>
+                    <StatusPill
+                      tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}
+                    >
                       {statusLabel(config.status)}
                     </StatusPill>
                   </div>
@@ -182,6 +205,10 @@ export function ConfigTableCard({
           )}
         </CardContent>
       </Card>
+      <ConfigCompareDialog
+        pair={comparing}
+        onClose={() => setComparing(null)}
+      />
     </div>
   );
 }
