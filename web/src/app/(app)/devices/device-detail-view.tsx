@@ -263,7 +263,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
               <div className="flex flex-col gap-4">
                 {/* สถานะไว้บนสุด คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
                  * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid items-start gap-4 lg:grid-cols-2">
                   <DeviceStatusCard deviceId={device.deviceId} />
                   <DeviceCentralCardView state={central} />
                 </div>

@@ -19,7 +19,6 @@ import {
 } from "@/lib/firmware-compare";
 import { type Firmware } from "@/lib/firmware-api";
 import {
-  FIRMWARE_APPROVAL_STATUS_TONE,
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
   pillClass,
@@ -98,19 +97,13 @@ function FirmwareDetailContent({
             <StatusPill tone={RELEASE_TONE[firmwareRelease(firmware)]}>
               {FIRMWARE_RELEASE_LABEL[firmwareRelease(firmware)]}
             </StatusPill>
-            <StatusPill
-              tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
-            >
-              {statusLabel(firmware.uploadStatus)}
-            </StatusPill>
-            <StatusPill
-              tone={
-                FIRMWARE_APPROVAL_STATUS_TONE[firmware.approvalStatus] ??
-                "neutral"
-              }
-            >
-              {statusLabel(firmware.approvalStatus)}
-            </StatusPill>
+            {firmware.uploadStatus !== "stored" && (
+              <StatusPill
+                tone={FIRMWARE_UPLOAD_STATUS_TONE[firmware.uploadStatus] ?? "neutral"}
+              >
+                {statusLabel(firmware.uploadStatus)}
+              </StatusPill>
+            )}
           </>
         }
       />
