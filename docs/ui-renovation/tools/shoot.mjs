@@ -69,6 +69,7 @@ const targets = {
     url: "/config",
     w: 1440,
     h: 900,
+    extra: ["mobile"],
     act: async (page) => {
       await page.getByRole("button", { name: /Import จากไฟล์/ }).click();
       await page.locator('input[type="file"]').setInputFiles({
