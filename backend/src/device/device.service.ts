@@ -85,6 +85,19 @@ import { RejectDeviceFirmwareOverrideDto } from './dto/reject-device-firmware-ov
 export type ConfigWithDeviceOverride = Config & {
   hasDeviceOverride: boolean;
   pendingOverride: DeviceConfigOverride | null;
+  delivery: ConfigDelivery | null;
+};
+
+/** ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด — `fields` ของ response คือค่าที่**จะ**อยู่ในกล่อง
+ * หลังส่งครั้งถัดไป (รวม Override ที่อนุมัติแล้วทันที) ซึ่งในโหมด central
+ * (docs/30) อนุมัติแล้วยังต้องรอช่างกดส่ง จึงต่างจากค่าในกล่องได้ · `null` =
+ * ไม่มีหลักฐานการส่ง (Config ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง) */
+export type ConfigDelivery = {
+  fields: Record<string, unknown>;
+  /** เวลาที่ Rollout target ของเครื่องนี้สำเร็จ (กล่องยืนยันผล) */
+  confirmedAt: Date;
+  /** field ที่ค่าใน `fields` ของ response ต่างจากค่าในกล่อง (อนุมัติแล้ว รอส่ง) */
+  pendingFieldNames: string[];
 };
 
 /** สถานะเดียวที่ทดสอบสัญญาณ / ใส่ Config ได้ — อุปกรณ์ต้องติดตั้งจริงแล้ว
@@ -1165,6 +1178,14 @@ export class DeviceService {
    * จนกว่าจะมี `completedAt` แยก
    */
   private async getBaseConfigForDevice(deviceId: string): Promise<Config> {
+    return (await this.resolveBaseConfig(deviceId)).config;
+  }
+
+  /** `getBaseConfigForDevice()` + `deliveredAt` = เวลาที่ Rollout target สำเร็จ
+   * เมื่อ Config ฐานมาจาก Rollout (มีหลักฐานว่าส่งเข้ากล่องแล้ว) ไม่งั้น `null` */
+  private async resolveBaseConfig(
+    deviceId: string,
+  ): Promise<{ config: Config; deliveredAt: Date | null }> {
     // เลือกอันที่ใหม่กว่าระหว่าง (1) Task ที่ช่างทำเสร็จล่าสุด กับ (2) Rollout
     // target ของ Config ที่สำเร็จล่าสุด (docs/19 §5) — เดิมดูแค่ Task ทำให้
     // Config ที่ Rollout ส่งสำเร็จไม่ถูกนับเป็น Config ปัจจุบันของเครื่อง
@@ -1197,10 +1218,9 @@ export class DeviceService {
       }),
     ]);
     const rolloutConfigId = rolloutTarget?.rollout.configId ?? null;
-    const configId =
-      rolloutConfigId && (!task || rolloutTarget!.updatedAt > task.updatedAt)
-        ? rolloutConfigId
-        : (task?.configId ?? null);
+    const fromRollout =
+      !!rolloutConfigId && (!task || rolloutTarget!.updatedAt > task.updatedAt);
+    const configId = fromRollout ? rolloutConfigId : (task?.configId ?? null);
     const config = configId
       ? await this.prisma.config.findUnique({ where: { id: configId } })
       : null;
@@ -1212,7 +1232,10 @@ export class DeviceService {
         'อุปกรณ์นี้ยังไม่มี Config ที่ยืนยันติดตั้งแล้ว',
       );
     }
-    return config;
+    return {
+      config,
+      deliveredAt: fromRollout ? rolloutTarget!.updatedAt : null,
+    };
   }
 
   /** Config ที่ใช้อยู่ตอนนี้ของเครื่อง หรือ null ถ้ายังไม่เคยมี Config ที่ยืนยันติดตั้ง
@@ -1228,7 +1251,8 @@ export class DeviceService {
 
   async getCurrentConfig(deviceId: string): Promise<ConfigWithDeviceOverride> {
     await this.findByDeviceId(deviceId);
-    const baseConfig = await this.getBaseConfigForDevice(deviceId);
+    const { config: baseConfig, deliveredAt } =
+      await this.resolveBaseConfig(deviceId);
 
     // Per-device Config Override (issue #223, มติ 2026-09-24) — merge เฉพาะ
     // แถว status: approved ของ Config **ตัวเดียวกับ base** เท่านั้น (bug fix
@@ -1269,8 +1293,23 @@ export class DeviceService {
       }),
     ]);
 
+    const delivery = deliveredAt
+      ? await this.describeDelivery(
+          deviceId,
+          baseConfig,
+          fields,
+          approvedOverride,
+          deliveredAt,
+        )
+      : null;
+
     if (!approvedOverride) {
-      return { ...baseConfig, hasDeviceOverride: false, pendingOverride };
+      return {
+        ...baseConfig,
+        hasDeviceOverride: false,
+        pendingOverride,
+        delivery,
+      };
     }
 
     return {
@@ -1278,7 +1317,51 @@ export class DeviceService {
       fields: fields as Prisma.JsonValue,
       hasDeviceOverride: true,
       pendingOverride,
+      delivery,
     };
+  }
+
+  /**
+   * ค่าในกล่อง = Config ฐาน + Override (สะสม) ฉบับล่าสุดที่อนุมัติ**ไม่หลัง**เวลาที่
+   * Rollout ล่าสุดของเครื่องสำเร็จ — ทุกเส้นทางส่ง (คำขอส่งเข้ากล่อง, Campaign,
+   * กล่องดึงงาน) merge Override ที่ approved ตอนเตรียม payload ก่อนกล่องยืนยัน
+   * จึงถูกรวมไปแล้ว · Override ที่อนุมัติหลังจากนั้นยังไม่ถึงกล่อง
+   *
+   * ข้อจำกัด: Override ที่อนุมัติระหว่างที่การส่งยังไม่จบ (หลังเตรียม payload แต่
+   * ก่อนกล่องยืนยัน) จะถูกนับว่าส่งแล้ว — โหมด central กันกรณีนี้อยู่แล้ว เพราะ
+   * ขอแก้ค่าไม่ได้ระหว่างที่เครื่องมีคำขอค้างหรือ Campaign กำลังส่ง (docs/30)
+   * · `decidedAt` null (ข้อมูลเก่า) ถือว่าส่งแล้ว ไม่ขึ้นว่ารอส่งโดยไม่มีหลักฐาน
+   */
+  private async describeDelivery(
+    deviceId: string,
+    baseConfig: Config,
+    expected: Record<string, unknown>,
+    latestApproved: DeviceConfigOverride | null,
+    deliveredAt: Date,
+  ): Promise<ConfigDelivery> {
+    let delivered = latestApproved;
+    if (
+      latestApproved?.decidedAt &&
+      latestApproved.decidedAt.getTime() > deliveredAt.getTime()
+    ) {
+      delivered = await this.prisma.deviceConfigOverride.findFirst({
+        where: {
+          deviceId,
+          configId: baseConfig.id,
+          status: 'approved',
+          OR: [{ decidedAt: null }, { decidedAt: { lte: deliveredAt } }],
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+    }
+    const fields = {
+      ...(baseConfig.fields as Record<string, unknown>),
+      ...((delivered?.fields as Record<string, unknown> | undefined) ?? {}),
+    };
+    const pendingFieldNames = Object.keys(expected).filter(
+      (key) => JSON.stringify(expected[key]) !== JSON.stringify(fields[key]),
+    );
+    return { fields, confirmedAt: deliveredAt, pendingFieldNames };
   }
 
   /**
