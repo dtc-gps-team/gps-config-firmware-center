@@ -1,0 +1,110 @@
+import Link from "next/link";
+
+import { StatusLed, type LedTone } from "@/components/ui/status-led";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { Panel } from "./dashboard-panel";
+
+/**
+ * การ์ด "สถานะระบบ" — สรุปสั้นด้านขวาของแถวบน (รอง "ต้องทำตอนนี้") ทุกแถวเป็น
+ * LED + ชื่อ + ค่า: ค่า > 0 ที่ต้องสนใจใช้สี/LED เต้น, ปกติเป็นเขียวจาง · แถวที่
+ * ยังไม่มีหน้าปลายทางที่ตรงกับตัวเลข (ไม่ใส่ `href`) ไม่เป็นลิงก์
+ */
+export function HealthCard({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Panel title="สถานะระบบ" className={className}>
+      <ul className="flex flex-col divide-y">{children}</ul>
+    </Panel>
+  );
+}
+
+type HealthRowProps = {
+  label: string;
+  /** null = ยังโหลดอยู่ */
+  value: number | null;
+  /** ข้อความแทนตัวเลข (เช่น "84%") */
+  text?: string;
+  error?: string | null;
+  /** แหล่งข้อมูลติดต่อไม่ได้ แสดง "ไม่ทราบ" ไม่ใช่เลข 0 ที่ดูเหมือนปกติ */
+  unavailable?: boolean;
+  /** โทนเมื่อมีสิ่งที่ต้องสนใจ (ค่า > 0) */
+  attention?: "danger" | "warning" | null;
+  href?: string;
+  hint?: string;
+  children?: React.ReactNode;
+};
+
+export function HealthRow({
+  label,
+  value,
+  text,
+  error,
+  unavailable,
+  attention = null,
+  href,
+  hint,
+  children,
+}: HealthRowProps) {
+  const flagged = attention !== null && (value ?? 0) > 0 && !error && !unavailable;
+  const led: LedTone = flagged
+    ? attention === "danger"
+      ? "danger"
+      : "warning"
+    : error || unavailable
+      ? "neutral"
+      : "online";
+
+  const content = (
+    <>
+      <div className="flex items-center gap-2.5">
+        <StatusLed tone={led} pulse={flagged && attention === "danger"} />
+        <span className="min-w-0 flex-1 text-sm">{label}</span>
+        <span
+          data-tabular
+          className={cn(
+            "text-sm font-semibold tabular-nums",
+            flagged && attention === "danger" && "text-danger-foreground",
+            flagged && attention === "warning" && "text-warning-foreground",
+            !flagged && "text-muted-foreground",
+          )}
+        >
+          {error ? (
+            <span className="font-normal text-destructive">โหลดไม่สำเร็จ</span>
+          ) : unavailable ? (
+            <span className="font-normal">ไม่ทราบ</span>
+          ) : value === null && text === undefined ? (
+            <Skeleton className="h-4 w-8" />
+          ) : (
+            (text ?? (value ?? 0).toLocaleString("th-TH"))
+          )}
+        </span>
+      </div>
+      {children}
+    </>
+  );
+
+  const rowClass = "block px-1 py-2.5";
+  return (
+    <li title={hint}>
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            rowClass,
+            "rounded-md outline-none transition-colors duration-(--duration-fast) hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {content}
+        </Link>
+      ) : (
+        <div className={rowClass}>{content}</div>
+      )}
+    </li>
+  );
+}

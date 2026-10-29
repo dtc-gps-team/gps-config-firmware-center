@@ -1,131 +1,139 @@
 /**
- * มุมมอง Dashboard ต่อ Role — ตัดสินว่า Role ไหนเห็นการ์ด/แผงอะไรบ้าง และเรียง
- * อย่างไร เพื่อให้หน้าแรกตอบ "ตอนนี้มีอะไรต้องให้ฉันทำ" ของ Role นั้นจริงๆ
- * (ConfigEngineer ดู Config ของตัวเอง, QAEngineer ดูคิว Firmware รอตรวจ,
- * Operation ดู Rollout ที่รอปล่อย ฯลฯ) แทนที่ทุก Role เห็นหน้าเดียวกัน
+ * มุมมอง Dashboard ต่อ Role — ออกแบบจากงานของแต่ละ Role ไม่ใช่การกรองการ์ด
  *
- * นี่เป็น UX-level เหมือน `permissions.ts` — การบังคับสิทธิ์จริงอยู่ที่ backend
- * ข้อจำกัดที่ derive จากสิทธิ์จริงอยู่แล้ว: FirmwareEngineer/QAEngineer ไม่มี
- * `campaign:Read` (ไม่มีแผง Campaign) และ ConfigEngineer/FirmwareEngineer/
- * QAEngineer เข้า Audit Log ไม่ได้ (ไม่มีแผงกิจกรรมล่าสุด)
+ * ทุก Role ใช้โครงเดียวกัน (เรียนรู้ครั้งเดียว):
+ *   แถวบน   [ ต้องทำตอนนี้ (คิวงานเรียงตามความเร่งด่วน) | สถานะระบบ (สรุปสั้น) ]
+ *   แถวถัดไป แผงรายละเอียดตามที่ Role นั้นใช้
+ * ต่างกันที่เนื้อหา: Operation ได้คิวอนุมัติ/ปล่อย Rollout, ConfigEngineer ได้
+ * Config ของตัวเองที่ต้องแก้/ส่ง, QAEngineer ได้ Firmware รอตรวจ ฯลฯ · Role ที่ไม่มี
+ * งานในคิว (Auditor/Admin) ใช้กิจกรรมล่าสุดเป็นแผงนำแทน
+ *
+ * ข้อจำกัดที่ derive จากสิทธิ์จริง: FirmwareEngineer/QAEngineer ไม่มี `campaign:Read`
+ * (ไม่มีแผง Campaign) และ ConfigEngineer/FirmwareEngineer/QAEngineer เข้า Audit Log
+ * ไม่ได้ (ไม่มีแผงกิจกรรม) · UX-level เหมือน `permissions.ts` — backend บังคับสิทธิ์จริง
  */
 
-/** การ์ดในแถบ "ต้องลงมือทำ" */
-export type RiskId = "paused" | "incident" | "offline" | "drift";
+/** ชนิดของคิว "ต้องทำตอนนี้" · null = Role นี้ไม่มีคิวงาน (ใช้กิจกรรมล่าสุดนำแทน) */
+export type QueueKind =
+  | "operation"
+  | "field"
+  | "configEngineer"
+  | "firmwareEngineer"
+  | "qa"
+  | null;
 
-/** ตัวเลขนิ่งท้ายแถบ */
-export type StatId = "devices" | "models" | "configsPending" | "campaigns";
+/** แถวในการ์ด "สถานะระบบ" */
+export type HealthId =
+  | "connection"
+  | "offline"
+  | "drift"
+  | "devices"
+  | "incident"
+  | "deploy";
 
-/** แผงกลุ่มกลางหน้า (hook-driven ใน DashboardSummary) */
-export type SummaryPanelId = "rollouts" | "silent" | "deploy" | "connection";
-
-/** แผงที่เป็นของ Role นั้นโดยเฉพาะ / แผงรวมท้ายหน้า */
-export type FocusPanelId =
-  | "myConfigs"
-  | "firmwareQueue"
+export type PanelId =
+  | "rollouts"
+  | "silent"
   | "configStatus"
-  | "activity";
+  | "activity"
+  | "firmwareStatus";
 
 export type PanelSpan = 5 | 7 | 12;
 
 export type DashboardView = {
-  /** แถวบนสุดใต้แถบรออนุมัติ: แผงเฉพาะ Role */
-  focus: { id: FocusPanelId; span: PanelSpan }[];
-  risk: RiskId[];
-  summary: { id: SummaryPanelId; span: PanelSpan }[];
-  stats: StatId[];
-  /** แผงท้ายหน้า */
-  lower: { id: FocusPanelId; span: PanelSpan }[];
+  queue: QueueKind;
+  health: HealthId[];
+  /** แถวใต้แถวบน แต่ละแถวผลรวม span = 12 */
+  rows: { id: PanelId; span: PanelSpan }[][];
 };
 
-const ALL_RISK: RiskId[] = ["paused", "incident", "offline", "drift"];
-const ALL_STATS: StatId[] = ["devices", "models", "configsPending", "campaigns"];
-
-const OPERATION: DashboardView = {
-  focus: [],
-  risk: ALL_RISK,
-  summary: [
-    { id: "rollouts", span: 7 },
-    { id: "silent", span: 5 },
-    { id: "deploy", span: 7 },
-    { id: "connection", span: 5 },
-  ],
-  stats: ALL_STATS,
-  lower: [
-    { id: "configStatus", span: 5 },
-    { id: "activity", span: 7 },
-  ],
-};
-
-const FIELD: DashboardView = {
-  focus: [],
-  risk: ALL_RISK,
-  summary: [
-    { id: "silent", span: 5 },
-    { id: "connection", span: 7 },
-    { id: "rollouts", span: 7 },
-    { id: "deploy", span: 5 },
-  ],
-  stats: ["devices", "models", "campaigns"],
-  lower: [{ id: "activity", span: 12 }],
-};
-
-const READ_ONLY: DashboardView = {
-  focus: [],
-  risk: ALL_RISK,
-  summary: [
-    { id: "deploy", span: 7 },
-    { id: "connection", span: 5 },
-    { id: "rollouts", span: 7 },
-    { id: "silent", span: 5 },
-  ],
-  stats: ALL_STATS,
-  lower: [
-    { id: "configStatus", span: 5 },
-    { id: "activity", span: 7 },
-  ],
-};
+const FIELD_HEALTH: HealthId[] = ["connection", "offline", "drift", "incident", "deploy"];
 
 const VIEWS: Record<string, DashboardView> = {
-  Operation: OPERATION,
-  ST: FIELD,
-  OT: FIELD,
-  Auditor: READ_ONLY,
-  Admin: READ_ONLY,
-  SuperAdmin: READ_ONLY,
+  Operation: {
+    queue: "operation",
+    health: FIELD_HEALTH,
+    rows: [
+      [
+        { id: "rollouts", span: 7 },
+        { id: "silent", span: 5 },
+      ],
+      [
+        { id: "configStatus", span: 5 },
+        { id: "activity", span: 7 },
+      ],
+    ],
+  },
+  ST: {
+    queue: "field",
+    health: FIELD_HEALTH,
+    rows: [
+      [
+        { id: "silent", span: 5 },
+        { id: "rollouts", span: 7 },
+      ],
+      [{ id: "activity", span: 12 }],
+    ],
+  },
+  OT: {
+    queue: "field",
+    health: FIELD_HEALTH,
+    rows: [
+      [
+        { id: "silent", span: 5 },
+        { id: "rollouts", span: 7 },
+      ],
+      [{ id: "activity", span: 12 }],
+    ],
+  },
   ConfigEngineer: {
-    focus: [
-      { id: "myConfigs", span: 7 },
-      { id: "configStatus", span: 5 },
+    queue: "configEngineer",
+    health: ["incident", "deploy"],
+    rows: [
+      [
+        { id: "configStatus", span: 5 },
+        { id: "rollouts", span: 7 },
+      ],
     ],
-    risk: ["incident", "paused"],
-    summary: [
-      { id: "rollouts", span: 7 },
-      { id: "deploy", span: 5 },
-    ],
-    stats: ["devices", "models", "configsPending", "campaigns"],
-    lower: [],
   },
   FirmwareEngineer: {
-    focus: [{ id: "firmwareQueue", span: 12 }],
-    risk: ["incident"],
-    summary: [],
-    stats: ["devices", "models"],
-    lower: [],
+    queue: "firmwareEngineer",
+    health: ["devices", "incident"],
+    rows: [[{ id: "firmwareStatus", span: 12 }]],
   },
   QAEngineer: {
-    focus: [{ id: "firmwareQueue", span: 12 }],
-    risk: ["incident"],
-    summary: [],
-    stats: ["devices", "models"],
-    lower: [],
+    queue: "qa",
+    health: ["devices", "incident"],
+    rows: [[{ id: "firmwareStatus", span: 12 }]],
+  },
+  Auditor: {
+    queue: null,
+    health: FIELD_HEALTH,
+    rows: [
+      [
+        { id: "rollouts", span: 7 },
+        { id: "silent", span: 5 },
+      ],
+      [{ id: "configStatus", span: 12 }],
+    ],
+  },
+  Admin: {
+    queue: null,
+    health: FIELD_HEALTH,
+    rows: [
+      [
+        { id: "rollouts", span: 7 },
+        { id: "silent", span: 5 },
+      ],
+      [{ id: "configStatus", span: 12 }],
+    ],
   },
 };
+VIEWS.SuperAdmin = VIEWS.Admin;
 
-/** Role ที่ไม่รู้จัก (หรือยังไม่มี session) ได้มุมมองอ่านอย่างเดียวที่
- *  ไม่มีแผงเฉพาะ Role ซึ่งเป็นชุดที่ปลอดภัยที่สุด */
+/** Role ที่ไม่รู้จัก (หรือยังไม่มี session) ได้มุมมองอ่านอย่างเดียวแบบ Auditor */
 export function dashboardView(role: string | null | undefined): DashboardView {
-  return (role && VIEWS[role]) || READ_ONLY;
+  return (role && VIEWS[role]) || VIEWS.Auditor;
 }
 
 const SPAN_CLASS: Record<PanelSpan, string> = {

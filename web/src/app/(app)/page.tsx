@@ -1,7 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { RefreshControl } from "@/components/refresh-control";
-import { DashboardPendingApprovals } from "./dashboard-pending-approvals";
-import { DashboardRoleLayout } from "./dashboard-role-layout";
+import { DashboardSummary } from "./dashboard-summary";
 
 export const metadata = {
   title: "Dashboard | GPS Config Center",
@@ -17,16 +16,15 @@ export const metadata = {
  * **คนละฟีเจอร์กับ Local Activity Log ที่ถูกยกเลิกไปแล้ว** (`docs/10`) ชื่อไทย
  * บังเอิญซ้ำกันเฉยๆ ไม่ต้องลบ/แก้อะไรเพิ่มจากเหตุการณ์นั้น
  *
- * แถบ "รายการรออนุมัติ" เป็นแค่ทางลัดไป Approval Center (ไม่มีปุ่มอนุมัติใน
- * หน้านี้ — ดู `dashboard-pending-approvals.tsx`) หน้านี้จึงอ่านอย่างเดียว
+ * งานรออนุมัติของ Operation อยู่ในการ์ด "ต้องทำตอนนี้" (ทางลัดไป Approval Center
+ * ไม่มีปุ่มอนุมัติในหน้านี้) หน้านี้จึงอ่านอย่างเดียว
  */
 export default function DashboardPage() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader title="Dashboard" actions={<RefreshControl />} />
 
-      <DashboardPendingApprovals />
-      <DashboardRoleLayout />
+      <DashboardSummary />
     </div>
   );
 }

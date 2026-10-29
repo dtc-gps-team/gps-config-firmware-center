@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import { dashboardView } from "./dashboard-view";
+import {
+  oldestIso,
+  sortQueue,
+  waitingLabel,
+  type QueueItem,
+} from "./dashboard-queue";
 import {
   activeRollouts,
   rolloutsAwaitingRelease,
   silentDevices,
 } from "./dashboard-metrics";
-import { dashboardView } from "./dashboard-view";
 import type { CampaignRollout } from "./campaign-api";
 
 const HOUR = 3_600_000;
@@ -31,7 +37,7 @@ describe("silentDevices", () => {
     const central = [
       { deviceId: "A", online: false, lastSeenAt: ago(30) },
       { deviceId: "B", online: false, lastSeenAt: ago(60) },
-      { deviceId: "C", online: false, lastSeenAt: ago(2) }, // เพิ่งหาย ยังไม่เกินเกณฑ์
+      { deviceId: "C", online: false, lastSeenAt: ago(2) },
       { deviceId: "D", online: true, lastSeenAt: ago(1) },
     ];
     const result = silentDevices(devices, central, 24 * HOUR, NOW);
@@ -44,7 +50,6 @@ describe("silentDevices", () => {
       { deviceId: "B", online: false, lastSeenAt: null },
     ];
     const result = silentDevices(devices, central, 24 * HOUR, NOW);
-    // E ไม่อยู่ใน Server กลาง จึงไม่ถูกนับ
     expect(result.map((d) => d.deviceId)).toEqual(["B", "A"]);
   });
 });
@@ -68,32 +73,75 @@ describe("rollouts", () => {
   });
 });
 
+describe("sortQueue", () => {
+  const item = (key: string, tone: QueueItem["tone"], count: number): QueueItem => ({
+    key,
+    tone,
+    title: key,
+    count,
+  });
+
+  it("ตัดงานที่ไม่มี และเรียงผิดปกติ → ต้องตัดสินใจ → รับทราบ ลำดับเดิมคงไว้ในโทนเดียวกัน", () => {
+    const sorted = sortQueue([
+      item("info", "info", 2),
+      item("warn-1", "warning", 1),
+      item("empty", "danger", 0),
+      item("danger", "danger", 3),
+      item("warn-2", "warning", 4),
+    ]);
+    expect(sorted.map((i) => i.key)).toEqual(["danger", "warn-1", "warn-2", "info"]);
+  });
+});
+
+describe("waitingLabel / oldestIso", () => {
+  it("แปลงเวลาที่ค้างเป็นข้อความ", () => {
+    expect(waitingLabel(ago(0.2), NOW)).toBe("ค้างมาไม่ถึงชั่วโมง");
+    expect(waitingLabel(ago(5), NOW)).toBe("ค้างมา 5 ชั่วโมง");
+    expect(waitingLabel(ago(50), NOW)).toBe("ค้างมา 2 วัน");
+    expect(waitingLabel(undefined, NOW)).toBeUndefined();
+  });
+
+  it("หาเวลาเก่าสุดโดยข้ามค่าว่าง/ไม่ถูกต้อง", () => {
+    expect(oldestIso([ago(1), null, "x", ago(9)])).toBe(ago(9));
+    expect(oldestIso([])).toBeUndefined();
+  });
+});
+
 describe("dashboardView ต่อ Role", () => {
-  it("role ที่ไม่มี campaign:Read ไม่มีแผงที่พึ่ง Campaign", () => {
+  it("role ที่ไม่มี campaign:Read ไม่มีแผงที่พึ่ง Campaign และ health ไม่มี deploy", () => {
     for (const role of ["FirmwareEngineer", "QAEngineer"]) {
       const v = dashboardView(role);
-      expect(v.summary).toEqual([]);
-      expect(v.risk).toEqual(["incident"]);
-      expect(v.stats).not.toContain("campaigns");
+      expect(v.rows.flat().map((p) => p.id)).not.toContain("rollouts");
+      expect(v.health).not.toContain("deploy");
     }
   });
 
   it("role ที่เข้า Audit Log ไม่ได้ไม่มีแผงกิจกรรมล่าสุด", () => {
     for (const role of ["ConfigEngineer", "FirmwareEngineer", "QAEngineer"]) {
-      const v = dashboardView(role);
-      const ids = [...v.focus, ...v.lower].map((p) => p.id);
-      expect(ids).not.toContain("activity");
+      expect(dashboardView(role).rows.flat().map((p) => p.id)).not.toContain("activity");
     }
   });
 
-  it("Operation เห็น Rollout รอปล่อย, ConfigEngineer เห็น Config ของตัวเอง", () => {
-    expect(dashboardView("Operation").summary.map((p) => p.id)).toContain("rollouts");
-    expect(dashboardView("ConfigEngineer").focus.map((p) => p.id)).toContain("myConfigs");
-    expect(dashboardView("QAEngineer").focus.map((p) => p.id)).toContain("firmwareQueue");
+  it("แต่ละ role มีคิวงานตามหน้าที่ของตัวเอง", () => {
+    expect(dashboardView("Operation").queue).toBe("operation");
+    expect(dashboardView("ConfigEngineer").queue).toBe("configEngineer");
+    expect(dashboardView("QAEngineer").queue).toBe("qa");
+    expect(dashboardView("FirmwareEngineer").queue).toBe("firmwareEngineer");
+    expect(dashboardView("ST").queue).toBe("field");
+    expect(dashboardView("Auditor").queue).toBeNull();
+    expect(dashboardView("SuperAdmin").queue).toBeNull();
   });
 
-  it("role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว ไม่มีแผงเฉพาะ role", () => {
-    expect(dashboardView(null).focus).toEqual([]);
-    expect(dashboardView("Whatever").focus).toEqual([]);
+  it("แต่ละแถวผลรวม span เป็น 12", () => {
+    for (const role of ["Operation", "ST", "ConfigEngineer", "QAEngineer", "Auditor", "Admin"]) {
+      for (const row of dashboardView(role).rows) {
+        expect(row.reduce((n, p) => n + p.span, 0)).toBe(12);
+      }
+    }
+  });
+
+  it("role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว ไม่มีคิว", () => {
+    expect(dashboardView(null).queue).toBeNull();
+    expect(dashboardView("Whatever").queue).toBeNull();
   });
 });

@@ -124,7 +124,7 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | AppShell | `components/app-shell/*` | รอบ 1 เสร็จ (sidebar ยุบ+spring+indicator, badge งานค้าง, top bar, command palette, ตัวบอก Server กลาง) |
 | PageHeader | `components/page-header.tsx` | มีเดิม ใช้ `RefreshControl` ใน `actions` เมื่อหน้าต้องการรีเฟรช |
 | RefreshControl | `components/refresh-control.tsx` | รอบ 1 (ปุ่มส่งสัญญาณผ่าน `lib/refresh-bus.ts`) |
-| KpiCard, SegmentBar | `components/kpi-card.tsx`, `components/segment-bar.tsx` | รอบ 1 |
+| SegmentBar | `components/segment-bar.tsx` | รอบ 1 (การ์ดหน้า Dashboard อยู่ใน `app/(app)/dashboard-*.tsx`) |
 | StatusBadge, StatusLed, ConnectionIndicator | `components/status-badge.tsx`, `components/ui/status-led.tsx`, `components/connection-indicator.tsx` | รอบ 1 (`StatusPill` เดิมใน `lib/status-pill.tsx` ยังใช้กับ lifecycle enum ต่อ รอบ 2 ให้ย้ายเข้าตัวเดียวกัน) |
 | EmptyState, ErrorState | `components/empty-state.tsx`, `components/error-state.tsx` | EmptyState มีเดิม ErrorState ใหม่ รอบ 2 เปลี่ยนทุกหน้าที่เขียน error เอง |
 | ConfirmDialog (type-to-confirm) | `components/confirm-dialog.tsx` | สร้างแล้ว ยังไม่ถูกใช้ รอบ 2 ผูกกับ release/rollback/bulk |
@@ -137,18 +137,20 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 
 ### มุมมองตาม Role (Dashboard, `web/src/lib/dashboard-view.ts`)
 
-ตารางเดียวกำหนดว่า Role ไหนเห็นการ์ด/แผงอะไรและเรียงอย่างไร (แก้ที่ไฟล์นี้ ไม่ต้องแก้ component) กฎที่ derive จากสิทธิ์จริง: FirmwareEngineer/QAEngineer ไม่มี `campaign:Read` (ไม่มีแผง Campaign), ConfigEngineer/FirmwareEngineer/QAEngineer เข้า Audit Log ไม่ได้ (ไม่มีแผงกิจกรรม) Role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว
+ออกแบบจากงานของแต่ละ Role ไม่ใช่การกรองการ์ด ทุก Role ใช้โครงเดียวกัน: แถวบน **ต้องทำตอนนี้** (คิวงานเรียงผิดปกติ → ต้องตัดสินใจ → รับทราบ ค้างนานขึ้นก่อน กดไปทำได้ ไม่มีงาน = "ไม่มีงานค้างตอนนี้") + **สถานะระบบ** (แถว LED สั้นๆ) แถวถัดไปเป็นแผงรายละเอียด ตารางเดียวกำหนดว่าใครเห็นอะไร (แก้ที่ไฟล์นี้ ไม่ต้องแก้ component) กฎที่ derive จากสิทธิ์จริง: FirmwareEngineer/QAEngineer ไม่มี `campaign:Read` (ไม่มีแผง/แถว Campaign), ConfigEngineer/FirmwareEngineer/QAEngineer เข้า Audit Log ไม่ได้ (ไม่มีแผงกิจกรรม) Role ที่ไม่รู้จักได้มุมมอง Auditor
 
-| Role | แผงเฉพาะ | ความเสี่ยง |
+| Role | ต้องทำตอนนี้ | แผงรายละเอียด |
 |---|---|---|
-| Operation | Rollout รอปล่อย/กำลังส่ง, อุปกรณ์เงียบ, ผล Deploy, การเชื่อมต่อ, สถานะ Config, กิจกรรม | ครบ 4 |
-| ST / OT | อุปกรณ์เงียบ + การเชื่อมต่อ ขึ้นก่อน, Rollout, ผล Deploy, กิจกรรม | ครบ 4 |
-| ConfigEngineer | Config ของฉันที่ยังไม่จบ + สถานะ Config ขึ้นบนสุด, Rollout, ผล Deploy | Incident, Rollout หยุด |
-| FirmwareEngineer | Firmware ของฉันที่รอตรวจ/ถูกปฏิเสธ | Incident |
-| QAEngineer | Firmware ที่รอตรวจคุณภาพ (ทุกตัว) | Incident |
-| Auditor / Admin / SuperAdmin | อ่านอย่างเดียว: ผล Deploy, การเชื่อมต่อ, Rollout, อุปกรณ์เงียบ, สถานะ Config, กิจกรรม | ครบ 4 |
+| Operation | Rollout ที่ระบบหยุดเอง, Incident, Config/Rollout/คำขอเฉพาะเครื่องรออนุมัติ, Rollout รอปล่อย | Rollout, อุปกรณ์เงียบ, สถานะ Config, กิจกรรม |
+| ST / OT | Incident, อุปกรณ์ออฟไลน์, Config ยังไม่อัปเดต | อุปกรณ์เงียบ, Rollout, กิจกรรม |
+| ConfigEngineer | Config ของฉันที่ถูกปฏิเสธ / ฉบับร่าง / รอผู้อนุมัติ | สถานะ Config, Rollout |
+| FirmwareEngineer | Firmware ของฉันที่ถูกปฏิเสธ / รอ QA | สถานะ Firmware |
+| QAEngineer | Firmware รอตรวจคุณภาพ (ทุกตัว) | สถานะ Firmware |
+| Auditor / Admin / SuperAdmin | ไม่มีคิว: กิจกรรมล่าสุดนำแทน | Rollout, อุปกรณ์เงียบ, สถานะ Config |
 
-หน้าอื่นยังไม่ปรับตาม Role นอกจากที่มีอยู่เดิม (เมนูกรองด้วย `allowedRoles`, ปุ่มกรองด้วย `lib/permissions.ts`) รอบ 2 และ 3 ต้องใช้หลักเดียวกันกับทุกหน้า: ใช้ฟังก์ชันใน `permissions.ts` ตัดสินว่าจะซ่อน แสดง หรือ disable + เหตุผล
+เจตนาที่เอาออก: แถบ "รออนุมัติ" เดิม (ซ้ำกับคิว), ตัวเลขนิ่ง (จำนวนโมเดล ฯลฯ ไม่ช่วยตัดสินใจ), KpiCard hook ที่ใช้ร่วมกันเรียกครั้งเดียวใน `dashboard-summary.tsx` แล้วส่ง props ลงแผง
+
+หน้าอื่นยังไม่ปรับตาม Role นอกจากที่มีอยู่เดิม (เมนูกรองด้วย `allowedRoles`, ปุ่มกรองด้วย `lib/permissions.ts`) รอบ 2 และ 3 ใช้หลักเดียวกัน: ใช้ฟังก์ชันใน `permissions.ts` ตัดสินว่าจะซ่อน แสดง หรือ disable + เหตุผล และเริ่มหน้าด้วยงานที่ Role นั้นต้องทำ
 
 ## 10. เช็คลิสต์ประจำหน้า (ใช้ทุกหน้าในรอบ 2 และ 3)
 
