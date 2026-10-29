@@ -647,7 +647,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       <WizardStepIndicator steps={CONFIG_WIZARD_STEPS} step={step} />
 
       {step === 1 ? (
-        <div className="grid w-full max-w-5xl items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid w-full items-stretch gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <Card className="gap-5 p-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-base font-semibold">ข้อมูลทั่วไป</h2>
@@ -689,9 +689,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   clearErrors();
                 }}
                 maxLength={500}
-                rows={5}
+                rows={4}
                 placeholder="อธิบายวัตถุประสงค์ของ Config ชุดนี้…"
-                className="min-h-28 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                className="min-h-24 flex-1 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
               />
               <p className="text-right text-xs tabular-nums text-muted-foreground">
                 {description.length} / 500
@@ -699,11 +699,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             </div>
           </Card>
 
-          <Card className="gap-4 p-6 lg:sticky lg:top-24">
+          <Card className="gap-4 p-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-base font-semibold">อุปกรณ์เป้าหมาย</h2>
               <p className="text-sm text-muted-foreground">
-                เลือกแล้วระบบจะแสดงพารามิเตอร์ที่รุ่นนี้ใช้ในขั้นถัดไป
+                ระบบจะแสดงพารามิเตอร์ของรุ่นนี้ในขั้นถัดไป
               </p>
             </div>
 
@@ -846,7 +846,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   </label>
                 )}
               </div>
-              <div className="flex flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
+              <div className="flex flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
                 {libraryDefs.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted-foreground">
                     {search.trim()
@@ -875,7 +875,10 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                           {!isInModelSet(def) && <OutsideSetBadge />}
                         </span>
                         {def.description && (
-                          <span className="text-xs text-muted-foreground">
+                          <span
+                            className="line-clamp-2 text-xs text-muted-foreground"
+                            title={def.description}
+                          >
                             {def.description}
                           </span>
                         )}
@@ -1020,7 +1023,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             </Card>
           </div>
 
-          {diff && (
+          {diff && diff.changes.length > 0 && (
             <Card className="gap-3 p-4" aria-label="สิ่งที่จะเปลี่ยน">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
@@ -1033,11 +1036,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                   unchangedCount={diff.unchangedCount}
                 />
               </div>
-              {diff.changes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  ยังไม่มีการเปลี่ยนแปลงจากฉบับเดิม
-                </p>
-              ) : (
+              {(
                 <DiffViewer
                   changes={diff.changes}
                   beforeLabel={editing ? "ฉบับที่บันทึกไว้" : "ต้นฉบับ"}
@@ -1171,6 +1170,7 @@ function TemplateRow({
   const id = `field-${def.fieldName}`;
   const hint = def.description ?? formatModelSupport(def.supportedModels);
   const errorId = `${id}-error`;
+  const [expanded, setExpanded] = useState(false);
   const originalText =
     originalValue === undefined || originalValue === null
       ? "-"
@@ -1222,7 +1222,28 @@ function TemplateRow({
           <span className="text-[0.65rem] text-muted-foreground">บังคับ</span>
         )}
       </div>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hint && (
+        <div className="flex flex-col items-start gap-0.5">
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              !expanded && "line-clamp-2",
+            )}
+          >
+            {hint}
+          </p>
+          {hint.length > 90 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              className="rounded text-xs text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              {expanded ? "ย่อ" : "อ่านเพิ่ม"}
+            </button>
+          )}
+        </div>
+      )}
       {(def.defaultValue !== null && !def.sensitive) && (
         <p className="text-xs text-muted-foreground">
           ค่าเริ่มต้น <span className="font-instrument">{def.defaultValue}</span>

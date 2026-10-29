@@ -117,7 +117,8 @@ describe("ConfigWizard editor — validation, diff, JSON mode, reset", () => {
     render(<ConfigWizard mode={{ kind: "edit", config: saved }} />);
     await openStep2(user);
 
-    expect(screen.getByText("ยังไม่มีการเปลี่ยนแปลงจากฉบับเดิม")).toBeInTheDocument();
+    expect(screen.getByText("ยังไม่ได้แก้ไขอะไร")).toBeInTheDocument();
+    expect(screen.queryByLabelText("สิ่งที่จะเปลี่ยน")).not.toBeInTheDocument();
 
     fireEvent.change(document.getElementById("field-APN1")!, { target: { value: "m2m" } });
 
@@ -174,6 +175,21 @@ describe("ConfigWizard editor — validation, diff, JSON mode, reset", () => {
 
     expect((document.getElementById("field-PW") as HTMLInputElement).value).toBe("s3cr3t");
     expect((document.getElementById("field-APN1") as HTMLInputElement).value).toBe("m2m");
+  });
+
+  it("คำอธิบายยาวถูกย่อ มีปุ่มอ่านเพิ่มและย่อกลับ", async () => {
+    const long = "ชื่อผู้ใช้ APN (ถ้าผู้ให้บริการกำหนด) ".repeat(6);
+    definitionsState.data = [def({ fieldName: "APN1", description: long, category: "Network" })];
+    const user = userEvent.setup();
+    render(<ConfigWizard mode={{ kind: "edit", config: { ...saved, fields: { APN1: "x" } } }} />);
+    await openStep2(user);
+
+    const text = screen.getAllByText(long.trim(), { exact: false })[0];
+    expect(text.className).toContain("line-clamp-2");
+    await user.click(screen.getByRole("button", { name: "อ่านเพิ่ม" }));
+    expect(text.className).not.toContain("line-clamp-2");
+    await user.click(screen.getByRole("button", { name: "ย่อ" }));
+    expect(text.className).toContain("line-clamp-2");
   });
 
   it("รีเซ็ต: ต้องยืนยันก่อน แล้วค่ากลับเป็นฉบับที่บันทึกไว้", async () => {
