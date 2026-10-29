@@ -130,6 +130,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) => throw UnimplementedError();
 }
 
@@ -345,14 +346,14 @@ int _lineCount(WidgetTester tester, Finder text) =>
 
 void main() {
   group('Config Override ช่องที่ override ไม่ได้ (UX audit #8)', () {
-    testWidgets('320dp x2.0 -> ไม่ล้นขอบ และ "(override ไม่ได้)" อยู่ใต้ค่า', (
+    testWidgets('320dp x2.0 -> ไม่ล้นขอบ และ "(แก้ไขไม่ได้)" อยู่ใต้ค่า', (
       tester,
     ) async {
       useLargeTextNarrowScreen(tester);
       await _pumpConfigOverride(tester);
 
       expect(tester.takeException(), isNull);
-      final label = find.text('(override ไม่ได้)');
+      final label = find.text('(แก้ไขไม่ได้)');
       expect(label, findsNWidgets(2));
       // ค่า (ไม่ sensitive) อยู่บรรทัดบน ป้ายอยู่บรรทัดล่าง ไม่แย่งความกว้างกัน
       final value = find.text('30');
@@ -369,7 +370,7 @@ void main() {
       await _pumpConfigOverride(tester);
 
       expect(tester.takeException(), isNull);
-      expect(find.text('(override ไม่ได้)'), findsNWidgets(2));
+      expect(find.text('(แก้ไขไม่ได้)'), findsNWidgets(2));
     });
   });
 
@@ -487,6 +488,12 @@ void main() {
     ) async {
       useLargeTextNarrowScreen(tester);
       await _pumpPage(tester, const DeviceSearchPage());
+      // รายการขึ้นเมื่อค้นหาแล้วเท่านั้น
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        'DEV',
+      );
+      await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
       // ป้ายสถานะอยู่ใต้รายละเอียด รายละเอียดจึงได้ความกว้างเต็มการ์ด

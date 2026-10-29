@@ -133,6 +133,67 @@ void main() {
   });
 
   group('DeviceConfigDraft.fromJson', () {
+    test(
+      'boxFields (v3.74): ค่าที่กล่องรายงานว่าใช้อยู่ · ไม่มี/null -> null',
+      () {
+        final draft = DeviceConfigDraft.fromJson({
+          'id': 'cfg-1',
+          'boxFields': {
+            'fields': {'led.enabled': true, 'gps.send_interval_sec': 10},
+            'reportedAt': '2026-10-28T07:17:14.569Z',
+          },
+        });
+        expect(draft.boxFields!.fields, {
+          'led.enabled': true,
+          'gps.send_interval_sec': 10,
+        });
+        expect(
+          draft.boxFields!.reportedAt,
+          DateTime.utc(2026, 10, 28, 7, 17, 14, 569),
+        );
+        expect(DeviceConfigDraft.fromJson({'id': 'cfg-1'}).boxFields, isNull);
+        expect(
+          DeviceConfigDraft.fromJson({
+            'id': 'cfg-1',
+            'boxFields': null,
+          }).boxFields,
+          isNull,
+        );
+      },
+    );
+
+    test('delivery (v3.71): ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', () {
+      final draft = DeviceConfigDraft.fromJson({
+        'id': 'cfg-1',
+        'fields': {'speed_limit.max_kmh': 100},
+        'delivery': {
+          'fields': {'speed_limit.max_kmh': 80},
+          'confirmedAt': '2026-10-27T09:31:34.000Z',
+          'pendingFieldNames': ['speed_limit.max_kmh'],
+        },
+      });
+      final delivery = draft.delivery!;
+      expect(delivery.fields, {'speed_limit.max_kmh': 80});
+      expect(delivery.confirmedAt, DateTime.utc(2026, 10, 27, 9, 31, 34));
+      expect(delivery.pendingFieldNames, ['speed_limit.max_kmh']);
+      expect(delivery.isPending('speed_limit.max_kmh'), isTrue);
+      expect(delivery.isPending('gps.enabled'), isFalse);
+    });
+
+    test(
+      'delivery ไม่มี / null (backend เก่า หรือไม่มีหลักฐานการส่ง) -> null',
+      () {
+        expect(DeviceConfigDraft.fromJson({'id': 'cfg-1'}).delivery, isNull);
+        expect(
+          DeviceConfigDraft.fromJson({
+            'id': 'cfg-1',
+            'delivery': null,
+          }).delivery,
+          isNull,
+        );
+      },
+    );
+
     test('parses status enum and fields map', () {
       final draft = DeviceConfigDraft.fromJson({
         'id': 'cfg-1',
@@ -283,6 +344,25 @@ void main() {
   });
 
   group('Device.fromJson', () {
+    test('reportedFirmwareVersion/At (docs/23 telemetry) · ไม่มี = null', () {
+      final base = {
+        'id': 'd1',
+        'deviceId': 'BOX-0001',
+        'status': 'installed',
+        'registeredAt': '2026-10-01T00:00:00.000Z',
+      };
+      final d = Device.fromJson({
+        ...base,
+        'reportedFirmwareVersion': '1.0.0',
+        'reportedFirmwareAt': '2026-10-28T05:06:39.055Z',
+      });
+      expect(d.reportedFirmwareVersion, '1.0.0');
+      expect(d.reportedFirmwareAt, DateTime.utc(2026, 10, 28, 5, 6, 39, 55));
+      final none = Device.fromJson(base);
+      expect(none.reportedFirmwareVersion, isNull);
+      expect(none.reportedFirmwareAt, isNull);
+    });
+
     test('parses all fields incl. nullable installedAt', () {
       final device = Device.fromJson({
         'id': 'uuid-1',

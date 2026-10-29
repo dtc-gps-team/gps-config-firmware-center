@@ -103,6 +103,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) async {
     lastDeviceId = deviceId;
     lastFields = fields;
@@ -162,7 +163,7 @@ void main() {
   });
 
   testWidgets(
-    'field stOverridable:false -> read-only + label "(override ไม่ได้)" ไม่มี input',
+    'field stOverridable:false -> read-only + label "(แก้ไขไม่ได้)" ไม่มี input',
     (tester) async {
       await _pump(tester);
 
@@ -170,7 +171,7 @@ void main() {
         find.byKey(const Key('config_override_input_COMMAND_PASSWORD')),
         findsNothing,
       );
-      expect(find.textContaining('(override ไม่ได้)'), findsOneWidget);
+      expect(find.textContaining('(แก้ไขไม่ได้)'), findsOneWidget);
     },
   );
 
@@ -841,6 +842,276 @@ void main() {
   );
 
   // docs/30 §6 — ช่วงค่าตัวเลข + โหมด central (Override = คำขอส่งเข้ากล่อง)
+  testWidgets(
+    'มีคำอธิบาย -> แสดงชื่อเรียกง่ายเป็นหัว และชื่อพารามิเตอร์จริงตัวเล็กด้านล่าง',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · มาตรฐาน',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10, 'gps.baud_rate': 9600},
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+            description: 'รอบส่ง GPS (วินาที)',
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      expect(
+        find.byKey(const Key('config_override_label_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      expect(find.text('รอบส่ง GPS (วินาที)'), findsOneWidget);
+      expect(find.text('gps.send_interval_sec'), findsOneWidget);
+      // ไม่มีคำอธิบาย -> ใช้ชื่อพารามิเตอร์อย่างเดียว ไม่มีหัวซ้ำ
+      expect(
+        find.byKey(const Key('config_override_label_gps.baud_rate')),
+        findsNothing,
+      );
+      expect(find.text('gps.baud_rate'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config -> แสดงด้วยแบบแก้ไม่ได้ ไม่ซ้ำกับค่าใน Config',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · ส่งพิกัดทุก 10 วินาที',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10},
+          boxFields: BoxFields(
+            fields: {'gps.send_interval_sec': 10, 'led.enabled': true},
+            reportedAt: null,
+          ),
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+          ),
+          ConfigFieldDefinition(
+            id: 'def-led',
+            fieldName: 'led.enabled',
+            dataType: 'boolean',
+            allowedValues: [],
+            required: false,
+            // แก้ผ่าน Override ได้ แต่ไม่อยู่ใน Config นี้ -> ยังแก้ไม่ได้
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+            description: 'เปิดไฟ LED',
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      expect(
+        find.byKey(const Key('config_override_field_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_input_gps.send_interval_sec')),
+        findsOneWidget,
+      );
+      final led = find.byKey(const Key('config_override_field_led.enabled'));
+      expect(led, findsOneWidget);
+      expect(
+        find.descendant(of: led, matching: find.text('เปิดไฟ LED')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: led, matching: find.text('true')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: led, matching: find.text('(แก้ไขไม่ได้)')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_input_led.enabled')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'ค่าที่กล่องรายงานแต่ไม่มีนิยามในระบบ -> ซ่อนไว้ก่อน (อาจเป็นค่าลับที่เราไม่รู้จัก) กดดูได้',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · ส่งพิกัดทุก 10 วินาที',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10},
+          boxFields: BoxFields(
+            fields: {
+              'gps.send_interval_sec': 10,
+              'vendor.secret_token': 'abc123',
+            },
+            reportedAt: null,
+          ),
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      final unknown = find.byKey(
+        const Key('config_override_field_vendor.secret_token'),
+      );
+      expect(unknown, findsOneWidget);
+      expect(
+        find.descendant(of: unknown, matching: find.text('abc123')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: unknown,
+          matching: find.text(AppSensitiveValue.masked),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: unknown, matching: find.byType(IconButton)),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(of: unknown, matching: find.text('abc123')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  group('ค่าในกล่องกับค่าที่อนุมัติแล้วรอส่ง (delivery v3.71)', () {
+    const speedDef = ConfigFieldDefinition(
+      id: 'def-speed',
+      fieldName: 'speed_limit.max_kmh',
+      dataType: 'integer',
+      allowedValues: [],
+      required: false,
+      stOverridable: true,
+      sensitive: false,
+      supportedModels: [],
+      unit: 'km/h',
+    );
+
+    Future<void> pumpWithDelivery(
+      WidgetTester tester,
+      ConfigDelivery? delivery,
+    ) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · มาตรฐาน',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: const {'speed_limit.max_kmh': 100},
+          hasDeviceOverride: true,
+          delivery: delivery,
+        ),
+        definitions: const [speedDef],
+      );
+      await _pump(tester, repo: fake);
+    }
+
+    testWidgets(
+      'อนุมัติแล้วยังไม่ส่ง -> แถบบอกจำนวนค่าที่รอส่ง + ใต้ช่องบอกค่าในกล่องตอนนี้',
+      (tester) async {
+        await pumpWithDelivery(
+          tester,
+          ConfigDelivery(
+            fields: const {'speed_limit.max_kmh': 80},
+            confirmedAt: DateTime.utc(2026, 10, 27, 9, 31),
+            pendingFieldNames: const ['speed_limit.max_kmh'],
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('config_override_undelivered_notice')),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('1 ค่าที่อนุมัติแล้วแต่ยังไม่ได้ส่งเข้ากล่อง'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('config_override_in_box_speed_limit.max_kmh')),
+          findsOneWidget,
+        );
+        expect(find.text('ในกล่องตอนนี้ 80 · รอส่งเข้ากล่อง'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'ค่าในกล่องตรงกับที่อนุมัติ -> ไม่มีแถบ ไม่มีบรรทัดค่าในกล่อง',
+      (tester) async {
+        await pumpWithDelivery(
+          tester,
+          ConfigDelivery(
+            fields: const {'speed_limit.max_kmh': 100},
+            confirmedAt: DateTime.utc(2026, 10, 27, 9, 31),
+            pendingFieldNames: const [],
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('config_override_undelivered_notice')),
+          findsNothing,
+        );
+        expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+      },
+    );
+
+    testWidgets('ไม่มีข้อมูลการส่ง (delivery = null) -> แสดงแบบเดิม', (
+      tester,
+    ) async {
+      await pumpWithDelivery(tester, null);
+
+      expect(
+        find.byKey(const Key('config_override_undelivered_notice')),
+        findsNothing,
+      );
+      expect(find.textContaining('ในกล่องตอนนี้'), findsNothing);
+    });
+  });
+
   group('docs/30 — ช่วงค่าและโหมด central', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',
