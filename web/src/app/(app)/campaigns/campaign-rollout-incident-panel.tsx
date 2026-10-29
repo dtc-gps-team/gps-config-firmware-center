@@ -21,14 +21,7 @@ import {
 } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Table,
   TableBody,
@@ -149,11 +142,11 @@ export function CampaignRolloutIncidentPanel({
     }
   }
 
-  async function handleRollback() {
-    if (!session?.accessToken) return;
+  async function handleRollback(): Promise<boolean> {
+    if (!session?.accessToken) return false;
     if (successTargets.length > 0 && includedCount === 0) {
       setError("ต้องเหลืออุปกรณ์อย่างน้อย 1 เครื่องให้ rollback");
-      return;
+      return false;
     }
     setSubmitting(true);
     setError(null);
@@ -171,12 +164,14 @@ export function CampaignRolloutIncidentPanel({
       );
       router.push(`/campaigns/${campaignId}/rollouts/${created.id}`);
       router.refresh();
+      return true;
     } catch (err) {
       setSubmitting(false);
       const message =
         err instanceof ApiError ? err.message : "สั่ง Rollback ไม่สำเร็จ";
       setError(message);
       toast.error(message);
+      return false;
     }
   }
 
@@ -216,96 +211,85 @@ export function CampaignRolloutIncidentPanel({
         )}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={rollbackOpen}
         onOpenChange={(open) => {
           if (open) setRollbackOpen(true);
           else if (!submitting) closeRollback();
         }}
+        title="สั่ง Rollback"
+        description={
+          <>
+            สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่ completed ล่าสุด
+            {successTargets.length > 0 && (
+              <>
+                {" "}
+                จะส่งกลับให้{" "}
+                <strong className="tabular-nums">
+                  {includedCount} จาก {successTargets.length} เครื่อง
+                </strong>{" "}
+                ที่ได้รับ payload รอบนี้สำเร็จ
+              </>
+            )}
+          </>
+        }
+        confirmLabel="ยืนยันสั่ง Rollback"
+        confirmText="ROLLBACK"
+        destructive
+        confirmDisabled={
+          targetsLoading || !!targetsError || successTargets.length === 0
+        }
+        onConfirm={handleRollback}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>สั่ง Rollback</DialogTitle>
-            <DialogDescription>
-              สร้าง Rollout ใหม่จาก payload ของรอบก่อนหน้าที่ completed ล่าสุด
-              เอาเครื่องที่ไม่ต้องการ rollback ออกได้ ({includedCount}/
-              {successTargets.length} เครื่อง)
-            </DialogDescription>
-          </DialogHeader>
-
-          {targetsLoading ? (
-            <p className="text-sm text-muted-foreground">
-              กำลังโหลดรายชื่อเครื่อง…
-            </p>
-          ) : targetsError ? (
-            <p className="text-sm text-destructive">{targetsError}</p>
-          ) : successTargets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              ยังไม่มีเครื่องที่ได้รับ payload ของรอบนี้สำเร็จเลย
-            </p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto rounded-lg border">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-muted/50">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead>เลขเครื่อง</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {successTargets.map((target) => {
-                    const included = !excludedDeviceIds.has(target.deviceId);
-                    return (
-                      <TableRow key={target.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={included}
-                            onCheckedChange={(c) =>
-                              toggleExcluded(target.deviceId, c === true)
-                            }
-                            aria-label={
-                              included
-                                ? "เอาเครื่องนี้ออกจาก Rollback"
-                                : "เอาเครื่องนี้กลับเข้า Rollback"
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {target.deviceId}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              disabled={submitting}
-              onClick={closeRollback}
-            >
-              ยกเลิก
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={
-                submitting ||
-                targetsLoading ||
-                !!targetsError ||
-                successTargets.length === 0
-              }
-              onClick={() => void handleRollback()}
-            >
-              {submitting ? "กำลังสร้าง Rollout…" : "ยืนยันสั่ง Rollback"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {targetsLoading ? (
+          <p className="text-sm text-muted-foreground">
+            กำลังโหลดรายชื่อเครื่อง…
+          </p>
+        ) : targetsError ? (
+          <p className="text-sm text-destructive">{targetsError}</p>
+        ) : successTargets.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            ยังไม่มีเครื่องที่ได้รับ payload ของรอบนี้สำเร็จเลย
+          </p>
+        ) : (
+          <div className="max-h-64 overflow-y-auto rounded-lg border">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-muted/50">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-10"></TableHead>
+                  <TableHead>เลขเครื่อง</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {successTargets.map((target) => {
+                  const included = !excludedDeviceIds.has(target.deviceId);
+                  return (
+                    <TableRow key={target.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={included}
+                          onCheckedChange={(c) =>
+                            toggleExcluded(target.deviceId, c === true)
+                          }
+                          aria-label={
+                            included
+                              ? "เอาเครื่องนี้ออกจาก Rollback"
+                              : "เอาเครื่องนี้กลับเข้า Rollback"
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="font-instrument text-xs">
+                        {target.deviceId}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </ConfirmDialog>
     </>
   );
 }

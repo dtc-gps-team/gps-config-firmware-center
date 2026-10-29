@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
+import { CountUp } from "@/components/motion/count-up";
 import type { CampaignRolloutStatus } from "@/lib/campaign-api";
 import {
   rolloutProgress,
@@ -47,8 +48,10 @@ export function RolloutProgressCard({
           {headline(status, payloadType, total, awaiting)}
         </p>
         <div className="shrink-0 text-right">
-          <p className="text-sm font-semibold">{percent}% ได้ผลแล้ว</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm font-semibold tabular-nums">
+            <CountUp value={percent} suffix="%" /> ได้ผลแล้ว
+          </p>
+          <p className="font-instrument text-xs text-muted-foreground">
             {done} / {total} เครื่อง
           </p>
         </div>
@@ -63,27 +66,27 @@ export function RolloutProgressCard({
         className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full"
       >
         <div
-          className="h-full rounded-full bg-success transition-[width] duration-500"
+          className="h-full rounded-full bg-success transition-[width] duration-(--duration-slow) ease-(--ease-standard)"
           style={{ width: `${pct(summary.success)}%` }}
         />
         <div
-          className="h-full rounded-full bg-warning transition-[width] duration-500"
+          className="h-full rounded-full bg-warning transition-[width] duration-(--duration-slow) ease-(--ease-standard)"
           style={{ width: `${pct(summary.skipped)}%` }}
         />
         <div
-          className="h-full rounded-full bg-destructive transition-[width] duration-500"
+          className="h-full rounded-full bg-destructive transition-[width] duration-(--duration-slow) ease-(--ease-standard)"
           style={{ width: `${pct(summary.failed)}%` }}
         />
         {/* ส่วนที่ยังรอผล: เทาลายเฉียงตรงกับจุดสีในคำอธิบาย กะพริบเบาๆ ขณะยังรออยู่ */}
         {summary.pending > 0 && (
           <div
-            className={`h-full rounded-full bg-muted-foreground/25 bg-[repeating-linear-gradient(45deg,transparent_0_6px,rgba(255,255,255,0.45)_6px_12px)] ${awaiting ? "animate-pulse" : ""}`}
+            className={`h-full rounded-full bg-muted-foreground/25 ${awaiting ? "animate-pulse" : ""}`}
             style={{ width: `${pct(summary.pending)}%` }}
           />
         )}
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <div className="font-instrument flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2 rounded-full bg-success" />
           สำเร็จ {summary.success}

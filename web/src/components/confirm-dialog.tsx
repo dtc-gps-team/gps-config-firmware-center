@@ -28,6 +28,7 @@ export function ConfirmDialog({
   confirmLabel,
   confirmText,
   destructive = false,
+  confirmDisabled = false,
   onConfirm,
   children,
 }: {
@@ -38,7 +39,10 @@ export function ConfirmDialog({
   confirmLabel: string;
   confirmText?: string;
   destructive?: boolean;
-  onConfirm: () => void | Promise<void>;
+  /** ปิดปุ่มยืนยันเพิ่มจากเงื่อนไข type-to-confirm (เช่น ยังโหลดรายการไม่เสร็จ) */
+  confirmDisabled?: boolean;
+  /** คืน `false` = ไม่ปิดกล่อง (ผู้เรียกแสดงข้อผิดพลาดเองแล้ว ให้ผู้ใช้แก้แล้วลองใหม่) */
+  onConfirm: () => void | boolean | Promise<void | boolean>;
   /** เนื้อหาเพิ่มระหว่างคำอธิบายกับปุ่ม เช่นช่องกรอกเหตุผล */
   children?: React.ReactNode;
 }) {
@@ -49,8 +53,8 @@ export function ConfirmDialog({
   async function run() {
     setBusy(true);
     try {
-      await onConfirm();
-      onOpenChange(false);
+      const result = await onConfirm();
+      if (result !== false) onOpenChange(false);
     } finally {
       setBusy(false);
     }
@@ -90,7 +94,7 @@ export function ConfirmDialog({
           <AlertDialogCancel disabled={busy}>ยกเลิก</AlertDialogCancel>
           <Button
             variant={destructive ? "destructive" : "default"}
-            disabled={blocked}
+            disabled={blocked || confirmDisabled}
             loading={busy}
             onClick={() => void run()}
           >

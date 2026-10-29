@@ -129,10 +129,10 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
       />,
     );
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = screen.getByRole("alertdialog");
     expect(
       within(dialog).getByRole("heading", { name: "สั่ง Rollback" }),
     ).toBeInTheDocument();
@@ -141,7 +141,7 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
     ).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "ยกเลิก" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("role ST (ไม่ใช่ Operation) -> ไม่เห็นปุ่มไหนเลย ไม่ render อะไร", () => {
@@ -191,7 +191,7 @@ describe("CampaignRolloutIncidentPanel — เลือก/เอาเครื
     );
 
     await user.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
-    expect(screen.getByText(/2\/2 เครื่อง/)).toBeInTheDocument();
+    expect(screen.getByText(/2 จาก 2 เครื่อง/)).toBeInTheDocument();
 
     // ทั้ง 2 เครื่องยัง included อยู่ทั้งคู่ -> label เหมือนกันทั้งคู่ กดตัวแรก
     await user.click(
@@ -199,8 +199,12 @@ describe("CampaignRolloutIncidentPanel — เลือก/เอาเครื
         name: "เอาเครื่องนี้ออกจาก Rollback",
       })[0],
     );
-    expect(screen.getByText(/1\/2 เครื่อง/)).toBeInTheDocument();
-    // ปุ่มยืนยันยังกดได้ เพราะเหลืออย่างน้อย 1 เครื่อง
+    expect(screen.getByText(/1 จาก 2 เครื่อง/)).toBeInTheDocument();
+    // ต้องพิมพ์ ROLLBACK ก่อนปุ่มยืนยันถึงกดได้ (เหลืออย่างน้อย 1 เครื่อง)
+    expect(
+      screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
+    ).toBeDisabled();
+    await user.type(screen.getByRole("textbox"), "ROLLBACK");
     expect(
       screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
     ).toBeEnabled();

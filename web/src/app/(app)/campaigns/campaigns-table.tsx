@@ -4,11 +4,6 @@ import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { MegaphoneIcon } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { RoleGuard } from "@/components/auth/role-guard";
 import { DataTable } from "@/components/data-table/data-table";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
@@ -19,10 +14,16 @@ import { PageHeader } from "@/components/page-header";
 import { CreateCampaignButton } from "./create-campaign-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) —
  * mirror `config-table.tsx`/`firmware-table.tsx` */
-function thTextSort(a: Row<Campaign>, b: Row<Campaign>, columnId: string): number {
+function thTextSort(
+  a: Row<Campaign>,
+  b: Row<Campaign>,
+  columnId: string,
+): number {
   return String(a.getValue(columnId)).localeCompare(
     String(b.getValue(columnId)),
     "th",
@@ -88,36 +89,33 @@ export function CampaignsTableCard({
         <PageHeader
           title={title}
           description={description}
-          actions={<CreateCampaignButton />}
+          actions={
+            <>
+              <RefreshControl />
+              <CreateCampaignButton />
+            </>
+          }
         />
-        <Card>
-          <CardContent>
-            {isLoading && data === null ? (
-              <TableSkeleton columns={columns.length} />
-            ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : !data || data.length === 0 ? (
-              <EmptyState
-                icon={MegaphoneIcon}
-                message="ยังไม่มีแคมเปญ"
-                action={<CreateCampaignButton />}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={data}
-                searchPlaceholder="ค้นหาชื่อแคมเปญ…"
-                emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
-                onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
-              />
-            )}
-          </CardContent>
-        </Card>
+        {isLoading && data === null ? (
+          <TableSkeleton columns={columns.length} />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => void refetch()} />
+        ) : !data || data.length === 0 ? (
+          <EmptyState
+            icon={MegaphoneIcon}
+            message="ยังไม่มีแคมเปญ สร้างกลุ่มอุปกรณ์แรกเพื่อเริ่มติดตามและปล่อย Rollout"
+            action={<CreateCampaignButton />}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            data={data}
+            urlSync
+            searchPlaceholder="ค้นหาชื่อแคมเปญ…"
+            emptyMessage="ไม่พบแคมเปญที่ตรงกับเงื่อนไข"
+            onRowClick={(campaign) => router.push(`/campaigns/${campaign.id}`)}
+          />
+        )}
       </div>
     </RoleGuard>
   );

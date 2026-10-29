@@ -114,13 +114,8 @@ async function selectConfig(
   await user.click(await screen.findByRole("option", { name }));
 }
 
-/** checkbox ของ ui/checkbox เป็น span role=checkbox (ไม่ใช่ <input>) จึงตรวจ
- * สถานะปิดผ่าน aria-disabled ซึ่งเป็นค่าที่โปรแกรมอ่านหน้าจอใช้จริงด้วย */
-function expectEnabled(el: HTMLElement) {
-  expect(el).not.toHaveAttribute("aria-disabled", "true");
-}
-function expectDisabled(el: HTMLElement) {
-  expect(el).toHaveAttribute("aria-disabled", "true");
+async function next(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /ถัดไป/ }));
 }
 
 function checkboxFor(deviceId: string) {
@@ -130,10 +125,11 @@ function checkboxFor(deviceId: string) {
 }
 
 /**
- * แถว 5 จากรีวิวพี่เลี้ยง 12 ต.ค.: เครื่องที่ไม่เข้ากันกับ payload ต้องติ๊ก
- * ไม่ได้ (disabled) แต่ยังโชว์พร้อมเหตุผล และไม่ทำให้ submit โดน 409
+ * Rollout wizard 4 ขั้น: เป้าหมาย → เวอร์ชัน/Config → ตรวจสอบผลกระทบ → ยืนยัน
+ * (แถว 5 จากรีวิวพี่เลี้ยง 12 ต.ค.: เครื่องที่ไม่เข้ากันกับ payload ถูกข้ามพร้อมเหตุผล
+ * และไม่ทำให้ submit โดน 409)
  */
-describe("CampaignRolloutCreateForm: เครื่องที่ไม่เข้ากันกับ payload", () => {
+describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
   beforeEach(() => {
     createCampaignRollout.mockReset();
     push.mockReset();
@@ -142,29 +138,49 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     hookState.configs = [gt06nConfig];
   });
 
-  it("ยังไม่เลือก Config: ทุกเครื่องติ๊กได้ ไม่มีเหตุผลไม่เข้ากัน", () => {
+  it("เริ่มที่ขั้นเป้าหมาย: ทุกเครื่องถูกเลือก และยังไม่เห็นตัวเลือก Config", () => {
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
     for (const id of ["DEV-0001", "DEV-0002", "DEV-0003"]) {
-      expectEnabled(checkboxFor(id));
+      expect(checkboxFor(id)).toHaveAttribute("aria-checked", "true");
     }
-    expect(screen.queryByText(/ไม่ตรงกับ Config นี้/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Config" })).not.toBeInTheDocument();
   });
 
-  it("เลือก Config แล้ว: เครื่องคนละโมเดลถูกปิด checkbox พร้อมเหตุผล และสรุปจำนวนที่จะส่ง", async () => {
+  it("ยังไม่เลือก Config: ไปขั้นตรวจสอบผลกระทบไม่ได้ และบอกให้เลือก", async () => {
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
-    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await next(user);
 
-    expectEnabled(checkboxFor("DEV-0001"));
-    expectEnabled(checkboxFor("DEV-0002"));
-    expectDisabled(checkboxFor("DEV-0003"));
-    expect(checkboxFor("DEV-0003")).toHaveAttribute("aria-checked", "false");
+    expect(await screen.findByText("เลือก Config ก่อน")).toBeInTheDocument();
+  });
+
+  it("ขั้นตรวจสอบ: เครื่องคนละโมเดลถูกข้ามพร้อมเหตุผล", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+
     expect(
       screen.getByText(/โมเดล VT300 ไม่ตรงกับ Config นี้ \(ต้องเป็น GT06N\)/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/จะส่งให้ 2 จาก 3/)).toBeInTheDocument();
+    expect(screen.getByText("DEV-0003")).toBeInTheDocument();
+  });
+
+  it("ขั้นยืนยัน: สรุปจำนวนที่จะได้รับ", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await next(user);
+
+    expect(screen.getByText("2 จาก 3 เครื่อง")).toBeInTheDocument();
   });
 
   it("กดเริ่ม Rollout: ส่งเครื่องที่ไม่เข้ากันไปใน excludeDeviceIds ให้เอง", async () => {
@@ -172,7 +188,10 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
+    await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await next(user);
     await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
 
     await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
@@ -188,8 +207,11 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
-    await selectConfig(user, /GT06N มาตรฐาน/);
     await user.click(checkboxFor("DEV-0002"));
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await next(user);
     await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
 
     await waitFor(() => expect(createCampaignRollout).toHaveBeenCalledTimes(1));
@@ -199,13 +221,15 @@ describe("CampaignRolloutCreateForm: เครื่องที่ไม่เ�
     expect([...body.excludeDeviceIds].sort()).toEqual(["DEV-0002", "DEV-0003"]);
   });
 
-  it("ไม่มีเครื่องไหนเข้ากันเลย: ไม่ยิง API และบอกให้เลือก payload อื่น", async () => {
+  it("ไม่มีเครื่องไหนเข้ากันเลย: ไม่ไปขั้นยืนยัน ไม่ยิง API และบอกให้เลือก payload อื่น", async () => {
     hookState.targets = [{ deviceId: "DEV-0003" }];
     const user = userEvent.setup();
     render(<CampaignRolloutCreateForm campaignId="camp-1" />);
 
+    await next(user);
     await selectConfig(user, /GT06N มาตรฐาน/);
-    await user.click(screen.getByRole("button", { name: "เริ่ม Rollout" }));
+    await next(user);
+    await next(user);
 
     expect(createCampaignRollout).not.toHaveBeenCalled();
     expect(
