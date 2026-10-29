@@ -956,6 +956,67 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ค่าที่กล่องรายงานแต่ไม่มีนิยามในระบบ -> ซ่อนไว้ก่อน (อาจเป็นค่าลับที่เราไม่รู้จัก) กดดูได้',
+    (tester) async {
+      final fake = _FakeConfigOverrideRepository(
+        config: const DeviceConfigDraft(
+          id: 'cfg-1',
+          name: 'BOX · ส่งพิกัดทุก 10 วินาที',
+          deviceModel: 'ESP32-DEVKIT-V1',
+          protocol: 'HTTP',
+          status: ConfigStatus.approved,
+          fields: {'gps.send_interval_sec': 10},
+          boxFields: BoxFields(
+            fields: {
+              'gps.send_interval_sec': 10,
+              'vendor.secret_token': 'abc123',
+            },
+            reportedAt: null,
+          ),
+        ),
+        definitions: const [
+          ConfigFieldDefinition(
+            id: 'def-interval',
+            fieldName: 'gps.send_interval_sec',
+            dataType: 'integer',
+            allowedValues: [],
+            required: false,
+            stOverridable: true,
+            sensitive: false,
+            supportedModels: [],
+          ),
+        ],
+      );
+      await _pump(tester, repo: fake);
+
+      final unknown = find.byKey(
+        const Key('config_override_field_vendor.secret_token'),
+      );
+      expect(unknown, findsOneWidget);
+      expect(
+        find.descendant(of: unknown, matching: find.text('abc123')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: unknown,
+          matching: find.text(AppSensitiveValue.masked),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: unknown, matching: find.byType(IconButton)),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(of: unknown, matching: find.text('abc123')),
+        findsOneWidget,
+      );
+    },
+  );
+
   group('ค่าในกล่องกับค่าที่อนุมัติแล้วรอส่ง (delivery v3.71)', () {
     const speedDef = ConfigFieldDefinition(
       id: 'def-speed',

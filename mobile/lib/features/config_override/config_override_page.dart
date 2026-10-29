@@ -644,7 +644,7 @@ class _FieldRowState extends State<_FieldRow> {
   /// ค่าในกล่องของ field ลับซ่อนไว้จนกว่าจะกดดู (เหมือนช่องค่า) · ไม่มีค่า = "—"
   String _inBoxLabel(dynamic value) {
     if (value == null) return '—';
-    if (widget.def?.sensitive == true && !widget.revealed) return '••••';
+    if (widget.def?.sensitive != false && !widget.revealed) return '••••';
     return configValueToInput(value);
   }
 
@@ -666,7 +666,7 @@ class _FieldRowState extends State<_FieldRow> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (def?.sensitive == true)
+          if (def?.sensitive != false)
             AppSensitiveValue(
               value: currentValue,
               revealed: revealed,
