@@ -136,7 +136,7 @@ describe("ApprovalQueueCard (โครงกลาง)", () => {
     expect(freshCard.className).toContain("border-l-4");
     expect(staleCard.className).toContain("border-l-4");
     expect(freshCard.className).toContain("border-l-transparent");
-    expect(staleCard.className).toContain("border-l-amber-500");
+    expect(staleCard.className).toContain("border-l-warning");
   });
 });
 
