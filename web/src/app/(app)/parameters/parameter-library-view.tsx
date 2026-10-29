@@ -18,16 +18,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
-import { useDeviceModels } from "@/hooks/use-device-models";
 import {
   formatModelSupport,
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
-import { ParameterCreateForm } from "./parameter-create-form";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -242,15 +241,12 @@ function ParameterLibraryContent() {
   const { session } = useAuth();
   const canCreate = canCreateFieldDefinition(session?.role);
   const definitions = useConfigDefinitions();
-  const deviceModels = useDeviceModels();
-  const [showForm, setShowForm] = useState(false);
 
-  const existingNames = useMemo(
-    () =>
-      new Set(
-        (definitions.data ?? []).map((d) => d.fieldName.trim().toLowerCase()),
-      ),
-    [definitions.data],
+  const createLink = (size?: "sm") => (
+    <Link href="/parameters/new" className={buttonVariants({ size })}>
+      <PlusIcon />
+      สร้าง Parameter ใหม่
+    </Link>
   );
 
   return (
@@ -258,38 +254,12 @@ function ParameterLibraryContent() {
       <PageHeader
         title="Parameter Library"
         description="นิยามพารามิเตอร์ที่ใช้กรอก Config ของแต่ละโมเดล ทั้งชนิดข้อมูล ช่วงค่า และค่าเริ่มต้น"
-        actions={
-          canCreate && !showForm ? (
-            <Button onClick={() => setShowForm(true)}>
-              <PlusIcon />
-              สร้าง Parameter ใหม่
-            </Button>
-          ) : null
-        }
+        actions={canCreate ? createLink() : null}
       />
-
-      {canCreate && showForm ? (
-        <ParameterCreateForm
-          deviceModels={deviceModels.data ?? []}
-          existingNames={existingNames}
-          onCancel={() => setShowForm(false)}
-          onCreated={async () => {
-            await definitions.refetch();
-            setShowForm(false);
-          }}
-        />
-      ) : null}
 
       <ParameterTableCard
         definitions={definitions}
-        emptyAction={
-          canCreate && !showForm ? (
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <PlusIcon />
-              สร้าง Parameter ใหม่
-            </Button>
-          ) : undefined
-        }
+        emptyAction={canCreate ? createLink("sm") : undefined}
       />
     </div>
   );

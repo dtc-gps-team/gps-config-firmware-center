@@ -61,7 +61,8 @@ type Props = {
   deviceModels: DeviceModel[];
   /** ชื่อ field ที่มีอยู่แล้ว (lowercase) — กันซ้ำตั้งแต่ฝั่ง client */
   existingNames: Set<string>;
-  onCreated: () => void | Promise<void>;
+  /** เรียกหลังสร้างสำเร็จ พร้อมชื่อ field ที่เพิ่งสร้าง */
+  onCreated: (fieldName: string) => void | Promise<void>;
   onCancel: () => void;
 };
 
@@ -199,7 +200,7 @@ export function ParameterCreateForm({
         supportedModels,
       });
       toast.success(`สร้าง Parameter "${trimmedName}" แล้ว`);
-      await onCreated();
+      await onCreated(trimmedName);
     } catch (err) {
       if (err instanceof ApiError && err.statusCode === 409) {
         setNameError(err.message);

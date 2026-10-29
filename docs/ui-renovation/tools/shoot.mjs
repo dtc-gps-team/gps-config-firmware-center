@@ -100,20 +100,17 @@ const targets = {
   },
   firmware: { url: "/firmware", w: 1440, h: 900 },
   "parameter-new": {
-    url: "/parameters",
+    url: "/parameters/new",
     w: 1440,
-    h: 1000,
+    h: 900,
     extra: ["mobile"],
     act: async (page) => {
-      await page.getByRole("button", { name: /สร้าง Parameter ใหม่/ }).first().click();
       await page.locator("#param-name").fill("report_interval");
       await page.locator("#param-desc").fill("ช่วงเวลารายงานตำแหน่ง");
       await page.getByRole("checkbox", { name: /BB-200/ }).click();
-      await page.locator("summary").click();
-      await page.locator("#param-unit").fill("วินาที");
-      await page.getByRole("checkbox", { name: /ต้องกรอก/ }).click();
     },
   },
+  "parameters-list": { url: "/parameters", w: 1440, h: 900 },
   "config-detail": { url: "/config/c2?tab=versions", w: 1440, h: 900, extra: ["mobile"] },
   "config-detail-params": { url: "/config/c2", w: 1440, h: 900 },
   "config-detail-draft": { url: "/config/c3", w: 1440, h: 900, extra: ["mobile"] },
