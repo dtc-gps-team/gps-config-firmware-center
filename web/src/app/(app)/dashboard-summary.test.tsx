@@ -112,7 +112,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     // BOX-2 ออฟไลน์ที่เดียว (BOX-3 ไม่อยู่ใน Server กลาง จึงไม่ทราบ ไม่นับเป็นออฟไลน์)
     expect(within(card("อุปกรณ์ออฟไลน์")).getByText("1")).toBeInTheDocument();
     // BOX-2 กล่องรายงาน v8 แต่เป้าหมาย v9
-    expect(within(card("Config ไม่ตรงกับที่ตั้งไว้")).getByText("1")).toBeInTheDocument();
+    expect(within(card("อุปกรณ์ที่ Config ยังไม่อัปเดต")).getByText("1")).toBeInTheDocument();
     expect(within(card("อุปกรณ์ทั้งหมด")).getByText("3")).toBeInTheDocument();
   });
 
@@ -151,7 +151,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     render(<DashboardSummary />);
 
     expect(within(card("อุปกรณ์ออฟไลน์")).getByText("ไม่ทราบ")).toBeInTheDocument();
-    expect(within(card("Config ไม่ตรงกับที่ตั้งไว้")).getByText("ไม่ทราบ")).toBeInTheDocument();
+    expect(within(card("อุปกรณ์ที่ Config ยังไม่อัปเดต")).getByText("ไม่ทราบ")).toBeInTheDocument();
     expect(
       screen.getByText(/ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบสถานะการเชื่อมต่อ/),
     ).toBeInTheDocument();

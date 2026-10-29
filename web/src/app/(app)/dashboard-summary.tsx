@@ -215,7 +215,7 @@ export function DashboardSummary() {
         />
         <KpiCard
           plain
-          label="Config ไม่ตรงกับที่ตั้งไว้"
+          label="อุปกรณ์ที่ Config ยังไม่อัปเดต"
           href="/devices"
           value={driftCount}
           error={devices.error}
