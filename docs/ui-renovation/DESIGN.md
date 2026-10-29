@@ -220,3 +220,4 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 - **ฟิลเตอร์ที่เก็บเป็นมุมมอง (saved views)** เก็บใน localStorage ของเครื่องนั้น ไม่ซิงก์ข้ามเครื่อง/ผู้ใช้
 - **Firmware ล้าสมัย** คำนวณจากเวอร์ชันที่กล่องรายงาน (Server กลาง) เทียบ Firmware ล่าสุดที่ผ่าน QA และอัปโหลดสำเร็จของโมเดลเดียวกัน (เทียบเลขทีละส่วน) ไม่มีข้อมูลรายงาน = ไม่ตัดสิน
 - Bulk ใน Device Search มีเฉพาะ คัดลอก Device ID และส่งออก CSV (ไม่มี endpoint สั่งงานเป็นกลุ่ม) อนุมัติหลายรายการมีเฉพาะ Config
+- **Firmware ไม่แสดงให้ ConfigEngineer**: RBAC_Matrix ระบุ "-" ที่แถว Firmware Repository เมนูถูกซ่อน (`allowedRoles` ใน `nav.ts`) หน้า `/firmware` และ `/firmware/[id]` ครอบด้วย `RoleGuard` (`canReadFirmware`) และ Device Search/Detail ไม่ยิง `GET /firmware` ให้ role นี้

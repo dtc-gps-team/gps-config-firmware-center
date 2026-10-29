@@ -23,7 +23,7 @@ import { CopyButton } from "@/components/copy-button";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
 import { ErrorState } from "@/components/error-state";
-import { canRegisterDevice } from "@/lib/permissions";
+import { canReadFirmware, canRegisterDevice } from "@/lib/permissions";
 import { useCentralDevices } from "@/hooks/use-central-devices";
 import { useDevices } from "@/hooks/use-devices";
 import { useFirmwareList } from "@/hooks/use-firmware";
@@ -323,7 +323,7 @@ export function DeviceSearchView({
   const devices = useMemo(() => data ?? [], [data]);
   // ข้อมูลเสริมจาก Server กลาง/รายการ Firmware: โหลดไม่ได้ก็แค่ไม่มีข้อมูลเสริม ตารางหลักไม่กระทบ
   const { data: central } = useCentralDevices();
-  const { data: firmware } = useFirmwareList();
+  const { data: firmware } = useFirmwareList(canReadFirmware(session?.role));
   const centralById = useMemo(
     () => onlineByDeviceId(central?.devices ?? []),
     [central],

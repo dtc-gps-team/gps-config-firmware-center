@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
-import { canRegisterDevice } from "@/lib/permissions";
+import { canReadFirmware, canRegisterDevice } from "@/lib/permissions";
 import { StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
@@ -229,7 +229,8 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
 
 function DeviceDetailContent({ device }: { device: Device }) {
   const central = useDeviceCentral(device.deviceId);
-  const { data: firmware } = useFirmwareList();
+  const { session } = useAuth();
+  const { data: firmware } = useFirmwareList(canReadFirmware(session?.role));
   const latestFirmware = useMemo(
     () => latestApprovedByModel(firmware ?? []).get(device.deviceModel),
     [firmware, device.deviceModel],

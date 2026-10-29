@@ -112,6 +112,17 @@ export const NAV_ITEMS: NavItem[] = [
     group: "config",
     screenName: "Firmware Repository",
     icon: CpuIcon,
+    // Section 2: ConfigEngineer เป็น "-" (ไม่มีสิทธิ์อ่าน Firmware เลย) role อื่นมี R ขึ้นไป
+    allowedRoles: [
+      "FirmwareEngineer",
+      "QAEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ],
   },
   {
     label: "Campaign",

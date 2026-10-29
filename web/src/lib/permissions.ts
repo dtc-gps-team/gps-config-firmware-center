@@ -266,6 +266,25 @@ export function canAccessParameterLibrary(
 }
 
 /**
+ * เห็น/เข้า Firmware Repository และอ่านรายการ Firmware ได้ไหม — RBAC_Matrix.md
+ * Section 2 แถว Firmware Repository: ทุก Role มีอย่างน้อย R ยกเว้น ConfigEngineer
+ * ที่เป็น "-" (เดิม SW ก่อนแยก role) · ใช้ซ่อนเมนู/ปิดหน้า และกันหน้าอื่นไม่ให้ยิง
+ * `GET /firmware` ที่ role นี้ได้ 403 · UX-level เท่านั้น backend บังคับจริง
+ */
+export function canReadFirmware(role: string | null | undefined): boolean {
+  return (
+    role === "FirmwareEngineer" ||
+    role === "QAEngineer" ||
+    role === "Operation" ||
+    role === "ST" ||
+    role === "OT" ||
+    role === "Auditor" ||
+    role === "Admin" ||
+    role === "SuperAdmin"
+  );
+}
+
+/**
  * ปุ่ม/ฟอร์ม "สร้าง Parameter ใหม่" — RBAC_Matrix.md ตาราง 4.1
  * `POST /config-definitions`: ConfigEngineer เท่านั้น (self-service ไม่ต้อง
  * ผ่านอนุมัติ — ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09 · เดิม SW ก่อนแยก role)

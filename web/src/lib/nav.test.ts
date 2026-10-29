@@ -25,6 +25,13 @@ describe("visibleNavItems", () => {
     expect(hrefs).toContain("/config");
   });
 
+  it("Firmware Repository ซ่อนจาก ConfigEngineer (RBAC Matrix เป็น -) role อื่นเห็น", () => {
+    expect(visibleNavItems("ConfigEngineer").map((i) => i.href)).not.toContain("/firmware");
+    for (const role of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
+      expect(visibleNavItems(role).map((i) => i.href)).toContain("/firmware");
+    }
+  });
+
   it("ไม่มี session เห็นแค่เมนูที่ไม่จำกัด Role", () => {
     const items = visibleNavItems(undefined);
     expect(items.every((i) => !i.allowedRoles)).toBe(true);
