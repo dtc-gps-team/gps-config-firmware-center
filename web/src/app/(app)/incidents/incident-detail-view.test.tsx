@@ -128,7 +128,7 @@ describe("IncidentDetailView", () => {
     expect(screen.getByText("ดูได้อย่างเดียว")).toBeInTheDocument();
   });
 
-  it("ตัดสินใจแล้ว: แสดงการ์ดผลการตรวจสอบ (ชื่อผู้ตัดสินใจ + หมายเหตุ) และไม่มีปุ่ม", () => {
+  it("ตัดสินใจแล้ว: แสดงในไทม์ไลน์ (ชื่อผู้ตัดสินใจ + หมายเหตุ) และไม่มีปุ่ม", () => {
     setHook({
       data: incident({
         status: "dismissed",
@@ -140,20 +140,20 @@ describe("IncidentDetailView", () => {
 
     render(<IncidentDetailView incidentId="inc-1" />);
 
-    expect(screen.getByText("ผลการตรวจสอบ")).toBeInTheDocument();
-    expect(screen.getByText("คุณปฏิบัติการ")).toBeInTheDocument();
+    expect(screen.getByText(/^ตัดสินใจ:/)).toBeInTheDocument();
+    expect(screen.getByText("โดย คุณปฏิบัติการ")).toBeInTheDocument();
     expect(screen.getByText("ซ้ำกับรายการเดิม")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
     ).not.toBeInTheDocument();
   });
 
-  it("ยังไม่ตัดสินใจ: ไม่มีการ์ดผลการตรวจสอบ", () => {
+  it("ยังไม่ตัดสินใจ: ไม่มีเหตุการณ์ตัดสินใจในไทม์ไลน์", () => {
     setHook({ data: incident() });
 
     render(<IncidentDetailView incidentId="inc-1" />);
 
-    expect(screen.queryByText("ผลการตรวจสอบ")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^ตัดสินใจ:/)).not.toBeInTheDocument();
   });
 
   it("ตรวจพบอัตโนมัติ: ลิงก์ Config/Firmware และรายละเอียดทางเทคนิค (ครั้งที่พยายาม + error)", () => {

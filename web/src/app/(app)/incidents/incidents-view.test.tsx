@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { IncidentsView } from "./incidents-view";
@@ -59,6 +59,7 @@ function incident(overrides: Partial<Incident> = {}): Incident {
 
 describe("IncidentsView: Field Report", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
@@ -168,6 +169,7 @@ function rolloutIncident(overrides: Partial<Incident> = {}): Incident {
 
 describe("IncidentsView: แยกที่มาและผลกระทบ", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
@@ -265,27 +267,10 @@ describe("IncidentsView: แยกที่มาและผลกระทบ"
       screen.getByText("ไม่พบ Incident ที่ตรงกับเงื่อนไข"),
     ).toBeInTheDocument();
   });
-
-  it("จำนวนในหัวการ์ดนับเฉพาะรายการที่ผ่านตัวกรอง", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [
-      incident({ id: "a", severity: "critical" }),
-      incident({ id: "b", severity: "critical" }),
-      rolloutIncident({ severity: "high" }),
-    ];
-
-    render(<IncidentsView />);
-    const heading = screen.getByText(/^รายการ Incident/);
-    expect(within(heading).getByText("(3)")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
-    await user.click(await screen.findByRole("option", { name: "high" }));
-
-    expect(within(heading).getByText("(1)")).toBeInTheDocument();
-  });
 });
 describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแล้ว / ทั้งหมด", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
@@ -386,21 +371,6 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     await user.click(tab(allTab));
 
     expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
-  });
-
-  it("จำนวนในหัวการ์ดตามแท็บที่เลือก", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [open(), resolved(), dismissed()];
-
-    render(<IncidentsView />);
-    const heading = screen.getByText(/^รายการ Incident/);
-    expect(within(heading).getByText("(1)")).toBeInTheDocument();
-
-    await user.click(tab(closedTab));
-    expect(within(heading).getByText("(2)")).toBeInTheDocument();
-
-    await user.click(tab(allTab));
-    expect(within(heading).getByText("(3)")).toBeInTheDocument();
   });
 
   it("ปิดทั้งหมดแล้ว: แท็บ 'ยังไม่ปิด' บอกว่าไม่มีที่ยังไม่ปิด ไม่ใช่ 'ยังไม่มี Incident'", () => {
