@@ -3,11 +3,17 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CpuIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -41,6 +47,7 @@ import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { ErrorState } from "@/components/error-state";
 import { WizardStepIndicator } from "@/components/wizard-step-indicator";
 import { SegmentBar } from "@/components/segment-bar";
+import { cn } from "@/lib/utils";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { describeIncompatibility } from "./rollout-compatibility";
 
@@ -59,28 +66,146 @@ const STEPS = [
   { n: 4, label: "ยืนยัน" },
 ] as const;
 
-function PayloadTypeButton({
+function PayloadTypeCard({
   active,
   onClick,
-  children,
+  icon: Icon,
+  title,
+  description,
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
 }) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
-      className={
-        "rounded-full px-3 py-1 text-xs font-medium transition-colors " +
-        (active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-muted-foreground hover:bg-secondary/80")
-      }
+      className={cn(
+        "flex flex-1 items-start gap-3 rounded-lg border p-3 text-left outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "border-primary bg-primary/5 ring-1 ring-primary"
+          : "bg-card hover:bg-muted/50",
+      )}
     >
-      {children}
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-md",
+          active
+            ? "bg-primary text-primary-foreground"
+            : "bg-secondary text-muted-foreground",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="text-sm font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{description}</span>
+      </span>
     </button>
+  );
+}
+
+/** แผงสรุปด้านขวาของ wizard: เห็นผลของสิ่งที่เลือกอยู่ตลอด ไม่ต้องเดินไปขั้นสุดท้ายถึงรู้ว่าส่งกี่เครื่อง */
+function RolloutSummary({
+  payloadType,
+  payloadName,
+  total,
+  included,
+  incompatible,
+  manual,
+}: {
+  payloadType: CampaignPayloadType;
+  payloadName: string | null;
+  total: number;
+  included: number;
+  incompatible: number;
+  manual: number;
+}) {
+  return (
+    <Card
+      className="gap-4 p-5 lg:sticky lg:top-20"
+      data-testid="rollout-summary"
+    >
+      <p className="label-caps text-muted-foreground">สรุป Rollout</p>
+      <dl className="flex flex-col gap-3 text-sm">
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-xs text-muted-foreground">ประเภท</dt>
+          <dd className="font-medium">{payloadType}</dd>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-xs text-muted-foreground">
+            {payloadType === "Config" ? "Config ที่จะส่ง" : "Firmware ที่จะส่ง"}
+          </dt>
+          <dd
+            className={
+              payloadName ? "font-medium break-words" : "text-muted-foreground"
+            }
+          >
+            {payloadName ?? "ยังไม่ได้เลือก"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-col gap-2 border-t pt-4">
+        <p className="text-xs text-muted-foreground">อุปกรณ์ที่จะได้รับ</p>
+        <p className="font-instrument tabular-nums">
+          <span className="text-3xl font-semibold">{included}</span>
+          <span className="text-sm text-muted-foreground">
+            {" "}
+            / {total} เครื่อง
+          </span>
+        </p>
+        <SegmentBar
+          legend={false}
+          segments={[
+            {
+              key: "send",
+              label: "ได้รับ",
+              value: included,
+              colorClass: "bg-success",
+            },
+            {
+              key: "incompatible",
+              label: "ข้าม",
+              value: incompatible,
+              colorClass: "bg-warning",
+            },
+            {
+              key: "manual",
+              label: "เอาออก",
+              value: manual,
+              colorClass: "bg-muted-foreground/40",
+            },
+          ]}
+        />
+        {(incompatible > 0 || manual > 0) && (
+          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {incompatible > 0 && (
+              <li className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-warning" />
+                ข้ามเพราะไม่เข้ากัน {incompatible} เครื่อง
+              </li>
+            )}
+            {manual > 0 && (
+              <li className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-muted-foreground/40" />
+                คุณเอาออกเอง {manual} เครื่อง
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+
+      <p className="border-t pt-4 text-xs text-muted-foreground">
+        เริ่มแล้วรอ Operation อีกคนอนุมัติ
+        และยังไม่ส่งเข้าอุปกรณ์จนกว่าจะกดปล่อย
+      </p>
+    </Card>
   );
 }
 
@@ -306,287 +431,363 @@ export function CampaignRolloutCreateForm({
   );
 
   return (
-    <div className="flex max-w-3xl flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <WizardStepIndicator steps={STEPS} step={step} />
-
-      {step === 1 && (
-        <Card className="gap-3 p-5">
-          <div>
-            <p className="text-sm font-medium">
-              อุปกรณ์ในรอบนี้ (
-              <span className="tabular-nums">
-                {memberDeviceIds.length - excludedDeviceIds.size}/
-                {memberDeviceIds.length}
-              </span>
-              )
-            </p>
-            <p className="text-xs text-muted-foreground">
-              default = สมาชิกทั้งกลุ่ม
-              เอาเครื่องที่ไม่พร้อมออกได้โดยเอาเครื่องหมายถูกออก
-            </p>
-          </div>
-
-          {memberDeviceIds.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">
-              กลุ่มนี้ยังไม่มีสมาชิก เพิ่มอุปกรณ์เข้ากลุ่มก่อนเริ่ม Rollout
-            </p>
-          ) : (
-            <div className="max-h-96 overflow-y-auto rounded-lg border">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-muted/50">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead>เลขเครื่อง</TableHead>
-                    <TableHead>โมเดล/โปรโตคอล</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {memberDeviceIds.map((deviceId) => {
-                    const device: Device | undefined =
-                      deviceByDeviceId.get(deviceId);
-                    const included = !excludedDeviceIds.has(deviceId);
-                    return (
-                      <TableRow key={deviceId}>
-                        <TableCell>
-                          <Checkbox
-                            checked={included}
-                            onCheckedChange={(c) =>
-                              toggleExcluded(deviceId, c === true)
-                            }
-                            aria-label={
-                              included
-                                ? "เอาเครื่องนี้ออกจาก Rollout"
-                                : "เอาเครื่องนี้กลับเข้า Rollout"
-                            }
-                          />
-                        </TableCell>
-                        <TableCell className="font-instrument text-xs">
-                          {deviceId}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {device
-                            ? `${device.deviceModel} / ${device.protocol}`
-                            : "-"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {step === 2 && (
-        <Card className="gap-4 p-5">
-          <div className="flex flex-col gap-1.5">
-            <Label>ประเภท Payload</Label>
-            <div className="flex gap-2">
-              <PayloadTypeButton
-                active={payloadType === "Config"}
-                onClick={() => {
-                  setPayloadType("Config");
-                  setFormError(null);
-                }}
-              >
-                Config
-              </PayloadTypeButton>
-              <PayloadTypeButton
-                active={payloadType === "Firmware"}
-                onClick={() => {
-                  setPayloadType("Firmware");
-                  setFormError(null);
-                }}
-              >
-                Firmware
-              </PayloadTypeButton>
-            </div>
-          </div>
-
-          {payloadType === "Config" ? (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rollout-config">Config</Label>
-              <Select
-                value={configId}
-                onValueChange={(value) => {
-                  setConfigId(value ?? "");
-                  setFormError(null);
-                }}
-              >
-                <SelectTrigger id="rollout-config" className="w-full">
-                  <SelectValue placeholder="- เลือก -">
-                    {() =>
-                      selectedConfig
-                        ? `${selectedConfig.name} (${selectedConfig.deviceModel}/${selectedConfig.protocol})`
-                        : "- เลือก -"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {eligibleConfigs.map((c: Config) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name} ({c.deviceModel}/{c.protocol})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {eligibleConfigs.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  ยังไม่มี Config สถานะ approved/synced ให้เลือก
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-w-0 flex-col gap-5">
+          {step === 1 && (
+            <Card className="gap-3 p-5">
+              <div>
+                <p className="text-sm font-medium">
+                  อุปกรณ์ในรอบนี้ (
+                  <span className="tabular-nums">
+                    {memberDeviceIds.length - excludedDeviceIds.size}/
+                    {memberDeviceIds.length}
+                  </span>
+                  )
                 </p>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rollout-firmware">Firmware</Label>
-              <Select
-                value={firmwareId}
-                onValueChange={(value) => {
-                  setFirmwareId(value ?? "");
-                  setFormError(null);
-                }}
-              >
-                <SelectTrigger id="rollout-firmware" className="w-full">
-                  <SelectValue placeholder="- เลือก -">
-                    {() =>
-                      selectedFirmware
-                        ? `v${selectedFirmware.version}: รองรับ ${selectedFirmware.deviceModelCompatibility.join(", ")}`
-                        : "- เลือก -"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {eligibleFirmware.map((f: Firmware) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      v{f.version}: รองรับ{" "}
-                      {f.deviceModelCompatibility.join(", ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {eligibleFirmware.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  ยังไม่มี Firmware สถานะ stored (จัดเก็บสำเร็จแล้ว) ให้เลือก
+                  default = สมาชิกทั้งกลุ่ม
+                  เอาเครื่องที่ไม่พร้อมออกได้โดยเอาเครื่องหมายถูกออก
                 </p>
+              </div>
+
+              {memberDeviceIds.length === 0 ? (
+                <p className="py-4 text-sm text-muted-foreground">
+                  กลุ่มนี้ยังไม่มีสมาชิก เพิ่มอุปกรณ์เข้ากลุ่มก่อนเริ่ม Rollout
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      เลือกแล้ว{" "}
+                      {memberDeviceIds.length - excludedDeviceIds.size} จาก{" "}
+                      {memberDeviceIds.length}
+                    </p>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setExcludedDeviceIds(new Set())}
+                        disabled={excludedDeviceIds.size === 0}
+                      >
+                        เลือกทั้งหมด
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setExcludedDeviceIds(new Set(memberDeviceIds))
+                        }
+                        disabled={
+                          excludedDeviceIds.size === memberDeviceIds.length
+                        }
+                      >
+                        ล้างทั้งหมด
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="max-h-[28rem] overflow-y-auto rounded-lg border">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-muted/50">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead>เลขเครื่อง</TableHead>
+                          <TableHead>โมเดล/โปรโตคอล</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {memberDeviceIds.map((deviceId) => {
+                          const device: Device | undefined =
+                            deviceByDeviceId.get(deviceId);
+                          const included = !excludedDeviceIds.has(deviceId);
+                          return (
+                            <TableRow key={deviceId}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={included}
+                                  onCheckedChange={(c) =>
+                                    toggleExcluded(deviceId, c === true)
+                                  }
+                                  aria-label={
+                                    included
+                                      ? "เอาเครื่องนี้ออกจาก Rollout"
+                                      : "เอาเครื่องนี้กลับเข้า Rollout"
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell className="font-instrument text-xs">
+                                {deviceId}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {device
+                                  ? `${device.deviceModel} / ${device.protocol}`
+                                  : "-"}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
-            </div>
+            </Card>
           )}
-        </Card>
-      )}
 
-      {step === 3 && (
-        <Card className="gap-4 p-5">
-          <div>
-            <p className="text-sm font-medium">ผลกระทบของ Rollout นี้</p>
-            <p className="text-xs text-muted-foreground">
-              เครื่องที่ไม่เข้ากันกับ{" "}
-              {payloadType === "Config" ? "Config" : "Firmware"}{" "}
-              ที่เลือกถูกเอาออกจากรอบนี้ให้อัตโนมัติ
-            </p>
-          </div>
+          {step === 2 && (
+            <Card className="gap-4 p-5">
+              <div className="flex flex-col gap-1.5">
+                <Label id="payload-type-label">ประเภท Payload</Label>
+                <div
+                  role="radiogroup"
+                  aria-labelledby="payload-type-label"
+                  className="flex flex-col gap-2 sm:flex-row"
+                >
+                  <PayloadTypeCard
+                    active={payloadType === "Config"}
+                    icon={SlidersHorizontalIcon}
+                    title="Config"
+                    description="ส่งค่าตั้งค่าที่อนุมัติแล้วเข้าอุปกรณ์"
+                    onClick={() => {
+                      setPayloadType("Config");
+                      setFormError(null);
+                    }}
+                  />
+                  <PayloadTypeCard
+                    active={payloadType === "Firmware"}
+                    icon={CpuIcon}
+                    title="Firmware"
+                    description="อัปเดตเฟิร์มแวร์ที่จัดเก็บแล้วเข้าอุปกรณ์"
+                    onClick={() => {
+                      setPayloadType("Firmware");
+                      setFormError(null);
+                    }}
+                  />
+                </div>
+              </div>
 
-          <SegmentBar
-            segments={[
-              {
-                key: "send",
-                label: "ได้รับ",
-                value: includedDeviceIds.length,
-                colorClass: "bg-success",
-              },
-              {
-                key: "incompatible",
-                label: "ไม่เข้ากัน (ข้าม)",
-                value: incompatibleReasons.size,
-                colorClass: "bg-warning",
-              },
-              {
-                key: "manual",
-                label: "เอาออกเอง",
-                value: manuallyExcluded.length,
-                colorClass: "bg-muted-foreground/40",
-              },
-            ]}
-          />
-
-          {incompatibleReasons.size > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="label-caps text-muted-foreground">
-                เครื่องที่ถูกข้าม
-              </p>
-              <ul className="divide-y rounded-lg border">
-                {[...incompatibleReasons].map(([deviceId, reason]) => (
-                  <li
-                    key={deviceId}
-                    className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2 text-sm"
+              {payloadType === "Config" ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="rollout-config">Config</Label>
+                  <Select
+                    value={configId}
+                    onValueChange={(value) => {
+                      setConfigId(value ?? "");
+                      setFormError(null);
+                    }}
                   >
-                    <span className="font-instrument text-xs">{deviceId}</span>
-                    <span className="text-warning-foreground">{reason}</span>
-                  </li>
-                ))}
-              </ul>
+                    <SelectTrigger id="rollout-config" className="w-full">
+                      <SelectValue placeholder="- เลือก -">
+                        {() =>
+                          selectedConfig
+                            ? `${selectedConfig.name} (${selectedConfig.deviceModel}/${selectedConfig.protocol})`
+                            : "- เลือก -"
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eligibleConfigs.map((c: Config) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} ({c.deviceModel}/{c.protocol})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {eligibleConfigs.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      ยังไม่มี Config สถานะ approved/synced ให้เลือก
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="rollout-firmware">Firmware</Label>
+                  <Select
+                    value={firmwareId}
+                    onValueChange={(value) => {
+                      setFirmwareId(value ?? "");
+                      setFormError(null);
+                    }}
+                  >
+                    <SelectTrigger id="rollout-firmware" className="w-full">
+                      <SelectValue placeholder="- เลือก -">
+                        {() =>
+                          selectedFirmware
+                            ? `v${selectedFirmware.version}: รองรับ ${selectedFirmware.deviceModelCompatibility.join(", ")}`
+                            : "- เลือก -"
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eligibleFirmware.map((f: Firmware) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          v{f.version}: รองรับ{" "}
+                          {f.deviceModelCompatibility.join(", ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {eligibleFirmware.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      ยังไม่มี Firmware สถานะ stored (จัดเก็บสำเร็จแล้ว)
+                      ให้เลือก
+                    </p>
+                  )}
+                </div>
+              )}
+              {(payloadType === "Config" ? selectedConfig : selectedFirmware) &&
+                incompatibleReasons.size > 0 && (
+                  <Notice tone="warning">
+                    {incompatibleReasons.size}{" "}
+                    เครื่องในกลุ่มไม่เข้ากับตัวที่เลือก และจะถูกข้ามในรอบนี้
+                    ดูรายชื่อในขั้นตรวจสอบผลกระทบ
+                  </Notice>
+                )}
+            </Card>
+          )}
+
+          {step === 3 && (
+            <Card className="gap-4 p-5">
+              <div>
+                <p className="text-sm font-medium">ผลกระทบของ Rollout นี้</p>
+                <p className="text-xs text-muted-foreground">
+                  เครื่องที่ไม่เข้ากันกับ{" "}
+                  {payloadType === "Config" ? "Config" : "Firmware"}{" "}
+                  ที่เลือกถูกเอาออกจากรอบนี้ให้อัตโนมัติ
+                </p>
+              </div>
+
+              <SegmentBar
+                segments={[
+                  {
+                    key: "send",
+                    label: "ได้รับ",
+                    value: includedDeviceIds.length,
+                    colorClass: "bg-success",
+                  },
+                  {
+                    key: "incompatible",
+                    label: "ไม่เข้ากัน (ข้าม)",
+                    value: incompatibleReasons.size,
+                    colorClass: "bg-warning",
+                  },
+                  {
+                    key: "manual",
+                    label: "เอาออกเอง",
+                    value: manuallyExcluded.length,
+                    colorClass: "bg-muted-foreground/40",
+                  },
+                ]}
+              />
+
+              {incompatibleReasons.size > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="label-caps text-muted-foreground">
+                    เครื่องที่ถูกข้าม
+                  </p>
+                  <ul className="divide-y rounded-lg border">
+                    {[...incompatibleReasons].map(([deviceId, reason]) => (
+                      <li
+                        key={deviceId}
+                        className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2 text-sm"
+                      >
+                        <span className="font-instrument text-xs">
+                          {deviceId}
+                        </span>
+                        <span className="text-warning-foreground">
+                          {reason}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    เครื่องเหล่านี้ต้องส่งในรอบอื่นด้วย{" "}
+                    {payloadType === "Config" ? "Config" : "Firmware"}{" "}
+                    ที่ตรงกับโมเดลของเครื่อง
+                  </p>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {step === 4 && (
+            <Card className="gap-3 p-5">
+              <p className="text-sm font-medium">ตรวจสอบก่อนเริ่ม</p>
+              <dl className="divide-y text-sm">
+                <div className="flex justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">ประเภท Payload</dt>
+                  <dd>{payloadType}</dd>
+                </div>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">
+                    {payloadType === "Config" ? "Config" : "Firmware"}
+                  </dt>
+                  <dd className="text-right">{payloadName}</dd>
+                </div>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">อุปกรณ์ที่ได้รับ</dt>
+                  <dd className="font-instrument tabular-nums">
+                    {includedDeviceIds.length} จาก {memberDeviceIds.length}{" "}
+                    เครื่อง
+                  </dd>
+                </div>
+              </dl>
               <p className="text-xs text-muted-foreground">
-                เครื่องเหล่านี้ต้องส่งในรอบอื่นด้วย{" "}
-                {payloadType === "Config" ? "Config" : "Firmware"}{" "}
-                ที่ตรงกับโมเดลของเครื่อง
+                เมื่อเริ่มแล้ว Rollout จะรอ Operation อีกคนอนุมัติ
+                และยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะกดปล่อย
               </p>
-            </div>
+            </Card>
           )}
-        </Card>
-      )}
 
-      {step === 4 && (
-        <Card className="gap-3 p-5">
-          <p className="text-sm font-medium">ตรวจสอบก่อนเริ่ม</p>
-          <dl className="divide-y text-sm">
-            <div className="flex justify-between gap-4 py-2">
-              <dt className="text-muted-foreground">ประเภท Payload</dt>
-              <dd>{payloadType}</dd>
-            </div>
-            <div className="flex justify-between gap-4 py-2">
-              <dt className="text-muted-foreground">
-                {payloadType === "Config" ? "Config" : "Firmware"}
-              </dt>
-              <dd className="text-right">{payloadName}</dd>
-            </div>
-            <div className="flex justify-between gap-4 py-2">
-              <dt className="text-muted-foreground">อุปกรณ์ที่ได้รับ</dt>
-              <dd className="font-instrument tabular-nums">
-                {includedDeviceIds.length} จาก {memberDeviceIds.length} เครื่อง
-              </dd>
-            </div>
-          </dl>
-          <p className="text-xs text-muted-foreground">
-            เมื่อเริ่มแล้ว Rollout จะรอ Operation อีกคนอนุมัติ
-            และยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะกดปล่อย
-          </p>
-        </Card>
-      )}
+          {formError && <ErrorState message={formError} />}
 
-      {formError && <ErrorState message={formError} />}
-
-      <div className="flex justify-between gap-2 border-t pt-4">
-        <Button variant="outline" disabled={submitting} onClick={handleCancel}>
-          ยกเลิก
-        </Button>
-        <div className="flex gap-2">
-          {step > 1 && (
-            <Button variant="outline" disabled={submitting} onClick={goBack}>
-              <ArrowLeftIcon />
-              ย้อนกลับ
+          <div className="flex justify-between gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              disabled={submitting}
+              onClick={handleCancel}
+            >
+              ยกเลิก
             </Button>
-          )}
-          {step < STEPS.length ? (
-            <Button onClick={goNext}>
-              ถัดไป
-              <ArrowRightIcon />
-            </Button>
-          ) : (
-            <Button onClick={() => void handleSubmit()} loading={submitting}>
-              เริ่ม Rollout
-            </Button>
-          )}
+            <div className="flex gap-2">
+              {step > 1 && (
+                <Button
+                  variant="outline"
+                  disabled={submitting}
+                  onClick={goBack}
+                >
+                  <ArrowLeftIcon />
+                  ย้อนกลับ
+                </Button>
+              )}
+              {step < STEPS.length ? (
+                <Button onClick={goNext}>
+                  ถัดไป
+                  <ArrowRightIcon />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void handleSubmit()}
+                  loading={submitting}
+                >
+                  เริ่ม Rollout
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
+
+        <RolloutSummary
+          payloadType={payloadType}
+          payloadName={payloadName === "-" ? null : payloadName}
+          total={memberDeviceIds.length}
+          included={includedDeviceIds.length}
+          incompatible={incompatibleReasons.size}
+          manual={manuallyExcluded.length}
+        />
       </div>
     </div>
   );
