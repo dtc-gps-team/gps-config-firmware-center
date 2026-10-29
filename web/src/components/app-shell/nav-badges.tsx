@@ -75,7 +75,7 @@ export function ApprovalNavBadge({ compact }: { compact: boolean }) {
 export function IncidentNavBadge({ compact }: { compact: boolean }) {
   const incidents = useIncidents();
   const count = incidents.data ? activeIncidentCount(incidents.data) : 0;
-  return <CountPill count={count} label="ที่ยังต้องตาม" compact={compact} />;
+  return <CountPill count={count} label="ที่ยังเปิดอยู่" compact={compact} />;
 }
 
 /** เมนูที่มีตัวเลขงานค้าง (href → component) */
