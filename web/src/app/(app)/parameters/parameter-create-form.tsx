@@ -232,7 +232,7 @@ export function ParameterCreateForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <Card className="w-full max-w-4xl gap-0 overflow-hidden p-0">
+      <Card className="w-full gap-0 overflow-hidden p-0">
         <div className="border-b px-6 py-4">
           <h2 className="text-base font-semibold">ข้อมูล Parameter</h2>
           <p className="text-sm text-muted-foreground">
@@ -244,7 +244,7 @@ export function ParameterCreateForm({
           <div className="flex min-w-0 flex-col divide-y">
             <section className="flex flex-col gap-4 p-6">
               <SectionLabel>ข้อมูลหลัก</SectionLabel>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="param-name">ชื่อ field</Label>
                   <Input
@@ -287,17 +287,6 @@ export function ParameterCreateForm({
                   </Select>
                 </div>
 
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="param-desc">คำอธิบาย (ไม่บังคับ)</Label>
-                  <Input
-                    id="param-desc"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="อธิบายสั้นๆ ว่า field นี้ควบคุมอะไร"
-                    autoComplete="off"
-                  />
-                </div>
-
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="param-unit">หน่วย (ไม่บังคับ)</Label>
                   <Input
@@ -306,6 +295,17 @@ export function ParameterCreateForm({
                     onChange={(e) => setUnit(e.target.value)}
                     placeholder='เช่น "วินาที", "%", "เมตร"'
                     maxLength={20}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="param-desc">คำอธิบาย (ไม่บังคับ)</Label>
+                  <Input
+                    id="param-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="อธิบายสั้นๆ ว่า field นี้ควบคุมอะไร"
                     autoComplete="off"
                   />
                 </div>
@@ -353,6 +353,7 @@ export function ParameterCreateForm({
               </div>
             </section>
 
+            <div className="grid divide-y lg:grid-cols-2 lg:divide-x lg:divide-y-0">
             <section className="flex flex-col gap-3 p-6">
               <SectionLabel>
                 โมเดลที่รองรับ{" "}
@@ -402,10 +403,11 @@ export function ParameterCreateForm({
                 </p>
               </div>
             </section>
+            </div>
 
             <section className="flex flex-col gap-3 p-6">
               <SectionLabel>พฤติกรรม</SectionLabel>
-              <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
                 <FlagRow
                   id="param-required"
                   checked={required}
