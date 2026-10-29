@@ -96,6 +96,10 @@ Future<ProviderContainer> _pump(
 }) async {
   tester.view.physicalSize = viewport * 3;
   tester.view.devicePixelRatio = 3;
+  // จำลองพื้นที่แถบสถานะและแถบนำทาง Android อย่างละ 24 logical pixels
+  // ให้ SafeArea หักพื้นที่ระบบเหมือนใช้งานบนมือถือ ไม่ได้ใช้จอเต็มทั้งหมด
+  tester.view.viewPadding = const FakeViewPadding(top: 72, bottom: 72);
+  tester.view.padding = const FakeViewPadding(top: 72, bottom: 72);
   addTearDown(tester.view.reset);
   final container = ProviderContainer(
     overrides: [
@@ -180,7 +184,7 @@ void main() {
     (view: const Size(390, 844), scale: 2.0),
     (view: const Size(360, 640), scale: 1.0),
   ]) {
-    testWidgets('การ์ดมาก่อนบรรทัดสรุป ${config.view} / ${config.scale}x', (
+    testWidgets('พื้นที่รวมแถบระบบ ${config.view} / ${config.scale}x', (
       tester,
     ) async {
       await _pump(
@@ -198,20 +202,31 @@ void main() {
       );
       await tester.pumpAndSettle();
       final rows = find.byType(HomeTaskRow).hitTestable();
-      expect(rows, findsOneWidget);
       final body = tester.getRect(find.byKey(const Key('home_overview')));
-      final row = tester.getRect(rows);
-      expect(row.top, greaterThanOrEqualTo(body.top));
-      expect(row.bottom, lessThanOrEqualTo(body.bottom));
+      final compact = find.byKey(const Key('home_compact_all')).hitTestable();
+      if (config.view.height == 640) {
+        expect(rows, findsNothing);
+        expect(compact, findsOneWidget);
+        final button = tester.getRect(compact);
+        expect(button.top, greaterThanOrEqualTo(body.top));
+        expect(button.bottom, lessThanOrEqualTo(body.bottom));
+      } else {
+        expect(rows, findsOneWidget);
+        final row = tester.getRect(rows);
+        expect(row.top, greaterThanOrEqualTo(body.top));
+        expect(row.bottom, lessThanOrEqualTo(body.bottom));
+        expect(compact, findsNothing);
+      }
       expect(
         find.byKey(const Key('home_preview_caption')).hitTestable(),
         findsNothing,
       );
-      expect(
-        find.byKey(const Key('home_compact_all')).hitTestable(),
-        findsNothing,
+      // ตรวจทางเข้าที่ผู้ใช้เห็นจริง: ปุ่มสำรองบนจอเล็ก หรือปุ่มในหัวข้อ
+      await tester.tap(
+        config.view.height == 640
+            ? compact
+            : find.byKey(const Key('home_view_all')).hitTestable(),
       );
-      await tester.tap(find.byKey(const Key('home_view_all')).hitTestable());
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('home_tasks_search')), findsOneWidget);
       expect(tester.takeException(), isNull);
