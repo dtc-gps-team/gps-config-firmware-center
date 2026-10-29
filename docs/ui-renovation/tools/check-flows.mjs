@@ -174,7 +174,7 @@ async function open(role) {
   await page.goto(`${base}/campaigns`, { waitUntil: "networkidle" });
   await click(page.getByRole("cell", { name: "ปรับค่ารถบรรทุกภาคเหนือ" }));
   await page.waitForURL(/\/campaigns\/camp1$/);
-  await page.getByRole("link", { name: /Roll out ใหม่/ }).waitFor();
+  await page.getByText("Roll out ใหม่").first().waitFor();
   // ในข้อมูลจำลอง Rollout r4 ค้างสถานะ approved จึงเปิดรอบใหม่ไม่ได้ ไปหน้า wizard ตรงๆ เพื่อตรวจ flow
   await page.goto(`${base}/campaigns/camp1/rollouts/new`, { waitUntil: "networkidle" });
   check("D1 ขั้น 1 เห็นอุปกรณ์ในกลุ่ม", (await page.getByRole("checkbox").count()) >= 4);
@@ -184,7 +184,8 @@ async function open(role) {
   await click(page.getByRole("combobox", { name: "Config" }));
   await click(page.getByRole("option").first());
   await click(page.getByRole("button", { name: /ถัดไป/ }));
-  check("D3 ขั้นตรวจสอบแสดงเครื่องที่ถูกข้ามพร้อมเหตุผล", await page.getByText("BB-310-20495").isVisible());
+  check("D3 ขั้นตรวจสอบแสดงเครื่องที่ไม่เข้ากันพร้อมเหตุผล และไปต่อไม่ได้", (await page.getByText("BB-310-20495").first().isVisible()) && (await page.getByRole("button", { name: /ถัดไป/ }).isDisabled()));
+  await click(page.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }));
   await click(page.getByRole("button", { name: /ถัดไป/ }));
   check("D4 ขั้นยืนยันสรุปจำนวนเครื่อง", await page.getByText(/จาก 4 เครื่อง/).isVisible());
   await click(page.getByRole("button", { name: "เริ่ม Rollout" }));
@@ -218,11 +219,10 @@ async function open(role) {
   await click(page.getByRole("button", { name: "สั่ง Rollback" }));
   const confirm = page.getByRole("button", { name: "ยืนยันสั่ง Rollback" });
   check("E2 กล่อง Rollback บอกจำนวนเครื่องที่จะถูกแตะ", await page.getByText(/2 จาก 2 เครื่อง/).isVisible());
-  check("E3 ปุ่มยืนยันปิดอยู่จนกว่าจะพิมพ์ ROLLBACK", await confirm.isDisabled());
-  await page.getByRole("textbox").last().fill("ROLLBACK");
+  check("E3 ปุ่มยืนยัน Rollback กดได้เมื่อมีเครื่องที่เลือกอยู่ (ไม่ต้องพิมพ์คำยืนยัน)", await confirm.isEnabled());
   await click(confirm);
   await page.waitForTimeout(800);
-  check("E4 ยิง POST rollback เมื่อพิมพ์ยืนยันแล้ว", rollbackCalled !== null);
+  check("E4 ยิง POST rollback เมื่อกดยืนยัน", rollbackCalled !== null);
   check("E5 ไม่มี error ใน console หน้า", errors.length === 0, errors.join("; "));
   console.log(`      คลิกทั้งงาน E (จาก Incident ถึงสั่ง Rollback): ${clicks}`);
   await ctx.close();
