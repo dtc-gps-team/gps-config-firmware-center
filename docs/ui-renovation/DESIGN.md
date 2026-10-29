@@ -34,10 +34,13 @@ node docs/ui-renovation/tools/shoot.mjs after http://localhost:3100 dashboard,co
 node docs/ui-renovation/tools/check-motion.mjs http://localhost:3100
 ```
 
-- `shoot.mjs <label> <url> <หน้า,...>`: ถ่าย 1440 light/dark และ (เฉพาะ dashboard) มือถือ 390 + เมนู ชื่อหน้าที่รองรับ: `dashboard`, `config`, `devices` เพิ่มได้ในตัวแปร `targets`
+- `shoot.mjs <label> <url> <หน้า,...>`: ถ่าย 1440 light/dark (`THEMES=dark` เลือกธีมเดียว) และ (เฉพาะ dashboard) มือถือ 390 + เมนู หน้าที่ระบุ `extra: ["mobile","light"]` ถ่าย 390 light เพิ่มด้วย ชื่อหน้าที่รองรับ: `dashboard`, `config`, `config-edit`, `config-edit-json`, `devices`, `devices-select`, `device-detail`, `device-config-tab`, `approvals`, `approvals-diff`, `parameters`, `firmware`, `firmware-compare` เพิ่มได้ในตัวแปร `targets` (แต่ละหน้ามี `act` ทำขั้นก่อนถ่ายได้) หน้าแก้ Config ต้องใช้ `ROLE=ConfigEngineer`
+- `check-flows.mjs [url]`: เดินงานหลัก 2 งานด้วย API จำลอง (A: หาอุปกรณ์ → แก้ Config → ทดสอบ → ส่งขออนุมัติ, B: ดู diff → เลือกทั้งหมด → อนุมัติหลายรายการ) นับคลิกและตรวจผล 15 ข้อ
+- `check-virtual.mjs [url]`: `FLEET=300` ตรวจว่า Device Search ทำ windowing เมื่อเกิน 200 แถว (ไม่เกินไม่ทำ)
 - `check-login-intro.mjs`: ตรวจแอนิเมชันเปิดหน้า Login (การ์ดค่อยๆ เข้า, ช่องกรอกโฟกัสทันที, สั่นเมื่อกรอกผิด, ไม่เล่นซ้ำภายใน 8 ชั่วโมง, ลดการเคลื่อนไหวแล้วไม่มี fade) และถ่ายเฟรมไทม์ไลน์ไว้ดู
 - `check-motion.mjs`: ตรวจ page transition, ไม่มี layout shift, command palette เปิด/ปิด, sidebar ยุบ/ขยาย, สลับธีมและจำค่า, hover ไม่กระตุก, reduced-motion เหลือ fade
-- ข้อจำกัด: fixture คืน `[]` สำหรับ endpoint ที่ไม่ได้ระบุ หน้า `/approvals` พังด้วยข้อมูลนี้ (`Cannot convert undefined or null to object`) ต้องเพิ่ม fixture ให้ตรง shape ก่อนถ่ายหน้านั้น
+- ข้อจำกัด: fixture คืน `[]` สำหรับ endpoint ที่ไม่ได้ระบุ รอบ 2 เพิ่ม fixture ของ config (มี `fields`), `/config-definitions`, `/device-models`, `/devices/:id` (+ central/status/history), firmware (มี checksum) แล้ว หน้าใหม่ที่เรียก endpoint อื่นต้องเพิ่มให้ตรง shape ก่อนถ่าย
+- ถ้า `:3000` ของเจ้าของรันอยู่ (dev server ตัวเดียวต่อโฟลเดอร์ `web/`) ใช้ `:3000` ถ่ายได้เลย (ดึงโค้ดชุดเดียวกัน API ถูก mock ใน Playwright) และห้ามรัน `next build` ใน `web/` ให้ copy `web/` (ไม่เอา `node_modules`/`.next`) ไปที่อื่นแล้วทำ junction `node_modules` + `next build --webpack` (Turbopack ไม่ยอม symlink ออกนอก root)
 - Next dev indicator (ปุ่ม N มุมซ้ายล่าง) ทับปุ่มมุมซ้ายล่างได้ ให้ละเว้น ใช้ `dispatchEvent("click")` ในสคริปต์
 
 ## 4. หน้าทั้งหมดและฟีเจอร์ที่ต้องรักษา
@@ -133,15 +136,21 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | RingGauge | `components/ring-gauge.tsx` | รอบ 1 (วงแหวนสัดส่วน ส่วนโค้งยืดออกตอนโหลด) |
 | CountUp, ChangeFlash | `components/motion/count-up.tsx`, `change-flash.tsx` | รอบ 1 (ตัวเลขนับขึ้น, วาบ opacity เมื่อค่าเปลี่ยน) ข้ามเมื่อ prefers-reduced-motion ในเทส `vitest.setup.ts` จำลอง matchMedia ให้เป็น reduced เพื่อให้เทสอ่านค่าจริงได้ |
 | Fleet LED grid | `app/(app)/dashboard-fleet.tsx` + `fleetDots`/`capFleetDots` ใน `lib/dashboard-metrics.ts` | รอบ 1 (1 เครื่อง = 1 จุด เรียงเครื่องที่ต้องสนใจก่อน เกิน 300 เครื่องวาดเฉพาะที่ต้องสนใจ) |
-| StatusBadge, StatusLed, ConnectionIndicator | `components/status-badge.tsx`, `components/ui/status-led.tsx`, `components/connection-indicator.tsx` | รอบ 1 (`StatusPill` เดิมใน `lib/status-pill.tsx` ยังใช้กับ lifecycle enum ต่อ รอบ 2 ให้ย้ายเข้าตัวเดียวกัน) |
-| EmptyState, ErrorState | `components/empty-state.tsx`, `components/error-state.tsx` | EmptyState มีเดิม ErrorState ใหม่ รอบ 2 เปลี่ยนทุกหน้าที่เขียน error เอง |
-| ConfirmDialog (type-to-confirm) | `components/confirm-dialog.tsx` | สร้างแล้ว ยังไม่ถูกใช้ รอบ 2 ผูกกับ release/rollback/bulk |
-| CopyButton, RelativeTime | `components/copy-button.tsx`, `components/relative-time.tsx` | สร้างแล้ว รอบ 2 ใช้ในหน้า Device/Config |
-| FloatingActionBar | `components/floating-action-bar.tsx` | สร้างแล้ว รอบ 2 ใช้กับ bulk select |
+| StatusBadge, StatusLed, ConnectionIndicator | `components/status-badge.tsx`, `components/ui/status-led.tsx`, `components/connection-indicator.tsx` | รอบ 1 (`StatusPill` เดิมใน `lib/status-pill.tsx` ยังใช้กับ lifecycle enum และมีไอคอนประกอบอยู่แล้ว ยังไม่ย้ายเข้า StatusBadge ตัวเดียว: ทำรอบ 3) |
+| EmptyState, ErrorState | `components/empty-state.tsx`, `components/error-state.tsx` | รอบ 2 ใช้ ErrorState แทน error เขียนเองใน Approval Center, Device Search, Config, Firmware, Parameter Library, Config wizard (หน้ารอบ 3 ยังเขียนเอง) |
+| ConfirmDialog (type-to-confirm) | `components/confirm-dialog.tsx` | รอบ 2 ใช้กับอนุมัติ/ปฏิเสธ Config, อนุมัติหลายรายการ (พิมพ์ `APPROVE`), รีเซ็ตการแก้ไขใน Config Editor (release/rollback ของ Campaign เป็นงานรอบ 3) |
+| CopyButton, RelativeTime | `components/copy-button.tsx`, `components/relative-time.tsx` | รอบ 2 ใช้ใน Device Search/Detail, Firmware, Parameter drawer |
+| FloatingActionBar | `components/floating-action-bar.tsx` | รอบ 2 ใช้ผ่าน DataTable (`selectable`) และ bulk approve |
 | Button (loading, hover/active) | `components/ui/button.tsx` | รอบ 1 |
 | Skeleton shimmer | `components/ui/skeleton.tsx` | รอบ 1 |
 | Dialog/Sheet/Popover/Tooltip/Select | `components/ui/*` | รอบ 1 ปรับ duration/ease/เงาเป็น token |
-| **ยังไม่ทำ (รอบ 2)** | | DataTable (sort/filter/column visibility/saved views/bulk select: มี `components/data-table/*` เดิม ต้องต่อยอด), DiffViewer (มี `lib/config-diff.ts`), Stepper (มี `wizard-step-indicator.tsx`), Tabs (ยังไม่มีในแอป ใช้ `layoutId` ตอนมีหน้าที่ใช้), Accordion, Progress animate, Toast motion |
+| **DataTable** | `components/data-table/*` | รอบ 2 ต่อยอดจากของเดิม (props เสริมทั้งหมด หน้าเดิมไม่ต้องแก้): `urlSync` (ค้นหา/sort/ฟิลเตอร์อยู่ใน URL: `q`, `sort`, `f.`/`m.`/`r.` + `lib/table-url-state.ts`), `savedViewsKey` (มุมมองที่บันทึกใน localStorage), `columnToggle` + `initialColumnVisibility`, `selectable` (checkbox + FloatingActionBar), `renderCard` (card list ต่ำกว่า 768px), windowing อัตโนมัติเมื่อแถวหลังกรองเกิน 200 (`lib/virtual-window.ts`, ความสูงแถวคงที่ 52px) ใช้ `urlSync` แล้ว: Device Search, Config, Firmware, Parameter Library |
+| **DiffViewer / DiffCounts** | `components/diff-viewer.tsx` | รอบ 2 ตารางค่าเดิม→ใหม่ + ตัวเลขเพิ่ม/แก้ไข/ลบ (ต่อกับ `lib/config-diff.ts`) ใช้ใน Approval Center (การ์ด + หน้ารายละเอียด), Config Editor, เปรียบเทียบ Firmware |
+| **UrlTabs** | `components/url-tabs.tsx` | รอบ 2 แท็บที่เก็บใน `?tab=` (replaceState), ลูกศร/Home/End สลับแท็บ, indicator ใช้ `layoutId` + spring, render เฉพาะแท็บที่เปิด ใช้ใน Device Detail, Approval Center |
+| **ProgressBar, FileDropzone** | `components/progress-bar.tsx`, `components/file-dropzone.tsx` | รอบ 2 ProgressBar animate ด้วย scaleX + `role=progressbar` · FileDropzone ใช้ input file จริงข้างใน (คีย์บอร์ดได้) ใช้ในอัปโหลด Firmware (ความคืบหน้าจริงผ่าน `apiUpload` ใน `lib/api.ts` ซึ่งเป็น XHR ไป endpoint เดิม) |
+| **CommandStatusSteps** | `components/command-status-steps.tsx` | รอบ 2 รอส่ง → ส่งแล้ว → อุปกรณ์ตอบรับ → สำเร็จ/ล้มเหลว จากสถานะคำสั่งของ Server กลาง (สถานะที่ไม่รู้จักไม่แสดง) ใช้ในแท็บ Config/Firmware/Logs ของอุปกรณ์ |
+| Config Editor libs | `lib/config-field-validation.ts` (Zod), `lib/config-raw.ts` | รอบ 2 ตรวจค่าแบบ real-time (ตัวเลข/จำนวนเต็ม/json/array/allowedValues) · โหมด JSON + ไฮไลต์สี + ปิดค่าอ่อนไหวเป็น `********` |
+| **ยังไม่ทำ** | | Stepper ใหม่ (ใช้ `wizard-step-indicator.tsx` เดิม), Accordion, Toast motion, StatusPill→StatusBadge รวมตัวเดียว (รอบ 3) |
 
 ### มุมมองตาม Role (Dashboard, `web/src/lib/dashboard-view.ts`)
 
@@ -170,7 +179,7 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 - [ ] ตารางตัวเลขชิดขวา, ค่าเครื่องวัดเป็น mono
 - [ ] ปุ่ม: hover/active/focus/disabled/loading ครบ, ปุ่มที่ role ทำไม่ได้เลยซ่อน, ปุ่มที่ติดเงื่อนไขชั่วคราว disable + `DisabledWithReason`
 - [ ] action ที่แก้กลับยากมี preview ผลกระทบ + `ConfirmDialog` (type-to-confirm เมื่อเป็น bulk/อันตราย)
-- [ ] ฟิลเตอร์/แท็บ/sort อยู่ใน URL (ยังไม่มีหน้าไหนทำ: งานรอบ 2 เริ่มจาก Device Search)
+- [ ] ฟิลเตอร์/แท็บ/sort อยู่ใน URL (รอบ 2 ทำแล้ว: Device Search/Detail, Approval Center, Config, Firmware, Parameter Library · รอบ 3 ทำที่ Campaign, Incident, Audit Log, Users, Device Model)
 - [ ] มือถือ 390 ไม่มี horizontal scroll, dark mode ตรวจแล้ว
 - [ ] test เดิมผ่าน, เพิ่ม test เมื่อเพิ่มพฤติกรรม
 
@@ -179,17 +188,17 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | หน้า / ส่วน | รอบ 1 | รอบ 2 | รอบ 3 |
 |---|---|---|---|
 | Tokens, motion, theme | เสร็จ | | |
-| Shared components | เสร็จ (ส่วนที่ shell/dashboard ใช้) | DataTable, DiffViewer, Stepper, ใช้ ConfirmDialog/EmptyState/ErrorState | |
+| Shared components | เสร็จ (ส่วนที่ shell/dashboard ใช้) | เสร็จ: DataTable, DiffViewer, UrlTabs, ProgressBar, FileDropzone, CommandStatusSteps, ใช้ ConfirmDialog/ErrorState/CopyButton/RelativeTime/FloatingActionBar | StatusPill→StatusBadge, Accordion |
 | App Shell | เสร็จ | | |
 | Dashboard | เสร็จ (รวมมุมมองตาม Role, Rollout ที่กำลังดำเนินการ, อุปกรณ์ที่เงียบเกิน 24 ชม.) | | |
-| Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | | |
-| Config Editor (list/wizard/detail) | ยังไม่แตะ | | |
-| Approval Center + detail | ยังไม่แตะ | | |
-| Firmware | ยังไม่แตะ | | |
-| Campaign + Rollout | ยังไม่แตะ | | |
-| Incident & Rollback | ยังไม่แตะ | | |
-| Audit Log | ยังไม่แตะ | | |
-| Parameter Library, Users, Device Model | ยังไม่แตะ | | |
+| Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | Search + Detail เสร็จ (ลงทะเบียน `/devices/new` ยังไม่แตะ) | ฟอร์มลงทะเบียน |
+| Config Editor (list/wizard/detail) | ยังไม่แตะ | list + wizard เสร็จ (detail `/config/[id]` ยังไม่แตะ ไม่มี UI rollback ค่าเวอร์ชันเก่า) | detail + versions |
+| Approval Center + detail | ยังไม่แตะ | Center เสร็จ, หน้ารายละเอียด Config ใช้ DiffViewer ร่วม (หน้ารายละเอียด Override ยังไม่แตะ) | detail ที่เหลือ |
+| Firmware | ยังไม่แตะ | list + อัปโหลด + เทียบเวอร์ชันเสร็จ (detail `/firmware/[id]` ยังไม่แตะ) | detail |
+| Campaign + Rollout | ยังไม่แตะ | | ทั้งหมด (ผูก ConfirmDialog กับ release/rollback) |
+| Incident & Rollback | ยังไม่แตะ | | ทั้งหมด |
+| Audit Log | ยังไม่แตะ | | ทั้งหมด |
+| Parameter Library, Users, Device Model | ยังไม่แตะ | Parameter Library เสร็จ | Users, Device Model |
 | Login | ยังไม่แตะ | | |
 
 ข้อจำกัดที่รับรู้หลังรอบ 1
@@ -198,3 +207,15 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 - badge งานค้างและตัวบอก Server กลางเรียก hook ซ้ำกับ Dashboard (poll ซ้ำสองชุด) ถ้าต้องลดให้ยกเป็น context เดียวในรอบ 2
 - ไม่มี backend ให้ทดสอบ: ทุกการตรวจผ่าน API mock ตรวจพฤติกรรมกับ backend จริงไม่ได้
 - ไม่มี Tabs ในแอปตอนนี้ การตรวจ "สลับแท็บ" จึงยังไม่ได้ทำ
+
+## 12. บันทึกรอบ 2 (หน้าทำงานหลัก)
+
+ข้อจำกัดที่รู้ (ตัดสินใจไม่ทำเพราะไม่มี API หรือจะต้องแก้ contract ซึ่งเป็นกฎเหล็กข้อ 1/4)
+
+- **เหตุผลตอนอนุมัติ/ปฏิเสธ Config**: `POST /config/{id}/reject` ไม่รับ body (ดู `rejectConfig` ใน `config-api.ts`) จึงยังใส่เหตุผลไม่ได้ ถ้าจะทำต้องเพิ่ม field ที่ backend + openapi ก่อน (คำขอ apply มี `rejectReason` อยู่แล้วแต่ยังไม่มี UI ในเว็บ)
+- **Changelog ของ Firmware**: `Firmware` ใน openapi ไม่มี field changelog จึงไม่มีช่องกรอก/แสดง (version, checksum, สถานะ release, เทียบเวอร์ชันมี)
+- **ช่วงค่าต่ำสุด/สูงสุดของ Parameter**: `ConfigFieldDefinition` ยังไม่มี min/max (มี branch `feat/config-definition-min-max` ที่ยังไม่ merge) drawer แสดง ค่าที่ยอมรับ (allowedValues) และค่าเริ่มต้น และ Zod ตรวจชนิดตัวเลข/จำนวนเต็ม/JSON ตามที่ backend ตรวจ
+- **Telemetry / Logs ของอุปกรณ์**: ไม่มี API ส่งค่าจากกล่อง (พิกัด แรงดัน สัญญาณ) และ Server กลางเก็บคำสั่งล่าสุดคำสั่งเดียว แท็บ Telemetry เป็น empty state บอกสาเหตุ แท็บ Logs แสดงคำสั่งล่าสุด
+- **ฟิลเตอร์ที่เก็บเป็นมุมมอง (saved views)** เก็บใน localStorage ของเครื่องนั้น ไม่ซิงก์ข้ามเครื่อง/ผู้ใช้
+- **Firmware ล้าสมัย** คำนวณจากเวอร์ชันที่กล่องรายงาน (Server กลาง) เทียบ Firmware ล่าสุดที่ผ่าน QA และอัปโหลดสำเร็จของโมเดลเดียวกัน (เทียบเลขทีละส่วน) ไม่มีข้อมูลรายงาน = ไม่ตัดสิน
+- Bulk ใน Device Search มีเฉพาะ คัดลอก Device ID และส่งออก CSV (ไม่มี endpoint สั่งงานเป็นกลุ่ม) อนุมัติหลายรายการมีเฉพาะ Config
