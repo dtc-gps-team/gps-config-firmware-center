@@ -30,7 +30,7 @@ export const central = {
     deviceId: d.deviceId,
     hardwareModel: d.deviceModel,
     online: i % 4 !== 3,
-    lastSeenAt: iso(i * 3),
+    lastSeenAt: i === 3 ? iso(60 * 50) : i === 7 ? iso(60 * 30) : iso(i * 3),
     reportedFirmwareVersion: "2.4.1",
     reportedConfigVersion: i === 2 || i === 5 ? 6 : 7,
     reportedSchemaVersion: 1,
@@ -76,6 +76,7 @@ export const rollouts = [
   { id: "r1", status: "active", targetCount: 40, successCount: 31, failureCount: 4 },
   { id: "r2", status: "paused", targetCount: 25, successCount: 10, failureCount: 6 },
   { id: "r3", status: "completed", targetCount: 12, successCount: 12, failureCount: 0 },
+  { id: "r4", status: "approved", targetCount: 18, successCount: 0, failureCount: 0 },
 ].map((r) => ({
   ...r,
   campaignId: "camp1",
@@ -84,10 +85,27 @@ export const rollouts = [
   firmwareId: null,
   createdBy: "u1",
   approvedBy: "u2",
-  approvedAt: iso(500),
+  approvedAt: iso(r.status === "approved" ? 60 * 20 : 500),
   isRollback: false,
   createdAt: iso(600),
   updatedAt: iso(30),
+}));
+
+export const firmware = [
+  { id: "f1", version: "2.5.0", approvalStatus: "pending_review", uploadedAt: iso(60 * 6) },
+  { id: "f2", version: "2.4.2", approvalStatus: "rejected", uploadedAt: iso(60 * 30) },
+  { id: "f3", version: "2.4.1", approvalStatus: "approved", uploadedAt: iso(60 * 90) },
+].map((f) => ({
+  ...f,
+  deviceModelCompatibility: ["BB-200", "BB-310"],
+  uploadStatus: "stored",
+  deviceUpdateStatus: "unknown",
+  objectKey: "k",
+  originalFilename: "fw.bin",
+  fileSizeBytes: 1024,
+  checksumSha256: null,
+  uploadedBy: "u1",
+  approvedBy: null,
 }));
 
 export const campaigns = [{ id: "camp1", name: "ปรับค่ารถบรรทุกภาคเหนือ", createdAt: iso(900) }];
@@ -113,6 +131,7 @@ export function apiResponse(path) {
   if (p === "/central/devices") return central;
   if (p === "/config") return configs;
   if (p === "/incidents") return incidents;
+  if (p === "/firmware") return firmware;
   if (p === "/campaigns") return campaigns;
   if (p === "/campaigns/rollouts") return rollouts;
   if (p === "/audit-logs") return auditLogs;

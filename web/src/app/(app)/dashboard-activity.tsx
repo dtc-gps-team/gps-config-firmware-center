@@ -24,6 +24,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { RelativeTime } from "@/components/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/components/auth/auth-provider";
+import { canAccessAuditLog } from "@/lib/permissions";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
 import { listItem, staggerContainer } from "@/lib/motion";
 
@@ -66,8 +68,16 @@ const ACTION_LABEL: Record<string, string> = {
  * comment เหนือ `AuditLogRow` ใน `use-audit-logs.ts`)
  */
 export function DashboardActivity() {
+  const { session } = useAuth();
+  // ConfigEngineer/FirmwareEngineer/QAEngineer เข้า Audit Log ไม่ได้ (403) —
+  // ไม่แสดงแผงนี้เลย (มุมมองของ role เหล่านี้ก็ไม่มีแผงนี้อยู่แล้ว กันซ้ำที่นี่อีกชั้น)
+  const allowed = canAccessAuditLog(session?.role);
   // ขอแค่ 5 แถวจาก backend ตรงๆ (เดิมดึงทุกแถวแล้ว slice ฝั่ง client)
-  const { data, isLoading, error, refetch } = useAuditLogs({ pageSize: 5 });
+  const { data, isLoading, error, refetch } = useAuditLogs({
+    pageSize: 5,
+    enabled: allowed,
+  });
+  if (!allowed) return null;
   const rows = data ?? [];
 
   return (

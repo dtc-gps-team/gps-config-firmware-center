@@ -1,102 +1,99 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activeIncidentCount,
-  configDriftCount,
-  connectionSummary,
-  deployTotals,
+  activeRollouts,
+  rolloutsAwaitingRelease,
+  silentDevices,
 } from "./dashboard-metrics";
+import { dashboardView } from "./dashboard-view";
+import type { CampaignRollout } from "./campaign-api";
 
-const rollout = (
-  status: string,
-  successCount: number,
-  failureCount: number,
-) => ({ status, successCount, failureCount }) as never;
+const HOUR = 3_600_000;
+const NOW = Date.parse("2026-10-29T12:00:00Z");
+const ago = (hours: number) => new Date(NOW - hours * HOUR).toISOString();
 
-describe("deployTotals", () => {
-  it("รวมเฉพาะ Rollout ที่ปล่อยแล้ว (active, paused, completed)", () => {
-    expect(
-      deployTotals([
-        rollout("completed", 10, 2),
-        rollout("active", 3, 0),
-        rollout("paused", 1, 4),
-        rollout("pending_approval", 99, 99),
-        rollout("approved", 99, 99),
-        rollout("rejected", 99, 99),
-      ]),
-    ).toEqual({ success: 14, failed: 6 });
+const rollout = (over: Partial<CampaignRollout>) =>
+  ({
+    id: "r",
+    status: "approved",
+    createdAt: ago(100),
+    approvedAt: null,
+    ...over,
+  }) as CampaignRollout;
+
+describe("silentDevices", () => {
+  const devices = ["A", "B", "C", "D", "E"].map((deviceId) => ({
+    deviceId,
+    deviceModel: "BB-200",
+  }));
+
+  it("นับเฉพาะเครื่องออฟไลน์ที่เงียบเกินเกณฑ์ เรียงเงียบนานสุดก่อน", () => {
+    const central = [
+      { deviceId: "A", online: false, lastSeenAt: ago(30) },
+      { deviceId: "B", online: false, lastSeenAt: ago(60) },
+      { deviceId: "C", online: false, lastSeenAt: ago(2) }, // เพิ่งหาย ยังไม่เกินเกณฑ์
+      { deviceId: "D", online: true, lastSeenAt: ago(1) },
+    ];
+    const result = silentDevices(devices, central, 24 * HOUR, NOW);
+    expect(result.map((d) => d.deviceId)).toEqual(["B", "A"]);
   });
 
-  it("ไม่มี Rollout: ศูนย์ทั้งคู่", () => {
-    expect(deployTotals([])).toEqual({ success: 0, failed: 0 });
-  });
-});
-
-describe("connectionSummary", () => {
-  const ours = [{ deviceId: "A" }, { deviceId: "B" }, { deviceId: "C" }];
-
-  it("จับคู่ด้วย deviceId: ออนไลน์ ออฟไลน์ และไม่ทราบ (Server กลางไม่รู้จัก)", () => {
-    expect(
-      connectionSummary(ours, [
-        { deviceId: "A", online: true },
-        { deviceId: "B", online: false },
-        { deviceId: "OTHER", online: true },
-      ]),
-    ).toEqual({ online: 1, offline: 1, unknown: 1 });
-  });
-
-  it("กล่องที่ Server กลางรู้จักแต่ไม่อยู่ในระบบเรา ไม่นับ", () => {
-    expect(
-      connectionSummary([{ deviceId: "A" }], [
-        { deviceId: "A", online: true },
-        { deviceId: "Z", online: true },
-        { deviceId: "Y", online: false },
-      ]),
-    ).toEqual({ online: 1, offline: 0, unknown: 0 });
-  });
-
-  it("Server กลางติดต่อไม่ได้ (รายการว่าง): ทุกเครื่องเป็นไม่ทราบ ไม่ใช่ออฟไลน์", () => {
-    expect(connectionSummary(ours, [])).toEqual({
-      online: 0,
-      offline: 0,
-      unknown: 3,
-    });
+  it("เครื่องที่ไม่เคยรายงานเงียบที่สุด และเครื่องที่ Server กลางไม่รู้จักไม่นับ", () => {
+    const central = [
+      { deviceId: "A", online: false, lastSeenAt: ago(48) },
+      { deviceId: "B", online: false, lastSeenAt: null },
+    ];
+    const result = silentDevices(devices, central, 24 * HOUR, NOW);
+    // E ไม่อยู่ใน Server กลาง จึงไม่ถูกนับ
+    expect(result.map((d) => d.deviceId)).toEqual(["B", "A"]);
   });
 });
 
-describe("configDriftCount", () => {
-  const ours = [{ deviceId: "A" }, { deviceId: "B" }, { deviceId: "C" }];
-
-  it("นับเครื่องที่ Config ที่กล่องรายงานไม่ตรงกับเป้าหมาย", () => {
-    expect(
-      configDriftCount(ours, [
-        { deviceId: "A", desiredConfigVersion: 9, reportedConfigVersion: 8 },
-        { deviceId: "B", desiredConfigVersion: 9, reportedConfigVersion: 9 },
-        { deviceId: "C", desiredConfigVersion: 9, reportedConfigVersion: null },
-      ]),
-    ).toBe(2);
+describe("rollouts", () => {
+  it("รอปล่อย: เฉพาะ approved เรียงที่อนุมัติก่อนขึ้นก่อน", () => {
+    const result = rolloutsAwaitingRelease([
+      rollout({ id: "new", approvedAt: ago(1) }),
+      rollout({ id: "old", approvedAt: ago(30) }),
+      rollout({ id: "active", status: "active" }),
+    ]);
+    expect(result.map((r) => r.id)).toEqual(["old", "new"]);
   });
 
-  it("ไม่นับเครื่องที่ยังไม่เคยตั้งเป้า และเครื่องที่ไม่อยู่ในระบบเรา", () => {
-    expect(
-      configDriftCount(ours, [
-        { deviceId: "A", desiredConfigVersion: null, reportedConfigVersion: 3 },
-        { deviceId: "NOT-OURS", desiredConfigVersion: 9, reportedConfigVersion: 1 },
-      ]),
-    ).toBe(0);
+  it("กำลังทำงาน: เฉพาะ active", () => {
+    const result = activeRollouts([
+      rollout({ id: "a", status: "active" }),
+      rollout({ id: "p", status: "paused" }),
+    ]);
+    expect(result.map((r) => r.id)).toEqual(["a"]);
   });
 });
 
-describe("activeIncidentCount", () => {
-  it("นับเฉพาะ open และ investigating", () => {
-    expect(
-      activeIncidentCount([
-        { status: "open" },
-        { status: "investigating" },
-        { status: "resolved" },
-        { status: "dismissed" },
-        { status: "rolled_back" },
-      ] as never),
-    ).toBe(2);
+describe("dashboardView ต่อ Role", () => {
+  it("role ที่ไม่มี campaign:Read ไม่มีแผงที่พึ่ง Campaign", () => {
+    for (const role of ["FirmwareEngineer", "QAEngineer"]) {
+      const v = dashboardView(role);
+      expect(v.summary).toEqual([]);
+      expect(v.risk).toEqual(["incident"]);
+      expect(v.stats).not.toContain("campaigns");
+    }
+  });
+
+  it("role ที่เข้า Audit Log ไม่ได้ไม่มีแผงกิจกรรมล่าสุด", () => {
+    for (const role of ["ConfigEngineer", "FirmwareEngineer", "QAEngineer"]) {
+      const v = dashboardView(role);
+      const ids = [...v.focus, ...v.lower].map((p) => p.id);
+      expect(ids).not.toContain("activity");
+    }
+  });
+
+  it("Operation เห็น Rollout รอปล่อย, ConfigEngineer เห็น Config ของตัวเอง", () => {
+    expect(dashboardView("Operation").summary.map((p) => p.id)).toContain("rollouts");
+    expect(dashboardView("ConfigEngineer").focus.map((p) => p.id)).toContain("myConfigs");
+    expect(dashboardView("QAEngineer").focus.map((p) => p.id)).toContain("firmwareQueue");
+  });
+
+  it("role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว ไม่มีแผงเฉพาะ role", () => {
+    expect(dashboardView(null).focus).toEqual([]);
+    expect(dashboardView("Whatever").focus).toEqual([]);
   });
 });

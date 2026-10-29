@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ErrorState } from "@/components/error-state";
 import { KpiCard } from "@/components/kpi-card";
 import { SegmentBar, type Segment } from "@/components/segment-bar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfigs } from "@/hooks/use-configs";
@@ -25,6 +25,16 @@ import {
 } from "@/lib/dashboard-metrics";
 import { cn } from "@/lib/utils";
 import { canReadCampaign } from "@/lib/permissions";
+import {
+  dashboardView,
+  spanClass,
+  type RiskId,
+  type StatId,
+  type SummaryPanelId,
+} from "@/lib/dashboard-view";
+import { Panel } from "./dashboard-panel";
+import { DashboardRolloutsPanel } from "./dashboard-rollouts-panel";
+import { DashboardSilentPanel } from "./dashboard-silent-panel";
 
 /**
  * Dashboard — จัดเป็น 3 กลุ่มตาม docs/planning §12.1 (Device Overview /
@@ -42,30 +52,13 @@ import { canReadCampaign } from "@/lib/permissions";
  *  lib/status-pill.ts: "ล้มเหลวเกิน 5%") — ใช้เป็นเกณฑ์เตือนที่ Dashboard ด้วย */
 const FAILURE_WARN_PERCENT = 5;
 
-function Panel({
-  title,
-  href,
-  children,
-  className,
-}: {
-  title: string;
-  href: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <Card className={cn("h-full", className)}>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">
-          <Link href={href} className="hover:underline">
-            {title}
-          </Link>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-3">{children}</CardContent>
-    </Card>
-  );
-}
+/** จำนวนคอลัมน์ของแถบการ์ดตามจำนวนช่อง (สตริงเต็มให้ Tailwind เห็น) */
+const GRID_COLS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-2 lg:grid-cols-3",
+  4: "grid-cols-2 lg:grid-cols-4",
+};
 
 export function DashboardSummary() {
   const { session } = useAuth();
@@ -162,6 +155,217 @@ export function DashboardSummary() {
     centralLoading || (devices.data === null && devices.isLoading);
   const connectionTotal = connectionSegments.reduce((n, s) => n + s.value, 0);
 
+  const centralDevices = central.data?.devices ?? null;
+  const view = dashboardView(session?.role);
+  const showRisk = (id: RiskId) => id !== "paused" || hasCampaignAccess;
+  const riskItems = view.risk.filter(showRisk);
+  const statItems = view.stats.filter(
+    (id) => id !== "campaigns" || hasCampaignAccess,
+  );
+  const summaryPanels = view.summary.filter(
+    (p) =>
+      hasCampaignAccess || (p.id !== "rollouts" && p.id !== "deploy"),
+  );
+
+  const riskCard: Record<RiskId, React.ReactNode> = {
+    paused: (
+      <KpiCard
+        plain
+        label="Rollout หยุดชั่วคราว (Auto Pause)"
+        href="/campaigns"
+        value={pausedRolloutCount}
+        error={pausedRollouts.error}
+        tone="danger"
+        emphasis="action"
+        hint="Rollout ที่ระบบหยุดเองเพราะเครื่องล้มเหลวเกินเกณฑ์ ต้องตัดสินใจ Resume หรือ Rollback"
+      />
+    ),
+    incident: (
+      <KpiCard
+        plain
+        label="Incident ที่ยังต้องตาม"
+        href="/incidents"
+        value={activeIncidents}
+        error={incidents.error}
+        tone="danger"
+        emphasis="action"
+        hint="Incident ที่สถานะเปิดอยู่หรือกำลังตรวจสอบ"
+      />
+    ),
+    offline: (
+      <KpiCard
+        plain
+        label="อุปกรณ์ออฟไลน์"
+        href="/devices"
+        value={connection ? connection.offline : null}
+        error={devices.error}
+        unavailable={centralUnavailable}
+        tone="warning"
+        emphasis="action"
+        hint="อุปกรณ์ในระบบที่ Server กลางรายงานว่าไม่ได้เชื่อมต่ออยู่"
+      />
+    ),
+    drift: (
+      <KpiCard
+        plain
+        label="อุปกรณ์ที่ Config ยังไม่อัปเดต"
+        href="/devices"
+        value={driftCount}
+        error={devices.error}
+        unavailable={centralUnavailable}
+        tone="warning"
+        emphasis="action"
+        hint="อุปกรณ์ที่รายงานเวอร์ชัน Config ไม่ตรงกับเวอร์ชันที่ตั้งเป้าไว้"
+      />
+    ),
+  };
+
+  const statCard: Record<StatId, React.ReactNode> = {
+    devices: (
+      <KpiCard
+        plain
+        label="อุปกรณ์ทั้งหมด"
+        href="/devices"
+        value={deviceCount}
+        error={devices.error}
+      />
+    ),
+    models: (
+      <KpiCard
+        plain
+        label="โมเดล"
+        href="/devices"
+        value={modelCount}
+        error={devices.error}
+      />
+    ),
+    configsPending: (
+      <KpiCard
+        plain
+        label="Config รออนุมัติ"
+        href="/approvals"
+        value={pendingConfigCount}
+        error={configs.error}
+      />
+    ),
+    campaigns: (
+      <KpiCard
+        plain
+        label="กลุ่มอุปกรณ์ทั้งหมด"
+        href="/campaigns"
+        value={campaignCount}
+        error={campaigns.error}
+      />
+    ),
+  };
+
+  const summaryPanel: Record<SummaryPanelId, React.ReactNode> = {
+    rollouts: (
+      <DashboardRolloutsPanel
+        rollouts={allRollouts.data}
+        campaigns={campaigns.data}
+        loading={allRollouts.isLoading}
+        error={allRollouts.error}
+        onRetry={() => void allRollouts.refetch?.()}
+      />
+    ),
+    silent: (
+      <DashboardSilentPanel
+        devices={devices.data}
+        central={centralDevices}
+        loading={centralLoading || (devices.data === null && devices.isLoading)}
+        error={devices.error}
+        unavailable={centralUnavailable}
+        onRetry={() => void devices.refetch?.()}
+      />
+    ),
+    deploy: (
+      <Panel title="ผลการ Deploy" href="/campaigns">
+        {allRollouts.error ? (
+          <ErrorState
+            message="โหลดไม่สำเร็จ"
+            onRetry={() => void allRollouts.refetch?.()}
+          />
+        ) : allRollouts.data === null && allRollouts.isLoading ? (
+          <Skeleton className="h-10 w-full" />
+        ) : deployTotal === 0 ? (
+          <p className="text-sm text-muted-foreground">ยังไม่มีการ Deploy</p>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span
+                data-tabular
+                className="text-4xl font-semibold tracking-tight tabular-nums"
+              >
+                {successPercent}%
+              </span>
+              <span className="text-sm text-muted-foreground">ความสำเร็จ</span>
+              <span
+                data-tabular
+                className="ml-auto text-xs text-muted-foreground"
+              >
+                {deployTotal.toLocaleString("th-TH")} เครื่อง
+              </span>
+            </div>
+            <SegmentBar segments={deploySegments} />
+            {failurePercent >= FAILURE_WARN_PERCENT && (
+              <Notice tone="danger" className="mt-auto">
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    ล้มเหลว {deploy?.failed} จาก {deployTotal} เครื่อง (
+                    {Math.round(failurePercent)}%) สูงกว่าเกณฑ์{" "}
+                    {FAILURE_WARN_PERCENT}%
+                  </span>
+                  <Link
+                    href="/campaigns"
+                    className="font-medium underline-offset-2 hover:underline"
+                  >
+                    เปิดรายการ Campaign
+                  </Link>
+                </span>
+              </Notice>
+            )}
+          </>
+        )}
+      </Panel>
+    ),
+    connection: (
+      <Panel title="การเชื่อมต่อ (Online / Offline)" href="/devices">
+        {devices.error ? (
+          <ErrorState
+            message="โหลดไม่สำเร็จ"
+            onRetry={() => void devices.refetch?.()}
+          />
+        ) : connectionLoading ? (
+          <Skeleton className="h-10 w-full" />
+        ) : connectionTotal === 0 ? (
+          <p className="text-sm text-muted-foreground">{connectionEmpty}</p>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span
+                data-tabular
+                className="text-4xl font-semibold tracking-tight tabular-nums"
+              >
+                {connection?.online ?? 0}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                เครื่องที่เชื่อมต่ออยู่
+              </span>
+              <span
+                data-tabular
+                className="ml-auto text-xs text-muted-foreground"
+              >
+                {connectionTotal.toLocaleString("th-TH")} เครื่อง
+              </span>
+            </div>
+            <SegmentBar segments={connectionSegments} />
+          </>
+        )}
+      </Panel>
+    ),
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {centralIsMock && (
@@ -171,194 +375,47 @@ export function DashboardSummary() {
         </Notice>
       )}
 
-      {/* ต้องลงมือทำ: แถบเดียว 4 ช่องเท่ากัน เส้นแบ่งบางแทนการ์ดแยก ความต่างอยู่ที่สี
-       * และตัวเลข (ค่า > 0 มีสีสถานะ + LED เต้น, ค่า 0 จางเป็น "ปกติ") ไม่ใช่ขนาดช่อง */}
-      <Card
-        aria-label="ความเสี่ยง"
-        className={cn(
-          "grid gap-px overflow-hidden bg-border py-0",
-          hasCampaignAccess ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-1 sm:grid-cols-3",
-        )}
-      >
-        {hasCampaignAccess && (
-          <KpiCard
-            plain
-            label="Rollout หยุดชั่วคราว (Auto Pause)"
-            href="/campaigns"
-            value={pausedRolloutCount}
-            error={pausedRollouts.error}
-            tone="danger"
-            emphasis="action"
-            hint="Rollout ที่ระบบหยุดเองเพราะเครื่องล้มเหลวเกินเกณฑ์ ต้องตัดสินใจ Resume หรือ Rollback"
-          />
-        )}
-        <KpiCard
-          plain
-          label="Incident ที่ยังต้องตาม"
-          href="/incidents"
-          value={activeIncidents}
-          error={incidents.error}
-          tone="danger"
-          emphasis="action"
-          hint="Incident ที่สถานะเปิดอยู่หรือกำลังตรวจสอบ"
-        />
-        <KpiCard
-          plain
-          label="อุปกรณ์ออฟไลน์"
-          href="/devices"
-          value={connection ? connection.offline : null}
-          error={devices.error}
-          unavailable={centralUnavailable}
-          tone="warning"
-          emphasis="action"
-          hint="อุปกรณ์ในระบบที่ Server กลางรายงานว่าไม่ได้เชื่อมต่ออยู่"
-        />
-        <KpiCard
-          plain
-          label="อุปกรณ์ที่ Config ยังไม่อัปเดต"
-          href="/devices"
-          value={driftCount}
-          error={devices.error}
-          unavailable={centralUnavailable}
-          tone="warning"
-          emphasis="action"
-          hint="อุปกรณ์ที่รายงานเวอร์ชัน Config ไม่ตรงกับเวอร์ชันที่ตั้งเป้าไว้"
-        />
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-12">
-        {hasCampaignAccess && (
-          <Panel
-            title="ผลการ Deploy"
-            href="/campaigns"
-            className="lg:col-span-7"
-          >
-            {allRollouts.error ? (
-              <ErrorState
-                message="โหลดไม่สำเร็จ"
-                onRetry={() => void allRollouts.refetch?.()}
-              />
-            ) : allRollouts.data === null && allRollouts.isLoading ? (
-              <Skeleton className="h-10 w-full" />
-            ) : deployTotal === 0 ? (
-              <p className="text-sm text-muted-foreground">ยังไม่มีการ Deploy</p>
-            ) : (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span
-                    data-tabular
-                    className="text-4xl font-semibold tracking-tight tabular-nums"
-                  >
-                    {successPercent}%
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    ความสำเร็จ
-                  </span>
-                  <span
-                    data-tabular
-                    className="ml-auto text-xs text-muted-foreground"
-                  >
-                    {deployTotal.toLocaleString("th-TH")} เครื่อง
-                  </span>
-                </div>
-                <SegmentBar segments={deploySegments} />
-                {failurePercent >= FAILURE_WARN_PERCENT && (
-                  <Notice tone="danger" className="mt-auto">
-                    <span className="flex flex-wrap items-center justify-between gap-2">
-                      <span>
-                        ล้มเหลว {deploy?.failed} จาก {deployTotal} เครื่อง (
-                        {Math.round(failurePercent)}%) สูงกว่าเกณฑ์{" "}
-                        {FAILURE_WARN_PERCENT}%
-                      </span>
-                      <Link
-                        href="/campaigns"
-                        className="font-medium underline-offset-2 hover:underline"
-                      >
-                        เปิดรายการ Campaign
-                      </Link>
-                    </span>
-                  </Notice>
-                )}
-              </>
-            )}
-          </Panel>
-        )}
-
-        <Panel
-          title="การเชื่อมต่อ (Online / Offline)"
-          href="/devices"
-          className={hasCampaignAccess ? "lg:col-span-5" : "lg:col-span-12"}
-        >
-          {devices.error ? (
-            <ErrorState
-              message="โหลดไม่สำเร็จ"
-              onRetry={() => void devices.refetch?.()}
-            />
-          ) : connectionLoading ? (
-            <Skeleton className="h-10 w-full" />
-          ) : connectionTotal === 0 ? (
-            <p className="text-sm text-muted-foreground">{connectionEmpty}</p>
-          ) : (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span
-                  data-tabular
-                  className="text-4xl font-semibold tracking-tight tabular-nums"
-                >
-                  {connection?.online ?? 0}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  เครื่องที่เชื่อมต่ออยู่
-                </span>
-                <span
-                  data-tabular
-                  className="ml-auto text-xs text-muted-foreground"
-                >
-                  {connectionTotal.toLocaleString("th-TH")} เครื่อง
-                </span>
-              </div>
-              <SegmentBar segments={connectionSegments} />
-            </>
+      {/* ต้องลงมือทำ: แถบเดียว ช่องเท่ากัน เส้นแบ่งบางแทนการ์ดแยก ความต่างอยู่ที่สี
+       * และตัวเลข (ค่า > 0 มีสีสถานะ + LED เต้น, ค่า 0 จางเป็น "ปกติ") ไม่ใช่ขนาดช่อง
+       * รายการที่แสดงต่างกันตาม Role (lib/dashboard-view.ts) */}
+      {riskItems.length > 0 && (
+        <Card
+          aria-label="ความเสี่ยง"
+          className={cn(
+            "grid gap-px overflow-hidden bg-border py-0",
+            GRID_COLS[riskItems.length],
           )}
-        </Panel>
-      </div>
+        >
+          {riskItems.map((id) => (
+            <Fragment key={id}>{riskCard[id]}</Fragment>
+          ))}
+        </Card>
+      )}
+
+      {summaryPanels.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-12 [&>*>*]:h-full">
+          {summaryPanels.map((p) => (
+            <div key={p.id} className={spanClass(p.span)}>
+              {summaryPanel[p.id]}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ตัวเลขนิ่ง: น้ำหนักต่ำ ไม่ใช้สี */}
-      <Card
-        aria-label="ภาพรวมอุปกรณ์"
-        className="grid grid-cols-2 gap-px overflow-hidden bg-border py-0 lg:grid-cols-4"
-      >
-        <KpiCard
-          plain
-          label="อุปกรณ์ทั้งหมด"
-          href="/devices"
-          value={deviceCount}
-          error={devices.error}
-        />
-        <KpiCard
-          plain
-          label="โมเดล"
-          href="/devices"
-          value={modelCount}
-          error={devices.error}
-        />
-        <KpiCard
-          plain
-          label="Config รออนุมัติ"
-          href="/approvals"
-          value={pendingConfigCount}
-          error={configs.error}
-        />
-        {hasCampaignAccess && (
-          <KpiCard
-          plain
-            label="กลุ่มอุปกรณ์ทั้งหมด"
-            href="/campaigns"
-            value={campaignCount}
-            error={campaigns.error}
-          />
-        )}
-      </Card>
+      {statItems.length > 0 && (
+        <Card
+          aria-label="ภาพรวมอุปกรณ์"
+          className={cn(
+            "grid gap-px overflow-hidden bg-border py-0",
+            GRID_COLS[statItems.length],
+          )}
+        >
+          {statItems.map((id) => (
+            <Fragment key={id}>{statCard[id]}</Fragment>
+          ))}
+        </Card>
+      )}
     </div>
   );
 }

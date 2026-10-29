@@ -8,7 +8,8 @@ import { apiResponse, makeToken } from "./fixtures.mjs";
 const require = createRequire(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/package.json"));
 const { chromium } = require("playwright");
 const out = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../screenshots");
-const label = process.argv[2] ?? "after";
+const role = process.env.ROLE ?? "Operation";
+const label = (process.argv[2] ?? "after") + (role === "Operation" ? "" : `-${role}`);
 const base = process.argv[3] ?? "http://localhost:3100";
 
 const shots = (process.argv[4] ?? "dashboard").split(",");
@@ -21,11 +22,11 @@ const targets = {
 const browser = await chromium.launch();
 async function newPage(w, h, theme) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
-  await ctx.addInitScript(([t]) => {
+  await ctx.addInitScript(([t, r]) => {
     localStorage.setItem("gps.accessToken", t);
-    localStorage.setItem("gps.role", "Operation");
+    localStorage.setItem("gps.role", r);
     if (window.__theme) localStorage.setItem("theme", window.__theme);
-  }, [makeToken()]);
+  }, [makeToken(role), role]);
   await ctx.route(/\/api\/v1\//, (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(apiResponse(route.request().url())) }),
   );
@@ -34,7 +35,7 @@ async function newPage(w, h, theme) {
 
 for (const name of shots) {
   const t = targets[name];
-  for (const theme of label === "before" ? ["light"] : ["light", "dark"]) {
+  for (const theme of label === "before" ? ["light"] : process.env.THEMES ? process.env.THEMES.split(",") : ["light", "dark"]) {
     const { ctx, page } = await newPage(t.w, t.h, theme);
     await page.addInitScript((th) => { try { localStorage.setItem("theme", th); } catch {} }, theme);
     await page.goto(base + t.url, { waitUntil: "networkidle" });

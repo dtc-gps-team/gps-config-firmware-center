@@ -1,9 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { RefreshControl } from "@/components/refresh-control";
-import { DashboardSummary } from "./dashboard-summary";
 import { DashboardPendingApprovals } from "./dashboard-pending-approvals";
-import { DashboardConfigStatusChart } from "./dashboard-config-status-chart";
-import { DashboardActivity } from "./dashboard-activity";
+import { DashboardRoleLayout } from "./dashboard-role-layout";
 
 export const metadata = {
   title: "Dashboard | GPS Config Center",
@@ -28,15 +26,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" actions={<RefreshControl />} />
 
       <DashboardPendingApprovals />
-      <DashboardSummary />
-      <div className="grid gap-4 lg:grid-cols-12 [&>*>*]:h-full">
-        <div className="lg:col-span-5">
-          <DashboardConfigStatusChart />
-        </div>
-        <div className="lg:col-span-7">
-          <DashboardActivity />
-        </div>
-      </div>
+      <DashboardRoleLayout />
     </div>
   );
 }

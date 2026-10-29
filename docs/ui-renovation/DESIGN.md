@@ -135,6 +135,21 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | Dialog/Sheet/Popover/Tooltip/Select | `components/ui/*` | รอบ 1 ปรับ duration/ease/เงาเป็น token |
 | **ยังไม่ทำ (รอบ 2)** | | DataTable (sort/filter/column visibility/saved views/bulk select: มี `components/data-table/*` เดิม ต้องต่อยอด), DiffViewer (มี `lib/config-diff.ts`), Stepper (มี `wizard-step-indicator.tsx`), Tabs (ยังไม่มีในแอป ใช้ `layoutId` ตอนมีหน้าที่ใช้), Accordion, Progress animate, Toast motion |
 
+### มุมมองตาม Role (Dashboard, `web/src/lib/dashboard-view.ts`)
+
+ตารางเดียวกำหนดว่า Role ไหนเห็นการ์ด/แผงอะไรและเรียงอย่างไร (แก้ที่ไฟล์นี้ ไม่ต้องแก้ component) กฎที่ derive จากสิทธิ์จริง: FirmwareEngineer/QAEngineer ไม่มี `campaign:Read` (ไม่มีแผง Campaign), ConfigEngineer/FirmwareEngineer/QAEngineer เข้า Audit Log ไม่ได้ (ไม่มีแผงกิจกรรม) Role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว
+
+| Role | แผงเฉพาะ | ความเสี่ยง |
+|---|---|---|
+| Operation | Rollout รอปล่อย/กำลังส่ง, อุปกรณ์เงียบ, ผล Deploy, การเชื่อมต่อ, สถานะ Config, กิจกรรม | ครบ 4 |
+| ST / OT | อุปกรณ์เงียบ + การเชื่อมต่อ ขึ้นก่อน, Rollout, ผล Deploy, กิจกรรม | ครบ 4 |
+| ConfigEngineer | Config ของฉันที่ยังไม่จบ + สถานะ Config ขึ้นบนสุด, Rollout, ผล Deploy | Incident, Rollout หยุด |
+| FirmwareEngineer | Firmware ของฉันที่รอตรวจ/ถูกปฏิเสธ | Incident |
+| QAEngineer | Firmware ที่รอตรวจคุณภาพ (ทุกตัว) | Incident |
+| Auditor / Admin / SuperAdmin | อ่านอย่างเดียว: ผล Deploy, การเชื่อมต่อ, Rollout, อุปกรณ์เงียบ, สถานะ Config, กิจกรรม | ครบ 4 |
+
+หน้าอื่นยังไม่ปรับตาม Role นอกจากที่มีอยู่เดิม (เมนูกรองด้วย `allowedRoles`, ปุ่มกรองด้วย `lib/permissions.ts`) รอบ 2 และ 3 ต้องใช้หลักเดียวกันกับทุกหน้า: ใช้ฟังก์ชันใน `permissions.ts` ตัดสินว่าจะซ่อน แสดง หรือ disable + เหตุผล
+
 ## 10. เช็คลิสต์ประจำหน้า (ใช้ทุกหน้าในรอบ 2 และ 3)
 
 - [ ] ใช้ `PageHeader` อันเดียว ไม่มีชื่อหน้าซ้ำกับ top bar
@@ -154,7 +169,7 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | Tokens, motion, theme | เสร็จ | | |
 | Shared components | เสร็จ (ส่วนที่ shell/dashboard ใช้) | DataTable, DiffViewer, Stepper, ใช้ ConfirmDialog/EmptyState/ErrorState | |
 | App Shell | เสร็จ | | |
-| Dashboard | เสร็จ | | |
+| Dashboard | เสร็จ (รวมมุมมองตาม Role, Rollout ที่กำลังดำเนินการ, อุปกรณ์ที่เงียบเกิน 24 ชม.) | | |
 | Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | | |
 | Config Editor (list/wizard/detail) | ยังไม่แตะ | | |
 | Approval Center + detail | ยังไม่แตะ | | |
