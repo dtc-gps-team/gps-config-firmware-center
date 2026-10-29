@@ -62,7 +62,7 @@ export function LoginBackground() {
         className="absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)",
+            "radial-gradient(circle, color-mix(in oklab, var(--brand-50) 8%, transparent) 1px, transparent 1px)",
           backgroundSize: "28px 28px",
         }}
       />
@@ -114,7 +114,7 @@ export function LoginBackground() {
       {ROUTE_LINES.map(([a, b], i) => (
         <span
           key={`packet-${i}`}
-          className="animate-packet absolute hidden size-1.5 rounded-full bg-sky-200/80 md:block"
+          className="animate-packet absolute hidden size-1.5 rounded-full bg-brand-200/80 md:block"
           style={
             {
               left: `${MAP_POINTS[a].x}%`,

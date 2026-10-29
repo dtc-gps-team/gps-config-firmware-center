@@ -2,16 +2,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { UsersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { UsersIcon, PlusIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { type ManagedUser } from "@/lib/users-api";
 import { useManagedUsers } from "@/hooks/use-users";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +21,8 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { UserRowActions } from "./user-row-actions";
@@ -74,7 +72,9 @@ export function UserManagementView() {
         sortingFn: thTextSort,
         meta: { filterVariant: "text", label: "Username" },
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.username}</span>
+          <span className="font-instrument text-sm">
+            {row.original.username}
+          </span>
         ),
       },
       {
@@ -121,10 +121,7 @@ export function UserManagementView() {
           description="จัดการบัญชีผู้ใช้ทั่วไป กำหนด Role และเปิดหรือปิดการใช้งาน บัญชี Admin และ SuperAdmin ไม่อยู่ในรายการนี้"
           actions={
             <>
-              <Button variant="outline" onClick={() => void refetch()}>
-                <RefreshCwIcon />
-                รีเฟรช
-              </Button>
+              <RefreshControl />
               <Button onClick={() => setDialogOpen(true)}>
                 <PlusIcon />
                 เพิ่มผู้ใช้
@@ -140,42 +137,30 @@ export function UserManagementView() {
           </Notice>
         )}
 
-        <Card>
-          <CardContent>
-            {isLoading && data === null ? (
-              <TableSkeleton columns={columns.length} />
-            ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : userList.length === 0 ? (
-              <EmptyState
-                icon={UsersIcon}
-                message="ยังไม่มีผู้ใช้ในระบบ"
-                action={
-                  <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    <PlusIcon />
-                    เพิ่มผู้ใช้
-                  </Button>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={userList}
-                searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
-                emptyMessage="ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข"
-              />
-            )}
-          </CardContent>
-        </Card>
+        {isLoading && data === null ? (
+          <TableSkeleton columns={columns.length} />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => void refetch()} />
+        ) : userList.length === 0 ? (
+          <EmptyState
+            icon={UsersIcon}
+            message="ยังไม่มีผู้ใช้ในระบบ"
+            action={
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <PlusIcon />
+                เพิ่มผู้ใช้
+              </Button>
+            }
+          />
+        ) : (
+          <DataTable
+            urlSync
+            columns={columns}
+            data={userList}
+            searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
+            emptyMessage="ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข"
+          />
+        )}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

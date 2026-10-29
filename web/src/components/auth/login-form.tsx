@@ -118,7 +118,7 @@ export function LoginForm() {
         animate={failCount > 0 ? { x: [0, -9, 8, -5, 3, 0] } : undefined}
         transition={{ duration: 0.42, ease: "easeOut" }}
       >
-        <Card className="w-full ring-white/25 [--card-spacing:--spacing(6)] shadow-2xl">
+        <Card className="w-full [--card-spacing:--spacing(6)] shadow-overlay">
           <CardHeader className="items-center gap-2 text-center">
             <AnimatedLogoMark
               play={play}

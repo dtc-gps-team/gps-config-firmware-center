@@ -2,16 +2,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { LayersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { LayersIcon, PlusIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canManageDeviceModels } from "@/lib/permissions";
 import { type DeviceModel } from "@/lib/device-model-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +21,8 @@ import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill, DEVICE_MODEL_STATUS_TONE } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { DeviceModelRowActions } from "./device-model-row-actions";
@@ -74,7 +72,7 @@ export function DeviceModelManagementView() {
         sortingFn: thTextSort,
         meta: { filterVariant: "text", label: "โมเดล" },
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.name}</span>
+          <span className="font-instrument text-sm">{row.original.name}</span>
         ),
       },
       {
@@ -142,10 +140,7 @@ export function DeviceModelManagementView() {
           description="ทะเบียนโมเดลอุปกรณ์และ protocol ที่รองรับ ใช้เป็นตัวเลือกตอนสร้าง Config, Parameter และลงทะเบียนอุปกรณ์"
           actions={
             <>
-              <Button variant="outline" onClick={() => void refetch()}>
-                <RefreshCwIcon />
-                รีเฟรช
-              </Button>
+              <RefreshControl />
               <Button onClick={() => setDialogOpen(true)}>
                 <PlusIcon />
                 เพิ่มโมเดล
@@ -160,42 +155,30 @@ export function DeviceModelManagementView() {
           </Notice>
         )}
 
-        <Card>
-          <CardContent>
-            {isLoading && data === null ? (
-              <TableSkeleton columns={columns.length} />
-            ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : modelList.length === 0 ? (
-              <EmptyState
-                icon={LayersIcon}
-                message="ยังไม่มีโมเดลในทะเบียน"
-                action={
-                  <Button size="sm" onClick={() => setDialogOpen(true)}>
-                    <PlusIcon />
-                    เพิ่มโมเดล
-                  </Button>
-                }
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={modelList}
-                searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
-                emptyMessage="ไม่พบโมเดลที่ตรงกับเงื่อนไข"
-              />
-            )}
-          </CardContent>
-        </Card>
+        {isLoading && data === null ? (
+          <TableSkeleton columns={columns.length} />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => void refetch()} />
+        ) : modelList.length === 0 ? (
+          <EmptyState
+            icon={LayersIcon}
+            message="ยังไม่มีโมเดลในทะเบียน"
+            action={
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <PlusIcon />
+                เพิ่มโมเดล
+              </Button>
+            }
+          />
+        ) : (
+          <DataTable
+            urlSync
+            columns={columns}
+            data={modelList}
+            searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
+            emptyMessage="ไม่พบโมเดลที่ตรงกับเงื่อนไข"
+          />
+        )}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
