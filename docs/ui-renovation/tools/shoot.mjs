@@ -1,5 +1,7 @@
-// Usage: node docs/ui-renovation/tools/shoot.mjs <label> [baseUrl]
+// Usage: node docs/ui-renovation/tools/shoot.mjs <label> [baseUrl] [page,page,...]
 // Screenshots go to docs/ui-renovation/screenshots/ (gitignored).
+// THEMES=dark,light  เลือกธีม (ค่าเริ่มต้น light,dark)   ROLE=Operation  เลือกบทบาทใน token ปลอม
+// หน้าที่ระบุ `extra: ["mobile", "light"]` จะถ่าย 390 (light) และ 1440 light เพิ่มเมื่อธีมที่เลือกเป็น dark อย่างเดียว
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,10 +15,74 @@ const label = (process.argv[2] ?? "after") + (role === "Operation" ? "" : `-${ro
 const base = process.argv[3] ?? "http://localhost:3100";
 
 const shots = (process.argv[4] ?? "dashboard").split(",");
+const DEV = "/devices/BB-200-20481";
+
 const targets = {
   dashboard: { url: "/", w: 1440, h: 900 },
-  config: { url: "/config", w: 1440, h: 900 },
-  devices: { url: "/devices", w: 1440, h: 900 },
+  config: { url: "/config", w: 1440, h: 900, extra: ["mobile", "light"] },
+  devices: { url: "/devices", w: 1440, h: 900, extra: ["mobile", "light"] },
+  "devices-select": {
+    url: "/devices",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(0).click();
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(1).click();
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(2).click();
+    },
+  },
+  "device-detail": { url: DEV, w: 1440, h: 900 },
+  "device-config-tab": { url: `${DEV}?tab=config`, w: 1440, h: 900 },
+  approvals: { url: "/approvals", w: 1440, h: 900 },
+  "approvals-diff": {
+    url: "/approvals",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: /ดูค่าที่เปลี่ยน/ }).first().click();
+      await page.getByRole("checkbox", { name: /เลือกทั้งหมดที่อนุมัติได้/ }).click();
+    },
+  },
+  "config-edit": {
+    url: "/config/c3/edit",
+    w: 1440,
+    h: 900,
+    extra: ["mobile", "light"],
+    act: async (page) => {
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+      await page.locator("#field-SERVER_PORT").fill("9100");
+      await page.locator("#field-REPORT_INTERVAL").fill("45");
+    },
+  },
+  "config-edit-json": {
+    url: "/config/c3/edit",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+      await page.locator("#field-SERVER_PORT").fill("9100");
+      await page.getByRole("button", { name: "JSON" }).click();
+    },
+  },
+  parameters: {
+    url: "/parameters",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("cell", { name: "SERVER_PORT" }).first().click();
+    },
+  },
+  firmware: { url: "/firmware", w: 1440, h: 900 },
+  "firmware-compare": {
+    url: "/firmware",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(0).click();
+      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(2).click();
+      await page.getByRole("button", { name: /เปรียบเทียบ 2 เวอร์ชัน/ }).click();
+    },
+  },
 };
 
 const browser = await chromium.launch();
@@ -25,22 +91,33 @@ async function newPage(w, h, theme) {
   await ctx.addInitScript(([t, r]) => {
     localStorage.setItem("gps.accessToken", t);
     localStorage.setItem("gps.role", r);
-    if (window.__theme) localStorage.setItem("theme", window.__theme);
   }, [makeToken(role), role]);
   await ctx.route(/\/api\/v1\//, (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(apiResponse(route.request().url())) }),
   );
-  return { ctx, page: await ctx.newPage() };
+  const page = await ctx.newPage();
+  await page.addInitScript((th) => { try { localStorage.setItem("theme", th); } catch {} }, theme);
+  return { ctx, page };
+}
+
+async function capture(name, t, w, h, theme, suffix, fullPage = false) {
+  const { ctx, page } = await newPage(w, h, theme);
+  await page.goto(base + t.url, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1200);
+  if (t.act) {
+    await t.act(page);
+    await page.waitForTimeout(700);
+  }
+  await page.screenshot({ path: path.join(out, `${label}-${name}-${suffix}.png`), fullPage });
+  await ctx.close();
 }
 
 for (const name of shots) {
   const t = targets[name];
-  for (const theme of label === "before" ? ["light"] : process.env.THEMES ? process.env.THEMES.split(",") : ["light", "dark"]) {
-    const { ctx, page } = await newPage(t.w, t.h, theme);
-    await page.addInitScript((th) => { try { localStorage.setItem("theme", th); } catch {} }, theme);
-    await page.goto(base + t.url, { waitUntil: "networkidle" });
-    await page.waitForTimeout(1200);
-    await page.screenshot({ path: path.join(out, `${label}-${name}-${t.w}-${theme}.png`) });
+  if (!t) throw new Error(`unknown target ${name}`);
+  const themes = label === "before" ? ["light"] : process.env.THEMES ? process.env.THEMES.split(",") : ["light", "dark"];
+  for (const theme of themes) {
+    await capture(name, t, t.w, t.h, theme, `${t.w}-${theme}`);
     if (label !== "before" && name === "dashboard" && theme === "light") {
       const m = await newPage(390, 844, theme);
       await m.page.goto(base + t.url, { waitUntil: "networkidle" });
@@ -51,7 +128,8 @@ for (const name of shots) {
       await m.page.screenshot({ path: path.join(out, `${label}-shell-390-menu.png`) });
       await m.ctx.close();
     }
-    await ctx.close();
   }
+  if (t.extra?.includes("mobile")) await capture(name, t, 390, 844, "light", "390-light", true);
+  if (t.extra?.includes("light") && !themes.includes("light")) await capture(name, t, t.w, t.h, "light", `${t.w}-light`);
 }
 await browser.close();
