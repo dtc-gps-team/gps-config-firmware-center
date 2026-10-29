@@ -96,7 +96,7 @@ const central = (
 const healthCard = () =>
   screen.getByText("สถานะระบบ").closest("[data-slot='card']") as HTMLElement;
 const queueCard = () =>
-  screen.getByText("ต้องทำตอนนี้").closest("[data-slot='card']") as HTMLElement;
+  screen.getByText("งานที่ต้องดำเนินการ").closest("[data-slot='card']") as HTMLElement;
 /** แถวในการ์ด "สถานะระบบ" ตามชื่อ */
 const health = (label: string) =>
   within(healthCard()).getByText(label).closest("li") as HTMLElement;
@@ -154,7 +154,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     ).toBeInTheDocument();
   });
 
-  it("Operation: คิว 'ต้องทำตอนนี้' แสดงงานที่ต้องตัดสินใจเรียงตามความเร่งด่วน", () => {
+  it("Operation: คิว 'งานที่ต้องดำเนินการ' แสดงงานที่ต้องตัดสินใจเรียงตามความเร่งด่วน", () => {
     state.pendingConfigs = q([{ queuedAt: new Date().toISOString() }]);
     state.pendingRollouts = q([{}, {}]);
     render(<DashboardSummary />);
@@ -324,7 +324,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
       state.role = "Auditor";
       render(<DashboardSummary />);
 
-      expect(screen.queryByText("ต้องทำตอนนี้")).not.toBeInTheDocument();
+      expect(screen.queryByText("งานที่ต้องดำเนินการ")).not.toBeInTheDocument();
       expect(screen.getByText("กิจกรรมล่าสุด")).toBeInTheDocument();
     });
   });
