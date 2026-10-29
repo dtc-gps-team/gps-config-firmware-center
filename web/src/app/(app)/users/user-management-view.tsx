@@ -2,20 +2,15 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { UsersIcon, PlusIcon } from "lucide-react";
+import { UserPlusIcon, UsersIcon, PlusIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { type ManagedUser } from "@/lib/users-api";
 import { useManagedUsers } from "@/hooks/use-users";
+import { FormDialogHeader } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
@@ -169,15 +164,16 @@ export function UserManagementView() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
-            <DialogDescription>
-              เฉพาะ Role Admin เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม
-              Admin/SuperAdmin) และตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่
-            </DialogDescription>
-          </DialogHeader>
-          <CreateUserForm onCreated={handleCreated} />
+        <DialogContent className="gap-0 p-0 pb-0 sm:max-w-xl sm:pb-0">
+          <FormDialogHeader
+            icon={UserPlusIcon}
+            title="เพิ่มผู้ใช้ใหม่"
+            description="เฉพาะ Role Admin เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม Admin/SuperAdmin) และตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่"
+          />
+          <CreateUserForm
+            onCreated={handleCreated}
+            onCancel={() => setDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </RoleGuard>

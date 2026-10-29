@@ -8,14 +8,9 @@ import { RoleGuard } from "@/components/auth/role-guard";
 import { canManageDeviceModels } from "@/lib/permissions";
 import { type DeviceModel } from "@/lib/device-model-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
+import { FormDialogHeader } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill, DEVICE_MODEL_STATUS_TONE } from "@/lib/status-pill";
@@ -187,15 +182,16 @@ export function DeviceModelManagementView() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>เพิ่มโมเดลใหม่</DialogTitle>
-            <DialogDescription>
-              ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้วเป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อ
-              ทีหลังไม่ได้
-            </DialogDescription>
-          </DialogHeader>
-          <CreateDeviceModelForm onCreated={handleCreated} />
+        <DialogContent className="gap-0 p-0 pb-0 sm:max-w-xl sm:pb-0">
+          <FormDialogHeader
+            icon={LayersIcon}
+            title="เพิ่มโมเดลใหม่"
+            description="ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้วเป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อ ทีหลังไม่ได้"
+          />
+          <CreateDeviceModelForm
+            onCreated={handleCreated}
+            onCancel={() => setDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </RoleGuard>

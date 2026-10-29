@@ -206,6 +206,26 @@ const targets = {
   },
   users: { url: "/users", w: 1440, h: 900, role: "Admin", extra: ["mobile"] },
   "device-models": { url: "/device-models", w: 1440, h: 900, role: "Admin", extra: ["mobile"] },
+  "users-add": {
+    url: "/users",
+    w: 1440,
+    h: 900,
+    role: "Admin",
+    act: async (page) => {
+      await page.getByRole("button", { name: /เพิ่มผู้ใช้/ }).first().click();
+      await page.waitForTimeout(500);
+    },
+  },
+  "device-model-add": {
+    url: "/device-models",
+    w: 1440,
+    h: 900,
+    role: "Admin",
+    act: async (page) => {
+      await page.getByRole("button", { name: /เพิ่มโมเดล/ }).first().click();
+      await page.waitForTimeout(500);
+    },
+  },
   forbidden: { url: "/audit-log", w: 1440, h: 900, role: "ConfigEngineer" },
   "not-found": { url: "/no-such-page", w: 1440, h: 900 },
   login: { url: "/login", w: 1440, h: 900, anon: true, extra: ["mobile"] },
