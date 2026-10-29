@@ -59,6 +59,7 @@ describe("ParameterCreateForm", () => {
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "report_interval" } });
     fireEvent.change(screen.getByLabelText("หน่วย (ไม่บังคับ)"), { target: { value: "วินาที" } });
+    await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
     await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
     await user.click(screen.getByRole("checkbox", { name: /ต้องกรอก/ }));
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
@@ -83,6 +84,7 @@ describe("ParameterCreateForm", () => {
       target: { value: "auto\n 2g \n\n4g\nauto" },
     });
     expect(screen.getByText("3 ค่า")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
     await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
 
@@ -96,6 +98,7 @@ describe("ParameterCreateForm", () => {
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "pw" } });
     fireEvent.change(screen.getByLabelText("ค่าเริ่มต้น (ไม่บังคับ)"), { target: { value: "secret" } });
+    await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
     await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
     await user.click(screen.getByRole("checkbox", { name: /ซ่อนค่า/ }));
 
@@ -104,5 +107,38 @@ describe("ParameterCreateForm", () => {
     await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
     expect(createConfigDefinition.mock.calls[0][1]).not.toHaveProperty("defaultValue");
     expect(createConfigDefinition.mock.calls[0][1]).toMatchObject({ sensitive: true });
+  });
+});
+
+describe("ParameterCreateForm model picker", () => {
+  it("searches many models, selects the visible ones and removes chips", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      id: `m${i}`,
+      name: i < 5 ? `GT-${i}` : `BB-${i}`,
+      supportedProtocols: ["TCP"],
+      status: "active",
+    })) as unknown as DeviceModel[];
+    render(
+      <ParameterCreateForm
+        deviceModels={many}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("ยังไม่ได้เลือกโมเดล เลือกอย่างน้อย 1 โมเดล")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
+    await user.type(screen.getByLabelText("ค้นหาโมเดล"), "GT-");
+    expect(screen.getAllByRole("checkbox", { name: /GT-/ })).toHaveLength(5);
+    expect(screen.queryByRole("checkbox", { name: /BB-/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /เลือกที่แสดงทั้งหมด \(5\)/ }));
+    const chips = screen.getByRole("list", { name: "โมเดลที่เลือกแล้ว" });
+    expect(chips.querySelectorAll("li")).toHaveLength(5);
+
+    await user.click(screen.getByRole("button", { name: "เอา GT-0 ออก" }));
+    expect(chips.querySelectorAll("li")).toHaveLength(4);
   });
 });

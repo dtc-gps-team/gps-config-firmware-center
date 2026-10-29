@@ -81,30 +81,3 @@ export function JsonEditor({
     </div>
   );
 }
-
-/** แสดง JSON ระบายสีแบบอ่านอย่างเดียว (ใช้พรีวิวสิ่งที่กำลังจะส่ง) */
-export function JsonView({
-  value,
-  label,
-  className,
-}: {
-  value: string;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <pre
-      aria-label={label}
-      className={cn(
-        "overflow-auto rounded-lg border bg-card p-3 font-instrument text-xs leading-5",
-        className,
-      )}
-    >
-      {tokenizeJson(value).map((t, i) => (
-        <span key={i} className={TOKEN_CLASS[t.kind]}>
-          {t.text}
-        </span>
-      ))}
-    </pre>
-  );
-}
