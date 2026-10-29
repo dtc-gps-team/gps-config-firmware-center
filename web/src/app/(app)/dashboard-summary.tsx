@@ -262,12 +262,10 @@ export function DashboardSummary() {
         </Notice>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8">{lead}</div>
-        <div className="lg:col-span-4">
-          <HealthCard>{healthRows.map((id) => healthRow[id])}</HealthCard>
-        </div>
-      </div>
+      {lead}
+      {healthRows.length > 0 && (
+        <HealthCard>{healthRows.map((id) => healthRow[id])}</HealthCard>
+      )}
 
       {rows.map((row) => (
         <div

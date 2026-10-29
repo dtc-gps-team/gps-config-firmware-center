@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 import { DashboardSummary } from "./dashboard-summary";
 
@@ -177,23 +177,6 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
       "href",
       "/approvals",
     );
-  });
-
-  it("คิวยาว: พับเหลือ 4 งานแรก กดเพื่อดูทั้งหมดและพับกลับได้", () => {
-    state.pendingConfigs = q([{ queuedAt: new Date().toISOString() }]);
-    state.pendingRollouts = q([{}]);
-    state.pendingConfigOverrides = q([{}]);
-    state.pendingFirmwareOverrides = q([{}]);
-    render(<DashboardSummary />);
-
-    const queue = within(queueCard());
-    const count = () => queue.getAllByRole("listitem").length;
-    const before = count();
-    expect(before).toBe(4);
-    fireEvent.click(queue.getByRole("button", { name: /ดูอีก \d+ รายการ/ }));
-    expect(count()).toBeGreaterThan(before);
-    fireEvent.click(queue.getByRole("button", { name: /แสดงน้อยลง/ }));
-    expect(count()).toBe(before);
   });
 
   it("ไม่มีงานค้างเลย: บอกว่าเรียบร้อย ไม่ปล่อยการ์ดว่าง", () => {

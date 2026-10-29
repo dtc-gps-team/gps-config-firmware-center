@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Panel } from "./dashboard-panel";
 
 /**
- * การ์ด "สถานะระบบ" — สรุปสั้นด้านขวาของแถวบน (รอง "งานที่ต้องดำเนินการ") ทุกแถวเป็น
+ * การ์ด "สถานะระบบ" — แถบสรุปสั้นใต้ "งานที่ต้องดำเนินการ" (เรียงแนวนอนเต็มความกว้าง ไม่เหลือพื้นที่ว่างข้างคิว) ทุกแถวเป็น
  * LED + ชื่อ + ค่า: ค่า > 0 ที่ต้องสนใจใช้สี/LED เต้น, ปกติเป็นเขียวจาง · แถวที่
  * ยังไม่มีหน้าปลายทางที่ตรงกับตัวเลข (ไม่ใส่ `href`) ไม่เป็นลิงก์
  */
@@ -21,7 +21,7 @@ export function HealthCard({
 }) {
   return (
     <Panel title="สถานะระบบ" className={className}>
-      <ul className="flex flex-col divide-y">{children}</ul>
+      <ul className="grid divide-y sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] sm:divide-x sm:divide-y-0">{children}</ul>
     </Panel>
   );
 }
@@ -93,7 +93,7 @@ export function HealthRow({
   );
 
   const rowClass =
-    "relative flex min-h-14 flex-col justify-center overflow-hidden rounded-md px-1 py-2.5";
+    "relative flex min-h-14 flex-col justify-center overflow-hidden rounded-md px-4 py-2.5";
   return (
     <li title={hint}>
       {href ? (
