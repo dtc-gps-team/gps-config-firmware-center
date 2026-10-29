@@ -65,6 +65,19 @@ const targets = {
       await page.getByRole("option", { name: "BB-200" }).click();
     },
   },
+  "config-import": {
+    url: "/config",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: /Import จากไฟล์/ }).click();
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "gt06n-standard.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify({ name: "GT06N มาตรฐาน", deviceModel: "BB-200", protocol: "mqtt", settings: { SERVER_HOST: "gps.example.net", SERVER_PORT: 8080 } })),
+      });
+    },
+  },
   "config-edit-json": {
     url: "/config/c3/edit",
     w: 1440,

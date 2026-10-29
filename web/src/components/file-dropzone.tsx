@@ -13,12 +13,15 @@ export function FileDropzone({
   label,
   hint,
   disabled,
+  accept,
   onPick,
   children,
 }: {
   label: string;
   hint?: string;
   disabled?: boolean;
+  /** ชนิดไฟล์ที่เลือกได้ เช่น `application/json,.json` */
+  accept?: string;
   onPick: (file: File | null) => void;
   /** เนื้อหาแทนข้อความตั้งต้น (เช่นชื่อไฟล์ที่เลือกแล้ว) */
   children?: React.ReactNode;
@@ -62,6 +65,7 @@ export function FileDropzone({
         id={id}
         type="file"
         disabled={disabled}
+        accept={accept}
         onChange={(e) => onPick(e.target.files?.[0] ?? null)}
         className="sr-only"
       />
