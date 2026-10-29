@@ -23,6 +23,7 @@ import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { RefreshControl } from "@/components/refresh-control";
+import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { DeviceModelRowActions } from "./device-model-row-actions";
@@ -155,30 +156,34 @@ export function DeviceModelManagementView() {
           </Notice>
         )}
 
-        {isLoading && data === null ? (
-          <TableSkeleton columns={columns.length} />
-        ) : error ? (
-          <ErrorState message={error} onRetry={() => void refetch()} />
-        ) : modelList.length === 0 ? (
-          <EmptyState
-            icon={LayersIcon}
-            message="ยังไม่มีโมเดลในทะเบียน"
-            action={
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                <PlusIcon />
-                เพิ่มโมเดล
-              </Button>
-            }
-          />
-        ) : (
-          <DataTable
-            urlSync
-            columns={columns}
-            data={modelList}
-            searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
-            emptyMessage="ไม่พบโมเดลที่ตรงกับเงื่อนไข"
-          />
-        )}
+        <Card>
+          <CardContent>
+            {isLoading && data === null ? (
+              <TableSkeleton columns={columns.length} />
+            ) : error ? (
+              <ErrorState message={error} onRetry={() => void refetch()} />
+            ) : modelList.length === 0 ? (
+              <EmptyState
+                icon={LayersIcon}
+                message="ยังไม่มีโมเดลในทะเบียน"
+                action={
+                  <Button size="sm" onClick={() => setDialogOpen(true)}>
+                    <PlusIcon />
+                    เพิ่มโมเดล
+                  </Button>
+                }
+              />
+            ) : (
+              <DataTable
+                urlSync
+                columns={columns}
+                data={modelList}
+                searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
+                emptyMessage="ไม่พบโมเดลที่ตรงกับเงื่อนไข"
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

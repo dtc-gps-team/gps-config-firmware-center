@@ -23,6 +23,7 @@ import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { RefreshControl } from "@/components/refresh-control";
+import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { UserRowActions } from "./user-row-actions";
@@ -137,30 +138,34 @@ export function UserManagementView() {
           </Notice>
         )}
 
-        {isLoading && data === null ? (
-          <TableSkeleton columns={columns.length} />
-        ) : error ? (
-          <ErrorState message={error} onRetry={() => void refetch()} />
-        ) : userList.length === 0 ? (
-          <EmptyState
-            icon={UsersIcon}
-            message="ยังไม่มีผู้ใช้ในระบบ"
-            action={
-              <Button size="sm" onClick={() => setDialogOpen(true)}>
-                <PlusIcon />
-                เพิ่มผู้ใช้
-              </Button>
-            }
-          />
-        ) : (
-          <DataTable
-            urlSync
-            columns={columns}
-            data={userList}
-            searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
-            emptyMessage="ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข"
-          />
-        )}
+        <Card>
+          <CardContent>
+            {isLoading && data === null ? (
+              <TableSkeleton columns={columns.length} />
+            ) : error ? (
+              <ErrorState message={error} onRetry={() => void refetch()} />
+            ) : userList.length === 0 ? (
+              <EmptyState
+                icon={UsersIcon}
+                message="ยังไม่มีผู้ใช้ในระบบ"
+                action={
+                  <Button size="sm" onClick={() => setDialogOpen(true)}>
+                    <PlusIcon />
+                    เพิ่มผู้ใช้
+                  </Button>
+                }
+              />
+            ) : (
+              <DataTable
+                urlSync
+                columns={columns}
+                data={userList}
+                searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
+                emptyMessage="ไม่พบผู้ใช้ที่ตรงกับเงื่อนไข"
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

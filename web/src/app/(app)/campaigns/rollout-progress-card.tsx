@@ -32,17 +32,23 @@ export function RolloutProgressCard({
   payloadType,
   summary,
   awaiting,
+  embedded = false,
 }: {
   status: CampaignRolloutStatus;
   payloadType: string;
   summary: RolloutTargetSummary;
   awaiting: boolean;
+  /** วางในการ์ดอื่นอยู่แล้ว: ไม่วาดกรอบและพื้นซ้อน */
+  embedded?: boolean;
 }) {
   const { done, total, percent } = rolloutProgress(summary);
   const pct = (n: number) => (total === 0 ? 0 : (n / total) * 100);
 
   return (
-    <Card className="gap-3 p-5" data-testid="rollout-progress">
+    <Card
+      className={embedded ? "gap-3 bg-transparent p-0 ring-0" : "gap-3 p-5"}
+      data-testid="rollout-progress"
+    >
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm font-medium">
           {headline(status, payloadType, total, awaiting)}
