@@ -1,5 +1,6 @@
 "use client";
 
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -246,17 +247,13 @@ const CONNECTION_QUERY: Record<string, string> = {
   unknown: CONNECTION_UNKNOWN,
 };
 
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
 /** ส่งออกเครื่องที่เลือกเป็น CSV ฝั่ง client (ไม่มี endpoint ส่งออก) */
 function exportDevicesCsv(
   devices: Device[],
   centralById: Map<string, CentralDevice>,
 ) {
   const header = ["deviceId", "sim", "model", "protocol", "status", "connection", "firmware"];
-  const lines = devices.map((d) => {
+  const rows = devices.map((d) => {
     const central = centralById.get(d.deviceId);
     return [
       d.deviceId,
@@ -266,19 +263,12 @@ function exportDevicesCsv(
       d.status,
       connectionLabel(central),
       central?.reportedFirmwareVersion ?? "",
-    ]
-      .map(csvCell)
-      .join(",");
+    ];
   });
-  const blob = new Blob([`﻿${[header.join(","), ...lines].join("\n")}`], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `devices-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(
+    `devices-${new Date().toISOString().slice(0, 10)}.csv`,
+    toCsv(header, rows),
+  );
 }
 
 function DeviceCard({
