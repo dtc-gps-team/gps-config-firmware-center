@@ -157,6 +157,19 @@ const targets = {
       await page.getByRole("button", { name: /ถัดไป/ }).click();
     },
   },
+  "rollout-new-4": {
+    url: "/campaigns/camp1/rollouts/new",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+      await page.getByRole("combobox", { name: "Config" }).click();
+      await page.getByRole("option").first().click();
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+      await page.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }).click();
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+    },
+  },
   "rollout-detail": { url: "/campaigns/camp1/rollouts/r2", w: 1440, h: 900, extra: ["mobile"] },
   "rollout-rollback": {
     url: "/campaigns/camp1/rollouts/r3",

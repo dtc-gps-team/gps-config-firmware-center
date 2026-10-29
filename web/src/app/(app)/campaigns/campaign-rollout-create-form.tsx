@@ -110,6 +110,48 @@ function PayloadTypeCard({
   );
 }
 
+/** รายชื่ออุปกรณ์ให้ตรวจทานซ้ำ (ขั้นตรวจสอบผลกระทบ/ยืนยัน) เลื่อนในกรอบเมื่อยาว */
+function DeviceReviewList({
+  title,
+  ids,
+  devices,
+  dotClass,
+}: {
+  title: string;
+  ids: string[];
+  devices: Map<string, Device>;
+  dotClass: string;
+}) {
+  if (ids.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="flex items-center gap-2 text-sm font-medium">
+        <span className={cn("size-2 rounded-full", dotClass)} />
+        {title}
+        <span className="text-xs font-normal text-muted-foreground tabular-nums">
+          {ids.length} เครื่อง
+        </span>
+      </p>
+      <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
+        {ids.map((id) => {
+          const device = devices.get(id);
+          return (
+            <li
+              key={id}
+              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2 text-sm"
+            >
+              <span className="font-instrument text-xs">{id}</span>
+              <span className="text-xs text-muted-foreground">
+                {device ? `${device.deviceModel} / ${device.protocol}` : "-"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** แผงสรุปด้านขวาของ wizard: เห็นผลของสิ่งที่เลือกอยู่ตลอด ไม่ต้องเดินไปขั้นสุดท้ายถึงรู้ว่าส่งกี่เครื่อง */
 function RolloutSummary({
   payloadType,
@@ -697,6 +739,18 @@ export function CampaignRolloutCreateForm({
                 ]}
               />
 
+              <DeviceReviewList
+                title="อุปกรณ์ที่จะได้รับ"
+                ids={includedDeviceIds}
+                devices={deviceByDeviceId}
+                dotClass="bg-success"
+              />
+              <DeviceReviewList
+                title="อุปกรณ์ที่เอาออกเอง"
+                ids={manuallyExcluded}
+                devices={deviceByDeviceId}
+                dotClass="bg-muted-foreground/40"
+              />
               {blocking.length > 0 && (
                 <div className="flex flex-col gap-3">
                   <Notice tone="danger">
@@ -759,6 +813,18 @@ export function CampaignRolloutCreateForm({
                   </dd>
                 </div>
               </dl>
+              <DeviceReviewList
+                title="อุปกรณ์ที่จะได้รับ"
+                ids={includedDeviceIds}
+                devices={deviceByDeviceId}
+                dotClass="bg-success"
+              />
+              <DeviceReviewList
+                title="อุปกรณ์ที่เอาออก"
+                ids={manuallyExcluded}
+                devices={deviceByDeviceId}
+                dotClass="bg-muted-foreground/40"
+              />
               <p className="text-xs text-muted-foreground">
                 เมื่อเริ่มแล้ว Rollout จะรอ Operation อีกคนอนุมัติ
                 และยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะกดปล่อย

@@ -192,6 +192,25 @@ describe("CampaignRolloutCreateForm: wizard 4 ขั้น", () => {
     expect(screen.getByText("2 จาก 3 เครื่อง")).toBeInTheDocument();
   });
 
+  it("ขั้นยืนยัน: ระบุรายชื่ออุปกรณ์ที่จะได้รับและที่เอาออกให้ตรวจทาน", async () => {
+    const user = userEvent.setup();
+    render(<CampaignRolloutCreateForm campaignId="camp-1" />);
+
+    await next(user);
+    await selectConfig(user, /GT06N มาตรฐาน/);
+    await next(user);
+    await user.click(
+      screen.getByRole("button", { name: "เอาเครื่องเหล่านี้ออกจากรอบนี้" }),
+    );
+    await next(user);
+
+    expect(screen.getAllByText("อุปกรณ์ที่จะได้รับ").length).toBeGreaterThan(0);
+    expect(screen.getByText("DEV-0001")).toBeInTheDocument();
+    expect(screen.getByText("DEV-0002")).toBeInTheDocument();
+    expect(screen.getByText("อุปกรณ์ที่เอาออก")).toBeInTheDocument();
+    expect(screen.getByText("DEV-0003")).toBeInTheDocument();
+  });
+
   it("กดเริ่ม Rollout: ส่งเครื่องที่เอาออกไปใน excludeDeviceIds", async () => {
     createCampaignRollout.mockResolvedValue({ id: "roll-1" });
     const user = userEvent.setup();
