@@ -553,6 +553,7 @@ export function ApprovalCenterView() {
                   item={item}
                   requesterName={item.requester.fullName}
                   canDecide={canDecideFieldApply}
+                  myUserId={myUserId}
                   onDecided={(action) => {
                     setFieldApplyNotice(
                       action === "approve"

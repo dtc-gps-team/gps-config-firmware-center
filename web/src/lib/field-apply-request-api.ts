@@ -43,7 +43,8 @@ export type FieldApplyRequest = {
   /** เวอร์ชัน Firmware ที่กล่องรายงานตอนขอ — null เมื่อ kind=config หรือไม่มี Server กลาง */
   fromFirmwareVersion: string | null;
   isDowngrade: boolean;
-  /** ผู้ผูก Config เข้างาน (snapshot) — มีค่า = อนุมัติคำขอนี้ไม่ได้ (SoD) */
+  /** ผู้ผูก Config เข้างาน (snapshot) — ถ้าตรงกับผู้ตัดสิน คนนี้คนเดียว
+   * อนุมัติคำขอนี้ไม่ได้ (SoD) Operation คนอื่นยังอนุมัติได้ตามปกติ */
   configAssignedBy: string | null;
   requestedBy: string;
   requestedAt: string;

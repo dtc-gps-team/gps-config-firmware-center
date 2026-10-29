@@ -14,14 +14,24 @@ export function FieldApplyRequestApprovalCard({
   item,
   requesterName,
   canDecide,
+  myUserId,
   onDecided,
 }: {
   item: FieldApplyRequest;
   requesterName: string;
   canDecide: boolean;
+  /** เทียบ SoD ล่วงหน้า (ผู้ขอ/ผู้ผูก Config เข้างาน) — ไม่ส่ง = ไม่เทียบ
+   * (เช่นตอนยังไม่รู้ตัวตนผู้ใช้) ปล่อยให้ backend ตัดสินตอนกดอย่างเดียว */
+  myUserId?: string | null;
   onDecided: (action: "approve" | "reject") => void;
 }) {
   const isFirmware = item.kind === "firmware";
+  const sodBlockedReason =
+    myUserId && myUserId === item.requestedBy
+      ? "คุณเป็นผู้ส่งคำขอนี้เอง อนุมัติ/ปฏิเสธไม่ได้ (Separation of Duty)"
+      : myUserId && !isFirmware && myUserId === item.configAssignedBy
+        ? "คุณเป็นผู้ผูก Config เข้างานนี้ อนุมัติการส่งนี้เองไม่ได้ (Separation of Duty)"
+        : null;
 
   return (
     <ApprovalQueueCard
@@ -96,6 +106,7 @@ export function FieldApplyRequestApprovalCard({
           id={item.id}
           deviceId={item.deviceId}
           canDecide={canDecide}
+          sodBlockedReason={sodBlockedReason}
           onDecided={onDecided}
         />
       }

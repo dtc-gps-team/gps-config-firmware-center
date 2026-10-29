@@ -26,11 +26,16 @@ export function FieldApplyRequestApprovalActions({
   id,
   deviceId,
   canDecide,
+  sodBlockedReason,
   onDecided,
 }: {
   id: string;
   deviceId: string;
   canDecide: boolean;
+  /** เหตุผลที่ผู้ใช้คนนี้โดยเฉพาะอนุมัติคำขอนี้ไม่ได้ (SoD เทียบ user id ฝั่ง
+   * client ล่วงหน้า) — ไม่ครอบคลุม Config.approvedBy เพราะ list endpoint
+   * ไม่คืนค่านี้ กรณีนั้นยังต้องกดแล้วเจอ 403 จาก backend เหมือนเดิม */
+  sodBlockedReason?: string | null;
   onDecided: (action: Decision) => void;
 }) {
   const { session } = useAuth();
@@ -43,6 +48,14 @@ export function FieldApplyRequestApprovalActions({
     return (
       <span className="text-sm text-muted-foreground">
         เฉพาะ Operation เท่านั้นที่อนุมัติ/ปฏิเสธได้
+      </span>
+    );
+  }
+
+  if (sodBlockedReason) {
+    return (
+      <span className="text-sm text-muted-foreground">
+        {sodBlockedReason}
       </span>
     );
   }
