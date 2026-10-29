@@ -14,6 +14,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { DeviceModule } from '../../src/device/device.module';
 import { PrismaModule } from '../../src/prisma/prisma.module';
+import { ConfigApplyRequestService } from '../../src/config-apply-request/config-apply-request.service';
 import { TaskService } from '../../src/task/task.service';
 import {
   createTestPrisma,
@@ -3395,6 +3396,65 @@ describe('DeviceController test-connection (integration — real postgres + guar
         return res.body as { id: string };
       }
 
+      it('ส่งตรง (direct): Config ที่อนุมัติแล้วไม่แก้ค่า -> คำขอ approved ทันที ไม่มีผู้อนุมัติ · applyOptions บอกค่าของแต่ละ Config', async () => {
+        const { configId, stId } = await setupCentralDevice('DCO-C-DIRECT');
+        const actor = { id: stId, role: 'ST' };
+        const { task } = await app
+          .get(TaskService)
+          .start({ deviceId: 'DCO-C-DIRECT' }, actor);
+        const service = app.get(ConfigApplyRequestService);
+
+        const options = await service.applyOptions('DCO-C-DIRECT', actor);
+        expect(options.configs.find((c) => c.id === configId)?.fields).toEqual({
+          APN: 'internet',
+        });
+
+        const created = await service.create(
+          task.id,
+          { configId, direct: true },
+          actor,
+        );
+        expect(created).toMatchObject({
+          configId,
+          status: 'approved',
+          decidedBy: null,
+        });
+        expect(created.approvedConfigVersion).not.toBeNull();
+        const audit = await prisma.auditLog.findFirst({
+          where: { userId: stId, action: 'config_apply_direct' },
+        });
+        expect(audit).not.toBeNull();
+      });
+
+      it('เลือก Config อื่นแล้วแก้ค่า (configId) -> Override + คำขอ pending ผูกกับ Config ที่เลือก', async () => {
+        const { stTok } = await setupCentralDevice('DCO-C-PICK');
+        const otherConfig = await makeConfig('approved');
+
+        const res = await request(app.getHttpServer())
+          .post('/api/v1/devices/DCO-C-PICK/config-override')
+          .set('Authorization', `Bearer ${stTok}`)
+          .send({
+            fields: { APN: 'apn-picked' },
+            reason: 'ใช้ Config อื่นแต่แก้ APN',
+            configId: otherConfig,
+          })
+          .expect(200);
+
+        expect(res.body).toMatchObject({
+          configId: otherConfig,
+          status: 'pending',
+        });
+        const requests = await prisma.configApplyRequest.findMany({
+          where: { deviceId: 'DCO-C-PICK' },
+        });
+        expect(requests).toHaveLength(1);
+        expect(requests[0]).toMatchObject({
+          configId: otherConfig,
+          status: 'pending',
+          overrideId: (res.body as { id: string }).id,
+        });
+      });
+
       it('ช่างขอ Override -> เริ่มงานให้ + สร้างคำขอ pending ผูก Override (แถวเดียว) · คิว Override ไม่แสดงซ้ำ · อนุมัติ Override ตรงๆ ได้ 409', async () => {
         const { configId, stTok, stId, opTok } =
           await setupCentralDevice('DCO-C-FLOW');
@@ -3526,6 +3586,55 @@ describe('DeviceController test-connection (integration — real postgres + guar
         ]);
         expect(after.status).toBe('cancelled');
         expect(ov.status).toBe('approved');
+      });
+
+      it('อนุมัติแล้วยังไม่กดส่ง -> GET config: fields = ค่าใหม่ แต่ delivery = ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', async () => {
+        const { configId, stTok, stId, opTok } =
+          await setupCentralDevice('DCO-C-DELIVERY');
+        // ส่ง Config ฐานเข้ากล่องสำเร็จแล้ว (Rollout target success) ก่อนขอแก้ค่า
+        const campaign = await prisma.campaign.create({
+          data: { name: 'ส่ง Config ฐาน', createdBy: stId },
+        });
+        await prisma.campaignRollout.create({
+          data: {
+            campaignId: campaign.id,
+            payloadType: 'Config',
+            configId,
+            status: 'completed',
+            applyMode: 'central',
+            createdBy: stId,
+            targets: {
+              create: { deviceId: 'DCO-C-DELIVERY', status: 'success' },
+            },
+          },
+        });
+        const override = await submit('DCO-C-DELIVERY', stTok);
+        const car = await prisma.configApplyRequest.findUniqueOrThrow({
+          where: { overrideId: override.id },
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/config-apply-requests/${car.id}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/devices/DCO-C-DELIVERY/config')
+          .set('Authorization', `Bearer ${stTok}`)
+          .expect(200);
+        const body = res.body as {
+          fields: Record<string, unknown>;
+          hasDeviceOverride: boolean;
+          delivery: {
+            fields: Record<string, unknown>;
+            confirmedAt: string;
+            pendingFieldNames: string[];
+          } | null;
+        };
+        expect(body.hasDeviceOverride).toBe(true);
+        expect(body.fields.APN).toBe('apn-central');
+        expect(body.delivery).not.toBeNull();
+        expect(body.delivery!.fields.APN).toBe('internet');
+        expect(body.delivery!.pendingFieldNames).toEqual(['APN']);
       });
 
       it('Operation ปฏิเสธคำขอ -> Override ถูกปิดเป็น rejected ด้วยเหตุผลเดียวกัน', async () => {

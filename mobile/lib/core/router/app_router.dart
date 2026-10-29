@@ -13,7 +13,9 @@ import '../../features/incident/incident_detail_page.dart';
 import '../../features/incident/field_report_page.dart';
 import '../../features/incident/incident_list_page.dart';
 import '../../features/notification/notification_list_page.dart';
+import '../../features/task/apply_config_params_page.dart';
 import '../../features/task/apply_config_picker_page.dart';
+import '../../features/task/apply_request_history_page.dart';
 import '../../features/task/task_detail_page.dart';
 import '../api/models.dart';
 import '../auth/auth_controller.dart';
@@ -88,9 +90,27 @@ class AppRoutes {
     ).toString();
   }
 
+  /// พารามิเตอร์ของ Config ที่จะส่งเข้ากล่อง (docs/27 §2.2) —
+  /// `/devices/:deviceId/apply/config/:configId` · `?taskId=` = ส่งให้งานนี้ ·
+  /// ไม่ส่ง = เริ่มงานให้ก่อน · ปิดหน้าพร้อม id ของงานเมื่อส่ง/ขอสำเร็จ
+  static const deviceApplyConfigPattern =
+      '/devices/:deviceId/apply/config/:configId';
+  static String deviceApplyConfig(
+    String deviceId,
+    String configId, {
+    String? taskId,
+  }) => Uri(
+    path: '/devices/$deviceId/apply/config/$configId',
+    queryParameters: taskId == null ? null : {'taskId': taskId},
+  ).toString();
+
   /// Task detail — `/tasks/:id`. Use [taskDetail] to build a concrete path.
   static const taskDetailPattern = '/tasks/:id';
   static String taskDetail(String id) => '/tasks/$id';
+
+  /// ประวัติคำขอส่งเข้ากล่องของงาน — `/tasks/:id/requests`
+  static const taskRequestHistoryPattern = '/tasks/:id/requests';
+  static String taskRequestHistory(String id) => '/tasks/$id/requests';
 }
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
@@ -223,9 +243,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: AppRoutes.deviceApplyConfigPattern,
+        builder: (context, state) => ApplyConfigParamsPage(
+          deviceId: state.pathParameters['deviceId']!,
+          configId: state.pathParameters['configId']!,
+          taskId: state.uri.queryParameters['taskId'],
+        ),
+      ),
+      GoRoute(
         path: AppRoutes.taskDetailPattern,
         builder: (context, state) =>
             TaskDetailPage(taskId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: AppRoutes.taskRequestHistoryPattern,
+        builder: (context, state) =>
+            ApplyRequestHistoryPage(taskId: state.pathParameters['id']!),
       ),
     ],
   );

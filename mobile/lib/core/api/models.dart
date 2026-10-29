@@ -576,6 +576,7 @@ class ApplyOptionConfig {
     required this.name,
     required this.latestVersion,
     required this.suggested,
+    this.fields = const {},
   });
 
   final String id;
@@ -588,12 +589,17 @@ class ApplyOptionConfig {
   /// ตัวนี้ขึ้นก่อนแล้ว
   final bool suggested;
 
+  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วของกล่อง ·
+  /// backend เก่า = ว่าง
+  final Map<String, dynamic> fields;
+
   factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
       ApplyOptionConfig(
         id: json['id'] as String,
         name: json['name'] as String,
         latestVersion: (json['latestVersion'] as num?)?.toInt() ?? 0,
         suggested: json['suggested'] as bool? ?? false,
+        fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
       );
 }
 
@@ -815,6 +821,8 @@ class DeviceConfigDraft {
     this.fields,
     this.hasDeviceOverride = false,
     this.pendingOverride,
+    this.delivery,
+    this.boxFields,
   });
 
   final String? id;
@@ -840,9 +848,21 @@ class DeviceConfigDraft {
   /// 2026-09-24, PR #225) ใช้แสดงสถานะ "รอ Operation อนุมัติ" บนหน้า Override
   final DeviceConfigOverride? pendingOverride;
 
+  /// เฉพาะ `GET /devices/{deviceId}/config` (v3.71) — ค่าที่ส่งเข้ากล่องสำเร็จ
+  /// ล่าสุด · `fields` ข้างบนคือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม
+  /// Override ที่อนุมัติแล้ว) จึงต่างจากค่าในกล่องได้ · `null` = ไม่มีหลักฐาน
+  /// การส่ง หรือ backend เก่า
+  final ConfigDelivery? delivery;
+
+  /// เฉพาะ `GET /devices/{deviceId}/config` (v3.74) — ค่าที่กล่องรายงานว่าใช้อยู่
+  /// ทุกพารามิเตอร์ (โหมด central) · `null` = ไม่ทราบ
+  final BoxFields? boxFields;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
     final rawPending = json['pendingOverride'] as Map?;
+    final rawDelivery = json['delivery'] as Map?;
+    final rawBoxFields = json['boxFields'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
       name: json['name'] as String?,
@@ -854,6 +874,53 @@ class DeviceConfigDraft {
       pendingOverride: rawPending == null
           ? null
           : DeviceConfigOverride.fromJson(rawPending.cast<String, dynamic>()),
+      delivery: rawDelivery == null
+          ? null
+          : ConfigDelivery.fromJson(rawDelivery.cast<String, dynamic>()),
+      boxFields: rawBoxFields == null
+          ? null
+          : BoxFields.fromJson(rawBoxFields.cast<String, dynamic>()),
+    );
+  }
+}
+
+/// `DeviceCurrentConfig.boxFields` (v3.74) — ค่าที่กล่องรายงานว่าใช้อยู่
+class BoxFields {
+  const BoxFields({required this.fields, required this.reportedAt});
+
+  final Map<String, dynamic> fields;
+  final DateTime? reportedAt;
+
+  factory BoxFields.fromJson(Map<String, dynamic> json) {
+    return BoxFields(
+      fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
+      reportedAt: DateTime.tryParse(json['reportedAt'] as String? ?? ''),
+    );
+  }
+}
+
+/// `DeviceCurrentConfig.delivery` (v3.71) — ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด
+class ConfigDelivery {
+  const ConfigDelivery({
+    required this.fields,
+    required this.confirmedAt,
+    required this.pendingFieldNames,
+  });
+
+  final Map<String, dynamic> fields;
+  final DateTime confirmedAt;
+
+  /// field ที่อนุมัติแล้วแต่ค่าในกล่องยังไม่ตรง (รอส่งเข้ากล่อง)
+  final List<String> pendingFieldNames;
+
+  bool isPending(String fieldName) => pendingFieldNames.contains(fieldName);
+
+  factory ConfigDelivery.fromJson(Map<String, dynamic> json) {
+    return ConfigDelivery(
+      fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
+      confirmedAt: DateTime.parse(json['confirmedAt'] as String),
+      pendingFieldNames:
+          (json['pendingFieldNames'] as List?)?.cast<String>() ?? const [],
     );
   }
 }
@@ -1167,6 +1234,8 @@ class Device {
     this.hardwareRevisionCode,
     this.bootloader,
     this.customer,
+    this.reportedFirmwareVersion,
+    this.reportedFirmwareAt,
   });
 
   final String id;
@@ -1193,6 +1262,11 @@ class Device {
   /// ลูกค้าเจ้าของอุปกรณ์ (`customer: {id, companyName}`) — null = ยังไม่ผูก
   final Customer? customer;
 
+  /// เวอร์ชัน Firmware ที่กล่องรายงานเองล่าสุดผ่าน telemetry (docs/23) และเวลาที่
+  /// รายงาน — null = กล่องยังไม่เคยรายงาน
+  final String? reportedFirmwareVersion;
+  final DateTime? reportedFirmwareAt;
+
   factory Device.fromJson(Map<String, dynamic> json) {
     DateTime? parseDate(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -1216,6 +1290,8 @@ class Device {
       customer: json['customer'] is Map<String, dynamic>
           ? Customer.fromJson(json['customer'] as Map<String, dynamic>)
           : null,
+      reportedFirmwareVersion: json['reportedFirmwareVersion'] as String?,
+      reportedFirmwareAt: parseDate(json['reportedFirmwareAt']),
     );
   }
 }
