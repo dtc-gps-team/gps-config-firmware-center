@@ -53,6 +53,7 @@ import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { CloneSourceLinkLoader } from "@/components/config/clone-source-link";
 import { ConfigFieldLabel } from "@/components/config/config-field-label";
+import { useDescriptionByField } from "@/components/config/use-description-by-field";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { PageHeader, PageHeaderMeta } from "@/components/page-header";
 import { ConfigReviewPanel } from "./config-review-panel";
@@ -170,13 +171,7 @@ function ConfigDetailContent({
     }
     return set;
   }, [definitions.data]);
-  const descriptionByField = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const d of definitions.data ?? []) {
-      if (d.description) map.set(d.fieldName, d.description);
-    }
-    return map;
-  }, [definitions.data]);
+  const descriptionByField = useDescriptionByField(definitions.data);
   /** ก่อน `useConfigDefinitions()` โหลดเสร็จ ยังไม่รู้จริงๆ ว่า field ไหน
    * sensitive — treat ทุก field เป็น sensitive ไว้ก่อน (safe default) แทนที่
    * จะ default เป็น "ไม่ sensitive" ซึ่งจะเผย plaintext ไปก่อนช่วงสั้นๆ ถ้า
@@ -360,7 +355,7 @@ function ConfigDetailContent({
                       className="flex items-start justify-between gap-4 px-3 py-2 text-sm"
                     >
                       <ConfigFieldLabel
-                        className="shrink-0"
+                        className="min-w-0 max-w-[60%]"
                         fieldName={key}
                         description={descriptionByField.get(key)}
                       />

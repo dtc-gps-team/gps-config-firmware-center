@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { ConfigFieldLabel } from "@/components/config/config-field-label";
+import { useDescriptionByField } from "@/components/config/use-description-by-field";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -97,13 +98,7 @@ function Content({
     }
     return set;
   }, [definitions.data]);
-  const descriptionByField = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const d of definitions.data ?? []) {
-      if (d.description) map.set(d.fieldName, d.description);
-    }
-    return map;
-  }, [definitions.data]);
+  const descriptionByField = useDescriptionByField(definitions.data);
   // ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน — mirror
   // config-approval-detail-view.tsx กัน plaintext หลุดช่วงสั้นๆ
   const isMasked = (fieldName: string) =>
