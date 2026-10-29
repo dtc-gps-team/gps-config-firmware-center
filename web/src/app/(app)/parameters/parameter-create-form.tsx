@@ -48,16 +48,16 @@ const DATA_TYPES = [
 ] as const;
 
 const DATA_TYPE_LABELS: Record<(typeof DATA_TYPES)[number], string> = {
-  integer: "จำนวนเต็ม (integer)",
-  decimal: "ทศนิยม (decimal)",
-  string: "ข้อความ (string)",
-  text: "ข้อความหลายบรรทัด (text)",
-  boolean: "จริง/เท็จ (boolean)",
-  date: "วันที่ (date)",
-  datetime: "วันที่และเวลา (datetime)",
-  json: "ชุดค่าแบบ key-value (json)",
-  array: "รายการหลายค่า (array)",
-  uuid: "รหัส UUID (uuid)",
+  integer: "integer (จำนวนเต็ม)",
+  decimal: "decimal (ทศนิยม)",
+  string: "string (ข้อความ)",
+  text: "text (ข้อความหลายบรรทัด)",
+  boolean: "boolean (จริง/เท็จ)",
+  date: "date (วันที่)",
+  datetime: "datetime (วันที่และเวลา)",
+  json: "json (ชุดค่าแบบ key-value)",
+  array: "array (รายการหลายค่า)",
+  uuid: "uuid (รหัส UUID)",
 };
 
 /** ตัวอย่างค่าใต้ช่องเลือกชนิด — รูปแบบตรงกับที่ฟอร์ม Config และ backend ตรวจ */

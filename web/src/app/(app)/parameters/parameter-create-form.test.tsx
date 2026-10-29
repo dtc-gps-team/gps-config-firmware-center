@@ -157,7 +157,7 @@ describe("ParameterCreateForm data type hint", () => {
     expect(screen.getByText("ข้อความบรรทัดเดียว เช่น internet")).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: "ชนิดข้อมูล" }));
-    await user.click(await screen.findByRole("option", { name: "จริง/เท็จ (boolean)" }));
+    await user.click(await screen.findByRole("option", { name: "boolean (จริง/เท็จ)" }));
     expect(screen.getByText("ค่า true หรือ false")).toBeInTheDocument();
   });
 });
