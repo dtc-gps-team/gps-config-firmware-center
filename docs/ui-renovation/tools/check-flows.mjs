@@ -2,6 +2,7 @@
 // เดินตามงานหลัก 2 งานของรอบ 2 ด้วย API จำลอง (ไม่มี backend) แล้วนับคลิก/ตรวจผล
 //   A) ConfigEngineer: หาอุปกรณ์ -> แก้ Config -> ทดสอบ -> ส่งขออนุมัติ
 //   B) Operation: ดู diff ใน Approval Center -> เลือกทั้งหมด -> อนุมัติหลายรายการ
+//   C) โคลน Config  D) Campaign -> Rollout wizard 4 ขั้น  E) Incident -> Rollout ต้นทาง -> Rollback (ต้องพิมพ์ยืนยัน)
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,6 +152,79 @@ async function open(role) {
   check("C4 ส่ง clonedFromId และค่าที่แก้", posted?.clonedFromId === "c2" && posted?.fields?.REPORT_INTERVAL === 99, JSON.stringify(posted));
   check("C5 ไม่มี error ใน console หน้า", errors.length === 0, errors.join("; "));
   console.log(`      คลิกทั้งงาน C: ${clicks}`);
+  await ctx.close();
+}
+
+// ---------- D) Operation: Campaign -> Rollout wizard 4 ขั้น -> ส่งขออนุมัติ ----------
+{
+  const { ctx, page, errors } = await open("Operation");
+  let clicks = 0;
+  const click = async (locator) => {
+    await locator.click();
+    clicks += 1;
+  };
+  let posted = null;
+  await page.route(/\/api\/v1\/campaigns\/camp1\/rollouts$/, async (route) => {
+    if (route.request().method() === "POST") {
+      posted = route.request().postDataJSON();
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "r2" }) });
+    }
+    await route.fallback();
+  });
+  await page.goto(`${base}/campaigns`, { waitUntil: "networkidle" });
+  await click(page.getByRole("cell", { name: "ปรับค่ารถบรรทุกภาคเหนือ" }));
+  await page.waitForURL(/\/campaigns\/camp1$/);
+  await page.getByRole("link", { name: /Roll out ใหม่/ }).waitFor();
+  // ในข้อมูลจำลอง Rollout r4 ค้างสถานะ approved จึงเปิดรอบใหม่ไม่ได้ ไปหน้า wizard ตรงๆ เพื่อตรวจ flow
+  await page.goto(`${base}/campaigns/camp1/rollouts/new`, { waitUntil: "networkidle" });
+  check("D1 ขั้น 1 เห็นอุปกรณ์ในกลุ่ม", (await page.getByRole("checkbox").count()) >= 4);
+  await click(page.getByRole("button", { name: /ถัดไป/ }));
+  await click(page.getByRole("button", { name: /ถัดไป/ }));
+  check("D2 ยังไม่เลือก Config ไปต่อไม่ได้", await page.getByText("เลือก Config ก่อน").isVisible());
+  await click(page.getByRole("combobox", { name: "Config" }));
+  await click(page.getByRole("option").first());
+  await click(page.getByRole("button", { name: /ถัดไป/ }));
+  check("D3 ขั้นตรวจสอบแสดงเครื่องที่ถูกข้ามพร้อมเหตุผล", await page.getByText("BB-310-20495").isVisible());
+  await click(page.getByRole("button", { name: /ถัดไป/ }));
+  check("D4 ขั้นยืนยันสรุปจำนวนเครื่อง", await page.getByText(/จาก 4 เครื่อง/).isVisible());
+  await click(page.getByRole("button", { name: "เริ่ม Rollout" }));
+  await page.waitForURL(/\/rollouts\/r2$/);
+  check("D5 ส่ง POST พร้อม excludeDeviceIds ของเครื่องที่ไม่เข้ากัน", posted?.payloadType === "Config" && posted?.excludeDeviceIds?.includes("BB-310-20495"), JSON.stringify(posted));
+  check("D6 ไม่มี error ใน console หน้า", errors.length === 0, errors.join("; "));
+  console.log(`      คลิกทั้งงาน D (จากรายการ Campaign): ${clicks}`);
+  await ctx.close();
+}
+
+// ---------- E) Operation: Incident -> Rollout ต้นทาง -> Rollback ต้องพิมพ์ยืนยัน ----------
+{
+  const { ctx, page, errors } = await open("Operation");
+  let clicks = 0;
+  const click = async (locator) => {
+    await locator.click();
+    clicks += 1;
+  };
+  let rollbackCalled = null;
+  await page.route(/\/api\/v1\/campaigns\/camp1\/rollouts\/r2\/rollback$/, async (route) => {
+    rollbackCalled = route.request().postDataJSON();
+    return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "r9" }) });
+  });
+  await page.goto(`${base}/incidents`, { waitUntil: "networkidle" });
+  await click(page.getByRole("link", { name: /Rollout หยุดอัตโนมัติ/ }).first());
+  await page.waitForURL(/\/incidents\/i1$/);
+  await page.getByText("ตรวจพบ Incident").waitFor();
+  check("E1 หน้า Incident แสดงไทม์ไลน์และจำนวนเครื่องที่ล้มเหลว", (await page.getByText("ตรวจพบ Incident").isVisible()) && (await page.getByText(/ล้มเหลว 6 จาก 25 เครื่อง/).isVisible()));
+  await click(page.getByRole("link", { name: /ดู Rollout ต้นทาง/ }));
+  await page.waitForURL(/\/rollouts\/r2$/);
+  await click(page.getByRole("button", { name: "สั่ง Rollback" }));
+  const confirm = page.getByRole("button", { name: "ยืนยันสั่ง Rollback" });
+  check("E2 กล่อง Rollback บอกจำนวนเครื่องที่จะถูกแตะ", await page.getByText(/2 จาก 2 เครื่อง/).isVisible());
+  check("E3 ปุ่มยืนยันปิดอยู่จนกว่าจะพิมพ์ ROLLBACK", await confirm.isDisabled());
+  await page.getByRole("textbox").last().fill("ROLLBACK");
+  await click(confirm);
+  await page.waitForTimeout(800);
+  check("E4 ยิง POST rollback เมื่อพิมพ์ยืนยันแล้ว", rollbackCalled !== null);
+  check("E5 ไม่มี error ใน console หน้า", errors.length === 0, errors.join("; "));
+  console.log(`      คลิกทั้งงาน E (จาก Incident ถึงสั่ง Rollback): ${clicks}`);
   await ctx.close();
 }
 

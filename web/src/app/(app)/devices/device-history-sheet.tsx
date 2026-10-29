@@ -357,7 +357,7 @@ export function DeviceHistorySheet({ deviceId }: { deviceId: string }) {
       <SheetContent className="sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>
-            ประวัติของ <span className="font-mono">{deviceId}</span>
+            ประวัติของ <span className="font-instrument">{deviceId}</span>
           </SheetTitle>
         </SheetHeader>
         <div className="overflow-y-auto px-4 pb-4">

@@ -202,7 +202,7 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
               readOnly
               aria-label="API Key ใหม่"
               value={newKey ?? ""}
-              className="font-mono text-xs"
+              className="font-instrument text-xs"
             />
             <Button
               type="button"

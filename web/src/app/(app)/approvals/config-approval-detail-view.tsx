@@ -44,7 +44,7 @@ function valueText(value: unknown): string {
 function ValueCell({ value, masked }: { value: unknown; masked: boolean }) {
   if (masked) return <SensitiveValue value={value} />;
   return (
-    <span className="min-w-0 font-mono text-xs break-words">
+    <span className="min-w-0 font-instrument text-xs break-words">
       {valueText(value)}
     </span>
   );
@@ -402,7 +402,7 @@ function Content({
                     key={name}
                     className="flex justify-between gap-4 px-3 py-1.5 text-xs"
                   >
-                    <span className="flex shrink-0 items-center gap-1.5 font-mono text-muted-foreground">
+                    <span className="flex shrink-0 items-center gap-1.5 font-instrument text-muted-foreground">
                       {name}
                       {changedNames.has(name) && (
                         <span className="rounded bg-info-subtle px-1 text-[10px] text-info-foreground">

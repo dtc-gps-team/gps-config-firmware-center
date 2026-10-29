@@ -98,7 +98,7 @@ function CentralRows({ device }: { device: CentralDevice }) {
               {centralCommandStatusLabel(cmd.status)}
             </StatusPill>
             {cmd.errorCode && (
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-instrument text-xs text-muted-foreground">
                 {cmd.errorCode}
               </span>
             )}

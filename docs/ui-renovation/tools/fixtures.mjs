@@ -66,20 +66,29 @@ export const configs = [
 }));
 
 export const incidents = [
-  { id: "i1", title: "อุปกรณ์รายงานค่าผิดปกติหลังอัปเดต", severity: "high", status: "open" },
-  { id: "i2", title: "ซิงก์ Config ล้มเหลว", severity: "medium", status: "investigating" },
-  { id: "i3", title: "แจ้งจากช่างหน้างาน", severity: "low", status: "resolved" },
+  {
+    id: "i1",
+    title: "Rollout หยุดอัตโนมัติ: ปรับค่ารถบรรทุกภาคเหนือ",
+    severity: "high",
+    status: "open",
+    source: "rollout-failure",
+    description: "ระบบหยุด Rollout เพราะอัตราล้มเหลวเกินเกณฑ์",
+    metadata: { kind: "auto-pause", failureCount: 6, targetCount: 25, skippedCount: 2, failedDeviceIds: ["BB-200-20481", "BB-200-20488", "BB-310-20495", "BB-310-20502", "TK-50-20509", "BB-200-20544"], sampleErrors: ["อุปกรณ์ตอบกลับไม่ทันเวลา", "Checksum ไม่ตรง"], campaignId: "camp1", rolloutId: "r2" },
+  },
+  { id: "i2", title: "เขียน Config ไม่สำเร็จ", severity: "medium", status: "investigating", source: "config-sync-writer", description: null, metadata: { attempts: 3, lastError: "connection timeout" } },
+  { id: "i3", title: "แจ้งจากช่างหน้างาน", severity: "low", status: "resolved", source: "field-report", description: "อุปกรณ์ไม่ส่งตำแหน่งหลังเปลี่ยนซิม", deviceId: "BB-200-20481", reportedBy: "u2", reviewedBy: "u1", reviewedAt: iso(120), reviewNote: "ตรวจสอบแล้ว ซิมใช้งานได้ปกติ", metadata: null },
 ].map((x) => ({
-  ...x,
   description: null,
   relatedConfigId: null,
   relatedFirmwareId: null,
-  source: null,
-  metadata: null,
   deviceId: null,
   reportedBy: null,
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewNote: null,
   createdAt: iso(200),
   updatedAt: iso(100),
+  ...x,
 }));
 
 export const rollouts = [
@@ -144,21 +153,45 @@ export const configDefinitions = [
 }));
 
 export const deviceModels = [
-  { id: "m1", name: "BB-200", supportedProtocols: ["mqtt"], status: "active", active: true },
-  { id: "m2", name: "BB-310", supportedProtocols: ["mqtt"], status: "active", active: true },
+  { id: "m1", name: "BB-200", manufacturer: "Blackbox", supportedProtocols: ["mqtt"], status: "active", warrantyMonths: 24, endOfSupportDate: null, notes: null, createdAt: iso(9000), updatedAt: iso(9000) },
+  { id: "m2", name: "BB-310", manufacturer: "Blackbox", supportedProtocols: ["mqtt", "tcp"], status: "active", warrantyMonths: 12, endOfSupportDate: null, notes: null, createdAt: iso(9000), updatedAt: iso(9000) },
 ];
 
-export const campaigns = [{ id: "camp1", name: "ปรับค่ารถบรรทุกภาคเหนือ", createdAt: iso(900) }];
+export const campaigns = [
+  { id: "camp1", name: "ปรับค่ารถบรรทุกภาคเหนือ", description: "กลุ่มรถบรรทุกที่วิ่งเส้นเหนือ", createdBy: "u1", createdAt: iso(900), updatedAt: iso(800) },
+  { id: "camp2", name: "อัปเดต Firmware รุ่น BB-310", description: null, createdBy: "u1", createdAt: iso(3000), updatedAt: iso(2900) },
+];
 
+const auditActions = [
+  ["config", "approve"], ["campaign", "create"], ["firmware", "approve"], ["device", "apply-config"], ["config", "update"],
+  ["campaign", "release"], ["config-deletion", "decide"], ["device", "create"],
+];
 export const auditLogs = {
-  items: [
-    { id: "a1", userId: "u1", auditModule: "config", action: "approve", ipAddress: "10.0.0.2", metadata: null, createdAt: iso(12) },
-    { id: "a2", userId: "u1", auditModule: "campaign", action: "create", ipAddress: "10.0.0.2", metadata: null, createdAt: iso(55) },
-  ],
-  total: 2,
+  items: Array.from({ length: 20 }, (_, i) => ({
+    id: `a${i}`,
+    userId: i % 3 === 0 ? "u2" : "u1",
+    auditModule: auditActions[i % auditActions.length][0],
+    action: auditActions[i % auditActions.length][1],
+    ipAddress: i % 4 === 3 ? null : `10.0.0.${2 + (i % 5)}`,
+    metadata: auditActions[i % auditActions.length][1] === "apply-config" ? { deviceId: "BB-200-20481", configId: "c2", fieldNames: ["SERVER_PORT", "REPORT_INTERVAL"] } : null,
+    createdAt: iso(12 + i * 47),
+  })),
+  total: 46,
   page: 1,
-  pageSize: 5,
+  pageSize: 20,
 };
+
+export const campaignTargets = ["BB-200-20481", "BB-200-20488", "BB-310-20495", "BB-310-20502"].map((deviceId, i) => ({ id: `ct${i}`, campaignId: "camp1", deviceId, createdAt: iso(800 - i) }));
+export const rolloutTargets = [
+  ["BB-200-20481", "success", null], ["BB-200-20488", "success", null], ["BB-310-20495", "failed", "อุปกรณ์ตอบกลับไม่ทันเวลา"],
+  ["BB-310-20502", "skipped", "ออฟไลน์"], ["TK-50-20509", "pending", null],
+].map(([deviceId, status, resultDetail], i) => ({ id: `rt${i}`, rolloutId: "r2", deviceId, status, resultDetail, createdAt: iso(600), updatedAt: iso(20 + i) }));
+
+export const managedUsers = [
+  { id: "u3", username: "somchai.k", fullName: "สมชาย ใจดี", role: "Operation", isActive: true },
+  { id: "u4", username: "wipa.r", fullName: "วิภา รักงาน", role: "ConfigEngineer", isActive: true },
+  { id: "u5", username: "anan.s", fullName: "อนันต์ สุขใจ", role: "ST", isActive: false },
+];
 
 export function makeToken(role = "Operation") {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -205,15 +238,26 @@ export function apiResponse(url) {
   }
   if (p === "/config-definitions") return configDefinitions;
   if (p === "/device-models") return deviceModels;
+  const inc = p.match(/^\/incidents\/([^/]+)$/);
+  if (inc) return incidents.find((x) => x.id === inc[1]) ?? incidents[0];
   if (p === "/incidents") return incidents;
   const fw = p.match(/^\/firmware\/([^/]+)$/);
   if (fw) return firmware.find((f) => f.id === fw[1]) ?? firmware[0];
   if (p === "/firmware") return firmware;
   if (p === "/customers") return [{ id: "cu1", companyName: "บริษัท ขนส่งภาคเหนือ จำกัด" }];
   if (p === "/campaigns") return campaigns;
+  const camp = p.match(/^\/campaigns\/([^/]+)(?:\/(targets|rollouts)(?:\/([^/]+)(?:\/(targets))?)?)?$/);
+  if (camp && camp[1] !== "rollouts") {
+    if (camp[4] === "targets") return rolloutTargets;
+    if (camp[3]) return rollouts.find((r) => r.id === camp[3]) ?? rollouts[1];
+    if (camp[2] === "targets") return campaignTargets;
+    if (camp[2] === "rollouts") return rollouts;
+    return campaigns[0];
+  }
   if (p === "/campaigns/rollouts") return query.get("status") === "pending_approval" ? [] : rollouts;
   if (p === "/audit-logs") return auditLogs;
   if (p === "/notifications") return [];
-  if (p === "/users") return [{ id: "u1", name: "สมชาย ใจดี", email: "op@example.com", role: "Operation" }, { id: "u2", name: "วิภา รักงาน", email: "ce@example.com", role: "ConfigEngineer" }];
+  if (p === "/users/managed") return managedUsers;
+  if (p === "/users") return [{ id: "u1", fullName: "สมชาย ใจดี", role: "Operation" }, { id: "u2", fullName: "วิภา รักงาน", role: "ConfigEngineer" }];
   return [];
 }

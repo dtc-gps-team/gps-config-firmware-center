@@ -28,7 +28,7 @@ export function RolloutImpactCard({ incident }: { incident: Incident }) {
   if (!impact && !sample && errors.length === 0 && !href) return null;
 
   return (
-    <Card className="max-w-xl p-4" aria-label="ผลกระทบ">
+    <Card className="p-4" aria-label="ผลกระทบ">
       <h2 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
         <ServerCrashIcon className="size-4" />
         ผลกระทบ
@@ -53,7 +53,7 @@ export function RolloutImpactCard({ incident }: { incident: Incident }) {
               <li key={deviceId}>
                 <Link
                   href={`/devices/${encodeURIComponent(deviceId)}`}
-                  className="font-mono text-sm underline-offset-2 hover:underline"
+                  className="font-instrument text-sm underline-offset-2 hover:underline"
                 >
                   {deviceId}
                 </Link>
@@ -75,7 +75,7 @@ export function RolloutImpactCard({ incident }: { incident: Incident }) {
           </p>
           <ul className="flex flex-col gap-1">
             {errors.map((message, i) => (
-              <li key={i} className="font-mono text-xs">
+              <li key={i} className="font-instrument text-xs">
                 {message}
               </li>
             ))}

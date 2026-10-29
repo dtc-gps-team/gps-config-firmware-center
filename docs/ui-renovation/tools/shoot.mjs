@@ -122,6 +122,46 @@ const targets = {
   "config-detail-draft": { url: "/config/c3", w: 1440, h: 900, extra: ["mobile"] },
   "firmware-detail": { url: "/firmware/f1", w: 1440, h: 900, extra: ["mobile"] },
   "device-new": { url: "/devices/new", w: 1440, h: 900, extra: ["mobile"] },
+  "audit-log": { url: "/audit-log", w: 1440, h: 900, extra: ["mobile"] },
+  "audit-log-detail": {
+    url: "/audit-log",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("cell", { name: "apply-config" }).first().click();
+    },
+  },
+  incidents: { url: "/incidents", w: 1440, h: 900, extra: ["mobile"] },
+  "incident-detail": { url: "/incidents/i1", w: 1440, h: 900, extra: ["mobile"] },
+  "incident-detail-reviewed": { url: "/incidents/i3", w: 1440, h: 900 },
+  campaigns: { url: "/campaigns", w: 1440, h: 900, extra: ["mobile"] },
+  "campaign-detail": { url: "/campaigns/camp1", w: 1440, h: 900, extra: ["mobile"] },
+  "rollout-new-1": { url: "/campaigns/camp1/rollouts/new", w: 1440, h: 900, extra: ["mobile"] },
+  "rollout-new-3": {
+    url: "/campaigns/camp1/rollouts/new",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+      await page.getByRole("combobox", { name: "Config" }).click();
+      await page.getByRole("option").first().click();
+      await page.getByRole("button", { name: /ถัดไป/ }).click();
+    },
+  },
+  "rollout-detail": { url: "/campaigns/camp1/rollouts/r2", w: 1440, h: 900, extra: ["mobile"] },
+  "rollout-rollback": {
+    url: "/campaigns/camp1/rollouts/r3",
+    w: 1440,
+    h: 900,
+    act: async (page) => {
+      await page.getByRole("button", { name: "สั่ง Rollback" }).click();
+    },
+  },
+  users: { url: "/users", w: 1440, h: 900, role: "Admin", extra: ["mobile"] },
+  "device-models": { url: "/device-models", w: 1440, h: 900, role: "Admin", extra: ["mobile"] },
+  forbidden: { url: "/audit-log", w: 1440, h: 900, role: "ConfigEngineer" },
+  "not-found": { url: "/no-such-page", w: 1440, h: 900 },
+  login: { url: "/login", w: 1440, h: 900, anon: true, extra: ["mobile"] },
   "firmware-compare": {
     url: "/firmware",
     w: 1440,
@@ -135,12 +175,15 @@ const targets = {
 };
 
 const browser = await chromium.launch();
-async function newPage(w, h, theme) {
+async function newPage(w, h, theme, t = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
-  await ctx.addInitScript(([t, r]) => {
-    localStorage.setItem("gps.accessToken", t);
-    localStorage.setItem("gps.role", r);
-  }, [makeToken(role), role]);
+  const r = t.role ?? role;
+  if (!t.anon) {
+    await ctx.addInitScript(([tok, rr]) => {
+      localStorage.setItem("gps.accessToken", tok);
+      localStorage.setItem("gps.role", rr);
+    }, [makeToken(r), r]);
+  }
   await ctx.route(/\/api\/v1\//, (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(apiResponse(route.request().url())) }),
   );
@@ -150,7 +193,7 @@ async function newPage(w, h, theme) {
 }
 
 async function capture(name, t, w, h, theme, suffix, fullPage = false) {
-  const { ctx, page } = await newPage(w, h, theme);
+  const { ctx, page } = await newPage(w, h, theme, t);
   await page.goto(base + t.url, { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
   if (t.act) {

@@ -27,7 +27,7 @@ export function DeviceFirmwareOverrideApprovalCard({
   return (
     <ApprovalQueueCard
       tag="Firmware Override"
-      title={<span className="font-mono">{item.deviceId}</span>}
+      title={<span className="font-instrument">{item.deviceId}</span>}
       meta={`เวอร์ชัน #${item.versionNumber}`}
       queuedAt={item.overriddenAt}
       detailHref={`/approvals/firmware-override/${item.id}`}
@@ -36,7 +36,7 @@ export function DeviceFirmwareOverrideApprovalCard({
       summary={
         <span>
           ขอติดตั้ง Firmware{" "}
-          <span className="font-mono">
+          <span className="font-instrument">
             {firmwareQuery.data
               ? `v${firmwareQuery.data.version}`
               : item.firmwareId}

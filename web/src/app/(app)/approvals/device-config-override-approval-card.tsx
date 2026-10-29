@@ -51,7 +51,7 @@ export function DeviceConfigOverrideApprovalCard({
   return (
     <ApprovalQueueCard
       tag="Config Override"
-      title={<span className="font-mono">{item.deviceId}</span>}
+      title={<span className="font-instrument">{item.deviceId}</span>}
       meta={`เวอร์ชัน #${item.versionNumber}`}
       queuedAt={item.overriddenAt}
       detailHref={`/approvals/config-override/${item.id}`}
@@ -71,13 +71,13 @@ export function DeviceConfigOverrideApprovalCard({
                   key={key}
                   className="flex justify-between gap-4 px-3 py-1.5"
                 >
-                  <span className="shrink-0 font-mono text-muted-foreground">
+                  <span className="shrink-0 font-instrument text-muted-foreground">
                     {key}
                   </span>
                   {effectiveSensitiveFieldNames.has(key) ? (
                     <SensitiveValue value={value} />
                   ) : (
-                    <span className="min-w-0 font-mono break-words">
+                    <span className="min-w-0 font-instrument break-words">
                       {fieldValueText(value)}
                     </span>
                   )}
