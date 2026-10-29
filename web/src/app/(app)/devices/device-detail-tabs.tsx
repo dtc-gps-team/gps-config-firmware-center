@@ -13,6 +13,7 @@ import {
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CommandStatusSteps } from "@/components/command-status-steps";
 import { EmptyState } from "@/components/empty-state";
 import { InfoRow } from "@/components/info-row";
 import { RelativeTime } from "@/components/relative-time";
@@ -50,6 +51,7 @@ function CommandRow({ cmd }: { cmd: CentralLastCommand | null | undefined }) {
       <StatusPill tone={centralCommandStatusTone(cmd.status)}>
         {centralCommandStatusLabel(cmd.status)}
       </StatusPill>
+      <CommandStatusSteps status={cmd.status} />
       {cmd.errorCode && (
         <span className="font-instrument text-xs text-muted-foreground">
           {cmd.errorCode}

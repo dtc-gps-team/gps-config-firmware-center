@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PlusIcon, XIcon } from "lucide-react";
+import { CodeIcon, ListIcon, PlusIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,13 @@ import { useDeviceModels } from "@/hooks/use-device-models";
 import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { WizardStepIndicator } from "@/components/wizard-step-indicator";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
+import { ErrorState } from "@/components/error-state";
+import { diffConfigFields } from "@/lib/config-diff";
+import { validateFieldValue } from "@/lib/config-field-validation";
+import { parseRawFields, tokenizeJson, type JsonTokenKind } from "@/lib/config-raw";
+import { cn } from "@/lib/utils";
 
 type FieldValue = string | boolean;
 
@@ -110,6 +117,42 @@ function defaultFieldValue(def: ConfigFieldDefinition): FieldValue | undefined {
     : def.defaultValue;
 }
 
+function initialValuesOf(source: Config | null): Record<string, FieldValue> {
+  const out: Record<string, FieldValue> = {};
+  if (!source) return out;
+  for (const [k, v] of Object.entries(source.fields)) {
+    out[k] = typeof v === "boolean" ? v : String(v);
+  }
+  return out;
+}
+
+const UNCATEGORIZED = "อื่นๆ";
+
+const JSON_TOKEN_CLASS: Record<JsonTokenKind, string> = {
+  key: "text-info-foreground",
+  string: "text-success-foreground",
+  number: "text-warning-foreground",
+  literal: "text-primary",
+  punct: "text-muted-foreground",
+  space: "",
+};
+
+/** ข้อความ JSON ระบายสีตามชนิด (อ่านอย่างเดียว) */
+function HighlightedJson({ text }: { text: string }) {
+  return (
+    <pre
+      aria-label="ตัวอย่าง JSON ที่ไฮไลต์"
+      className="max-h-96 overflow-auto rounded-lg border bg-surface-sunken p-3 font-instrument text-xs leading-relaxed"
+    >
+      {tokenizeJson(text).map((t, i) => (
+        <span key={i} className={JSON_TOKEN_CLASS[t.kind]}>
+          {t.text}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
 /**
  * ฟอร์มสร้าง/แก้ Config แบบ 2 ขั้น (ตาม wireframe frame 07–08 ที่พี่เลี้ยง
  * approve):
@@ -148,14 +191,9 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const [protocol, setProtocol] = useState(source?.protocol ?? "");
   const [search, setSearch] = useState("");
   const [showAllParams, setShowAllParams] = useState(false);
-  const [values, setValues] = useState<Record<string, FieldValue>>(() => {
-    if (!source) return {};
-    const out: Record<string, FieldValue> = {};
-    for (const [k, v] of Object.entries(source.fields)) {
-      out[k] = typeof v === "boolean" ? v : String(v);
-    }
-    return out;
-  });
+  const [values, setValues] = useState<Record<string, FieldValue>>(() =>
+    initialValuesOf(source),
+  );
   const [selected, setSelected] = useState<string[]>(() =>
     source ? Object.keys(source.fields) : [],
   );
@@ -165,6 +203,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const [initialSnapshot] = useState(() =>
     JSON.stringify({ name, description, deviceModel, protocol, values, selected }),
   );
+
+  const [editorMode, setEditorMode] = useState<"form" | "raw">("form");
+  const [rawText, setRawText] = useState("");
+  const [rawError, setRawError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -274,6 +317,75 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     const v = values[def.fieldName];
     if (v !== undefined) return v;
     return source ? undefined : defaultFieldValue(def);
+  }
+
+  /** ค่าที่จะบันทึกจริงตอนนี้ ใช้เทียบกับฉบับเดิมและสร้าง JSON ของโหมด Raw */
+  const currentFields = buildFields();
+  const currentFieldsKey = JSON.stringify(currentFields);
+  const baseFields = source?.fields ?? null;
+  const diff = useMemo(
+    () => (baseFields ? diffConfigFields(baseFields, JSON.parse(currentFieldsKey)) : null),
+    [baseFields, currentFieldsKey],
+  );
+  const changedNames = useMemo(
+    () => new Set(diff?.changes.map((c) => c.fieldName) ?? []),
+    [diff],
+  );
+  const fieldErrors: Record<string, string> = {};
+  for (const d of chosenDefs) {
+    const err = validateFieldValue(d, effectiveValue(d));
+    if (err) fieldErrors[d.fieldName] = err;
+  }
+  const errorCount = Object.keys(fieldErrors).length;
+
+  /** จัดกลุ่ม Template ตามหมวดของ field ("อื่นๆ" ไว้ท้ายสุด) */
+  const groupedDefs = useMemo(() => {
+    const groups = new Map<string, ConfigFieldDefinition[]>();
+    for (const d of chosenDefs) {
+      const key = d.category ?? UNCATEGORIZED;
+      groups.set(key, [...(groups.get(key) ?? []), d]);
+    }
+    return [...groups.entries()].sort(([a], [b]) =>
+      a === UNCATEGORIZED ? 1 : b === UNCATEGORIZED ? -1 : a.localeCompare(b),
+    );
+  }, [chosenDefs]);
+
+  function resetToInitial() {
+    setValues(initialValuesOf(source));
+    setSelected(source ? Object.keys(source.fields) : []);
+    setMissingRequired([]);
+    setRawError(null);
+    clearErrors();
+    setEditorMode("form");
+  }
+
+  function switchToRaw() {
+    setRawText(JSON.stringify(currentFields, null, 2));
+    setRawError(null);
+    setEditorMode("raw");
+  }
+
+  /** แก้ข้อความ JSON แล้วซิงก์เข้าฟอร์มทันทีเมื่ออ่านได้ ถ้าอ่านไม่ได้แสดงสาเหตุและบล็อกการบันทึก */
+  function onRawChange(text: string) {
+    setRawText(text);
+    const parsed = parseRawFields(text, defs ?? []);
+    if (!parsed.ok) {
+      setRawError(parsed.error);
+      return;
+    }
+    setRawError(null);
+    const nextValues: Record<string, FieldValue> = {};
+    for (const [k, v] of Object.entries(parsed.fields)) {
+      nextValues[k] =
+        typeof v === "boolean"
+          ? v
+          : typeof v === "object" && v !== null
+            ? JSON.stringify(v)
+            : String(v);
+    }
+    setValues(nextValues);
+    setSelected(Object.keys(parsed.fields));
+    clearErrors();
   }
 
   /** field ในคลังด้านซ้ายที่ยังไม่ได้เพิ่ม + กรองด้วยคำค้น ค่าเริ่มต้นแสดงเฉพาะ
@@ -446,6 +558,17 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
       return;
     }
 
+    if (rawError) {
+      setFormError("แก้ JSON ให้ถูกต้องก่อนบันทึก");
+      return;
+    }
+    if (errorCount > 0) {
+      setFormError(
+        `มี ${errorCount} ค่าที่ยังไม่ถูกต้อง แก้ตามที่แจ้งใต้แต่ละช่องก่อนบันทึก`,
+      );
+      return;
+    }
+
     if (!session?.accessToken) return;
     const fields = buildFields();
     const trimmedDesc = description.trim();
@@ -496,14 +619,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   }
 
   if (defsError) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">{defsError}</p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
-          ลองใหม่
-        </Button>
-      </div>
-    );
+    return <ErrorState message={defsError} onRetry={() => void refetch()} />;
   }
 
   return (
@@ -692,43 +808,188 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             </Card>
 
             <Card className="gap-0 py-0">
-              <div className="border-b px-4 py-3">
-                <p className="text-sm font-medium">
-                  Config Template{" "}
-                  <span className="text-muted-foreground">
-                    ({chosenDefs.length})
-                  </span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {deviceModel} / {protocol}, field ที่บังคับถอดไม่ได้
-                </p>
-              </div>
-              <div className="flex flex-col gap-2.5 p-4">
-                {chosenDefs.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    เลือก Parameter จากคลังด้านซ้ายมาเริ่มได้เลย
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    Config Template{" "}
+                    <span className="text-muted-foreground">
+                      ({chosenDefs.length})
+                    </span>
                   </p>
-                ) : (
-                  chosenDefs.map((def) => (
-                    <TemplateRow
-                      key={def.id}
-                      def={def}
-                      required={isRequiredHere(def)}
-                      outsideSet={!isInModelSet(def)}
-                      value={effectiveValue(def)}
-                      missing={missingRequired.includes(def.fieldName)}
-                      onChange={(v) => setValue(def.fieldName, v)}
-                      onRemove={
-                        isRequiredHere(def)
-                          ? undefined
-                          : () => removeField(def.fieldName)
-                      }
-                    />
-                  ))
-                )}
+                  <p className="text-xs text-muted-foreground">
+                    {deviceModel} / {protocol}, field ที่บังคับถอดไม่ได้
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div
+                    role="group"
+                    aria-label="โหมดแก้ไข"
+                    className="flex rounded-lg border p-0.5"
+                  >
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={editorMode === "form" ? "secondary" : "ghost"}
+                      aria-pressed={editorMode === "form"}
+                      onClick={() => setEditorMode("form")}
+                    >
+                      <ListIcon />
+                      ฟอร์ม
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={editorMode === "raw" ? "secondary" : "ghost"}
+                      aria-pressed={editorMode === "raw"}
+                      onClick={switchToRaw}
+                    >
+                      <CodeIcon />
+                      JSON
+                    </Button>
+                  </div>
+                  {isDirty && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setResetOpen(true)}
+                    >
+                      <RotateCcwIcon />
+                      รีเซ็ต
+                    </Button>
+                  )}
+                </div>
               </div>
+              {editorMode === "raw" ? (
+                <div className="grid gap-3 p-4 lg:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="config-raw">JSON ของ field และค่า</Label>
+                    <textarea
+                      id="config-raw"
+                      value={rawText}
+                      onChange={(e) => onRawChange(e.target.value)}
+                      spellCheck={false}
+                      rows={16}
+                      aria-invalid={rawError ? true : undefined}
+                      className="min-h-64 resize-y rounded-lg border border-input bg-transparent p-3 font-instrument text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
+                    />
+                    {rawError ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        {rawError}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        แก้แล้วซิงก์เข้าฟอร์มทันที ใช้ได้เฉพาะ field ที่มีในคลัง Parameter
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-sm font-medium">ตัวอย่างที่ไฮไลต์</span>
+                    <HighlightedJson text={rawText} />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 p-4">
+                  {chosenDefs.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      เลือก Parameter จากคลังด้านซ้ายมาเริ่มได้เลย
+                    </p>
+                  ) : (
+                    groupedDefs.map(([category, defsInGroup]) => (
+                      <section
+                        key={category}
+                        aria-label={category}
+                        className="flex flex-col gap-2.5"
+                      >
+                        <h2 className="label-caps text-muted-foreground">
+                          {category}{" "}
+                          <span className="tabular-nums">
+                            ({defsInGroup.length})
+                          </span>
+                        </h2>
+                        {defsInGroup.map((def) => (
+                          <TemplateRow
+                            key={def.id}
+                            def={def}
+                            required={isRequiredHere(def)}
+                            outsideSet={!isInModelSet(def)}
+                            value={effectiveValue(def)}
+                            missing={
+                              missingRequired.includes(def.fieldName) ||
+                              Boolean(fieldErrors[def.fieldName])
+                            }
+                            error={fieldErrors[def.fieldName] ?? null}
+                            changed={changedNames.has(def.fieldName)}
+                            originalValue={baseFields?.[def.fieldName]}
+                            hasOriginal={
+                              baseFields !== null &&
+                              Object.hasOwn(baseFields, def.fieldName)
+                            }
+                            onChange={(v) => setValue(def.fieldName, v)}
+                            onRemove={
+                              isRequiredHere(def)
+                                ? undefined
+                                : () => removeField(def.fieldName)
+                            }
+                          />
+                        ))}
+                      </section>
+                    ))
+                  )}
+                </div>
+              )}
             </Card>
           </div>
+
+          {diff && (
+            <Card className="gap-3 p-4" aria-label="สิ่งที่จะเปลี่ยน">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium">
+                  {editing
+                    ? "สิ่งที่จะเปลี่ยนจากฉบับที่บันทึกไว้"
+                    : "สิ่งที่ต่างจาก Config ต้นฉบับ"}
+                </p>
+                <DiffCounts
+                  counts={diff.counts}
+                  unchangedCount={diff.unchangedCount}
+                />
+              </div>
+              {diff.changes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  ยังไม่มีการเปลี่ยนแปลงจากฉบับเดิม
+                </p>
+              ) : (
+                <DiffViewer
+                  changes={diff.changes}
+                  beforeLabel={editing ? "ฉบับที่บันทึกไว้" : "ต้นฉบับ"}
+                  afterLabel="ฉบับที่กำลังแก้"
+                  isMasked={(name) =>
+                    (defs ?? []).find((d) => d.fieldName === name)?.sensitive ?? true
+                  }
+                  attention={(name) => {
+                    const d = (defs ?? []).find((x) => x.fieldName === name);
+                    if (!d) return null;
+                    if (d.restartRequired) return "ต้อง Restart กล่องหลังเปลี่ยนค่านี้";
+                    return d.sensitive ? "ค่าอ่อนไหว" : null;
+                  }}
+                />
+              )}
+            </Card>
+          )}
+
+          <ConfirmDialog
+            open={resetOpen}
+            onOpenChange={setResetOpen}
+            title="รีเซ็ตการแก้ไขทั้งหมด?"
+            description={
+              source
+                ? `ค่าทุกช่องจะกลับเป็นของ${editing ? "ฉบับที่บันทึกไว้" : "ต้นฉบับ"} การแก้ไขที่ทำไว้จะหายไป`
+                : "Parameter ที่เลือกและค่าที่กรอกจะถูกล้างทั้งหมด"
+            }
+            confirmLabel="รีเซ็ต"
+            destructive
+            onConfirm={resetToInitial}
+          />
 
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
@@ -742,7 +1003,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
             >
               ← ย้อนกลับ
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
+            <Button onClick={handleSubmit} disabled={submitting || rawError !== null}>
               {submitting
                 ? "กำลังบันทึก…"
                 : editing
@@ -798,6 +1059,10 @@ function TemplateRow({
   outsideSet,
   value,
   missing,
+  error,
+  changed,
+  originalValue,
+  hasOriginal,
   onChange,
   onRemove,
 }: {
@@ -806,20 +1071,54 @@ function TemplateRow({
   outsideSet: boolean;
   value: FieldValue | undefined;
   missing: boolean;
+  /** ข้อความตรวจค่าแบบ real-time (Zod) · null = ผ่าน */
+  error: string | null;
+  /** ค่าต่างจากฉบับเดิม (โหมดแก้/โคลน) */
+  changed: boolean;
+  originalValue: unknown;
+  hasOriginal: boolean;
   onChange: (value: FieldValue) => void;
   onRemove?: () => void;
 }) {
   const id = `field-${def.fieldName}`;
   const hint = def.description ?? formatModelSupport(def.supportedModels);
+  const errorId = `${id}-error`;
+  const originalText =
+    originalValue === undefined || originalValue === null
+      ? "-"
+      : typeof originalValue === "string"
+        ? originalValue
+        : JSON.stringify(originalValue);
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border p-3">
+    <div
+      className={cn(
+        "flex flex-col gap-1.5 rounded-lg border p-3 transition-colors duration-(--duration-base) ease-(--ease-standard)",
+        changed && "border-l-4 border-l-info bg-info-subtle/40",
+        error && "border-destructive/50",
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="flex flex-wrap items-center gap-1.5">
-          <Label htmlFor={id} className="font-mono text-xs">
+          <Label htmlFor={id} className="font-instrument text-xs">
             {def.fieldName}
             {required ? <span className="text-destructive"> *</span> : null}
           </Label>
+          {def.restartRequired && (
+            <span className="rounded-full bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
+              ต้อง Restart
+            </span>
+          )}
+          {def.sensitive && (
+            <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] whitespace-nowrap text-secondary-foreground">
+              อ่อนไหว
+            </span>
+          )}
+          {changed && (
+            <span className="rounded-full bg-info-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-info-foreground">
+              {hasOriginal ? "แก้ไขแล้ว" : "เพิ่มใหม่"}
+            </span>
+          )}
           {outsideSet && <OutsideSetBadge />}
         </span>
         {onRemove ? (
@@ -827,7 +1126,7 @@ function TemplateRow({
             type="button"
             onClick={onRemove}
             aria-label={`เอา ${def.fieldName} ออก`}
-            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <XIcon className="size-3.5" />
           </button>
@@ -836,6 +1135,11 @@ function TemplateRow({
         )}
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {(def.defaultValue !== null && !def.sensitive) && (
+        <p className="text-xs text-muted-foreground">
+          ค่าเริ่มต้น <span className="font-instrument">{def.defaultValue}</span>
+        </p>
+      )}
 
       {def.dataType === "boolean" ? (
         <label className="flex items-center gap-2 text-sm" htmlFor={id}>
@@ -852,7 +1156,12 @@ function TemplateRow({
             value={typeof value === "string" ? value : ""}
             onValueChange={(v) => onChange(v ?? "")}
           >
-            <SelectTrigger id={id} className="w-full" aria-invalid={missing ? true : undefined}>
+            <SelectTrigger
+              id={id}
+              className="w-full"
+              aria-invalid={missing ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
+            >
               <SelectValue placeholder="- เลือก -" />
             </SelectTrigger>
             <SelectContent>
@@ -872,6 +1181,7 @@ function TemplateRow({
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={missing ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
           />
           {def.unit && <UnitLabel unit={def.unit} />}
         </div>
@@ -883,9 +1193,22 @@ function TemplateRow({
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
             aria-invalid={missing ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            className={isNumericDataType(def.dataType) ? "font-instrument" : undefined}
           />
           {def.unit && <UnitLabel unit={def.unit} />}
         </div>
+      )}
+
+      {error && (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {changed && hasOriginal && !def.sensitive && (
+        <p className="text-xs text-muted-foreground">
+          ค่าเดิม <span className="font-instrument">{originalText}</span>
+        </p>
       )}
     </div>
   );
