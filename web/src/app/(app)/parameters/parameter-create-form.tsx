@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDownIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/components/auth/auth-provider";
+import { JsonView } from "@/components/json-editor";
 import { ApiError } from "@/lib/api";
 import {
   createConfigDefinition,
@@ -219,339 +219,310 @@ export function ParameterCreateForm({
   }
 
   const numeric = dataType === "integer" || dataType === "decimal";
-  const previewName = fieldName.trim() || "field_name";
-  const selectedCount = selectedModelNames.size;
-  const extrasCount =
-    [unit.trim(), defaultValue.trim()].filter(Boolean).length +
-    (allowedValues.length > 0 ? 1 : 0) +
-    [required, unknownSpec, stOverridable, sensitive].filter(Boolean).length;
 
-  const actions = (
-    <div className="flex flex-col gap-3">
-      {formError && (
-        <div role="alert" className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <span>{formError}</span>
-          {formErrorList.length > 0 && (
-            <ul className="list-disc pl-5 text-xs">
-              {formErrorList.map((msg, i) => (
-                <li key={i}>{msg}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="flex-1"
-          onClick={onCancel}
-          disabled={submitting}
-        >
-          ยกเลิก
-        </Button>
-        <Button type="submit" className="flex-1" loading={submitting}>
-          {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
-        </Button>
-      </div>
-    </div>
-  );
+  /** สิ่งที่จะส่งไป `POST /config-definitions` ตามค่าที่กรอกตอนนี้ (ใช้โชว์ให้เห็นสด) */
+  const payload: Record<string, unknown> = {
+    fieldName: fieldName.trim() || "",
+    dataType,
+    required,
+    ...(unknownSpec ? { unknownSpec: true } : {}),
+    ...(stOverridable ? { stOverridable: true } : {}),
+    ...(sensitive ? { sensitive: true } : {}),
+    ...(allowedValues.length ? { allowedValues } : {}),
+    ...(description.trim() ? { description: description.trim() } : {}),
+    ...(unit.trim() ? { unit: unit.trim() } : {}),
+    ...(!sensitive && defaultValue.trim() ? { defaultValue: defaultValue.trim() } : {}),
+    supportedModels: sortedModels
+      .filter((m) => selectedModelNames.has(m.name))
+      .flatMap((m) =>
+        m.supportedProtocols.map((protocol) => ({ deviceModel: m.name, protocol })),
+      ),
+  };
+  const missing = [
+    ...(fieldName.trim() ? [] : ["ชื่อ field"]),
+    ...(selectedModelNames.size > 0 ? [] : ["โมเดลที่รองรับ"]),
+  ];
 
   return (
-    <form
-      className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]"
-      onSubmit={handleSubmit}
-    >
-      <div className="flex min-w-0 flex-col gap-6">
-        <Card className="gap-5 p-6">
-          <SectionHeading title="1. ข้อมูลหลัก" hint="ใส่แค่ชื่อกับชนิดก็เริ่มได้" />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="param-name">ชื่อ field</Label>
-              <Input
-                id="param-name"
-                value={fieldName}
-                onChange={(e) => {
-                  setFieldName(e.target.value);
-                  clearErrors();
-                }}
-                placeholder="เช่น max_speed_alert"
-                autoComplete="off"
-                className="font-instrument"
-                aria-invalid={nameError ? true : undefined}
-              />
-              {nameError && (
-                <p className="text-xs text-destructive">{nameError}</p>
-              )}
-            </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <Card className="gap-0 overflow-hidden p-0">
+        <div className="border-b px-6 py-4">
+          <h2 className="text-base font-semibold">ข้อมูล Parameter</h2>
+          <p className="text-sm text-muted-foreground">
+            กรอกชื่อ ชนิดข้อมูล และเลือกโมเดล ส่วนที่เหลือไม่บังคับ
+          </p>
+        </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="param-datatype">ชนิดข้อมูล</Label>
-              <Select
-                value={dataType}
-                onValueChange={(value) => value && setDataType(value)}
-              >
-                <SelectTrigger id="param-datatype" className="w-full">
-                  <SelectValue>
-                    {(value: (typeof DATA_TYPES)[number]) =>
-                      DATA_TYPE_LABELS[value]
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {DATA_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {DATA_TYPE_LABELS[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="param-desc">คำอธิบาย (ไม่บังคับ)</Label>
-            <Input
-              id="param-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="อธิบายสั้นๆ ว่า field นี้ควบคุมอะไร"
-              autoComplete="off"
-            />
-          </div>
-        </Card>
-
-        <Card className="gap-4 p-6">
-          <SectionHeading
-            title="2. ใช้กับโมเดลไหน"
-            hint={
-              selectedCount > 0
-                ? `เลือกแล้ว ${selectedCount} จาก ${sortedModels.length} โมเดล`
-                : "เลือกอย่างน้อย 1 โมเดล"
-            }
-          />
-          <fieldset className="flex flex-col gap-2">
-            <legend className="sr-only">โมเดลที่รองรับ</legend>
-            {sortedModels.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                ยังไม่มีโมเดลในระบบ เพิ่มโมเดลก่อน
-              </p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {sortedModels.map((m) => (
-                  <label
-                    key={m.id}
-                    htmlFor={`param-model-${m.id}`}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:bg-muted/60 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
-                  >
-                    <Checkbox
-                      id={`param-model-${m.id}`}
-                      checked={selectedModelNames.has(m.name)}
-                      onCheckedChange={() => toggleModel(m.name)}
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="font-instrument">{m.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        ({m.supportedProtocols.join(", ")})
-                      </span>
-                    </span>
-                    {m.status === "discontinued" && (
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground">
-                        เลิกผลิต
-                      </span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            )}
-          </fieldset>
-        </Card>
-
-        <details className="group rounded-xl border bg-card">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl p-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
-            <span className="flex flex-col gap-0.5">
-              <span className="text-base font-semibold">ตั้งค่าเพิ่มเติม (ไม่บังคับ)</span>
-              <span className="text-sm text-muted-foreground">
-                หน่วย ค่าเริ่มต้น ค่าที่เลือกได้ และสิทธิ์การใช้งาน
-                {extrasCount > 0 && ` (ตั้งไว้ ${extrasCount} รายการ)`}
-              </span>
-            </span>
-            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-standard) group-open:rotate-180" />
-          </summary>
-
-          <div className="flex flex-col gap-6 border-t p-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="param-unit">หน่วย (ไม่บังคับ)</Label>
-                <Input
-                  id="param-unit"
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  placeholder='เช่น "วินาที", "%", "เมตร"'
-                  maxLength={20}
-                  autoComplete="off"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="param-default-value">
-                  ค่าเริ่มต้น (ไม่บังคับ)
-                </Label>
-                {sensitive ? (
-                  <p className="text-xs text-muted-foreground">
-                    field ที่ซ่อนค่าตั้งค่าเริ่มต้นไม่ได้ ป้องกันค่าอ่อนไหวรั่วผ่าน
-                    คลัง Parameter ที่หลาย Role เข้าถึงได้
-                  </p>
-                ) : dataType === "boolean" ? (
-                  <Select
-                    value={defaultValue}
-                    onValueChange={(value) => setDefaultValue(value ?? "")}
-                  >
-                    <SelectTrigger id="param-default-value" className="w-full">
-                      <SelectValue placeholder="- ไม่ตั้งค่าเริ่มต้น -" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true">true</SelectItem>
-                      <SelectItem value="false">false</SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : (
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_23rem]">
+          <div className="flex min-w-0 flex-col divide-y">
+            <section className="flex flex-col gap-4 p-6">
+              <SectionLabel>ข้อมูลหลัก</SectionLabel>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="param-name">ชื่อ field</Label>
                   <Input
-                    id="param-default-value"
-                    // แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2 — เดิมเช็ค
-                    // dataType === "number" ซึ่งเป็น dead code มาตั้งแต่ก่อน
-                    // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
-                    // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
-                    // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
-                    type={numeric ? "number" : "text"}
-                    value={defaultValue}
-                    onChange={(e) => setDefaultValue(e.target.value)}
-                    placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"
-                    maxLength={255}
+                    id="param-name"
+                    value={fieldName}
+                    onChange={(e) => {
+                      setFieldName(e.target.value);
+                      clearErrors();
+                    }}
+                    placeholder="เช่น max_speed_alert"
                     autoComplete="off"
                     className="font-instrument"
+                    aria-invalid={nameError ? true : undefined}
                   />
-                )}
+                  {nameError && (
+                    <p className="text-xs text-destructive">{nameError}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="param-datatype">ชนิดข้อมูล</Label>
+                  <Select
+                    value={dataType}
+                    onValueChange={(value) => value && setDataType(value)}
+                  >
+                    <SelectTrigger id="param-datatype" className="w-full">
+                      <SelectValue>
+                        {(value: (typeof DATA_TYPES)[number]) =>
+                          DATA_TYPE_LABELS[value]
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DATA_TYPES.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {DATA_TYPE_LABELS[t]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <Label htmlFor="param-desc">คำอธิบาย (ไม่บังคับ)</Label>
+                  <Input
+                    id="param-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="อธิบายสั้นๆ ว่า field นี้ควบคุมอะไร"
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="param-unit">หน่วย (ไม่บังคับ)</Label>
+                  <Input
+                    id="param-unit"
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    placeholder='เช่น "วินาที", "%", "เมตร"'
+                    maxLength={20}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="param-default-value">
+                    ค่าเริ่มต้น (ไม่บังคับ)
+                  </Label>
+                  {sensitive ? (
+                    <p className="rounded-lg border border-dashed px-2.5 py-1.5 text-xs text-muted-foreground">
+                      field ที่ซ่อนค่าตั้งค่าเริ่มต้นไม่ได้ กันค่าอ่อนไหวรั่วผ่านคลัง
+                      Parameter
+                    </p>
+                  ) : dataType === "boolean" ? (
+                    <Select
+                      value={defaultValue}
+                      onValueChange={(value) => setDefaultValue(value ?? "")}
+                    >
+                      <SelectTrigger id="param-default-value" className="w-full">
+                        <SelectValue placeholder="- ไม่ตั้งค่าเริ่มต้น -" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">true</SelectItem>
+                        <SelectItem value="false">false</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="param-default-value"
+                      // แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2 — เดิมเช็ค
+                      // dataType === "number" ซึ่งเป็น dead code มาตั้งแต่ก่อน
+                      // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
+                      // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
+                      // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
+                      type={numeric ? "number" : "text"}
+                      value={defaultValue}
+                      onChange={(e) => setDefaultValue(e.target.value)}
+                      placeholder="ค่าที่ใช้บ่อยที่สุด"
+                      maxLength={255}
+                      autoComplete="off"
+                      className="font-instrument"
+                    />
+                  )}
+                </div>
               </div>
-            </div>
+            </section>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="param-allowed">
-                ค่าที่เลือกได้ (ไม่บังคับ){" "}
-                {allowedValues.length > 0 && (
-                  <span className="font-normal text-muted-foreground tabular-nums">
-                    {allowedValues.length} ค่า
-                  </span>
+            <section className="flex flex-col gap-3 p-6">
+              <SectionLabel>
+                โมเดลที่รองรับ{" "}
+                <span className="tabular-nums">
+                  ({selectedModelNames.size}/{sortedModels.length})
+                </span>
+              </SectionLabel>
+              <fieldset className="flex flex-col gap-2">
+                <legend className="sr-only">โมเดลที่รองรับ</legend>
+                {sortedModels.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    ยังไม่มีโมเดลในระบบ เพิ่มโมเดลก่อน
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {sortedModels.map((m) => (
+                      <label
+                        key={m.id}
+                        htmlFor={`param-model-${m.id}`}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:bg-muted/60 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
+                      >
+                        <Checkbox
+                          id={`param-model-${m.id}`}
+                          checked={selectedModelNames.has(m.name)}
+                          onCheckedChange={() => toggleModel(m.name)}
+                        />
+                        <span className="font-instrument">{m.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({m.supportedProtocols.join(", ")})
+                        </span>
+                        {m.status === "discontinued" && (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground">
+                            เลิกผลิต
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
                 )}
-              </Label>
-              <textarea
-                id="param-allowed"
-                value={allowedText}
-                onChange={(e) => setAllowedText(e.target.value)}
-                rows={4}
-                spellCheck={false}
-                placeholder={"พิมพ์ 1 ค่าต่อ 1 บรรทัด เช่น\nauto\n2g\n4g"}
-                className="min-h-24 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-instrument text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-              />
+              </fieldset>
+            </section>
+
+            <section className="flex flex-col gap-3 p-6">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="param-allowed">
+                  ค่าที่เลือกได้ (ไม่บังคับ){" "}
+                  {allowedValues.length > 0 && (
+                    <span className="font-normal text-muted-foreground tabular-nums">
+                      {allowedValues.length} ค่า
+                    </span>
+                  )}
+                </Label>
+                <textarea
+                  id="param-allowed"
+                  value={allowedText}
+                  onChange={(e) => setAllowedText(e.target.value)}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder={"พิมพ์ 1 ค่าต่อ 1 บรรทัด เช่น\nauto\n2g\n4g"}
+                  className="min-h-20 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-instrument text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                />
+                <p className="text-xs text-muted-foreground">
+                  ถ้าเว้นว่าง ผู้ใช้กรอกค่าอะไรก็ได้ตามชนิดข้อมูล
+                </p>
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3 p-6">
+              <SectionLabel>พฤติกรรม</SectionLabel>
+              <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                <FlagRow
+                  id="param-required"
+                  checked={required}
+                  onChange={setRequired}
+                  label="ต้องกรอก (บังคับกรอก)"
+                  hint="ผู้สร้าง Config ต้องใส่ค่านี้ทุกครั้ง"
+                />
+                <FlagRow
+                  id="param-st-overridable"
+                  checked={stOverridable}
+                  onChange={setStOverridable}
+                  label="ช่างหน้างาน (ST) แก้ค่าบนเครื่องได้"
+                  hint="ช่าง OT แก้ไม่ได้"
+                />
+                <FlagRow
+                  id="param-sensitive"
+                  checked={sensitive}
+                  onChange={setSensitive}
+                  label="ซ่อนค่า (ค่าอ่อนไหว เช่น รหัสผ่าน)"
+                  hint="ซ่อนบนหน้าจอ และตั้งค่าเริ่มต้นไม่ได้"
+                />
+                <FlagRow
+                  id="param-unknown-spec"
+                  checked={unknownSpec}
+                  onChange={setUnknownSpec}
+                  label="ยังไม่ยืนยันรายละเอียด"
+                  hint="รู้แค่ชื่อกับชนิดข้อมูล ติดป้ายไว้ให้รู้"
+                />
+              </div>
+            </section>
+          </div>
+
+          <aside className="min-w-0 border-t bg-surface-sunken lg:border-t-0 lg:border-l">
+            <div className="flex flex-col gap-3 p-6 lg:sticky lg:top-16">
+              <SectionLabel>Definition</SectionLabel>
               <p className="text-xs text-muted-foreground">
-                ถ้าเว้นว่าง ผู้ใช้กรอกค่าอะไรก็ได้ตามชนิดข้อมูล
+                ข้อมูลที่จะบันทึก อัปเดตตามที่กรอก
               </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium">สิทธิ์และพฤติกรรม</span>
-              <FlagRow
-                id="param-required"
-                checked={required}
-                onChange={setRequired}
-                label="ต้องกรอก (บังคับกรอก)"
-                hint="ผู้สร้าง Config ต้องใส่ค่านี้ทุกครั้ง"
-              />
-              <FlagRow
-                id="param-st-overridable"
-                checked={stOverridable}
-                onChange={setStOverridable}
-                label="ช่างหน้างาน (ST) แก้ค่าบนเครื่องได้"
-                hint="ช่าง OT แก้ไม่ได้"
-              />
-              <FlagRow
-                id="param-sensitive"
-                checked={sensitive}
-                onChange={setSensitive}
-                label="ซ่อนค่า (ค่าอ่อนไหว เช่น รหัสผ่าน)"
-                hint="ซ่อนบนหน้าจอ และตั้งค่าเริ่มต้นไม่ได้"
-              />
-              <FlagRow
-                id="param-unknown-spec"
-                checked={unknownSpec}
-                onChange={setUnknownSpec}
-                label="ยังไม่ยืนยันรายละเอียด"
-                hint="รู้แค่ชื่อกับชนิดข้อมูล ติดป้ายไว้ให้รู้"
+              <JsonView
+                label="Definition ที่จะบันทึก"
+                value={JSON.stringify(payload, null, 2)}
+                className="max-h-[28rem]"
               />
             </div>
-          </div>
-        </details>
+          </aside>
+        </div>
+      </Card>
 
-      </div>
-
-      <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24">
-        <Card className="gap-3 p-5" aria-hidden>
-          <SectionHeading title="พรีวิวในหน้าสร้าง Config" hint="ช่องกรอกจะหน้าตาประมาณนี้" />
-          <div className="flex flex-col gap-1.5 rounded-lg border p-3">
-            <span className="flex flex-wrap items-center gap-1.5">
-              <span className="font-instrument text-xs">
-                {previewName}
-                {required && <span className="text-destructive"> *</span>}
-              </span>
-              {sensitive && (
-                <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
-                  อ่อนไหว
-                </span>
+      <div className="sticky bottom-0 z-(--z-sticky) -mx-4 flex flex-wrap items-center justify-between gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="min-w-0 text-sm">
+          {formError ? (
+            <div role="alert" className="flex flex-col gap-0.5 text-destructive">
+              <span>{formError}</span>
+              {formErrorList.length > 0 && (
+                <ul className="list-disc pl-5 text-xs">
+                  {formErrorList.map((msg, i) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </ul>
               )}
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {missing.length > 0 ? `ยังขาด: ${missing.join(", ")}` : "ข้อมูลครบ พร้อมบันทึก"}
             </span>
-            {description.trim() && (
-              <span className="text-xs text-muted-foreground">
-                {description.trim()}
-              </span>
-            )}
-            {dataType === "boolean" ? (
-              <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="inline-block size-4 rounded-[4px] border border-muted-foreground/60" />
-                เปิดใช้งาน
-              </span>
-            ) : allowedValues.length > 0 ? (
-              <span className="flex h-8 items-center justify-between rounded-lg border border-input px-2.5 text-sm text-muted-foreground">
-                {defaultValue && allowedValues.includes(defaultValue)
-                  ? defaultValue
-                  : "- เลือก -"}
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span className="flex h-8 flex-1 items-center rounded-lg border border-input px-2.5 font-instrument text-sm text-muted-foreground">
-                  {sensitive ? "••••••" : defaultValue || "\u00A0"}
-                </span>
-                {unit.trim() && (
-                  <span className="text-xs text-muted-foreground">
-                    {unit.trim()}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        </Card>
-        {actions}
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            ยกเลิก
+          </Button>
+          <Button type="submit" loading={submitting}>
+            {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
+          </Button>
+        </div>
       </div>
     </form>
   );
 }
 
-function SectionHeading({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="text-sm text-muted-foreground">{hint}</p>
-    </div>
-  );
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <h3 className="label-caps text-muted-foreground">{children}</h3>;
 }
 
 function FlagRow({
@@ -568,10 +539,7 @@ function FlagRow({
   hint?: string;
 }) {
   return (
-    <label
-      htmlFor={id}
-      className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors duration-(--duration-fast) ease-(--ease-standard) hover:bg-muted/60 has-[[data-checked]]:border-primary has-[[data-checked]]:bg-primary/5"
-    >
+    <label htmlFor={id} className="flex cursor-pointer items-start gap-2.5 text-sm">
       <Checkbox
         id={id}
         className="mt-0.5"

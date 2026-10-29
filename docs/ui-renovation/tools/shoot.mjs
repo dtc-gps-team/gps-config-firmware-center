@@ -107,7 +107,10 @@ const targets = {
     act: async (page) => {
       await page.locator("#param-name").fill("report_interval");
       await page.locator("#param-desc").fill("ช่วงเวลารายงานตำแหน่ง");
+      await page.locator("#param-unit").fill("วินาที");
+      await page.locator("#param-allowed").fill("30\n60\n120");
       await page.getByRole("checkbox", { name: /BB-200/ }).click();
+      await page.getByRole("checkbox", { name: /ต้องกรอก/ }).click();
     },
   },
   "parameters-list": { url: "/parameters", w: 1440, h: 900 },
