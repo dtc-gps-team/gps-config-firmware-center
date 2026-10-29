@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PlusIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -43,16 +43,16 @@ const DATA_TYPES = [
 ] as const;
 
 const DATA_TYPE_LABELS: Record<(typeof DATA_TYPES)[number], string> = {
-  integer: "integer: จำนวนเต็ม",
-  decimal: "decimal: จำนวนทศนิยม",
-  string: "string: ข้อความสั้น",
-  text: "text: ข้อความยาว",
-  boolean: "boolean: จริง/เท็จ",
-  date: "date: วันที่ (YYYY-MM-DD)",
-  datetime: "datetime: วันที่เวลา (ISO 8601)",
-  json: "json: ออบเจกต์ JSON",
-  array: "array: รายการค่า (JSON array)",
-  uuid: "uuid: รหัส UUID",
+  integer: "จำนวนเต็ม (integer)",
+  decimal: "ทศนิยม (decimal)",
+  string: "ข้อความสั้น (string)",
+  text: "ข้อความยาว (text)",
+  boolean: "เปิด/ปิด (boolean)",
+  date: "วันที่ YYYY-MM-DD (date)",
+  datetime: "วันที่และเวลา ISO 8601 (datetime)",
+  json: "ออบเจกต์ JSON (json)",
+  array: "รายการค่า JSON array (array)",
+  uuid: "รหัส UUID (uuid)",
 };
 
 type Props = {
@@ -96,8 +96,19 @@ export function ParameterCreateForm({
   const [sensitive, setSensitive] = useState(false);
   const [unit, setUnit] = useState("");
   const [defaultValue, setDefaultValue] = useState("");
-  const [allowedValues, setAllowedValues] = useState<string[]>([]);
-  const [optionDraft, setOptionDraft] = useState("");
+  // ค่าที่ยอมรับ: พิมพ์หนึ่งค่าต่อบรรทัด (ตัดช่องว่าง ตัดบรรทัดว่าง ตัดค่าซ้ำ)
+  const [allowedText, setAllowedText] = useState("");
+  const allowedValues = useMemo(
+    () => [
+      ...new Set(
+        allowedText
+          .split("\n")
+          .map((v) => v.trim())
+          .filter(Boolean),
+      ),
+    ],
+    [allowedText],
+  );
   const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(
     new Set(),
   );
@@ -126,20 +137,6 @@ export function ParameterCreateForm({
       else next.add(name);
       return next;
     });
-  }
-
-  function addOption() {
-    const v = optionDraft.trim();
-    if (!v || allowedValues.includes(v)) {
-      setOptionDraft("");
-      return;
-    }
-    setAllowedValues((prev) => [...prev, v]);
-    setOptionDraft("");
-  }
-
-  function removeOption(v: string) {
-    setAllowedValues((prev) => prev.filter((x) => x !== v));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -223,15 +220,50 @@ export function ParameterCreateForm({
   const numeric = dataType === "integer" || dataType === "decimal";
   const previewName = fieldName.trim() || "field_name";
   const selectedCount = selectedModelNames.size;
+  const extrasCount =
+    [unit.trim(), defaultValue.trim()].filter(Boolean).length +
+    (allowedValues.length > 0 ? 1 : 0) +
+    [required, unknownSpec, stOverridable, sensitive].filter(Boolean).length;
+
+  const actions = (
+    <div className="flex flex-col gap-3">
+      {formError && (
+        <div role="alert" className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{formError}</span>
+          {formErrorList.length > 0 && (
+            <ul className="list-disc pl-5 text-xs">
+              {formErrorList.map((msg, i) => (
+                <li key={i}>{msg}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          ยกเลิก
+        </Button>
+        <Button type="submit" className="flex-1" loading={submitting}>
+          {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <form
-      className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"
+      className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]"
       onSubmit={handleSubmit}
     >
       <div className="flex min-w-0 flex-col gap-6">
         <Card className="gap-5 p-6">
-          <SectionHeading title="ข้อมูลหลัก" hint="ชื่อ ชนิดข้อมูล และคำอธิบายที่ผู้สร้าง Config จะเห็น" />
+          <SectionHeading title="1. ข้อมูลหลัก" hint="ใส่แค่ชื่อกับชนิดก็เริ่มได้" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="param-name">ชื่อ field</Label>
@@ -286,121 +318,11 @@ export function ParameterCreateForm({
               autoComplete="off"
             />
           </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="param-unit">หน่วย (ไม่บังคับ)</Label>
-            <Input
-              id="param-unit"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder='เช่น "วินาที", "%", "เมตร"'
-              maxLength={20}
-              autoComplete="off"
-              className="sm:max-w-56"
-            />
-          </div>
-        </Card>
-
-        <Card className="gap-5 p-6">
-          <SectionHeading title="ค่า" hint="ค่าเริ่มต้นที่เติมให้ตอนสร้าง Config ใหม่ และชุดค่าที่ยอมรับ" />
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="param-default-value">
-              ค่าเริ่มต้น (Default Value, ไม่บังคับ)
-            </Label>
-            {sensitive ? (
-              <p className="text-xs text-muted-foreground">
-                field ที่เป็น Sensitive ตั้งค่าเริ่มต้นไม่ได้ ป้องกันค่าอ่อนไหวรั่วผ่าน
-                คลัง Parameter ที่หลาย Role เข้าถึงได้
-              </p>
-            ) : dataType === "boolean" ? (
-              <Select
-                value={defaultValue}
-                onValueChange={(value) => setDefaultValue(value ?? "")}
-              >
-                <SelectTrigger
-                  id="param-default-value"
-                  className="w-full sm:max-w-56"
-                >
-                  <SelectValue placeholder="- ไม่ตั้งค่าเริ่มต้น -" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="true">true</SelectItem>
-                  <SelectItem value="false">false</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id="param-default-value"
-                // แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2 — เดิมเช็ค
-                // dataType === "number" ซึ่งเป็น dead code มาตั้งแต่ก่อน
-                // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
-                // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
-                // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
-                type={numeric ? "number" : "text"}
-                value={defaultValue}
-                onChange={(e) => setDefaultValue(e.target.value)}
-                placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"
-                maxLength={255}
-                autoComplete="off"
-                className="font-instrument sm:max-w-56"
-              />
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="param-option-draft">
-              ค่าที่ยอมรับ (ไม่บังคับ ถ้าว่างคือไม่จำกัดค่า)
-            </Label>
-            {allowedValues.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {allowedValues.map((v) => (
-                  <span
-                    key={v}
-                    className="inline-flex items-center gap-1 rounded-md border border-input bg-surface-sunken px-2 py-0.5 font-instrument text-xs"
-                  >
-                    {v}
-                    <button
-                      type="button"
-                      onClick={() => removeOption(v)}
-                      className="rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-                      aria-label={`ลบตัวเลือก ${v}`}
-                    >
-                      <XIcon className="size-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Input
-                id="param-option-draft"
-                value={optionDraft}
-                onChange={(e) => setOptionDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addOption();
-                  }
-                }}
-                placeholder="พิมพ์ตัวเลือกแล้วกด Enter"
-                autoComplete="off"
-                className="sm:max-w-64"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addOption}
-              >
-                <PlusIcon className="size-3.5" /> เพิ่ม
-              </Button>
-            </div>
-          </div>
         </Card>
 
         <Card className="gap-4 p-6">
           <SectionHeading
-            title="โมเดลที่รองรับ"
+            title="2. ใช้กับโมเดลไหน"
             hint={
               selectedCount > 0
                 ? `เลือกแล้ว ${selectedCount} จาก ${sortedModels.length} โมเดล`
@@ -443,39 +365,135 @@ export function ParameterCreateForm({
             )}
           </fieldset>
         </Card>
+
+        <details className="group rounded-xl border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl p-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+            <span className="flex flex-col gap-0.5">
+              <span className="text-base font-semibold">ตั้งค่าเพิ่มเติม (ไม่บังคับ)</span>
+              <span className="text-sm text-muted-foreground">
+                หน่วย ค่าเริ่มต้น ค่าที่เลือกได้ และสิทธิ์การใช้งาน
+                {extrasCount > 0 && ` (ตั้งไว้ ${extrasCount} รายการ)`}
+              </span>
+            </span>
+            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) ease-(--ease-standard) group-open:rotate-180" />
+          </summary>
+
+          <div className="flex flex-col gap-6 border-t p-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="param-unit">หน่วย (ไม่บังคับ)</Label>
+                <Input
+                  id="param-unit"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  placeholder='เช่น "วินาที", "%", "เมตร"'
+                  maxLength={20}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="param-default-value">
+                  ค่าเริ่มต้น (ไม่บังคับ)
+                </Label>
+                {sensitive ? (
+                  <p className="text-xs text-muted-foreground">
+                    field ที่ซ่อนค่าตั้งค่าเริ่มต้นไม่ได้ ป้องกันค่าอ่อนไหวรั่วผ่าน
+                    คลัง Parameter ที่หลาย Role เข้าถึงได้
+                  </p>
+                ) : dataType === "boolean" ? (
+                  <Select
+                    value={defaultValue}
+                    onValueChange={(value) => setDefaultValue(value ?? "")}
+                  >
+                    <SelectTrigger id="param-default-value" className="w-full">
+                      <SelectValue placeholder="- ไม่ตั้งค่าเริ่มต้น -" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">true</SelectItem>
+                      <SelectItem value="false">false</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="param-default-value"
+                    // แก้ตามรีวิว B บน PR #255 ข้อ 3 รอบ 2 — เดิมเช็ค
+                    // dataType === "number" ซึ่งเป็น dead code มาตั้งแต่ก่อน
+                    // งานขยายชุด dataType (ชุดตัวเลือกใน DATA_TYPES ด้านบน
+                    // ไม่มี "number" อีกแล้ว ค่า state จึงเป็นค่านี้ไม่ได้)
+                    // เปลี่ยนให้ตรงกับชุดตัวเลขจริงปัจจุบันแทน
+                    type={numeric ? "number" : "text"}
+                    value={defaultValue}
+                    onChange={(e) => setDefaultValue(e.target.value)}
+                    placeholder="เช่น ค่าที่ใช้บ่อยที่สุด"
+                    maxLength={255}
+                    autoComplete="off"
+                    className="font-instrument"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="param-allowed">
+                ค่าที่เลือกได้ (ไม่บังคับ){" "}
+                {allowedValues.length > 0 && (
+                  <span className="font-normal text-muted-foreground tabular-nums">
+                    {allowedValues.length} ค่า
+                  </span>
+                )}
+              </Label>
+              <textarea
+                id="param-allowed"
+                value={allowedText}
+                onChange={(e) => setAllowedText(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                placeholder={"พิมพ์ 1 ค่าต่อ 1 บรรทัด เช่น\nauto\n2g\n4g"}
+                className="min-h-24 resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-instrument text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              />
+              <p className="text-xs text-muted-foreground">
+                ถ้าเว้นว่าง ผู้ใช้กรอกค่าอะไรก็ได้ตามชนิดข้อมูล
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">สิทธิ์และพฤติกรรม</span>
+              <FlagRow
+                id="param-required"
+                checked={required}
+                onChange={setRequired}
+                label="ต้องกรอก (บังคับกรอก)"
+                hint="ผู้สร้าง Config ต้องใส่ค่านี้ทุกครั้ง"
+              />
+              <FlagRow
+                id="param-st-overridable"
+                checked={stOverridable}
+                onChange={setStOverridable}
+                label="ช่างหน้างาน (ST) แก้ค่าบนเครื่องได้"
+                hint="ช่าง OT แก้ไม่ได้"
+              />
+              <FlagRow
+                id="param-sensitive"
+                checked={sensitive}
+                onChange={setSensitive}
+                label="ซ่อนค่า (ค่าอ่อนไหว เช่น รหัสผ่าน)"
+                hint="ซ่อนบนหน้าจอ และตั้งค่าเริ่มต้นไม่ได้"
+              />
+              <FlagRow
+                id="param-unknown-spec"
+                checked={unknownSpec}
+                onChange={setUnknownSpec}
+                label="ยังไม่ยืนยันรายละเอียด"
+                hint="รู้แค่ชื่อกับชนิดข้อมูล ติดป้ายไว้ให้รู้"
+              />
+            </div>
+          </div>
+        </details>
+
       </div>
 
-      <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
-        <Card className="gap-3 p-5">
-          <SectionHeading title="ตัวเลือก" hint="กำหนดพฤติกรรมของ field นี้" />
-          <FlagRow
-            id="param-required"
-            checked={required}
-            onChange={setRequired}
-            label="บังคับกรอก (required)"
-            hint="ผู้สร้าง Config ต้องใส่ค่านี้ทุกครั้ง"
-          />
-          <FlagRow
-            id="param-unknown-spec"
-            checked={unknownSpec}
-            onChange={setUnknownSpec}
-            label="ยังไม่มี spec ครบ (รู้แค่ชื่อ + ชนิดข้อมูล)"
-            hint="ติดป้ายไว้ให้รู้ว่ายังไม่ยืนยันรายละเอียด"
-          />
-          <FlagRow
-            id="param-st-overridable"
-            checked={stOverridable}
-            onChange={setStOverridable}
-            label="ST override ได้ (แก้ค่าบนอุปกรณ์หน้างานได้, OT ไม่มีสิทธิ์นี้)"
-          />
-          <FlagRow
-            id="param-sensitive"
-            checked={sensitive}
-            onChange={setSensitive}
-            label="ค่าอ่อนไหว (Sensitive: เช่นรหัสผ่าน ซ่อนค่าบนหน้าจอ)"
-          />
-        </Card>
-
+      <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24">
         <Card className="gap-3 p-5" aria-hidden>
           <SectionHeading title="พรีวิวในหน้าสร้าง Config" hint="ช่องกรอกจะหน้าตาประมาณนี้" />
           <div className="flex flex-col gap-1.5 rounded-lg border p-3">
@@ -509,7 +527,7 @@ export function ParameterCreateForm({
             ) : (
               <span className="flex items-center gap-2">
                 <span className="flex h-8 flex-1 items-center rounded-lg border border-input px-2.5 font-instrument text-sm text-muted-foreground">
-                  {sensitive ? "••••••" : defaultValue || " "}
+                  {sensitive ? "••••••" : defaultValue || "\u00A0"}
                 </span>
                 {unit.trim() && (
                   <span className="text-xs text-muted-foreground">
@@ -520,35 +538,7 @@ export function ParameterCreateForm({
             )}
           </div>
         </Card>
-      </div>
-
-      <div className="flex flex-col gap-4 lg:col-span-2">
-        {formError && (
-          <div role="alert" className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            <span>{formError}</span>
-            {formErrorList.length > 0 && (
-              <ul className="list-disc pl-5 text-xs">
-                {formErrorList.map((msg, i) => (
-                  <li key={i}>{msg}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 border-t pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={submitting}
-          >
-            ยกเลิก
-          </Button>
-          <Button type="submit" loading={submitting}>
-            {submitting ? "กำลังบันทึก…" : "บันทึก Parameter"}
-          </Button>
-        </div>
+        {actions}
       </div>
     </form>
   );

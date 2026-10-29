@@ -60,7 +60,7 @@ describe("ParameterCreateForm", () => {
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "report_interval" } });
     fireEvent.change(screen.getByLabelText("หน่วย (ไม่บังคับ)"), { target: { value: "วินาที" } });
     await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
-    await user.click(screen.getByRole("checkbox", { name: /บังคับกรอก/ }));
+    await user.click(screen.getByRole("checkbox", { name: /ต้องกรอก/ }));
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
 
     await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
@@ -74,16 +74,32 @@ describe("ParameterCreateForm", () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
   });
 
+  it("takes allowed values one per line, trimmed and de-duplicated", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "network_mode" } });
+    fireEvent.change(screen.getByLabelText(/ค่าที่เลือกได้/), {
+      target: { value: "auto\n 2g \n\n4g\nauto" },
+    });
+    expect(screen.getByText("3 ค่า")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+
+    await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+    expect(createConfigDefinition.mock.calls[0][1].allowedValues).toEqual(["auto", "2g", "4g"]);
+  });
+
   it("does not send a default value for sensitive fields and hides it from the preview", async () => {
     const user = userEvent.setup();
     setup();
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "pw" } });
-    fireEvent.change(screen.getByLabelText(/ค่าเริ่มต้น/), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("ค่าเริ่มต้น (ไม่บังคับ)"), { target: { value: "secret" } });
     await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
-    await user.click(screen.getByRole("checkbox", { name: /ค่าอ่อนไหว/ }));
+    await user.click(screen.getByRole("checkbox", { name: /ซ่อนค่า/ }));
 
-    expect(screen.queryByLabelText(/ค่าเริ่มต้น/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("ค่าเริ่มต้น (ไม่บังคับ)")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
     await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
     expect(createConfigDefinition.mock.calls[0][1]).not.toHaveProperty("defaultValue");

@@ -108,9 +108,10 @@ const targets = {
       await page.getByRole("button", { name: /สร้าง Parameter ใหม่/ }).first().click();
       await page.locator("#param-name").fill("report_interval");
       await page.locator("#param-desc").fill("ช่วงเวลารายงานตำแหน่ง");
-      await page.locator("#param-unit").fill("วินาที");
       await page.getByRole("checkbox", { name: /BB-200/ }).click();
-      await page.getByRole("checkbox", { name: /บังคับกรอก/ }).click();
+      await page.locator("summary").click();
+      await page.locator("#param-unit").fill("วินาที");
+      await page.getByRole("checkbox", { name: /ต้องกรอก/ }).click();
     },
   },
   "config-detail": { url: "/config/c2?tab=versions", w: 1440, h: 900, extra: ["mobile"] },
