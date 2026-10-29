@@ -186,10 +186,11 @@ export function UploadFirmwareForm({
             placeholder="เช่น GT06N"
             onChange={(e) => setDeviceModel(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            เพิ่มโมเดลอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
-          </p>
         </div>
+
+        <p className="text-xs text-muted-foreground sm:col-span-2">
+          เพิ่มโมเดลอื่นที่รองรับด้วยได้ทีหลังในหน้ารายละเอียด (Compatibility Tag)
+        </p>
       </div>
 
       {formError && (

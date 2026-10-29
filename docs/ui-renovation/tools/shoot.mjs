@@ -100,6 +100,16 @@ const targets = {
     },
   },
   firmware: { url: "/firmware", w: 1440, h: 900 },
+  "firmware-upload": {
+    url: "/firmware",
+    w: 1440,
+    h: 900,
+    role: "FirmwareEngineer",
+    act: async (page) => {
+      await page.getByRole("button", { name: /อัปโหลด Firmware/ }).first().click();
+      await page.waitForTimeout(500);
+    },
+  },
   "parameter-new": {
     url: "/parameters/new",
     w: 1440,
