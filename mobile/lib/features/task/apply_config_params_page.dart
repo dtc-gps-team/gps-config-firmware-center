@@ -209,10 +209,12 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(authControllerProvider).role;
-    // ปุ่มในแอปพามาได้เฉพาะช่าง — role อื่นมาจากลิงก์ตรง บอกว่าไม่มีสิทธิ์ ไม่โหลด
-    final locked = role != null && !isFieldStaff(role);
-    final optionsAsync = locked
+    final auth = ref.watch(authControllerProvider);
+    final role = auth.role;
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    // รอ restore ก่อน; role ว่างหลัง restore หรือ role อื่นให้ปิดกั้นและไม่โหลด API
+    final locked = !rolePending && (role == null || !isFieldStaff(role));
+    final optionsAsync = rolePending || locked
         ? null
         : ref.watch(deviceApplyOptionsProvider(widget.deviceId));
     final options = optionsAsync?.valueOrNull;
@@ -245,7 +247,11 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
               onBack: navigator.canPop() ? navigator.pop : null,
             ),
             Expanded(
-              child: optionsAsync == null
+              child: rolePending
+                  ? const AppDetailSkeleton(
+                      padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    )
+                  : optionsAsync == null
                   ? const AppRoleLockedView()
                   : optionsAsync.when(
                       skipLoadingOnRefresh: true,

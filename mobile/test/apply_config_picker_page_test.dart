@@ -150,7 +150,7 @@ void main() {
   Future<GoRouter> pump(
     WidgetTester tester, {
     required String startAt,
-    UserRole role = UserRole.st,
+    UserRole? role = UserRole.st,
   }) async {
     tester.view.physicalSize = const Size(1080, 4000);
     tester.view.devicePixelRatio = 2;
@@ -691,6 +691,27 @@ void main() {
       },
     );
 
+    testWidgets('ระหว่างยืนยันถอยเวอร์ชัน -> ปุ่มถูกปิดจนกว่าจะยืนยัน', (
+      tester,
+    ) async {
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1', taskId: 't1'));
+      await openFirmwareTab(tester);
+      await tester.tap(firmware('fw-1.0.0'));
+      await tester.pump();
+
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('confirm_downgrade')), findsOneWidget);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+
+      expect(applyRepo.createCalls, 0);
+
+      await tester.tap(find.byKey(const Key('confirm_downgrade')));
+      await tester.pumpAndSettle();
+      expect(applyRepo.createCalls, 1);
+      expect(applyRepo.lastCreateFirmwareId, 'fw-1.0.0');
+    });
+
     testWidgets('เปิดด้วย ?kind=firmware -> อยู่แท็บ Firmware เลย', (
       tester,
     ) async {
@@ -1094,6 +1115,32 @@ void main() {
         tester,
         startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
         role: UserRole.operation,
+      );
+
+      expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+      expect(submit, findsNothing);
+      expect(applyRepo.optionsCalls, 0);
+    });
+
+    testWidgets(
+      'role null หลัง restore -> หน้าเลือกล็อก ไม่โหลด apply-options',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'), role: null);
+
+        expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+        expect(option('cfg-1'), findsNothing);
+        expect(applyRepo.optionsCalls, 0);
+        expect(submit, findsNothing);
+      },
+    );
+
+    testWidgets('role null -> หน้าพารามิเตอร์ไม่โหลด API และไม่มีปุ่มส่ง', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        role: null,
       );
 
       expect(find.byKey(const Key('app_role_locked')), findsOneWidget);

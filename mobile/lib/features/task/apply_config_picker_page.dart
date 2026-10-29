@@ -65,6 +65,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
   late FieldApplyKind _kind = widget.initialKind;
   String? _selectedFirmwareId;
   bool _submitting = false;
+  bool _confirmingDowngrade = false;
   String? _error;
 
   /// งานที่เริ่มสำเร็จแล้วในหน้านี้ (กรณีเปิดจากหน้ากล่อง) — กดซ้ำไม่ต้องเริ่มใหม่
@@ -106,9 +107,16 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
     ApplyOptionFirmware firmware,
     String? currentVersion,
   ) async {
-    if (firmware.isDowngrade &&
-        !await _confirmDowngrade(currentVersion, firmware.version)) {
-      return;
+    if (_submitting || _confirmingDowngrade) return;
+    if (firmware.isDowngrade) {
+      setState(() => _confirmingDowngrade = true);
+      bool confirmed;
+      try {
+        confirmed = await _confirmDowngrade(currentVersion, firmware.version);
+      } finally {
+        if (mounted) setState(() => _confirmingDowngrade = false);
+      }
+      if (!confirmed) return;
     }
     await _submit(firmwareId: firmware.id);
   }
@@ -129,6 +137,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
 
   /// ทำงานที่เรียก backend — error ของ backend แสดงใต้ฟอร์ม
   Future<void> _run(Future<void> Function() action) async {
+    if (_submitting) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -192,10 +201,12 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(authControllerProvider).role;
-    // ปุ่มในแอปพามาได้เฉพาะช่าง — role อื่นมาจากลิงก์ตรง บอกว่าไม่มีสิทธิ์ ไม่โหลด
-    final locked = role != null && !isFieldStaff(role);
-    final optionsAsync = locked
+    final auth = ref.watch(authControllerProvider);
+    final role = auth.role;
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    // ปุ่มในแอปพามาได้เฉพาะช่าง — รอ restore ก่อน; role ว่างหลัง restore ให้ปิดกั้น
+    final locked = !rolePending && (role == null || !isFieldStaff(role));
+    final optionsAsync = rolePending || locked
         ? null
         : ref.watch(deviceApplyOptionsProvider(widget.deviceId));
     final options = optionsAsync?.valueOrNull;
@@ -221,7 +232,11 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
               onBack: navigator.canPop() ? navigator.pop : null,
             ),
             Expanded(
-              child: optionsAsync == null
+              child: rolePending
+                  ? const AppDetailSkeleton(
+                      padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    )
+                  : optionsAsync == null
                   ? const AppRoleLockedView()
                   : optionsAsync.when(
                       skipLoadingOnRefresh: true,
@@ -360,7 +375,7 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
           buttonKey: const Key('apply_submit_button'),
           label: 'ขออนุมัติ',
           submitting: _submitting,
-          onPressed: !canSubmit
+          onPressed: !canSubmit || _confirmingDowngrade
               ? null
               : () => _submitFirmware(
                   selectedFirmware,
