@@ -17,6 +17,7 @@ import 'package:mobile/core/ui/labels.dart';
 import 'package:mobile/core/ui/app_page_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
+import 'package:mobile/features/task/apply_request_history_page.dart';
 import 'package:mobile/features/task/task_detail_page.dart';
 import 'package:mobile/features/task/task_event_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -1568,17 +1569,75 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final history = find.byKey(const Key('apply_request_history'));
-      expect(history, findsOneWidget);
+      // ไม่อัดรายการไว้ในหน้างาน — เป็นปุ่มบอกจำนวนแล้วกดไปหน้าประวัติ
       expect(
-        find.descendant(
-          of: history,
-          matching: find.text(
-            configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
-          ),
+        find.text(
+          configApplyRequestStatusLabel(ConfigApplyRequestStatus.rejected),
         ),
+        findsNothing,
+      );
+      final button = find.byKey(const Key('apply_request_history'));
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(of: button, matching: find.text('ประวัติคำขอ')),
         findsOneWidget,
       );
+      expect(
+        find.descendant(of: button, matching: find.text('ก่อนหน้า 1 ครั้ง')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('กดปุ่มประวัติคำขอ -> ไปหน้าประวัติคำขอของงานนี้', (
+      tester,
+    ) async {
+      // ปุ่มอยู่ท้ายหน้างาน ใต้ขอบจอเทส 800x600
+      await tester.binding.setSurfaceSize(const Size(800, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final router = GoRouter(
+        initialLocation: AppRoutes.taskDetail('t1'),
+        routes: [
+          GoRoute(
+            path: AppRoutes.taskDetailPattern,
+            builder: (_, state) =>
+                TaskDetailPage(taskId: state.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: AppRoutes.taskRequestHistoryPattern,
+            builder: (_, state) => Scaffold(
+              body: Text('HISTORY_STUB ${state.pathParameters['id']}'),
+            ),
+          ),
+        ],
+      );
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              id: 'car-2',
+              status: ConfigApplyRequestStatus.succeeded,
+            ),
+            fakeApplyRequest(
+              id: 'car-1',
+              status: ConfigApplyRequestStatus.rejected,
+            ),
+          ],
+        ),
+        router: router,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const Key('apply_request_history')),
+      );
+      await tester.tap(find.byKey(const Key('apply_request_history')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('HISTORY_STUB t1'), findsOneWidget);
     });
 
     testWidgets(
@@ -1772,9 +1831,12 @@ void main() {
       },
     );
 
-    testWidgets('คำขอก่อนหน้าที่เป็น Firmware บอกเวอร์ชันในแถว', (
+    testWidgets('หน้าประวัติคำขอ: ทุกคำขอใหม่ไปเก่า + Firmware บอกเวอร์ชัน', (
       tester,
     ) async {
+      // ปุ่มอยู่ท้ายหน้างาน ใต้ขอบจอเทส 800x600
+      await tester.binding.setSurfaceSize(const Size(800, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await _pump(
         tester,
         repo: _FakeTaskRepository(
@@ -1794,10 +1856,40 @@ void main() {
             ),
           ],
         ),
+        router: GoRouter(
+          initialLocation: AppRoutes.taskDetail('t1'),
+          routes: [
+            GoRoute(
+              path: AppRoutes.taskDetailPattern,
+              builder: (_, state) =>
+                  TaskDetailPage(taskId: state.pathParameters['id']!),
+            ),
+            GoRoute(
+              path: AppRoutes.taskRequestHistoryPattern,
+              builder: (_, state) =>
+                  ApplyRequestHistoryPage(taskId: state.pathParameters['id']!),
+            ),
+          ],
+        ),
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('apply_request_history')),
+      );
+      await tester.tap(find.byKey(const Key('apply_request_history')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ประวัติคำขอ'), findsWidgets);
       expect(find.textContaining('Firmware v1.3.0'), findsOneWidget);
+      expect(
+        find.text(
+          configApplyRequestStatusLabel(ConfigApplyRequestStatus.succeeded),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('request_history_row_0')), findsOneWidget);
+      expect(find.byKey(const Key('request_history_row_1')), findsOneWidget);
     });
   });
 }
