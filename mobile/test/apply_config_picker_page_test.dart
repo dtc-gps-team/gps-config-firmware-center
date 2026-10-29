@@ -324,6 +324,33 @@ void main() {
       expect(find.byKey(const Key('apply_param_led.enabled')), findsNothing);
     });
 
+    testWidgets('ค่าที่ไม่มีนิยามในระบบ -> ซ่อนไว้ก่อนเหมือนค่าลับ แก้ไม่ได้', (
+      tester,
+    ) async {
+      applyRepo.options = fakeApplyOptions(
+        configs: const [
+          ApplyOptionConfig(
+            id: 'cfg-1',
+            name: 'BOX ส่งพิกัดทุก 10 วินาที',
+            latestVersion: 1,
+            suggested: true,
+            fields: {'gps.send_interval_sec': 10, 'vendor.secret': 'abc123'},
+          ),
+        ],
+      );
+      await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+      await openParams(tester, 'cfg-1');
+
+      final row = find.byKey(const Key('apply_param_row_vendor.secret'));
+      expect(row, findsOneWidget);
+      expect(find.textContaining('abc123'), findsNothing);
+      expect(
+        find.descendant(of: row, matching: find.text('••••')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('apply_param_vendor.secret')), findsNothing);
+    });
+
     testWidgets(
       'แก้ค่า -> ต้องกรอกเหตุผล แล้วขออนุมัติผ่าน Override ของ Config ที่เลือก (ไม่ส่งตรง)',
       (tester) async {

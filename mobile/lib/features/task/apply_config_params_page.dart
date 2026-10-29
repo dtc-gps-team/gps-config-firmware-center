@@ -510,7 +510,7 @@ class _ParamRowState extends State<_ParamRow> {
       key: key,
       controller: _controller,
       enabled: widget.enabled,
-      obscureText: def?.sensitive ?? false,
+      obscureText: def?.sensitive != false,
       onChanged: widget.onChanged,
       decoration: const InputDecoration(
         isDense: true,
@@ -575,7 +575,7 @@ class _ParamRowState extends State<_ParamRow> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                def?.sensitive == true
+                def?.sensitive != false
                     ? '••••'
                     : def?.dataType == 'boolean' && widget.value is bool
                     ? (widget.value as bool ? 'เปิด' : 'ปิด')
