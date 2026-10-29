@@ -4,20 +4,21 @@ import type { ConfigStatus } from "@/lib/config-api";
 import { cn } from "@/lib/utils";
 
 /**
- * เส้นทางชีวิตของ Config (ร่าง → รออนุมัติ → อนุมัติแล้ว → ซิงก์แล้ว) บอกว่าตอนนี้อยู่ขั้นไหน
+ * เส้นทางชีวิตของ Config (ร่าง → รออนุมัติ → อนุมัติแล้ว) บอกว่าตอนนี้อยู่ขั้นไหน
  * และข้างหน้าเหลืออะไร · ถูกปฏิเสธแสดงที่ขั้น "รออนุมัติ" เป็นสีแดงพร้อมข้อความ (ไม่พึ่งสีอย่างเดียว)
- * สถานะจริงมี 5 ค่า: draft, testing, approved, rejected, synced
+ * สถานะ synced (ค่าเก่าที่ระบบไม่ใช้แล้ว) นับเป็น "อนุมัติแล้ว"
  */
 const STEPS: { status: ConfigStatus; label: string }[] = [
   { status: "draft", label: "ร่าง" },
   { status: "testing", label: "รออนุมัติ" },
   { status: "approved", label: "อนุมัติแล้ว" },
-  { status: "synced", label: "ซิงก์แล้ว" },
 ];
 
 export function ConfigLifecycleSteps({ status }: { status: ConfigStatus }) {
   const rejected = status === "rejected";
-  const current = rejected ? 1 : STEPS.findIndex((s) => s.status === status);
+  const current = rejected
+    ? 1
+    : STEPS.findIndex((s) => s.status === (status === "synced" ? "approved" : status));
 
   return (
     <ol
@@ -25,7 +26,7 @@ export function ConfigLifecycleSteps({ status }: { status: ConfigStatus }) {
       className="flex items-center overflow-hidden rounded-lg border bg-card text-sm"
     >
       {STEPS.map((step, i) => {
-        const done = i < current || (i === current && status === "synced");
+        const done = i < current || (i === current && i === STEPS.length - 1);
         const active = i === current;
         const bad = rejected && active;
         return (
