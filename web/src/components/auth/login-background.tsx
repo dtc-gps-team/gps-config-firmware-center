@@ -45,7 +45,7 @@ export function LoginBackground() {
   const radarPoint = MAP_POINTS[RADAR_POINT_INDEX];
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden bg-sidebar">
+    <div aria-hidden className="animate-bg-in pointer-events-none absolute inset-0 overflow-hidden bg-sidebar">
       <div className="animate-drift-a absolute -top-24 -left-24 size-96 rounded-full bg-sidebar-primary/30 blur-3xl" />
       <div className="animate-drift-b absolute -right-32 -bottom-24 size-[28rem] rounded-full bg-sidebar-accent/70 blur-3xl" />
 

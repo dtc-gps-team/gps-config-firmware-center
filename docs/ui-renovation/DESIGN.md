@@ -35,6 +35,7 @@ node docs/ui-renovation/tools/check-motion.mjs http://localhost:3100
 ```
 
 - `shoot.mjs <label> <url> <หน้า,...>`: ถ่าย 1440 light/dark และ (เฉพาะ dashboard) มือถือ 390 + เมนู ชื่อหน้าที่รองรับ: `dashboard`, `config`, `devices` เพิ่มได้ในตัวแปร `targets`
+- `check-login-intro.mjs`: ตรวจแอนิเมชันเปิดหน้า Login (การ์ดค่อยๆ เข้า, ช่องกรอกโฟกัสทันที, สั่นเมื่อกรอกผิด, ไม่เล่นซ้ำภายใน 8 ชั่วโมง, ลดการเคลื่อนไหวแล้วไม่มี fade) และถ่ายเฟรมไทม์ไลน์ไว้ดู
 - `check-motion.mjs`: ตรวจ page transition, ไม่มี layout shift, command palette เปิด/ปิด, sidebar ยุบ/ขยาย, สลับธีมและจำค่า, hover ไม่กระตุก, reduced-motion เหลือ fade
 - ข้อจำกัด: fixture คืน `[]` สำหรับ endpoint ที่ไม่ได้ระบุ หน้า `/approvals` พังด้วยข้อมูลนี้ (`Cannot convert undefined or null to object`) ต้องเพิ่ม fixture ให้ตรง shape ก่อนถ่ายหน้านั้น
 - Next dev indicator (ปุ่ม N มุมซ้ายล่าง) ทับปุ่มมุมซ้ายล่างได้ ให้ละเว้น ใช้ `dispatchEvent("click")` ในสคริปต์
@@ -113,6 +114,10 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 ## 8. หลักการ UX
 
 หน้าแรกตอบ "ตอนนี้มีอะไรต้องให้ฉันทำ", งานหลัก ≤ 3 คลิก, กันพลาดแพง (preview ผลกระทบ + diff ก่อนส่ง config/firmware, bulk/อันตราย type-to-confirm, rollback เห็นชัด), สถานะระบบมองเห็นเสมอ, progressive disclosure, Command Palette, จำค่าที่ตั้ง (try/catch), URL เป็น source of truth (แท็บ/ฟิลเตอร์/sort), เตือนก่อนออกจากหน้าที่ไม่บันทึก (`hooks/use-unsaved-changes-warning.ts` มีแล้ว), ทุกหน้ามี loading (skeleton) / empty (บอกขั้นต่อไป) / error (สาเหตุ + Retry)
+
+### แอนิเมชันเปิดหน้า Login
+
+ไทม์ไลน์ราว 1.4 วินาที (ช่องกรอกใช้งานได้ตั้งแต่เฟรมแรก): พื้นหลังจางเข้า → การ์ดลอยขึ้น → โลโก้ประกอบตัว (หมุดตกเด้ง, LED ผุด, วงโคจรวาด, ดาวเทียมวิ่งหนึ่งรอบแล้วจอดตรงตำแหน่งโลโก้นิ่ง) → ข้อความและช่องกรอกเข้าทีละช่อง · กรอกผิด = การ์ดสั่น + ข้อความ error จางเข้า · สำเร็จ = การ์ดเลื่อนจางออกพร้อมเปลี่ยนหน้า · เล่นเต็มครั้งเดียวต่อ 8 ชั่วโมง (`components/auth/login-intro.ts` เก็บเวลาใน localStorage) ที่เหลือแสดงภาพสุดท้ายทันที · ปิดเมื่อ prefers-reduced-motion · โลโก้เคลื่อนไหวคือ `components/brand/animated-logo-mark.tsx` ใช้เรขาคณิตชุดเดียวกับ `logo-mark.tsx`
 
 ## 9. Component กลาง
 
