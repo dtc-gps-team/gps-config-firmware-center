@@ -816,6 +816,7 @@ class DeviceConfigDraft {
     this.hasDeviceOverride = false,
     this.pendingOverride,
     this.delivery,
+    this.boxFields,
   });
 
   final String? id;
@@ -847,10 +848,15 @@ class DeviceConfigDraft {
   /// การส่ง หรือ backend เก่า
   final ConfigDelivery? delivery;
 
+  /// เฉพาะ `GET /devices/{deviceId}/config` (v3.74) — ค่าที่กล่องรายงานว่าใช้อยู่
+  /// ทุกพารามิเตอร์ (โหมด central) · `null` = ไม่ทราบ
+  final BoxFields? boxFields;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
     final rawPending = json['pendingOverride'] as Map?;
     final rawDelivery = json['delivery'] as Map?;
+    final rawBoxFields = json['boxFields'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
       name: json['name'] as String?,
@@ -865,6 +871,24 @@ class DeviceConfigDraft {
       delivery: rawDelivery == null
           ? null
           : ConfigDelivery.fromJson(rawDelivery.cast<String, dynamic>()),
+      boxFields: rawBoxFields == null
+          ? null
+          : BoxFields.fromJson(rawBoxFields.cast<String, dynamic>()),
+    );
+  }
+}
+
+/// `DeviceCurrentConfig.boxFields` (v3.74) — ค่าที่กล่องรายงานว่าใช้อยู่
+class BoxFields {
+  const BoxFields({required this.fields, required this.reportedAt});
+
+  final Map<String, dynamic> fields;
+  final DateTime? reportedAt;
+
+  factory BoxFields.fromJson(Map<String, dynamic> json) {
+    return BoxFields(
+      fields: (json['fields'] as Map?)?.cast<String, dynamic>() ?? const {},
+      reportedAt: DateTime.tryParse(json['reportedAt'] as String? ?? ''),
     );
   }
 }

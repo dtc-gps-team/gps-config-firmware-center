@@ -30,6 +30,31 @@ export type PushConfigOutcome =
   /** ติดต่อ Server กลางไม่ได้ */
   | { kind: 'unavailable'; reason: string };
 
+/** ค่าที่กล่องรายงานว่าใช้อยู่ (`readReportedFields`) เป็นชื่อพารามิเตอร์แบบจุด */
+export interface ReportedBoxFields {
+  fields: Record<string, unknown>;
+  reportedAt: string | null;
+}
+
+/** ไม่ส่งค่าเหล่านี้ออกไป — `data_server.path` มี key ส่ง telemetry อยู่ใน URL (docs/23 §7) */
+const HIDDEN_REPORTED_KEYS = new Set(['data_server.path']);
+
+/** `{gps: {send_interval_sec: 10}}` -> `{'gps.send_interval_sec': 10}` */
+function flattenSettings(
+  settings: Record<string, unknown>,
+  prefix = '',
+  out: Record<string, unknown> = {},
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(settings)) {
+    const name = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      flattenSettings(value as Record<string, unknown>, name, out);
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
 /** ผลการตรวจ Config กับ schema ที่กล่องรันอยู่ โดยไม่ส่ง (`checkConfig`) */
 export type CheckConfigOutcome =
   /** ทุกค่าผ่าน schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ */
@@ -116,6 +141,26 @@ export class CentralDeviceService {
       list,
       device: list.devices.find((d) => d.deviceId === deviceId) ?? null,
     };
+  }
+
+  /**
+   * ค่าที่กล่องรายงานว่าใช้อยู่จริง (ทุกพารามิเตอร์ ไม่ใช่แค่ที่อยู่ใน Config ของเรา) ให้หน้าขอแก้ค่า
+   * แสดงค่าที่แก้ไม่ได้ด้วย · ซ่อน {@link HIDDEN_REPORTED_KEYS} · ติดต่อไม่ได้/กล่องยังไม่รายงาน = null
+   * ไม่โยน error
+   */
+  async readReportedFields(
+    deviceId: string,
+  ): Promise<ReportedBoxFields | null> {
+    try {
+      const raw = await this.client.getDeviceConfig(deviceId);
+      const settings = raw.reported?.settings;
+      if (!settings) return null;
+      const fields = flattenSettings(settings);
+      for (const key of HIDDEN_REPORTED_KEYS) delete fields[key];
+      return { fields, reportedAt: raw.reported?.reported_at ?? null };
+    } catch {
+      return null;
+    }
   }
 
   /**

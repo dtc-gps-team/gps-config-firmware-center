@@ -234,6 +234,7 @@ describe('DeviceService', () => {
   let deviceModelService: { findOne: jest.Mock };
   let centralDeviceService: {
     findDevice: jest.Mock;
+    readReportedFields: jest.Mock;
     checkConfig: jest.Mock;
     mode: 'real' | 'mock';
   };
@@ -299,6 +300,7 @@ describe('DeviceService', () => {
     // ปลอมมาเป็น seed)
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
+      readReportedFields: jest.fn().mockResolvedValue(null),
       checkConfig: jest.fn(),
       mode: 'real',
     };
@@ -2153,7 +2155,30 @@ describe('DeviceService', () => {
         pendingOverride: null,
         // Config ฐานมาจากงานที่ช่างปิด (ยืนยันติดตั้งเอง) ไม่มีหลักฐานว่าส่งค่าอะไรเข้ากล่อง
         delivery: null,
+        // ไม่ใช่โหมด central -> ไม่อ่านค่าจากกล่อง
+        boxFields: null,
       });
+      expect(centralDeviceService.readReportedFields).not.toHaveBeenCalled();
+    });
+
+    it('โหมด central -> boxFields = ค่าที่กล่องรายงานว่าใช้อยู่ (ทุกพารามิเตอร์)', async () => {
+      deviceConfigApplyMode = 'central';
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      mockOverrideQueries({});
+      const boxFields = {
+        fields: { 'led.enabled': true, 'gps.send_interval_sec': 10 },
+        reportedAt: '2026-10-28T07:17:14.569Z',
+      };
+      centralDeviceService.readReportedFields.mockResolvedValue(boxFields);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(centralDeviceService.readReportedFields).toHaveBeenCalledWith(
+        'DTC-0001',
+      );
+      expect(result.boxFields).toEqual(boxFields);
       expect(task.findFirst).toHaveBeenCalledWith({
         where: {
           deviceId: 'DTC-0001',

@@ -4978,8 +4978,28 @@ components:
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
-          required: [hasDeviceOverride, pendingOverride, delivery]
+          required: [hasDeviceOverride, pendingOverride, delivery, boxFields]
           properties:
+            boxFields:
+              type: object
+              nullable: true
+              description: >-
+                (v3.74) ค่าที่กล่องรายงานว่าใช้อยู่จริง**ทุกพารามิเตอร์** จาก Server กลาง
+                (`reported.settings` ของกล่อง) ไม่ใช่แค่ที่อยู่ใน Config — ให้หน้าขอแก้ค่า
+                แสดงค่าที่ไม่อยู่ใน Config เป็นแบบแก้ไม่ได้ · ไม่มี `data_server.path`
+                (มี key ส่ง telemetry ใน URL) · `null` = ไม่ใช่โหมด
+                `DEVICE_CONFIG_APPLY_MODE=central`, ติดต่อ Server กลางไม่ได้ หรือกล่องยังไม่รายงาน
+              required: [fields, reportedAt]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: ค่าที่กล่องใช้อยู่ (key = fieldName แบบจุด เช่น `gps.send_interval_sec`)
+                reportedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: เวลาที่กล่องรายงานล่าสุด
             delivery:
               type: object
               nullable: true
