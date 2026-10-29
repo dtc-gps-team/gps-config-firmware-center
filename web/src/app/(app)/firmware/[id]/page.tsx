@@ -1,5 +1,4 @@
-import { RoleGuard } from "@/components/auth/role-guard";
-import { canReadFirmware } from "@/lib/permissions";
+import { FirmwareAccessGuard } from "../firmware-access-guard";
 import { FirmwareDetailView } from "../firmware-detail-view";
 
 export const metadata = {
@@ -15,8 +14,8 @@ export default async function FirmwareDetailPage({
 }) {
   const { id } = await params;
   return (
-    <RoleGuard allow={canReadFirmware}>
+    <FirmwareAccessGuard>
       <FirmwareDetailView firmwareId={id} />
-    </RoleGuard>
+    </FirmwareAccessGuard>
   );
 }

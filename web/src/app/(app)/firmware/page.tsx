@@ -1,5 +1,4 @@
-import { RoleGuard } from "@/components/auth/role-guard";
-import { canReadFirmware } from "@/lib/permissions";
+import { FirmwareAccessGuard } from "./firmware-access-guard";
 import { FirmwareTableCard } from "./firmware-table";
 
 export const metadata = {
@@ -17,11 +16,11 @@ export const metadata = {
  */
 export default function FirmwarePage() {
   return (
-    <RoleGuard allow={canReadFirmware}>
+    <FirmwareAccessGuard>
       <FirmwareTableCard
         title="Firmware Repository"
         description="เก็บ Firmware แต่ละเวอร์ชัน ระบุโมเดลที่ใช้ได้ และส่งให้ QA ตรวจก่อนนำไปติดตั้ง คลิกแถวเพื่อดูรายละเอียด"
       />
-    </RoleGuard>
+    </FirmwareAccessGuard>
   );
 }
