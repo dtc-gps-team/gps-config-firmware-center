@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { motion } from "motion/react";
 import {
   BoxIcon,
   CpuIcon,
@@ -19,9 +20,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RelativeTime } from "@/components/relative-time";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuditLogs } from "@/hooks/use-audit-logs";
-import { formatDateTime, formatRelativeTime } from "@/lib/format-date";
+import { listItem, staggerContainer } from "@/lib/motion";
 
 const MODULE_ICON: Record<string, LucideIcon> = {
   config: SlidersHorizontalIcon,
@@ -69,7 +73,7 @@ export function DashboardActivity() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>กิจกรรมล่าสุด</CardTitle>
+        <CardTitle className="text-sm font-medium">กิจกรรมล่าสุด</CardTitle>
         <CardDescription>5 รายการล่าสุด</CardDescription>
         <CardAction>
           <Link
@@ -84,48 +88,43 @@ export function DashboardActivity() {
         {isLoading && data === null ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-5 animate-pulse rounded bg-muted" />
+              <Skeleton key={i} className="h-5" />
             ))}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-          </div>
+          <ErrorState message={error} onRetry={() => void refetch()} />
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <HistoryIcon className="size-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              ยังไม่มีประวัติการทำงาน
-            </p>
-          </div>
+          <EmptyState icon={HistoryIcon} message="ยังไม่มีประวัติการทำงาน" />
         ) : (
-          <ul className="flex flex-col gap-3 text-sm">
+          <motion.ul
+            initial="hidden"
+            animate="visible"
+            variants={staggerContainer}
+            className="flex flex-col divide-y text-sm"
+          >
             {rows.map((row) => {
               const Icon = MODULE_ICON[row.auditModule] ?? HistoryIcon;
               const moduleLabel = MODULE_LABEL[row.auditModule] ?? row.auditModule;
               const actionLabel = ACTION_LABEL[row.action] ?? row.action;
               return (
-                <li key={row.id} className="flex items-start gap-3">
+                <motion.li
+                  key={row.id}
+                  variants={listItem}
+                  className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0"
+                >
                   <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
-                    <span className="text-xs font-medium">
-                      {row.actorName}
-                    </span>{" "}
+                    <span className="font-medium">{row.actorName}</span>{" "}
                     {actionLabel} {moduleLabel}
                   </span>
-                  <span
+                  <RelativeTime
+                    iso={row.createdAt}
                     className="shrink-0 text-xs whitespace-nowrap text-muted-foreground"
-                    title={formatDateTime(row.createdAt)}
-                  >
-                    {formatRelativeTime(row.createdAt)}
-                  </span>
-                </li>
+                  />
+                </motion.li>
               );
             })}
-          </ul>
+          </motion.ul>
         )}
       </CardContent>
     </Card>

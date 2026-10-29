@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { BellIcon } from "lucide-react";
 
+import { StatusLed } from "@/components/ui/status-led";
 import { useAuth } from "@/components/auth/auth-provider";
 import {
   canDecideCampaignApproval,
@@ -77,9 +77,9 @@ function PendingApprovalsBanner() {
   return (
     <Link
       href="/approvals"
-      className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-subtle px-4 py-2.5 text-sm text-warning-foreground transition-colors hover:bg-warning-subtle"
+      className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning-subtle px-4 py-2.5 text-sm text-warning-foreground transition-colors duration-(--duration-base) hover:border-warning"
     >
-      <BellIcon className="size-4 shrink-0" />
+      <StatusLed tone="warning" pulse />
       <span className="flex-1">
         มี <strong className="tabular-nums">{totalCount}</strong> รายการรออนุมัติ
       </span>
