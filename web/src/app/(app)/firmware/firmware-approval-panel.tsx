@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { approveFirmware, rejectFirmware, type Firmware } from "@/lib/firmware-api";
 import { canDecideFirmwareApproval } from "@/lib/permissions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -37,7 +38,7 @@ export function FirmwareApprovalPanel({
 
   if (!canDecideFirmwareApproval(session?.role)) {
     return (
-      <Card className="max-w-2xl gap-1 bg-muted/30 p-4">
+      <Card className="gap-1 bg-muted/30 p-4">
         <p className="text-sm font-medium">รอ QA Engineer ตรวจคุณภาพ</p>
         <p className="text-sm text-muted-foreground">
           Firmware เวอร์ชันนี้ยังไม่ได้รับการอนุมัติคุณภาพ เฉพาะ QA Engineer
@@ -62,6 +63,8 @@ export function FirmwareApprovalPanel({
           : `ปฏิเสธคุณภาพ "${firmware.version}" แล้ว`,
       );
       onDecided(updated);
+      setPending(false);
+      setConfirming(null);
     } catch (err) {
       setPending(false);
       setConfirming(null);
@@ -77,7 +80,7 @@ export function FirmwareApprovalPanel({
   }
 
   return (
-    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
+    <Card className="gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">อนุมัติคุณภาพ Firmware</p>
       <p className="text-sm text-muted-foreground">
         ดูผลทดสอบด้านบนก่อนตัดสินใจ อนุมัติแล้วใช้สร้างแคมเปญได้ทันที
@@ -85,49 +88,31 @@ export function FirmwareApprovalPanel({
       </p>
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {confirming ? (
-        <div className="flex flex-col items-start gap-2">
-          <p className="text-sm">
-            {confirming === "approve" ? "อนุมัติ" : "ปฏิเสธ"} คุณภาพเวอร์ชัน
-            &ldquo;{firmware.version}&rdquo;?
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={confirming === "approve" ? "default" : "destructive"}
-              disabled={pending}
-              onClick={() => void run(confirming)}
-            >
-              {pending
-                ? "กำลังดำเนินการ…"
-                : confirming === "approve"
-                  ? "ยืนยันอนุมัติ"
-                  : "ยืนยันปฏิเสธ"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pending}
-              onClick={() => setConfirming(null)}
-            >
-              ยกเลิก
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setConfirming("reject")}
-          >
-            ปฏิเสธ
-          </Button>
-          <Button size="sm" onClick={() => setConfirming("approve")}>
-            อนุมัติ
-          </Button>
-        </div>
-      )}
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => setConfirming("reject")}>
+          ปฏิเสธ
+        </Button>
+        <Button size="sm" onClick={() => setConfirming("approve")}>
+          อนุมัติ
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setConfirming(null);
+        }}
+        title={`${confirming === "reject" ? "ปฏิเสธ" : "อนุมัติ"} คุณภาพเวอร์ชัน "${firmware.version}"?`}
+        description={
+          confirming === "reject"
+            ? "Firmware Engineer ต้องอัปโหลดเวอร์ชันใหม่มาแก้ไข เวอร์ชันนี้จะใช้สร้างแคมเปญไม่ได้"
+            : "เวอร์ชันนี้ใช้สร้างแคมเปญได้ทันที ยังไม่ถูกติดตั้งเข้าอุปกรณ์จนกว่าจะเริ่ม Rollout"
+        }
+        confirmLabel={confirming === "reject" ? "ยืนยันปฏิเสธ" : "ยืนยันอนุมัติ"}
+        destructive={confirming === "reject"}
+        onConfirm={async () => {
+          if (confirming) await run(confirming);
+        }}
+      />
     </Card>
   );
 }
