@@ -95,7 +95,7 @@ export function LoginForm() {
           <CardHeader className="items-center gap-2 text-center">
             <AnimatedLogoMark
               play={play}
-              className="mb-1 size-14 justify-self-center rounded-xl"
+              className="mb-1 size-14 justify-self-center"
             />
             <motion.div
               className="contents"

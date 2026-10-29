@@ -3,20 +3,17 @@
 import { motion, type TargetAndTransition } from "motion/react";
 
 import { cn } from "@/lib/utils";
+import { LOGO_PIN_PATH, LOGO_STROKE_WIDTH, LOGO_VIEWBOX } from "./logo-mark";
 
-/** ดีเลย์ของแต่ละช่วง (วินาที) — ทั้งชุดจบราว 1.3 วินาที */
-const T = { tile: 0.1, pin: 0.35, dot: 0.7, ripple: 0.78 } as const;
-
-/** เส้นหมุดเดียวกับ `LogoMark` (lucide map-pin) */
-const PIN_PATH =
-  "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0";
+/** ดีเลย์ของแต่ละช่วง (วินาที) — ทั้งชุดจบราว 1.2 วินาที */
+const T = { pin: 0.15, dot: 0.55, ripple: 0.62 } as const;
 
 /**
- * โลโก้เดิม (หมุดขาวในกรอบสีน้ำเงินหลัก) พร้อมแอนิเมชันเปิดหน้า Login: กรอบเด้งเข้า →
- * หมุดตกลงมาแล้วยุบ-เด้งตอนถึงพื้น → วงกลมกลางหมุดผุด → วงคลื่นแผ่ออกจากปลายหมุด
- * แล้วจางหาย (เหมือนจับพิกัดได้) · ภาพสุดท้ายตรงกับ `LogoMark` เป๊ะ (วงคลื่นจบที่
- * โปร่งใส) · `play=false` แสดงภาพสุดท้ายทันที (เล่นซ้ำ/ลดการเคลื่อนไหว) ·
- * animate เฉพาะ transform/opacity
+ * โลโก้หมุดตำแหน่งแบบไม่มีกรอบพร้อมแอนิเมชันเปิดหน้า Login (โทน `light` เพราะอยู่บน
+ * การ์ด): หมุดตกลงมาแล้วยุบ-เด้งตอนถึงพื้น → วงกลมกลางหมุดผุด → วงคลื่นแผ่ออกจากปลาย
+ * หมุดแล้วจางหาย (เหมือนจับพิกัดได้) · ภาพสุดท้ายตรงกับ `LogoMark` เป๊ะ (วงคลื่นจบที่
+ * โปร่งใส) · `play=false` แสดงภาพสุดท้ายทันที (เล่นซ้ำ/ลดการเคลื่อนไหว) · animate
+ * เฉพาะ transform/opacity
  */
 export function AnimatedLogoMark({
   play,
@@ -28,38 +25,29 @@ export function AnimatedLogoMark({
   const from = (props: TargetAndTransition) => (play ? props : false);
 
   return (
-    <motion.span
+    <span
       aria-hidden="true"
-      className={cn(
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-white",
-        className,
-      )}
-      initial={from({ scale: 0.55, opacity: 0 })}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{
-        scale: { type: "spring", stiffness: 380, damping: 17, delay: T.tile },
-        opacity: { duration: 0.2, delay: T.tile },
-      }}
+      className={cn("inline-flex size-9 shrink-0 text-primary", className)}
     >
       <svg
-        viewBox="0 0 24 24"
+        viewBox={LOGO_VIEWBOX}
         fill="none"
         stroke="currentColor"
-        strokeWidth={2}
+        strokeWidth={LOGO_STROKE_WIDTH}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="size-[55%] overflow-visible"
+        className="size-full overflow-visible"
       >
         {/* หมุดตก: จุดหมุนอยู่ที่ปลายหมุดให้ยุบ-เด้งเหมือนปักลงพื้น */}
         <motion.path
-          d={PIN_PATH}
+          d={LOGO_PIN_PATH}
           style={{ transformBox: "fill-box", transformOrigin: "50% 100%" }}
-          initial={from({ y: -12, opacity: 0, scaleY: 1.2, scaleX: 0.85 })}
+          initial={from({ y: -9, opacity: 0, scaleY: 1.2, scaleX: 0.85 })}
           animate={{ y: 0, opacity: 1, scaleY: 1, scaleX: 1 }}
           transition={{
-            y: { type: "spring", stiffness: 360, damping: 13, delay: T.pin },
-            scaleX: { type: "spring", stiffness: 360, damping: 11, delay: T.pin },
-            scaleY: { type: "spring", stiffness: 360, damping: 11, delay: T.pin },
+            y: { type: "spring", stiffness: 340, damping: 12, delay: T.pin },
+            scaleX: { type: "spring", stiffness: 340, damping: 10, delay: T.pin },
+            scaleY: { type: "spring", stiffness: 340, damping: 10, delay: T.pin },
             opacity: { duration: 0.15, delay: T.pin },
           }}
         />
@@ -76,17 +64,17 @@ export function AnimatedLogoMark({
         {play && (
           <motion.ellipse
             cx="12"
-            cy="21.6"
-            rx="6"
-            ry="1.9"
-            strokeWidth={1.4}
+            cy="21.8"
+            rx="7"
+            ry="2.1"
+            strokeWidth={1.3}
             style={{ transformBox: "fill-box", transformOrigin: "center" }}
-            initial={{ scale: 0.15, opacity: 0.85 }}
+            initial={{ scale: 0.15, opacity: 0.8 }}
             animate={{ scale: 1.25, opacity: 0 }}
-            transition={{ duration: 0.8, delay: T.ripple, ease: [0.05, 0.7, 0.1, 1] }}
+            transition={{ duration: 0.85, delay: T.ripple, ease: [0.05, 0.7, 0.1, 1] }}
           />
         )}
       </svg>
-    </motion.span>
+    </span>
   );
 }
