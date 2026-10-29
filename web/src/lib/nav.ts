@@ -83,6 +83,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "config",
     screenName: "Config Editor",
     icon: SlidersHorizontalIcon,
+    // FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `config:Read` (seed.ts) ไม่แสดงเมนูที่เข้าไม่ได้
+    allowedRoles: [
+      "ConfigEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ],
   },
   // "Config Import จากไฟล์ (JSON)" (RBAC_Matrix.md Section 2) ไม่มี entry ใน
   // sidebar โดยตั้งใจ — Build Reference §3.1 ระบุว่าเป็น "ปุ่มในหน้า Config
@@ -130,6 +140,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "deploy",
     screenName: "Campaign Wizard / Campaign Monitor",
     icon: RocketIcon,
+    // FirmwareEngineer/QAEngineer ไม่มีสิทธิ์ `campaign:Read` (seed.ts) ไม่แสดงเมนูที่เข้าไม่ได้
+    allowedRoles: [
+      "ConfigEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ],
   },
   // "Task Management" ยกเลิกถาวร ไม่มีวันกลับมา (มติพี่เลี้ยงล่าสุด — สืบเนื่อง
   // จาก PR #144 review, ดู RBAC_Matrix.md Section 6 แก้ครั้งที่ 25) เดิมพักไว้

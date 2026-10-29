@@ -1,3 +1,5 @@
+import { RoleGuard } from "@/components/auth/role-guard";
+import { canReadConfig } from "@/lib/permissions";
 import { ConfigTableCard } from "./config-table";
 
 export const metadata = {
@@ -17,10 +19,12 @@ export default async function ConfigPage({
   const { saved } = await searchParams;
 
   return (
-    <ConfigTableCard
-      title="Config Editor"
-      description="ร่าง ทดสอบ และส่ง Config ของแต่ละโมเดลให้ Operation อนุมัติ คลิกแถวเพื่อดูรายละเอียด"
-      justSavedId={saved ?? null}
-    />
+    <RoleGuard allow={canReadConfig}>
+      <ConfigTableCard
+        title="Config Editor"
+        description="ร่าง ทดสอบ และส่ง Config ของแต่ละโมเดลให้ Operation อนุมัติ คลิกแถวเพื่อดูรายละเอียด"
+        justSavedId={saved ?? null}
+      />
+    </RoleGuard>
   );
 }

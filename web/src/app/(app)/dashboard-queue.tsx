@@ -382,7 +382,7 @@ export function FirmwareQueue({
             title: "Firmware รอตรวจคุณภาพ",
             detail: waitingLabel(oldestIso(pending.map((f) => f.uploadedAt))),
             count: pending.length,
-            href: "/firmware",
+            href: "/approvals",
           },
         ]
       : [

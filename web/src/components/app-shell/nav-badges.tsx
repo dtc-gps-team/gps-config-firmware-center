@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { useFirmwareList } from "@/hooks/use-firmware";
 import { useIncidents } from "@/hooks/use-incidents";
 import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
@@ -11,6 +12,7 @@ import {
   canDecideCampaignApproval,
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
+  canDecideFirmwareApproval,
   canDecideFirmwareOverride,
 } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -60,9 +62,21 @@ function ApprovalCount({ compact }: { compact: boolean }) {
   return <CountPill count={count} label="รออนุมัติ" compact={compact} />;
 }
 
+/** QAEngineer: Firmware ที่รอตรวจคุณภาพ (ไม่ยิง API คิว Config/Campaign ที่ QA อ่านไม่ได้) */
+function FirmwareReviewCount({ compact }: { compact: boolean }) {
+  const firmware = useFirmwareList();
+  const count = (firmware.data ?? []).filter(
+    (f) => f.approvalStatus === "pending_review",
+  ).length;
+  return <CountPill count={count} label="รอตรวจคุณภาพ" compact={compact} />;
+}
+
 export function ApprovalNavBadge({ compact }: { compact: boolean }) {
   const { session } = useAuth();
   const role = session?.role;
+  if (canDecideFirmwareApproval(role)) {
+    return <FirmwareReviewCount compact={compact} />;
+  }
   const canAnyDecide =
     canDecideConfigApproval(role) ||
     canDecideCampaignApproval(role) ||

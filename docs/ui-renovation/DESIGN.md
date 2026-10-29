@@ -261,3 +261,5 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 6. motion: ใช้ variants จาก `lib/motion.ts` (`staggerContainer`/`listItem`), `CountUp` กับตัวเลขสรุป, `ChangeFlash` กับแถวที่ข้อมูลเปลี่ยนจากการรีเฟรชจริงเท่านั้น ห้ามใส่ถ้าไม่มีข้อมูล real-time
 7. สีใช้ token (`bg-warning`, `text-danger-foreground`, `border-l-info`) ห้าม palette ตรง ตรวจด้วย grep ในเช็คลิสต์ §10
 8. หน้าใหม่ที่เรียก endpoint ใหม่ ต้องเพิ่ม fixture ใน `tools/fixtures.mjs` และ target ใน `shoot.mjs` ก่อนถ่าย
+
+**QAEngineer (หลังรอบ 3):** Approval Center ของ QA แสดงเฉพาะคิว Firmware รอตรวจคุณภาพ (`approvals/firmware-review-view.tsx`, แยกจากคิว Config/Campaign เพื่อไม่ยิง API ที่ QA อ่านไม่ได้) · เมนู Config Editor และ Campaign ซ่อนสำหรับ FirmwareEngineer/QAEngineer (`nav.ts` + `canReadConfig`) พร้อม RoleGuard ที่หน้า `/config` · ป้ายตัวเลขที่ Approval Center ของ QA นับ Firmware รอตรวจ

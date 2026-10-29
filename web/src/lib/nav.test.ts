@@ -26,9 +26,42 @@ describe("visibleNavItems", () => {
   });
 
   it("Firmware Repository ซ่อนจาก ConfigEngineer (RBAC Matrix เป็น -) role อื่นเห็น", () => {
-    expect(visibleNavItems("ConfigEngineer").map((i) => i.href)).not.toContain("/firmware");
-    for (const role of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
+    expect(visibleNavItems("ConfigEngineer").map((i) => i.href)).not.toContain(
+      "/firmware",
+    );
+    for (const role of [
+      "FirmwareEngineer",
+      "QAEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ]) {
       expect(visibleNavItems(role).map((i) => i.href)).toContain("/firmware");
+    }
+  });
+
+  it("FirmwareEngineer/QAEngineer ไม่เห็น Config Editor และ Campaign (ไม่มีสิทธิ์อ่าน) แต่ยังเห็น Approval Center", () => {
+    for (const role of ["FirmwareEngineer", "QAEngineer"]) {
+      const hrefs = visibleNavItems(role).map((i) => i.href);
+      expect(hrefs).not.toContain("/config");
+      expect(hrefs).not.toContain("/campaigns");
+      expect(hrefs).toContain("/approvals");
+    }
+    for (const role of [
+      "ConfigEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ]) {
+      const hrefs = visibleNavItems(role).map((i) => i.href);
+      expect(hrefs).toContain("/config");
+      expect(hrefs).toContain("/campaigns");
     }
   });
 
@@ -47,7 +80,9 @@ describe("findActiveNavItem", () => {
   });
 
   it("หน้าย่อยได้เมนูที่ครอบอยู่", () => {
-    expect(findActiveNavItem(items, "/devices/GX50-001")?.href).toBe("/devices");
+    expect(findActiveNavItem(items, "/devices/GX50-001")?.href).toBe(
+      "/devices",
+    );
     expect(findActiveNavItem(items, "/campaigns/abc/rollouts/new")?.href).toBe(
       "/campaigns",
     );

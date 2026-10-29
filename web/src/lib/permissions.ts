@@ -179,6 +179,16 @@ export function canReadCampaign(role: string | null | undefined): boolean {
   );
 }
 
+/**
+ * เห็นหน้า Config Editor ได้ไหม — mirror สิทธิ์ resource `config` action `Read`
+ * ใน `backend/prisma/seed.ts` (ConfigEngineer, Operation, ST, OT, Auditor,
+ * Admin/SuperAdmin) **FirmwareEngineer/QAEngineer ไม่มีสิทธิ์นี้** (RBAC_Matrix.md
+ * §2: แต่ละ role เห็นเฉพาะโดเมนงานตัวเอง) จึงไม่แสดงเมนูและกันทั้งหน้า
+ */
+export function canReadConfig(role: string | null | undefined): boolean {
+  return role !== "FirmwareEngineer" && role !== "QAEngineer";
+}
+
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation";

@@ -1,3 +1,5 @@
+import { RoleGuard } from "@/components/auth/role-guard";
+import { canReadConfig } from "@/lib/permissions";
 import { ConfigDetailView } from "../config-detail-view";
 
 export const metadata = {
@@ -12,5 +14,9 @@ export default async function ConfigDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <ConfigDetailView configId={id} />;
+  return (
+    <RoleGuard allow={canReadConfig}>
+      <ConfigDetailView configId={id} />
+    </RoleGuard>
+  );
 }
