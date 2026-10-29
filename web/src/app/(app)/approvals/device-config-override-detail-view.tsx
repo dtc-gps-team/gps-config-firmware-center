@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
+import { useDescriptionByField } from "@/components/config/use-description-by-field";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -96,6 +98,7 @@ function Content({
     }
     return set;
   }, [definitions.data]);
+  const descriptionByField = useDescriptionByField(definitions.data);
   // ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน — mirror
   // config-approval-detail-view.tsx กัน plaintext หลุดช่วงสั้นๆ
   const isMasked = (fieldName: string) =>
@@ -184,9 +187,12 @@ function Content({
             {fieldEntries.map(([key, value]) => (
               <div
                 key={key}
-                className="flex flex-wrap justify-between gap-4 px-3 py-2 text-sm"
+                className="flex flex-wrap items-start justify-between gap-4 px-3 py-2 text-sm"
               >
-                <span className="font-mono text-muted-foreground">{key}</span>
+                <ConfigFieldLabel
+                  fieldName={key}
+                  description={descriptionByField.get(key)}
+                />
                 {isMasked(key) ? (
                   <SensitiveValue value={value} />
                 ) : (

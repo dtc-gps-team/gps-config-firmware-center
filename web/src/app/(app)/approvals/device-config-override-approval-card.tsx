@@ -4,6 +4,8 @@ import { useMemo } from "react";
 
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
 import type { DeviceConfigOverride } from "@/lib/device-config-override-api";
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
+import { useDescriptionByField } from "@/components/config/use-description-by-field";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { ApprovalQueueCard } from "./approval-queue-card";
 import { DeviceConfigOverrideApprovalActions } from "./device-config-override-approval-actions";
@@ -42,6 +44,7 @@ export function DeviceConfigOverrideApprovalCard({
     }
     return set;
   }, [definitions.data]);
+  const descriptionByField = useDescriptionByField(definitions.data);
   /** ก่อน definitions โหลดเสร็จ treat ทุก field เป็น sensitive ไว้ก่อน — mirror
    * `config-approval-detail-view.tsx`/`config-detail-view.tsx` กัน plaintext หลุด */
   const effectiveSensitiveFieldNames = definitionsReady
@@ -69,11 +72,13 @@ export function DeviceConfigOverrideApprovalCard({
               {fieldEntries.map(([key, value]) => (
                 <div
                   key={key}
-                  className="flex justify-between gap-4 px-3 py-1.5"
+                  className="flex items-start justify-between gap-4 px-3 py-1.5"
                 >
-                  <span className="shrink-0 font-mono text-muted-foreground">
-                    {key}
-                  </span>
+                  <ConfigFieldLabel
+                    className="min-w-0 max-w-[60%]"
+                    fieldName={key}
+                    description={descriptionByField.get(key)}
+                  />
                   {effectiveSensitiveFieldNames.has(key) ? (
                     <SensitiveValue value={value} />
                   ) : (
