@@ -108,6 +108,43 @@ export function describeNotification(n: Input): NotificationView {
         urgent: false,
       };
     }
+    case "config_apply_pending": {
+      const what = p.kind === "firmware" ? "Firmware" : "Config";
+      return {
+        title: `มีคำขอส่ง ${what} เข้าเครื่องรออนุมัติ`,
+        details: line("อุปกรณ์", deviceId),
+        href: "/approvals",
+        urgent: false,
+      };
+    }
+    case "config_apply_approved":
+    case "config_apply_rejected":
+    case "config_apply_succeeded":
+    case "config_apply_failed":
+    case "config_apply_expired": {
+      const what = p.kind === "firmware" ? "Firmware" : "Config";
+      const title = {
+        config_apply_approved: `คำขอส่ง ${what} อนุมัติแล้ว — กดส่งเข้ากล่องได้`,
+        config_apply_rejected: `คำขอส่ง ${what} ของคุณถูกปฏิเสธ`,
+        config_apply_succeeded: `กล่องรับ ${what} ที่คุณขอส่งแล้ว`,
+        config_apply_failed: `ส่ง ${what} ที่คุณขอเข้าเครื่องไม่สำเร็จ`,
+        config_apply_expired: `คำขอส่ง ${what} ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)`,
+      }[n.type as string]!;
+      return {
+        title,
+        // เว็บไม่มีหน้างาน (ตัดออกตามมติ เหมือน task_assigned) จึงไม่ลิงก์
+        details: [
+          ...line("อุปกรณ์", deviceId),
+          ...(n.type === "config_apply_rejected"
+            ? line("เหตุผล", text(p, "rejectReason"))
+            : n.type === "config_apply_failed"
+              ? line("เหตุผล", text(p, "detail"))
+              : []),
+        ],
+        href: null,
+        urgent: false,
+      };
+    }
     case "config_deletion_pending":
       return {
         title: "มีคำขอลบ Config รออนุมัติ",

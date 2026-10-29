@@ -78,6 +78,66 @@ describe("describeNotification", () => {
     expect(approved.details).toEqual(["อุปกรณ์: DEV-7"]);
   });
 
+  it("config_apply_pending: ไปหน้าอนุมัติ สลับ Config/Firmware ตาม kind", () => {
+    const config = view("config_apply_pending", {
+      deviceId: "DEV-1",
+      kind: "config",
+    });
+    expect(config.title).toBe("มีคำขอส่ง Config เข้าเครื่องรออนุมัติ");
+    expect(config.href).toBe("/approvals");
+    expect(config.urgent).toBe(false);
+
+    const firmware = view("config_apply_pending", {
+      deviceId: "DEV-1",
+      kind: "firmware",
+    });
+    expect(firmware.title).toBe("มีคำขอส่ง Firmware เข้าเครื่องรออนุมัติ");
+  });
+
+  it.each([
+    [
+      "config_apply_approved",
+      "คำขอส่ง Config อนุมัติแล้ว — กดส่งเข้ากล่องได้",
+    ],
+    ["config_apply_succeeded", "กล่องรับ Config ที่คุณขอส่งแล้ว"],
+    [
+      "config_apply_expired",
+      "คำขอส่ง Config ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)",
+    ],
+  ])("%s: ไม่ลิงก์ (เว็บไม่มีหน้างาน) ไม่ด่วน แสดงอุปกรณ์", (type, title) => {
+    const v = view(type, { deviceId: "DEV-3", kind: "config" });
+    expect(v.title).toBe(title);
+    expect(v.href).toBeNull();
+    expect(v.urgent).toBe(false);
+    expect(v.details).toEqual(["อุปกรณ์: DEV-3"]);
+  });
+
+  it("config_apply_rejected: แสดงเหตุผลที่ปฏิเสธ", () => {
+    const v = view("config_apply_rejected", {
+      deviceId: "DEV-3",
+      kind: "config",
+      rejectReason: "ค่าไม่เหมาะกับโมเดลนี้",
+    });
+    expect(v.title).toBe("คำขอส่ง Config ของคุณถูกปฏิเสธ");
+    expect(v.details).toEqual([
+      "อุปกรณ์: DEV-3",
+      "เหตุผล: ค่าไม่เหมาะกับโมเดลนี้",
+    ]);
+  });
+
+  it("config_apply_failed (firmware): แสดงเหตุผลจาก detail และสลับคำเป็น Firmware", () => {
+    const v = view("config_apply_failed", {
+      deviceId: "DEV-3",
+      kind: "firmware",
+      detail: "กล่องออฟไลน์ระหว่างส่ง",
+    });
+    expect(v.title).toBe("ส่ง Firmware ที่คุณขอเข้าเครื่องไม่สำเร็จ");
+    expect(v.details).toEqual([
+      "อุปกรณ์: DEV-3",
+      "เหตุผล: กล่องออฟไลน์ระหว่างส่ง",
+    ]);
+  });
+
   it("config_deletion_pending / grace: ลิงก์ไป Config พร้อมชื่อ", () => {
     for (const type of ["config_deletion_pending", "config_deletion_grace"]) {
       const v = view(type, { configId: "cfg-1", configName: "Config กลาง" });
@@ -119,6 +179,12 @@ describe("describeNotification", () => {
       "task_assigned",
       "config_approved",
       "config_deletion_pending",
+      "config_apply_pending",
+      "config_apply_approved",
+      "config_apply_rejected",
+      "config_apply_succeeded",
+      "config_apply_failed",
+      "config_apply_expired",
     ]) {
       expect(view(type).urgent).toBe(false);
     }
