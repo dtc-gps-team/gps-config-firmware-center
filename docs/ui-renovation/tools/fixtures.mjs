@@ -206,7 +206,10 @@ export function apiResponse(url) {
   if (p === "/config-definitions") return configDefinitions;
   if (p === "/device-models") return deviceModels;
   if (p === "/incidents") return incidents;
+  const fw = p.match(/^\/firmware\/([^/]+)$/);
+  if (fw) return firmware.find((f) => f.id === fw[1]) ?? firmware[0];
   if (p === "/firmware") return firmware;
+  if (p === "/customers") return [{ id: "cu1", companyName: "บริษัท ขนส่งภาคเหนือ จำกัด" }];
   if (p === "/campaigns") return campaigns;
   if (p === "/campaigns/rollouts") return query.get("status") === "pending_approval" ? [] : rollouts;
   if (p === "/audit-logs") return auditLogs;

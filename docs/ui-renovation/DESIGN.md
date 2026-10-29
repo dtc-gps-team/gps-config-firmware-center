@@ -191,11 +191,11 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | Shared components | เสร็จ (ส่วนที่ shell/dashboard ใช้) | เสร็จ: DataTable, DiffViewer, UrlTabs, ProgressBar, FileDropzone, CommandStatusSteps, ใช้ ConfirmDialog/ErrorState/CopyButton/RelativeTime/FloatingActionBar | StatusPill→StatusBadge, Accordion |
 | App Shell | เสร็จ | | |
 | Dashboard | เสร็จ (รวมมุมมองตาม Role, Rollout ที่กำลังดำเนินการ, อุปกรณ์ที่เงียบเกิน 24 ชม.) | | |
-| Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | Search + Detail เสร็จ (ลงทะเบียน `/devices/new` ยังไม่แตะ) | ฟอร์มลงทะเบียน |
-| Config Editor (list/wizard/detail) | ยังไม่แตะ | list + wizard เสร็จ (detail `/config/[id]` ยังไม่แตะ ไม่มี UI rollback ค่าเวอร์ชันเก่า) | detail + versions |
-| Approval Center + detail | ยังไม่แตะ | Center เสร็จ, หน้ารายละเอียด Config ใช้ DiffViewer ร่วม (หน้ารายละเอียด Override ยังไม่แตะ) | detail ที่เหลือ |
-| Firmware | ยังไม่แตะ | list + อัปโหลด + เทียบเวอร์ชันเสร็จ (detail `/firmware/[id]` ยังไม่แตะ) | detail |
-| Campaign + Rollout | ยังไม่แตะ | | ทั้งหมด (ผูก ConfirmDialog กับ release/rollback) |
+| Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | เสร็จทั้ง 3 (ลงทะเบียน: grid ตอบสนอง, ลำดับช่องใหม่, CopyButton, ปุ่มยกเลิก) | |
+| Config Editor (list/wizard/detail) | ยังไม่แตะ | เสร็จทั้ง 3: detail เป็นแท็บ พารามิเตอร์ (จัดกลุ่มหมวด) / ประวัติเวอร์ชัน (เทียบกับค่าปัจจุบัน, ใส่ค่าเวอร์ชันเก่ากลับเข้า draft ผ่าน PUT เดิม), โคลนเป็นปุ่มหลักของ Config ที่แก้ตรงๆ ไม่ได้, ลบผ่าน ConfirmDialog | |
+| Approval Center + detail | ยังไม่แตะ | เสร็จ: Center, รายละเอียด Config (DiffViewer), Override ทั้งสองแบบ (ConfirmDialog + ช่องเหตุผลปฏิเสธ, ErrorState) | |
+| Firmware | ยังไม่แตะ | เสร็จ: list, อัปโหลด, เทียบเวอร์ชัน, detail (2 คอลัมน์, อนุมัติ QA ผ่าน ConfirmDialog, สถานะพร้อมปล่อยเดียว) | |
+| Campaign + Rollout | ยังไม่แตะ | ผูก ConfirmDialog กับแผงอนุมัติ/ปล่อย Rollout แล้ว (ปล่อยเข้าอุปกรณ์ต้องพิมพ์ `RELEASE`) Rollback มี dialog อยู่เดิม | layout ที่เหลือทั้งหมด |
 | Incident & Rollback | ยังไม่แตะ | | ทั้งหมด |
 | Audit Log | ยังไม่แตะ | | ทั้งหมด |
 | Parameter Library, Users, Device Model | ยังไม่แตะ | Parameter Library เสร็จ | Users, Device Model |
@@ -213,6 +213,7 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 ข้อจำกัดที่รู้ (ตัดสินใจไม่ทำเพราะไม่มี API หรือจะต้องแก้ contract ซึ่งเป็นกฎเหล็กข้อ 1/4)
 
 - **เหตุผลตอนอนุมัติ/ปฏิเสธ Config**: `POST /config/{id}/reject` ไม่รับ body (ดู `rejectConfig` ใน `config-api.ts`) จึงยังใส่เหตุผลไม่ได้ ถ้าจะทำต้องเพิ่ม field ที่ backend + openapi ก่อน (คำขอ apply มี `rejectReason` อยู่แล้วแต่ยังไม่มี UI ในเว็บ)
+- **Template ของ Config** = โคลน Config ที่มีอยู่ แล้วแก้บางค่า (`/config/new?from={id}` ส่ง `clonedFromId`) ไม่มีระบบแม่แบบแยก ตรวจเส้นทางโคลนด้วย `check-flows.mjs` (งาน C)
 - **Changelog ของ Firmware**: `Firmware` ใน openapi ไม่มี field changelog จึงไม่มีช่องกรอก/แสดง (version, checksum, สถานะ release, เทียบเวอร์ชันมี)
 - **ช่วงค่าต่ำสุด/สูงสุดของ Parameter**: `ConfigFieldDefinition` ยังไม่มี min/max (มี branch `feat/config-definition-min-max` ที่ยังไม่ merge) drawer แสดง ค่าที่ยอมรับ (allowedValues) และค่าเริ่มต้น และ Zod ตรวจชนิดตัวเลข/จำนวนเต็ม/JSON ตามที่ backend ตรวจ
 - **Telemetry / Logs ของอุปกรณ์**: ไม่มี API ส่งค่าจากกล่อง (พิกัด แรงดัน สัญญาณ) และ Server กลางเก็บคำสั่งล่าสุดคำสั่งเดียว แท็บ Telemetry เป็น empty state บอกสาเหตุ แท็บ Logs แสดงคำสั่งล่าสุด

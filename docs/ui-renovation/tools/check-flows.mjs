@@ -125,6 +125,35 @@ async function open(role) {
   await ctx.close();
 }
 
+// ---------- C) โคลน Config -> แก้บางค่า -> บันทึกเป็นชุดใหม่ ----------
+{
+  const { ctx, calls, page, errors } = await open("ConfigEngineer");
+  let clicks = 0;
+  const click = async (locator) => {
+    await locator.click();
+    clicks += 1;
+  };
+  let posted = null;
+  await page.route(/\/api\/v1\/config$/, async (route) => {
+    if (route.request().method() === "POST") posted = route.request().postDataJSON();
+    await route.fallback();
+  });
+  await page.goto(`${base}/config/c2`, { waitUntil: "networkidle" });
+  await click(page.getByRole("link", { name: /โคลนไปสร้างชุดใหม่/ }));
+  await page.waitForURL(/\/config\/new\?from=c2/);
+  check("C1 ฟอร์มโคลนใส่ชื่อ (สำเนา) ให้", (await page.getByLabel("ชื่อ Config").inputValue()).includes("(สำเนา)"));
+  await click(page.getByRole("button", { name: /ถัดไป/ }));
+  check("C2 พารามิเตอร์ของต้นฉบับถูกคัดลอกมาครบ", (await page.locator("#field-SERVER_PORT").count()) === 1 && (await page.locator("#field-REPORT_INTERVAL").count()) === 1);
+  await page.locator("#field-REPORT_INTERVAL").fill("99");
+  check("C3 เห็นส่วนต่างจากต้นฉบับ", await page.getByText("สิ่งที่ต่างจาก Config ต้นฉบับ").isVisible());
+  await click(page.getByRole("button", { name: /บันทึก Config Draft/ }));
+  await page.waitForTimeout(600);
+  check("C4 ส่ง clonedFromId และค่าที่แก้", posted?.clonedFromId === "c2" && posted?.fields?.REPORT_INTERVAL === 99, JSON.stringify(posted));
+  check("C5 ไม่มี error ใน console หน้า", errors.length === 0, errors.join("; "));
+  console.log(`      คลิกทั้งงาน C: ${clicks}`);
+  await ctx.close();
+}
+
 await browser.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} ผ่าน`);
