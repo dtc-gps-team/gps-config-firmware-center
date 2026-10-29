@@ -236,7 +236,7 @@ export function DashboardSummary() {
     incident: (
       <HealthRow
         key="incident"
-        label="Incident ที่ยังต้องตาม"
+        label="Incident ที่ยังเปิดอยู่"
         value={incidentCount}
         error={incidents.error}
         attention="danger"

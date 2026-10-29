@@ -145,7 +145,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
   it("สถานะระบบคำนวณจากข้อมูลจริง", () => {
     render(<DashboardSummary />);
 
-    expect(within(health("Incident ที่ยังต้องตาม")).getByText("2")).toBeInTheDocument();
+    expect(within(health("Incident ที่ยังเปิดอยู่")).getByText("2")).toBeInTheDocument();
     // BOX-2 ออฟไลน์ที่เดียว (BOX-3 ไม่อยู่ใน Server กลาง จึงไม่ทราบ ไม่นับเป็นออฟไลน์)
     expect(within(health("อุปกรณ์ออฟไลน์")).getByText("1")).toBeInTheDocument();
     // BOX-2 กล่องรายงาน v8 แต่เป้าหมาย v9
@@ -165,7 +165,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
       .map((li) => li.textContent ?? "");
     // ผิดปกติ (Rollout หยุดเอง, Incident) มาก่อนงานรออนุมัติ
     expect(titles[0]).toContain("Rollout ที่ระบบหยุดเอง");
-    expect(titles[1]).toContain("Incident ที่ยังต้องตาม");
+    expect(titles[1]).toContain("Incident ที่ยังเปิดอยู่");
     expect(titles[2]).toContain("Config รออนุมัติ");
     expect(titles[3]).toContain("Rollout รออนุมัติ");
     expect(queue.getByText("Rollout รออนุมัติ").closest("a")).toHaveAttribute(
@@ -243,7 +243,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
       screen.getByText(/ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบสถานะการเชื่อมต่อ/),
     ).toBeInTheDocument();
     // แถวอื่นไม่กระทบ
-    expect(within(health("Incident ที่ยังต้องตาม")).getByText("2")).toBeInTheDocument();
+    expect(within(health("Incident ที่ยังเปิดอยู่")).getByText("2")).toBeInTheDocument();
   });
 
   it("Server กลางอยู่ในโหมด mock: มีแถบแจ้งข้อมูลตัวอย่างระดับหน้า (ซื่อตรงว่าเป็นข้อมูลตัวอย่าง)", () => {
@@ -271,7 +271,7 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
         expect(screen.queryByText("ผลการ Deploy")).not.toBeInTheDocument();
         expect(screen.queryByText("Rollout ที่กำลังดำเนินการ")).not.toBeInTheDocument();
         // สถานะระบบที่ไม่พึ่ง Campaign ยังอยู่ตามปกติ
-        expect(within(health("Incident ที่ยังต้องตาม")).getByText("2")).toBeInTheDocument();
+        expect(within(health("Incident ที่ยังเปิดอยู่")).getByText("2")).toBeInTheDocument();
         expect(within(health("อุปกรณ์ทั้งหมด")).getByText("3")).toBeInTheDocument();
       },
     );

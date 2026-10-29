@@ -70,7 +70,7 @@ export function configDriftCount(
   ).length;
 }
 
-/** Incident ที่ยังต้องตาม (เปิดอยู่หรือกำลังตรวจสอบ) */
+/** Incident ที่ยังเปิดอยู่ (เปิดอยู่หรือกำลังตรวจสอบ) */
 export function activeIncidentCount(
   incidents: Pick<Incident, "status">[],
 ): number {

@@ -180,7 +180,7 @@ export function OperationQueue({
     {
       key: "incident",
       tone: "danger",
-      title: "Incident ที่ยังต้องตาม",
+      title: "Incident ที่ยังเปิดอยู่",
       count: incidentCount ?? 0,
       href: "/incidents",
     },
@@ -249,7 +249,7 @@ export function FieldQueue({
     {
       key: "incident",
       tone: "danger",
-      title: "Incident ที่ยังต้องตาม",
+      title: "Incident ที่ยังเปิดอยู่",
       count: incidentCount ?? 0,
       href: "/incidents",
     },
