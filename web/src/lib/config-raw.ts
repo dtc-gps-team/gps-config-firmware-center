@@ -5,6 +5,21 @@ import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
  * สี (ฟังก์ชันล้วน เทสต์ได้ ไม่ผูกกับ UI)
  */
 
+/** ตัวแทนค่าอ่อนไหวในข้อความ JSON (ไม่แสดงรหัสผ่านจริงบนหน้าจอ) · ถ้าผู้ใช้ไม่แตะ
+ * ค่านี้ ระบบเก็บค่าเดิมไว้ ถ้าพิมพ์ค่าใหม่ทับ ค่าใหม่ถูกใช้ */
+export const SENSITIVE_MASK = "********";
+
+/** สำเนา fields ที่ค่าของ field ที่ `sensitive` ถูกแทนด้วย `SENSITIVE_MASK` */
+export function maskSensitiveFields(
+  fields: Record<string, unknown>,
+  defs: ConfigFieldDefinition[],
+): Record<string, unknown> {
+  const sensitive = new Set(defs.filter((d) => d.sensitive).map((d) => d.fieldName));
+  return Object.fromEntries(
+    Object.entries(fields).map(([k, v]) => [k, sensitive.has(k) ? SENSITIVE_MASK : v]),
+  );
+}
+
 export type RawParse =
   | { ok: true; fields: Record<string, unknown> }
   | { ok: false; error: string };

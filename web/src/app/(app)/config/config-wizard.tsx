@@ -35,7 +35,13 @@ import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
 import { ErrorState } from "@/components/error-state";
 import { diffConfigFields } from "@/lib/config-diff";
 import { validateFieldValue } from "@/lib/config-field-validation";
-import { parseRawFields, tokenizeJson, type JsonTokenKind } from "@/lib/config-raw";
+import {
+  maskSensitiveFields,
+  parseRawFields,
+  SENSITIVE_MASK,
+  tokenizeJson,
+  type JsonTokenKind,
+} from "@/lib/config-raw";
 import { cn } from "@/lib/utils";
 
 type FieldValue = string | boolean;
@@ -360,7 +366,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   }
 
   function switchToRaw() {
-    setRawText(JSON.stringify(currentFields, null, 2));
+    setRawText(JSON.stringify(maskSensitiveFields(currentFields, defs ?? []), null, 2));
     setRawError(null);
     setEditorMode("raw");
   }
@@ -375,7 +381,16 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     }
     setRawError(null);
     const nextValues: Record<string, FieldValue> = {};
+    const sensitiveNames = new Set(
+      (defs ?? []).filter((d) => d.sensitive).map((d) => d.fieldName),
+    );
     for (const [k, v] of Object.entries(parsed.fields)) {
+      if (sensitiveNames.has(k) && v === SENSITIVE_MASK) {
+        // ไม่ได้แตะค่าอ่อนไหว: คงค่าเดิมในฟอร์มไว้
+        const keep = effectiveValueByName(k);
+        if (keep !== undefined) nextValues[k] = keep;
+        continue;
+      }
       nextValues[k] =
         typeof v === "boolean"
           ? v
@@ -386,6 +401,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     setValues(nextValues);
     setSelected(Object.keys(parsed.fields));
     clearErrors();
+  }
+
+  function effectiveValueByName(fieldName: string): FieldValue | undefined {
+    const d = (defs ?? []).find((x) => x.fieldName === fieldName);
+    return d ? effectiveValue(d) : values[fieldName];
   }
 
   /** field ในคลังด้านซ้ายที่ยังไม่ได้เพิ่ม + กรองด้วยคำค้น ค่าเริ่มต้นแสดงเฉพาะ

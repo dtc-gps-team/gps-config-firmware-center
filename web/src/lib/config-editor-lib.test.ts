@@ -79,3 +79,14 @@ describe("tokenizeJson", () => {
     expect(tokens.some((t) => t.kind === "literal" && t.text === "true")).toBe(true);
   });
 });
+
+describe("maskSensitiveFields", () => {
+  it("replaces only sensitive values", async () => {
+    const { maskSensitiveFields, SENSITIVE_MASK } = await import("./config-raw");
+    const defs = [def({ fieldName: "PW", sensitive: true }), def({ fieldName: "PORT" })];
+    expect(maskSensitiveFields({ PW: "s3cret", PORT: 80 }, defs)).toEqual({
+      PW: SENSITIVE_MASK,
+      PORT: 80,
+    });
+  });
+});

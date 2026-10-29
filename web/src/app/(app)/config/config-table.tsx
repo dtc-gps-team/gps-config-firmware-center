@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import {
   dateRangeFilterFn,
@@ -25,6 +24,7 @@ import { CreateConfigButton } from "./create-config-button";
 import { ImportConfigButton } from "./import-config-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 
 /** เรียงชื่อแบบภาษาไทย (default text sort ของ TanStack เทียบ codepoint ล้วน) */
 function thTextSort(a: Row<Config>, b: Row<Config>, columnId: string): number {
@@ -149,12 +149,7 @@ export function ConfigTableCard({
           {isLoading && data === null ? (
             <TableSkeleton columns={columns.length} />
           ) : error ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                ลองใหม่
-              </Button>
-            </div>
+            <ErrorState message={error} onRetry={() => void refetch()} />
           ) : configs.length === 0 ? (
             <EmptyState
               icon={SlidersHorizontalIcon}
@@ -165,9 +160,24 @@ export function ConfigTableCard({
             <DataTable
               columns={columns}
               data={configs}
+              urlSync
+              savedViewsKey="configs"
               searchPlaceholder="ค้นหาชื่อ / โมเดล / โปรโตคอล…"
-              emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข"
+              emptyMessage="ไม่พบ Config ที่ตรงกับเงื่อนไข ลองล้างตัวกรองบางตัว"
               onRowClick={(config) => router.push(`/config/${config.id}`)}
+              renderCard={(config) => (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium break-words">{config.name}</span>
+                    <StatusPill tone={CONFIG_STATUS_TONE[config.status] ?? "neutral"}>
+                      {statusLabel(config.status)}
+                    </StatusPill>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {config.deviceModel} / {config.protocol}
+                  </span>
+                </div>
+              )}
             />
           )}
         </CardContent>

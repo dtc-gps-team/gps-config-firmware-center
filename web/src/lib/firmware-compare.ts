@@ -1,4 +1,5 @@
 import type { Firmware } from "@/lib/firmware-api";
+import { formatDateTime } from "@/lib/format-date";
 import { diffConfigFields, type ConfigDiff } from "@/lib/config-diff";
 
 /** สถานะพร้อมปล่อยของ Firmware รวมจากผลอัปโหลดและผลตรวจคุณภาพ (ข้อความเดียวที่ตอบ
@@ -29,7 +30,7 @@ function snapshot(f: Firmware): Record<string, unknown> {
     "ขนาดไฟล์ (ไบต์)": f.fileSizeBytes,
     "SHA-256": f.checksumSha256 ?? "-",
     "ชื่อไฟล์": f.originalFilename,
-    "อัปโหลดเมื่อ": f.uploadedAt,
+    "อัปโหลดเมื่อ": formatDateTime(f.uploadedAt),
   };
 }
 

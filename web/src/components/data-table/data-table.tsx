@@ -203,15 +203,17 @@ export function DataTable<TData, TValue>({
       enableSorting: false,
       enableHiding: false,
       header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllRowsSelected()}
-          indeterminate={table.getIsSomeRowsSelected()}
-          onCheckedChange={(v) => table.toggleAllRowsSelected(Boolean(v))}
-          aria-label="เลือกทุกแถว"
-        />
+        <span className="flex items-center">
+          <Checkbox
+            checked={table.getIsAllRowsSelected()}
+            indeterminate={table.getIsSomeRowsSelected()}
+            onCheckedChange={(v) => table.toggleAllRowsSelected(Boolean(v))}
+            aria-label="เลือกทุกแถว"
+          />
+        </span>
       ),
       cell: ({ row }) => (
-        <span onClick={(e) => e.stopPropagation()}>
+        <span className="flex items-center" onClick={(e) => e.stopPropagation()}>
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(v) => row.toggleSelected(Boolean(v))}

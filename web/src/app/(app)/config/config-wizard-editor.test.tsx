@@ -151,6 +151,31 @@ describe("ConfigWizard editor — validation, diff, JSON mode, reset", () => {
     expect((document.getElementById("field-APN1") as HTMLInputElement).value).toBe("m2m");
   });
 
+  it("โหมด JSON ไม่แสดงค่าอ่อนไหวจริง และคงค่าเดิมไว้ถ้าไม่ได้แก้", async () => {
+    definitionsState.data = [
+      def({ fieldName: "APN1", category: "Network" }),
+      def({ fieldName: "PW", sensitive: true, category: "Security" }),
+    ];
+    const user = userEvent.setup();
+    render(
+      <ConfigWizard
+        mode={{ kind: "edit", config: { ...saved, fields: { APN1: "internet", PW: "s3cr3t" } } }}
+      />,
+    );
+    await openStep2(user);
+
+    await user.click(screen.getByRole("button", { name: "JSON" }));
+    const textarea = screen.getByLabelText("JSON ของ field และค่า") as HTMLTextAreaElement;
+    expect(textarea.value).not.toContain("s3cr3t");
+    expect(JSON.parse(textarea.value).PW).toBe("********");
+
+    fireEvent.change(textarea, { target: { value: '{"APN1": "m2m", "PW": "********"}' } });
+    await user.click(screen.getByRole("button", { name: "ฟอร์ม" }));
+
+    expect((document.getElementById("field-PW") as HTMLInputElement).value).toBe("s3cr3t");
+    expect((document.getElementById("field-APN1") as HTMLInputElement).value).toBe("m2m");
+  });
+
   it("รีเซ็ต: ต้องยืนยันก่อน แล้วค่ากลับเป็นฉบับที่บันทึกไว้", async () => {
     const user = userEvent.setup();
     render(<ConfigWizard mode={{ kind: "edit", config: saved }} />);
