@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -124,13 +123,6 @@ export function LoginForm() {
           </Button>
         </form>
       </CardContent>
-      {process.env.NODE_ENV !== "production" ? (
-        <CardFooter>
-          <p className="text-xs text-muted-foreground">
-            ทดสอบ: config.test / password123
-          </p>
-        </CardFooter>
-      ) : null}
     </Card>
   );
 }
