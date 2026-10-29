@@ -10,10 +10,7 @@ const CHANGE_LABEL: Record<FieldChangeKind, string> = {
   removed: "ลบ",
 };
 
-const GRID_WITH_KIND =
-  "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem]";
-const GRID_NO_KIND =
-  "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)]";
+const GRID = "sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem]";
 
 function valueText(value: unknown): string {
   if (value === null || value === undefined) return "-";
@@ -71,7 +68,6 @@ export function DiffViewer({
   afterLabel,
   isMasked = () => false,
   attention = () => null,
-  showKind = true,
   className,
 }: {
   changes: FieldChange[];
@@ -79,11 +75,8 @@ export function DiffViewer({
   afterLabel: string;
   isMasked?: (fieldName: string) => boolean;
   attention?: (fieldName: string) => string | null;
-  /** false = ซ่อนคอลัมน์ประเภท (เพิ่ม/แก้ไข/ลบ) เมื่อทุกแถวเป็นชนิดเดียวกันจนคอลัมน์ไม่ให้ข้อมูล เช่นเทียบ Firmware */
-  showKind?: boolean;
   className?: string;
 }) {
-  const GRID = showKind ? GRID_WITH_KIND : GRID_NO_KIND;
   return (
     <div className={cn("overflow-hidden rounded-lg border", className)}>
       <div
@@ -96,7 +89,7 @@ export function DiffViewer({
         <span>ชื่อฟิลด์</span>
         <span>{beforeLabel}</span>
         <span>{afterLabel}</span>
-        {showKind && <span>ประเภท</span>}
+        <span>ประเภท</span>
       </div>
       <div className="divide-y">
         {changes.map((c) => {
@@ -154,9 +147,7 @@ export function DiffViewer({
                   <ValueCell value={c.after} masked={isMasked(c.fieldName)} />
                 )}
               </span>
-              {showKind && (
-                <span className="font-medium">{CHANGE_LABEL[c.kind]}</span>
-              )}
+              <span className="font-medium">{CHANGE_LABEL[c.kind]}</span>
             </div>
           );
         })}

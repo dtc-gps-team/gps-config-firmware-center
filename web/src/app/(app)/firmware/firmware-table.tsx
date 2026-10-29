@@ -3,13 +3,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { CpuIcon, GitCompareIcon } from "lucide-react";
+import { CpuIcon } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorState } from "@/components/error-state";
 import { RelativeTime } from "@/components/relative-time";
@@ -19,7 +15,6 @@ import {
   type FirmwareRelease,
 } from "@/lib/firmware-compare";
 import type { PillTone } from "@/lib/status-pill";
-import { FirmwareCompareDialog } from "./firmware-compare-dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useFirmwareList } from "@/hooks/use-firmware";
@@ -39,7 +34,11 @@ import { UploadFirmwareButton } from "./upload-firmware-button";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
 
-function thTextSort(a: Row<Firmware>, b: Row<Firmware>, columnId: string): number {
+function thTextSort(
+  a: Row<Firmware>,
+  b: Row<Firmware>,
+  columnId: string,
+): number {
   return String(a.getValue(columnId)).localeCompare(
     String(b.getValue(columnId)),
     "th",
@@ -159,7 +158,10 @@ const columns: ColumnDef<Firmware>[] = [
           >
             {row.original.checksumSha256.slice(0, 10)}
           </span>
-          <CopyButton value={row.original.checksumSha256} label="คัดลอก SHA-256" />
+          <CopyButton
+            value={row.original.checksumSha256}
+            label="คัดลอก SHA-256"
+          />
         </span>
       ) : (
         <span className="text-muted-foreground">-</span>
@@ -202,7 +204,6 @@ export function FirmwareTableCard({
   const { data, isLoading, error, refetch } = useFirmwareList();
   const firmwareList = useMemo(() => data ?? [], [data]);
   const [justUploaded, setJustUploaded] = useState<Firmware | null>(null);
-  const [comparing, setComparing] = useState<[Firmware, Firmware] | null>(null);
 
   const handleUploaded = useCallback(
     (firmware: Firmware) => {
@@ -224,7 +225,12 @@ export function FirmwareTableCard({
           <span className="flex flex-wrap items-center gap-1">
             อัปโหลด Firmware เวอร์ชัน &ldquo;{justUploaded.version}&rdquo; แล้ว
             สถานะ{" "}
-            <StatusPill tone={FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ?? "neutral"}>
+            <StatusPill
+              tone={
+                FIRMWARE_UPLOAD_STATUS_TONE[justUploaded.uploadStatus] ??
+                "neutral"
+              }
+            >
               {statusLabel(justUploaded.uploadStatus)}
             </StatusPill>
           </span>
@@ -252,23 +258,6 @@ export function FirmwareTableCard({
               searchPlaceholder="ค้นหาเวอร์ชัน / โมเดล…"
               emptyMessage="ไม่พบ Firmware ที่ตรงกับเงื่อนไข ลองล้างตัวกรองบางตัว"
               onRowClick={(fw) => router.push(`/firmware/${fw.id}`)}
-              selectable={{
-                getRowId: (fw) => fw.id,
-                bulkActions: (selected) =>
-                  selected.length === 2 ? (
-                    <Button
-                      size="sm"
-                      onClick={() => setComparing([selected[0], selected[1]])}
-                    >
-                      <GitCompareIcon />
-                      เปรียบเทียบ 2 เวอร์ชัน
-                    </Button>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      เลือก 2 เวอร์ชันเพื่อเปรียบเทียบ
-                    </span>
-                  ),
-              }}
               renderCard={(fw) => (
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
@@ -291,7 +280,6 @@ export function FirmwareTableCard({
           )}
         </CardContent>
       </Card>
-      <FirmwareCompareDialog pair={comparing} onClose={() => setComparing(null)} />
     </div>
   );
 }

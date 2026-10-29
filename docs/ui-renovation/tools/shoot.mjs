@@ -240,16 +240,6 @@ const targets = {
       await page.waitForTimeout(500);
     },
   },
-  "firmware-compare": {
-    url: "/firmware",
-    w: 1440,
-    h: 900,
-    act: async (page) => {
-      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(0).click();
-      await page.getByRole("checkbox", { name: "เลือกแถวนี้" }).nth(2).click();
-      await page.getByRole("button", { name: /เปรียบเทียบ 2 เวอร์ชัน/ }).click();
-    },
-  },
 };
 
 const browser = await chromium.launch();
