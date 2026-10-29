@@ -123,8 +123,7 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
     ).toBeInTheDocument();
 
     const confirm = screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" });
-    expect(confirm).toBeDisabled();
-    await user.type(screen.getByRole("textbox"), "RELEASE");
+    expect(confirm).toBeEnabled();
     await user.click(confirm);
 
     expect(releaseMock).toHaveBeenCalledWith("tok", "campaign-1", "rollout-1");
@@ -169,8 +168,7 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
 
     await user.click(screen.getByRole("button", { name: "ปล่อยเข้าอุปกรณ์" }));
     const confirm = screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" });
-    expect(confirm).toBeDisabled();
-    await user.type(screen.getByRole("textbox"), "RELEASE");
+    expect(confirm).toBeEnabled();
     await user.click(confirm);
 
     expect(await screen.findByText("ปล่อยเข้าอุปกรณ์ไม่สำเร็จ")).toBeInTheDocument();

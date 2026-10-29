@@ -162,7 +162,6 @@ export function CampaignRolloutReleasePanel({
         confirmLabel={
           confirming === "release" ? "ยืนยันปล่อยเข้าอุปกรณ์" : "ยืนยันปฏิเสธ"
         }
-        confirmText={confirming === "release" ? "RELEASE" : undefined}
         destructive={confirming === "reject"}
         onConfirm={async () => {
           if (confirming) await run(confirming);
