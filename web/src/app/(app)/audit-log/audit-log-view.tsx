@@ -1,27 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  DownloadIcon,
   HistoryIcon,
-  RefreshCwIcon,
   SearchXIcon,
 } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
+import { useAuth } from "@/components/auth/auth-provider";
 import { canAccessAuditLog } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -37,12 +31,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useAuditLogs } from "@/hooks/use-audit-logs";
+import { useAuditLogs, type AuditLogRow } from "@/hooks/use-audit-logs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useUrlParams } from "@/hooks/use-url-params";
 import { dayRangeToIso } from "@/lib/audit-date-range";
+import { listAuditLogs } from "@/lib/audit-api";
+import { listUsers } from "@/lib/users-api";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
+import { RefreshControl } from "@/components/refresh-control";
+import { AuditLogDetailSheet } from "./audit-log-detail-sheet";
 
 /** โมดูลที่เขียน AuditLog จริงตอนนี้ — mirror `AUDIT_MODULE` ของแต่ละ
  * service ฝั่ง backend (config/campaign/config-deletion/device/firmware
@@ -58,33 +59,51 @@ const AUDIT_MODULE_OPTIONS = [
 /** แถวต่อหน้า — ตรงกับ default `pageSize` ของ backend (`GET /audit-logs`) */
 const PAGE_SIZE = 20;
 
+/** ตัวกรองและหน้าที่เก็บใน URL (`?from=&to=&actor=&module=&action=&page=`) */
+const URL_DEFAULTS = {
+  from: "",
+  to: "",
+  actor: "",
+  module: "",
+  action: "",
+  page: "1",
+};
+
+/** ส่งออกสูงสุดตามตัวกรองปัจจุบัน — กันดึงทั้งฐานข้อมูล */
+const EXPORT_MAX_ROWS = 5000;
+const EXPORT_PAGE_SIZE = 100;
+
 /**
  * เนื้อหาจริงของหน้า Audit Log — แยกเป็น client component ต่างหากจาก
  * page.tsx (server component ที่ export metadata) เพราะ RoleGuard ต้องใช้
  * useAuth() ซึ่งเป็น client-only hook
  */
 export function AuditLogView() {
-  const [auditModule, setAuditModule] = useState("");
-  const [action, setAction] = useState("");
-  const [actorName, setActorName] = useState("");
-  // YYYY-MM-DD จาก <input type="date"> — แปลงเป็นช่วงเวลาไทยตอนส่ง backend
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  // ไม่ต้องกันกรณีหน้าปัจจุบันเกินจำนวนหน้าจริง — AuditLog เพิ่มอย่างเดียว
-  // ไม่มีการลบแถว และเปลี่ยน filter แล้วกลับไปหน้า 1 เสมอ
-  const [page, setPage] = useState(1);
-  const debouncedAction = useDebouncedValue(action.trim(), 300);
-  const debouncedActor = useDebouncedValue(actorName.trim(), 300);
-  const range = dayRangeToIso(dateFrom, dateTo);
+  const { session } = useAuth();
+  const { values, update, reset } = useUrlParams(URL_DEFAULTS);
+  const [selected, setSelected] = useState<AuditLogRow | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const page = Math.max(1, Number(values.page) || 1);
+  const debouncedAction = useDebouncedValue(values.action.trim(), 300);
+  const debouncedActor = useDebouncedValue(values.actor.trim(), 300);
+  const range = dayRangeToIso(values.from, values.to);
   const hasFilter = Boolean(
-    auditModule || debouncedAction || debouncedActor || dateFrom || dateTo,
+    values.module ||
+      debouncedAction ||
+      debouncedActor ||
+      values.from ||
+      values.to,
   );
-  const { data, total, isLoading, error, refetch } = useAuditLogs({
-    auditModule: auditModule || undefined,
+  const filters = {
+    auditModule: values.module || undefined,
     action: debouncedAction || undefined,
     actorName: debouncedActor || undefined,
     from: range.from,
     to: range.to,
+  };
+  const { data, total, isLoading, error, refetch } = useAuditLogs({
+    ...filters,
     // ช่วงวันที่ไม่ถูกต้อง: ไม่ยิง request (จะได้ 400) แสดงข้อความแทนตาราง
     enabled: !range.error,
     page,
@@ -96,236 +115,263 @@ export function AuditLogView() {
   const firstRow = (page - 1) * PAGE_SIZE + 1;
   const lastRow = firstRow + rows.length - 1;
 
+  /** เปลี่ยนตัวกรองแล้วกลับหน้า 1 เสมอ */
+  function setFilter(patch: Partial<typeof URL_DEFAULTS>) {
+    update({ ...patch, page: "1" });
+  }
+
+  /** ดึงทุกหน้าตามตัวกรองปัจจุบัน (สูงสุด EXPORT_MAX_ROWS) แล้วสร้าง CSV ฝั่ง client */
+  async function exportCsv() {
+    const token = session?.accessToken;
+    if (!token || range.error) return;
+    setExporting(true);
+    try {
+      const users = await listUsers(token).catch(() => []);
+      const nameById = new Map(users.map((u) => [u.id, u.fullName]));
+      const lines: string[][] = [];
+      let count = Infinity;
+      for (let p = 1; lines.length < Math.min(count, EXPORT_MAX_ROWS); p++) {
+        const result = await listAuditLogs(token, {
+          ...filters,
+          page: p,
+          pageSize: EXPORT_PAGE_SIZE,
+        });
+        count = result.total;
+        if (result.items.length === 0) break;
+        for (const log of result.items) {
+          lines.push([
+            log.createdAt,
+            nameById.get(log.userId) ?? log.userId,
+            log.auditModule,
+            log.action,
+            log.ipAddress ?? "",
+            log.metadata ? JSON.stringify(log.metadata) : "",
+          ]);
+        }
+      }
+      downloadCsv(
+        `audit-log-${new Date().toISOString().slice(0, 10)}.csv`,
+        toCsv(
+          ["createdAt", "actor", "module", "action", "ipAddress", "metadata"],
+          lines,
+        ),
+      );
+      toast.success(
+        count > lines.length
+          ? `ส่งออก ${lines.length.toLocaleString("th-TH")} จาก ${count.toLocaleString("th-TH")} รายการ (จำกัดสูงสุด ${EXPORT_MAX_ROWS.toLocaleString("th-TH")})`
+          : `ส่งออก ${lines.length.toLocaleString("th-TH")} รายการ`,
+      );
+    } catch {
+      toast.error("ส่งออก Audit Log ไม่สำเร็จ ลองใหม่อีกครั้ง");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <RoleGuard allow={canAccessAuditLog}>
       <div className="flex flex-col gap-5">
         <PageHeader
           title="Audit Log"
           description="ประวัติการกระทำที่เปลี่ยนข้อมูลในระบบ ใครทำอะไร เมื่อไร กรองตามช่วงวันที่หรือผู้ทำรายการได้"
+          actions={
+            <>
+              <RefreshControl />
+              <Button
+                variant="outline"
+                onClick={() => void exportCsv()}
+                loading={exporting}
+                disabled={Boolean(range.error) || (total ?? 0) === 0}
+              >
+                <DownloadIcon />
+                ส่งออก CSV
+              </Button>
+            </>
+          }
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              ประวัติการทำงาน{" "}
-              <span className="text-muted-foreground">
-                ({(total ?? 0).toLocaleString("th-TH")})
-              </span>
-            </CardTitle>
-            <CardDescription>
-              เรียงจากล่าสุด เฉพาะการกระทำที่เปลี่ยนข้อมูล (สร้าง/แก้ไข/
-              อนุมัติ/ปฏิเสธ/นำ Config ไปใช้) ไม่รวมการดูอย่างเดียว
-            </CardDescription>
-            {/* useAuditLogs ดึงล่าสุดให้เองแล้วตอนกลับมาโฟกัสแท็บ (useRefetchOnFocus)
-                ปุ่มนี้เผื่อกรณีอยากดึงทันทีโดยไม่ต้องสลับแท็บไปมา */}
-            <CardAction>
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="audit-date-from" className="text-xs">
+              ตั้งแต่วันที่
+            </Label>
+            <Input
+              id="audit-date-from"
+              type="date"
+              value={values.from}
+              max={values.to || undefined}
+              onChange={(e) => setFilter({ from: e.target.value })}
+              className="h-8 w-40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="audit-date-to" className="text-xs">
+              ถึงวันที่
+            </Label>
+            <Input
+              id="audit-date-to"
+              type="date"
+              value={values.to}
+              min={values.from || undefined}
+              onChange={(e) => setFilter({ to: e.target.value })}
+              className="h-8 w-40"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="audit-actor" className="text-xs">
+              ผู้ทำรายการ
+            </Label>
+            <Input
+              id="audit-actor"
+              value={values.actor}
+              onChange={(e) => setFilter({ actor: e.target.value })}
+              placeholder="พิมพ์ชื่อผู้ทำรายการ"
+              className="h-8 w-48"
+            />
+          </div>
+          <Select
+            value={values.module}
+            onValueChange={(value) => setFilter({ module: value ?? "" })}
+          >
+            <SelectTrigger className="h-8 max-w-48" aria-label="โมดูล">
+              <SelectValue placeholder="โมดูล: ทั้งหมด">
+                {(value: string) =>
+                  AUDIT_MODULE_OPTIONS.find((m) => m.value === value)?.label ??
+                  "โมดูล: ทั้งหมด"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">โมดูล: ทั้งหมด</SelectItem>
+              {AUDIT_MODULE_OPTIONS.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={values.action}
+            onChange={(e) => setFilter({ action: e.target.value })}
+            placeholder="ค้นหา action เช่น create, approve, reject…"
+            aria-label="Action"
+            className="h-8 max-w-64"
+          />
+          {(values.module ||
+            values.action ||
+            values.actor ||
+            values.from ||
+            values.to) && (
+            <Button variant="ghost" size="sm" onClick={reset}>
+              ล้างตัวกรอง
+            </Button>
+          )}
+          <span className="font-instrument ml-auto text-xs text-muted-foreground tabular-nums">
+            {(total ?? 0).toLocaleString("th-TH")} รายการ
+          </span>
+        </div>
+
+        {range.error && (
+          <p role="alert" className="text-sm text-destructive">
+            {range.error}
+          </p>
+        )}
+
+        {range.error ? null : isLoading && data === null ? (
+          <TableSkeleton columns={5} />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => void refetch()} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={hasFilter ? SearchXIcon : HistoryIcon}
+            message={
+              hasFilter
+                ? "ไม่พบประวัติที่ตรงกับเงื่อนไข ลองเปลี่ยนหรือล้างตัวกรอง"
+                : "ยังไม่มีประวัติการทำงาน จะแสดงเมื่อมีการสร้าง แก้ไข หรืออนุมัติข้อมูล"
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>เวลา</TableHead>
+                  <TableHead>ผู้ทำรายการ</TableHead>
+                  <TableHead>โมดูล</TableHead>
+                  <TableHead>Action</TableHead>
+                  {/* ipAddress เป็น null ในแถวเก่าและ flow อัตโนมัติ (openapi AuditLogEntry) */}
+                  <TableHead>IP Address</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    tabIndex={0}
+                    aria-label={`ดูรายละเอียด ${row.action} โดย ${row.actorName}`}
+                    className="cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
+                    onClick={() => setSelected(row)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelected(row);
+                      }
+                    }}
+                  >
+                    <TableCell className="font-instrument text-xs text-muted-foreground">
+                      {new Date(row.createdAt).toLocaleString("th-TH")}
+                    </TableCell>
+                    <TableCell className="text-xs">{row.actorName}</TableCell>
+                    <TableCell className="font-instrument text-xs">
+                      {row.auditModule}
+                    </TableCell>
+                    <TableCell className="font-instrument text-xs">
+                      {row.action}
+                    </TableCell>
+                    <TableCell className="font-instrument text-xs text-muted-foreground">
+                      {row.ipAddress ?? "-"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {!range.error && totalPages > 1 && rows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+            <span className="tabular-nums">
+              แสดง {firstRow.toLocaleString("th-TH")}-
+              {lastRow.toLocaleString("th-TH")} จาก{" "}
+              {(total ?? 0).toLocaleString("th-TH")} รายการ
+            </span>
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void refetch()}
-                disabled={isLoading}
+                onClick={() => update({ page: String(page - 1) })}
+                disabled={isLoading || page <= 1}
               >
-                <RefreshCwIcon className={isLoading ? "animate-spin" : ""} />
-                รีเฟรช
+                <ChevronLeftIcon />
+                ก่อนหน้า
               </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="audit-date-from" className="text-xs">
-                  ตั้งแต่วันที่
-                </Label>
-                <Input
-                  id="audit-date-from"
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
-                    setPage(1);
-                  }}
-                  className="h-8 w-40"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="audit-date-to" className="text-xs">
-                  ถึงวันที่
-                </Label>
-                <Input
-                  id="audit-date-to"
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
-                    setPage(1);
-                  }}
-                  className="h-8 w-40"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="audit-actor" className="text-xs">
-                  ผู้ทำรายการ
-                </Label>
-                <Input
-                  id="audit-actor"
-                  value={actorName}
-                  onChange={(e) => {
-                    setActorName(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="พิมพ์ชื่อผู้ทำรายการ"
-                  className="h-8 w-48"
-                />
-              </div>
-              <Select
-                value={auditModule}
-                onValueChange={(value) => {
-                  setAuditModule(value ?? "");
-                  setPage(1);
-                }}
+              <span className="tabular-nums">
+                หน้า {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => update({ page: String(page + 1) })}
+                disabled={isLoading || page >= totalPages}
               >
-                <SelectTrigger className="h-8 max-w-48">
-                  <SelectValue placeholder="โมดูล: ทั้งหมด">
-                    {(value: string) =>
-                      AUDIT_MODULE_OPTIONS.find((m) => m.value === value)
-                        ?.label ?? "โมดูล: ทั้งหมด"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">โมดูล: ทั้งหมด</SelectItem>
-                  {AUDIT_MODULE_OPTIONS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                value={action}
-                onChange={(e) => {
-                  setAction(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="ค้นหา action เช่น create, approve, reject…"
-                className="h-8 max-w-64"
-              />
-              {(auditModule || action || actorName || dateFrom || dateTo) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setAuditModule("");
-                    setAction("");
-                    setActorName("");
-                    setDateFrom("");
-                    setDateTo("");
-                    setPage(1);
-                  }}
-                >
-                  ล้างตัวกรอง
-                </Button>
-              )}
+                ถัดไป
+                <ChevronRightIcon />
+              </Button>
             </div>
-
-            {range.error && (
-              <p className="text-sm text-destructive">{range.error}</p>
-            )}
-
-            {range.error ? null : isLoading && data === null ? (
-              <TableSkeleton columns={4} />
-            ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
-            ) : rows.length === 0 ? (
-              <EmptyState
-                icon={hasFilter ? SearchXIcon : HistoryIcon}
-                message={
-                  hasFilter
-                    ? "ไม่พบประวัติที่ตรงกับเงื่อนไข"
-                    : "ยังไม่มีประวัติการทำงาน"
-                }
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>เวลา</TableHead>
-                    <TableHead>ผู้ทำรายการ</TableHead>
-                    <TableHead>โมดูล</TableHead>
-                    <TableHead>Action</TableHead>
-                    {/* ipAddress เป็น null เสมอตอนนี้ — openapi.yaml AuditLogEntry
-                        ระบุว่ายังไม่มี endpoint ไหนส่งค่านี้มาจริง (nullable ไว้รอ) */}
-                    <TableHead>IP Address</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {new Date(row.createdAt).toLocaleString("th-TH")}
-                      </TableCell>
-                      <TableCell className="text-xs">{row.actorName}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.auditModule}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.action}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {row.ipAddress ?? "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-
-            {!range.error && totalPages > 1 && rows.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm text-muted-foreground">
-                <span className="tabular-nums">
-                  แสดง {firstRow.toLocaleString("th-TH")}-
-                  {lastRow.toLocaleString("th-TH")} จาก{" "}
-                  {(total ?? 0).toLocaleString("th-TH")} รายการ
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => p - 1)}
-                    disabled={isLoading || page <= 1}
-                  >
-                    <ChevronLeftIcon />
-                    ก่อนหน้า
-                  </Button>
-                  <span className="tabular-nums">
-                    หน้า {page} / {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={isLoading || page >= totalPages}
-                  >
-                    ถัดไป
-                    <ChevronRightIcon />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
+      <AuditLogDetailSheet row={selected} onClose={() => setSelected(null)} />
     </RoleGuard>
   );
 }
