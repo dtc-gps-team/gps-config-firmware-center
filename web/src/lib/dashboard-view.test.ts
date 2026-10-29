@@ -33,7 +33,7 @@ describe("silentDevices", () => {
     deviceModel: "BB-200",
   }));
 
-  it("นับเฉพาะเครื่องออฟไลน์ที่เงียบเกินเกณฑ์ เรียงเงียบนานสุดก่อน", () => {
+  it("นับเฉพาะเครื่องออฟไลน์ที่ขาดการติดต่อเกินเกณฑ์ เรียงเงียบนานสุดก่อน", () => {
     const central = [
       { deviceId: "A", online: false, lastSeenAt: ago(30) },
       { deviceId: "B", online: false, lastSeenAt: ago(60) },
@@ -44,7 +44,7 @@ describe("silentDevices", () => {
     expect(result.map((d) => d.deviceId)).toEqual(["B", "A"]);
   });
 
-  it("เครื่องที่ไม่เคยรายงานเงียบที่สุด และเครื่องที่ Server กลางไม่รู้จักไม่นับ", () => {
+  it("เครื่องที่ไม่เคยรายงานขาดการติดต่อนานที่สุด และเครื่องที่ Server กลางไม่รู้จักไม่นับ", () => {
     const central = [
       { deviceId: "A", online: false, lastSeenAt: ago(48) },
       { deviceId: "B", online: false, lastSeenAt: null },

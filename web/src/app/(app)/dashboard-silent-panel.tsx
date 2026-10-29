@@ -43,11 +43,11 @@ export function DashboardSilentPanel({
 
   return (
     <Panel
-      title={`อุปกรณ์ที่เงียบเกิน ${SILENT_THRESHOLD_HOURS} ชั่วโมง`}
+      title={`อุปกรณ์ที่ขาดการติดต่อเกิน ${SILENT_THRESHOLD_HOURS} ชั่วโมง`}
       href="/devices"
       description={
         silent && silent.length > 0
-          ? `${silent.length.toLocaleString("th-TH")} เครื่อง เรียงที่หายนานสุดก่อน`
+          ? `${silent.length.toLocaleString("th-TH")} เครื่อง เรียงที่ขาดการติดต่อนานสุดก่อน`
           : undefined
       }
       className={className}
@@ -56,12 +56,14 @@ export function DashboardSilentPanel({
         <ErrorState message="โหลดไม่สำเร็จ" onRetry={onRetry} />
       ) : unavailable ? (
         <PanelEmpty>
-          ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบว่าเครื่องไหนเงียบ
+          ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบว่าเครื่องไหนขาดการติดต่อ
         </PanelEmpty>
       ) : loading || silent === null ? (
         <Skeleton className="h-16 w-full" />
       ) : silent.length === 0 ? (
-        <PanelEmpty>ไม่มีเครื่องที่หายไปนานเกินเกณฑ์</PanelEmpty>
+        <PanelEmpty>
+          ไม่มีเครื่องที่ขาดการติดต่อเกิน {SILENT_THRESHOLD_HOURS} ชั่วโมง
+        </PanelEmpty>
       ) : (
         <ul className="flex flex-col divide-y rounded-lg border">
           {silent.slice(0, MAX_ROWS).map((d) => (
