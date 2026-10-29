@@ -112,6 +112,8 @@ interface DataTableProps<TData, TValue> {
   };
   /** การ์ดของแถวสำหรับจอแคบ (< 768px) — ไม่ใส่ = ตารางเลื่อนแนวนอนตามเดิม */
   renderCard?: (row: TData) => React.ReactNode;
+  /** คอลัมน์ที่ซ่อนตอนเริ่ม (ผู้ใช้เปิดได้จากเมนู "คอลัมน์") เช่น `{ protocol: false }` */
+  initialColumnVisibility?: VisibilityState;
   /** ความสูงแถว (px) ตอนเข้าโหมด virtualization (แถวเกิน 200) */
   virtualRowHeight?: number;
 }
@@ -151,6 +153,7 @@ export function DataTable<TData, TValue>({
   columnToggle = false,
   selectable,
   renderCard,
+  initialColumnVisibility = {},
   virtualRowHeight = 52,
 }: DataTableProps<TData, TValue>) {
   // TanStack Table's useReactTable() คืน function ที่ React Compiler memoize
@@ -173,7 +176,9 @@ export function DataTable<TData, TValue>({
     initial.columnFilters,
   );
   const [sorting, setSorting] = useState<SortingState>(initial.sorting);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
+    initialColumnVisibility,
+  );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   // เพิ่มค่าเมื่อมุมมองถูกแทนที่จากภายนอก (มุมมองที่บันทึก/ล้างตัวกรอง) เพื่อ
   // remount ช่องกรองที่เก็บข้อความของตัวเองไว้

@@ -220,7 +220,7 @@ function TypeFilterButton({
   );
 }
 
-function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
+export function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
   const { session } = useAuth();
   // ซ่อน pill ของชนิดที่ role นี้ไม่มีสิทธิ์เห็นเลย (#378 รีวิว B บน #371) —
   // mirror การกรองฝั่ง backend กัน "กดปุ่มแล้วไม่มีผลอะไร"
