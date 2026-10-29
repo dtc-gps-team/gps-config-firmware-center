@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/components/auth/auth-provider";
@@ -8,7 +8,11 @@ import { canUploadFirmware } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { uploadFirmware, type Firmware } from "@/lib/firmware-api";
 import { formatFileSize } from "@/lib/format-bytes";
+import { CopyButton } from "@/components/copy-button";
+import { FileDropzone } from "@/components/file-dropzone";
+import { ProgressBar } from "@/components/progress-bar";
 import { Button } from "@/components/ui/button";
+import { sha256Hex } from "@/lib/file-checksum";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -43,8 +47,21 @@ export function UploadFirmwareForm({
   const [deviceModel, setDeviceModel] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  // bump เพื่อ remount <input type="file"> ตอนกด "ล้าง" (input file คุมค่าไม่ได้)
-  const [fileInputNonce, setFileInputNonce] = useState(0);
+  const [progress, setProgress] = useState(0);
+  // SHA-256 ของไฟล์ที่เลือก คำนวณในเครื่องเพื่อเทียบกับ checksum ที่ระบบเก็บหลังอัปโหลด
+  const [sum, setSum] = useState<{ file: File; hex: string | null } | null>(null);
+  const checksum = file && sum?.file === file ? sum.hex : null;
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    void sha256Hex(file).then((hex) => {
+      if (!cancelled) setSum({ file, hex });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   if (!canUploadFirmware(session?.role)) {
     return (
@@ -59,7 +76,7 @@ export function UploadFirmwareForm({
     setVersion("");
     setDeviceModel("");
     setFormError(null);
-    setFileInputNonce((n) => n + 1);
+    setProgress(0);
   }
 
   function onPick(picked: File | null) {
@@ -89,12 +106,13 @@ export function UploadFirmwareForm({
 
     setSubmitting(true);
     setFormError(null);
+    setProgress(0);
     try {
-      const created = await uploadFirmware(session.accessToken, {
-        file,
-        version: trimmedVersion,
-        deviceModel: trimmedModel,
-      });
+      const created = await uploadFirmware(
+        session.accessToken,
+        { file, version: trimmedVersion, deviceModel: trimmedModel },
+        setProgress,
+      );
       toast.success(`อัปโหลด Firmware "${created.version}" แล้ว`);
       onUploaded(created);
     } catch (err) {
@@ -121,18 +139,27 @@ export function UploadFirmwareForm({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="firmware-file">ไฟล์ Firmware</Label>
-        <Input
-          key={fileInputNonce}
-          id="firmware-file"
-          type="file"
-          disabled={submitting}
-          onChange={(e) => onPick(e.target.files?.[0] ?? null)}
-        />
-        {file && (
-          <p className="text-xs text-muted-foreground">
-            {file.name}, {formatFileSize(file.size)}
+        <FileDropzone label="ไฟล์ Firmware" disabled={submitting} onPick={onPick}>
+          {file ? (
+            <span className="font-instrument">
+              {file.name}, {formatFileSize(file.size)}
+            </span>
+          ) : undefined}
+        </FileDropzone>
+        {file && checksum && (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            SHA-256
+            <span className="font-instrument break-all">{checksum}</span>
+            <CopyButton value={checksum} label="คัดลอก SHA-256" />
           </p>
+        )}
+        {submitting && (
+          <div className="flex items-center gap-2">
+            <ProgressBar value={progress} label="ความคืบหน้าการอัปโหลด" />
+            <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+              {progress}%
+            </span>
+          </div>
         )}
       </div>
 
@@ -166,14 +193,14 @@ export function UploadFirmwareForm({
       </div>
 
       {formError && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           {formError}
         </div>
       )}
 
       <div className="flex gap-2">
         <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
-          {submitting ? "กำลังอัปโหลด…" : "อัปโหลด"}
+          {submitting ? `กำลังอัปโหลด ${progress}%` : "อัปโหลด"}
         </Button>
         {(file || version || deviceModel) && (
           <Button variant="ghost" disabled={submitting} onClick={reset}>

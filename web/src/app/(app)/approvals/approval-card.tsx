@@ -53,7 +53,7 @@ function DiffPreview({
         <p className="flex items-center gap-1.5 text-xs text-warning-foreground">
           <TriangleAlertIcon className="size-3.5" />
           {restartCount > 0 && `${restartCount} ค่าต้อง Restart กล่องหลังเปลี่ยน`}
-          {restartCount > 0 && sensitiveCount > 0 && " · "}
+          {restartCount > 0 && sensitiveCount > 0 && ", "}
           {sensitiveCount > 0 && `${sensitiveCount} ค่าอ่อนไหว`}
         </p>
       )}
