@@ -222,7 +222,8 @@ paths:
         เป็น**ความลับ** (สุ่ม 32 byte base64url) backend เก็บแค่ SHA-256 · ใช้
         key ของเครื่อง (`Device.telemetryKeyHash`) ถ้ามี ไม่งั้นใช้ key กลางจาก
         env `TELEMETRY_INGEST_KEY_SHA256` · ปฏิเสธเครื่อง `decommissioned` ·
-        ไม่เปลี่ยนสถานะเครื่องและไม่เขียน `lastSeenAt`
+        ไม่เปลี่ยนสถานะเครื่อง · (v3.73) เลื่อน `Device.lastSeenAt` (เมื่อค่าเดิม
+        เก่ากว่า 1 นาที) ให้ `GET /devices/{deviceId}/status` บอกออนไลน์ได้
 
         จำกัด 60 คำขอ/นาทีต่อ `deviceId` และ 300 คำขอ/นาทีต่อ IP (ตั้งได้ผ่าน env)
         · `firmware_version` ที่กล่องรายงานเก็บที่ `Device.reportedFirmwareVersion`
@@ -2489,7 +2490,11 @@ paths:
         **ไม่ persist / ไม่แตะสถานะใดๆ** ทั้ง Device และ Config. อ้างด้วยเลขเครื่อง
         จริง (`Device.deviceId`). ต่างจาก `applyConfigToDevice`: deviceModel/protocol
         ไม่ตรง **ไม่ใช่ 409** — คืน 200 พร้อม `compatibilityCheck.passed:false`
-        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง
+        เพื่อให้ช่างเห็นว่าอะไรไม่ตรง · (v3.72) โหมด `DEVICE_CONFIG_APPLY_MODE=central`
+        ตรวจ (1) เพิ่มกับ schema ของ Firmware ที่กล่องรายงานว่ารันอยู่ใน Server กลาง
+        แบบเดียวกับตอนส่งจริง (ไม่ส่ง) — กล่องไม่รู้จักค่าไหน `configCheck.passed:false`
+        พร้อมเหตุผลรายค่าใน `details` · ติดต่อ Server กลางไม่ได้ไม่ทำให้ไม่ผ่าน แต่มี
+        `details` บอกว่ายังไม่ได้ตรวจกับกล่อง
       parameters:
         - in: path
           name: deviceId
@@ -4981,8 +4986,56 @@ components:
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
-          required: [hasDeviceOverride, pendingOverride]
+          required: [hasDeviceOverride, pendingOverride, delivery, boxFields]
           properties:
+            boxFields:
+              type: object
+              nullable: true
+              description: >-
+                (v3.74) ค่าที่กล่องรายงานว่าใช้อยู่จริง**ทุกพารามิเตอร์** จาก Server กลาง
+                (`reported.settings` ของกล่อง) ไม่ใช่แค่ที่อยู่ใน Config — ให้หน้าขอแก้ค่า
+                แสดงค่าที่ไม่อยู่ใน Config เป็นแบบแก้ไม่ได้ · ไม่มี `data_server.path`
+                (มี key ส่ง telemetry ใน URL) · `null` = ไม่ใช่โหมด
+                `DEVICE_CONFIG_APPLY_MODE=central`, ติดต่อ Server กลางไม่ได้ หรือกล่องยังไม่รายงาน
+              required: [fields, reportedAt]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: ค่าที่กล่องใช้อยู่ (key = fieldName แบบจุด เช่น `gps.send_interval_sec`)
+                reportedAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: เวลาที่กล่องรายงานล่าสุด
+            delivery:
+              type: object
+              nullable: true
+              description: >-
+                (v3.71) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` — `fields`
+                คือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติ
+                แล้วทันที) ซึ่งในโหมด central (docs/30) อนุมัติแล้วยังต้องรอช่างกด
+                ส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน + Override
+                ฉบับล่าสุดที่อนุมัติไม่หลังเวลาที่ Rollout ของเครื่องนี้สำเร็จ ·
+                `null` = ไม่มีหลักฐานการส่ง (Config ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง
+                ไม่ใช่ Rollout)
+              required: [fields, confirmedAt, pendingFieldNames]
+              properties:
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด (key = fieldName)
+                confirmedAt:
+                  type: string
+                  format: date-time
+                  description: เวลาที่ Rollout target ของเครื่องนี้สำเร็จ
+                pendingFieldNames:
+                  type: array
+                  items:
+                    type: string
+                  description: >-
+                    field ที่ค่าใน `fields` ของ response ต่างจากค่าในกล่อง
+                    (อนุมัติแล้ว รอส่งเข้ากล่อง) · ว่าง = ตรงกันทั้งหมด
             hasDeviceOverride:
               type: boolean
               description: >-
@@ -6970,7 +7023,8 @@ components:
       description: >-
         เวอร์ชันย่อ (v3.39, issue #245) — configStatus/firmwareStatus · v3.56
         เพิ่ม `lastSeenAt`/`online` จากเวลาที่อุปกรณ์เรียก `/device-sync/*`
-        ล่าสุด (docs/19) ส่วน `lastCheckInMessage` ยังเป็น placeholder
+        ล่าสุด (docs/19) · v3.73 รวมเวลาที่กล่องส่ง telemetry/event เข้า
+        `/device-sync/{deviceId}/telemetry/{key}` ด้วย ส่วน `lastCheckInMessage` ยังเป็น placeholder
       required:
         [
           deviceId,
@@ -7026,7 +7080,8 @@ components:
           nullable: true
           description: >-
             (v3.56, docs/19 §4.3) เวลาที่อุปกรณ์เรียก `/device-sync/*` สำเร็จ
-            ล่าสุด · null = ไม่เคยติดต่อเข้ามา
+            ล่าสุด · v3.73 รวมการส่ง telemetry/event (docs/23 §10.2 ข้อ 4) ·
+            ความละเอียดระดับนาที · null = ไม่เคยติดต่อเข้ามา
         online:
           type: boolean
           description: >-

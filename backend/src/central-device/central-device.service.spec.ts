@@ -11,6 +11,7 @@ const unusedClientMethods = {
   putDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   getCommand: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   pushFirmware: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
+  getDeviceConfig: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
   listDeviceCommands: () => Promise.reject(new Error('ไม่ได้ใช้ในเทสนี้')),
 };
 
@@ -243,6 +244,7 @@ describe('pushConfig', () => {
       }),
       getCommand: jest.fn(),
       pushFirmware: jest.fn(),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
       ...over,
     };
@@ -361,6 +363,63 @@ describe('pushConfig', () => {
     });
     expect(out.kind).toBe('rejected');
   });
+
+  describe('checkConfig (ตรวจอย่างเดียว ไม่ส่ง — ปุ่มทดสอบหน้างาน)', () => {
+    it('ทุกค่าผ่าน schema ที่กล่องรัน -> ok พร้อมโมเดล/schema/Firmware ไม่ยิง PUT', async () => {
+      const client = clientWith();
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': '20',
+      });
+      expect(out).toEqual({
+        kind: 'ok',
+        hardwareModel: 'ESP32-DEVKIT-V1',
+        schemaVersion: 1,
+        firmwareVersion: '1.0.0',
+      });
+      expect(client.getSchema).toHaveBeenCalledWith('ESP32-DEVKIT-V1', 1);
+      expect(client.putDeviceConfig).not.toHaveBeenCalled();
+    });
+
+    it('มีค่าที่ Firmware ในกล่องไม่รู้จัก -> rejected แยกเหตุผลรายค่า ไม่ยิง PUT', async () => {
+      const client = clientWith();
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+        'speed_limit.max_kmh': 100,
+        'geofence.enabled': true,
+      });
+      expect(out.kind).toBe('rejected');
+      if (out.kind !== 'rejected') return;
+      expect(out.reasons).toHaveLength(2);
+      expect(out.reasons[0]).toContain('speed_limit.max_kmh');
+      expect(out.reasons[1]).toContain('geofence.enabled');
+      expect(client.putDeviceConfig).not.toHaveBeenCalled();
+    });
+
+    it('ติดต่อ Server กลางไม่ได้ -> unavailable', async () => {
+      const client = clientWith({
+        listGatewayDevices: () =>
+          Promise.reject(
+            new CentralUnavailableError('เชื่อมต่อ Server กลางไม่ได้'),
+          ),
+      });
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+      });
+      expect(out.kind).toBe('unavailable');
+    });
+
+    it('ดึง schema ไม่ได้ -> unavailable', async () => {
+      const client = clientWith({
+        getSchema: jest
+          .fn()
+          .mockRejectedValue(new CentralUnavailableError('timeout')),
+      });
+      const out = await makeService(client).checkConfig('BOX-1', {
+        'gps.send_interval_sec': 20,
+      });
+      expect(out).toEqual({ kind: 'unavailable', reason: 'timeout' });
+    });
+  });
 });
 
 describe('getCommandOutcome', () => {
@@ -370,6 +429,7 @@ describe('getCommandOutcome', () => {
     getSchema: jest.fn(),
     putDeviceConfig: jest.fn(),
     pushFirmware: jest.fn(),
+    getDeviceConfig: jest.fn(),
     listDeviceCommands: jest.fn(),
   };
 
@@ -435,6 +495,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
             firmware_version_reported: '1.1.0',
           },
         ]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn().mockResolvedValue([
         {
           command_id: 'CMD-3',
@@ -472,6 +533,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
     const client: CentralDeviceClient = {
       ...base,
       listGatewayDevices: () => Promise.resolve([]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
     };
 
@@ -487,6 +549,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
       ...base,
       listGatewayDevices: () =>
         Promise.reject(new CentralUnavailableError('x')),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn(),
     };
 
@@ -509,6 +572,7 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
             firmware_version_reported: '1.0.0',
           },
         ]),
+      getDeviceConfig: jest.fn(),
       listDeviceCommands: jest.fn().mockResolvedValue([
         {
           command_id: 'CMD-1',
@@ -526,5 +590,55 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
       );
 
     expect(result).toBeNull();
+  });
+});
+
+describe('readReportedFields (ค่าที่กล่องรายงานว่าใช้อยู่)', () => {
+  const client = (getDeviceConfig: CentralDeviceClient['getDeviceConfig']) =>
+    ({
+      ...unusedClientMethods,
+      listGatewayDevices: () => Promise.resolve([]),
+      listRegistryDevices: () => Promise.resolve([]),
+      getDeviceConfig,
+    }) as CentralDeviceClient;
+
+  it('แปลงเป็นชื่อพารามิเตอร์แบบจุด และซ่อน data_server.path (มี key ส่ง telemetry)', async () => {
+    const out = await makeService(
+      client(() =>
+        Promise.resolve({
+          device_id: 'BOX-1',
+          reported: {
+            config_version: 17,
+            settings: {
+              led: { enabled: true },
+              gps: { send_interval_sec: 10 },
+              data_server: { host: '10.0.0.5', path: '/secret/key' },
+            },
+            reported_at: '2026-10-28T07:17:14.569Z',
+          },
+        }),
+      ),
+    ).readReportedFields('BOX-1');
+    expect(out).toEqual({
+      fields: {
+        'led.enabled': true,
+        'gps.send_interval_sec': 10,
+        'data_server.host': '10.0.0.5',
+      },
+      reportedAt: '2026-10-28T07:17:14.569Z',
+    });
+  });
+
+  it('กล่องยังไม่รายงาน / ติดต่อไม่ได้ -> null ไม่โยน error', async () => {
+    await expect(
+      makeService(
+        client(() => Promise.resolve({ device_id: 'BOX-1', reported: null })),
+      ).readReportedFields('BOX-1'),
+    ).resolves.toBeNull();
+    await expect(
+      makeService(
+        client(() => Promise.reject(new CentralUnavailableError('down'))),
+      ).readReportedFields('BOX-1'),
+    ).resolves.toBeNull();
   });
 });

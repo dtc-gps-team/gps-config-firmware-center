@@ -3588,6 +3588,55 @@ describe('DeviceController test-connection (integration — real postgres + guar
         expect(ov.status).toBe('approved');
       });
 
+      it('อนุมัติแล้วยังไม่กดส่ง -> GET config: fields = ค่าใหม่ แต่ delivery = ค่าที่ส่งเข้ากล่องล่าสุด + field ที่รอส่ง', async () => {
+        const { configId, stTok, stId, opTok } =
+          await setupCentralDevice('DCO-C-DELIVERY');
+        // ส่ง Config ฐานเข้ากล่องสำเร็จแล้ว (Rollout target success) ก่อนขอแก้ค่า
+        const campaign = await prisma.campaign.create({
+          data: { name: 'ส่ง Config ฐาน', createdBy: stId },
+        });
+        await prisma.campaignRollout.create({
+          data: {
+            campaignId: campaign.id,
+            payloadType: 'Config',
+            configId,
+            status: 'completed',
+            applyMode: 'central',
+            createdBy: stId,
+            targets: {
+              create: { deviceId: 'DCO-C-DELIVERY', status: 'success' },
+            },
+          },
+        });
+        const override = await submit('DCO-C-DELIVERY', stTok);
+        const car = await prisma.configApplyRequest.findUniqueOrThrow({
+          where: { overrideId: override.id },
+        });
+        await request(app.getHttpServer())
+          .post(`/api/v1/config-apply-requests/${car.id}/approve`)
+          .set('Authorization', `Bearer ${opTok}`)
+          .expect(200);
+
+        const res = await request(app.getHttpServer())
+          .get('/api/v1/devices/DCO-C-DELIVERY/config')
+          .set('Authorization', `Bearer ${stTok}`)
+          .expect(200);
+        const body = res.body as {
+          fields: Record<string, unknown>;
+          hasDeviceOverride: boolean;
+          delivery: {
+            fields: Record<string, unknown>;
+            confirmedAt: string;
+            pendingFieldNames: string[];
+          } | null;
+        };
+        expect(body.hasDeviceOverride).toBe(true);
+        expect(body.fields.APN).toBe('apn-central');
+        expect(body.delivery).not.toBeNull();
+        expect(body.delivery!.fields.APN).toBe('internet');
+        expect(body.delivery!.pendingFieldNames).toEqual(['APN']);
+      });
+
       it('Operation ปฏิเสธคำขอ -> Override ถูกปิดเป็น rejected ด้วยเหตุผลเดียวกัน', async () => {
         const { stTok, opTok } = await setupCentralDevice('DCO-C-REJECT');
         const override = await submit('DCO-C-REJECT', stTok);
