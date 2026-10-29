@@ -74,6 +74,7 @@
   --animate-device-glow: device-glow 2.4s ease-in-out infinite;
   --animate-radar-spin: radar-spin 9s linear infinite;
   --animate-led: led-ping 2s var(--ease-standard) infinite;
+  --animate-dot-in: dot-in var(--duration-base) var(--ease-emphasized) backwards;
   --animate-shimmer: shimmer 1.6s var(--ease-standard) infinite;
 
   /* สเกลน้ำเงินแบรนด์ 50-950 (hue เดียวกับ --primary / --sidebar) */
@@ -159,6 +160,17 @@
     opacity: 0;
   }
 }
+/* จุดอุปกรณ์ในกริด LED โผล่ทีละจุด (opacity + scale) */
+@keyframes dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 /* skeleton shimmer: แถบสว่างเลื่อนผ่าน (translate ล้วน) */
 @keyframes shimmer {
   to {
@@ -168,6 +180,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-led,
+  .animate-dot-in,
   .animate-shimmer,
   .animate-drift-a,
   .animate-drift-b,

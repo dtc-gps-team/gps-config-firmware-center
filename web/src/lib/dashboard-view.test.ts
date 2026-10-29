@@ -9,6 +9,8 @@ import {
 } from "./dashboard-queue";
 import {
   activeRollouts,
+  capFleetDots,
+  fleetDots,
   rolloutsAwaitingRelease,
   silentDevices,
 } from "./dashboard-metrics";
@@ -143,5 +145,74 @@ describe("dashboardView ต่อ Role", () => {
   it("role ที่ไม่รู้จักได้มุมมองอ่านอย่างเดียว ไม่มีคิว", () => {
     expect(dashboardView(null).queue).toBeNull();
     expect(dashboardView("Whatever").queue).toBeNull();
+  });
+});
+
+describe("fleetDots / capFleetDots", () => {
+  const devices = ["A", "B", "C", "D"].map((deviceId) => ({
+    deviceId,
+    deviceModel: "BB-200",
+  }));
+  const c = (
+    deviceId: string,
+    online: boolean,
+    desired: number | null,
+    reported: number | null,
+  ) => ({
+    deviceId,
+    online,
+    lastSeenAt: null,
+    desiredConfigVersion: desired,
+    reportedConfigVersion: reported,
+  });
+
+  it("ระบุสถานะต่อเครื่อง และเรียงเครื่องที่ต้องสนใจขึ้นก่อน", () => {
+    const dots = fleetDots(devices, [
+      c("A", true, 1, 1), // ปกติ
+      c("B", false, 1, 1), // ออฟไลน์
+      c("C", true, 2, 1), // Config ไม่ตรง
+      // D ไม่อยู่ใน Server กลาง
+    ]);
+    expect(dots.map((d) => [d.deviceId, d.status, d.drift])).toEqual([
+      ["C", "online", true],
+      ["B", "offline", false],
+      ["D", "unknown", false],
+      ["A", "online", false],
+    ]);
+  });
+
+  it("Config ไม่ตรงนับตามเกณฑ์เดียวกับ configDriftCount (ไม่นับเครื่องที่ยังไม่ตั้งเป้า)", () => {
+    const dots = fleetDots(devices, [c("A", true, null, 3), c("B", true, 2, 2)]);
+    expect(dots.every((d) => !d.drift)).toBe(true);
+  });
+
+  it("ไม่เกินเพดาน: วาดทุกเครื่อง", () => {
+    const dots = fleetDots(devices, [c("A", true, 1, 1)]);
+    expect(capFleetDots(dots, 10)).toEqual({
+      shown: dots,
+      hiddenNormal: 0,
+      hiddenAbnormal: 0,
+    });
+  });
+
+  it("เกินเพดาน: วาดเฉพาะเครื่องที่ต้องสนใจ ที่เหลือสรุปเป็นตัวเลข", () => {
+    const dots = fleetDots(devices, [
+      c("A", true, 1, 1),
+      c("B", true, 1, 1),
+      c("C", false, 1, 1),
+      c("D", true, 1, 1),
+    ]);
+    const view = capFleetDots(dots, 3);
+    expect(view.shown.map((d) => d.deviceId)).toEqual(["C"]);
+    expect(view.hiddenNormal).toBe(3);
+    expect(view.hiddenAbnormal).toBe(0);
+  });
+
+  it("เกินเพดานและผิดปกติเองก็เกินเพดาน: นับส่วนที่ไม่ได้วาด", () => {
+    const dots = fleetDots(devices, devices.map((d) => c(d.deviceId, false, 1, 1)));
+    const view = capFleetDots(dots, 2);
+    expect(view.shown).toHaveLength(2);
+    expect(view.hiddenAbnormal).toBe(2);
+    expect(view.hiddenNormal).toBe(0);
   });
 });

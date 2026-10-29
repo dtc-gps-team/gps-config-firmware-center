@@ -16,7 +16,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -84,7 +83,6 @@ export function DashboardActivity() {
     <Card>
       <CardHeader>
         <CardTitle className="text-sm font-medium">กิจกรรมล่าสุด</CardTitle>
-        <CardDescription>5 รายการล่าสุด</CardDescription>
         <CardAction>
           <Link
             href="/audit-log"

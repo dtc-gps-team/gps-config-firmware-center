@@ -97,6 +97,9 @@ const healthCard = () =>
   screen.getByText("สถานะระบบ").closest("[data-slot='card']") as HTMLElement;
 const queueCard = () =>
   screen.getByText("งานที่ต้องดำเนินการ").closest("[data-slot='card']") as HTMLElement;
+/** แผงตามหัวข้อ (สถานะอุปกรณ์, ผลการ Deploy ฯลฯ) */
+const panel = (title: string) =>
+  screen.getByText(title).closest("[data-slot='card']") as HTMLElement;
 /** แถวในการ์ด "สถานะระบบ" ตามชื่อ */
 const health = (label: string) =>
   within(healthCard()).getByText(label).closest("li") as HTMLElement;
@@ -192,30 +195,48 @@ describe("DashboardSummary: ทุกตัวเลขมาจากข้อ�
     expect(health("อุปกรณ์ที่ Config ยังไม่อัปเดต").querySelector("a")).toBeNull();
   });
 
-  it("แถวการเชื่อมต่อแยกออนไลน์ ออฟไลน์ และไม่ทราบ", () => {
+  it("สถานะอุปกรณ์: ตัวเลขแยกออนไลน์ ออฟไลน์ ไม่ทราบ และ Config ไม่ตรง", () => {
     render(<DashboardSummary />);
 
-    const row = within(health("การเชื่อมต่อ (Online / Offline)"));
-    expect(row.getByText("ออนไลน์").nextSibling?.textContent).toBe("1");
-    expect(row.getByText("ออฟไลน์").nextSibling?.textContent).toBe("1");
-    expect(row.getByText("ไม่ทราบ").nextSibling?.textContent).toBe("1");
+    const fleet = within(panel("สถานะอุปกรณ์"));
+    expect(fleet.getByText("ออนไลน์").nextSibling?.textContent).toBe("1");
+    expect(fleet.getByText("ออฟไลน์").nextSibling?.textContent).toBe("1");
+    expect(fleet.getByText("ไม่ทราบ").nextSibling?.textContent).toBe("1");
+    expect(fleet.getByText("Config ไม่ตรง").nextSibling?.textContent).toBe("1");
+    // วงแหวนบอกสัดส่วนออนไลน์: 1 จาก 3 เครื่อง
+    expect(fleet.getByText("33%")).toBeInTheDocument();
+  });
+
+  it("กริดจุด LED: 1 เครื่อง 1 จุด เรียงเครื่องที่ต้องสนใจขึ้นก่อน และกดเปิดหน้าเครื่องได้", () => {
+    render(<DashboardSummary />);
+
+    const dots = within(
+      within(panel("สถานะอุปกรณ์")).getByRole("list", { name: "อุปกรณ์ทั้งหมด" }),
+    ).getAllByRole("link");
+    expect(dots).toHaveLength(3);
+    // BOX-2: ออฟไลน์ + Config ไม่ตรง มาก่อน, ตามด้วยไม่ทราบ (BOX-3), ปกติ (BOX-1) ท้ายสุด
+    expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual([
+      "BOX-2 · ออฟไลน์ · Config ไม่ตรง",
+      "BOX-3 · ไม่ทราบ",
+      "BOX-1 · ออนไลน์",
+    ]);
+    expect(dots[0]).toHaveAttribute("href", "/devices/BOX-2");
   });
 
   it("ผลการ Deploy รวมเฉพาะ Rollout ที่ปล่อยแล้ว และแสดง % ความสำเร็จ", () => {
     render(<DashboardSummary />);
 
-    const row = within(health("ผลการ Deploy"));
-    expect(row.getByText("สำเร็จ").nextSibling?.textContent).toBe("5");
-    expect(row.getByText("ล้มเหลว").nextSibling?.textContent).toBe("1");
-    expect(row.getByText("83%")).toBeInTheDocument();
+    const deploy = within(panel("ผลการ Deploy"));
+    expect(deploy.getByText("สำเร็จ").nextSibling?.textContent).toBe("5");
+    expect(deploy.getByText("ล้มเหลว").nextSibling?.textContent).toBe("1");
+    expect(deploy.getByText("83%")).toBeInTheDocument();
   });
 
-  it("ล้มเหลวเกินเกณฑ์ 5%: เตือนในแถว Deploy", () => {
+  it("ล้มเหลวเกินเกณฑ์ 5%: เตือนพร้อมลิงก์ไป Campaign", () => {
     render(<DashboardSummary />);
 
-    expect(
-      within(health("ผลการ Deploy")).getByText(/สูงกว่าเกณฑ์ 5%/),
-    ).toBeInTheDocument();
+    const warning = within(panel("ผลการ Deploy")).getByText(/เกณฑ์ 5%/);
+    expect(warning.closest("a")).toHaveAttribute("href", "/campaigns");
   });
 
   it("ยังไม่มีการ Deploy เลย: บอกตรงๆ ไม่วาดแท่งเปล่า", () => {

@@ -50,7 +50,11 @@ export function DashboardFirmwareStatus({
     <Panel
       title="สถานะ Firmware ในคลัง"
       href="/firmware"
-      description={`${total.toLocaleString("th-TH")} เวอร์ชัน`}
+      action={
+        <span data-tabular className="text-xs text-muted-foreground">
+          {total.toLocaleString("th-TH")} เวอร์ชัน
+        </span>
+      }
       className={className}
     >
       {error ? (

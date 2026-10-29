@@ -54,13 +54,13 @@ export function DashboardRolloutsPanel({
       ) : loading && rollouts === null ? (
         <Skeleton className="h-16 w-full" />
       ) : awaiting.length === 0 && active.length === 0 ? (
-        <PanelEmpty>ไม่มี Rollout ที่รอปล่อยหรือกำลังส่งอยู่</PanelEmpty>
+        <PanelEmpty>ไม่มี Rollout ที่รอปล่อยหรือกำลังส่ง</PanelEmpty>
       ) : (
         <div className="flex flex-col gap-4">
           {awaiting.length > 0 && (
-            <section aria-label="รอปล่อยเข้าอุปกรณ์">
+            <section aria-label="อนุมัติแล้ว รอปล่อยเข้าอุปกรณ์">
               <p className="label-caps mb-1.5">
-                อนุมัติแล้ว รอปล่อยเข้าอุปกรณ์ ({awaiting.length})
+                รอปล่อย ({awaiting.length})
               </p>
               <ul className="flex flex-col divide-y rounded-lg border">
                 {awaiting.slice(0, MAX_ROWS).map((r) => (
@@ -93,7 +93,7 @@ export function DashboardRolloutsPanel({
           {active.length > 0 && (
             <section aria-label="กำลังส่งให้อุปกรณ์">
               <p className="label-caps mb-1.5">
-                กำลังส่งให้อุปกรณ์ ({active.length})
+                กำลังส่ง ({active.length})
               </p>
               <ul className="flex flex-col gap-3">
                 {active.slice(0, MAX_ROWS).map((r) => {

@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { SegmentBar, type Segment } from "@/components/segment-bar";
 import { Notice } from "@/components/ui/notice";
 import { useAllCampaignRollouts } from "@/hooks/use-all-campaign-rollouts";
 import { useCampaigns } from "@/hooks/use-campaigns";
@@ -27,6 +26,8 @@ import {
 import { getTokenSubject } from "@/lib/jwt";
 import { canReadCampaign } from "@/lib/permissions";
 import { DashboardActivity } from "./dashboard-activity";
+import { DashboardDeploy } from "./dashboard-deploy";
+import { DashboardFleet } from "./dashboard-fleet";
 import { DashboardConfigStatusChart } from "./dashboard-config-status-chart";
 import { DashboardFirmwareStatus } from "./dashboard-firmware-status";
 import { HealthCard, HealthRow } from "./dashboard-health";
@@ -50,10 +51,6 @@ import { DashboardSilentPanel } from "./dashboard-silent-panel";
  * hook ที่ใช้ร่วมหลายแผง (อุปกรณ์, Server กลาง, Rollout, Incident) เรียกที่นี่ครั้ง
  * เดียวแล้วส่งข้อมูลลงไป ไม่ให้แต่ละแผงยิงซ้ำ
  */
-
-/** เกณฑ์ล้มเหลวที่ Rollout หยุดอัตโนมัติ (ดูข้อความสถานะ paused ใน
- *  lib/status-pill.ts: "ล้มเหลวเกิน 5%") — ใช้เป็นเกณฑ์เตือนที่ Dashboard ด้วย */
-const FAILURE_WARN_PERCENT = 5;
 
 export function DashboardSummary() {
   const { session } = useAuth();
@@ -105,33 +102,8 @@ export function DashboardSummary() {
     () => (allRollouts.data ? deployTotals(allRollouts.data) : null),
     [allRollouts.data],
   );
-  const deployTotal = deploy ? deploy.success + deploy.failed : 0;
-  const successPercent =
-    deploy && deployTotal > 0
-      ? Math.round((deploy.success / deployTotal) * 100)
-      : null;
-  const failurePercent =
-    deploy && deployTotal > 0 ? (deploy.failed / deployTotal) * 100 : 0;
-
-  const connectionSegments: Segment[] = connection
-    ? [
-        { key: "online", label: "ออนไลน์", value: connection.online, colorClass: "bg-success" },
-        { key: "offline", label: "ออฟไลน์", value: connection.offline, colorClass: "bg-status-offline" },
-        { key: "unknown", label: "ไม่ทราบ", value: connection.unknown, colorClass: "bg-muted-foreground/30" },
-      ]
-    : [];
-  const deploySegments: Segment[] = deploy
-    ? [
-        { key: "success", label: "สำเร็จ", value: deploy.success, colorClass: "bg-success" },
-        { key: "failed", label: "ล้มเหลว", value: deploy.failed, colorClass: "bg-destructive" },
-      ]
-    : [];
-  const connectionTotal = connectionSegments.reduce((n, s) => n + s.value, 0);
   const connectionLoading =
     centralLoading || (devices.data === null && devices.isLoading);
-  const connectionEmpty = centralUnavailable
-    ? "ติดต่อ Server กลางไม่ได้ตอนนี้ จึงยังไม่ทราบสถานะการเชื่อมต่อ"
-    : "ยังไม่มีอุปกรณ์";
 
   // ---- แถวบนซ้าย: คิวงานของ Role (หรือกิจกรรมล่าสุดถ้า Role นี้ไม่มีคิว)
   const lead = (() => {
@@ -174,32 +146,6 @@ export function DashboardSummary() {
 
   // ---- แถวบนขวา: สถานะระบบ
   const healthRow: Record<HealthId, React.ReactNode> = {
-    connection: (
-      <HealthRow
-        key="connection"
-        label="การเชื่อมต่อ (Online / Offline)"
-        value={connection ? connection.online : null}
-        text={
-          connection && connectionTotal > 0
-            ? `${connection.online}/${connectionTotal}`
-            : connectionLoading
-              ? undefined
-              : "-"
-        }
-        error={devices.error}
-        href="/devices"
-      >
-        {!devices.error && !connectionLoading && (
-          <div className="mt-2 pl-4.5">
-            {connectionTotal === 0 ? (
-              <p className="text-xs text-muted-foreground">{connectionEmpty}</p>
-            ) : (
-              <SegmentBar segments={connectionSegments} />
-            )}
-          </div>
-        )}
-      </HealthRow>
-    ),
     offline: (
       <HealthRow
         key="offline"
@@ -244,43 +190,29 @@ export function DashboardSummary() {
         hint="Incident ที่สถานะเปิดอยู่หรือกำลังตรวจสอบ"
       />
     ),
-    deploy: (
-      <HealthRow
-        key="deploy"
-        label="ผลการ Deploy"
-        value={successPercent}
-        text={
-          allRollouts.error
-            ? undefined
-            : allRollouts.data === null && allRollouts.isLoading
-              ? undefined
-              : deployTotal === 0
-                ? "ยังไม่มีการ Deploy"
-                : `${successPercent}%`
-        }
-        error={allRollouts.error}
-        href="/campaigns"
-      >
-        {deployTotal > 0 && (
-          <div className="mt-2 flex flex-col gap-2 pl-4.5">
-            <SegmentBar segments={deploySegments} />
-            {failurePercent >= FAILURE_WARN_PERCENT && (
-              <p className="text-xs text-danger-foreground">
-                ล้มเหลว {deploy?.failed} จาก {deployTotal} เครื่อง (
-                {Math.round(failurePercent)}%) สูงกว่าเกณฑ์ {FAILURE_WARN_PERCENT}%
-              </p>
-            )}
-          </div>
-        )}
-      </HealthRow>
-    ),
   };
-  const healthRows = view.health.filter(
-    (id) => id !== "deploy" || hasCampaignAccess,
-  );
+  const healthRows = view.health;
 
   // ---- แผงรายละเอียดด้านล่าง
   const panel: Record<PanelId, React.ReactNode> = {
+    fleet: (
+      <DashboardFleet
+        devices={devices.data}
+        central={central.data?.devices ?? null}
+        loading={connectionLoading}
+        error={devices.error}
+        unavailable={centralUnavailable}
+        onRetry={() => void devices.refetch?.()}
+      />
+    ),
+    deploy: (
+      <DashboardDeploy
+        deploy={deploy}
+        loading={allRollouts.isLoading}
+        error={allRollouts.error}
+        onRetry={() => void allRollouts.refetch?.()}
+      />
+    ),
     rollouts: (
       <DashboardRolloutsPanel
         rollouts={allRollouts.data}
@@ -311,8 +243,10 @@ export function DashboardSummary() {
       />
     ),
   };
+  // Campaign เป็นสิทธิ์ `campaign:Read` — Rollout/Deploy พึ่งข้อมูลนี้
+  const needsCampaign = (id: PanelId) => id === "rollouts" || id === "deploy";
   const rows = view.rows
-    .map((row) => row.filter((p) => hasCampaignAccess || p.id !== "rollouts"))
+    .map((row) => row.filter((p) => hasCampaignAccess || !needsCampaign(p.id)))
     .filter((row) => row.length > 0);
 
   return (

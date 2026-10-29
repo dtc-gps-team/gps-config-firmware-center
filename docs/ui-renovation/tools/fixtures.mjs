@@ -3,7 +3,10 @@
 const now = Date.now();
 const iso = (minAgo) => new Date(now - minAgo * 60000).toISOString();
 
-const models = ["BB-200", "BB-200", "BB-310", "BB-310", "TK-50", "TK-50", "BB-200", "TK-50", "BB-310", "BB-200"];
+const base = ["BB-200", "BB-200", "BB-310", "BB-310", "TK-50", "TK-50", "BB-200", "TK-50", "BB-310", "BB-200"];
+// FLEET=N ขยายจำนวนอุปกรณ์จำลอง (ทดสอบกริด LED)
+const fleetSize = Number(process.env.FLEET ?? base.length);
+const models = Array.from({ length: fleetSize }, (_, i) => base[i % base.length]);
 export const devices = models.map((m, i) => ({
   id: `dev-${i}`,
   deviceId: `${m}-${String(20481 + i * 7)}`,
@@ -29,10 +32,10 @@ export const central = {
   devices: devices.map((d, i) => ({
     deviceId: d.deviceId,
     hardwareModel: d.deviceModel,
-    online: i % 4 !== 3,
+    online: i % 4 !== 3 && i % 17 !== 5,
     lastSeenAt: i === 3 ? iso(60 * 50) : i === 7 ? iso(60 * 30) : iso(i * 3),
     reportedFirmwareVersion: "2.4.1",
-    reportedConfigVersion: i === 2 || i === 5 ? 6 : 7,
+    reportedConfigVersion: i === 2 || i === 5 || i % 23 === 7 ? 6 : 7,
     reportedSchemaVersion: 1,
     desiredConfigVersion: 7,
     registered: true,

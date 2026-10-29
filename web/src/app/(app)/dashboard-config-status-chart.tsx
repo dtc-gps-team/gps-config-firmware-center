@@ -7,7 +7,7 @@ import { SegmentBar, type Segment } from "@/components/segment-bar";
 import {
   Card,
   CardContent,
-  CardDescription,
+  CardAction,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -55,10 +55,11 @@ export function DashboardConfigStatusChart() {
     <Card>
       <CardHeader>
         <CardTitle className="text-sm font-medium">สถานะ Config โดยรวม</CardTitle>
-        <CardDescription>
-          สัดส่วน Config ทั้งหมดในระบบแยกตามสถานะ (
-          {total.toLocaleString("th-TH")} รายการ)
-        </CardDescription>
+        <CardAction>
+          <span data-tabular className="text-xs text-muted-foreground">
+            {total.toLocaleString("th-TH")} รายการ
+          </span>
+        </CardAction>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
         {error ? (

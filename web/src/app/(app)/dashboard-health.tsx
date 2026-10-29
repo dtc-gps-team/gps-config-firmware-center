@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { ChangeFlash } from "@/components/motion/change-flash";
+import { CountUp } from "@/components/motion/count-up";
 import { StatusLed, type LedTone } from "@/components/ui/status-led";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -19,7 +21,7 @@ export function HealthCard({
 }) {
   return (
     <Panel title="สถานะระบบ" className={className}>
-      <ul className="flex flex-col divide-y">{children}</ul>
+      <ul className="flex flex-1 flex-col divide-y">{children}</ul>
     </Panel>
   );
 }
@@ -68,7 +70,7 @@ export function HealthRow({
         <span
           data-tabular
           className={cn(
-            "text-sm font-semibold tabular-nums",
+            "text-2xl font-semibold tabular-nums",
             flagged && attention === "danger" && "text-danger-foreground",
             flagged && attention === "warning" && "text-warning-foreground",
             !flagged && "text-muted-foreground",
@@ -81,17 +83,19 @@ export function HealthRow({
           ) : value === null && text === undefined ? (
             <Skeleton className="h-4 w-8" />
           ) : (
-            (text ?? (value ?? 0).toLocaleString("th-TH"))
+            (text ?? <CountUp value={value ?? 0} />)
           )}
         </span>
       </div>
       {children}
+      <ChangeFlash signal={value} />
     </>
   );
 
-  const rowClass = "block px-1 py-2.5";
+  const rowClass =
+    "relative flex h-full min-h-14 flex-col justify-center overflow-hidden rounded-md px-1 py-2.5";
   return (
-    <li title={hint}>
+    <li title={hint} className="flex-1">
       {href ? (
         <Link
           href={href}

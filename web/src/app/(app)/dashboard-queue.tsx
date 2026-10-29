@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { motion } from "motion/react";
 import { ChevronRightIcon } from "lucide-react";
 
 import { ErrorState } from "@/components/error-state";
+import { ChangeFlash } from "@/components/motion/change-flash";
+import { CountUp } from "@/components/motion/count-up";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusLed, type LedTone } from "@/components/ui/status-led";
 import { useConfigs } from "@/hooks/use-configs";
@@ -22,6 +25,7 @@ import {
   type QueueTone,
 } from "@/lib/dashboard-queue";
 import type { Firmware } from "@/lib/firmware-api";
+import { listItem, staggerContainer } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Panel } from "./dashboard-panel";
 
@@ -62,18 +66,10 @@ function QueueCard({
   className?: string;
 }) {
   const queue = useMemo(() => sortQueue(items), [items]);
-  const total = queue.reduce((n, i) => n + i.count, 0);
 
   return (
     <Panel
       title="งานที่ต้องดำเนินการ"
-      description={
-        loading || error
-          ? undefined
-          : queue.length > 0
-            ? `${queue.length} เรื่อง รวม ${total.toLocaleString("th-TH")} รายการ`
-            : undefined
-      }
       className={className}
     >
       {error ? (
@@ -92,7 +88,12 @@ function QueueCard({
           </p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <motion.ul
+          initial="hidden"
+          animate="visible"
+          variants={staggerContainer}
+          className="flex flex-col gap-2"
+        >
           {queue.map((item) => {
             const body = (
               <>
@@ -101,22 +102,23 @@ function QueueCard({
                   pulse={item.tone === "danger"}
                 />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-sm font-medium">{item.title}</span>
+                  <span className="text-sm font-medium" title={item.hint}>
+                    {item.title}
+                  </span>
                   {item.detail && (
                     <span className="text-xs text-muted-foreground">
                       {item.detail}
                     </span>
                   )}
                 </span>
-                <span
-                  data-tabular
+                <CountUp
+                  value={item.count}
                   className={cn(
                     "text-2xl font-semibold tabular-nums",
                     TONE_COUNT[item.tone],
                   )}
-                >
-                  {item.count.toLocaleString("th-TH")}
-                </span>
+                />
+                <ChangeFlash signal={item.count} />
                 {item.href && (
                   <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-fast) group-hover/row:translate-x-0.5" />
                 )}
@@ -127,7 +129,7 @@ function QueueCard({
               TONE_STRIPE[item.tone],
             );
             return (
-              <li key={item.key}>
+              <motion.li key={item.key} variants={listItem}>
                 {item.href ? (
                   <Link
                     href={item.href}
@@ -141,10 +143,10 @@ function QueueCard({
                 ) : (
                   <div className={rowClass}>{body}</div>
                 )}
-              </li>
+              </motion.li>
             );
           })}
-        </ul>
+        </motion.ul>
       )}
     </Panel>
   );
@@ -173,7 +175,7 @@ export function OperationQueue({
       key: "paused",
       tone: "danger",
       title: "Rollout ที่ระบบหยุดเอง",
-      detail: "เครื่องล้มเหลวเกินเกณฑ์ ต้องตัดสินใจ Resume หรือ Rollback",
+      hint: "เครื่องล้มเหลวเกินเกณฑ์ ต้องตัดสินใจ Resume หรือ Rollback",
       count: pausedCount ?? 0,
       href: "/campaigns",
     },
@@ -257,7 +259,7 @@ export function FieldQueue({
       key: "offline",
       tone: "warning",
       title: "อุปกรณ์ออฟไลน์",
-      detail: "ดูรายการเครื่องที่ไม่ได้เชื่อมต่ออยู่",
+      hint: "ดูรายการเครื่องที่ไม่ได้เชื่อมต่ออยู่",
       count: offlineCount ?? 0,
       href: "/devices?connection=offline",
     },
@@ -265,7 +267,7 @@ export function FieldQueue({
       key: "drift",
       tone: "warning",
       title: "อุปกรณ์ที่ Config ยังไม่อัปเดต",
-      detail: "เปิดรายละเอียดของแต่ละเครื่องเพื่อดูเวอร์ชันที่รายงาน",
+      hint: "เปิดรายละเอียดของแต่ละเครื่องเพื่อดูเวอร์ชันที่รายงาน",
       count: driftCount ?? 0,
     },
   ];
@@ -292,10 +294,8 @@ export function ConfigEngineerQueue({
       key: "rejected",
       tone: "danger",
       title: "Config ที่ถูกปฏิเสธ",
-      detail:
-        rejected.length === 1
-          ? `${rejected[0].name} แก้ไขแล้วส่งใหม่`
-          : "แก้ไขแล้วส่งใหม่",
+      detail: rejected.length === 1 ? rejected[0].name : undefined,
+      hint: "แก้ไขแล้วส่งใหม่",
       count: rejected.length,
       href: rejected.length === 1 ? `/config/${rejected[0].id}` : "/config",
     },
@@ -367,7 +367,7 @@ export function FirmwareQueue({
             key: "rejected",
             tone: "danger",
             title: "Firmware ของฉันที่ถูกปฏิเสธ",
-            detail: "ตรวจเหตุผลแล้วอัปโหลดเวอร์ชันใหม่",
+            hint: "ตรวจเหตุผลแล้วอัปโหลดเวอร์ชันใหม่",
             count: all.filter(
               (f) => f.uploadedBy === me && f.approvalStatus === "rejected",
             ).length,

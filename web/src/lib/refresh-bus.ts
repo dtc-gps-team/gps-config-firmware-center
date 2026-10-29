@@ -14,3 +14,27 @@ export function subscribeRefresh(listener: () => void): () => void {
   window.addEventListener(REFRESH_EVENT, listener);
   return () => window.removeEventListener(REFRESH_EVENT, listener);
 }
+
+/**
+ * เวลาที่ข้อมูลสดล่าสุดเข้ามา (ms) — hook ที่ poll เองอย่างสถานะกล่องจาก Server กลาง
+ * เรียก `markDataLoaded()` ทุกครั้งที่ดึงสำเร็จ ตัวบอก "อัปเดตล่าสุด" ที่หัวหน้า
+ * อ่านค่านี้ จึงสะท้อนความสดจริง ไม่ใช่แค่เวลาที่เปิดหน้า
+ */
+let dataLoadedAt = 0;
+const dataLoadedListeners = new Set<() => void>();
+
+export function markDataLoaded(): void {
+  dataLoadedAt = Date.now();
+  dataLoadedListeners.forEach((listener) => listener());
+}
+
+export function getDataLoadedAt(): number {
+  return dataLoadedAt;
+}
+
+export function subscribeDataLoaded(listener: () => void): () => void {
+  dataLoadedListeners.add(listener);
+  return () => {
+    dataLoadedListeners.delete(listener);
+  };
+}

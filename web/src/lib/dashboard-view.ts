@@ -23,15 +23,11 @@ export type QueueKind =
   | null;
 
 /** แถวในการ์ด "สถานะระบบ" */
-export type HealthId =
-  | "connection"
-  | "offline"
-  | "drift"
-  | "devices"
-  | "incident"
-  | "deploy";
+export type HealthId = "offline" | "drift" | "devices" | "incident";
 
 export type PanelId =
+  | "fleet"
+  | "deploy"
   | "rollouts"
   | "silent"
   | "configStatus"
@@ -47,13 +43,17 @@ export type DashboardView = {
   rows: { id: PanelId; span: PanelSpan }[][];
 };
 
-const FIELD_HEALTH: HealthId[] = ["connection", "offline", "drift", "incident", "deploy"];
+const FIELD_HEALTH: HealthId[] = ["offline", "drift", "incident"];
 
 const VIEWS: Record<string, DashboardView> = {
   Operation: {
     queue: "operation",
     health: FIELD_HEALTH,
     rows: [
+      [
+        { id: "fleet", span: 7 },
+        { id: "deploy", span: 5 },
+      ],
       [
         { id: "rollouts", span: 7 },
         { id: "silent", span: 5 },
@@ -69,6 +69,10 @@ const VIEWS: Record<string, DashboardView> = {
     health: FIELD_HEALTH,
     rows: [
       [
+        { id: "fleet", span: 7 },
+        { id: "deploy", span: 5 },
+      ],
+      [
         { id: "silent", span: 5 },
         { id: "rollouts", span: 7 },
       ],
@@ -80,6 +84,10 @@ const VIEWS: Record<string, DashboardView> = {
     health: FIELD_HEALTH,
     rows: [
       [
+        { id: "fleet", span: 7 },
+        { id: "deploy", span: 5 },
+      ],
+      [
         { id: "silent", span: 5 },
         { id: "rollouts", span: 7 },
       ],
@@ -88,12 +96,13 @@ const VIEWS: Record<string, DashboardView> = {
   },
   ConfigEngineer: {
     queue: "configEngineer",
-    health: ["incident", "deploy"],
+    health: ["incident"],
     rows: [
       [
-        { id: "configStatus", span: 5 },
+        { id: "deploy", span: 5 },
         { id: "rollouts", span: 7 },
       ],
+      [{ id: "configStatus", span: 12 }],
     ],
   },
   FirmwareEngineer: {
@@ -111,6 +120,10 @@ const VIEWS: Record<string, DashboardView> = {
     health: FIELD_HEALTH,
     rows: [
       [
+        { id: "fleet", span: 7 },
+        { id: "deploy", span: 5 },
+      ],
+      [
         { id: "rollouts", span: 7 },
         { id: "silent", span: 5 },
       ],
@@ -121,6 +134,10 @@ const VIEWS: Record<string, DashboardView> = {
     queue: null,
     health: FIELD_HEALTH,
     rows: [
+      [
+        { id: "fleet", span: 7 },
+        { id: "deploy", span: 5 },
+      ],
       [
         { id: "rollouts", span: 7 },
         { id: "silent", span: 5 },

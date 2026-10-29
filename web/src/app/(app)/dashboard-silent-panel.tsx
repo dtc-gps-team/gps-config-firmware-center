@@ -45,10 +45,12 @@ export function DashboardSilentPanel({
     <Panel
       title={`อุปกรณ์ที่ขาดการติดต่อเกิน ${SILENT_THRESHOLD_HOURS} ชั่วโมง`}
       href="/devices"
-      description={
-        silent && silent.length > 0
-          ? `${silent.length.toLocaleString("th-TH")} เครื่อง เรียงที่ขาดการติดต่อนานสุดก่อน`
-          : undefined
+      action={
+        silent && silent.length > 0 ? (
+          <span data-tabular className="text-xs text-muted-foreground">
+            {silent.length.toLocaleString("th-TH")} เครื่อง
+          </span>
+        ) : undefined
       }
       className={className}
     >

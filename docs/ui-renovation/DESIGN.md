@@ -125,6 +125,9 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | PageHeader | `components/page-header.tsx` | มีเดิม ใช้ `RefreshControl` ใน `actions` เมื่อหน้าต้องการรีเฟรช |
 | RefreshControl | `components/refresh-control.tsx` | รอบ 1 (ปุ่มส่งสัญญาณผ่าน `lib/refresh-bus.ts`) |
 | SegmentBar | `components/segment-bar.tsx` | รอบ 1 (การ์ดหน้า Dashboard อยู่ใน `app/(app)/dashboard-*.tsx`) |
+| RingGauge | `components/ring-gauge.tsx` | รอบ 1 (วงแหวนสัดส่วน ส่วนโค้งยืดออกตอนโหลด) |
+| CountUp, ChangeFlash | `components/motion/count-up.tsx`, `change-flash.tsx` | รอบ 1 (ตัวเลขนับขึ้น, วาบ opacity เมื่อค่าเปลี่ยน) ข้ามเมื่อ prefers-reduced-motion ในเทส `vitest.setup.ts` จำลอง matchMedia ให้เป็น reduced เพื่อให้เทสอ่านค่าจริงได้ |
+| Fleet LED grid | `app/(app)/dashboard-fleet.tsx` + `fleetDots`/`capFleetDots` ใน `lib/dashboard-metrics.ts` | รอบ 1 (1 เครื่อง = 1 จุด เรียงเครื่องที่ต้องสนใจก่อน เกิน 300 เครื่องวาดเฉพาะที่ต้องสนใจ) |
 | StatusBadge, StatusLed, ConnectionIndicator | `components/status-badge.tsx`, `components/ui/status-led.tsx`, `components/connection-indicator.tsx` | รอบ 1 (`StatusPill` เดิมใน `lib/status-pill.tsx` ยังใช้กับ lifecycle enum ต่อ รอบ 2 ให้ย้ายเข้าตัวเดียวกัน) |
 | EmptyState, ErrorState | `components/empty-state.tsx`, `components/error-state.tsx` | EmptyState มีเดิม ErrorState ใหม่ รอบ 2 เปลี่ยนทุกหน้าที่เขียน error เอง |
 | ConfirmDialog (type-to-confirm) | `components/confirm-dialog.tsx` | สร้างแล้ว ยังไม่ถูกใช้ รอบ 2 ผูกกับ release/rollback/bulk |
@@ -147,6 +150,8 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | FirmwareEngineer | Firmware ของฉันที่ถูกปฏิเสธ / รอ QA | สถานะ Firmware |
 | QAEngineer | Firmware รอตรวจคุณภาพ (ทุกตัว) | สถานะ Firmware |
 | Auditor / Admin / SuperAdmin | ไม่มีคิว: กิจกรรมล่าสุดนำแทน | Rollout, อุปกรณ์เงียบ, สถานะ Config |
+
+ความมีชีวิต (ข้อมูลจริงทั้งหมด): กริดจุด LED ของอุปกรณ์ทั้งกอง, วงแหวน % เชื่อมต่อ/% Deploy สำเร็จ, ตัวเลขนับขึ้น, แถวคิวเข้าทีละแถว, วาบเมื่อค่าเปลี่ยนจากการรีเฟรช, ตัวบอก "อัปเดต N วินาทีที่แล้ว" ที่หัวหน้า (อ้างจากการ poll สถานะกล่องสำเร็จล่าสุดผ่าน `markDataLoaded` ใน `lib/refresh-bus.ts`) ไม่ใช้กราฟแนวโน้มเพราะไม่มี API ประวัติย้อนหลัง · ลดข้อความ: ประโยคอธิบายย้ายไป tooltip (`QueueItem.hint`) คำอธิบายใต้หัวข้อแผงเปลี่ยนเป็นตัวเลขที่มุมขวา
 
 เจตนาที่เอาออก: แถบ "รออนุมัติ" เดิม (ซ้ำกับคิว), ตัวเลขนิ่ง (จำนวนโมเดล ฯลฯ ไม่ช่วยตัดสินใจ), KpiCard hook ที่ใช้ร่วมกันเรียกครั้งเดียวใน `dashboard-summary.tsx` แล้วส่ง props ลงแผง
 
