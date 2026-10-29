@@ -87,14 +87,14 @@ describe("DataTable", () => {
     render(<DataTable columns={columns} data={rows} urlSync savedViewsKey="t" />);
 
     await user.type(screen.getByRole("textbox", { name: "ค้นหารวม" }), "alpha");
-    await user.click(screen.getByRole("button", { name: /มุมมอง/ }));
-    fireEvent.change(screen.getByRole("textbox", { name: "ชื่อมุมมอง" }), { target: { value: "เฉพาะ alpha" } });
+    await user.click(screen.getByRole("button", { name: /ตัวกรองที่บันทึก/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "ชื่อตัวกรอง" }), { target: { value: "เฉพาะ alpha" } });
     await user.click(screen.getByRole("button", { name: "บันทึก" }));
 
     await user.click(screen.getByRole("button", { name: /ล้างตัวกรอง/ }));
     expect(screen.getByText("3 / 3 รายการ")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /มุมมอง/ }));
+    await user.click(screen.getByRole("button", { name: /ตัวกรองที่บันทึก/ }));
     await user.click(screen.getByRole("button", { name: "เฉพาะ alpha" }));
     expect(screen.getByText("1 / 3 รายการ")).toBeInTheDocument();
     expect(window.location.search).toBe("?q=alpha");

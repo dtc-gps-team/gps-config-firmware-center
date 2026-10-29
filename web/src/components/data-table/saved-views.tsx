@@ -84,14 +84,14 @@ export function SavedViewsMenu({
         render={
           <Button type="button" variant="outline" size="sm">
             <BookmarkIcon />
-            มุมมอง{views.length > 0 && ` (${views.length})`}
+            ตัวกรองที่บันทึก{views.length > 0 && ` (${views.length})`}
           </Button>
         }
       />
       <PopoverContent className="w-72 gap-2 p-2" align="start">
         {views.length === 0 ? (
           <p className="px-1 py-1 text-xs text-muted-foreground">
-            ยังไม่มีมุมมองที่บันทึก ตั้งค้นหาหรือตัวกรองแล้วตั้งชื่อเพื่อบันทึก
+            ยังไม่มีตัวกรองที่บันทึก ตั้งค้นหาหรือตัวกรองในตาราง แล้วตั้งชื่อเพื่อเก็บไว้ใช้ซ้ำ
           </p>
         ) : (
           <ul className="flex flex-col">
@@ -108,7 +108,7 @@ export function SavedViewsMenu({
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  aria-label={`ลบมุมมอง ${v.name}`}
+                  aria-label={`ลบตัวกรอง ${v.name}`}
                   onClick={() => persist(views.filter((x) => x.name !== v.name))}
                 >
                   <XIcon />
@@ -124,9 +124,9 @@ export function SavedViewsMenu({
             onKeyDown={(e) => {
               if (e.key === "Enter") save();
             }}
-            placeholder="ชื่อมุมมองปัจจุบัน"
+            placeholder="ตั้งชื่อตัวกรองปัจจุบัน"
             className="h-8"
-            aria-label="ชื่อมุมมอง"
+            aria-label="ชื่อตัวกรอง"
           />
           <Button type="button" size="sm" disabled={!canSave} onClick={save}>
             บันทึก
