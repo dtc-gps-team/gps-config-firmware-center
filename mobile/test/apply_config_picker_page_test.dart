@@ -923,7 +923,8 @@ void main() {
     );
 
     testWidgets(
-      'พิมพ์ค่าผิดชนิด -> บอกที่ช่องทันที และปุ่มกดไม่ได้จนกว่าจะแก้',
+      // มติล็อก r4: ข้อยกเว้นภาพ 1272 — ปุ่มไม่เทา บอกเหตุผลใต้ช่องหลังกด
+      'ค่าผิดชนิด -> ปุ่มยังกดได้ กดแล้วบอกที่ช่อง ไม่ส่ง · แก้แล้ว error หาย',
       (tester) async {
         applyRepo.options = fakeApplyOptions(
           configs: const [
@@ -945,13 +946,15 @@ void main() {
         );
         await tester.enterText(input, 'สิบห้า');
         await tester.pump();
+        expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
+        await tester.tap(submit);
+        await tester.pump();
         expect(find.text('ต้องเป็นจำนวนเต็ม'), findsOneWidget);
-        expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+        expect(overrides.calls, 0);
 
         await tester.enterText(input, '15');
         await tester.pump();
         expect(find.text('ต้องเป็นจำนวนเต็ม'), findsNothing);
-        expect(tester.widget<FilledButton>(submit).onPressed, isNotNull);
       },
     );
 
@@ -977,8 +980,13 @@ void main() {
           '500',
         );
         await tester.pump();
+        await tester.enterText(
+          find.byKey(const Key('apply_reason_field')),
+          'ทดสอบ',
+        );
+        await tester.tap(submit);
+        await tester.pump();
         expect(find.text('ต้องอยู่ระหว่าง 20–200 km/h'), findsOneWidget);
-        expect(tester.widget<FilledButton>(submit).onPressed, isNull);
         expect(overrides.calls, 0);
       },
     );

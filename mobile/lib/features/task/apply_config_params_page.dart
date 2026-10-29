@@ -60,6 +60,9 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
 
   /// ค่าที่ช่างพิมพ์ในช่องพารามิเตอร์ (ชื่อ field -> ข้อความ)
   final Map<String, String> _edits = {};
+
+  /// error รายช่องจากการกดครั้งล่าสุด — พิมพ์ใหม่แล้วล้าง
+  Map<String, String> _paramErrors = const {};
   String? _reasonError;
   bool _submitting = false;
   String? _error;
@@ -138,17 +141,19 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     _finish(taskId, message);
   });
 
-  /// แก้ค่า — ค่าผ่านการตรวจแล้ว (ปุ่มกดได้เฉพาะตอนไม่มี error) · ต้องมีเหตุผล
-  /// แล้วขออนุมัติผ่าน Override ของ Config นี้
+  /// แก้ค่า — ตรวจค่า + เหตุผลตอนกด (ปุ่มไม่เทาเมื่อค่าผิด ช่างจะเห็นเหตุผลใต้ช่อง ·
+  /// มติล็อก r4 ข้อยกเว้นภาพ 1272) แล้วขออนุมัติผ่าน Override ของ Config นี้
   Future<void> _submitEdits(
     ApplyOptionConfig config,
-    Map<String, dynamic> parsed,
+    Map<String, ConfigFieldDefinition> defByName,
   ) async {
+    final (:parsed, :errors) = _checkEdits(config, defByName);
     final reason = _reasonController.text.trim();
-    if (reason.isEmpty) {
-      setState(() => _reasonError = 'กรุณากรอกเหตุผลที่แก้ค่า');
-      return;
-    }
+    setState(() {
+      _paramErrors = errors;
+      _reasonError = reason.isEmpty ? 'กรุณากรอกเหตุผลที่แก้ค่า' : null;
+    });
+    if (errors.isNotEmpty || reason.isEmpty) return;
     await _run(() async {
       final taskId = await _ensureTask();
       await ref
@@ -174,8 +179,8 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
         entry.key: entry.value,
   };
 
-  /// ตรวจค่าที่แก้ทุกครั้งที่พิมพ์ (ชนิด + ช่วง min/max ของคลัง Parameter —
-  /// backend ตรวจซ้ำเสมอ) · คืนค่าที่ parse แล้ว และ error รายช่อง
+  /// ตรวจค่าที่แก้ (ชนิด + ช่วง min/max ของคลัง Parameter — backend ตรวจซ้ำเสมอ) ·
+  /// คืนค่าที่ parse แล้ว และ error รายช่อง
   ({Map<String, dynamic> parsed, Map<String, String> errors}) _checkEdits(
     ApplyOptionConfig config,
     Map<String, ConfigFieldDefinition> defByName,
@@ -301,7 +306,6 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
       );
     }
     final edited = _changedFields(config).isNotEmpty;
-    final errors = _checkEdits(config, defByName).errors;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
@@ -352,10 +356,13 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
           _ConfigParams(
             config: config,
             defByName: defByName,
-            errors: errors,
+            errors: _paramErrors,
             canEdit: canEdit,
             enabled: !_submitting,
-            onChanged: (field, value) => setState(() => _edits[field] = value),
+            onChanged: (field, value) => setState(() {
+              _edits[field] = value;
+              _paramErrors = const {};
+            }),
           ),
         if (edited) ...[
           const SizedBox(height: 16),
@@ -383,20 +390,16 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     );
   }
 
-  /// แถบล่าง: error ของ backend อยู่เหนือปุ่ม เห็นทันทีที่กด · ค่าที่แก้ผิด = กดไม่ได้
+  /// แถบล่าง: error ของ backend อยู่เหนือปุ่ม เห็นทันทีที่กด
   Widget _actions(
     DeviceApplyOptions options,
     ApplyOptionConfig config,
     Map<String, ConfigFieldDefinition> defByName,
   ) {
     final edited = _changedFields(config).isNotEmpty;
-    final check = _checkEdits(config, defByName);
     // คำขอของงานนี้เองที่ค้าง หน้างานไม่เปิดมาที่นี่อยู่แล้ว — ค้างอยู่ = ของงานอื่น
     // หรือเปิดจากหน้ากล่อง (backend ตอบ 409 ถ้าขอซ้ำ)
-    final blocked =
-        !options.deviceInstalled ||
-        options.openRequest != null ||
-        check.errors.isNotEmpty;
+    final blocked = !options.deviceInstalled || options.openRequest != null;
     final startedTaskId = _startedTaskId;
     return AppBottomActionBar(
       children: [
@@ -426,7 +429,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
           onPressed: blocked
               ? null
               : edited
-              ? () => _submitEdits(config, check.parsed)
+              ? () => _submitEdits(config, defByName)
               : _submitDirect,
         ),
       ],
