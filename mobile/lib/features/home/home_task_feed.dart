@@ -89,7 +89,7 @@ class HomeTaskRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${task.deviceId ?? 'ไม่ระบุอุปกรณ์'} · ${task.id}',
+                        task.deviceId ?? 'ไม่ระบุอุปกรณ์',
                         style: const TextStyle(
                           fontSize: HomeTokens.metaSize,
                           height: 1.4,

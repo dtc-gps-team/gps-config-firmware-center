@@ -7,6 +7,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/config/app_config.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/theme/app_theme.dart';
+import 'package:mobile/features/home/home_task_feed.dart';
 
 class _Auth extends AuthController {
   _Auth(this.role);
@@ -66,22 +67,36 @@ void main() {
               .timeout(const Duration(seconds: 20));
         }
 
-        await capture('home');
-        final all = find.byKey(const Key('home_view_all'));
-        if (all.evaluate().isEmpty) {
-          await tester.scrollUntilVisible(
-            all,
-            150,
-            scrollable: find
-                .byWidgetPredicate(
-                  (w) =>
-                      w is Scrollable && w.axisDirection == AxisDirection.down,
-                )
-                .first,
+        final scroll = tester.state<ScrollableState>(
+          find
+              .byWidgetPredicate(
+                (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+              )
+              .first,
+        );
+        expect(scroll.position.maxScrollExtent, 0);
+        final body = tester.getRect(find.byKey(const Key('home_overview')));
+        final visibleRows = find.byType(HomeTaskRow).hitTestable();
+        for (final row in visibleRows.evaluate()) {
+          expect(
+            tester.getRect(find.byWidget(row.widget)).bottom,
+            lessThanOrEqualTo(body.bottom),
           );
         }
-        await tester.ensureVisible(all);
-        await tester.pumpAndSettle();
+        if (view.height.round() == 640 && scale == 2) {
+          expect(visibleRows, findsNothing);
+          expect(
+            find.byKey(const Key('home_compact_all')).hitTestable(),
+            findsOneWidget,
+          );
+        }
+        expect(find.textContaining('mock-task-'), findsNothing);
+        await capture('home');
+        var all = find.byKey(const Key('home_view_all')).hitTestable();
+        if (all.evaluate().isEmpty) {
+          all = find.byKey(const Key('home_compact_all')).hitTestable();
+        }
+        expect(all, findsOneWidget);
         await tester.tap(all);
         await tester.pumpAndSettle(
           const Duration(milliseconds: 100),
@@ -91,6 +106,7 @@ void main() {
         // push เป็นหน้าลูก จึงตรวจหน้าที่แสดงจริง ไม่ใช้ URL ที่อาจคงเป็น /home
         expect(find.byKey(const Key('home_tasks_search')), findsOneWidget);
         expect(router.canPop(), isTrue);
+        expect(find.textContaining('mock-task-'), findsNothing);
         await capture('all');
         await tester.tap(find.byKey(const Key('home_filter_open')));
         await tester.pumpAndSettle();

@@ -217,7 +217,7 @@ void main() {
       expect(roleDescription(null), 'ผู้ใช้งาน');
     });
 
-    test('อักษรย่อใน avatar มาจากชื่อจริง', () {
+    test('อักษรย่อใน avatar มาจาก username', () {
       expect(accountInitials('somchai.t'), 'SO');
       expect(accountInitials(null), '?');
       expect(accountInitials('42'), '4');

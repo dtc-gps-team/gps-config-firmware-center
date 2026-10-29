@@ -17,7 +17,7 @@ class HomeTokens {
   static const double metaSize = 12;
   static const double iconSize = 32;
   static const double largeTextScale = 1.5;
-  static const double compactHeight = 760;
   static const int previewLimit = 3;
+  static const overviewPadding = EdgeInsets.fromLTRB(18, 10, 18, 12);
   static const contentPadding = EdgeInsets.fromLTRB(18, 16, 18, 20);
 }

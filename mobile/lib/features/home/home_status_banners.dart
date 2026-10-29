@@ -8,6 +8,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/sync_status_widgets.dart';
 import '../task/task_repository.dart';
 import '../task/task_status_ui.dart';
+import 'home_tokens.dart';
 
 /// ส่วนบนสุดของหน้าแรกสำหรับช่าง — แยกไฟล์จาก home_page.dart
 ///
@@ -20,10 +21,12 @@ class HomeStatusBanners extends ConsumerWidget {
     super.key,
     this.onSummaryTap,
     this.showSummary = true,
+    this.showBanners = true,
   });
 
   final VoidCallback? onSummaryTap;
   final bool showSummary;
+  final bool showBanners;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,9 +39,10 @@ class HomeStatusBanners extends ConsumerWidget {
     final tasks = ref.watch(taskListProvider).valueOrNull;
 
     final items = <Widget>[
-      if (offline != null) OfflineCacheBanner(cachedAt: offline.cachedAt),
-      if (authExpired) const SyncAuthExpiredBanner(),
-      if (failedCount > 0) SyncFailedBanner(count: failedCount),
+      if (showBanners && offline != null)
+        OfflineCacheBanner(cachedAt: offline.cachedAt),
+      if (showBanners && authExpired) const SyncAuthExpiredBanner(),
+      if (showBanners && failedCount > 0) SyncFailedBanner(count: failedCount),
       if (tasks != null &&
           showSummary &&
           tasks.any(
@@ -82,6 +86,8 @@ class _TaskSummary extends StatelessWidget {
         )
         .toList();
     final urgent = open.where(TaskUrgencyStyle.isUrgent).length;
+    final large =
+        MediaQuery.textScalerOf(context).scale(1) >= HomeTokens.largeTextScale;
     if (open.isEmpty) return const SizedBox.shrink();
     return Material(
       key: const Key('home_task_summary'),
@@ -107,17 +113,20 @@ class _TaskSummary extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'มี ${open.length} งานที่ยังไม่เสร็จ',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.4,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.accentForeground,
+                    if (!large)
+                      Text(
+                        'มี ${open.length} งานที่ยังไม่เสร็จ',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.accentForeground,
+                        ),
                       ),
-                    ),
                     Text(
                       'ค้าง ${open.length} งาน ด่วน $urgent งาน',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         height: 1.4,

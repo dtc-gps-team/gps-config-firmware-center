@@ -21,112 +21,46 @@ import 'home_tokens.dart';
 
 /// หน้าแรก r4 ของ ST/OT ใช้ taskListProvider เดิม ไม่เพิ่ม API หรือรวมกิจกรรม
 /// ชนิดอื่นที่ยังไม่มี contract บน main และไม่อนุมานสถานะอนุมัติจากสถานะงาน
-class HomePage extends ConsumerStatefulWidget {
+class HomePage extends ConsumerWidget {
   const HomePage({super.key});
-  @override
-  ConsumerState<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends ConsumerState<HomePage> {
-  final _scroll = ScrollController();
-  final _hero = GlobalKey();
-  bool _heroScrolledAway = false;
-  double _heroHeight = 300;
 
   @override
-  void initState() {
-    super.initState();
-    // ไอคอน status bar ต้องอ่านได้ทั้งเมื่อหัวเข้มอยู่บนจอและเมื่อเลื่อนไปพื้นอ่อน
-    _scroll.addListener(() {
-      _heroHeight = _hero.currentContext?.size?.height ?? _heroHeight;
-      final away = _scroll.offset >= _heroHeight;
-      if (away != _heroScrolledAway) setState(() => _heroScrolledAway = away);
-    });
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
     final staff = isFieldStaff(auth.role);
     return AppV2Theme(
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: _heroScrolledAway
-            ? SystemUiOverlayStyle.dark
-            : SystemUiOverlayStyle.light,
+        value: SystemUiOverlayStyle.light,
         child: Scaffold(
           backgroundColor: AppColors.background,
           body: RefreshIndicator(
             onRefresh: () => staff
                 ? ref.refresh(taskListProvider.future)
                 : Future<void>.value(),
-            child: ListView(
-              controller: _scroll,
-              padding: EdgeInsets.zero,
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                _HomeHero(key: _hero, auth: auth),
-                if (staff)
-                  Padding(
-                    padding: HomeTokens.contentPadding,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const _Shortcuts(),
-                        const SizedBox(height: HomeTokens.gap),
-                        HomeStatusBanners(
-                          onSummaryTap: () =>
-                              context.push('${AppRoutes.homeAll}?filter=open'),
-                        ),
-                        Wrap(
-                          alignment: WrapAlignment.spaceBetween,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 10,
-                          children: [
-                            Semantics(
-                              header: true,
-                              child: const Text(
-                                'งานล่าสุด',
-                                style: TextStyle(
-                                  fontSize: HomeTokens.titleSize,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              key: const Key('home_view_all'),
-                              style: TextButton.styleFrom(
-                                minimumSize: const Size(48, 48),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                              ),
-                              onPressed: () => context.push(AppRoutes.homeAll),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      'ดูทั้งหมด',
-                                      style: TextStyle(fontSize: 12.5),
-                                    ),
-                                  ),
-                                  Icon(Icons.chevron_right, size: 16),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const _RecentTasks(),
-                      ],
-                    ),
+            // เนื้อหาสูงเท่า viewport เสมอ จึงไม่เลื่อน แต่ยังส่ง overscroll ให้ดึงโหลดใหม่ได้
+            child: CustomScrollView(
+              key: const Key('home_fixed_viewport'),
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: ClampingScrollPhysics(),
+              ),
+              slivers: [
+                SliverFillRemaining(
+                  hasScrollBody: true,
+                  child: Column(
+                    children: [
+                      _HomeHero(auth: auth),
+                      if (staff)
+                        const Expanded(
+                          child: Padding(
+                            padding: HomeTokens.overviewPadding,
+                            child: _HomeOverview(),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -137,7 +71,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 }
 
 class _HomeHero extends StatelessWidget {
-  const _HomeHero({super.key, required this.auth});
+  const _HomeHero({required this.auth});
   final AuthState auth;
   @override
   Widget build(BuildContext context) {
@@ -167,6 +101,8 @@ class _HomeHero extends StatelessWidget {
       header: true,
       child: Text(
         name,
+        maxLines: large ? 1 : 2,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           fontSize: HomeTokens.heroNameSize,
           height: 1.25,
@@ -272,6 +208,8 @@ class _HomeHero extends StatelessWidget {
                           const Expanded(
                             child: Text(
                               'ค้นหาด้วยเลขเครื่อง หรือเบอร์ซิม',
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 14,
                                 height: 1.4,
@@ -380,46 +318,153 @@ class _Shortcuts extends StatelessWidget {
   }
 }
 
-class _RecentTasks extends ConsumerWidget {
-  const _RecentTasks();
+class _HomeOverview extends ConsumerWidget {
+  const _HomeOverview();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasks = ref.watch(taskListProvider);
     final pending =
         ref.watch(pendingTaskIdsProvider).valueOrNull ?? const <String>{};
+    void all() => context.push(AppRoutes.homeAll);
+    Widget fallback(String label, {VoidCallback? tap, Key? key}) =>
+        OutlinedButton(
+          key: key,
+          onPressed: tap,
+          child: Text(label, textAlign: TextAlign.start),
+        );
+    Widget layout(
+      List<Widget> rows,
+      Widget compact, {
+      Widget caption = const SizedBox.shrink(),
+    }) {
+      return ClipRect(
+        key: const Key('home_overview'),
+        child: CustomMultiChildLayout(
+          delegate: _HomeOverviewDelegate(rowCount: rows.length),
+          children: [
+            LayoutId(id: _HomeSlot.shortcuts, child: _Shortcuts()),
+            LayoutId(
+              id: _HomeSlot.alerts,
+              child: HomeStatusBanners(showSummary: false),
+            ),
+            LayoutId(
+              id: _HomeSlot.summary,
+              child: HomeStatusBanners(
+                showBanners: false,
+                onSummaryTap: () =>
+                    context.push('${AppRoutes.homeAll}?filter=open'),
+              ),
+            ),
+            LayoutId(
+              id: _HomeSlot.heading,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: const Text(
+                      'งานล่าสุด',
+                      style: TextStyle(
+                        fontSize: HomeTokens.titleSize,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    key: const Key('home_view_all'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                    onPressed: all,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'ดูทั้งหมด',
+                            style: TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, size: 16),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            LayoutId(id: _HomeSlot.fallback, child: compact),
+            LayoutId(id: _HomeSlot.caption, child: caption),
+            LayoutId(
+              id: _HomeSlot.compactAlerts,
+              child: TextButton.icon(
+                key: const Key('home_compact_status'),
+                icon: const Icon(Icons.info_outline),
+                label: const Text('ดูสถานะการซิงก์'),
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  useRootNavigator: true,
+                  isScrollControlled: true,
+                  builder: (_) => const AppV2Theme(
+                    child: SafeArea(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(18),
+                        child: HomeStatusBanners(showSummary: false),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            for (var i = 0; i < rows.length; i++)
+              LayoutId(id: i, child: rows[i]),
+          ],
+        ),
+      );
+    }
+
     return tasks.when(
       skipLoadingOnRefresh: true,
-      loading: () => const AppListSkeleton(
-        key: Key('home_recent_loading'),
-        padding: EdgeInsets.zero,
-      ),
-      error: (error, _) => AppErrorView(
-        message: error is ApiException
-            ? error.message
-            : 'โหลดงานล่าสุดไม่สำเร็จ',
-        onRetry: () => ref.invalidate(taskListProvider),
-        messageKey: const Key('my_tasks_error'),
-        retryKey: const Key('my_tasks_retry'),
+      loading: () => layout([
+        const AppListSkeleton(
+          key: Key('home_recent_loading'),
+          padding: EdgeInsets.zero,
+        ),
+      ], fallback('กำลังโหลดงาน')),
+      error: (error, _) => layout(
+        [
+          AppErrorView(
+            message: error is ApiException
+                ? error.message
+                : 'โหลดงานล่าสุดไม่สำเร็จ',
+            onRetry: () => ref.invalidate(taskListProvider),
+            messageKey: const Key('my_tasks_error'),
+            retryKey: const Key('my_tasks_retry'),
+          ),
+        ],
+        fallback(
+          'โหลดงานไม่สำเร็จ · ลองอีกครั้ง',
+          tap: () => ref.invalidate(taskListProvider),
+          key: const Key('home_compact_retry'),
+        ),
       ),
       data: (items) {
         if (items.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.assignment_outlined,
-            message: 'ยังไม่มีงานที่ได้รับมอบหมาย',
-            messageKey: Key('my_tasks_empty'),
-          );
+          return layout([
+            const AppEmptyState(
+              icon: Icons.assignment_outlined,
+              message: 'ยังไม่มีงานที่ได้รับมอบหมาย',
+              messageKey: Key('my_tasks_empty'),
+            ),
+          ], fallback('ยังไม่มีงานที่ได้รับมอบหมาย'));
         }
-        final media = MediaQuery.of(context);
-        final large = media.textScaler.scale(1) >= HomeTokens.largeTextScale;
-        // หน้าแคบ/ข้อความใหญ่เปิดทางไปดูทั้งหมดแทนการอัดการ์ดจนถูกตัดครึ่ง
-        // หน้าเลื่อนทั้งหน้าได้เสมอ จึงยังเข้าถึงปุ่มได้เมื่อขยายเกิน2เท่า
-        final limit = large
-            ? (media.size.height < HomeTokens.compactHeight ? 0 : 1)
-            : HomeTokens.previewLimit;
-        final recent = recentHomeTasks(items).take(limit).toList();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        final recent = recentHomeTasks(items).take(HomeTokens.previewLimit);
+        return layout(
+          [
             for (final task in recent)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -430,26 +475,110 @@ class _RecentTasks extends ConsumerWidget {
                   onTap: () => context.push(AppRoutes.taskDetail(task.id)),
                 ),
               ),
-            if (recent.isEmpty)
-              OutlinedButton(
-                key: const Key('home_compact_all'),
-                onPressed: () => context.push(AppRoutes.homeAll),
-                child: Text('ดูทั้งหมด ${items.length} รายการ'),
-              )
-            else
-              Text(
-                'แสดง ${recent.length} จาก ${items.length} รายการ · ที่เหลืออยู่ใน “ดูทั้งหมด”',
-                key: const Key('home_preview_caption'),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11,
-                  height: 1.5,
-                  color: AppColors.mutedForeground,
-                ),
-              ),
           ],
+          fallback(
+            'ดูทั้งหมด ${items.length} รายการ',
+            tap: all,
+            key: const Key('home_compact_all'),
+          ),
+          caption: Text(
+            'ทั้งหมด ${items.length} รายการ · รายการที่เหลืออยู่ใน “ดูทั้งหมด”',
+            key: const Key('home_preview_caption'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              height: 1.5,
+              color: AppColors.mutedForeground,
+            ),
+          ),
         );
       },
     );
   }
+}
+
+enum _HomeSlot {
+  shortcuts,
+  alerts,
+  summary,
+  heading,
+  fallback,
+  caption,
+  compactAlerts,
+}
+
+/// วัดขนาดจริงทุกแถว ไม่เดาจาก text scale หรือความสูงจอ
+/// วางเฉพาะแถวที่พอดีทั้งใบ ส่วนที่ไม่แสดงอยู่นอก ClipRect จึงไม่ถูกวาด/แตะ/อ่านซ้ำ
+/// สูงสุดเพียง3แถว จึงไม่ต้องเพิ่ม query หรือสร้างรายการทั้งหมดเพื่อวัด
+class _HomeOverviewDelegate extends MultiChildLayoutDelegate {
+  _HomeOverviewDelegate({required this.rowCount});
+  final int rowCount;
+
+  @override
+  void performLayout(Size size) {
+    final heights = <Object, double>{};
+    final ids = <Object>[
+      ..._HomeSlot.values,
+      for (var i = 0; i < rowCount; i++) i,
+    ];
+    for (final id in ids) {
+      heights[id] = layoutChild(
+        id,
+        BoxConstraints.tightFor(width: size.width),
+      ).height;
+      positionChild(
+        id,
+        Offset(size.width + HomeTokens.target, size.height + HomeTokens.target),
+      );
+    }
+    double h(Object id) => heights[id]!;
+    var alerts = _HomeSlot.alerts;
+    var heading = true;
+    var shortcuts = true;
+    double reserved() =>
+        (shortcuts ? h(_HomeSlot.shortcuts) + HomeTokens.gap : 0) +
+        h(alerts) +
+        (heading ? h(_HomeSlot.heading) : 0) +
+        h(_HomeSlot.fallback);
+    // ถ้า banner หลายอัน/ตัวอักษรใหญ่ ใช้ปุ่มเปิดรายละเอียดแทนการตัดคำเตือนครึ่งเดียว
+    if (reserved() > size.height && h(alerts) > h(_HomeSlot.compactAlerts)) {
+      alerts = _HomeSlot.compactAlerts;
+    }
+    // ปุ่มดูทั้งหมดสำคัญกว่าหัวข้อหรือทางลัดซ้ำกับแท็บ เมื่อพื้นที่เล็กผิดปกติ
+    if (reserved() > size.height) heading = false;
+    if (reserved() > size.height) shortcuts = false;
+    final summary = reserved() + h(_HomeSlot.summary) <= size.height;
+    var y = 0.0;
+    void place(Object id) {
+      positionChild(id, Offset(0, y));
+      y += h(id);
+    }
+
+    if (shortcuts) {
+      place(_HomeSlot.shortcuts);
+      y += HomeTokens.gap;
+    }
+    place(alerts);
+    if (summary) place(_HomeSlot.summary);
+    if (heading) place(_HomeSlot.heading);
+    final available = size.height - y;
+    var used = 0.0;
+    var count = 0;
+    for (var i = 0; i < rowCount; i++) {
+      if (used + h(i) + h(_HomeSlot.caption) > available) break;
+      used += h(i);
+      count++;
+    }
+    if (count == 0) {
+      if (h(_HomeSlot.fallback) <= available) place(_HomeSlot.fallback);
+    } else {
+      for (var i = 0; i < count; i++) {
+        place(i);
+      }
+      place(_HomeSlot.caption);
+    }
+  }
+
+  @override
+  bool shouldRelayout(covariant _HomeOverviewDelegate oldDelegate) => true;
 }

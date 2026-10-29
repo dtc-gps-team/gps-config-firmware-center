@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:ui' show SemanticsAction;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
@@ -12,6 +13,7 @@ import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/features/task/task_repository.dart';
+import 'package:mobile/features/home/home_task_feed.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 
@@ -132,15 +134,166 @@ Future<ProviderContainer> _pump(
 }
 
 Future<void> _all(WidgetTester tester) async {
-  final button = find.byKey(const Key('home_view_all'));
-  await _show(tester, button);
+  var button = find.byKey(const Key('home_view_all')).hitTestable();
+  if (button.evaluate().isEmpty) {
+    button = find.byKey(const Key('home_compact_all')).hitTestable();
+  }
+  expect(button, findsOneWidget);
   await tester.tap(button);
   await tester.pumpAndSettle();
 }
 
 void main() {
+  setUpAll(() async {
+    // ตรวจพื้นที่จริงด้วยฟอนต์ที่แอป bundle ไม่ใช้ความกว้างจำลองของ Ahem
+    final loader = FontLoader(AppTypography.fontFamily)
+      ..addFont(rootBundle.load('assets/fonts/Anuphan[wght].ttf'));
+    await loader.load();
+  });
+
+  testWidgets('UUID ใช้สำหรับเปิดงาน ไม่พิมพ์บนการ์ด Home หรือรายการเต็ม', (
+    tester,
+  ) async {
+    const uuid = '3f2a9c1e-1bf7-4a02-9adb-8dc527b65e1a';
+    await _pump(
+      tester,
+      _Repo([
+        Task(
+          id: uuid,
+          title: 'ติดตั้งกล่อง GPS',
+          assignedTo: 'u1',
+          status: TaskStatus.pending,
+          deviceId: 'DEV-0512',
+          createdAt: DateTime(2026, 10, 1),
+          updatedAt: DateTime(2026, 10, 1),
+        ),
+      ]),
+    );
+    expect(find.text('DEV-0512'), findsOneWidget);
+    expect(find.textContaining(uuid), findsNothing);
+    await _all(tester);
+    expect(find.text('DEV-0512'), findsOneWidget);
+    expect(find.textContaining(uuid), findsNothing);
+  });
+
+  for (final view in [const Size(390, 844), const Size(360, 640)]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+        'Home ไม่เลื่อนและแสดงเฉพาะแถวเต็ม ${view.width}×${view.height} / ${scale}x',
+        (tester) async {
+          await _pump(
+            tester,
+            _Repo([
+              for (var i = 0; i < 8; i++)
+                _task(
+                  '$i',
+                  TaskStatus.pending,
+                  title: 'ติดตั้งกล่อง GPS และตรวจสัญญาณอุปกรณ์ $i',
+                ),
+            ]),
+            viewport: view,
+            scale: scale,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          final scroll = tester.state<ScrollableState>(
+            find
+                .byWidgetPredicate(
+                  (w) =>
+                      w is Scrollable && w.axisDirection == AxisDirection.down,
+                )
+                .first,
+          );
+          expect(scroll.position.maxScrollExtent, 0);
+          final body = tester.getRect(find.byKey(const Key('home_overview')));
+          final rows = find.byType(HomeTaskRow).hitTestable();
+          for (final row in rows.evaluate()) {
+            final rect = tester.getRect(find.byWidget(row.widget));
+            expect(rect.top, greaterThanOrEqualTo(body.top));
+            expect(rect.bottom, lessThanOrEqualTo(body.bottom));
+          }
+          if (rows.evaluate().isEmpty) {
+            final all = find.byKey(const Key('home_compact_all')).hitTestable();
+            expect(all, findsOneWidget);
+            expect(tester.getRect(all).bottom, lessThanOrEqualTo(body.bottom));
+          }
+          if (view.height == 640 && scale == 2) {
+            expect(rows, findsNothing);
+            expect(
+              find.byKey(const Key('home_compact_all')).hitTestable(),
+              findsOneWidget,
+            );
+          }
+          final hero = tester.getTopLeft(find.byKey(const Key('home_hero')));
+          await tester.drag(
+            find.byType(CustomScrollView),
+            const Offset(0, -180),
+          );
+          await tester.pumpAndSettle();
+          expect(tester.getTopLeft(find.byKey(const Key('home_hero'))), hero);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  testWidgets('Home กรอบคงที่ยังดึงโหลดใหม่ได้โดยไม่เลื่อนเนื้อหา', (
+    tester,
+  ) async {
+    final repo = _Repo([_task('1', TaskStatus.pending)]);
+    await _pump(tester, repo);
+    final before = tester.getTopLeft(find.byKey(const Key('home_hero')));
+    await tester.fling(
+      find.byKey(const Key('home_fixed_viewport')),
+      const Offset(0, 350),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(repo.calls, 2);
+    expect(tester.getTopLeft(find.byKey(const Key('home_hero'))), before);
+  });
+
+  testWidgets('TalkBack ไม่อ่านแถวที่ไม่แสดง และแตะดูทั้งหมดบนจอเล็ก2xได้', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    try {
+      const hiddenTitle = 'แถวนี้ต้องไปอ่านในรายการเต็ม';
+      await _pump(
+        tester,
+        _Repo([_task('1', TaskStatus.pending, title: hiddenTitle)]),
+        viewport: const Size(360, 640),
+        scale: 2,
+      );
+      await tester.pumpAndSettle();
+      final labels = <String>[];
+      void collect(SemanticsNode node) {
+        final data = node.getSemanticsData();
+        if (data.flagsCollection.isHidden) return;
+        labels.add(data.label);
+        node.visitChildren((child) {
+          collect(child);
+          return true;
+        });
+      }
+
+      final owner = tester.binding.renderViews.first.owner!.semanticsOwner!;
+      collect(owner.rootSemanticsNode!);
+      expect(labels.any((label) => label.contains(hiddenTitle)), isFalse);
+      final button = tester.getSemantics(
+        find.byKey(const Key('home_compact_all')),
+      );
+      expect(button.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      owner.performAction(button.id, SemanticsAction.tap);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('home_tasks_search')), findsOneWidget);
+    } finally {
+      handle.dispose();
+    }
+  });
+
   for (final role in [UserRole.st, UserRole.ot]) {
-    testWidgets('หัว Home r4: ${role.wireName} ชื่อจริง ทางลัด และเข้าค้นหา', (
+    testWidgets('หัว Home r4: ${role.wireName} username ทางลัด และเข้าค้นหา', (
       tester,
     ) async {
       final c = await _pump(tester, _Repo([]), role: role);
@@ -175,6 +328,7 @@ void main() {
           _task('b', TaskStatus.cancelled, day: 3),
           _task('new', TaskStatus.inProgress, day: 4),
         ]),
+        viewport: const Size(390, 1200),
       );
       expect(find.byKey(const Key('home_recent_new')), findsOneWidget);
       expect(find.byKey(const Key('home_recent_b')), findsOneWidget);
@@ -184,7 +338,10 @@ void main() {
         tester.getTopLeft(find.byKey(const Key('home_recent_b'))).dy,
         lessThan(tester.getTopLeft(find.byKey(const Key('home_recent_a'))).dy),
       );
-      expect(find.textContaining('แสดง 3 จาก 4'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('home_preview_caption'))).data,
+        startsWith('ทั้งหมด 4 รายการ'),
+      );
     },
   );
 
