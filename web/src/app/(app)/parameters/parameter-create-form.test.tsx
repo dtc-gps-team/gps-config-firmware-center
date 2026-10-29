@@ -161,3 +161,34 @@ describe("ParameterCreateForm data type hint", () => {
     expect(screen.getByText("ค่า true หรือ false")).toBeInTheDocument();
   });
 });
+
+describe("ParameterCreateForm unsaved changes", () => {
+  it("asks before cancelling a dirty form and leaves immediately when clean", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const confirm = vi.spyOn(window, "confirm");
+    render(
+      <ParameterCreateForm
+        deviceModels={models}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "half_done" } });
+    confirm.mockReturnValueOnce(false);
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    confirm.mockReturnValueOnce(true);
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+});

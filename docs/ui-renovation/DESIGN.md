@@ -192,13 +192,13 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 | App Shell | เสร็จ | | |
 | Dashboard | เสร็จ (รวมมุมมองตาม Role, Rollout ที่กำลังดำเนินการ, อุปกรณ์ที่เงียบเกิน 24 ชม.) | | |
 | Device Search / Detail / ลงทะเบียน | ยังไม่แตะ | เสร็จทั้ง 3 (ลงทะเบียน: grid ตอบสนอง, ลำดับช่องใหม่, CopyButton, ปุ่มยกเลิก) | |
-| Config Editor (list/wizard/detail) | ยังไม่แตะ | เสร็จทั้ง 3: detail เป็นแท็บ พารามิเตอร์ (จัดกลุ่มหมวด) / ประวัติเวอร์ชัน (เทียบกับค่าปัจจุบัน, ใส่ค่าเวอร์ชันเก่ากลับเข้า draft ผ่าน PUT เดิม), โคลนเป็นปุ่มหลักของ Config ที่แก้ตรงๆ ไม่ได้, ลบผ่าน ConfirmDialog | |
+| Config Editor (list/wizard/detail) | ยังไม่แตะ | เสร็จทั้ง 3: wizard 2 ขั้น (ขั้น 1 สองการ์ด + สรุปจำนวนพารามิเตอร์ของรุ่น, ขั้น 2 แถบสรุป + แถบบันทึกติดจอ, JSON mode เป็นช่องเดียวที่ระบายสีขณะพิมพ์ `components/json-editor.tsx`, dialog นำเข้าไฟล์แบบ dropzone) · detail เป็นแถบขั้น (ร่าง → รออนุมัติ → อนุมัติแล้ว `components/config/lifecycle-steps.tsx`) + การ์ดตัวเลข + แท็บ พารามิเตอร์ (จัดกลุ่มหมวด) / ประวัติเวอร์ชัน (เทียบกับค่าปัจจุบัน, ใส่ค่าเวอร์ชันเก่ากลับเข้า draft ผ่าน PUT เดิม), โคลนเป็นปุ่มหลักของ Config ที่แก้ตรงๆ ไม่ได้, ลบผ่าน ConfirmDialog | |
 | Approval Center + detail | ยังไม่แตะ | เสร็จ: Center, รายละเอียด Config (DiffViewer), Override ทั้งสองแบบ (ConfirmDialog + ช่องเหตุผลปฏิเสธ, ErrorState) | |
 | Firmware | ยังไม่แตะ | เสร็จ: list, อัปโหลด, เทียบเวอร์ชัน, detail (2 คอลัมน์, อนุมัติ QA ผ่าน ConfirmDialog, สถานะพร้อมปล่อยเดียว) | |
 | Campaign + Rollout | ยังไม่แตะ | ผูก ConfirmDialog กับแผงอนุมัติ/ปล่อย Rollout แล้ว (ปล่อยเข้าอุปกรณ์ต้องพิมพ์ `RELEASE`) Rollback มี dialog อยู่เดิม | layout ที่เหลือทั้งหมด |
 | Incident & Rollback | ยังไม่แตะ | | ทั้งหมด |
 | Audit Log | ยังไม่แตะ | | ทั้งหมด |
-| Parameter Library, Users, Device Model | ยังไม่แตะ | Parameter Library เสร็จ | Users, Device Model |
+| Parameter Library, Users, Device Model | ยังไม่แตะ | Parameter Library เสร็จ: รายการ + drawer + หน้าสร้างแยก `/parameters/new` (การ์ดเดียว เต็มความกว้าง, ตัวเลือกโมเดลแบบค้นหา, ค่าที่เลือกได้พิมพ์บรรทัดละค่า) | Users, Device Model |
 | Login | ยังไม่แตะ | | |
 
 ข้อจำกัดที่รับรู้หลังรอบ 1
@@ -221,3 +221,9 @@ Top tasks ข้ามบทบาท: ดูว่าอะไรผิดป�
 - **Firmware ล้าสมัย** คำนวณจากเวอร์ชันที่กล่องรายงาน (Server กลาง) เทียบ Firmware ล่าสุดที่ผ่าน QA และอัปโหลดสำเร็จของโมเดลเดียวกัน (เทียบเลขทีละส่วน) ไม่มีข้อมูลรายงาน = ไม่ตัดสิน
 - Bulk ใน Device Search มีเฉพาะ คัดลอก Device ID และส่งออก CSV (ไม่มี endpoint สั่งงานเป็นกลุ่ม) อนุมัติหลายรายการมีเฉพาะ Config
 - **Firmware ไม่แสดงให้ ConfigEngineer**: RBAC_Matrix ระบุ "-" ที่แถว Firmware Repository เมนูถูกซ่อน (`allowedRoles` ใน `nav.ts`) หน้า `/firmware` และ `/firmware/[id]` ครอบด้วย `RoleGuard` (`canReadFirmware`) และ Device Search/Detail ไม่ยิง `GET /firmware` ให้ role นี้
+- **Dialog / AlertDialog เป็น bottom sheet บนมือถือ** (< 640px) ใน `components/ui/dialog.tsx`, `alert-dialog.tsx` จอใหญ่เป็นกล่องกลางจอเหมือนเดิม
+- **เตือนก่อนออกจากหน้าที่กรอกค้าง** ใช้ `useUnsavedChangesWarning` ครบ: Config wizard, สร้าง Parameter, ลงทะเบียนอุปกรณ์ (ปุ่มยกเลิกถามก่อน, รีเฟรช/ปิดแท็บขึ้น prompt ของเบราว์เซอร์)
+- **URL เก็บมุมมองย่อยของ Approval Center** `?view=mine` (หมวดอยู่ที่ `?tab=`)
+- **หน้า server ส่งฟังก์ชันให้ client component ไม่ได้**: RoleGuard ที่ต้องการ `allow` ให้ห่อเป็น client component ก่อน (ตัวอย่าง `firmware/firmware-access-guard.tsx`) · ตรวจด้วย `check-firmware-access.mjs` และ build ที่ prerender หน้านั้น เทสระดับ view อย่างเดียวไม่เจอ
+- **ยังไม่ได้ทำในรอบ 2:** undo toast (การอนุมัติ/ลบย้อนกลับไม่ได้ จึงไม่มีที่ใส่จริง), รวมหัวข้อสองภาษาเป็นภาษาเดียว, ตรวจ accessibility ด้วยเครื่องมือ (axe/contrast AA)
+- **เครื่องมือตรวจ:** `check-flows.mjs` (งาน A/B/C), `check-virtual.mjs`, `check-firmware-access.mjs` · อย่ารัน `next dev` สองตัวในโฟลเดอร์ `web/` พร้อมกัน ไฟล์ type ที่ Next สร้างใน `.next/dev/types` จะเขียนทับกันจนเสีย (typecheck พัง ลบส่วนท้ายไฟล์ที่เกินหรือรีสตาร์ท dev server)

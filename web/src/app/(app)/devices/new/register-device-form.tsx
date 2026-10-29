@@ -12,6 +12,7 @@ import {
   registerDevice,
   type RegisterDeviceResult,
 } from "@/lib/device-api";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import { useDeviceModels } from "@/hooks/use-device-models";
 import { useCustomers } from "@/hooks/use-customers";
 import { useCentralDevices } from "@/hooks/use-central-devices";
@@ -75,6 +76,14 @@ export function RegisterDeviceForm() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [result, setResult] = useState<RegisterDeviceResult | null>(null);
+
+  // กรอกค้างไว้แล้วออกจากหน้า (รีเฟรช/ปิดแท็บ/กดยกเลิก) ต้องเตือนก่อน · ลงทะเบียนสำเร็จแล้วไม่ต้องเตือน
+  const isDirty =
+    result === null &&
+    [deviceId, simNumber, modelId, hardwareRevisionCode, imei, serialNumber, blackboxId, bootloader].some(
+      (v) => v.trim() !== "",
+    );
+  const { confirmLeave } = useUnsavedChangesWarning(isDirty);
 
   const modelList = useMemo(() => models ?? [], [models]);
   const customerList = useMemo(() => customers ?? [], [customers]);
@@ -441,6 +450,9 @@ export function RegisterDeviceForm() {
       <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
         <Link
           href="/devices"
+          onClick={(e) => {
+            if (!confirmLeave()) e.preventDefault();
+          }}
           className={buttonVariants({ variant: "outline" })}
         >
           ยกเลิก

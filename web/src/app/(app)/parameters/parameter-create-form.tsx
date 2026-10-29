@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import {
   Popover,
   PopoverContent,
@@ -137,6 +138,18 @@ export function ParameterCreateForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [formErrorList, setFormErrorList] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // กรอกค้างไว้แล้วออกจากหน้า (รีเฟรช/ปิดแท็บ/กดยกเลิก) ต้องเตือนก่อน
+  const isDirty =
+    [fieldName, description, unit, defaultValue, allowedText].some((v) => v.trim() !== "") ||
+    dataType !== "string" ||
+    required ||
+    unknownSpec ||
+    stOverridable ||
+    sensitive ||
+    selectedModelNames.size > 0;
+  const { confirmLeave } = useUnsavedChangesWarning(isDirty && !saved);
 
   const sortedModels = useMemo(
     () => [...deviceModels].sort((a, b) => a.name.localeCompare(b.name)),
@@ -218,6 +231,7 @@ export function ParameterCreateForm({
         ...(!sensitive && trimmedDefault ? { defaultValue: trimmedDefault } : {}),
         supportedModels,
       });
+      setSaved(true);
       toast.success(`สร้าง Parameter "${trimmedName}" แล้ว`);
       await onCreated(trimmedName);
     } catch (err) {
@@ -483,7 +497,9 @@ export function ParameterCreateForm({
           <Button
             type="button"
             variant="outline"
-            onClick={onCancel}
+            onClick={() => {
+              if (confirmLeave()) onCancel();
+            }}
             disabled={submitting}
           >
             ยกเลิก

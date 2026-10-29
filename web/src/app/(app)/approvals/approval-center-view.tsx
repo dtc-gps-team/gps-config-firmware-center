@@ -85,7 +85,25 @@ export function ApprovalCenterView() {
     string | null
   >(null);
   const [rolloutNotice, setRolloutNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"all" | "mine">("all");
+  // มุมมองย่อยของหมวด Config ("ทั้งหมด"/"เจาะจงถึงฉัน") เก็บใน URL (`?view=mine`) แชร์ลิงก์ได้
+  const [tab, setTabState] = useState<"all" | "mine">(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("view") === "mine"
+      ? "mine"
+      : "all",
+  );
+  function setTab(next: "all" | "mine") {
+    setTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === "mine") params.set("view", "mine");
+    else params.delete("view");
+    const qs = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+  }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
 

@@ -92,4 +92,14 @@ describe("Approval Center bulk approve", () => {
     expect(approveConfig).toHaveBeenCalledWith("tok", "2");
     expect(approveConfig).not.toHaveBeenCalledWith("tok", "3");
   });
+
+  it("สลับ ทั้งหมด / เจาะจงถึงฉัน แล้ว URL เปลี่ยนตาม", async () => {
+    const user = userEvent.setup();
+    render(<ApprovalCenterView />);
+
+    await user.click(screen.getByRole("button", { name: /^เจาะจงถึงฉัน \(/ }));
+    expect(window.location.search).toBe("?view=mine");
+    await user.click(screen.getByRole("button", { name: /^ทั้งหมด \(/ }));
+    expect(window.location.search).toBe("");
+  });
 });

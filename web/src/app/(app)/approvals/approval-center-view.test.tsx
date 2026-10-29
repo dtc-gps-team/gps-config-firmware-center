@@ -208,3 +208,16 @@ describe("ApprovalCenterView — ข้อความหัวหน้าแ�
     expect(screen.queryByText(/Per-device/)).not.toBeInTheDocument();
   });
 });
+
+describe("ApprovalCenterView: มุมมองย่อยอยู่ใน URL", () => {
+  it("เปิดจากลิงก์ ?view=mine แล้วเลือกมุมมอง 'เจาะจงถึงฉัน' ให้เลย", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    window.history.replaceState(null, "", "/approvals?view=mine");
+
+    render(<ApprovalCenterView />);
+    expect(screen.getByText("ไม่มี Config ที่เจาะจงถึงคุณ")).toBeInTheDocument();
+
+  });
+});
