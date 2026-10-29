@@ -234,10 +234,12 @@ export function CampaignRolloutIncidentPanel({
           </>
         }
         confirmLabel="ยืนยันสั่ง Rollback"
-        confirmText="ROLLBACK"
         destructive
         confirmDisabled={
-          targetsLoading || !!targetsError || successTargets.length === 0
+          targetsLoading ||
+          !!targetsError ||
+          successTargets.length === 0 ||
+          includedCount === 0
         }
         onConfirm={handleRollback}
       >

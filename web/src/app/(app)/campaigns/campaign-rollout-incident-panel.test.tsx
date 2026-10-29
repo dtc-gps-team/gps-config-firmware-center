@@ -3,7 +3,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
-import type { CampaignRollout, CampaignRolloutTarget } from "@/lib/campaign-api";
+import type {
+  CampaignRollout,
+  CampaignRolloutTarget,
+} from "@/lib/campaign-api";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -17,9 +20,10 @@ vi.mock("@/components/auth/auth-provider", () => ({
 }));
 
 vi.mock("@/lib/campaign-api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/campaign-api")>(
-    "@/lib/campaign-api",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/lib/campaign-api")>(
+      "@/lib/campaign-api",
+    );
   return {
     ...actual,
     resumeCampaignRollout: vi.fn(),
@@ -200,14 +204,18 @@ describe("CampaignRolloutIncidentPanel — เลือก/เอาเครื
       })[0],
     );
     expect(screen.getByText(/1 จาก 2 เครื่อง/)).toBeInTheDocument();
-    // ต้องพิมพ์ ROLLBACK ก่อนปุ่มยืนยันถึงกดได้ (เหลืออย่างน้อย 1 เครื่อง)
-    expect(
-      screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
-    ).toBeDisabled();
-    await user.type(screen.getByRole("textbox"), "ROLLBACK");
+    // ไม่ต้องพิมพ์ยืนยัน: กดได้ตราบที่ยังเหลืออย่างน้อย 1 เครื่อง
     expect(
       screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
     ).toBeEnabled();
+    await user.click(
+      screen.getAllByRole("checkbox", {
+        name: "เอาเครื่องนี้ออกจาก Rollback",
+      })[0],
+    );
+    expect(
+      screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
+    ).toBeDisabled();
   });
 });
 
