@@ -36,7 +36,9 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
       <LogoMark />
       {!collapsed && (
         <span className="flex flex-col leading-tight">
-          <span className="text-[15px] font-bold text-white">GPS Center</span>
+          <span className="text-[15px] font-medium tracking-wide text-white">
+            <span className="font-bold">GPS</span> Center
+          </span>
           <span className="text-xs text-sidebar-foreground/70">
             Config &amp; Firmware
           </span>
