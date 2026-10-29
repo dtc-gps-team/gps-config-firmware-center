@@ -116,6 +116,21 @@ const targets = {
       await page.getByRole("checkbox", { name: /ต้องกรอก/ }).click();
     },
   },
+  "parameter-new-wide": {
+    url: "/parameters/new",
+    w: 2200,
+    h: 900,
+    act: async (page) => {
+      await page.locator("#param-name").fill("report_interval");
+      await page.locator("#param-desc").fill("ช่วงเวลารายงานตำแหน่ง");
+      await page.locator("#param-unit").fill("วินาที");
+      await page.locator("#param-allowed").fill("30\n60\n120");
+      await page.getByRole("button", { name: /เลือกโมเดล/ }).click();
+      await page.getByRole("checkbox", { name: /BB-200/ }).click();
+      await page.keyboard.press("Escape");
+      await page.getByRole("checkbox", { name: /ต้องกรอก/ }).click();
+    },
+  },
   "parameters-list": { url: "/parameters", w: 1440, h: 900 },
   "config-detail": { url: "/config/c2?tab=versions", w: 1440, h: 900, extra: ["mobile"] },
   "config-detail-params": { url: "/config/c2", w: 1440, h: 900 },

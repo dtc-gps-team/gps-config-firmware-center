@@ -126,7 +126,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </motion.aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
           <header className="sticky top-0 z-(--z-sticky) flex h-16 items-center border-b bg-card px-4 sm:px-6 lg:px-8">
             <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3">
               <Button

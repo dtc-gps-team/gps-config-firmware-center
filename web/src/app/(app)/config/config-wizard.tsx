@@ -1032,7 +1032,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
 
           {formError && <ErrorBanner message={formError} list={formErrorList} />}
 
-          <div className="sticky bottom-0 z-(--z-sticky) -mx-4 flex flex-wrap items-center justify-between gap-3 border-t bg-card/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          <div className="sticky bottom-0 z-(--z-sticky) -mx-4 flex flex-wrap items-center justify-between gap-3 bar-full-bleed px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
             <p className="text-xs text-muted-foreground">
               {diff
                 ? diff.changes.length > 0
