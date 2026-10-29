@@ -6,13 +6,11 @@ import Link from "next/link";
 import {
   CalendarIcon,
   CheckIcon,
-  ClockIcon,
   CopyIcon,
   HistoryIcon,
+  Trash2Icon,
   EyeIcon,
   EyeOffIcon,
-  RadioIcon,
-  SlidersHorizontalIcon,
   UserCheckIcon,
   UserIcon,
 } from "lucide-react";
@@ -24,6 +22,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
 import { ErrorState } from "@/components/error-state";
 import { UrlTabs } from "@/components/url-tabs";
+import { ConfigLifecycleSteps } from "@/components/config/lifecycle-steps";
+import { RelativeTime } from "@/components/relative-time";
 import { diffConfigFields } from "@/lib/config-diff";
 import { useAuth } from "@/components/auth/auth-provider";
 import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
@@ -248,9 +248,6 @@ function ConfigDetailContent({
             items={[
               { label: "โมเดล", value: config.deviceModel },
               { label: "โปรโตคอล", value: config.protocol },
-              ...(latestVersion != null
-                ? [{ label: "เวอร์ชัน", value: String(latestVersion) }]
-                : []),
             ]}
           />
         }
@@ -261,8 +258,15 @@ function ConfigDetailContent({
               {copied ? "คัดลอกแล้ว" : "คัดลอก JSON"}
             </Button>
             {canModify && (
-              <Button variant="destructive" onClick={() => setConfirming(true)}>
-                ลบ
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="ลบ Config นี้"
+                title="ลบ Config นี้"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirming(true)}
+              >
+                <Trash2Icon />
               </Button>
             )}
             {/* โคลน = คัดลอกชุดนี้ไปเป็น Config ใหม่แล้วแก้เฉพาะบางค่า ไม่ต้องใส่พารามิเตอร์ใหม่ทั้งหมด
@@ -306,10 +310,25 @@ function ConfigDetailContent({
         onConfirm={handleDelete}
       />
 
-      {canModify && <ConfigReviewPanel config={config} />}
+      <ConfigLifecycleSteps status={config.status} />
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile label="พารามิเตอร์" value={String(fieldEntries.length)} hint="ค่าที่ตั้งใน Config นี้" />
+        <StatTile
+          label="เวอร์ชันที่อนุมัติ"
+          value={latestVersion !== null ? `v${latestVersion}` : "ยังไม่มี"}
+          hint={latestVersion !== null ? "ล่าสุด" : "เกิดเมื่อ Operation อนุมัติ"}
+        />
+        <StatTile
+          label="แก้ไขล่าสุด"
+          value={<RelativeTime iso={config.updatedAt} />}
+          hint={formatDateTime(config.updatedAt)}
+        />
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {canModify && <ConfigReviewPanel config={config} />}
           {config.description?.trim() && (
             <p className="text-sm whitespace-pre-wrap text-muted-foreground">
               {config.description}
@@ -350,12 +369,6 @@ function ConfigDetailContent({
         <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24">
           <Card className="p-4">
             <div className="divide-y">
-              <InfoRow label="โมเดล" icon={SlidersHorizontalIcon}>
-                {config.deviceModel}
-              </InfoRow>
-              <InfoRow label="โปรโตคอล" icon={RadioIcon}>
-                {config.protocol}
-              </InfoRow>
               <InfoRow label="สร้างโดย" icon={UserIcon}>
                 {resolveName(config.createdBy)}
               </InfoRow>
@@ -369,9 +382,6 @@ function ConfigDetailContent({
               </InfoRow>
               <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(config.createdAt)}
-              </InfoRow>
-              <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
-                {formatDateTime(config.updatedAt)}
               </InfoRow>
             </div>
           </Card>
@@ -418,6 +428,24 @@ function ConfigDetailContent({
   );
 }
 
+function StatTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border bg-card px-4 py-3">
+      <span className="label-caps text-muted-foreground">{label}</span>
+      <span className="text-lg font-semibold tabular-nums">{value}</span>
+      <span className="truncate text-xs text-muted-foreground">{hint}</span>
+    </div>
+  );
+}
+
 const UNCATEGORIZED = "อื่นๆ";
 
 /** พารามิเตอร์จัดกลุ่มตามหมวดจากคลัง Parameter (ยังไม่รู้หมวด/โหลดไม่ได้ = กลุ่ม "อื่นๆ") */
@@ -430,6 +458,7 @@ function ParamGroups({
   definitions: ConfigFieldDefinition[];
   isMasked: (name: string) => boolean;
 }) {
+  const defByName = useMemo(() => new Map(definitions.map((d) => [d.fieldName, d])), [definitions]);
   const groups = useMemo(() => {
     const category = new Map(definitions.map((d) => [d.fieldName, d.category ?? UNCATEGORIZED]));
     const out = new Map<string, [string, unknown][]>();
@@ -457,30 +486,46 @@ function ParamGroups({
           <h2 className="label-caps text-muted-foreground">
             {name} <span className="tabular-nums">({entries.length})</span>
           </h2>
-          <div className="divide-y rounded-lg border">
+          <div className="divide-y rounded-lg border bg-card">
             {entries.map(([key, value]) => {
               const rendered = renderFieldValue(value);
               const multiline = rendered.includes("\n");
+              const def = defByName.get(key);
               return (
                 <div
                   key={key}
-                  className="flex justify-between gap-4 px-3 py-2 text-sm"
+                  className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1 px-4 py-3 text-sm"
                 >
-                  <span className="shrink-0 font-instrument text-xs text-muted-foreground">
-                    {key}
-                  </span>
-                  {isMasked(key) ? (
-                    <SensitiveValue value={value} />
-                  ) : (
-                    <span
-                      className={
-                        "min-w-0 font-instrument text-xs break-words whitespace-pre-wrap " +
-                        (multiline ? "text-left" : "text-right")
-                      }
-                    >
-                      {rendered}
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-instrument text-xs font-medium">{key}</span>
+                      {def?.restartRequired && (
+                        <span className="rounded-full bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
+                          ต้อง Restart
+                        </span>
+                      )}
                     </span>
-                  )}
+                    {def?.description && (
+                      <span className="text-xs text-muted-foreground">{def.description}</span>
+                    )}
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-1.5">
+                    {isMasked(key) ? (
+                      <SensitiveValue value={value} />
+                    ) : (
+                      <span
+                        className={
+                          "min-w-0 rounded bg-surface-sunken px-2 py-0.5 font-instrument text-xs break-words whitespace-pre-wrap " +
+                          (multiline ? "text-left" : "text-right")
+                        }
+                      >
+                        {rendered}
+                      </span>
+                    )}
+                    {def?.unit && (
+                      <span className="text-xs text-muted-foreground">{def.unit}</span>
+                    )}
+                  </div>
                 </div>
               );
             })}

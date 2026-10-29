@@ -78,7 +78,7 @@ export function UrlTabs({
         role="tablist"
         aria-orientation="horizontal"
         onKeyDown={onKeyDown}
-        className="flex gap-1 overflow-x-auto border-b"
+        className="flex gap-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((t) => {
           const selected = t.id === current.id;
