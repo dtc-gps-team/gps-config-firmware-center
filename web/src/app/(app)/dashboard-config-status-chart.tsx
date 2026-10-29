@@ -14,6 +14,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfigs } from "@/hooks/use-configs";
 import { CONFIG_STATUSES, type ConfigStatus } from "@/lib/config-api";
+import { cn } from "@/lib/utils";
 import { statusLabel } from "@/lib/status-pill";
 
 /**
@@ -59,7 +60,7 @@ export function DashboardConfigStatusChart() {
           {total.toLocaleString("th-TH")} รายการ)
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col gap-3">
         {error ? (
           <ErrorState message={error} onRetry={() => void refetch()} />
         ) : isLoading && total === 0 ? (
@@ -67,7 +68,36 @@ export function DashboardConfigStatusChart() {
         ) : total === 0 ? (
           <p className="text-sm text-muted-foreground">ยังไม่มี Config ในระบบ</p>
         ) : (
-          <SegmentBar segments={segments} />
+          <>
+            <SegmentBar segments={segments} legend={false} />
+            <ul className="mt-1 flex flex-1 flex-col divide-y text-sm">
+              {segments.map((s) => (
+                <li
+                  key={s.key}
+                  className="flex flex-1 items-center gap-2.5 py-1.5"
+                >
+                  <span
+                    className={cn("size-2 shrink-0 rounded-full", s.colorClass)}
+                  />
+                  <span className={s.value === 0 ? "text-muted-foreground" : ""}>
+                    {s.label}
+                  </span>
+                  <span
+                    data-tabular
+                    className="ml-auto font-medium tabular-nums"
+                  >
+                    {s.value}
+                  </span>
+                  <span
+                    data-tabular
+                    className="w-12 text-right text-xs text-muted-foreground tabular-nums"
+                  >
+                    {Math.round((s.value / total) * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </CardContent>
     </Card>

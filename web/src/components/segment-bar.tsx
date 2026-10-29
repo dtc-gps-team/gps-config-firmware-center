@@ -16,8 +16,11 @@ export type Segment = {
 export function SegmentBar({
   segments,
   className,
+  legend = true,
 }: {
   segments: Segment[];
+  /** false = วาดแต่แท่ง ผู้เรียกแสดงค่าเองในรูปแบบอื่น */
+  legend?: boolean;
   className?: string;
 }) {
   const total = segments.reduce((sum, s) => sum + s.value, 0);
@@ -42,6 +45,7 @@ export function SegmentBar({
           />
         ))}
       </div>
+      {legend && (
       <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
         {segments.map((s) => (
           <div key={s.key} className="flex items-center gap-1.5">
@@ -53,6 +57,7 @@ export function SegmentBar({
           </div>
         ))}
       </dl>
+      )}
     </div>
   );
 }
