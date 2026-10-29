@@ -38,6 +38,13 @@ const TONE_ACTIVE: Record<KpiTone, string> = {
   neutral: "bg-card ring-foreground/20 hover:ring-foreground/40",
 };
 
+const TONE_PLAIN_ACTIVE: Record<KpiTone, string> = {
+  danger: "bg-danger-subtle hover:brightness-[0.98]",
+  warning: "bg-warning-subtle hover:brightness-[0.98]",
+  info: "bg-info-subtle hover:brightness-[0.98]",
+  neutral: "bg-card hover:bg-muted/60",
+};
+
 const TONE_VALUE: Record<KpiTone, string> = {
   danger: "text-danger-foreground",
   warning: "text-warning-foreground",
@@ -54,6 +61,7 @@ export function KpiCard({
   emphasis = "stat",
   hint,
   unavailable = false,
+  plain = false,
   className,
 }: {
   label: string;
@@ -66,6 +74,8 @@ export function KpiCard({
   hint?: string;
   /** แหล่งข้อมูลติดต่อไม่ได้ (เช่น Server กลาง) แสดง "ไม่ทราบ" ไม่ใช่เลข 0 */
   unavailable?: boolean;
+  /** ไม่มีกรอบของตัวเอง ใช้เป็นช่องในแถบที่ครอบด้วย Card เดียว */
+  plain?: boolean;
   className?: string;
 }) {
   const active = emphasis === "action" && value !== null && value > 0 && !error && !unavailable;
@@ -78,9 +88,14 @@ export function KpiCard({
       data-active={active || undefined}
       className={cn(
         "group/kpi flex h-full min-w-0 flex-col gap-2 rounded-lg px-4 py-3.5 ring-1 transition-[box-shadow,background-color] duration-(--duration-base) ease-(--ease-standard) outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active
-          ? TONE_ACTIVE[tone]
-          : "bg-card ring-foreground/20 hover:ring-foreground/40",
+        plain
+          ? cn(
+              "rounded-none px-5 py-4 ring-0 focus-visible:ring-inset",
+              active ? TONE_PLAIN_ACTIVE[tone] : "bg-card hover:bg-muted/60",
+            )
+          : active
+            ? TONE_ACTIVE[tone]
+            : "bg-card ring-foreground/20 hover:ring-foreground/40",
       )}
     >
       <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -98,7 +113,7 @@ export function KpiCard({
         data-tabular
         className={cn(
           "font-semibold tracking-tight tabular-nums",
-          active ? "text-4xl" : emphasis === "action" ? "text-2xl" : "text-3xl",
+          "text-3xl",
           active ? TONE_VALUE[tone] : calm ? "text-muted-foreground" : "text-foreground",
         )}
       >
@@ -122,7 +137,7 @@ export function KpiCard({
 
   return (
     <motion.div
-      whileHover={lift}
+      whileHover={plain ? undefined : lift}
       transition={transition.fast}
       className={cn("min-w-0", className)}
     >

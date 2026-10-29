@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { Menu, PanelLeftCloseIcon, PanelLeftOpenIcon, SearchIcon } from "lucide-react";
+import { Menu, PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -52,7 +52,7 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
  * Sheet บนจอเล็ก
  *
  * แถบบน: ซ้าย = breadcrumb (แสดงเมื่อลึกกว่าหน้าหลัก — ชื่อหน้าหลักอยู่ที่
- * หัวหน้าอันเดียว ไม่ซ้ำกัน) + ปุ่มค้นหา/Command Palette (Ctrl/Cmd+K),
+ * หัวหน้าอันเดียว ไม่ซ้ำกัน) (ไม่มีช่องค้นหาบนแถบ — Command Palette เปิดด้วย Ctrl/Cmd+K),
  * ขวา = สถานะ Server กลาง, สลับธีม, กระดิ่งแจ้งเตือน, เมนูผู้ใช้
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -137,20 +137,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Menu />
               </Button>
               <HeaderBreadcrumb />
-              <button
-                type="button"
-                onClick={() => setPaletteOpen(true)}
-                aria-label="ค้นหาและสั่งงาน"
-                className="flex h-9 min-w-0 items-center gap-2 rounded-lg border bg-surface-sunken px-3 text-sm text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring sm:w-72"
-              >
-                <SearchIcon className="size-4 shrink-0" />
-                <span className="hidden min-w-0 flex-1 truncate text-left sm:block">
-                  ค้นหาหน้า อุปกรณ์ หรือคำสั่ง
-                </span>
-                <kbd className="font-instrument ml-auto hidden rounded border bg-card px-1.5 py-0.5 text-[11px] sm:block">
-                  Ctrl K
-                </kbd>
-              </button>
               <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
                 <CentralConnection />
                 <ThemeToggle />

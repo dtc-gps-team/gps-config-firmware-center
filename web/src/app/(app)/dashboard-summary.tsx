@@ -23,6 +23,7 @@ import {
   connectionSummary,
   deployTotals,
 } from "@/lib/dashboard-metrics";
+import { cn } from "@/lib/utils";
 import { canReadCampaign } from "@/lib/permissions";
 
 /**
@@ -41,11 +42,6 @@ import { canReadCampaign } from "@/lib/permissions";
  *  lib/status-pill.ts: "ล้มเหลวเกิน 5%") — ใช้เป็นเกณฑ์เตือนที่ Dashboard ด้วย */
 const FAILURE_WARN_PERCENT = 5;
 
-/** การ์ดที่ต้องลงมือทำและค่า > 0: danger กว้างสุด, warning รองลงมา, ค่า 0 แคบสุด */
-const ACTIVE_DANGER_BASIS = "flex-[2_1_17rem]";
-const ACTIVE_WARNING_BASIS = "flex-[1.4_1_14rem]";
-const CALM_BASIS = "flex-[1_1_11rem]";
-
 function Panel({
   title,
   href,
@@ -58,7 +54,7 @@ function Panel({
   className?: string;
 }) {
   return (
-    <Card className={className}>
+    <Card className={cn("h-full", className)}>
       <CardHeader>
         <CardTitle className="text-sm font-medium">
           <Link href={href} className="hover:underline">
@@ -66,7 +62,7 @@ function Panel({
           </Link>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">{children}</CardContent>
+      <CardContent className="flex flex-1 flex-col gap-3">{children}</CardContent>
     </Card>
   );
 }
@@ -175,15 +171,18 @@ export function DashboardSummary() {
         </Notice>
       )}
 
-      {/* ต้องลงมือทำ: ค่า > 0 กว้างและเด่นกว่า ค่า 0 หดเป็นสถานะปกติ — การ์ดสูง
-       * ตามเนื้อหา (items-start) ไม่ยืดเท่ากันทั้งแถว */}
-      <section
+      {/* ต้องลงมือทำ: แถบเดียว 4 ช่องเท่ากัน เส้นแบ่งบางแทนการ์ดแยก ความต่างอยู่ที่สี
+       * และตัวเลข (ค่า > 0 มีสีสถานะ + LED เต้น, ค่า 0 จางเป็น "ปกติ") ไม่ใช่ขนาดช่อง */}
+      <Card
         aria-label="ความเสี่ยง"
-        className="flex flex-wrap items-start gap-3"
+        className={cn(
+          "grid gap-px overflow-hidden bg-border py-0",
+          hasCampaignAccess ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-1 sm:grid-cols-3",
+        )}
       >
         {hasCampaignAccess && (
           <KpiCard
-            className={(pausedRolloutCount ?? 0) > 0 ? ACTIVE_DANGER_BASIS : CALM_BASIS}
+            plain
             label="Rollout หยุดชั่วคราว (Auto Pause)"
             href="/campaigns"
             value={pausedRolloutCount}
@@ -194,7 +193,7 @@ export function DashboardSummary() {
           />
         )}
         <KpiCard
-          className={(activeIncidents ?? 0) > 0 ? ACTIVE_DANGER_BASIS : CALM_BASIS}
+          plain
           label="Incident ที่ยังต้องตาม"
           href="/incidents"
           value={activeIncidents}
@@ -204,7 +203,7 @@ export function DashboardSummary() {
           hint="Incident ที่สถานะเปิดอยู่หรือกำลังตรวจสอบ"
         />
         <KpiCard
-          className={(connection?.offline ?? 0) > 0 ? ACTIVE_WARNING_BASIS : CALM_BASIS}
+          plain
           label="อุปกรณ์ออฟไลน์"
           href="/devices"
           value={connection ? connection.offline : null}
@@ -215,7 +214,7 @@ export function DashboardSummary() {
           hint="อุปกรณ์ในระบบที่ Server กลางรายงานว่าไม่ได้เชื่อมต่ออยู่"
         />
         <KpiCard
-          className={(driftCount ?? 0) > 0 ? ACTIVE_WARNING_BASIS : CALM_BASIS}
+          plain
           label="Config ไม่ตรงกับที่ตั้งไว้"
           href="/devices"
           value={driftCount}
@@ -225,9 +224,9 @@ export function DashboardSummary() {
           emphasis="action"
           hint="อุปกรณ์ที่รายงานเวอร์ชัน Config ไม่ตรงกับเวอร์ชันที่ตั้งเป้าไว้"
         />
-      </section>
+      </Card>
 
-      <div className="grid items-start gap-4 lg:grid-cols-12">
+      <div className="grid gap-4 lg:grid-cols-12">
         {hasCampaignAccess && (
           <Panel
             title="ผลการ Deploy"
@@ -264,7 +263,7 @@ export function DashboardSummary() {
                 </div>
                 <SegmentBar segments={deploySegments} />
                 {failurePercent >= FAILURE_WARN_PERCENT && (
-                  <Notice tone="danger">
+                  <Notice tone="danger" className="mt-auto">
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span>
                         ล้มเหลว {deploy?.failed} จาก {deployTotal} เครื่อง (
@@ -300,29 +299,51 @@ export function DashboardSummary() {
           ) : connectionTotal === 0 ? (
             <p className="text-sm text-muted-foreground">{connectionEmpty}</p>
           ) : (
-            <SegmentBar segments={connectionSegments} />
+            <>
+              <div className="flex items-baseline gap-2">
+                <span
+                  data-tabular
+                  className="text-4xl font-semibold tracking-tight tabular-nums"
+                >
+                  {connection?.online ?? 0}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  เครื่องที่เชื่อมต่ออยู่
+                </span>
+                <span
+                  data-tabular
+                  className="ml-auto text-xs text-muted-foreground"
+                >
+                  {connectionTotal.toLocaleString("th-TH")} เครื่อง
+                </span>
+              </div>
+              <SegmentBar segments={connectionSegments} />
+            </>
           )}
         </Panel>
       </div>
 
       {/* ตัวเลขนิ่ง: น้ำหนักต่ำ ไม่ใช้สี */}
-      <section
+      <Card
         aria-label="ภาพรวมอุปกรณ์"
-        className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+        className="grid grid-cols-2 gap-px overflow-hidden bg-border py-0 lg:grid-cols-4"
       >
         <KpiCard
+          plain
           label="อุปกรณ์ทั้งหมด"
           href="/devices"
           value={deviceCount}
           error={devices.error}
         />
         <KpiCard
+          plain
           label="โมเดล"
           href="/devices"
           value={modelCount}
           error={devices.error}
         />
         <KpiCard
+          plain
           label="Config รออนุมัติ"
           href="/approvals"
           value={pendingConfigCount}
@@ -330,13 +351,14 @@ export function DashboardSummary() {
         />
         {hasCampaignAccess && (
           <KpiCard
+          plain
             label="กลุ่มอุปกรณ์ทั้งหมด"
             href="/campaigns"
             value={campaignCount}
             error={campaigns.error}
           />
         )}
-      </section>
+      </Card>
     </div>
   );
 }
