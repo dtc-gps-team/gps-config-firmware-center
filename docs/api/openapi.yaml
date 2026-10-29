@@ -2633,6 +2633,14 @@ paths:
                   type: string
                   maxLength: 500
                   description: เหตุผลของการ override — บังคับกรอกเสมอ
+                configId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    (v3.75) Config ที่จะแก้ค่า — ช่างเลือก Config อื่นจากหน้าเลือกสิ่งที่จะส่ง
+                    แล้วแก้ค่า · เฉพาะโหมด `DEVICE_CONFIG_APPLY_MODE=central` (ไม่ใช่ = 400)
+                    · ไม่พบ/ถูกลบ = 404 · ไม่ส่ง = Config ปัจจุบันของกล่องตามเดิม ·
+                    Override และคำขอส่งเข้ากล่องที่ผูกกันใช้ Config นี้
       responses:
         "200":
           description: >-
@@ -5882,6 +5890,16 @@ components:
           type: string
           maxLength: 500
           description: ข้อความถึง Operation (optional)
+        direct:
+          type: boolean
+          description: >-
+            (v3.75) ส่ง Config ที่อนุมัติแล้วตามเดิม (ไม่แก้ค่า) โดยไม่ต้องรอ Operation —
+            คำขอเกิดเป็น `approved` ทันที (`decidedBy` null, snapshot
+            `approvedConfigVersion`, เส้นตายแบบอนุมัติแล้ว) แล้วช่างกด `release` ต่อได้เลย
+            · ไม่แจ้ง Operation · AuditLog `config_apply_direct` · ใช้กับ kind=firmware
+            ไม่ได้ (400 — Firmware ยังต้องอนุมัติ) · แก้ค่าต้องขอผ่าน
+            `POST /devices/{deviceId}/config-override` (ต้องอนุมัติ) · มติ B 2026-10-28
+            (docs/27 §2.2)
 
     TaskStartRequest:
       type: object
@@ -5917,7 +5935,7 @@ components:
           type: array
           items:
             type: object
-            required: [id, name, status, latestVersion, suggested]
+            required: [id, name, status, latestVersion, suggested, fields]
             properties:
               id:
                 type: string
@@ -5933,6 +5951,12 @@ components:
               suggested:
                 type: boolean
                 description: Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้
+              fields:
+                type: object
+                additionalProperties: true
+                description: >-
+                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของ
+                  กล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อนเลือก
         currentFirmwareVersion:
           type: string
           nullable: true

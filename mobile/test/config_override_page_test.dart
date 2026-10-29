@@ -103,6 +103,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String deviceId,
     required Map<String, dynamic> fields,
     required String reason,
+    String? configId,
   }) async {
     lastDeviceId = deviceId;
     lastFields = fields;
