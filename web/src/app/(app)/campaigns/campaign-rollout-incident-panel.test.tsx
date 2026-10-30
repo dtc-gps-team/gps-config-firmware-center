@@ -3,7 +3,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
-import type { CampaignRollout, CampaignRolloutTarget } from "@/lib/campaign-api";
+import type {
+  CampaignRollout,
+  CampaignRolloutTarget,
+} from "@/lib/campaign-api";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -17,9 +20,10 @@ vi.mock("@/components/auth/auth-provider", () => ({
 }));
 
 vi.mock("@/lib/campaign-api", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/campaign-api")>(
-    "@/lib/campaign-api",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/lib/campaign-api")>(
+      "@/lib/campaign-api",
+    );
   return {
     ...actual,
     resumeCampaignRollout: vi.fn(),
@@ -129,10 +133,10 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
       />,
     );
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = screen.getByRole("alertdialog");
     expect(
       within(dialog).getByRole("heading", { name: "สั่ง Rollback" }),
     ).toBeInTheDocument();
@@ -141,7 +145,7 @@ describe("CampaignRolloutIncidentPanel — แสดงตาม status/role (#2
     ).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "ยกเลิก" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("role ST (ไม่ใช่ Operation) -> ไม่เห็นปุ่มไหนเลย ไม่ render อะไร", () => {
@@ -191,7 +195,7 @@ describe("CampaignRolloutIncidentPanel — เลือก/เอาเครื
     );
 
     await user.click(screen.getByRole("button", { name: "สั่ง Rollback" }));
-    expect(screen.getByText(/2\/2 เครื่อง/)).toBeInTheDocument();
+    expect(screen.getByText(/2 จาก 2 เครื่อง/)).toBeInTheDocument();
 
     // ทั้ง 2 เครื่องยัง included อยู่ทั้งคู่ -> label เหมือนกันทั้งคู่ กดตัวแรก
     await user.click(
@@ -199,11 +203,19 @@ describe("CampaignRolloutIncidentPanel — เลือก/เอาเครื
         name: "เอาเครื่องนี้ออกจาก Rollback",
       })[0],
     );
-    expect(screen.getByText(/1\/2 เครื่อง/)).toBeInTheDocument();
-    // ปุ่มยืนยันยังกดได้ เพราะเหลืออย่างน้อย 1 เครื่อง
+    expect(screen.getByText(/1 จาก 2 เครื่อง/)).toBeInTheDocument();
+    // ไม่ต้องพิมพ์ยืนยัน: กดได้ตราบที่ยังเหลืออย่างน้อย 1 เครื่อง
     expect(
       screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
     ).toBeEnabled();
+    await user.click(
+      screen.getAllByRole("checkbox", {
+        name: "เอาเครื่องนี้ออกจาก Rollback",
+      })[0],
+    );
+    expect(
+      screen.getByRole("button", { name: "ยืนยันสั่ง Rollback" }),
+    ).toBeDisabled();
   });
 });
 

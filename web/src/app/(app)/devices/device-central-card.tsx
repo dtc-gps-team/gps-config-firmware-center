@@ -74,13 +74,13 @@ function CentralRows({ device }: { device: CentralDevice }) {
       </InfoRow>
       <InfoRow label="Firmware ที่กล่องรายงาน" icon={CpuIcon}>
         {device.reportedFirmwareVersion ? (
-          <span className="font-mono">{device.reportedFirmwareVersion}</span>
+          <span className="font-instrument">{device.reportedFirmwareVersion}</span>
         ) : (
           <span className="text-muted-foreground">ยังไม่รายงาน</span>
         )}
       </InfoRow>
       <InfoRow label="Config ที่กล่องรายงาน" icon={FileCogIcon}>
-        <span className="font-mono">{configLabel}</span>
+        <span className="font-instrument">{configLabel}</span>
         {configBehind && (
           <span className="ml-2 text-xs text-muted-foreground">
             เป้าหมาย v{device.desiredConfigVersion}
@@ -98,7 +98,7 @@ function CentralRows({ device }: { device: CentralDevice }) {
               {centralCommandStatusLabel(cmd.status)}
             </StatusPill>
             {cmd.errorCode && (
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-instrument text-xs text-muted-foreground">
                 {cmd.errorCode}
               </span>
             )}
@@ -120,10 +120,21 @@ function CentralRows({ device }: { device: CentralDevice }) {
  * Server กลางไม่ได้ก็แสดงแค่ในการ์ดนี้ ไม่กระทบข้อมูลหลักของหน้า
  */
 export function DeviceCentralCard({ deviceId }: { deviceId: string }) {
-  const { data, isLoading, error, refetch } = useDeviceCentral(deviceId);
+  const state = useDeviceCentral(deviceId);
+  return <DeviceCentralCardView state={state} />;
+}
+
+/** เหมือน `DeviceCentralCard` แต่รับผลจาก `useDeviceCentral` มาจากหน้าที่เรียกไว้แล้ว
+ * (หน้ารายละเอียดใช้ข้อมูลชุดเดียวกันหลายจุด ไม่ poll ซ้ำ) */
+export function DeviceCentralCardView({
+  state,
+}: {
+  state: ReturnType<typeof useDeviceCentral>;
+}) {
+  const { data, isLoading, error, refetch } = state;
 
   return (
-    <Card className="max-w-xl">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>สถานะจริงจาก Server กลาง</CardTitle>
         {data?.mode === "mock" && (

@@ -55,7 +55,9 @@ function incident(overrides: Partial<Incident> = {}): Incident {
 function renderActions(i: Incident) {
   const onDecided = vi.fn();
   const onStale = vi.fn();
-  render(<IncidentActions incident={i} onDecided={onDecided} onStale={onStale} />);
+  render(
+    <IncidentActions incident={i} onDecided={onDecided} onStale={onStale} />,
+  );
   return { onDecided, onStale };
 }
 
@@ -178,7 +180,10 @@ describe("IncidentActions: Incident ที่ระบบสร้างเอ�
 
   it("ปิด Incident: เลือกผลและกรอกหมายเหตุ แล้วส่ง resolve ไปที่ decide (ไม่มีตัวเลือกส่งต่อเป็น Campaign)", async () => {
     const user = userEvent.setup();
-    decideIncident.mockResolvedValue({ ...incident({ status: "resolved" }), device: null });
+    decideIncident.mockResolvedValue({
+      ...incident({ status: "resolved" }),
+      device: null,
+    });
     const { onDecided } = renderActions(incident());
 
     await user.click(screen.getByRole("button", { name: "ปิด Incident" }));

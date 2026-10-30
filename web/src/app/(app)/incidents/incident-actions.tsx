@@ -18,7 +18,11 @@ import {
   type IncidentDecisionResult,
 } from "@/lib/incident-api";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { DecideFieldReportDialog } from "./decide-field-report-dialog";
 import { RetrySyncButton } from "./retry-sync-button";
 
