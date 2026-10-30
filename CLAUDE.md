@@ -68,7 +68,8 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 - เป็น **single-stage เท่านั้น**: `draft`, `testing`, `approved`, `rejected`, `synced`
 - **ไม่ใช่ 2-stage** — ไม่มี `sw_approved` / `operation_approved`
-- มีเฉพาะ **Operation** เท่านั้นที่อนุมัติ Config / Firmware / Campaign ได้
+- **Operation** อนุมัติ Config / Firmware / Campaign ได้ (**และ `SuperAdmin` ก็ได้ด้วย
+  ตามมติ 2026-10-30 — ดู §Role Enum ด้านบน** ข้ามได้ทั้ง Separation of Duty)
   ConfigEngineer สร้าง/แก้ไข/รัน simulation ได้ แต่อนุมัติงานตัวเองไม่ได้ (Separation of Duty)
 
 ## Team Ownership
