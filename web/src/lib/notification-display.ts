@@ -17,6 +17,13 @@ export type NotificationView = {
 
 type Input = { type: string; payload: Record<string, unknown> };
 
+/** role ของผู้เปิดดูแจ้งเตือน — ใช้แค่จุดเดียว (`config_apply_succeeded`/
+ * `config_apply_failed`) ที่ backend ส่งให้ทั้งช่างผู้ขอ "และ" Operation
+ * ผู้อนุมัติ (`config-apply-request.service.ts` `onRolloutResult`) ข้อความ
+ * default เขียนจากมุมช่าง ("ที่คุณขอส่ง") ตรงกับ Mobile ที่เห็น type นี้แค่
+ * ฝั่งช่าง — ไม่ส่ง role หรือไม่ใช่ Operation = ใช้ข้อความเดิมเป๊ะ */
+type ViewerRole = string | null | undefined;
+
 function text(payload: Record<string, unknown>, key: string): string | null {
   const v = payload[key];
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
@@ -30,7 +37,10 @@ function hrefTo(base: string, id: string | null): string | null {
   return id ? `${base}/${encodeURIComponent(id)}` : null;
 }
 
-export function describeNotification(n: Input): NotificationView {
+export function describeNotification(
+  n: Input,
+  viewerRole?: ViewerRole,
+): NotificationView {
   const p = n.payload ?? {};
   const deviceId = text(p, "deviceId");
 
@@ -119,29 +129,53 @@ export function describeNotification(n: Input): NotificationView {
     }
     case "config_apply_approved":
     case "config_apply_rejected":
-    case "config_apply_succeeded":
-    case "config_apply_failed":
     case "config_apply_expired": {
       const what = p.kind === "firmware" ? "Firmware" : "Config";
       const title = {
         config_apply_approved: `คำขอส่ง ${what} อนุมัติแล้ว — กดส่งเข้ากล่องได้`,
         config_apply_rejected: `คำขอส่ง ${what} ของคุณถูกปฏิเสธ`,
-        config_apply_succeeded: `กล่องรับ ${what} ที่คุณขอส่งแล้ว`,
-        config_apply_failed: `ส่ง ${what} ที่คุณขอเข้าเครื่องไม่สำเร็จ`,
         config_apply_expired: `คำขอส่ง ${what} ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)`,
       }[n.type as string]!;
       return {
         title,
-        // เว็บไม่มีหน้างาน (ตัดออกตามมติ เหมือน task_assigned) จึงไม่ลิงก์
+        // เว็บไม่มีหน้างาน (ตัดออกตามมติ เหมือน task_assigned) จึงไม่ลิงก์ —
+        // type กลุ่มนี้ backend ส่งแค่ช่างผู้ขอเท่านั้น (ต่างจาก succeeded/
+        // failed ด้านล่างที่ส่ง Operation ด้วย) ไม่ต้องสลับข้อความตาม role
         details: [
           ...line("อุปกรณ์", deviceId),
           ...(n.type === "config_apply_rejected"
             ? line("เหตุผล", text(p, "rejectReason"))
-            : n.type === "config_apply_failed"
-              ? line("เหตุผล", text(p, "detail"))
-              : []),
+            : []),
         ],
         href: null,
+        urgent: false,
+      };
+    }
+    case "config_apply_succeeded":
+    case "config_apply_failed": {
+      // backend ส่งให้ทั้งช่างผู้ขอและ Operation ผู้อนุมัติ (ต่างจาก
+      // approved/rejected/expired ด้านบนที่ส่งแค่ช่าง) ข้อความต้องไม่ผูกกับ
+      // "คุณขอ" เมื่อผู้เปิดดูเป็น Operation — Operation มีหน้าอุปกรณ์ให้ไปดูได้
+      // จริงจึงลิงก์ได้ด้วย ต่างจากช่างที่เว็บไม่มีหน้างาน
+      const what = p.kind === "firmware" ? "Firmware" : "Config";
+      const isOperation = viewerRole === "Operation";
+      const title =
+        n.type === "config_apply_succeeded"
+          ? isOperation
+            ? `กล่อง ${deviceId ?? ""} รับ ${what} ที่อนุมัติไว้แล้ว`.trim()
+            : `กล่องรับ ${what} ที่คุณขอส่งแล้ว`
+          : isOperation
+            ? `ส่ง ${what} เข้ากล่อง ${deviceId ?? ""} ไม่สำเร็จ`.trim()
+            : `ส่ง ${what} ที่คุณขอเข้าเครื่องไม่สำเร็จ`;
+      return {
+        title,
+        details: [
+          ...line("อุปกรณ์", deviceId),
+          ...(n.type === "config_apply_failed"
+            ? line("เหตุผล", text(p, "detail"))
+            : []),
+        ],
+        href: isOperation ? hrefTo("/devices", deviceId) : null,
         urgent: false,
       };
     }

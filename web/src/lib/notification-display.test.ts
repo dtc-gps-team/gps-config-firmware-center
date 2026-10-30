@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { describeNotification } from "./notification-display";
 
-function view(type: string, payload: Record<string, unknown> = {}) {
-  return describeNotification({ type, payload });
+function view(
+  type: string,
+  payload: Record<string, unknown> = {},
+  role?: string | null,
+) {
+  return describeNotification({ type, payload }, role);
 }
 
 describe("describeNotification", () => {
@@ -136,6 +140,37 @@ describe("describeNotification", () => {
       "อุปกรณ์: DEV-3",
       "เหตุผล: กล่องออฟไลน์ระหว่างส่ง",
     ]);
+  });
+
+  it("config_apply_succeeded/failed: backend ส่งให้ Operation ด้วย — ข้อความต้องไม่พูดว่า 'คุณขอ' และลิงก์ไปหน้าอุปกรณ์ได้ (รีวิว B #411)", () => {
+    const succeeded = view(
+      "config_apply_succeeded",
+      { deviceId: "DEV-9", kind: "config" },
+      "Operation",
+    );
+    expect(succeeded.title).toBe("กล่อง DEV-9 รับ Config ที่อนุมัติไว้แล้ว");
+    expect(succeeded.title).not.toContain("คุณขอ");
+    expect(succeeded.href).toBe("/devices/DEV-9");
+
+    const failed = view(
+      "config_apply_failed",
+      { deviceId: "DEV-9", kind: "firmware", detail: "กล่องออฟไลน์" },
+      "Operation",
+    );
+    expect(failed.title).toBe("ส่ง Firmware เข้ากล่อง DEV-9 ไม่สำเร็จ");
+    expect(failed.title).not.toContain("คุณขอ");
+    expect(failed.href).toBe("/devices/DEV-9");
+    expect(failed.details).toContain("เหตุผล: กล่องออฟไลน์");
+  });
+
+  it("config_apply_succeeded/failed: role อื่น (ST/OT) หรือไม่ส่ง role มา ใช้ข้อความ/ลิงก์เดิม", () => {
+    expect(
+      view("config_apply_succeeded", { deviceId: "DEV-9" }, "ST").title,
+    ).toBe("กล่องรับ Config ที่คุณขอส่งแล้ว");
+    expect(
+      view("config_apply_succeeded", { deviceId: "DEV-9" }, "ST").href,
+    ).toBeNull();
+    expect(view("config_apply_succeeded", { deviceId: "DEV-9" }).href).toBeNull();
   });
 
   it("config_deletion_pending / grace: ลิงก์ไป Config พร้อมชื่อ", () => {

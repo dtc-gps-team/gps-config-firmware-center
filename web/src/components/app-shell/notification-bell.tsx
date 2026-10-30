@@ -3,6 +3,7 @@
 import { BellIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -25,6 +26,7 @@ export const NOTIFICATION_PANEL_LIMIT = 20;
  */
 export function NotificationBell() {
   const router = useRouter();
+  const { session } = useAuth();
   const {
     notifications,
     unreadCount,
@@ -97,7 +99,7 @@ export function NotificationBell() {
         ) : (
           <ul className="divide-y">
             {shown.map((n) => {
-              const view = describeNotification(n);
+              const view = describeNotification(n, session?.role);
               return (
                 <li key={n.id}>
                   <button
