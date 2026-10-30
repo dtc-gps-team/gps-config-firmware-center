@@ -24,6 +24,7 @@ import {
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
 import { CentralDeviceService } from '../central-device/central-device.service';
+import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import {
   CONFIG_APPLY_MODE,
   type ConfigApplyMode,
@@ -588,10 +589,10 @@ export class ConfigApplyRequestService implements OnModuleInit {
       status: config.status,
       latestVersion: config.versions[0]?.versionNumber ?? 0,
       suggested: config.id === suggestedId,
-      fields: {
+      fields: omitHiddenConfigFields({
         ...asFieldMap(config.fields),
         ...latestOverride.get(config.id),
-      },
+      }),
     }));
     options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
 

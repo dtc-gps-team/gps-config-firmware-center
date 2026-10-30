@@ -1664,6 +1664,24 @@ describe('ConfigApplyRequestService', () => {
       });
     });
 
+    it('ไม่ส่ง data_server.path ถึงช่าง (มี key ส่ง telemetry) แต่คงช่องอื่นไว้', async () => {
+      (prisma.config as Record<string, jest.Mock>).findMany.mockResolvedValue([
+        {
+          ...configRow('a', 'A มาตรฐาน', 3),
+          fields: {
+            'data_server.host': 'example.test',
+            'data_server.path': '/ingest/secret-key',
+          },
+        },
+      ]);
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.configs[0].fields).toEqual({
+        'data_server.host': 'example.test',
+      });
+    });
+
     it('Config ที่ Operation ผูกกับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อนเป็น suggested', async () => {
       (prisma.task as Record<string, jest.Mock>).findFirst.mockResolvedValue({
         configId: CONFIG_ID,
