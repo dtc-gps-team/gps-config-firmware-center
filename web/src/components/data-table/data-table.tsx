@@ -60,6 +60,8 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: string;
   /** คลิกแถว (เปิดรายละเอียด ฯลฯ) — ใส่แล้วแถวจะกดได้ + โฟกัสด้วยคีย์บอร์ดได้ */
   onRowClick?: (row: TData) => void;
+  /** ฟิลเตอร์คอลัมน์ตั้งต้น (เช่นมาจากลิงก์ที่มี query) — ใช้ตอน mount ครั้งเดียว ผู้ใช้แก้/ล้างต่อได้ */
+  initialColumnFilters?: ColumnFiltersState;
 }
 
 /**
@@ -73,13 +75,16 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "ค้นหา…",
   emptyMessage = "ไม่พบข้อมูลที่ตรงกับเงื่อนไข",
   onRowClick,
+  initialColumnFilters = [],
 }: DataTableProps<TData, TValue>) {
   // TanStack Table's useReactTable() คืน function ที่ React Compiler memoize
   // ไม่ปลอดภัย — opt-out component นี้ออกจาก compiler (คำแนะนำทางการของ TanStack)
   "use no memo";
 
   const [globalFilter, setGlobalFilter] = useState("");
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
+    initialColumnFilters,
+  );
   const [sorting, setSorting] = useState<SortingState>([]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- opt-out ด้วย "use no memo" ข้างบนแล้ว
