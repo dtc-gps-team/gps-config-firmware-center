@@ -4983,6 +4983,8 @@ components:
         #223) `fields` เป็นค่าที่ merge override เฉพาะเครื่องนี้ (ถ้ามีและ
         `status: approved` เท่านั้น — v3.32) ทับ base แล้ว — **ไม่ใช่**
         `Config.fields` ดิบๆ เสมอไป
+        · **(v3.77)** `fields` และ `delivery.fields` ไม่มี `data_server.path` เพราะมี
+        key ส่ง telemetry
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
@@ -5982,6 +5984,8 @@ components:
                 description: >-
                   (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของ
                   กล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อนเลือก
+                  · **(v3.77)** ไม่มี `data_server.path` เพราะมี key ส่ง telemetry
+                  ส่วนค่าที่ส่งเข้ากล่องจริงยังครบ
         currentFirmwareVersion:
           type: string
           nullable: true

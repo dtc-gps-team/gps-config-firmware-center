@@ -20,6 +20,7 @@ import type {
   RawGatewayDevice,
   RawRegistryDevice,
 } from './central-device.types';
+import { omitHiddenConfigFields } from './hidden-config-fields';
 
 /** ผลการสั่งส่ง Config ให้กล่องหนึ่งเครื่อง */
 export type PushConfigOutcome =
@@ -43,9 +44,6 @@ export interface BoxSupportedSchema {
   schemaVersion: number;
   keys: string[];
 }
-
-/** ไม่ส่งค่าเหล่านี้ออกไป — `data_server.path` มี key ส่ง telemetry อยู่ใน URL (docs/23 §7) */
-const HIDDEN_REPORTED_KEYS = new Set(['data_server.path']);
 
 /** `{gps: {send_interval_sec: 10}}` -> `{'gps.send_interval_sec': 10}` */
 function flattenSettings(
@@ -153,7 +151,7 @@ export class CentralDeviceService {
 
   /**
    * ค่าที่กล่องรายงานว่าใช้อยู่จริง (ทุกพารามิเตอร์ ไม่ใช่แค่ที่อยู่ใน Config ของเรา) ให้หน้าขอแก้ค่า
-   * แสดงค่าที่แก้ไม่ได้ด้วย · ซ่อน {@link HIDDEN_REPORTED_KEYS} · ติดต่อไม่ได้/กล่องยังไม่รายงาน = null
+   * แสดงค่าที่แก้ไม่ได้ด้วย · ซ่อนค่าตาม {@link omitHiddenConfigFields} · ติดต่อไม่ได้/กล่องยังไม่รายงาน = null
    * ไม่โยน error
    */
   async readReportedFields(
@@ -163,8 +161,7 @@ export class CentralDeviceService {
       const raw = await this.client.getDeviceConfig(deviceId);
       const settings = raw.reported?.settings;
       if (!settings) return null;
-      const fields = flattenSettings(settings);
-      for (const key of HIDDEN_REPORTED_KEYS) delete fields[key];
+      const fields = omitHiddenConfigFields(flattenSettings(settings));
       return { fields, reportedAt: raw.reported?.reported_at ?? null };
     } catch {
       return null;
