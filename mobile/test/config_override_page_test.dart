@@ -272,6 +272,34 @@ void main() {
     expect(fake.lastDeviceId, isNull); // ไม่เรียก repository เลย
   });
 
+  testWidgets('error ของคำขออยู่ในแถบล่าง และ notice ระบุ Audit Log', (
+    tester,
+  ) async {
+    await _pump(tester);
+
+    expect(
+      find.textContaining('ต้องระบุเหตุผล และถูกบันทึกลง Audit Log ทุกครั้ง'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('config_override_input_APN')),
+      'new-apn',
+    );
+    await tester.tap(find.byKey(const Key('config_override_submit')));
+    await tester.pumpAndSettle();
+
+    final actionBar = find.byKey(const Key('app_bottom_action_bar'));
+    expect(
+      find.descendant(
+        of: actionBar,
+        matching: find.byKey(const Key('config_override_error')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('กรอกเหตุผลก่อน override'), findsOneWidget);
+  });
+
   testWidgets(
     'กรอกเหตุผลแต่ไม่แก้ค่าไหนเลย -> submit -> error "ยังไม่ได้แก้ค่าไหนเลย"',
     (tester) async {

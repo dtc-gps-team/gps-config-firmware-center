@@ -294,8 +294,6 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
                           edits: _edits,
                           revealed: _revealed,
                           reasonController: _reasonController,
-                          error: _error,
-                          errorList: _errorList,
                           fieldErrors: _fieldErrors,
                           reasonError: _reasonError,
                           onReasonChanged: () {
@@ -326,6 +324,17 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
                 definitionsAsync?.hasValue == true
             ? AppBottomActionBar(
                 children: [
+                  if (_error != null) ...[
+                    AppNotice(
+                      key: const Key('config_override_error'),
+                      tone: AppBadgeTone.danger,
+                      child: AppErrorDetails(
+                        message: _error!,
+                        details: _errorList,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   AppSubmitButton(
                     buttonKey: const Key('config_override_submit'),
                     label: 'ขออนุมัติค่าที่แก้',
@@ -366,8 +375,6 @@ class _OverrideForm extends StatelessWidget {
     required this.edits,
     required this.revealed,
     required this.reasonController,
-    required this.error,
-    required this.errorList,
     required this.fieldErrors,
     required this.reasonError,
     required this.onReasonChanged,
@@ -381,8 +388,6 @@ class _OverrideForm extends StatelessWidget {
   final Map<String, String> edits;
   final Set<String> revealed;
   final TextEditingController reasonController;
-  final String? error;
-  final List<String> errorList;
   final Map<String, String> fieldErrors;
   final String? reasonError;
   final VoidCallback onReasonChanged;
@@ -400,6 +405,9 @@ class _OverrideForm extends StatelessWidget {
         .toList(growable: false);
     final delivery = config.delivery;
     final undelivered = delivery?.pendingFieldNames.length ?? 0;
+    final afterApproval = central
+        ? 'ส่งแล้วรอ Operation อนุมัติ จากนั้นกดส่งเข้ากล่องจากหน้างาน'
+        : 'ต้องรอ Operation อนุมัติก่อน แล้วจึงส่ง Config เข้าเครื่องจากหน้างาน';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
@@ -407,11 +415,8 @@ class _OverrideForm extends StatelessWidget {
         AppNotice(
           tone: AppBadgeTone.info,
           child: Text(
-            central
-                ? 'แก้ค่านี้เฉพาะเครื่องนี้ · ส่งแล้วรอ Operation อนุมัติ '
-                      'จากนั้นกดส่งเข้ากล่องจากหน้างาน'
-                : 'แก้ค่านี้เฉพาะเครื่องนี้ · ต้องรอ Operation อนุมัติก่อน '
-                      'แล้วจึงส่ง Config เข้าเครื่องจากหน้างาน',
+            'แก้ค่านี้เฉพาะเครื่องนี้ · $afterApproval · '
+            'ต้องระบุเหตุผล และถูกบันทึกลง Audit Log ทุกครั้ง',
           ),
         ),
         const SizedBox(height: 16),
@@ -490,14 +495,6 @@ class _OverrideForm extends StatelessWidget {
             errorText: reasonError,
           ),
         ),
-        if (error != null) ...[
-          const SizedBox(height: 8),
-          AppNotice(
-            key: const Key('config_override_error'),
-            tone: AppBadgeTone.danger,
-            child: AppErrorDetails(message: error!, details: errorList),
-          ),
-        ],
         const SizedBox(height: 16),
       ],
     );
