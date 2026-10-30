@@ -14,8 +14,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_info_row.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -111,64 +111,54 @@ class TaskDetailPage extends ConsumerWidget {
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'รายละเอียดงาน',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                status: task == null
-                    ? null
-                    : Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          AppBadge(
-                            key: const Key('task_detail_status_badge'),
-                            label: taskStatusLabel(task.status),
-                            tone: taskStatusTone(task.status),
-                            dot: true,
-                          ),
-                          if (pendingSync) const PendingSyncBadge(),
-                        ],
-                      ),
-              ),
-              Expanded(
-                child: taskAsync.when(
-                  skipLoadingOnRefresh: true,
-                  // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh)
-                  // ถ้าไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย skeleton แล้ว
-                  // dispose ทิ้งระหว่างโหลด (UX audit #3)
-                  skipLoadingOnReload: true,
-                  data: (task) => _TaskDetailView(
-                    // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt
-                    // ทำให้ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
-                    // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config
-                    // ที่ยังค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server
-                    // ทำใน didUpdateWidget แทน
-                    key: ValueKey(task.id),
-                    taskId: taskId,
-                    task: task,
-                  ),
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => ListView(
-                    children: [
-                      const SizedBox(height: 64),
-                      _DetailError(
-                        message: _errorMessage(error),
-                        onRetry: () =>
-                            ref.invalidate(taskDetailProvider(taskId)),
-                      ),
-                    ],
-                  ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: 'งาน ${task?.id ?? taskId}',
+              subtitle: 'บันทึกและสถานะงานของคุณ',
+              onBack: navigator.canPop() ? navigator.pop : null,
+            ),
+            if (pendingSync)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: PendingSyncBadge(),
                 ),
               ),
-            ],
-          ),
+            Expanded(
+              child: taskAsync.when(
+                skipLoadingOnRefresh: true,
+                // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh)
+                // ถ้าไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย skeleton แล้ว
+                // dispose ทิ้งระหว่างโหลด (UX audit #3)
+                skipLoadingOnReload: true,
+                data: (task) => _TaskDetailView(
+                  // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt
+                  // ทำให้ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
+                  // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config
+                  // ที่ยังค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server
+                  // ทำใน didUpdateWidget แทน
+                  key: ValueKey(task.id),
+                  taskId: taskId,
+                  task: task,
+                ),
+                loading: () => const AppDetailSkeleton(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                ),
+                error: (error, _) => ListView(
+                  children: [
+                    const SizedBox(height: 64),
+                    _DetailError(
+                      message: _errorMessage(error),
+                      onRetry: () => ref.invalidate(taskDetailProvider(taskId)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -627,6 +617,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                AppInfoRow(
+                  key: const Key('task_detail_status_summary'),
+                  label: 'สถานะงาน',
+                  value: taskStatusLabel(task.status),
+                ),
                 Text(
                   task.title,
                   key: const Key('task_detail_title'),

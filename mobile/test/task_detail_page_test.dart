@@ -14,7 +14,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/labels.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/apply_request_history_page.dart';
@@ -1487,9 +1487,9 @@ void main() {
     }
   });
 
-  // docs/22 Batch 5 — หัวหน้าจอแบบ AppPageHeader แทน AppBar สีกรมท่า
-  group('หัวหน้าจอ (AppPageHeader)', () {
-    testWidgets('ชื่อหน้า + ป้ายสถานะงานบนหัวหน้าจอ ไม่มี AppBar', (
+  // R4-07 — task detail ใช้หัวพื้นเข้มและแสดงสถานะในสรุปงาน
+  group('หัวหน้าจองาน', () {
+    testWidgets('เลขงานและข้อความรองอยู่บนหัวพื้นเข้ม สถานะอยู่ในการ์ดสรุป', (
       tester,
     ) async {
       await _pump(
@@ -1500,28 +1500,28 @@ void main() {
       );
 
       expect(find.byType(AppBar), findsNothing);
-      final header = find.byType(AppPageHeader);
+      final header = find.byType(AppInkHeader);
       expect(
-        find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
+        find.descendant(of: header, matching: find.text('งาน t1')),
         findsOneWidget,
       );
       expect(
         find.descendant(
           of: header,
-          matching: find.byKey(const Key('task_detail_status_badge')),
+          matching: find.text('บันทึกและสถานะงานของคุณ'),
         ),
         findsOneWidget,
       );
+      final status = find.byKey(const Key('task_detail_status_summary'));
+      expect(status, findsOneWidget);
       expect(
-        find.descendant(of: header, matching: find.text('กำลังทำ')),
+        find.descendant(of: status, matching: find.text('กำลังทำ')),
         findsOneWidget,
       );
       expect(AppV2Theme.isActive(tester.element(header)), isTrue);
     });
 
-    testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" อยู่ข้างป้ายสถานะ', (
-      tester,
-    ) async {
+    testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" แสดงอยู่', (tester) async {
       await _pump(
         tester,
         repo: _FakeTaskRepository(task: _makeTask()),
@@ -1529,13 +1529,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        find.descendant(
-          of: find.byType(AppPageHeader),
-          matching: find.byKey(const Key('pending_sync_badge')),
-        ),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pending_sync_badge')), findsOneWidget);
     });
   });
 
@@ -2014,6 +2008,7 @@ void main() {
       );
       expect(find.byKey(const Key('request_history_row_0')), findsOneWidget);
       expect(find.byKey(const Key('request_history_row_1')), findsOneWidget);
+      expect(find.byKey(const Key('request_history_title_0')), findsOneWidget);
     });
   });
 }
