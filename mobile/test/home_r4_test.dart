@@ -475,13 +475,13 @@ void main() {
     expect(find.byKey(const Key('home_search_entry')), findsOneWidget);
   });
 
-  testWidgets('การ์ด Incidents การ์ดเดียว แตะแล้วเข้าหน้าแจ้งปัญหาทันที', (
+  testWidgets('การ์ด "แจ้งปัญหา" บนหน้าแรก แตะแล้วเข้าหน้าแจ้งปัญหา', (
     tester,
   ) async {
     await _pump(tester, _Repo([]));
-    expect(find.byKey(const Key('home_report_shortcut')), findsNothing);
+    expect(find.byKey(const Key('home_incidents_shortcut')), findsOneWidget);
 
-    final card = find.byKey(const Key('home_incidents_shortcut'));
+    final card = find.byKey(const Key('home_report_shortcut'));
     await _show(tester, card);
     await tester.tap(card);
     await tester.pumpAndSettle();
@@ -526,7 +526,11 @@ void main() {
           scale: scale,
         );
         expect(tester.takeException(), isNull);
-        for (final key in ['home_search_entry', 'home_incidents_shortcut']) {
+        for (final key in [
+          'home_search_entry',
+          'home_incidents_shortcut',
+          'home_report_shortcut',
+        ]) {
           await _show(tester, find.byKey(Key(key)));
           expect(
             tester
