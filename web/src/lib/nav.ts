@@ -199,11 +199,19 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-/** เมนูที่ Role นี้เห็น — ไม่ใส่ `allowedRoles` = ทุก Role เห็น */
+/**
+ * เมนูที่ Role นี้เห็น — ไม่ใส่ `allowedRoles` = ทุก Role เห็น
+ *
+ * SuperAdmin เห็นทุกเมนูเสมอ แม้เมนูนั้นไม่ได้ใส่ Admin/SuperAdmin ไว้ใน
+ * `allowedRoles` เลยก็ตาม (เช่น Parameter Library) — มติ 2026-10-30:
+ * SuperAdmin ทำได้ทุกอย่าง เห็นทุกอย่างในระบบ
+ */
 export function visibleNavItems(role: string | null | undefined): NavItem[] {
   return NAV_ITEMS.filter(
     (item) =>
-      !item.allowedRoles || item.allowedRoles.some((r) => r === role),
+      !item.allowedRoles ||
+      item.allowedRoles.some((r) => r === role) ||
+      role === "SuperAdmin",
   );
 }
 

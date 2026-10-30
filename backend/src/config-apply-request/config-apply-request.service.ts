@@ -56,6 +56,8 @@ import { compareFirmwareVersions } from './firmware-version';
 const AUDIT_MODULE = 'config-apply-request';
 
 const OPERATION_ROLE = 'Operation';
+/** ข้าม Separation of Duty ได้ทุกข้อ (มติ 2026-10-30 — ดู `assertDecider()`) */
+const SUPER_ADMIN_ROLE = 'SuperAdmin';
 
 // สำเนาของ `APPLICABLE_CONFIG_STATUSES` (device/config-applier.ts) และ
 // `TESTABLE_DEVICE_STATUS` (device.service.ts) — เงื่อนไขเดียวกับ
@@ -1264,11 +1266,15 @@ export class ConfigApplyRequestService implements OnModuleInit {
    *
    * คำขอ Firmware (docs/27 §5.3) ใช้แค่ข้อ 1–2 — ไม่มีคนผูก/คนอนุมัติ Config ·
    * ผู้อนุมัติคุณภาพ Firmware เป็น QAEngineer ซึ่งเป็น Operation คนเดียวกันไม่ได้อยู่แล้ว
+   *
+   * `SuperAdmin` ข้ามทุกข้อ (มติ 2026-10-30 — เดิม docs/11 §6 ห้ามไว้ แต่มติใหม่
+   * ให้ข้าม Separation of Duty ได้ทั้งหมด)
    */
   private async assertDecider(
     request: ConfigApplyRequest,
     actor: ActingUser,
   ): Promise<void> {
+    if (actor.role === SUPER_ADMIN_ROLE) return;
     if (actor.role !== OPERATION_ROLE) {
       throw new ForbiddenException(
         'ตัดสินคำขอส่งเข้ากล่องได้เฉพาะ Role Operation เท่านั้น',

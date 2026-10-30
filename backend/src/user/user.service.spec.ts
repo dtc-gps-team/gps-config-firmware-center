@@ -11,6 +11,7 @@ import { ActingUser, UserService } from './user.service';
 jest.mock('bcrypt', () => ({ hash: jest.fn() }));
 
 const actor: ActingUser = { id: 'admin-1', role: 'Admin' };
+const superAdmin: ActingUser = { id: 'superadmin-1', role: 'SuperAdmin' };
 
 describe('UserService', () => {
   let service: UserService;
@@ -20,6 +21,7 @@ describe('UserService', () => {
     findUnique: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
+    count: jest.Mock;
   };
   let role: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
@@ -31,6 +33,7 @@ describe('UserService', () => {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      count: jest.fn().mockResolvedValue(2),
     };
     role = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
@@ -91,7 +94,7 @@ describe('UserService', () => {
         },
       ]);
 
-      const result = await service.listManaged();
+      const result = await service.listManaged(actor);
 
       expect(findMany).toHaveBeenCalledWith({
         where: { role: { code: { notIn: ['Admin', 'SuperAdmin'] } } },
@@ -113,6 +116,24 @@ describe('UserService', () => {
           role: 'ConfigEngineer',
         },
       ]);
+    });
+
+    it('actor เป็น SuperAdmin -> ไม่ filter เห็นบัญชี Admin/SuperAdmin ด้วย (มติ 2026-10-30)', async () => {
+      findMany.mockResolvedValue([
+        {
+          id: 'u2',
+          username: 'admin.test',
+          fullName: 'Admin Tester',
+          isActive: true,
+          role: { code: 'Admin' },
+        },
+      ]);
+
+      await service.listManaged(superAdmin);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: undefined }),
+      );
     });
   });
 
@@ -204,6 +225,29 @@ describe('UserService', () => {
           service.create({ ...dto, role: roleCode }, actor),
         ).rejects.toThrow(BadRequestException);
         expect(user.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['Admin', 'SuperAdmin'])(
+      'actor เป็น SuperAdmin -> สร้างบัญชี role %s ได้ (มติ 2026-10-30)',
+      async (roleCode) => {
+        role.findUnique.mockResolvedValue({ id: 'role-x', code: roleCode });
+        user.findUnique.mockResolvedValue(null);
+        (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-pw');
+        user.create.mockResolvedValue({
+          id: 'u-new',
+          username: dto.username,
+          fullName: dto.fullName,
+          isActive: true,
+          role: { code: roleCode },
+        });
+
+        const result = await service.create(
+          { ...dto, role: roleCode },
+          superAdmin,
+        );
+
+        expect(result.role).toBe(roleCode);
       },
     );
   });
@@ -315,5 +359,112 @@ describe('UserService', () => {
         expect(user.update).not.toHaveBeenCalled();
       },
     );
+
+    it('actor เป็น SuperAdmin -> แก้บัญชี Admin/SuperAdmin ได้ (มติ 2026-10-30)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'Admin' },
+      });
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'admin.test',
+        fullName: 'Admin Tester',
+        isActive: false,
+        role: { code: 'Admin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { isActive: false },
+        superAdmin,
+      );
+
+      expect(result.isActive).toBe(false);
+      expect(user.count).not.toHaveBeenCalled();
+    });
+
+    it('actor เป็น SuperAdmin -> เปลี่ยน role เป้าหมายเป็น SuperAdmin ได้ (มติ 2026-10-30)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'Operation' },
+      });
+      role.findUnique.mockResolvedValue({
+        id: 'role-superadmin',
+        code: 'SuperAdmin',
+      });
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'op.test',
+        fullName: 'Op Tester',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { role: 'SuperAdmin' },
+        superAdmin,
+      );
+
+      expect(result.role).toBe('SuperAdmin');
+    });
+
+    it('เป้าหมายเป็น SuperAdmin คนสุดท้ายที่ active + พยายาม deactivate -> ConflictException (docs/11 §7)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+      expect(user.update).not.toHaveBeenCalled();
+      expect(user.count).toHaveBeenCalledWith({
+        where: { role: { code: 'SuperAdmin' }, isActive: true },
+      });
+    });
+
+    it('เป้าหมายเป็น SuperAdmin คนสุดท้ายที่ active + พยายามเปลี่ยน role ออก -> ConflictException', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      role.findUnique.mockResolvedValue({ id: 'role-op', code: 'Operation' });
+      user.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('u1', { role: 'Operation' }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+      expect(user.update).not.toHaveBeenCalled();
+    });
+
+    it('มี SuperAdmin active มากกว่า 1 -> deactivate คนหนึ่งได้ตามปกติ', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(2);
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'super.test',
+        fullName: 'Super Tester',
+        isActive: false,
+        role: { code: 'SuperAdmin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { isActive: false },
+        superAdmin,
+      );
+
+      expect(result.isActive).toBe(false);
+    });
   });
 });
