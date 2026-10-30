@@ -2,29 +2,23 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { UsersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { UserPlusIcon, UsersIcon, PlusIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canAccessUserManagement } from "@/lib/permissions";
 import { type ManagedUser } from "@/lib/users-api";
 import { useManagedUsers } from "@/hooks/use-users";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { FormDialogHeader } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
+import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { UserRowActions } from "./user-row-actions";
@@ -74,7 +68,9 @@ export function UserManagementView() {
         sortingFn: thTextSort,
         meta: { filterVariant: "text", label: "Username" },
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.username}</span>
+          <span className="font-instrument text-sm">
+            {row.original.username}
+          </span>
         ),
       },
       {
@@ -121,10 +117,7 @@ export function UserManagementView() {
           description="จัดการบัญชีผู้ใช้ทั่วไป กำหนด Role และเปิดหรือปิดการใช้งาน บัญชี Admin และ SuperAdmin ไม่อยู่ในรายการนี้"
           actions={
             <>
-              <Button variant="outline" onClick={() => void refetch()}>
-                <RefreshCwIcon />
-                รีเฟรช
-              </Button>
+              <RefreshControl />
               <Button onClick={() => setDialogOpen(true)}>
                 <PlusIcon />
                 เพิ่มผู้ใช้
@@ -145,16 +138,7 @@ export function UserManagementView() {
             {isLoading && data === null ? (
               <TableSkeleton columns={columns.length} />
             ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={error} onRetry={() => void refetch()} />
             ) : userList.length === 0 ? (
               <EmptyState
                 icon={UsersIcon}
@@ -168,6 +152,7 @@ export function UserManagementView() {
               />
             ) : (
               <DataTable
+                urlSync
                 columns={columns}
                 data={userList}
                 searchPlaceholder="ค้นหา username / ชื่อเต็ม…"
@@ -179,15 +164,16 @@ export function UserManagementView() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>เพิ่มผู้ใช้ใหม่</DialogTitle>
-            <DialogDescription>
-              เฉพาะ Role Admin เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม
-              Admin/SuperAdmin) และตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่
-            </DialogDescription>
-          </DialogHeader>
-          <CreateUserForm onCreated={handleCreated} />
+        <DialogContent className="gap-0 p-0 pb-0 sm:max-w-xl sm:pb-0">
+          <FormDialogHeader
+            icon={UserPlusIcon}
+            title="เพิ่มผู้ใช้ใหม่"
+            description="เฉพาะ Role Admin เลือก role ได้แค่บัญชีทั่วไป (ไม่รวม Admin/SuperAdmin) และตั้งรหัสผ่านเริ่มต้นให้ผู้ใช้เองที่นี่"
+          />
+          <CreateUserForm
+            onCreated={handleCreated}
+            onCancel={() => setDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </RoleGuard>

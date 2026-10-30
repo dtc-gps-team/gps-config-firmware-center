@@ -26,6 +26,7 @@ import {
 import { useDeviceHistory } from "@/hooks/use-device-history";
 import { useUserNames } from "@/hooks/use-user-names";
 import { formatDateTime } from "@/lib/format-date";
+import { cn } from "@/lib/utils";
 import {
   type DeviceHistoryItem,
   type DeviceHistoryType,
@@ -116,6 +117,65 @@ function historyItemLink(item: DeviceHistoryItem): string | null {
   return null;
 }
 
+/** สีของวงไอคอนตามชนิดเหตุการณ์ — อ่านชนิดได้จากสีก่อนอ่านข้อความ */
+const TYPE_TONE: Record<DeviceHistoryType, string> = {
+  lifecycle: "bg-success-subtle text-success-foreground",
+  rollout: "bg-info-subtle text-info-foreground",
+  "config-override": "bg-warning-subtle text-warning-foreground",
+  "firmware-override": "bg-warning-subtle text-warning-foreground",
+  task: "bg-secondary text-secondary-foreground",
+  incident: "bg-danger-subtle text-danger-foreground",
+};
+
+/** สถานะของ Task/Incident ที่ backend ส่งเป็นอังกฤษดิบ — แปลเฉพาะในเส้นเวลานี้ */
+const RAW_STATUS_LABEL: Record<string, string> = {
+  completed: "เสร็จสิ้น",
+  open: "เปิดอยู่",
+  in_progress: "กำลังดำเนินการ",
+  investigating: "กำลังตรวจสอบ",
+  resolved: "แก้ไขแล้ว",
+  closed: "ปิดแล้ว",
+  cancelled: "ยกเลิก",
+  assigned: "มอบหมายแล้ว",
+  installed: "ติดตั้งแล้ว",
+};
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "unknown";
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** "วันนี้" / "เมื่อวาน" / วันที่เต็ม — หัวข้อของกลุ่มรายวัน */
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "ไม่ทราบวันที่";
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (dayKey(iso) === dayKey(now.toISOString())) return "วันนี้";
+  if (dayKey(iso) === dayKey(yesterday.toISOString())) return "เมื่อวาน";
+  return d.toLocaleDateString("th-TH", { dateStyle: "long" });
+}
+
+function groupByDay(items: DeviceHistoryItem[]) {
+  const groups: { key: string; label: string; items: DeviceHistoryItem[] }[] =
+    [];
+  for (const item of items) {
+    const key = dayKey(item.occurredAt);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(item);
+    else groups.push({ key, label: dayLabel(item.occurredAt), items: [item] });
+  }
+  return groups;
+}
+
 function HistoryItemRow({
   item,
   resolveName,
@@ -124,76 +184,97 @@ function HistoryItemRow({
   resolveName: (userId: string) => string;
 }) {
   const type = item.type;
-  const Icon = isKnownType(type) ? TYPE_ICON[type] : HistoryIcon;
-  const typeLabel = isKnownType(type) ? TYPE_LABEL[type] : type;
+  const known = isKnownType(type);
+  const Icon = known ? TYPE_ICON[type] : HistoryIcon;
+  const typeLabel = known ? TYPE_LABEL[type] : type;
   const link = historyItemLink(item);
   const titleText = item.title ?? typeLabel;
+  const statusText = item.status
+    ? type === "rollout"
+      ? itemStatusLabel(type, item.status)
+      : (RAW_STATUS_LABEL[item.status] ?? itemStatusLabel(type, item.status))
+    : null;
 
   const body = (
-    <div className="flex items-start gap-3 py-3">
-      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">{typeLabel}</span>
-          {item.status && (
-            <StatusPill tone={statusTone(item.type, item.status)}>
-              {itemStatusLabel(item.type, item.status)}
-            </StatusPill>
-          )}
-          {item.severity && (
-            <StatusPill tone={INCIDENT_SEVERITY_TONE[item.severity] ?? "neutral"}>
-              {item.severity}
-            </StatusPill>
-          )}
-          {item.payloadType && (
-            <span className="text-xs text-muted-foreground">
-              {item.payloadType}
-              {item.isRollback ? " (Rollback)" : ""}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-sm font-medium">{titleText}</p>
-        {item.config && (
-          <p className="text-xs text-muted-foreground">
-            Config: {item.config.name}
-            {item.config.versionNumber !== null &&
-              ` (เวอร์ชัน #${item.config.versionNumber})`}
-          </p>
+    <div className="flex min-w-0 flex-1 flex-col gap-1 rounded-md py-0.5">
+      <p className="text-sm font-medium break-words">{titleText}</p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <span>{typeLabel}</span>
+        {item.status && statusText && (
+          <StatusPill tone={statusTone(item.type, item.status)}>
+            {statusText}
+          </StatusPill>
         )}
-        {item.firmware && (
-          <p className="text-xs text-muted-foreground">
-            Firmware: v{item.firmware.version}
-          </p>
+        {item.severity && (
+          <StatusPill tone={INCIDENT_SEVERITY_TONE[item.severity] ?? "neutral"}>
+            {item.severity}
+          </StatusPill>
         )}
-        {item.detail && (
-          <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-        )}
-        {item.decision && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            ตัดสินใจโดย {resolveName(item.decision.byId ?? "")}
-            {item.decision.at && ` เมื่อ ${formatDateTime(item.decision.at)}`}
-            {item.decision.note && ` — ${item.decision.note}`}
-          </p>
+        {item.payloadType && (
+          <span>
+            {item.payloadType}
+            {item.isRollback ? " (Rollback)" : ""}
+          </span>
         )}
       </div>
-      <div className="shrink-0 text-right text-xs text-muted-foreground">
-        <p>{formatDateTime(item.occurredAt)}</p>
-        {item.actorId && <p>{resolveName(item.actorId)}</p>}
-      </div>
+      {item.config && (
+        <p className="text-xs text-muted-foreground">
+          Config: {item.config.name}
+          {item.config.versionNumber !== null &&
+            ` (เวอร์ชัน #${item.config.versionNumber})`}
+        </p>
+      )}
+      {item.firmware && (
+        <p className="text-xs text-muted-foreground">
+          Firmware: v{item.firmware.version}
+        </p>
+      )}
+      {item.detail && (
+        <p className="text-sm text-muted-foreground">{item.detail}</p>
+      )}
+      {item.decision && (
+        <p className="text-xs text-muted-foreground">
+          ตัดสินใจโดย {resolveName(item.decision.byId ?? "")}
+          {item.decision.at && ` เมื่อ ${formatDateTime(item.decision.at)}`}
+          {item.decision.note && ` — ${item.decision.note}`}
+        </p>
+      )}
+      <p
+        data-tabular
+        className="flex gap-2 text-xs text-muted-foreground"
+        title={formatDateTime(item.occurredAt)}
+      >
+        {formatTime(item.occurredAt)}
+        {item.actorId && <span>{resolveName(item.actorId)}</span>}
+      </p>
     </div>
   );
 
-  if (!link) return body;
   return (
-    <Link href={link} className="block transition-colors hover:bg-muted/50">
-      {body}
-    </Link>
+    <li className="relative flex gap-3 pb-5 last:pb-0 before:absolute before:top-8 before:bottom-0 before:left-4 before:w-px before:-translate-x-1/2 before:bg-border last:before:hidden">
+      <span
+        className={cn(
+          "relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full",
+          known ? TYPE_TONE[type] : "bg-secondary text-secondary-foreground",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      {link ? (
+        <Link
+          href={link}
+          className="-mx-2 flex min-w-0 flex-1 rounded-md px-2 outline-none transition-colors duration-(--duration-fast) hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {body}
+        </Link>
+      ) : (
+        body
+      )}
+    </li>
   );
 }
 
-/** ปุ่มเลือกประเภทแบบ pill — mirror `PayloadTypeButton` ของหน้าสร้าง Rollout
- * (ปุ่มเล็กมุมมน active เป็นสี primary) ไม่ใช้ร่วมกันเพราะอยู่คนละ context
- * (ตัวนั้นเลือกได้ค่าเดียว ตัวนี้เลือกได้หลายค่า) */
+/** ปุ่มกรองประเภท — เลือกได้หลายค่า: active = พื้นฟ้าอ่อน + ขอบ primary, ไม่ active = ขอบจาง */
 function TypeFilterButton({
   active,
   onClick,
@@ -208,19 +289,19 @@ function TypeFilterButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={
-        "rounded-full px-2.5 py-1 text-xs font-medium transition-colors " +
-        (active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-muted-foreground hover:bg-secondary/80")
-      }
+      className={cn(
+        "rounded-full border px-2.5 py-1 text-xs font-medium outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border bg-card text-muted-foreground hover:bg-muted/50",
+      )}
     >
       {children}
     </button>
   );
 }
 
-function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
+export function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
   const { session } = useAuth();
   // ซ่อน pill ของชนิดที่ role นี้ไม่มีสิทธิ์เห็นเลย (#378 รีวิว B บน #371) —
   // mirror การกรองฝั่ง backend กัน "กดปุ่มแล้วไม่มีผลอะไร"
@@ -232,8 +313,15 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
   );
   const typesFilter =
     selectedTypes.size === visibleTypes.length ? undefined : [...selectedTypes];
-  const { summary, items, nextCursor, isLoading, isLoadingMore, error, loadMore } =
-    useDeviceHistory(deviceId, typesFilter);
+  const {
+    summary,
+    items,
+    nextCursor,
+    isLoading,
+    isLoadingMore,
+    error,
+    loadMore,
+  } = useDeviceHistory(deviceId, typesFilter);
   const { resolveName } = useUserNames();
 
   // กันเลือกประเภทสุดท้ายออก (เหลือ 0 ประเภท = งงว่า "ไม่กรอง" หรือ "ไม่โชว์
@@ -249,7 +337,7 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
   }
 
   const typeFilterBar = (
-    <div className="mb-3 flex flex-wrap gap-1.5">
+    <div className="mb-4 flex flex-wrap gap-1.5">
       {visibleTypes.map((type) => (
         <TypeFilterButton
           key={type}
@@ -279,7 +367,7 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
     <>
       {typeFilterBar}
       {summary && (summary.currentConfig || summary.currentFirmware) && (
-        <div className="mb-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           {summary.currentConfig && (
             <span className="inline-flex items-center gap-1">
               <FileCogIcon className="size-3.5" />
@@ -302,9 +390,22 @@ function DeviceHistoryTimeline({ deviceId }: { deviceId: string }) {
             : "ยังไม่มีประวัติของเครื่องนี้"}
         </p>
       ) : (
-        <div className="divide-y">
-          {items.map((item) => (
-            <HistoryItemRow key={item.id} item={item} resolveName={resolveName} />
+        <div className="flex flex-col gap-5">
+          {groupByDay(items).map((group) => (
+            <section key={group.key} className="flex flex-col gap-3">
+              <h3 className="label-caps text-muted-foreground">
+                {group.label}
+              </h3>
+              <ul>
+                {group.items.map((item) => (
+                  <HistoryItemRow
+                    key={item.id}
+                    item={item}
+                    resolveName={resolveName}
+                  />
+                ))}
+              </ul>
+            </section>
           ))}
         </div>
       )}
@@ -357,7 +458,7 @@ export function DeviceHistorySheet({ deviceId }: { deviceId: string }) {
       <SheetContent className="sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>
-            ประวัติของ <span className="font-mono">{deviceId}</span>
+            ประวัติของ <span className="font-instrument">{deviceId}</span>
           </SheetTitle>
         </SheetHeader>
         <div className="overflow-y-auto px-4 pb-4">

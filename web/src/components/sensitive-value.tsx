@@ -71,7 +71,7 @@ export function SensitiveValue({ value }: { value: unknown }) {
   const display = formatSensitiveValue(value);
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="font-mono text-xs whitespace-pre-wrap break-words">
+      <span className="font-instrument text-xs whitespace-pre-wrap break-words">
         {show ? display : "••••••••"}
       </span>
       <button

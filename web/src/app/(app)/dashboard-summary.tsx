@@ -154,6 +154,7 @@ export function DashboardSummary() {
         error={devices.error}
         unavailable={centralUnavailable}
         attention="warning"
+        of={deviceCount}
         href="/devices?connection=offline"
         hint="อุปกรณ์ในระบบที่ Server กลางรายงานว่าไม่ได้เชื่อมต่ออยู่"
       />
@@ -166,6 +167,7 @@ export function DashboardSummary() {
         error={devices.error}
         unavailable={centralUnavailable}
         attention="warning"
+        of={deviceCount}
         // ไม่ใส่ href: ยังไม่มีหน้าไหนกรองอุปกรณ์ตามเวอร์ชัน Config ที่ไม่ตรงได้
         hint="อุปกรณ์ที่รายงานเวอร์ชัน Config ไม่ตรงกับเวอร์ชันที่ตั้งเป้าไว้"
       />
@@ -191,7 +193,11 @@ export function DashboardSummary() {
       />
     ),
   };
-  const healthRows = view.health;
+  // คิวงานของ Operation/ช่างหน้างานมีแถว Incident อยู่แล้ว ไม่แสดงซ้ำในสถานะระบบ
+  const queueHasIncident = view.queue === "operation" || view.queue === "field";
+  const healthRows = view.health.filter(
+    (id) => !(id === "incident" && queueHasIncident),
+  );
 
   // ---- แผงรายละเอียดด้านล่าง
   const panel: Record<PanelId, React.ReactNode> = {
@@ -259,10 +265,14 @@ export function DashboardSummary() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-12 [&>*>*]:h-full">
-        <div className="lg:col-span-8">{lead}</div>
-        <div className="lg:col-span-4">
-          <HealthCard>{healthRows.map((id) => healthRow[id])}</HealthCard>
+        <div className={healthRows.length > 0 ? "lg:col-span-8" : "lg:col-span-12"}>
+          {lead}
         </div>
+        {healthRows.length > 0 && (
+          <div className="lg:col-span-4">
+            <HealthCard>{healthRows.map((id) => healthRow[id])}</HealthCard>
+          </div>
+        )}
       </div>
 
       {rows.map((row) => (

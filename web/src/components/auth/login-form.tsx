@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { EyeIcon, EyeOffIcon, LockIcon, UserIcon } from "lucide-react";
+import {
+  ArrowBigUpIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+  UserIcon,
+} from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +32,9 @@ const CARD_DELAY = 0.05;
 const TEXT_DELAY = 0.6;
 const FIELDS_DELAY = 0.7;
 
+/** จำชื่อผู้ใช้ล่าสุดไว้ในเครื่อง (ไม่จำรหัสผ่านเด็ดขาด) ให้คนที่ใช้ทุกวันกรอกแค่รหัสผ่าน */
+const LAST_USERNAME_KEY = "gps.lastUsername";
+
 export function LoginForm() {
   const router = useRouter();
   const { isReady, isAuthenticated, login } = useAuth();
@@ -35,9 +44,24 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
   // นับครั้งที่กรอกผิด เพื่อสั่นการ์ดใหม่ทุกครั้ง · leaving = เข้าสู่ระบบสำเร็จแล้ว
   const [failCount, setFailCount] = useState(0);
   const [leaving, setLeaving] = useState(false);
+
+  // อ่านชื่อผู้ใช้ที่จำไว้หลัง mount (กัน hydration mismatch) แล้วย้ายโฟกัสไปช่องรหัสผ่าน —
+  // storage ใช้ไม่ได้ก็ข้าม
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LAST_USERNAME_KEY);
+      if (saved) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setUsername(saved);
+        passwordRef.current?.focus();
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (isReady && isAuthenticated) {
@@ -52,6 +76,9 @@ export function LoginForm() {
 
     try {
       await login(username.trim(), password);
+      try {
+        localStorage.setItem(LAST_USERNAME_KEY, username.trim());
+      } catch {}
       // การ์ดเลื่อนจางออกพร้อมเริ่มเปลี่ยนหน้า ไม่รอ (ไม่หน่วงผู้ใช้)
       setLeaving(true);
       router.replace("/");
@@ -91,11 +118,11 @@ export function LoginForm() {
         animate={failCount > 0 ? { x: [0, -9, 8, -5, 3, 0] } : undefined}
         transition={{ duration: 0.42, ease: "easeOut" }}
       >
-        <Card className="w-full [--card-spacing:--spacing(6)] shadow-2xl">
+        <Card className="w-full [--card-spacing:--spacing(6)] shadow-overlay">
           <CardHeader className="items-center gap-2 text-center">
             <AnimatedLogoMark
               play={play}
-              className="mb-1 size-20 justify-self-center"
+              className="mb-1 size-14 justify-self-center"
             />
             <motion.div
               className="contents"
@@ -157,6 +184,14 @@ export function LoginForm() {
                   <Input
                     id="password"
                     name="password"
+                    ref={passwordRef}
+                    onKeyDown={(event) =>
+                      setCapsLock(event.getModifierState("CapsLock"))
+                    }
+                    onKeyUp={(event) =>
+                      setCapsLock(event.getModifierState("CapsLock"))
+                    }
+                    onBlur={() => setCapsLock(false)}
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
                     className="h-10 px-9"
@@ -180,6 +215,22 @@ export function LoginForm() {
                   </button>
                 </div>
               </motion.div>
+              <AnimatePresence initial={false}>
+                {capsLock ? (
+                  <motion.p
+                    key="caps"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={transition.fast}
+                    className="-mt-2 flex items-center gap-1.5 text-xs text-warning-foreground"
+                    role="status"
+                  >
+                    <ArrowBigUpIcon className="size-3.5" />
+                    Caps Lock เปิดอยู่
+                  </motion.p>
+                ) : null}
+              </AnimatePresence>
               <AnimatePresence initial={false}>
                 {error ? (
                   <motion.p
@@ -206,6 +257,14 @@ export function LoginForm() {
                 </Button>
               </motion.div>
             </motion.form>
+            <motion.p
+              className="mt-5 text-center text-xs text-muted-foreground"
+              initial={play ? { opacity: 0 } : false}
+              animate={{ opacity: 1 }}
+              transition={{ ...transition.slow, delay: play ? FIELDS_DELAY + 0.35 : 0 }}
+            >
+              ระบบภายในสำหรับเจ้าหน้าที่ที่ได้รับอนุญาตเท่านั้น
+            </motion.p>
           </CardContent>
         </Card>
       </motion.div>

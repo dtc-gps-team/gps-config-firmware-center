@@ -32,6 +32,7 @@ function lastFilters(): Record<string, unknown> {
 describe("AuditLogView: filter วันที่และชื่อผู้ทำรายการ", () => {
   beforeEach(() => {
     hook.calls.length = 0;
+    window.history.replaceState(null, "", "/audit-log");
   });
 
   it("เริ่มต้นไม่กรองอะไร และไม่มีปุ่มล้างตัวกรอง", () => {
@@ -108,5 +109,22 @@ describe("AuditLogView: filter วันที่และชื่อผู้�
       actorName: undefined,
     });
     expect(screen.getByLabelText("ตั้งแต่วันที่")).toHaveValue("");
+  });
+
+  it("ตัวกรองถูกเก็บใน URL และอ่านกลับเมื่อเปิดลิงก์ตรง", () => {
+    window.history.replaceState(null, "", "/audit-log?actor=%E0%B8%AA&module=config&page=3");
+    render(<AuditLogView />);
+
+    expect(lastFilters()).toMatchObject({ auditModule: "config", page: 3 });
+    fireEvent.change(screen.getByLabelText("ตั้งแต่วันที่"), {
+      target: { value: "2026-10-14" },
+    });
+    expect(window.location.search).toContain("from=2026-10-14");
+    expect(window.location.search).not.toContain("page=");
+  });
+
+  it("ไม่มีรายการ: ปุ่มส่งออก CSV ถูกปิด", () => {
+    render(<AuditLogView />);
+    expect(screen.getByRole("button", { name: /ส่งออก CSV/ })).toBeDisabled();
   });
 });

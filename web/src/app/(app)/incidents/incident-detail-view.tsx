@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangleIcon,
-  CalendarIcon,
   CpuIcon,
   FileCogIcon,
   RadioIcon,
@@ -13,10 +12,13 @@ import {
   UserIcon,
 } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { ErrorState } from "@/components/error-state";
+import { EventTimeline, type TimelineEvent } from "@/components/event-timeline";
+import type { LedTone } from "@/components/ui/status-led";
 import { useIncident } from "@/hooks/use-incident";
 import { useUserNames } from "@/hooks/use-user-names";
 import { formatDateTime } from "@/lib/format-date";
@@ -54,21 +56,19 @@ export function IncidentDetailView({ incidentId }: { incidentId: string }) {
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">
-          {error ?? "ไม่พบ Incident นี้"}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            ลองใหม่
-          </Button>
-          <Link
-            href="/incidents"
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            กลับไปรายการ
-          </Link>
-        </div>
+      <div className="flex flex-col gap-4">
+        <ErrorState
+          message={error ?? "ไม่พบ Incident นี้"}
+          onRetry={() => void refetch()}
+        />
+        <Link
+          href="/incidents"
+          className={
+            buttonVariants({ variant: "ghost", size: "sm" }) + " self-start"
+          }
+        >
+          กลับไปรายการ
+        </Link>
       </div>
     );
   }
@@ -82,6 +82,58 @@ export function IncidentDetailView({ incidentId }: { incidentId: string }) {
   );
 }
 
+const STATUS_LED: Record<string, LedTone> = {
+  open: "danger",
+  investigating: "warning",
+  rolled_back: "info",
+  resolved: "online",
+  dismissed: "neutral",
+};
+
+/** เหตุการณ์ของ Incident เฉพาะที่มีข้อมูลจริงใน record (ตรวจพบ → ตัดสินใจ) API ยังไม่เก็บประวัติเปลี่ยนสถานะรายขั้น */
+function buildTimeline(
+  incident: Incident,
+  resolveName: (id: string) => string,
+): TimelineEvent[] {
+  const events: TimelineEvent[] = [
+    {
+      id: "created",
+      time: formatDateTime(incident.createdAt),
+      title: "ตรวจพบ Incident",
+      tone:
+        incident.severity === "critical" || incident.severity === "high"
+          ? "danger"
+          : "warning",
+    },
+  ];
+  if (incident.reviewedAt || incident.reviewedBy) {
+    events.push({
+      id: "reviewed",
+      time: incident.reviewedAt ? formatDateTime(incident.reviewedAt) : "-",
+      title: `ตัดสินใจ: ${statusLabel(incident.status)}`,
+      tone: STATUS_LED[incident.status] ?? "neutral",
+      detail: (
+        <>
+          {incident.reviewedBy && <p>โดย {resolveName(incident.reviewedBy)}</p>}
+          {incident.reviewNote && (
+            <p className="mt-1 whitespace-pre-wrap text-foreground">
+              {incident.reviewNote}
+            </p>
+          )}
+        </>
+      ),
+    });
+  } else {
+    events.push({
+      id: "current",
+      time: formatDateTime(incident.updatedAt),
+      title: `สถานะปัจจุบัน: ${statusLabel(incident.status)}`,
+      tone: STATUS_LED[incident.status] ?? "neutral",
+    });
+  }
+  return events;
+}
+
 function IncidentDetailContent({
   incident,
   onChanged,
@@ -93,7 +145,6 @@ function IncidentDetailContent({
   const { resolveName } = useUserNames();
   const sourceLabel = incidentSourceLabel(incident.source);
   const technical = incidentTechnicalDetails(incident.metadata);
-  const reviewed = incident.reviewedBy !== null || incident.reviewNote !== null;
 
   function handleDecided(
     result: IncidentDecisionResult,
@@ -108,6 +159,8 @@ function IncidentDetailContent({
     }
     onChanged();
   }
+
+  const events = buildTimeline(incident, resolveName);
 
   return (
     <div className="flex flex-col gap-6">
@@ -124,118 +177,111 @@ function IncidentDetailContent({
             </StatusPill>
           </>
         }
+        actions={
+          <IncidentActions
+            incident={incident}
+            onDecided={handleDecided}
+            onStale={onChanged}
+          />
+        }
       />
 
-      <Card className="max-w-xl p-4">
-        {incident.description && (
-          <p className="mb-3 border-b pb-3 text-sm whitespace-pre-wrap">
-            {incident.description}
-          </p>
-        )}
-        <div className="divide-y">
-          {sourceLabel && (
-            <InfoRow label="ที่มา" icon={RadioIcon}>
-              {sourceLabel}
-            </InfoRow>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="flex flex-col gap-6">
+          <RolloutImpactCard incident={incident} />
+
+          {incident.description && (
+            <Card className="p-4">
+              <h2 className="label-caps mb-2 text-muted-foreground">
+                รายละเอียด
+              </h2>
+              <p className="text-sm whitespace-pre-wrap">
+                {incident.description}
+              </p>
+            </Card>
           )}
-          {incident.deviceId && (
-            <InfoRow label="อุปกรณ์" icon={SmartphoneIcon}>
-              <Link
-                href={`/devices/${encodeURIComponent(incident.deviceId)}`}
-                className="font-mono underline-offset-2 hover:underline"
-              >
-                {incident.deviceId}
-              </Link>
-            </InfoRow>
+
+          {(technical.attempts !== null || technical.lastError !== null) && (
+            <Card className="p-4">
+              <h2 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
+                <AlertTriangleIcon className="size-4" />
+                รายละเอียดทางเทคนิค
+              </h2>
+              <div className="divide-y">
+                {technical.attempts !== null && (
+                  <InfoRow label="พยายามเขียนแล้ว">
+                    {technical.attempts} ครั้ง
+                  </InfoRow>
+                )}
+                {technical.lastError !== null && (
+                  <InfoRow label="ข้อผิดพลาดล่าสุด">
+                    <span className="font-instrument text-xs">
+                      {technical.lastError}
+                    </span>
+                  </InfoRow>
+                )}
+              </div>
+            </Card>
           )}
-          {incident.relatedConfigId && (
-            <InfoRow label="Config ที่เกี่ยวข้อง" icon={FileCogIcon}>
-              <Link
-                href={`/config/${encodeURIComponent(incident.relatedConfigId)}`}
-                className="underline-offset-2 hover:underline"
-              >
-                ดูรายละเอียด Config
-                {technical.versionNumber !== null &&
-                  ` (v${technical.versionNumber})`}
-              </Link>
-            </InfoRow>
-          )}
-          {incident.relatedFirmwareId && (
-            <InfoRow label="Firmware ที่เกี่ยวข้อง" icon={CpuIcon}>
-              <Link
-                href={`/firmware/${encodeURIComponent(incident.relatedFirmwareId)}`}
-                className="underline-offset-2 hover:underline"
-              >
-                ดูรายละเอียด Firmware
-              </Link>
-            </InfoRow>
-          )}
-          {incident.reportedBy && (
-            <InfoRow label="ผู้แจ้ง" icon={UserIcon}>
-              {resolveName(incident.reportedBy)}
-            </InfoRow>
-          )}
-          <InfoRow label="เกิดเมื่อ" icon={CalendarIcon}>
-            {formatDateTime(incident.createdAt)}
-          </InfoRow>
-          <InfoRow label="อัปเดตล่าสุด" icon={RefreshCwIcon}>
-            {formatDateTime(incident.updatedAt)}
-          </InfoRow>
         </div>
-      </Card>
 
-      <RolloutImpactCard incident={incident} />
+        <div className="flex flex-col gap-6">
+          <Card className="p-4">
+            <h2 className="label-caps mb-3 text-muted-foreground">ไทม์ไลน์</h2>
+            <EventTimeline events={events} label="ไทม์ไลน์ของ Incident" />
+          </Card>
 
-      {(technical.attempts !== null || technical.lastError !== null) && (
-        <Card className="max-w-xl p-4">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-            <AlertTriangleIcon className="size-4" />
-            รายละเอียดทางเทคนิค
-          </h2>
-          <div className="divide-y">
-            {technical.attempts !== null && (
-              <InfoRow label="พยายามเขียนแล้ว">{technical.attempts} ครั้ง</InfoRow>
-            )}
-            {technical.lastError !== null && (
-              <InfoRow label="ข้อผิดพลาดล่าสุด">
-                <span className="font-mono text-xs">{technical.lastError}</span>
+          <Card className="p-4">
+            <div className="divide-y">
+              {sourceLabel && (
+                <InfoRow label="ที่มา" icon={RadioIcon}>
+                  {sourceLabel}
+                </InfoRow>
+              )}
+              {incident.deviceId && (
+                <InfoRow label="อุปกรณ์" icon={SmartphoneIcon}>
+                  <Link
+                    href={`/devices/${encodeURIComponent(incident.deviceId)}`}
+                    className="font-instrument underline-offset-2 hover:underline"
+                  >
+                    {incident.deviceId}
+                  </Link>
+                </InfoRow>
+              )}
+              {incident.relatedConfigId && (
+                <InfoRow label="Config ที่เกี่ยวข้อง" icon={FileCogIcon}>
+                  <Link
+                    href={`/config/${encodeURIComponent(incident.relatedConfigId)}`}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    ดูรายละเอียด Config
+                    {technical.versionNumber !== null &&
+                      ` (v${technical.versionNumber})`}
+                  </Link>
+                </InfoRow>
+              )}
+              {incident.relatedFirmwareId && (
+                <InfoRow label="Firmware ที่เกี่ยวข้อง" icon={CpuIcon}>
+                  <Link
+                    href={`/firmware/${encodeURIComponent(incident.relatedFirmwareId)}`}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    ดูรายละเอียด Firmware
+                  </Link>
+                </InfoRow>
+              )}
+              {incident.reportedBy && (
+                <InfoRow label="ผู้แจ้ง" icon={UserIcon}>
+                  {resolveName(incident.reportedBy)}
+                </InfoRow>
+              )}
+              <InfoRow label="อัปเดตล่าสุด" icon={RefreshCwIcon}>
+                {formatDateTime(incident.updatedAt)}
               </InfoRow>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {reviewed && (
-        <Card className="max-w-xl p-4" aria-label="ผลการตรวจสอบ">
-          <h2 className="mb-2 text-sm font-medium">ผลการตรวจสอบ</h2>
-          <div className="divide-y">
-            {incident.reviewedBy && (
-              <InfoRow label="ตัดสินใจโดย" icon={UserIcon}>
-                {resolveName(incident.reviewedBy)}
-              </InfoRow>
-            )}
-            {incident.reviewedAt && (
-              <InfoRow label="เมื่อ" icon={CalendarIcon}>
-                {formatDateTime(incident.reviewedAt)}
-              </InfoRow>
-            )}
-          </div>
-          {incident.reviewNote && (
-            <p className="mt-3 border-t pt-3 text-sm whitespace-pre-wrap">
-              {incident.reviewNote}
-            </p>
-          )}
-        </Card>
-      )}
-
-      <Card className="max-w-xl p-4">
-        <h2 className="mb-2 text-sm font-medium">การดำเนินการ</h2>
-        <IncidentActions
-          incident={incident}
-          onDecided={handleDecided}
-          onStale={onChanged}
-        />
-      </Card>
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

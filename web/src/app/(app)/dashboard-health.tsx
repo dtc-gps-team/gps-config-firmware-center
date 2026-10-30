@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Panel } from "./dashboard-panel";
 
 /**
- * การ์ด "สถานะระบบ" — สรุปสั้นด้านขวาของแถวบน (รอง "งานที่ต้องดำเนินการ") ทุกแถวเป็น
+ * การ์ด "สถานะระบบ" — สรุปสั้นด้านขวาของแถวบน (รอง "งานที่ต้องดำเนินการ") แถวยืดเท่าความสูงของคิวและมีแท่งสัดส่วนกับจำนวนอุปกรณ์ทั้งหมด จึงสมดุลกับฝั่งซ้ายไม่ว่าคิวจะยาวแค่ไหน ทุกแถวเป็น
  * LED + ชื่อ + ค่า: ค่า > 0 ที่ต้องสนใจใช้สี/LED เต้น, ปกติเป็นเขียวจาง · แถวที่
  * ยังไม่มีหน้าปลายทางที่ตรงกับตัวเลข (ไม่ใส่ `href`) ไม่เป็นลิงก์
  */
@@ -39,6 +39,8 @@ type HealthRowProps = {
   attention?: "danger" | "warning" | null;
   href?: string;
   hint?: string;
+  /** จำนวนทั้งหมดที่ใช้คิดสัดส่วน (เช่นอุปกรณ์ทั้งหมด) · มีค่า = แสดงแท่งสัดส่วนใต้ชื่อ */
+  of?: number | null;
   children?: React.ReactNode;
 };
 
@@ -51,6 +53,7 @@ export function HealthRow({
   attention = null,
   href,
   hint,
+  of,
   children,
 }: HealthRowProps) {
   const flagged = attention !== null && (value ?? 0) > 0 && !error && !unavailable;
@@ -87,6 +90,22 @@ export function HealthRow({
           )}
         </span>
       </div>
+      {of != null && value !== null && !error && !unavailable && of > 0 && (
+        <div className="mt-2 flex flex-col gap-1 pl-[1.125rem]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-(--duration-slow) ease-(--ease-standard)",
+                flagged && attention === "danger" ? "bg-destructive" : flagged ? "bg-warning" : "bg-success",
+              )}
+              style={{ width: `${Math.min(100, (value / of) * 100)}%` }}
+            />
+          </div>
+          <span data-tabular className="text-xs text-muted-foreground">
+            จากทั้งหมด {of} เครื่อง
+          </span>
+        </div>
+      )}
       {children}
       <ChangeFlash signal={value} />
     </>

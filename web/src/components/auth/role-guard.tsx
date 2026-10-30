@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { ShieldAlertIcon } from "lucide-react";
 
+import { StatusPage } from "@/components/status-page";
+import { buttonVariants } from "@/components/ui/button";
+
 import { useAuth } from "./auth-provider";
 
 /**
@@ -30,24 +33,18 @@ export function RoleGuard({
   if (!isReady) return null;
 
   if (!allow(session?.role)) {
-    // จัดกลางทั้งแนวตั้ง/แนวนอนของพื้นที่เนื้อหา — เดิมเป็นกล่องเส้นประชิด
-    // ขอบบน ดูเหมือนหน้าโหลดไม่เสร็จมากกว่าหน้าแจ้ง "ไม่มีสิทธิ์"
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-          <ShieldAlertIcon className="size-10 text-muted-foreground/40" />
-          <p className="font-medium">คุณไม่มีสิทธิ์เข้าถึงหน้านี้</p>
-          <p className="text-sm text-muted-foreground">
-            หากคิดว่าควรเข้าถึงได้ โปรดติดต่อผู้ดูแลระบบ
-          </p>
-          <Link
-            href="/"
-            className="text-sm text-primary underline-offset-2 hover:underline"
-          >
+      <StatusPage
+        icon={ShieldAlertIcon}
+        code="403"
+        title="คุณไม่มีสิทธิ์เข้าถึงหน้านี้"
+        description="หากคิดว่าควรเข้าถึงได้ โปรดติดต่อผู้ดูแลระบบ"
+        actions={
+          <Link href="/" className={buttonVariants({ variant: "outline" })}>
             กลับไปหน้า Dashboard
           </Link>
-        </div>
-      </div>
+        }
+      />
     );
   }
 

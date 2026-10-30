@@ -1,66 +1,227 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ParameterCreateForm } from "./parameter-create-form";
 import type { DeviceModel } from "@/lib/device-model-api";
 
+const createConfigDefinition = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/config-definition-api", async (orig) => ({
+  ...(await orig<typeof import("@/lib/config-definition-api")>()),
+  createConfigDefinition,
+}));
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { accessToken: "tok", role: "ConfigEngineer" } }),
 }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const createConfigDefinition = vi.fn();
-vi.mock("@/lib/config-definition-api", () => ({
-  createConfigDefinition: (...args: unknown[]) =>
-    createConfigDefinition(...args),
-}));
+const models = [
+  { id: "m1", name: "GT06N", supportedProtocols: ["TCP"], status: "active" },
+  { id: "m2", name: "BB-200", supportedProtocols: ["mqtt"], status: "active" },
+] as unknown as DeviceModel[];
 
-const models: DeviceModel[] = [
-  {
-    id: "m1",
-    name: "GT06N",
-    manufacturer: null,
-    supportedProtocols: ["TCP"],
-    status: "active",
-    warrantyMonths: null,
-    endOfSupportDate: null,
-    notes: null,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  },
-];
-
-function setup() {
-  return render(
+function setup(existing = new Set<string>()) {
+  const onCreated = vi.fn();
+  render(
     <ParameterCreateForm
       deviceModels={models}
-      existingNames={new Set()}
-      onCreated={vi.fn()}
+      existingNames={existing}
+      onCreated={onCreated}
       onCancel={vi.fn()}
     />,
   );
+  return { onCreated };
 }
 
-async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("ชื่อ field"), "max_speed_alert");
-  await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
-}
-
-/** เปิด dropdown "ชนิดข้อมูล" แล้วเลือกตัวเลือกที่ขึ้นต้นด้วยข้อความนี้ —
+/** เปิด dropdown "ชนิดข้อมูล" แล้วเลือกตัวเลือกที่ label ขึ้นต้นด้วยข้อความนี้ —
  * ใช้ findByRole (รอ/retry) กัน flaky จาก animation ปิด/เปิด listbox ของ
  * base-ui ตอนเปิดซ้ำหลายรอบในเทสเดียว */
 async function selectDataType(
   user: ReturnType<typeof userEvent.setup>,
-  startsWith: string,
+  label: string,
 ) {
-  await user.click(screen.getByLabelText("ชนิดข้อมูล"));
-  const listbox = await screen.findByRole("listbox");
-  await user.click(within(listbox).getByText(new RegExp(`^${startsWith}:`)));
+  await user.click(screen.getByRole("combobox", { name: "ชนิดข้อมูล" }));
+  await user.click(await screen.findByRole("option", { name: label }));
 }
+
+async function openModelPicker(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
+}
+
+describe("ParameterCreateForm", () => {
+  beforeEach(() => {
+    createConfigDefinition.mockReset();
+    createConfigDefinition.mockResolvedValue({});
+  });
+
+  it("requires at least one model and rejects duplicate names", async () => {
+    const user = userEvent.setup();
+    setup(new Set(["apn1"]));
+
+    await user.type(screen.getByLabelText("ชื่อ field"), "APN1");
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+    expect(screen.getByText(/มี field ชื่อ "APN1" อยู่แล้ว/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "NEW_FIELD" } });
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล");
+    expect(createConfigDefinition).not.toHaveBeenCalled();
+  });
+
+  it("builds supportedModels from the selected models and submits", async () => {
+    const user = userEvent.setup();
+    const { onCreated } = setup();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "report_interval" } });
+    fireEvent.change(screen.getByLabelText("หน่วย (ไม่บังคับ)"), { target: { value: "วินาที" } });
+    await openModelPicker(user);
+    await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
+    await user.click(screen.getByRole("checkbox", { name: /ต้องกรอก/ }));
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+
+    await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+    const body = createConfigDefinition.mock.calls[0][1];
+    expect(body).toMatchObject({
+      fieldName: "report_interval",
+      required: true,
+      unit: "วินาที",
+      supportedModels: [{ deviceModel: "GT06N", protocol: "TCP" }],
+    });
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+  });
+
+  it("takes allowed values one per line, trimmed and de-duplicated", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "network_mode" } });
+    fireEvent.change(screen.getByLabelText(/ค่าที่เลือกได้/), {
+      target: { value: "auto\n 2g \n\n4g\nauto" },
+    });
+    expect(screen.getByText("3 ค่า")).toBeInTheDocument();
+    await openModelPicker(user);
+    await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+
+    await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+    expect(createConfigDefinition.mock.calls[0][1].allowedValues).toEqual(["auto", "2g", "4g"]);
+  });
+
+  it("does not send a default value for sensitive fields and hides it from the preview", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "pw" } });
+    fireEvent.change(screen.getByLabelText("ค่าเริ่มต้น (ไม่บังคับ)"), { target: { value: "secret" } });
+    await openModelPicker(user);
+    await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
+    await user.click(screen.getByRole("checkbox", { name: /ซ่อนค่า/ }));
+
+    expect(screen.queryByLabelText("ค่าเริ่มต้น (ไม่บังคับ)")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+    await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+    expect(createConfigDefinition.mock.calls[0][1]).not.toHaveProperty("defaultValue");
+    expect(createConfigDefinition.mock.calls[0][1]).toMatchObject({ sensitive: true });
+  });
+});
+
+describe("ParameterCreateForm model picker", () => {
+  it("searches many models, selects the visible ones and removes chips", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      id: `m${i}`,
+      name: i < 5 ? `GT-${i}` : `BB-${i}`,
+      supportedProtocols: ["TCP"],
+      status: "active",
+    })) as unknown as DeviceModel[];
+    render(
+      <ParameterCreateForm
+        deviceModels={many}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("ยังไม่ได้เลือกโมเดล เลือกอย่างน้อย 1 โมเดล")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
+    await user.type(screen.getByLabelText("ค้นหาโมเดล"), "GT-");
+    expect(screen.getAllByRole("checkbox", { name: /GT-/ })).toHaveLength(5);
+    expect(screen.queryByRole("checkbox", { name: /BB-/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /เลือกที่แสดงทั้งหมด \(5\)/ }));
+    const chips = screen.getByRole("list", { name: "โมเดลที่เลือกแล้ว" });
+    expect(chips.querySelectorAll("li")).toHaveLength(5);
+
+    await user.click(screen.getByRole("button", { name: "เอา GT-0 ออก" }));
+    expect(chips.querySelectorAll("li")).toHaveLength(4);
+  });
+});
+
+describe("ParameterCreateForm data type hint", () => {
+  it("shows an example for the selected data type", async () => {
+    const user = userEvent.setup();
+    render(
+      <ParameterCreateForm
+        deviceModels={models}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("ข้อความบรรทัดเดียว เช่น internet")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: "ชนิดข้อมูล" }));
+    await user.click(await screen.findByRole("option", { name: "boolean (จริง/เท็จ)" }));
+    expect(screen.getByText("ค่า true หรือ false")).toBeInTheDocument();
+  });
+});
+
+describe("ParameterCreateForm unsaved changes", () => {
+  it("asks before cancelling a dirty form and leaves immediately when clean", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const confirm = vi.spyOn(window, "confirm");
+    render(
+      <ParameterCreateForm
+        deviceModels={models}
+        existingNames={new Set()}
+        onCreated={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "half_done" } });
+    confirm.mockReturnValueOnce(false);
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    confirm.mockReturnValueOnce(true);
+    await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+});
 
 describe(
   "ParameterCreateForm — ช่วงค่า Min/Max (docs/30 §2 ข้อ 2, เฉพาะชนิดตัวเลข)",
   () => {
+    beforeEach(() => {
+      createConfigDefinition.mockReset();
+      createConfigDefinition.mockResolvedValue({});
+    });
+
+    async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByLabelText("ชื่อ field"), "max_speed_alert");
+      await openModelPicker(user);
+      await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
+    }
+
     it("ชนิดข้อมูลเริ่มต้น (string) -> ไม่เห็นช่อง Min/Max", () => {
       setup();
       expect(screen.queryByLabelText(/ค่าต่ำสุด/)).not.toBeInTheDocument();
@@ -71,7 +232,7 @@ describe(
       const user = userEvent.setup();
       setup();
 
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
 
       expect(screen.getByLabelText(/ค่าต่ำสุด/)).toBeInTheDocument();
       expect(screen.getByLabelText(/ค่าสูงสุด/)).toBeInTheDocument();
@@ -81,15 +242,15 @@ describe(
       const user = userEvent.setup();
       setup();
 
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
       await user.type(screen.getByLabelText(/ค่าต่ำสุด/), "1");
       await user.type(screen.getByLabelText(/ค่าสูงสุด/), "200");
 
-      await selectDataType(user, "string");
+      await selectDataType(user, "string (ข้อความ)");
       expect(screen.queryByLabelText(/ค่าต่ำสุด/)).not.toBeInTheDocument();
 
       // สลับกลับไป integer ค่าต้องถูกล้างแล้ว ไม่ใช่ค่าเดิมที่กรอกไว้ก่อนหน้า
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
       expect(screen.getByLabelText(/ค่าต่ำสุด/)).toHaveValue(null);
     });
 
@@ -98,7 +259,7 @@ describe(
       setup();
       await fillRequired(user);
 
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
       await user.type(screen.getByLabelText(/ค่าต่ำสุด/), "100");
       await user.type(screen.getByLabelText(/ค่าสูงสุด/), "1");
       await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
@@ -110,37 +271,53 @@ describe(
     });
 
     it("กรอก Min/Max ถูกต้อง -> ส่ง minValue/maxValue เป็นตัวเลขไปกับ request", async () => {
-      createConfigDefinition.mockResolvedValue({ id: "new" });
       const user = userEvent.setup();
       setup();
       await fillRequired(user);
 
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
       await user.type(screen.getByLabelText(/ค่าต่ำสุด/), "1");
       await user.type(screen.getByLabelText(/ค่าสูงสุด/), "200");
       await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
 
-      expect(createConfigDefinition).toHaveBeenCalledWith(
-        "tok",
-        expect.objectContaining({ minValue: 1, maxValue: 200 }),
+      await waitFor(() =>
+        expect(createConfigDefinition).toHaveBeenCalledWith(
+          "tok",
+          expect.objectContaining({ minValue: 1, maxValue: 200 }),
+        ),
       );
     });
 
     it("ไม่กรอก Min/Max เลย -> ไม่ส่ง minValue/maxValue ไปใน request", async () => {
-      createConfigDefinition.mockResolvedValue({ id: "new" });
       const user = userEvent.setup();
       setup();
       await fillRequired(user);
 
-      await selectDataType(user, "integer");
+      await selectDataType(user, "integer (จำนวนเต็ม)");
       await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
 
+      await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
       const sent = createConfigDefinition.mock.calls[0]?.[1] as Record<
         string,
         unknown
       >;
       expect(sent).not.toHaveProperty("minValue");
       expect(sent).not.toHaveProperty("maxValue");
+    });
+
+    it("ไม่ใช่ตัวเลข (ค่าค้างจากการสลับ dataType ผ่าน state ตรงๆ ไม่ผ่าน UI) ไม่ทำให้พัง", async () => {
+      // ช่อง min/max เป็น <input type="number"> เบราว์เซอร์กันอักขระที่ไม่ใช่ตัวเลข
+      // อยู่แล้ว เทสนี้ยืนยันแค่ว่า parse ฝั่ง client (Number.isFinite) ไม่ throw
+      // กับค่าว่าง/undefined ซึ่งเป็น path เดียวที่ state จริงเป็นไปได้
+      const user = userEvent.setup();
+      setup();
+      await fillRequired(user);
+
+      await selectDataType(user, "integer (จำนวนเต็ม)");
+      await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+
+      await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+      expect(screen.queryByText("ค่าต่ำสุด/สูงสุดต้องเป็นตัวเลข")).not.toBeInTheDocument();
     });
   },
 );

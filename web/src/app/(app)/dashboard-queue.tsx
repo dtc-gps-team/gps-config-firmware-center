@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
 import { ErrorState } from "@/components/error-state";
 import { ChangeFlash } from "@/components/motion/change-flash";
@@ -28,6 +28,9 @@ import type { Firmware } from "@/lib/firmware-api";
 import { listItem, staggerContainer } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { Panel } from "./dashboard-panel";
+
+/** งานเกินนี้พับไว้ (งานเร่งด่วนเรียงมาก่อนเสมอ จึงไม่ถูกพับ) */
+const COLLAPSED_LIMIT = 3;
 
 const TONE_LED: Record<QueueTone, LedTone> = {
   danger: "danger",
@@ -66,6 +69,10 @@ function QueueCard({
   className?: string;
 }) {
   const queue = useMemo(() => sortQueue(items), [items]);
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = queue.length > COLLAPSED_LIMIT;
+  const visible = collapsible && !expanded ? queue.slice(0, COLLAPSED_LIMIT) : queue;
+  const hiddenCount = queue.length - visible.length;
 
   return (
     <Panel
@@ -92,16 +99,16 @@ function QueueCard({
           initial="hidden"
           animate="visible"
           variants={staggerContainer}
-          className="flex flex-col gap-2"
+          className="flex flex-col gap-1.5"
         >
-          {queue.map((item) => {
+          {visible.map((item) => {
             const body = (
               <>
                 <StatusLed
                   tone={TONE_LED[item.tone]}
                   pulse={item.tone === "danger"}
                 />
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
                   <span className="text-sm font-medium" title={item.hint}>
                     {item.title}
                   </span>
@@ -114,7 +121,7 @@ function QueueCard({
                 <CountUp
                   value={item.count}
                   className={cn(
-                    "text-2xl font-semibold tabular-nums",
+                    "text-xl font-semibold tabular-nums",
                     TONE_COUNT[item.tone],
                   )}
                 />
@@ -125,7 +132,7 @@ function QueueCard({
               </>
             );
             const rowClass = cn(
-              "group/row relative flex items-center gap-3 overflow-hidden rounded-lg border bg-card py-3 pr-3 pl-4 before:absolute before:inset-y-0 before:left-0 before:w-1",
+              "group/row relative flex items-center gap-3 overflow-hidden rounded-lg border bg-card py-2 pr-3 pl-4 before:absolute before:inset-y-0 before:left-0 before:w-1",
               TONE_STRIPE[item.tone],
             );
             return (
@@ -147,6 +154,22 @@ function QueueCard({
             );
           })}
         </motion.ul>
+      )}
+      {collapsible && !error && !loading && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-2 flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {expanded ? "แสดงน้อยลง" : `ดูอีก ${hiddenCount} รายการ`}
+          <ChevronDownIcon
+            className={cn(
+              "size-3.5 transition-transform duration-(--duration-fast)",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
       )}
     </Panel>
   );
@@ -359,7 +382,7 @@ export function FirmwareQueue({
             title: "Firmware รอตรวจคุณภาพ",
             detail: waitingLabel(oldestIso(pending.map((f) => f.uploadedAt))),
             count: pending.length,
-            href: "/firmware",
+            href: "/approvals",
           },
         ]
       : [

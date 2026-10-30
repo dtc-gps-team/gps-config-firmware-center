@@ -11,6 +11,7 @@ import {
   MANAGEABLE_ROLE_CODES,
   type ManagedUser,
 } from "@/lib/users-api";
+import { FormBody, FormFooter, FormSection } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,8 +37,10 @@ import {
  */
 export function CreateUserForm({
   onCreated,
+  onCancel,
 }: {
   onCreated: (user: ManagedUser) => void;
+  onCancel?: () => void;
 }) {
   const { session } = useAuth();
 
@@ -50,7 +53,7 @@ export function CreateUserForm({
 
   if (!canAccessUserManagement(session?.role)) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="px-6 py-5 text-sm text-muted-foreground">
         เฉพาะ Role Admin เท่านั้นที่เพิ่มผู้ใช้ได้
       </p>
     );
@@ -100,75 +103,85 @@ export function CreateUserForm({
     !submitting;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="user-username">Username</Label>
-          <Input
-            id="user-username"
-            value={username}
-            disabled={submitting}
-            placeholder="เช่น config2.test"
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </div>
+    <div className="flex flex-col">
+      <FormBody>
+        <FormSection title="ข้อมูลบัญชี">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="user-username">Username</Label>
+              <Input
+                id="user-username"
+                value={username}
+                disabled={submitting}
+                placeholder="เช่น config2.test"
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
-          <Input
-            id="user-fullname"
-            value={fullName}
-            disabled={submitting}
-            onChange={(e) => setFullName(e.target.value)}
-          />
-        </div>
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="user-fullname">ชื่อเต็ม</Label>
+              <Input
+                id="user-fullname"
+                value={fullName}
+                disabled={submitting}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            </div>
+          </div>
+        </FormSection>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
-          <Input
-            id="user-password"
-            type="text"
-            value={password}
-            disabled={submitting}
-            placeholder="อย่างน้อย 8 ตัวอักษร"
-            onChange={(e) => setPassword(e.target.value)}
-          />
+        <FormSection title="สิทธิ์และการเข้าสู่ระบบ">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>Role</Label>
+              <Select
+                value={role}
+                onValueChange={(value) =>
+                  setRole(value ?? MANAGEABLE_ROLE_CODES[0])
+                }
+              >
+                <SelectTrigger className="w-full" disabled={submitting}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MANAGEABLE_ROLE_CODES.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
+              <Input
+                id="user-password"
+                type="text"
+                value={password}
+                disabled={submitting}
+                placeholder="อย่างน้อย 8 ตัวอักษร"
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </div>
           <p className="text-xs text-muted-foreground">
             แจ้งรหัสผ่านนี้ให้ผู้ใช้เอง ระบบยังไม่มีอีเมล/flow ลืมรหัสผ่าน
           </p>
-        </div>
+        </FormSection>
 
-        <div className="flex flex-col gap-1.5">
-          <Label>Role</Label>
-          <Select
-            value={role}
-            onValueChange={(value) => setRole(value ?? MANAGEABLE_ROLE_CODES[0])}
-          >
-            <SelectTrigger className="w-full" disabled={submitting}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MANAGEABLE_ROLE_CODES.map((code) => (
-                <SelectItem key={code} value={code}>
-                  {code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+        {formError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+            {formError}
+          </div>
+        )}
+      </FormBody>
 
-      {formError && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          {formError}
-        </div>
-      )}
-
-      <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
-        {submitting ? "กำลังเพิ่ม…" : "เพิ่มผู้ใช้"}
-      </Button>
+      <FormFooter onCancel={onCancel} submitting={submitting}>
+        <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
+          {submitting ? "กำลังเพิ่ม…" : "เพิ่มผู้ใช้"}
+        </Button>
+      </FormFooter>
     </div>
   );
 }

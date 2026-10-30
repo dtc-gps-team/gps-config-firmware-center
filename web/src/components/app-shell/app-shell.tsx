@@ -31,15 +31,26 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
     <Link
       href="/"
       aria-label="GPS Center หน้าแรก"
-      className="flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+      className="group/brand flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
     >
-      <LogoMark tone="dark" className="size-10" />
+      {/* หมุดเดิม + จุดกลางที่เต้นเหมือนสัญญาณ GPS จับตำแหน่งได้ · ยกตัวขึ้นเบาๆ ตอนชี้ */}
+      <span className="relative inline-flex transition-transform duration-(--duration-base) ease-(--ease-standard) group-hover/brand:-translate-y-0.5">
+        <LogoMark tone="dark" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-[41%] left-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2"
+        >
+          <span className="absolute inset-0 animate-led rounded-full bg-brand-400" />
+          <span className="absolute inset-0 rounded-full bg-brand-400" />
+        </span>
+      </span>
       {!collapsed && (
-        <span className="flex flex-col leading-tight">
-          <span className="text-[15px] font-medium tracking-wide text-white">
-            <span className="font-bold">GPS</span> Center
+        <span className="flex flex-col gap-0.5 leading-none">
+          <span className="text-[17px] tracking-wide text-white">
+            <span className="font-bold">GPS</span>{" "}
+            <span className="font-light text-brand-300">Center</span>
           </span>
-          <span className="text-xs text-sidebar-foreground/70">
+          <span className="text-[0.625rem] font-medium tracking-[0.16em] text-sidebar-foreground/60 uppercase">
             Config &amp; Firmware
           </span>
         </span>
@@ -95,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div
             className={cn(
-              "flex h-16 shrink-0 items-center border-b border-sidebar-border",
+              "relative flex h-16 shrink-0 items-center border-b border-sidebar-border bg-[radial-gradient(120%_140%_at_0%_0%,color-mix(in_oklab,var(--brand-500)_26%,transparent),transparent_65%)]",
               collapsed ? "justify-center" : "px-5",
             )}
           >
@@ -126,7 +137,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </motion.aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
           <header className="sticky top-0 z-(--z-sticky) flex h-16 items-center border-b bg-card px-4 sm:px-6 lg:px-8">
             <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3">
               <Button

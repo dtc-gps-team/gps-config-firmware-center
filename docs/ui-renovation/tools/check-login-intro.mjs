@@ -57,6 +57,15 @@ const cardOpacity = (page) =>
   // username focused without waiting
   check("username field is focused (usable during intro)", await page.evaluate(() => document.activeElement?.id === "username"));
 
+  // caps lock hint appears while Caps Lock is on, disappears when it is off
+  await page.focus("#password");
+  await page.evaluate(() => document.querySelector("#password").dispatchEvent(new KeyboardEvent("keyup", { key: "a", modifierCapsLock: true, bubbles: true })));
+  await page.waitForTimeout(300);
+  check("caps lock hint shows when Caps Lock is on", (await page.getByText("Caps Lock เปิดอยู่").count()) === 1);
+  await page.evaluate(() => document.querySelector("#password").dispatchEvent(new KeyboardEvent("keyup", { key: "a", modifierCapsLock: false, bubbles: true })));
+  await page.waitForTimeout(400);
+  check("caps lock hint hides when Caps Lock is off", (await page.getByText("Caps Lock เปิดอยู่").count()) === 0);
+
   // wrong credentials: error shown + card moves (shake)
   await page.fill("#username", "x");
   await page.fill("#password", "y");
@@ -75,7 +84,7 @@ const cardOpacity = (page) =>
   await p3.goto(base + "/login", { waitUntil: "networkidle" });
   await p3.waitForTimeout(500);
   const replayFade = await fadeFrames(p3);
-  check("repeat visit: card appears without a fade (no replay)", (await cardOpacity(p3)) === 1 && replayFade === 0, `fade frames ${replayFade}`);
+  check("repeat visit / refresh: intro plays again", (await cardOpacity(p3)) === 1 && replayFade >= 5, `fade frames ${replayFade}`);
   // the very first load does fade
   const p4ctx = await browser.newContext({ viewport: { width: 700, height: 560 } });
   const p4 = await p4ctx.newPage();
@@ -85,6 +94,19 @@ const cardOpacity = (page) =>
   const firstFade = await fadeFrames(p4);
   check("first visit: card fades in over several frames", firstFade >= 5, `fade frames ${firstFade}`);
   await p4ctx.close();
+  await ctx.close();
+}
+
+// ---- remembered username: prefilled, focus moves to the password field
+{
+  const ctx = await browser.newContext({ viewport: { width: 700, height: 560 } });
+  await ctx.addInitScript(() => localStorage.setItem("gps.lastUsername", "config.test"));
+  const page = await ctx.newPage();
+  await page.goto(base + "/login", { waitUntil: "networkidle" });
+  await page.waitForTimeout(400);
+  check("remembered username is prefilled", (await page.inputValue("#username")) === "config.test");
+  check("focus moves to the password field", await page.evaluate(() => document.activeElement?.id === "password"));
+  check("password is never remembered", (await page.inputValue("#password")) === "");
   await ctx.close();
 }
 
