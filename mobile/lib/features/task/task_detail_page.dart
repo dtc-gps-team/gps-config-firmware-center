@@ -1418,7 +1418,9 @@ class _ApplyRequestTimeline extends StatelessWidget {
           switch (request.status) {
             ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
             ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธ',
-            ConfigApplyRequestStatus.expired => 'หมดเวลารอ Operation อนุมัติ',
+            // หมดอายุได้ 2 แบบ: ไม่มีใครตัดสิน หรืออนุมัติแล้วแต่ไม่ได้กดส่งใน 24 ชม.
+            ConfigApplyRequestStatus.expired when request.decidedAt == null =>
+              'หมดเวลารอ Operation อนุมัติ',
             ConfigApplyRequestStatus.cancelled when request.decidedAt == null =>
               'ยกเลิกก่อน Operation ตัดสินใจ',
             _ => 'Operation อนุมัติ',

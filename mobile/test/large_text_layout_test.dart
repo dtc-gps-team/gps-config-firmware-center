@@ -140,6 +140,8 @@ Future<void> _pumpConfigOverride(WidgetTester tester) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        // R4-06 — หน้า Override ล็อกเมื่อไม่ใช่ ST จึงต้องมี role
+        authControllerProvider.overrideWith(_StAuth.new),
         configOverrideRepositoryProvider.overrideWithValue(
           _FakeConfigOverrideRepository(),
         ),

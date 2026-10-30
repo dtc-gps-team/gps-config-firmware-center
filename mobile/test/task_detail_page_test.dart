@@ -573,6 +573,35 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets(
+      'อนุมัติแล้วแต่หมดอายุเพราะไม่ได้กดส่ง -> ไม่บอกว่ารอ Operation',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          applyRepo: FakeConfigApplyRequestRepository(
+            requests: [
+              fakeApplyRequest(
+                status: ConfigApplyRequestStatus.expired,
+                decidedAt: DateTime.utc(2026, 10, 22, 4),
+              ),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        final event = find.byKey(const Key('apply_request_event_operation'));
+        expect(
+          find.descendant(of: event, matching: find.text('Operation อนุมัติ')),
+          findsOneWidget,
+        );
+        expect(find.text('หมดเวลารอ Operation อนุมัติ'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
     testWidgets('release ต้องยืนยันก่อนเรียก repository', (tester) async {
       tester.view.physicalSize = const Size(1080, 4000);
       tester.view.devicePixelRatio = 2;
