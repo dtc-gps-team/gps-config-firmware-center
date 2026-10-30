@@ -12,7 +12,7 @@ import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/core/ui/app_card.dart';
 import 'package:mobile/core/ui/app_empty_state.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/notification/notification_list_page.dart';
@@ -597,17 +597,16 @@ void main() {
   });
 
   group('design system ใหม่ (docs/22 Batch 2)', () {
-    testWidgets('ใช้ theme v2 + AppPageHeader แทน AppBar สีกรมท่า', (
+    testWidgets('ใช้ theme v2 + AppInkHeader และ unread badge แบบข้อความ', (
       tester,
     ) async {
       await _pump(tester, _FakeNotificationRepository(items: [_n('n1')]));
 
       expect(find.byType(AppBar), findsNothing);
       expect(find.byType(AppV2Theme), findsOneWidget);
-      expect(
-        find.widgetWithText(AppPageHeader, 'รายการแจ้งเตือน'),
-        findsOneWidget,
-      );
+      expect(find.widgetWithText(AppInkHeader, 'แจ้งเตือน'), findsOneWidget);
+      expect(find.text('การอนุมัติและผลการทำงาน'), findsOneWidget);
+      expect(find.text('ใหม่'), findsOneWidget);
       final theme = Theme.of(tester.element(find.text('รายการแจ้งเตือน')));
       expect(theme.colorScheme.primary, AppColors.primary);
       // หน้าแรกของ stack (ไม่มีหน้าให้ย้อน) -> ไม่มีปุ่มย้อนกลับ

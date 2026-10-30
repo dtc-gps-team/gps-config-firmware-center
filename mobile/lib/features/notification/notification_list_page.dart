@@ -5,9 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
@@ -80,67 +81,64 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
 
     final navigator = Navigator.of(context);
 
-    // design system ใหม่ (docs/22 Batch 2) — หัวหน้าจอ AppPageHeader แทน AppBar
-    // สีกรมท่า · ตรรกะ/การเรียก API เหมือนเดิมทุกอย่าง
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'รายการแจ้งเตือน',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                trailing: const AccountButton(),
-              ),
-              Expanded(
-                child: async.when(
-                  skipLoadingOnRefresh: true,
-                  data: (items) {
-                    if (items.isEmpty) {
-                      return const Align(
-                        alignment: Alignment.topCenter,
-                        child: AppEmptyState(
-                          icon: Icons.notifications_none,
-                          message: 'ไม่มีการแจ้งเตือน',
-                          messageKey: Key('notification_list_message'),
-                        ),
-                      );
-                    }
-                    return RefreshIndicator(
-                      onRefresh: () async =>
-                          ref.invalidate(notificationListProvider),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                        itemCount: items.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, i) {
-                          final n = items[i];
-                          return _NotificationTile(
-                            key: Key('notification_tile_$i'),
-                            notification: n,
-                            read: _isRead(n),
-                            onTap: () => _handleTap(context, n),
-                          );
-                        },
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: 'แจ้งเตือน',
+              subtitle: 'การอนุมัติและผลการทำงาน',
+              onBack: navigator.canPop() ? navigator.pop : null,
+              trailing: const AccountButton(),
+            ),
+            Expanded(
+              child: async.when(
+                skipLoadingOnRefresh: true,
+                data: (items) {
+                  if (items.isEmpty) {
+                    return const Align(
+                      alignment: Alignment.topCenter,
+                      child: AppEmptyState(
+                        icon: Icons.notifications_none,
+                        message: 'ไม่มีการแจ้งเตือน',
+                        messageKey: Key('notification_list_message'),
                       ),
                     );
-                  },
-                  loading: () => const AppListSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => AppErrorView(
-                    message: error is ApiException
-                        ? error.message
-                        : 'โหลดการแจ้งเตือนไม่สำเร็จ',
-                    onRetry: () => ref.invalidate(notificationListProvider),
-                    messageKey: const Key('notification_list_message'),
-                    retryKey: const Key('notification_list_retry'),
-                  ),
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () async =>
+                        ref.invalidate(notificationListProvider),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, i) {
+                        final n = items[i];
+                        return _NotificationTile(
+                          key: Key('notification_tile_$i'),
+                          notification: n,
+                          read: _isRead(n),
+                          onTap: () => _handleTap(context, n),
+                        );
+                      },
+                    ),
+                  );
+                },
+                loading: () => const AppListSkeleton(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                ),
+                error: (error, _) => AppErrorView(
+                  message: error is ApiException
+                      ? error.message
+                      : 'โหลดการแจ้งเตือนไม่สำเร็จ',
+                  onRetry: () => ref.invalidate(notificationListProvider),
+                  messageKey: const Key('notification_list_message'),
+                  retryKey: const Key('notification_list_retry'),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -224,17 +222,15 @@ class _NotificationTile extends StatelessWidget {
           ),
           if (!read) ...[
             const SizedBox(width: 8),
-            Container(
+            AppBadge(
               key: const Key('unread_dot'),
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(top: 6),
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
+              label: 'ใหม่',
+              tone: AppBadgeTone.success,
+              dot: true,
             ),
           ],
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, color: AppColors.mutedForeground),
         ],
       ),
     );

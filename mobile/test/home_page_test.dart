@@ -299,7 +299,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('account_sheet')), findsOneWidget);
+      expect(find.byKey(const Key('account_close')), findsOneWidget);
       expect(find.byKey(const Key('logout_confirm_dialog')), findsNothing);
+      await tester.tap(find.byKey(const Key('account_close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('account_sheet')), findsNothing);
       expect(
         container.read(authControllerProvider).status,
         AuthStatus.authenticated,
