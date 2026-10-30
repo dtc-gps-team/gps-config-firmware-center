@@ -19,6 +19,7 @@ import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
 import '../config_override/config_override_repository.dart';
 import '../config_override/config_value_parser.dart';
+import '../config_override/unsupported_firmware_notice.dart';
 import 'config_apply_request_repository.dart';
 import 'field_task_repository.dart';
 import 'task_repository.dart';
@@ -229,6 +230,13 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                 const <ConfigFieldDefinition>[])
           def.fieldName: def,
     };
+    // v3.76 — พารามิเตอร์ที่ firmware บนกล่องรองรับ (null = ไม่ทราบ ไม่ล็อก)
+    final boxSchema = config == null
+        ? null
+        : ref
+              .watch(currentConfigProvider(widget.deviceId))
+              .valueOrNull
+              ?.boxSchema;
     final navigator = Navigator.of(context);
 
     return AppV2Theme(
@@ -278,6 +286,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
                         config,
                         defByName,
                         canEdit: role == UserRole.st,
+                        boxSchema: boxSchema,
                       ),
                     ),
             ),
@@ -294,6 +303,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
     ApplyOptionConfig? config,
     Map<String, ConfigFieldDefinition> defByName, {
     required bool canEdit,
+    required BoxSchema? boxSchema,
   }) {
     if (config == null) {
       return ListView(
@@ -312,6 +322,8 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
       );
     }
     final edited = _changedFields(config).isNotEmpty;
+    final unsupported =
+        boxSchema?.unsupportedIn(config.fields.keys) ?? const <String>[];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
@@ -352,6 +364,13 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
           ),
           const SizedBox(height: 16),
         ],
+        if (boxSchema != null && unsupported.isNotEmpty) ...[
+          UnsupportedFirmwareNotice(
+            schema: boxSchema,
+            unsupportedKeys: unsupported,
+          ),
+          const SizedBox(height: 16),
+        ],
         if (config.fields.isEmpty)
           const AppNotice(
             key: Key('apply_params_empty'),
@@ -364,6 +383,7 @@ class _ApplyConfigParamsPageState extends ConsumerState<ApplyConfigParamsPage> {
             defByName: defByName,
             errors: _paramErrors,
             canEdit: canEdit,
+            boxSchema: boxSchema,
             enabled: !_submitting,
             onChanged: (field, value) => setState(() {
               _edits[field] = value;
@@ -452,11 +472,13 @@ class _ConfigParams extends StatelessWidget {
     required this.defByName,
     required this.errors,
     required this.canEdit,
+    required this.boxSchema,
     required this.enabled,
     required this.onChanged,
   });
 
   final ApplyOptionConfig config;
+  final BoxSchema? boxSchema;
   final Map<String, ConfigFieldDefinition> defByName;
   final Map<String, String> errors;
   final bool canEdit;
@@ -484,7 +506,12 @@ class _ConfigParams extends StatelessWidget {
               value: entry.value,
               def: defByName[entry.key],
               editable:
-                  canEdit && (defByName[entry.key]?.stOverridable ?? false),
+                  canEdit &&
+                  (defByName[entry.key]?.stOverridable ?? false) &&
+                  (boxSchema?.supports(entry.key) ?? true),
+              unsupportedLabel: boxSchema?.supports(entry.key) ?? true
+                  ? null
+                  : boxSchema!.unsupportedLabel,
               error: errors[entry.key],
               enabled: enabled,
               onChanged: (v) => onChanged(entry.key, v),
@@ -502,12 +529,16 @@ class _ParamRow extends StatefulWidget {
     required this.value,
     required this.def,
     required this.editable,
+    this.unsupportedLabel,
     required this.error,
     required this.enabled,
     required this.onChanged,
   });
 
   final String field;
+
+  /// firmware บนกล่องไม่รองรับค่านี้ (v3.76) — บอกเหตุผลแทน "(แก้ไขไม่ได้)"
+  final String? unsupportedLabel;
   final dynamic value;
   final ConfigFieldDefinition? def;
   final bool editable;
@@ -656,7 +687,14 @@ class _ParamRowState extends State<_ParamRow> {
                   readOnlyValue,
                   style: _valueStyle.copyWith(color: AppColors.mutedForeground),
                 ),
-                const Text('(แก้ไขไม่ได้)', style: muted),
+                if (widget.unsupportedLabel case final label?)
+                  Text(
+                    label,
+                    key: Key('apply_param_unsupported_${widget.field}'),
+                    style: muted.copyWith(color: AppColors.destructive),
+                  )
+                else
+                  const Text('(แก้ไขไม่ได้)', style: muted),
               ],
             ),
         ],

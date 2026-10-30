@@ -38,6 +38,9 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
   String? lastReason;
   String? lastConfigId;
 
+  /// ค่าของ `GET /devices/{id}/config` (boxSchema v3.76) — null = โหลดไม่ได้
+  DeviceConfigDraft? currentConfig;
+
   @override
   Future<DeviceConfigOverride> overrideConfig({
     required String deviceId,
@@ -65,8 +68,8 @@ class _FakeOverrideRepository implements ConfigOverrideRepository {
   }
 
   @override
-  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) =>
-      throw UnimplementedError();
+  Future<DeviceConfigDraft> getCurrentConfig(String deviceId) async =>
+      currentConfig ?? (throw UnimplementedError());
 
   @override
   Future<List<ConfigFieldDefinition>> listDefinitions() async => const [
@@ -1105,6 +1108,48 @@ void main() {
         expect(find.text('บทบาทนี้ไม่มีสิทธิ์ใช้หน้านี้'), findsOneWidget);
         expect(option('cfg-1'), findsNothing);
         expect(applyRepo.optionsCalls, 0);
+      },
+    );
+
+    testWidgets(
+      'firmware บนกล่องไม่รองรับค่าใน Config -> เตือนส่งไม่สำเร็จ และล็อกช่องนั้น',
+      (tester) async {
+        overrides.currentConfig = const DeviceConfigDraft(
+          id: 'cfg-1',
+          boxSchema: BoxSchema(
+            firmwareVersion: '1.0.0',
+            schemaVersion: 1,
+            keys: {'led.enabled'},
+          ),
+        );
+        await pump(
+          tester,
+          startAt: AppRoutes.deviceApplyConfig('DVC-1', 'cfg-1'),
+        );
+        await tester.pumpAndSettle();
+
+        final notice = find.byKey(const Key('unsupported_firmware_notice'));
+        expect(notice, findsOneWidget);
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('gps.send_interval_sec'),
+          ),
+          findsOneWidget,
+        );
+        final row = find.byKey(
+          const Key('apply_param_row_gps.send_interval_sec'),
+        );
+        expect(
+          find.byKey(
+            const Key('apply_param_unsupported_gps.send_interval_sec'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: row, matching: find.byType(TextField)),
+          findsNothing,
+        );
       },
     );
 

@@ -823,6 +823,7 @@ class DeviceConfigDraft {
     this.pendingOverride,
     this.delivery,
     this.boxFields,
+    this.boxSchema,
   });
 
   final String? id;
@@ -858,11 +859,16 @@ class DeviceConfigDraft {
   /// ทุกพารามิเตอร์ (โหมด central) · `null` = ไม่ทราบ
   final BoxFields? boxFields;
 
+  /// เฉพาะ `GET /devices/{deviceId}/config` (v3.76) — พารามิเตอร์ที่ firmware บน
+  /// กล่องรองรับ (โหมด central) · `null` = ไม่ทราบ ให้ทำงานเหมือนเดิม
+  final BoxSchema? boxSchema;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
     final rawPending = json['pendingOverride'] as Map?;
     final rawDelivery = json['delivery'] as Map?;
     final rawBoxFields = json['boxFields'] as Map?;
+    final rawBoxSchema = json['boxSchema'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
       name: json['name'] as String?,
@@ -880,6 +886,45 @@ class DeviceConfigDraft {
       boxFields: rawBoxFields == null
           ? null
           : BoxFields.fromJson(rawBoxFields.cast<String, dynamic>()),
+      boxSchema: rawBoxSchema == null
+          ? null
+          : BoxSchema.fromJson(rawBoxSchema.cast<String, dynamic>()),
+    );
+  }
+}
+
+/// `DeviceCurrentConfig.boxSchema` (v3.76) — พารามิเตอร์ที่ firmware บนกล่อง
+/// รองรับ ตัวเดียวกับที่ backend ใช้ตรวจตอนส่ง Config เข้ากล่อง (key นอกรายการ
+/// = ส่งไม่ผ่านทั้งชุด)
+class BoxSchema {
+  const BoxSchema({
+    required this.firmwareVersion,
+    required this.schemaVersion,
+    required this.keys,
+  });
+
+  final String? firmwareVersion;
+  final int schemaVersion;
+  final Set<String> keys;
+
+  bool supports(String key) => keys.contains(key);
+
+  /// key ใน [fieldNames] ที่กล่องไม่รองรับ (คงลำดับเดิม)
+  List<String> unsupportedIn(Iterable<String> fieldNames) => [
+    for (final name in fieldNames)
+      if (!supports(name)) name,
+  ];
+
+  /// เช่น "Firmware ที่กล่องใช้อยู่ (1.0.0) ไม่รองรับ"
+  String get unsupportedLabel =>
+      'Firmware ที่กล่องใช้อยู่ (${firmwareVersion ?? 'schema $schemaVersion'}) '
+      'ไม่รองรับ';
+
+  factory BoxSchema.fromJson(Map<String, dynamic> json) {
+    return BoxSchema(
+      firmwareVersion: json['firmwareVersion'] as String?,
+      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 0,
+      keys: {for (final k in (json['keys'] as List? ?? const [])) k as String},
     );
   }
 }

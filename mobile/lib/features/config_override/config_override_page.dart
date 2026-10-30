@@ -23,6 +23,7 @@ import '../task/apply_mode_provider.dart';
 import '../task/config_apply_request_repository.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
+import 'unsupported_firmware_notice.dart';
 
 /// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
 /// เข้าได้เฉพาะ role ST (เช็คที่ entry point ใน `device_detail_page.dart`) —
@@ -405,6 +406,10 @@ class _OverrideForm extends StatelessWidget {
         .toList(growable: false);
     final delivery = config.delivery;
     final undelivered = delivery?.pendingFieldNames.length ?? 0;
+    // v3.76 — ค่าใน Config ที่ firmware บนกล่องไม่รองรับ (null = ไม่ทราบ ไม่ล็อก)
+    final boxSchema = config.boxSchema;
+    final unsupported =
+        boxSchema?.unsupportedIn(configFields.keys) ?? const <String>[];
     final afterApproval = central
         ? 'ส่งแล้วรอ Operation อนุมัติ จากนั้นกดส่งเข้ากล่องจากหน้างาน'
         : 'ต้องรอ Operation อนุมัติก่อน แล้วจึงส่ง Config เข้าเครื่องจากหน้างาน';
@@ -420,6 +425,13 @@ class _OverrideForm extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        if (boxSchema != null && unsupported.isNotEmpty) ...[
+          UnsupportedFirmwareNotice(
+            schema: boxSchema,
+            unsupportedKeys: unsupported,
+          ),
+          const SizedBox(height: 16),
+        ],
         // v3.71 — ค่าในช่องคือค่าหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติแล้ว)
         // ถ้ายังไม่ได้ส่ง ค่าในกล่องจริงยังเป็นค่าเดิม บอกให้ชัดว่าต่างกัน
         if (undelivered > 0) ...[
@@ -456,6 +468,9 @@ class _OverrideForm extends StatelessWidget {
                   editValue: edits[entry.key],
                   inBox: delivery != null && delivery.isPending(entry.key)
                       ? _InBoxValue(delivery.fields[entry.key])
+                      : null,
+                  unsupportedLabel: unsupported.contains(entry.key)
+                      ? boxSchema!.unsupportedLabel
                       : null,
                   errorText: fieldErrors[entry.key],
                   revealed: revealed.contains(entry.key),
@@ -517,6 +532,7 @@ class _FieldRow extends StatefulWidget {
     required this.editValue,
     this.inBox,
     this.outsideConfig = false,
+    this.unsupportedLabel,
     required this.errorText,
     required this.revealed,
     required this.onToggleReveal,
@@ -533,6 +549,10 @@ class _FieldRow extends StatefulWidget {
 
   /// ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config นี้ — แก้ไม่ได้เสมอ
   final bool outsideConfig;
+
+  /// firmware บนกล่องไม่รองรับค่านี้ (v3.76) — แก้ไม่ได้ และบอกเหตุผลแทน
+  /// "(แก้ไขไม่ได้)"
+  final String? unsupportedLabel;
   final String? errorText;
   final bool revealed;
   final VoidCallback onToggleReveal;
@@ -656,7 +676,11 @@ class _FieldRowState extends State<_FieldRow> {
     final revealed = widget.revealed;
     final fieldKey = widget.fieldKey;
 
-    if (widget.outsideConfig || def == null || !def.stOverridable) {
+    final unsupportedLabel = widget.unsupportedLabel;
+    if (widget.outsideConfig ||
+        unsupportedLabel != null ||
+        def == null ||
+        !def.stOverridable) {
       const valueStyle = TextStyle(
         fontSize: AppTypography.xs,
         height: AppTypography.xsHeight,
@@ -683,12 +707,17 @@ class _FieldRowState extends State<_FieldRow> {
               style: valueStyle,
             ),
           const SizedBox(height: 2),
-          const Text(
-            '(แก้ไขไม่ได้)',
+          Text(
+            unsupportedLabel ?? '(แก้ไขไม่ได้)',
+            key: unsupportedLabel == null
+                ? null
+                : Key('config_override_unsupported_$fieldKey'),
             style: TextStyle(
               fontSize: AppTypography.xs,
               height: AppTypography.xsHeight,
-              color: AppColors.mutedForeground,
+              color: unsupportedLabel == null
+                  ? AppColors.mutedForeground
+                  : AppColors.destructive,
             ),
           ),
         ],

@@ -272,6 +272,66 @@ void main() {
     expect(fake.lastDeviceId, isNull); // ไม่เรียก repository เลย
   });
 
+  testWidgets(
+    'firmware บนกล่องไม่รองรับบางค่า -> เตือนส่งไม่สำเร็จ และล็อกช่องนั้น',
+    (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeConfigOverrideRepository(
+          config: const DeviceConfigDraft(
+            id: 'cfg-1',
+            name: 'GT06N · ตั้งค่ามาตรฐาน',
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+            status: ConfigStatus.approved,
+            fields: {'APN': 'internet', 'REPORT_MODE': 'normal'},
+            boxSchema: BoxSchema(
+              firmwareVersion: '1.0.0',
+              schemaVersion: 1,
+              keys: {'APN'},
+            ),
+          ),
+        ),
+      );
+
+      final notice = find.byKey(const Key('unsupported_firmware_notice'));
+      expect(notice, findsOneWidget);
+      expect(
+        find.descendant(
+          of: notice,
+          matching: find.textContaining('REPORT_MODE'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_unsupported_REPORT_MODE')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Firmware ที่กล่องใช้อยู่ (1.0.0) ไม่รองรับ'),
+        findsOneWidget,
+      );
+      // ค่าที่รองรับยังแก้ได้ ค่าที่ไม่รองรับไม่มีช่องกรอก
+      expect(
+        find.byKey(const Key('config_override_input_APN')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('config_override_input_REPORT_MODE')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('ไม่รู้ schema ของกล่อง (boxSchema null) -> ไม่เตือน ไม่ล็อก', (
+    tester,
+  ) async {
+    await _pump(tester);
+
+    expect(find.byKey(const Key('unsupported_firmware_notice')), findsNothing);
+    expect(find.byKey(const Key('config_override_input_APN')), findsOneWidget);
+  });
+
   testWidgets('error ของคำขออยู่ในแถบล่าง และ notice ระบุ Audit Log', (
     tester,
   ) async {
