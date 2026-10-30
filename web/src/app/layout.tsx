@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Anuphan, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/auth-provider";
+import { MotionProvider } from "@/components/motion/motion-provider";
+import { ThemeProvider } from "@/components/theme/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -43,10 +45,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="th"
       className={`${anuphan.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
-        <Toaster />
+        <ThemeProvider>
+          <MotionProvider>
+            <AuthProvider>{children}</AuthProvider>
+            <Toaster />
+          </MotionProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
