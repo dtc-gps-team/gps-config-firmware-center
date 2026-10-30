@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
 import 'package:mobile/core/ui/app_sensitive_value.dart';
 import 'package:mobile/features/config_override/config_override_page.dart';
 import 'package:mobile/features/config_override/config_override_repository.dart';
@@ -12,6 +15,15 @@ import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 
 import 'support/fake_config_apply_request_repository.dart';
+
+class _FakeAuthController extends AuthController {
+  _FakeAuthController(this.authState);
+
+  final AuthState authState;
+
+  @override
+  AuthState build() => authState;
+}
 
 const _apnDef = ConfigFieldDefinition(
   id: 'def-apn',
@@ -77,6 +89,7 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     this.configError,
     List<ConfigFieldDefinition>? definitions,
     this.overrideError,
+    this.overrideGate,
   }) : _config = config ?? _defaultConfig,
        _definitions = definitions ?? const [_apnDef, _modeDef, _passwordDef];
 
@@ -84,19 +97,27 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
   final Object? configError;
   final List<ConfigFieldDefinition> _definitions;
   final Object? overrideError;
+  final Completer<void>? overrideGate;
 
   String? lastDeviceId;
   Map<String, dynamic>? lastFields;
   String? lastReason;
+  int configCalls = 0;
+  int definitionCalls = 0;
+  int overrideCalls = 0;
 
   @override
   Future<DeviceConfigDraft> getCurrentConfig(String deviceId) async {
+    configCalls++;
     if (configError != null) throw configError!;
     return _config;
   }
 
   @override
-  Future<List<ConfigFieldDefinition>> listDefinitions() async => _definitions;
+  Future<List<ConfigFieldDefinition>> listDefinitions() async {
+    definitionCalls++;
+    return _definitions;
+  }
 
   @override
   Future<DeviceConfigOverride> overrideConfig({
@@ -105,9 +126,12 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
     required String reason,
     String? configId,
   }) async {
+    overrideCalls++;
     lastDeviceId = deviceId;
     lastFields = fields;
     lastReason = reason;
+    final gate = overrideGate;
+    if (gate != null) await gate.future;
     if (overrideError != null) throw overrideError!;
     return DeviceConfigOverride(
       id: 'ov-1',
@@ -126,24 +150,80 @@ class _FakeConfigOverrideRepository implements ConfigOverrideRepository {
 Future<_FakeConfigOverrideRepository> _pump(
   WidgetTester tester, {
   _FakeConfigOverrideRepository? repo,
+  UserRole? role = UserRole.st,
+  AuthStatus status = AuthStatus.authenticated,
 }) async {
   final fake = repo ?? _FakeConfigOverrideRepository();
-  // หัวหน้าจอแบบ AppPageHeader (docs/22 Batch 4) กินพื้นที่บนจอ 800x600 ค่าเริ่มต้น
+  // หัวหน้าจอพื้นเข้มแบบ r4 กินพื้นที่บนจอ 800x600 ค่าเริ่มต้น
   // จนปุ่มส่งพ้นจอ — ใช้จอสูงแบบโทรศัพท์แนวตั้งให้เห็นทั้งฟอร์ม
   tester.view.physicalSize = const Size(400 * 3, 1200 * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [configOverrideRepositoryProvider.overrideWithValue(fake)],
+      overrides: [
+        configOverrideRepositoryProvider.overrideWithValue(fake),
+        authControllerProvider.overrideWith(
+          () => _FakeAuthController(AuthState(status: status, role: role)),
+        ),
+      ],
       child: const MaterialApp(home: ConfigOverridePage(deviceId: 'DEV-0117')),
     ),
   );
-  await tester.pumpAndSettle();
+  if (status == AuthStatus.unknown || status == AuthStatus.authenticating) {
+    await tester.pump();
+  } else {
+    await tester.pumpAndSettle();
+  }
   return fake;
 }
 
 void main() {
+  testWidgets('OT เปิดลิงก์ตรงแล้วล็อก และไม่อ่าน Config', (tester) async {
+    final repo = await _pump(tester, role: UserRole.ot);
+
+    expect(find.byKey(const Key('app_role_locked')), findsOneWidget);
+    expect(repo.configCalls, 0);
+    expect(repo.definitionCalls, 0);
+  });
+
+  testWidgets('กำลัง restore session ให้รอโดยยังไม่เรียก API', (tester) async {
+    final repo = await _pump(tester, role: null, status: AuthStatus.unknown);
+
+    expect(find.byKey(const Key('app_role_locked')), findsNothing);
+    expect(repo.configCalls, 0);
+    expect(repo.definitionCalls, 0);
+  });
+
+  testWidgets('ระหว่างส่ง Override แสดงกำลังส่งและกันส่งซ้ำ', (tester) async {
+    final gate = Completer<void>();
+    final repo = _FakeConfigOverrideRepository(overrideGate: gate);
+    await _pump(tester, repo: repo);
+    await tester.enterText(
+      find.byKey(const Key('config_override_input_APN')),
+      'apn-new',
+    );
+    await tester.enterText(
+      find.byKey(const Key('config_override_reason_input')),
+      'แก้ตามการใช้งาน',
+    );
+    await tester.tap(find.byKey(const Key('config_override_submit')));
+    await tester.pump();
+
+    expect(find.text('กำลังส่ง…'), findsOneWidget);
+    expect(repo.overrideCalls, 1);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('config_override_submit')))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byKey(const Key('config_override_submit')));
+    expect(repo.overrideCalls, 1);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+  });
   testWidgets('field stOverridable:true -> แก้ไขได้ (TextField)', (
     tester,
   ) async {
@@ -825,15 +905,12 @@ void main() {
       );
 
       expect(
-        find.descendant(
-          of: find.byType(AppPageHeader),
-          matching: find.byKey(const Key('config_override_has_override_badge')),
-        ),
+        find.byKey(const Key('config_override_has_override_badge')),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: find.byType(AppPageHeader),
+          of: find.byType(AppInkHeader),
           matching: find.text('GT06N · ตั้งค่ามาตรฐาน'),
         ),
         findsOneWidget,
@@ -1165,6 +1242,14 @@ void main() {
         ProviderScope(
           overrides: [
             configOverrideRepositoryProvider.overrideWithValue(fake),
+            authControllerProvider.overrideWith(
+              () => _FakeAuthController(
+                const AuthState(
+                  status: AuthStatus.authenticated,
+                  role: UserRole.st,
+                ),
+              ),
+            ),
             centralApplyModeProvider.overrideWith((ref) async => central),
             configApplyRequestRepositoryProvider.overrideWithValue(
               applyRepo ?? FakeConfigApplyRequestRepository(),
@@ -1210,7 +1295,7 @@ void main() {
       final applyRepo = FakeConfigApplyRequestRepository();
       final fake = await pumpMode(tester, central: false, applyRepo: applyRepo);
 
-      expect(find.text('ยืนยัน Override'), findsOneWidget);
+      expect(find.text('ขออนุมัติค่าที่แก้'), findsOneWidget);
       await fillAndSubmit(tester, '60');
 
       expect(fake.lastFields, {'speed_limit.max_kmh': 60});
@@ -1237,7 +1322,7 @@ void main() {
           applyRepo: applyRepo,
         );
 
-        expect(find.text('ขออนุมัติและรอส่งเข้ากล่อง'), findsOneWidget);
+        expect(find.text('ขออนุมัติค่าที่แก้'), findsOneWidget);
         expect(find.textContaining('กดส่งเข้ากล่องจากหน้างาน'), findsOneWidget);
         await fillAndSubmit(tester, '60');
 
