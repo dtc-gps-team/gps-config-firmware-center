@@ -72,7 +72,7 @@ void main() {
     expect(find.byKey(const Key('login_submit')), findsOneWidget);
   });
 
-  testWidgets('Concept 02 shows the field-work hero above the workspace form', (
+  testWidgets('login follows the field-work hero and workspace layout', (
     tester,
   ) async {
     await _pumpLogin(tester, _container(_FakeAuthRepository()));
@@ -81,8 +81,22 @@ void main() {
     expect(find.text('GPS TECH'), findsOneWidget);
     expect(find.text('TECHNICIAN WORKSPACE'), findsOneWidget);
     expect(find.text('พร้อมสำหรับงานภาคสนาม'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
-    expect(find.text('LOGIN CONCEPT 02'), findsOneWidget);
+    expect(find.text('YOUR WORKSPACE'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
+    expect(find.text('ใช้บัญชีของคุณเพื่อเริ่มงาน'), findsOneWidget);
+    expect(find.text('LOGIN CONCEPT 02'), findsNothing);
+    expect(find.text('GPS Config & Firmware Center'), findsNothing);
+    expect(find.text('ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม'), findsNothing);
+  });
+
+  testWidgets('login submit fits the 360x800 screen without scrolling', (
+    tester,
+  ) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    final bounds = tester.getRect(find.byKey(const Key('login_submit')));
+    expect(bounds.top, greaterThanOrEqualTo(0));
+    expect(bounds.bottom, lessThanOrEqualTo(720));
   });
 
   testWidgets('shows validation errors on empty submit', (tester) async {
@@ -209,29 +223,30 @@ void main() {
   });
 
   group('design system ใหม่ (docs/22 Batch 2)', () {
-    testWidgets(
-      'theme v2 + ฟอร์มอยู่ในแผงลอย (มุม xxl เงา floating) + ไม่มี AppBar',
-      (tester) async {
-        await _pumpLogin(tester, _container(_FakeAuthRepository()));
+    testWidgets('theme v2 + ฟอร์มอยู่ในแผ่นสว่างโค้งด้านบน + ไม่มี AppBar', (
+      tester,
+    ) async {
+      await _pumpLogin(tester, _container(_FakeAuthRepository()));
 
-        expect(find.byType(AppV2Theme), findsOneWidget);
-        expect(find.byType(AppBar), findsNothing);
-        final panel = find.ancestor(
-          of: find.byKey(const Key('login_submit')),
-          matching: find.byKey(const Key('login_panel')),
-        );
-        expect(panel, findsOneWidget);
-        final deco =
-            tester.widget<Container>(panel).decoration! as BoxDecoration;
-        expect(deco.color, AppColors.card);
-        expect(deco.borderRadius, BorderRadius.circular(AppRadius.xxl));
-        expect(deco.boxShadow, AppShadows.floating);
-        final theme = Theme.of(
-          tester.element(find.byKey(const Key('login_submit'))),
-        );
-        expect(theme.colorScheme.primary, AppColors.primary);
-      },
-    );
+      expect(find.byType(AppV2Theme), findsOneWidget);
+      expect(find.byType(AppBar), findsNothing);
+      final panel = find.ancestor(
+        of: find.byKey(const Key('login_submit')),
+        matching: find.byKey(const Key('login_panel')),
+      );
+      expect(panel, findsOneWidget);
+      final deco = tester.widget<Container>(panel).decoration! as BoxDecoration;
+      expect(deco.color, AppColors.background);
+      expect(
+        deco.borderRadius,
+        const BorderRadius.vertical(top: Radius.circular(AppRadius.xxl)),
+      );
+      expect(deco.boxShadow, isNull);
+      final theme = Theme.of(
+        tester.element(find.byKey(const Key('login_submit'))),
+      );
+      expect(theme.colorScheme.primary, AppColors.primary);
+    });
 
     testWidgets('ช่องกรอกใช้ขอบ inputBorder #576171 จาก theme v2', (
       tester,
