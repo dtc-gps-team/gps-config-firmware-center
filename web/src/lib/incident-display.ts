@@ -239,7 +239,7 @@ export function rolloutImpactBar(
   return { failedPct, skippedPct };
 }
 
-/** Incident ที่ยังต้องตาม (ยังไม่ปิด): open หรือ investigating */
+/** Incident ที่ยังเปิดอยู่ (ยังไม่ปิด): open หรือ investigating */
 export function isIncidentActive(status: IncidentStatus): boolean {
   return !isIncidentClosed(status);
 }
