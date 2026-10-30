@@ -450,7 +450,8 @@ class _DeviceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'ซิม ${device.simNumber} · ${device.deviceModel}/${device.protocol}',
+                  // B (30/10/2026): ไม่แสดงโปรโตคอลบนการ์ด (ยังกรองตามโปรโตคอลได้)
+                  'ซิม ${device.simNumber} · ${device.deviceModel}',
                   style: const TextStyle(
                     fontSize: AppTypography.sm,
                     height: AppTypography.smHeight,

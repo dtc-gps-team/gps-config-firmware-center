@@ -288,7 +288,9 @@ void main() {
     expect(find.byType(AppEmptyState), findsOneWidget);
   });
 
-  testWidgets('ไม่มี Incident ก็ยังมีทางเข้าแจ้งปัญหาให้ ST', (tester) async {
+  testWidgets('ไม่มี Incident -> แสดงแค่สถานะว่าง ไม่มีปุ่มแจ้งปัญหา', (
+    tester,
+  ) async {
     await _pumpRouted(
       tester,
       repo: _FakeIncidentRepository(incidents: const []),
@@ -296,7 +298,7 @@ void main() {
     );
 
     expect(find.byKey(const Key('incidents_empty')), findsOneWidget);
-    expect(find.byKey(const Key('incidents_field_report')), findsOneWidget);
+    expect(find.byKey(const Key('incidents_field_report')), findsNothing);
   });
 
   testWidgets('error -> error card + ปุ่มลองอีกครั้ง (กดแล้วยิงซ้ำ)', (
@@ -422,26 +424,19 @@ void main() {
     });
   });
 
-  // docs/22 §7.2 — ปุ่ม Field Report ใน actions ของหัวแท็บ Incidents (เว้นไว้จาก
-  // Batch 2 เพราะรอโครงแท็บ) · ทางลัด "แจ้งปัญหา" บนหน้าแรกเดิมหายไปพร้อมหน้าแรกใหม่
+  // B (30/10/2026) — เอาปุ่ม "แจ้งปัญหาหน้างาน" ออกจากรายการ เข้าหน้าแจ้งปัญหา
+  // ผ่านการ์ด Incidents บนหน้าแรกแทน (home_r4_test) · รายการนี้ไว้ดูอย่างเดียว
   group('ปุ่ม Field Report (Batch 3)', () {
     final button = find.byKey(const Key('incidents_field_report'));
 
     for (final role in [UserRole.st, UserRole.ot]) {
-      testWidgets('${role.wireName}: เห็นปุ่ม แตะแล้วไปหน้า Field Report', (
+      testWidgets('${role.wireName}: รายการไม่มีปุ่มแจ้งปัญหาแล้ว', (
         tester,
       ) async {
         await _pumpRouted(tester, repo: _FakeIncidentRepository(), role: role);
 
-        expect(button, findsOneWidget);
-        expect(
-          find.descendant(of: button, matching: find.text('แจ้งปัญหาหน้างาน')),
-          findsOneWidget,
-        );
-        await tester.tap(button);
-        await tester.pumpAndSettle();
-
-        expect(find.text('FIELD_REPORT_STUB'), findsOneWidget);
+        expect(button, findsNothing);
+        expect(find.text('แจ้งปัญหาหน้างาน'), findsNothing);
       });
     }
 

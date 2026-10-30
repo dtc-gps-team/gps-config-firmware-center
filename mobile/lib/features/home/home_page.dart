@@ -293,27 +293,13 @@ class _Shortcuts extends StatelessWidget {
             ),
           ),
         );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: button(
-            'home_incidents_shortcut',
-            'Incidents',
-            Icons.report_problem_outlined,
-            () => context.go(AppRoutes.incidents),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: button(
-            'home_report_shortcut',
-            'แจ้งปัญหา',
-            Icons.add,
-            () => context.push(AppRoutes.incidentReport),
-          ),
-        ),
-      ],
+    // B (30/10/2026): รวมทางลัดเหลือการ์ดเดียว — แตะ Incidents เข้าหน้าแจ้งปัญหา
+    // ทันที · ดูรายการ Incident ผ่านแท็บ Incidents ด้านล่าง
+    return button(
+      'home_incidents_shortcut',
+      'Incidents',
+      Icons.report_problem_outlined,
+      () => context.push(AppRoutes.incidentReport),
     );
   }
 }

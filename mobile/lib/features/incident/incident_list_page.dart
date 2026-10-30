@@ -4,9 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
-import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
-import '../../core/router/app_shell.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
@@ -55,11 +53,8 @@ class IncidentListPage extends ConsumerWidget {
                 child: incidentsAsync.when(
                   skipLoadingOnRefresh: true,
                   data: (incidents) {
-                    final canReport = isFieldStaff(
-                      ref.watch(authControllerProvider.select((s) => s.role)),
-                    );
                     if (incidents.isEmpty) {
-                      return _IncidentsEmpty(canReport: canReport);
+                      return const _IncidentsEmpty();
                     }
                     final fieldReports = incidents
                         .where((incident) => incident.source == 'field-report')
@@ -72,16 +67,6 @@ class IncidentListPage extends ConsumerWidget {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                         children: [
-                          if (canReport) ...[
-                            FilledButton.icon(
-                              key: const Key('incidents_field_report'),
-                              onPressed: () =>
-                                  context.push(AppRoutes.incidentReport),
-                              icon: const Icon(Icons.add),
-                              label: const Text('แจ้งปัญหาหน้างาน'),
-                            ),
-                            const SizedBox(height: 20),
-                          ],
                           if (fieldReports.isNotEmpty) ...[
                             const _IncidentGroupTitle('ที่คุณแจ้ง'),
                             for (final incident in fieldReports) ...[
@@ -263,26 +248,13 @@ class _IncidentCard extends StatelessWidget {
 }
 
 class _IncidentsEmpty extends StatelessWidget {
-  const _IncidentsEmpty({required this.canReport});
-
-  final bool canReport;
+  const _IncidentsEmpty();
 
   @override
   Widget build(BuildContext context) {
     // อยู่ใน ListView ให้ดึงลงเพื่อรีเฟรชได้เหมือนเดิม
     return ListView(
       children: [
-        if (canReport) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: FilledButton.icon(
-              key: const Key('incidents_field_report'),
-              onPressed: () => context.push(AppRoutes.incidentReport),
-              icon: const Icon(Icons.add),
-              label: const Text('แจ้งปัญหาหน้างาน'),
-            ),
-          ),
-        ],
         const AppEmptyState(
           icon: Icons.check_circle_outline,
           message: 'ยังไม่มี Incident',

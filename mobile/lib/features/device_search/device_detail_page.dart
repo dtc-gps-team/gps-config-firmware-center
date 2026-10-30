@@ -263,7 +263,7 @@ class _DeviceDetailView extends ConsumerWidget {
             if (isFieldStaff)
               _Shortcut(
                 key: const Key('device_detail_start_task'),
-                label: openTask == null ? 'เริ่มงาน' : 'ไปที่งาน',
+                label: openTask == null ? 'เริ่มงาน' : 'รายละเอียดงาน',
                 icon: openTask == null
                     ? Icons.play_circle_outline
                     : Icons.assignment_outlined,

@@ -1158,7 +1158,7 @@ void _pendingConfigOverrideTests() {
     );
 
     testWidgets(
-      'มีงานเปิดอยู่แล้ว -> ปุ่มเป็น "ไปที่งาน" แตะแล้วไปงานนั้นโดยไม่เรียก start',
+      'มีงานเปิดอยู่แล้ว -> ปุ่มเป็น "รายละเอียดงาน" แตะแล้วไปงานนั้นโดยไม่เรียก start',
       (tester) async {
         String? opened;
         final router = routerWith((path) => opened = path);
@@ -1182,7 +1182,7 @@ void _pendingConfigOverrideTests() {
         );
         await tester.pump();
 
-        expect(find.text('ไปที่งาน'), findsOneWidget);
+        expect(find.text('รายละเอียดงาน'), findsOneWidget);
         await tester.tap(find.byKey(const Key('device_detail_start_task')));
         await tester.pumpAndSettle();
 

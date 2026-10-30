@@ -9,6 +9,7 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/db/app_database.dart';
 import 'package:mobile/core/router/app_router.dart';
+import 'package:mobile/features/incident/field_report_page.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/core/theme/app_theme.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
@@ -474,6 +475,20 @@ void main() {
     expect(find.byKey(const Key('home_search_entry')), findsOneWidget);
   });
 
+  testWidgets('การ์ด Incidents การ์ดเดียว แตะแล้วเข้าหน้าแจ้งปัญหาทันที', (
+    tester,
+  ) async {
+    await _pump(tester, _Repo([]));
+    expect(find.byKey(const Key('home_report_shortcut')), findsNothing);
+
+    final card = find.byKey(const Key('home_incidents_shortcut'));
+    await _show(tester, card);
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FieldReportPage), findsOneWidget);
+  });
+
   testWidgets('loading และ empty ไม่ทำให้ทางลัดหาย', (tester) async {
     final pending = Completer<List<Task>>();
     await _pump(tester, _Repo([])..loading = pending);
@@ -497,11 +512,7 @@ void main() {
           scale: scale,
         );
         expect(tester.takeException(), isNull);
-        for (final key in [
-          'home_search_entry',
-          'home_incidents_shortcut',
-          'home_report_shortcut',
-        ]) {
+        for (final key in ['home_search_entry', 'home_incidents_shortcut']) {
           await _show(tester, find.byKey(Key(key)));
           expect(
             tester

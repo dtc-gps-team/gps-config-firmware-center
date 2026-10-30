@@ -518,7 +518,9 @@ void main() {
 
       expect(tester.takeException(), isNull);
       // ป้ายสถานะอยู่ใต้รายละเอียด รายละเอียดจึงได้ความกว้างเต็มการ์ด
-      final detail = find.textContaining('GT06N/TCP');
+      final detail = find.textContaining('· GT06N');
+      // ไม่แสดงโปรโตคอลบนการ์ด (B 30/10/2026)
+      expect(find.textContaining('GT06N/TCP'), findsNothing);
       expect(
         tester.getTopLeft(find.text('Installed')).dy,
         greaterThanOrEqualTo(tester.getBottomLeft(detail).dy),
