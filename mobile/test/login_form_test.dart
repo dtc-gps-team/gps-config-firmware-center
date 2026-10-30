@@ -82,7 +82,7 @@ void main() {
     expect(find.text('TECHNICIAN WORKSPACE'), findsOneWidget);
     expect(find.text('พร้อมสำหรับงานภาคสนาม'), findsOneWidget);
     expect(find.text('YOUR WORKSPACE'), findsOneWidget);
-    expect(find.text('เข้าสู่ระบบ'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
     expect(find.text('ใช้บัญชีของคุณเพื่อเริ่มงาน'), findsOneWidget);
     expect(find.text('LOGIN CONCEPT 02'), findsNothing);
     expect(find.text('GPS Config & Firmware Center'), findsNothing);

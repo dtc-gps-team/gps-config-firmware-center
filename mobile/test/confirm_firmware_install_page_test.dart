@@ -11,6 +11,7 @@ import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_page.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_repository.dart';
 import 'package:mobile/features/firmware_override/firmware_override_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 
 final _device = Device(
   id: 'uuid-1',
@@ -136,6 +137,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required _FakeConfirmRepository confirmRepo,
   UserRole role = UserRole.st,
+  bool central = false,
   List<Firmware> firmware = const [_okFw, _otherModelFw, _unapprovedFw],
   DeviceStatusRepository? statusRepo,
 }) async {
@@ -169,6 +171,7 @@ Future<void> _pump(
         ),
         confirmFirmwareInstallRepositoryProvider.overrideWithValue(confirmRepo),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
+        centralApplyModeProvider.overrideWith((ref) async => central),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -191,13 +194,22 @@ Future<void> _submit(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('central mode hides direct confirmation action', (tester) async {
+    final repo = _FakeConfirmRepository();
+    await _pump(tester, confirmRepo: repo, central: true);
+
+    expect(find.byKey(const Key('firmware_confirm_central_locked')), findsOne);
+    expect(find.byKey(const Key('confirm_firmware_submit')), findsNothing);
+    expect(repo.calls, 0);
+  });
+
   group('รายการ Firmware', () {
     testWidgets(
       'แสดงเฉพาะตัวที่ติดตั้งได้กับรุ่นเครื่อง (stored+approved+รองรับรุ่น)',
       (tester) async {
         await _pump(tester, confirmRepo: _FakeConfirmRepository());
 
-        expect(find.text('v2.1.0'), findsWidgets);
+        expect(find.textContaining('v2.1.0'), findsOneWidget);
         expect(
           find.byKey(const Key('confirm_firmware_option_fw-ok')),
           findsOne,
