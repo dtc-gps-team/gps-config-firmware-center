@@ -117,8 +117,8 @@ describe("DeviceDetailView", () => {
 
     render(<DeviceDetailView deviceId="DEV-0001" />);
 
-    expect(screen.getByText("DEV-0001")).toBeInTheDocument();
-    expect(screen.getByText("GT06N")).toBeInTheDocument();
+    expect(screen.getAllByText("DEV-0001").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("GT06N").length).toBeGreaterThan(0);
     expect(screen.getByText("โหลดสถานะอุปกรณ์ไม่สำเร็จ")).toBeInTheDocument();
   });
 

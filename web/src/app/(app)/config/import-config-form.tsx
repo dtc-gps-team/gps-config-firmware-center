@@ -9,8 +9,14 @@ import { ApiError } from "@/lib/api";
 import { importConfig, type Config } from "@/lib/config-api";
 import { flattenFields } from "@/lib/config-fields";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FileDropzone } from "@/components/file-dropzone";
+import { formatFileSize } from "@/lib/format-bytes";
+import {
+  CircleCheckIcon,
+  DownloadIcon,
+  FileJsonIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 
 /** ตรงกับ backend `IMPORT_FILE_SIZE_LIMIT_BYTES` (1MB) — เช็คฝั่ง client ก่อน
  *  เพื่อไม่ให้ผู้ใช้รออัปโหลดไฟล์ใหญ่แล้วเจอ 413 */
@@ -212,43 +218,69 @@ export function ImportConfigForm({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="config-file">ไฟล์ Config (.json)</Label>
-        <Input
+      <div className="flex flex-col gap-2">
+        <FileDropzone
           key={fileInputNonce}
-          id="config-file"
-          type="file"
+          label="ไฟล์ Config (.json)"
           accept="application/json,.json"
           disabled={submitting}
-          onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
-        />
-        <button
-          type="button"
-          onClick={downloadTemplate}
-          className="self-start text-xs text-muted-foreground underline hover:text-foreground"
+          onPick={(f) => void onPick(f)}
         >
+          {file ? (
+            <span className="inline-flex items-center gap-1.5 font-instrument">
+              <FileJsonIcon className="size-3.5" />
+              {file.name}, {formatFileSize(file.size)}
+            </span>
+          ) : (
+            "ลากไฟล์ .json มาวางที่นี่ หรือกดเพื่อเลือกไฟล์ (ไม่เกิน 1MB)"
+          )}
+        </FileDropzone>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={downloadTemplate}
+        >
+          <DownloadIcon />
           ดาวน์โหลดไฟล์ตัวอย่าง
-        </button>
+        </Button>
       </div>
 
       {parse?.ok === false && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+        >
+          <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
           {parse.error}
         </div>
       )}
 
       {preview && (
-        <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
-          <p className="font-medium">ตรวจไฟล์ก่อนนำเข้า</p>
-          <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-muted-foreground">
+        <div className="flex flex-col gap-3 rounded-lg border bg-surface-sunken p-4 text-sm">
+          <p className="flex items-center gap-2 font-medium">
+            {preview.missing.length === 0 ? (
+              <>
+                <CircleCheckIcon className="size-4 text-success" />
+                ไฟล์พร้อมนำเข้า
+              </>
+            ) : (
+              <>
+                <TriangleAlertIcon className="size-4 text-warning" />
+                ไฟล์ยังไม่ครบ
+              </>
+            )}
+          </p>
+          <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
             <dt>ชื่อ</dt>
             <dd className="text-foreground">{preview.name ?? "-"}</dd>
             <dt>โมเดล</dt>
-            <dd className="text-foreground">{preview.deviceModel ?? "-"}</dd>
+            <dd className="font-instrument text-foreground">{preview.deviceModel ?? "-"}</dd>
             <dt>โปรโตคอล</dt>
-            <dd className="text-foreground">{preview.protocol ?? "-"}</dd>
+            <dd className="font-instrument text-foreground">{preview.protocol ?? "-"}</dd>
             <dt>จำนวน field</dt>
-            <dd className="text-foreground">
+            <dd className="text-foreground tabular-nums">
               {preview.fieldCount ?? "-"}
             </dd>
           </dl>
@@ -261,7 +293,7 @@ export function ImportConfigForm({
       )}
 
       {formError && (
-        <div className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+        <div role="alert" className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
           <p className="text-sm text-destructive">{formError}</p>
           {formErrorList.length > 0 && (
             <ul className="list-disc pl-5 text-xs text-destructive">
@@ -273,15 +305,15 @@ export function ImportConfigForm({
         </div>
       )}
 
-      <div className="flex gap-2">
-        <Button disabled={!canSubmit} onClick={() => void onSubmit()}>
-          {submitting ? "กำลังนำเข้า…" : "นำเข้า"}
-        </Button>
+      <div className="flex justify-end gap-2 border-t pt-4">
         {file && (
           <Button variant="ghost" disabled={submitting} onClick={reset}>
             ล้าง
           </Button>
         )}
+        <Button disabled={!canSubmit} loading={submitting} onClick={() => void onSubmit()}>
+          {submitting ? "กำลังนำเข้า…" : "นำเข้า"}
+        </Button>
       </div>
     </div>
   );

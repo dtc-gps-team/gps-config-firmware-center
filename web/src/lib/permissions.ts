@@ -179,6 +179,16 @@ export function canReadCampaign(role: string | null | undefined): boolean {
   );
 }
 
+/**
+ * เห็นหน้า Config Editor ได้ไหม — mirror สิทธิ์ resource `config` action `Read`
+ * ใน `backend/prisma/seed.ts` (ConfigEngineer, Operation, ST, OT, Auditor,
+ * Admin/SuperAdmin) **FirmwareEngineer/QAEngineer ไม่มีสิทธิ์นี้** (RBAC_Matrix.md
+ * §2: แต่ละ role เห็นเฉพาะโดเมนงานตัวเอง) จึงไม่แสดงเมนูและกันทั้งหน้า
+ */
+export function canReadConfig(role: string | null | undefined): boolean {
+  return role !== "FirmwareEngineer" && role !== "QAEngineer";
+}
+
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation";
@@ -247,6 +257,19 @@ export function canDecideFirmwareOverride(
 }
 
 /**
+ * ปุ่ม "อนุมัติ" / "ปฏิเสธ" คิวคำขอส่ง Config/Firmware เข้ากล่องจากหน้างาน —
+ * RBAC_Matrix.md ตาราง 4.1 `POST /config-apply-requests/{id}/approve` /
+ * `.../reject`: resource `config-apply-request` action `Approve` — Operation
+ * เท่านั้น (seed.ts ให้ Read กับ Auditor/Admin/SuperAdmin ด้วย แต่ Approve ให้
+ * Operation คนเดียว) mirror `canDecideDeviceConfigOverride` ทุกประการ
+ */
+export function canDecideFieldApplyRequest(
+  role: string | null | undefined,
+): boolean {
+  return role === "Operation";
+}
+
+/**
  * หน้าคลัง Parameter (Config Definition Lookup) — RBAC_Matrix.md ตาราง 4.1
  * `GET /config-definitions`: ConfigEngineer, Operation, ST, OT เท่านั้น (เดิม
  * SW ก่อนแยก role — docs/13 §3.1 · FirmwareEngineer/QAEngineer ไม่ได้ เพราะ
@@ -262,6 +285,25 @@ export function canAccessParameterLibrary(
     role === "Operation" ||
     role === "ST" ||
     role === "OT"
+  );
+}
+
+/**
+ * เห็น/เข้า Firmware Repository และอ่านรายการ Firmware ได้ไหม — RBAC_Matrix.md
+ * Section 2 แถว Firmware Repository: ทุก Role มีอย่างน้อย R ยกเว้น ConfigEngineer
+ * ที่เป็น "-" (เดิม SW ก่อนแยก role) · ใช้ซ่อนเมนู/ปิดหน้า และกันหน้าอื่นไม่ให้ยิง
+ * `GET /firmware` ที่ role นี้ได้ 403 · UX-level เท่านั้น backend บังคับจริง
+ */
+export function canReadFirmware(role: string | null | undefined): boolean {
+  return (
+    role === "FirmwareEngineer" ||
+    role === "QAEngineer" ||
+    role === "Operation" ||
+    role === "ST" ||
+    role === "OT" ||
+    role === "Auditor" ||
+    role === "Admin" ||
+    role === "SuperAdmin"
   );
 }
 

@@ -12,6 +12,7 @@ import {
 } from "@/lib/campaign-api";
 import { getTokenSubject } from "@/lib/jwt";
 import { canDecideCampaignApproval } from "@/lib/permissions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DisabledWithReason } from "@/components/disabled-with-reason";
@@ -102,6 +103,8 @@ export function CampaignRolloutApprovalPanel({
         decision === "approve" ? "อนุมัติ Rollout แล้ว" : "ปฏิเสธ Rollout แล้ว",
       );
       onDecided(updated);
+      setPending(false);
+      setConfirming(null);
     } catch (err) {
       setPending(false);
       setConfirming(null);
@@ -120,35 +123,6 @@ export function CampaignRolloutApprovalPanel({
     <>
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {confirming ? (
-        <div className="flex flex-col items-start gap-2">
-          <p className="text-sm">
-            {confirming === "approve" ? "อนุมัติ" : "ปฏิเสธ"} Rollout นี้?
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant={confirming === "approve" ? "default" : "destructive"}
-              disabled={pending}
-              onClick={() => void run(confirming)}
-            >
-              {pending
-                ? "กำลังดำเนินการ…"
-                : confirming === "approve"
-                  ? "ยืนยันอนุมัติ"
-                  : "ยืนยันปฏิเสธ"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pending}
-              onClick={() => setConfirming(null)}
-            >
-              ยกเลิก
-            </Button>
-          </div>
-        </div>
-      ) : (
         <div className="flex gap-2">
           {isOwnRollout ? (
             // Separation of Duty — ผู้สร้างรอบอนุมัติ/ปฏิเสธของตัวเองไม่ได้
@@ -179,7 +153,23 @@ export function CampaignRolloutApprovalPanel({
             </>
           )}
         </div>
-      )}
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setConfirming(null);
+        }}
+        title={`${confirming === "approve" ? "อนุมัติ" : "ปฏิเสธ"} Rollout นี้?`}
+        description={
+          confirming === "approve"
+            ? "อนุมัติแล้วยังไม่ถูกส่งเข้าอุปกรณ์ ต้องกดปล่อยอีกขั้นเมื่อพร้อม"
+            : "Rollout นี้จะถูกปฏิเสธ ไม่มีอะไรถูกส่งเข้าอุปกรณ์"
+        }
+        confirmLabel={confirming === "approve" ? "ยืนยันอนุมัติ" : "ยืนยันปฏิเสธ"}
+        destructive={confirming === "reject"}
+        onConfirm={async () => {
+          if (confirming) await run(confirming);
+        }}
+      />
     </>
   );
 

@@ -9,6 +9,7 @@ import {
   approveDeviceConfigOverride,
   rejectDeviceConfigOverride,
 } from "@/lib/device-config-override-api";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -66,6 +67,8 @@ export function DeviceConfigOverrideApprovalActions({
           : `ปฏิเสธคำขอของ ${deviceId} แล้ว`,
       );
       onDecided(decision);
+      setPending(false);
+      setConfirming(null);
     } catch (err) {
       setPending(false);
       setConfirming(null);
@@ -78,49 +81,6 @@ export function DeviceConfigOverrideApprovalActions({
       setError(message);
       toast.error(message);
     }
-  }
-
-  if (confirming) {
-    const isApprove = confirming === "approve";
-    return (
-      <div className="flex flex-col items-start gap-2">
-        <p className="text-sm">
-          {isApprove ? "อนุมัติ" : "ปฏิเสธ"}คำขอของ{" "}
-          <span className="font-mono">{deviceId}</span>?
-        </p>
-        {!isApprove && (
-          <Input
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
-            maxLength={500}
-            className="h-8 w-64 text-xs"
-          />
-        )}
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={isApprove ? "default" : "destructive"}
-            disabled={pending}
-            onClick={() => void run(confirming)}
-          >
-            {pending
-              ? "กำลังดำเนินการ…"
-              : isApprove
-                ? "ยืนยันอนุมัติ"
-                : "ยืนยันปฏิเสธ"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => setConfirming(null)}
-          >
-            ยกเลิก
-          </Button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -138,6 +98,33 @@ export function DeviceConfigOverrideApprovalActions({
           อนุมัติ
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setConfirming(null);
+        }}
+        title={`${confirming === "reject" ? "ปฏิเสธ" : "อนุมัติ"}คำขอของ ${deviceId}?`}
+        description={
+          confirming === "reject"
+            ? "ผู้ส่งคำขอจะเห็นว่าถูกปฏิเสธพร้อมเหตุผล (ถ้าใส่)"
+            : "อนุมัติแล้วช่างต้องกดใส่ Config เข้าเครื่องอีกครั้ง ยังไม่ถูกส่งเข้าอุปกรณ์อัตโนมัติ"
+        }
+        confirmLabel={confirming === "reject" ? "ยืนยันปฏิเสธ" : "ยืนยันอนุมัติ"}
+        destructive={confirming === "reject"}
+        onConfirm={async () => {
+          if (confirming) await run(confirming);
+        }}
+      >
+        {confirming === "reject" && (
+          <Input
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
+            maxLength={500}
+            aria-label="เหตุผลที่ปฏิเสธ"
+          />
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

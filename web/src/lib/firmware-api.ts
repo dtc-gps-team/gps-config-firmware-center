@@ -1,4 +1,4 @@
-import { apiJson } from "@/lib/api";
+import { apiJson, apiUpload } from "@/lib/api";
 
 /**
  * Firmware API client — ตรงกับ `docs/api/openapi.yaml` tag `firmware`
@@ -82,11 +82,16 @@ export function getFirmware(token: string, id: string): Promise<Firmware> {
 export function uploadFirmware(
   token: string,
   input: { file: File; version: string; deviceModel: string },
+  /** ใส่เมื่ออยากได้ความคืบหน้า (0-100) · เรียก endpoint เดียวกัน ต่างแค่ส่งผ่าน XHR */
+  onProgress?: (percent: number) => void,
 ): Promise<Firmware> {
   const form = new FormData();
   form.append("file", input.file);
   form.append("version", input.version);
   form.append("deviceModel", input.deviceModel);
+  if (onProgress) {
+    return apiUpload<Firmware>("/firmware", { token, body: form, onProgress });
+  }
   return apiJson<Firmware>("/firmware", {
     method: "POST",
     token,

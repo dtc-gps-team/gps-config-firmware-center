@@ -2,14 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  CalendarIcon,
-  ClockIcon,
-  HardDriveIcon,
-  RocketIcon,
-} from "lucide-react";
+import { HardDriveIcon, RocketIcon } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -36,7 +31,16 @@ import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
 import { canCreateCampaign, canReadCampaign } from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
+import { PageHeader, PageHeaderMeta } from "@/components/page-header";
+import { DisabledWithReason } from "@/components/disabled-with-reason";
+import { RolloutProgressCard } from "./rollout-progress-card";
+import {
+  isAwaitingTargetResults,
+  summarizeRolloutTargets,
+} from "@/lib/rollout-target-display";
 import { DeviceHistorySheet } from "../devices/device-history-sheet";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
@@ -86,29 +90,61 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
   if (error || !data) {
     return (
       <RoleGuard allow={canReadCampaign}>
-        <div className="flex flex-col items-center gap-3 py-16">
-          <p className="text-sm text-destructive">{error ?? "ไม่พบกลุ่มนี้"}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-            <Link
-              href="/campaigns"
-              className={buttonVariants({ variant: "ghost", size: "sm" })}
-            >
-              กลับไปรายการ
-            </Link>
-          </div>
+        <div className="flex flex-col gap-4">
+          <ErrorState
+            message={error ?? "ไม่พบกลุ่มนี้"}
+            onRetry={() => void refetch()}
+          />
+          <Link
+            href="/campaigns"
+            className={
+              buttonVariants({ variant: "ghost", size: "sm" }) + " self-start"
+            }
+          >
+            กลับไปรายการ
+          </Link>
         </div>
       </RoleGuard>
     );
   }
 
   const rollouts = rolloutsQuery.data ?? [];
+  const members = targetsQuery.data ?? [];
   const hasOpenRollout = rollouts.some((r) =>
     (OPEN_CAMPAIGN_ROLLOUT_STATUSES as readonly string[]).includes(r.status),
   );
   const canStartRollout = canCreateCampaign(session?.role);
+  const latestTargets = latestRolloutTargetsQuery.data ?? [];
+  const latestSummary = summarizeRolloutTargets(latestTargets);
+  const showProgress =
+    latestRollout !== null &&
+    (latestRollout.status === "active" ||
+      latestRollout.status === "paused" ||
+      latestRollout.status === "completed") &&
+    latestSummary.total > 0;
+
+  const newRolloutButton = canStartRollout ? (
+    hasOpenRollout ? (
+      <DisabledWithReason reason="กลุ่มนี้มี Rollout ที่ยังไม่จบ ต้องรอให้จบก่อนถึงจะเริ่มรอบใหม่ได้">
+        <span
+          aria-disabled
+          className={buttonVariants({
+            variant: "outline",
+            className: "pointer-events-none opacity-50",
+          })}
+        >
+          <RocketIcon /> Roll out ใหม่
+        </span>
+      </DisabledWithReason>
+    ) : (
+      <Link
+        href={`/campaigns/${campaignId}/rollouts/new`}
+        className={buttonVariants({ variant: "default" })}
+      >
+        <RocketIcon /> Roll out ใหม่
+      </Link>
+    )
+  ) : null;
 
   return (
     <RoleGuard allow={canReadCampaign}>
@@ -117,228 +153,243 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           title={data.name}
           description={data.description ?? undefined}
           breadcrumb={[{ label: data.name }]}
+          meta={
+            <PageHeaderMeta
+              items={[
+                { label: "สมาชิก", value: `${members.length} เครื่อง` },
+                { label: "Rollout", value: `${rollouts.length} รอบ` },
+                { label: "สร้างเมื่อ", value: formatDateTime(data.createdAt) },
+              ]}
+            />
+          }
+          actions={
+            <>
+              <RefreshControl />
+              {newRolloutButton}
+            </>
+          }
         />
 
-      {latestRollout && (
-        <Card className="gap-4 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">
-              สถานะล่าสุด: {latestRollout.payloadType}
-            </p>
-            <StatusPill
-              tone={CAMPAIGN_ROLLOUT_STATUS_TONE[latestRollout.status] ?? "neutral"}
-            >
-              {rolloutStatusLabel(latestRollout.status)}
-            </StatusPill>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {getRolloutStatusExplanation(latestRollout.status)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            สำเร็จ{" "}
-            <span className="font-medium text-success-foreground">
-              {latestRollout.successCount}
-            </span>{" "}
-            / ล้มเหลว{" "}
-            <span className="font-medium text-danger-foreground">
-              {latestRollout.failureCount}
-            </span>{" "}
-            / ทั้งหมด {latestRollout.targetCount}
-          </p>
-
-          <CampaignRolloutApprovalPanel
-            campaignId={campaignId}
-            rollout={latestRollout}
-            onDecided={() => void rolloutsQuery.refetch()}
-          />
-
-          <CampaignRolloutReleasePanel
-            campaignId={campaignId}
-            rollout={latestRollout}
-            onReleased={() => void rolloutsQuery.refetch()}
-            onRejected={() => void rolloutsQuery.refetch()}
-          />
-
-          <CampaignRolloutIncidentPanel
-            campaignId={campaignId}
-            rollout={latestRollout}
-            targets={latestRolloutTargetsQuery.data ?? []}
-            targetsLoading={
-              latestRolloutTargetsQuery.isLoading &&
-              !latestRolloutTargetsQuery.data
-            }
-            targetsError={latestRolloutTargetsQuery.error}
-            onResumed={() => void rolloutsQuery.refetch()}
-          />
-        </Card>
-      )}
-
-      <Card className="gap-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">
-            สมาชิกกลุ่ม ({(targetsQuery.data ?? []).length})
-          </p>
-        </div>
-        {targetsQuery.isLoading && !targetsQuery.data ? (
-          <p className="py-4 text-sm text-muted-foreground">กำลังโหลด…</p>
-        ) : targetsQuery.error ? (
-          <p className="py-4 text-sm text-destructive">{targetsQuery.error}</p>
-        ) : (targetsQuery.data ?? []).length === 0 ? (
-          <p className="py-4 text-sm text-muted-foreground">
-            กลุ่มนี้ยังไม่มีสมาชิก
-          </p>
-        ) : (
-          <div className="max-h-72 overflow-y-auto rounded-lg border">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-muted/50">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>เลขเครื่อง</TableHead>
-                  <TableHead className="text-right">เพิ่มเข้ากลุ่มเมื่อ</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(targetsQuery.data ?? []).map((target) => (
-                  <TableRow key={target.id}>
-                    <TableCell className="font-mono text-xs">
-                      {target.deviceId}
-                    </TableCell>
-                    <TableCell
-                      className="text-right text-muted-foreground"
-                      title={formatDateTime(target.createdAt)}
+        <div className="grid items-start gap-6 lg:grid-cols-12">
+          <div className="flex min-w-0 flex-col gap-6 lg:col-span-8">
+            {latestRollout ? (
+              <Card className="gap-4 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <p className="label-caps text-muted-foreground">
+                      Rollout ล่าสุด
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {latestRollout.payloadType}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {getRolloutStatusExplanation(latestRollout.status)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusPill
+                      tone={
+                        CAMPAIGN_ROLLOUT_STATUS_TONE[latestRollout.status] ??
+                        "neutral"
+                      }
                     >
-                      {formatRelativeTime(target.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DeviceHistorySheet deviceId={target.deviceId} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      {rolloutStatusLabel(latestRollout.status)}
+                    </StatusPill>
+                    <Link
+                      href={`/campaigns/${campaignId}/rollouts/${latestRollout.id}`}
+                      className={buttonVariants({
+                        variant: "outline",
+                        size: "sm",
+                      })}
+                    >
+                      ดูผลรายเครื่อง
+                    </Link>
+                  </div>
+                </div>
+
+                {showProgress ? (
+                  <RolloutProgressCard
+                    embedded
+                    status={latestRollout.status}
+                    payloadType={latestRollout.payloadType}
+                    summary={latestSummary}
+                    awaiting={isAwaitingTargetResults(
+                      latestRollout.status,
+                      latestTargets,
+                    )}
+                  />
+                ) : (
+                  <p className="font-instrument text-sm tabular-nums text-muted-foreground">
+                    สำเร็จ{" "}
+                    <span className="font-medium text-success-foreground">
+                      {latestRollout.successCount}
+                    </span>{" "}
+                    / ล้มเหลว{" "}
+                    <span className="font-medium text-danger-foreground">
+                      {latestRollout.failureCount}
+                    </span>{" "}
+                    / ทั้งหมด {latestRollout.targetCount}
+                  </p>
+                )}
+
+                <CampaignRolloutApprovalPanel
+                  campaignId={campaignId}
+                  rollout={latestRollout}
+                  onDecided={() => void rolloutsQuery.refetch()}
+                />
+                <CampaignRolloutReleasePanel
+                  campaignId={campaignId}
+                  rollout={latestRollout}
+                  onReleased={() => void rolloutsQuery.refetch()}
+                  onRejected={() => void rolloutsQuery.refetch()}
+                />
+                <CampaignRolloutIncidentPanel
+                  campaignId={campaignId}
+                  rollout={latestRollout}
+                  targets={latestTargets}
+                  targetsLoading={
+                    latestRolloutTargetsQuery.isLoading &&
+                    !latestRolloutTargetsQuery.data
+                  }
+                  targetsError={latestRolloutTargetsQuery.error}
+                  onResumed={() => void rolloutsQuery.refetch()}
+                />
+              </Card>
+            ) : (
+              !rolloutsQuery.isLoading && (
+                <EmptyState
+                  icon={RocketIcon}
+                  message="กลุ่มนี้ยังไม่เคย Roll out เริ่มรอบแรกเพื่อส่ง Config หรือ Firmware เข้ากลุ่ม"
+                  action={newRolloutButton}
+                />
+              )
+            )}
+
+            <section className="flex flex-col gap-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-base font-semibold">ประวัติ Rollout</h2>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {rollouts.length} รอบ
+                </span>
+              </div>
+              {rolloutsQuery.isLoading && !rolloutsQuery.data ? (
+                <TableSkeleton columns={4} rows={3} />
+              ) : rolloutsQuery.error ? (
+                <ErrorState
+                  message={rolloutsQuery.error}
+                  onRetry={() => void rolloutsQuery.refetch()}
+                />
+              ) : rollouts.length === 0 ? (
+                <EmptyState
+                  icon={HardDriveIcon}
+                  message="กลุ่มนี้ยังไม่เคย Roll out payload เลย"
+                />
+              ) : (
+                <div className="max-h-[32rem] overflow-auto rounded-lg border bg-card">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-muted/50">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead>สถานะ</TableHead>
+                        <TableHead>Payload</TableHead>
+                        <TableHead className="text-right">
+                          สำเร็จ / ล้มเหลว / ทั้งหมด
+                        </TableHead>
+                        <TableHead className="text-right">สร้างเมื่อ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rollouts.map((rollout) => (
+                        <TableRow
+                          key={rollout.id}
+                          className="cursor-pointer"
+                          onClick={() =>
+                            router.push(
+                              `/campaigns/${campaignId}/rollouts/${rollout.id}`,
+                            )
+                          }
+                        >
+                          <TableCell>
+                            <StatusPill
+                              tone={
+                                CAMPAIGN_ROLLOUT_STATUS_TONE[rollout.status] ??
+                                "neutral"
+                              }
+                            >
+                              {rolloutStatusLabel(rollout.status)}
+                            </StatusPill>
+                          </TableCell>
+                          <TableCell>{rollout.payloadType}</TableCell>
+                          <TableCell className="font-instrument text-right tabular-nums">
+                            <span className="text-success-foreground">
+                              {rollout.successCount}
+                            </span>
+                            <span className="text-muted-foreground"> / </span>
+                            <span className="text-danger-foreground">
+                              {rollout.failureCount}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {" "}
+                              / {rollout.targetCount}
+                            </span>
+                          </TableCell>
+                          <TableCell
+                            className="text-right text-muted-foreground"
+                            title={formatDateTime(rollout.createdAt)}
+                          >
+                            {formatRelativeTime(rollout.createdAt)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </section>
           </div>
-        )}
-      </Card>
-
-      <Card className="gap-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">ประวัติ Rollout</p>
-          {canStartRollout && (
-            <Link
-              href={
-                hasOpenRollout
-                  ? "#"
-                  : `/campaigns/${campaignId}/rollouts/new`
-              }
-              aria-disabled={hasOpenRollout}
-              className={buttonVariants({
-                size: "sm",
-                variant: hasOpenRollout ? "outline" : "default",
-                className: hasOpenRollout
-                  ? "pointer-events-none opacity-50"
-                  : undefined,
-              })}
-            >
-              <RocketIcon /> Roll out ใหม่
-            </Link>
-          )}
-        </div>
-        {hasOpenRollout && (
-          <p className="text-xs text-muted-foreground">
-            กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว ต้องรอให้จบก่อน
-            (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้
-          </p>
-        )}
-
-        {rolloutsQuery.isLoading && !rolloutsQuery.data ? (
-          <p className="py-4 text-sm text-muted-foreground">กำลังโหลด…</p>
-        ) : rolloutsQuery.error ? (
-          <p className="py-4 text-sm text-destructive">
-            {rolloutsQuery.error}
-          </p>
-        ) : rollouts.length === 0 ? (
-          <EmptyState
-            icon={HardDriveIcon}
-            message="กลุ่มนี้ยังไม่เคย Roll out payload เลย"
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>สถานะ</TableHead>
-                  <TableHead>Payload</TableHead>
-                  <TableHead className="text-right">
-                    สำเร็จ / ล้มเหลว / ทั้งหมด
-                  </TableHead>
-                  <TableHead className="text-right">สร้างเมื่อ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rollouts.map((rollout) => (
-                  <TableRow
-                    key={rollout.id}
-                    className="cursor-pointer"
-                    onClick={() =>
-                      router.push(
-                        `/campaigns/${campaignId}/rollouts/${rollout.id}`,
-                      )
-                    }
+          <aside className="flex flex-col gap-3 lg:col-span-4 lg:sticky lg:top-20">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-base font-semibold">สมาชิกกลุ่ม</h2>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {members.length} เครื่อง
+              </span>
+            </div>
+            {targetsQuery.isLoading && !targetsQuery.data ? (
+              <TableSkeleton columns={2} rows={3} />
+            ) : targetsQuery.error ? (
+              <ErrorState
+                message={targetsQuery.error}
+                onRetry={() => void targetsQuery.refetch()}
+              />
+            ) : members.length === 0 ? (
+              <EmptyState
+                icon={HardDriveIcon}
+                message="กลุ่มนี้ยังไม่มีสมาชิก"
+              />
+            ) : (
+              <ul className="max-h-[32rem] divide-y overflow-y-auto rounded-lg border bg-card">
+                {members.map((target) => (
+                  <li
+                    key={target.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2"
                   >
-                    <TableCell>
-                      <StatusPill
-                        tone={
-                          CAMPAIGN_ROLLOUT_STATUS_TONE[rollout.status] ??
-                          "neutral"
-                        }
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-instrument truncate text-xs">
+                        {target.deviceId}
+                      </span>
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title={formatDateTime(target.createdAt)}
                       >
-                        {rolloutStatusLabel(rollout.status)}
-                      </StatusPill>
-                    </TableCell>
-                    <TableCell>{rollout.payloadType}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <span className="text-success-foreground">
-                        {rollout.successCount}
+                        เพิ่มเมื่อ {formatRelativeTime(target.createdAt)}
                       </span>
-                      <span className="text-muted-foreground"> / </span>
-                      <span className="text-danger-foreground">
-                        {rollout.failureCount}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {" "}
-                        / {rollout.targetCount}
-                      </span>
-                    </TableCell>
-                    <TableCell
-                      className="text-right text-muted-foreground"
-                      title={formatDateTime(rollout.createdAt)}
-                    >
-                      {formatRelativeTime(rollout.createdAt)}
-                    </TableCell>
-                  </TableRow>
+                    </span>
+                    <DeviceHistorySheet deviceId={target.deviceId} />
+                  </li>
                 ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </Card>
-
-      <Card className="max-w-md p-4">
-        <div className="divide-y">
-          <div className="flex justify-between gap-4 py-1.5 text-sm">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <CalendarIcon className="size-3.5" /> สร้างเมื่อ
-            </span>
-            <span>{formatDateTime(data.createdAt)}</span>
-          </div>
-          <div className="flex justify-between gap-4 py-1.5 text-sm">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <ClockIcon className="size-3.5" /> แก้ไขล่าสุด
-            </span>
-            <span>{formatDateTime(data.updatedAt)}</span>
-          </div>
+              </ul>
+            )}
+          </aside>
         </div>
-      </Card>
       </div>
     </RoleGuard>
   );

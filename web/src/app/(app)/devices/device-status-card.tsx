@@ -73,7 +73,7 @@ export function DeviceStatusCard({ deviceId }: { deviceId: string }) {
   const { data, isLoading, error, refetch } = useDeviceStatus(deviceId);
 
   return (
-    <Card className="max-w-xl">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>สถานะ Config และ Firmware</CardTitle>
         <CardAction>

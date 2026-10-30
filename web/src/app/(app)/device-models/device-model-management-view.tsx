@@ -2,29 +2,23 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { ColumnDef, Row } from "@tanstack/react-table";
-import { LayersIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import { LayersIcon, PlusIcon } from "lucide-react";
 
 import { RoleGuard } from "@/components/auth/role-guard";
 import { canManageDeviceModels } from "@/lib/permissions";
 import { type DeviceModel } from "@/lib/device-model-api";
 import { useDeviceModels } from "@/hooks/use-device-models";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { FormDialogHeader } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { StatusPill, DEVICE_MODEL_STATUS_TONE } from "@/lib/status-pill";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
+import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { DeviceModelRowActions } from "./device-model-row-actions";
@@ -74,7 +68,7 @@ export function DeviceModelManagementView() {
         sortingFn: thTextSort,
         meta: { filterVariant: "text", label: "โมเดล" },
         cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.name}</span>
+          <span className="font-instrument text-sm">{row.original.name}</span>
         ),
       },
       {
@@ -142,10 +136,7 @@ export function DeviceModelManagementView() {
           description="ทะเบียนโมเดลอุปกรณ์และ protocol ที่รองรับ ใช้เป็นตัวเลือกตอนสร้าง Config, Parameter และลงทะเบียนอุปกรณ์"
           actions={
             <>
-              <Button variant="outline" onClick={() => void refetch()}>
-                <RefreshCwIcon />
-                รีเฟรช
-              </Button>
+              <RefreshControl />
               <Button onClick={() => setDialogOpen(true)}>
                 <PlusIcon />
                 เพิ่มโมเดล
@@ -165,16 +156,7 @@ export function DeviceModelManagementView() {
             {isLoading && data === null ? (
               <TableSkeleton columns={columns.length} />
             ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={error} onRetry={() => void refetch()} />
             ) : modelList.length === 0 ? (
               <EmptyState
                 icon={LayersIcon}
@@ -188,6 +170,7 @@ export function DeviceModelManagementView() {
               />
             ) : (
               <DataTable
+                urlSync
                 columns={columns}
                 data={modelList}
                 searchPlaceholder="ค้นหาโมเดล / ผู้ผลิต…"
@@ -199,15 +182,16 @@ export function DeviceModelManagementView() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>เพิ่มโมเดลใหม่</DialogTitle>
-            <DialogDescription>
-              ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้วเป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อ
-              ทีหลังไม่ได้
-            </DialogDescription>
-          </DialogHeader>
-          <CreateDeviceModelForm onCreated={handleCreated} />
+        <DialogContent className="gap-0 p-0 pb-0 sm:max-w-xl sm:pb-0">
+          <FormDialogHeader
+            icon={LayersIcon}
+            title="เพิ่มโมเดลใหม่"
+            description="ชื่อโมเดลต้องตรงกับที่ใช้อยู่แล้วเป๊ะ (ถ้ามี) เพราะเปลี่ยนชื่อ ทีหลังไม่ได้"
+          />
+          <CreateDeviceModelForm
+            onCreated={handleCreated}
+            onCancel={() => setDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </RoleGuard>
