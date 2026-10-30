@@ -18,6 +18,10 @@ class AppInkHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final Widget? trailing;
 
+  // รูปทรงหัว r4 ใช้รัศมี 32px และพื้นที่ท้าย 22px; ไม่มี token ตรงใน AppTokens.
+  static const double _radius = 32;
+  static const double _bottomPadding = 22;
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -26,18 +30,16 @@ class AppInkHeader extends StatelessWidget {
         key: const Key('app_ink_header'),
         decoration: const BoxDecoration(
           color: AppColors.primary,
-          borderRadius: BorderRadius.vertical(
-            bottom: Radius.circular(AppRadius.xxl),
-          ),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(_radius)),
         ),
         child: SafeArea(
           bottom: false,
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              onBack == null ? AppSpacing.lg : 0,
-              AppSpacing.xs,
-              AppSpacing.lg,
-              AppSpacing.lg,
+              onBack == null ? AppSpacing.xl : AppSpacing.xs,
+              AppSpacing.sm,
+              AppSpacing.xl,
+              _bottomPadding,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
