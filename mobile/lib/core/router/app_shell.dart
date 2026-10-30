@@ -68,9 +68,7 @@ class AppTabShell extends ConsumerWidget {
   }
 }
 
-/// แถบแท็บ: พื้น `card` + เส้นบน `border` · แท็บที่เลือก = `primary` บนพื้น
-/// `accent` · ที่ไม่เลือก = `muted-foreground` · แท็บแจ้งเตือนมีตัวเลขยังไม่อ่าน
-/// (แทนกระดิ่งบนหัวหน้าแรกเดิม)
+/// แถบเมนู r4 เปลี่ยนเฉพาะหน้าตา การสลับแท็บและ stack ยังใช้ StatefulShellRoute เดิม
 class AppTabBar extends ConsumerWidget {
   const AppTabBar({
     super.key,
@@ -78,91 +76,194 @@ class AppTabBar extends ConsumerWidget {
     required this.selectedIndex,
     required this.onSelected,
   });
-
   final List<AppTab> tabs;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
-  static Color _color(Set<WidgetState> states) =>
-      states.contains(WidgetState.selected)
-      ? AppColors.primary
-      : AppColors.mutedForeground;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref.watch(unreadNotificationCountProvider).valueOrNull ?? 0;
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          backgroundColor: AppColors.card,
-          surfaceTintColor: Colors.transparent,
-          indicatorColor: AppColors.accent,
-          elevation: 0,
-          height: 64,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          iconTheme: WidgetStateProperty.resolveWith(
-            (states) => IconThemeData(color: _color(states), size: 24),
-          ),
-          labelTextStyle: WidgetStateProperty.resolveWith(
-            (states) => TextStyle(
-              fontSize: AppTypography.xs,
-              height: AppTypography.xsHeight,
-              fontWeight: states.contains(WidgetState.selected)
-                  ? FontWeight.w600
-                  : FontWeight.w400,
-              color: _color(states),
+    return ColoredBox(
+      color: AppColors.background,
+      child: SafeArea(
+        top: false,
+        minimum: AppDockTokens.margin,
+        child: Material(
+          key: const Key('app_tab_bar'),
+          color: AppColors.primary,
+          borderRadius: BorderRadius.circular(AppDockTokens.radius),
+          child: Padding(
+            padding: const EdgeInsets.all(AppDockTokens.padding),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                for (var i = 0; i < tabs.length; i++) ...[
+                  if (i > 0) const SizedBox(width: AppDockTokens.gap),
+                  Expanded(
+                    child: AppTabButton(
+                      key: Key('tab_${tabs[i].name}'),
+                      tab: tabs[i],
+                      selected: i == selectedIndex,
+                      unread: unread,
+                      onTap: () => onSelected(i),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-        ),
-        child: NavigationBar(
-          key: const Key('app_tab_bar'),
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onSelected,
-          destinations: [for (final tab in tabs) _destination(tab, unread)],
         ),
       ),
     );
   }
+}
 
-  static Widget _destination(AppTab tab, int unread) {
-    final (label, icon, selectedIcon) = switch (tab) {
-      // ชื่อตาม docs/22 §6.2 — มีคู่เทียบใน Web ใช้คำของ Web ไม่มีคงไทย
-      AppTab.home => ('หน้าแรก', Icons.home_outlined, Icons.home),
-      AppTab.devices => ('Device Search', Icons.search, Icons.search),
-      AppTab.incidents => (
-        'Incidents',
-        Icons.report_problem_outlined,
-        Icons.report_problem,
-      ),
-      AppTab.notifications => (
-        'แจ้งเตือน',
-        Icons.notifications_outlined,
-        Icons.notifications,
-      ),
+/// ปุ่มแท็บที่มีชื่อและคำสั่งแตะสำหรับโปรแกรมอ่านหน้าจอ เมื่อข้อความโตใช้แนวตั้งและตัดระหว่างคำ
+class AppTabButton extends StatelessWidget {
+  const AppTabButton({
+    super.key,
+    required this.tab,
+    required this.selected,
+    required this.unread,
+    required this.onTap,
+  });
+  final AppTab tab;
+  final bool selected;
+  final int unread;
+  final VoidCallback onTap;
+
+  String get label => switch (tab) {
+    AppTab.home => 'หน้าแรก',
+    AppTab.devices => 'Device Search',
+    AppTab.incidents => 'Incidents',
+    AppTab.notifications => 'แจ้งเตือน',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final baseSize = selected
+        ? AppDockTokens.selectedLabelSize
+        : AppDockTokens.labelSize;
+    final maxSize = selected
+        ? AppDockTokens.maxSelectedLabelSize
+        : AppDockTokens.maxLabelSize;
+    // รับ text scale รวมถึงค่าระหว่าง 1.1–1.3 อย่างต่อเนื่อง แต่จำกัดเพดานตาม r4
+    // เพื่อให้ชื่อแท็บอ่านครบเป็นคำบนจอเล็ก ไม่ล็อกขนาดตั้งแต่ scale 1 เท่า
+    final labelScaler = MediaQuery.textScalerOf(
+      context,
+    ).clamp(maxScaleFactor: maxSize / baseSize);
+    final large =
+        labelScaler.scale(baseSize) >
+        baseSize * AppDockTokens.verticalLayoutScale;
+    final fg = selected
+        ? AppColors.tabSelectedForeground
+        : AppColors.onInkMuted;
+    final icon = switch (tab) {
+      AppTab.home => selected ? Icons.home : Icons.home_outlined,
+      AppTab.devices => Icons.search,
+      AppTab.incidents => Icons.report_problem_outlined,
+      AppTab.notifications =>
+        selected ? Icons.notifications : Icons.notifications_outlined,
     };
-    Widget withBadge(IconData data) {
-      final iconWidget = Icon(data);
-      if (tab != AppTab.notifications || unread == 0) return iconWidget;
-      return Badge(
+    Widget symbol = Icon(icon, size: AppDockTokens.iconSize, color: fg);
+    final hasBadge = tab == AppTab.notifications && unread > 0;
+    if (hasBadge) {
+      symbol = Badge(
         key: const Key('tab_notifications_badge'),
-        label: Text(unread > 99 ? '99+' : '$unread'),
-        backgroundColor: AppColors.destructive,
-        textColor: AppColors.primaryForeground,
-        child: iconWidget,
+        label: Text(
+          unread > 99 ? '99+' : '$unread',
+          textScaler: TextScaler.noScaling,
+          style: const TextStyle(
+            fontSize: AppDockTokens.badgeLabelSize,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        backgroundColor: AppColors.notificationBadge,
+        textColor: AppColors.onNotificationBadge,
+        child: symbol,
       );
     }
-
-    return NavigationDestination(
-      key: Key('tab_${tab.name}'),
-      icon: withBadge(icon),
-      selectedIcon: withBadge(selectedIcon),
-      label: label,
-      tooltip: unread > 0 && tab == AppTab.notifications
-          ? '$label (ยังไม่อ่าน $unread)'
-          : label,
+    final text = Text(
+      label,
+      textAlign: TextAlign.center,
+      textScaler: labelScaler,
+      style: TextStyle(
+        fontFamily: AppTypography.fontFamily,
+        fontSize: baseSize,
+        height: AppDockTokens.labelHeight,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        color: fg,
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: hasBadge ? '$label (ยังไม่อ่าน $unread)' : label,
+      // รวมชื่อและจำนวนยังไม่อ่านเป็น node เดียว ไม่ให้อ่านไอคอน/ข้อความซ้ำ
+      // เมื่อตัด semantics ของลูก ต้องใส่คำสั่งแตะคืนให้ TalkBack ด้วย
+      excludeSemantics: true,
+      onTap: onTap,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppDockTokens.itemRadius),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: selected ? AppColors.onInk : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppDockTokens.itemRadius),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppDockTokens.minTarget,
+            ),
+            child: Padding(
+              padding: AppDockTokens.itemPadding,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // วางชื่อแท็บข้างไอคอนเฉพาะเมื่อพอ ต้องวัดด้วยฟอนต์และ text scale ที่วาดจริง
+                  final painter = TextPainter(
+                    text: TextSpan(
+                      text: label,
+                      style: DefaultTextStyle.of(
+                        context,
+                      ).style.merge(text.style),
+                    ),
+                    textDirection: Directionality.of(context),
+                    textScaler: labelScaler,
+                  )..layout();
+                  final horizontal =
+                      selected &&
+                      !large &&
+                      painter.width +
+                              AppDockTokens.iconSize +
+                              AppDockTokens.horizontalGap +
+                              AppDockTokens.textMeasurementSlack <=
+                          constraints.maxWidth;
+                  painter.dispose();
+                  if (horizontal) {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        symbol,
+                        const SizedBox(width: AppDockTokens.horizontalGap),
+                        Flexible(child: text),
+                      ],
+                    );
+                  }
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      symbol,
+                      const SizedBox(height: AppDockTokens.verticalGap),
+                      text,
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

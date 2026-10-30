@@ -3,64 +3,43 @@ import 'package:flutter/material.dart';
 
 import 'app_tokens.dart';
 
-/// App-wide theme. Kept intentionally small — a design pass comes later.
-///
-/// The colors below were consolidated from per-screen `_XColors` classes
-/// (Login, Home, Task, Device, Incident, Notification) that had all
-/// converged on the same palette independently — this is a pure refactor
-/// (no visual change): same hex values, one shared source instead of six
-/// duplicated ones. `label` is the one value that turned out genuinely
-/// different from `textSecondary` (Login's field-label color vs. the
-/// subtitle/secondary-text color used everywhere else) and stays separate
-/// on purpose.
+/// Theme หลักของ Mobile ใช้ชุดสี r4 เดียวกันทั้งหน้าใหม่และชื่อ token เก่า
+/// เก็บ alias ไว้ให้หน้าที่ทยอยปรับ layout ใช้ต่อได้ โดยไม่คง palette สองชุด
 class AppTheme {
   const AppTheme._();
 
-  static const _seed = Color(0xFF1565C0);
+  static const navy = AppColors.primary;
+  static const background = AppColors.background;
+  static const surface = AppColors.card;
+  static const textPrimary = AppColors.foreground;
+  static const textSecondary = AppColors.mutedForeground;
+  static const label = AppColors.mutedForeground;
+  static const error = AppColors.destructive;
+  static const fieldBorder = AppColors.border;
 
-  static const navy = Color(0xFF12344D);
-  static const background = Color(0xFFF4F6F8);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF12344D);
-  static const textSecondary = Color(0xFF5F6E79);
-  static const label = Color(0xFF51606B);
-  static const error = Color(0xFFC0392B);
-  static const fieldBorder = Color(0xFFCED6DE);
+  static const inputBorder = AppColors.inputBorder;
+  static const unreadTint = AppColors.accent;
+  static const unreadDot = AppColors.primary;
+  static const iconBg = AppColors.secondary;
 
-  /// ขอบช่องกรอกที่ตั้ง `enabledBorder` เอง (UX audit #10) — ขอบเป็นสิ่งเดียวที่
-  /// บอกว่าตรงไหนกรอกได้ จึงต้องถึง 3:1 ตาม WCAG 1.4.11 (3.43:1 บนพื้นขาว,
-  /// 3.16:1 บน [background]) · ช่องกรอกที่ไม่ได้ตั้งเองใช้ `colorScheme.outline`
-  /// ของ Material (4.48:1) ซึ่งผ่านอยู่แล้ว · [fieldBorder] (1.47:1) ใช้กับเส้นแบ่ง
-  /// / กรอบตกแต่งที่ไม่ใช่ช่องกรอกเท่านั้น
-  static const inputBorder = Color(0xFF778DA4);
-  static const unreadTint = Color(0xFFE3ECF4);
-  static const unreadDot = Color(0xFF1F6FB2);
-  static const iconBg = Color(0xFFE8EEF3);
+  // ชื่อเดิมของหน้าที่ยังใช้ token กลุ่ม mock — ชี้ชุดสีเดียวกันจนย้าย layout ครบ
+  static const mockBg = AppColors.background;
+  static const mockAccent = AppColors.primary;
+  static const mockAccentSoft = AppColors.accent;
+  static const mockSuccess = AppColors.successForeground;
+  static const mockSuccessSoft = AppColors.successSubtle;
+  static const mockTextPrimary = AppColors.foreground;
+  static const mockTextSecondary = AppColors.mutedForeground;
+  static const mockTextTertiary = AppColors.mutedForeground;
+  static const mockCardBorder = AppColors.border;
 
-  // --- Redesign tokens (from the field-app visual mockup) ---------------
-  // Scoped to the screens migrated to the new look so far (Home). Not yet
-  // applied app-wide — that is a separate follow-up once every screen has
-  // been checked against the mockup. Do not remove the tokens above while
-  // any screen still depends on them.
-  static const mockBg = Color(0xFFF1F1EE);
-  static const mockAccent = Color(0xFF2955B3);
-  static const mockAccentSoft = Color(0xFFE8EEFB);
-  // เขียวเข้มขึ้นจาก #2F8F5B (3.57:1) ให้ป้าย "เสร็จสิ้น" ผ่าน WCAG AA (UX audit
-  // #10): 4.66:1 บน [mockSuccessSoft], 5.27:1 บนพื้นขาว
-  static const mockSuccess = Color(0xFF287A4E);
-  static const mockSuccessSoft = Color(0xFFE7F4EC);
-  static const mockTextPrimary = Color(0xFF1B2333);
-  static const mockTextSecondary = Color(0xFF767C88);
-  static const mockTextTertiary = Color(0xFF9298A3);
-  static const mockCardBorder = Color(0xFFE2E1DA);
-
-  /// Standalone card / detail-panel shadow.
+  /// เงาของการ์ดเดี่ยวหรือกล่องรายละเอียด
   static const mockShadowCard = [
     BoxShadow(color: Color(0x0D141822), blurRadius: 2, offset: Offset(0, 1)),
     BoxShadow(color: Color(0x0F141822), blurRadius: 16, offset: Offset(0, 6)),
   ];
 
-  /// Lighter shadow for repeated list rows (history cards, notif cards…).
+  /// เงาที่เบากว่าสำหรับแถวซ้ำ เช่น ประวัติและแจ้งเตือน
   static const mockShadowRow = [
     BoxShadow(color: Color(0x0A141822), blurRadius: 2, offset: Offset(0, 1)),
   ];
@@ -75,12 +54,10 @@ class AppTheme {
     },
   );
 
-  static ThemeData light() => _base(Brightness.light);
-  static ThemeData dark() => _base(Brightness.dark);
+  static ThemeData light() => v2();
+  static ThemeData dark() => v2();
 
-  /// Theme ใหม่ตาม design system ของ Web (docs/22 §4) — โหมดสว่างอย่างเดียว
-  /// ยังไม่มีหน้าไหนใช้ หน้าที่ย้ายแล้วครอบด้วย theme นี้ทีละหน้า (Batch 2–5)
-  /// แล้วสลับทั้งแอปใน Batch 6 · token อยู่ใน `app_tokens.dart`
+  /// Theme r4 โหมดสว่าง ใช้ร่วมกันที่รากแอปและ AppV2Theme
   static ThemeData v2() {
     const scheme = ColorScheme(
       brightness: Brightness.light,
@@ -184,18 +161,16 @@ class AppTheme {
               minimumSize: buttonSize,
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.primaryForeground,
-              // ตอนกดไม่ได้ — ต่างจาก Web (disabled:opacity-50) โดยตั้งใจ: primary 50%
-              // + ตัวอักษรขาวได้แค่ ~2.2:1 อ่านแทบไม่ออก · พื้น accent (ฟ้าอ่อน ยังบอก
-              // ว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) + ตัวอักษร
-              // mutedForeground ได้ ~5.6:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+              // ต่างจาก Web ที่ใช้ opacity-50: ปุ่มที่กดไม่ได้ยังต้องอ่านข้อความได้
+              // ใช้พื้น accent เขียวอ่อนกับตัวอักษร mutedForeground (WCAG AA ≥4.5:1)
+              // แทนการลด opacity ของปุ่มทั้งก้อน ซึ่งทำให้ข้อความจางเกินไป
               disabledBackgroundColor: AppColors.accent,
               disabledForegroundColor: AppColors.mutedForeground,
               shape: shape,
               textStyle: buttonText,
             ).copyWith(
-              // พื้น accent กลืนกับพื้นหน้าจอ (~1.05:1) มองไม่เห็นทรงปุ่ม — ขอบฟ้าจาง
-              // (primary 35% ~1.6:1) เฉพาะตอนกดไม่ได้ ให้เห็นทรงชัดขึ้นแต่ยังจางกว่า
-              // ปุ่มที่กดได้ · ตอนกดได้ไม่มีขอบเหมือนเดิม
+              // พื้นปุ่มที่กดไม่ได้ใกล้สีพื้นหน้า จึงเติมขอบ ink จางให้เห็นรูปทรง
+              // ไม่ใช้ขอบเข้มเท่าช่องกรอก และไม่เติมขอบให้ปุ่มหลักที่ยังกดได้
               side: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.disabled)
                     ? BorderSide(
@@ -205,18 +180,17 @@ class AppTheme {
               ),
             ),
       ),
-      // variant `outline` ของ Web: ขอบ border พื้น background ตัวอักษร foreground
+      // ปุ่มรอง: ใช้ขอบ inputBorder ที่ผ่าน 3:1 แทน border ตกแต่ง ต่างจาก Web โดยตั้งใจ
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: buttonSize,
           foregroundColor: AppColors.foreground,
           backgroundColor: AppColors.background,
-          // ตอนกดไม่ได้ — ถ้าไม่ตั้ง Material ใช้ onSurface 38% ได้แค่ ~2.2:1 อ่าน
-          // แทบไม่ออก (ไม่ใช้ opacity-50 แบบปุ่มหลักด้วยเหตุผลเดียวกัน) · พื้น muted
-          // + ตัวอักษร mutedForeground ได้ ~5.5:1 ยังอ่านออก แต่ดูออกว่ากดไม่ได้
+          // ปุ่มรองที่กดไม่ได้ยังต้องอ่านออก ใช้พื้น muted กับข้อความ mutedForeground
+          // แทน onSurface 38% ของ Material ซึ่งจางเกินเกณฑ์อ่านข้อความ 4.5:1
           disabledForegroundColor: AppColors.mutedForeground,
           disabledBackgroundColor: AppColors.muted,
-          side: const BorderSide(color: AppColors.border),
+          side: const BorderSide(color: AppColors.inputBorder),
           shape: shape,
           textStyle: buttonText,
         ),
@@ -245,36 +219,6 @@ class AppTheme {
         color: AppColors.border,
         thickness: 1,
         space: 1,
-      ),
-    );
-  }
-
-  static ThemeData _base(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: _seed,
-      brightness: brightness,
-    );
-    return ThemeData(
-      colorScheme: scheme,
-      pageTransitionsTheme: pageTransitions,
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-      ),
-      // ปุ่มหลักทั้งแอปหน้าตาเดียวกับปุ่มหลักหน้า login (UX audit #12) — กรมท่า
-      // ตัวอักษรขาว มุม 12 สูง 48 เดิมตั้งแค่ความสูง ปุ่มที่ไม่ได้ใส่ style เอง
-      // จึงได้สีฟ้าจาก seed และทรงแคปซูล · ปุ่มที่ใส่ style เองค่าของปุ่มยังชนะ
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(48),
-          backgroundColor: navy,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: navy.withValues(alpha: 0.4),
-          disabledForegroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
-        ),
       ),
     );
   }
