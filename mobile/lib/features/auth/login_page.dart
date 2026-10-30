@@ -102,139 +102,148 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   child: AppFadeIn(
                     offset: 16,
                     duration: AppMotion.slow,
-                    child: _LoginPanel(
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (!keyboardOpen) ...[
-                              const SizedBox(height: 8),
-                              const Center(child: _AppMark()),
-                              const SizedBox(height: 16),
-                            ],
-                            const Text(
-                              'GPS Config & Firmware Center',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppTypography.xxl,
-                                height: AppTypography.xxlHeight,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.foreground,
-                              ),
-                            ),
-                            if (!keyboardOpen) ...[
-                              const SizedBox(height: 8),
-                              const Text(
-                                'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: AppTypography.base,
-                                  height: AppTypography.baseHeight,
-                                  color: AppColors.mutedForeground,
-                                ),
-                              ),
-                            ],
-                            if (AppConfig.apiMockMode && !keyboardOpen) ...[
-                              const SizedBox(height: 16),
-                              const _MockModeBanner(),
-                            ],
-                            SizedBox(height: keyboardOpen ? 16 : 24),
-                            TextFormField(
-                              key: const Key('login_username'),
-                              controller: _usernameController,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              textInputAction: TextInputAction.next,
-                              decoration: _fieldDecoration(
-                                label: 'ชื่อผู้ใช้',
-                                hint: 'กรอกชื่อผู้ใช้ของคุณ',
-                                prefixIcon: const Icon(
-                                  Icons.person_outline,
-                                  color: AppColors.mutedForeground,
-                                ),
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'กรุณากรอก Username'
-                                  : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              key: const Key('login_password'),
-                              controller: _passwordController,
-                              obscureText: _obscurePassword,
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _submit(),
-                              decoration: _fieldDecoration(
-                                label: 'รหัสผ่าน',
-                                hint: 'กรอกรหัสผ่าน',
-                                prefixIcon: const Icon(
-                                  Icons.lock_outline,
-                                  color: AppColors.mutedForeground,
-                                ),
-                                suffixIcon: IconButton(
-                                  key: const Key('login_password_toggle'),
-                                  onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!keyboardOpen) const _LoginConceptHero(),
+                        const SizedBox(height: 16),
+                        _LoginPanel(
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (!keyboardOpen) ...[
+                                  const SizedBox(height: 8),
+                                  const Center(child: _AppMark()),
+                                  const SizedBox(height: 16),
+                                ],
+                                const Text(
+                                  'GPS Config & Firmware Center',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: AppTypography.xxl,
+                                    height: AppTypography.xxlHeight,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.foreground,
                                   ),
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                    color: AppColors.mutedForeground,
-                                  ),
-                                  tooltip: _obscurePassword
-                                      ? 'แสดงรหัสผ่าน'
-                                      : 'ซ่อนรหัสผ่าน',
                                 ),
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.isEmpty)
-                                  ? 'กรุณากรอก Password'
-                                  : null,
-                            ),
-                            if (auth.error != null) ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 3),
-                                    child: Icon(
-                                      Icons.error_outline,
-                                      size: 18,
-                                      color: AppColors.destructive,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      auth.error!,
-                                      key: const Key('login_error'),
-                                      style: const TextStyle(
-                                        color: AppColors.destructive,
-                                        fontSize: AppTypography.sm,
-                                        height: AppTypography.smHeight,
-                                      ),
+                                if (!keyboardOpen) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: AppTypography.base,
+                                      height: AppTypography.baseHeight,
+                                      color: AppColors.mutedForeground,
                                     ),
                                   ),
                                 ],
-                              ),
-                            ],
-                            const SizedBox(height: 24),
-                            _SubmitButton(
-                              busy: auth.isBusy,
-                              onPressed: _submit,
+                                if (AppConfig.apiMockMode && !keyboardOpen) ...[
+                                  const SizedBox(height: 16),
+                                  const _MockModeBanner(),
+                                ],
+                                SizedBox(height: keyboardOpen ? 16 : 24),
+                                TextFormField(
+                                  key: const Key('login_username'),
+                                  controller: _usernameController,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: _fieldDecoration(
+                                    label: 'ชื่อผู้ใช้',
+                                    hint: 'กรอกชื่อผู้ใช้ของคุณ',
+                                    prefixIcon: const Icon(
+                                      Icons.person_outline,
+                                      color: AppColors.mutedForeground,
+                                    ),
+                                  ),
+                                  validator: (value) =>
+                                      (value == null || value.trim().isEmpty)
+                                      ? 'กรุณากรอก Username'
+                                      : null,
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  key: const Key('login_password'),
+                                  controller: _passwordController,
+                                  obscureText: _obscurePassword,
+                                  textInputAction: TextInputAction.done,
+                                  onFieldSubmitted: (_) => _submit(),
+                                  decoration: _fieldDecoration(
+                                    label: 'รหัสผ่าน',
+                                    hint: 'กรอกรหัสผ่าน',
+                                    prefixIcon: const Icon(
+                                      Icons.lock_outline,
+                                      color: AppColors.mutedForeground,
+                                    ),
+                                    suffixIcon: IconButton(
+                                      key: const Key('login_password_toggle'),
+                                      onPressed: () => setState(
+                                        () => _obscurePassword =
+                                            !_obscurePassword,
+                                      ),
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        color: AppColors.mutedForeground,
+                                      ),
+                                      tooltip: _obscurePassword
+                                          ? 'แสดงรหัสผ่าน'
+                                          : 'ซ่อนรหัสผ่าน',
+                                    ),
+                                  ),
+                                  validator: (value) =>
+                                      (value == null || value.isEmpty)
+                                      ? 'กรุณากรอก Password'
+                                      : null,
+                                ),
+                                if (auth.error != null) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Padding(
+                                        padding: EdgeInsets.only(top: 3),
+                                        child: Icon(
+                                          Icons.error_outline,
+                                          size: 18,
+                                          color: AppColors.destructive,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          auth.error!,
+                                          key: const Key('login_error'),
+                                          style: const TextStyle(
+                                            color: AppColors.destructive,
+                                            fontSize: AppTypography.sm,
+                                            height: AppTypography.smHeight,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 24),
+                                _SubmitButton(
+                                  busy: auth.isBusy,
+                                  onPressed: _submit,
+                                ),
+                                if (!keyboardOpen) ...[
+                                  const SizedBox(height: 16),
+                                  const _AppVersionText(),
+                                ],
+                              ],
                             ),
-                            if (!keyboardOpen) ...[
-                              const SizedBox(height: 16),
-                              const _AppVersionText(),
-                            ],
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -245,6 +254,62 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     );
   }
+}
+
+class _LoginConceptHero extends StatelessWidget {
+  const _LoginConceptHero();
+
+  @override
+  Widget build(BuildContext context) => const Column(
+    children: [
+      _AppMark(),
+      SizedBox(height: 12),
+      Text(
+        'GPS TECH',
+        key: Key('login_hero'),
+        style: TextStyle(
+          color: AppColors.foreground,
+          fontSize: AppTypography.xxl,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      ),
+      SizedBox(height: 4),
+      Text(
+        'TECHNICIAN WORKSPACE',
+        style: TextStyle(
+          color: AppColors.mutedForeground,
+          fontSize: AppTypography.xs,
+          letterSpacing: 1.4,
+        ),
+      ),
+      SizedBox(height: 12),
+      Text(
+        'พร้อมสำหรับงานภาคสนาม',
+        style: TextStyle(
+          color: AppColors.foreground,
+          fontSize: AppTypography.lg,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      SizedBox(height: 4),
+      Text(
+        'เข้าสู่ระบบ',
+        style: TextStyle(
+          color: AppColors.mutedForeground,
+          fontSize: AppTypography.sm,
+        ),
+      ),
+      SizedBox(height: 4),
+      Text(
+        'LOGIN CONCEPT 02',
+        style: TextStyle(
+          color: AppColors.mutedForeground,
+          fontSize: AppTypography.xs,
+        ),
+      ),
+    ],
+  );
 }
 
 /// แผงฟอร์มหน้า Login — การ์ดขาวลอยเด่นกลางจอ: มุม [AppRadius.xxl] เงา

@@ -72,6 +72,19 @@ void main() {
     expect(find.byKey(const Key('login_submit')), findsOneWidget);
   });
 
+  testWidgets('Concept 02 shows the field-work hero above the workspace form', (
+    tester,
+  ) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    expect(find.byKey(const Key('login_hero')), findsOneWidget);
+    expect(find.text('GPS TECH'), findsOneWidget);
+    expect(find.text('TECHNICIAN WORKSPACE'), findsOneWidget);
+    expect(find.text('พร้อมสำหรับงานภาคสนาม'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
+    expect(find.text('LOGIN CONCEPT 02'), findsOneWidget);
+  });
+
   testWidgets('shows validation errors on empty submit', (tester) async {
     final container = _container(_FakeAuthRepository());
     await _pumpLogin(tester, container);

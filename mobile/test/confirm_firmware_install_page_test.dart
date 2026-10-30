@@ -242,6 +242,13 @@ void main() {
         expect(repo.lastDeviceId, 'DEV-0117');
         expect(repo.lastFirmwareId, 'fw-ok');
         expect(find.byKey(const Key('confirm_firmware_success')), findsOne);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('app_bottom_action_bar')),
+            matching: find.byKey(const Key('confirm_firmware_success')),
+          ),
+          findsOne,
+        );
         expect(find.text('อุปกรณ์: DEV-0117'), findsOne);
         expect(find.text('Firmware: v2.1.0'), findsOne);
         expect(find.text('เมื่อ: 12/10/2026 10:30'), findsOne);
@@ -338,6 +345,13 @@ void main() {
         await _submit(tester);
 
         expect(find.text(_gateMessage), findsOne);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('app_bottom_action_bar')),
+            matching: find.byKey(const Key('confirm_firmware_error')),
+          ),
+          findsOne,
+        );
         expect(find.byKey(const Key('confirm_firmware_gate_hint')), findsOne);
         expect(
           find.byKey(const Key('confirm_firmware_goto_override')),

@@ -1487,6 +1487,13 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byKey(const Key('task_note_error')), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byKey(const Key('app_bottom_action_bar')),
+              matching: find.byKey(const Key('task_note_error')),
+            ),
+            findsOneWidget,
+          );
           expect(find.text(message), findsOneWidget);
           expect(find.byKey(const Key('task_note_field')), findsOneWidget);
         },
