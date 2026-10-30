@@ -152,6 +152,9 @@ export interface ApplyOptionConfig {
   latestVersion: number;
   /** Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ (docs/28 D5) */
   suggested: boolean;
+  /** ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของกล่องกับ
+   * Config ตัวนี้ (merge แบบเดียวกับตอนส่ง) ให้ช่างดูก่อนเลือก */
+  fields: Record<string, unknown>;
 }
 
 /** 1 ตัวเลือก Firmware ใน `GET /devices/{deviceId}/apply-options` (docs/27 B2) */
@@ -193,6 +196,13 @@ export interface ApplyOptions {
 
 // งานที่ยังเปิดอยู่ — ใช้หา Config แนะนำ (mirror `OPEN_TASK_STATUSES` ใน task.service.ts)
 const OPEN_TASK_STATUSES = ['pending', 'in_progress'] as const;
+
+/** `Json` ของ Config/Override เป็น map ชื่อ field -> ค่า (ไม่ใช่ object = ว่าง) */
+function asFieldMap(value: Prisma.JsonValue): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : {};
+}
 
 /**
  * คำขอ "ส่ง Config ของ Task เข้าเครื่องจริง" (docs/25, PR #364) — ช่างขอ,
@@ -256,6 +266,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
       );
     }
     const deviceId = task.deviceId;
+    if (dto.direct && dto.kind === 'firmware') {
+      throw new BadRequestException(
+        'ส่ง Firmware โดยไม่ผ่านการอนุมัติไม่ได้ — ส่งเฉพาะ Config ที่อนุมัติแล้วได้เท่านั้น',
+      );
+    }
     // `kind=firmware` (docs/27 §5.1, B2) — Firmware ต้องส่งได้ · โหมด central อ่าน
     // เวอร์ชันที่กล่องรายงานจาก Server กลาง: เท่ากับที่ขอ 409, ต่ำกว่า =
     // `isDowngrade`, ติดต่อไม่ได้ 503 (fail closed — ไม่รู้ว่าถอยหรือไม่)
@@ -264,15 +279,18 @@ export class ConfigApplyRequestService implements OnModuleInit {
         ? await this.prepareFirmwareRequest(dto, deviceId)
         : await this.prepareConfigRequest(dto, task, deviceId);
 
+    const direct = dto.direct === true;
     const created = await this.prisma.$transaction((tx) =>
       this.insertRequest(
         tx,
         { taskId, deviceId, ...draft, note: dto.note?.trim() || null },
         actor,
+        direct,
       ),
     );
 
-    await this.notifyOperations(created);
+    // ส่งตรง: ไม่มีอะไรให้ Operation อนุมัติ
+    if (!direct) await this.notifyOperations(created);
     return created;
   }
 
@@ -326,7 +344,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
   }
 
   /** ส่วนในทรานแซกชันของการสร้างคำขอ — lock เครื่อง, ห้ามมีคำขอ/Rollout ค้าง,
-   * ตั้งเส้นตาย, AuditLog · ใช้ร่วมกันโดย `create()` และ `createForOverride()` */
+   * ตั้งเส้นตาย, AuditLog · ใช้ร่วมกันโดย `create()` และ `createForOverride()`
+   *
+   * `direct` (Config ที่อนุมัติแล้ว ไม่แก้ค่า) — เกิดเป็น `approved` ทันทีด้วยค่า
+   * เดียวกับตอน Operation อนุมัติ (snapshot เวอร์ชัน Config, เส้นตายแบบอนุมัติ
+   * แล้ว) แต่ `decidedBy` null = ไม่มีคนอนุมัติ · AuditLog `config_apply_direct` */
   private async insertRequest(
     tx: Prisma.TransactionClient,
     data: RequestPayloadDraft & {
@@ -336,6 +358,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       overrideId?: string;
     },
     actor: ActingUser,
+    direct = false,
   ): Promise<ConfigApplyRequest> {
     const { deviceId } = data;
     await this.lockDevice(tx, deviceId);
@@ -350,17 +373,36 @@ export class ConfigApplyRequestService implements OnModuleInit {
     await this.assertNoOpenRolloutTarget(tx, deviceId);
 
     const now = new Date();
+    const directApproval =
+      direct && data.kind === 'config'
+        ? {
+            status: 'approved' as const,
+            decidedBy: null,
+            decidedAt: now,
+            approvedConfigVersion: await this.latestConfigVersion(
+              tx,
+              data.configId,
+            ),
+          }
+        : null;
+    const ttlHours = directApproval
+      ? CONFIG_APPLY_APPROVAL_TTL_HOURS
+      : CONFIG_APPLY_REQUEST_TTL_HOURS;
     const request = await tx.configApplyRequest.create({
       data: {
         ...data,
+        ...directApproval,
         requestedBy: actor.id,
         requestedAt: now,
-        expiresAt: new Date(
-          now.getTime() + CONFIG_APPLY_REQUEST_TTL_HOURS * HOUR_MS,
-        ),
+        expiresAt: new Date(now.getTime() + ttlHours * HOUR_MS),
       },
     });
-    await this.writeAudit(tx, 'config_apply_request', actor, request);
+    await this.writeAudit(
+      tx,
+      directApproval ? 'config_apply_direct' : 'config_apply_request',
+      actor,
+      request,
+    );
     return request;
   }
 
@@ -513,6 +555,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
         id: true,
         name: true,
         status: true,
+        fields: true,
         versions: {
           orderBy: { versionNumber: 'desc' },
           take: 1,
@@ -520,12 +563,35 @@ export class ConfigApplyRequestService implements OnModuleInit {
         },
       },
     });
+    // Override ที่อนุมัติแล้วของกล่องนี้ — แถวล่าสุดต่อ Config เก็บค่าสะสมไว้แล้ว
+    // (เหมือน `mergeApprovedOverride`) query เดียวแทนทีละ Config
+    const overrides = configs.length
+      ? await this.prisma.deviceConfigOverride.findMany({
+          where: {
+            deviceId,
+            status: 'approved',
+            configId: { in: configs.map((c) => c.id) },
+          },
+          orderBy: { versionNumber: 'desc' },
+          select: { configId: true, fields: true },
+        })
+      : [];
+    const latestOverride = new Map<string, Record<string, unknown>>();
+    for (const o of overrides) {
+      if (!latestOverride.has(o.configId)) {
+        latestOverride.set(o.configId, asFieldMap(o.fields));
+      }
+    }
     const options = configs.map((config): ApplyOptionConfig => ({
       id: config.id,
       name: config.name,
       status: config.status,
       latestVersion: config.versions[0]?.versionNumber ?? 0,
       suggested: config.id === suggestedId,
+      fields: {
+        ...asFieldMap(config.fields),
+        ...latestOverride.get(config.id),
+      },
     }));
     options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
 

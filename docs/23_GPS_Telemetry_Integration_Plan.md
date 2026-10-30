@@ -438,6 +438,11 @@ endpoint ออก key (ยังไม่มี) แทน env
 3. **MAC address ของบอร์ด** — ต้องอ่านจากบอร์ดจริงก่อนลงทะเบียน
 4. **สถานะออนไลน์ / `lastSeenAt`** — รอบแรก guard ใหม่ไม่เขียน `lastSeenAt` · จะใช้ telemetry หรือ Server กลาง (#359)
    เป็นแหล่งของสถานะออนไลน์ แยกตัดสินใน PR ถัดไป (A เสนอให้คุยต่อที่นี่)
+   - **ข้อเสนอ (2026-10-28, รอ A ตกลง):** ใช้ทั้งสองแหล่งตามลำดับ — Server กลางก่อน (Mobile ทำอยู่แล้วใน `DeviceOnline`)
+     ถ้าติดต่อ Server กลางไม่ได้ ใช้ `Device.lastSeenAt` ซึ่ง**รับ telemetry/event แล้วเลื่อนด้วย** (throttle 1 นาที
+     เท่า guard เดิม, never-throw) · เหตุผล: 28 ต.ค. Server กลางไม่ได้รัน หน้ากล่อง BOX-0001 ขึ้น "ยังไม่เคยติดต่อ"
+     ทั้งที่ telemetry เข้ามาแล้วกว่า 1,000 ครั้ง · ไม่แก้ `GET /devices/{id}/status` และ module `device-status`
+     (อ่าน `lastSeenAt` เดิม) · telemetry ยังไม่เปลี่ยน `Device.status`
 
 ### 10.3 แบ่งงาน (Q9)
 

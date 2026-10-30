@@ -8,6 +8,7 @@ import { TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { CloneSourceLink } from "@/components/config/clone-source-link";
+import { ConfigFieldLabel } from "@/components/config/config-field-label";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -64,6 +65,7 @@ type FieldMeta = {
   category: string;
   sensitive: boolean;
   restartRequired: boolean;
+  description: string | null;
 };
 
 export function ConfigApprovalDetailView({ configId }: { configId: string }) {
@@ -127,6 +129,7 @@ function Content({
         category: d.category ?? UNCATEGORIZED,
         sensitive: d.sensitive,
         restartRequired: d.restartRequired,
+        description: d.description,
       });
     }
     return map;
@@ -377,10 +380,14 @@ function Content({
                       key={c.fieldName}
                       className="grid grid-cols-[minmax(0,1fr)] gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem] sm:items-start sm:gap-3"
                     >
-                      <span className="flex items-center gap-1 font-mono text-muted-foreground">
-                        {c.fieldName}
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <ConfigFieldLabel
+                          fieldName={c.fieldName}
+                          description={metaByField.get(c.fieldName)?.description}
+                        />
                         {needsAttention(c.fieldName) && (
                           <span
+                            className="flex items-center"
                             title={
                               metaByField.get(c.fieldName)?.restartRequired
                                 ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
@@ -487,12 +494,15 @@ function Content({
                 {names.map((name) => (
                   <div
                     key={name}
-                    className="flex justify-between gap-4 px-3 py-1.5 text-xs"
+                    className="flex items-start justify-between gap-4 px-3 py-1.5 text-xs"
                   >
-                    <span className="flex shrink-0 items-center gap-1.5 font-mono text-muted-foreground">
-                      {name}
+                    <span className="flex min-w-0 max-w-[60%] flex-col gap-0.5">
+                      <ConfigFieldLabel
+                        fieldName={name}
+                        description={metaByField.get(name)?.description}
+                      />
                       {changedNames.has(name) && (
-                        <span className="rounded bg-info-subtle px-1 text-[10px] text-info-foreground">
+                        <span className="w-fit rounded bg-info-subtle px-1 text-[10px] text-info-foreground">
                           เปลี่ยน
                         </span>
                       )}

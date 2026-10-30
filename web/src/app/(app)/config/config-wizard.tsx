@@ -670,8 +670,11 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                     >
                       <PlusIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       <span className="flex min-w-0 flex-col gap-0.5">
+                        {def.description && (
+                          <span className="text-xs">{def.description}</span>
+                        )}
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-xs font-medium break-all">
+                          <span className="font-mono text-xs text-muted-foreground break-all">
                             {def.fieldName}
                           </span>
                           <span className="rounded-full bg-secondary px-1.5 text-[0.65rem] text-secondary-foreground">
@@ -679,11 +682,6 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
                           </span>
                           {!isInModelSet(def) && <OutsideSetBadge />}
                         </span>
-                        {def.description && (
-                          <span className="text-xs text-muted-foreground">
-                            {def.description}
-                          </span>
-                        )}
                       </span>
                     </button>
                   ))
@@ -810,17 +808,27 @@ function TemplateRow({
   onRemove?: () => void;
 }) {
   const id = `field-${def.fieldName}`;
-  const hint = def.description ?? formatModelSupport(def.supportedModels);
+  // คำอธิบาย (ถ้ามี) ขึ้นเป็นหัวแทน fieldName — รีวิวพี่เลี้ยง: อยากรู้
+  // "ค่านี้คืออะไร" ก่อนชื่อตัวแปรดิบ (สลับจากหน้าคลัง Parameter ด้านซ้ายที่
+  // fieldName ขึ้นก่อน) · ไม่มีคำอธิบาย = แสดงเหมือนเดิมทุกประการ (hint ล่าง
+  // ใช้ formatModelSupport แทน)
+  const description = def.description?.trim();
+  const supportHint = description
+    ? null
+    : formatModelSupport(def.supportedModels);
 
   return (
     <div className="flex flex-col gap-1.5 rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <Label htmlFor={id} className="font-mono text-xs">
-            {def.fieldName}
-            {required ? <span className="text-destructive"> *</span> : null}
-          </Label>
-          {outsideSet && <OutsideSetBadge />}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {description && <span className="text-sm">{description}</span>}
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Label htmlFor={id} className="font-mono text-xs">
+              {def.fieldName}
+              {required ? <span className="text-destructive"> *</span> : null}
+            </Label>
+            {outsideSet && <OutsideSetBadge />}
+          </span>
         </span>
         {onRemove ? (
           <button
@@ -835,7 +843,9 @@ function TemplateRow({
           <span className="text-[0.65rem] text-muted-foreground">บังคับ</span>
         )}
       </div>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {supportHint && (
+        <p className="text-xs text-muted-foreground">{supportHint}</p>
+      )}
 
       {def.dataType === "boolean" ? (
         <label className="flex items-center gap-2 text-sm" htmlFor={id}>
