@@ -10,6 +10,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/theme/app_tokens.dart';
+import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/app_card.dart';
 import 'package:mobile/core/ui/app_empty_state.dart';
 import 'package:mobile/core/ui/app_ink_header.dart';
@@ -607,7 +608,7 @@ void main() {
       expect(find.widgetWithText(AppInkHeader, 'แจ้งเตือน'), findsOneWidget);
       expect(find.text('การอนุมัติและผลการทำงาน'), findsOneWidget);
       expect(find.text('ใหม่'), findsOneWidget);
-      final theme = Theme.of(tester.element(find.text('รายการแจ้งเตือน')));
+      final theme = Theme.of(tester.element(find.byType(AppInkHeader)));
       expect(theme.colorScheme.primary, AppColors.primary);
       // หน้าแรกของ stack (ไม่มีหน้าให้ย้อน) -> ไม่มีปุ่มย้อนกลับ
       expect(find.byTooltip('ย้อนกลับ'), findsNothing);
@@ -629,10 +630,13 @@ void main() {
         );
         expect(cardOf(0).highlighted, isTrue);
         expect(cardOf(1).highlighted, isFalse);
-        final dot = tester.widget<Container>(
+        // r4: ยังไม่อ่าน = ป้าย "ใหม่" (AppBadge success) แทนจุดสี
+        final badge = tester.widget<AppBadge>(
           find.byKey(const Key('unread_dot')),
         );
-        expect((dot.decoration! as BoxDecoration).color, AppColors.primary);
+        expect(badge.label, 'ใหม่');
+        expect(badge.tone, AppBadgeTone.success);
+        expect(find.byKey(const Key('unread_dot')), findsOneWidget);
       },
     );
 
