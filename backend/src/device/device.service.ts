@@ -28,6 +28,7 @@ import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
 import {
   CentralDeviceService,
+  type BoxSupportedSchema,
   type ReportedBoxFields,
   type CheckConfigOutcome,
 } from '../central-device/central-device.service';
@@ -90,6 +91,9 @@ export type ConfigWithDeviceOverride = Config & {
   /** ค่าที่กล่องรายงานว่าใช้อยู่ทุกพารามิเตอร์ (โหมด central) ให้หน้าขอแก้ค่าแสดงค่าที่ไม่อยู่ใน
    * Config ด้วย · null = ไม่ใช่โหมด central / ติดต่อ Server กลางไม่ได้ / กล่องยังไม่รายงาน */
   boxFields: ReportedBoxFields | null;
+  /** พารามิเตอร์ที่ firmware บนกล่องรองรับ (โหมด central) — ให้หน้าขอแก้ค่าล็อกช่องที่กล่องไม่รู้จัก
+   * และเตือนก่อนว่าส่งไม่ผ่าน · null = ไม่ใช่โหมด central / ติดต่อ Server กลางไม่ได้ / ไม่รู้ schema */
+  boxSchema: BoxSupportedSchema | null;
 };
 
 /** ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด — `fields` ของ response คือค่าที่**จะ**อยู่ในกล่อง
@@ -1297,9 +1301,12 @@ export class DeviceService {
       }),
     ]);
 
-    const boxFields = this.isCentralApplyMode()
-      ? await this.centralDeviceService.readReportedFields(deviceId)
-      : null;
+    const [boxFields, boxSchema] = this.isCentralApplyMode()
+      ? await Promise.all([
+          this.centralDeviceService.readReportedFields(deviceId),
+          this.centralDeviceService.readSupportedSchema(deviceId),
+        ])
+      : [null, null];
 
     const delivery = deliveredAt
       ? await this.describeDelivery(
@@ -1318,6 +1325,7 @@ export class DeviceService {
         pendingOverride,
         delivery,
         boxFields,
+        boxSchema,
       };
     }
 
@@ -1328,6 +1336,7 @@ export class DeviceService {
       pendingOverride,
       delivery,
       boxFields,
+      boxSchema,
     };
   }
 

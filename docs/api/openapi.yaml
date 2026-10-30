@@ -4986,8 +4986,33 @@ components:
       allOf:
         - $ref: "#/components/schemas/DeviceConfigDraft"
         - type: object
-          required: [hasDeviceOverride, pendingOverride, delivery, boxFields]
+          required: [hasDeviceOverride, pendingOverride, delivery, boxFields, boxSchema]
           properties:
+            boxSchema:
+              type: object
+              nullable: true
+              description: >-
+                (v3.76) พารามิเตอร์ที่ firmware บนกล่องรองรับ — key ทุกตัวใน schema ที่กล่อง
+                **รายงานว่ารันอยู่** จาก Server กลาง (ตัวเดียวกับที่ใช้ตรวจตอนส่ง Config เข้ากล่อง:
+                Config ที่มี key นอกรายการนี้ถูกปฏิเสธทั้งชุด) · ให้หน้าขอแก้ค่าล็อกช่องที่กล่อง
+                ไม่รู้จัก และเตือนก่อนขออนุมัติว่าส่งไม่ผ่าน · มี `data_server.path` ได้ (เป็นแค่ชื่อ
+                ไม่มีค่า ต่างจาก `boxFields`) · `null` = ไม่ใช่โหมด
+                `DEVICE_CONFIG_APPLY_MODE=central`, ติดต่อ Server กลางไม่ได้, Server กลางไม่รู้จัก
+                กล่อง / กล่องไม่อยู่ในทะเบียน หรือดึง schema ไม่ได้
+              required: [firmwareVersion, schemaVersion, keys]
+              properties:
+                firmwareVersion:
+                  type: string
+                  nullable: true
+                  description: เวอร์ชัน firmware ที่กล่องรายงาน (เช่น `1.0.0`)
+                schemaVersion:
+                  type: integer
+                  description: เลข schema ที่กล่องรายงานว่ารันอยู่
+                keys:
+                  type: array
+                  items:
+                    type: string
+                  description: ชื่อพารามิเตอร์แบบจุด เช่น `gps.send_interval_sec`
             boxFields:
               type: object
               nullable: true
