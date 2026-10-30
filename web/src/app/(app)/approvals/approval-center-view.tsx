@@ -99,6 +99,7 @@ export function ApprovalCenterView() {
     null,
   );
   const [rolloutNotice, setRolloutNotice] = useState<string | null>(null);
+  const [tabRequest, setTabRequest] = useState<{ id: string; nonce: number } | undefined>();
   // มุมมองย่อยของหมวด Config ("ทั้งหมด"/"เจาะจงถึงฉัน") เก็บใน URL (`?view=mine`) แชร์ลิงก์ได้
   const [tab, setTabState] = useState<"all" | "mine">(() =>
     typeof window !== "undefined" &&
@@ -187,6 +188,11 @@ export function ApprovalCenterView() {
     "firmware-override": firmwareOverrideNotice,
     "field-apply": fieldApplyNotice,
   };
+  const preferredTab = categories.some((category) => category.count === null)
+    ? undefined
+    : categories.find((category) => (category.count ?? 0) > 0)?.key ?? categories[0]?.key;
+  const editedFieldApplyCount =
+    fieldApplyData?.filter((request) => request.override !== null).length ?? 0;
 
   // อนุมัติหลายรายการ: เลือกได้เฉพาะ Config ที่ไม่ใช่ของตัวเอง (Separation of Duty)
   // และเฉพาะรายการที่ยังอยู่ในคิวตอนนี้ (คิวรีเฟรชแล้วรายการที่หายไปไม่ค้างเป็นที่เลือก)
@@ -398,6 +404,28 @@ export function ApprovalCenterView() {
         </Card>
     ),
     "config-override": (
+      <div className="flex flex-col gap-4">
+        {canDecideOverride && canDecideFieldApply && editedFieldApplyCount > 0 && (
+          <Notice tone="info">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                มีคำขอแก้ค่าจากหน้างาน {editedFieldApplyCount} รายการ อยู่ในแท็บ ส่งเข้ากล่องจากหน้างาน
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setTabRequest((previous) => ({
+                    id: "field-apply",
+                    nonce: (previous?.nonce ?? 0) + 1,
+                  }))
+                }
+              >
+                ไปที่คำขอ
+              </Button>
+            </div>
+          </Notice>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>
@@ -442,6 +470,7 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
+      </div>
     ),
     "firmware-override": (
         <Card>
@@ -559,6 +588,8 @@ export function ApprovalCenterView() {
       )}
 
       <UrlTabs
+        preferredTab={preferredTab}
+        tabRequest={tabRequest}
         tabs={categories.map((c) => ({
           id: c.key,
           label: c.label,
