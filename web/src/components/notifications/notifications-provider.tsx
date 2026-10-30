@@ -60,6 +60,7 @@ export function NotificationsProvider({
 }) {
   const { session } = useAuth();
   const token = session?.accessToken ?? null;
+  const role = session?.role ?? null;
 
   const [items, setItems] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,7 +97,7 @@ export function NotificationsProvider({
         if (fresh.length > 0 && !panelOpenRef.current) {
           const message =
             fresh.length === 1
-              ? `มีแจ้งเตือนใหม่: ${describeNotification(fresh[0]).title}`
+              ? `มีแจ้งเตือนใหม่: ${describeNotification(fresh[0], role).title}`
               : `มีแจ้งเตือนใหม่ ${fresh.length} รายการ`;
           toast.info(message, {
             action: { label: "ดู", onClick: () => setPanelOpen(true) },
@@ -115,7 +116,7 @@ export function NotificationsProvider({
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, role]);
 
   useEffect(() => {
     void refetch();
