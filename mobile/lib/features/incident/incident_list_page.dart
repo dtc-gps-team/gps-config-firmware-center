@@ -11,7 +11,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
@@ -40,69 +40,114 @@ class IncidentListPage extends ConsumerWidget {
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'Incidents',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                trailing: const AccountButton(),
-                // ST/OT แจ้งปัญหาหน้างาน (docs/22 §7.2) — role อื่นซ่อนปุ่ม (ไม่ใช่
-                // disable) เพราะไม่มีสิทธิ์ `POST /incidents` แบบ field report
-                actions: [
-                  AppPageHeaderAction(
-                    key: const Key('incidents_field_report'),
-                    label: 'Field Report',
-                    icon: Icons.add,
-                    primary: true,
-                    visible: isFieldStaff(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: 'Incidents',
+              subtitle: 'Field Report ของคุณ + Incident จากระบบ',
+              onBack: navigator.canPop() ? navigator.pop : null,
+              trailing: const AccountButton(),
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: () => ref.refresh(incidentListProvider.future),
+                child: incidentsAsync.when(
+                  skipLoadingOnRefresh: true,
+                  data: (incidents) {
+                    final canReport = isFieldStaff(
                       ref.watch(authControllerProvider.select((s) => s.role)),
-                    ),
-                    onPressed: () => context.push(AppRoutes.incidentReport),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () => ref.refresh(incidentListProvider.future),
-                  child: incidentsAsync.when(
-                    skipLoadingOnRefresh: true,
-                    data: (incidents) {
-                      if (incidents.isEmpty) return const _IncidentsEmpty();
-                      // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
-                      return AppFadeIn(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                          itemCount: incidents.length,
-                          separatorBuilder: (_, _) =>
+                    );
+                    if (incidents.isEmpty) {
+                      return _IncidentsEmpty(canReport: canReport);
+                    }
+                    final fieldReports = incidents
+                        .where((incident) => incident.source == 'field-report')
+                        .toList(growable: false);
+                    final systemReports = incidents
+                        .where((incident) => incident.source != 'field-report')
+                        .toList(growable: false);
+                    // จางเข้าทั้งรายการตอนโหลดเสร็จ (ไม่ใช่ทีละแถว — แถวถูกสร้างใหม่ตอนเลื่อน)
+                    return AppFadeIn(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        children: [
+                          if (canReport) ...[
+                            FilledButton.icon(
+                              key: const Key('incidents_field_report'),
+                              onPressed: () =>
+                                  context.push(AppRoutes.incidentReport),
+                              icon: const Icon(Icons.add),
+                              label: const Text('แจ้งปัญหาหน้างาน'),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                          if (fieldReports.isNotEmpty) ...[
+                            const _IncidentGroupTitle('ที่คุณแจ้ง'),
+                            for (final incident in fieldReports) ...[
+                              _IncidentCard(
+                                key: Key(
+                                  'incident_card_${incidents.indexOf(incident)}',
+                                ),
+                                incident: incident,
+                                index: incidents.indexOf(incident),
+                              ),
                               const SizedBox(height: 12),
-                          itemBuilder: (context, i) => _IncidentCard(
-                            key: Key('incident_card_$i'),
-                            incident: incidents[i],
-                            index: i,
-                          ),
-                        ),
-                      );
-                    },
-                    loading: () => const AppListSkeleton(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    ),
-                    error: (error, _) => _IncidentsError(
-                      message: error is ApiException
-                          ? error.message
-                          : 'โหลดรายการ Incident ไม่สำเร็จ',
-                      onRetry: () => ref.invalidate(incidentListProvider),
-                    ),
+                            ],
+                          ],
+                          if (systemReports.isNotEmpty) ...[
+                            const _IncidentGroupTitle('จากระบบ'),
+                            for (final incident in systemReports) ...[
+                              _IncidentCard(
+                                key: Key(
+                                  'incident_card_${incidents.indexOf(incident)}',
+                                ),
+                                incident: incident,
+                                index: incidents.indexOf(incident),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                  loading: () => const AppListSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => _IncidentsError(
+                    message: error is ApiException
+                        ? error.message
+                        : 'โหลดรายการ Incident ไม่สำเร็จ',
+                    onRetry: () => ref.invalidate(incidentListProvider),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _IncidentGroupTitle extends StatelessWidget {
+  const _IncidentGroupTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      title,
+      style: const TextStyle(
+        fontSize: AppTypography.sm,
+        height: AppTypography.smHeight,
+        color: AppColors.mutedForeground,
+      ),
+    ),
+  );
 }
 
 class _IncidentCard extends StatelessWidget {
@@ -218,14 +263,27 @@ class _IncidentCard extends StatelessWidget {
 }
 
 class _IncidentsEmpty extends StatelessWidget {
-  const _IncidentsEmpty();
+  const _IncidentsEmpty({required this.canReport});
+
+  final bool canReport;
 
   @override
   Widget build(BuildContext context) {
     // อยู่ใน ListView ให้ดึงลงเพื่อรีเฟรชได้เหมือนเดิม
     return ListView(
-      children: const [
-        AppEmptyState(
+      children: [
+        if (canReport) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: FilledButton.icon(
+              key: const Key('incidents_field_report'),
+              onPressed: () => context.push(AppRoutes.incidentReport),
+              icon: const Icon(Icons.add),
+              label: const Text('แจ้งปัญหาหน้างาน'),
+            ),
+          ),
+        ],
+        const AppEmptyState(
           icon: Icons.check_circle_outline,
           message: 'ยังไม่มี Incident',
           messageKey: Key('incidents_empty'),

@@ -3,13 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
 import '../../core/ui/app_field_label.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_role_locked_view.dart';
+import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
+import '../../core/widgets/app_error_view.dart';
 import '../device_search/device_search_repository.dart';
 import 'incident_repository.dart';
 
@@ -110,8 +115,15 @@ class _FieldReportPageState extends ConsumerState<FieldReportPage> {
 
   @override
   Widget build(BuildContext context) {
-    // โหลดรายการอุปกรณ์ไม่ได้ไม่ block ฟอร์ม — อุปกรณ์เป็น optional
-    final devices = ref.watch(deviceListProvider).valueOrNull ?? const [];
+    final auth = ref.watch(authControllerProvider);
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    final allowed = auth.role == UserRole.st || auth.role == UserRole.ot;
+    final locked = !rolePending && !allowed;
+    // ตรวจสิทธิ์ก่อน watch provider เพื่อไม่เรียก API ระหว่าง restore หรือ role ไม่มีสิทธิ์
+    final devicesAsync = rolePending || locked
+        ? null
+        : ref.watch(deviceListProvider);
+    final devices = devicesAsync?.valueOrNull ?? const [];
     final deviceIds = {for (final d in devices) d.deviceId};
     final selectedDevice = (_deviceId != null && deviceIds.contains(_deviceId))
         ? _deviceId
@@ -120,22 +132,31 @@ class _FieldReportPageState extends ConsumerState<FieldReportPage> {
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'Field Report',
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (rolePending)
+              const Expanded(child: AppDetailSkeleton(lines: 6))
+            else if (locked)
+              const Expanded(child: AppRoleLockedView())
+            else ...[
+              AppInkHeader(
+                title: 'แจ้งปัญหาหน้างาน',
+                subtitle: 'แจ้งปัญหาให้ฝ่ายปฏิบัติการตรวจสอบ',
                 onBack: navigator.canPop() ? navigator.pop : null,
-                description:
-                    'แจ้งปัญหาที่เจอกับอุปกรณ์ให้ Operation ตรวจสอบ — การแจ้งนี้ไม่ได้สั่ง '
-                    'หยุดหรือ Rollback อัตโนมัติ Operation จะเป็นผู้ตัดสินใจเอง '
-                    'และแจ้งผลกลับมา',
               ),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
                   children: [
+                    const AppNotice(
+                      tone: AppBadgeTone.info,
+                      child: Text(
+                        'การแจ้งนี้ไม่สั่งหยุดอุปกรณ์หรือ Rollback อัตโนมัติ '
+                        'Operation จะตรวจสอบและตัดสินใจ',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     const AppFieldLabel('หัวข้อปัญหา', hint: '(บังคับ)'),
                     TextField(
                       key: const Key('field_report_title'),
@@ -164,25 +185,23 @@ class _FieldReportPageState extends ConsumerState<FieldReportPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const AppFieldLabel('ความรุนแรง'),
-                    DropdownButtonFormField<IncidentSeverity>(
-                      key: const Key('field_report_severity'),
-                      initialValue: _severity,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.card,
-                      ),
-                      items: [
-                        for (final s in IncidentSeverity.values)
-                          DropdownMenuItem(
-                            value: s,
-                            child: Text(incidentSeverityLabel(s)),
+                    const AppFieldLabel('ความรุนแรง', hint: '(บังคับ)'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final severity in IncidentSeverity.values)
+                          ChoiceChip(
+                            key: Key(
+                              'field_report_severity_${severity.wireName}',
+                            ),
+                            label: Text(incidentSeverityLabel(severity)),
+                            selected: _severity == severity,
+                            onSelected: _submitted
+                                ? null
+                                : (_) => setState(() => _severity = severity),
                           ),
                       ],
-                      onChanged: _submitted
-                          ? null
-                          : (v) => setState(() => _severity = v ?? _severity),
                     ),
                     const SizedBox(height: 12),
                     const AppFieldLabel(
@@ -218,52 +237,47 @@ class _FieldReportPageState extends ConsumerState<FieldReportPage> {
                           ? null
                           : (v) => setState(() => _deviceId = v),
                     ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      AppNotice(
-                        key: const Key('field_report_error'),
-                        tone: AppBadgeTone.danger,
-                        child: AppErrorDetails(
-                          message: _error!,
-                          details: _errorList,
-                        ),
-                      ),
-                    ],
-                    if (_submitted) ...[
-                      const SizedBox(height: 12),
-                      const AppNotice(
-                        key: Key('field_report_submitted'),
-                        tone: AppBadgeTone.success,
-                        icon: Icons.check_circle_outline,
-                        child: Text(
-                          'ส่งรายงานแล้ว — Operation จะตรวจสอบและตัดสินใจ ดูสถานะได้ที่ '
-                          'แท็บ Incidents',
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      key: const Key('field_report_submit'),
-                      onPressed: (_submitting || _submitted) ? null : _submit,
-                      child: _submitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(
-                                  AppColors.primaryForeground,
-                                ),
-                              ),
-                            )
-                          : const Text('ส่งรายงานปัญหา'),
-                    ),
                   ],
                 ),
               ),
             ],
-          ),
+          ],
         ),
+        bottomNavigationBar: rolePending || locked
+            ? null
+            : AppBottomActionBar(
+                children: [
+                  if (_error != null) ...[
+                    AppNotice(
+                      key: const Key('field_report_error'),
+                      tone: AppBadgeTone.danger,
+                      child: AppErrorDetails(
+                        message: _error!,
+                        details: _errorList,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_submitted) ...[
+                    const AppNotice(
+                      key: Key('field_report_submitted'),
+                      tone: AppBadgeTone.success,
+                      icon: Icons.check_circle_outline,
+                      child: Text(
+                        'ส่งรายงานแล้ว — Operation จะตรวจสอบและตัดสินใจ ดูสถานะได้ที่ '
+                        'แท็บ Incidents',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  AppSubmitButton(
+                    buttonKey: const Key('field_report_submit'),
+                    label: 'ส่งรายงานปัญหา',
+                    submitting: _submitting,
+                    onPressed: _submitted ? null : _submit,
+                  ),
+                ],
+              ),
       ),
     );
   }

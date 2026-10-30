@@ -11,7 +11,7 @@ import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/app_card.dart';
 import 'package:mobile/core/ui/app_empty_state.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/incident/incident_list_page.dart';
@@ -214,14 +214,14 @@ void main() {
   });
 
   group('design system ใหม่ (docs/22 Batch 2)', () {
-    testWidgets('theme v2 + AppPageHeader ชื่อ "Incidents" แทน AppBar', (
+    testWidgets('theme v2 + AppInkHeader ชื่อ "Incidents" แทน AppBar', (
       tester,
     ) async {
       await _pump(tester, repo: _FakeIncidentRepository());
 
       expect(find.byType(AppBar), findsNothing);
       expect(find.byType(AppV2Theme), findsOneWidget);
-      expect(find.widgetWithText(AppPageHeader, 'Incidents'), findsOneWidget);
+      expect(find.widgetWithText(AppInkHeader, 'Incidents'), findsOneWidget);
       expect(find.byType(AppCard), findsOneWidget);
     });
 
@@ -263,12 +263,40 @@ void main() {
     });
   });
 
+  testWidgets('แบ่ง Incident ที่ช่างแจ้งกับรายการที่ระบบตรวจพบ', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repo: _FakeIncidentRepository(
+        incidents: [
+          _incident(id: 'reported', source: 'field-report'),
+          _incident(id: 'automatic', source: 'config-sync-writer'),
+        ],
+      ),
+    );
+
+    expect(find.text('ที่คุณแจ้ง'), findsOneWidget);
+    expect(find.text('จากระบบ'), findsOneWidget);
+  });
+
   testWidgets('ไม่มี incident -> empty state', (tester) async {
     await _pump(tester, repo: _FakeIncidentRepository(incidents: const []));
 
     expect(find.byKey(const Key('incidents_empty')), findsOneWidget);
     expect(find.text('ยังไม่มี Incident'), findsOneWidget);
     expect(find.byType(AppEmptyState), findsOneWidget);
+  });
+
+  testWidgets('ไม่มี Incident ก็ยังมีทางเข้าแจ้งปัญหาให้ ST', (tester) async {
+    await _pumpRouted(
+      tester,
+      repo: _FakeIncidentRepository(incidents: const []),
+      role: UserRole.st,
+    );
+
+    expect(find.byKey(const Key('incidents_empty')), findsOneWidget);
+    expect(find.byKey(const Key('incidents_field_report')), findsOneWidget);
   });
 
   testWidgets('error -> error card + ปุ่มลองอีกครั้ง (กดแล้วยิงซ้ำ)', (
@@ -407,7 +435,7 @@ void main() {
 
         expect(button, findsOneWidget);
         expect(
-          find.descendant(of: button, matching: find.text('Field Report')),
+          find.descendant(of: button, matching: find.text('แจ้งปัญหาหน้างาน')),
           findsOneWidget,
         );
         await tester.tap(button);

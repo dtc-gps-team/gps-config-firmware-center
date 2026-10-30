@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
+import 'package:mobile/core/auth/auth_controller.dart';
+import 'package:mobile/core/ui/app_bottom_action_bar.dart';
+import 'package:mobile/core/ui/app_role_locked_view.dart';
+import 'package:mobile/core/ui/app_skeleton.dart';
+import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/features/device_search/device_search_repository.dart';
 import 'package:mobile/features/incident/field_report_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
@@ -21,15 +26,26 @@ class _FakeDeviceSearchRepository implements DeviceSearchRepository {
   _FakeDeviceSearchRepository({this.listError});
 
   final Object? listError;
+  int listCalls = 0;
 
   @override
   Future<List<Device>> listDevices() async {
+    listCalls++;
     if (listError != null) throw listError!;
     return [_device('DEV-0001', 'GT06N'), _device('DEV-0002', 'GT06L')];
   }
 
   @override
   Future<Device> getDevice(String deviceId) => throw UnimplementedError();
+}
+
+class _FakeAuthController extends AuthController {
+  _FakeAuthController(this.state);
+
+  final AuthState state;
+
+  @override
+  AuthState build() => state;
 }
 
 /// ใช้ MockIncidentRepository จริง (pattern เดียวกับ MockTaskRepository) แต่
@@ -71,10 +87,12 @@ Future<_SpyIncidentRepository> _pump(
   _SpyIncidentRepository? repo,
   _FakeDeviceSearchRepository? devices,
   String? initialDeviceId,
+  AuthState auth = const AuthState(
+    status: AuthStatus.authenticated,
+    role: UserRole.st,
+  ),
 }) async {
   final spy = repo ?? _SpyIncidentRepository();
-  // หัวหน้าจอแบบ AppPageHeader (docs/22 Batch 4) กินพื้นที่บนจอ 800x600 ค่าเริ่มต้น
-  // จนปุ่มส่งเลื่อนพ้นจอเมื่อมีกล่องแจ้งผลขึ้น — ใช้จอสูงขึ้นแบบโทรศัพท์จริง
   tester.view.physicalSize = const Size(400 * 3, 900 * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -82,6 +100,11 @@ Future<_SpyIncidentRepository> _pump(
     ProviderScope(
       overrides: [
         incidentRepositoryProvider.overrideWithValue(spy),
+        authControllerProvider.overrideWith(() => _FakeAuthController(auth)),
+        tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
+        sessionProfileStoreProvider.overrideWithValue(
+          InMemorySessionProfileStore(),
+        ),
         deviceSearchRepositoryProvider.overrideWithValue(
           devices ?? _FakeDeviceSearchRepository(),
         ),
@@ -108,14 +131,7 @@ Future<void> _fill(
 }
 
 Future<void> _tapSubmit(WidgetTester tester) async {
-  // ปุ่มอยู่ท้ายฟอร์มยาว (ListView สร้าง lazy) — เลื่อนลงจนเจอก่อนแตะ
-  final submit = find.byKey(const Key('field_report_submit'));
-  await tester.scrollUntilVisible(
-    submit,
-    300,
-    scrollable: find.byType(Scrollable).first,
-  );
-  await tester.tap(submit);
+  await tester.tap(find.byKey(const Key('field_report_submit')));
   await tester.pumpAndSettle();
 }
 
@@ -172,9 +188,7 @@ void main() {
     final spy = await _pump(tester);
     await _fill(tester);
 
-    await tester.tap(find.byKey(const Key('field_report_severity')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Critical').last);
+    await tester.tap(find.byKey(const Key('field_report_severity_critical')));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byKey(const Key('field_report_device')));
@@ -256,5 +270,84 @@ void main() {
 
     expect(find.textContaining('ไม่ได้สั่ง'), findsOneWidget);
     expect(find.textContaining('Operation จะเป็นผู้ตัดสินใจ'), findsOneWidget);
+  });
+
+  testWidgets('ส่ง error แสดงเหนือปุ่มในแถบล่าง', (tester) async {
+    final spy = await _pump(
+      tester,
+      repo: _SpyIncidentRepository(
+        createError: ApiException('ส่งรายงานไม่สำเร็จ', statusCode: 500),
+      ),
+    );
+    await _fill(tester);
+    await _tapSubmit(tester);
+
+    expect(spy.createCalls, 1);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('app_bottom_action_bar')),
+        matching: find.byKey(const Key('field_report_error')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('role ที่ไม่มีสิทธิ์ตรงลิงก์เห็นหน้าล็อกและไม่โหลดอุปกรณ์', (
+    tester,
+  ) async {
+    final devices = _FakeDeviceSearchRepository();
+    final spy = await _pump(
+      tester,
+      devices: devices,
+      auth: const AuthState(
+        status: AuthStatus.authenticated,
+        role: UserRole.operation,
+      ),
+    );
+
+    expect(find.byType(AppRoleLockedView), findsOneWidget);
+    expect(devices.listCalls, 0);
+    expect(spy.createCalls, 0);
+  });
+
+  testWidgets('role null ถูกล็อกและไม่เรียก API', (tester) async {
+    final devices = _FakeDeviceSearchRepository();
+    final spy = await _pump(
+      tester,
+      devices: devices,
+      auth: const AuthState(status: AuthStatus.authenticated),
+    );
+
+    expect(find.byType(AppRoleLockedView), findsOneWidget);
+    expect(devices.listCalls, 0);
+    expect(spy.createCalls, 0);
+  });
+
+  testWidgets('OT มีสิทธิ์เปิดฟอร์ม Field Report', (tester) async {
+    await _pump(
+      tester,
+      auth: const AuthState(
+        status: AuthStatus.authenticated,
+        role: UserRole.ot,
+      ),
+    );
+
+    expect(find.byKey(const Key('field_report_title')), findsOneWidget);
+    expect(find.byType(AppRoleLockedView), findsNothing);
+  });
+
+  testWidgets('ระหว่าง restore session รอ skeleton โดยไม่โหลด API', (
+    tester,
+  ) async {
+    final devices = _FakeDeviceSearchRepository();
+    final spy = await _pump(
+      tester,
+      devices: devices,
+      auth: const AuthState(status: AuthStatus.unknown),
+    );
+
+    expect(find.byType(AppDetailSkeleton), findsOneWidget);
+    expect(devices.listCalls, 0);
+    expect(spy.createCalls, 0);
   });
 }
