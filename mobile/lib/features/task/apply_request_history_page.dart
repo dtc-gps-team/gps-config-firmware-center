@@ -41,7 +41,7 @@ class ApplyRequestHistoryPage extends ConsumerWidget {
           children: [
             AppInkHeader(
               title: 'ประวัติคำขอ',
-              subtitle: 'งาน $taskId · ใหม่ไปเก่า',
+              subtitle: 'คำขอส่งเข้ากล่องของงานนี้ · ใหม่ไปเก่า',
               onBack: navigator.canPop() ? navigator.pop : null,
             ),
             Expanded(

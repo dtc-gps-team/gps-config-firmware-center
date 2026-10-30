@@ -115,7 +115,8 @@ class TaskDetailPage extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AppInkHeader(
-              title: 'งาน ${task?.id ?? taskId}',
+              // ไม่แสดง id ภายในของงาน (uuid) — ชื่องานอยู่ในการ์ดสรุปด้านล่างแล้ว
+              title: 'รายละเอียดงาน',
               subtitle: 'บันทึกและสถานะงานของคุณ',
               onBack: navigator.canPop() ? navigator.pop : null,
             ),
@@ -620,7 +621,15 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                 AppInfoRow(
                   key: const Key('task_detail_status_summary'),
                   label: 'สถานะงาน',
-                  value: taskStatusLabel(task.status),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: AppBadge(
+                      key: const Key('task_detail_status_badge'),
+                      label: taskStatusLabel(task.status),
+                      tone: taskStatusTone(task.status),
+                      dot: true,
+                    ),
+                  ),
                 ),
                 Text(
                   task.title,

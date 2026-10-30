@@ -136,6 +136,13 @@ Future<void> _pump(
   TaskEventRepository? eventRepo,
   GoRouter? router,
 }) async {
+  // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
+  // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
+  if (tester.view.physicalSize == const Size(2400, 1800)) {
+    tester.view.physicalSize = const Size(1080, 4000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+  }
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -1489,37 +1496,49 @@ void main() {
 
   // R4-07 — task detail ใช้หัวพื้นเข้มและแสดงสถานะในสรุปงาน
   group('หัวหน้าจองาน', () {
-    testWidgets('เลขงานและข้อความรองอยู่บนหัวพื้นเข้ม สถานะอยู่ในการ์ดสรุป', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress),
-        ),
-      );
+    testWidgets(
+      'หัวพื้นเข้มไม่แสดง id ภายในของงาน สถานะเป็นป้ายสีในการ์ดสรุป',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+        );
 
-      expect(find.byType(AppBar), findsNothing);
-      final header = find.byType(AppInkHeader);
-      expect(
-        find.descendant(of: header, matching: find.text('งาน t1')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: header,
-          matching: find.text('บันทึกและสถานะงานของคุณ'),
-        ),
-        findsOneWidget,
-      );
-      final status = find.byKey(const Key('task_detail_status_summary'));
-      expect(status, findsOneWidget);
-      expect(
-        find.descendant(of: status, matching: find.text('กำลังทำ')),
-        findsOneWidget,
-      );
-      expect(AppV2Theme.isActive(tester.element(header)), isTrue);
-    });
+        expect(find.byType(AppBar), findsNothing);
+        final header = find.byType(AppInkHeader);
+        expect(
+          find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: header, matching: find.textContaining('t1')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: header,
+            matching: find.text('บันทึกและสถานะงานของคุณ'),
+          ),
+          findsOneWidget,
+        );
+        final status = find.byKey(const Key('task_detail_status_summary'));
+        expect(status, findsOneWidget);
+        expect(
+          find.descendant(
+            of: status,
+            matching: find.byKey(const Key('task_detail_status_badge')),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: status, matching: find.text('กำลังทำ')),
+          findsOneWidget,
+        );
+        expect(AppV2Theme.isActive(tester.element(header)), isTrue);
+      },
+    );
 
     testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" แสดงอยู่', (tester) async {
       await _pump(
