@@ -196,58 +196,72 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                 onBack: navigator.canPop() ? navigator.pop : null,
                 trailing: const AccountButton(),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: TextField(
-                  key: const Key('device_search_field'),
-                  controller: _controller,
-                  onChanged: (value) => setState(() => _query = value),
-                  textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'ค้นหาด้วยเลขเครื่อง หรือเบอร์ซิม',
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    fillColor: AppColors.card,
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            key: const Key('device_search_clear'),
-                            tooltip: 'ล้างคำค้น',
-                            icon: const Icon(Icons.close),
-                            onPressed: () {
-                              _controller.clear();
-                              setState(() => _query = '');
-                            },
-                          ),
-                  ),
+              // จอเล็กที่ตัวอักษรใหญ่ ช่องค้นหา+ชิปสูงเกินจอได้ ให้เลื่อนในกรอบ
+              // ไม่เกินครึ่งจอ ผลลัพธ์ยังมีพื้นที่ที่เหลือเสมอ (R4-03 จัดหน้านี้ใหม่ทั้งหน้า)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height / 2,
                 ),
-              ),
-              // ตัดบรรทัดแทนเลื่อนแนวนอน ให้เห็นค่าที่เลือกและปุ่มล้างครบเสมอ
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final filter in _DeviceFilter.values)
-                      _FilterChipButton(
-                        key: Key('device_filter_${filter.keyName}'),
-                        label: _filters.containsKey(filter)
-                            ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
-                            : filter.title,
-                        active: _filters.containsKey(filter),
-                        onTap: allDevices.isEmpty
-                            ? null
-                            : () => _openFilter(filter, allDevices),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: TextField(
+                          key: const Key('device_search_field'),
+                          controller: _controller,
+                          onChanged: (value) => setState(() => _query = value),
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText: 'ค้นหาด้วยเลขเครื่อง หรือเบอร์ซิม',
+                            prefixIcon: const Icon(Icons.search),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            suffixIcon: _query.isEmpty
+                                ? null
+                                : IconButton(
+                                    key: const Key('device_search_clear'),
+                                    tooltip: 'ล้างคำค้น',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _controller.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  ),
+                          ),
+                        ),
                       ),
-                    if (_filters.isNotEmpty)
-                      TextButton(
-                        key: const Key('device_filter_clear'),
-                        onPressed: () => setState(_filters.clear),
-                        child: const Text('ล้างตัวกรอง'),
+                      // ตัดบรรทัดแทนเลื่อนแนวนอน ให้เห็นค่าที่เลือกและปุ่มล้างครบเสมอ
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            for (final filter in _DeviceFilter.values)
+                              _FilterChipButton(
+                                key: Key('device_filter_${filter.keyName}'),
+                                label: _filters.containsKey(filter)
+                                    ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
+                                    : filter.title,
+                                active: _filters.containsKey(filter),
+                                onTap: allDevices.isEmpty
+                                    ? null
+                                    : () => _openFilter(filter, allDevices),
+                              ),
+                            if (_filters.isNotEmpty)
+                              TextButton(
+                                key: const Key('device_filter_clear'),
+                                onPressed: () => setState(_filters.clear),
+                                child: const Text('ล้างตัวกรอง'),
+                              ),
+                          ],
+                        ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
