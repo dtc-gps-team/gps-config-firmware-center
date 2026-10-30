@@ -18,18 +18,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table/data-table";
 import { multiSelectFilterFn } from "@/components/data-table/filter-fns";
 import { useConfigDefinitions } from "@/hooks/use-config-definitions";
-import { useDeviceModels } from "@/hooks/use-device-models";
 import {
   formatModelSupport,
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
-import { ParameterCreateForm } from "./parameter-create-form";
 import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { ParameterDetailDrawer } from "./parameter-detail-drawer";
 
 type DefinitionsState = ReturnType<typeof useConfigDefinitions>;
 
@@ -40,7 +41,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
     meta: { filterVariant: "text", label: "ชื่อ field" },
     cell: ({ row }) => (
       <div className="flex items-center gap-2" title={row.original.description ?? undefined}>
-        <span className="font-mono text-sm">{row.original.fieldName}</span>
+        <span className="font-instrument text-sm">{row.original.fieldName}</span>
         {row.original.unknownSpec && (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[0.7rem] text-muted-foreground">
             ยังไม่มี spec
@@ -48,6 +49,13 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
         )}
       </div>
     ),
+  },
+  {
+    id: "category",
+    accessorFn: (row) => row.category ?? "อื่นๆ",
+    header: "หมวด",
+    filterFn: multiSelectFilterFn,
+    meta: { filterVariant: "multi-select", label: "หมวด" },
   },
   {
     accessorKey: "dataType",
@@ -75,7 +83,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
     enableSorting: false,
     cell: ({ row }) =>
       row.original.allowedValues.length ? (
-        <span className="font-mono text-xs">
+        <span className="font-instrument text-xs">
           {row.original.allowedValues.join(", ")}
         </span>
       ) : (
@@ -103,7 +111,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
     meta: { filterVariant: "multi-select", label: "ST Override" },
     cell: ({ row }) =>
       row.original.stOverridable ? (
-        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-primary">
+        <span className="rounded bg-info-subtle px-1.5 py-0.5 text-[0.7rem] font-medium text-info-foreground">
           ST override ได้
         </span>
       ) : (
@@ -118,7 +126,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
     meta: { filterVariant: "multi-select", label: "Sensitive" },
     cell: ({ row }) =>
       row.original.sensitive ? (
-        <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[0.7rem] font-medium text-destructive">
+        <span className="rounded bg-warning-subtle px-1.5 py-0.5 text-[0.7rem] font-medium text-warning-foreground">
           Sensitive
         </span>
       ) : (
@@ -146,6 +154,26 @@ function ParameterTableCard({
 }) {
   const { data, isLoading, error, refetch } = definitions;
   const rows = useMemo(() => data ?? [], [data]);
+  // field ที่เปิดใน drawer เก็บใน URL (`?param=NAME`) แชร์ลิงก์ตรงถึง field ได้
+  const [openName, setOpenName] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("param"),
+  );
+  const openDefinition = rows.find((r) => r.fieldName === openName) ?? null;
+
+  function setOpen(name: string | null) {
+    setOpenName(name);
+    const params = new URLSearchParams(window.location.search);
+    if (name) params.set("param", name);
+    else params.delete("param");
+    const qs = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+  }
 
   return (
     <Card>
@@ -153,19 +181,14 @@ function ParameterTableCard({
         <CardTitle>รายการ Parameter ทั้งหมด</CardTitle>
         <CardDescription>
           นิยาม field ที่ระบบรู้จัก ใช้อ้างอิงตอนกรอก/ตรวจ Config
-          {data ? ` (${data.length} field)` : ""}
+          {data ? ` (${data.length} field)` : ""} คลิกแถวเพื่อดูรายละเอียด
         </CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading && data === null ? (
           <TableSkeleton columns={columns.length} />
         ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <p className="text-sm text-destructive">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void refetch()}>
-              ลองใหม่
-            </Button>
-          </div>
+          <ErrorState message={error} onRetry={() => void refetch()} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={ListIcon}
@@ -176,10 +199,33 @@ function ParameterTableCard({
           <DataTable
             columns={columns}
             data={rows}
+            urlSync
+            columnToggle
+            initialColumnVisibility={{
+              unit: false,
+              stOverridable: false,
+              sensitive: false,
+            }}
+            onRowClick={(row) => setOpen(row.fieldName)}
             searchPlaceholder="ค้นหาชื่อ field / โมเดล…"
-            emptyMessage="ไม่พบ Parameter ที่ตรงกับเงื่อนไข"
+            emptyMessage="ไม่พบ Parameter ที่ตรงกับเงื่อนไข ลองล้างตัวกรองบางตัว"
+            renderCard={(row) => (
+              <div className="flex flex-col gap-1">
+                <span className="font-instrument text-sm font-medium break-all">
+                  {row.fieldName}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {row.category ?? "อื่นๆ"}, {row.dataType}
+                  {row.required ? ", บังคับ" : ""}
+                </span>
+              </div>
+            )}
           />
         )}
+        <ParameterDetailDrawer
+          definition={openDefinition}
+          onClose={() => setOpen(null)}
+        />
       </CardContent>
     </Card>
   );
@@ -195,15 +241,12 @@ function ParameterLibraryContent() {
   const { session } = useAuth();
   const canCreate = canCreateFieldDefinition(session?.role);
   const definitions = useConfigDefinitions();
-  const deviceModels = useDeviceModels();
-  const [showForm, setShowForm] = useState(false);
 
-  const existingNames = useMemo(
-    () =>
-      new Set(
-        (definitions.data ?? []).map((d) => d.fieldName.trim().toLowerCase()),
-      ),
-    [definitions.data],
+  const createLink = (size?: "sm") => (
+    <Link href="/parameters/new" className={buttonVariants({ size })}>
+      <PlusIcon />
+      สร้าง Parameter ใหม่
+    </Link>
   );
 
   return (
@@ -211,38 +254,12 @@ function ParameterLibraryContent() {
       <PageHeader
         title="Parameter Library"
         description="นิยามพารามิเตอร์ที่ใช้กรอก Config ของแต่ละโมเดล ทั้งชนิดข้อมูล ช่วงค่า และค่าเริ่มต้น"
-        actions={
-          canCreate && !showForm ? (
-            <Button onClick={() => setShowForm(true)}>
-              <PlusIcon />
-              สร้าง Parameter ใหม่
-            </Button>
-          ) : null
-        }
+        actions={canCreate ? createLink() : null}
       />
-
-      {canCreate && showForm ? (
-        <ParameterCreateForm
-          deviceModels={deviceModels.data ?? []}
-          existingNames={existingNames}
-          onCancel={() => setShowForm(false)}
-          onCreated={async () => {
-            await definitions.refetch();
-            setShowForm(false);
-          }}
-        />
-      ) : null}
 
       <ParameterTableCard
         definitions={definitions}
-        emptyAction={
-          canCreate && !showForm ? (
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <PlusIcon />
-              สร้าง Parameter ใหม่
-            </Button>
-          ) : undefined
-        }
+        emptyAction={canCreate ? createLink("sm") : undefined}
       />
     </div>
   );

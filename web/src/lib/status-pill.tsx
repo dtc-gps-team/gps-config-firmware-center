@@ -1,11 +1,5 @@
-import {
-  CircleIcon,
-  InfoIcon,
-  ClockIcon,
-  CircleCheckIcon,
-  CircleXIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
+import type { LedTone } from "@/components/ui/status-led";
 
 /**
  * Status pill — className helper สำหรับ badge สถานะ (Config / Task / Device ฯลฯ)
@@ -78,27 +72,23 @@ export function toneColorClass(tone: PillTone): string {
   return PILL_TONE[tone];
 }
 
-/** ไอคอนต่อ tone ของ pill — ใช้กับ <StatusPill> เท่านั้น (ไม่ใช่ pillClass()
- *  เปล่าๆ ที่บางหน้าเอาไปทำ tag/chip ธรรมดาที่ไม่ได้สื่อสถานะ เช่น รุ่นอุปกรณ์
- *  ที่ compatibility ของ Firmware — จุดนั้นไม่ควรมีไอคอนสถานะเพราะไม่ใช่สถานะ) */
-const PILL_ICON: Record<PillTone, LucideIcon> = {
-  neutral: CircleIcon,
-  info: InfoIcon,
-  progress: ClockIcon,
-  success: CircleCheckIcon,
-  danger: CircleXIcon,
+/** tone ของ pill → tone ของ LED ใน `StatusBadge` (ตัวเดียวทั้งระบบ) */
+const PILL_TO_LED: Record<PillTone, LedTone> = {
+  neutral: "neutral",
+  info: "info",
+  progress: "warning",
+  success: "online",
+  danger: "danger",
 };
 
 /**
- * Badge สถานะพร้อมไอคอน — ใช้แทน `<span className={pillClass(tone)}>` เดิม
- * ทุกจุดที่ text ข้างในสื่อ "สถานะ" จริงๆ (Config/Campaign/Firmware/Device
- * status, ผลทดสอบผ่าน/ไม่ผ่าน ฯลฯ) เทียบกับ mockup UX/UI Design ต้นฉบับที่มี
- * ไอคอนกำกับสถานะเสมอ แต่ของจริงเป็น text ล้วนมาตลอด
+ * ป้ายสถานะของ enum ที่มีตาราง tone (Config/Campaign/Firmware/Device/Incident ฯลฯ)
+ * เป็น `StatusBadge` ตัวเดียวกับสถานะอื่นทั้งระบบ: จุด LED + ข้อความบนพื้นอ่อน
+ * (ใช้แทน `<span className={pillClass(tone)}>` ทุกจุดที่ข้อความสื่อ "สถานะ" จริง)
  *
- * tone `progress` (pending/testing/active ฯลฯ — สถานะที่ "ยังไม่นิ่ง" กำลัง
- * รอให้มีอะไรเกิดขึ้นต่อ) ไอคอนกระพริบจางๆ (`animate-pulse`) สื่อว่ายังไม่จบ
- * ต่างจาก success/danger ที่เป็นผลสุดท้ายแล้วนิ่งปกติ — respect
- * `prefers-reduced-motion` ผ่าน global override ใน globals.css
+ * tone `progress` (pending/testing/active ฯลฯ สถานะที่ยังไม่นิ่ง) LED เต้นเบาๆ สื่อว่ายังไม่จบ
+ * ต่างจาก success/danger ที่เป็นผลสุดท้ายแล้วนิ่ง · ปิดการเต้นเองเมื่อ prefers-reduced-motion
+ * · สถานะที่ยังไม่มีในตาราง tone (tone เป็น undefined) ใช้ neutral ไม่ให้ทั้งหน้าพัง
  */
 export function StatusPill({
   tone,
@@ -109,14 +99,14 @@ export function StatusPill({
   children: React.ReactNode;
   className?: string;
 }) {
-  // สถานะที่ยังไม่มีในตาราง *_STATUS_TONE จะได้ tone เป็น undefined — ใช้
-  // ไอคอน/สีกลางแทน ไม่ให้ทั้งหน้าพัง (เคยเกิดกับ Incident `dismissed`)
-  const Icon = PILL_ICON[tone] ?? CircleIcon;
   return (
-    <span className={`${pillClass(PILL_TONE[tone] ? tone : "neutral")} gap-1${className ? ` ${className}` : ""}`}>
-      <Icon className={`size-3${tone === "progress" ? " animate-pulse" : ""}`} />
+    <StatusBadge
+      tone={PILL_TO_LED[tone] ?? "neutral"}
+      pulse={tone === "progress"}
+      className={className}
+    >
       {children}
-    </span>
+    </StatusBadge>
   );
 }
 
