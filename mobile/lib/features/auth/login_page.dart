@@ -243,19 +243,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               );
               return Column(
                 children: [
+                  // หัวสูงตามเนื้อหา (จอสูงให้อย่างน้อย ~32% ตามภาพ 1145) — เดิม
+                  // ล็อกสัดส่วน 40% ทำให้ล้นล่างบนจอเตี้ย
                   if (!keyboardOpen)
-                    Expanded(
-                      flex: compact ? 32 : 40,
-                      child: const _LoginConceptHero(),
+                    _LoginConceptHero(
+                      minHeight: compact ? 0 : constraints.maxHeight * 0.32,
                     ),
-                  Expanded(
-                    flex: keyboardOpen
-                        ? 1
-                        : compact
-                        ? 68
-                        : 60,
-                    child: panel,
-                  ),
+                  Expanded(child: panel),
                 ],
               );
             },
@@ -267,11 +261,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 }
 
 class _LoginConceptHero extends StatelessWidget {
-  const _LoginConceptHero();
+  const _LoginConceptHero({required this.minHeight});
+
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) => Container(
     width: double.infinity,
+    constraints: BoxConstraints(minHeight: minHeight),
+    alignment: Alignment.centerLeft,
     color: AppColors.primary,
     padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
     child: const Column(
@@ -286,28 +284,31 @@ class _LoginConceptHero extends StatelessWidget {
               size: 30,
             ),
             SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'GPS TECH',
-                  key: Key('login_hero'),
-                  style: TextStyle(
-                    color: AppColors.onInk,
-                    fontSize: AppTypography.base,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.8,
+            // จอแคบ/ตัวอักษรใหญ่ ให้ชื่อหดและขึ้นบรรทัดใหม่ได้ ไม่ล้นขวา
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'GPS TECH',
+                    key: Key('login_hero'),
+                    style: TextStyle(
+                      color: AppColors.onInk,
+                      fontSize: AppTypography.base,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.8,
+                    ),
                   ),
-                ),
-                Text(
-                  'TECHNICIAN WORKSPACE',
-                  style: TextStyle(
-                    color: AppColors.onInkMuted,
-                    fontSize: AppTypography.xs,
-                    letterSpacing: 1.5,
+                  Text(
+                    'TECHNICIAN WORKSPACE',
+                    style: TextStyle(
+                      color: AppColors.onInkMuted,
+                      fontSize: AppTypography.xs,
+                      letterSpacing: 1.5,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),

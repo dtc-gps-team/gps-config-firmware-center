@@ -95,8 +95,14 @@ void main() {
     await _pumpLogin(tester, _container(_FakeAuthRepository()));
 
     final bounds = tester.getRect(find.byKey(const Key('login_submit')));
+    // เทสรันโหมด mock (ค่าเริ่มต้น) ซึ่งมีกล่องคำใบ้เหนือช่องกรอก — แอปจริง
+    // ไม่มีกล่องนี้ จึงหักความสูงกล่อง + ช่องว่าง 12 ออกเพื่อวัดตำแหน่งจริง
+    final hint = find.byKey(const Key('login_mock_hint'));
+    final mockOffset = AppConfig.apiMockMode && hint.evaluate().isNotEmpty
+        ? tester.getRect(hint).height + 12
+        : 0.0;
     expect(bounds.top, greaterThanOrEqualTo(0));
-    expect(bounds.bottom, lessThanOrEqualTo(720));
+    expect(bounds.bottom - mockOffset, lessThanOrEqualTo(720));
   });
 
   testWidgets('shows validation errors on empty submit', (tester) async {
@@ -286,12 +292,14 @@ void main() {
       },
     );
 
-    testWidgets('สัญลักษณ์ระบบไล่สีลงไปจบที่ primary + เงาสีฟ้า (docs/22 §4.6)', (
+    // r4 (ภาพ 1145) แทนสัญลักษณ์ไล่สีของ docs/22 §4.6 ด้วยหมุดบนหัวพื้นเข้ม
+    // (A อนุมัติให้ชุดสี/หน้าตา r4 แทน docs/22 ใน #409)
+    testWidgets('หมุดตำแหน่งอยู่บนหัวพื้น primary และมีแค่ชุดเดียว', (
       tester,
     ) async {
       await _pumpLogin(tester, _container(_FakeAuthRepository()));
-      // Container ที่ใกล้ไอคอนที่สุด (แผงฟอร์มก็เป็น Container ที่ครอบอยู่ชั้นนอก)
-      final mark = tester.widget<Container>(
+      expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
+      final hero = tester.widget<Container>(
         find
             .ancestor(
               of: find.byIcon(Icons.location_on_outlined),
@@ -299,9 +307,7 @@ void main() {
             )
             .first,
       );
-      final deco = mark.decoration! as BoxDecoration;
-      expect((deco.gradient! as LinearGradient).colors.last, AppColors.primary);
-      expect(deco.boxShadow, AppShadows.primaryGlow);
+      expect(hero.color, AppColors.primary);
     });
   });
 }
