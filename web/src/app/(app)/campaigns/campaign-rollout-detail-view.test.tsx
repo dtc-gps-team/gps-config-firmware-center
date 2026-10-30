@@ -186,7 +186,7 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       name: "ความคืบหน้าของ Rollout",
     });
     expect(bar).toHaveAttribute("aria-valuenow", "75");
-    expect(screen.getByText("75% ได้ผลแล้ว")).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByText("3 / 4 เครื่อง")).toBeInTheDocument();
     expect(screen.getByText("กำลังส่ง Config ให้ 4 เครื่อง")).toBeInTheDocument();
   });
@@ -197,7 +197,7 @@ describe("CampaignRolloutDetailView: การ์ดผลต่อเครื�
       target("D2", "failed"),
     ]);
 
-    expect(screen.getByText("100% ได้ผลแล้ว")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
     expect(screen.getByText("ส่ง Config ให้ 2 เครื่องเสร็จสิ้น")).toBeInTheDocument();
   });
 

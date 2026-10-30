@@ -7,14 +7,21 @@ import {
   RocketIcon,
 } from "lucide-react";
 
+import { toast } from "sonner";
+
 import { useAuth } from "@/components/auth/auth-provider";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FloatingActionBar } from "@/components/floating-action-bar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ApiError } from "@/lib/api";
+import { approveConfig } from "@/lib/config-api";
 import {
   canDecideConfigApproval,
   canDecideDeviceConfigOverride,
+  canDecideFieldApplyRequest,
   canDecideFirmwareOverride,
 } from "@/lib/permissions";
 import { getTokenSubject } from "@/lib/jwt";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,26 +40,32 @@ import { useUserNames } from "@/hooks/use-user-names";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
 import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
+import { usePendingFieldApplyRequests } from "@/hooks/use-pending-field-apply-requests";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { PageHeader } from "@/components/page-header";
+import { UrlTabs } from "@/components/url-tabs";
 import { Notice } from "@/components/ui/notice";
 import { ApprovalCard } from "./approval-card";
 import { CampaignRolloutApprovalCard } from "./campaign-rollout-approval-card";
 import { DeviceConfigOverrideApprovalCard } from "./device-config-override-approval-card";
 import { DeviceFirmwareOverrideApprovalCard } from "./device-firmware-override-approval-card";
+import { FieldApplyRequestApprovalCard } from "./field-apply-request-approval-card";
 
 type ApprovalCategory =
   | "config"
   | "rollout"
   | "config-override"
-  | "firmware-override";
+  | "firmware-override"
+  | "field-apply";
 
 export function ApprovalCenterView() {
   const { session } = useAuth();
   const canDecide = canDecideConfigApproval(session?.role);
   const canDecideOverride = canDecideDeviceConfigOverride(session?.role);
   const canDecideFirmwareOv = canDecideFirmwareOverride(session?.role);
+  const canDecideFieldApply = canDecideFieldApplyRequest(session?.role);
   const myUserId = session?.accessToken
     ? getTokenSubject(session.accessToken)
     : null;
@@ -71,14 +84,42 @@ export function ApprovalCenterView() {
     error: firmwareOverrideError,
     refetch: refetchFirmwareOverrides,
   } = usePendingDeviceFirmwareOverrides(canDecideFirmwareOv);
+  const {
+    data: fieldApplyData,
+    isLoading: fieldApplyLoading,
+    error: fieldApplyError,
+    refetch: refetchFieldApply,
+  } = usePendingFieldApplyRequests(canDecideFieldApply);
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideNotice, setOverrideNotice] = useState<string | null>(null);
   const [firmwareOverrideNotice, setFirmwareOverrideNotice] = useState<
     string | null
   >(null);
+  const [fieldApplyNotice, setFieldApplyNotice] = useState<string | null>(
+    null,
+  );
   const [rolloutNotice, setRolloutNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"all" | "mine">("all");
-  const [picked, setPicked] = useState<ApprovalCategory>("config");
+  // มุมมองย่อยของหมวด Config ("ทั้งหมด"/"เจาะจงถึงฉัน") เก็บใน URL (`?view=mine`) แชร์ลิงก์ได้
+  const [tab, setTabState] = useState<"all" | "mine">(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("view") === "mine"
+      ? "mine"
+      : "all",
+  );
+  function setTab(next: "all" | "mine") {
+    setTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === "mine") params.set("view", "mine");
+    else params.delete("view");
+    const qs = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+  }
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const allItems = useMemo(() => data ?? [], [data]);
   const mineCount = useMemo(
@@ -129,76 +170,65 @@ export function ApprovalCenterView() {
           },
         ]
       : []),
+    ...(canDecideFieldApply
+      ? [
+          {
+            key: "field-apply" as const,
+            label: "ส่งเข้ากล่องจากหน้างาน",
+            count: fieldApplyData?.length ?? null,
+          },
+        ]
+      : []),
   ];
-  const category: ApprovalCategory = categories.some((c) => c.key === picked)
-    ? picked
-    : "config";
-  const activeNotice = {
+  const notices: Record<ApprovalCategory, string | null> = {
     config: notice,
     rollout: rolloutNotice,
     "config-override": overrideNotice,
     "firmware-override": firmwareOverrideNotice,
-  }[category];
+    "field-apply": fieldApplyNotice,
+  };
 
-  return (
-    <div className="flex flex-col gap-5">
-      <PageHeader
-        title="Approval Center"
-        description="คำขอทุกประเภทที่รอ Operation อนุมัติ แยกเป็นส่วนตามประเภทคำขอ"
-      />
-      {/* คนที่ไม่ใช่ Operation เข้ามาดูได้ แต่ปุ่มอนุมัติ/ปฏิเสธจะไม่แสดง —
-       * บอกครั้งเดียวตรงนี้ให้รู้ว่าทำไมไม่มีปุ่ม (ไม่ใช่ระบบพัง) */}
-      {!canDecide && (
-        <Notice tone="neutral">
-          หน้านี้แสดงให้ดูอย่างเดียว การอนุมัติหรือปฏิเสธทำได้เฉพาะ Operation
-        </Notice>
-      )}
+  // อนุมัติหลายรายการ: เลือกได้เฉพาะ Config ที่ไม่ใช่ของตัวเอง (Separation of Duty)
+  // และเฉพาะรายการที่ยังอยู่ในคิวตอนนี้ (คิวรีเฟรชแล้วรายการที่หายไปไม่ค้างเป็นที่เลือก)
+  const isOwn = (createdBy: string) => myUserId !== null && createdBy === myUserId;
+  const selectableItems = items.filter((i) => !isOwn(i.createdBy));
+  const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
 
-      <div
-        role="group"
-        aria-label="หมวดคำขอ"
-        className="flex flex-wrap gap-1 border-b"
-      >
-        {categories.map((c) => {
-          const active = c.key === category;
-          return (
-            <button
-              key={c.key}
-              type="button"
-              aria-pressed={active}
-              onClick={() => setPicked(c.key)}
-              className={cn(
-                "-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm",
-                active
-                  ? "border-primary font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {c.label}
-              {c.count !== null && (
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs",
-                    c.count > 0
-                      ? "bg-warning-subtle text-warning-foreground"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {c.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+  async function approveSelected() {
+    if (!session?.accessToken) return;
+    const token = session.accessToken;
+    const failed: string[] = [];
+    let done = 0;
+    for (const item of selectedItems) {
+      try {
+        await approveConfig(token, item.id);
+        done += 1;
+      } catch (err) {
+        failed.push(
+          `${item.name}: ${err instanceof ApiError ? err.message : "อนุมัติไม่สำเร็จ"}`,
+        );
+      }
+    }
+    setSelectedIds(new Set());
+    void refetch();
+    if (done > 0) {
+      setNotice(`อนุมัติ ${done} รายการแล้ว`);
+      toast.success(`อนุมัติ ${done} รายการแล้ว`);
+    }
+    if (failed.length > 0) {
+      toast.error(`อนุมัติไม่สำเร็จ ${failed.length} รายการ`, {
+        description: failed.join("; "),
+      });
+    }
+  }
 
-      {activeNotice && (
-        <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm text-success-foreground">
-          {activeNotice}
-        </div>
-      )}
-
-      {category === "config" && (
+  // แต่ละประเภทเป็น Card แยก ไม่ผสมเป็น list เดียวกัน (คนละ resource/endpoint
+  // และคนละ flow: Config, Campaign Rollout ที่ต้องมี Operation อีกคนอนุมัติ,
+  // Config/Firmware Override เฉพาะเครื่องที่ ST ส่งจาก Mobile) · หมวด Override
+  // gate ด้วย `canDecideOverride`/`canDecideFirmwareOv` (= Operation) ตรงกับ
+  // grant Read ใน seed.ts ไม่งั้น role อื่นจะเห็น 403 ดิบจาก backend
+  const sections: Record<ApprovalCategory, React.ReactNode> = {
+    "config": (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -256,19 +286,27 @@ export function ApprovalCenterView() {
               </div>
             )}
 
+            {canDecide && myUserId && selectableItems.length > 1 && (
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox
+                  checked={
+                    selectableItems.length > 0 &&
+                    selectableItems.every((i) => selectedIds.has(i.id))
+                  }
+                  onCheckedChange={(v) =>
+                    setSelectedIds(
+                      v ? new Set(selectableItems.map((i) => i.id)) : new Set(),
+                    )
+                  }
+                />
+                เลือกทั้งหมดที่อนุมัติได้ ({selectableItems.length})
+              </label>
+            )}
+
             {isLoading && data === null ? (
               <CardListSkeleton />
             ) : error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={error} onRetry={() => void refetch()} />
             ) : items.length === 0 ? (
               <EmptyState
                 icon={ClipboardCheckIcon}
@@ -285,6 +323,23 @@ export function ApprovalCenterView() {
                   item={item}
                   creatorName={resolveName(item.createdBy)}
                   canDecide={canDecide}
+                  selection={
+                    canDecide && myUserId
+                      ? {
+                          checked: selectedIds.has(item.id),
+                          disabledReason: isOwn(item.createdBy)
+                            ? "อนุมัติ Config ของตัวเองไม่ได้"
+                            : undefined,
+                          onChange: (checked) =>
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (checked) next.add(item.id);
+                              else next.delete(item.id);
+                              return next;
+                            }),
+                        }
+                      : undefined
+                  }
                   onDecided={(action) => {
                     setNotice(
                       action === "approve"
@@ -298,12 +353,8 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
-      )}
-
-      {/* section แยกจาก Config ชัดเจน (แก้ไข 2026-09-24 — feedback: หาปุ่ม
-       * อนุมัติ Rollout ยาก) — คนละ Card ไม่ผสมเป็น list เดียวกับ Config
-       * เพราะ resource/flow คนละอย่างกัน */}
-      {category === "rollout" && (
+    ),
+    "rollout": (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -320,18 +371,7 @@ export function ApprovalCenterView() {
             {rolloutsQuery.isLoading && rolloutsQuery.data === null ? (
               <CardListSkeleton />
             ) : rolloutsQuery.error ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">
-                  {rolloutsQuery.error}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void rolloutsQuery.refetch()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={rolloutsQuery.error} onRetry={() => void rolloutsQuery.refetch()} />
             ) : (rolloutsQuery.data ?? []).length === 0 ? (
               <EmptyState
                 icon={RocketIcon}
@@ -356,15 +396,8 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
-      )}
-
-      {/* section แยกจาก Config/Campaign Rollout ชัดเจนเช่นกัน (issue #223,
-       * มติ 2026-09-24) — คนละ resource/endpoint กันทั้งหมด · gate ด้วย
-       * canDecideOverride (= role Operation เท่านั้น ตรงกับ grant Read ของ
-       * resource `device-config-override` ใน seed.ts เป๊ะ) — ไม่งั้น role อื่น
-       * (Admin ฯลฯ) จะเห็น raw 403 message จาก backend ตรงๆ แทนที่จะไม่เห็น
-       * section นี้เลย (แก้ครั้งที่ 73 — พบจาก UX/UI audit) */}
-      {category === "config-override" && (
+    ),
+    "config-override": (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -383,16 +416,7 @@ export function ApprovalCenterView() {
             {overrideLoading && overrideData === null ? (
               <CardListSkeleton />
             ) : overrideError ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">{overrideError}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetchOverrides()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={overrideError} onRetry={() => void refetchOverrides()} />
             ) : (overrideData?.length ?? 0) === 0 ? (
               <EmptyState
                 icon={ClipboardCheckIcon}
@@ -418,13 +442,8 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
-      )}
-
-      {/* section แยกจากทั้ง Config/Campaign Rollout/Config Override (Sprint 3
-       * แถวที่ 24) — คนละ resource/endpoint กันทั้งหมด mirror section
-       * Per-device Config Override ด้านบนเป๊ะ รวมถึง gate ด้วย
-       * canDecideFirmwareOv เหมือนกัน (แก้ครั้งที่ 73) */}
-      {category === "firmware-override" && (
+    ),
+    "firmware-override": (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -443,18 +462,7 @@ export function ApprovalCenterView() {
             {firmwareOverrideLoading && firmwareOverrideData === null ? (
               <CardListSkeleton />
             ) : firmwareOverrideError ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <p className="text-sm text-destructive">
-                  {firmwareOverrideError}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void refetchFirmwareOverrides()}
-                >
-                  ลองใหม่
-                </Button>
-              </div>
+              <ErrorState message={firmwareOverrideError} onRetry={() => void refetchFirmwareOverrides()} />
             ) : (firmwareOverrideData?.length ?? 0) === 0 ? (
               <EmptyState
                 icon={ClipboardCheckIcon}
@@ -480,7 +488,122 @@ export function ApprovalCenterView() {
             )}
           </CardContent>
         </Card>
+    ),
+    /* section แยกจากทุกหมวดด้านบน (docs/25 §3.3–§3.4 · docs/30 P1) — ครอบทั้ง
+     * kind=config (ส่ง Config ของ Task เข้าเครื่องจริง) และ kind=firmware
+     * (docs/27 B2) เพราะ backend เป็น resource `config-apply-request` ตัวเดียวกัน
+     * · gate ด้วย canDecideFieldApply (= role Operation เท่านั้น ตรงกับ grant
+     * Approve ของ resource นี้ใน seed.ts — Read ให้ Auditor/Admin/SuperAdmin
+     * ด้วยแต่ Approve ให้ Operation คนเดียว) mirror section Config/Firmware
+     * Override ทุกประการ */
+    "field-apply": (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              ส่งเข้ากล่องจากหน้างาน รออนุมัติ{" "}
+              <span className="text-muted-foreground">
+                ({fieldApplyData?.length ?? 0})
+              </span>
+            </CardTitle>
+            <CardDescription>
+              คำขอส่ง Config หรือ Firmware เข้าอุปกรณ์จริง (ST/OT ส่งจาก
+              Mobile) อนุมัติแล้วรอช่างที่ถืองานกดส่งเข้ากล่องเองอีกครั้ง
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {fieldApplyLoading && fieldApplyData === null ? (
+              <CardListSkeleton />
+            ) : fieldApplyError ? (
+              <ErrorState message={fieldApplyError} onRetry={() => void refetchFieldApply()} />
+            ) : (fieldApplyData?.length ?? 0) === 0 ? (
+              <EmptyState
+                icon={ClipboardCheckIcon}
+                message="ไม่มีคำขอส่งเข้ากล่องจากหน้างานรออนุมัติ"
+              />
+            ) : (
+              fieldApplyData?.map((item) => (
+                <FieldApplyRequestApprovalCard
+                  key={item.id}
+                  item={item}
+                  requesterName={item.requester.fullName}
+                  canDecide={canDecideFieldApply}
+                  myUserId={myUserId}
+                  onDecided={(action) => {
+                    setFieldApplyNotice(
+                      action === "approve"
+                        ? `อนุมัติคำขอของ ${item.deviceId} แล้ว`
+                        : `ปฏิเสธคำขอของ ${item.deviceId} แล้ว`,
+                    );
+                    void refetchFieldApply();
+                  }}
+                />
+              ))
+            )}
+          </CardContent>
+        </Card>
+    ),
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Approval Center"
+        description="คำขอทุกประเภทที่รอ Operation อนุมัติ แยกเป็นส่วนตามประเภทคำขอ"
+      />
+      {/* คนที่ไม่ใช่ Operation เข้ามาดูได้ แต่ปุ่มอนุมัติ/ปฏิเสธจะไม่แสดง —
+       * บอกครั้งเดียวตรงนี้ให้รู้ว่าทำไมไม่มีปุ่ม (ไม่ใช่ระบบพัง) */}
+      {!canDecide && (
+        <Notice tone="neutral">
+          หน้านี้แสดงให้ดูอย่างเดียว การอนุมัติหรือปฏิเสธทำได้เฉพาะ Operation
+        </Notice>
       )}
+
+      <UrlTabs
+        tabs={categories.map((c) => ({
+          id: c.key,
+          label: c.label,
+          count: c.count ?? undefined,
+          content: (
+            <div className="flex flex-col gap-4">
+              {notices[c.key] && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm text-success-foreground"
+                >
+                  {notices[c.key]}
+                </div>
+              )}
+              {sections[c.key]}
+            </div>
+          ),
+        }))}
+      />
+      <FloatingActionBar show={selectedItems.length > 0 && canDecide}>
+        <span className="tabular-nums">เลือก {selectedItems.length} Config</span>
+        <Button size="sm" onClick={() => setBulkOpen(true)}>
+          อนุมัติที่เลือก
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+          ยกเลิกการเลือก
+        </Button>
+      </FloatingActionBar>
+      <ConfirmDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        title={`อนุมัติ ${selectedItems.length} Config พร้อมกัน?`}
+        description={
+          <>
+            Config ที่เลือกจะเป็นสถานะอนุมัติแล้วทั้งหมดและย้อนกลับไม่ได้
+            ยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะเริ่ม Rollout
+            <span className="mt-2 block font-instrument text-xs">
+              {selectedItems.map((i) => i.name).join(", ")}
+            </span>
+          </>
+        }
+        confirmLabel={`อนุมัติ ${selectedItems.length} รายการ`}
+        confirmText="APPROVE"
+        onConfirm={approveSelected}
+      />
     </div>
   );
 }
