@@ -1,4 +1,4 @@
-import { ApprovalCenterView } from "./approval-center-view";
+import { ApprovalCenterEntry } from "./approval-center-entry";
 
 export const metadata = {
   title: "Approval Center | GPS Config Center",
@@ -15,5 +15,5 @@ export const metadata = {
  * รวม (คงอยู่หน้า Firmware Repository ของตัวเองต่อไป) — ดู docs/13 proposal
  */
 export default function ApprovalsPage() {
-  return <ApprovalCenterView />;
+  return <ApprovalCenterEntry />;
 }

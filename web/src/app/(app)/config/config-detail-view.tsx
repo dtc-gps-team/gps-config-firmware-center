@@ -6,12 +6,11 @@ import Link from "next/link";
 import {
   CalendarIcon,
   CheckIcon,
-  ClockIcon,
   CopyIcon,
+  HistoryIcon,
+  Trash2Icon,
   EyeIcon,
   EyeOffIcon,
-  RadioIcon,
-  SlidersHorizontalIcon,
   UserCheckIcon,
   UserIcon,
 } from "lucide-react";
@@ -19,21 +18,20 @@ import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
+import { ErrorState } from "@/components/error-state";
+import { UrlTabs } from "@/components/url-tabs";
+import { ConfigLifecycleSteps } from "@/components/config/lifecycle-steps";
+import { RelativeTime } from "@/components/relative-time";
+import { diffConfigFields } from "@/lib/config-diff";
 import { useAuth } from "@/components/auth/auth-provider";
-import { canUpdateConfig } from "@/lib/permissions";
+import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
+import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
 import { ApiError } from "@/lib/api";
 import {
   deleteConfig,
+  updateConfig,
   type Config,
   type ConfigVersion,
 } from "@/lib/config-api";
@@ -115,19 +113,17 @@ export function ConfigDetailView({ configId }: { configId: string }) {
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">{error ?? "ไม่พบ Config นี้"}</p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            ลองใหม่
-          </Button>
-          <Link
-            href="/config"
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            กลับไปรายการ
-          </Link>
-        </div>
+      <div className="flex flex-col gap-3 py-8">
+        <ErrorState
+          message={error ?? "ไม่พบ Config นี้"}
+          onRetry={() => void refetch()}
+        />
+        <Link
+          href="/config"
+          className={buttonVariants({ variant: "ghost", size: "sm", className: "w-fit" })}
+        >
+          กลับไปรายการ
+        </Link>
       </div>
     );
   }
@@ -137,6 +133,10 @@ export function ConfigDetailView({ configId }: { configId: string }) {
       key={data.id}
       config={data}
       versions={versions.data ?? []}
+      onChanged={() => {
+        void refetch();
+        void versions.refetch();
+      }}
     />
   );
 }
@@ -144,16 +144,17 @@ export function ConfigDetailView({ configId }: { configId: string }) {
 function ConfigDetailContent({
   config,
   versions,
+  onChanged,
 }: {
   config: Config;
   versions: ConfigVersion[];
+  onChanged: () => void;
 }) {
   const router = useRouter();
   const { session } = useAuth();
   const definitions = useConfigDefinitions();
   const { resolveName } = useUserNames();
   const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showSensitiveJson, setShowSensitiveJson] = useState(false);
@@ -199,9 +200,24 @@ function ConfigDetailContent({
     }
   }
 
+  const [restoring, setRestoring] = useState<ConfigVersion | null>(null);
+
+  /** ใส่ค่าจากเวอร์ชันที่อนุมัติแล้วกลับเข้า draft นี้ (ใช้ PUT เดิม แก้ได้เฉพาะ draft) */
+  async function restoreVersion(v: ConfigVersion) {
+    if (!session?.accessToken) return;
+    try {
+      await updateConfig(session.accessToken, config.id, { fields: v.fields });
+      toast.success(`ใส่ค่าจากเวอร์ชัน ${v.versionNumber} กลับเข้า draft แล้ว`);
+      onChanged();
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "ใส่ค่ากลับไม่สำเร็จ";
+      toast.error(message);
+    }
+  }
+
   async function handleDelete() {
     if (!session?.accessToken) return;
-    setDeleting(true);
     setDeleteError(null);
     try {
       await deleteConfig(session.accessToken, config.id);
@@ -209,7 +225,6 @@ function ConfigDetailContent({
       router.push("/config");
       router.refresh();
     } catch (err) {
-      setDeleting(false);
       const message =
         err instanceof ApiError ? err.message : "ลบ Config ไม่สำเร็จ";
       setDeleteError(message);
@@ -233,9 +248,6 @@ function ConfigDetailContent({
             items={[
               { label: "โมเดล", value: config.deviceModel },
               { label: "โปรโตคอล", value: config.protocol },
-              ...(latestVersion != null
-                ? [{ label: "เวอร์ชัน", value: String(latestVersion) }]
-                : []),
             ]}
           />
         }
@@ -245,71 +257,118 @@ function ConfigDetailContent({
               {copied ? <CheckIcon /> : <CopyIcon />}
               {copied ? "คัดลอกแล้ว" : "คัดลอก JSON"}
             </Button>
-            <Link
-              href={`/config/new?from=${encodeURIComponent(config.id)}`}
-              className={buttonVariants({ variant: "outline" })}
-            >
-              โคลน Config
-            </Link>
             {canModify && (
-              <>
-                <Button variant="destructive" onClick={() => setConfirming(true)}>
-                  ลบ
-                </Button>
-                <Link
-                  href={`/config/${config.id}/edit`}
-                  className={buttonVariants()}
-                >
-                  แก้ไข
-                </Link>
-              </>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="ลบ Config นี้"
+                title="ลบ Config นี้"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirming(true)}
+              >
+                <Trash2Icon />
+              </Button>
+            )}
+            {/* โคลน = คัดลอกชุดนี้ไปเป็น Config ใหม่แล้วแก้เฉพาะบางค่า ไม่ต้องใส่พารามิเตอร์ใหม่ทั้งหมด
+                เป็นปุ่มหลักเมื่อแก้ชุดนี้ตรงๆ ไม่ได้ (อนุมัติแล้ว/อยู่ในคิว) */}
+            {canCreateConfig(session?.role) && (
+              <Link
+                href={`/config/new?from=${encodeURIComponent(config.id)}`}
+                title="คัดลอกค่าทั้งหมดไปเป็น Config ใหม่ แล้วแก้เฉพาะค่าที่ต้องการ"
+                className={buttonVariants({ variant: canModify ? "outline" : "default" })}
+              >
+                <CopyIcon />
+                โคลนไปสร้างชุดใหม่
+              </Link>
+            )}
+            {canModify && (
+              <Link
+                href={`/config/${config.id}/edit`}
+                className={buttonVariants()}
+              >
+                แก้ไข
+              </Link>
             )}
           </>
         }
       />
 
-      <AlertDialog open={confirming} onOpenChange={setConfirming}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>ลบ Config นี้?</AlertDialogTitle>
-            <AlertDialogDescription>
-              ลบ Config &ldquo;{config.name}&rdquo; ถาวร? กู้คืนไม่ได้
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {deleteError && (
-            <p className="text-sm text-destructive">{deleteError}</p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting ? "กำลังลบ…" : "ยืนยันลบ"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="ลบ Config นี้?"
+        description={
+          <>
+            ลบ &ldquo;{config.name}&rdquo; ถาวร กู้คืนไม่ได้
+            {deleteError && (
+              <span className="mt-2 block text-destructive">{deleteError}</span>
+            )}
+          </>
+        }
+        confirmLabel="ยืนยันลบ"
+        destructive
+        onConfirm={handleDelete}
+      />
 
-      {canModify && <ConfigReviewPanel config={config} />}
+      <ConfigLifecycleSteps status={config.status} />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
-        <div className="flex flex-col gap-6">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile label="พารามิเตอร์" value={String(fieldEntries.length)} hint="ค่าที่ตั้งใน Config นี้" />
+        <StatTile
+          label="เวอร์ชันที่อนุมัติ"
+          value={latestVersion !== null ? `v${latestVersion}` : "ยังไม่มี"}
+          hint={latestVersion !== null ? "ล่าสุด" : "เกิดเมื่อ Operation อนุมัติ"}
+        />
+        <StatTile
+          label="แก้ไขล่าสุด"
+          value={<RelativeTime iso={config.updatedAt} />}
+          hint={formatDateTime(config.updatedAt)}
+        />
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          {canModify && <ConfigReviewPanel config={config} />}
           {config.description?.trim() && (
             <p className="text-sm whitespace-pre-wrap text-muted-foreground">
               {config.description}
             </p>
           )}
 
+          <UrlTabs
+            tabs={[
+              {
+                id: "params",
+                label: "พารามิเตอร์",
+                count: fieldEntries.length,
+                content: (
+                  <ParamGroups
+                    config={config}
+                    definitions={definitions.data ?? []}
+                    isMasked={(name) => effectiveSensitiveFieldNames.has(name)}
+                  />
+                ),
+              },
+              {
+                id: "versions",
+                label: "ประวัติเวอร์ชัน",
+                count: versions.length,
+                content: (
+                  <VersionHistory
+                    config={config}
+                    versions={versions}
+                    isMasked={(name) => effectiveSensitiveFieldNames.has(name)}
+                    onRestore={canModify ? setRestoring : undefined}
+                  />
+                ),
+              },
+            ]}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24">
           <Card className="p-4">
             <div className="divide-y">
-              <InfoRow label="โมเดล" icon={SlidersHorizontalIcon}>
-                {config.deviceModel}
-              </InfoRow>
-              <InfoRow label="โปรโตคอล" icon={RadioIcon}>
-                {config.protocol}
-              </InfoRow>
               <InfoRow label="สร้างโดย" icon={UserIcon}>
                 {resolveName(config.createdBy)}
               </InfoRow>
@@ -324,101 +383,233 @@ function ConfigDetailContent({
               <InfoRow label="สร้างเมื่อ" icon={CalendarIcon}>
                 {formatDateTime(config.createdAt)}
               </InfoRow>
-              <InfoRow label="แก้ไขล่าสุด" icon={ClockIcon}>
-                {formatDateTime(config.updatedAt)}
-              </InfoRow>
             </div>
           </Card>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">
-              พารามิเตอร์{" "}
-              <span className="text-muted-foreground">
-                ({fieldEntries.length})
-              </span>
-            </p>
-            {fieldEntries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                ยังไม่ได้ตั้งค่าพารามิเตอร์
-              </p>
-            ) : (
-              <div className="divide-y rounded-lg border">
-                {fieldEntries.map(([key, value]) => {
-                  const rendered = renderFieldValue(value);
-                  const multiline = rendered.includes("\n");
-                  return (
-                    <div
-                      key={key}
-                      className="flex justify-between gap-4 px-3 py-2 text-sm"
-                    >
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {key}
-                      </span>
-                      {effectiveSensitiveFieldNames.has(key) ? (
-                        <SensitiveValue value={value} />
-                      ) : (
-                        <span
-                          className={
-                            "min-w-0 font-mono text-xs break-words whitespace-pre-wrap " +
-                            (multiline ? "text-left" : "text-right")
-                          }
-                        >
-                          {rendered}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {versions.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm font-medium">ประวัติเวอร์ชัน</p>
-              <ul className="divide-y rounded-lg border text-sm">
-                {versions.map((v) => (
-                  <li
-                    key={v.id}
-                    className="flex items-center justify-between gap-4 px-3 py-2"
-                  >
-                    <span>เวอร์ชัน {v.versionNumber}</span>
-                    <span className="text-xs text-muted-foreground">
-                      อนุมัติ {formatDateTime(v.approvedAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">Config JSON</p>
+              {effectiveSensitiveFieldNames.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowSensitiveJson((v) => !v)}
+                  className="flex items-center gap-1 rounded text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  {showSensitiveJson ? (
+                    <>
+                      <EyeOffIcon className="size-3.5" /> ซ่อนค่าอ่อนไหว
+                    </>
+                  ) : (
+                    <>
+                      <EyeIcon className="size-3.5" /> แสดงค่าอ่อนไหว
+                    </>
+                  )}
+                </button>
+              )}
             </div>
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium">Config JSON</p>
-            {effectiveSensitiveFieldNames.size > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSensitiveJson((v) => !v)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                {showSensitiveJson ? (
-                  <>
-                    <EyeOffIcon className="size-3.5" /> ซ่อนค่าอ่อนไหว
-                  </>
-                ) : (
-                  <>
-                    <EyeIcon className="size-3.5" /> แสดงค่าอ่อนไหว
-                  </>
-                )}
-              </button>
-            )}
+            <pre className="max-h-[28rem] overflow-auto rounded-lg border bg-surface-sunken p-3 font-instrument text-xs">
+              <code>{displayedJson}</code>
+            </pre>
           </div>
-          <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs">
-            <code>{displayedJson}</code>
-          </pre>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={restoring !== null}
+        onOpenChange={(open) => !open && setRestoring(null)}
+        title={`ใส่ค่าจากเวอร์ชัน ${restoring?.versionNumber ?? ""} กลับเข้า draft?`}
+        description="ค่าทุกช่องใน draft นี้จะถูกแทนที่ด้วยค่าของเวอร์ชันนั้น ค่าที่แก้ค้างอยู่จะหายไป ส่งขออนุมัติใหม่อีกครั้งหลังตรวจ"
+        confirmLabel="ใส่ค่ากลับ"
+        onConfirm={async () => {
+          if (restoring) await restoreVersion(restoring);
+        }}
+      />
     </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border bg-card px-4 py-3">
+      <span className="label-caps text-muted-foreground">{label}</span>
+      <span className="text-lg font-semibold tabular-nums">{value}</span>
+      <span className="truncate text-xs text-muted-foreground">{hint}</span>
+    </div>
+  );
+}
+
+const UNCATEGORIZED = "อื่นๆ";
+
+/** พารามิเตอร์จัดกลุ่มตามหมวดจากคลัง Parameter (ยังไม่รู้หมวด/โหลดไม่ได้ = กลุ่ม "อื่นๆ") */
+function ParamGroups({
+  config,
+  definitions,
+  isMasked,
+}: {
+  config: Config;
+  definitions: ConfigFieldDefinition[];
+  isMasked: (name: string) => boolean;
+}) {
+  const defByName = useMemo(() => new Map(definitions.map((d) => [d.fieldName, d])), [definitions]);
+  const groups = useMemo(() => {
+    const category = new Map(definitions.map((d) => [d.fieldName, d.category ?? UNCATEGORIZED]));
+    const out = new Map<string, [string, unknown][]>();
+    for (const entry of Object.entries(config.fields)) {
+      const key = category.get(entry[0]) ?? UNCATEGORIZED;
+      out.set(key, [...(out.get(key) ?? []), entry]);
+    }
+    return [...out.entries()].sort(([a], [b]) =>
+      a === UNCATEGORIZED ? 1 : b === UNCATEGORIZED ? -1 : a.localeCompare(b),
+    );
+  }, [config.fields, definitions]);
+
+  if (groups.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        ยังไม่ได้ตั้งค่าพารามิเตอร์ กด &ldquo;แก้ไข&rdquo; เพื่อเพิ่ม
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map(([name, entries]) => (
+        <section key={name} aria-label={name} className="flex flex-col gap-1.5">
+          <h2 className="label-caps text-muted-foreground">
+            {name} <span className="tabular-nums">({entries.length})</span>
+          </h2>
+          <div className="divide-y rounded-lg border bg-card">
+            {entries.map(([key, value]) => {
+              const rendered = renderFieldValue(value);
+              const multiline = rendered.includes("\n");
+              const def = defByName.get(key);
+              return (
+                <div
+                  key={key}
+                  className="flex flex-wrap items-start justify-between gap-x-6 gap-y-1 px-4 py-3 text-sm"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-instrument text-xs font-medium">{key}</span>
+                      {def?.restartRequired && (
+                        <span className="rounded-full bg-warning-subtle px-1.5 text-[0.65rem] whitespace-nowrap text-warning-foreground">
+                          ต้อง Restart
+                        </span>
+                      )}
+                    </span>
+                    {def?.description && (
+                      <span className="text-xs text-muted-foreground">{def.description}</span>
+                    )}
+                  </div>
+                  <div className="flex min-w-0 items-baseline gap-1.5">
+                    {isMasked(key) ? (
+                      <SensitiveValue value={value} />
+                    ) : (
+                      <span
+                        className={
+                          "min-w-0 rounded bg-surface-sunken px-2 py-0.5 font-instrument text-xs break-words whitespace-pre-wrap " +
+                          (multiline ? "text-left" : "text-right")
+                        }
+                      >
+                        {rendered}
+                      </span>
+                    )}
+                    {def?.unit && (
+                      <span className="text-xs text-muted-foreground">{def.unit}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** ประวัติเวอร์ชันที่อนุมัติ (ใหม่ไปเก่า) กดดูส่วนต่างเทียบค่าปัจจุบันได้ · draft ใส่ค่าจากเวอร์ชันเก่ากลับได้ */
+function VersionHistory({
+  config,
+  versions,
+  isMasked,
+  onRestore,
+}: {
+  config: Config;
+  versions: ConfigVersion[];
+  isMasked: (name: string) => boolean;
+  onRestore?: (v: ConfigVersion) => void;
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const { resolveName } = useUserNames();
+
+  if (versions.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        ยังไม่มีเวอร์ชันที่อนุมัติ เวอร์ชันแรกเกิดเมื่อ Operation อนุมัติ
+      </p>
+    );
+  }
+
+  return (
+    <ul className="divide-y rounded-lg border text-sm">
+      {versions.map((v) => {
+        const open = openId === v.id;
+        const diff = open ? diffConfigFields(v.fields, config.fields) : null;
+        return (
+          <li key={v.id} className="flex flex-col gap-3 px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <HistoryIcon className="size-3.5 text-muted-foreground" />
+                <span className="font-medium">เวอร์ชัน {v.versionNumber}</span>
+                <span className="text-xs text-muted-foreground">
+                  อนุมัติ {formatDateTime(v.approvedAt)} โดย {resolveName(v.approvedBy)}
+                </span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-expanded={open}
+                  onClick={() => setOpenId(open ? null : v.id)}
+                >
+                  {open ? "ซ่อนส่วนต่าง" : "เทียบกับค่าปัจจุบัน"}
+                </Button>
+                {onRestore && (
+                  <Button size="sm" variant="outline" onClick={() => onRestore(v)}>
+                    ใส่ค่ากลับเข้า draft
+                  </Button>
+                )}
+              </span>
+            </div>
+            {diff && (
+              <div className="flex flex-col gap-2">
+                <DiffCounts counts={diff.counts} unchangedCount={diff.unchangedCount} />
+                {diff.changes.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    ค่าปัจจุบันเหมือนเวอร์ชันนี้ทุกช่อง
+                  </p>
+                ) : (
+                  <DiffViewer
+                    changes={diff.changes}
+                    beforeLabel={`เวอร์ชัน ${v.versionNumber}`}
+                    afterLabel="ค่าปัจจุบัน"
+                    isMasked={isMasked}
+                  />
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -57,7 +57,7 @@ export function FirmwareSimulatePanel({ firmware }: { firmware: Firmware }) {
   }
 
   return (
-    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
+    <Card className="gap-3 bg-muted/30 p-4">
       <p className="text-sm font-medium">ทดสอบ Firmware</p>
       <p className="text-xs text-muted-foreground">
         ระบุโมเดลที่จะทดสอบ (ลองโมเดลนอกรายการ compatibility เพื่อดูผลไม่ผ่านได้)

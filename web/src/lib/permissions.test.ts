@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canManageDeviceModels, visibleDeviceHistoryTypes } from "./permissions";
+import { canManageDeviceModels, canReadFirmware, visibleDeviceHistoryTypes } from "./permissions";
 
 /**
  * เทสแรกของ permissions.ts ในโปรเจกต์ (ยังไม่เคยมี unit test ของไฟล์นี้มา
@@ -88,6 +88,17 @@ describe("visibleDeviceHistoryTypes", () => {
       expect(visibleDeviceHistoryTypes(role)).not.toContain(
         "firmware-override",
       );
+    }
+  });
+});
+
+describe("canReadFirmware", () => {
+  it("ConfigEngineer และ role ที่ไม่รู้จักอ่าน Firmware ไม่ได้ ที่เหลือทุก role ได้", () => {
+    expect(canReadFirmware("ConfigEngineer")).toBe(false);
+    expect(canReadFirmware(undefined)).toBe(false);
+    expect(canReadFirmware("SW")).toBe(false);
+    for (const r of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
+      expect(canReadFirmware(r)).toBe(true);
     }
   });
 });

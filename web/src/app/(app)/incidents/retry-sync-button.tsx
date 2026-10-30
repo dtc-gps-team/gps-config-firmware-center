@@ -62,11 +62,7 @@ export function RetrySyncButton({
   }
 
   return (
-    <Button
-      size="sm"
-      disabled={submitting}
-      onClick={() => void retry()}
-    >
+    <Button size="sm" disabled={submitting} onClick={() => void retry()}>
       <RefreshCwIcon className={submitting ? "animate-spin" : ""} />
       {submitting ? "กำลังสั่ง…" : "ลองเขียนใหม่"}
     </Button>

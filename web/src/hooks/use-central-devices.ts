@@ -9,6 +9,7 @@ import {
   type CentralDeviceList,
   type DeviceCentralView,
 } from "@/lib/central-device-api";
+import { markDataLoaded } from "@/lib/refresh-bus";
 import { usePollInterval } from "@/hooks/use-poll-interval";
 import { useRefetchOnFocus } from "@/hooks/use-refetch-on-focus";
 
@@ -45,6 +46,7 @@ function useCentralFetch<T>(load: (token: string) => Promise<T>, key: string) {
       const data = await load(token);
       if (latestKey.current !== key) return;
       setState({ key, data, isLoading: false, error: null });
+      markDataLoaded();
     } catch (err) {
       if (latestKey.current !== key) return;
       // รีเฟรชเบื้องหลังล้มเหลว: เก็บข้อมูลเดิมไว้ ไม่ทำให้การ์ดกระพริบเป็นว่าง
