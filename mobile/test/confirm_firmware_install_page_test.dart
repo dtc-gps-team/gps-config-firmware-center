@@ -178,9 +178,8 @@ Future<void> _pump(
 }
 
 Future<void> _selectFirmware(WidgetTester tester, String label) async {
-  await tester.tap(find.byKey(const Key('confirm_firmware_select')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text(label).last);
+  final key = label == 'v2.1.0' ? 'confirm_firmware_option_fw-ok' : label;
+  await tester.tap(find.byKey(Key(key)));
   await tester.pumpAndSettle();
 }
 
@@ -198,10 +197,11 @@ void main() {
       (tester) async {
         await _pump(tester, confirmRepo: _FakeConfirmRepository());
 
-        await tester.tap(find.byKey(const Key('confirm_firmware_select')));
-        await tester.pumpAndSettle();
-
         expect(find.text('v2.1.0'), findsWidgets);
+        expect(
+          find.byKey(const Key('confirm_firmware_option_fw-ok')),
+          findsOne,
+        );
         expect(find.text('v9.9.9'), findsNothing); // คนละรุ่น
         expect(find.text('v3.0.0-rc'), findsNothing); // ยังไม่ approved
       },
@@ -226,6 +226,20 @@ void main() {
         isNull,
       );
     });
+  });
+
+  testWidgets('อธิบายว่าการยืนยันเป็นเพียง Audit Log ก่อนรายการ', (
+    tester,
+  ) async {
+    await _pump(tester, confirmRepo: _FakeConfirmRepository());
+
+    expect(find.byKey(const Key('confirm_firmware_notice')), findsOne);
+    expect(
+      find.text(
+        'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกการยืนยันลง Audit Log ไม่ได้ส่งอะไรไปที่อุปกรณ์',
+      ),
+      findsOne,
+    );
   });
 
   group('200 สำเร็จ', () {

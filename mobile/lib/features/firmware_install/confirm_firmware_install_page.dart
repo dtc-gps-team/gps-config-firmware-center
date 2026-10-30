@@ -232,6 +232,14 @@ class _ConfirmFirmwareInstallPageState
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
+        const AppNotice(
+          key: Key('confirm_firmware_notice'),
+          tone: AppBadgeTone.neutral,
+          child: Text(
+            'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกการยืนยันลง Audit Log ไม่ได้ส่งอะไรไปที่อุปกรณ์',
+          ),
+        ),
+        const SizedBox(height: 16),
         const AppFieldLabel('Firmware ที่ติดตั้งแล้ว'),
         if (options.isEmpty)
           const AppNotice(
@@ -243,54 +251,59 @@ class _ConfirmFirmwareInstallPageState
             ),
           )
         else
-          for (final firmware in options)
-            AppCard(
-              key: Key('confirm_firmware_option_${firmware.id}'),
-              highlighted: _selectedFirmwareId == firmware.id,
-              onTap: done || _submitting
-                  ? null
-                  : () => setState(() => _selectedFirmwareId = firmware.id),
-              size: AppCardSize.small,
-              child: Row(
-                children: [
-                  Radio<String>(
-                    value: firmware.id,
-                    groupValue: _selectedFirmwareId,
-                    onChanged: done || _submitting
+          RadioGroup<String>(
+            groupValue: _selectedFirmwareId,
+            onChanged: (value) => setState(() => _selectedFirmwareId = value),
+            child: Column(
+              children: [
+                for (final firmware in options)
+                  AppCard(
+                    key: Key('confirm_firmware_option_${firmware.id}'),
+                    highlighted: _selectedFirmwareId == firmware.id,
+                    onTap: done || _submitting
                         ? null
-                        : (value) =>
-                              setState(() => _selectedFirmwareId = value),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                        : () =>
+                              setState(() => _selectedFirmwareId = firmware.id),
+                    size: AppCardSize.small,
+                    child: Row(
                       children: [
-                        Text(
-                          firmware.originalFilename.isEmpty
-                              ? 'Firmware v${firmware.version}'
-                              : 'Firmware v${firmware.version} · '
-                                    '${firmware.originalFilename}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.foreground,
-                          ),
+                        Radio<String>(
+                          value: firmware.id,
+                          enabled: !done && !_submitting,
                         ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'รองรับรุ่นอุปกรณ์ · ผ่านการอนุมัติแล้ว',
-                          style: TextStyle(
-                            fontSize: AppTypography.xs,
-                            height: AppTypography.xsHeight,
-                            color: AppColors.mutedForeground,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                firmware.originalFilename.isEmpty
+                                    ? 'Firmware v${firmware.version}'
+                                    : 'Firmware v${firmware.version} · '
+                                          '${firmware.originalFilename}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.foreground,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'รองรับรุ่นอุปกรณ์ · ผ่านการอนุมัติแล้ว',
+                                style: TextStyle(
+                                  fontSize: AppTypography.xs,
+                                  height: AppTypography.xsHeight,
+                                  color: AppColors.mutedForeground,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
+          ),
       ],
     );
   }
