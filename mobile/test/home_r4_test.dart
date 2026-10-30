@@ -489,6 +489,20 @@ void main() {
     expect(find.byType(FieldReportPage), findsOneWidget);
   });
 
+  testWidgets('การ์ดงานค้างอยู่เหนือการ์ด Incidents', (tester) async {
+    await _pump(tester, _Repo([_task('1', TaskStatus.pending)]));
+    await tester.pumpAndSettle();
+
+    final summary = find.byKey(const Key('home_task_summary'));
+    final incidents = find.byKey(const Key('home_incidents_shortcut'));
+    expect(summary, findsOneWidget);
+    expect(incidents, findsOneWidget);
+    expect(
+      tester.getBottomLeft(summary).dy,
+      lessThanOrEqualTo(tester.getTopLeft(incidents).dy),
+    );
+  });
+
   testWidgets('loading และ empty ไม่ทำให้ทางลัดหาย', (tester) async {
     final pending = Completer<List<Task>>();
     await _pump(tester, _Repo([])..loading = pending);

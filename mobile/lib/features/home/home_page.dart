@@ -533,19 +533,24 @@ class _HomeOverviewDelegate extends MultiChildLayoutDelegate {
     // ปุ่มดูทั้งหมดสำคัญกว่าหัวข้อหรือทางลัดซ้ำกับแท็บ เมื่อพื้นที่เล็กผิดปกติ
     if (reserved() > size.height) heading = false;
     if (reserved() > size.height) shortcuts = false;
-    final summary = reserved() + h(_HomeSlot.summary) <= size.height;
+    final summary =
+        reserved() + h(_HomeSlot.summary) + HomeTokens.gap <= size.height;
     var y = 0.0;
     void place(Object id) {
       positionChild(id, Offset(0, y));
       y += h(id);
     }
 
+    // B (30/10/2026): การ์ดงานค้างอยู่บนสุด เหนือการ์ด Incidents
+    if (summary) {
+      place(_HomeSlot.summary);
+      y += HomeTokens.gap;
+    }
     if (shortcuts) {
       place(_HomeSlot.shortcuts);
       y += HomeTokens.gap;
     }
     place(alerts);
-    if (summary) place(_HomeSlot.summary);
     if (heading) place(_HomeSlot.heading);
     final available = size.height - y;
     var used = 0.0;
