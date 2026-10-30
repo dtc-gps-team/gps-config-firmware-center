@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { ApprovalCard } from "./approval-card";
 import type { PendingApproval } from "@/hooks/use-pending-approvals";
@@ -26,6 +27,18 @@ vi.mock("@/hooks/use-config-versions", () => ({
   useConfigVersions: () => ({
     data: versionsState.data,
     isLoading: versionsState.data === null,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/use-config-definitions", () => ({
+  useConfigDefinitions: () => ({
+    data: [
+      { fieldName: "COMMAND_PASSWORD", sensitive: true, restartRequired: false },
+      { fieldName: "SERVER_PORT", sensitive: false, restartRequired: true },
+    ],
+    isLoading: false,
     error: null,
     refetch: vi.fn(),
   }),
@@ -106,9 +119,37 @@ describe("ApprovalCard", () => {
     renderCard();
 
     // v2 -> ใหม่: SERVER_PORT แก้ 1 ค่า (COMMAND_PASSWORD เท่าเดิม)
+    expect(screen.getByText("เทียบกับเวอร์ชัน 2")).toBeInTheDocument();
+    expect(screen.getByText("แก้ไข 1")).toBeInTheDocument();
+  });
+
+  it("กด 'ดูค่าที่เปลี่ยน' แล้วเห็นค่าเดิม→ใหม่ ค่าอ่อนไหวถูกปิด และเตือนค่าที่ต้อง Restart", async () => {
+    versionsState.data = [
+      version(2, { COMMAND_PASSWORD: "old-secret", SERVER_PORT: 9000 }),
+    ];
+    const user = userEvent.setup();
+    renderCard();
+
+    expect(screen.queryByText("9000")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /ดูค่าที่เปลี่ยน/ }));
+
+    expect(screen.getByText("9000")).toBeInTheDocument();
+    expect(screen.getByText("8080")).toBeInTheDocument();
+    expect(screen.queryByText("old-secret")).not.toBeInTheDocument();
+    expect(screen.queryByText("s3cr3t")).not.toBeInTheDocument();
+    expect(screen.getByText(/ต้อง Restart กล่องหลังเปลี่ยน/)).toBeInTheDocument();
+  });
+
+  it("กดอนุมัติแล้วเห็นกล่องยืนยันที่บอกผลกระทบก่อนทำจริง", async () => {
+    const user = userEvent.setup();
+    renderCard();
+
+    await user.click(screen.getByRole("button", { name: "อนุมัติ" }));
+
     expect(
-      screen.getByText("เปลี่ยนจากเวอร์ชัน 2 จำนวน 1 ค่า"),
+      await screen.findByText(/ยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะเริ่ม Rollout/),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ยืนยันอนุมัติ" })).toBeInTheDocument();
   });
 
   it("ยังไม่เคยอนุมัติ: บอกว่าเป็นเวอร์ชันแรก", () => {
@@ -116,8 +157,6 @@ describe("ApprovalCard", () => {
 
     renderCard();
 
-    expect(
-      screen.getByText("ยังไม่เคยอนุมัติ (เวอร์ชันแรก)"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/ยังไม่เคยอนุมัติ \(เวอร์ชันแรก\)/)).toBeInTheDocument();
   });
 });

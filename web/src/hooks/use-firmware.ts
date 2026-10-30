@@ -17,9 +17,9 @@ type FirmwareListState = {
  * Repository (list) และ dropdown เลือก payload ใน Campaign Wizard (mirror
  * `useConfigs`)
  */
-export function useFirmwareList() {
+export function useFirmwareList(enabled = true) {
   const { session } = useAuth();
-  const token = session?.accessToken ?? null;
+  const token = enabled ? (session?.accessToken ?? null) : null;
   const [state, setState] = useState<FirmwareListState>({
     data: null,
     isLoading: true,

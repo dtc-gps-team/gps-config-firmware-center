@@ -43,7 +43,7 @@ export function UploadFirmwareButton({
         <PlusIcon />
         อัปโหลด Firmware
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>อัปโหลด Firmware</DialogTitle>
           <DialogDescription>

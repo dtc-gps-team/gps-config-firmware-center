@@ -122,9 +122,9 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
       screen.getByText("ปล่อย Rollout นี้เข้าอุปกรณ์เลยหรือไม่?"),
     ).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" }),
-    );
+    const confirm = screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" });
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
 
     expect(releaseMock).toHaveBeenCalledWith("tok", "campaign-1", "rollout-1");
     expect(onReleased).toHaveBeenCalledWith(released);
@@ -167,9 +167,9 @@ describe("CampaignRolloutReleasePanel — flow ยืนยัน 2 ขั้น
     );
 
     await user.click(screen.getByRole("button", { name: "ปล่อยเข้าอุปกรณ์" }));
-    await user.click(
-      screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" }),
-    );
+    const confirm = screen.getByRole("button", { name: "ยืนยันปล่อยเข้าอุปกรณ์" });
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
 
     expect(await screen.findByText("ปล่อยเข้าอุปกรณ์ไม่สำเร็จ")).toBeInTheDocument();
     expect(
