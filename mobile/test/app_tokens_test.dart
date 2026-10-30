@@ -6,7 +6,7 @@ import 'package:mobile/core/theme/app_tokens.dart';
 import 'package:mobile/core/ui/app_badge.dart';
 import 'package:mobile/core/ui/status_tones.dart';
 
-// docs/22 Batch 1 — token ชุดเดียวกับ Web (§4) และ tone ของสถานะ (§5.2)
+// สี Mobile ตามภาพ r4.2 และ tone ตามความหมายสถานะเดิม
 // คำนวณ contrast จากค่า Color จริงในโค้ดด้วยสูตร relative luminance ของ WCAG
 // แบบเดียวกับ color_contrast_test.dart
 
@@ -22,50 +22,46 @@ double _contrast(Color a, Color b) {
 Color _onto(Color fg, Color bg) => Color.alphaBlend(fg, bg);
 
 void main() {
-  group('AppColors ตรงกับ oklch จริงของ Web (ไม่ใช่คอมเมนต์ใน globals.css)', () {
-    // ค่าที่แปลงจาก `web/src/app/globals.css` (`:root`) บน main d487763
-    // ยกเว้น mutedForeground = ค่าใหม่จาก #344 ที่ B ตัดสินให้ Mobile ตาม และ
-    // ค่าที่ **ต่างจาก Web แล้วโดยตั้งใจ** (docs/22 §4.6 ปรับดีไซน์ให้พรีเมียมขึ้น):
-    // background, border, *Subtle ทั้ง 4 — คอมเมนต์ค่า Web เดิมไว้ท้ายบรรทัด
+  group('r4.2 reference palette (docs/29 §4)', () {
+    // ค่าอ้างอิงจากภาพ r4.2 ที่ล็อกไว้
     final expected = <String, (Color, int)>{
-      'background': (AppColors.background, 0xFFF5F7FA), // Web F7F8FA
-      'foreground': (AppColors.foreground, 0xFF1B2733),
+      'background': (AppColors.background, 0xFFF5F6F1),
+      'foreground': (AppColors.foreground, 0xFF252821),
       'card': (AppColors.card, 0xFFFFFFFF),
-      'primary': (AppColors.primary, 0xFF1B6FB2),
+      'primary': (AppColors.primary, 0xFF22261F),
       'primaryForeground': (AppColors.primaryForeground, 0xFFFFFFFF),
-      'secondary': (AppColors.secondary, 0xFFEEF1F5),
-      'mutedForeground': (AppColors.mutedForeground, 0xFF576171),
-      'accent': (AppColors.accent, 0xFFECF3F9),
-      'accentForeground': (AppColors.accentForeground, 0xFF12344D),
-      'destructive': (AppColors.destructive, 0xFFE7000B),
-      'success': (AppColors.success, 0xFF4E9B6C),
-      'successForeground': (AppColors.successForeground, 0xFF165E3C),
-      'successSubtle': (AppColors.successSubtle, 0xFFE3F5EA), // Web DBF6E6
-      'warning': (AppColors.warning, 0xFFCB8315),
-      'warningForeground': (AppColors.warningForeground, 0xFF824103),
-      'warningSubtle': (AppColors.warningSubtle, 0xFFFDF2D8), // Web FEF3C9
-      'info': (AppColors.info, 0xFF287CCF),
-      'infoForeground': (AppColors.infoForeground, 0xFF075A8E),
-      'infoSubtle': (AppColors.infoSubtle, 0xFFE5F1FC), // Web DFF2FE
-      'dangerForeground': (AppColors.dangerForeground, 0xFF9D1135),
-      'dangerSubtle': (AppColors.dangerSubtle, 0xFFFDEDEF), // Web FFF0F2
-      'border': (AppColors.border, 0xFFE7EAEF), // Web E2E6EB
-      'inputBorder': (AppColors.inputBorder, 0xFF576171),
-      'ring': (AppColors.ring, 0xFF1B6FB2),
+      'secondary': (AppColors.secondary, 0xFFEEF0EA),
+      'mutedForeground': (AppColors.mutedForeground, 0xFF5F675A),
+      'accent': (AppColors.accent, 0xFFE3EFCF),
+      'accentForeground': (AppColors.accentForeground, 0xFF344126),
+      'destructive': (AppColors.destructive, 0xFF943726),
+      'success': (AppColors.success, 0xFF2B5E33),
+      'successForeground': (AppColors.successForeground, 0xFF2B5E33),
+      'successSubtle': (AppColors.successSubtle, 0xFFE1F0E1),
+      'warning': (AppColors.warning, 0xFF6F511A),
+      'warningForeground': (AppColors.warningForeground, 0xFF6F511A),
+      'warningSubtle': (AppColors.warningSubtle, 0xFFF8EFD9),
+      'info': (AppColors.info, 0xFF2C5574),
+      'infoForeground': (AppColors.infoForeground, 0xFF2C5574),
+      'infoSubtle': (AppColors.infoSubtle, 0xFFE2EDF6),
+      'dangerForeground': (AppColors.dangerForeground, 0xFF943726),
+      'dangerSubtle': (AppColors.dangerSubtle, 0xFFFBE5E0),
+      'border': (AppColors.border, 0xFFE7EAE0),
+      'inputBorder': (AppColors.inputBorder, 0xFF76816B),
+      'ring': (AppColors.ring, 0xFF22261F),
     };
     for (final MapEntry(key: name, value: (actual, hex)) in expected.entries) {
       test(name, () => expect(actual, Color(hex)));
     }
   });
 
-  // radius มนกว่า Web แล้วโดยตั้งใจ (docs/22 §4.6: lg 10 → 12, xl 14 → 16) ·
-  // ขนาดตัวอักษรยังตาม Web
+  // มุมโค้งตาม r4 ต่างจาก Web โดยตั้งใจ ส่วนสเกลข้อความเนื้อหาคงเดิม
   test('radius (มนกว่า Web) และขนาดตัวอักษรตาม Web (text-xs 13 / sm 15)', () {
-    expect(AppRadius.lg, 12);
+    expect(AppRadius.lg, 16);
     expect(AppRadius.sm, 6);
     expect(AppRadius.md, 8);
-    expect(AppRadius.xl, 16);
-    expect(AppRadius.xxl, 20);
+    expect(AppRadius.xl, 20);
+    expect(AppRadius.xxl, 32);
     expect(AppTypography.xs, 13);
     expect(AppTypography.sm, 15);
     expect(AppTypography.base, 16);
@@ -73,6 +69,16 @@ void main() {
   });
 
   group('contrast ของ token (WCAG AA)', () {
+    test('r4 dock labels, notification badge and lime accent >= 4.5:1', () {
+      for (final (fg, bg) in [
+        (AppColors.onInkMuted, AppColors.primary),
+        (AppColors.tabSelectedForeground, AppColors.onInk),
+        (AppColors.onNotificationBadge, AppColors.notificationBadge),
+        (AppColors.accentForeground, AppColors.primarySubtle),
+      ]) {
+        expect(_contrast(fg, bg), greaterThanOrEqualTo(4.5));
+      }
+    });
     test('ข้อความหลัก / ข้อความรอง / ตัวอักษรบนปุ่มหลัก ≥ 4.5:1', () {
       for (final (name, fg, bg) in [
         (
@@ -189,7 +195,7 @@ void main() {
 
     // ปุ่มหลัก (filled) ตอนกดไม่ได้ — เดิม primary 50% + ตัวอักษรขาว ได้แค่
     // ~2.2:1 (ปุ่ม "บันทึกสถานะ" ใน Task Detail ตอนงานยังรอดำเนินการ) · ใช้พื้น
-    // accent (ฟ้าอ่อน ยังบอกว่าเป็นตำแหน่งปุ่มหลัก ต่างจาก outline ที่พื้นเทา) +
+    // accent (เขียวอ่อนที่แยกจากปุ่มรองพื้นเทา) +
     // ตัวอักษร mutedForeground: อ่านออก ≥ 4.5:1 และดูออกว่ากดไม่ได้
     test('ปุ่มหลักตอนกดไม่ได้: อ่านออก ≥ 4.5:1 พื้นฟ้าอ่อนต่างจาก outline', () {
       final style = theme.filledButtonTheme.style!;
@@ -209,7 +215,7 @@ void main() {
       expect(bg, isNot(outlineBg));
     });
 
-    // พื้น accent กลืนกับพื้นหน้าจอ (~1.05:1) มองไม่เห็นทรงปุ่ม — ใส่ขอบฟ้าจาง
+    // พื้น accent ใกล้สีพื้นหน้า — เติมขอบ ink จางให้เห็นรูปทรงปุ่มที่กดไม่ได้
     // (primary 35%) ตอนกดไม่ได้เท่านั้น ให้เห็นทรงชัดขึ้นแต่ยังไม่เข้มเท่าปุ่มที่
     // กดได้ · ตอนกดได้ไม่มีขอบเหมือนเดิม
     test('ปุ่มหลักตอนกดไม่ได้มีขอบฟ้าจาง ตอนกดได้ไม่มีขอบ', () {

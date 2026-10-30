@@ -1,3 +1,4 @@
+import 'dart:ui' show SemanticsAction;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -116,8 +117,10 @@ Future<GoRouter> _pumpApp(
   WidgetTester tester,
   UserRole role, {
   int unread = 0,
+  Size viewport = const Size(400, 900),
+  double textScale = 1,
 }) async {
-  tester.view.physicalSize = const Size(400 * 3, 900 * 3);
+  tester.view.physicalSize = viewport * 3;
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
   final container = ProviderContainer(
@@ -150,7 +153,15 @@ Future<GoRouter> _pumpApp(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -158,9 +169,7 @@ Future<GoRouter> _pumpApp(
 }
 
 List<String> _tabLabels(WidgetTester tester) => [
-  for (final d in tester.widgetList<NavigationDestination>(
-    find.byType(NavigationDestination),
-  ))
+  for (final d in tester.widgetList<AppTabButton>(find.byType(AppTabButton)))
     d.label,
 ];
 
@@ -221,7 +230,125 @@ void main() {
     });
   });
 
+  for (final role in [UserRole.st, UserRole.ot, UserRole.operation]) {
+    testWidgets(
+      'r4 dock ${role.wireName}: 360px / 2x พื้นที่แตะและการเปลี่ยนหน้า',
+      (tester) async {
+        final router = await _pumpApp(
+          tester,
+          role,
+          unread: 120,
+          viewport: const Size(360, 640),
+          textScale: 2,
+        );
+        for (final tab in tabsFor(role)) {
+          final target = find.byKey(Key('tab_${tab.name}'));
+          final size = tester.getSize(target);
+          expect(size.width, greaterThanOrEqualTo(48));
+          expect(size.height, greaterThanOrEqualTo(48));
+          await tester.tap(target);
+          await tester.pumpAndSettle();
+          expect(_location(router), tab.location);
+          expect(tester.takeException(), isNull);
+          final selected = tester.widget<AppTabButton>(target);
+          expect(selected.selected, isTrue);
+        }
+        expect(find.text('99+'), findsOneWidget);
+      },
+    );
+  }
+
+  for (final role in [UserRole.st, UserRole.ot, UserRole.operation]) {
+    testWidgets('โปรแกรมอ่านหน้าจอแตะแท็บได้ครบ: ${role.wireName}', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        final router = await _pumpApp(tester, role, unread: 3);
+        for (final tab in tabsFor(role).reversed) {
+          final node = tester.getSemantics(find.byKey(Key('tab_${tab.name}')));
+          expect(
+            node.getSemanticsData().hasAction(SemanticsAction.tap),
+            isTrue,
+            reason: 'แท็บ ${tab.name} ต้องมีคำสั่งแตะสำหรับ TalkBack',
+          );
+          tester.binding.renderViews.first.owner!.semanticsOwner!.performAction(
+            node.id,
+            SemanticsAction.tap,
+          );
+          await tester.pumpAndSettle();
+          expect(_location(router), tab.location);
+          final selectedNode = tester.getSemantics(
+            find.byKey(Key('tab_${tab.name}')),
+          );
+          expect(
+            selectedNode.getSemanticsData().label,
+            tab == AppTab.notifications
+                ? 'แจ้งเตือน (ยังไม่อ่าน 3)'
+                : tester
+                      .widget<AppTabButton>(find.byKey(Key('tab_${tab.name}')))
+                      .label,
+          );
+        }
+      } finally {
+        handle.dispose();
+      }
+    });
+  }
+
+  for (final (scale, selectedSize, idleSize) in [
+    (1.0, 11.5, 10.5),
+    (1.1, 12.65, 11.55),
+    (1.2, 13.8, 12.6),
+    (1.3, 14.5, 13.65),
+    (2.0, 14.5, 14.0),
+  ]) {
+    testWidgets('ชื่อแท็บขยายต่อเนื่องและมีเพดาน: ${scale}x', (tester) async {
+      await _pumpApp(
+        tester,
+        UserRole.st,
+        viewport: const Size(360, 640),
+        textScale: scale,
+      );
+      for (final (tab, expectedSize) in [
+        (AppTab.home, selectedSize),
+        (AppTab.devices, idleSize),
+      ]) {
+        final label = tester
+            .widget<AppTabButton>(find.byKey(Key('tab_${tab.name}')))
+            .label;
+        final text = tester.widget<Text>(
+          find.descendant(
+            of: find.byKey(Key('tab_${tab.name}')),
+            matching: find.text(label),
+          ),
+        );
+        final actualSize = text.textScaler!.scale(text.style!.fontSize!);
+        expect(actualSize, closeTo(expectedSize, 0.01));
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   group('สลับแท็บ', () {
+    testWidgets('r4: สลับแท็บแล้วยังคงคำค้นอุปกรณ์', (tester) async {
+      await _pumpApp(tester, UserRole.st);
+      await tester.tap(find.byKey(const Key('tab_devices')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('device_search_field')),
+        'DEV-0117',
+      );
+      await tester.tap(find.byKey(const Key('tab_incidents')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tab_devices')));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('device_search_field')),
+      );
+      expect(field.controller!.text, 'DEV-0117');
+    });
+
     testWidgets('แตะแต่ละแท็บ -> เปิดหน้าของแท็บนั้น แถบแท็บยังอยู่', (
       tester,
     ) async {
@@ -240,9 +367,7 @@ void main() {
         expect(_location(router), location, reason: key);
         expect(find.byType(page), findsOneWidget, reason: key);
         expect(find.byKey(const Key('app_tab_bar')), findsOneWidget);
-        final bar = tester.widget<NavigationBar>(
-          find.byKey(const Key('app_tab_bar')),
-        );
+        final bar = tester.widget<AppTabBar>(find.byType(AppTabBar));
         expect(bar.selectedIndex, index, reason: key);
       }
     });

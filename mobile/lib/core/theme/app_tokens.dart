@@ -1,115 +1,128 @@
 import 'package:flutter/material.dart';
 
-/// Design token ของ Mobile — เริ่มจากชุดเดียวกับ Web (docs/22 §4) ใช้กับ
-/// [AppTheme.v2] และ widget ใหม่ใน `lib/core/ui/` เท่านั้น หน้าเดิมยังใช้ token เก่าใน
-/// `AppTheme` จนกว่าจะย้ายตาม batch ของ docs/22 §9 (token เก่าลบใน Batch 6)
-///
-/// ชื่อตาม CSS variable ของ `web/src/app/globals.css` (`:root`) แปลง kebab-case
-/// เป็น camelCase (`--muted-foreground` → [AppColors.mutedForeground]) ค้นข้าม
-/// สองฝั่งได้ตรงๆ · ค่า hex เดิม **แปลงจาก `oklch()` จริง** (main `d487763`)
-///
-/// **เริ่มต่างจาก Web แล้วโดยตั้งใจ (ปรับดีไซน์ให้พรีเมียมขึ้น — docs/22 §4.6):**
-/// ขอบ / พื้น / ป้ายสถานะนุ่มขึ้น, radius ใหญ่ขึ้น, มีเงา ([AppShadows]) ที่ Web ไม่มี
-/// · ค่าที่ต่างจาก Web มีคอมเมนต์ "ต่างจาก Web" กำกับ · ต้องคุยกับ A ว่าจะตาม Web
-/// หรือให้ Web ตาม ก่อนสลับทั้งแอปใน Batch 6
-///
-/// โหมดสว่างอย่างเดียว ไม่พอร์ต `.dark` ของ Web ในรอบนี้ (docs/22 §4.2)
+/// ชุดสี Mobile ตามภาพ r4.2 (docs/29 §4) — ตั้งใจต่างจาก Web:
+/// ใช้พื้นกระดาษอ่อน สี ink และเขียวมะนาว แทนชุดสีน้ำเงินเดิม ไม่เปลี่ยนสีของ Web
+/// คงชื่อ semantic token เดิม เพื่อให้หน้าและ component ที่ใช้ร่วมกันเปลี่ยนชุดสีได้พร้อมกัน
 class AppColors {
   const AppColors._();
 
-  /// ต่างจาก Web (`#F7F8FA`) — เทาอมฟ้าอ่อนลงนิดเดียว ให้การ์ดขาวที่มีเงาลอยเด่นขึ้น
-  static const background = Color(0xFFF5F7FA);
-  static const foreground = Color(0xFF1B2733);
+  static const background = Color(0xFFF5F6F1);
+  static const foreground = Color(0xFF252821);
   static const card = Color(0xFFFFFFFF);
   static const cardForeground = foreground;
-  static const primary = Color(0xFF1B6FB2);
+  static const primary = Color(0xFF22261F);
   static const primaryForeground = Color(0xFFFFFFFF);
 
-  /// สีเน้น (accent) จุดสำคัญ — พื้นฟ้าอ่อนของ primary ใต้ไอคอน / ตัวเลข / สัญลักษณ์
-  /// ใหม่ ไม่มีใน Web (ต่างจาก Web)
-  static const primarySubtle = Color(0xFFE8F1FA);
-  static const secondary = Color(0xFFEEF1F5);
+  static const primarySubtle = Color(0xFFD7EDAC);
+  static const secondary = Color(0xFFEEF0EA);
   static const secondaryForeground = foreground;
   static const muted = secondary;
 
-  /// ค่าใหม่จาก #344 (`oklch(0.49 0.028 259.8)`) เข้มขึ้นจาก `#667080` เดิม —
-  /// 6.26:1 บน [card], 5.89:1 บน [background]
-  static const mutedForeground = Color(0xFF576171);
-  static const accent = Color(0xFFECF3F9);
-  static const accentForeground = Color(0xFF12344D);
-  static const destructive = Color(0xFFE7000B);
+  static const mutedForeground = Color(0xFF5F675A);
+  static const accent = Color(0xFFE3EFCF);
+  static const accentForeground = Color(0xFF344126);
+  static const destructive = Color(0xFF943726);
 
-  // ป้ายสถานะ: พื้นอ่อน (subtle) + ตัวอักษรเข้ม (foreground) — subtle ต่างจาก Web
-  // เล็กน้อย (นุ่มลง อิ่มสีน้อยลง) ตัวอักษรคงค่าเดิม คอนทราสต์ยังเกิน 4.5:1 ทุกคู่
-  static const success = Color(0xFF4E9B6C);
-  static const successForeground = Color(0xFF165E3C);
-  static const successSubtle = Color(0xFFE3F5EA);
-  static const warning = Color(0xFFCB8315);
-  static const warningForeground = Color(0xFF824103);
-  static const warningSubtle = Color(0xFFFDF2D8);
-  static const info = Color(0xFF287CCF);
-  static const infoForeground = Color(0xFF075A8E);
-  static const infoSubtle = Color(0xFFE5F1FC);
+  static const success = Color(0xFF2B5E33);
+  static const successForeground = Color(0xFF2B5E33);
+  static const successSubtle = Color(0xFFE1F0E1);
+  static const warning = Color(0xFF6F511A);
+  static const warningForeground = Color(0xFF6F511A);
+  static const warningSubtle = Color(0xFFF8EFD9);
+  static const info = Color(0xFF2C5574);
+  static const infoForeground = Color(0xFF2C5574);
+  static const infoSubtle = Color(0xFFE2EDF6);
 
-  /// Web ไม่มี `--danger` ตัวเข้ม จุด/ปุ่มอันตรายใช้ [destructive] แทน
-  static const dangerForeground = Color(0xFF9D1135);
-  static const dangerSubtle = Color(0xFFFDEDEF);
+  static const dangerForeground = Color(0xFF943726);
+  static const dangerSubtle = Color(0xFFFBE5E0);
 
-  /// ขอบการ์ด เส้นแบ่ง — ของตกแต่ง ห้ามใช้เป็นขอบช่องกรอก · ต่างจาก Web
-  /// (`#E2E6EB`) — จางลงเพราะการ์ดใช้เงา ([AppShadows.card]) แยกจากพื้นแทนเส้นขอบ
-  static const border = Color(0xFFE7EAEF);
+  /// ขอบการ์ด/เส้นแบ่งเป็นของตกแต่ง ใช้สีจางได้ ไม่ใช้เป็นขอบช่องกรอก
+  static const border = Color(0xFFE7EAE0);
 
-  /// ขอบช่องกรอก **ต่างจาก Web โดยตั้งใจ** (docs/22 §4.3): `--input` ของ Web
-  /// เท่ากับ [border] (1.25:1) ไม่ผ่าน WCAG 1.4.11 ใช้ [mutedForeground] แทน
-  static const inputBorder = mutedForeground;
+  /// ช่องกรอกต้องแยกจากพื้นได้ตาม WCAG 1.4.11 (อย่างน้อย 3:1)
+  /// #76816B ได้ประมาณ 4.10:1 บนขาว ต่างจาก Web และขอบการ์ดโดยตั้งใจ
+  static const inputBorder = Color(0xFF76816B);
   static const ring = primary;
+  static const onInk = Color(0xFFF3F6EC);
+  static const onInkMuted = Color(0xFFD3DBC9);
+  static const tabSelectedForeground = Color(0xFF34412A);
+  static const notificationBadge = Color(0xFFE8A33B);
+  static const onNotificationBadge = Color(0xFF2B1F08);
 
-  /// ไฮไลต์ที่วิ่งผ่าน skeleton ([AppSkeletonBox] shimmer) — สว่างกว่า [muted]
-  static const shimmerHighlight = Color(0xFFF8F9FB);
+  static const shimmerHighlight = Color(0xFFFAFBF7);
 }
 
-/// Radius — เริ่มจากสเกลของ Web (`--radius: 0.625rem` = 10) แล้ว **มนขึ้นต่างจาก
-/// Web** (lg 10 → 12, xl 14 → 16) · ปุ่ม / ช่องกรอก / กล่องข้อความใช้ [lg] · การ์ดใช้
-/// [xl] · กล่องใหญ่ที่ลอยเด่น (การ์ดหน้า Login) ใช้ [xxl]
+/// มุมโค้งตาม r4: ช่องกรอก/ปุ่ม 16, การ์ด 20, พื้นหัวหน้า/แผ่นล่าง 32
+/// ต่างจากสเกล Web โดยตั้งใจ ส่วนป้ายและ component เล็กยังใช้มุมเดิม
 class AppRadius {
   const AppRadius._();
 
   static const double sm = 6;
   static const double md = 8;
-  static const double lg = 12;
-  static const double xl = 16;
-  static const double xxl = 20;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 32;
 
   /// ป้าย (Badge) — `rounded-full`
   static const double full = 999;
 }
 
-/// เงาแบบนุ่ม (blur มาก opacity ต่ำ สีอมน้ำเงินของ [AppColors.foreground] ไม่ใช่ดำ)
+/// ขนาดแถบเมนูล่างตามภาพ r4.2 — แยกจากมุมการ์ดและสเกลข้อความเนื้อหา
+/// ชื่อแท็บขยายตามผู้ใช้จนถึงเพดาน เพื่อให้อ่านครบเป็นคำบนจอ 360px
+/// พื้นที่แตะยังไม่น้อยกว่า 48dp และโปรแกรมอ่านหน้าจอได้รับชื่อเต็มเสมอ
+class AppDockTokens {
+  const AppDockTokens._();
+
+  static const double radius = 23;
+  static const double itemRadius = 17;
+  static const margin = EdgeInsets.fromLTRB(18, 10, 18, 14);
+  static const double padding = 7;
+  static const double gap = 4;
+  static const itemPadding = EdgeInsets.symmetric(horizontal: 4, vertical: 5);
+  static const double iconSize = 19;
+  static const double minTarget = 48;
+  static const double labelSize = 10.5;
+  static const double selectedLabelSize = 11.5;
+  static const double maxLabelSize = 14;
+  static const double maxSelectedLabelSize = 14.5;
+  static const double labelHeight = 1.25;
+  static const double badgeLabelSize = 10;
+  static const double verticalGap = 3;
+  static const double horizontalGap = 7;
+
+  /// เปลี่ยนเป็นแนวตั้งเมื่อข้อความโตขึ้น ลดการเบียดไอคอนและการตัดคำ
+  static const double verticalLayoutScale = 1.2;
+
+  /// เผื่อการปัดเศษและฟอนต์จริงที่ต่างจากความกว้างที่วัดเล็กน้อย
+  static const double textMeasurementSlack = 4;
+}
+
+/// เงาแบบนุ่ม (blur มาก opacity ต่ำ สี ink ของ r4 ไม่ใช่ดำสนิท)
 /// สองชั้น: ชั้นแคบคมให้ขอบล่างชัด + ชั้นกว้างจางให้ลอย — ไม่มีใน Web (ต่างจาก Web)
 class AppShadows {
   const AppShadows._();
 
   /// การ์ดปกติ (`AppCard`) — แทนเส้นขอบเข้มเดิม
   static const card = [
-    BoxShadow(color: Color(0x0A1B2733), blurRadius: 2, offset: Offset(0, 1)),
-    BoxShadow(color: Color(0x0F1B2733), blurRadius: 16, offset: Offset(0, 4)),
+    BoxShadow(color: Color(0x0A22261F), blurRadius: 2, offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x0F22261F), blurRadius: 16, offset: Offset(0, 4)),
   ];
 
   /// ตอนกดการ์ดค้าง / element ที่ลอยเหนือเนื้อหา (แถบปุ่มล่าง)
   static const raised = [
-    BoxShadow(color: Color(0x0D1B2733), blurRadius: 4, offset: Offset(0, 2)),
-    BoxShadow(color: Color(0x141B2733), blurRadius: 24, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x0D22261F), blurRadius: 4, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x1422261F), blurRadius: 24, offset: Offset(0, 8)),
   ];
 
   /// กล่องหลักที่ลอยเด่นกลางจอ (การ์ดหน้า Login)
   static const floating = [
-    BoxShadow(color: Color(0x0D1B2733), blurRadius: 6, offset: Offset(0, 2)),
-    BoxShadow(color: Color(0x1A1B2733), blurRadius: 40, offset: Offset(0, 16)),
+    BoxShadow(color: Color(0x0D22261F), blurRadius: 6, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x1A22261F), blurRadius: 40, offset: Offset(0, 16)),
   ];
 
   /// เงาสีของสัญลักษณ์แอป / ปุ่มหลักที่ต้องการเน้น
   static const primaryGlow = [
-    BoxShadow(color: Color(0x401B6FB2), blurRadius: 20, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x1822261F), blurRadius: 20, offset: Offset(0, 8)),
   ];
 }
 
