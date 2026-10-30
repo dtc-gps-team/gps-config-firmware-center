@@ -192,6 +192,20 @@ void main() {
     }
   });
 
+  testWidgets('ตัวกรอง 4 ตัวเรียงแถวเดียวบนจอ 360 ไม่ล้น', (tester) async {
+    await _pump(tester, repo: _FakeTaskRepository());
+    tester.view.physicalSize = const Size(360 * 3, 800 * 3);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('home_filter_row')), findsOneWidget);
+    final tops = {
+      for (final name in ['all', 'open', 'completed', 'cancelled'])
+        tester.getTopLeft(find.byKey(Key('home_filter_$name'))).dy,
+    };
+    expect(tops, hasLength(1));
+  });
+
   testWidgets('งานยังไม่เสร็จเรียงความเร่งด่วนเดิมและป้ายถูกต้อง', (
     tester,
   ) async {

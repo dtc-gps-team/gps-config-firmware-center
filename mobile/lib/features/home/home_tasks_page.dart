@@ -162,30 +162,10 @@ class _HomeTasksPageState extends ConsumerState<HomeTasksPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final filter in _Filter.values)
-                            ChoiceChip(
-                              key: Key('home_filter_${filter.name}'),
-                              label: Text(filter.label),
-                              selected: _filter == filter,
-                              selectedColor: AppColors.primary,
-                              shape: const StadiumBorder(),
-                              checkmarkColor: AppColors.onInk,
-                              labelStyle: TextStyle(
-                                color: _filter == filter
-                                    ? AppColors.onInk
-                                    : AppColors.foreground,
-                              ),
-                              side: const BorderSide(
-                                color: AppColors.inputBorder,
-                              ),
-                              onSelected: (_) =>
-                                  setState(() => _filter = filter),
-                            ),
-                        ],
+                      _FilterBar(
+                        selected: _filter,
+                        onSelected: (filter) =>
+                            setState(() => _filter = filter),
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -274,6 +254,81 @@ class _HomeTasksPageState extends ConsumerState<HomeTasksPage> {
                       ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ตัวกรองสถานะงาน — B (30/10/2026): 4 ตัวเลือกเรียงแถวเดียวกว้างเท่ากัน
+/// แตะครั้งเดียวกรองได้เลย · ตัวอักษรใหญ่ (>= [HomeTokens.largeTextScale])
+/// แถวเดียวไม่พอ จึงห่อหลายแถวแทนการตัดข้อความ
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({required this.selected, required this.onSelected});
+
+  final _Filter selected;
+  final ValueChanged<_Filter> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final large =
+        MediaQuery.textScalerOf(context).scale(1) >= HomeTokens.largeTextScale;
+    if (large) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final filter in _Filter.values) _pill(filter, expand: false),
+        ],
+      );
+    }
+    return Row(
+      key: const Key('home_filter_row'),
+      children: [
+        for (final (i, filter) in _Filter.values.indexed) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(child: _pill(filter, expand: true)),
+        ],
+      ],
+    );
+  }
+
+  Widget _pill(_Filter filter, {required bool expand}) {
+    final isSelected = filter == selected;
+    final label = Text(
+      filter.label,
+      maxLines: 1,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: AppTypography.sm,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+        color: isSelected ? AppColors.onInk : AppColors.foreground,
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: Material(
+        key: Key('home_filter_${filter.name}'),
+        color: isSelected ? AppColors.primary : AppColors.card,
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: isSelected ? AppColors.primary : AppColors.inputBorder,
+          ),
+        ),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: () => onSelected(filter),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: expand ? 4 : 16,
+                vertical: 8,
+              ),
+              child: expand ? Center(child: label) : label,
+            ),
           ),
         ),
       ),
