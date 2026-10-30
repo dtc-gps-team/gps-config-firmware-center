@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -36,17 +36,28 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
-import { canRegisterDevice } from "@/lib/permissions";
-import { DEVICE_STATUS_TONE, StatusPill, statusLabel } from "@/lib/status-pill";
+import { canReadFirmware, canRegisterDevice } from "@/lib/permissions";
+import { StatusPill } from "@/lib/status-pill";
 import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
 import { rotateDeviceKey, type Device } from "@/lib/device-api";
 import { PageHeader } from "@/components/page-header";
-import { DeviceCentralCard } from "./device-central-card";
-import { DeviceHistorySheet } from "./device-history-sheet";
+import { UrlTabs } from "@/components/url-tabs";
+import { useDeviceCentral } from "@/hooks/use-central-devices";
+import { useFirmwareList } from "@/hooks/use-firmware";
+import { latestApprovedByModel } from "@/lib/firmware-staleness";
+import { DeviceCentralCardView } from "./device-central-card";
+import {
+  DeviceConfigTab,
+  DeviceFirmwareTab,
+  DeviceLogsTab,
+  DeviceTelemetryTab,
+} from "./device-detail-tabs";
+import { DeviceHistoryTimeline } from "./device-history-sheet";
 import { DeviceStatusCard } from "./device-status-card";
+import { DeviceSummaryBar } from "./device-summary-bar";
 
 export function DeviceDetailView({ deviceId }: { deviceId: string }) {
   const { data, isLoading, notFound, error, refetch } = useDevice(deviceId);
@@ -191,7 +202,7 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
               readOnly
               aria-label="API Key ใหม่"
               value={newKey ?? ""}
-              className="font-mono text-xs"
+              className="font-instrument text-xs"
             />
             <Button
               type="button"
@@ -217,42 +228,100 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
 }
 
 function DeviceDetailContent({ device }: { device: Device }) {
+  const central = useDeviceCentral(device.deviceId);
+  const { session } = useAuth();
+  const { data: firmware } = useFirmwareList(canReadFirmware(session?.role));
+  const latestFirmware = useMemo(
+    () => latestApprovedByModel(firmware ?? []).get(device.deviceModel),
+    [firmware, device.deviceModel],
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
-        title={<span className="font-mono">{device.deviceId}</span>}
+        title={<span className="font-instrument">{device.deviceId}</span>}
         breadcrumb={[{ label: device.deviceId }]}
         status={
-          <>
-            <StatusPill tone={DEVICE_STATUS_TONE[device.status] ?? "neutral"}>
-              {statusLabel(device.status)}
-            </StatusPill>
-            {device.hardwareRevisionCode && (
-              <StatusPill tone="neutral">{device.hardwareRevisionCode}</StatusPill>
-            )}
-          </>
+          device.hardwareRevisionCode ? (
+            <StatusPill tone="neutral">{device.hardwareRevisionCode}</StatusPill>
+          ) : undefined
         }
-        actions={
-          <>
-            <DeviceHistorySheet deviceId={device.deviceId} />
-            <RotateKeyControl deviceId={device.deviceId} />
-          </>
-        }
+        actions={<RotateKeyControl deviceId={device.deviceId} />}
       />
 
-      {/* สถานะไว้บนสุด — คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
-       * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}
-      <DeviceStatusCard deviceId={device.deviceId} />
+      <DeviceSummaryBar
+        device={device}
+        central={central}
+        latestFirmware={latestFirmware}
+      />
 
-      <DeviceCentralCard deviceId={device.deviceId} />
+      <UrlTabs
+        tabs={[
+          {
+            id: "overview",
+            label: "ภาพรวม",
+            content: (
+              <div className="flex flex-col gap-4">
+                {/* สถานะไว้บนสุด คนเปิดหน้านี้ส่วนใหญ่อยากรู้ก่อนว่าเครื่องมีปัญหาไหม
+                 * ข้อมูลเครื่อง (SIM/IMEI/...) ดูทีหลังได้ */}
+                <div className="grid items-start gap-4 lg:grid-cols-2">
+                  <DeviceStatusCard deviceId={device.deviceId} />
+                  <DeviceCentralCardView state={central} />
+                </div>
+                <DeviceIdentityCard device={device} />
+              </div>
+            ),
+          },
+          {
+            id: "config",
+            label: "Config",
+            content: (
+              <DeviceConfigTab deviceId={device.deviceId} central={central} />
+            ),
+          },
+          {
+            id: "firmware",
+            label: "Firmware",
+            content: (
+              <DeviceFirmwareTab
+                deviceId={device.deviceId}
+                central={central}
+                latestFirmware={latestFirmware}
+              />
+            ),
+          },
+          {
+            id: "telemetry",
+            label: "Telemetry",
+            content: <DeviceTelemetryTab central={central} />,
+          },
+          {
+            id: "logs",
+            label: "Logs",
+            content: <DeviceLogsTab central={central} device={device} />,
+          },
+          {
+            id: "history",
+            label: "History",
+            content: (
+              <Card className="p-4">
+                <DeviceHistoryTimeline deviceId={device.deviceId} />
+              </Card>
+            ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
 
-      {/* เนื้อหาเป็น label/value ล้วนเหมือน Campaign detail — จำกัด max-width
-       * ไว้ที่การ์ดนี้ ไม่ปล่อยเต็มความกว้างหน้าจอ (mirror ปัญหาเดียวกับที่
-       * แก้ไปแล้วในหน้า detail อื่น) */}
-      <Card className="max-w-xl p-4">
+function DeviceIdentityCard({ device }: { device: Device }) {
+  return (
+    <Card className="w-full p-4">
+      <div className="grid gap-x-10 lg:grid-cols-2">
         <div className="divide-y">
           <InfoRow label="SIM Number" icon={CardSimIcon}>
-            <span className="font-mono">{device.simNumber}</span>
+            <span className="font-instrument">{device.simNumber}</span>
           </InfoRow>
           <InfoRow label="โมเดล" icon={SlidersHorizontalIcon}>
             {device.deviceModel}
@@ -266,13 +335,17 @@ function DeviceDetailContent({ device }: { device: Device }) {
             )}
           </InfoRow>
           <InfoRow label="IMEI" icon={SmartphoneIcon}>
-            {device.imei ?? <NotRecorded />}
+            <span className="font-instrument">{device.imei ?? <NotRecorded />}</span>
           </InfoRow>
           <InfoRow label="Serial Number" icon={HashIcon}>
-            {device.serialNumber ?? <NotRecorded />}
+            <span className="font-instrument">
+              {device.serialNumber ?? <NotRecorded />}
+            </span>
           </InfoRow>
+        </div>
+        <div className="divide-y">
           <InfoRow label="Blackbox ID" icon={BoxIcon}>
-            {device.blackboxId ?? <NotRecorded />}
+            <span className="font-instrument">{device.blackboxId ?? <NotRecorded />}</span>
           </InfoRow>
           <InfoRow label="Bootloader" icon={TerminalIcon}>
             {device.bootloader ?? (
@@ -293,7 +366,7 @@ function DeviceDetailContent({ device }: { device: Device }) {
             {device.installedAt ? formatDateTime(device.installedAt) : "-"}
           </InfoRow>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 }

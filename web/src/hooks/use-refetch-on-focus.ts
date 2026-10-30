@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { subscribeRefresh } from "@/lib/refresh-bus";
+
 /**
  * Refetch อัตโนมัติตอนแท็บ/หน้าต่างนี้กลับมาโฟกัส (ไม่ทำ polling ต่อเนื่อง) —
  * แก้ปัญหาข้อมูลค้างระหว่าง role เช่น sw สร้าง Config แล้ว auditor ที่เปิดหน้า
@@ -30,9 +32,12 @@ export function useRefetchOnFocus(refetch: () => void): void {
     }
     window.addEventListener("focus", handleFocusOrVisible);
     document.addEventListener("visibilitychange", handleFocusOrVisible);
+    // ปุ่ม refresh ที่หัวหน้า (components/refresh-control.tsx)
+    const unsubscribeRefresh = subscribeRefresh(() => refetchRef.current());
     return () => {
       window.removeEventListener("focus", handleFocusOrVisible);
       document.removeEventListener("visibilitychange", handleFocusOrVisible);
+      unsubscribeRefresh();
     };
   }, []);
 }

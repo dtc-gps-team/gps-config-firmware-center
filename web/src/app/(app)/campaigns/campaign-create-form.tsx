@@ -199,7 +199,7 @@ export function CampaignCreateForm({
         header: "เลขเครื่อง",
         meta: { filterVariant: "text", label: "เลขเครื่อง" },
         cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.deviceId}</span>
+          <span className="font-instrument text-xs">{row.original.deviceId}</span>
         ),
       },
       {

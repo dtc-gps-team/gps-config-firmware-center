@@ -8,6 +8,10 @@ import type { AppNotification } from "@/lib/notification-api";
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
+}));
+
 const state = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
