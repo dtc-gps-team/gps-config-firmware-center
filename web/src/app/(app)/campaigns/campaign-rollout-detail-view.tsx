@@ -10,7 +10,7 @@ import {
   TargetIcon,
 } from "lucide-react";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -40,6 +40,10 @@ import {
 } from "@/lib/rollout-target-display";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
+import { ErrorState } from "@/components/error-state";
+import { RefreshControl } from "@/components/refresh-control";
+import { ChangeFlash } from "@/components/motion/change-flash";
+import { TableSkeleton } from "@/components/skeleton/table-skeleton";
 import { PageHeader } from "@/components/page-header";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
@@ -89,21 +93,19 @@ export function CampaignRolloutDetailView({
 
   if (error || !data) {
     return (
-      <div className="flex flex-col items-center gap-3 py-16">
-        <p className="text-sm text-destructive">
-          {error ?? "ไม่พบ Rollout นี้"}
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void refetch()}>
-            ลองใหม่
-          </Button>
-          <Link
-            href={`/campaigns/${campaignId}`}
-            className={buttonVariants({ variant: "ghost", size: "sm" })}
-          >
-            กลับไปหน้ากลุ่ม
-          </Link>
-        </div>
+      <div className="flex flex-col gap-4">
+        <ErrorState
+          message={error ?? "ไม่พบ Rollout นี้"}
+          onRetry={() => void refetch()}
+        />
+        <Link
+          href={`/campaigns/${campaignId}`}
+          className={
+            buttonVariants({ variant: "ghost", size: "sm" }) + " self-start"
+          }
+        >
+          กลับไปหน้ากลุ่ม
+        </Link>
       </div>
     );
   }
@@ -128,15 +130,18 @@ export function CampaignRolloutDetailView({
         }
         description={getRolloutStatusExplanation(data.status)}
         actions={
-          <CampaignRolloutIncidentPanel
-            showPausedNotice={false}
-            campaignId={campaignId}
-            rollout={data}
-            targets={targets}
-            targetsLoading={targetsQuery.isLoading && !targetsQuery.data}
-            targetsError={targetsQuery.error}
-            onResumed={() => void refetch()}
-          />
+          <>
+            <RefreshControl />
+            <CampaignRolloutIncidentPanel
+              showPausedNotice={false}
+              campaignId={campaignId}
+              rollout={data}
+              targets={targets}
+              targetsLoading={targetsQuery.isLoading && !targetsQuery.data}
+              targetsError={targetsQuery.error}
+              onResumed={() => void refetch()}
+            />
+          </>
         }
       />
 
@@ -182,11 +187,12 @@ export function CampaignRolloutDetailView({
               )}
             </div>
             {targetsQuery.isLoading && !targetsQuery.data ? (
-              <p className="py-4 text-sm text-muted-foreground">กำลังโหลด…</p>
+              <TableSkeleton columns={4} rows={4} />
             ) : targetsQuery.error ? (
-              <p className="py-4 text-sm text-destructive">
-                {targetsQuery.error}
-              </p>
+              <ErrorState
+                message={targetsQuery.error}
+                onRetry={() => void targetsQuery.refetch()}
+              />
             ) : targets.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">
                 ยังไม่มีเป้าหมายในรอบนี้
@@ -204,8 +210,9 @@ export function CampaignRolloutDetailView({
                   </TableHeader>
                   <TableBody>
                     {targets.map((target) => (
-                      <TableRow key={target.id}>
-                        <TableCell className="font-mono text-xs">
+                      <TableRow key={target.id} className="relative">
+                        <TableCell className="font-instrument text-xs">
+                          <ChangeFlash signal={target.status} />
                           {target.deviceId}
                         </TableCell>
                         <TableCell>

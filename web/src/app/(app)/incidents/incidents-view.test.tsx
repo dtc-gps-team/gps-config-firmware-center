@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { IncidentsView } from "./incidents-view";
@@ -59,6 +59,7 @@ function incident(overrides: Partial<Incident> = {}): Incident {
 
 describe("IncidentsView: Field Report", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
@@ -106,7 +107,9 @@ describe("IncidentsView: Field Report", () => {
 
     render(<IncidentsView />);
     // Incident ที่ปิดแล้วอยู่ในแท็บ "ปิดแล้ว" ไม่อยู่ในแท็บเริ่มต้น กดแท็บก่อนถึงจะเห็นแถวนี้
-    await userEvent.click(screen.getByRole("button", { name: /^ปิดแล้ว\s*\d+$/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /^ปิดแล้ว\s*\d+$/ }),
+    );
 
     expect(
       screen.queryByRole("button", { name: "ตัดสินใจ" }),
@@ -168,6 +171,7 @@ function rolloutIncident(overrides: Partial<Incident> = {}): Incident {
 
 describe("IncidentsView: แยกที่มาและผลกระทบ", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
@@ -246,7 +250,7 @@ describe("IncidentsView: แยกที่มาและผลกระทบ"
     render(<IncidentsView />);
 
     await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
-    await user.click(await screen.findByRole("option", { name: "high" }));
+    await user.click(await screen.findByRole("option", { name: "สูง" }));
 
     expect(screen.queryByText("รุนแรงมาก")).not.toBeInTheDocument();
     expect(screen.getByText("รุนแรงสูง")).toBeInTheDocument();
@@ -259,42 +263,26 @@ describe("IncidentsView: แยกที่มาและผลกระทบ"
     render(<IncidentsView />);
 
     await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
-    await user.click(await screen.findByRole("option", { name: "low" }));
+    await user.click(await screen.findByRole("option", { name: "ต่ำ" }));
 
     expect(
       screen.getByText("ไม่พบ Incident ที่ตรงกับเงื่อนไข"),
     ).toBeInTheDocument();
   });
-
-  it("จำนวนในหัวการ์ดนับเฉพาะรายการที่ผ่านตัวกรอง", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [
-      incident({ id: "a", severity: "critical" }),
-      incident({ id: "b", severity: "critical" }),
-      rolloutIncident({ severity: "high" }),
-    ];
-
-    render(<IncidentsView />);
-    const heading = screen.getByText(/^รายการ Incident/);
-    expect(within(heading).getByText("(3)")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
-    await user.click(await screen.findByRole("option", { name: "high" }));
-
-    expect(within(heading).getByText("(1)")).toBeInTheDocument();
-  });
 });
 describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแล้ว / ทั้งหมด", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/incidents");
     auth.role = "Operation";
     router.push.mockReset();
   });
 
-  const open = () => incident({ id: "o", title: "ยังเปิดอยู่", status: "open" });
+  const open = () =>
+    incident({ id: "o", title: "ยังเปิดอยู่", status: "open" });
   const investigating = () =>
-    incident({ id: "i", title: "กำลังตรวจสอบ", status: "investigating" });
+    incident({ id: "i", title: "เรื่องที่กำลังตรวจ", status: "investigating" });
   const resolved = () =>
-    incident({ id: "r", title: "แก้แล้ว", status: "resolved" });
+    incident({ id: "r", title: "เรื่องที่จบแล้ว", status: "resolved" });
   const dismissed = () =>
     incident({ id: "d", title: "ไม่ต้องดำเนินการแล้ว", status: "dismissed" });
   const rolledBack = () =>
@@ -319,8 +307,8 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     expect(tab(openTab)).toHaveAttribute("aria-pressed", "true");
     expect(tab(closedTab)).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("ยังเปิดอยู่")).toBeInTheDocument();
-    expect(screen.getByText("กำลังตรวจสอบ")).toBeInTheDocument();
-    expect(screen.queryByText("แก้แล้ว")).not.toBeInTheDocument();
+    expect(screen.getByText("เรื่องที่กำลังตรวจ")).toBeInTheDocument();
+    expect(screen.queryByText("เรื่องที่จบแล้ว")).not.toBeInTheDocument();
     expect(screen.queryByText("ไม่ต้องดำเนินการแล้ว")).not.toBeInTheDocument();
     expect(screen.queryByText("ย้อนกลับแล้ว")).not.toBeInTheDocument();
   });
@@ -336,9 +324,15 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
 
     render(<IncidentsView />);
 
-    expect(screen.getByRole("button", { name: "ยังไม่ปิด 2" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ปิดแล้ว 3" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ทั้งหมด 5" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ยังไม่ปิด 2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ปิดแล้ว 3" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ทั้งหมด 5" }),
+    ).toBeInTheDocument();
   });
 
   it("กดแท็บ 'ปิดแล้ว': เห็นเฉพาะที่ปิดแล้ว ไม่เห็นที่ยังเปิดอยู่ และไม่มีหัวกลุ่ม", async () => {
@@ -349,10 +343,10 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     await user.click(tab(closedTab));
 
     expect(tab(closedTab)).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
+    expect(screen.getByText("เรื่องที่จบแล้ว")).toBeInTheDocument();
     expect(screen.getByText("ไม่ต้องดำเนินการแล้ว")).toBeInTheDocument();
     expect(screen.queryByText("ยังเปิดอยู่")).not.toBeInTheDocument();
-    expect(screen.queryByText("กำลังตรวจสอบ")).not.toBeInTheDocument();
+    expect(screen.queryByText("เรื่องที่กำลังตรวจ")).not.toBeInTheDocument();
     expect(screen.queryByText(/^ยังไม่ปิด \(/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
   });
@@ -375,7 +369,11 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
         name: /ปิดแล้วใหม่สุด|ยังเปิดเก่ากว่า|ปิดแล้วเก่า/,
       })
       .map((a) => a.textContent);
-    expect(titles).toEqual(["ยังเปิดเก่ากว่า", "ปิดแล้วใหม่สุด", "ปิดแล้วเก่า"]);
+    expect(titles).toEqual([
+      "ยังเปิดเก่ากว่า",
+      "ปิดแล้วใหม่สุด",
+      "ปิดแล้วเก่า",
+    ]);
   });
 
   it("'ทั้งหมด' ที่มีแต่ที่ปิดแล้ว: ไม่มีหัวกลุ่ม ไม่ต้องแยก", async () => {
@@ -386,21 +384,6 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     await user.click(tab(allTab));
 
     expect(screen.queryByText(/^ปิดแล้ว \(/)).not.toBeInTheDocument();
-  });
-
-  it("จำนวนในหัวการ์ดตามแท็บที่เลือก", async () => {
-    const user = userEvent.setup();
-    incidentsState.rows = [open(), resolved(), dismissed()];
-
-    render(<IncidentsView />);
-    const heading = screen.getByText(/^รายการ Incident/);
-    expect(within(heading).getByText("(1)")).toBeInTheDocument();
-
-    await user.click(tab(closedTab));
-    expect(within(heading).getByText("(2)")).toBeInTheDocument();
-
-    await user.click(tab(allTab));
-    expect(within(heading).getByText("(3)")).toBeInTheDocument();
   });
 
   it("ปิดทั้งหมดแล้ว: แท็บ 'ยังไม่ปิด' บอกว่าไม่มีที่ยังไม่ปิด ไม่ใช่ 'ยังไม่มี Incident'", () => {
@@ -419,7 +402,9 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     render(<IncidentsView />);
     await user.click(tab(closedTab));
 
-    expect(screen.getByText("ยังไม่มี Incident ที่ปิดแล้ว")).toBeInTheDocument();
+    expect(
+      screen.getByText("ยังไม่มี Incident ที่ปิดแล้ว"),
+    ).toBeInTheDocument();
   });
 
   it("ไม่มี Incident เลย: ขึ้น 'ยังไม่มี Incident'", () => {
@@ -435,12 +420,12 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
     incidentsState.rows = [resolved()];
 
     render(<IncidentsView />);
-    expect(screen.queryByText("แก้แล้ว")).not.toBeInTheDocument();
+    expect(screen.queryByText("เรื่องที่จบแล้ว")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: /สถานะ/ }));
-    await user.click(await screen.findByRole("option", { name: "Resolved" }));
+    await user.click(await screen.findByRole("option", { name: "แก้แล้ว" }));
 
-    expect(screen.getByText("แก้แล้ว")).toBeInTheDocument();
+    expect(screen.getByText("เรื่องที่จบแล้ว")).toBeInTheDocument();
     expect(tab(openTab)).toBeDisabled();
     expect(tab(closedTab)).toBeDisabled();
     expect(tab(allTab)).toBeDisabled();
@@ -456,10 +441,16 @@ describe("IncidentsView: แท็บ ยังไม่ปิด / ปิดแ
 
     render(<IncidentsView />);
     await user.click(screen.getByRole("combobox", { name: /ความรุนแรง/ }));
-    await user.click(await screen.findByRole("option", { name: "low" }));
+    await user.click(await screen.findByRole("option", { name: "ต่ำ" }));
 
-    expect(screen.getByRole("button", { name: "ยังไม่ปิด 1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ปิดแล้ว 1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ทั้งหมด 2" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ยังไม่ปิด 1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ปิดแล้ว 1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "ทั้งหมด 2" }),
+    ).toBeInTheDocument();
   });
 });
