@@ -67,13 +67,19 @@ describe("visibleDeviceHistoryTypes", () => {
     }
   });
 
-  it("เฉพาะ Operation และ ST เห็นปุ่ม override (seed.ts ให้ ST เท่านั้น ไม่ให้ OT)", () => {
+  it("เฉพาะ Operation, ST และ SuperAdmin เห็นปุ่ม override (seed.ts ให้ ST เท่านั้น ไม่ให้ OT — SuperAdmin ข้ามได้ตามมติ 2026-10-30)", () => {
     expect(visibleDeviceHistoryTypes("Operation")).toContain("config-override");
     expect(visibleDeviceHistoryTypes("Operation")).toContain(
       "firmware-override",
     );
     expect(visibleDeviceHistoryTypes("ST")).toContain("config-override");
     expect(visibleDeviceHistoryTypes("ST")).toContain("firmware-override");
+    expect(visibleDeviceHistoryTypes("SuperAdmin")).toContain(
+      "config-override",
+    );
+    expect(visibleDeviceHistoryTypes("SuperAdmin")).toContain(
+      "firmware-override",
+    );
 
     for (const role of [
       "OT",
@@ -82,7 +88,6 @@ describe("visibleDeviceHistoryTypes", () => {
       "QAEngineer",
       "Auditor",
       "Admin",
-      "SuperAdmin",
     ]) {
       expect(visibleDeviceHistoryTypes(role)).not.toContain("config-override");
       expect(visibleDeviceHistoryTypes(role)).not.toContain(

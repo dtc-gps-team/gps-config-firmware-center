@@ -190,7 +190,12 @@ export function ApprovalCenterView() {
 
   // อนุมัติหลายรายการ: เลือกได้เฉพาะ Config ที่ไม่ใช่ของตัวเอง (Separation of Duty)
   // และเฉพาะรายการที่ยังอยู่ในคิวตอนนี้ (คิวรีเฟรชแล้วรายการที่หายไปไม่ค้างเป็นที่เลือก)
-  const isOwn = (createdBy: string) => myUserId !== null && createdBy === myUserId;
+  // SuperAdmin ข้าม Separation of Duty ได้ (มติ 2026-10-30) — อนุมัติ/ปฏิเสธ
+  // รายการที่ตัวเองสร้างได้เลย ไม่ต้องรอ Operation คนอื่น
+  const isOwn = (createdBy: string) =>
+    session?.role !== "SuperAdmin" &&
+    myUserId !== null &&
+    createdBy === myUserId;
   const selectableItems = items.filter((i) => !isOwn(i.createdBy));
   const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
 

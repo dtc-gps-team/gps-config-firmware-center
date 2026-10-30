@@ -85,6 +85,20 @@ describe('PermissionGuard', () => {
     });
   });
 
+  it('role SuperAdmin -> ผ่านทุก resource/action เสมอ ไม่ query DB เลย (มติ 2026-10-30)', async () => {
+    reflector.getAllAndOverride.mockReturnValue({
+      resource: 'role-management',
+      action: ActionType.Create,
+    });
+
+    const result = await guard.canActivate(
+      buildContext({ sub: 'u1', role: 'SuperAdmin' }),
+    );
+
+    expect(result).toBe(true);
+    expect(rolePermission.findFirst).not.toHaveBeenCalled();
+  });
+
   it('role ไม่มีสิทธิ์ (query ไม่เจอแถวไหนเลย) -> 403', async () => {
     reflector.getAllAndOverride.mockReturnValue({
       resource: 'config',

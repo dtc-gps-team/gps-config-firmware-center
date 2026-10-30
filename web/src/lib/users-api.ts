@@ -28,7 +28,8 @@ export function listUsers(
 /** role ที่เลือกได้ในหน้า User / Role Management — ตรงกับ
  * `EXCLUDED_MANAGED_ROLE_CODES` ฝั่ง backend (`managed-user-roles.ts`) แค่กลับ
  * ด้าน (allow-list ฝั่ง UI ง่ายกว่า exclude-list ตอนทำ dropdown) — Admin/
- * SuperAdmin ไม่อยู่ในนี้โดยตั้งใจ (จัดการผ่าน `admin-management` ที่ยังไม่ทำ) */
+ * SuperAdmin ไม่อยู่ในนี้ (viewer เป็น Admin ธรรมดา) ดู `rolesManageableBy`
+ * ด้านล่างสำหรับ viewer ที่เป็น SuperAdmin */
 export const MANAGEABLE_ROLE_CODES = [
   "ConfigEngineer",
   "FirmwareEngineer",
@@ -38,6 +39,19 @@ export const MANAGEABLE_ROLE_CODES = [
   "OT",
   "Auditor",
 ] as const;
+
+/**
+ * role ที่เลือกได้ในหน้า User / Role Management ตาม role ของผู้ดู — SuperAdmin
+ * จัดการบัญชี Admin/SuperAdmin ได้ด้วย (มติ 2026-10-30) Admin ธรรมดายังเห็น
+ * แค่ `MANAGEABLE_ROLE_CODES` เหมือนเดิมทุกประการ
+ */
+export function rolesManageableBy(
+  viewerRole: string | null | undefined,
+): readonly string[] {
+  return viewerRole === "SuperAdmin"
+    ? [...MANAGEABLE_ROLE_CODES, "Admin", "SuperAdmin"]
+    : MANAGEABLE_ROLE_CODES;
+}
 
 /** `ManagedUser` ใน openapi.yaml — เต็มกว่า `UserSummary` (มี username/isActive)
  * role เป็นไปได้แค่ role ที่ไม่ใช่ Admin/SuperAdmin เท่านั้น */

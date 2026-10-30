@@ -78,11 +78,18 @@ export class UserService {
    * `GET /users/managed` — รายชื่อบัญชีทั่วไปแบบเต็ม (username/isActive รวมด้วย
    * — ต่างจาก `list()` ด้านบนที่คืนแค่ user active สำหรับ dropdown) ตัดบัญชี
    * Admin/SuperAdmin ออกทั้งหมดเสมอ (RBAC_Matrix.md §2 — ดู `managed-user-roles.ts`)
-   * — Admin เท่านั้นที่เรียกได้ (resource `user-management` action `Read`)
+   * — Admin เรียกได้ (resource `user-management` action `Read`)
+   *
+   * `SuperAdmin` เห็นบัญชี Admin/SuperAdmin ด้วย (มติ 2026-10-30 — จัดการบัญชี
+   * Admin/SuperAdmin ผ่านหน้า User Management เดิมนี้เลย ไม่ทำหน้าแยก) Admin
+   * ธรรมดายังถูก filter เหมือนเดิมทุกประการ (กัน Admin ยกระดับตัวเอง)
    */
-  async listManaged(): Promise<ManagedUser[]> {
+  async listManaged(actor: ActingUser): Promise<ManagedUser[]> {
+    const isSuperAdmin = actor.role === 'SuperAdmin';
     const users = await this.prisma.user.findMany({
-      where: { role: { code: { notIn: [...EXCLUDED_MANAGED_ROLE_CODES] } } },
+      where: isSuperAdmin
+        ? undefined
+        : { role: { code: { notIn: [...EXCLUDED_MANAGED_ROLE_CODES] } } },
       select: {
         id: true,
         username: true,
@@ -107,10 +114,14 @@ export class UserService {
    * — ตกลงกับ paveekornk แล้ว 2026-09-18 ว่าไม่ทำ auto-generate ตอนนี้)
    *
    * `role` ต้องไม่ใช่ Admin/SuperAdmin — เช็คซ้ำที่นี่แม้ web จะไม่โชว์ 2 role
-   * นี้ใน dropdown อยู่แล้วก็ตาม (กัน bypass ผ่านเรียก API ตรงๆ)
+   * นี้ใน dropdown อยู่แล้วก็ตาม (กัน bypass ผ่านเรียก API ตรงๆ) ยกเว้น actor
+   * เป็น SuperAdmin เอง (มติ 2026-10-30)
    */
   async create(dto: CreateUserDto, actor: ActingUser): Promise<ManagedUser> {
-    const role = await this.findManageableRoleOrThrow(dto.role);
+    const role = await this.findManageableRoleOrThrow(
+      dto.role,
+      actor.role === 'SuperAdmin',
+    );
 
     const existing = await this.prisma.user.findUnique({
       where: { username: dto.username },
@@ -140,24 +151,49 @@ export class UserService {
    * Admin/SuperAdmin (มองว่า "ไม่มีอยู่" จากมุมของ resource นี้ — mirror การ
    * filter ออกใน `listManaged()`) เปลี่ยน role ไปเป็น Admin/SuperAdmin ก็ทำ
    * ไม่ได้เช่นกัน (กัน escalation ผ่านหน้านี้)
+   *
+   * actor เป็น SuperAdmin — แก้บัญชี Admin/SuperAdmin ได้ด้วย (มติ 2026-10-30)
+   * แต่ถ้าเป้าหมายเป็น SuperAdmin คนสุดท้ายที่ active อยู่ ห้าม deactivate
+   * หรือเปลี่ยน role ออกจาก SuperAdmin (กันระบบไม่มี SuperAdmin เหลือเลย —
+   * docs/11 §7)
    */
   async update(
     id: string,
     dto: UpdateUserDto,
     actor: ActingUser,
   ): Promise<ManagedUser> {
+    const isSuperAdmin = actor.role === 'SuperAdmin';
     const existing = await this.prisma.user.findUnique({
       where: { id },
       include: { role: true },
     });
-    if (!existing || EXCLUDED_MANAGED_ROLE_CODES.includes(existing.role.code)) {
+    if (
+      !existing ||
+      (!isSuperAdmin && EXCLUDED_MANAGED_ROLE_CODES.includes(existing.role.code))
+    ) {
       throw new NotFoundException(`ไม่พบผู้ใช้ id ${id}`);
     }
 
     const newRole =
       dto.role !== undefined
-        ? await this.findManageableRoleOrThrow(dto.role)
+        ? await this.findManageableRoleOrThrow(dto.role, isSuperAdmin)
         : undefined;
+
+    if (
+      existing.role.code === 'SuperAdmin' &&
+      existing.isActive &&
+      (dto.isActive === false ||
+        (newRole !== undefined && newRole.code !== 'SuperAdmin'))
+    ) {
+      const activeSuperAdminCount = await this.prisma.user.count({
+        where: { role: { code: 'SuperAdmin' }, isActive: true },
+      });
+      if (activeSuperAdminCount <= 1) {
+        throw new ConflictException(
+          'ไม่สามารถปิดใช้งานหรือเปลี่ยน role ของ SuperAdmin คนสุดท้ายที่เหลืออยู่ได้',
+        );
+      }
+    }
 
     let updated: {
       id: string;
@@ -190,14 +226,15 @@ export class UserService {
 
   private async findManageableRoleOrThrow(
     code: string,
+    allowPrivileged = false,
   ): Promise<{ id: string; code: string }> {
     const role = await this.prisma.role.findUnique({ where: { code } });
     if (!role) {
       throw new BadRequestException(`ไม่พบ role code "${code}"`);
     }
-    if (EXCLUDED_MANAGED_ROLE_CODES.includes(role.code)) {
+    if (!allowPrivileged && EXCLUDED_MANAGED_ROLE_CODES.includes(role.code)) {
       throw new BadRequestException(
-        `สร้าง/แก้บัญชีเป็น role "${role.code}" ผ่านหน้านี้ไม่ได้ — จัดการบัญชี Admin/SuperAdmin เป็นสิทธิ์แยกต่างหาก (ยังไม่เปิดใช้งาน)`,
+        `สร้าง/แก้บัญชีเป็น role "${role.code}" ผ่านหน้านี้ไม่ได้ — จัดการบัญชี Admin/SuperAdmin ทำได้เฉพาะ SuperAdmin เท่านั้น (มติ 2026-10-30)`,
       );
     }
     return role;

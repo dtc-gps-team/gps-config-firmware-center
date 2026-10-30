@@ -71,9 +71,14 @@ describe('UserController', () => {
     ];
     service.listManaged.mockResolvedValue(managed);
 
-    const result = await controller.listManaged();
+    const result = await controller.listManaged(adminReq);
 
     expect(result).toEqual(managed);
+    expect(service.listManaged).toHaveBeenCalledWith({
+      id: 'admin-1',
+      role: 'Admin',
+      ipAddress: null,
+    });
   });
 
   it('POST /users -> service.create พร้อม actor จาก JWT', async () => {

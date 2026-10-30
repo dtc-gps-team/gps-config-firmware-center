@@ -8,7 +8,7 @@ import { canAccessUserManagement } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import {
   createUser,
-  MANAGEABLE_ROLE_CODES,
+  rolesManageableBy,
   type ManagedUser,
 } from "@/lib/users-api";
 import { FormBody, FormFooter, FormSection } from "@/components/form-dialog";
@@ -24,10 +24,11 @@ import {
 } from "@/components/ui/select";
 
 /**
- * ฟอร์มสร้างบัญชีทั่วไปใหม่ — Admin เท่านั้น (RBAC_Matrix.md ตาราง 4.1
- * `POST /users`) role อื่นเห็นข้อความแทนฟอร์ม · dropdown role มีแค่บัญชี
- * ทั่วไป (`MANAGEABLE_ROLE_CODES`) ไม่มี Admin/SuperAdmin ให้เลือกเลย — กัน
- * ทั้งฝั่ง UI (ไม่โชว์) และฝั่ง backend (validate ปฏิเสธซ้ำ)
+ * ฟอร์มสร้างบัญชีทั่วไปใหม่ — Admin/SuperAdmin เท่านั้น (RBAC_Matrix.md ตาราง
+ * 4.1 `POST /users`) role อื่นเห็นข้อความแทนฟอร์ม · dropdown role ขึ้นกับ
+ * viewer (`rolesManageableBy`) — Admin ธรรมดาเห็นแค่บัญชีทั่วไป SuperAdmin
+ * เห็น Admin/SuperAdmin เพิ่มด้วย (มติ 2026-10-30) — กันทั้งฝั่ง UI (ไม่โชว์)
+ * และฝั่ง backend (validate ปฏิเสธซ้ำ)
  *
  * เดิมเป็นหน้าเต็ม `/users/new` — ย้ายมาเป็น Dialog (แก้ครั้งที่ 71) เพราะ
  * เนื้อหาสั้นจบในตัว ไม่มี preview/error list ที่ต้องการพื้นที่เยอะ · เรียก
@@ -43,11 +44,12 @@ export function CreateUserForm({
   onCancel?: () => void;
 }) {
   const { session } = useAuth();
+  const roles = rolesManageableBy(session?.role);
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<string>(MANAGEABLE_ROLE_CODES[0]);
+  const [role, setRole] = useState<string>(roles[0]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -136,15 +138,13 @@ export function CreateUserForm({
               <Label>Role</Label>
               <Select
                 value={role}
-                onValueChange={(value) =>
-                  setRole(value ?? MANAGEABLE_ROLE_CODES[0])
-                }
+                onValueChange={(value) => setRole(value ?? roles[0])}
               >
                 <SelectTrigger className="w-full" disabled={submitting}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MANAGEABLE_ROLE_CODES.map((code) => (
+                  {roles.map((code) => (
                     <SelectItem key={code} value={code}>
                       {code}
                     </SelectItem>
