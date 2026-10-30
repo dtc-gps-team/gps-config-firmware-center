@@ -36,6 +36,14 @@ export interface ReportedBoxFields {
   reportedAt: string | null;
 }
 
+/** พารามิเตอร์ที่ firmware บนกล่องรองรับ — จาก schema ที่กล่องรายงานว่ารันอยู่ (ตัวเดียวกับที่
+ * `pushConfig` ใช้ตรวจ) ให้หน้าขอแก้ค่าล็อกช่องที่กล่องไม่รู้จัก และเตือนก่อนว่า Config นี้ส่งไม่ผ่าน */
+export interface BoxSupportedSchema {
+  firmwareVersion: string | null;
+  schemaVersion: number;
+  keys: string[];
+}
+
 /** ไม่ส่งค่าเหล่านี้ออกไป — `data_server.path` มี key ส่ง telemetry อยู่ใน URL (docs/23 §7) */
 const HIDDEN_REPORTED_KEYS = new Set(['data_server.path']);
 
@@ -158,6 +166,33 @@ export class CentralDeviceService {
       const fields = flattenSettings(settings);
       for (const key of HIDDEN_REPORTED_KEYS) delete fields[key];
       return { fields, reportedAt: raw.reported?.reported_at ?? null };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * key ทุกตัวใน schema ที่กล่อง**รายงานว่ารันอยู่จริง** — เส้นทางเดียวกับ `pushConfig`
+   * (`findConfigTarget` -> `getSchema`) ผลจึงตรงกับที่ตรวจตอนส่ง · ไม่ซ่อน `data_server.path`
+   * เพราะเป็นแค่ชื่อพารามิเตอร์ ไม่มีค่า · ติดต่อไม่ได้ / ไม่รู้จักกล่อง / ไม่อยู่ในทะเบียน /
+   * ดึง schema ไม่ได้ -> `null` (ไม่โยน error ให้หน้าที่เรียกทำงานต่อได้)
+   */
+  async readSupportedSchema(
+    deviceId: string,
+  ): Promise<BoxSupportedSchema | null> {
+    try {
+      const target = await this.findConfigTarget(deviceId);
+      if ('kind' in target) return null;
+      const { device } = target;
+      const schema = await this.client.getSchema(
+        device.hardwareModel,
+        device.reportedSchemaVersion,
+      );
+      return {
+        firmwareVersion: device.reportedFirmwareVersion,
+        schemaVersion: schema.schema_version,
+        keys: schema.parameters.map((p) => p.key),
+      };
     } catch {
       return null;
     }

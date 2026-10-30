@@ -235,6 +235,7 @@ describe('DeviceService', () => {
   let centralDeviceService: {
     findDevice: jest.Mock;
     readReportedFields: jest.Mock;
+    readSupportedSchema: jest.Mock;
     checkConfig: jest.Mock;
     mode: 'real' | 'mock';
   };
@@ -301,6 +302,7 @@ describe('DeviceService', () => {
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
       readReportedFields: jest.fn().mockResolvedValue(null),
+      readSupportedSchema: jest.fn().mockResolvedValue(null),
       checkConfig: jest.fn(),
       mode: 'real',
     };
@@ -2157,8 +2159,31 @@ describe('DeviceService', () => {
         delivery: null,
         // ไม่ใช่โหมด central -> ไม่อ่านค่าจากกล่อง
         boxFields: null,
+        boxSchema: null,
       });
       expect(centralDeviceService.readReportedFields).not.toHaveBeenCalled();
+      expect(centralDeviceService.readSupportedSchema).not.toHaveBeenCalled();
+    });
+
+    it('โหมด central -> boxSchema = พารามิเตอร์ที่ firmware บนกล่องรองรับ', async () => {
+      deviceConfigApplyMode = 'central';
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      mockOverrideQueries({});
+      const boxSchema = {
+        firmwareVersion: '1.0.0',
+        schemaVersion: 1,
+        keys: ['gps.send_interval_sec'],
+      };
+      centralDeviceService.readSupportedSchema.mockResolvedValue(boxSchema);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(centralDeviceService.readSupportedSchema).toHaveBeenCalledWith(
+        'DTC-0001',
+      );
+      expect(result.boxSchema).toEqual(boxSchema);
     });
 
     it('โหมด central -> boxFields = ค่าที่กล่องรายงานว่าใช้อยู่ (ทุกพารามิเตอร์)', async () => {
