@@ -19,6 +19,8 @@ function def(over: Partial<ConfigFieldDefinition>): ConfigFieldDefinition {
     sensitive: false,
     restartRequired: true,
     defaultValue: "8080",
+    minValue: null,
+    maxValue: null,
     supportedModels: [{ deviceModel: "GT06N", protocol: "TCP" }],
     createdAt: "",
     updatedAt: "",

@@ -19,6 +19,8 @@ function def(over: Partial<ConfigFieldDefinition>): ConfigFieldDefinition {
     sensitive: false,
     restartRequired: false,
     defaultValue: null,
+    minValue: null,
+    maxValue: null,
     supportedModels: [],
     createdAt: "",
     updatedAt: "",
