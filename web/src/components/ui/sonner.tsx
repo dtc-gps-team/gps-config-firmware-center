@@ -1,17 +1,15 @@
 "use client"
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useTheme } from "next-themes"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// shadcn CLI generate มาพร้อม next-themes เป็นค่าเริ่มต้น — แต่โปรเจกต์นี้ยัง
-// ไม่มี ThemeProvider/ปุ่มสลับ dark mode จริง (globals.css มี token ของ .dark
-// รอไว้ แต่ไม่มีจุดไหนเซ็ต class นี้เลย ดู CSS comment "Harbor Palette") เลย
-// ตัด next-themes ออก ใช้ theme="light" ตรงๆ ไปก่อนให้ตรงกับสถานะจริงของแอป —
-// เปลี่ยนเป็นอ่านจาก next-themes ได้ทันทีถ้าโปรเจกต์ทำ dark mode toggle จริง
+// ธีมตาม next-themes (ThemeProvider อยู่ที่ app/layout.tsx)
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { resolvedTheme } = useTheme()
   return (
     <Sonner
-      theme="light"
+      theme={resolvedTheme === "dark" ? "dark" : "light"}
       className="toaster group"
       icons={{
         success: (

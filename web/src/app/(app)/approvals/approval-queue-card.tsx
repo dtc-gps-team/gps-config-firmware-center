@@ -27,6 +27,7 @@ export function ApprovalQueueCard({
   extra,
   summary,
   actions,
+  leading,
 }: {
   tag: string;
   title: React.ReactNode;
@@ -44,6 +45,8 @@ export function ApprovalQueueCard({
   /** ข้อมูลสรุปเฉพาะประเภท เช่น จำนวนค่าที่เปลี่ยน หรือค่าที่ขอแก้ */
   summary?: React.ReactNode;
   actions: React.ReactNode;
+  /** ช่องหน้าสุดของการ์ด เช่นกล่องเลือกสำหรับอนุมัติหลายรายการ */
+  leading?: React.ReactNode;
 }) {
   const staleLabel = stalePendingLabel(queuedAt);
 
@@ -51,10 +54,11 @@ export function ApprovalQueueCard({
     // ทุกการ์ดมีขอบซ้าย 4px เท่ากัน (การ์ดปกติขอบโปร่งใส) เนื้อหาจะตรงแนวกัน
     // ทั้งคิว เดิมเฉพาะการ์ดที่ค้างมีขอบ ทำให้เนื้อหาเยื้องไปขวา 4px
     <Card
-      className={`gap-3 border-l-4 ${staleLabel ? "border-l-amber-500" : "border-l-transparent"}`}
+      className={`gap-3 border-l-4 ${staleLabel ? "border-l-warning" : "border-l-transparent"}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4 px-4">
-        <div className="flex min-w-0 flex-col gap-1">
+        {leading && <div className="pt-0.5">{leading}</div>}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <EntityTypeTag type={tag} />
             <span className="font-medium">{title}</span>

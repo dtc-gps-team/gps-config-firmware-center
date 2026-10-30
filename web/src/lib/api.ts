@@ -164,3 +164,45 @@ export async function apiJson<T>(
 
   return body as T;
 }
+
+/**
+ * อัปโหลด FormData พร้อมรายงานความคืบหน้า (`fetch` ไม่มี upload progress จึงใช้
+ * XMLHttpRequest) — endpoint/ส่วนหัว/รูปแบบ error เหมือน `apiJson` ทุกประการ
+ * `onProgress` ได้ค่า 0-100 ตามจำนวนไบต์ที่ส่งแล้ว
+ */
+export function apiUpload<T>(
+  path: string,
+  init: { token: string; body: FormData; onProgress?: (percent: number) => void },
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}${path}`);
+    xhr.setRequestHeader("Authorization", `Bearer ${init.token}`);
+    xhr.responseType = "json";
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && init.onProgress) {
+        init.onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError("เชื่อมต่อ Server ไม่ได้ ลองใหม่อีกครั้ง"));
+    xhr.onabort = () => reject(new ApiError("ยกเลิกการอัปโหลดแล้ว"));
+    xhr.onload = () => {
+      const body: unknown = xhr.response;
+      if (xhr.status === 401) onUnauthorized?.();
+      if (xhr.status >= 200 && xhr.status < 300) {
+        init.onProgress?.(100);
+        resolve(body as T);
+        return;
+      }
+      reject(
+        new ApiError(
+          getErrorMessage(body, `คำขอไม่สำเร็จ (${xhr.status})`),
+          xhr.status,
+          getErrorDetails(body),
+        ),
+      );
+    };
+    xhr.send(init.body);
+  });
+}

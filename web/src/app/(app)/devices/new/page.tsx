@@ -20,7 +20,7 @@ export const metadata = {
  */
 export default function NewDevicePage() {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <PageHeader
         title="ลงทะเบียนอุปกรณ์ใหม่"
         description="ระบบจะออก API key ให้อุปกรณ์ใช้เชื่อมต่อ และแสดงได้ครั้งเดียวตอนลงทะเบียนสำเร็จเท่านั้น"

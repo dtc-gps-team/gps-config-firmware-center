@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { approveConfig, rejectConfig } from "@/lib/config-api";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 
 type Decision = "approve" | "reject";
@@ -16,6 +17,7 @@ type Decision = "approve" | "reject";
  * read-only แทน · การบังคับสิทธิ์จริงอยู่ที่ backend PermissionGuard เสมอ
  *
  * `reject` ยังไม่รับเหตุผล (endpoint ไม่มี field) — ยืนยันแล้วกดปฏิเสธเลย
+ * ทั้งสองปุ่มผ่าน `ConfirmDialog` ที่บอกผลกระทบก่อนทำจริง
  */
 export function ApprovalActions({
   configId,
@@ -57,6 +59,8 @@ export function ApprovalActions({
           : `ปฏิเสธ "${configName}" แล้ว`,
       );
       onDecided(decision);
+      setPending(false);
+      setConfirming(null);
     } catch (err) {
       setPending(false);
       setConfirming(null);
@@ -69,39 +73,6 @@ export function ApprovalActions({
       setError(message);
       toast.error(message);
     }
-  }
-
-  if (confirming) {
-    const isApprove = confirming === "approve";
-    return (
-      <div className="flex flex-col items-start gap-2">
-        <p className="text-sm">
-          {isApprove ? "อนุมัติ" : "ปฏิเสธ"} &ldquo;{configName}&rdquo;?
-        </p>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant={isApprove ? "default" : "destructive"}
-            disabled={pending}
-            onClick={() => void run(confirming)}
-          >
-            {pending
-              ? "กำลังดำเนินการ…"
-              : isApprove
-                ? "ยืนยันอนุมัติ"
-                : "ยืนยันปฏิเสธ"}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => setConfirming(null)}
-          >
-            ยกเลิก
-          </Button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -119,6 +90,23 @@ export function ApprovalActions({
           อนุมัติ
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setConfirming(null);
+        }}
+        title={`${confirming === "reject" ? "ปฏิเสธ" : "อนุมัติ"} "${configName}"?`}
+        description={
+          confirming === "reject"
+            ? "Config จะกลับเป็นสถานะถูกปฏิเสธ ผู้สร้างต้องแก้ไขแล้วส่งใหม่ ยังไม่ถูกนำไปใช้กับอุปกรณ์"
+            : "Config จะเป็นสถานะอนุมัติแล้ว นำไปใช้ใน Rollout ได้ ยังไม่ถูกส่งเข้าอุปกรณ์จนกว่าจะเริ่ม Rollout"
+        }
+        confirmLabel={confirming === "reject" ? "ยืนยันปฏิเสธ" : "ยืนยันอนุมัติ"}
+        destructive={confirming === "reject"}
+        onConfirm={async () => {
+          if (confirming) await run(confirming);
+        }}
+      />
     </div>
   );
 }

@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { CloneSourceLink } from "@/components/config/clone-source-link";
+import { DiffCounts, DiffViewer } from "@/components/diff-viewer";
 import { ConfigFieldLabel } from "@/components/config/config-field-label";
 import { SensitiveValue } from "@/components/sensitive-value";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
@@ -21,11 +21,7 @@ import { useUserNames } from "@/hooks/use-user-names";
 import { ApiError } from "@/lib/api";
 import { simulateConfig, type SimulationResult } from "@/lib/config-api";
 import { resolveDiffBase } from "@/lib/config-diff-base";
-import {
-  diffConfigFields,
-  type FieldChange,
-  type FieldChangeKind,
-} from "@/lib/config-diff";
+import { diffConfigFields, type FieldChange } from "@/lib/config-diff";
 import { formatDateTime } from "@/lib/format-date";
 import { canDecideConfigApproval } from "@/lib/permissions";
 import {
@@ -38,12 +34,6 @@ import { PageHeader } from "@/components/page-header";
 import { Notice } from "@/components/ui/notice";
 import { ApprovalActions } from "./approval-actions";
 
-const CHANGE_LABEL: Record<FieldChangeKind, string> = {
-  added: "เพิ่ม",
-  changed: "แก้ไข",
-  removed: "ลบ",
-};
-
 const UNCATEGORIZED = "อื่นๆ";
 
 function valueText(value: unknown): string {
@@ -55,7 +45,7 @@ function valueText(value: unknown): string {
 function ValueCell({ value, masked }: { value: unknown; masked: boolean }) {
   if (masked) return <SensitiveValue value={value} />;
   return (
-    <span className="min-w-0 font-mono text-xs break-words">
+    <span className="min-w-0 font-instrument text-xs break-words">
       {valueText(value)}
     </span>
   );
@@ -342,107 +332,27 @@ function Content({
                   จะขึ้นเป็น ลบ
                 </div>
               )}
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-success-subtle px-2 py-0.5 text-success-foreground">
-                เพิ่ม {diff.counts.added}
-              </span>
-              <span className="rounded-full bg-info-subtle px-2 py-0.5 text-info-foreground">
-                แก้ไข {diff.counts.changed}
-              </span>
-              <span className="rounded-full bg-danger-subtle px-2 py-0.5 text-danger-foreground">
-                ลบ {diff.counts.removed}
-              </span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
-                ไม่เปลี่ยน {diff.unchangedCount}
-              </span>
-            </div>
+            <DiffCounts counts={diff.counts} unchangedCount={diff.unchangedCount} />
 
             {orderedChanges.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 ค่าทุกตัวเหมือนเวอร์ชันที่อนุมัติล่าสุด
               </p>
             ) : (
-              <div className="overflow-hidden rounded-lg border">
-                {/* ส่วนหัวคอลัมน์ (เฉพาะจอ sm ขึ้นไป) — ค่าเดิมกับค่าใหม่แยก
-                    คอลัมน์ให้สายตาไล่ลงมาเทียบได้ ไม่ต้องอ่านทีละบรรทัด */}
-                <div
-                  className="hidden gap-3 border-b bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem]"
-                  role="row"
-                >
-                  <span>ชื่อฟิลด์</span>
-                  <span>{baseColumnLabel}</span>
-                  <span>Config นี้</span>
-                  <span>ประเภท</span>
-                </div>
-                <div className="divide-y">
-                  {orderedChanges.map((c) => (
-                    <div
-                      key={c.fieldName}
-                      className="grid grid-cols-[minmax(0,1fr)] gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,1fr)_4rem] sm:items-start sm:gap-3"
-                    >
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <ConfigFieldLabel
-                          fieldName={c.fieldName}
-                          description={metaByField.get(c.fieldName)?.description}
-                        />
-                        {needsAttention(c.fieldName) && (
-                          <span
-                            className="flex items-center"
-                            title={
-                              metaByField.get(c.fieldName)?.restartRequired
-                                ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
-                                : "ค่าอ่อนไหว"
-                            }
-                          >
-                            <TriangleAlertIcon className="size-3.5 text-warning" />
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        className={
-                          c.kind === "added"
-                            ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
-                            : "min-w-0 rounded bg-danger-subtle px-1.5 py-0.5"
-                        }
-                      >
-                        <span className="text-muted-foreground sm:hidden">
-                          {baseColumnLabel}:{" "}
-                        </span>
-                        {c.kind === "added" ? (
-                          "-"
-                        ) : (
-                          <ValueCell
-                            value={c.before}
-                            masked={isMasked(c.fieldName)}
-                          />
-                        )}
-                      </span>
-                      <span
-                        className={
-                          c.kind === "removed"
-                            ? "min-w-0 rounded px-1.5 py-0.5 text-muted-foreground"
-                            : "min-w-0 rounded bg-success-subtle px-1.5 py-0.5"
-                        }
-                      >
-                        <span className="text-muted-foreground sm:hidden">
-                          Config นี้:{" "}
-                        </span>
-                        {c.kind === "removed" ? (
-                          "-"
-                        ) : (
-                          <ValueCell
-                            value={c.after}
-                            masked={isMasked(c.fieldName)}
-                          />
-                        )}
-                      </span>
-                      <span className="font-medium">
-                        {CHANGE_LABEL[c.kind]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <DiffViewer
+                changes={orderedChanges}
+                beforeLabel={baseColumnLabel}
+                afterLabel="Config นี้"
+                isMasked={isMasked}
+                attention={(name) => {
+                  const m = metaByField.get(name);
+                  if (!m || !(m.sensitive || m.restartRequired)) return null;
+                  return m.restartRequired
+                    ? "ต้อง Restart กล่องหลังเปลี่ยนค่านี้"
+                    : "ค่าอ่อนไหว";
+                }}
+                descriptionFor={(name) => metaByField.get(name)?.description}
+              />
             )}
             <p className="text-xs text-muted-foreground">
               ไอคอนเตือนหมายถึงค่าอ่อนไหวหรือค่าที่ต้อง Restart กล่องหลังเปลี่ยน

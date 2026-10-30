@@ -1,0 +1,133 @@
+import Link from "next/link";
+
+import { ChangeFlash } from "@/components/motion/change-flash";
+import { CountUp } from "@/components/motion/count-up";
+import { StatusLed, type LedTone } from "@/components/ui/status-led";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { Panel } from "./dashboard-panel";
+
+/**
+ * การ์ด "สถานะระบบ" — สรุปสั้นด้านขวาของแถวบน (รอง "งานที่ต้องดำเนินการ") แถวยืดเท่าความสูงของคิวและมีแท่งสัดส่วนกับจำนวนอุปกรณ์ทั้งหมด จึงสมดุลกับฝั่งซ้ายไม่ว่าคิวจะยาวแค่ไหน ทุกแถวเป็น
+ * LED + ชื่อ + ค่า: ค่า > 0 ที่ต้องสนใจใช้สี/LED เต้น, ปกติเป็นเขียวจาง · แถวที่
+ * ยังไม่มีหน้าปลายทางที่ตรงกับตัวเลข (ไม่ใส่ `href`) ไม่เป็นลิงก์
+ */
+export function HealthCard({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Panel title="สถานะระบบ" className={className}>
+      <ul className="flex flex-1 flex-col divide-y">{children}</ul>
+    </Panel>
+  );
+}
+
+type HealthRowProps = {
+  label: string;
+  /** null = ยังโหลดอยู่ */
+  value: number | null;
+  /** ข้อความแทนตัวเลข (เช่น "84%") */
+  text?: string;
+  error?: string | null;
+  /** แหล่งข้อมูลติดต่อไม่ได้ แสดง "ไม่ทราบ" ไม่ใช่เลข 0 ที่ดูเหมือนปกติ */
+  unavailable?: boolean;
+  /** โทนเมื่อมีสิ่งที่ต้องสนใจ (ค่า > 0) */
+  attention?: "danger" | "warning" | null;
+  href?: string;
+  hint?: string;
+  /** จำนวนทั้งหมดที่ใช้คิดสัดส่วน (เช่นอุปกรณ์ทั้งหมด) · มีค่า = แสดงแท่งสัดส่วนใต้ชื่อ */
+  of?: number | null;
+  children?: React.ReactNode;
+};
+
+export function HealthRow({
+  label,
+  value,
+  text,
+  error,
+  unavailable,
+  attention = null,
+  href,
+  hint,
+  of,
+  children,
+}: HealthRowProps) {
+  const flagged = attention !== null && (value ?? 0) > 0 && !error && !unavailable;
+  const led: LedTone = flagged
+    ? attention === "danger"
+      ? "danger"
+      : "warning"
+    : error || unavailable
+      ? "neutral"
+      : "online";
+
+  const content = (
+    <>
+      <div className="flex items-center gap-2.5">
+        <StatusLed tone={led} pulse={flagged && attention === "danger"} />
+        <span className="min-w-0 flex-1 text-sm">{label}</span>
+        <span
+          data-tabular
+          className={cn(
+            "text-2xl font-semibold tabular-nums",
+            flagged && attention === "danger" && "text-danger-foreground",
+            flagged && attention === "warning" && "text-warning-foreground",
+            !flagged && "text-muted-foreground",
+          )}
+        >
+          {error ? (
+            <span className="font-normal text-destructive">โหลดไม่สำเร็จ</span>
+          ) : unavailable ? (
+            <span className="font-normal">ไม่ทราบ</span>
+          ) : value === null && text === undefined ? (
+            <Skeleton className="h-4 w-8" />
+          ) : (
+            (text ?? <CountUp value={value ?? 0} />)
+          )}
+        </span>
+      </div>
+      {of != null && value !== null && !error && !unavailable && of > 0 && (
+        <div className="mt-2 flex flex-col gap-1 pl-[1.125rem]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full rounded-full transition-[width] duration-(--duration-slow) ease-(--ease-standard)",
+                flagged && attention === "danger" ? "bg-destructive" : flagged ? "bg-warning" : "bg-success",
+              )}
+              style={{ width: `${Math.min(100, (value / of) * 100)}%` }}
+            />
+          </div>
+          <span data-tabular className="text-xs text-muted-foreground">
+            จากทั้งหมด {of} เครื่อง
+          </span>
+        </div>
+      )}
+      {children}
+      <ChangeFlash signal={value} />
+    </>
+  );
+
+  const rowClass =
+    "relative flex h-full min-h-14 flex-col justify-center overflow-hidden rounded-md px-1 py-2.5";
+  return (
+    <li title={hint} className="flex-1">
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            rowClass,
+            "rounded-md outline-none transition-colors duration-(--duration-fast) hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {content}
+        </Link>
+      ) : (
+        <div className={rowClass}>{content}</div>
+      )}
+    </li>
+  );
+}
