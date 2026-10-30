@@ -20,6 +20,7 @@ export type AuditLogRow = {
   auditModule: string;
   action: string;
   ipAddress: string | null;
+  metadata: Record<string, unknown> | null;
   createdAt: string;
 };
 
@@ -94,6 +95,7 @@ export function useAuditLogs(filters: AuditLogFilters = {}) {
         auditModule: log.auditModule,
         action: log.action,
         ipAddress: log.ipAddress,
+        metadata: log.metadata,
         createdAt: log.createdAt,
       }));
       setState({ data, total: result.total, isLoading: false, error: null });

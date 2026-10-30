@@ -60,3 +60,6 @@ commit-msg.txt
 
 # Claude Code local scratch output — ไม่ commit
 Claude outputs/
+
+# UI renovation acceptance screenshots
+docs/ui-renovation/screenshots/

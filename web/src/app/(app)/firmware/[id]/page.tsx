@@ -1,3 +1,4 @@
+import { FirmwareAccessGuard } from "../firmware-access-guard";
 import { FirmwareDetailView } from "../firmware-detail-view";
 
 export const metadata = {
@@ -12,5 +13,9 @@ export default async function FirmwareDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <FirmwareDetailView firmwareId={id} />;
+  return (
+    <FirmwareAccessGuard>
+      <FirmwareDetailView firmwareId={id} />
+    </FirmwareAccessGuard>
+  );
 }

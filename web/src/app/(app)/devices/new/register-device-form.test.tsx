@@ -232,3 +232,21 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     });
   });
 });
+
+describe("RegisterDeviceForm: เตือนก่อนออกจากหน้าที่กรอกค้าง", () => {
+  it("กรอกค้างแล้วกดยกเลิก: ถามก่อน ถ้าไม่ยืนยันลิงก์ไม่ถูกตาม", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<RegisterDeviceForm />);
+
+    await user.click(screen.getByRole("link", { name: "ยกเลิก" }));
+    expect(confirm).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Device ID"), "DEV-9");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    screen.getByRole("link", { name: "ยกเลิก" }).dispatchEvent(click);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(click.defaultPrevented).toBe(true);
+    confirm.mockRestore();
+  });
+});

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ApprovalCenterView } from "./approval-center-view";
@@ -40,6 +40,11 @@ vi.mock("@/hooks/use-pending-device-firmware-overrides", () => ({
     usePendingDeviceFirmwareOverrides(enabled),
 }));
 
+// แท็บเก็บอยู่ใน URL (?tab=) และ jsdom ใช้ URL ร่วมกันทั้งไฟล์ ต้องรีเซ็ตทุกเทส
+beforeEach(() => {
+  window.history.replaceState(null, "", "/approvals");
+});
+
 function emptyQueryState() {
   return { data: [], isLoading: false, error: null, refetch: vi.fn() };
 }
@@ -59,19 +64,19 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     render(<ApprovalCenterView />);
 
     expect(
-      screen.queryByRole("button", { name: /^Config Override/ }),
+      screen.queryByRole("tab", { name: /^Config Override/ }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /^Firmware Override/ }),
+      screen.queryByRole("tab", { name: /^Firmware Override/ }),
     ).not.toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(false);
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(false);
 
     // หมวดที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นเป็นแท็บ
-    expect(screen.getByRole("button", { name: /^Config\s*\d*$/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Config\s*\d*$/ })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /^Campaign Rollout/ }),
+      screen.getByRole("tab", { name: /^Campaign Rollout/ }),
     ).toBeInTheDocument();
   });
 
@@ -83,10 +88,10 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     render(<ApprovalCenterView />);
 
     expect(
-      screen.getByRole("button", { name: /^Config Override/ }),
+      screen.getByRole("tab", { name: /^Config Override/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /^Firmware Override/ }),
+      screen.getByRole("tab", { name: /^Firmware Override/ }),
     ).toBeInTheDocument();
 
     expect(usePendingDeviceConfigOverrides).toHaveBeenCalledWith(true);
@@ -108,34 +113,34 @@ describe("ApprovalCenterView — แท็บแยกหมวดคำขอ",
       screen.queryByText(/^Campaign Rollout รออนุมัติ/),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Campaign Rollout/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Campaign Rollout/ }));
     expect(screen.getByText(/^Campaign Rollout รออนุมัติ/)).toBeInTheDocument();
     expect(screen.queryByText(/^Config รออนุมัติ/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Config Override/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Config Override/ }));
     expect(screen.getByText(/^Config Override รออนุมัติ/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Firmware Override/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Firmware Override/ }));
     expect(
       screen.getByText(/^Firmware Override รออนุมัติ/),
     ).toBeInTheDocument();
   });
 
-  it("แท็บที่เลือกอยู่มี aria-pressed=true แท็บอื่นเป็น false", () => {
+  it("แท็บที่เลือกอยู่มี aria-selected=true แท็บอื่นเป็น false", () => {
     authState.role = "Operation";
     usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
     usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
 
     render(<ApprovalCenterView />);
 
-    const configTab = screen.getByRole("button", { name: /^Config\s*\d*$/ });
-    const rolloutTab = screen.getByRole("button", { name: /^Campaign Rollout/ });
-    expect(configTab).toHaveAttribute("aria-pressed", "true");
-    expect(rolloutTab).toHaveAttribute("aria-pressed", "false");
+    const configTab = screen.getByRole("tab", { name: /^Config\s*\d*$/ });
+    const rolloutTab = screen.getByRole("tab", { name: /^Campaign Rollout/ });
+    expect(configTab).toHaveAttribute("aria-selected", "true");
+    expect(rolloutTab).toHaveAttribute("aria-selected", "false");
 
     fireEvent.click(rolloutTab);
-    expect(configTab).toHaveAttribute("aria-pressed", "false");
-    expect(rolloutTab).toHaveAttribute("aria-pressed", "true");
+    expect(configTab).toHaveAttribute("aria-selected", "false");
+    expect(rolloutTab).toHaveAttribute("aria-selected", "true");
   });
 
   it("ป้ายตัวเลขบนแท็บแสดงจำนวนรออนุมัติของแต่ละหมวด", () => {
@@ -149,10 +154,10 @@ describe("ApprovalCenterView — แท็บแยกหมวดคำขอ",
     render(<ApprovalCenterView />);
 
     expect(
-      screen.getByRole("button", { name: /^Config Override\s*3$/ }),
+      screen.getByRole("tab", { name: /^Config Override\s*3$/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /^Firmware Override\s*0$/ }),
+      screen.getByRole("tab", { name: /^Firmware Override\s*0$/ }),
     ).toBeInTheDocument();
   });
 
@@ -168,7 +173,7 @@ describe("ApprovalCenterView — แท็บแยกหมวดคำขอ",
 
     render(<ApprovalCenterView />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Config Override/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Config Override/ }));
     expect(
       screen.getByText(/คำขอแก้ค่าพารามิเตอร์เฉพาะเครื่อง/),
     ).toBeInTheDocument();
@@ -201,5 +206,18 @@ describe("ApprovalCenterView — ข้อความหัวหน้าแ�
     expect(container.textContent).not.toContain("·");
     // ชื่อเดิม "Per-device Config Override" เปลี่ยนให้ตรงกับป้ายบนการ์ด
     expect(screen.queryByText(/Per-device/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ApprovalCenterView: มุมมองย่อยอยู่ใน URL", () => {
+  it("เปิดจากลิงก์ ?view=mine แล้วเลือกมุมมอง 'เจาะจงถึงฉัน' ให้เลย", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    window.history.replaceState(null, "", "/approvals?view=mine");
+
+    render(<ApprovalCenterView />);
+    expect(screen.getByText("ไม่มี Config ที่เจาะจงถึงคุณ")).toBeInTheDocument();
+
   });
 });

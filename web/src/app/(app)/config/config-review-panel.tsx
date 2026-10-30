@@ -92,7 +92,7 @@ export function ConfigReviewPanel({ config }: { config: Config }) {
   }
 
   return (
-    <Card className="max-w-2xl gap-3 bg-muted/30 p-4">
+    <Card className="gap-3 border-primary/30 bg-info-subtle/40 p-4">
       <p className="text-sm font-medium">ทดสอบ &amp; ส่งอนุมัติ</p>
 
       <div className="flex flex-wrap items-center gap-2">

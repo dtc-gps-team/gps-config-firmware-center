@@ -1,3 +1,4 @@
+import { ConfigReadGuard } from "../config-read-guard";
 import { ConfigDetailView } from "../config-detail-view";
 
 export const metadata = {
@@ -12,5 +13,9 @@ export default async function ConfigDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <ConfigDetailView configId={id} />;
+  return (
+    <ConfigReadGuard>
+      <ConfigDetailView configId={id} />
+    </ConfigReadGuard>
+  );
 }

@@ -23,6 +23,22 @@ if (typeof window !== "undefined" && !window.PointerEvent) {
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+// jsdom ไม่มี matchMedia — ตอบว่าผู้ใช้ตั้ง prefers-reduced-motion ไว้ เพื่อให้
+// แอนิเมชันตัวเลข/วงแหวนข้ามไปที่ค่าสุดท้ายทันที เทสอ่านค่าจริงได้ไม่ต้องรอ
+if (typeof window !== "undefined" && !window.matchMedia) {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: query.includes("prefers-reduced-motion"),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+}
+
 afterEach(() => {
   cleanup();
 });
