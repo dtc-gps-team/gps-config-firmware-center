@@ -14,7 +14,6 @@ import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
-import '../../core/widgets/app_error_view.dart';
 import '../device_search/device_search_repository.dart';
 import 'incident_repository.dart';
 

@@ -48,7 +48,8 @@ class IncidentDetailPage extends ConsumerWidget {
             AppInkHeader(
               title: incident?.title ?? 'รายละเอียด Incident',
               titleKey: const Key('incident_detail_title'),
-              subtitle: '${incident?.deviceId ?? 'Incident'} · $incidentId',
+              // ไม่แสดง id ภายในของ Incident (uuid) — บอกแค่อุปกรณ์
+              subtitle: incident?.deviceId,
               onBack: navigator.canPop() ? navigator.pop : null,
             ),
             Expanded(

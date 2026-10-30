@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/core/api/api_client.dart';
 import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/auth/auth_controller.dart';
-import 'package:mobile/core/ui/app_bottom_action_bar.dart';
 import 'package:mobile/core/ui/app_role_locked_view.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/core/auth/token_store.dart';
@@ -40,12 +39,12 @@ class _FakeDeviceSearchRepository implements DeviceSearchRepository {
 }
 
 class _FakeAuthController extends AuthController {
-  _FakeAuthController(this.state);
+  _FakeAuthController(this._initial);
 
-  final AuthState state;
+  final AuthState _initial;
 
   @override
-  AuthState build() => state;
+  AuthState build() => _initial;
 }
 
 /// ใช้ MockIncidentRepository จริง (pattern เดียวกับ MockTaskRepository) แต่
@@ -91,6 +90,8 @@ Future<_SpyIncidentRepository> _pump(
     status: AuthStatus.authenticated,
     role: UserRole.st,
   ),
+  // หน้า skeleton (restore session) มีแอนิเมชันไม่จบ pumpAndSettle จะ timeout
+  bool settle = true,
 }) async {
   final spy = repo ?? _SpyIncidentRepository();
   tester.view.physicalSize = const Size(400 * 3, 900 * 3);
@@ -114,7 +115,11 @@ Future<_SpyIncidentRepository> _pump(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
   return spy;
 }
 
@@ -268,8 +273,14 @@ void main() {
   testWidgets('แจ้งผู้ใช้ชัดว่าไม่ auto-pause/rollback', (tester) async {
     await _pump(tester);
 
-    expect(find.textContaining('ไม่ได้สั่ง'), findsOneWidget);
-    expect(find.textContaining('Operation จะเป็นผู้ตัดสินใจ'), findsOneWidget);
+    expect(
+      find.textContaining('ไม่สั่งหยุดอุปกรณ์หรือ Rollback อัตโนมัติ'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Operation จะตรวจสอบและตัดสินใจ'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('ส่ง error แสดงเหนือปุ่มในแถบล่าง', (tester) async {
@@ -344,6 +355,7 @@ void main() {
       tester,
       devices: devices,
       auth: const AuthState(status: AuthStatus.unknown),
+      settle: false,
     );
 
     expect(find.byType(AppDetailSkeleton), findsOneWidget);
