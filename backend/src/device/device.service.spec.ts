@@ -235,6 +235,7 @@ describe('DeviceService', () => {
   let centralDeviceService: {
     findDevice: jest.Mock;
     readReportedFields: jest.Mock;
+    readSupportedSchema: jest.Mock;
     checkConfig: jest.Mock;
     mode: 'real' | 'mock';
   };
@@ -301,6 +302,7 @@ describe('DeviceService', () => {
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
       readReportedFields: jest.fn().mockResolvedValue(null),
+      readSupportedSchema: jest.fn().mockResolvedValue(null),
       checkConfig: jest.fn(),
       mode: 'real',
     };
@@ -2157,8 +2159,69 @@ describe('DeviceService', () => {
         delivery: null,
         // ไม่ใช่โหมด central -> ไม่อ่านค่าจากกล่อง
         boxFields: null,
+        boxSchema: null,
       });
       expect(centralDeviceService.readReportedFields).not.toHaveBeenCalled();
+      expect(centralDeviceService.readSupportedSchema).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่ง data_server.path ใน fields (มี key ส่ง telemetry) แต่คงช่องอื่นไว้', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({});
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.fields).toEqual({ APN: 'a' });
+    });
+
+    it('มี override ที่อนุมัติแล้ว -> fields ที่ merge ก็ไม่มี data_server.path', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({
+        approved: {
+          id: 'ov-1',
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          versionNumber: 1,
+          fields: { APN: 'b' },
+          status: 'approved',
+        },
+      });
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.hasDeviceOverride).toBe(true);
+      expect(result.fields).toEqual({ APN: 'b' });
+    });
+
+    it('โหมด central -> boxSchema = พารามิเตอร์ที่ firmware บนกล่องรองรับ', async () => {
+      deviceConfigApplyMode = 'central';
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      mockOverrideQueries({});
+      const boxSchema = {
+        firmwareVersion: '1.0.0',
+        schemaVersion: 1,
+        keys: ['gps.send_interval_sec'],
+      };
+      centralDeviceService.readSupportedSchema.mockResolvedValue(boxSchema);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(centralDeviceService.readSupportedSchema).toHaveBeenCalledWith(
+        'DTC-0001',
+      );
+      expect(result.boxSchema).toEqual(boxSchema);
     });
 
     it('โหมด central -> boxFields = ค่าที่กล่องรายงานว่าใช้อยู่ (ทุกพารามิเตอร์)', async () => {
@@ -2337,6 +2400,21 @@ describe('DeviceService', () => {
             updatedAt: deliveredAt,
             rollout: { configId: base.id },
           });
+        });
+
+        it('delivery.fields ไม่มี data_server.path', async () => {
+          config.findUnique.mockResolvedValue({
+            ...base,
+            fields: {
+              ...base.fields,
+              'data_server.path': '/ingest/secret-key',
+            },
+          });
+          mockApproved(null);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery?.fields).toEqual(base.fields);
         });
 
         it('ไม่มี override -> delivery = ค่าฐาน ไม่มีค่ารอส่ง', async () => {
