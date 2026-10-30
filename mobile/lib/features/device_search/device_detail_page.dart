@@ -159,7 +159,7 @@ class _DeviceDetailView extends ConsumerWidget {
         // ยิง GET /devices/{id}/config ให้ role อื่นโดยไม่จำเป็น)
         if (isSt) _PendingConfigOverride(deviceId: deviceId),
         _PendingFirmwareOverride(deviceId: deviceId),
-        if (isFieldStaff) _OpenRequestNotice(deviceId: deviceId),
+        if (isFieldStaff) _OpenRequestNotice(deviceId: deviceId, isSt: isSt),
         if (isFieldStaff && !installed) ...[
           const AppNotice(
             key: Key('device_detail_not_installed'),
@@ -388,10 +388,14 @@ class _StatusCard extends ConsumerWidget {
 /// คำขอส่ง Config/Firmware ที่ยังไม่จบของกล่องนี้ (`apply-options.openRequest`) —
 /// มี `taskId` = งานของผู้ใช้เอง (เปิดคำขอได้) · ไม่มี = งานของช่างคนอื่น ·
 /// โหลดไม่ได้/ไม่มีคำขอ = ไม่แสดงอะไร (ข้อมูลเสริม)
+///
+/// โหมด central คำขอแก้ค่า (Override) อยู่ในคำขอส่งเข้ากล่องตัวเดียวกัน — ST
+/// เห็น "ขอแก้ / เหตุผล" ในแถบนี้แถบเดียว ([_PendingConfigOverride] ไม่แสดงซ้ำ)
 class _OpenRequestNotice extends ConsumerWidget {
-  const _OpenRequestNotice({required this.deviceId});
+  const _OpenRequestNotice({required this.deviceId, required this.isSt});
 
   final String deviceId;
+  final bool isSt;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -400,6 +404,14 @@ class _OpenRequestNotice extends ConsumerWidget {
         .valueOrNull
         ?.openRequest;
     if (request == null) return const SizedBox.shrink();
+    // GET /devices/{id}/config ยิงเฉพาะ ST (role เดียวที่ขอ Override ได้)
+    final override = isSt && request.kind == FieldApplyKind.config
+        ? ref
+              .watch(currentConfigProvider(deviceId))
+              .valueOrNull
+              ?.pendingOverride
+        : null;
+    final pendingOverride = override?.status == 'pending' ? override : null;
     final configName = request.configName;
     final firmwareVersion = request.firmwareVersion;
     final subject = request.kind == FieldApplyKind.firmware
@@ -425,6 +437,14 @@ class _OpenRequestNotice extends ConsumerWidget {
                   ? '$subject ในงานของคุณ'
                   : '$subject ในงานของช่างคนอื่น — ขอใหม่ได้เมื่อคำขอนี้จบ',
             ),
+            if (pendingOverride != null) ...[
+              if (pendingOverride.fields.isNotEmpty)
+                Text(
+                  'ขอแก้: ${pendingOverride.fields.keys.join(', ')}',
+                  key: const Key('device_detail_open_request_fields'),
+                ),
+              Text('เหตุผล: ${pendingOverride.reason}'),
+            ],
             if (mine) ...[
               const SizedBox(height: 10),
               OutlinedButton(
@@ -681,6 +701,15 @@ class _PendingConfigOverride extends ConsumerWidget {
         .valueOrNull
         ?.pendingOverride;
     if (pending == null || pending.status != 'pending') {
+      return const SizedBox.shrink();
+    }
+    // มีคำขอส่ง Config ค้างอยู่ = Override นี้อยู่ในคำขอนั้น (central) —
+    // [_OpenRequestNotice] แสดงรวมไว้แล้ว ไม่แสดงซ้ำเป็นสองแถบ
+    final openRequest = ref
+        .watch(deviceApplyOptionsProvider(deviceId))
+        .valueOrNull
+        ?.openRequest;
+    if (openRequest?.kind == FieldApplyKind.config) {
       return const SizedBox.shrink();
     }
     final central = ref.watch(centralApplyModeProvider).valueOrNull ?? false;

@@ -1361,6 +1361,50 @@ void _r4Tests() {
       },
     );
 
+    testWidgets(
+      'central: คำขอแก้ค่าอยู่ในคำขอส่งเข้ากล่อง -> แถบเดียว พร้อมขอแก้/เหตุผล',
+      (tester) async {
+        final overrideRepo = _FakeConfigOverrideRepository()
+          ..pending = _pendingOverride();
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          overrideRepo: overrideRepo,
+          applyOptions: const DeviceApplyOptions(
+            deviceId: 'DEV-0117',
+            deviceInstalled: true,
+            configs: [],
+            openRequest: ApplyOptionOpenRequest(
+              kind: FieldApplyKind.config,
+              status: ConfigApplyRequestStatus.pending,
+              configName: 'ส่งพิกัดทุก 15 วินาที',
+              taskId: 't-mine',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(_pendingBanner), findsNothing);
+        final notice = find.byKey(const Key('device_detail_open_request'));
+        expect(notice, findsOneWidget);
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('REPORT_INTERVAL_MOVING'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.textContaining('ลูกค้าขอปรับรอบส่งพิกัด'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('คำขอค้างของช่างคนอื่น -> บอกให้รอ ไม่มีปุ่มเปิดคำขอ', (
       tester,
     ) async {
