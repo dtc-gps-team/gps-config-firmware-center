@@ -9,7 +9,9 @@ vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { accessToken: "tok", role: "Operation" } }),
 }));
 
-function makeItem(overrides: Partial<FieldApplyRequest> = {}): FieldApplyRequest {
+function makeItem(
+  overrides: Partial<FieldApplyRequest> = {},
+): FieldApplyRequest {
   return {
     id: "req-1",
     taskId: "task-1",
@@ -80,14 +82,19 @@ describe("FieldApplyRequestApprovalCard", () => {
     const confirmButton = screen.getByRole("button", { name: "ยืนยันปฏิเสธ" });
     expect(confirmButton).toBeDisabled();
 
-    await user.type(screen.getByPlaceholderText("เหตุผลที่ปฏิเสธ (บังคับ)"), "  ลองใหม่  ");
+    await user.type(
+      screen.getByPlaceholderText("เหตุผลที่ปฏิเสธ (บังคับ)"),
+      "  ลองใหม่  ",
+    );
     expect(confirmButton).toBeEnabled();
   });
 
   it("kind=config -> แสดงรายชื่อ field ที่จะส่ง", () => {
     render(
       <FieldApplyRequestApprovalCard
-        item={makeItem({ fieldNames: ["gps.send_interval_sec", "led.enabled"] })}
+        item={makeItem({
+          fieldNames: ["gps.send_interval_sec", "led.enabled"],
+        })}
         requesterName="ช่างสมศรี"
         canDecide={true}
         onDecided={vi.fn()}
@@ -97,6 +104,34 @@ describe("FieldApplyRequestApprovalCard", () => {
     expect(screen.getByText("gps.send_interval_sec")).toBeInTheDocument();
     expect(screen.getByText("led.enabled")).toBeInTheDocument();
     expect(screen.getByText("Config")).toBeInTheDocument();
+  });
+
+  it("แสดงป้ายมีค่าที่แก้เฉพาะเมื่อคำขอมี override", () => {
+    const { rerender } = render(
+      <FieldApplyRequestApprovalCard
+        item={makeItem()}
+        requesterName="ช่างสมศรี"
+        canDecide={true}
+        onDecided={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("มีค่าที่แก้")).not.toBeInTheDocument();
+
+    rerender(
+      <FieldApplyRequestApprovalCard
+        item={makeItem({
+          override: {
+            id: "ov-1",
+            reason: "ปรับค่า",
+            fieldNames: ["gps.send_interval_sec"],
+          },
+        })}
+        requesterName="ช่างสมศรี"
+        canDecide={true}
+        onDecided={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("มีค่าที่แก้")).toBeInTheDocument();
   });
 
   it("kind=firmware -> แสดง from → to และป้ายถอยเวอร์ชันเมื่อ isDowngrade", () => {
