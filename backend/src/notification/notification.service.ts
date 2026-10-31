@@ -27,6 +27,12 @@ export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
   'incident_report_resolved',
   'incident_report_dismissed',
   'incident_report_promoted',
+  // ผลคำขอส่งเข้ากล่อง แจ้งช่างที่ถืองาน · mobile เปิดหน้างานจาก push ได้แล้ว
+  'config_apply_approved',
+  'config_apply_rejected',
+  'config_apply_succeeded',
+  'config_apply_failed',
+  'config_apply_expired',
 ];
 
 export interface SendNotificationInput {
