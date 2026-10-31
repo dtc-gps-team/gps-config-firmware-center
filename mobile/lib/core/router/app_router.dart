@@ -123,9 +123,6 @@ class AppRoutes {
   static String taskRequestHistory(String id) => '/tasks/$id/requests';
 }
 
-/// Observes root page returns (for example, returning from Config parameters to
-/// the Apply picker) without adding a timer to interactive selection screens.
-
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
 /// to `/login`, and an authenticated user landing on `/login` (or `/`) is
 /// sent to their landing tab ([landingFor] — `/home` for ST/OT, Device Search

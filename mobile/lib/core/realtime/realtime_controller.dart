@@ -135,6 +135,7 @@ class LiveRefreshRegistration {
     Duration? interval,
     FutureOr<void> Function()? refresh,
     bool? active,
+    bool refreshImmediately = true,
   }) {
     if (_disposed) return;
     final wasActive = this.active;
@@ -152,10 +153,13 @@ class LiveRefreshRegistration {
       _timer = null;
     }
     _owner._reconcile(this);
-    if (!wasActive && this.active) _owner._refreshRegistration(this);
+    if (!wasActive && this.active && refreshImmediately) {
+      _owner._refreshRegistration(this);
+    }
   }
 
-  void setActive(bool active) => update(active: active);
+  void setActive(bool active, {bool refreshImmediately = true}) =>
+      update(active: active, refreshImmediately: refreshImmediately);
 
   void refreshNow() => _owner._refreshRegistration(this);
 

@@ -6,7 +6,6 @@ import '../../features/notification/notification_repository.dart';
 import '../api/models.dart';
 import '../auth/auth_controller.dart';
 import '../realtime/live_refresh.dart';
-import '../sync/sync_providers.dart';
 import '../theme/app_tokens.dart';
 import '../ui/app_v2_theme.dart';
 import 'app_router.dart';
@@ -46,14 +45,6 @@ class AppTabShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.read(activeAppTabIndexProvider) != shell.currentIndex) {
-      final index = shell.currentIndex;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          ref.read(activeAppTabIndexProvider.notifier).state = index;
-        }
-      });
-    }
     final role = ref.watch(authControllerProvider.select((s) => s.role));
     final tabs = tabsFor(role);
     final current = AppTab.values[shell.currentIndex];
@@ -74,7 +65,6 @@ class AppTabShell extends ConsumerWidget {
           selectedIndex: selected < 0 ? 0 : selected,
           onSelected: (i) {
             final branch = tabs[i].index;
-            ref.read(activeAppTabIndexProvider.notifier).state = branch;
             // แตะแท็บที่อยู่แล้ว = กลับรากของแท็บนั้น (แบบแอปทั่วไป)
             shell.goBranch(
               branch,

@@ -84,7 +84,6 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
 
     return LiveRefresh(
       interval: const Duration(seconds: 15),
-      tabIndex: 3,
       onRefresh: () async {
         await ref.refresh(notificationListProvider.future).then<void>((_) {});
       },

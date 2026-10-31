@@ -18,9 +18,6 @@ final pendingActionDaoProvider = Provider(
   (ref) => ref.watch(appDatabaseProvider).pendingActionDao,
 );
 
-/// Index of the selected root tab. Indexed branches remain mounted offstage.
-final activeAppTabIndexProvider = StateProvider<int>((ref) => 0);
-
 /// Shared live-refresh coordinator. Timers are disabled in mock mode and until
 /// a user session is authenticated.
 final realtimeControllerProvider = Provider<RealtimeController>((ref) {

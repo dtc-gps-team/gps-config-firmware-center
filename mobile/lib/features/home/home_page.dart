@@ -31,7 +31,6 @@ class HomePage extends ConsumerWidget {
     final staff = isFieldStaff(auth.role);
     return LiveRefresh(
       interval: const Duration(seconds: 15),
-      tabIndex: 0,
       onRefresh: () async {
         if (staff) {
           await ref.refresh(taskListProvider.future).then<void>((_) {});

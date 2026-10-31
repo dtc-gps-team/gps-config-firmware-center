@@ -39,7 +39,6 @@ class IncidentListPage extends ConsumerWidget {
 
     return LiveRefresh(
       interval: const Duration(seconds: 30),
-      tabIndex: 2,
       onRefresh: () async {
         await ref.refresh(incidentListProvider.future).then<void>((_) {});
       },
