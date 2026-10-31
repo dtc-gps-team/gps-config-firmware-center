@@ -1969,6 +1969,43 @@ paths:
         "404":
           description: ไม่พบ Device (deviceId) นี้
 
+  /devices/{deviceId}/confirm-install:
+    post:
+      tags: [device]
+      operationId: confirmDeviceInstalled
+      summary: ยืนยันว่าอุปกรณ์ติดตั้งแล้ว — ย้าย registered ไป installed (v3.78)
+      description: >-
+        **endpoint ฝั่ง staff** (resource เดียวกับ `registerDevice`/
+        `rotateDeviceApiKey` — `device-registration` action `Update` —
+        Admin/SuperAdmin เท่านั้น) ปิดช่องว่างที่ไม่เคยมีทางย้าย Device จาก
+        `registered` ไป `installed` ได้เลยนอกจากแก้ตรงใน DB ด้วยสคริปต์ชั่วคราว
+        (docs/24 §Q2) — Campaign ต้องการ `installed` เท่านั้นถึงจะเพิ่มเข้ากลุ่มได้
+        (`CampaignService`) · ไม่ผูกกับ Task/field flow ใดๆ เป็นการยืนยันตรงๆ ·
+        ตั้ง `installedAt` เป็นเวลาที่เรียกสำเร็จ · สถานะปัจจุบันต้องเป็น
+        `registered` เท่านั้น — `installed` อยู่แล้วหรือ `decommissioned` แล้ว
+        คือ `409`
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ยืนยันติดตั้งสำเร็จ — status เป็น installed แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ยืนยันติดตั้งอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: สถานะปัจจุบันไม่ใช่ registered (installed อยู่แล้ว หรือ decommissioned แล้ว)
+
   /devices/{deviceId}/status:
     get:
       tags: [device-status]
@@ -6464,10 +6501,6 @@ components:
           description: >-
             เลขที่มากับตัวอุปกรณ์เอง (คนละอย่างกับ `deviceId` ที่เป็นเลขเครื่อง
             ของระบบ)
-        bootloader:
-          type: string
-          maxLength: 50
-          nullable: true
         initialFirmwareId:
           type: string
           format: uuid
@@ -6531,9 +6564,6 @@ components:
           type: string
           nullable: true
         blackboxId:
-          type: string
-          nullable: true
-        bootloader:
           type: string
           nullable: true
         status:

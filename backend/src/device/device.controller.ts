@@ -119,6 +119,19 @@ export class DeviceController {
     return this.deviceService.rotateKey(deviceId, toActor(req));
   }
 
+  // ปุ่ม "ยืนยันติดตั้งแล้ว" บนหน้า Device Detail — resource/action เดียวกับ
+  // rotate-key (device-registration/Update) ปิด gap ที่ไม่เคยมีทางย้าย Device
+  // จาก registered ไป installed ได้เลยนอกจากแก้ตรงใน DB (docs/24 §Q2)
+  @Post(':deviceId/confirm-install')
+  @RequirePermission('device-registration', ActionType.Update)
+  @HttpCode(HttpStatus.OK)
+  confirmInstalled(
+    @Param('deviceId') deviceId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<DeviceWithCustomer> {
+    return this.deviceService.confirmInstalled(deviceId, toActor(req));
+  }
+
   // Device Search / Device Detail (Sprint 2 #11) — resource `devices` action
   // Read · RBAC_Matrix.md §2 แถว "Device Search / Device Detail" = R ทุก Role
   // · grant `devices` Read seed ให้ทุก role อยู่แล้ว (prisma/seed.ts — เดิม
