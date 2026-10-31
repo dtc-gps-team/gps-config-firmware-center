@@ -7,12 +7,14 @@ import type { Device } from "@/lib/device-api";
 
 const authState = vi.hoisted(() => ({ role: "Operation" as string }));
 const rotateDeviceKey = vi.hoisted(() => vi.fn());
+const confirmDeviceInstalled = vi.hoisted(() => vi.fn());
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { role: authState.role, accessToken: "tok" } }),
 }));
 vi.mock("@/lib/device-api", async (orig) => ({
   ...(await orig<typeof import("@/lib/device-api")>()),
   rotateDeviceKey,
+  confirmDeviceInstalled,
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -36,20 +38,20 @@ let device: Device = {
   imei: null,
   serialNumber: null,
   blackboxId: null,
-  bootloader: null,
   status: "installed",
   registeredAt: "2026-01-01T00:00:00Z",
   installedAt: null,
   customer: null,
 };
 
+const deviceRefetch = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/use-device", () => ({
   useDevice: () => ({
     data: device,
     isLoading: false,
     notFound: false,
     error: null,
-    refetch: vi.fn(),
+    refetch: deviceRefetch,
   }),
 }));
 
@@ -164,5 +166,47 @@ describe("DeviceDetailView", () => {
 
     expect(rotateDeviceKey).toHaveBeenCalledWith("tok", "DEV-0001");
     expect(await screen.findByDisplayValue("new-key-123")).toBeInTheDocument();
+  });
+
+  it("status installed -> ไม่เห็นปุ่มยืนยันติดตั้งแล้ว แม้เป็น Admin", () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    authState.role = "Admin";
+    device = { ...device, status: "installed" };
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    expect(
+      screen.queryByRole("button", { name: /ยืนยันติดตั้งแล้ว/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("status registered + Operation -> ไม่เห็นปุ่มยืนยันติดตั้งแล้ว", () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    authState.role = "Operation";
+    device = { ...device, status: "registered" };
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+
+    expect(
+      screen.queryByRole("button", { name: /ยืนยันติดตั้งแล้ว/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("status registered + Admin: ยืนยันแล้วเรียก confirmDeviceInstalled + refetch", async () => {
+    statusHook.value = { data: null, isLoading: false, error: null };
+    authState.role = "Admin";
+    device = { ...device, status: "registered" };
+    confirmDeviceInstalled.mockResolvedValue({ ...device, status: "installed" });
+    const user = userEvent.setup();
+
+    render(<DeviceDetailView deviceId="DEV-0001" />);
+    await user.click(
+      screen.getByRole("button", { name: "ยืนยันติดตั้งแล้ว" }),
+    );
+    expect(confirmDeviceInstalled).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "ยืนยัน" }));
+
+    expect(confirmDeviceInstalled).toHaveBeenCalledWith("tok", "DEV-0001");
+    expect(deviceRefetch).toHaveBeenCalled();
   });
 });

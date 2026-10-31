@@ -71,7 +71,6 @@ export function RegisterDeviceForm() {
   const [imei, setImei] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [blackboxId, setBlackboxId] = useState("");
-  const [bootloader, setBootloader] = useState("");
   const [centralPick, setCentralPick] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -80,7 +79,7 @@ export function RegisterDeviceForm() {
   // กรอกค้างไว้แล้วออกจากหน้า (รีเฟรช/ปิดแท็บ/กดยกเลิก) ต้องเตือนก่อน · ลงทะเบียนสำเร็จแล้วไม่ต้องเตือน
   const isDirty =
     result === null &&
-    [deviceId, simNumber, modelId, hardwareRevisionCode, imei, serialNumber, blackboxId, bootloader].some(
+    [deviceId, simNumber, modelId, hardwareRevisionCode, imei, serialNumber, blackboxId].some(
       (v) => v.trim() !== "",
     );
   const { confirmLeave } = useUnsavedChangesWarning(isDirty);
@@ -195,7 +194,6 @@ export function RegisterDeviceForm() {
         imei: trimmedImei,
         serialNumber: trimmedSerial,
         blackboxId: trimmedBlackbox,
-        bootloader: bootloader.trim() || undefined,
       });
       toast.success(`ลงทะเบียน "${registered.deviceId}" แล้ว`);
       setResult(registered);
@@ -326,18 +324,6 @@ export function RegisterDeviceForm() {
               value={blackboxId}
               disabled={submitting}
               onChange={(e) => setBlackboxId(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-bootloader">
-              Bootloader{" "}
-              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
-            </Label>
-            <Input
-              id="device-bootloader"
-              value={bootloader}
-              disabled={submitting}
-              onChange={(e) => setBootloader(e.target.value)}
             />
           </div>
         </div>
