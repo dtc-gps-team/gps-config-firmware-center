@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
@@ -59,47 +60,67 @@ class DeviceDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final role = ref.watch(authControllerProvider.select((s) => s.role));
+    final isSt = role == UserRole.st;
+    final isFieldStaff = isSt || role == UserRole.ot;
     final deviceAsync = ref.watch(deviceDetailProvider(deviceId));
     final navigator = Navigator.of(context);
     final device = deviceAsync.valueOrNull;
-    return AppV2Theme(
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AppInkHeader(
-              title: deviceId,
-              subtitle: device == null
-                  ? null
-                  : '${device.deviceModel} · ซิม ${device.simNumber}',
-              onBack: navigator.canPop() ? navigator.pop : null,
-            ),
-            Expanded(
-              child: deviceAsync.when(
-                skipLoadingOnRefresh: true,
-                data: (device) => AppFadeIn(
-                  child: _DeviceDetailView(device: device, deviceId: deviceId),
-                ),
-                loading: () => const AppDetailSkeleton(
-                  lines: 6,
-                  padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
-                ),
-                error: (error, _) => ListView(
-                  children: [
-                    const SizedBox(height: 64),
-                    AppErrorView(
-                      message: _errorMessage(error),
-                      onRetry: () =>
-                          ref.invalidate(deviceDetailProvider(deviceId)),
-                      messageKey: const Key('device_detail_error'),
-                      retryKey: const Key('device_detail_retry'),
+    return LiveRefresh(
+      interval: const Duration(seconds: 10),
+      onRefresh: () async {
+        await Future.wait([
+          ref.refresh(deviceCentralProvider(deviceId).future),
+          ref.refresh(deviceStatusProvider(deviceId).future),
+          if (isSt) ref.refresh(currentConfigProvider(deviceId).future),
+          if (isFieldStaff) ...[
+            ref.refresh(openTaskForDeviceProvider(deviceId).future),
+            ref.refresh(deviceApplyOptionsProvider(deviceId).future),
+          ],
+        ]);
+      },
+      child: AppV2Theme(
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppInkHeader(
+                title: deviceId,
+                subtitle: device == null
+                    ? null
+                    : '${device.deviceModel} · ซิม ${device.simNumber}',
+                onBack: navigator.canPop() ? navigator.pop : null,
+              ),
+              Expanded(
+                child: deviceAsync.when(
+                  skipLoadingOnRefresh: true,
+                  data: (device) => AppFadeIn(
+                    child: _DeviceDetailView(
+                      device: device,
+                      deviceId: deviceId,
                     ),
-                  ],
+                  ),
+                  loading: () => const AppDetailSkeleton(
+                    lines: 6,
+                    padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
+                  ),
+                  error: (error, _) => ListView(
+                    children: [
+                      const SizedBox(height: 64),
+                      AppErrorView(
+                        message: _errorMessage(error),
+                        onRetry: () =>
+                            ref.invalidate(deviceDetailProvider(deviceId)),
+                        messageKey: const Key('device_detail_error'),
+                        retryKey: const Key('device_detail_retry'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -755,6 +776,7 @@ class _PayloadSection extends ConsumerWidget {
     final central = ref.watch(deviceCentralProvider(deviceId)).valueOrNull;
     return statusAsync.when(
       skipLoadingOnRefresh: true,
+      skipError: true,
       data: (status) {
         final online = DeviceOnline.resolve(status, central);
         final reported = online.fromCentral ? central?.device : null;

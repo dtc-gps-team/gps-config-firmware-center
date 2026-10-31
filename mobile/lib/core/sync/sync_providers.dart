@@ -9,11 +9,30 @@ import '../config/app_config.dart';
 import '../db/app_database.dart';
 import '../db/providers/database_provider.dart';
 import '../db/tables/pending_actions_table.dart';
+import '../realtime/realtime_controller.dart';
 import 'sync_queue_service.dart';
+
+final mobileRouteObserver = RouteObserver<PageRoute<dynamic>>();
 
 final pendingActionDaoProvider = Provider(
   (ref) => ref.watch(appDatabaseProvider).pendingActionDao,
 );
+
+/// Index of the selected root tab. Indexed branches remain mounted offstage.
+final activeAppTabIndexProvider = StateProvider<int>((ref) => 0);
+
+/// Shared live-refresh coordinator. Timers are disabled in mock mode and until
+/// a user session is authenticated.
+final realtimeControllerProvider = Provider<RealtimeController>((ref) {
+  final controller = RealtimeController(mockMode: AppConfig.apiMockMode)
+    ..start()
+    ..setAuthenticated(ref.read(authControllerProvider).isAuthenticated);
+  ref.listen(authControllerProvider, (_, next) {
+    controller.setAuthenticated(next.isAuthenticated);
+  });
+  ref.onDispose(controller.dispose);
+  return controller;
+});
 
 /// Bumped whenever a flush changed the queue or the cache. Providers that
 /// show synced data watch it to refresh (kept as a plain counter so `core/sync`
@@ -82,7 +101,12 @@ final syncTriggersProvider = Provider<SyncTriggers>((ref) {
   // resume / connectivity event.
   final triggers = SyncTriggers(
     onTrigger: () {
-      if (signedIn()) ref.read(syncQueueServiceProvider).flush();
+      if (!signedIn()) return;
+      unawaited(
+        ref.read(syncQueueServiceProvider).flush().then((_) {
+          if (signedIn()) ref.read(realtimeControllerProvider).refreshActive();
+        }),
+      );
     },
     connectivity: ref.read(syncConnectivityProvider),
   );
