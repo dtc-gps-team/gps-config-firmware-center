@@ -225,6 +225,7 @@ function ParameterTableCard({
         <ParameterDetailDrawer
           definition={openDefinition}
           onClose={() => setOpen(null)}
+          onChanged={() => void refetch()}
         />
       </CardContent>
     </Card>

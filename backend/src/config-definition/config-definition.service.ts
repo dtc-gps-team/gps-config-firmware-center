@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ConfigFieldDefinition,
@@ -11,7 +12,9 @@ import {
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockFieldForDelete } from './config-definition-lock';
 import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
+import { UpdateConfigDefinitionDto } from './dto/update-config-definition.dto';
 
 export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
@@ -332,6 +335,154 @@ export class ConfigDefinitionService {
       }
       throw err;
     }
+  }
+
+  /** Config (ที่ยังไม่ถูกลบ) ที่ใช้ field นี้อยู่ในค่า - นับทั้งหมด + ตัวอย่างชื่อสูงสุด 5 รายการ
+   * (Config เก็บ `fields` แบบ flat key = ชื่อ field) */
+  private async findConfigsUsingField(
+    db: Pick<Prisma.TransactionClient, '$queryRaw'>,
+    fieldName: string,
+  ): Promise<{ count: number; configs: { id: string; name: string }[] }> {
+    const countRows = await db.$queryRaw<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM "Config"
+      WHERE "deletedAt" IS NULL AND jsonb_exists(fields::jsonb, ${fieldName})`;
+    const configs = await db.$queryRaw<{ id: string; name: string }[]>`
+      SELECT id, name FROM "Config"
+      WHERE "deletedAt" IS NULL AND jsonb_exists(fields::jsonb, ${fieldName})
+      ORDER BY name LIMIT 5`;
+    return { count: countRows[0]?.count ?? 0, configs };
+  }
+
+  /** `GET /config-definitions/{id}/usage` - ให้หน้าเว็บเตือนก่อนแก้/ลบว่ามี Config ใช้ field นี้กี่ตัว */
+  async getUsage(
+    id: string,
+  ): Promise<{ count: number; configs: { id: string; name: string }[] }> {
+    const def = await this.prisma.configFieldDefinition.findUnique({
+      where: { id },
+    });
+    if (!def) {
+      throw new NotFoundException(`ไม่พบพารามิเตอร์ id ${id}`);
+    }
+    return this.findConfigsUsingField(this.prisma, def.fieldName);
+  }
+
+  /**
+   * `PATCH /config-definitions/{id}` - แก้ metadata และกฎ validate ของ field (ไม่แก้ `fieldName`)
+   * กฎ validate ที่เปลี่ยนมีผลกับ Config ที่สร้าง/แก้ครั้งถัดไปเท่านั้น ไม่แก้ Config เดิมย้อนหลัง
+   * ตรวจกฎเดียวกับตอนสร้างบนค่าที่ "จะเป็นจริงหลังแก้" (ชนิดข้อมูล/ช่วงค่า/ค่าเริ่มต้น/sensitive)
+   */
+  async update(
+    id: string,
+    dto: UpdateConfigDefinitionDto,
+    actor: ActingUser,
+  ): Promise<ConfigFieldDefinitionWithSupport> {
+    if (Object.values(dto).every((v) => v === undefined)) {
+      throw new BadRequestException('ไม่มี field ที่จะแก้ไข');
+    }
+    const existing = await this.prisma.configFieldDefinition.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบพารามิเตอร์ id ${id}`);
+    }
+
+    const candidate = {
+      dataType: dto.dataType ?? existing.dataType,
+      sensitive: dto.sensitive ?? existing.sensitive,
+      defaultValue:
+        (dto.defaultValue === undefined
+          ? existing.defaultValue
+          : dto.defaultValue) ?? undefined,
+      minValue: dto.minValue === undefined ? existing.minValue : dto.minValue,
+      maxValue: dto.maxValue === undefined ? existing.maxValue : dto.maxValue,
+    };
+    this.assertNoSensitiveDefaultValue(candidate);
+    this.assertDefaultValueMatchesDataType(candidate);
+    this.assertValidRange(candidate);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.configFieldDefinition.update({
+        where: { id },
+        data: {
+          dataType: dto.dataType,
+          allowedValues: dto.allowedValues,
+          required: dto.required,
+          unknownSpec: dto.unknownSpec,
+          description: dto.description,
+          unit: dto.unit,
+          stOverridable: dto.stOverridable,
+          category: dto.category,
+          sensitive: dto.sensitive,
+          restartRequired: dto.restartRequired,
+          defaultValue: dto.defaultValue,
+          minValue: dto.minValue,
+          maxValue: dto.maxValue,
+        },
+      });
+      if (dto.supportedModels) {
+        await tx.configFieldDefinitionModelSupport.deleteMany({
+          where: { fieldDefinitionId: id },
+        });
+        await tx.configFieldDefinitionModelSupport.createMany({
+          data: dto.supportedModels.map((m) => ({
+            fieldDefinitionId: id,
+            deviceModel: m.deviceModel,
+            protocol: m.protocol,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      const withSupport = await tx.configFieldDefinition.findUniqueOrThrow({
+        where: { id },
+        include: { supportedModels: true },
+      });
+      const metadata: AuditLogMetadata = { fieldNames: [updated.fieldName] };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'update',
+          ipAddress: actor.ipAddress ?? null,
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+      return withSupport;
+    });
+  }
+
+  /**
+   * `DELETE /config-definitions/{id}` - ลบ field ออกจากคลัง · ลบไม่ได้ (409) ถ้ายังมี Config ที่ไม่ถูก
+   * ลบใช้ field นี้ในค่าของมัน (เพราะ `validateFields` จะมอง field ที่ไม่มีนิยามว่า "ไม่รู้จัก" และ
+   * บล็อกการแก้ Config เหล่านั้น) · ล็อกแถว (FOR UPDATE) แล้วตรวจซ้ำหลังได้ล็อก คู่กับ
+   * `lockFieldsForUse()` ฝั่งสร้าง/แก้ Config กัน TOCTOU (แนวทางเดียวกับ #425/#426)
+   */
+  async remove(id: string, actor: ActingUser): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await lockFieldForDelete(tx, id);
+      const def = await tx.configFieldDefinition.findUnique({ where: { id } });
+      if (!def) {
+        throw new NotFoundException(`ไม่พบพารามิเตอร์ id ${id}`);
+      }
+      const usage = await this.findConfigsUsingField(tx, def.fieldName);
+      if (usage.count > 0) {
+        const names = usage.configs.map((c) => c.name).join(', ');
+        const more = usage.count > usage.configs.length ? ' และอื่นๆ' : '';
+        throw new ConflictException(
+          `ลบพารามิเตอร์ "${def.fieldName}" ไม่ได้ เพราะมี Config ใช้อยู่ ${usage.count} ตัว (${names}${more}) - ลบหรือแก้ Config เหล่านั้นก่อน`,
+        );
+      }
+      await tx.configFieldDefinition.delete({ where: { id } });
+      const metadata: AuditLogMetadata = { fieldNames: [def.fieldName] };
+      await tx.auditLog.create({
+        data: {
+          userId: actor.id,
+          auditModule: AUDIT_MODULE,
+          action: 'delete',
+          ipAddress: actor.ipAddress ?? null,
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+    });
   }
 
   /**
