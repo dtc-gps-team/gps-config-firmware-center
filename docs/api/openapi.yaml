@@ -870,6 +870,114 @@ paths:
         "409":
           description: มี field ชื่อนี้อยู่แล้วในคลัง (fieldName ซ้ำ)
 
+  /config-definitions/{id}:
+    patch:
+      tags: [config]
+      operationId: updateConfigDefinition
+      summary: แก้พารามิเตอร์ใน Parameter Library - v3.82
+      description: >-
+        ConfigEngineer (resource `config-definition` action `Update`; SuperAdmin ผ่านด้วย bypass) ·
+        ส่งเฉพาะ field ที่จะแก้ · **แก้ `fieldName` ไม่ได้** (Config เก็บค่าตามชื่อ - ส่งมา = 400) ·
+        `null` ล้างค่าที่ไม่บังคับได้ · กฎ validate ที่เปลี่ยน (ชนิด/ค่าที่ยอมรับ/required/ช่วงค่า) มีผลกับ
+        Config ที่สร้างหรือแก้ครั้งถัดไปเท่านั้น ไม่แก้ Config เดิมย้อนหลัง · ตรวจกฎเดียวกับตอนสร้างบนค่า
+        หลังแก้ · `supportedModels` ส่งมา = แทนที่ทั้งชุด · AuditLog `update` (เก็บแค่ชื่อ field)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConfigDefinitionInput"
+      responses:
+        "200":
+          description: แก้สำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigFieldDefinition"
+        "400":
+          description: validation ไม่ผ่าน (ไม่ส่ง field ใดเลย, ส่ง fieldName, min > max, ค่าเริ่มต้นไม่ตรงชนิด, sensitive พร้อม defaultValue)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้ - เฉพาะ ConfigEngineer และ SuperAdmin
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
+    delete:
+      tags: [config]
+      operationId: deleteConfigDefinition
+      summary: ลบพารามิเตอร์ออกจาก Parameter Library - v3.82
+      description: >-
+        ConfigEngineer (resource `config-definition` action `Update`) · ลบจริง (hard delete) ได้เมื่อ
+        **ไม่มี Config ที่ยังไม่ถูกลบใช้ field นี้ในค่าของมัน** (409 บอกจำนวนและชื่อ Config) เพราะ validate
+        จะมอง field ที่ไม่มีนิยามว่า "ไม่รู้จัก" และบล็อกการแก้ Config เหล่านั้น · ล็อกแถว field แล้วตรวจซ้ำ
+        คู่กับการล็อกฝั่งสร้าง/แก้ Config กัน race · AuditLog `delete` (เก็บแค่ชื่อ field)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ลบ - เฉพาะ ConfigEngineer และ SuperAdmin
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
+        "409":
+          description: ยังมี Config ใช้พารามิเตอร์นี้อยู่
+
+  /config-definitions/{id}/usage:
+    get:
+      tags: [config]
+      operationId: getConfigDefinitionUsage
+      summary: Config ที่ใช้พารามิเตอร์นี้ - v3.82
+      description: >-
+        สิทธิ์อ่านเดียวกับ listConfigDefinitions · นับเฉพาะ Config ที่ไม่ถูกลบ · คืนตัวอย่างชื่อสูงสุด 5 รายการ
+        ใช้เตือนบนหน้าเว็บก่อนแก้/ลบ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: จำนวนและตัวอย่าง Config ที่ใช้
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, configs]
+                properties:
+                  count:
+                    type: integer
+                  configs:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
+
   /notifications:
     get:
       tags: [notification]
@@ -5398,6 +5506,62 @@ components:
         protocol:
           type: string
           example: TCP
+
+    UpdateConfigDefinitionInput:
+      type: object
+      description: >-
+        Request body ของ updateConfigDefinition (v3.82) - ทุก field optional แต่ต้องส่งอย่างน้อย 1 อย่าง ·
+        ไม่มี `fieldName` (เปลี่ยนชื่อไม่ได้) · `null` ล้างค่าที่ไม่บังคับ
+      properties:
+        dataType:
+          type: string
+        allowedValues:
+          type: array
+          items:
+            type: string
+        required:
+          type: boolean
+        unknownSpec:
+          type: boolean
+        description:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+          maxLength: 20
+        stOverridable:
+          type: boolean
+        category:
+          type: string
+          nullable: true
+          maxLength: 50
+        sensitive:
+          type: boolean
+        restartRequired:
+          type: boolean
+        defaultValue:
+          type: string
+          nullable: true
+          maxLength: 255
+        minValue:
+          type: number
+          nullable: true
+        maxValue:
+          type: number
+          nullable: true
+        supportedModels:
+          type: array
+          minItems: 1
+          description: ส่งมา = แทนที่ทั้งชุด
+          items:
+            type: object
+            required: [deviceModel, protocol]
+            properties:
+              deviceModel:
+                type: string
+              protocol:
+                type: string
 
     CreateConfigDefinitionInput:
       type: object

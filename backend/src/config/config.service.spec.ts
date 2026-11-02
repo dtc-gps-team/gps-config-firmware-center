@@ -130,7 +130,16 @@ describe('ConfigService', () => {
       auditLog,
       user,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ config, configVersion, auditLog }),
+        cb({
+          config,
+          configVersion,
+          auditLog,
+          // ล็อกนิยาม field ที่ Config ใช้ (FOR SHARE) - คืนแถวครบทุกชื่อที่ถามมา (ไม่มี field ถูกลบ)
+          $queryRaw: jest.fn(
+            (_strings: TemplateStringsArray, names: string[]) =>
+              Promise.resolve(names.map((fieldName) => ({ fieldName }))),
+          ),
+        }),
       ),
     };
 

@@ -45,6 +45,12 @@ export function canUpdateConfig(role: string | null | undefined): boolean {
   return role === "ConfigEngineer" || role === "SuperAdmin";
 }
 
+/** แก้/ลบพารามิเตอร์ใน Parameter Library - resource `config-definition` action `Update` เดียวกับ
+ * `PATCH`/`DELETE /config-definitions/{id}` (ConfigEngineer; SuperAdmin ผ่านด้วย bypass ที่ PermissionGuard) */
+export function canManageParameters(role: string | null | undefined): boolean {
+  return role === "ConfigEngineer" || role === "SuperAdmin";
+}
+
 /**
  * ปุ่ม "Approve" / "Reject" ใน Approval Center — Section 2 + Section 5 ข้อ 1
  * (Separation of Duty): Operation เท่านั้น — ConfigEngineer ห้ามอนุมัติ
