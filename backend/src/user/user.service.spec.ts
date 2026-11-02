@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, UserService } from './user.service';
@@ -11,6 +12,7 @@ import { ActingUser, UserService } from './user.service';
 jest.mock('bcrypt', () => ({ hash: jest.fn() }));
 
 const actor: ActingUser = { id: 'admin-1', role: 'Admin' };
+const superAdmin: ActingUser = { id: 'superadmin-1', role: 'SuperAdmin' };
 
 describe('UserService', () => {
   let service: UserService;
@@ -20,9 +22,11 @@ describe('UserService', () => {
     findUnique: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
+    count: jest.Mock;
   };
   let role: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
+  let $transaction: jest.Mock;
 
   beforeEach(async () => {
     findMany = jest.fn().mockResolvedValue([]);
@@ -31,14 +35,26 @@ describe('UserService', () => {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      count: jest.fn().mockResolvedValue(2),
     };
     role = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
+    $transaction = jest.fn((cb: (tx: unknown) => unknown) => cb({ user }));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
-        { provide: PrismaService, useValue: { user, role, auditLog } },
+        {
+          provide: PrismaService,
+          useValue: {
+            user,
+            role,
+            auditLog,
+            // $transaction (interactive) - เรียก callback ด้วย tx ที่ใช้ delegate
+            // mock ตัวเดียวกับนอก transaction
+            $transaction,
+          },
+        },
       ],
     }).compile();
 
@@ -91,7 +107,7 @@ describe('UserService', () => {
         },
       ]);
 
-      const result = await service.listManaged();
+      const result = await service.listManaged(actor);
 
       expect(findMany).toHaveBeenCalledWith({
         where: { role: { code: { notIn: ['Admin', 'SuperAdmin'] } } },
@@ -113,6 +129,24 @@ describe('UserService', () => {
           role: 'ConfigEngineer',
         },
       ]);
+    });
+
+    it('actor เป็น SuperAdmin -> ไม่ filter เห็นบัญชี Admin/SuperAdmin ด้วย (มติ 2026-10-30)', async () => {
+      findMany.mockResolvedValue([
+        {
+          id: 'u2',
+          username: 'admin.test',
+          fullName: 'Admin Tester',
+          isActive: true,
+          role: { code: 'Admin' },
+        },
+      ]);
+
+      await service.listManaged(superAdmin);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: undefined }),
+      );
     });
   });
 
@@ -204,6 +238,29 @@ describe('UserService', () => {
           service.create({ ...dto, role: roleCode }, actor),
         ).rejects.toThrow(BadRequestException);
         expect(user.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['Admin', 'SuperAdmin'])(
+      'actor เป็น SuperAdmin -> สร้างบัญชี role %s ได้ (มติ 2026-10-30)',
+      async (roleCode) => {
+        role.findUnique.mockResolvedValue({ id: 'role-x', code: roleCode });
+        user.findUnique.mockResolvedValue(null);
+        (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-pw');
+        user.create.mockResolvedValue({
+          id: 'u-new',
+          username: dto.username,
+          fullName: dto.fullName,
+          isActive: true,
+          role: { code: roleCode },
+        });
+
+        const result = await service.create(
+          { ...dto, role: roleCode },
+          superAdmin,
+        );
+
+        expect(result.role).toBe(roleCode);
       },
     );
   });
@@ -315,5 +372,198 @@ describe('UserService', () => {
         expect(user.update).not.toHaveBeenCalled();
       },
     );
+
+    it('actor เป็น SuperAdmin -> แก้บัญชี Admin/SuperAdmin ได้ (มติ 2026-10-30)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'Admin' },
+      });
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'admin.test',
+        fullName: 'Admin Tester',
+        isActive: false,
+        role: { code: 'Admin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { isActive: false },
+        superAdmin,
+      );
+
+      expect(result.isActive).toBe(false);
+      expect(user.count).not.toHaveBeenCalled();
+    });
+
+    it('actor เป็น SuperAdmin -> เปลี่ยน role เป้าหมายเป็น SuperAdmin ได้ (มติ 2026-10-30)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'Operation' },
+      });
+      role.findUnique.mockResolvedValue({
+        id: 'role-superadmin',
+        code: 'SuperAdmin',
+      });
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'op.test',
+        fullName: 'Op Tester',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { role: 'SuperAdmin' },
+        superAdmin,
+      );
+
+      expect(result.role).toBe('SuperAdmin');
+    });
+
+    it('เป้าหมายเป็น SuperAdmin คนสุดท้ายที่ active + พยายาม deactivate -> ConflictException (docs/11 §7)', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+      expect(user.update).not.toHaveBeenCalled();
+      expect(user.count).toHaveBeenCalledWith({
+        where: { role: { code: 'SuperAdmin' }, isActive: true },
+      });
+    });
+
+    it('เป้าหมายเป็น SuperAdmin คนสุดท้ายที่ active + พยายามเปลี่ยน role ออก -> ConflictException', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      role.findUnique.mockResolvedValue({ id: 'role-op', code: 'Operation' });
+      user.count.mockResolvedValue(1);
+
+      await expect(
+        service.update('u1', { role: 'Operation' }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+      expect(user.update).not.toHaveBeenCalled();
+    });
+
+    it('การกัน SuperAdmin คนสุดท้ายรัน count+update ใน transaction Serializable เดียวกัน', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(2);
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'super.test',
+        fullName: 'Super Tester',
+        isActive: false,
+        role: { code: 'SuperAdmin' },
+      });
+
+      await service.update('u1', { isActive: false }, superAdmin);
+
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: 'Serializable',
+      });
+    });
+
+    it('แก้ user ที่ไม่ใช่ SuperAdmin ไม่ต้องเปิด transaction', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u2',
+        isActive: true,
+        role: { code: 'Operation' },
+      });
+      user.update.mockResolvedValue({
+        id: 'u2',
+        username: 'op.test',
+        fullName: 'Op Tester',
+        isActive: false,
+        role: { code: 'Operation' },
+      });
+
+      await service.update('u2', { isActive: false }, superAdmin);
+
+      expect($transaction).not.toHaveBeenCalled();
+      expect(user.count).not.toHaveBeenCalled();
+    });
+
+    it('ธุรกรรมชนกัน (P2034) -> ลองใหม่ รอบใหม่เห็น count=1 -> ConflictException ไม่ปิดคนสุดท้าย', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(1);
+      $transaction
+        .mockRejectedValueOnce(
+          new PrismaClientKnownRequestError('write conflict', {
+            code: 'P2034',
+            clientVersion: 'test',
+          }),
+        )
+        .mockImplementation((cb: (tx: unknown) => unknown) => cb({ user }));
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+
+      expect($transaction).toHaveBeenCalledTimes(2);
+      expect(user.update).not.toHaveBeenCalled();
+    });
+
+    it('ชนกันครบจำนวนครั้งที่ลองใหม่ -> ConflictException บอกให้ลองใหม่', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      $transaction.mockRejectedValue(
+        new PrismaClientKnownRequestError('write conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(/พร้อมกัน/);
+      expect($transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it('มี SuperAdmin active มากกว่า 1 -> deactivate คนหนึ่งได้ตามปกติ', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(2);
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'super.test',
+        fullName: 'Super Tester',
+        isActive: false,
+        role: { code: 'SuperAdmin' },
+      });
+
+      const result = await service.update(
+        'u1',
+        { isActive: false },
+        superAdmin,
+      );
+
+      expect(result.isActive).toBe(false);
+    });
   });
 });

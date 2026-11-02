@@ -583,6 +583,24 @@ describe('CampaignRolloutService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('SuperAdmin อนุมัติ Rollout ของตัวเองได้ (ข้าม Separation of Duty — มติ 2026-10-30)', async () => {
+      const superAdmin: ActingUser = {
+        id: pendingRollout.createdBy,
+        role: 'SuperAdmin',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...pendingRollout,
+        status: 'approved',
+        approvedBy: superAdmin.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      const result = await service.approve(pendingRollout.id, superAdmin);
+
+      expect(result.status).toBe('approved');
+    });
+
     it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วระหว่างที่ทรานแซกชันกำลังจะ update (updateMany count 0) -> ConflictException (409), ไม่ throw P2025', async () => {
       campaignRollout.findUnique.mockResolvedValue(pendingRollout);
       campaignRollout.updateMany.mockResolvedValue({ count: 0 });

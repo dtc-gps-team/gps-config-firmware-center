@@ -33,7 +33,7 @@ export type Role =
  * — docs/13_Role_Redesign_Proposal.md §3.1)
  */
 export function canCreateConfig(role: string | null | undefined): boolean {
-  return role === "ConfigEngineer";
+  return role === "ConfigEngineer" || role === "SuperAdmin";
 }
 
 /**
@@ -42,7 +42,7 @@ export function canCreateConfig(role: string | null | undefined): boolean {
  * เจ้าของ)
  */
 export function canUpdateConfig(role: string | null | undefined): boolean {
-  return role === "ConfigEngineer";
+  return role === "ConfigEngineer" || role === "SuperAdmin";
 }
 
 /** แก้/ลบพารามิเตอร์ใน Parameter Library - resource `config-definition` action `Update` เดียวกับ
@@ -59,7 +59,7 @@ export function canManageParameters(role: string | null | undefined): boolean {
 export function canDecideConfigApproval(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -67,7 +67,7 @@ export function canDecideConfigApproval(
  * FirmwareEngineer ที่มีสิทธิ์ Create (เดิม SW ก่อนแยก role — docs/13 §3.1)
  */
 export function canUploadFirmware(role: string | null | undefined): boolean {
-  return role === "FirmwareEngineer";
+  return role === "FirmwareEngineer" || role === "SuperAdmin";
 }
 
 /**
@@ -79,7 +79,7 @@ export function canUploadFirmware(role: string | null | undefined): boolean {
 export function canUpdateFirmwareCompatibility(
   role: string | null | undefined,
 ): boolean {
-  return role === "FirmwareEngineer";
+  return role === "FirmwareEngineer" || role === "SuperAdmin";
 }
 
 /**
@@ -96,7 +96,8 @@ export function canSimulateFirmware(role: string | null | undefined): boolean {
     role === "QAEngineer" ||
     role === "Operation" ||
     role === "ST" ||
-    role === "OT"
+    role === "OT" ||
+    role === "SuperAdmin"
   );
 }
 
@@ -109,7 +110,7 @@ export function canSimulateFirmware(role: string | null | undefined): boolean {
 export function canDecideFirmwareApproval(
   role: string | null | undefined,
 ): boolean {
-  return role === "QAEngineer";
+  return role === "QAEngineer" || role === "SuperAdmin";
 }
 
 /**
@@ -197,7 +198,7 @@ export function canReadConfig(role: string | null | undefined): boolean {
 
 /** ปุ่ม "สร้างแคมเปญ" — Section 2 แถว Campaign Wizard: Operation เท่านั้นที่มี C */
 export function canCreateCampaign(role: string | null | undefined): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -212,7 +213,7 @@ export function canCreateCampaign(role: string | null | undefined): boolean {
 export function canDecideCampaignApproval(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -222,7 +223,7 @@ export function canDecideCampaignApproval(
 export function canEditIncidentTechnical(
   role: string | null | undefined,
 ): boolean {
-  return role === "ST";
+  return role === "ST" || role === "SuperAdmin";
 }
 
 /**
@@ -233,7 +234,7 @@ export function canEditIncidentTechnical(
 export function canDecideFieldReport(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -247,7 +248,7 @@ export function canDecideFieldReport(
 export function canDecideDeviceConfigOverride(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -259,7 +260,7 @@ export function canDecideDeviceConfigOverride(
 export function canDecideFirmwareOverride(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -272,7 +273,7 @@ export function canDecideFirmwareOverride(
 export function canDecideFieldApplyRequest(
   role: string | null | undefined,
 ): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -290,7 +291,8 @@ export function canAccessParameterLibrary(
     role === "ConfigEngineer" ||
     role === "Operation" ||
     role === "ST" ||
-    role === "OT"
+    role === "OT" ||
+    role === "SuperAdmin"
   );
 }
 
@@ -321,7 +323,7 @@ export function canReadFirmware(role: string | null | undefined): boolean {
 export function canCreateFieldDefinition(
   role: string | null | undefined,
 ): boolean {
-  return role === "ConfigEngineer";
+  return role === "ConfigEngineer" || role === "SuperAdmin";
 }
 
 /**
@@ -330,7 +332,7 @@ export function canCreateFieldDefinition(
  * (ตัวเดียวกับการตัดสินใจ Field Report) · UX-level เท่านั้น backend บังคับจริง
  */
 export function canCloseIncident(role: string | null | undefined): boolean {
-  return role === "Operation";
+  return role === "Operation" || role === "SuperAdmin";
 }
 
 /**
@@ -360,7 +362,8 @@ export function visibleDeviceHistoryTypes(
     role === "SuperAdmin" ||
     role === "ST" ||
     role === "OT";
-  const canSeeOverride = role === "Operation" || role === "ST";
+  const canSeeOverride =
+    role === "Operation" || role === "ST" || role === "SuperAdmin";
 
   return [
     "lifecycle",
