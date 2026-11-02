@@ -201,6 +201,12 @@ export function canCreateCampaign(role: string | null | undefined): boolean {
   return role === "Operation" || role === "SuperAdmin";
 }
 
+/** ปุ่มแก้ชื่อ/เพิ่ม-เอาเครื่องออก/ลบกลุ่ม — resource `campaign` action `Update`
+ * (seed.ts ให้ Operation; SuperAdmin ผ่านด้วย bypass ที่ PermissionGuard) */
+export function canManageCampaign(role: string | null | undefined): boolean {
+  return role === "Operation" || role === "SuperAdmin";
+}
+
 /**
  * ปุ่ม "อนุมัติ" / "ปฏิเสธ" Campaign — Section 2 แถว Campaign Wizard (Campaign
  * Approval, แก้ครั้งที่ 39): Operation เท่านั้น (resource `campaign` action

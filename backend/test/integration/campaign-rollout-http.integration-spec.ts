@@ -133,6 +133,132 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
     return campaign;
   }
 
+  // review B บน #424: ลบกลุ่มกับสร้าง Rollout พร้อมกันห้ามทำให้ Rollout ที่เพิ่งเริ่มถูก
+  // cascade ลบทิ้ง · ยิงจริงผ่าน HTTP + Postgres (ล็อกแถว Campaign)
+  describe('DELETE /campaigns/:id พร้อมกับ POST /campaigns/:id/rollouts (race)', () => {
+    it('ผลลัพธ์ต้องสอดคล้องกันเสมอ: ถ้าสร้าง Rollout สำเร็จ (201) การลบต้อง 409 และกลุ่ม+Rollout ยังอยู่ · ถ้าลบสำเร็จ (204) การสร้างต้องไม่สำเร็จและไม่เหลือ Rollout กำพร้า', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      await grant('Operation', ActionType.Update);
+      const token = tokenFor(opUser.id, 'Operation');
+      const outcomes = new Set<string>();
+
+      for (let round = 0; round < 8; round++) {
+        const config = await seedApprovedConfig();
+        const device = await seedInstalledDevice();
+        const campaign = await seedGroup(opUser.id, [device.deviceId]);
+
+        const [created, deleted] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ payloadType: 'Config', configId: config.id }),
+          request(app.getHttpServer())
+            .delete(`/api/v1/campaigns/${campaign.id}`)
+            .set('Authorization', `Bearer ${token}`),
+        ]);
+
+        const campaignAfter = await prisma.campaign.findUnique({
+          where: { id: campaign.id },
+        });
+        const rolloutsAfter = await prisma.campaignRollout.count({
+          where: { campaignId: campaign.id },
+        });
+
+        if (created.status === 201) {
+          // Rollout สำเร็จ -> ลบต้องถูกปฏิเสธ กลุ่มและ Rollout ยังอยู่ครบ
+          expect(deleted.status).toBe(409);
+          expect(campaignAfter).not.toBeNull();
+          expect(rolloutsAfter).toBe(1);
+          outcomes.add('created-first');
+        } else {
+          // ลบสำเร็จก่อน -> สร้างต้อง 404/409 และไม่มีอะไรเหลือ
+          expect(deleted.status).toBe(204);
+          expect([404, 409]).toContain(created.status);
+          expect(campaignAfter).toBeNull();
+          expect(rolloutsAfter).toBe(0);
+          outcomes.add('deleted-first');
+        }
+      }
+      // ไม่บังคับว่าต้องเจอทั้งสองลำดับ (ขึ้นกับจังหวะ) แต่ต้องมีผลอย่างน้อยหนึ่งแบบ
+      expect(outcomes.size).toBeGreaterThan(0);
+    });
+  });
+
+  // review B บน #424 รอบ 2: สร้าง Rollout กับเพิ่ม/เอาสมาชิกออกพร้อมกัน - Rollout ต้อง snapshot รายชื่อ
+  // "หลังได้ล็อก" ห้ามสร้างจากรายชื่อเก่า · ถือล็อกค้างเองเพื่อบังคับจังหวะ (ชนซ้ำด้วย Promise.all ไม่ได้)
+  describe('POST /campaigns/:id/rollouts พร้อมกับการเพิ่มสมาชิกกลุ่ม (race)', () => {
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    it('เพิ่มสมาชิกถือล็อกกลุ่มอยู่ -> สร้าง Rollout ต้องรอ แล้วเมื่อสมาชิก commit ต้องไม่สร้างจากรายชื่อเก่า (201 ต้องมีสมาชิกใหม่ครบ มิฉะนั้น 409 ให้ลองใหม่)', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      const token = tokenFor(opUser.id, 'Operation');
+      const config = await seedApprovedConfig();
+      const deviceA = await seedInstalledDevice();
+      const deviceB = await seedInstalledDevice();
+      const campaign = await seedGroup(opUser.id, [deviceA.deviceId]);
+
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // จำลอง CampaignService.addTargets: ล็อกกลุ่ม (FOR UPDATE) -> เพิ่มสมาชิก -> อัปเดตแถวกลุ่ม -> ค้างก่อน commit
+      const adder = prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Campaign" WHERE id = ${campaign.id} FOR UPDATE`;
+          await tx.campaignTarget.create({
+            data: { campaignId: campaign.id, deviceId: deviceB.deviceId },
+          });
+          await tx.campaign.update({
+            where: { id: campaign.id },
+            data: { updatedAt: new Date() },
+          });
+          await gate;
+        },
+        { timeout: 20000 },
+      );
+      await sleep(300);
+
+      let settled = false;
+      const creating = request(app.getHttpServer())
+        .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ payloadType: 'Config', configId: config.id })
+        .then((res) => {
+          settled = true;
+          return res;
+        });
+      await sleep(500);
+      // ถ้ายังอ่านสมาชิกก่อนล็อก หรือไม่ล็อก การสร้างจะเสร็จไปแล้วด้วยรายชื่อเก่า (1 เครื่อง)
+      expect(settled).toBe(false);
+
+      release();
+      await adder;
+      const res = await creating;
+
+      if (res.status === 201) {
+        const body = res.body as { id: string; targetCount: number };
+        expect(body.targetCount).toBe(2);
+        const targets = await prisma.campaignRolloutTarget.findMany({
+          where: { rolloutId: body.id },
+        });
+        expect(targets.map((x) => x.deviceId).sort()).toEqual(
+          [deviceA.deviceId, deviceB.deviceId].sort(),
+        );
+      } else {
+        // ธุรกรรม Serializable ตรวจพบว่าแถวกลุ่มถูกแก้ระหว่างรอล็อก -> 409 ให้ลองใหม่ และไม่มี Rollout
+        expect(res.status).toBe(409);
+        expect(
+          await prisma.campaignRollout.count({
+            where: { campaignId: campaign.id },
+          }),
+        ).toBe(0);
+      }
+    });
+  });
+
   describe('POST /campaigns/:campaignId/rollouts', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });
