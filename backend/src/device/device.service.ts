@@ -38,6 +38,7 @@ import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -539,7 +540,6 @@ export class DeviceService {
             imei: dto.imei,
             serialNumber: dto.serialNumber,
             blackboxId: dto.blackboxId,
-            bootloader: dto.bootloader,
             modelId: model.id,
             apiKeyHash,
             // activePartition default เป็น 'A' เสมอตอนสร้างใหม่ (schema.prisma)
@@ -646,6 +646,72 @@ export class DeviceService {
     }
 
     return { ...device, apiKey };
+  }
+
+  /**
+   * `POST /devices/{deviceId}/confirm-install` — ปุ่ม "ยืนยันติดตั้งแล้ว" บนหน้า
+   * Device Detail (Admin/SuperAdmin เท่านั้น เหมือน `register()`/`rotateKey()`
+   * — resource `device-registration` action `Update`) ย้าย Device จาก
+   * `registered` ไป `installed` + ตั้ง `installedAt`
+   *
+   * ก่อนหน้านี้**ไม่มีทางไหนทำสิ่งนี้ได้เลย** นอกจากแก้ตรงใน DB ด้วยสคริปต์
+   * ชั่วคราว (ดู docs/24 §Q2) — ทำให้ device ที่เพิ่งลงทะเบียนใหม่ค้างที่
+   * `registered` ตลอดไป เข้า Campaign ไม่ได้เลย (`CampaignService` ต้องการ
+   * `installed` เท่านั้น — ดู `GROUPABLE_DEVICE_STATUS`) endpoint นี้ปิด gap
+   * นั้น — เป็นการ "ยืนยัน" ตรงๆ ไม่ผูกกับ Task/field flow ใดๆ (ต่างจาก
+   * `registeredAt`/`installedAt` ที่ `device-history.service.ts` อ่านไปแสดง
+   * timeline อยู่แล้ว ใช้ค่าเดียวกัน)
+   *
+   * สถานะต้องเป็น `registered` เท่านั้นถึงจะยืนยันได้ — `installed` อยู่แล้ว
+   * หรือ `decommissioned` แล้วคือ 409 (กันกดซ้ำ/กันยืนยันเครื่องที่ปลดระวางไปแล้ว)
+   */
+  async confirmInstalled(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<DeviceWithCustomer> {
+    const existing = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+    }
+    if (existing.status !== 'registered') {
+      throw new ConflictException(
+        `Device deviceId ${deviceId} สถานะปัจจุบัน (${existing.status}) ไม่ใช่ registered ยืนยันติดตั้งซ้ำไม่ได้`,
+      );
+    }
+
+    let device: DeviceWithCustomer;
+    try {
+      device = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.device.update({
+          where: { deviceId },
+          data: { status: 'installed', installedAt: new Date() },
+          include: { customer: { select: { id: true, companyName: true } } },
+        });
+        const metadata: AuditLogMetadata = { deviceId: updated.deviceId };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'confirm-install',
+            metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
+          },
+        });
+        return updated;
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+      }
+      throw err;
+    }
+
+    return device;
   }
 
   /**
@@ -1527,6 +1593,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Config ฐานที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #425)
+        await lockConfigForReference(tx, baseConfig.id);
         const override = await tx.deviceConfigOverride.create({
           data: {
             deviceId,

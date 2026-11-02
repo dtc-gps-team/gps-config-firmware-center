@@ -45,6 +45,7 @@ const configApprover: ActingUser = {
 };
 const decider: ActingUser = { id: 'op-decider', role: 'Operation' };
 const admin: ActingUser = { id: 'admin-1', role: 'Admin' };
+const superAdmin: ActingUser = { id: 'superadmin-1', role: 'SuperAdmin' };
 
 const task: Task = {
   id: TASK_ID,
@@ -231,12 +232,15 @@ describe('ConfigApplyRequestService', () => {
       },
       auditLog,
       user: users,
-      // ล็อกแถว Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
-      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
-        Promise.resolve(
-          strings.join('').includes('"Firmware"') ? [{ deletedAt: null }] : [],
-        ),
-      ),
+      // ล็อกแถว Config/Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = strings.join('');
+        return Promise.resolve(
+          sql.includes('"Config"') || sql.includes('"Firmware"')
+            ? [{ deletedAt: null }]
+            : [],
+        );
+      }),
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
     notification = { send: jest.fn().mockResolvedValue(undefined) };
@@ -608,6 +612,21 @@ describe('ConfigApplyRequestService', () => {
           ForbiddenException,
         );
         expect(requests.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('SuperAdmin ข้าม SoD ได้ทันที ไม่เช็คข้อ 1-5 เลย (มติ 2026-10-30)', async () => {
+        // ใช้ค่าดีฟอลต์ของ pending/task ไม่แก้อะไร (configAssignedBy =
+        // assigner.id, ไม่ใช่ superAdmin) — ยืนยันว่า assertDecider() คืนทันที
+        // ตั้งแต่เช็ค role ไม่ต้องให้ actor.id ตรงกับใครเลยในคำขอก็ผ่านได้
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...pending,
+          status: 'approved',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+
+        await decide(service)(superAdmin);
+
+        expect(requests.updateMany).toHaveBeenCalled();
       });
 
       it('ข้อ 2: ผู้ตัดสินเป็นผู้ขอเอง -> 403', async () => {

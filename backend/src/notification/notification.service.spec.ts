@@ -164,6 +164,58 @@ describe('NotificationService', () => {
       expect(result.sentAt).not.toBeNull();
     });
 
+    it.each([
+      'config_apply_approved',
+      'config_apply_rejected',
+      'config_apply_succeeded',
+      'config_apply_failed',
+      'config_apply_expired',
+    ] as const)('%s → ส่ง push ให้ช่างที่ถืองาน', async (type) => {
+      notification.create.mockResolvedValue({ ...sampleNotification, type });
+      notification.update.mockResolvedValue(sampleNotification);
+      deviceToken.findMany.mockResolvedValue(sampleTokens);
+      const fcmSender: FcmSenderMock = {
+        sendToTokens: jest
+          .fn()
+          .mockResolvedValue({ invalidTokens: [] } satisfies FcmSendResult),
+      };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
+
+      await service.send({
+        userId: 'user-1',
+        type,
+        payload: { taskId: 'abc' },
+      });
+
+      expect(fcmSender.sendToTokens).toHaveBeenCalledWith({
+        tokens: ['tok-1', 'tok-2'],
+        notification: { type, payload: { taskId: 'abc' } },
+      });
+    });
+
+    it('config_apply_pending → ไม่ส่ง push เพราะ Operation ตัดสินบน Web', async () => {
+      notification.create.mockResolvedValue({
+        ...sampleNotification,
+        type: 'config_apply_pending',
+      });
+      const fcmSender: FcmSenderMock = { sendToTokens: jest.fn() };
+      const service = await buildService(
+        'fcm',
+        notification,
+        deviceToken,
+        fcmSender,
+      );
+
+      await service.send({ userId: 'user-1', type: 'config_apply_pending' });
+
+      expect(fcmSender.sendToTokens).not.toHaveBeenCalled();
+    });
+
     it('fcmSender คืน token invalid → ลบ token นั้นออกจาก DeviceToken', async () => {
       notification.create.mockResolvedValue(sampleNotification);
       notification.update.mockResolvedValue(sampleNotification);

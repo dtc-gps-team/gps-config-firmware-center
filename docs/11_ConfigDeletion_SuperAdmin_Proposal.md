@@ -5,6 +5,8 @@
 > **สถานะ:** **B รีวิว + อนุมัติแล้ว (PR #105)** — ตอบคำถามเปิดครบใน §10 (รวมยืนยัน 2 `NotificationType` ใหม่ในโมดูล B) · รอพี่เลี้ยงเคาะ flow แล้วเข้าคิว
 > **จังหวะ:** **Sprint 3** (ยืนยันตามรีวิว B — PR #99 §5 ข้อ 5 + PR #105)
 
+> **อัปเดต 2026-11-02 (ลบด้วยมือ):** `DELETE /config/{id}` ลบได้ทุกสถานะแล้ว (เดิมเฉพาะ draft) ยกเว้น Config ที่ยังถูกใช้งานอยู่ (Rollout/คำขอส่งเข้ากล่อง/Override/Task ที่ยังไม่จบ) — soft delete ไม่ต้องรอ SuperAdmin อนุมัติ เพราะการลบเทมเพลตไม่กระทบกล่อง · flow คำขอลบอัตโนมัติใน Part A (job กวาด draft/rejected ที่ไม่ใช้ 90 วัน → SuperAdmin อนุมัติ) ยังทำงานเหมือนเดิม ไม่ถูกแตะ · ดู RBAC_Matrix.md แก้ครั้งที่ 106
+
 ---
 
 ## 1. ปัญหา / สิ่งที่พี่เลี้ยงขอ
@@ -119,6 +121,21 @@ model ConfigDeletionRequest {
 ## PART B — Role SuperAdmin
 
 ## 6. นิยาม
+
+> **มติใหม่ 2026-10-30 (แทนที่ขอบเขตด้านล่างในส่วน "SuperAdmin ทำ *ไม่ได้*"):**
+> ตัดสินใจเปิดให้ SuperAdmin ทำได้ทุกอย่างที่ระบบมีอยู่แล้วทั้งหมด (รวมสิทธิ์
+> ของทุก role ปัจจุบัน) **และข้าม Separation of Duty ได้** (อนุมัติ
+> Config/Firmware/Campaign ของตัวเองได้) — เหตุผล: ใช้งานจริงแล้วพบว่าการ
+> จำกัด SuperAdmin ให้เหมือน Admin + สิทธิ์เพิ่มเล็กน้อยไม่ครอบคลุม
+> สถานการณ์จริง (เช่น ต้อง login เป็น Operation แยกต่างหากเพื่ออนุมัติ) ·
+> implement แบบ bypass ที่จุดศูนย์กลาง (`PermissionGuard`, `assertDecider()`,
+> `assertDecidable()`) ไม่ seed สิทธิ์ทีละ resource/action — ดู
+> `CLAUDE.md` §Role Enum และ `docs/architecture/RBAC_Matrix.md` §1/§2/§4 สำหรับ
+> ข้อความล่าสุด **ไม่สร้าง resource/หน้าใหม่ `role-management`** (สร้าง role
+> ใหม่/แก้ permission ผ่านเว็บ) ในรอบนี้ — ยังต้องแก้ผ่าน `seed.ts` เหมือนเดิม
+> ส่วนการจัดการบัญชี Admin/SuperAdmin ใช้หน้า User Management เดิมที่มีอยู่
+> แล้ว ไม่ใช่หน้าใหม่ `admin-management` ตามที่เคยเสนอไว้ด้านล่าง เนื้อหาเดิม
+> ของ §6-§7 เก็บไว้เป็นประวัติการตัดสินใจ ไม่ลบทิ้ง
 
 **SuperAdmin = ทุกอย่างที่ Admin ทำได้ + เพิ่ม:**
 

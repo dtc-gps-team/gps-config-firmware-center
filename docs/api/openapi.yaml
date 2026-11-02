@@ -405,7 +405,14 @@ paths:
     delete:
       tags: [config]
       operationId: deleteConfig
-      summary: ลบ Config ที่ยังเป็นสถานะ draft
+      summary: ลบ Config (ทุกสถานะ ยกเว้นที่ระบบยังต้องใช้อยู่) - v3.80
+      description: >-
+        ConfigEngineer (resource `config` action `Update`; SuperAdmin ผ่านด้วย bypass) ·
+        **v3.80:** ลบได้ทุกสถานะ (เดิมเฉพาะ `draft`) · `draft` ลบจริง (ถ้ามีข้อมูลอ้างอิง
+        ตกไป soft delete) · สถานะอื่น soft delete (`deletedAt`) และเปลี่ยนชื่อเป็น
+        `<ชื่อเดิม> [ลบแล้ว <id 8 ตัว>]` เพื่อปล่อยชื่อให้สร้างใหม่ได้ (ชื่อ Config unique) ·
+        ไม่กระทบค่าที่ส่งไปแล้วบนกล่อง · คำขอลบอัตโนมัติที่ค้างของ Config นี้ถูกยกเลิก ·
+        AuditLog `delete` เก็บ `configId`
       parameters:
         - in: path
           name: configId
@@ -418,11 +425,13 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role ConfigEngineer เท่านั้น
+          description: ไม่มีสิทธิ์ลบ Config - เฉพาะ Role ConfigEngineer (และ SuperAdmin) เท่านั้น
         "404":
-          description: ไม่พบ Config นี้
+          description: ไม่พบ Config นี้ (หรือถูกลบไปแล้ว)
         "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงลบไม่ได้
+          description: >-
+            Config นี้ยังถูกใช้งานอยู่ (Rollout ที่ยังไม่จบ, คำขอส่งเข้ากล่องที่ยังไม่จบ,
+            คำขอ Override ที่รออนุมัติ หรือ Task ที่ยังเปิดอยู่) ข้อความบอกว่าติดอะไรบ้าง
 
   /config/import:
     post:
@@ -869,6 +878,114 @@ paths:
           description: ไม่มีสิทธิ์สร้าง Config Definition — เฉพาะ Role ConfigEngineer
         "409":
           description: มี field ชื่อนี้อยู่แล้วในคลัง (fieldName ซ้ำ)
+
+  /config-definitions/{id}:
+    patch:
+      tags: [config]
+      operationId: updateConfigDefinition
+      summary: แก้พารามิเตอร์ใน Parameter Library - v3.82
+      description: >-
+        ConfigEngineer (resource `config-definition` action `Update`; SuperAdmin ผ่านด้วย bypass) ·
+        ส่งเฉพาะ field ที่จะแก้ · **แก้ `fieldName` ไม่ได้** (Config เก็บค่าตามชื่อ - ส่งมา = 400) ·
+        `null` ล้างค่าที่ไม่บังคับได้ · กฎ validate ที่เปลี่ยน (ชนิด/ค่าที่ยอมรับ/required/ช่วงค่า) มีผลกับ
+        Config ที่สร้างหรือแก้ครั้งถัดไปเท่านั้น ไม่แก้ Config เดิมย้อนหลัง · ตรวจกฎเดียวกับตอนสร้างบนค่า
+        หลังแก้ · `supportedModels` ส่งมา = แทนที่ทั้งชุด · AuditLog `update` (เก็บแค่ชื่อ field)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConfigDefinitionInput"
+      responses:
+        "200":
+          description: แก้สำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigFieldDefinition"
+        "400":
+          description: validation ไม่ผ่าน (ไม่ส่ง field ใดเลย, ส่ง fieldName, min > max, ค่าเริ่มต้นไม่ตรงชนิด, sensitive พร้อม defaultValue)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์แก้ - เฉพาะ ConfigEngineer และ SuperAdmin
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
+    delete:
+      tags: [config]
+      operationId: deleteConfigDefinition
+      summary: ลบพารามิเตอร์ออกจาก Parameter Library - v3.82
+      description: >-
+        ConfigEngineer (resource `config-definition` action `Update`) · ลบจริง (hard delete) ได้เมื่อ
+        **ไม่มี Config ที่ยังไม่ถูกลบใช้ field นี้ในค่าของมัน** (409 บอกจำนวนและชื่อ Config) เพราะ validate
+        จะมอง field ที่ไม่มีนิยามว่า "ไม่รู้จัก" และบล็อกการแก้ Config เหล่านั้น · ล็อกแถว field แล้วตรวจซ้ำ
+        คู่กับการล็อกฝั่งสร้าง/แก้ Config กัน race · AuditLog `delete` (เก็บแค่ชื่อ field)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ลบ - เฉพาะ ConfigEngineer และ SuperAdmin
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
+        "409":
+          description: ยังมี Config ใช้พารามิเตอร์นี้อยู่
+
+  /config-definitions/{id}/usage:
+    get:
+      tags: [config]
+      operationId: getConfigDefinitionUsage
+      summary: Config ที่ใช้พารามิเตอร์นี้ - v3.82
+      description: >-
+        สิทธิ์อ่านเดียวกับ listConfigDefinitions · นับเฉพาะ Config ที่ไม่ถูกลบ · คืนตัวอย่างชื่อสูงสุด 5 รายการ
+        ใช้เตือนบนหน้าเว็บก่อนแก้/ลบ
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: จำนวนและตัวอย่าง Config ที่ใช้
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, configs]
+                properties:
+                  count:
+                    type: integer
+                  configs:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "404":
+          description: ไม่พบพารามิเตอร์นี้
 
   /notifications:
     get:
@@ -2003,6 +2120,43 @@ paths:
           description: ไม่มีสิทธิ์ออก/หมุนเวียน API key ของอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
         "404":
           description: ไม่พบ Device (deviceId) นี้
+
+  /devices/{deviceId}/confirm-install:
+    post:
+      tags: [device]
+      operationId: confirmDeviceInstalled
+      summary: ยืนยันว่าอุปกรณ์ติดตั้งแล้ว — ย้าย registered ไป installed (v3.78)
+      description: >-
+        **endpoint ฝั่ง staff** (resource เดียวกับ `registerDevice`/
+        `rotateDeviceApiKey` — `device-registration` action `Update` —
+        Admin/SuperAdmin เท่านั้น) ปิดช่องว่างที่ไม่เคยมีทางย้าย Device จาก
+        `registered` ไป `installed` ได้เลยนอกจากแก้ตรงใน DB ด้วยสคริปต์ชั่วคราว
+        (docs/24 §Q2) — Campaign ต้องการ `installed` เท่านั้นถึงจะเพิ่มเข้ากลุ่มได้
+        (`CampaignService`) · ไม่ผูกกับ Task/field flow ใดๆ เป็นการยืนยันตรงๆ ·
+        ตั้ง `installedAt` เป็นเวลาที่เรียกสำเร็จ · สถานะปัจจุบันต้องเป็น
+        `registered` เท่านั้น — `installed` อยู่แล้วหรือ `decommissioned` แล้ว
+        คือ `409`
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ยืนยันติดตั้งสำเร็จ — status เป็น installed แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ยืนยันติดตั้งอุปกรณ์ — เฉพาะ Role Admin, SuperAdmin
+        "404":
+          description: ไม่พบ Device (deviceId) นี้
+        "409":
+          description: สถานะปัจจุบันไม่ใช่ registered (installed อยู่แล้ว หรือ decommissioned แล้ว)
 
   /devices/{deviceId}/status:
     get:
@@ -3554,8 +3708,116 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบกลุ่มนี้
+    patch:
+      tags: [campaign]
+      operationId: updateCampaign
+      summary: แก้ชื่อ/คำอธิบายกลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`; SuperAdmin ผ่านด้วย
+        bypass) · ส่ง `name` และ/หรือ `description` อย่างน้อย 1 อย่าง ·
+        ทำได้ทุกเมื่อ แม้มี Rollout ค้าง (Rollout ผูกกับกลุ่มด้วย id ไม่ใช่ชื่อ) ·
+        Campaign ระบบของคำขอหน้างานแก้ไม่ได้ (404) · AuditLog `update`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignUpdateRequest"
+      responses:
+        "200":
+          description: แก้สำเร็จ คืนกลุ่มหลังแก้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          description: validation ไม่ผ่าน (ไม่ส่ง field ใดเลย หรือ name ว่าง)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update (ไม่ใช่ Operation/SuperAdmin)
+        "404":
+          description: ไม่พบกลุ่มนี้
+    delete:
+      tags: [campaign]
+      operationId: deleteCampaign
+      summary: ลบกลุ่มพร้อมสมาชิกและประวัติ Rollout — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · ลบไม่ได้ขณะกลุ่มมี
+        Rollout ที่ยังไม่จบ (`pending_approval`/`approved`/`active`/`paused`) ·
+        ลบจริง (hard delete) พร้อม `CampaignTarget` และ `CampaignRollout` ของ
+        กลุ่ม (cascade) — ไม่กระทบอุปกรณ์ เพราะค่าที่ส่งไปแล้วอยู่บนกล่อง สิ่งที่
+        หายคือประวัติ Rollout ของกลุ่มนี้ · AuditLog `delete` เก็บ `campaignId` +
+        `campaignName` ใน metadata
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่มนี้ (รวมถึง Campaign ระบบของคำขอหน้างาน)
+        "409":
+          description: กลุ่มยังมี Rollout ที่ไม่จบ
 
   /campaigns/{id}/targets:
+    post:
+      tags: [campaign]
+      operationId: addCampaignTargets
+      summary: เพิ่มเครื่องเข้ากลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · เครื่องต้องมีอยู่จริง
+        สถานะ `installed` และยังไม่อยู่ในกลุ่ม · ทำไม่ได้ขณะกลุ่มมี Rollout ที่ยังไม่จบ
+        (Rollout เก็บรายชื่อเครื่องของรอบนั้นไว้ตอนสร้าง) · AuditLog `add_targets`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignAddTargetsRequest"
+      responses:
+        "200":
+          description: เพิ่มสำเร็จ คืนสมาชิกทั้งหมดของกลุ่มหลังเพิ่ม (เรียงตาม createdAt asc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignTarget"
+        "400":
+          description: validation ไม่ผ่าน (targets ว่าง หรือ deviceId ซ้ำกันในคำขอ)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่มนี้
+        "409":
+          description: >-
+            เครื่องไม่พบ/ยังไม่ installed หรืออยู่ในกลุ่มแล้ว หรือกลุ่มมี Rollout
+            ที่ยังไม่จบ
     get:
       tags: [campaign]
       operationId: listCampaignTargets
@@ -3579,6 +3841,39 @@ paths:
                   $ref: "#/components/schemas/CampaignTarget"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /campaigns/{id}/targets/{deviceId}:
+    delete:
+      tags: [campaign]
+      operationId: removeCampaignTarget
+      summary: เอาเครื่องออกจากกลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · `deviceId` คือเลขเครื่องจริง
+        (`Device.deviceId`) · กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง (ถ้าไม่ใช้กลุ่มแล้ว
+        ให้ลบกลุ่มแทน) · ทำไม่ได้ขณะกลุ่มมี Rollout ที่ยังไม่จบ · AuditLog `remove_target`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: เอาออกสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่ม หรือเครื่องนี้ไม่ได้อยู่ในกลุ่ม
+        "409":
+          description: เป็นเครื่องสุดท้ายของกลุ่ม หรือกลุ่มมี Rollout ที่ยังไม่จบ
 
   /campaigns/{id}/rollouts:
     get:
@@ -4561,6 +4856,28 @@ components:
             เพิ่งถูก `decide(outcome: promote)` ดู response 404/409 ของ
             `createCampaign`
 
+    CampaignUpdateRequest:
+      type: object
+      description: >-
+        v3.79 — ส่งอย่างน้อย 1 field · `description` ส่งสตริงว่างเพื่อล้างคำอธิบาย
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+
+    CampaignAddTargetsRequest:
+      type: object
+      required: [targets]
+      description: v3.79 — เครื่องที่จะเพิ่มเข้ากลุ่ม
+      properties:
+        targets:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CampaignTargetInput"
+
     CampaignTarget:
       type: object
       description: >-
@@ -5433,6 +5750,62 @@ components:
         protocol:
           type: string
           example: TCP
+
+    UpdateConfigDefinitionInput:
+      type: object
+      description: >-
+        Request body ของ updateConfigDefinition (v3.82) - ทุก field optional แต่ต้องส่งอย่างน้อย 1 อย่าง ·
+        ไม่มี `fieldName` (เปลี่ยนชื่อไม่ได้) · `null` ล้างค่าที่ไม่บังคับ
+      properties:
+        dataType:
+          type: string
+        allowedValues:
+          type: array
+          items:
+            type: string
+        required:
+          type: boolean
+        unknownSpec:
+          type: boolean
+        description:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+          maxLength: 20
+        stOverridable:
+          type: boolean
+        category:
+          type: string
+          nullable: true
+          maxLength: 50
+        sensitive:
+          type: boolean
+        restartRequired:
+          type: boolean
+        defaultValue:
+          type: string
+          nullable: true
+          maxLength: 255
+        minValue:
+          type: number
+          nullable: true
+        maxValue:
+          type: number
+          nullable: true
+        supportedModels:
+          type: array
+          minItems: 1
+          description: ส่งมา = แทนที่ทั้งชุด
+          items:
+            type: object
+            required: [deviceModel, protocol]
+            properties:
+              deviceModel:
+                type: string
+              protocol:
+                type: string
 
     CreateConfigDefinitionInput:
       type: object
@@ -6510,10 +6883,6 @@ components:
           description: >-
             เลขที่มากับตัวอุปกรณ์เอง (คนละอย่างกับ `deviceId` ที่เป็นเลขเครื่อง
             ของระบบ)
-        bootloader:
-          type: string
-          maxLength: 50
-          nullable: true
         initialFirmwareId:
           type: string
           format: uuid
@@ -6577,9 +6946,6 @@ components:
           type: string
           nullable: true
         blackboxId:
-          type: string
-          nullable: true
-        bootloader:
           type: string
           nullable: true
         status:
