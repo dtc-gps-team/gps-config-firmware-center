@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +13,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { EXCLUDED_MANAGED_ROLE_CODES } from './managed-user-roles';
+
+/** จำนวนครั้งสูงสุดที่ลองใหม่เมื่อธุรกรรม Serializable ชนกัน (P2034) */
+const SERIALIZABLE_MAX_ATTEMPTS = 3;
 
 /** ข้อมูล user แบบย่อ — id + ชื่อ + role code เท่านั้น (ไม่มี username/email/สิทธิ์) */
 export interface UserSummary {
@@ -169,7 +173,8 @@ export class UserService {
     });
     if (
       !existing ||
-      (!isSuperAdmin && EXCLUDED_MANAGED_ROLE_CODES.includes(existing.role.code))
+      (!isSuperAdmin &&
+        EXCLUDED_MANAGED_ROLE_CODES.includes(existing.role.code))
     ) {
       throw new NotFoundException(`ไม่พบผู้ใช้ id ${id}`);
     }
@@ -179,21 +184,30 @@ export class UserService {
         ? await this.findManageableRoleOrThrow(dto.role, isSuperAdmin)
         : undefined;
 
-    if (
+    // การแก้ที่ทำให้ SuperAdmin ที่ active หายไป 1 คน (ปิดบัญชีหรือเปลี่ยน role ออก)
+    const removesActiveSuperAdmin =
       existing.role.code === 'SuperAdmin' &&
       existing.isActive &&
       (dto.isActive === false ||
-        (newRole !== undefined && newRole.code !== 'SuperAdmin'))
-    ) {
-      const activeSuperAdminCount = await this.prisma.user.count({
-        where: { role: { code: 'SuperAdmin' }, isActive: true },
-      });
-      if (activeSuperAdminCount <= 1) {
-        throw new ConflictException(
-          'ไม่สามารถปิดใช้งานหรือเปลี่ยน role ของ SuperAdmin คนสุดท้ายที่เหลืออยู่ได้',
-        );
+        (newRole !== undefined && newRole.code !== 'SuperAdmin'));
+
+    const applyUpdate = async (db: Prisma.TransactionClient) => {
+      if (removesActiveSuperAdmin) {
+        const activeSuperAdminCount = await db.user.count({
+          where: { role: { code: 'SuperAdmin' }, isActive: true },
+        });
+        if (activeSuperAdminCount <= 1) {
+          throw new ConflictException(
+            'ไม่สามารถปิดใช้งานหรือเปลี่ยน role ของ SuperAdmin คนสุดท้ายที่เหลืออยู่ได้',
+          );
+        }
       }
-    }
+      return db.user.update({
+        where: { id },
+        data: { roleId: newRole?.id, isActive: dto.isActive },
+        include: { role: true },
+      });
+    };
 
     let updated: {
       id: string;
@@ -203,11 +217,13 @@ export class UserService {
       role: { code: string };
     };
     try {
-      updated = await this.prisma.user.update({
-        where: { id },
-        data: { roleId: newRole?.id, isActive: dto.isActive },
-        include: { role: true },
-      });
+      // count กับ update ต้องอยู่ในธุรกรรม Serializable เดียวกัน ไม่งั้น SuperAdmin 2 คน
+      // ที่ปิดบัญชีกันและกันพร้อมกันจะอ่าน count=2 ทั้งคู่แล้วเหลือ 0 คน (review B บน
+      // #418) · Postgres จะยกเลิกธุรกรรมหนึ่งใน 2 ตัวที่ชนกัน (P2034) -> ลองใหม่ ซึ่ง
+      // รอบใหม่จะเห็น count=1 และตอบ 409
+      updated = removesActiveSuperAdmin
+        ? await this.runSerializable(applyUpdate)
+        : await applyUpdate(this.prisma);
     } catch (err) {
       // race condition เดียวกับ config.service.ts/firmware.service.ts — row
       // อาจถูกลบไปพอดีระหว่าง findUnique กับ update นี้ (rare)
@@ -222,6 +238,30 @@ export class UserService {
 
     await this.logAudit('update', actor);
     return this.toManagedUser(updated);
+  }
+
+  /** รันงานใน transaction ระดับ Serializable และลองใหม่เมื่อชนกับธุรกรรมอื่น (P2034) */
+  private async runSerializable<T>(
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(work, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (err) {
+        const conflicted =
+          err instanceof PrismaClientKnownRequestError && err.code === 'P2034';
+        if (!conflicted || attempt >= SERIALIZABLE_MAX_ATTEMPTS) {
+          if (conflicted) {
+            throw new ConflictException(
+              'มีการแก้บัญชี SuperAdmin พร้อมกัน ลองใหม่อีกครั้ง',
+            );
+          }
+          throw err;
+        }
+      }
+    }
   }
 
   private async findManageableRoleOrThrow(

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, UserService } from './user.service';
@@ -25,6 +26,7 @@ describe('UserService', () => {
   };
   let role: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
+  let $transaction: jest.Mock;
 
   beforeEach(async () => {
     findMany = jest.fn().mockResolvedValue([]);
@@ -37,11 +39,22 @@ describe('UserService', () => {
     };
     role = { findUnique: jest.fn() };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
+    $transaction = jest.fn((cb: (tx: unknown) => unknown) => cb({ user }));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
-        { provide: PrismaService, useValue: { user, role, auditLog } },
+        {
+          provide: PrismaService,
+          useValue: {
+            user,
+            role,
+            auditLog,
+            // $transaction (interactive) - เรียก callback ด้วย tx ที่ใช้ delegate
+            // mock ตัวเดียวกับนอก transaction
+            $transaction,
+          },
+        },
       ],
     }).compile();
 
@@ -441,6 +454,92 @@ describe('UserService', () => {
         service.update('u1', { role: 'Operation' }, superAdmin),
       ).rejects.toThrow(ConflictException);
       expect(user.update).not.toHaveBeenCalled();
+    });
+
+    it('การกัน SuperAdmin คนสุดท้ายรัน count+update ใน transaction Serializable เดียวกัน', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(2);
+      user.update.mockResolvedValue({
+        id: 'u1',
+        username: 'super.test',
+        fullName: 'Super Tester',
+        isActive: false,
+        role: { code: 'SuperAdmin' },
+      });
+
+      await service.update('u1', { isActive: false }, superAdmin);
+
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: 'Serializable',
+      });
+    });
+
+    it('แก้ user ที่ไม่ใช่ SuperAdmin ไม่ต้องเปิด transaction', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u2',
+        isActive: true,
+        role: { code: 'Operation' },
+      });
+      user.update.mockResolvedValue({
+        id: 'u2',
+        username: 'op.test',
+        fullName: 'Op Tester',
+        isActive: false,
+        role: { code: 'Operation' },
+      });
+
+      await service.update('u2', { isActive: false }, superAdmin);
+
+      expect($transaction).not.toHaveBeenCalled();
+      expect(user.count).not.toHaveBeenCalled();
+    });
+
+    it('ธุรกรรมชนกัน (P2034) -> ลองใหม่ รอบใหม่เห็น count=1 -> ConflictException ไม่ปิดคนสุดท้าย', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      user.count.mockResolvedValue(1);
+      $transaction
+        .mockRejectedValueOnce(
+          new PrismaClientKnownRequestError('write conflict', {
+            code: 'P2034',
+            clientVersion: 'test',
+          }),
+        )
+        .mockImplementation((cb: (tx: unknown) => unknown) => cb({ user }));
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(ConflictException);
+
+      expect($transaction).toHaveBeenCalledTimes(2);
+      expect(user.update).not.toHaveBeenCalled();
+    });
+
+    it('ชนกันครบจำนวนครั้งที่ลองใหม่ -> ConflictException บอกให้ลองใหม่', async () => {
+      user.findUnique.mockResolvedValue({
+        id: 'u1',
+        isActive: true,
+        role: { code: 'SuperAdmin' },
+      });
+      $transaction.mockRejectedValue(
+        new PrismaClientKnownRequestError('write conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.update('u1', { isActive: false }, superAdmin),
+      ).rejects.toThrow(/พร้อมกัน/);
+      expect($transaction).toHaveBeenCalledTimes(3);
     });
 
     it('มี SuperAdmin active มากกว่า 1 -> deactivate คนหนึ่งได้ตามปกติ', async () => {
