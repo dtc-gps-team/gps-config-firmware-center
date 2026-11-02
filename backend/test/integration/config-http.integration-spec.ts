@@ -854,7 +854,55 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
     ).toBeNull();
   });
 
-  it('DELETE /config/:id สถานะไม่ใช่ draft -> 409 และไม่ถูกลบ', async () => {
+  it('DELETE /config/:id สถานะไม่ใช่ draft (approved) -> 204 soft delete: คงแถวไว้ ตั้ง deletedAt และปล่อยชื่อเดิม', async () => {
+    const configEngineerUser = await makeUser(prisma, {
+      role: 'ConfigEngineer',
+    });
+    await grant('ConfigEngineer', ActionType.Update);
+    await grant('ConfigEngineer', ActionType.Read);
+    const originalName = `cfg-${randomUUID()}`;
+    const configRow = await prisma.config.create({
+      data: {
+        name: originalName,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: {},
+        createdBy: configEngineerUser.id,
+        status: 'approved',
+      },
+    });
+    const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/config/${configRow.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    const after = await prisma.config.findUniqueOrThrow({
+      where: { id: configRow.id },
+    });
+    expect(after.deletedAt).not.toBeNull();
+    expect(after.name).toBe(
+      `${originalName} [ลบแล้ว ${configRow.id.slice(0, 8)}]`,
+    );
+
+    // ชื่อเดิมต้องว่าง สร้างเทมเพลตชื่อเดิมใหม่ได้ และตัวที่ลบแล้วหายจาก GET
+    await prisma.config.create({
+      data: {
+        name: originalName,
+        deviceModel: 'GT06N',
+        protocol: 'TCP',
+        fields: {},
+        createdBy: configEngineerUser.id,
+      },
+    });
+    await request(app.getHttpServer())
+      .get(`/api/v1/config/${configRow.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('DELETE /config/:id ยังมี Task ที่เปิดอยู่ใช้ Config นี้ -> 409 และไม่ถูกลบ', async () => {
     const configEngineerUser = await makeUser(prisma, {
       role: 'ConfigEngineer',
     });
@@ -869,6 +917,15 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
         status: 'approved',
       },
     });
+    await prisma.task.create({
+      data: {
+        title: 'ติดตั้ง Config ยังไม่เสร็จ',
+        assignedTo: configEngineerUser.id,
+        deviceId: `DEV-${randomUUID().slice(0, 8)}`,
+        configId: configRow.id,
+        status: 'in_progress',
+      },
+    });
     const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
 
     await request(app.getHttpServer())
@@ -876,9 +933,10 @@ describe('ConfigController Stage 1-4 CRUD + Import + Simulate + Decide/Approve/R
       .set('Authorization', `Bearer ${token}`)
       .expect(409);
 
-    expect(
-      await prisma.config.findUnique({ where: { id: configRow.id } }),
-    ).not.toBeNull();
+    const after = await prisma.config.findUniqueOrThrow({
+      where: { id: configRow.id },
+    });
+    expect(after.deletedAt).toBeNull();
   });
 
   describe('POST /config/:id/simulate (Stage 3)', () => {
