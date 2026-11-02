@@ -116,7 +116,15 @@ describe('ConfigService', () => {
     task = { count: jest.fn().mockResolvedValue(0) };
     incident = { count: jest.fn().mockResolvedValue(0) };
     // ล็อกแถว Config (FOR UPDATE) ของ remove() - default เจอแถว
-    queryRaw = jest.fn().mockResolvedValue([{ id: 'cfg-1' }]);
+    // $queryRaw ใช้ 2 งาน: ล็อกแถว Config ตอนลบ (FOR UPDATE) -> [{ id }] · ล็อกนิยาม field ที่ Config ใช้
+    // ตอนสร้าง/แก้ (FOR SHARE, ส่งรายชื่อ field มาเป็น argument) -> คืนแถวครบทุกชื่อ (ไม่มี field ถูกลบ)
+    queryRaw = jest.fn((_strings: TemplateStringsArray, names?: string[]) =>
+      Promise.resolve(
+        Array.isArray(names)
+          ? names.map((fieldName) => ({ fieldName }))
+          : [{ id: 'cfg-1' }],
+      ),
+    );
     configDeletionRequest = {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     };

@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ActionType } from '@prisma/client';
 import { Request } from 'express';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -10,6 +23,7 @@ import {
   ConfigFieldDefinitionWithSupport,
 } from './config-definition.service';
 import { CreateConfigDefinitionDto } from './dto/create-config-definition.dto';
+import { UpdateConfigDefinitionDto } from './dto/update-config-definition.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ — mirror campaign.controller.ts */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -50,5 +64,36 @@ export class ConfigDefinitionController {
     @Req() req: AuthenticatedRequest,
   ): Promise<ConfigFieldDefinitionWithSupport> {
     return this.configDefinitionService.create(dto, toActor(req));
+  }
+
+  // Config ที่ใช้ field นี้อยู่กี่ตัว - ให้หน้าเว็บเตือนก่อนแก้/ลบ (สิทธิ์อ่านเดียวกับรายการ)
+  @Get(':id/usage')
+  @RequirePermission('config-definition', ActionType.Read)
+  getUsage(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ count: number; configs: { id: string; name: string }[] }> {
+    return this.configDefinitionService.getUsage(id);
+  }
+
+  // แก้/ลบ - resource `config-definition` action Update (ไม่มี action Delete ใน ActionType
+  // เหมือน DELETE /config/{id}) เฉพาะ ConfigEngineer ผู้สร้าง field (SuperAdmin ผ่าน bypass)
+  @Patch(':id')
+  @RequirePermission('config-definition', ActionType.Update)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateConfigDefinitionDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<ConfigFieldDefinitionWithSupport> {
+    return this.configDefinitionService.update(id, dto, toActor(req));
+  }
+
+  @Delete(':id')
+  @RequirePermission('config-definition', ActionType.Update)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.configDefinitionService.remove(id, toActor(req));
   }
 }

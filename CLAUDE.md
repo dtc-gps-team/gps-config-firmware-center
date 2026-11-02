@@ -43,11 +43,19 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
   `firmware-decision` — `POST /firmware/{id}/approve`/`.../reject`, Firmware
   Approval Lifecycle, docs/13 §3.2 — implement แล้ว)
 - **`SuperAdmin` เพิ่มโดยตั้งใจ** ตามมติ Sprint 1 review (PR #99 → `docs/09_Sprint1_Review_Decisions.md`)
-  — ต่างจาก `FieldTechnician` ที่เป็นความผิดพลาด · ขอบเขต: ทำได้ทุกอย่างที่ `Admin`
-  ทำ **+** อนุมัติคำขอลบ Config (auto delete-request), จัดการบัญชี `Admin`/`SuperAdmin`,
-  แก้ role/permission · **ไม่ข้าม Separation of Duty** — อนุมัติ Config/Firmware/Campaign
-  แทน Operation **ไม่ได้** · สิทธิ์ resource ใหม่ (`config-deletion`, `admin-management`,
-  `role-management`) รอ `docs/11` (proposal) — ยังไม่ finalize ใน RBAC Matrix §2/§4
+  — ต่างจาก `FieldTechnician` ที่เป็นความผิดพลาด · **มติ 2026-10-30 (แทนที่ขอบเขตเดิม):**
+  ทำได้ทุกอย่างที่ระบบมีอยู่แล้ว เห็นทุกอย่างในระบบ **และข้ามได้ Separation of Duty**
+  ทุกข้อ (อนุมัติ Config/Firmware/Campaign ของตัวเองได้) — เดิมตั้งใจให้ SuperAdmin
+  ทำได้แค่เท่า Admin + อนุมัติคำขอลบ Config + จัดการบัญชี Admin/SuperAdmin + แก้
+  role/permission และ **ห้าม**ข้าม Separation of Duty (ดู `docs/11_ConfigDeletion_SuperAdmin_Proposal.md`
+  §6-§7 สำหรับขอบเขตเดิมที่เก็บไว้เป็นประวัติ) · implement เป็น bypass ที่จุดศูนย์กลาง
+  (`PermissionGuard.canActivate()`, `assertDecider()` ใน config-apply-request,
+  `assertDecidable()` ใน campaign-rollout) ไม่ seed สิทธิ์ทีละ resource/action — ของ
+  ใหม่ในอนาคตได้อัตโนมัติไม่ต้องตามแก้ seed.ts · การจัดการบัญชี Admin/SuperAdmin ใช้
+  หน้า User Management เดิม (ไม่สร้างหน้า/resource ใหม่ `admin-management`) · **ไม่สร้าง
+  resource/หน้าใหม่ `role-management`** ในรอบนี้ (สร้าง role ใหม่/แก้ permission ผ่าน
+  เว็บ) — ยังต้องแก้ผ่าน `seed.ts` เหมือนเดิม · ยังคงกฎ "ต้องมี SuperAdmin ที่ active
+  ≥ 1 คนเสมอ" (docs/11 §7) — ห้าม deactivate/เปลี่ยน role ของ SuperAdmin คนสุดท้าย
 - **ห้ามมี `FieldTechnician` เด็ดขาด** — role นี้ไม่เคยมีอยู่จริง เคยถูกใส่ผิดพลาดใน
   ดราฟต์ก่อนหน้าแล้วถูกแก้ออกทั้งหมด (อ้างอิง PR #11, #13, #15) ช่างหน้างานที่ใช้
   Mobile คือ `ST` / `OT` ที่ login เข้าแอป ไม่ใช่ role แยก
@@ -60,7 +68,8 @@ Monorepo 3 โปรเจกต์อิสระ สื่อสารกั�
 
 - เป็น **single-stage เท่านั้น**: `draft`, `testing`, `approved`, `rejected`, `synced`
 - **ไม่ใช่ 2-stage** — ไม่มี `sw_approved` / `operation_approved`
-- มีเฉพาะ **Operation** เท่านั้นที่อนุมัติ Config / Firmware / Campaign ได้
+- **Operation** อนุมัติ Config / Firmware / Campaign ได้ (**และ `SuperAdmin` ก็ได้ด้วย
+  ตามมติ 2026-10-30 — ดู §Role Enum ด้านบน** ข้ามได้ทั้ง Separation of Duty)
   ConfigEngineer สร้าง/แก้ไข/รัน simulation ได้ แต่อนุมัติงานตัวเองไม่ได้ (Separation of Duty)
 
 ## Team Ownership

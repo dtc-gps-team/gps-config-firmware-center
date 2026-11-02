@@ -32,7 +32,8 @@ export function RoleGuard({
   // กระพริบ "ไม่มีสิทธิ์" ผิดๆ ให้คนที่มีสิทธิ์จริงเห็นแวบนึงตอนโหลดหน้า
   if (!isReady) return null;
 
-  if (!allow(session?.role)) {
+  // SuperAdmin ข้ามการเช็ค allow() ได้เลย (มติ 2026-10-30 — เห็นทุกหน้าในระบบ)
+  if (session?.role !== "SuperAdmin" && !allow(session?.role)) {
     return (
       <StatusPage
         icon={ShieldAlertIcon}

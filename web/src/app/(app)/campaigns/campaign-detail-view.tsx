@@ -28,7 +28,11 @@ import { useCampaignTargets } from "@/hooks/use-campaign-targets";
 import { useCampaignRollouts } from "@/hooks/use-campaign-rollouts";
 import { useCampaignRolloutTargets } from "@/hooks/use-campaign-rollout-targets";
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from "@/lib/campaign-api";
-import { canCreateCampaign, canReadCampaign } from "@/lib/permissions";
+import {
+  canCreateCampaign,
+  canManageCampaign,
+  canReadCampaign,
+} from "@/lib/permissions";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -45,6 +49,16 @@ import { DeviceHistorySheet } from "../devices/device-history-sheet";
 import { CampaignRolloutApprovalPanel } from "./campaign-rollout-approval-panel";
 import { CampaignRolloutReleasePanel } from "./campaign-rollout-release-panel";
 import { CampaignRolloutIncidentPanel } from "./campaign-rollout-incident-panel";
+import {
+  AddMembersButton,
+  DeleteCampaignButton,
+  EditCampaignButton,
+  OPEN_ROLLOUT_REASON,
+  RemoveMemberButton,
+} from "./campaign-manage-controls";
+
+const LAST_MEMBER_REASON =
+  "กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง ถ้าไม่ใช้กลุ่มนี้แล้วให้ลบกลุ่มแทน";
 
 /**
  * รายละเอียดกลุ่มอุปกรณ์ 1 กลุ่ม — ต่อ `GET /campaigns/{id}` +
@@ -114,6 +128,9 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
     (OPEN_CAMPAIGN_ROLLOUT_STATUSES as readonly string[]).includes(r.status),
   );
   const canStartRollout = canCreateCampaign(session?.role);
+  const canManage = canManageCampaign(session?.role);
+  // แก้สมาชิก/ลบกลุ่มไม่ได้ขณะมี Rollout ค้าง (backend ตอบ 409 เหมือนกัน)
+  const openRolloutReason = hasOpenRollout ? OPEN_ROLLOUT_REASON : null;
   const latestTargets = latestRolloutTargetsQuery.data ?? [];
   const latestSummary = summarizeRolloutTargets(latestTargets);
   const showProgress =
@@ -165,6 +182,19 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           actions={
             <>
               <RefreshControl />
+              {canManage && (
+                <>
+                  <EditCampaignButton
+                    campaign={data}
+                    onUpdated={() => void refetch()}
+                  />
+                  <DeleteCampaignButton
+                    campaign={data}
+                    disabledReason={openRolloutReason}
+                    onDeleted={() => router.push("/campaigns")}
+                  />
+                </>
+              )}
               {newRolloutButton}
             </>
           }
@@ -349,8 +379,18 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
           <aside className="flex flex-col gap-3 lg:col-span-4 lg:sticky lg:top-20">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-base font-semibold">สมาชิกกลุ่ม</h2>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {members.length} เครื่อง
+              <span className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {members.length} เครื่อง
+                </span>
+                {canManage && (
+                  <AddMembersButton
+                    campaignId={campaignId}
+                    memberDeviceIds={members.map((m) => m.deviceId)}
+                    disabledReason={openRolloutReason}
+                    onAdded={() => void targetsQuery.refetch()}
+                  />
+                )}
               </span>
             </div>
             {targetsQuery.isLoading && !targetsQuery.data ? (
@@ -383,7 +423,20 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                         เพิ่มเมื่อ {formatRelativeTime(target.createdAt)}
                       </span>
                     </span>
-                    <DeviceHistorySheet deviceId={target.deviceId} />
+                    <span className="flex items-center gap-1">
+                      <DeviceHistorySheet deviceId={target.deviceId} />
+                      {canManage && (
+                        <RemoveMemberButton
+                          campaignId={campaignId}
+                          deviceId={target.deviceId}
+                          disabledReason={
+                            openRolloutReason ??
+                            (members.length <= 1 ? LAST_MEMBER_REASON : null)
+                          }
+                          onRemoved={() => void targetsQuery.refetch()}
+                        />
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>

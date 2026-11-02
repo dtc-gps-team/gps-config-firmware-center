@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
@@ -123,6 +124,7 @@ function firmwareDto(): CreateCampaignRolloutDto {
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
   let transactionMock: jest.Mock;
+  let queryRawMock: jest.Mock;
   let campaign: {
     findUnique: jest.Mock;
     findFirst: jest.Mock;
@@ -281,13 +283,17 @@ describe('CampaignRolloutService', () => {
       }),
     };
 
-    // ล็อกแถว Config (FOR SHARE) ที่ create()/rollback() เรียกเมื่อ Rollout อ้าง Config - default ไม่ถูกลบ
+    // ล็อกแถวกลุ่ม (FOR SHARE) ที่ create()/rollback() เรียกเป็นคำสั่งแรก - default เจอกลุ่ม
+    queryRawMock = jest.fn().mockResolvedValue([{ id: 'campaign-1' }]);
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
       cb({
+        // create() อ่านกลุ่ม+สมาชิกใน transaction หลังได้ล็อก (review B บน #424 รอบ 2)
+        campaign,
+        campaignTarget,
         campaignRollout,
         campaignRolloutTarget,
         deviceConfigOverride,
-        $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
+        $queryRaw: queryRawMock,
       }),
     );
     const prismaMock = {
@@ -341,6 +347,73 @@ describe('CampaignRolloutService', () => {
       expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
+    });
+
+    it('ล็อกแถวกลุ่ม (FOR SHARE) เป็นคำสั่งแรกใน transaction ก่อนตรวจรอบค้างและสร้าง (กันถูกลบ/แก้สมาชิกแทรก - review B บน #424)', async () => {
+      const order: string[] = [];
+      queryRawMock.mockImplementation((strings: TemplateStringsArray) => {
+        order.push(`lock:${strings.join('?').includes('FOR SHARE')}`);
+        return Promise.resolve([{ id: campaignId }]);
+      });
+      campaignRollout.findFirst.mockImplementation(() => {
+        order.push('check-open');
+        return Promise.resolve(null);
+      });
+
+      await service.create(campaignId, baseDto(), operation);
+
+      // ล็อกกลุ่มต้องมาก่อนตรวจรอบค้าง (มี $queryRaw ตัวอื่นตามมาได้ เช่นล็อก Config)
+      expect(order[0]).toBe('lock:true');
+      expect(order.indexOf('check-open')).toBeGreaterThan(0);
+    });
+
+    it('อ่านกลุ่มและสมาชิกหลังได้ล็อกเท่านั้น (ไม่ snapshot รายชื่อเครื่องก่อนล็อก - review B บน #424 รอบ 2)', async () => {
+      const order: string[] = [];
+      queryRawMock.mockImplementation(() => {
+        order.push('lock');
+        return Promise.resolve([{ id: campaignId, deletedAt: null }]);
+      });
+      campaign.findUnique.mockImplementation(() => {
+        order.push('read-campaign');
+        return Promise.resolve(sampleCampaign);
+      });
+      campaignTarget.findMany.mockImplementation(() => {
+        order.push('read-members');
+        return Promise.resolve([
+          { campaignId, deviceId: installedDeviceA.deviceId },
+          { campaignId, deviceId: installedDeviceB.deviceId },
+        ]);
+      });
+
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(order.slice(0, 3)).toEqual([
+        'lock',
+        'read-campaign',
+        'read-members',
+      ]);
+    });
+
+    it('กลุ่มถูกลบระหว่างรอล็อก -> NotFoundException ไม่สร้าง Rollout', async () => {
+      queryRawMock.mockResolvedValue([]);
+
+      await expect(
+        service.create(campaignId, baseDto(), operation),
+      ).rejects.toThrow(NotFoundException);
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
+
+    it('ธุรกรรมชนกัน (P2034) -> ConflictException ให้ลองใหม่ ไม่ใช่ 500', async () => {
+      transactionMock.mockRejectedValue(
+        new PrismaClientKnownRequestError('write conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.create(campaignId, baseDto(), operation),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ไม่พบ Campaign -> NotFoundException', async () => {
@@ -587,6 +660,24 @@ describe('CampaignRolloutService', () => {
       await expect(
         service.approve(pendingRollout.id, operation),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('SuperAdmin อนุมัติ Rollout ของตัวเองได้ (ข้าม Separation of Duty — มติ 2026-10-30)', async () => {
+      const superAdmin: ActingUser = {
+        id: pendingRollout.createdBy,
+        role: 'SuperAdmin',
+      };
+      campaignRollout.findUnique.mockResolvedValue(pendingRollout);
+      campaignRollout.findUniqueOrThrow.mockResolvedValue({
+        ...pendingRollout,
+        status: 'approved',
+        approvedBy: superAdmin.id,
+        approvedAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      const result = await service.approve(pendingRollout.id, superAdmin);
+
+      expect(result.status).toBe('approved');
     });
 
     it('race condition — มีคนอื่นตัดสินใจ Rollout นี้ไปแล้วระหว่างที่ทรานแซกชันกำลังจะ update (updateMany count 0) -> ConflictException (409), ไม่ throw P2025', async () => {

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+// drawer อ่าน role จาก session เพื่อโชว์ปุ่มแก้/ลบ - Auditor ไม่มีสิทธิ์ (ไม่โชว์ปุ่ม)
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({ session: { accessToken: "tok", role: "Auditor" } }),
+}));
+
 import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
 import { defaultSnippet, ParameterDetailDrawer } from "./parameter-detail-drawer";
 
