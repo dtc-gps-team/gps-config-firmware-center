@@ -22,6 +22,8 @@ type CampaignDelegateMock = {
   create: jest.Mock;
   findMany: jest.Mock;
   findUnique: jest.Mock;
+  update: jest.Mock;
+  delete: jest.Mock;
 };
 
 const operation: ActingUser = { id: 'op-1', role: 'Operation' };
@@ -63,7 +65,14 @@ function baseDto(): CreateCampaignDto {
 describe('CampaignService', () => {
   let service: CampaignService;
   let campaign: CampaignDelegateMock;
-  let campaignTarget: { createMany: jest.Mock; findMany: jest.Mock };
+  let campaignTarget: {
+    createMany: jest.Mock;
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    count: jest.Mock;
+    delete: jest.Mock;
+  };
+  let campaignRollout: { count: jest.Mock };
   let device: { findMany: jest.Mock };
   let incident: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
@@ -73,11 +82,17 @@ describe('CampaignService', () => {
       create: jest.fn().mockResolvedValue(sampleCampaign),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn().mockResolvedValue(sampleCampaign),
     };
     campaignTarget = {
       createMany: jest.fn().mockResolvedValue({ count: 2 }),
       findMany: jest.fn(),
+      findUnique: jest.fn(),
+      count: jest.fn(),
+      delete: jest.fn().mockResolvedValue(undefined),
     };
+    campaignRollout = { count: jest.fn().mockResolvedValue(0) };
     device = {
       findMany: jest
         .fn()
@@ -89,6 +104,7 @@ describe('CampaignService', () => {
     const prismaMock = {
       campaign,
       campaignTarget,
+      campaignRollout,
       device,
       incident,
       auditLog,
@@ -324,6 +340,279 @@ describe('CampaignService', () => {
         where: { campaignId: sampleCampaign.id },
         orderBy: { createdAt: 'asc' },
       });
+    });
+  });
+
+  describe('update', () => {
+    beforeEach(() => {
+      campaign.findUnique.mockResolvedValue(sampleCampaign);
+      campaign.update.mockResolvedValue({
+        ...sampleCampaign,
+        name: 'ชื่อใหม่',
+      });
+    });
+
+    it('แก้ชื่อ -> update แล้วเขียน AuditLog update พร้อม metadata', async () => {
+      const result = await service.update(
+        sampleCampaign.id,
+        { name: 'ชื่อใหม่' },
+        operation,
+      );
+
+      expect(result.name).toBe('ชื่อใหม่');
+      expect(campaign.update).toHaveBeenCalledWith({
+        where: { id: sampleCampaign.id },
+        data: { name: 'ชื่อใหม่', description: undefined },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: operation.id,
+          auditModule: 'campaign',
+          action: 'update',
+          metadata: { campaignId: sampleCampaign.id, campaignName: 'ชื่อใหม่' },
+        },
+      });
+    });
+
+    it('ไม่ส่ง name และ description เลย -> 400', async () => {
+      await expect(
+        service.update(sampleCampaign.id, {}, operation),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(campaign.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบกลุ่ม -> 404', async () => {
+      campaign.findUnique.mockResolvedValue(null);
+      await expect(
+        service.update('x', { name: 'a' }, operation),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('Campaign ระบบของคำขอหน้างาน -> 404 แก้ไม่ได้', async () => {
+      campaign.findUnique.mockResolvedValue({
+        ...sampleCampaign,
+        name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+      });
+      await expect(
+        service.update(sampleCampaign.id, { name: 'a' }, operation),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(campaign.update).not.toHaveBeenCalled();
+    });
+
+    it('แก้ชื่อได้แม้มี Rollout ค้าง (ไม่กระทบรอบที่รันอยู่)', async () => {
+      campaignRollout.count.mockResolvedValue(1);
+      await expect(
+        service.update(sampleCampaign.id, { name: 'ชื่อใหม่' }, operation),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('addTargets', () => {
+    const addDto = { targets: [{ deviceId: installedDeviceA.deviceId }] };
+
+    beforeEach(() => {
+      campaign.findUnique.mockResolvedValue(sampleCampaign);
+      campaignTarget.findMany.mockResolvedValue([]);
+      device.findMany.mockResolvedValue([installedDeviceA]);
+    });
+
+    it('เพิ่มเครื่อง installed ที่ยังไม่อยู่ในกลุ่ม -> createMany + AuditLog add_targets', async () => {
+      await service.addTargets(sampleCampaign.id, addDto, operation);
+
+      expect(campaignTarget.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            campaignId: sampleCampaign.id,
+            deviceId: installedDeviceA.deviceId,
+          },
+        ],
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: operation.id,
+          auditModule: 'campaign',
+          action: 'add_targets',
+          metadata: {
+            campaignId: sampleCampaign.id,
+            campaignName: sampleCampaign.name,
+            deviceIds: [installedDeviceA.deviceId],
+          },
+        },
+      });
+    });
+
+    it('มี Rollout ค้าง -> 409 ไม่เพิ่ม', async () => {
+      campaignRollout.count.mockResolvedValue(1);
+      await expect(
+        service.addTargets(sampleCampaign.id, addDto, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(campaignTarget.createMany).not.toHaveBeenCalled();
+    });
+
+    it('เครื่องอยู่ในกลุ่มแล้ว -> 409', async () => {
+      campaignTarget.findMany.mockResolvedValue([
+        { deviceId: installedDeviceA.deviceId },
+      ]);
+      await expect(
+        service.addTargets(sampleCampaign.id, addDto, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('เครื่องที่ยังไม่ installed -> 409', async () => {
+      device.findMany.mockResolvedValue([
+        { ...installedDeviceA, status: 'registered' },
+      ]);
+      await expect(
+        service.addTargets(sampleCampaign.id, addDto, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('deviceId ซ้ำกันในคำขอ -> 400', async () => {
+      await expect(
+        service.addTargets(
+          sampleCampaign.id,
+          {
+            targets: [
+              { deviceId: installedDeviceA.deviceId },
+              { deviceId: installedDeviceA.deviceId },
+            ],
+          },
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('createMany ชน unique (race) -> 409', async () => {
+      campaignTarget.createMany.mockRejectedValue(makeP2002());
+      await expect(
+        service.addTargets(sampleCampaign.id, addDto, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('removeTarget', () => {
+    const member = {
+      id: 'target-1',
+      campaignId: sampleCampaign.id,
+      deviceId: installedDeviceA.deviceId,
+    };
+
+    beforeEach(() => {
+      campaign.findUnique.mockResolvedValue(sampleCampaign);
+      campaignTarget.findUnique.mockResolvedValue(member);
+      campaignTarget.count.mockResolvedValue(2);
+    });
+
+    it('เอาเครื่องออก -> delete + AuditLog remove_target', async () => {
+      await service.removeTarget(
+        sampleCampaign.id,
+        installedDeviceA.deviceId,
+        operation,
+      );
+
+      expect(campaignTarget.delete).toHaveBeenCalledWith({
+        where: { id: member.id },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: operation.id,
+          auditModule: 'campaign',
+          action: 'remove_target',
+          metadata: {
+            campaignId: sampleCampaign.id,
+            campaignName: sampleCampaign.name,
+            deviceIds: [installedDeviceA.deviceId],
+          },
+        },
+      });
+    });
+
+    it('มี Rollout ค้าง -> 409', async () => {
+      campaignRollout.count.mockResolvedValue(1);
+      await expect(
+        service.removeTarget(
+          sampleCampaign.id,
+          installedDeviceA.deviceId,
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(campaignTarget.delete).not.toHaveBeenCalled();
+    });
+
+    it('เครื่องไม่ได้อยู่ในกลุ่ม -> 404', async () => {
+      campaignTarget.findUnique.mockResolvedValue(null);
+      await expect(
+        service.removeTarget(sampleCampaign.id, 'DEV-9999', operation),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('เป็นเครื่องสุดท้ายของกลุ่ม -> 409 ให้ลบกลุ่มแทน', async () => {
+      campaignTarget.count.mockResolvedValue(1);
+      await expect(
+        service.removeTarget(
+          sampleCampaign.id,
+          installedDeviceA.deviceId,
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(campaignTarget.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('remove', () => {
+    beforeEach(() => {
+      campaign.findUnique.mockResolvedValue(sampleCampaign);
+    });
+
+    it('ไม่มี Rollout ค้าง -> ลบกลุ่ม + AuditLog delete เก็บชื่อกลุ่ม', async () => {
+      await service.remove(sampleCampaign.id, operation);
+
+      expect(campaign.delete).toHaveBeenCalledWith({
+        where: { id: sampleCampaign.id },
+      });
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: operation.id,
+          auditModule: 'campaign',
+          action: 'delete',
+          metadata: {
+            campaignId: sampleCampaign.id,
+            campaignName: sampleCampaign.name,
+          },
+        },
+      });
+    });
+
+    it('มี Rollout ค้าง (pending_approval/approved/active/paused) -> 409 ไม่ลบ', async () => {
+      campaignRollout.count.mockResolvedValue(2);
+      await expect(
+        service.remove(sampleCampaign.id, operation),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(campaign.delete).not.toHaveBeenCalled();
+      expect(campaignRollout.count).toHaveBeenCalledWith({
+        where: {
+          campaignId: sampleCampaign.id,
+          status: { in: ['pending_approval', 'approved', 'active', 'paused'] },
+        },
+      });
+    });
+
+    it('Campaign ระบบของคำขอหน้างาน -> 404 ลบไม่ได้', async () => {
+      campaign.findUnique.mockResolvedValue({
+        ...sampleCampaign,
+        name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME,
+      });
+      await expect(
+        service.remove(sampleCampaign.id, operation),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(campaign.delete).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบกลุ่ม -> 404', async () => {
+      campaign.findUnique.mockResolvedValue(null);
+      await expect(service.remove('x', operation)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });

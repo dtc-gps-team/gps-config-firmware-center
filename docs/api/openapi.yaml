@@ -3519,8 +3519,116 @@ paths:
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "404":
           description: ไม่พบกลุ่มนี้
+    patch:
+      tags: [campaign]
+      operationId: updateCampaign
+      summary: แก้ชื่อ/คำอธิบายกลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`; SuperAdmin ผ่านด้วย
+        bypass) · ส่ง `name` และ/หรือ `description` อย่างน้อย 1 อย่าง ·
+        ทำได้ทุกเมื่อ แม้มี Rollout ค้าง (Rollout ผูกกับกลุ่มด้วย id ไม่ใช่ชื่อ) ·
+        Campaign ระบบของคำขอหน้างานแก้ไม่ได้ (404) · AuditLog `update`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignUpdateRequest"
+      responses:
+        "200":
+          description: แก้สำเร็จ คืนกลุ่มหลังแก้
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          description: validation ไม่ผ่าน (ไม่ส่ง field ใดเลย หรือ name ว่าง)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update (ไม่ใช่ Operation/SuperAdmin)
+        "404":
+          description: ไม่พบกลุ่มนี้
+    delete:
+      tags: [campaign]
+      operationId: deleteCampaign
+      summary: ลบกลุ่มพร้อมสมาชิกและประวัติ Rollout — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · ลบไม่ได้ขณะกลุ่มมี
+        Rollout ที่ยังไม่จบ (`pending_approval`/`approved`/`active`/`paused`) ·
+        ลบจริง (hard delete) พร้อม `CampaignTarget` และ `CampaignRollout` ของ
+        กลุ่ม (cascade) — ไม่กระทบอุปกรณ์ เพราะค่าที่ส่งไปแล้วอยู่บนกล่อง สิ่งที่
+        หายคือประวัติ Rollout ของกลุ่มนี้ · AuditLog `delete` เก็บ `campaignId` +
+        `campaignName` ใน metadata
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่มนี้ (รวมถึง Campaign ระบบของคำขอหน้างาน)
+        "409":
+          description: กลุ่มยังมี Rollout ที่ไม่จบ
 
   /campaigns/{id}/targets:
+    post:
+      tags: [campaign]
+      operationId: addCampaignTargets
+      summary: เพิ่มเครื่องเข้ากลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · เครื่องต้องมีอยู่จริง
+        สถานะ `installed` และยังไม่อยู่ในกลุ่ม · ทำไม่ได้ขณะกลุ่มมี Rollout ที่ยังไม่จบ
+        (Rollout เก็บรายชื่อเครื่องของรอบนั้นไว้ตอนสร้าง) · AuditLog `add_targets`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignAddTargetsRequest"
+      responses:
+        "200":
+          description: เพิ่มสำเร็จ คืนสมาชิกทั้งหมดของกลุ่มหลังเพิ่ม (เรียงตาม createdAt asc)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CampaignTarget"
+        "400":
+          description: validation ไม่ผ่าน (targets ว่าง หรือ deviceId ซ้ำกันในคำขอ)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่มนี้
+        "409":
+          description: >-
+            เครื่องไม่พบ/ยังไม่ installed หรืออยู่ในกลุ่มแล้ว หรือกลุ่มมี Rollout
+            ที่ยังไม่จบ
     get:
       tags: [campaign]
       operationId: listCampaignTargets
@@ -3544,6 +3652,39 @@ paths:
                   $ref: "#/components/schemas/CampaignTarget"
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+
+  /campaigns/{id}/targets/{deviceId}:
+    delete:
+      tags: [campaign]
+      operationId: removeCampaignTarget
+      summary: เอาเครื่องออกจากกลุ่ม — v3.79
+      description: >-
+        Operation (resource `campaign` action `Update`) · `deviceId` คือเลขเครื่องจริง
+        (`Device.deviceId`) · กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง (ถ้าไม่ใช้กลุ่มแล้ว
+        ให้ลบกลุ่มแทน) · ทำไม่ได้ขณะกลุ่มมี Rollout ที่ยังไม่จบ · AuditLog `remove_target`
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: เอาออกสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: Role ไม่มีสิทธิ์ campaign.Update
+        "404":
+          description: ไม่พบกลุ่ม หรือเครื่องนี้ไม่ได้อยู่ในกลุ่ม
+        "409":
+          description: เป็นเครื่องสุดท้ายของกลุ่ม หรือกลุ่มมี Rollout ที่ยังไม่จบ
 
   /campaigns/{id}/rollouts:
     get:
@@ -4525,6 +4666,28 @@ components:
             optional (v3.47, issue #236) — ผูก Campaign นี้กับ Incident ที่
             เพิ่งถูก `decide(outcome: promote)` ดู response 404/409 ของ
             `createCampaign`
+
+    CampaignUpdateRequest:
+      type: object
+      description: >-
+        v3.79 — ส่งอย่างน้อย 1 field · `description` ส่งสตริงว่างเพื่อล้างคำอธิบาย
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+
+    CampaignAddTargetsRequest:
+      type: object
+      required: [targets]
+      description: v3.79 — เครื่องที่จะเพิ่มเข้ากลุ่ม
+      properties:
+        targets:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CampaignTargetInput"
 
     CampaignTarget:
       type: object

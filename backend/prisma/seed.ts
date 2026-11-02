@@ -433,6 +433,8 @@ async function main() {
     grant('ConfigEngineer', 'campaign', 'Read'),
     grant('Operation', 'campaign', 'Create'),
     grant('Operation', 'campaign', 'Read'),
+    // แก้ชื่อ/สมาชิก + ลบกลุ่ม (PATCH/DELETE /campaigns/{id}, .../targets)
+    grant('Operation', 'campaign', 'Update'),
     grant('Operation', 'campaign', 'Approve'),
     grant('ST', 'campaign', 'Read'),
     grant('OT', 'campaign', 'Read'),

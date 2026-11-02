@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { canManageDeviceModels, canReadFirmware, visibleDeviceHistoryTypes } from "./permissions";
+import {
+  canManageCampaign,
+  canManageDeviceModels,
+  canReadFirmware,
+  visibleDeviceHistoryTypes,
+} from "./permissions";
+
+describe("canManageCampaign", () => {
+  it("Operation และ SuperAdmin แก้/ลบกลุ่มได้ role อื่นทำไม่ได้", () => {
+    expect(canManageCampaign("Operation")).toBe(true);
+    expect(canManageCampaign("SuperAdmin")).toBe(true);
+    for (const r of ["ConfigEngineer", "ST", "OT", "Auditor", "Admin", null]) {
+      expect(canManageCampaign(r)).toBe(false);
+    }
+  });
+});
 
 /**
  * เทสแรกของ permissions.ts ในโปรเจกต์ (ยังไม่เคยมี unit test ของไฟล์นี้มา

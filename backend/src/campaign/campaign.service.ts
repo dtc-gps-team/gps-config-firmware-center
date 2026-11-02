@@ -5,10 +5,16 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Campaign, CampaignTarget, Device } from '@prisma/client';
+import { Campaign, CampaignTarget, Device, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
+import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from './campaign-rollout-status';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import {
+  AddCampaignTargetsDto,
+  UpdateCampaignDto,
+} from './dto/update-campaign.dto';
 import { FIELD_APPLY_SYSTEM_CAMPAIGN_NAME } from './field-apply-system-campaign';
 
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload ({ sub, role }) เสมอ (แต่ละ
@@ -67,9 +73,10 @@ export class CampaignService {
 
   /**
    * `POST /campaigns` — สร้างกลุ่มอุปกรณ์ + สมาชิกเริ่มต้น (`CampaignTarget[]`)
-   * ใน `$transaction` เดียว **MVP (มติ 2026-09-24): สมาชิกกลุ่ม fix ตอนสร้าง
-   * เท่านั้น** ยังไม่มี endpoint เพิ่ม/ลบทีหลัง — ไม่มี payload/approval
-   * เกี่ยวข้องตรงนี้เลย (ย้ายไปอยู่ที่ `CampaignRolloutService.create()` แทน)
+   * ใน `$transaction` เดียว · เพิ่ม/เอาสมาชิกออกทีหลังผ่าน `addTargets`/
+   * `removeTarget` (เดิม MVP มติ 2026-09-24 ให้ fix ตอนสร้างเท่านั้น) — ไม่มี
+   * payload/approval เกี่ยวข้องตรงนี้เลย (ย้ายไปอยู่ที่
+   * `CampaignRolloutService.create()` แทน)
    */
   async create(dto: CreateCampaignDto, actor: ActingUser): Promise<Campaign> {
     const deviceIds = dto.targets.map((t) => t.deviceId);
@@ -150,6 +157,179 @@ export class CampaignService {
     return campaign;
   }
 
+  /**
+   * `PATCH /campaigns/{id}` — แก้ชื่อ/คำอธิบายกลุ่ม ทำได้ทุกเมื่อ (ไม่กระทบ
+   * Rollout ที่มีอยู่ เพราะ Rollout ผูกกับกลุ่มด้วย id ไม่ใช่ชื่อ)
+   */
+  async update(
+    id: string,
+    dto: UpdateCampaignDto,
+    actor: ActingUser,
+  ): Promise<Campaign> {
+    if (dto.name === undefined && dto.description === undefined) {
+      throw new BadRequestException(
+        'ต้องส่ง name หรือ description อย่างน้อย 1 อย่าง',
+      );
+    }
+    const existing = await this.getManageableOrThrow(id);
+
+    const updated = await this.prisma.campaign.update({
+      where: { id },
+      data: { name: dto.name, description: dto.description },
+    });
+
+    await this.logAudit('update', actor, {
+      campaignId: id,
+      campaignName: updated.name,
+    });
+    this.logger.log(`แก้ Campaign ${id} (ชื่อเดิม "${existing.name}")`);
+    return updated;
+  }
+
+  /**
+   * `POST /campaigns/{id}/targets` — เพิ่มเครื่องเข้ากลุ่ม · ทำได้เฉพาะตอนไม่มี
+   * Rollout ค้างอยู่ (409) เพราะ Rollout สร้างรายชื่อเครื่องของตัวเองไว้ตอนสร้าง
+   * รอบนั้น การเปลี่ยนสมาชิกกลางทางจะทำให้รายชื่อกลุ่มกับรอบที่กำลังรันไม่ตรงกัน
+   */
+  async addTargets(
+    id: string,
+    dto: AddCampaignTargetsDto,
+    actor: ActingUser,
+  ): Promise<CampaignTarget[]> {
+    const campaign = await this.getManageableOrThrow(id);
+    await this.assertNoOpenRollout(id);
+
+    const deviceIds = dto.targets.map((t) => t.deviceId);
+    const duplicateDeviceIds = this.findDuplicates(deviceIds);
+    if (duplicateDeviceIds.length > 0) {
+      throw new BadRequestException(
+        `มี deviceId ซ้ำกันในรายการเป้าหมาย: ${duplicateDeviceIds.join(', ')}`,
+      );
+    }
+
+    const alreadyMembers = await this.prisma.campaignTarget.findMany({
+      where: { campaignId: id, deviceId: { in: deviceIds } },
+      select: { deviceId: true },
+    });
+    if (alreadyMembers.length > 0) {
+      throw new ConflictException(
+        `เครื่องเหล่านี้อยู่ในกลุ่มแล้ว: ${alreadyMembers.map((m) => m.deviceId).join(', ')}`,
+      );
+    }
+
+    const devices = await this.loadTargetDevices(dto.targets);
+    const problems = this.collectUnavailableDeviceProblems(
+      dto.targets,
+      devices,
+    );
+    if (problems.length > 0) {
+      throw new ConflictException(problems.join(' · '));
+    }
+
+    try {
+      await this.prisma.campaignTarget.createMany({
+        data: deviceIds.map((deviceId) => ({ campaignId: id, deviceId })),
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'เครื่องบางตัวถูกเพิ่มเข้ากลุ่มไปแล้วโดยคำขอที่เกิดขึ้นพร้อมกัน',
+        );
+      }
+      throw err;
+    }
+
+    await this.logAudit('add_targets', actor, {
+      campaignId: id,
+      campaignName: campaign.name,
+      deviceIds,
+    });
+    return this.findTargets(id);
+  }
+
+  /**
+   * `DELETE /campaigns/{id}/targets/{deviceId}` — เอาเครื่องออกจากกลุ่ม · เงื่อนไข
+   * เดียวกับ `addTargets` และกลุ่มต้องเหลืออย่างน้อย 1 เครื่อง (กลุ่มเปล่าไม่มี
+   * ความหมาย — ถ้าไม่ใช้กลุ่มแล้วให้ลบกลุ่ม)
+   */
+  async removeTarget(
+    id: string,
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<void> {
+    const campaign = await this.getManageableOrThrow(id);
+    await this.assertNoOpenRollout(id);
+
+    const target = await this.prisma.campaignTarget.findUnique({
+      where: { campaignId_deviceId: { campaignId: id, deviceId } },
+    });
+    if (!target) {
+      throw new NotFoundException(`เครื่อง ${deviceId} ไม่ได้อยู่ในกลุ่มนี้`);
+    }
+    const memberCount = await this.prisma.campaignTarget.count({
+      where: { campaignId: id },
+    });
+    if (memberCount <= 1) {
+      throw new ConflictException(
+        'กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง — ถ้าไม่ใช้กลุ่มนี้แล้วให้ลบกลุ่มแทน',
+      );
+    }
+
+    await this.prisma.campaignTarget.delete({ where: { id: target.id } });
+
+    await this.logAudit('remove_target', actor, {
+      campaignId: id,
+      campaignName: campaign.name,
+      deviceIds: [deviceId],
+    });
+  }
+
+  /**
+   * `DELETE /campaigns/{id}` — ลบกลุ่มพร้อมสมาชิกและประวัติ Rollout ของกลุ่ม
+   * (cascade ใน schema) · ลบไม่ได้ขณะมี Rollout ค้าง (409) เพราะระบบยังต้องใช้
+   * รายการนั้นอยู่ · ผลต่อกล่อง: ไม่มี — Config/Firmware ที่ส่งไปแล้วอยู่บนกล่อง
+   * เอง ที่หายไปคือประวัติ Rollout ของกลุ่มนี้ (รวมถึงตัวย้อนกลับ Rollback ของ
+   * รอบเก่า) ชื่อกลุ่มที่ลบเก็บไว้ใน AuditLog metadata
+   */
+  async remove(id: string, actor: ActingUser): Promise<void> {
+    const campaign = await this.getManageableOrThrow(id);
+    await this.assertNoOpenRollout(id);
+
+    await this.prisma.campaign.delete({ where: { id } });
+
+    await this.logAudit('delete', actor, {
+      campaignId: id,
+      campaignName: campaign.name,
+    });
+  }
+
+  /** โหลดกลุ่มที่แก้/ลบได้ — Campaign ระบบของคำขอหน้างานแสดงเป็น 404 เหมือนไม่มี
+   * (ซ่อนจาก Monitor อยู่แล้ว และห้ามแตะเด็ดขาด — ชื่อเขียนว่า "ห้ามลบ") */
+  private async getManageableOrThrow(id: string): Promise<Campaign> {
+    const campaign = await this.prisma.campaign.findUnique({ where: { id } });
+    if (!campaign || campaign.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) {
+      throw new NotFoundException(`ไม่พบ Campaign id ${id}`);
+    }
+    return campaign;
+  }
+
+  private async assertNoOpenRollout(campaignId: string): Promise<void> {
+    const open = await this.prisma.campaignRollout.count({
+      where: {
+        campaignId,
+        status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
+      },
+    });
+    if (open > 0) {
+      throw new ConflictException(
+        `กลุ่มนี้ยังมี Rollout ที่ไม่จบ ${open} รอบ — รอให้จบ หรือปฏิเสธ/ยกเลิกก่อน`,
+      );
+    }
+  }
+
   private findDuplicates(values: string[]): string[] {
     const seen = new Set<string>();
     const duplicates = new Set<string>();
@@ -191,7 +371,11 @@ export class CampaignService {
     return problems;
   }
 
-  private async logAudit(action: string, actor: ActingUser): Promise<void> {
+  private async logAudit(
+    action: string,
+    actor: ActingUser,
+    metadata?: AuditLogMetadata,
+  ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
         data: {
@@ -199,6 +383,7 @@ export class CampaignService {
           auditModule: AUDIT_MODULE,
           action,
           ipAddress: actor.ipAddress,
+          ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
         },
       });
     } catch (err) {

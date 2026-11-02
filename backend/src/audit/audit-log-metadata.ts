@@ -39,4 +39,9 @@ export interface AuditLogMetadata {
   /** device-model: id + ชื่อรุ่น (ไม่ใช่ค่าที่เปลี่ยน) */
   deviceModelId?: string;
   modelName?: string;
+  /** campaign: id + ชื่อกลุ่ม (เก็บชื่อไว้เพราะกลุ่มที่ลบแล้วหาชื่อย้อนหลังไม่ได้) */
+  campaignId?: string;
+  campaignName?: string;
+  /** campaign: `Device.deviceId` ของสมาชิกที่เพิ่ม/เอาออกในคำขอนั้น */
+  deviceIds?: string[];
 }
