@@ -482,7 +482,6 @@ model Device {
   imei                 String?
   serialNumber         String?
   blackboxId           String?
-  bootloader           String?
   status               DeviceLifecycleStatus @default(registered)
   registeredAt         DateTime              @default(now())
   installedAt          DateTime?
