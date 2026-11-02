@@ -13,6 +13,7 @@ import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from '../campaign/campaign-rollout-status';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFirmwareCompatibilityDto } from './dto/update-firmware-compatibility.dto';
+import { lockFirmwareForDelete } from './firmware-lock';
 import { FirmwareStorageService } from './firmware-storage.service';
 import {
   FIRMWARE_SIMULATOR,
@@ -71,12 +72,31 @@ export class FirmwareService {
    * partition ของกล่องอ้างถึงได้ ลบแล้วกู้ไม่ได้ ต้องอัปโหลดใหม่ Firmware Rollback
    * ไปหาตัวที่ลบแล้วจะล้มพร้อมข้อความ (ไม่มีไฟล์ให้ส่ง)
    *
-   * ลบไฟล์ก่อนแล้วค่อย mark ในฐานข้อมูล: ถ้า storage ล้ม (502) แถวยังใช้งานได้
-   * เหมือนเดิม ลองใหม่ได้ ไม่เหลือสถานะ "ลบแล้วแต่ไฟล์ค้าง" ที่ตามเก็บยาก
+   * 2 ขั้นที่กู้คืนได้ (review B บน #426):
+   * 1) transaction เดียว: ล็อกแถว (FOR UPDATE) -> ตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อก ->
+   *    ตั้ง `deletedAt` (**ปิดกั้น reference ใหม่ก่อนแตะไฟล์** ทุกเส้นทางที่สร้าง reference
+   *    ล็อกแถวเดียวกัน ดู firmware-lock.ts แล้วเห็น deletedAt -> 409)
+   * 2) ลบไฟล์ใน storage · ถ้าล้ม (502) ย้อน `deletedAt` กลับให้แถวใช้งานได้เหมือนเดิม ลองใหม่
+   *    ได้ · ถ้าย้อนไม่ได้ด้วย (DB ล้มซ้ำ) log ระดับ error พร้อม objectKey ให้ตามเก็บ และ
+   *    ผลที่เหลือคือ "แถวถูกซ่อน แต่ไฟล์ยังอยู่" (เปลืองพื้นที่ ไม่กระทบการทำงาน) ไม่มีกรณี
+   *    "แถวยังใช้งานได้แต่ไฟล์หาย" เพราะลบไฟล์หลังตั้ง deletedAt เสมอ
    */
   async remove(id: string, actor: ActingUser): Promise<void> {
-    const firmware = await this.findOne(id);
-    await this.assertNotInUse(firmware);
+    await this.findOne(id);
+
+    const firmware = await this.prisma.$transaction(async (tx) => {
+      await lockFirmwareForDelete(tx, id);
+      const current = await tx.firmware.findUnique({ where: { id } });
+      if (!current || current.deletedAt) {
+        throw new NotFoundException(`ไม่พบ Firmware id ${id}`);
+      }
+      await this.assertNotInUse(tx, current);
+      await tx.firmware.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      return current;
+    });
 
     try {
       await this.storage.deleteObject(firmware.objectKey);
@@ -84,15 +104,20 @@ export class FirmwareService {
       this.logger.warn(
         `ลบไฟล์ Firmware ${id} ออกจาก Object Storage ไม่สำเร็จ: ${(err as Error).message}`,
       );
+      try {
+        await this.prisma.firmware.update({
+          where: { id },
+          data: { deletedAt: null },
+        });
+      } catch (revertErr) {
+        this.logger.error(
+          `ย้อนสถานะลบของ Firmware ${id} ไม่สำเร็จ แถวถูกซ่อนแต่ไฟล์ยังอยู่ใน storage (objectKey ${firmware.objectKey}) ต้องตามลบไฟล์เอง: ${(revertErr as Error).message}`,
+        );
+      }
       throw new BadGatewayException(
         'ลบไฟล์ Firmware ออกจาก Object Storage ไม่สำเร็จ ลองใหม่อีกครั้ง',
       );
     }
-
-    await this.prisma.firmware.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
 
     await this.logAudit('delete', actor, {
       firmwareId: id,
@@ -107,9 +132,12 @@ export class FirmwareService {
    * ชนิด Firmware ที่ยังไม่จบ · คำขอ Override Firmware ที่ยังรออนุมัติหรืออนุมัติแล้ว
    * แต่ยังไม่ถูกใช้ · พาร์ทิชันที่**ไม่ active** (ตัวย้อนกลับ) ไม่บล็อก
    */
-  private async assertNotInUse(firmware: Firmware): Promise<void> {
+  private async assertNotInUse(
+    tx: Prisma.TransactionClient,
+    firmware: Firmware,
+  ): Promise<void> {
     const [running, rollouts, applyRequests, overrides] = await Promise.all([
-      this.prisma.device.findMany({
+      tx.device.findMany({
         where: {
           OR: [
             { activePartition: 'A', partitionAFirmwareId: firmware.id },
@@ -123,19 +151,19 @@ export class FirmwareService {
         select: { deviceId: true },
         take: 6,
       }),
-      this.prisma.campaignRollout.count({
+      tx.campaignRollout.count({
         where: {
           firmwareId: firmware.id,
           status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
         },
       }),
-      this.prisma.configApplyRequest.count({
+      tx.configApplyRequest.count({
         where: {
           firmwareId: firmware.id,
           status: { in: ['pending', 'approved', 'sending'] },
         },
       }),
-      this.prisma.deviceFirmwareOverride.count({
+      tx.deviceFirmwareOverride.count({
         where: {
           firmwareId: firmware.id,
           OR: [{ status: 'pending' }, { status: 'approved', consumedAt: null }],

@@ -231,7 +231,12 @@ describe('ConfigApplyRequestService', () => {
       },
       auditLog,
       user: users,
-      $queryRaw: jest.fn().mockResolvedValue([]),
+      // ล็อกแถว Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
+      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('').includes('"Firmware"') ? [{ deletedAt: null }] : [],
+        ),
+      ),
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
     notification = { send: jest.fn().mockResolvedValue(undefined) };

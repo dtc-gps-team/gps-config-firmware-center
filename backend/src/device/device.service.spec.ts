@@ -332,6 +332,8 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
+      // ล็อกแถว Firmware (FOR SHARE) ตอนเขียน partition/สร้างคำขอ Override/ลงทะเบียน
+      $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
         findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,

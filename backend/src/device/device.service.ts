@@ -37,6 +37,7 @@ import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -523,6 +524,10 @@ export class DeviceService {
       // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
       // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
       device = await this.prisma.$transaction(async (tx) => {
+        // ลงทะเบียนพร้อม Firmware เริ่มต้น (partition A) = กล่องรัน Firmware นี้ -> ล็อกกันถูกลบแทรก
+        if (initialFirmware) {
+          await lockFirmwareForReference(tx, initialFirmware.id);
+        }
         const created = await tx.device.create({
           data: {
             deviceId: dto.deviceId,
@@ -1036,14 +1041,18 @@ export class DeviceService {
     // ต้องเช็คว่าของเก่ายังอยู่ไหม
     try {
       const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
-      await this.prisma.device.update({
-        where: { deviceId: device.deviceId },
-        data: {
-          activePartition: nextPartition,
-          ...(nextPartition === 'A'
-            ? { partitionAFirmwareId: firmware.id }
-            : { partitionBFirmwareId: firmware.id }),
-        },
+      // เขียน partition = กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+      await this.prisma.$transaction(async (tx) => {
+        await lockFirmwareForReference(tx, firmware.id);
+        await tx.device.update({
+          where: { deviceId: device.deviceId },
+          data: {
+            activePartition: nextPartition,
+            ...(nextPartition === 'A'
+              ? { partitionAFirmwareId: firmware.id }
+              : { partitionBFirmwareId: firmware.id }),
+          },
+        });
       });
     } catch (err) {
       this.logger.warn(
@@ -1914,6 +1923,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Firmware ที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #426)
+        await lockFirmwareForReference(tx, firmware.id);
         const override = await tx.deviceFirmwareOverride.create({
           data: {
             deviceId: device.deviceId,

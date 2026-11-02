@@ -35,6 +35,7 @@ import {
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
 import { NotificationService } from '../notification/notification.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
 import {
@@ -363,6 +364,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<ConfigApplyRequest> {
     const { deviceId } = data;
     await this.lockDevice(tx, deviceId);
+    // ล็อก Firmware ที่คำขอจะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้างคำขอ
+    // (review B บน #426)
+    if (data.kind === 'firmware') {
+      await lockFirmwareForReference(tx, data.firmwareId);
+    }
     const open = await tx.configApplyRequest.findFirst({
       where: { deviceId, status: { in: OPEN_CONFIG_APPLY_REQUEST_STATUSES } },
     });

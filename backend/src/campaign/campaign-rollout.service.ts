@@ -53,6 +53,7 @@ import {
   getOrCreateFieldApplySystemCampaign,
 } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import {
@@ -290,6 +291,9 @@ export class CampaignRolloutService {
     // request จะได้ serialization error แทนที่จะเห็นทั้งคู่ผ่าน)
     const rollout = await this.prisma.$transaction(
       async (tx) => {
+        // ล็อก Firmware ที่จะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้าง Rollout
+        // (review B บน #426) - ผู้ลบตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อกจึงเห็นรอบนี้
+        if (firmwareId) await lockFirmwareForReference(tx, firmwareId);
         const openRollout = await tx.campaignRollout.findFirst({
           where: {
             campaignId,
@@ -1197,6 +1201,8 @@ export class CampaignRolloutService {
         }
       }
 
+      // Rollback ชี้ไป Firmware ของรอบก่อนหน้า - ล็อกกันถูกลบแทรกเหมือน create()
+      if (firmwareId) await lockFirmwareForReference(tx, firmwareId);
       const created = await tx.campaignRollout.create({
         data: {
           campaignId,
@@ -1760,14 +1766,18 @@ export class CampaignRolloutService {
       // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
       let partitionWriteSucceeded = true;
       try {
-        await this.prisma.device.update({
-          where: { deviceId: device.deviceId },
-          data: {
-            activePartition: nextPartition,
-            ...(nextPartition === 'A'
-              ? { partitionAFirmwareId: firmware.id }
-              : { partitionBFirmwareId: firmware.id }),
-          },
+        // เขียน partition = ทำให้กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+        await this.prisma.$transaction(async (tx) => {
+          await lockFirmwareForReference(tx, firmware.id);
+          await tx.device.update({
+            where: { deviceId: device.deviceId },
+            data: {
+              activePartition: nextPartition,
+              ...(nextPartition === 'A'
+                ? { partitionAFirmwareId: firmware.id }
+                : { partitionBFirmwareId: firmware.id }),
+            },
+          });
         });
       } catch (err) {
         partitionWriteSucceeded = false;
@@ -1937,14 +1947,18 @@ export class CampaignRolloutService {
     const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
     let partitionWriteSucceeded = true;
     try {
-      await this.prisma.device.update({
-        where: { deviceId },
-        data: {
-          activePartition: nextPartition,
-          ...(nextPartition === 'A'
-            ? { partitionAFirmwareId: firmwareId }
-            : { partitionBFirmwareId: firmwareId }),
-        },
+      // เขียน partition = ทำให้กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+      await this.prisma.$transaction(async (tx) => {
+        await lockFirmwareForReference(tx, firmwareId);
+        await tx.device.update({
+          where: { deviceId },
+          data: {
+            activePartition: nextPartition,
+            ...(nextPartition === 'A'
+              ? { partitionAFirmwareId: firmwareId }
+              : { partitionBFirmwareId: firmwareId }),
+          },
+        });
       });
     } catch (err) {
       partitionWriteSucceeded = false;

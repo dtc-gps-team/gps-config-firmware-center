@@ -282,7 +282,14 @@ describe('CampaignRolloutService', () => {
     };
 
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
-      cb({ campaignRollout, campaignRolloutTarget, deviceConfigOverride }),
+      cb({
+        campaignRollout,
+        campaignRolloutTarget,
+        deviceConfigOverride,
+        device,
+        // ล็อกแถว Firmware (FOR SHARE) ตอนสร้าง Rollout/เขียน partition - default ไม่ถูกลบ
+        $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
+      }),
     );
     const prismaMock = {
       campaign,
