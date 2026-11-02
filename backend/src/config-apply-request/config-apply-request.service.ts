@@ -35,6 +35,7 @@ import {
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
 import { NotificationService } from '../notification/notification.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
@@ -366,6 +367,11 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<ConfigApplyRequest> {
     const { deviceId } = data;
     await this.lockDevice(tx, deviceId);
+    // ล็อก Firmware ที่คำขอจะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้างคำขอ
+    // (review B บน #426)
+    if (data.kind === 'firmware') {
+      await lockFirmwareForReference(tx, data.firmwareId);
+    }
     // ล็อก Config ที่คำขอจะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้างคำขอ
     // (review B บน #425)
     if (data.kind === 'config') await lockConfigForReference(tx, data.configId);
@@ -606,6 +612,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     // เวอร์ชันปัจจุบันของกล่องเป็นข้อมูลเสริม อ่านไม่ได้ก็ยังตอบรายการได้
     const firmwares = await this.prisma.firmware.findMany({
       where: {
+        deletedAt: null,
         uploadStatus: SIMULATABLE_FIRMWARE_STATUS,
         approvalStatus: CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
         deviceModelCompatibility: { has: device.deviceModel },
@@ -1129,6 +1136,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     });
     if (
       !firmware ||
+      firmware.deletedAt ||
       firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS ||
       firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
     ) {
@@ -1429,7 +1437,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     const firmware = await db.firmware.findUnique({
       where: { id: firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       if (phase === 'approve') {
         throw new ConflictException('Firmware ของคำขอนี้ไม่มีในระบบแล้ว');
       }

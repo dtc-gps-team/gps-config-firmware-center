@@ -110,6 +110,7 @@ const readyFirmware: Firmware = {
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'approved',
   approvedBy: 'user-4',
+  deletedAt: null,
 };
 
 /** firmware ตัวที่สอง (compatible+approved เหมือนกัน) ใช้ทดสอบ Firmware
@@ -817,7 +818,7 @@ describe('DeviceService', () => {
 
       expect(firmware.findUnique).toHaveBeenCalledWith({
         where: { id: readyFirmware.id },
-        select: { id: true, deviceModelCompatibility: true },
+        select: { id: true, deviceModelCompatibility: true, deletedAt: true },
       });
       expect(device.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -868,6 +869,7 @@ describe('DeviceService', () => {
 
       expect(firmware.findFirst).toHaveBeenCalledWith({
         where: {
+          deletedAt: null,
           version: readyFirmware.version,
           deviceModelCompatibility: { has: gt06nModel.name },
         },
@@ -1175,9 +1177,9 @@ describe('DeviceService', () => {
     it('ไม่พบ deviceId -> NotFoundException ไม่เรียก device.update', async () => {
       device.findUnique.mockResolvedValue(null);
 
-      await expect(
-        service.confirmInstalled('NOPE', admin),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.confirmInstalled('NOPE', admin)).rejects.toThrow(
+        NotFoundException,
+      );
       expect(device.update).not.toHaveBeenCalled();
     });
 

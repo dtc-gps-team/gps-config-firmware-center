@@ -89,6 +89,13 @@ export function canUpdateFirmwareCompatibility(
   return role === "FirmwareEngineer" || role === "SuperAdmin";
 }
 
+/** ปุ่มลบ Firmware - resource `firmware` action `Update` เดียวกับ
+ * `DELETE /firmware/{id}` (FirmwareEngineer; SuperAdmin ผ่านด้วย bypass ที่
+ * PermissionGuard) */
+export function canDeleteFirmware(role: string | null | undefined): boolean {
+  return role === "FirmwareEngineer" || role === "SuperAdmin";
+}
+
 /**
  * ปุ่ม "ทดสอบ Firmware" — RBAC_Matrix.md ตาราง 4.1 `POST /firmware/{firmwareId}/simulate`:
  * resource แยก `firmware-simulation` (ไม่ใช่ `firmware` เฉยๆ) —

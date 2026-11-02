@@ -293,6 +293,7 @@ describe('CampaignRolloutService', () => {
         campaignRollout,
         campaignRolloutTarget,
         deviceConfigOverride,
+        device,
         $queryRaw: queryRawMock,
       }),
     );
@@ -3252,6 +3253,7 @@ describe('CampaignRolloutService', () => {
         ).toHaveBeenCalledWith(installedDeviceA.deviceId);
         expect(firmware.findFirst).toHaveBeenCalledWith({
           where: {
+            deletedAt: null,
             version: '1.0.0',
             deviceModelCompatibility: { has: installedDeviceA.deviceModel },
           },

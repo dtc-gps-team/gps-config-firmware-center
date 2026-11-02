@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   NotFoundException,
@@ -27,6 +28,7 @@ const sampleFirmware: Firmware = {
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'pending_review',
   approvedBy: null,
+  deletedAt: null,
 };
 
 const qaActor: ActingUser = { id: 'qa-1', role: 'QAEngineer' };
@@ -54,7 +56,12 @@ describe('FirmwareService', () => {
     update: jest.Mock;
   };
   let auditLog: { create: jest.Mock };
-  let storage: { uploadObject: jest.Mock };
+  let storage: { uploadObject: jest.Mock; deleteObject: jest.Mock };
+  let device: { findMany: jest.Mock };
+  let campaignRollout: { count: jest.Mock };
+  let configApplyRequest: { count: jest.Mock };
+  let deviceFirmwareOverride: { count: jest.Mock };
+  let queryRaw: jest.Mock;
   let simulator: { simulateFirmware: jest.Mock };
 
   beforeEach(async () => {
@@ -65,13 +72,45 @@ describe('FirmwareService', () => {
       update: jest.fn(),
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
-    storage = { uploadObject: jest.fn().mockResolvedValue(undefined) };
+    storage = {
+      uploadObject: jest.fn().mockResolvedValue(undefined),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
+    };
+    // ตัวตรวจ "ยังถูกใช้งานอยู่ไหม" ของ remove() - default ไม่ติดอะไร
+    device = { findMany: jest.fn().mockResolvedValue([]) };
+    campaignRollout = { count: jest.fn().mockResolvedValue(0) };
+    configApplyRequest = { count: jest.fn().mockResolvedValue(0) };
+    deviceFirmwareOverride = { count: jest.fn().mockResolvedValue(0) };
+    // ล็อกแถว Firmware (FOR UPDATE) ของ remove() - default เจอแถว
+    queryRaw = jest.fn().mockResolvedValue([{ id: 'fw-1' }]);
     simulator = { simulateFirmware: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FirmwareService,
-        { provide: PrismaService, useValue: { firmware, auditLog } },
+        {
+          provide: PrismaService,
+          useValue: {
+            firmware,
+            auditLog,
+            device,
+            campaignRollout,
+            configApplyRequest,
+            deviceFirmwareOverride,
+            $queryRaw: queryRaw,
+            // transaction ใช้ delegate mock ชุดเดียวกับนอก transaction
+            $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
+              cb({
+                firmware,
+                device,
+                campaignRollout,
+                configApplyRequest,
+                deviceFirmwareOverride,
+                $queryRaw: queryRaw,
+              }),
+            ),
+          },
+        },
         { provide: FirmwareStorageService, useValue: storage },
         { provide: FIRMWARE_SIMULATOR, useValue: simulator },
       ],
@@ -309,6 +348,7 @@ describe('FirmwareService', () => {
 
       expect(result).toEqual([sampleFirmware]);
       expect(firmware.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: null },
         orderBy: { uploadedAt: 'desc' },
       });
     });
@@ -432,6 +472,168 @@ describe('FirmwareService', () => {
       await expect(service.reject('missing-id', qaActor)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('remove', () => {
+    beforeEach(() => {
+      firmware.findUnique.mockResolvedValue(sampleFirmware);
+      firmware.update.mockResolvedValue(sampleFirmware);
+    });
+
+    it.each(['pending_review', 'approved', 'rejected'] as const)(
+      'สถานะอนุมัติ %s ไม่ติดอะไร -> ตั้ง deletedAt แล้วลบไฟล์ใน storage + AuditLog',
+      async (approvalStatus) => {
+        firmware.findUnique.mockResolvedValue({
+          ...sampleFirmware,
+          approvalStatus,
+        });
+
+        await service.remove(sampleFirmware.id, actor);
+
+        expect(firmware.update).toHaveBeenCalledWith({
+          where: { id: sampleFirmware.id },
+          data: { deletedAt: expect.any(Date) as Date },
+        });
+        expect(storage.deleteObject).toHaveBeenCalledWith(
+          sampleFirmware.objectKey,
+        );
+        expect(auditLog.create).toHaveBeenCalledWith({
+          data: {
+            userId: actor.id,
+            auditModule: 'firmware',
+            action: 'delete',
+            metadata: {
+              firmwareId: sampleFirmware.id,
+              firmwareVersion: sampleFirmware.version,
+            },
+          },
+        });
+      },
+    );
+
+    it('ลำดับ: ล็อกแถว (FOR UPDATE) -> ตรวจ "ยังถูกใช้งานอยู่" ซ้ำ -> ตั้ง deletedAt (ปิดกั้น reference ใหม่) -> ค่อยลบไฟล์ (review B บน #426)', async () => {
+      const order: string[] = [];
+      queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        order.push(`lock:${strings.join('?').includes('FOR UPDATE')}`);
+        return Promise.resolve([{ id: sampleFirmware.id }]);
+      });
+      device.findMany.mockImplementation(() => {
+        order.push('check-in-use');
+        return Promise.resolve([]);
+      });
+      firmware.update.mockImplementation(() => {
+        order.push('mark-deleted');
+        return Promise.resolve(sampleFirmware);
+      });
+      storage.deleteObject.mockImplementation(() => {
+        order.push('delete-file');
+        return Promise.resolve();
+      });
+
+      await service.remove(sampleFirmware.id, actor);
+
+      expect(order).toEqual([
+        'lock:true',
+        'check-in-use',
+        'mark-deleted',
+        'delete-file',
+      ]);
+    });
+
+    it('มีกล่องกำลังรัน Firmware นี้ -> 409 บอกเลขเครื่อง ไม่ตั้ง deletedAt ไม่ลบไฟล์', async () => {
+      device.findMany.mockResolvedValue([{ deviceId: 'DEV-0001' }]);
+
+      await expect(service.remove(sampleFirmware.id, actor)).rejects.toThrow(
+        /DEV-0001/,
+      );
+      await expect(
+        service.remove(sampleFirmware.id, actor),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(firmware.update).not.toHaveBeenCalled();
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+    });
+
+    it('เช็คกล่องที่รันอยู่ด้วย active partition และเวอร์ชันที่กล่องรายงาน (ไม่นับพาร์ทิชันสำรอง)', async () => {
+      await service.remove(sampleFirmware.id, actor);
+
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { activePartition: 'A', partitionAFirmwareId: sampleFirmware.id },
+            { activePartition: 'B', partitionBFirmwareId: sampleFirmware.id },
+            {
+              reportedFirmwareVersion: sampleFirmware.version,
+              deviceModel: { in: sampleFirmware.deviceModelCompatibility },
+            },
+          ],
+        },
+        select: { deviceId: true },
+        take: 6,
+      });
+    });
+
+    it.each([
+      ['Rollout ที่ยังไม่จบ', () => campaignRollout.count],
+      ['คำขอส่งเข้ากล่องที่ยังไม่จบ', () => configApplyRequest.count],
+      [
+        'คำขอ Override Firmware ที่ยังไม่เสร็จ',
+        () => deviceFirmwareOverride.count,
+      ],
+    ])('ยังมี %s -> 409 ไม่ลบ', async (label, counter) => {
+      counter().mockResolvedValue(1);
+
+      await expect(service.remove(sampleFirmware.id, actor)).rejects.toThrow(
+        label,
+      );
+      expect(firmware.update).not.toHaveBeenCalled();
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+    });
+
+    it('Firmware ที่ลบไปแล้ว -> 404', async () => {
+      firmware.findUnique.mockResolvedValue({
+        ...sampleFirmware,
+        deletedAt: new Date(),
+      });
+
+      await expect(
+        service.remove(sampleFirmware.id, actor),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('แถวหายระหว่างรอล็อก (ถูกลบพร้อมกัน) -> 404 ไม่ลบไฟล์', async () => {
+      queryRaw.mockResolvedValue([]);
+
+      await expect(
+        service.remove(sampleFirmware.id, actor),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+    });
+
+    it('storage ลบไม่สำเร็จ -> 502 และย้อน deletedAt กลับเป็น null (แถวใช้งานได้เหมือนเดิม ลองใหม่ได้)', async () => {
+      storage.deleteObject.mockRejectedValue(new Error('storage down'));
+
+      await expect(
+        service.remove(sampleFirmware.id, actor),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+
+      expect(firmware.update).toHaveBeenLastCalledWith({
+        where: { id: sampleFirmware.id },
+        data: { deletedAt: null },
+      });
+      expect(auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('storage ล้มและย้อนสถานะไม่ได้ด้วย -> ยังตอบ 502 (ไม่ปิดบัง) และไม่มี AuditLog', async () => {
+      storage.deleteObject.mockRejectedValue(new Error('storage down'));
+      firmware.update
+        .mockResolvedValueOnce(sampleFirmware)
+        .mockRejectedValueOnce(new Error('DB down'));
+
+      await expect(
+        service.remove(sampleFirmware.id, actor),
+      ).rejects.toBeInstanceOf(BadGatewayException);
+      expect(auditLog.create).not.toHaveBeenCalled();
     });
   });
 });

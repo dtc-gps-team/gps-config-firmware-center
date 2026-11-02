@@ -53,6 +53,7 @@ import {
   getOrCreateFieldApplySystemCampaign,
 } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { isSerializationFailure, lockCampaign } from './campaign-lock';
@@ -305,6 +306,8 @@ export class CampaignRolloutService {
           // ล็อก Config ที่จะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้าง Rollout
           // (review B บน #425) - ผู้ลบตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อกจึงเห็นรอบนี้
           if (configId) await lockConfigForReference(tx, configId);
+          // ล็อก Firmware ที่จะอ้างถึง (FOR SHARE) ด้วยเหตุผลเดียวกัน (review B บน #426)
+          if (firmwareId) await lockFirmwareForReference(tx, firmwareId);
           const openRollout = await tx.campaignRollout.findFirst({
             where: {
               campaignId,
@@ -1163,6 +1166,7 @@ export class CampaignRolloutService {
         if (previousVersion) {
           const matchedFirmware = await this.prisma.firmware.findFirst({
             where: {
+              deletedAt: null,
               version: previousVersion,
               deviceModelCompatibility: {
                 has: representativeDevice.deviceModel,
@@ -1223,6 +1227,8 @@ export class CampaignRolloutService {
         }
       }
 
+      // Rollback ชี้ไป Firmware ของรอบก่อนหน้า - ล็อกกันถูกลบแทรกเหมือน create()
+      if (firmwareId) await lockFirmwareForReference(tx, firmwareId);
       // Rollback ชี้กลับไป Config ของรอบก่อนหน้า - ล็อกกันถูกลบแทรกเหมือน create()
       if (configId) await lockConfigForReference(tx, configId);
       const created = await tx.campaignRollout.create({
@@ -1788,14 +1794,18 @@ export class CampaignRolloutService {
       // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
       let partitionWriteSucceeded = true;
       try {
-        await this.prisma.device.update({
-          where: { deviceId: device.deviceId },
-          data: {
-            activePartition: nextPartition,
-            ...(nextPartition === 'A'
-              ? { partitionAFirmwareId: firmware.id }
-              : { partitionBFirmwareId: firmware.id }),
-          },
+        // เขียน partition = ทำให้กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+        await this.prisma.$transaction(async (tx) => {
+          await lockFirmwareForReference(tx, firmware.id);
+          await tx.device.update({
+            where: { deviceId: device.deviceId },
+            data: {
+              activePartition: nextPartition,
+              ...(nextPartition === 'A'
+                ? { partitionAFirmwareId: firmware.id }
+                : { partitionBFirmwareId: firmware.id }),
+            },
+          });
         });
       } catch (err) {
         partitionWriteSucceeded = false;
@@ -1965,14 +1975,18 @@ export class CampaignRolloutService {
     const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
     let partitionWriteSucceeded = true;
     try {
-      await this.prisma.device.update({
-        where: { deviceId },
-        data: {
-          activePartition: nextPartition,
-          ...(nextPartition === 'A'
-            ? { partitionAFirmwareId: firmwareId }
-            : { partitionBFirmwareId: firmwareId }),
-        },
+      // เขียน partition = ทำให้กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+      await this.prisma.$transaction(async (tx) => {
+        await lockFirmwareForReference(tx, firmwareId);
+        await tx.device.update({
+          where: { deviceId },
+          data: {
+            activePartition: nextPartition,
+            ...(nextPartition === 'A'
+              ? { partitionAFirmwareId: firmwareId }
+              : { partitionBFirmwareId: firmwareId }),
+          },
+        });
       });
     } catch (err) {
       partitionWriteSucceeded = false;
@@ -2787,7 +2801,7 @@ export class CampaignRolloutService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {

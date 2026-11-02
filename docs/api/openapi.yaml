@@ -1807,6 +1807,41 @@ paths:
         "404":
           description: ไม่พบ Firmware นี้
 
+    delete:
+      tags: [firmware]
+      operationId: deleteFirmware
+      summary: ลบ Firmware (ทุกสถานะ ยกเว้นที่ระบบยังต้องใช้อยู่) - v3.81
+      description: >-
+        **FirmwareEngineer** (resource `firmware` action `Update`; SuperAdmin ผ่านด้วย
+        bypass) · ลบไฟล์ใน Object Storage จริง แล้ว soft delete แถว (`deletedAt`) เก็บ
+        version/checksum ไว้ให้ประวัติและ partition ของกล่องอ้างถึงได้ · ลบแล้วกู้ไม่ได้
+        ต้องอัปโหลดใหม่ · **ลบไม่ได้ (409) ถ้า:** มีกล่องกำลังรัน Firmware นี้อยู่ (พาร์ทิชันที่
+        active ชี้มาที่ตัวนี้ หรือกล่องรายงานเวอร์ชันนี้ของรุ่นที่ตรงกัน) · มี Rollout ชนิด
+        Firmware ที่ยังไม่จบ · มีคำขอส่งเข้ากล่องชนิด Firmware ที่ยังไม่จบ · มีคำขอ Override
+        Firmware ที่ยังรออนุมัติหรืออนุมัติแล้วแต่ยังไม่ถูกใช้ · พาร์ทิชันสำรอง (ตัวย้อนกลับ)
+        ไม่บล็อก แต่ Rollback ไปหาตัวนั้นภายหลังจะล้ม · AuditLog `delete` เก็บ `firmwareId`
+        + `firmwareVersion`
+      parameters:
+        - in: path
+          name: firmwareId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ลบ Firmware (เฉพาะ FirmwareEngineer และ SuperAdmin)
+        "404":
+          description: ไม่พบ Firmware นี้ (หรือถูกลบไปแล้ว)
+        "409":
+          description: Firmware นี้ยังถูกใช้งานอยู่ ข้อความบอกว่าติดอะไรบ้าง (รวมเลขเครื่องที่กำลังรัน)
+        "502":
+          description: ลบไฟล์ออกจาก Object Storage ไม่สำเร็จ แถวยังใช้งานได้เหมือนเดิม ลองใหม่ได้
+
   /firmware/{firmwareId}/simulate:
     post:
       tags: [firmware]
@@ -6630,6 +6665,13 @@ components:
           description: >-
             user id ของ QAEngineer ที่อนุมัติ — null จนกว่าจะถูกอนุมัติ
             (ตอน reject ก็ยังเป็น null เช่นกัน — ไม่มีใคร "อนุมัติ" การ reject)
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            v3.81 - เวลาที่ถูกลบ (soft delete) · API รายการ/รายละเอียดไม่คืนตัวที่ลบแล้ว
+            จึงเป็น null เสมอใน response ปกติ
 
     SimulationResult:
       type: object

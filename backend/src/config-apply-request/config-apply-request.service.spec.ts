@@ -232,12 +232,15 @@ describe('ConfigApplyRequestService', () => {
       },
       auditLog,
       user: users,
-      // ล็อกแถว Config (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
-      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
-        Promise.resolve(
-          strings.join('').includes('"Config"') ? [{ deletedAt: null }] : [],
-        ),
-      ),
+      // ล็อกแถว Config/Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = strings.join('');
+        return Promise.resolve(
+          sql.includes('"Config"') || sql.includes('"Firmware"')
+            ? [{ deletedAt: null }]
+            : [],
+        );
+      }),
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
     notification = { send: jest.fn().mockResolvedValue(undefined) };
@@ -2113,6 +2116,7 @@ describe('ConfigApplyRequestService', () => {
 
         expect(firmwareMock().findMany).toHaveBeenCalledWith({
           where: {
+            deletedAt: null,
             uploadStatus: 'stored',
             approvalStatus: 'approved',
             deviceModelCompatibility: { has: 'GT06N' },

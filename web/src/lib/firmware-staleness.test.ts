@@ -22,6 +22,7 @@ function fw(over: Partial<Firmware>): Firmware {
     uploadedAt: "2026-10-01T00:00:00Z",
     approvalStatus: "approved",
     approvedBy: null,
+    deletedAt: null,
     ...over,
   };
 }
