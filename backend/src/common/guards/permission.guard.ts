@@ -28,6 +28,13 @@ type AuthenticatedRequest = Request & { user?: JwtPayload };
  * `@UseGuards(...)` เพราะเป็นคนแนบ `req.user` ไว้ให้) — ถ้า handler/controller
  * ไม่มี `@RequirePermission` ติดไว้เลย ปล่อยผ่านไม่เช็คอะไรเพิ่ม (ใช้กับ endpoint
  * ที่แค่ต้อง login ก็พอ ไม่ต้องผูกกับสิทธิ์ resource ใดๆ)
+ *
+ * `SuperAdmin` ผ่านทุก resource/action เสมอ ไม่ query `RolePermission` เลย
+ * (มติ 2026-10-30 — เดิม docs/11 §6 ห้ามไว้ "ไม่ข้าม Separation of Duty" แต่
+ * มติใหม่ให้ SuperAdmin ทำได้ทุกอย่างที่ระบบมีอยู่แล้ว) จุดเดียวนี้ครอบคลุมทั้ง
+ * ระบบ ไม่ต้อง seed grant ทีละ resource ใน `seed.ts` — SoD (ผู้ทำ ≠
+ * ผู้เกี่ยวข้องกับรายการ) เป็นเช็คแยกต่างหากนอก guard นี้ (ดู
+ * `config-apply-request.service.ts`/`campaign-rollout.service.ts`)
  */
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -53,6 +60,10 @@ export class PermissionGuard implements CanActivate {
       // แล้วแนบ req.user ไว้แล้ว) — กันไว้เป็น 401 แทนที่จะปล่อยผ่านเฉยๆ หรือ
       // throw error ที่ไม่สื่อความหมาย (เช่น TypeError จาก user.role)
       throw new UnauthorizedException('ต้อง login ก่อนถึงจะเช็คสิทธิ์ได้');
+    }
+
+    if (user.role === 'SuperAdmin') {
+      return true;
     }
 
     const grant = await this.prisma.rolePermission.findFirst({

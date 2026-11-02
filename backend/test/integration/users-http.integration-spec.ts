@@ -394,5 +394,33 @@ describe('UserController (integration — real postgres + JwtAuthGuard)', () => 
           .expect(400);
       },
     );
+
+    // review B บน #418: count กับ update ต้อง atomic ไม่งั้น SuperAdmin 2 คนปิดบัญชี
+    // กันและกันพร้อมกันจะเหลือ 0 คน · ยิงจริงผ่าน HTTP + Postgres (Serializable)
+    it('SuperAdmin 2 คนปิดบัญชีกันและกันพร้อมกัน -> สำเร็จได้แค่คนเดียว อีกคน 409 เหลือ SuperAdmin active อย่างน้อย 1 คนเสมอ', async () => {
+      for (let round = 0; round < 5; round++) {
+        // AuditLog อ้าง user ด้วย FK จึงล้างทั้งฐานแทนการลบเฉพาะ user
+        await resetDb(prisma);
+        const a = await makeUser(prisma, { role: 'SuperAdmin' });
+        const b = await makeUser(prisma, { role: 'SuperAdmin' });
+
+        const [resA, resB] = await Promise.all([
+          request(app.getHttpServer())
+            .patch(`/api/v1/users/${b.id}`)
+            .set('Authorization', `Bearer ${tokenFor(a.id, 'SuperAdmin')}`)
+            .send({ isActive: false }),
+          request(app.getHttpServer())
+            .patch(`/api/v1/users/${a.id}`)
+            .set('Authorization', `Bearer ${tokenFor(b.id, 'SuperAdmin')}`)
+            .send({ isActive: false }),
+        ]);
+
+        expect([resA.status, resB.status].sort()).toEqual([200, 409]);
+        const stillActive = await prisma.user.count({
+          where: { role: { code: 'SuperAdmin' }, isActive: true },
+        });
+        expect(stillActive).toBe(1);
+      }
+    });
   });
 });

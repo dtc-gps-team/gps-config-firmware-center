@@ -2080,6 +2080,10 @@ export class CampaignRolloutService {
    * `REJECTABLE_CAMPAIGN_ROLLOUT_STATUSES` — ยอมทั้ง `pending_approval` และ
    * `approved`, แก้ครั้งที่ 63 review comment B บน PR #250) — SoD เช็คเหมือน
    * กันทั้งคู่ไม่ว่าจะยอมสถานะไหนบ้าง
+   *
+   * `SuperAdmin` ข้ามเช็คผู้สร้างเอง (มติ 2026-10-30 — เดิม docs/11 §6 ห้ามไว้
+   * แต่มติใหม่ให้ข้าม Separation of Duty ได้ทั้งหมด) ยังเช็ค allowedStatuses
+   * เหมือนเดิมทุกกรณี
    */
   private assertDecidable(
     rollout: CampaignRollout,
@@ -2091,6 +2095,7 @@ export class CampaignRolloutService {
         `สถานะ Rollout ปัจจุบัน (${rollout.status}) ไม่ใช่ ${allowedStatuses.join('/')} จึงตัดสินใจไม่ได้`,
       );
     }
+    if (actor.role === 'SuperAdmin') return;
     if (rollout.createdBy === actor.id) {
       throw new ForbiddenException(
         'ผู้สร้าง Rollout อนุมัติ/ปฏิเสธ Rollout ของตัวเองไม่ได้ (Separation of Duty)',

@@ -59,7 +59,12 @@ export function CampaignRolloutApprovalPanel({
   const myUserId = session?.accessToken
     ? getTokenSubject(session.accessToken)
     : null;
-  const isOwnRollout = myUserId !== null && myUserId === rollout.createdBy;
+  // SuperAdmin ข้าม Separation of Duty ได้ (มติ 2026-10-30) — ไม่ใช่
+  // "เจ้าของ Rollout" แม้ตัวเองจะเป็นผู้สร้างก็ตาม ไม่ต้องรอ Operation คนอื่น
+  const isOwnRollout =
+    session?.role !== "SuperAdmin" &&
+    myUserId !== null &&
+    myUserId === rollout.createdBy;
 
   const inline = variant === "inline";
 
