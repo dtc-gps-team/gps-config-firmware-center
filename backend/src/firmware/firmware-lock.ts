@@ -49,6 +49,21 @@ export async function lockFirmwareForReference(
   }
 }
 
+/**
+ * ฝั่ง telemetry - กล่องรายงานว่ารัน Firmware เวอร์ชันนี้ (หลักฐาน "กำลังรัน" ที่ผู้ลบใช้บล็อก)
+ * ล็อกร่วม (FOR SHARE) ทุกแถว Firmware ที่ยังไม่ถูกลบและมี version ตรงกัน ใน transaction เดียว
+ * กับการเขียน `Device.reportedFirmwareVersion` · ถ้าผู้ลบถือล็อกอยู่ ฝั่งนี้รอจนผู้ลบ commit
+ * แล้วแถวที่ถูก mark deletedAt จะหลุดเงื่อนไข (ไม่ล็อก) · **ไม่ปฏิเสธรายงาน** เพราะเป็นข้อเท็จจริง
+ * ที่กล่องส่งมาเอง (ไม่ใช่การที่ระบบสั่งให้กล่องใช้ Firmware) ไม่มีแถวตรงเลยก็ผ่าน
+ */
+export async function lockFirmwaresByReportedVersion(
+  tx: Prisma.TransactionClient,
+  version: string,
+): Promise<void> {
+  await tx.$queryRaw`
+    SELECT id FROM "Firmware" WHERE version = ${version} AND "deletedAt" IS NULL FOR SHARE`;
+}
+
 /** ฝั่งลบ - ล็อกเฉพาะตัว (FOR UPDATE) ต้องรอผู้สร้างที่ถือล็อกร่วมอยู่ให้จบก่อน */
 export async function lockFirmwareForDelete(
   tx: Prisma.TransactionClient,

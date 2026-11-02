@@ -148,6 +148,8 @@ describe('DeviceTelemetryService', () => {
       deleteMany: jest.Mock;
     };
     device: { updateMany: jest.Mock };
+    $queryRaw: jest.Mock;
+    $transaction?: jest.Mock;
   };
   let service: DeviceTelemetryService;
 
@@ -161,7 +163,10 @@ describe('DeviceTelemetryService', () => {
       deviceTelemetry: table(),
       deviceEvent: table(),
       device: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      // ล็อกแถว Firmware ตามเวอร์ชันที่กล่องรายงาน (FOR SHARE) ใน transaction เดียวกับการเขียน
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
+    prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
     service = new DeviceTelemetryService(prisma as unknown as PrismaService);
   });
 

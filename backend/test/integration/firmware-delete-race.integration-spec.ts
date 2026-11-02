@@ -1,4 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  ConflictException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -7,7 +11,14 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { CampaignModule } from '../../src/campaign/campaign.module';
+import { DeviceSyncModule } from '../../src/device-sync/device-sync.module';
+import { DeviceTelemetryService } from '../../src/device-sync/device-telemetry.service';
 import { FirmwareModule } from '../../src/firmware/firmware.module';
+import {
+  lockFirmwareForDelete,
+  lockFirmwaresByReportedVersion,
+} from '../../src/firmware/firmware-lock';
+import { FirmwareService } from '../../src/firmware/firmware.service';
 import { FirmwareStorageService } from '../../src/firmware/firmware-storage.service';
 import { PrismaModule } from '../../src/prisma/prisma.module';
 import {
@@ -31,6 +42,8 @@ describe('DELETE /firmware/:id พร้อมกับ POST /campaigns/:id/roll
   let app: INestApplication<App>;
   let prisma: PrismaClient;
   let jwtService: JwtService;
+  let firmwareService: FirmwareService;
+  let telemetryService: DeviceTelemetryService;
   const storageStub = {
     uploadObject: jest.fn().mockResolvedValue(undefined),
     downloadObject: jest.fn().mockResolvedValue(Buffer.from('fw')),
@@ -45,6 +58,7 @@ describe('DELETE /firmware/:id พร้อมกับ POST /campaigns/:id/roll
         PrismaModule,
         FirmwareModule,
         CampaignModule,
+        DeviceSyncModule,
       ],
     })
       .overrideProvider(FirmwareStorageService)
@@ -63,6 +77,8 @@ describe('DELETE /firmware/:id พร้อมกับ POST /campaigns/:id/roll
     await app.init();
 
     jwtService = moduleFixture.get(JwtService);
+    firmwareService = moduleFixture.get(FirmwareService);
+    telemetryService = moduleFixture.get(DeviceTelemetryService);
     prisma = createTestPrisma();
     await prisma.$connect();
   });
@@ -163,5 +179,130 @@ describe('DELETE /firmware/:id พร้อมกับ POST /campaigns/:id/roll
         expect(storageStub.deleteObject).toHaveBeenCalledTimes(1);
       }
     }
+  });
+
+  // review B บน #426 (รอบ 2): กล่องรายงานเวอร์ชันผ่าน telemetry พร้อมกับการลบ · จังหวะแทรกแคบเกินกว่า
+  // Promise.all จะชนซ้ำได้เสมอ จึงถือล็อกค้างไว้เองแล้วดูว่าอีกฝั่ง "ต้องรอ" จริง (deterministic)
+  describe('telemetry รายงานเวอร์ชัน vs ลบ Firmware (ล็อกค้างไว้เพื่อบังคับจังหวะ)', () => {
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+    async function seedFirmwareAndDevice(version: string) {
+      const fe = await makeUser(prisma, { role: 'FirmwareEngineer' });
+      const model = await getOrCreateDeviceModel(prisma, 'GT06N');
+      const firmware = await prisma.firmware.create({
+        data: {
+          version,
+          deviceModelCompatibility: ['GT06N'],
+          uploadStatus: 'stored',
+          approvalStatus: 'approved',
+          objectKey: `firmware/${randomUUID()}/fw.bin`,
+          originalFilename: 'fw.bin',
+          fileSizeBytes: 10,
+          uploadedBy: fe.id,
+        },
+      });
+      const device = await prisma.device.create({
+        data: {
+          deviceId: `DEV-${randomUUID().slice(0, 8)}`,
+          simNumber: `89660000${Math.floor(Math.random() * 1e8)}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'installed',
+          modelId: model.id,
+        },
+      });
+      return { fe, firmware, device };
+    }
+
+    it('ผู้ลบถือล็อกอยู่ -> telemetry ที่รายงานเวอร์ชันนั้นต้องรอจนผู้ลบ commit (ไม่แทรกผ่านล็อก) แล้วค่อยบันทึกรายงาน', async () => {
+      const { firmware, device } = await seedFirmwareAndDevice('9.1.0');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+
+      const deleter = prisma.$transaction(
+        async (tx) => {
+          await lockFirmwareForDelete(tx, firmware.id);
+          await gate;
+          await tx.firmware.update({
+            where: { id: firmware.id },
+            data: { deletedAt: new Date() },
+          });
+        },
+        { timeout: 20000 },
+      );
+      await sleep(300);
+
+      let reportSettled = false;
+      const reporting = telemetryService
+        .report(device.deviceId, {
+          latitude: 13.7,
+          longitude: 100.5,
+          fix: true,
+          location_source: 'gps',
+          timestamp: new Date().toISOString(),
+          firmware_version: '9.1.0',
+        })
+        .then(() => {
+          reportSettled = true;
+        });
+      await sleep(500);
+      // ถ้า telemetry ไม่ล็อก Firmware มันจะเสร็จไปแล้วระหว่างที่ผู้ลบถือล็อก
+      expect(reportSettled).toBe(false);
+
+      release();
+      await deleter;
+      await reporting;
+      const reported = await prisma.device.findUniqueOrThrow({
+        where: { id: device.id },
+      });
+      expect(reported.reportedFirmwareVersion).toBe('9.1.0');
+    });
+
+    it('telemetry กำลังเขียนรายงานเวอร์ชัน (ยังไม่ commit) -> การลบต้องรอ แล้วเห็นรายงานนั้นและปฏิเสธ 409 ไม่ลบไฟล์', async () => {
+      const { fe, firmware, device } = await seedFirmwareAndDevice('9.2.0');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+
+      const reporter = prisma.$transaction(
+        async (tx) => {
+          await lockFirmwaresByReportedVersion(tx, '9.2.0');
+          await tx.device.update({
+            where: { id: device.id },
+            data: { reportedFirmwareVersion: '9.2.0' },
+          });
+          await gate;
+        },
+        { timeout: 20000 },
+      );
+      await sleep(300);
+
+      let removeSettled = false;
+      const removing = firmwareService
+        .remove(firmware.id, { id: fe.id, role: 'FirmwareEngineer' })
+        .then(
+          () => 'removed' as const,
+          (err: unknown) => err,
+        )
+        .finally(() => {
+          removeSettled = true;
+        });
+      await sleep(500);
+      expect(removeSettled).toBe(false);
+
+      release();
+      await reporter;
+      const outcome = await removing;
+      expect(outcome).toBeInstanceOf(ConflictException);
+      expect(storageStub.deleteObject).not.toHaveBeenCalled();
+      const after = await prisma.firmware.findUniqueOrThrow({
+        where: { id: firmware.id },
+      });
+      expect(after.deletedAt).toBeNull();
+    });
   });
 });
