@@ -53,6 +53,7 @@ import {
   getOrCreateFieldApplySystemCampaign,
 } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser } from './campaign.service';
 import {
@@ -290,6 +291,9 @@ export class CampaignRolloutService {
     // request จะได้ serialization error แทนที่จะเห็นทั้งคู่ผ่าน)
     const rollout = await this.prisma.$transaction(
       async (tx) => {
+        // ล็อก Config ที่จะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้าง Rollout
+        // (review B บน #425) - ผู้ลบตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อกจึงเห็นรอบนี้
+        if (configId) await lockConfigForReference(tx, configId);
         const openRollout = await tx.campaignRollout.findFirst({
           where: {
             campaignId,
@@ -1196,6 +1200,8 @@ export class CampaignRolloutService {
         }
       }
 
+      // Rollback ชี้กลับไป Config ของรอบก่อนหน้า - ล็อกกันถูกลบแทรกเหมือน create()
+      if (configId) await lockConfigForReference(tx, configId);
       const created = await tx.campaignRollout.create({
         data: {
           campaignId,

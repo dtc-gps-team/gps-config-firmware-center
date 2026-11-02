@@ -18,6 +18,7 @@ import { validate } from 'class-validator';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from '../campaign/campaign-rollout-status';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import { lockConfigForDelete } from './config-lock';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
 import { toLegacyFields } from '../config-sync-writer/legacy-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
@@ -731,50 +732,70 @@ export class ConfigService {
    *   ที่ชี้มาที่ Config ที่ลบแล้วจะแจ้งว่าใช้ไม่ได้ ไม่พัง
    */
   async remove(id: string, actor: ActingUser): Promise<void> {
-    const existing = await this.findOne(id);
-    await this.assertNotInUse(id);
+    await this.findOne(id);
 
-    if (existing.status === EDITABLE_CONFIG_STATUS) {
-      // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
-      try {
-        await this.prisma.config.delete({ where: { id } });
-        // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
-        // เหมือนกัน (การลบ Config เปลี่ยนข้อมูลจริง compliance/Auditor ต้องเห็นร่องรอย)
-        await this.logAudit('delete', actor, { configId: id });
-        return;
-      } catch (err) {
-        if (err instanceof PrismaClientKnownRequestError) {
-          if (err.code === 'P2025') {
-            throw new NotFoundException(`ไม่พบ Config id ${id}`);
-          }
-          // draft ที่มีข้อมูลอ้างถึง (เช่น Task/ประวัติ) ลบจริงไม่ได้ -> soft delete
-          if (err.code !== 'P2003') throw err;
-        } else {
-          throw err;
-        }
+    // ล็อกแถว Config (FOR UPDATE) -> อ่านสถานะล่าสุด -> ตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อก
+    // -> ลบ ทั้งหมดใน transaction เดียว · ทุกเส้นทางที่สร้าง reference ใหม่ชี้ Config ล็อกแถว
+    // เดียวกัน (FOR SHARE, ดู config-lock.ts) จึงไม่มี reference แทรกระหว่างตรวจกับลบ
+    // (review B บน #425)
+    await this.prisma.$transaction(async (tx) => {
+      await lockConfigForDelete(tx, id);
+      const current = await tx.config.findUnique({ where: { id } });
+      if (!current || current.deletedAt !== null) {
+        throw new NotFoundException(`ไม่พบ Config id ${id}`);
       }
-    }
+      await this.assertNotInUse(tx, id);
 
-    await this.softDelete(existing);
+      // draft ที่ไม่มีอะไรอ้างถึงเลย -> ลบจริง · อย่างอื่น soft delete (ตัดสินจากการนับ
+      // ไม่ใช่ลองลบแล้วรอ FK error เพราะ error ใน transaction ทำให้ transaction ใช้ต่อไม่ได้)
+      if (
+        current.status === EDITABLE_CONFIG_STATUS &&
+        !(await this.hasAnyReference(tx, id))
+      ) {
+        await tx.config.delete({ where: { id } });
+      } else {
+        await this.softDelete(tx, current);
+      }
+    });
+
+    // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log เหมือนกัน
+    // (การลบ Config เปลี่ยนข้อมูลจริง compliance/Auditor ต้องเห็นร่องรอย)
     await this.logAudit('delete', actor, { configId: id });
   }
 
   /** Soft delete + ปล่อยชื่อให้ใช้ซ้ำ (`Config.name` เป็น unique ทั้งระบบ — ถ้าไม่
    * เปลี่ยนชื่อ จะสร้างเทมเพลตชื่อเดิมใหม่ไม่ได้) + ยกเลิกคำขอลบอัตโนมัติที่ค้าง */
-  private async softDelete(config: Config): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.config.update({
-        where: { id: config.id },
-        data: {
-          deletedAt: new Date(),
-          name: `${config.name} [ลบแล้ว ${config.id.slice(0, 8)}]`,
-        },
-      });
-      await tx.configDeletionRequest.updateMany({
-        where: { configId: config.id, status: 'pending' },
-        data: { status: 'cancelled' },
-      });
+  private async softDelete(
+    tx: Prisma.TransactionClient,
+    config: Config,
+  ): Promise<void> {
+    await tx.config.update({
+      where: { id: config.id },
+      data: {
+        deletedAt: new Date(),
+        name: `${config.name} [ลบแล้ว ${config.id.slice(0, 8)}]`,
+      },
     });
+    await tx.configDeletionRequest.updateMany({
+      where: { configId: config.id, status: 'pending' },
+      data: { status: 'cancelled' },
+    });
+  }
+
+  /** มีแถวใดอ้างถึง Config นี้อยู่ไหม (ทุกสถานะ รวมประวัติ) - FK แบบ Restrict ทำให้ลบจริงไม่ได้ */
+  private async hasAnyReference(
+    tx: Prisma.TransactionClient,
+    configId: string,
+  ): Promise<boolean> {
+    const counts = await Promise.all([
+      tx.configVersion.count({ where: { configId } }),
+      tx.campaignRollout.count({ where: { configId } }),
+      tx.configApplyRequest.count({ where: { configId } }),
+      tx.deviceConfigOverride.count({ where: { configId } }),
+      tx.task.count({ where: { configId } }),
+      tx.incident.count({ where: { relatedConfigId: configId } }),
+    ]);
+    return counts.some((n) => n > 0);
   }
 
   /**
@@ -782,21 +803,24 @@ export class ConfigService {
    * Rollout ที่ยังไม่จบ · คำขอส่งเข้ากล่องที่ยังไม่จบ · คำขอ Override ที่รอ
    * อนุมัติ · Task ที่ยังเปิดอยู่ — ต้องรอให้จบหรือยกเลิกก่อน
    */
-  private async assertNotInUse(configId: string): Promise<void> {
+  private async assertNotInUse(
+    tx: Prisma.TransactionClient,
+    configId: string,
+  ): Promise<void> {
     const [rollouts, applyRequests, overrides, tasks] = await Promise.all([
-      this.prisma.campaignRollout.count({
+      tx.campaignRollout.count({
         where: {
           configId,
           status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
         },
       }),
-      this.prisma.configApplyRequest.count({
+      tx.configApplyRequest.count({
         where: { configId, status: { in: ['pending', 'approved', 'sending'] } },
       }),
-      this.prisma.deviceConfigOverride.count({
+      tx.deviceConfigOverride.count({
         where: { configId, status: 'pending' },
       }),
-      this.prisma.task.count({
+      tx.task.count({
         where: { configId, status: { in: ['pending', 'in_progress'] } },
       }),
     ]);

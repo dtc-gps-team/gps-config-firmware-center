@@ -281,8 +281,14 @@ describe('CampaignRolloutService', () => {
       }),
     };
 
+    // ล็อกแถว Config (FOR SHARE) ที่ create()/rollback() เรียกเมื่อ Rollout อ้าง Config - default ไม่ถูกลบ
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
-      cb({ campaignRollout, campaignRolloutTarget, deviceConfigOverride }),
+      cb({
+        campaignRollout,
+        campaignRolloutTarget,
+        deviceConfigOverride,
+        $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
+      }),
     );
     const prismaMock = {
       campaign,
