@@ -241,60 +241,66 @@ export class CampaignRolloutService {
     dto: CreateCampaignRolloutDto,
     actor: ActingUser,
   ): Promise<CampaignRollout> {
-    const campaign = await this.prisma.campaign.findUnique({
-      where: { id: campaignId },
-    });
-    if (!campaign) {
-      throw new NotFoundException(`ไม่พบ Campaign id ${campaignId}`);
-    }
-
-    const groupTargets = await this.prisma.campaignTarget.findMany({
-      where: { campaignId },
-    });
-    const excludeSet = new Set(dto.excludeDeviceIds ?? []);
-    const unknownExcludes = [...excludeSet].filter(
-      (deviceId) => !groupTargets.some((t) => t.deviceId === deviceId),
-    );
-    if (unknownExcludes.length > 0) {
-      throw new BadRequestException(
-        `excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในกลุ่มนี้: ${unknownExcludes.join(', ')}`,
-      );
-    }
-
-    const rolloutDeviceIds = groupTargets
-      .map((t) => t.deviceId)
-      .filter((deviceId) => !excludeSet.has(deviceId));
-    if (rolloutDeviceIds.length === 0) {
-      throw new BadRequestException(
-        'ไม่มีอุปกรณ์เหลือสำหรับ Rollout นี้ (เอาออกหมดทุกเครื่อง หรือกลุ่มนี้ยังไม่มีสมาชิก)',
-      );
-    }
-    const targetRefs = rolloutDeviceIds.map((deviceId) => ({ deviceId }));
-
-    const { configId, firmwareId } =
-      dto.payloadType === CampaignPayloadType.Config
-        ? await this.validateConfigPayload(dto, targetRefs)
-        : await this.validateFirmwarePayload(dto, targetRefs);
-
-    // ค่าเฉพาะเครื่อง (docs/17) — ตรวจหลังรู้ Config แล้ว (ต้องใช้โมเดล/โปรโตคอล)
-    const deviceValues = await this.validateDeviceValues(
-      dto,
-      configId,
-      rolloutDeviceIds,
-    );
-
     // เช็ค "มีรอบเปิดอยู่ไหม" + สร้าง rollout ต้องอยู่ใน transaction เดียวกัน
     // (แก้ตาม review B บน PR #224) — เดิมเช็คนอก transaction ทำให้ 2 requests
     // ที่ยิงพร้อมกัน (double-click/concurrent) ผ่านเช็คนี้ได้ทั้งคู่แล้วสร้าง
     // rollout ซ้อนกัน ขัด "กลุ่มหนึ่งรัน rollout ได้ทีละรอบ" — ใช้ Serializable
     // isolation ให้ Postgres detect ความขัดแย้งของ read-then-write นี้เอง (อีก
     // request จะได้ serialization error แทนที่จะเห็นทั้งคู่ผ่าน)
+    // ค่าเฉพาะเครื่องที่ validate แล้ว (กำหนดค่าใน transaction หลังได้ล็อกกลุ่ม) ใช้ต่อใน AuditLog
+    let deviceValues = new Map<string, Record<string, unknown>>();
     const rollout = await this.prisma
       .$transaction(
         async (tx) => {
           // ล็อกกลุ่มแบบ share เป็นคำสั่งแรก - ต้องรอการลบ/แก้สมาชิกกลุ่มที่กำลังทำอยู่ให้จบ
           // ก่อน และกันการลบ/แก้สมาชิกแทรกระหว่างสร้าง Rollout (review B บน #424)
           await lockCampaign(tx, campaignId, 'share');
+          // อ่านสมาชิกกลุ่ม + validate ทั้งหมด **หลังได้ล็อก** (review B บน #424 รอบ 2) - ถ้าอ่านก่อนล็อก
+          // แล้วมีการเพิ่ม/เอาสมาชิกออก commit คั่น Rollout จะ snapshot รายชื่อเครื่องเก่า · การเพิ่ม/เอา
+          // สมาชิกออกอัปเดตแถวกลุ่ม (updatedAt) ด้วย ถ้ามัน commit ระหว่างที่เรารอล็อก ธุรกรรม Serializable นี้
+          // จะได้ serialization failure -> 409 ให้ลองใหม่ ไม่ใช่สร้างจากรายชื่อเก่า
+          const campaign = await tx.campaign.findUnique({
+            where: { id: campaignId },
+          });
+          if (!campaign) {
+            throw new NotFoundException(`ไม่พบ Campaign id ${campaignId}`);
+          }
+
+          const groupTargets = await tx.campaignTarget.findMany({
+            where: { campaignId },
+          });
+          const excludeSet = new Set(dto.excludeDeviceIds ?? []);
+          const unknownExcludes = [...excludeSet].filter(
+            (deviceId) => !groupTargets.some((t) => t.deviceId === deviceId),
+          );
+          if (unknownExcludes.length > 0) {
+            throw new BadRequestException(
+              `excludeDeviceIds มีเครื่องที่ไม่ได้อยู่ในกลุ่มนี้: ${unknownExcludes.join(', ')}`,
+            );
+          }
+
+          const rolloutDeviceIds = groupTargets
+            .map((t) => t.deviceId)
+            .filter((deviceId) => !excludeSet.has(deviceId));
+          if (rolloutDeviceIds.length === 0) {
+            throw new BadRequestException(
+              'ไม่มีอุปกรณ์เหลือสำหรับ Rollout นี้ (เอาออกหมดทุกเครื่อง หรือกลุ่มนี้ยังไม่มีสมาชิก)',
+            );
+          }
+          const targetRefs = rolloutDeviceIds.map((deviceId) => ({ deviceId }));
+
+          const { configId, firmwareId } =
+            dto.payloadType === CampaignPayloadType.Config
+              ? await this.validateConfigPayload(dto, targetRefs)
+              : await this.validateFirmwarePayload(dto, targetRefs);
+
+          // ค่าเฉพาะเครื่อง (docs/17) — ตรวจหลังรู้ Config แล้ว (ต้องใช้โมเดล/โปรโตคอล)
+          deviceValues = await this.validateDeviceValues(
+            dto,
+            configId,
+            rolloutDeviceIds,
+          );
+
           const openRollout = await tx.campaignRollout.findFirst({
             where: {
               campaignId,

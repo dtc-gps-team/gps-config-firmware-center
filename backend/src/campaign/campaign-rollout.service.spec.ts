@@ -287,6 +287,9 @@ describe('CampaignRolloutService', () => {
     queryRawMock = jest.fn().mockResolvedValue([{ id: 'campaign-1' }]);
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
       cb({
+        // create() อ่านกลุ่ม+สมาชิกใน transaction หลังได้ล็อก (review B บน #424 รอบ 2)
+        campaign,
+        campaignTarget,
         campaignRollout,
         campaignRolloutTarget,
         deviceConfigOverride,
@@ -360,6 +363,33 @@ describe('CampaignRolloutService', () => {
       await service.create(campaignId, baseDto(), operation);
 
       expect(order.slice(0, 2)).toEqual(['lock:true', 'check-open']);
+    });
+
+    it('อ่านกลุ่มและสมาชิกหลังได้ล็อกเท่านั้น (ไม่ snapshot รายชื่อเครื่องก่อนล็อก - review B บน #424 รอบ 2)', async () => {
+      const order: string[] = [];
+      queryRawMock.mockImplementation(() => {
+        order.push('lock');
+        return Promise.resolve([{ id: campaignId, deletedAt: null }]);
+      });
+      campaign.findUnique.mockImplementation(() => {
+        order.push('read-campaign');
+        return Promise.resolve(sampleCampaign);
+      });
+      campaignTarget.findMany.mockImplementation(() => {
+        order.push('read-members');
+        return Promise.resolve([
+          { campaignId, deviceId: installedDeviceA.deviceId },
+          { campaignId, deviceId: installedDeviceB.deviceId },
+        ]);
+      });
+
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(order.slice(0, 3)).toEqual([
+        'lock',
+        'read-campaign',
+        'read-members',
+      ]);
     });
 
     it('กลุ่มถูกลบระหว่างรอล็อก -> NotFoundException ไม่สร้าง Rollout', async () => {

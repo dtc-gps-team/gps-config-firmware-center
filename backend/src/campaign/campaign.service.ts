@@ -238,6 +238,7 @@ export class CampaignService {
         await tx.campaignTarget.createMany({
           data: deviceIds.map((deviceId) => ({ campaignId: id, deviceId })),
         });
+        await this.touchCampaign(tx, id);
       });
     } catch (err) {
       if (
@@ -291,6 +292,7 @@ export class CampaignService {
       }
 
       await tx.campaignTarget.delete({ where: { id: target.id } });
+      await this.touchCampaign(tx, id);
     });
 
     await this.logAudit('remove_target', actor, {
@@ -333,6 +335,18 @@ export class CampaignService {
       throw new NotFoundException(`ไม่พบ Campaign id ${id}`);
     }
     return campaign;
+  }
+
+  /** อัปเดตแถวกลุ่ม (updatedAt) เมื่อสมาชิกเปลี่ยน - ให้ transaction Serializable ของการสร้าง
+   * Rollout ที่รอล็อกอยู่ตรวจพบ (serialization failure -> 409 ลองใหม่) แทนที่จะสร้างจากรายชื่อเก่า */
+  private async touchCampaign(
+    tx: Prisma.TransactionClient,
+    campaignId: string,
+  ): Promise<void> {
+    await tx.campaign.update({
+      where: { id: campaignId },
+      data: { updatedAt: new Date() },
+    });
   }
 
   /** ชื่อ Campaign ระบบของคำขอหน้างานสงวนไว้ ผู้ใช้ตั้ง/เปลี่ยนชื่อเป็นชื่อนี้ไม่ได้ -
