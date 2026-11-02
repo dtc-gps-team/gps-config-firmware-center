@@ -329,6 +329,8 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
+      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override
+      $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
         findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,
@@ -2253,6 +2255,44 @@ describe('DeviceService', () => {
       expect(centralDeviceService.readSupportedSchema).not.toHaveBeenCalled();
     });
 
+    it('ไม่ส่ง data_server.path ใน fields (มี key ส่ง telemetry) แต่คงช่องอื่นไว้', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({});
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.fields).toEqual({ APN: 'a' });
+    });
+
+    it('มี override ที่อนุมัติแล้ว -> fields ที่ merge ก็ไม่มี data_server.path', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({
+        approved: {
+          id: 'ov-1',
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          versionNumber: 1,
+          fields: { APN: 'b' },
+          status: 'approved',
+        },
+      });
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.hasDeviceOverride).toBe(true);
+      expect(result.fields).toEqual({ APN: 'b' });
+    });
+
     it('โหมด central -> boxSchema = พารามิเตอร์ที่ firmware บนกล่องรองรับ', async () => {
       deviceConfigApplyMode = 'central';
       device.findUnique.mockResolvedValue(installedDevice);
@@ -2450,6 +2490,21 @@ describe('DeviceService', () => {
             updatedAt: deliveredAt,
             rollout: { configId: base.id },
           });
+        });
+
+        it('delivery.fields ไม่มี data_server.path', async () => {
+          config.findUnique.mockResolvedValue({
+            ...base,
+            fields: {
+              ...base.fields,
+              'data_server.path': '/ingest/secret-key',
+            },
+          });
+          mockApproved(null);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery?.fields).toEqual(base.fields);
         });
 
         it('ไม่มี override -> delivery = ค่าฐาน ไม่มีค่ารอส่ง', async () => {

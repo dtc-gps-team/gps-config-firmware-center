@@ -24,6 +24,7 @@ import {
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
 import { CentralDeviceService } from '../central-device/central-device.service';
+import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import {
   CONFIG_APPLY_MODE,
   type ConfigApplyMode,
@@ -34,6 +35,7 @@ import {
   SIMULATABLE_FIRMWARE_STATUS,
 } from '../firmware/firmware-status';
 import { NotificationService } from '../notification/notification.service';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActingUser, TaskService } from '../task/task.service';
 import {
@@ -56,6 +58,8 @@ import { compareFirmwareVersions } from './firmware-version';
 const AUDIT_MODULE = 'config-apply-request';
 
 const OPERATION_ROLE = 'Operation';
+/** ข้าม Separation of Duty ได้ทุกข้อ (มติ 2026-10-30 — ดู `assertDecider()`) */
+const SUPER_ADMIN_ROLE = 'SuperAdmin';
 
 // สำเนาของ `APPLICABLE_CONFIG_STATUSES` (device/config-applier.ts) และ
 // `TESTABLE_DEVICE_STATUS` (device.service.ts) — เงื่อนไขเดียวกับ
@@ -362,6 +366,9 @@ export class ConfigApplyRequestService implements OnModuleInit {
   ): Promise<ConfigApplyRequest> {
     const { deviceId } = data;
     await this.lockDevice(tx, deviceId);
+    // ล็อก Config ที่คำขอจะอ้างถึง (FOR SHARE) กันถูกลบแทรกระหว่างตรวจกับสร้างคำขอ
+    // (review B บน #425)
+    if (data.kind === 'config') await lockConfigForReference(tx, data.configId);
     const open = await tx.configApplyRequest.findFirst({
       where: { deviceId, status: { in: OPEN_CONFIG_APPLY_REQUEST_STATUSES } },
     });
@@ -588,10 +595,10 @@ export class ConfigApplyRequestService implements OnModuleInit {
       status: config.status,
       latestVersion: config.versions[0]?.versionNumber ?? 0,
       suggested: config.id === suggestedId,
-      fields: {
+      fields: omitHiddenConfigFields({
         ...asFieldMap(config.fields),
         ...latestOverride.get(config.id),
-      },
+      }),
     }));
     options.sort((a, b) => Number(b.suggested) - Number(a.suggested));
 
@@ -1264,11 +1271,15 @@ export class ConfigApplyRequestService implements OnModuleInit {
    *
    * คำขอ Firmware (docs/27 §5.3) ใช้แค่ข้อ 1–2 — ไม่มีคนผูก/คนอนุมัติ Config ·
    * ผู้อนุมัติคุณภาพ Firmware เป็น QAEngineer ซึ่งเป็น Operation คนเดียวกันไม่ได้อยู่แล้ว
+   *
+   * `SuperAdmin` ข้ามทุกข้อ (มติ 2026-10-30 — เดิม docs/11 §6 ห้ามไว้ แต่มติใหม่
+   * ให้ข้าม Separation of Duty ได้ทั้งหมด)
    */
   private async assertDecider(
     request: ConfigApplyRequest,
     actor: ActingUser,
   ): Promise<void> {
+    if (actor.role === SUPER_ADMIN_ROLE) return;
     if (actor.role !== OPERATION_ROLE) {
       throw new ForbiddenException(
         'ตัดสินคำขอส่งเข้ากล่องได้เฉพาะ Role Operation เท่านั้น',

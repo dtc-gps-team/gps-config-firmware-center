@@ -32,10 +32,12 @@ import {
   type ReportedBoxFields,
   type CheckConfigOutcome,
 } from '../central-device/central-device.service';
+import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -1383,12 +1385,19 @@ export class DeviceService {
         )
       : null;
 
+    // คำตอบนี้ถึงมือช่าง ตัดค่าที่ห้ามเปิดเผยตรงนี้ · ตอนส่งเข้ากล่องไม่ได้ใช้ฟังก์ชันนี้
+    const visibleDelivery = delivery && {
+      ...delivery,
+      fields: omitHiddenConfigFields(delivery.fields),
+    };
+
     if (!approvedOverride) {
       return {
         ...baseConfig,
+        fields: omitHiddenConfigFields(baseConfig.fields),
         hasDeviceOverride: false,
         pendingOverride,
-        delivery,
+        delivery: visibleDelivery,
         boxFields,
         boxSchema,
       };
@@ -1396,10 +1405,10 @@ export class DeviceService {
 
     return {
       ...baseConfig,
-      fields: fields as Prisma.JsonValue,
+      fields: omitHiddenConfigFields(fields) as Prisma.JsonValue,
       hasDeviceOverride: true,
       pendingOverride,
-      delivery,
+      delivery: visibleDelivery,
       boxFields,
       boxSchema,
     };
@@ -1574,6 +1583,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Config ฐานที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #425)
+        await lockConfigForReference(tx, baseConfig.id);
         const override = await tx.deviceConfigOverride.create({
           data: {
             deviceId,

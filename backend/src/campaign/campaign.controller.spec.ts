@@ -69,6 +69,10 @@ describe('CampaignController', () => {
     create: jest.Mock;
     findOne: jest.Mock;
     findTargets: jest.Mock;
+    update: jest.Mock;
+    remove: jest.Mock;
+    addTargets: jest.Mock;
+    removeTarget: jest.Mock;
   };
   let rolloutService: { findAllAcrossCampaigns: jest.Mock };
 
@@ -78,6 +82,10 @@ describe('CampaignController', () => {
       create: jest.fn(),
       findOne: jest.fn(),
       findTargets: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+      addTargets: jest.fn(),
+      removeTarget: jest.fn(),
     };
     rolloutService = { findAllAcrossCampaigns: jest.fn() };
 
@@ -168,6 +176,59 @@ describe('CampaignController', () => {
 
     expect(rolloutService.findAllAcrossCampaigns).toHaveBeenCalledWith(
       undefined,
+    );
+  });
+
+  const actor = { id: 'op-1', role: 'Operation', ipAddress: null };
+
+  it('PATCH /campaigns/:id -> service.update พร้อม actor จาก JWT', async () => {
+    service.update.mockResolvedValue(sampleCampaign);
+
+    const result = await controller.update(
+      sampleCampaign.id,
+      { name: 'ชื่อใหม่' },
+      opReq,
+    );
+
+    expect(result).toEqual(sampleCampaign);
+    expect(service.update).toHaveBeenCalledWith(
+      sampleCampaign.id,
+      { name: 'ชื่อใหม่' },
+      actor,
+    );
+  });
+
+  it('DELETE /campaigns/:id -> service.remove', async () => {
+    service.remove.mockResolvedValue(undefined);
+
+    await controller.remove(sampleCampaign.id, opReq);
+
+    expect(service.remove).toHaveBeenCalledWith(sampleCampaign.id, actor);
+  });
+
+  it('POST /campaigns/:id/targets -> service.addTargets', async () => {
+    service.addTargets.mockResolvedValue([sampleTarget]);
+    const dto = { targets: [{ deviceId: 'DEV-0001' }] };
+
+    const result = await controller.addTargets(sampleCampaign.id, dto, opReq);
+
+    expect(result).toEqual([sampleTarget]);
+    expect(service.addTargets).toHaveBeenCalledWith(
+      sampleCampaign.id,
+      dto,
+      actor,
+    );
+  });
+
+  it('DELETE /campaigns/:id/targets/:deviceId -> service.removeTarget', async () => {
+    service.removeTarget.mockResolvedValue(undefined);
+
+    await controller.removeTarget(sampleCampaign.id, 'DEV-0001', opReq);
+
+    expect(service.removeTarget).toHaveBeenCalledWith(
+      sampleCampaign.id,
+      'DEV-0001',
+      actor,
     );
   });
 });

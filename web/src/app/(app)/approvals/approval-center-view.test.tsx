@@ -40,13 +40,57 @@ vi.mock("@/hooks/use-pending-device-firmware-overrides", () => ({
     usePendingDeviceFirmwareOverrides(enabled),
 }));
 
+const usePendingFieldApplyRequests = vi.fn();
+vi.mock("@/hooks/use-pending-field-apply-requests", () => ({
+  usePendingFieldApplyRequests: () => usePendingFieldApplyRequests(),
+}));
+
 // แท็บเก็บอยู่ใน URL (?tab=) และ jsdom ใช้ URL ร่วมกันทั้งไฟล์ ต้องรีเซ็ตทุกเทส
 beforeEach(() => {
   window.history.replaceState(null, "", "/approvals");
+  usePendingFieldApplyRequests.mockReturnValue(emptyQueryState());
 });
 
 function emptyQueryState() {
   return { data: [], isLoading: false, error: null, refetch: vi.fn() };
+}
+
+function fieldApplyRequest(
+  override: { id: string; reason: string; fieldNames: string[] } | null,
+) {
+  return {
+    id: "req-1",
+    taskId: "task-1",
+    deviceId: "DTC-0001",
+    kind: "config" as const,
+    configId: "cfg-1",
+    firmwareId: null,
+    overrideId: override?.id ?? null,
+    fromFirmwareVersion: null,
+    isDowngrade: false,
+    configAssignedBy: null,
+    requestedBy: "user-1",
+    requestedAt: "2026-01-01T00:00:00Z",
+    expiresAt: "2026-01-01T01:00:00Z",
+    note: null,
+    status: "pending" as const,
+    decidedBy: null,
+    decidedAt: null,
+    rejectReason: null,
+    task: { id: "task-1", title: "ติดตั้งกล่อง" },
+    config: {
+      id: "cfg-1",
+      name: "ชุดตั้งค่า",
+      deviceModel: "ESP32",
+      protocol: "HTTP",
+    },
+    firmware: null,
+    requester: { id: "user-1", fullName: "ช่างหนึ่ง" },
+    configAssigner: null,
+    decider: null,
+    fieldNames: ["gps.interval"],
+    override,
+  };
 }
 
 /**
@@ -74,7 +118,9 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
     expect(usePendingDeviceFirmwareOverrides).toHaveBeenCalledWith(false);
 
     // หมวดที่ role ใดก็อ่านได้อยู่แล้ว (Config/Campaign Rollout) ยังต้องเห็นเป็นแท็บ
-    expect(screen.getByRole("tab", { name: /^Config\s*\d*$/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /^Config\s*\d*$/ }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("tab", { name: /^Campaign Rollout/ }),
     ).toBeInTheDocument();
@@ -101,6 +147,84 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
 
 /** รายการแก้ UI เว็บตามรีวิวพี่เลี้ยง: แยกหมวดเป็นแท็บ แสดงทีละหมวด */
 describe("ApprovalCenterView — แท็บแยกหมวดคำขอ", () => {
+  it("เปิดแท็บแรกที่มีรายการเมื่อไม่มี tab ใน URL", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    usePendingFieldApplyRequests.mockReturnValue({
+      ...emptyQueryState(),
+      data: [fieldApplyRequest(null)],
+    });
+
+    render(<ApprovalCenterView />);
+
+    expect(
+      screen.getByRole("tab", { name: /^ส่งเข้ากล่องจากหน้างาน/ }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("tab=config ใน URL ยังคงเลือก Config แม้แท็บอื่นมีรายการ", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    usePendingFieldApplyRequests.mockReturnValue({
+      ...emptyQueryState(),
+      data: [fieldApplyRequest(null)],
+    });
+    window.history.replaceState(null, "", "/approvals?tab=config");
+
+    render(<ApprovalCenterView />);
+
+    expect(screen.getByRole("tab", { name: /^Config\s*0$/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("แจ้งจำนวนคำขอที่มี override และปุ่มพาไปแท็บหน้างานได้", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    usePendingFieldApplyRequests.mockReturnValue({
+      ...emptyQueryState(),
+      data: [
+        fieldApplyRequest({
+          id: "ov-1",
+          reason: "ปรับค่า",
+          fieldNames: ["gps.interval"],
+        }),
+      ],
+    });
+
+    render(<ApprovalCenterView />);
+    fireEvent.click(screen.getByRole("tab", { name: /^Config Override/ }));
+
+    expect(
+      screen.getByText(/มีคำขอแก้ค่าจากหน้างาน 1 รายการ/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ไปที่คำขอ" }));
+    expect(
+      screen.getByRole("tab", { name: /^ส่งเข้ากล่องจากหน้างาน/ }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("ไม่แสดง notice เมื่อไม่มีคำขอที่มี override", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    usePendingFieldApplyRequests.mockReturnValue({
+      ...emptyQueryState(),
+      data: [fieldApplyRequest(null)],
+    });
+
+    render(<ApprovalCenterView />);
+    fireEvent.click(screen.getByRole("tab", { name: /^Config Override/ }));
+
+    expect(
+      screen.queryByText(/มีคำขอแก้ค่าจากหน้างาน/),
+    ).not.toBeInTheDocument();
+  });
+
   it("เปิดมาที่หมวด Config และกดสลับไปหมวดอื่นได้ โดยแต่ละครั้งเห็นแค่หมวดเดียว", () => {
     authState.role = "Operation";
     usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
@@ -150,6 +274,7 @@ describe("ApprovalCenterView — แท็บแยกหมวดคำขอ",
       data: [{ id: "o1" }, { id: "o2" }, { id: "o3" }],
     });
     usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+    window.history.replaceState(null, "", "/approvals?tab=config");
 
     render(<ApprovalCenterView />);
 
@@ -217,7 +342,8 @@ describe("ApprovalCenterView: มุมมองย่อยอยู่ใน U
     window.history.replaceState(null, "", "/approvals?view=mine");
 
     render(<ApprovalCenterView />);
-    expect(screen.getByText("ไม่มี Config ที่เจาะจงถึงคุณ")).toBeInTheDocument();
-
+    expect(
+      screen.getByText("ไม่มี Config ที่เจาะจงถึงคุณ"),
+    ).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { motion } from "motion/react";
 
 import { spring } from "@/lib/motion";
@@ -29,33 +29,72 @@ export function UrlTabs({
   tabs,
   param = "tab",
   className,
+  preferredTab,
+  tabRequest,
 }: {
   tabs: UrlTab[];
   param?: string;
   className?: string;
+  /** Selects once after async counts are ready, unless the URL or user chose a tab. */
+  preferredTab?: string;
+  /** Explicit same-page tab change requested by an external control. */
+  tabRequest?: { id: string; nonce: number };
 }) {
   const ids = tabs.map((t) => t.id);
+  const idsKey = ids.join("|");
+  const firstId = ids[0];
   const [active, setActive] = useState(() => readTab(param, ids, ids[0]));
   const uid = useId();
   const listRef = useRef<HTMLDivElement>(null);
+  const userSelected = useRef(false);
+  const preferenceApplied = useRef(false);
 
-  function select(id: string, focus = false) {
-    setActive(id);
-    const params = new URLSearchParams(window.location.search);
-    if (id === ids[0]) params.delete(param);
-    else params.set(param, id);
-    const qs = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`,
-    );
-    if (focus) {
-      listRef.current
-        ?.querySelector<HTMLElement>(`[data-tab-id="${id}"]`)
-        ?.focus();
+  const select = useCallback(
+    (id: string, focus = false, fromUser = false) => {
+      if (fromUser) userSelected.current = true;
+      setActive(id);
+      const params = new URLSearchParams(window.location.search);
+      if (id === firstId) params.delete(param);
+      else params.set(param, id);
+      const qs = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`,
+      );
+      if (focus) {
+        listRef.current
+          ?.querySelector<HTMLElement>(`[data-tab-id="${id}"]`)
+          ?.focus();
+      }
+    },
+    [firstId, param],
+  );
+
+  useEffect(() => {
+    if (!preferredTab || preferenceApplied.current || userSelected.current)
+      return;
+    const urlTab = new URLSearchParams(window.location.search).get(param);
+    if (urlTab && idsKey.split("|").includes(urlTab)) {
+      preferenceApplied.current = true;
+      return;
     }
-  }
+    if (!idsKey.split("|").includes(preferredTab)) return;
+    preferenceApplied.current = true;
+    // Sync the asynchronously loaded default into the selected tab and URL.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    select(preferredTab);
+  }, [preferredTab, param, idsKey, select]);
+
+  const requestedId = tabRequest?.id;
+  const requestedNonce = tabRequest?.nonce;
+  useEffect(() => {
+    if (requestedId && idsKey.split("|").includes(requestedId)) {
+      // External controls request a real tab selection, including URL state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      select(requestedId);
+    }
+  }, [requestedId, requestedNonce, idsKey, select]);
 
   function onKeyDown(e: React.KeyboardEvent) {
     const i = ids.indexOf(active);
@@ -66,7 +105,7 @@ export function UrlTabs({
     else if (e.key === "End") next = ids.length - 1;
     if (next < 0) return;
     e.preventDefault();
-    select(ids[next], true);
+    select(ids[next], true, true);
   }
 
   const current = tabs.find((t) => t.id === active) ?? tabs[0];
@@ -92,7 +131,7 @@ export function UrlTabs({
               aria-selected={selected}
               aria-controls={`${uid}-panel-${t.id}`}
               tabIndex={selected ? 0 : -1}
-              onClick={() => select(t.id)}
+              onClick={() => select(t.id, false, true)}
               className={cn(
                 "relative inline-flex shrink-0 items-center gap-1.5 rounded-t-md px-3 py-2 text-sm font-medium outline-none transition-colors duration-(--duration-fast) ease-(--ease-standard)",
                 "focus-visible:ring-2 focus-visible:ring-ring/50",
