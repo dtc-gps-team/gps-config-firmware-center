@@ -32,6 +32,7 @@ import {
   type ReportedBoxFields,
   type CheckConfigOutcome,
 } from '../central-device/central-device.service';
+import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
@@ -1318,12 +1319,19 @@ export class DeviceService {
         )
       : null;
 
+    // คำตอบนี้ถึงมือช่าง ตัดค่าที่ห้ามเปิดเผยตรงนี้ · ตอนส่งเข้ากล่องไม่ได้ใช้ฟังก์ชันนี้
+    const visibleDelivery = delivery && {
+      ...delivery,
+      fields: omitHiddenConfigFields(delivery.fields),
+    };
+
     if (!approvedOverride) {
       return {
         ...baseConfig,
+        fields: omitHiddenConfigFields(baseConfig.fields),
         hasDeviceOverride: false,
         pendingOverride,
-        delivery,
+        delivery: visibleDelivery,
         boxFields,
         boxSchema,
       };
@@ -1331,10 +1339,10 @@ export class DeviceService {
 
     return {
       ...baseConfig,
-      fields: fields as Prisma.JsonValue,
+      fields: omitHiddenConfigFields(fields) as Prisma.JsonValue,
       hasDeviceOverride: true,
       pendingOverride,
-      delivery,
+      delivery: visibleDelivery,
       boxFields,
       boxSchema,
     };
