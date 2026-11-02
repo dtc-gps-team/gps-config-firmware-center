@@ -278,6 +278,8 @@ async function main() {
     // ไม่ต้องผ่านอนุมัติ — ดูเหตุผลเต็มใน config-definition.service.ts และ
     // RBAC_Matrix.md changelog
     grant('ConfigEngineer', 'config-definition', 'Create'),
+    // แก้/ลบพารามิเตอร์ (PATCH/DELETE /config-definitions/{id})
+    grant('ConfigEngineer', 'config-definition', 'Update'),
 
     // ---- device-connection-test (POST /devices/{deviceId}/test-connection) ----
     // ทดสอบสัญญาณอุปกรณ์ที่ติดตั้งจริง — grant ให้ ST/OT เท่านั้น (คนหน้างานที่
