@@ -2092,6 +2092,7 @@ describe('ConfigApplyRequestService', () => {
 
         expect(firmwareMock().findMany).toHaveBeenCalledWith({
           where: {
+            deletedAt: null,
             uploadStatus: 'stored',
             approvalStatus: 'approved',
             deviceModelCompatibility: { has: 'GT06N' },

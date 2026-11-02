@@ -1138,6 +1138,7 @@ export class CampaignRolloutService {
         if (previousVersion) {
           const matchedFirmware = await this.prisma.firmware.findFirst({
             where: {
+              deletedAt: null,
               version: previousVersion,
               deviceModelCompatibility: {
                 has: representativeDevice.deviceModel,
@@ -2753,7 +2754,7 @@ export class CampaignRolloutService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     if (firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS) {

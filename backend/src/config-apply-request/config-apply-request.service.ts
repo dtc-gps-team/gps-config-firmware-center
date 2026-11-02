@@ -600,6 +600,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     // เวอร์ชันปัจจุบันของกล่องเป็นข้อมูลเสริม อ่านไม่ได้ก็ยังตอบรายการได้
     const firmwares = await this.prisma.firmware.findMany({
       where: {
+        deletedAt: null,
         uploadStatus: SIMULATABLE_FIRMWARE_STATUS,
         approvalStatus: CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
         deviceModelCompatibility: { has: device.deviceModel },
@@ -1123,6 +1124,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     });
     if (
       !firmware ||
+      firmware.deletedAt ||
       firmware.uploadStatus !== SIMULATABLE_FIRMWARE_STATUS ||
       firmware.approvalStatus !== CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS
     ) {
@@ -1419,7 +1421,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     const firmware = await db.firmware.findUnique({
       where: { id: firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       if (phase === 'approve') {
         throw new ConflictException('Firmware ของคำขอนี้ไม่มีในระบบแล้ว');
       }

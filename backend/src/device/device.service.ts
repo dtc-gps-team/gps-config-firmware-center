@@ -463,9 +463,9 @@ export class DeviceService {
     if (dto.initialFirmwareId) {
       const firmware = await this.prisma.firmware.findUnique({
         where: { id: dto.initialFirmwareId },
-        select: { id: true, deviceModelCompatibility: true },
+        select: { id: true, deviceModelCompatibility: true, deletedAt: true },
       });
-      if (!firmware) {
+      if (!firmware || firmware.deletedAt) {
         throw new NotFoundException(
           `ไม่พบ Firmware id ${dto.initialFirmwareId}`,
         );
@@ -495,6 +495,7 @@ export class DeviceService {
           if (centralDevice?.reportedFirmwareVersion) {
             initialFirmware = await this.prisma.firmware.findFirst({
               where: {
+                deletedAt: null,
                 version: centralDevice.reportedFirmwareVersion,
                 deviceModelCompatibility: { has: model.name },
               },
@@ -935,7 +936,7 @@ export class DeviceService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     this.assertFirmwareInstallable(firmware, device);
@@ -1892,7 +1893,7 @@ export class DeviceService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     this.assertFirmwareInstallable(firmware, device);

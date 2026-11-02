@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -87,6 +88,13 @@ export class FirmwareStorageService implements OnModuleInit {
         Body: input.body,
         ContentType: input.contentType,
       }),
+    );
+  }
+
+  /** ลบไฟล์ออกจาก bucket (S3 ตอบสำเร็จแม้ไม่มี key นี้อยู่ เรียกซ้ำได้ปลอดภัย) */
+  async deleteObject(key: string): Promise<void> {
+    await this.client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     );
   }
 

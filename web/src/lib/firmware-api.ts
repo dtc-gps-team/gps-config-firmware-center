@@ -51,6 +51,8 @@ export type Firmware = {
   uploadedAt: string;
   approvalStatus: FirmwareApprovalStatus;
   approvedBy: string | null;
+  /** v3.81 - null เสมอใน response ปกติ (ตัวที่ลบแล้วไม่ถูกคืน) */
+  deletedAt: string | null;
 };
 
 /** ผลทดสอบจาก Device Simulator — schema `SimulationResult` ใน openapi.yaml
@@ -113,6 +115,15 @@ export function updateFirmwareCompatibility(
     token,
     body: JSON.stringify({ deviceModelCompatibility }),
   });
+}
+
+/**
+ * `DELETE /firmware/{firmwareId}` - FirmwareEngineer (และ SuperAdmin) · ลบไฟล์ใน
+ * Object Storage จริง เก็บแถวเล็กๆ ไว้ให้ประวัติ · 409 ถ้ามีกล่องกำลังรัน Firmware
+ * นี้อยู่ หรือยังมี Rollout/คำขอที่ใช้อยู่ (ข้อความบอกว่าติดอะไร) · 502 ถ้า storage ล้ม
+ */
+export function deleteFirmware(token: string, id: string): Promise<void> {
+  return apiJson<void>(`/firmware/${id}`, { method: "DELETE", token });
 }
 
 /**

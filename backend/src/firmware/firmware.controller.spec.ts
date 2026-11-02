@@ -32,6 +32,7 @@ const sampleFirmware: Firmware = {
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'pending_review',
   approvedBy: null,
+  deletedAt: null,
 };
 
 describe('FirmwareController', () => {
@@ -44,6 +45,7 @@ describe('FirmwareController', () => {
     simulate: jest.Mock;
     approve: jest.Mock;
     reject: jest.Mock;
+    remove: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -55,6 +57,7 @@ describe('FirmwareController', () => {
       simulate: jest.fn(),
       approve: jest.fn(),
       reject: jest.fn(),
+      remove: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -160,6 +163,18 @@ describe('FirmwareController', () => {
 
     expect(result).toEqual(rejected);
     expect(service.reject).toHaveBeenCalledWith(sampleFirmware.id, {
+      id: 'qa-1',
+      role: 'QAEngineer',
+      ipAddress: null,
+    });
+  });
+
+  it('DELETE /firmware/:id -> service.remove พร้อม actor จาก JWT', async () => {
+    service.remove.mockResolvedValue(undefined);
+
+    await controller.remove(sampleFirmware.id, qaEngineerReq);
+
+    expect(service.remove).toHaveBeenCalledWith(sampleFirmware.id, {
       id: 'qa-1',
       role: 'QAEngineer',
       ipAddress: null,

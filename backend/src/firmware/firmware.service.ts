@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Inject,
@@ -6,8 +7,10 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Firmware, FirmwareUploadStatus } from '@prisma/client';
+import { Firmware, FirmwareUploadStatus, Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
+import type { AuditLogMetadata } from '../audit/audit-log-metadata';
+import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from '../campaign/campaign-rollout-status';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFirmwareCompatibilityDto } from './dto/update-firmware-compatibility.dto';
 import { FirmwareStorageService } from './firmware-storage.service';
@@ -47,16 +50,119 @@ export class FirmwareService {
 
   findAll(): Promise<Firmware[]> {
     return this.prisma.firmware.findMany({
+      where: { deletedAt: null },
       orderBy: { uploadedAt: 'desc' },
     });
   }
 
   async findOne(id: string): Promise<Firmware> {
     const firmware = await this.prisma.firmware.findUnique({ where: { id } });
-    if (!firmware) {
+    // ตัวที่ลบแล้ว (soft delete) ถือว่าไม่มี แถวยังอยู่ให้ประวัติ/partition อ้างถึง
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${id}`);
     }
     return firmware;
+  }
+
+  /**
+   * `DELETE /firmware/{id}` ลบ Firmware ได้**ทุกสถานะ** ยกเว้นที่ระบบยังต้องใช้อยู่
+   * ตอนนี้ (409, ดู `assertNotInUse`) ลบไฟล์ใน Object Storage จริง (ตัวที่กินพื้นที่
+   * สะสม) แล้ว soft delete แถว (`deletedAt`) เก็บ version/checksum ไว้ให้ประวัติและ
+   * partition ของกล่องอ้างถึงได้ ลบแล้วกู้ไม่ได้ ต้องอัปโหลดใหม่ Firmware Rollback
+   * ไปหาตัวที่ลบแล้วจะล้มพร้อมข้อความ (ไม่มีไฟล์ให้ส่ง)
+   *
+   * ลบไฟล์ก่อนแล้วค่อย mark ในฐานข้อมูล: ถ้า storage ล้ม (502) แถวยังใช้งานได้
+   * เหมือนเดิม ลองใหม่ได้ ไม่เหลือสถานะ "ลบแล้วแต่ไฟล์ค้าง" ที่ตามเก็บยาก
+   */
+  async remove(id: string, actor: ActingUser): Promise<void> {
+    const firmware = await this.findOne(id);
+    await this.assertNotInUse(firmware);
+
+    try {
+      await this.storage.deleteObject(firmware.objectKey);
+    } catch (err) {
+      this.logger.warn(
+        `ลบไฟล์ Firmware ${id} ออกจาก Object Storage ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+      throw new BadGatewayException(
+        'ลบไฟล์ Firmware ออกจาก Object Storage ไม่สำเร็จ ลองใหม่อีกครั้ง',
+      );
+    }
+
+    await this.prisma.firmware.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    await this.logAudit('delete', actor, {
+      firmwareId: id,
+      firmwareVersion: firmware.version,
+    });
+  }
+
+  /**
+   * ลบไม่ได้ถ้า (409 บอกว่าติดอะไร): มีกล่องที่กำลังรัน Firmware นี้อยู่ (พาร์ทิชันที่
+   * active ชี้มาที่ตัวนี้ หรือกล่องรายงานเวอร์ชันนี้ของรุ่นที่ตรงกัน มติ 2026-11
+   * บล็อกเพื่อความปลอดภัย) · Rollout ชนิด Firmware ที่ยังไม่จบ · คำขอส่งเข้ากล่อง
+   * ชนิด Firmware ที่ยังไม่จบ · คำขอ Override Firmware ที่ยังรออนุมัติหรืออนุมัติแล้ว
+   * แต่ยังไม่ถูกใช้ · พาร์ทิชันที่**ไม่ active** (ตัวย้อนกลับ) ไม่บล็อก
+   */
+  private async assertNotInUse(firmware: Firmware): Promise<void> {
+    const [running, rollouts, applyRequests, overrides] = await Promise.all([
+      this.prisma.device.findMany({
+        where: {
+          OR: [
+            { activePartition: 'A', partitionAFirmwareId: firmware.id },
+            { activePartition: 'B', partitionBFirmwareId: firmware.id },
+            {
+              reportedFirmwareVersion: firmware.version,
+              deviceModel: { in: firmware.deviceModelCompatibility },
+            },
+          ],
+        },
+        select: { deviceId: true },
+        take: 6,
+      }),
+      this.prisma.campaignRollout.count({
+        where: {
+          firmwareId: firmware.id,
+          status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
+        },
+      }),
+      this.prisma.configApplyRequest.count({
+        where: {
+          firmwareId: firmware.id,
+          status: { in: ['pending', 'approved', 'sending'] },
+        },
+      }),
+      this.prisma.deviceFirmwareOverride.count({
+        where: {
+          firmwareId: firmware.id,
+          OR: [{ status: 'pending' }, { status: 'approved', consumedAt: null }],
+        },
+      }),
+    ]);
+
+    const reasons: string[] = [];
+    if (running.length > 0) {
+      const ids = running.slice(0, 5).map((d) => d.deviceId);
+      const more = running.length > 5 ? ' และอื่นๆ' : '';
+      reasons.push(
+        `มีกล่องกำลังรัน Firmware นี้อยู่ (${ids.join(', ')}${more})`,
+      );
+    }
+    if (rollouts > 0) reasons.push(`Rollout ที่ยังไม่จบ ${rollouts} รอบ`);
+    if (applyRequests > 0) {
+      reasons.push(`คำขอส่งเข้ากล่องที่ยังไม่จบ ${applyRequests} รายการ`);
+    }
+    if (overrides > 0) {
+      reasons.push(`คำขอ Override Firmware ที่ยังไม่เสร็จ ${overrides} รายการ`);
+    }
+    if (reasons.length > 0) {
+      throw new ConflictException(
+        `ลบ Firmware นี้ไม่ได้ เพราะยังถูกใช้งานอยู่: ${reasons.join(', ')}`,
+      );
+    }
   }
 
   /**
@@ -220,7 +326,11 @@ export class FirmwareService {
     return updated;
   }
 
-  private async logAudit(action: string, actor: ActingUser): Promise<void> {
+  private async logAudit(
+    action: string,
+    actor: ActingUser,
+    metadata?: AuditLogMetadata,
+  ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
         data: {
@@ -228,6 +338,7 @@ export class FirmwareService {
           auditModule: AUDIT_MODULE,
           action,
           ipAddress: actor.ipAddress,
+          ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
         },
       });
     } catch (err) {

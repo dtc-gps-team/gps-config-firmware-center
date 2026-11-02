@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { canManageDeviceModels, canReadFirmware, visibleDeviceHistoryTypes } from "./permissions";
+import {
+  canDeleteFirmware,
+  canManageDeviceModels,
+  canReadFirmware,
+  visibleDeviceHistoryTypes,
+} from "./permissions";
 
 /**
  * เทสแรกของ permissions.ts ในโปรเจกต์ (ยังไม่เคยมี unit test ของไฟล์นี้มา
@@ -99,6 +104,16 @@ describe("canReadFirmware", () => {
     expect(canReadFirmware("SW")).toBe(false);
     for (const r of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
       expect(canReadFirmware(r)).toBe(true);
+    }
+  });
+});
+
+describe("canDeleteFirmware", () => {
+  it("FirmwareEngineer และ SuperAdmin ลบ Firmware ได้ role อื่นทำไม่ได้", () => {
+    expect(canDeleteFirmware("FirmwareEngineer")).toBe(true);
+    expect(canDeleteFirmware("SuperAdmin")).toBe(true);
+    for (const r of ["QAEngineer", "Operation", "ST", "Auditor", "Admin", null]) {
+      expect(canDeleteFirmware(r)).toBe(false);
     }
   });
 });
