@@ -81,6 +81,13 @@ describe('ConfigService', () => {
   let configVersion: ConfigVersionDelegateMock;
   let auditLog: { create: jest.Mock };
   let user: { findUnique: jest.Mock };
+  let campaignRollout: { count: jest.Mock };
+  let configApplyRequest: { count: jest.Mock };
+  let deviceConfigOverride: { count: jest.Mock };
+  let task: { count: jest.Mock };
+  let incident: { count: jest.Mock };
+  let queryRaw: jest.Mock;
+  let configDeletionRequest: { updateMany: jest.Mock };
   let deviceSimulator: jest.Mocked<DeviceSimulator>;
   let configDefinitionService: { validateFields: jest.Mock };
   let configSyncQueue: { enqueueConfigSync: jest.Mock };
@@ -102,6 +109,25 @@ describe('ConfigService', () => {
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     user = { findUnique: jest.fn() };
+    // ตัวนับ "ยังถูกใช้งานอยู่ไหม" ของ remove() — default 0 = ไม่ติดอะไร
+    campaignRollout = { count: jest.fn().mockResolvedValue(0) };
+    configApplyRequest = { count: jest.fn().mockResolvedValue(0) };
+    deviceConfigOverride = { count: jest.fn().mockResolvedValue(0) };
+    task = { count: jest.fn().mockResolvedValue(0) };
+    incident = { count: jest.fn().mockResolvedValue(0) };
+    // ล็อกแถว Config (FOR UPDATE) ของ remove() - default เจอแถว
+    // $queryRaw ใช้ 2 งาน: ล็อกแถว Config ตอนลบ (FOR UPDATE) -> [{ id }] · ล็อกนิยาม field ที่ Config ใช้
+    // ตอนสร้าง/แก้ (FOR SHARE, ส่งรายชื่อ field มาเป็น argument) -> คืนแถวครบทุกชื่อ (ไม่มี field ถูกลบ)
+    queryRaw = jest.fn((_strings: TemplateStringsArray, names?: string[]) =>
+      Promise.resolve(
+        Array.isArray(names)
+          ? names.map((fieldName) => ({ fieldName }))
+          : [{ id: 'cfg-1' }],
+      ),
+    );
+    configDeletionRequest = {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    };
     deviceSimulator = { simulateConfig: jest.fn() };
     // default: ผ่าน validate เสมอ (test เดิมทั้งหมดไม่เกี่ยวกับ Semantic
     // Validation) — describe('create'/'update') ด้านล่างจะ override เฉพาะ
@@ -129,16 +155,23 @@ describe('ConfigService', () => {
       configVersion,
       auditLog,
       user,
+      campaignRollout,
+      configApplyRequest,
+      deviceConfigOverride,
+      task,
+      configDeletionRequest,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
         cb({
           config,
           configVersion,
           auditLog,
-          // ล็อกนิยาม field ที่ Config ใช้ (FOR SHARE) - คืนแถวครบทุกชื่อที่ถามมา (ไม่มี field ถูกลบ)
-          $queryRaw: jest.fn(
-            (_strings: TemplateStringsArray, names: string[]) =>
-              Promise.resolve(names.map((fieldName) => ({ fieldName }))),
-          ),
+          configDeletionRequest,
+          campaignRollout,
+          configApplyRequest,
+          deviceConfigOverride,
+          task,
+          incident,
+          $queryRaw: queryRaw,
         }),
       ),
     };
@@ -1460,15 +1493,7 @@ describe('ConfigService', () => {
   });
 
   describe('remove', () => {
-    it('config status ไม่ใช่ draft -> ConflictException', async () => {
-      config.findUnique.mockResolvedValue(testingConfig);
-      await expect(
-        service.remove(testingConfig.id, configEngineer),
-      ).rejects.toThrow(ConflictException);
-      expect(config.delete).not.toHaveBeenCalled();
-    });
-
-    it('config status เป็น draft -> delete ผ่าน', async () => {
+    it('draft ที่ไม่มีอะไรอ้างถึงเลย -> ลบจริง (hard delete)', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockResolvedValue(draftConfig);
 
@@ -1477,16 +1502,147 @@ describe('ConfigService', () => {
       expect(config.delete).toHaveBeenCalledWith({
         where: { id: draftConfig.id },
       });
+      expect(config.update).not.toHaveBeenCalled();
     });
 
-    it('AuditLog (#27) -> เขียน action delete หลัง config.delete สำเร็จ', async () => {
+    it('draft ที่มีแถวอ้างถึงอยู่ (เช่น ConfigVersion/ประวัติ) -> soft delete แทนลบจริง', async () => {
+      config.findUnique.mockResolvedValue(draftConfig);
+      config.update.mockResolvedValue(draftConfig);
+      configVersion.count.mockResolvedValue(1);
+
+      await service.remove(draftConfig.id, configEngineer);
+
+      expect(config.delete).not.toHaveBeenCalled();
+      expect(config.update).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['testing', testingConfig],
+      ['approved', approvedConfig],
+      ['synced', syncedConfig],
+    ])(
+      'config status %s -> soft delete (deletedAt + เปลี่ยนชื่อปล่อยชื่อเดิม) และยกเลิกคำขอลบอัตโนมัติที่ค้าง',
+      async (_label, existing) => {
+        config.findUnique.mockResolvedValue(existing);
+        config.update.mockResolvedValue(existing);
+
+        await service.remove(existing.id, configEngineer);
+
+        expect(config.delete).not.toHaveBeenCalled();
+        expect(config.update).toHaveBeenCalledWith({
+          where: { id: existing.id },
+          data: {
+            deletedAt: expect.any(Date) as Date,
+            name: `${existing.name} [ลบแล้ว ${existing.id.slice(0, 8)}]`,
+          },
+        });
+        expect(configDeletionRequest.updateMany).toHaveBeenCalledWith({
+          where: { configId: existing.id, status: 'pending' },
+          data: { status: 'cancelled' },
+        });
+      },
+    );
+
+    it('Config ที่ถูกลบไปแล้ว -> NotFoundException', async () => {
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        deletedAt: new Date(),
+      });
+
+      await expect(
+        service.remove(approvedConfig.id, configEngineer),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it.each([
+      ['Rollout ที่ยังไม่จบ', () => campaignRollout.count],
+      ['คำขอส่งเข้ากล่องที่ยังไม่จบ', () => configApplyRequest.count],
+      ['คำขอ Override ที่รออนุมัติ', () => deviceConfigOverride.count],
+      ['งานของช่างที่ยังเปิดอยู่', () => task.count],
+    ])('ยังมี %s -> ConflictException ไม่ลบ', async (label, counter) => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      counter().mockResolvedValue(1);
+
+      await expect(
+        service.remove(approvedConfig.id, configEngineer),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.remove(approvedConfig.id, configEngineer),
+      ).rejects.toThrow(label);
+      expect(config.delete).not.toHaveBeenCalled();
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('ตรวจ Rollout ค้างด้วยสถานะ pending_approval/approved/active/paused เท่านั้น', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      config.update.mockResolvedValue(approvedConfig);
+
+      await service.remove(approvedConfig.id, configEngineer);
+
+      expect(campaignRollout.count).toHaveBeenCalledWith({
+        where: {
+          configId: approvedConfig.id,
+          status: { in: ['pending_approval', 'approved', 'active', 'paused'] },
+        },
+      });
+    });
+
+    it('ล็อกแถว Config (FOR UPDATE) ก่อน แล้วตรวจ "ยังถูกใช้งานอยู่" ซ้ำหลังได้ล็อก แล้วค่อยลบ (กัน TOCTOU - review B บน #425)', async () => {
+      const order: string[] = [];
+      queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        order.push(`lock:${strings.join('?').includes('FOR UPDATE')}`);
+        return Promise.resolve([{ id: approvedConfig.id }]);
+      });
+      campaignRollout.count.mockImplementation(() => {
+        order.push('check-in-use');
+        return Promise.resolve(0);
+      });
+      config.update.mockImplementation(() => {
+        order.push('soft-delete');
+        return Promise.resolve(approvedConfig);
+      });
+      config.findUnique.mockResolvedValue(approvedConfig);
+
+      await service.remove(approvedConfig.id, configEngineer);
+
+      expect(order).toEqual(['lock:true', 'check-in-use', 'soft-delete']);
+    });
+
+    it('แถวหายไประหว่างรอล็อก (ถูกลบพร้อมกัน) -> NotFoundException ไม่ลบซ้ำ', async () => {
+      config.findUnique.mockResolvedValue(approvedConfig);
+      queryRaw.mockResolvedValue([]);
+
+      await expect(
+        service.remove(approvedConfig.id, configEngineer),
+      ).rejects.toThrow(NotFoundException);
+      expect(config.update).not.toHaveBeenCalled();
+      expect(config.delete).not.toHaveBeenCalled();
+    });
+
+    it('ถูกลบโดยอีกคำขอระหว่างรอล็อก (อ่านซ้ำหลังล็อกเจอ deletedAt) -> NotFoundException', async () => {
+      config.findUnique
+        .mockResolvedValueOnce(approvedConfig)
+        .mockResolvedValueOnce({ ...approvedConfig, deletedAt: new Date() });
+
+      await expect(
+        service.remove(approvedConfig.id, configEngineer),
+      ).rejects.toThrow(NotFoundException);
+      expect(config.update).not.toHaveBeenCalled();
+    });
+
+    it('AuditLog (#27) -> เขียน action delete พร้อม configId หลังลบสำเร็จ', async () => {
       config.findUnique.mockResolvedValue(draftConfig);
       config.delete.mockResolvedValue(draftConfig);
 
       await service.remove(draftConfig.id, configEngineer);
 
       expect(auditLog.create).toHaveBeenCalledWith({
-        data: { userId: 'ce-1', auditModule: 'config', action: 'delete' },
+        data: {
+          userId: 'ce-1',
+          auditModule: 'config',
+          action: 'delete',
+          metadata: { configId: draftConfig.id },
+        },
       });
     });
 
@@ -1498,15 +1654,6 @@ describe('ConfigService', () => {
       await expect(
         service.remove(draftConfig.id, configEngineer),
       ).resolves.toBeUndefined();
-    });
-
-    it('race condition: row ถูกลบไปพอดีระหว่าง findOne กับ delete (P2025) -> NotFoundException ไม่ใช่ 500', async () => {
-      config.findUnique.mockResolvedValue(draftConfig);
-      config.delete.mockRejectedValue(makeP2025());
-
-      await expect(
-        service.remove(draftConfig.id, configEngineer),
-      ).rejects.toThrow(NotFoundException);
     });
   });
 });

@@ -37,6 +37,7 @@ import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -1517,6 +1518,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Config ฐานที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #425)
+        await lockConfigForReference(tx, baseConfig.id);
         const override = await tx.deviceConfigOverride.create({
           data: {
             deviceId,

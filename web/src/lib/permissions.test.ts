@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canDeleteConfig,
   canManageCampaign,
   canManageDeviceModels,
   canManageParameters,
@@ -119,6 +120,16 @@ describe("canReadFirmware", () => {
     expect(canReadFirmware("SW")).toBe(false);
     for (const r of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
       expect(canReadFirmware(r)).toBe(true);
+    }
+  });
+});
+
+describe("canDeleteConfig", () => {
+  it("ConfigEngineer และ SuperAdmin ลบ Config ได้ role อื่นทำไม่ได้", () => {
+    expect(canDeleteConfig("ConfigEngineer")).toBe(true);
+    expect(canDeleteConfig("SuperAdmin")).toBe(true);
+    for (const r of ["Operation", "ST", "OT", "Auditor", "Admin", null]) {
+      expect(canDeleteConfig(r)).toBe(false);
     }
   });
 });

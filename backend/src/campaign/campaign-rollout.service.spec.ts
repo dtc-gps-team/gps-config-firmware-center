@@ -362,7 +362,9 @@ describe('CampaignRolloutService', () => {
 
       await service.create(campaignId, baseDto(), operation);
 
-      expect(order.slice(0, 2)).toEqual(['lock:true', 'check-open']);
+      // ล็อกกลุ่มต้องมาก่อนตรวจรอบค้าง (มี $queryRaw ตัวอื่นตามมาได้ เช่นล็อก Config)
+      expect(order[0]).toBe('lock:true');
+      expect(order.indexOf('check-open')).toBeGreaterThan(0);
     });
 
     it('อ่านกลุ่มและสมาชิกหลังได้ล็อกเท่านั้น (ไม่ snapshot รายชื่อเครื่องก่อนล็อก - review B บน #424 รอบ 2)', async () => {
