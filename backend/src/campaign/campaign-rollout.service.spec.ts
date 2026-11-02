@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { CampaignPayloadType, CampaignRollout, Prisma } from '@prisma/client';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
@@ -123,6 +124,7 @@ function firmwareDto(): CreateCampaignRolloutDto {
 describe('CampaignRolloutService', () => {
   let service: CampaignRolloutService;
   let transactionMock: jest.Mock;
+  let queryRawMock: jest.Mock;
   let campaign: {
     findUnique: jest.Mock;
     findFirst: jest.Mock;
@@ -281,8 +283,15 @@ describe('CampaignRolloutService', () => {
       }),
     };
 
+    // ล็อกแถวกลุ่ม (FOR SHARE) ที่ create()/rollback() เรียกเป็นคำสั่งแรก - default เจอกลุ่ม
+    queryRawMock = jest.fn().mockResolvedValue([{ id: 'campaign-1' }]);
     transactionMock = jest.fn((cb: (tx: unknown) => unknown) =>
-      cb({ campaignRollout, campaignRolloutTarget, deviceConfigOverride }),
+      cb({
+        campaignRollout,
+        campaignRolloutTarget,
+        deviceConfigOverride,
+        $queryRaw: queryRawMock,
+      }),
     );
     const prismaMock = {
       campaign,
@@ -335,6 +344,44 @@ describe('CampaignRolloutService', () => {
       expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
+    });
+
+    it('ล็อกแถวกลุ่ม (FOR SHARE) เป็นคำสั่งแรกใน transaction ก่อนตรวจรอบค้างและสร้าง (กันถูกลบ/แก้สมาชิกแทรก - review B บน #424)', async () => {
+      const order: string[] = [];
+      queryRawMock.mockImplementation((strings: TemplateStringsArray) => {
+        order.push(`lock:${strings.join('?').includes('FOR SHARE')}`);
+        return Promise.resolve([{ id: campaignId }]);
+      });
+      campaignRollout.findFirst.mockImplementation(() => {
+        order.push('check-open');
+        return Promise.resolve(null);
+      });
+
+      await service.create(campaignId, baseDto(), operation);
+
+      expect(order.slice(0, 2)).toEqual(['lock:true', 'check-open']);
+    });
+
+    it('กลุ่มถูกลบระหว่างรอล็อก -> NotFoundException ไม่สร้าง Rollout', async () => {
+      queryRawMock.mockResolvedValue([]);
+
+      await expect(
+        service.create(campaignId, baseDto(), operation),
+      ).rejects.toThrow(NotFoundException);
+      expect(campaignRollout.create).not.toHaveBeenCalled();
+    });
+
+    it('ธุรกรรมชนกัน (P2034) -> ConflictException ให้ลองใหม่ ไม่ใช่ 500', async () => {
+      transactionMock.mockRejectedValue(
+        new PrismaClientKnownRequestError('write conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.create(campaignId, baseDto(), operation),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('ไม่พบ Campaign -> NotFoundException', async () => {

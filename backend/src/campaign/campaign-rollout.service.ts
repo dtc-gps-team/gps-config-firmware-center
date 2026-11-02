@@ -54,6 +54,7 @@ import {
 } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isSerializationFailure, lockCampaign } from './campaign-lock';
 import { ActingUser } from './campaign.service';
 import {
   CreateCampaignRolloutDto,
@@ -288,75 +289,89 @@ export class CampaignRolloutService {
     // rollout ซ้อนกัน ขัด "กลุ่มหนึ่งรัน rollout ได้ทีละรอบ" — ใช้ Serializable
     // isolation ให้ Postgres detect ความขัดแย้งของ read-then-write นี้เอง (อีก
     // request จะได้ serialization error แทนที่จะเห็นทั้งคู่ผ่าน)
-    const rollout = await this.prisma.$transaction(
-      async (tx) => {
-        const openRollout = await tx.campaignRollout.findFirst({
-          where: {
-            campaignId,
-            status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
-          },
-        });
-        if (openRollout) {
-          throw new ConflictException(
-            `กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว (${openRollout.status}) — ต้องรอให้จบก่อน (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้`,
-          );
-        }
-
-        const createdRollout = await tx.campaignRollout.create({
-          data: {
-            campaignId,
-            payloadType: dto.payloadType,
-            configId,
-            firmwareId,
-            status: 'pending_approval',
-            targetCount: rolloutDeviceIds.length,
-            createdBy: actor.id,
-            // เวลารอของโหมด real (docs/19 §16) ไม่ส่ง = null = ค่าเริ่มต้น
-            pullTimeoutHours: dto.pullTimeoutHours ?? null,
-            applyTimeoutMinutes: dto.applyTimeoutMinutes ?? null,
-            ...(deviceValues.size > 0
-              ? { deviceValuesReason: dto.deviceValuesReason ?? null }
-              : {}),
-          },
-        });
-
-        // ช่างมีคำขอ override ของ (เครื่อง, Config นี้) รออนุมัติอยู่ — ถ้า
-        // Rollout นี้ตั้งค่าเฉพาะเครื่องซ้อนจะชนกฎ "pending ได้ทีละ 1" ตอนปล่อย
-        if (deviceValues.size > 0 && configId) {
-          const pending = await tx.deviceConfigOverride.findMany({
+    const rollout = await this.prisma
+      .$transaction(
+        async (tx) => {
+          // ล็อกกลุ่มแบบ share เป็นคำสั่งแรก - ต้องรอการลบ/แก้สมาชิกกลุ่มที่กำลังทำอยู่ให้จบ
+          // ก่อน และกันการลบ/แก้สมาชิกแทรกระหว่างสร้าง Rollout (review B บน #424)
+          await lockCampaign(tx, campaignId, 'share');
+          const openRollout = await tx.campaignRollout.findFirst({
             where: {
-              configId,
-              status: 'pending',
-              deviceId: { in: [...deviceValues.keys()] },
+              campaignId,
+              status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
             },
-            select: { deviceId: true },
           });
-          if (pending.length > 0) {
+          if (openRollout) {
             throw new ConflictException(
-              `เครื่องต่อไปนี้มีคำขอ override ของช่างรออนุมัติอยู่ ให้ Operation ตัดสินใจก่อนแล้วค่อยตั้งค่าเฉพาะเครื่อง: ${pending
-                .map((p) => p.deviceId)
-                .join(', ')}`,
+              `กลุ่มนี้มี Rollout ที่ยังไม่จบอยู่แล้ว (${openRollout.status}) — ต้องรอให้จบก่อน (completed/rejected/cancelled) ถึงจะเริ่มรอบใหม่ได้`,
             );
           }
-        }
 
-        await tx.campaignRolloutTarget.createMany({
-          data: rolloutDeviceIds.map((deviceId) => {
-            const proposed = deviceValues.get(deviceId);
-            return {
-              rolloutId: createdRollout.id,
-              deviceId,
-              ...(proposed
-                ? { proposedFields: proposed as Prisma.InputJsonValue }
+          const createdRollout = await tx.campaignRollout.create({
+            data: {
+              campaignId,
+              payloadType: dto.payloadType,
+              configId,
+              firmwareId,
+              status: 'pending_approval',
+              targetCount: rolloutDeviceIds.length,
+              createdBy: actor.id,
+              // เวลารอของโหมด real (docs/19 §16) ไม่ส่ง = null = ค่าเริ่มต้น
+              pullTimeoutHours: dto.pullTimeoutHours ?? null,
+              applyTimeoutMinutes: dto.applyTimeoutMinutes ?? null,
+              ...(deviceValues.size > 0
+                ? { deviceValuesReason: dto.deviceValuesReason ?? null }
                 : {}),
-            };
-          }),
-        });
+            },
+          });
 
-        return createdRollout;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+          // ช่างมีคำขอ override ของ (เครื่อง, Config นี้) รออนุมัติอยู่ — ถ้า
+          // Rollout นี้ตั้งค่าเฉพาะเครื่องซ้อนจะชนกฎ "pending ได้ทีละ 1" ตอนปล่อย
+          if (deviceValues.size > 0 && configId) {
+            const pending = await tx.deviceConfigOverride.findMany({
+              where: {
+                configId,
+                status: 'pending',
+                deviceId: { in: [...deviceValues.keys()] },
+              },
+              select: { deviceId: true },
+            });
+            if (pending.length > 0) {
+              throw new ConflictException(
+                `เครื่องต่อไปนี้มีคำขอ override ของช่างรออนุมัติอยู่ ให้ Operation ตัดสินใจก่อนแล้วค่อยตั้งค่าเฉพาะเครื่อง: ${pending
+                  .map((p) => p.deviceId)
+                  .join(', ')}`,
+              );
+            }
+          }
+
+          await tx.campaignRolloutTarget.createMany({
+            data: rolloutDeviceIds.map((deviceId) => {
+              const proposed = deviceValues.get(deviceId);
+              return {
+                rolloutId: createdRollout.id,
+                deviceId,
+                ...(proposed
+                  ? { proposedFields: proposed as Prisma.InputJsonValue }
+                  : {}),
+              };
+            }),
+          });
+
+          return createdRollout;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+      .catch((err: unknown) => {
+        // ชนกับธุรกรรมอื่นในกลุ่มเดียวกัน (สร้างซ้อน/ลบกลุ่ม/แก้สมาชิกพร้อมกัน) -> 409 ให้ลองใหม่
+        // แทน 500 (Postgres ตอบ serialization failure 40001 = Prisma P2034 หรือ P2010 จาก $queryRaw)
+        if (isSerializationFailure(err)) {
+          throw new ConflictException(
+            'กลุ่มนี้กำลังถูกแก้ไขพร้อมกัน (สร้าง Rollout/ลบกลุ่ม/แก้สมาชิก) ลองใหม่อีกครั้ง',
+          );
+        }
+        throw err;
+      });
 
     await this.logAudit(
       'create',
@@ -1158,6 +1173,8 @@ export class CampaignRolloutService {
     }
 
     const rollback = await this.prisma.$transaction(async (tx) => {
+      // ล็อกกลุ่มแบบ share เหมือน create() - กันการลบกลุ่มแทรกระหว่างสร้างรอบ rollback
+      await lockCampaign(tx, campaignId, 'share');
       // ปิดรอบเดิมที่ยังค้าง 'active'/'paused' ก่อนสร้างรอบ rollback ใหม่
       // (#238 review B รอบ 2 ข้อ 2) — เดิมไม่ cancel รอบเก่าเลย ทำให้: การ์ด
       // "Rollout หยุดชั่วคราว (Auto Pause)" ยังนับรอบนี้ต่อ, Campaign Monitor

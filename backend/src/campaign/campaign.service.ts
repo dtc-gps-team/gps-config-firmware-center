@@ -9,6 +9,7 @@ import { Campaign, CampaignTarget, Device, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockCampaign } from './campaign-lock';
 import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from './campaign-rollout-status';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import {
@@ -79,6 +80,7 @@ export class CampaignService {
    * `CampaignRolloutService.create()` แทน)
    */
   async create(dto: CreateCampaignDto, actor: ActingUser): Promise<Campaign> {
+    this.assertNotReservedName(dto.name);
     const deviceIds = dto.targets.map((t) => t.deviceId);
     const duplicateDeviceIds = this.findDuplicates(deviceIds);
     if (duplicateDeviceIds.length > 0) {
@@ -171,6 +173,7 @@ export class CampaignService {
         'ต้องส่ง name หรือ description อย่างน้อย 1 อย่าง',
       );
     }
+    if (dto.name !== undefined) this.assertNotReservedName(dto.name);
     const existing = await this.getManageableOrThrow(id);
 
     const updated = await this.prisma.campaign.update({
@@ -197,23 +200,12 @@ export class CampaignService {
     actor: ActingUser,
   ): Promise<CampaignTarget[]> {
     const campaign = await this.getManageableOrThrow(id);
-    await this.assertNoOpenRollout(id);
 
     const deviceIds = dto.targets.map((t) => t.deviceId);
     const duplicateDeviceIds = this.findDuplicates(deviceIds);
     if (duplicateDeviceIds.length > 0) {
       throw new BadRequestException(
         `มี deviceId ซ้ำกันในรายการเป้าหมาย: ${duplicateDeviceIds.join(', ')}`,
-      );
-    }
-
-    const alreadyMembers = await this.prisma.campaignTarget.findMany({
-      where: { campaignId: id, deviceId: { in: deviceIds } },
-      select: { deviceId: true },
-    });
-    if (alreadyMembers.length > 0) {
-      throw new ConflictException(
-        `เครื่องเหล่านี้อยู่ในกลุ่มแล้ว: ${alreadyMembers.map((m) => m.deviceId).join(', ')}`,
       );
     }
 
@@ -227,8 +219,25 @@ export class CampaignService {
     }
 
     try {
-      await this.prisma.campaignTarget.createMany({
-        data: deviceIds.map((deviceId) => ({ campaignId: id, deviceId })),
+      // ล็อกกลุ่มก่อน แล้วตรวจ Rollout ค้าง/สมาชิกซ้ำ/เขียน ใน transaction เดียว กันการ
+      // สร้าง Rollout (ที่ snapshot รายชื่อเครื่อง) แทรกกลางระหว่างตรวจกับเขียน (review B #424)
+      await this.prisma.$transaction(async (tx) => {
+        await lockCampaign(tx, id, 'update');
+        await this.assertNoOpenRollout(tx, id);
+
+        const alreadyMembers = await tx.campaignTarget.findMany({
+          where: { campaignId: id, deviceId: { in: deviceIds } },
+          select: { deviceId: true },
+        });
+        if (alreadyMembers.length > 0) {
+          throw new ConflictException(
+            `เครื่องเหล่านี้อยู่ในกลุ่มแล้ว: ${alreadyMembers.map((m) => m.deviceId).join(', ')}`,
+          );
+        }
+
+        await tx.campaignTarget.createMany({
+          data: deviceIds.map((deviceId) => ({ campaignId: id, deviceId })),
+        });
       });
     } catch (err) {
       if (
@@ -261,24 +270,28 @@ export class CampaignService {
     actor: ActingUser,
   ): Promise<void> {
     const campaign = await this.getManageableOrThrow(id);
-    await this.assertNoOpenRollout(id);
 
-    const target = await this.prisma.campaignTarget.findUnique({
-      where: { campaignId_deviceId: { campaignId: id, deviceId } },
-    });
-    if (!target) {
-      throw new NotFoundException(`เครื่อง ${deviceId} ไม่ได้อยู่ในกลุ่มนี้`);
-    }
-    const memberCount = await this.prisma.campaignTarget.count({
-      where: { campaignId: id },
-    });
-    if (memberCount <= 1) {
-      throw new ConflictException(
-        'กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง — ถ้าไม่ใช้กลุ่มนี้แล้วให้ลบกลุ่มแทน',
-      );
-    }
+    await this.prisma.$transaction(async (tx) => {
+      await lockCampaign(tx, id, 'update');
+      await this.assertNoOpenRollout(tx, id);
 
-    await this.prisma.campaignTarget.delete({ where: { id: target.id } });
+      const target = await tx.campaignTarget.findUnique({
+        where: { campaignId_deviceId: { campaignId: id, deviceId } },
+      });
+      if (!target) {
+        throw new NotFoundException(`เครื่อง ${deviceId} ไม่ได้อยู่ในกลุ่มนี้`);
+      }
+      const memberCount = await tx.campaignTarget.count({
+        where: { campaignId: id },
+      });
+      if (memberCount <= 1) {
+        throw new ConflictException(
+          'กลุ่มต้องเหลืออย่างน้อย 1 เครื่อง — ถ้าไม่ใช้กลุ่มนี้แล้วให้ลบกลุ่มแทน',
+        );
+      }
+
+      await tx.campaignTarget.delete({ where: { id: target.id } });
+    });
 
     await this.logAudit('remove_target', actor, {
       campaignId: id,
@@ -296,9 +309,15 @@ export class CampaignService {
    */
   async remove(id: string, actor: ActingUser): Promise<void> {
     const campaign = await this.getManageableOrThrow(id);
-    await this.assertNoOpenRollout(id);
 
-    await this.prisma.campaign.delete({ where: { id } });
+    // ล็อกกลุ่ม -> ตรวจ Rollout ค้างซ้ำหลังได้ล็อก -> ลบ ใน transaction เดียว ถ้ามีการ
+    // สร้าง Rollout พร้อมกัน อีกฝั่งจะรอแล้วเห็นผลของอีกฝั่งเสมอ (ไม่ลบ cascade
+    // Rollout ที่เพิ่งเริ่มทิ้ง) · review B บน #424
+    await this.prisma.$transaction(async (tx) => {
+      await lockCampaign(tx, id, 'update');
+      await this.assertNoOpenRollout(tx, id);
+      await tx.campaign.delete({ where: { id } });
+    });
 
     await this.logAudit('delete', actor, {
       campaignId: id,
@@ -316,8 +335,22 @@ export class CampaignService {
     return campaign;
   }
 
-  private async assertNoOpenRollout(campaignId: string): Promise<void> {
-    const open = await this.prisma.campaignRollout.count({
+  /** ชื่อ Campaign ระบบของคำขอหน้างานสงวนไว้ ผู้ใช้ตั้ง/เปลี่ยนชื่อเป็นชื่อนี้ไม่ได้ -
+   * ไม่งั้น `getOrCreateFieldApplySystemCampaign()` อาจหยิบ Campaign ของผู้ใช้ไปเป็น
+   * Campaign ระบบ แล้วกลุ่มนั้นถูกซ่อนและแก้ไม่ได้ (review B บน #424) */
+  private assertNotReservedName(name: string): void {
+    if (name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME) {
+      throw new BadRequestException(
+        'ชื่อนี้สงวนไว้สำหรับ Campaign ระบบ ใช้ตั้งชื่อกลุ่มไม่ได้',
+      );
+    }
+  }
+
+  private async assertNoOpenRollout(
+    db: Pick<Prisma.TransactionClient, 'campaignRollout'>,
+    campaignId: string,
+  ): Promise<void> {
+    const open = await db.campaignRollout.count({
       where: {
         campaignId,
         status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },

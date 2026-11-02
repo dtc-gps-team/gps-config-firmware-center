@@ -133,6 +133,58 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
     return campaign;
   }
 
+  // review B บน #424: ลบกลุ่มกับสร้าง Rollout พร้อมกันห้ามทำให้ Rollout ที่เพิ่งเริ่มถูก
+  // cascade ลบทิ้ง · ยิงจริงผ่าน HTTP + Postgres (ล็อกแถว Campaign)
+  describe('DELETE /campaigns/:id พร้อมกับ POST /campaigns/:id/rollouts (race)', () => {
+    it('ผลลัพธ์ต้องสอดคล้องกันเสมอ: ถ้าสร้าง Rollout สำเร็จ (201) การลบต้อง 409 และกลุ่ม+Rollout ยังอยู่ · ถ้าลบสำเร็จ (204) การสร้างต้องไม่สำเร็จและไม่เหลือ Rollout กำพร้า', async () => {
+      const opUser = await makeUser(prisma, { role: 'Operation' });
+      await grant('Operation', ActionType.Create);
+      await grant('Operation', ActionType.Update);
+      const token = tokenFor(opUser.id, 'Operation');
+      const outcomes = new Set<string>();
+
+      for (let round = 0; round < 8; round++) {
+        const config = await seedApprovedConfig();
+        const device = await seedInstalledDevice();
+        const campaign = await seedGroup(opUser.id, [device.deviceId]);
+
+        const [created, deleted] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/v1/campaigns/${campaign.id}/rollouts`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ payloadType: 'Config', configId: config.id }),
+          request(app.getHttpServer())
+            .delete(`/api/v1/campaigns/${campaign.id}`)
+            .set('Authorization', `Bearer ${token}`),
+        ]);
+
+        const campaignAfter = await prisma.campaign.findUnique({
+          where: { id: campaign.id },
+        });
+        const rolloutsAfter = await prisma.campaignRollout.count({
+          where: { campaignId: campaign.id },
+        });
+
+        if (created.status === 201) {
+          // Rollout สำเร็จ -> ลบต้องถูกปฏิเสธ กลุ่มและ Rollout ยังอยู่ครบ
+          expect(deleted.status).toBe(409);
+          expect(campaignAfter).not.toBeNull();
+          expect(rolloutsAfter).toBe(1);
+          outcomes.add('created-first');
+        } else {
+          // ลบสำเร็จก่อน -> สร้างต้อง 404/409 และไม่มีอะไรเหลือ
+          expect(deleted.status).toBe(204);
+          expect([404, 409]).toContain(created.status);
+          expect(campaignAfter).toBeNull();
+          expect(rolloutsAfter).toBe(0);
+          outcomes.add('deleted-first');
+        }
+      }
+      // ไม่บังคับว่าต้องเจอทั้งสองลำดับ (ขึ้นกับจังหวะ) แต่ต้องมีผลอย่างน้อยหนึ่งแบบ
+      expect(outcomes.size).toBeGreaterThan(0);
+    });
+  });
+
   describe('POST /campaigns/:campaignId/rollouts', () => {
     it('ไม่ส่ง Authorization header -> 401', async () => {
       const opUser = await makeUser(prisma, { role: 'Operation' });

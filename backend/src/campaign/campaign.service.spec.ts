@@ -73,6 +73,7 @@ describe('CampaignService', () => {
     delete: jest.Mock;
   };
   let campaignRollout: { count: jest.Mock };
+  let queryRaw: jest.Mock;
   let device: { findMany: jest.Mock };
   let incident: { findUnique: jest.Mock };
   let auditLog: { create: jest.Mock };
@@ -93,6 +94,8 @@ describe('CampaignService', () => {
       delete: jest.fn().mockResolvedValue(undefined),
     };
     campaignRollout = { count: jest.fn().mockResolvedValue(0) };
+    // ล็อกแถวกลุ่ม (FOR UPDATE) - default เจอกลุ่ม
+    queryRaw = jest.fn().mockResolvedValue([{ id: 'campaign-1' }]);
     device = {
       findMany: jest
         .fn()
@@ -109,7 +112,7 @@ describe('CampaignService', () => {
       incident,
       auditLog,
       $transaction: jest.fn((cb: (tx: unknown) => unknown) =>
-        cb({ campaign, campaignTarget }),
+        cb({ campaign, campaignTarget, campaignRollout, $queryRaw: queryRaw }),
       ),
     };
 
@@ -147,6 +150,16 @@ describe('CampaignService', () => {
           },
         ],
       });
+    });
+
+    it('ตั้งชื่อกลุ่มเป็นชื่อสงวนของ Campaign ระบบ -> 400 ไม่สร้าง', async () => {
+      await expect(
+        service.create(
+          { ...baseDto(), name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(campaign.create).not.toHaveBeenCalled();
     });
 
     it('เขียน AuditLog action create หลังสร้างสำเร็จ', async () => {
@@ -374,6 +387,17 @@ describe('CampaignService', () => {
       });
     });
 
+    it('เปลี่ยนชื่อเป็นชื่อสงวนของ Campaign ระบบ -> 400 ไม่แก้ (review B บน #424)', async () => {
+      await expect(
+        service.update(
+          sampleCampaign.id,
+          { name: FIELD_APPLY_SYSTEM_CAMPAIGN_NAME },
+          operation,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(campaign.update).not.toHaveBeenCalled();
+    });
+
     it('ไม่ส่ง name และ description เลย -> 400', async () => {
       await expect(
         service.update(sampleCampaign.id, {}, operation),
@@ -595,6 +619,35 @@ describe('CampaignService', () => {
           status: { in: ['pending_approval', 'approved', 'active', 'paused'] },
         },
       });
+    });
+
+    it('ล็อกแถวกลุ่ม (FOR UPDATE) เป็นคำสั่งแรกใน transaction ก่อนตรวจ Rollout ค้างและลบ (กัน race กับการสร้าง Rollout)', async () => {
+      const order: string[] = [];
+      queryRaw.mockImplementation((strings: TemplateStringsArray) => {
+        order.push(`lock:${strings.join('?').includes('FOR UPDATE')}`);
+        return Promise.resolve([{ id: sampleCampaign.id }]);
+      });
+      campaignRollout.count.mockImplementation(() => {
+        order.push('count');
+        return Promise.resolve(0);
+      });
+      campaign.delete.mockImplementation(() => {
+        order.push('delete');
+        return Promise.resolve(sampleCampaign);
+      });
+
+      await service.remove(sampleCampaign.id, operation);
+
+      expect(order).toEqual(['lock:true', 'count', 'delete']);
+    });
+
+    it('กลุ่มหายไประหว่างรอล็อก (ถูกลบพร้อมกัน) -> 404 ไม่ลบซ้ำ', async () => {
+      queryRaw.mockResolvedValue([]);
+
+      await expect(
+        service.remove(sampleCampaign.id, operation),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(campaign.delete).not.toHaveBeenCalled();
     });
 
     it('Campaign ระบบของคำขอหน้างาน -> 404 ลบไม่ได้', async () => {
