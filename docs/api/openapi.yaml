@@ -405,7 +405,14 @@ paths:
     delete:
       tags: [config]
       operationId: deleteConfig
-      summary: ลบ Config ที่ยังเป็นสถานะ draft
+      summary: ลบ Config (ทุกสถานะ ยกเว้นที่ระบบยังต้องใช้อยู่) - v3.80
+      description: >-
+        ConfigEngineer (resource `config` action `Update`; SuperAdmin ผ่านด้วย bypass) ·
+        **v3.80:** ลบได้ทุกสถานะ (เดิมเฉพาะ `draft`) · `draft` ลบจริง (ถ้ามีข้อมูลอ้างอิง
+        ตกไป soft delete) · สถานะอื่น soft delete (`deletedAt`) และเปลี่ยนชื่อเป็น
+        `<ชื่อเดิม> [ลบแล้ว <id 8 ตัว>]` เพื่อปล่อยชื่อให้สร้างใหม่ได้ (ชื่อ Config unique) ·
+        ไม่กระทบค่าที่ส่งไปแล้วบนกล่อง · คำขอลบอัตโนมัติที่ค้างของ Config นี้ถูกยกเลิก ·
+        AuditLog `delete` เก็บ `configId`
       parameters:
         - in: path
           name: configId
@@ -418,11 +425,13 @@ paths:
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
-          description: ไม่มีสิทธิ์ลบ Config — เฉพาะ Role ConfigEngineer เท่านั้น
+          description: ไม่มีสิทธิ์ลบ Config - เฉพาะ Role ConfigEngineer (และ SuperAdmin) เท่านั้น
         "404":
-          description: ไม่พบ Config นี้
+          description: ไม่พบ Config นี้ (หรือถูกลบไปแล้ว)
         "409":
-          description: สถานะ Config ปัจจุบันไม่ใช่ draft จึงลบไม่ได้
+          description: >-
+            Config นี้ยังถูกใช้งานอยู่ (Rollout ที่ยังไม่จบ, คำขอส่งเข้ากล่องที่ยังไม่จบ,
+            คำขอ Override ที่รออนุมัติ หรือ Task ที่ยังเปิดอยู่) ข้อความบอกว่าติดอะไรบ้าง
 
   /config/import:
     post:

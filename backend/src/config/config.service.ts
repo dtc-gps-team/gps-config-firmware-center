@@ -15,6 +15,8 @@ import {
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import type { AuditLogMetadata } from '../audit/audit-log-metadata';
+import { OPEN_CAMPAIGN_ROLLOUT_STATUSES } from '../campaign/campaign-rollout-status';
 import { ConfigDefinitionService } from '../config-definition/config-definition.service';
 import { ConfigSyncWriterQueue } from '../config-sync-writer/config-sync-writer-queue.service';
 import { toLegacyFields } from '../config-sync-writer/legacy-fields';
@@ -133,7 +135,11 @@ export class ConfigService {
    * (ยกเว้นใน `approve()` ที่ join กับ transaction เดิมอยู่แล้ว — wrap
    * try/catch ตรงนั้นแยกเพราะใช้ `tx` ไม่ใช่ `this.prisma`)
    */
-  private async logAudit(action: string, actor: ActingUser): Promise<void> {
+  private async logAudit(
+    action: string,
+    actor: ActingUser,
+    metadata?: AuditLogMetadata,
+  ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
         data: {
@@ -141,6 +147,7 @@ export class ConfigService {
           auditModule: AUDIT_MODULE,
           action,
           ipAddress: actor.ipAddress,
+          ...(metadata ? { metadata: metadata as Prisma.InputJsonValue } : {}),
         },
       });
     } catch (err) {
@@ -711,30 +718,102 @@ export class ConfigService {
     return updated;
   }
 
+  /**
+   * `DELETE /config/{id}` — ลบ Config ได้**ทุกสถานะ** ยกเว้นที่ระบบยังต้องใช้อยู่
+   * ตอนนี้ (409, ดู `assertNotInUse`) · เดิมลบได้เฉพาะ draft (มติเดิมกัน Config
+   * ที่เคยใช้งานแล้ว) — เปลี่ยนตามมติ 2026-11: Config เป็นแค่เทมเพลต ค่าที่ส่ง
+   * ไปแล้วอยู่บนกล่องเอง การลบไม่กระทบกล่อง สร้างเทมเพลตใหม่ได้เสมอ
+   *
+   * - `draft` -> ลบจริง (hard delete) เหมือนเดิม ถ้ามีข้อมูลอ้างอิงอยู่ (FK
+   *   Restrict, P2003) ตกไป soft delete แทน
+   * - สถานะอื่น -> soft delete (`deletedAt`) เก็บ row ไว้ให้ประวัติ/Audit ที่
+   *   อ้างถึงยังโยงได้ · ทุก query อ่านกรอง `deletedAt` อยู่แล้ว และ Rollback
+   *   ที่ชี้มาที่ Config ที่ลบแล้วจะแจ้งว่าใช้ไม่ได้ ไม่พัง
+   */
   async remove(id: string, actor: ActingUser): Promise<void> {
     const existing = await this.findOne(id);
-    if (existing.status !== EDITABLE_CONFIG_STATUS) {
+    await this.assertNotInUse(id);
+
+    if (existing.status === EDITABLE_CONFIG_STATUS) {
+      // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
+      try {
+        await this.prisma.config.delete({ where: { id } });
+        // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
+        // เหมือนกัน (การลบ Config เปลี่ยนข้อมูลจริง compliance/Auditor ต้องเห็นร่องรอย)
+        await this.logAudit('delete', actor, { configId: id });
+        return;
+      } catch (err) {
+        if (err instanceof PrismaClientKnownRequestError) {
+          if (err.code === 'P2025') {
+            throw new NotFoundException(`ไม่พบ Config id ${id}`);
+          }
+          // draft ที่มีข้อมูลอ้างถึง (เช่น Task/ประวัติ) ลบจริงไม่ได้ -> soft delete
+          if (err.code !== 'P2003') throw err;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    await this.softDelete(existing);
+    await this.logAudit('delete', actor, { configId: id });
+  }
+
+  /** Soft delete + ปล่อยชื่อให้ใช้ซ้ำ (`Config.name` เป็น unique ทั้งระบบ — ถ้าไม่
+   * เปลี่ยนชื่อ จะสร้างเทมเพลตชื่อเดิมใหม่ไม่ได้) + ยกเลิกคำขอลบอัตโนมัติที่ค้าง */
+  private async softDelete(config: Config): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.config.update({
+        where: { id: config.id },
+        data: {
+          deletedAt: new Date(),
+          name: `${config.name} [ลบแล้ว ${config.id.slice(0, 8)}]`,
+        },
+      });
+      await tx.configDeletionRequest.updateMany({
+        where: { configId: config.id, status: 'pending' },
+        data: { status: 'cancelled' },
+      });
+    });
+  }
+
+  /**
+   * ลบไม่ได้ถ้ายังมีงานที่ต้องใช้ Config นี้ส่งต่อ (409 พร้อมบอกว่าติดอะไร):
+   * Rollout ที่ยังไม่จบ · คำขอส่งเข้ากล่องที่ยังไม่จบ · คำขอ Override ที่รอ
+   * อนุมัติ · Task ที่ยังเปิดอยู่ — ต้องรอให้จบหรือยกเลิกก่อน
+   */
+  private async assertNotInUse(configId: string): Promise<void> {
+    const [rollouts, applyRequests, overrides, tasks] = await Promise.all([
+      this.prisma.campaignRollout.count({
+        where: {
+          configId,
+          status: { in: [...OPEN_CAMPAIGN_ROLLOUT_STATUSES] },
+        },
+      }),
+      this.prisma.configApplyRequest.count({
+        where: { configId, status: { in: ['pending', 'approved', 'sending'] } },
+      }),
+      this.prisma.deviceConfigOverride.count({
+        where: { configId, status: 'pending' },
+      }),
+      this.prisma.task.count({
+        where: { configId, status: { in: ['pending', 'in_progress'] } },
+      }),
+    ]);
+
+    const reasons: string[] = [];
+    if (rollouts > 0) reasons.push(`Rollout ที่ยังไม่จบ ${rollouts} รอบ`);
+    if (applyRequests > 0) {
+      reasons.push(`คำขอส่งเข้ากล่องที่ยังไม่จบ ${applyRequests} รายการ`);
+    }
+    if (overrides > 0) {
+      reasons.push(`คำขอ Override ที่รออนุมัติ ${overrides} รายการ`);
+    }
+    if (tasks > 0) reasons.push(`งานของช่างที่ยังเปิดอยู่ ${tasks} งาน`);
+    if (reasons.length > 0) {
       throw new ConflictException(
-        `สถานะ Config ปัจจุบันไม่ใช่ ${EDITABLE_CONFIG_STATUS} จึงลบไม่ได้`,
+        `ลบ Config นี้ไม่ได้ เพราะยังถูกใช้งานอยู่: ${reasons.join(', ')} (รอให้จบหรือยกเลิกก่อน)`,
       );
     }
-
-    // race condition เดียวกับ update() — ดูคอมเมนต์ด้านบน
-    try {
-      await this.prisma.config.delete({ where: { id } });
-    } catch (err) {
-      if (
-        err instanceof PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundException(`ไม่พบ Config id ${id}`);
-      }
-      throw err;
-    }
-
-    // AuditLog (#27, CLAUDE.md Audit Pattern) — ลบเป็น mutation ที่ต้อง log
-    // เหมือนกัน แม้ CLAUDE.md จะยกตัวอย่างไม่ครบทุก verb (การลบ Config เปลี่ยน
-    // ข้อมูลจริงเหมือนกัน compliance/Auditor ต้องเห็นร่องรอย)
-    await this.logAudit('delete', actor);
   }
 }

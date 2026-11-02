@@ -45,6 +45,13 @@ export function canUpdateConfig(role: string | null | undefined): boolean {
   return role === "ConfigEngineer";
 }
 
+/** ปุ่มลบ Config (ทุกสถานะ ยกเว้นที่ยังถูกใช้งานอยู่ — backend ตอบ 409) —
+ * resource `config` action `Update` เดียวกับ `DELETE /config/{id}` (ConfigEngineer;
+ * SuperAdmin ผ่านด้วย bypass ที่ PermissionGuard) */
+export function canDeleteConfig(role: string | null | undefined): boolean {
+  return role === "ConfigEngineer" || role === "SuperAdmin";
+}
+
 /**
  * ปุ่ม "Approve" / "Reject" ใน Approval Center — Section 2 + Section 5 ข้อ 1
  * (Separation of Duty): Operation เท่านั้น — ConfigEngineer ห้ามอนุมัติ
