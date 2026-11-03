@@ -39,6 +39,7 @@ import { usePendingApprovals } from "@/hooks/use-pending-approvals";
 import { useUserNames } from "@/hooks/use-user-names";
 import { usePendingCampaignRollouts } from "@/hooks/use-pending-campaign-rollouts";
 import { usePendingDeviceConfigOverrides } from "@/hooks/use-pending-device-config-overrides";
+import { useCentralDevices } from "@/hooks/use-central-devices";
 import { usePendingDeviceFirmwareOverrides } from "@/hooks/use-pending-device-firmware-overrides";
 import { usePendingFieldApplyRequests } from "@/hooks/use-pending-field-apply-requests";
 import { CardListSkeleton } from "@/components/skeleton/card-list-skeleton";
@@ -90,6 +91,13 @@ export function ApprovalCenterView() {
     error: fieldApplyError,
     refetch: refetchFieldApply,
   } = usePendingFieldApplyRequests(canDecideFieldApply);
+  // โหมด central: คำขอ Firmware Override ถูกปิดทั้งมือถือและ backend (ใช้ "ส่งเข้ากล่องจากหน้างาน"
+  // แทน - docs/27 §11) แท็บนี้จะว่างเสมอ จึงซ่อน · ยังไม่รู้โหมด (กำลังโหลด/ต่อ Server ไม่ได้) = แสดงตามเดิม
+  // · ถ้ายังมีคำขอเก่าค้าง (สร้างตอนยังไม่ใช่ central) ต้องเห็นแท็บต่อ ไม่งั้นตัดสินใจไม่ได้
+  const centralMode = useCentralDevices().data?.mode === "real";
+  const showFirmwareOverrideTab =
+    canDecideFirmwareOv &&
+    !(centralMode && (firmwareOverrideData?.length ?? 0) === 0);
   const [notice, setNotice] = useState<string | null>(null);
   const [overrideNotice, setOverrideNotice] = useState<string | null>(null);
   const [firmwareOverrideNotice, setFirmwareOverrideNotice] = useState<
@@ -162,7 +170,7 @@ export function ApprovalCenterView() {
           },
         ]
       : []),
-    ...(canDecideFirmwareOv
+    ...(showFirmwareOverrideTab
       ? [
           {
             key: "firmware-override" as const,
