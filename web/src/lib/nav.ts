@@ -115,6 +115,17 @@ export const NAV_ITEMS: NavItem[] = [
     group: "overview",
     screenName: "Approval Center",
     icon: CircleCheckIcon,
+    // Section 2: FirmwareEngineer เป็น "-" (ไม่มีรายการให้ดู) · QAEngineer เห็นคิวตรวจคุณภาพ Firmware
+    allowedRoles: [
+      "ConfigEngineer",
+      "QAEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ],
   },
   {
     label: "Firmware Repository",
