@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -23,6 +27,10 @@ import { CampaignRolloutService } from './campaign-rollout.service';
 import { ActingUser, CampaignService } from './campaign.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { QueryCampaignRolloutDto } from './dto/query-campaign-rollout.dto';
+import {
+  AddCampaignTargetsDto,
+  UpdateCampaignDto,
+} from './dto/update-campaign.dto';
 
 /** Request ที่ผ่าน JwtAuthGuard จะมี user อยู่เสมอ */
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -85,5 +93,49 @@ export class CampaignController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CampaignTarget[]> {
     return this.campaignService.findTargets(id);
+  }
+
+  // แก้/ลบกลุ่มและสมาชิก — Operation เท่านั้น (resource `campaign` action
+  // `Update`; ไม่มี action Delete ใน ActionType จึงใช้ Update ครอบการลบ เหมือน
+  // `DELETE /config/{id}`) · SuperAdmin ผ่านด้วย bypass ใน PermissionGuard
+  @Patch(':id')
+  @RequirePermission('campaign', ActionType.Update)
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCampaignDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Campaign> {
+    return this.campaignService.update(id, dto, toActor(req));
+  }
+
+  @Delete(':id')
+  @RequirePermission('campaign', ActionType.Update)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.campaignService.remove(id, toActor(req));
+  }
+
+  @Post(':id/targets')
+  @RequirePermission('campaign', ActionType.Update)
+  addTargets(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddCampaignTargetsDto,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<CampaignTarget[]> {
+    return this.campaignService.addTargets(id, dto, toActor(req));
+  }
+
+  @Delete(':id/targets/:deviceId')
+  @RequirePermission('campaign', ActionType.Update)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeTarget(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('deviceId') deviceId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.campaignService.removeTarget(id, deviceId, toActor(req));
   }
 }

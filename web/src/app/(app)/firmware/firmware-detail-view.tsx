@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import {
   CalendarIcon,
   FileIcon,
   FingerprintIcon,
   HardDriveIcon,
+  Trash2Icon,
   UserIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 
-import { buttonVariants } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/auth-provider";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorState } from "@/components/error-state";
@@ -17,7 +23,9 @@ import {
   FIRMWARE_RELEASE_LABEL,
   firmwareRelease,
 } from "@/lib/firmware-compare";
-import { type Firmware } from "@/lib/firmware-api";
+import { ApiError } from "@/lib/api";
+import { deleteFirmware, type Firmware } from "@/lib/firmware-api";
+import { canDeleteFirmware } from "@/lib/permissions";
 import {
   FIRMWARE_DEVICE_UPDATE_STATUS_TONE,
   FIRMWARE_UPLOAD_STATUS_TONE,
@@ -86,12 +94,52 @@ function FirmwareDetailContent({
   onUpdated: (updated: Firmware) => void;
 }) {
   const { resolveName } = useUserNames();
+  const router = useRouter();
+  const { session } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  /** คืน false = ไม่ปิด dialog ให้เห็นเหตุผล 409 (เช่น มีกล่องกำลังรันอยู่) */
+  async function handleDelete(): Promise<boolean> {
+    if (!session?.accessToken) return false;
+    setDeleteError(null);
+    try {
+      await deleteFirmware(session.accessToken, firmware.id);
+      toast.success(`ลบ Firmware เวอร์ชัน ${firmware.version} แล้ว`);
+      router.push("/firmware");
+      router.refresh();
+      return true;
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "ลบ Firmware ไม่สำเร็จ";
+      setDeleteError(message);
+      toast.error(message);
+      return false;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title={`เวอร์ชัน ${firmware.version}`}
         breadcrumb={[{ label: `เวอร์ชัน ${firmware.version}` }]}
+        actions={
+          canDeleteFirmware(session?.role) ? (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="ลบ Firmware นี้"
+              title="ลบ Firmware นี้"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => {
+                setDeleteError(null);
+                setConfirming(true);
+              }}
+            >
+              <Trash2Icon />
+            </Button>
+          ) : undefined
+        }
         status={
           <>
             <StatusPill tone={RELEASE_TONE[firmwareRelease(firmware)]}>
@@ -106,6 +154,26 @@ function FirmwareDetailContent({
             )}
           </>
         }
+      />
+
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="ลบ Firmware นี้?"
+        description={
+          <>
+            ลบไฟล์ของเวอร์ชัน {firmware.version} ออกจากระบบถาวร กู้คืนไม่ได้
+            ต้องอัปโหลดใหม่ถ้าจะใช้อีก และ Rollback กลับมาเวอร์ชันนี้ไม่ได้ ไม่กระทบ
+            กล่องที่ไม่ได้รันเวอร์ชันนี้ ถ้ามีกล่องกำลังรันเวอร์ชันนี้อยู่หรือยังมี
+            Rollout/คำขอที่ใช้อยู่ จะลบไม่ได้
+            {deleteError && (
+              <span className="mt-2 block text-destructive">{deleteError}</span>
+            )}
+          </>
+        }
+        confirmLabel="ยืนยันลบ"
+        destructive
+        onConfirm={handleDelete}
       />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">

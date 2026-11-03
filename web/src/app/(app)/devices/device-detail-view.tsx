@@ -14,11 +14,11 @@ import {
   RadioIcon,
   SlidersHorizontalIcon,
   SmartphoneIcon,
-  TerminalIcon,
   KeyRoundIcon,
   CheckIcon,
   CopyIcon,
   TriangleAlertIcon,
+  PackageCheckIcon,
 } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -42,7 +42,11 @@ import { formatDateTime } from "@/lib/format-date";
 import { useDevice } from "@/hooks/use-device";
 import { DetailSkeleton } from "@/components/skeleton/detail-skeleton";
 import { InfoRow } from "@/components/info-row";
-import { rotateDeviceKey, type Device } from "@/lib/device-api";
+import {
+  confirmDeviceInstalled,
+  rotateDeviceKey,
+  type Device,
+} from "@/lib/device-api";
 import { PageHeader } from "@/components/page-header";
 import { UrlTabs } from "@/components/url-tabs";
 import { useDeviceCentral } from "@/hooks/use-central-devices";
@@ -89,7 +93,7 @@ export function DeviceDetailView({ deviceId }: { deviceId: string }) {
     );
   }
 
-  return <DeviceDetailContent device={data} />;
+  return <DeviceDetailContent device={data} onDeviceUpdated={refetch} />;
 }
 
 /** ค่าที่ว่างในเครื่องที่ลงทะเบียนก่อนบังคับกรอก IMEI/Serial/Blackbox ID */
@@ -227,7 +231,94 @@ function RotateKeyControl({ deviceId }: { deviceId: string }) {
   );
 }
 
-function DeviceDetailContent({ device }: { device: Device }) {
+/**
+ * ปุ่ม "ยืนยันติดตั้งแล้ว" — Admin/SuperAdmin เท่านั้น (gate เป็น UX เท่านั้น
+ * backend บังคับสิทธิ์จริง) โชว์เฉพาะตอน status เป็น `registered` เท่านั้น —
+ * ย้ายไป `installed` แล้วต้องเพิ่มเข้า Campaign ได้ (ก่อนหน้านี้ไม่มีทางไหน
+ * ทำสิ่งนี้ได้เลยนอกจากแก้ตรงใน DB — ดู docs/24 §Q2)
+ */
+function ConfirmInstallControl({
+  device,
+  onConfirmed,
+}: {
+  device: Device;
+  onConfirmed: () => void;
+}) {
+  const { session } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!canRegisterDevice(session?.role)) return null;
+  if (device.status !== "registered") return null;
+
+  async function confirm() {
+    if (!session?.accessToken) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await confirmDeviceInstalled(session.accessToken, device.deviceId);
+      setConfirming(false);
+      toast.success(`ยืนยันติดตั้ง "${device.deviceId}" แล้ว`);
+      onConfirmed();
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "ยืนยันติดตั้งไม่สำเร็จ",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+        }}
+      >
+        <PackageCheckIcon className="size-4" />
+        ยืนยันติดตั้งแล้ว
+      </Button>
+
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันว่า {device.deviceId} ติดตั้งแล้ว?</AlertDialogTitle>
+            <AlertDialogDescription>
+              สถานะจะเปลี่ยนจาก &quot;ลงทะเบียนแล้ว&quot; เป็น &quot;ติดตั้งแล้ว&quot;
+              — ต้องติดตั้งจริงแล้วเท่านั้นถึงจะเพิ่มเข้า Campaign ได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={submitting}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirm();
+              }}
+            >
+              {submitting ? "กำลังยืนยัน…" : "ยืนยัน"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function DeviceDetailContent({
+  device,
+  onDeviceUpdated,
+}: {
+  device: Device;
+  onDeviceUpdated: () => void;
+}) {
   const central = useDeviceCentral(device.deviceId);
   const { session } = useAuth();
   const { data: firmware } = useFirmwareList(canReadFirmware(session?.role));
@@ -246,7 +337,15 @@ function DeviceDetailContent({ device }: { device: Device }) {
             <StatusPill tone="neutral">{device.hardwareRevisionCode}</StatusPill>
           ) : undefined
         }
-        actions={<RotateKeyControl deviceId={device.deviceId} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <ConfirmInstallControl
+              device={device}
+              onConfirmed={onDeviceUpdated}
+            />
+            <RotateKeyControl deviceId={device.deviceId} />
+          </div>
+        }
       />
 
       <DeviceSummaryBar
@@ -346,11 +445,6 @@ function DeviceIdentityCard({ device }: { device: Device }) {
         <div className="divide-y">
           <InfoRow label="Blackbox ID" icon={BoxIcon}>
             <span className="font-instrument">{device.blackboxId ?? <NotRecorded />}</span>
-          </InfoRow>
-          <InfoRow label="Bootloader" icon={TerminalIcon}>
-            {device.bootloader ?? (
-              <span className="text-muted-foreground">ไม่ระบุ</span>
-            )}
           </InfoRow>
           <InfoRow label="ลูกค้า" icon={Building2Icon}>
             {device.customer ? (

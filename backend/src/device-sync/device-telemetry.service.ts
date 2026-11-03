@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { lockFirmwaresByReportedVersion } from '../firmware/firmware-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { LAST_SEEN_WRITE_INTERVAL_MS } from '../common/guards/device-api-key.guard';
 import { DeviceDataReportDto } from './dto/device-data-report.dto';
@@ -134,15 +135,21 @@ export class DeviceTelemetryService {
     now: Date,
   ): Promise<void> {
     try {
-      const changed = await this.prisma.device.updateMany({
-        where: {
-          deviceId,
-          OR: [
-            { reportedFirmwareVersion: null },
-            { reportedFirmwareVersion: { not: version } },
-          ],
-        },
-        data: { reportedFirmwareVersion: version, reportedFirmwareAt: now },
+      // เวอร์ชันเปลี่ยน = หลักฐานใหม่ที่ `FirmwareService.remove()` ใช้บล็อกการลบ ("มีกล่องกำลัง
+      // รัน") -> ล็อก Firmware เวอร์ชันนั้นในธุรกรรมเดียวกับการเขียน ให้ผู้ลบที่ตรวจ in-use
+      // ซ้ำหลังได้ล็อกเห็นรายงานนี้เสมอ (review B บน #426)
+      const changed = await this.prisma.$transaction(async (tx) => {
+        await lockFirmwaresByReportedVersion(tx, version);
+        return tx.device.updateMany({
+          where: {
+            deviceId,
+            OR: [
+              { reportedFirmwareVersion: null },
+              { reportedFirmwareVersion: { not: version } },
+            ],
+          },
+          data: { reportedFirmwareVersion: version, reportedFirmwareAt: now },
+        });
       });
       if (changed.count > 0) return;
       await this.prisma.device.updateMany({

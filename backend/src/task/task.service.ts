@@ -9,6 +9,7 @@ import {
 import { ConfigStatus, Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -239,6 +240,8 @@ export class TaskService {
     // Task + event "สร้างงาน" (null -> pending) ในทรานแซกชันเดียวกัน
     // (docs/16 §2) — timeline ของทุกงานเริ่มจาก event นี้เสมอ
     const created = await this.prisma.$transaction(async (tx) => {
+      // ล็อก Config ที่งานจะผูก กันถูกลบแทรกระหว่างตรวจกับสร้างงาน (review B บน #425)
+      if (dto.configId != null) await lockConfigForReference(tx, dto.configId);
       const task = await tx.task.create({
         data: {
           title: dto.title,
@@ -436,6 +439,10 @@ export class TaskService {
             dto.status === 'completed' && previous.status !== 'completed';
           if (completing) {
             await this.assertNoSendingRequest(tx, id);
+          }
+          // ผูก Config ใหม่เข้างาน = สร้าง reference ใหม่ -> ล็อก Config กันถูกลบแทรก (review B บน #425)
+          if (dto.configId != null) {
+            await lockConfigForReference(tx, dto.configId);
           }
           const task = await tx.task.update({
             where: { id },

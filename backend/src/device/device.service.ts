@@ -28,13 +28,17 @@ import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { CustomerSummary } from '../customer/customer.service';
 import {
   CentralDeviceService,
+  type BoxSupportedSchema,
   type ReportedBoxFields,
   type CheckConfigOutcome,
 } from '../central-device/central-device.service';
+import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
+import { lockFirmwareForReference } from '../firmware/firmware-lock';
+import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { mergeApprovedOverride } from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
@@ -90,6 +94,9 @@ export type ConfigWithDeviceOverride = Config & {
   /** ค่าที่กล่องรายงานว่าใช้อยู่ทุกพารามิเตอร์ (โหมด central) ให้หน้าขอแก้ค่าแสดงค่าที่ไม่อยู่ใน
    * Config ด้วย · null = ไม่ใช่โหมด central / ติดต่อ Server กลางไม่ได้ / กล่องยังไม่รายงาน */
   boxFields: ReportedBoxFields | null;
+  /** พารามิเตอร์ที่ firmware บนกล่องรองรับ (โหมด central) — ให้หน้าขอแก้ค่าล็อกช่องที่กล่องไม่รู้จัก
+   * และเตือนก่อนว่าส่งไม่ผ่าน · null = ไม่ใช่โหมด central / ติดต่อ Server กลางไม่ได้ / ไม่รู้ schema */
+  boxSchema: BoxSupportedSchema | null;
 };
 
 /** ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด — `fields` ของ response คือค่าที่**จะ**อยู่ในกล่อง
@@ -458,9 +465,9 @@ export class DeviceService {
     if (dto.initialFirmwareId) {
       const firmware = await this.prisma.firmware.findUnique({
         where: { id: dto.initialFirmwareId },
-        select: { id: true, deviceModelCompatibility: true },
+        select: { id: true, deviceModelCompatibility: true, deletedAt: true },
       });
-      if (!firmware) {
+      if (!firmware || firmware.deletedAt) {
         throw new NotFoundException(
           `ไม่พบ Firmware id ${dto.initialFirmwareId}`,
         );
@@ -490,6 +497,7 @@ export class DeviceService {
           if (centralDevice?.reportedFirmwareVersion) {
             initialFirmware = await this.prisma.firmware.findFirst({
               where: {
+                deletedAt: null,
                 version: centralDevice.reportedFirmwareVersion,
                 deviceModelCompatibility: { has: model.name },
               },
@@ -517,6 +525,10 @@ export class DeviceService {
       // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
       // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
       device = await this.prisma.$transaction(async (tx) => {
+        // ลงทะเบียนพร้อม Firmware เริ่มต้น (partition A) = กล่องรัน Firmware นี้ -> ล็อกกันถูกลบแทรก
+        if (initialFirmware) {
+          await lockFirmwareForReference(tx, initialFirmware.id);
+        }
         const created = await tx.device.create({
           data: {
             deviceId: dto.deviceId,
@@ -528,7 +540,6 @@ export class DeviceService {
             imei: dto.imei,
             serialNumber: dto.serialNumber,
             blackboxId: dto.blackboxId,
-            bootloader: dto.bootloader,
             modelId: model.id,
             apiKeyHash,
             // activePartition default เป็น 'A' เสมอตอนสร้างใหม่ (schema.prisma)
@@ -635,6 +646,72 @@ export class DeviceService {
     }
 
     return { ...device, apiKey };
+  }
+
+  /**
+   * `POST /devices/{deviceId}/confirm-install` — ปุ่ม "ยืนยันติดตั้งแล้ว" บนหน้า
+   * Device Detail (Admin/SuperAdmin เท่านั้น เหมือน `register()`/`rotateKey()`
+   * — resource `device-registration` action `Update`) ย้าย Device จาก
+   * `registered` ไป `installed` + ตั้ง `installedAt`
+   *
+   * ก่อนหน้านี้**ไม่มีทางไหนทำสิ่งนี้ได้เลย** นอกจากแก้ตรงใน DB ด้วยสคริปต์
+   * ชั่วคราว (ดู docs/24 §Q2) — ทำให้ device ที่เพิ่งลงทะเบียนใหม่ค้างที่
+   * `registered` ตลอดไป เข้า Campaign ไม่ได้เลย (`CampaignService` ต้องการ
+   * `installed` เท่านั้น — ดู `GROUPABLE_DEVICE_STATUS`) endpoint นี้ปิด gap
+   * นั้น — เป็นการ "ยืนยัน" ตรงๆ ไม่ผูกกับ Task/field flow ใดๆ (ต่างจาก
+   * `registeredAt`/`installedAt` ที่ `device-history.service.ts` อ่านไปแสดง
+   * timeline อยู่แล้ว ใช้ค่าเดียวกัน)
+   *
+   * สถานะต้องเป็น `registered` เท่านั้นถึงจะยืนยันได้ — `installed` อยู่แล้ว
+   * หรือ `decommissioned` แล้วคือ 409 (กันกดซ้ำ/กันยืนยันเครื่องที่ปลดระวางไปแล้ว)
+   */
+  async confirmInstalled(
+    deviceId: string,
+    actor: ActingUser,
+  ): Promise<DeviceWithCustomer> {
+    const existing = await this.prisma.device.findUnique({
+      where: { deviceId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+    }
+    if (existing.status !== 'registered') {
+      throw new ConflictException(
+        `Device deviceId ${deviceId} สถานะปัจจุบัน (${existing.status}) ไม่ใช่ registered ยืนยันติดตั้งซ้ำไม่ได้`,
+      );
+    }
+
+    let device: DeviceWithCustomer;
+    try {
+      device = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.device.update({
+          where: { deviceId },
+          data: { status: 'installed', installedAt: new Date() },
+          include: { customer: { select: { id: true, companyName: true } } },
+        });
+        const metadata: AuditLogMetadata = { deviceId: updated.deviceId };
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            auditModule: AUDIT_MODULE,
+            action: 'confirm-install',
+            metadata: metadata as Prisma.InputJsonValue,
+            ipAddress: actor.ipAddress ?? null,
+          },
+        });
+        return updated;
+      });
+    } catch (err) {
+      if (
+        err instanceof PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundException(`ไม่พบ Device deviceId ${deviceId}`);
+      }
+      throw err;
+    }
+
+    return device;
   }
 
   /**
@@ -930,7 +1007,7 @@ export class DeviceService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     this.assertFirmwareInstallable(firmware, device);
@@ -1030,14 +1107,18 @@ export class DeviceService {
     // ต้องเช็คว่าของเก่ายังอยู่ไหม
     try {
       const nextPartition = device.activePartition === 'A' ? 'B' : 'A';
-      await this.prisma.device.update({
-        where: { deviceId: device.deviceId },
-        data: {
-          activePartition: nextPartition,
-          ...(nextPartition === 'A'
-            ? { partitionAFirmwareId: firmware.id }
-            : { partitionBFirmwareId: firmware.id }),
-        },
+      // เขียน partition = กล่องรัน Firmware นี้ -> ล็อก Firmware กันถูกลบแทรก (review B บน #426)
+      await this.prisma.$transaction(async (tx) => {
+        await lockFirmwareForReference(tx, firmware.id);
+        await tx.device.update({
+          where: { deviceId: device.deviceId },
+          data: {
+            activePartition: nextPartition,
+            ...(nextPartition === 'A'
+              ? { partitionAFirmwareId: firmware.id }
+              : { partitionBFirmwareId: firmware.id }),
+          },
+        });
       });
     } catch (err) {
       this.logger.warn(
@@ -1297,9 +1378,12 @@ export class DeviceService {
       }),
     ]);
 
-    const boxFields = this.isCentralApplyMode()
-      ? await this.centralDeviceService.readReportedFields(deviceId)
-      : null;
+    const [boxFields, boxSchema] = this.isCentralApplyMode()
+      ? await Promise.all([
+          this.centralDeviceService.readReportedFields(deviceId),
+          this.centralDeviceService.readSupportedSchema(deviceId),
+        ])
+      : [null, null];
 
     const delivery = deliveredAt
       ? await this.describeDelivery(
@@ -1311,23 +1395,32 @@ export class DeviceService {
         )
       : null;
 
+    // คำตอบนี้ถึงมือช่าง ตัดค่าที่ห้ามเปิดเผยตรงนี้ · ตอนส่งเข้ากล่องไม่ได้ใช้ฟังก์ชันนี้
+    const visibleDelivery = delivery && {
+      ...delivery,
+      fields: omitHiddenConfigFields(delivery.fields),
+    };
+
     if (!approvedOverride) {
       return {
         ...baseConfig,
+        fields: omitHiddenConfigFields(baseConfig.fields),
         hasDeviceOverride: false,
         pendingOverride,
-        delivery,
+        delivery: visibleDelivery,
         boxFields,
+        boxSchema,
       };
     }
 
     return {
       ...baseConfig,
-      fields: fields as Prisma.JsonValue,
+      fields: omitHiddenConfigFields(fields) as Prisma.JsonValue,
       hasDeviceOverride: true,
       pendingOverride,
-      delivery,
+      delivery: visibleDelivery,
       boxFields,
+      boxSchema,
     };
   }
 
@@ -1500,6 +1593,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Config ฐานที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #425)
+        await lockConfigForReference(tx, baseConfig.id);
         const override = await tx.deviceConfigOverride.create({
           data: {
             deviceId,
@@ -1875,7 +1970,7 @@ export class DeviceService {
     const firmware = await this.prisma.firmware.findUnique({
       where: { id: dto.firmwareId },
     });
-    if (!firmware) {
+    if (!firmware || firmware.deletedAt) {
       throw new NotFoundException(`ไม่พบ Firmware id ${dto.firmwareId}`);
     }
     this.assertFirmwareInstallable(firmware, device);
@@ -1896,6 +1991,8 @@ export class DeviceService {
           orderBy: { versionNumber: 'desc' },
         });
 
+        // ล็อก Firmware ที่คำขอ Override จะอ้างถึง กันถูกลบแทรก (review B บน #426)
+        await lockFirmwareForReference(tx, firmware.id);
         const override = await tx.deviceFirmwareOverride.create({
           data: {
             deviceId: device.deviceId,

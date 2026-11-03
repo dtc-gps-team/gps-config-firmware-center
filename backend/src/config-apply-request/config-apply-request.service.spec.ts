@@ -45,6 +45,7 @@ const configApprover: ActingUser = {
 };
 const decider: ActingUser = { id: 'op-decider', role: 'Operation' };
 const admin: ActingUser = { id: 'admin-1', role: 'Admin' };
+const superAdmin: ActingUser = { id: 'superadmin-1', role: 'SuperAdmin' };
 
 const task: Task = {
   id: TASK_ID,
@@ -231,7 +232,15 @@ describe('ConfigApplyRequestService', () => {
       },
       auditLog,
       user: users,
-      $queryRaw: jest.fn().mockResolvedValue([]),
+      // ล็อกแถว Config/Firmware (FOR SHARE) -> { deletedAt: null } · ล็อกแถวเครื่องเดิมคืน []
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = strings.join('');
+        return Promise.resolve(
+          sql.includes('"Config"') || sql.includes('"Firmware"')
+            ? [{ deletedAt: null }]
+            : [],
+        );
+      }),
     };
     prisma.$transaction = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
     notification = { send: jest.fn().mockResolvedValue(undefined) };
@@ -603,6 +612,21 @@ describe('ConfigApplyRequestService', () => {
           ForbiddenException,
         );
         expect(requests.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('SuperAdmin ข้าม SoD ได้ทันที ไม่เช็คข้อ 1-5 เลย (มติ 2026-10-30)', async () => {
+        // ใช้ค่าดีฟอลต์ของ pending/task ไม่แก้อะไร (configAssignedBy =
+        // assigner.id, ไม่ใช่ superAdmin) — ยืนยันว่า assertDecider() คืนทันที
+        // ตั้งแต่เช็ค role ไม่ต้องให้ actor.id ตรงกับใครเลยในคำขอก็ผ่านได้
+        requests.findUniqueOrThrow.mockResolvedValue({
+          ...pending,
+          status: 'approved',
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+
+        await decide(service)(superAdmin);
+
+        expect(requests.updateMany).toHaveBeenCalled();
       });
 
       it('ข้อ 2: ผู้ตัดสินเป็นผู้ขอเอง -> 403', async () => {
@@ -1664,6 +1688,24 @@ describe('ConfigApplyRequestService', () => {
       });
     });
 
+    it('ไม่ส่ง data_server.path ถึงช่าง (มี key ส่ง telemetry) แต่คงช่องอื่นไว้', async () => {
+      (prisma.config as Record<string, jest.Mock>).findMany.mockResolvedValue([
+        {
+          ...configRow('a', 'A มาตรฐาน', 3),
+          fields: {
+            'data_server.host': 'example.test',
+            'data_server.path': '/ingest/secret-key',
+          },
+        },
+      ]);
+
+      const result = await service.applyOptions(DEVICE_ID, tech);
+
+      expect(result.configs[0].fields).toEqual({
+        'data_server.host': 'example.test',
+      });
+    });
+
     it('Config ที่ Operation ผูกกับงานที่ช่างเปิดอยู่ของกล่องนี้ขึ้นก่อนเป็น suggested', async () => {
       (prisma.task as Record<string, jest.Mock>).findFirst.mockResolvedValue({
         configId: CONFIG_ID,
@@ -2074,6 +2116,7 @@ describe('ConfigApplyRequestService', () => {
 
         expect(firmwareMock().findMany).toHaveBeenCalledWith({
           where: {
+            deletedAt: null,
             uploadStatus: 'stored',
             approvalStatus: 'approved',
             deviceModelCompatibility: { has: 'GT06N' },

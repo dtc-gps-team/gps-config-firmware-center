@@ -1,6 +1,7 @@
 "use client";
 
 import type { FieldApplyRequest } from "@/lib/field-apply-request-api";
+import { Badge } from "@/components/ui/badge";
 import { ApprovalQueueCard } from "./approval-queue-card";
 import { FieldApplyRequestApprovalActions } from "./field-apply-request-approval-actions";
 
@@ -36,7 +37,9 @@ export function FieldApplyRequestApprovalCard({
   return (
     <ApprovalQueueCard
       tag={isFirmware ? "Firmware" : "Config"}
-      title={item.task.title || <span className="font-mono">{item.deviceId}</span>}
+      title={
+        item.task.title || <span className="font-mono">{item.deviceId}</span>
+      }
       meta={
         <>
           <span className="font-mono">{item.deviceId}</span>
@@ -72,6 +75,7 @@ export function FieldApplyRequestApprovalCard({
       }
       summary={
         <div className="flex flex-col gap-1">
+          {item.override !== null && <Badge tone="warning">มีค่าที่แก้</Badge>}
           {item.override && (
             <span className="text-amber-600">
               ผูกกับคำขอแก้ค่าเฉพาะเครื่อง (Override) — อนุมัติคำขอนี้แล้ว

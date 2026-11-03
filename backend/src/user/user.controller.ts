@@ -62,8 +62,8 @@ export class UserController {
   @Get('managed')
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission('user-management', ActionType.Read)
-  listManaged(): Promise<ManagedUser[]> {
-    return this.userService.listManaged();
+  listManaged(@Req() req: AuthenticatedRequest): Promise<ManagedUser[]> {
+    return this.userService.listManaged(toActor(req));
   }
 
   @Post()

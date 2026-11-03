@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth/auth-provider";
 import { CopyButton } from "@/components/copy-button";
 import { InfoRow } from "@/components/info-row";
 import { SensitiveValue } from "@/components/sensitive-value";
@@ -11,6 +12,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
+import { canManageParameters } from "@/lib/permissions";
+import { ParameterManageControls } from "./parameter-manage-controls";
 
 function Flag({
   tone,
@@ -55,10 +58,14 @@ export function defaultSnippet(def: ConfigFieldDefinition): string | null {
 export function ParameterDetailDrawer({
   definition,
   onClose,
+  onChanged,
 }: {
   definition: ConfigFieldDefinition | null;
   onClose: () => void;
+  /** แก้หรือลบสำเร็จ - ให้หน้ารายการโหลดข้อมูลใหม่ */
+  onChanged?: () => void;
 }) {
+  const { session } = useAuth();
   const d = definition;
   const snippet = d ? defaultSnippet(d) : null;
 
@@ -77,6 +84,19 @@ export function ParameterDetailDrawer({
               </SheetDescription>
             </SheetHeader>
             <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4">
+              {canManageParameters(session?.role) && (
+                <ParameterManageControls
+                  definition={d}
+                  onChanged={() => {
+                    onChanged?.();
+                    onClose();
+                  }}
+                  onDeleted={() => {
+                    onChanged?.();
+                    onClose();
+                  }}
+                />
+              )}
               <div className="flex flex-wrap gap-1.5">
                 {d.required && <Flag tone="info">บังคับกรอก</Flag>}
                 {d.restartRequired && <Flag tone="warning">ต้อง Restart กล่อง</Flag>}

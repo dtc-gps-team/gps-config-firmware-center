@@ -124,11 +124,15 @@ describe('TaskService', () => {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     };
     user = { findUnique: jest.fn().mockResolvedValue(null) };
-    queryRaw = jest
-      .fn()
-      .mockResolvedValue([
-        { status: sampleTask.status, createdAt: sampleTask.createdAt },
-      ]);
+    // $queryRaw ใช้ 2 งาน: ล็อกแถว Config (SELECT ... "Config") ที่ create() เรียกเมื่อผูก
+    // configId -> คืน { deletedAt: null } · งานอื่น (ล็อกแถว Task) คืนสถานะงาน
+    queryRaw = jest.fn((strings: TemplateStringsArray) =>
+      Promise.resolve(
+        strings.join('').includes('"Config"')
+          ? [{ deletedAt: null }]
+          : [{ status: sampleTask.status, createdAt: sampleTask.createdAt }],
+      ),
+    );
     // $transaction (interactive form) เรียก callback ด้วย prisma mock ตัวเดียวกัน
     // เป็น tx — pattern เดียวกับ config.service.spec.ts
     const prisma: Record<string, unknown> = {

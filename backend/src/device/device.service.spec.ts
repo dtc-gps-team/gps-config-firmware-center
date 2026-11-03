@@ -41,7 +41,6 @@ const installedDevice: Device = {
   imei: null,
   serialNumber: null,
   blackboxId: null,
-  bootloader: null,
   apiKeyHash: null,
   telemetryKeyHash: null,
   reportedFirmwareVersion: null,
@@ -111,6 +110,7 @@ const readyFirmware: Firmware = {
   uploadedAt: new Date('2026-01-01T00:00:00.000Z'),
   approvalStatus: 'approved',
   approvedBy: 'user-4',
+  deletedAt: null,
 };
 
 /** firmware ตัวที่สอง (compatible+approved เหมือนกัน) ใช้ทดสอบ Firmware
@@ -163,7 +163,6 @@ const createdDevice: Omit<Device, 'apiKeyHash' | 'telemetryKeyHash'> = {
   imei: null,
   serialNumber: null,
   blackboxId: null,
-  bootloader: null,
   status: 'registered',
   registeredAt: new Date('2026-10-01T00:00:00.000Z'),
   installedAt: null,
@@ -235,6 +234,7 @@ describe('DeviceService', () => {
   let centralDeviceService: {
     findDevice: jest.Mock;
     readReportedFields: jest.Mock;
+    readSupportedSchema: jest.Mock;
     checkConfig: jest.Mock;
     mode: 'real' | 'mock';
   };
@@ -301,6 +301,7 @@ describe('DeviceService', () => {
     centralDeviceService = {
       findDevice: jest.fn().mockResolvedValue({ device: null }),
       readReportedFields: jest.fn().mockResolvedValue(null),
+      readSupportedSchema: jest.fn().mockResolvedValue(null),
       checkConfig: jest.fn(),
       mode: 'real',
     };
@@ -329,6 +330,8 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
+      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override
+      $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
         findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,
@@ -698,7 +701,6 @@ describe('DeviceService', () => {
           imei: registerDto.imei,
           serialNumber: registerDto.serialNumber,
           blackboxId: registerDto.blackboxId,
-          bootloader: undefined,
           modelId: gt06nModel.id,
           apiKeyHash: expect.any(String) as string,
         },
@@ -734,14 +736,13 @@ describe('DeviceService', () => {
       expect(auditLog.create).not.toHaveBeenCalled();
     });
 
-    it('ส่ง Identity group มาครบ (imei/serialNumber/blackboxId/bootloader) -> ส่งต่อให้ device.create ครบทุก field (PDF §4.1)', async () => {
+    it('ส่ง Identity group มาครบ (imei/serialNumber/blackboxId) -> ส่งต่อให้ device.create ครบทุก field (PDF §4.1)', async () => {
       await service.register(
         {
           ...registerDto,
           imei: '123456789012345',
           serialNumber: 'SN-0001',
           blackboxId: 'BB-0001',
-          bootloader: 'v1.2.0',
         },
         admin,
       );
@@ -751,7 +752,6 @@ describe('DeviceService', () => {
           imei: '123456789012345',
           serialNumber: 'SN-0001',
           blackboxId: 'BB-0001',
-          bootloader: 'v1.2.0',
         }) as object,
       });
     });
@@ -818,7 +818,7 @@ describe('DeviceService', () => {
 
       expect(firmware.findUnique).toHaveBeenCalledWith({
         where: { id: readyFirmware.id },
-        select: { id: true, deviceModelCompatibility: true },
+        select: { id: true, deviceModelCompatibility: true, deletedAt: true },
       });
       expect(device.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -869,6 +869,7 @@ describe('DeviceService', () => {
 
       expect(firmware.findFirst).toHaveBeenCalledWith({
         where: {
+          deletedAt: null,
           version: readyFirmware.version,
           deviceModelCompatibility: { has: gt06nModel.name },
         },
@@ -1096,6 +1097,99 @@ describe('DeviceService', () => {
       await expect(
         service.rotateKey(createdDevice.deviceId, admin),
       ).rejects.toThrow('db down');
+    });
+  });
+
+  describe('confirmInstalled (ปุ่ม "ยืนยันติดตั้งแล้ว" — docs/24 §Q2)', () => {
+    beforeEach(() => {
+      device.findUnique.mockResolvedValue(createdDevice);
+      device.update.mockResolvedValue({
+        ...createdDevice,
+        status: 'installed',
+        installedAt: new Date('2026-10-31T00:00:00.000Z'),
+        customer: null,
+      });
+    });
+
+    it('status registered -> update เป็น installed + ตั้ง installedAt', async () => {
+      const result = await service.confirmInstalled(
+        createdDevice.deviceId,
+        admin,
+      );
+
+      expect(device.findUnique).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+      });
+      expect(device.update).toHaveBeenCalledWith({
+        where: { deviceId: createdDevice.deviceId },
+        data: { status: 'installed', installedAt: expect.any(Date) as Date },
+        include: { customer: { select: { id: true, companyName: true } } },
+      });
+      expect(result.status).toBe('installed');
+      expect(result.installedAt).not.toBeNull();
+    });
+
+    it('เขียน AuditLog action confirm-install พร้อม deviceId เท่านั้น', async () => {
+      await service.confirmInstalled(createdDevice.deviceId, admin);
+
+      expect(auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: admin.id,
+          auditModule: 'device',
+          action: 'confirm-install',
+          metadata: { deviceId: createdDevice.deviceId },
+          ipAddress: null,
+        },
+      });
+    });
+
+    it('เขียน AuditLog ใน tx เดียวกับการแก้ status', async () => {
+      await service.confirmInstalled(createdDevice.deviceId, admin);
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(auditLog.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('status เป็น installed อยู่แล้ว -> ConflictException ไม่เรียก update', async () => {
+      device.findUnique.mockResolvedValue({
+        ...createdDevice,
+        status: 'installed',
+      });
+
+      await expect(
+        service.confirmInstalled(createdDevice.deviceId, admin),
+      ).rejects.toThrow(ConflictException);
+      expect(device.update).not.toHaveBeenCalled();
+    });
+
+    it('status เป็น decommissioned -> ConflictException ไม่เรียก update', async () => {
+      device.findUnique.mockResolvedValue({
+        ...createdDevice,
+        status: 'decommissioned',
+      });
+
+      await expect(
+        service.confirmInstalled(createdDevice.deviceId, admin),
+      ).rejects.toThrow(ConflictException);
+      expect(device.update).not.toHaveBeenCalled();
+    });
+
+    it('ไม่พบ deviceId -> NotFoundException ไม่เรียก device.update', async () => {
+      device.findUnique.mockResolvedValue(null);
+
+      await expect(service.confirmInstalled('NOPE', admin)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(device.update).not.toHaveBeenCalled();
+    });
+
+    it('เครื่องถูกลบระหว่าง findUnique กับ update (P2025 ใน tx) -> NotFoundException', async () => {
+      device.update.mockRejectedValueOnce(makeP2025());
+
+      await expect(
+        service.confirmInstalled(createdDevice.deviceId, admin),
+      ).rejects.toThrow(NotFoundException);
+      expect(auditLog.create).not.toHaveBeenCalled();
     });
   });
 
@@ -2157,8 +2251,69 @@ describe('DeviceService', () => {
         delivery: null,
         // ไม่ใช่โหมด central -> ไม่อ่านค่าจากกล่อง
         boxFields: null,
+        boxSchema: null,
       });
       expect(centralDeviceService.readReportedFields).not.toHaveBeenCalled();
+      expect(centralDeviceService.readSupportedSchema).not.toHaveBeenCalled();
+    });
+
+    it('ไม่ส่ง data_server.path ใน fields (มี key ส่ง telemetry) แต่คงช่องอื่นไว้', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({});
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.fields).toEqual({ APN: 'a' });
+    });
+
+    it('มี override ที่อนุมัติแล้ว -> fields ที่ merge ก็ไม่มี data_server.path', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue({
+        ...approvedConfig,
+        fields: { APN: 'a', 'data_server.path': '/ingest/secret-key' },
+      });
+      mockOverrideQueries({
+        approved: {
+          id: 'ov-1',
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          versionNumber: 1,
+          fields: { APN: 'b' },
+          status: 'approved',
+        },
+      });
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(result.hasDeviceOverride).toBe(true);
+      expect(result.fields).toEqual({ APN: 'b' });
+    });
+
+    it('โหมด central -> boxSchema = พารามิเตอร์ที่ firmware บนกล่องรองรับ', async () => {
+      deviceConfigApplyMode = 'central';
+      device.findUnique.mockResolvedValue(installedDevice);
+      task.findFirst.mockResolvedValue(completedTask);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      mockOverrideQueries({});
+      const boxSchema = {
+        firmwareVersion: '1.0.0',
+        schemaVersion: 1,
+        keys: ['gps.send_interval_sec'],
+      };
+      centralDeviceService.readSupportedSchema.mockResolvedValue(boxSchema);
+
+      const result = await service.getCurrentConfig('DTC-0001');
+
+      expect(centralDeviceService.readSupportedSchema).toHaveBeenCalledWith(
+        'DTC-0001',
+      );
+      expect(result.boxSchema).toEqual(boxSchema);
     });
 
     it('โหมด central -> boxFields = ค่าที่กล่องรายงานว่าใช้อยู่ (ทุกพารามิเตอร์)', async () => {
@@ -2337,6 +2492,21 @@ describe('DeviceService', () => {
             updatedAt: deliveredAt,
             rollout: { configId: base.id },
           });
+        });
+
+        it('delivery.fields ไม่มี data_server.path', async () => {
+          config.findUnique.mockResolvedValue({
+            ...base,
+            fields: {
+              ...base.fields,
+              'data_server.path': '/ingest/secret-key',
+            },
+          });
+          mockApproved(null);
+
+          const result = await service.getCurrentConfig('DTC-0001');
+
+          expect(result.delivery?.fields).toEqual(base.fields);
         });
 
         it('ไม่มี override -> delivery = ค่าฐาน ไม่มีค่ารอส่ง', async () => {

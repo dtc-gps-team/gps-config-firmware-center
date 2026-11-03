@@ -482,7 +482,6 @@ model Device {
   imei                 String?
   serialNumber         String?
   blackboxId           String?
-  bootloader           String?
   status               DeviceLifecycleStatus @default(registered)
   registeredAt         DateTime              @default(now())
   installedAt          DateTime?
@@ -1186,6 +1185,11 @@ model Firmware {
   // แตะ approvedBy เช่นกัน)
   approvalStatus           FirmwareApprovalStatus     @default(pending_review)
   approvedBy               String?
+  // Soft delete (DELETE /firmware/{id}) — ลบไฟล์ใน Object Storage จริงแต่เก็บแถวนี้
+  // ไว้ (version/checksum/ชื่อไฟล์) เพราะตารางอื่นอ้าง FK แบบ Restrict และกล่องที่เก็บ
+  // Firmware นี้ใน partition A/B ยังต้องแสดงได้ว่ารันเวอร์ชันอะไร · ทุกจุดที่ "เลือกใช้"
+  // Firmware ต้องกรอง `deletedAt: null` · ไม่มีใน Data Dictionary (คอลัมน์ของโปรเจกต์เอง)
+  deletedAt                DateTime?
 
   uploader            User              @relation(fields: [uploadedBy], references: [id])
   approver            User?             @relation("FirmwareApprovedBy", fields: [approvedBy], references: [id])

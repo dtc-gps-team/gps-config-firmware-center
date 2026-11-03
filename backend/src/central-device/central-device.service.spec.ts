@@ -593,6 +593,72 @@ describe('findPreviousSuccessfulFirmwareVersion', () => {
   });
 });
 
+describe('readSupportedSchema (พารามิเตอร์ที่ firmware บนกล่องรองรับ)', () => {
+  const gateway = {
+    device_id: 'BOX-1',
+    online: true,
+    hardware_model: 'ESP32-DEVKIT-V1',
+    firmware_version_reported: '1.0.0',
+    config_version_reported: 18,
+    schema_version_reported: 1,
+  };
+  const schema = {
+    hardware_model: 'ESP32-DEVKIT-V1',
+    schema_version: 1,
+    parameters: [
+      { key: 'gps.send_interval_sec', type: 'integer' },
+      { key: 'data_server.path', type: 'string' },
+    ],
+  };
+  function client(over: Partial<CentralDeviceClient> = {}) {
+    const c: CentralDeviceClient = {
+      ...unusedClientMethods,
+      listGatewayDevices: () => Promise.resolve([gateway]),
+      listRegistryDevices: () => Promise.resolve([{ device_id: 'BOX-1' }]),
+      getSchema: jest.fn().mockResolvedValue(schema),
+      ...over,
+    };
+    return c;
+  }
+
+  it('คืน key ทุกตัวใน schema ที่กล่องรายงานว่ารันอยู่ (ตัวเดียวกับที่ใช้ตรวจตอนส่ง)', async () => {
+    const c = client();
+    const out = await makeService(c).readSupportedSchema('BOX-1');
+    expect(c.getSchema).toHaveBeenCalledWith('ESP32-DEVKIT-V1', 1);
+    // ไม่ซ่อน data_server.path — เป็นแค่ชื่อพารามิเตอร์ ไม่มีค่า
+    expect(out).toEqual({
+      firmwareVersion: '1.0.0',
+      schemaVersion: 1,
+      keys: ['gps.send_interval_sec', 'data_server.path'],
+    });
+  });
+
+  it('ติดต่อไม่ได้ / ไม่รู้จักกล่อง / ไม่อยู่ในทะเบียน / ดึง schema ไม่ได้ -> null ไม่โยน error', async () => {
+    const down = client({
+      listGatewayDevices: () =>
+        Promise.reject(new CentralUnavailableError('down')),
+    });
+    await expect(
+      makeService(down).readSupportedSchema('BOX-1'),
+    ).resolves.toBeNull();
+    await expect(
+      makeService(client()).readSupportedSchema('BOX-404'),
+    ).resolves.toBeNull();
+    await expect(
+      makeService(
+        client({ listRegistryDevices: () => Promise.resolve([]) }),
+      ).readSupportedSchema('BOX-1'),
+    ).resolves.toBeNull();
+    await expect(
+      makeService(
+        client({
+          getSchema: () => Promise.reject(new CentralUnavailableError('down')),
+        }),
+      ).readSupportedSchema('BOX-1'),
+    ).resolves.toBeNull();
+  });
+});
+
 describe('readReportedFields (ค่าที่กล่องรายงานว่าใช้อยู่)', () => {
   const client = (getDeviceConfig: CentralDeviceClient['getDeviceConfig']) =>
     ({
