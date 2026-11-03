@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ApprovalCenterView } from "./approval-center-view";
@@ -38,6 +38,18 @@ const usePendingDeviceFirmwareOverrides = vi.fn();
 vi.mock("@/hooks/use-pending-device-firmware-overrides", () => ({
   usePendingDeviceFirmwareOverrides: (enabled: boolean) =>
     usePendingDeviceFirmwareOverrides(enabled),
+}));
+
+// โหมดของ Server กลางที่ backend รายงาน (`mode`) - ค่าเริ่มต้นยังไม่รู้ (null) = แสดงตามเดิม
+const centralState = vi.hoisted(() => ({
+  data: null as { mode: "mock" | "real" } | null,
+}));
+vi.mock("@/hooks/use-central-devices", () => ({
+  useCentralDevices: () => ({
+    data: centralState.data,
+    isLoading: false,
+    error: null,
+  }),
 }));
 
 const usePendingFieldApplyRequests = vi.fn();
@@ -146,6 +158,59 @@ describe("ApprovalCenterView — permission gate ของ Per-device Config/Fir
 });
 
 /** รายการแก้ UI เว็บตามรีวิวพี่เลี้ยง: แยกหมวดเป็นแท็บ แสดงทีละหมวด */
+describe("ApprovalCenterView — โหมด central ซ่อนแท็บ Firmware Override", () => {
+  afterEach(() => {
+    centralState.data = null;
+  });
+
+  it("โหมด central (real) และไม่มีคำขอค้าง -> ไม่เห็นแท็บ Firmware Override แต่ยังเห็นแท็บอื่น", () => {
+    authState.role = "Operation";
+    centralState.data = { mode: "real" };
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    render(<ApprovalCenterView />);
+
+    expect(
+      screen.queryByRole("tab", { name: /^Firmware Override/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /^Config Override/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("โหมด central แต่ยังมีคำขอ Firmware Override ค้าง (สร้างก่อนสลับโหมด) -> ยังเห็นแท็บเพื่อให้ตัดสินใจได้", () => {
+    authState.role = "Operation";
+    centralState.data = { mode: "real" };
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue({
+      ...emptyQueryState(),
+      data: [{ id: "fo-1" }] as never,
+    });
+
+    render(<ApprovalCenterView />);
+
+    expect(
+      screen.getByRole("tab", { name: /^Firmware Override/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("โหมด mock หรือยังไม่รู้โหมด -> เห็นแท็บ Firmware Override ตามเดิม", () => {
+    authState.role = "Operation";
+    usePendingDeviceConfigOverrides.mockReturnValue(emptyQueryState());
+    usePendingDeviceFirmwareOverrides.mockReturnValue(emptyQueryState());
+
+    for (const state of [{ mode: "mock" as const }, null]) {
+      centralState.data = state;
+      const { unmount } = render(<ApprovalCenterView />);
+      expect(
+        screen.getByRole("tab", { name: /^Firmware Override/ }),
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
 describe("ApprovalCenterView — แท็บแยกหมวดคำขอ", () => {
   it("เปิดแท็บแรกที่มีรายการเมื่อไม่มี tab ใน URL", () => {
     authState.role = "Operation";
