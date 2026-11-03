@@ -43,13 +43,18 @@ describe("visibleNavItems", () => {
     }
   });
 
-  it("FirmwareEngineer/QAEngineer ไม่เห็น Config Editor และ Campaign (ไม่มีสิทธิ์อ่าน) แต่ยังเห็น Approval Center", () => {
+  it("FirmwareEngineer/QAEngineer ไม่เห็น Config Editor และ Campaign (ไม่มีสิทธิ์อ่าน) · QAEngineer ยังเห็น Approval Center (คิวตรวจคุณภาพ Firmware) แต่ FirmwareEngineer ไม่เห็น", () => {
     for (const role of ["FirmwareEngineer", "QAEngineer"]) {
       const hrefs = visibleNavItems(role).map((i) => i.href);
       expect(hrefs).not.toContain("/config");
       expect(hrefs).not.toContain("/campaigns");
-      expect(hrefs).toContain("/approvals");
     }
+    expect(visibleNavItems("QAEngineer").map((i) => i.href)).toContain(
+      "/approvals",
+    );
+    expect(visibleNavItems("FirmwareEngineer").map((i) => i.href)).not.toContain(
+      "/approvals",
+    );
     for (const role of [
       "ConfigEngineer",
       "Operation",
