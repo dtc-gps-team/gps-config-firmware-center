@@ -3,7 +3,10 @@ import { Config } from '@prisma/client';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { TARGETABLE_DEVICE_STATUS } from '../campaign/campaign-rollout.service';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
-import { mergeApprovedOverride } from '../device/config-override-merge';
+import {
+  markOverrideConsumed,
+  mergeApprovedOverride,
+} from '../device/config-override-merge';
 import { PrismaService } from '../prisma/prisma.service';
 import { JobResult } from './dto/report-job-result.dto';
 
@@ -251,6 +254,18 @@ export class DeviceSyncService {
       message,
       rollout.id,
     );
+    // ใช้ครั้งเดียว (มติ B 2026-11-03): กล่องยืนยันว่าใช้ Config แล้ว mark Override
+    // ที่ถูก merge ตอนดึงงาน (แถว approved ที่ยังไม่ถูกใช้ ณ ตอนนี้) · เครื่องดึงงานซ้ำ
+    // ได้ระหว่างรอผล จึง mark ตอนรายงานผลสำเร็จ ไม่ใช่ตอนดึง
+    if (claimed && success && rollout.configId) {
+      const { approvedOverride } = await mergeApprovedOverride(
+        this.prisma,
+        deviceId,
+        rollout.configId,
+        {},
+      );
+      await markOverrideConsumed(this.prisma, approvedOverride);
+    }
     if (claimed) return { accepted: true };
     // แพ้การ claim (มีผลเข้ามาพร้อมกัน) ข้อความของเครื่องนี้ยังต้องไม่หาย
     await this.appendLateReport(target.id, result, detail);

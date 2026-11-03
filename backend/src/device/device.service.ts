@@ -40,7 +40,10 @@ import { TaskService } from '../task/task.service';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
-import { mergeApprovedOverride } from './config-override-merge';
+import {
+  markOverrideConsumed,
+  mergeApprovedOverride,
+} from './config-override-merge';
 import { QueryDeviceDto } from './dto/query-device.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 
@@ -819,8 +822,10 @@ export class DeviceService {
     }
 
     // Per-device Config Override (issue #223/#226) — ใช้ค่าที่ ST override
-    // แล้วผ่านอนุมัติจริง ไม่ใช่ base Config เดิมเฉยๆ
-    const { fields } = await mergeApprovedOverride(
+    // แล้วผ่านอนุมัติจริง ไม่ใช่ base Config เดิมเฉยๆ · ใช้ครั้งเดียว (มติ B
+    // 2026-11-03): ส่งสำเร็จแล้ว mark ไว้ ครั้งถัดไปได้ค่าต้นฉบับ · ส่งไม่สำเร็จ
+    // ยังไม่ mark ให้กดส่งใหม่ได้ด้วยค่าเดิม
+    const { fields, approvedOverride } = await mergeApprovedOverride(
       this.prisma,
       device.deviceId,
       config.id,
@@ -832,6 +837,9 @@ export class DeviceService {
       protocol: device.protocol,
       fields,
     });
+    if (result.applied) {
+      await markOverrideConsumed(this.prisma, approvedOverride);
+    }
 
     // AuditLog (#27, CLAUDE.md Audit Pattern — "นำ Config ไปใช้") — log ทุกครั้ง
     // ที่ช่างกดใส่ Config เข้าอุปกรณ์ ไม่ว่าผล `applied` จะ true/false เพราะเป็น
@@ -1425,43 +1433,39 @@ export class DeviceService {
   }
 
   /**
-   * ค่าในกล่อง = Config ฐาน + Override (สะสม) ฉบับล่าสุดที่อนุมัติ**ไม่หลัง**เวลาที่
-   * Rollout ล่าสุดของเครื่องสำเร็จ — ทุกเส้นทางส่ง (คำขอส่งเข้ากล่อง, Campaign,
-   * กล่องดึงงาน) merge Override ที่ approved ตอนเตรียม payload ก่อนกล่องยืนยัน
-   * จึงถูกรวมไปแล้ว · Override ที่อนุมัติหลังจากนั้นยังไม่ถึงกล่อง
+   * ค่าในกล่อง = Config ฐาน + Override ฉบับล่าสุดที่ถูกส่งไปแล้ว (`consumedAt`)
+   * **ไม่หลัง**เวลาที่ Rollout ล่าสุดของเครื่องสำเร็จ (มติ B 2026-11-03 — Override
+   * ใช้ครั้งเดียว ทุกเส้นทางส่ง mark `consumedAt` ตอนส่ง) · ค่าที่รอส่ง =
+   * field ของ Override ที่อนุมัติแล้วแต่ยังไม่ถูกใช้ (`pendingApproved`) ที่ต่างจาก
+   * ค่าในกล่อง
    *
-   * ข้อจำกัด: Override ที่อนุมัติระหว่างที่การส่งยังไม่จบ (หลังเตรียม payload แต่
-   * ก่อนกล่องยืนยัน) จะถูกนับว่าส่งแล้ว — โหมด central กันกรณีนี้อยู่แล้ว เพราะ
-   * ขอแก้ค่าไม่ได้ระหว่างที่เครื่องมีคำขอค้างหรือ Campaign กำลังส่ง (docs/30)
-   * · `decidedAt` null (ข้อมูลเก่า) ถือว่าส่งแล้ว ไม่ขึ้นว่ารอส่งโดยไม่มีหลักฐาน
+   * ข้อจำกัด: ถ้าหลังส่งค่าที่แก้ไปแล้วมีการส่ง Config เดิมซ้ำแบบไม่แก้ กล่องได้
+   * ค่าต้นฉบับแล้ว แต่ที่นี่ยังนับ Override ที่ใช้ไปเป็นค่าในกล่อง — ใช้แค่บอกค่าใน
+   * กล่องของ field ที่รอส่ง (โหมด central อ่านค่าจริงจากกล่องผ่าน `boxFields` แทน)
    */
   private async describeDelivery(
     deviceId: string,
     baseConfig: Config,
     expected: Record<string, unknown>,
-    latestApproved: DeviceConfigOverride | null,
+    pendingApproved: DeviceConfigOverride | null,
     deliveredAt: Date,
   ): Promise<ConfigDelivery> {
-    let delivered = latestApproved;
-    if (
-      latestApproved?.decidedAt &&
-      latestApproved.decidedAt.getTime() > deliveredAt.getTime()
-    ) {
-      delivered = await this.prisma.deviceConfigOverride.findFirst({
-        where: {
-          deviceId,
-          configId: baseConfig.id,
-          status: 'approved',
-          OR: [{ decidedAt: null }, { decidedAt: { lte: deliveredAt } }],
-        },
-        orderBy: { versionNumber: 'desc' },
-      });
-    }
+    const delivered = await this.prisma.deviceConfigOverride.findFirst({
+      where: {
+        deviceId,
+        configId: baseConfig.id,
+        status: 'approved',
+        consumedAt: { not: null, lte: deliveredAt },
+      },
+      orderBy: { versionNumber: 'desc' },
+    });
     const fields = {
       ...(baseConfig.fields as Record<string, unknown>),
       ...((delivered?.fields as Record<string, unknown> | undefined) ?? {}),
     };
-    const pendingFieldNames = Object.keys(expected).filter(
+    const pendingFieldNames = Object.keys(
+      (pendingApproved?.fields as Record<string, unknown> | undefined) ?? {},
+    ).filter(
       (key) => JSON.stringify(expected[key]) !== JSON.stringify(fields[key]),
     );
     return { fields, confirmedAt: deliveredAt, pendingFieldNames };
@@ -1495,18 +1499,12 @@ export class DeviceService {
    * ตายไปแล้ว (Config ของเครื่องเปลี่ยนไปแล้วตั้งแต่ส่งคำขอ — approve ไม่ได้
    * อีกต่อไป) ยังบล็อกคำขอใหม่ไม่ให้ส่งได้จนกว่า Operation จะ reject ทิ้งก่อน
    *
-   * **`fields` ที่เขียนลง DB เป็นสถานะ override สะสม ไม่ใช่แค่ `dto.fields`
-   * ดิบๆ** — merge `dto.fields` (partial ที่ ST ส่งมารอบนี้) ทับ fields ของแถว
-   * **`approved`** ล่าสุดของ Config เดียวกัน (ถ้ามี) ก่อนเขียนแถวใหม่ mirror
-   * `ConfigOverrideService.override()` เดิมที่ merge ทับ `Config.fields` เต็ม
-   * ก้อนก่อนสร้าง `ConfigVersion` ใหม่ทุกครั้ง — **เหตุผลที่ทำแบบนี้แทนที่จะ
-   * เก็บแค่ delta ของรอบนี้ดิบๆ**: `getCurrentConfig()` merge แค่แถว approved
-   * ล่าสุดแถวเดียวทับ base (ไม่ไล่รวมทุก version) ถ้าเก็บแค่ delta ดิบๆ การ
-   * override field ใหม่ในรอบถัดไปจะ "ลบ" ผล override ของ field อื่นจากรอบก่อน
-   * หน้าไปเงียบๆ โดยไม่ตั้งใจ — **กรอง `configId: baseConfig.id` ด้วยเสมอ**
-   * (bug fix เดียวกับ `getCurrentConfig()` — comment A บน PR #225: ไม่งั้น
-   * field ที่เคย override ไว้กับ Config เก่า (ก่อน Confirm Install ใหม่) จะติด
-   * มากับแถวใหม่ที่อ้าง Config คนละตัว)
+   * **`fields` ที่เขียนลง DB คือ `dto.fields` ของรอบนี้เท่านั้น ไม่สะสมค่าจาก
+   * รอบก่อน** (มติ B 2026-11-03 — Override ใช้ครั้งเดียว ดู
+   * `mergeApprovedOverride()`) · เดิมสะสมค่าจากแถว approved ล่าสุดไว้ด้วย
+   * เพราะ Override เคยติดถาวรและ merge แค่แถวล่าสุดแถวเดียว ตอนนี้แต่ละรอบมี
+   * ผลกับการส่งครั้งเดียว การสะสมจึงทำให้ค่าที่แก้รอบก่อน (ที่ส่งไปแล้ว)
+   * กลับมาโดยช่างไม่ได้ขอ
    *
    * **`versionNumber` อ่านในทรานแซกชันเดียวกับ `create` เสมอ** (แก้ race
    * condition ที่ A ชี้ไว้บน PR #225: เดิมอ่านนอก transaction ทำให้ ST 2 คน
@@ -1579,15 +1577,6 @@ export class DeviceService {
           );
         }
 
-        const previousApproved = await tx.deviceConfigOverride.findFirst({
-          where: { deviceId, configId: baseConfig.id, status: 'approved' },
-          orderBy: { versionNumber: 'desc' },
-        });
-        const accumulatedFields = {
-          ...((previousApproved?.fields as Record<string, unknown>) ?? {}),
-          ...dto.fields,
-        };
-
         const latestVersion = await tx.deviceConfigOverride.findFirst({
           where: { deviceId },
           orderBy: { versionNumber: 'desc' },
@@ -1600,7 +1589,7 @@ export class DeviceService {
             deviceId,
             configId: baseConfig.id,
             versionNumber: (latestVersion?.versionNumber ?? 0) + 1,
-            fields: accumulatedFields as Prisma.InputJsonValue,
+            fields: dto.fields as Prisma.InputJsonValue,
             reason: dto.reason,
             overriddenBy: actor.id,
             status: 'pending',

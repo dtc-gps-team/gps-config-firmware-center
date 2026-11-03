@@ -139,3 +139,38 @@ openapi: เลขเวอร์ชันถัดจาก PR ที่ merge 
 1. Approval Center ตอนนี้ดึงรายการ Override pending แยก — โอเคไหมที่จะซ่อน Override ที่มีคำขอผูกออกจากรายการนั้น
    (กรองฝั่ง backend ด้วย `applyRequest: null`) แทนการแก้ฝั่ง Web อย่างเดียว
 2. `minValue`/`maxValue` เป็น `Float` พอไหม หรืออยากได้ `Decimal` ให้ตรงกับ `dataType: decimal`
+
+## 11. Override ใช้ครั้งเดียว (มติ B, 3 พ.ย. 2569)
+
+### 11.1 ปัญหา
+สร้าง Config "5วิ" (`gps.send_interval_sec` = 5) บนเว็บ ช่างขอแก้เป็น 15 ให้ BOX-0001 แล้ว Operation อนุมัติ พอกลับไป
+เลือก Config เดิมบน Mobile อีกครั้ง หน้าเลือกขึ้น 15 ใต้ชื่อ "5วิ" · ตรวจ DB แล้ว `Config` ยังเป็น 5 แต่
+`DeviceConfigOverride` ล่าสุดของ (BOX-0001, Config นี้) ถูก merge เข้าทุกการส่งและทุกหน้าที่แสดงค่า (`mergeApprovedOverride`,
+`apply-options`) ตลอดไป คนเลือกจึงเข้าใจว่าต้นฉบับถูกแก้ และทุกการส่ง Config นี้ให้กล่องนี้ติด 15 โดยไม่รู้ตัว
+
+### 11.2 มติ
+1. เลือก Config ใดก็ตาม หน้าเลือกและหน้าพารามิเตอร์แสดงค่าต้นฉบับ
+2. ส่งโดยไม่แก้ กล่องได้ค่าต้นฉบับ
+3. ส่งพร้อมแก้ค่า ต้องรอ Operation อนุมัติ แล้วการส่งครั้งนั้นได้ค่าต้นฉบับรวมกับค่าที่แก้ในรอบนั้น
+4. ขอแก้รอบใหม่ไม่สะสมค่าจากรอบก่อน
+
+ผล: ค่าที่แก้มีผลเฉพาะเครื่องนั้นและเฉพาะการส่งครั้งนั้น ส่ง Config เดิมซ้ำโดยไม่แก้ กล่องกลับเป็นค่าต้นฉบับ
+เครื่องที่ต้องใช้ค่าพิเศษถาวรให้สร้าง Config แยกบนเว็บ
+
+### 11.3 วิธีทำ
+- `DeviceConfigOverride.consumedAt` (migration additive `20261103090000_add_device_config_override_consumed_at`)
+  mirror `DeviceFirmwareOverride.consumedAt` · แถว approved เดิมถูก backfill เป็นใช้แล้ว ยกเว้นแถวที่ผูกกับคำขอที่อนุมัติ
+  แล้วแต่ยังไม่ได้ส่ง
+- `mergeApprovedOverride()` merge เฉพาะแถว approved ที่ `consumedAt` เป็น null · `markOverrideConsumed()` mark แถวนั้นและ
+  แถวรุ่นก่อนหน้าที่ยังไม่ถูกใช้ เมื่อส่งสำเร็จ: `apply-config` (applied), Campaign/คำขอส่งเข้ากล่อง (mock applied หรือ
+  Server กลางรับคำสั่ง), device-sync (กล่องรายงาน success) · ส่งไม่สำเร็จไม่ mark ส่งใหม่ได้ด้วยค่าเดิม
+- สร้าง Override (ช่าง) และค่าเฉพาะเครื่องของ Rollout เก็บเฉพาะค่ารอบนั้น ไม่สะสม
+- `apply-options` และ `GET /devices/{id}/config` แสดงค่าต้นฉบับ + Override ที่ยังไม่ถูกส่ง (ปกติไม่มี จึงเป็นค่าต้นฉบับ)
+- รายการคำขอ (Approval Center) นับ field จาก Config + Override ของคำขอนั้นเอง ประวัติคำขอเก่าจึงไม่เปลี่ยนตาม
+- `getDeviceValues()` ของ Campaign ยังเสนอ "ค่าพิเศษเดิม" จากประวัติ approved ให้ผู้ใช้เลือกใส่เองเหมือนเดิม
+
+### 11.4 ข้อจำกัด
+- `delivery.fields` นับ Override ที่ถูกส่งล่าสุดเป็นค่าในกล่อง ถ้าหลังจากนั้นมีการส่ง Config เดิมซ้ำแบบไม่แก้ ค่าในกล่องจริง
+  เป็นค่าต้นฉบับแล้ว (โหมด central อ่านค่าจริงผ่าน `boxFields`)
+- device-sync mark ตอนกล่องรายงาน success จึงถือว่า Override ที่อนุมัติระหว่างกล่องดึงงานกับรายงานผลถูกส่งไปแล้ว
+  (กรณีเดียวกับข้อจำกัดเดิมของ `describeDelivery`) · โหมด central กันไว้แล้ว เพราะขอแก้ค่าไม่ได้ระหว่างมีคำขอค้าง

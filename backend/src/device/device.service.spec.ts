@@ -1472,7 +1472,7 @@ describe('DeviceService', () => {
       expect(configApplier.applyConfig).not.toHaveBeenCalled();
     });
 
-    it('มี DeviceConfigOverride สถานะ approved ของ Config เดียวกัน -> merge fields ทับ base ก่อนส่งเข้า applier (issue #223/#226)', async () => {
+    it('มี DeviceConfigOverride สถานะ approved ที่ยังไม่ถูกใช้ของ Config เดียวกัน -> merge fields ทับ base ก่อนส่งเข้า applier แล้ว mark consumedAt เมื่อส่งสำเร็จ (มติ B 2026-11-03)', async () => {
       device.findUnique.mockResolvedValue(installedDevice);
       config.findUnique.mockResolvedValue(approvedConfig);
       deviceConfigOverride.findFirst.mockResolvedValue({
@@ -1492,6 +1492,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id,
           status: 'approved',
+          consumedAt: null,
         },
         orderBy: { versionNumber: 'desc' },
       });
@@ -1501,6 +1502,37 @@ describe('DeviceService', () => {
         protocol: 'TCP',
         fields: { APN: 'override-internet' },
       });
+      expect(deviceConfigOverride.updateMany).toHaveBeenCalledWith({
+        where: {
+          deviceId: 'DTC-0001',
+          configId: approvedConfig.id,
+          status: 'approved',
+          consumedAt: null,
+          versionNumber: { lte: 2 },
+        },
+        data: { consumedAt: expect.any(Date) as Date },
+      });
+    });
+
+    it('ส่งไม่สำเร็จ (applied:false) -> ไม่ mark Override ว่าใช้แล้ว ส่งใหม่ได้ด้วยค่าเดิม (มติ B 2026-11-03)', async () => {
+      device.findUnique.mockResolvedValue(installedDevice);
+      config.findUnique.mockResolvedValue(approvedConfig);
+      deviceConfigOverride.findFirst.mockResolvedValue({
+        id: 'override-1',
+        deviceId: 'DTC-0001',
+        configId: approvedConfig.id,
+        versionNumber: 2,
+        fields: { APN: 'override-internet' },
+        status: 'approved',
+      });
+      configApplier.applyConfig.mockResolvedValue({
+        ...applyResult,
+        applied: false,
+      });
+
+      await service.applyConfig('DTC-0001', approvedConfig.id, st);
+
+      expect(deviceConfigOverride.updateMany).not.toHaveBeenCalled();
     });
 
     it('ไม่มี DeviceConfigOverride ของเครื่องนี้ -> ใช้ base Config เดิมเฉยๆ ไม่ merge อะไร', async () => {
@@ -1943,6 +1975,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id,
           status: 'approved',
+          consumedAt: null,
         },
         orderBy: { versionNumber: 'desc' },
       });
@@ -2098,6 +2131,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id,
           status: 'approved',
+          consumedAt: null,
         },
         orderBy: { versionNumber: 'desc' },
       });
@@ -2351,6 +2385,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id,
           status: 'approved',
+          consumedAt: null,
         },
         orderBy: { versionNumber: 'desc' },
       });
@@ -2472,13 +2507,16 @@ describe('DeviceService', () => {
           decidedAt,
         });
 
-        /** approved ล่าสุด = `latest` · approved ที่ตัดสินไม่หลังเวลาส่ง = `delivered` */
-        function mockApproved(latest: unknown, delivered: unknown = latest) {
+        /** approved ที่ยังไม่ถูกส่ง (`consumedAt: null`) = `pending` · approved ที่ถูกส่ง
+         * ไม่หลังเวลาส่งสำเร็จล่าสุด = `delivered` (มติ B 2026-11-03 — ใช้ครั้งเดียว) */
+        function mockApproved(pending: unknown, delivered: unknown = null) {
           deviceConfigOverride.findFirst.mockImplementation(
-            (args: { where?: { status?: string; OR?: unknown } }) => {
+            (args: { where?: { status?: string; consumedAt?: unknown } }) => {
               if (args?.where?.status !== 'approved')
                 return Promise.resolve(null);
-              return Promise.resolve(args.where.OR ? delivered : latest);
+              return Promise.resolve(
+                args.where.consumedAt === null ? pending : delivered,
+              );
             },
           );
         }
@@ -2521,12 +2559,11 @@ describe('DeviceService', () => {
           });
         });
 
-        it('override อนุมัติหลังส่งล่าสุด -> fields = ค่าหลังส่งครั้งถัดไป · delivery = ค่าในกล่อง + field ที่รอส่ง', async () => {
+        it('override อนุมัติแล้วแต่ยังไม่ถูกส่ง -> fields = ค่าหลังส่งครั้งถัดไป · delivery = ค่าในกล่อง + field ที่รอส่ง', async () => {
           mockApproved(
             override(1, new Date('2026-10-28T04:32:34.000Z'), {
               'speed_limit.max_kmh': 100,
             }),
-            null,
           );
 
           const result = await service.getCurrentConfig('DTC-0001');
@@ -2545,37 +2582,32 @@ describe('DeviceService', () => {
               deviceId: 'DTC-0001',
               configId: base.id,
               status: 'approved',
-              OR: [{ decidedAt: null }, { decidedAt: { lte: deliveredAt } }],
+              consumedAt: { not: null, lte: deliveredAt },
             },
             orderBy: { versionNumber: 'desc' },
           });
         });
 
-        it('override อนุมัติก่อนส่ง -> ส่งเข้ากล่องไปแล้ว ไม่มีค่ารอส่ง (ไม่ query ซ้ำ)', async () => {
+        it('override ถูกส่งไปแล้ว (consumedAt) -> ค่าในกล่องรวมค่าที่แก้ · fields กลับเป็นค่าต้นฉบับ · ไม่มีค่ารอส่ง (มติ B 2026-11-03)', async () => {
           const ov = override(1, new Date('2026-10-27T08:00:00.000Z'), {
             'speed_limit.max_kmh': 100,
           });
-          mockApproved(ov);
+          mockApproved(null, ov);
 
           const result = await service.getCurrentConfig('DTC-0001');
 
+          expect(result.fields).toEqual(base.fields);
+          expect(result.hasDeviceOverride).toBe(false);
           expect(result.delivery).toEqual({
             fields: { 'speed_limit.max_kmh': 100, 'gps.send_interval_sec': 15 },
             confirmedAt: deliveredAt,
             pendingFieldNames: [],
           });
-          const approvedCalls =
-            deviceConfigOverride.findFirst.mock.calls.filter(
-              ([a]: [{ where?: { status?: string } }]) =>
-                a?.where?.status === 'approved',
-            );
-          expect(approvedCalls).toHaveLength(1);
         });
 
-        it('v1 ส่งแล้ว v2 (สะสม) อนุมัติหลังส่ง -> ค่าในกล่อง = v1 · รอส่งเฉพาะ field ที่ต่าง', async () => {
+        it('v1 ส่งแล้ว v2 อนุมัติรอส่ง (ไม่สะสม) -> ค่าในกล่อง = v1 · รอส่งเฉพาะ field ของ v2 ที่ต่าง', async () => {
           mockApproved(
             override(2, new Date('2026-10-28T04:00:00.000Z'), {
-              'speed_limit.max_kmh': 60,
               'gps.send_interval_sec': 10,
             }),
             override(1, new Date('2026-10-27T08:00:00.000Z'), {
@@ -2585,6 +2617,10 @@ describe('DeviceService', () => {
 
           const result = await service.getCurrentConfig('DTC-0001');
 
+          expect(result.fields).toEqual({
+            'speed_limit.max_kmh': 80,
+            'gps.send_interval_sec': 10,
+          });
           expect(result.delivery).toEqual({
             fields: { 'speed_limit.max_kmh': 60, 'gps.send_interval_sec': 15 },
             confirmedAt: deliveredAt,
@@ -2746,6 +2782,7 @@ describe('DeviceService', () => {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id, // กรอง configId ด้วยเสมอ — ไม่ใช่แค่ deviceId
           status: 'approved',
+          consumedAt: null,
         },
         orderBy: { versionNumber: 'desc' },
       });
@@ -3054,7 +3091,7 @@ describe('DeviceService', () => {
       expect(deviceConfigOverride.create).toHaveBeenCalled();
     });
 
-    it('มี override approved เดิมของ Config เดียวกัน -> versionNumber +1, fields สะสม (merge approved เดิม+dto ใหม่)', async () => {
+    it('มี override approved เดิมของ Config เดียวกัน -> versionNumber +1, fields = เฉพาะ dto รอบนี้ ไม่สะสมค่ารอบก่อน (มติ B 2026-11-03)', async () => {
       mockOverrideQueries({
         previousApproved: {
           id: 'ov-1',
@@ -3069,31 +3106,27 @@ describe('DeviceService', () => {
         deviceId: 'DTC-0001',
         configId: approvedConfig.id,
         versionNumber: 2,
-        fields: { REPORT_INTERVAL_MOVING: 60, APN: 'new-apn' },
+        fields: { APN: 'new-apn' },
         reason: dto.reason,
         status: 'pending',
         overriddenBy: 'st-1',
         overriddenAt: new Date('2026-09-16T00:00:00.000Z'),
       });
 
-      const result = await service.overrideDeviceConfig('DTC-0001', dto, st);
+      await service.overrideDeviceConfig('DTC-0001', dto, st);
 
+      // ค่าที่แก้รอบก่อน (REPORT_INTERVAL_MOVING) ถูกส่งไปแล้วหรือจะถูกส่งกับคำขอของ
+      // มันเอง ไม่ติดมากับคำขอใหม่
       expect(deviceConfigOverride.create).toHaveBeenCalledWith({
         data: {
           deviceId: 'DTC-0001',
           configId: approvedConfig.id,
           versionNumber: 2,
-          fields: { REPORT_INTERVAL_MOVING: 60, APN: 'new-apn' },
+          fields: { APN: 'new-apn' },
           reason: dto.reason,
           overriddenBy: 'st-1',
           status: 'pending',
         },
-      });
-      // field จาก override approved รอบก่อน (REPORT_INTERVAL_MOVING) ต้องยังอยู่
-      // ในคำขอใหม่ ไม่หายไปเงียบๆ แม้ dto รอบนี้จะไม่ได้แตะ field นั้นเลย
-      expect(result.fields).toEqual({
-        APN: 'new-apn',
-        REPORT_INTERVAL_MOVING: 60,
       });
     });
 
