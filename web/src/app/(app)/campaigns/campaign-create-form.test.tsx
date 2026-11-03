@@ -64,7 +64,6 @@ function device(deviceId: string, status: Device["status"] = "installed") {
     imei: null,
     serialNumber: null,
     blackboxId: null,
-    bootloader: null,
     status,
     registeredAt: "2026-01-01T00:00:00Z",
     installedAt: null,

@@ -71,11 +71,6 @@ export class RegisterDeviceDto {
   @MaxLength(50)
   blackboxId!: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  bootloader?: string;
-
   // Firmware ที่กล่องมีติดมาก่อนเข้าระบบเรา (เช่นจากโรงงาน) — optional เพราะ
   // ไม่ใช่ทุกกรณีที่รู้แน่ชัด (issue #362 ส่วนขยาย Rollback, เจอตอนทดสอบกับ
   // กล่องจริง) ไม่ใส่ไว้ = `DeviceService.register()` ไม่ seed Dual Partition

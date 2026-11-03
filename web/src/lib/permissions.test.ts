@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { canManageDeviceModels, canReadFirmware, visibleDeviceHistoryTypes } from "./permissions";
+import {
+  canDeleteConfig,
+  canDeleteFirmware,
+  canManageCampaign,
+  canManageDeviceModels,
+  canManageParameters,
+  canReadFirmware,
+  visibleDeviceHistoryTypes,
+} from "./permissions";
 
+describe("canManageCampaign", () => {
+  it("Operation และ SuperAdmin แก้/ลบกลุ่มได้ role อื่นทำไม่ได้", () => {
+    expect(canManageCampaign("Operation")).toBe(true);
+    expect(canManageCampaign("SuperAdmin")).toBe(true);
+    for (const r of ["ConfigEngineer", "ST", "OT", "Auditor", "Admin", null]) {
+      expect(canManageCampaign(r)).toBe(false);
+    }
+  });
+});
 /**
  * เทสแรกของ permissions.ts ในโปรเจกต์ (ยังไม่เคยมี unit test ของไฟล์นี้มา
  * ก่อน — PR #273 review ข้อ 1(ค) ขอให้เริ่มด้วย canManageDeviceModels)
@@ -67,13 +84,19 @@ describe("visibleDeviceHistoryTypes", () => {
     }
   });
 
-  it("เฉพาะ Operation และ ST เห็นปุ่ม override (seed.ts ให้ ST เท่านั้น ไม่ให้ OT)", () => {
+  it("เฉพาะ Operation, ST และ SuperAdmin เห็นปุ่ม override (seed.ts ให้ ST เท่านั้น ไม่ให้ OT — SuperAdmin ข้ามได้ตามมติ 2026-10-30)", () => {
     expect(visibleDeviceHistoryTypes("Operation")).toContain("config-override");
     expect(visibleDeviceHistoryTypes("Operation")).toContain(
       "firmware-override",
     );
     expect(visibleDeviceHistoryTypes("ST")).toContain("config-override");
     expect(visibleDeviceHistoryTypes("ST")).toContain("firmware-override");
+    expect(visibleDeviceHistoryTypes("SuperAdmin")).toContain(
+      "config-override",
+    );
+    expect(visibleDeviceHistoryTypes("SuperAdmin")).toContain(
+      "firmware-override",
+    );
 
     for (const role of [
       "OT",
@@ -82,7 +105,6 @@ describe("visibleDeviceHistoryTypes", () => {
       "QAEngineer",
       "Auditor",
       "Admin",
-      "SuperAdmin",
     ]) {
       expect(visibleDeviceHistoryTypes(role)).not.toContain("config-override");
       expect(visibleDeviceHistoryTypes(role)).not.toContain(
@@ -99,6 +121,36 @@ describe("canReadFirmware", () => {
     expect(canReadFirmware("SW")).toBe(false);
     for (const r of ["FirmwareEngineer", "QAEngineer", "Operation", "ST", "OT", "Auditor", "Admin", "SuperAdmin"]) {
       expect(canReadFirmware(r)).toBe(true);
+    }
+  });
+});
+
+describe("canDeleteConfig", () => {
+  it("ConfigEngineer และ SuperAdmin ลบ Config ได้ role อื่นทำไม่ได้", () => {
+    expect(canDeleteConfig("ConfigEngineer")).toBe(true);
+    expect(canDeleteConfig("SuperAdmin")).toBe(true);
+    for (const r of ["Operation", "ST", "OT", "Auditor", "Admin", null]) {
+      expect(canDeleteConfig(r)).toBe(false);
+    }
+  });
+});
+
+describe("canManageParameters", () => {
+  it("ConfigEngineer และ SuperAdmin แก้/ลบพารามิเตอร์ได้ role อื่นทำไม่ได้", () => {
+    expect(canManageParameters("ConfigEngineer")).toBe(true);
+    expect(canManageParameters("SuperAdmin")).toBe(true);
+    for (const r of ["Operation", "ST", "OT", "Auditor", "Admin", null]) {
+      expect(canManageParameters(r)).toBe(false);
+    }
+  });
+});
+
+describe("canDeleteFirmware", () => {
+  it("FirmwareEngineer และ SuperAdmin ลบ Firmware ได้ role อื่นทำไม่ได้", () => {
+    expect(canDeleteFirmware("FirmwareEngineer")).toBe(true);
+    expect(canDeleteFirmware("SuperAdmin")).toBe(true);
+    for (const r of ["QAEngineer", "Operation", "ST", "Auditor", "Admin", null]) {
+      expect(canDeleteFirmware(r)).toBe(false);
     }
   });
 });

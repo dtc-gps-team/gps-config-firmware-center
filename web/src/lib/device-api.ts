@@ -31,7 +31,6 @@ export type Device = {
   imei: string | null;
   serialNumber: string | null;
   blackboxId: string | null;
-  bootloader: string | null;
   status: DeviceStatus;
   registeredAt: string;
   installedAt: string | null;
@@ -119,7 +118,6 @@ export type RegisterDeviceInput = {
   imei: string;
   serialNumber: string;
   blackboxId: string;
-  bootloader?: string;
 };
 
 /** response — `RegisterDeviceResponse` (`Device` + `apiKey` จริงที่โชว์ได้
@@ -134,6 +132,19 @@ export function rotateDeviceKey(
 ): Promise<RegisterDeviceResult> {
   return apiJson<RegisterDeviceResult>(
     `/devices/${encodeURIComponent(deviceId)}/rotate-key`,
+    { method: "POST", token },
+  );
+}
+
+/** `POST /devices/{deviceId}/confirm-install` — Admin/SuperAdmin เท่านั้น ยืนยัน
+ * ว่าติดตั้งแล้ว ย้าย status `registered` -> `installed` (409 ถ้าสถานะไม่ใช่
+ * `registered`) — ต้อง `installed` ถึงจะเพิ่มเข้า Campaign ได้ */
+export function confirmDeviceInstalled(
+  token: string,
+  deviceId: string,
+): Promise<Device> {
+  return apiJson<Device>(
+    `/devices/${encodeURIComponent(deviceId)}/confirm-install`,
     { method: "POST", token },
   );
 }

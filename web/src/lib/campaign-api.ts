@@ -181,6 +181,61 @@ export function createCampaign(
   });
 }
 
+/** request body ของ `PATCH /campaigns/{id}` — ส่งอย่างน้อย 1 field */
+export type UpdateCampaignInput = {
+  name?: string;
+  description?: string;
+};
+
+/**
+ * `PATCH /campaigns/{id}` — แก้ชื่อ/คำอธิบายกลุ่ม ทำได้ทุกเมื่อ · 400 ถ้าไม่ส่ง
+ * field ใดเลย · 403 ถ้าไม่ใช่ Operation/SuperAdmin
+ */
+export function updateCampaign(
+  token: string,
+  id: string,
+  input: UpdateCampaignInput,
+): Promise<Campaign> {
+  return apiJson<Campaign>(`/campaigns/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+/** `DELETE /campaigns/{id}` — ลบกลุ่มพร้อมสมาชิกและประวัติ Rollout · 409 ถ้ามี
+ * Rollout ที่ยังไม่จบ */
+export function deleteCampaign(token: string, id: string): Promise<void> {
+  return apiJson<void>(`/campaigns/${id}`, { method: "DELETE", token });
+}
+
+/** `POST /campaigns/{id}/targets` — เพิ่มเครื่อง (installed เท่านั้น) · คืนสมาชิก
+ * ทั้งหมดหลังเพิ่ม · 409 ถ้ามี Rollout ค้าง/เครื่องอยู่ในกลุ่มแล้ว */
+export function addCampaignTargets(
+  token: string,
+  campaignId: string,
+  targets: CampaignTargetInput[],
+): Promise<CampaignTarget[]> {
+  return apiJson<CampaignTarget[]>(`/campaigns/${campaignId}/targets`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ targets }),
+  });
+}
+
+/** `DELETE /campaigns/{id}/targets/{deviceId}` — เอาเครื่องออก · 409 ถ้าเป็น
+ * เครื่องสุดท้ายหรือมี Rollout ค้าง */
+export function removeCampaignTarget(
+  token: string,
+  campaignId: string,
+  deviceId: string,
+): Promise<void> {
+  return apiJson<void>(
+    `/campaigns/${campaignId}/targets/${encodeURIComponent(deviceId)}`,
+    { method: "DELETE", token },
+  );
+}
+
 export function listCampaignRollouts(
   token: string,
   campaignId: string,

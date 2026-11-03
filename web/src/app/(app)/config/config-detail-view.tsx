@@ -26,7 +26,11 @@ import { ConfigLifecycleSteps } from "@/components/config/lifecycle-steps";
 import { RelativeTime } from "@/components/relative-time";
 import { diffConfigFields } from "@/lib/config-diff";
 import { useAuth } from "@/components/auth/auth-provider";
-import { canCreateConfig, canUpdateConfig } from "@/lib/permissions";
+import {
+  canCreateConfig,
+  canDeleteConfig,
+  canUpdateConfig,
+} from "@/lib/permissions";
 import type { ConfigFieldDefinition } from "@/lib/config-definition-api";
 import { ApiError } from "@/lib/api";
 import {
@@ -161,6 +165,9 @@ function ConfigDetailContent({
 
   const canModify =
     config.status === "draft" && canUpdateConfig(session?.role);
+  // ลบได้ทุกสถานะ (แก้ไขยังเฉพาะ draft) · ถ้ายังถูกใช้งานอยู่ backend ตอบ 409
+  // พร้อมเหตุผล แสดงใน dialog
+  const canDelete = canDeleteConfig(session?.role);
   const fieldEntries = Object.entries(config.fields);
   const definitionsReady = !definitions.isLoading;
   const sensitiveFieldNames = useMemo(() => {
@@ -257,7 +264,7 @@ function ConfigDetailContent({
               {copied ? <CheckIcon /> : <CopyIcon />}
               {copied ? "คัดลอกแล้ว" : "คัดลอก JSON"}
             </Button>
-            {canModify && (
+            {canDelete && (
               <Button
                 variant="outline"
                 size="icon"
@@ -300,6 +307,13 @@ function ConfigDetailContent({
         description={
           <>
             ลบ &ldquo;{config.name}&rdquo; ถาวร กู้คืนไม่ได้
+            {config.status !== "draft" && (
+              <span className="mt-2 block">
+                ไม่กระทบค่าที่ส่งไปแล้วบนกล่อง แต่จะ Rollback กลับมาใช้ Config
+                นี้ไม่ได้อีก ถ้ายังมี Rollout หรือคำขอที่ใช้ Config นี้อยู่
+                จะลบไม่ได้
+              </span>
+            )}
             {deleteError && (
               <span className="mt-2 block text-destructive">{deleteError}</span>
             )}

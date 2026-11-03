@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -87,6 +88,18 @@ export class FirmwareController {
     @Req() req: AuthenticatedRequest,
   ): Promise<Firmware> {
     return this.firmwareService.updateCompatibility(id, dto, toActor(req));
+  }
+
+  // ลบได้ทุกสถานะ ยกเว้นที่ระบบยังต้องใช้ (409) resource `firmware` action
+  // `Update` (ไม่มี action Delete ใน ActionType เหมือน DELETE /config/{id})
+  @Delete(':id')
+  @RequirePermission('firmware', ActionType.Update)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.firmwareService.remove(id, toActor(req));
   }
 
   @Post(':id/simulate')

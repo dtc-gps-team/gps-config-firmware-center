@@ -97,6 +97,65 @@ export function createConfigDefinition(
   });
 }
 
+/** request body ของ `PATCH /config-definitions/{id}` - ส่งเฉพาะ field ที่แก้ · `fieldName` แก้ไม่ได้
+ * · `null` ล้างค่าที่ไม่บังคับ (description/unit/category/defaultValue/minValue/maxValue) */
+export type UpdateConfigDefinitionInput = {
+  dataType?: string;
+  allowedValues?: string[];
+  required?: boolean;
+  unknownSpec?: boolean;
+  description?: string | null;
+  unit?: string | null;
+  stOverridable?: boolean;
+  category?: string | null;
+  sensitive?: boolean;
+  restartRequired?: boolean;
+  defaultValue?: string | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+  supportedModels?: ConfigFieldModelSupport[];
+};
+
+/** `PATCH /config-definitions/{id}` - ConfigEngineer (และ SuperAdmin) · กฎ validate ที่เปลี่ยนมีผลกับ
+ * Config ที่สร้าง/แก้ครั้งถัดไปเท่านั้น */
+export function updateConfigDefinition(
+  token: string,
+  id: string,
+  input: UpdateConfigDefinitionInput,
+): Promise<ConfigFieldDefinition> {
+  return apiJson<ConfigFieldDefinition>(`/config-definitions/${id}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+/** `DELETE /config-definitions/{id}` - 409 ถ้ายังมี Config (ที่ไม่ถูกลบ) ใช้พารามิเตอร์นี้อยู่ */
+export function deleteConfigDefinition(
+  token: string,
+  id: string,
+): Promise<void> {
+  return apiJson<void>(`/config-definitions/${id}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/** `GET /config-definitions/{id}/usage` - จำนวน Config ที่ใช้พารามิเตอร์นี้ + ตัวอย่างชื่อ (สูงสุด 5) */
+export type ConfigDefinitionUsage = {
+  count: number;
+  configs: { id: string; name: string }[];
+};
+
+export function getConfigDefinitionUsage(
+  token: string,
+  id: string,
+): Promise<ConfigDefinitionUsage> {
+  return apiJson<ConfigDefinitionUsage>(`/config-definitions/${id}/usage`, {
+    token,
+  });
+}
+
 /** "GT06N/TCP, GT06L/TCP" — ใช้โชว์ในตารางและเป็นค่าให้ filter ข้อความ */
 export function formatModelSupport(
   models: ConfigFieldModelSupport[],
