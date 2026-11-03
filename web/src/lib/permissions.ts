@@ -121,6 +121,18 @@ export function canSimulateFirmware(role: string | null | undefined): boolean {
  * `firmware-decision` (mirror `config-decision`) — QAEngineer เท่านั้น
  * (docs/13_Role_Redesign_Proposal.md §3.2 — Firmware Approval Lifecycle)
  */
+/**
+ * เห็นหน้า Approval Center ไหม - RBAC_Matrix.md §2 แถว Approval Center: FirmwareEngineer เป็น "-"
+ * (ไม่มีสิทธิ์อ่าน Config/Campaign และไม่ได้ตัดสิน Firmware เอง จึงไม่มีรายการอะไรให้ดูเลย) ·
+ * QAEngineer ยังเห็น (คิว "ตรวจคุณภาพ Firmware" ที่ตัวเองตัดสินใจ) · role อื่นเห็นตามเดิม
+ * ใช้ทั้งซ่อนเมนู (`nav.ts`) และกันเข้าผ่าน URL ตรงๆ (`approval-center-entry.tsx`)
+ */
+export function canViewApprovalCenter(
+  role: string | null | undefined,
+): boolean {
+  return role !== "FirmwareEngineer";
+}
+
 export function canDecideFirmwareApproval(
   role: string | null | undefined,
 ): boolean {

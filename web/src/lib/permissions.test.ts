@@ -7,6 +7,7 @@ import {
   canManageDeviceModels,
   canManageParameters,
   canReadFirmware,
+  canViewApprovalCenter,
   visibleDeviceHistoryTypes,
 } from "./permissions";
 
@@ -151,6 +152,24 @@ describe("canDeleteFirmware", () => {
     expect(canDeleteFirmware("SuperAdmin")).toBe(true);
     for (const r of ["QAEngineer", "Operation", "ST", "Auditor", "Admin", null]) {
       expect(canDeleteFirmware(r)).toBe(false);
+    }
+  });
+});
+
+describe("canViewApprovalCenter", () => {
+  it("FirmwareEngineer ไม่เห็น Approval Center (RBAC Matrix เป็น -) role อื่นเห็น รวม QAEngineer", () => {
+    expect(canViewApprovalCenter("FirmwareEngineer")).toBe(false);
+    for (const r of [
+      "ConfigEngineer",
+      "QAEngineer",
+      "Operation",
+      "ST",
+      "OT",
+      "Auditor",
+      "Admin",
+      "SuperAdmin",
+    ]) {
+      expect(canViewApprovalCenter(r)).toBe(true);
     }
   });
 });
