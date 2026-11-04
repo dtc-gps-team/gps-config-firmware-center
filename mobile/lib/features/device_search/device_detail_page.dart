@@ -416,9 +416,15 @@ class _StatusCard extends ConsumerWidget {
         ? 'ไม่ทราบ'
         : online.label;
     final onlineTone = online?.tone ?? AppBadgeTone.neutral;
+    // ค่าที่กล่องรายงานก่อน (Server กลาง แล้วค่อย telemetry) · ไม่มีเลยใช้
+    // `summary` ของประวัติเครื่อง
+    final reportedFw = online?.fromCentral == true
+        ? central?.device?.reportedFirmwareVersion
+        : null;
     final firmware =
-        central?.device?.reportedFirmwareVersion ??
-        device.reportedFirmwareVersion;
+        reportedFw ??
+        device.reportedFirmwareVersion ??
+        history?.currentFirmwareVersion;
     return AppCard(
       key: const Key('device_detail_status_card'),
       child: Column(
@@ -440,21 +446,23 @@ class _StatusCard extends ConsumerWidget {
             label: 'สถานะ',
             value: _lifecycleText(device.status),
           ),
+          // ชื่อ Config/Firmware แสดงเสมอ · เฉพาะป้ายสถานะที่รอ `/status`
+          _StatusPayloadRows(
+            status: status,
+            configName: history?.currentConfigName,
+            firmware: firmware,
+            reportedConfigVersion: central?.reachable == true
+                ? central?.device?.reportedConfigVersion
+                : null,
+            lastSeenAt: online?.lastSeenAt,
+          ),
           statusAsync.when(
             skipLoadingOnRefresh: true,
             skipError: true,
-            data: (status) => _StatusPayloadRows(
-              status: status,
-              configName: history?.currentConfigName,
-              firmware: firmware,
-              reportedConfigVersion: central?.reachable == true
-                  ? central?.device?.reportedConfigVersion
-                  : null,
-              lastSeenAt: online?.lastSeenAt,
-            ),
+            data: (_) => const SizedBox.shrink(),
             loading: () => const AppDetailSkeleton(
               key: Key('device_status_loading'),
-              lines: 4,
+              lines: 2,
               padding: EdgeInsets.zero,
             ),
             error: (error, _) => AppErrorView(
@@ -483,7 +491,7 @@ class _StatusPayloadRows extends StatelessWidget {
     required this.lastSeenAt,
   });
 
-  final DeviceStatus status;
+  final DeviceStatus? status;
   final String? configName;
   final String? firmware;
   final int? reportedConfigVersion;
@@ -509,12 +517,14 @@ class _StatusPayloadRows extends StatelessWidget {
                   color: AppColors.mutedForeground,
                 ),
               ),
-            const SizedBox(height: 4),
-            AppBadge(
-              label: devicePayloadLabel(status.configStatus, firmware: false),
-              tone: devicePayloadTone(status.configStatus),
-              dot: true,
-            ),
+            if (status case final status?) ...[
+              const SizedBox(height: 4),
+              AppBadge(
+                label: devicePayloadLabel(status.configStatus, firmware: false),
+                tone: devicePayloadTone(status.configStatus),
+                dot: true,
+              ),
+            ],
           ],
         ),
       ),
@@ -525,12 +535,17 @@ class _StatusPayloadRows extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(firmware ?? 'ไม่ทราบ'),
-            const SizedBox(height: 4),
-            AppBadge(
-              label: devicePayloadLabel(status.firmwareStatus, firmware: true),
-              tone: devicePayloadTone(status.firmwareStatus),
-              dot: true,
-            ),
+            if (status case final status?) ...[
+              const SizedBox(height: 4),
+              AppBadge(
+                label: devicePayloadLabel(
+                  status.firmwareStatus,
+                  firmware: true,
+                ),
+                tone: devicePayloadTone(status.firmwareStatus),
+                dot: true,
+              ),
+            ],
           ],
         ),
       ),

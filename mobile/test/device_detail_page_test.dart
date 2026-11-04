@@ -1340,6 +1340,47 @@ void _r4Tests() {
       },
     );
 
+    testWidgets(
+      'ไม่มีค่าที่กล่องรายงานเลย -> Firmware จาก summary ของประวัติ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          history: const DeviceHistoryResult(
+            items: [],
+            currentFirmwareVersion: '0.9.9',
+          ),
+        );
+        await tester.pump();
+        expect(card('Firmware', '0.9.9'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '/status โหลดไม่สำเร็จ -> ชื่อ Config/Firmware ยังแสดง ซ่อนแค่ป้ายสถานะ',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeDeviceSearchRepository(),
+          role: UserRole.st,
+          statusRepo: _FakeDeviceStatusRepository(error: Exception('boom')),
+          history: const DeviceHistoryResult(
+            items: [],
+            currentConfigName: 'ส่งพิกัดทุก 15 วินาที',
+            currentFirmwareVersion: '1.2.1',
+          ),
+        );
+        await tester.pump();
+        expect(
+          card('Config ปัจจุบัน', 'ส่งพิกัดทุก 15 วินาที'),
+          findsOneWidget,
+        );
+        expect(card('Firmware', '1.2.1'), findsOneWidget);
+        expect(find.byKey(const Key('device_status_retry')), findsOneWidget);
+      },
+    );
+
     testWidgets('เครื่องยังไม่ติดตั้ง -> เตือน และปุ่มส่งค่า/แก้ค่ากดไม่ได้', (
       tester,
     ) async {
