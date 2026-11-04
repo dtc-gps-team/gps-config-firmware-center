@@ -942,7 +942,7 @@ class _ShortcutGrid extends StatelessWidget {
                   if (j > 0) const SizedBox(width: 10),
                   Expanded(
                     child: j < chunk.length
-                        ? _ShortcutTile(tile: chunk[j])
+                        ? _ShortcutTile(tile: chunk[j], wide: oneColumn)
                         : const SizedBox.shrink(),
                   ),
                 ],
@@ -957,12 +957,33 @@ class _ShortcutGrid extends StatelessWidget {
 }
 
 class _ShortcutTile extends StatelessWidget {
-  const _ShortcutTile({required this.tile});
+  const _ShortcutTile({required this.tile, required this.wide});
 
   final _Shortcut tile;
+  final bool wide;
 
   @override
   Widget build(BuildContext context) {
+    final icon = Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: tile.tint,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(tile.icon, size: 18, color: AppColors.accentForeground),
+    );
+    Widget label(TextAlign align) => Text(
+      tile.label,
+      textAlign: align,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: wide ? 14 : 12.5,
+        height: 1.3,
+        fontWeight: FontWeight.w600,
+      ),
+    );
     return Material(
       key: tile.key,
       color: AppColors.card,
@@ -977,34 +998,25 @@ class _ShortcutTile extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 56),
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: tile.tint,
-                    borderRadius: BorderRadius.circular(10),
+            // 4 ช่องต่อแถว: ไอคอนบน ชื่อล่าง — ถ้าวางข้างกัน ชื่อเหลือที่
+            // ~40px แล้วตัดทีละตัวอักษร · จอ text scale สูง (1 ช่องต่อแถว)
+            // ยังวางข้างกันเหมือนเดิม
+            child: wide
+                ? Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 10),
+                      Expanded(child: label(TextAlign.start)),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      icon,
+                      const SizedBox(height: 8),
+                      label(TextAlign.center),
+                    ],
                   ),
-                  child: Icon(
-                    tile.icon,
-                    size: 18,
-                    color: AppColors.accentForeground,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    tile.label,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.35,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

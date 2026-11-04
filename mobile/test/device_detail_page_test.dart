@@ -1562,6 +1562,24 @@ void _r4Tests() {
       },
     );
 
+    testWidgets(
+      'ทางลัด 4 ช่องต่อแถว -> ไอคอนอยู่บน ชื่ออยู่ล่าง ไม่ตัดทีละตัว',
+      (tester) async {
+        await _pump(tester, repo: _FakeDeviceSearchRepository());
+        await tester.pump();
+
+        final tile = find.byKey(const Key('device_detail_history'));
+        final icon = tester.getCenter(
+          find.descendant(of: tile, matching: find.byIcon(Icons.history)),
+        );
+        final label = tester.getRect(
+          find.descendant(of: tile, matching: find.text('ประวัติเครื่อง')),
+        );
+        expect(icon.dy, lessThan(label.top));
+        expect(label.width, greaterThan(tester.getSize(tile).width * .6));
+      },
+    );
+
     testWidgets('ทางลัดประวัติเครื่อง -> หน้าประวัติของเครื่องนี้', (
       tester,
     ) async {

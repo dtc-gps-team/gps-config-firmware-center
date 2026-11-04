@@ -243,6 +243,19 @@ void main() {
       },
     );
 
+    testWidgets('ช่องค้นหาบอกว่าค้นด้วยเลขเครื่องหรือเบอร์ซิม พร้อมตัวอย่าง', (
+      tester,
+    ) async {
+      await _pumpStarred(
+        tester,
+        repo: _FakeDeviceSearchRepository(devices: devices),
+        store: _MemoryStarStore(),
+      );
+
+      expect(find.text('พิมพ์เลขเครื่อง หรือเบอร์ซิม'), findsOneWidget);
+      expect(find.textContaining('เช่น BOX-0001'), findsOneWidget);
+    });
+
     testWidgets('เปิดหน้าใหม่ -> ดาวที่บันทึกไว้ขึ้นเลยโดยไม่ต้องค้นหา', (
       tester,
     ) async {

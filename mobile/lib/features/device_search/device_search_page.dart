@@ -321,7 +321,12 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                         onChanged: (value) => setState(() => _query = value),
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
-                          hintText: 'เลขเครื่อง/ซิม',
+                          // ผู้ใช้ไม่รู้ว่าค้นด้วยอะไรได้ — บอกทั้ง 2 ช่องทาง
+                          // + ตัวอย่าง (ค้นบางส่วนได้ ตาม _filterDevices)
+                          hintText: 'พิมพ์เลขเครื่อง หรือเบอร์ซิม',
+                          helperText:
+                              'เช่น BOX-0001 หรือ 0812345678 · พิมพ์แค่บางส่วนก็ได้',
+                          helperMaxLines: 2,
                           filled: true,
                           fillColor: AppColors.card,
                           suffixIcon: _query.isEmpty
