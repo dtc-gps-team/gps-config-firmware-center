@@ -326,23 +326,35 @@ void main() {
       expect(find.text('ต้องติดตาม 2'), findsOneWidget);
     });
 
-    testWidgets('ตัวกรอง "ที่คุณแจ้ง" / "จากระบบ" กดซ้ำ = ยกเลิก', (
+    testWidgets('เมนูแหล่งที่มา: ที่คุณแจ้ง / จากระบบ / ทุกแหล่ง', (
       tester,
     ) async {
       await _pump(tester, repo: _FakeIncidentRepository(incidents: mixed));
 
-      await tester.tap(find.byKey(const Key('incidents_source_mine')));
-      await tester.pump();
+      Future<void> pick(String key) async {
+        await tester.tap(find.byKey(const Key('incidents_source_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key(key)));
+        await tester.pumpAndSettle();
+      }
+
+      await pick('incidents_source_mine');
       expect(find.text('GPS ไม่ส่งพิกัด'), findsOneWidget);
       expect(find.text('เขียน Config ไม่สำเร็จ'), findsNothing);
+      // ปุ่มบอกว่ากรองอะไรอยู่
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('incidents_source_menu')),
+          matching: find.text('ที่คุณแจ้ง'),
+        ),
+        findsOneWidget,
+      );
 
-      await tester.tap(find.byKey(const Key('incidents_source_system')));
-      await tester.pump();
+      await pick('incidents_source_system');
       expect(find.text('GPS ไม่ส่งพิกัด'), findsNothing);
       expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('incidents_source_system')));
-      await tester.pump();
+      await pick('incidents_source_all');
       expect(find.text('GPS ไม่ส่งพิกัด'), findsOneWidget);
       expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
     });
@@ -391,6 +403,8 @@ void main() {
       ),
     );
 
+    await tester.tap(find.byKey(const Key('incidents_source_menu')));
+    await tester.pumpAndSettle();
     expect(find.text('ที่คุณแจ้ง'), findsOneWidget);
     expect(find.text('จากระบบ'), findsOneWidget);
   });

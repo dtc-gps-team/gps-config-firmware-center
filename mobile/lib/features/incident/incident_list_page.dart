@@ -10,6 +10,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
+import '../../core/ui/app_filter_controls.dart';
 import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_fade_in.dart';
 import '../../core/ui/app_skeleton.dart';
@@ -200,68 +201,84 @@ class _IncidentFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final search = TextField(
+      key: const Key('incidents_search'),
+      controller: controller,
+      onChanged: onQuery,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: 'ค้นหาด้วยหัวข้อ หรือ device_id',
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.card,
+        prefixIcon: const Icon(Icons.search, size: 20),
+        suffixIcon: query.isEmpty
+            ? null
+            : IconButton(
+                key: const Key('incidents_search_clear'),
+                tooltip: 'ล้างคำค้น',
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  controller.clear();
+                  onQuery('');
+                },
+              ),
+      ),
+    );
+    final sourceMenu = AppFilterMenu<_SourceFilter>(
+      key: const Key('incidents_source_menu'),
+      placeholder: 'แหล่งที่มา',
+      allLabel: 'ทุกแหล่ง',
+      allKey: const Key('incidents_source_all'),
+      tooltip: 'เลือกแหล่งที่มา',
+      selected: source == _SourceFilter.all ? null : source,
+      onChanged: (s) => onSource(s ?? _SourceFilter.all),
+      options: const [
+        AppFilterOption(
+          value: _SourceFilter.mine,
+          label: 'ที่คุณแจ้ง',
+          key: Key('incidents_source_mine'),
+        ),
+        AppFilterOption(
+          value: _SourceFilter.system,
+          label: 'จากระบบ',
+          key: Key('incidents_source_system'),
+        ),
+      ],
+    );
+    // ตัวอักษรใหญ่ (จอ 360px / 2x) ช่องค้นหากับปุ่มแหล่งที่มาวางคู่กันไม่พอ
+    final stacked = MediaQuery.textScalerOf(context).scale(10) > 14;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            key: const Key('incidents_search'),
-            controller: controller,
-            onChanged: onQuery,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'ค้นหาด้วยหัวข้อ หรือ device_id',
-              isDense: true,
-              filled: true,
-              fillColor: AppColors.card,
-              prefixIcon: const Icon(Icons.search, size: 20),
-              suffixIcon: query.isEmpty
-                  ? null
-                  : IconButton(
-                      key: const Key('incidents_search_clear'),
-                      tooltip: 'ล้างคำค้น',
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: () {
-                        controller.clear();
-                        onQuery('');
-                      },
-                    ),
+          // B (04/11/2026): ชิป 5 อันปนกัน 2 แบบใช้ยาก → แถวบน = ค้นหา +
+          // ปุ่มเมนูแหล่งที่มา · แถวล่าง = สวิตช์สถานะเต็มความกว้าง (3 ช่อง
+          // วางคู่ปุ่มเมนูแล้วแคบจนชื่อถูกตัด)
+          if (stacked) ...[
+            search,
+            const SizedBox(height: 8),
+            Align(alignment: Alignment.centerLeft, child: sourceMenu),
+          ] else
+            Row(
+              children: [
+                Expanded(flex: 3, child: search),
+                const SizedBox(width: 8),
+                Flexible(flex: 2, child: sourceMenu),
+              ],
             ),
-          ),
           const SizedBox(height: 8),
-          // แท็บสถานะ + ตัวกรองแหล่งที่มาอยู่ใน Wrap เดียว: จอกว้างได้แถวเดียว
-          // จอแคบตัดลงบรรทัดที่สอง ไม่มีชิปตกขอบจอให้ต้องเลื่อนหา
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
+          AppSegmentedToggle<_StatusTab>(
+            selected: tab,
+            onChanged: onTab,
+            options: [
               for (final t in _StatusTab.values)
-                ChoiceChip(
+                AppFilterOption(
+                  value: t,
+                  label: '${_tabLabels[t]} ${counts[t] ?? 0}',
                   key: Key('incidents_tab_${t.name}'),
-                  label: Text('${_tabLabels[t]} ${counts[t] ?? 0}'),
-                  selected: tab == t,
-                  showCheckmark: false,
-                  onSelected: (_) => onTab(t),
                 ),
-              FilterChip(
-                key: const Key('incidents_source_mine'),
-                avatar: const Icon(Icons.person_outline, size: 16),
-                label: const Text('ที่คุณแจ้ง'),
-                selected: source == _SourceFilter.mine,
-                showCheckmark: false,
-                onSelected: (on) =>
-                    onSource(on ? _SourceFilter.mine : _SourceFilter.all),
-              ),
-              FilterChip(
-                key: const Key('incidents_source_system'),
-                avatar: const Icon(Icons.memory, size: 16),
-                label: const Text('จากระบบ'),
-                selected: source == _SourceFilter.system,
-                showCheckmark: false,
-                onSelected: (on) =>
-                    onSource(on ? _SourceFilter.system : _SourceFilter.all),
-              ),
             ],
           ),
         ],

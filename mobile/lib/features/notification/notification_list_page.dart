@@ -8,6 +8,7 @@ import '../../core/realtime/live_refresh.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
+import '../../core/ui/app_filter_controls.dart';
 import '../../core/ui/app_empty_state.dart';
 import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_skeleton.dart';
@@ -243,39 +244,40 @@ class _NotificationFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final toggle = Container(
-      constraints: const BoxConstraints(minHeight: 40),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.secondary,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Segment(
-              key: const Key('notification_filter_all'),
-              label: 'ทั้งหมด $allCount',
-              selected: !unreadOnly,
-              onTap: () => onUnreadOnly(false),
-            ),
-            _Segment(
-              key: const Key('notification_filter_unread'),
-              label: 'ยังไม่อ่าน $unreadCount',
-              selected: unreadOnly,
-              onTap: () => onUnreadOnly(true),
-            ),
-          ],
+    final toggle = AppSegmentedToggle<bool>(
+      selected: unreadOnly,
+      onChanged: onUnreadOnly,
+      options: [
+        AppFilterOption(
+          value: false,
+          label: 'ทั้งหมด $allCount',
+          key: const Key('notification_filter_all'),
         ),
-      ),
+        AppFilterOption(
+          value: true,
+          label: 'ยังไม่อ่าน $unreadCount',
+          key: const Key('notification_filter_unread'),
+        ),
+      ],
     );
     // หมวดเดียวไม่ต้องมีให้กรอง
     final menu = categories.length > 1
-        ? _CategoryMenu(
-            categories: categories,
-            category: category,
-            onCategory: onCategory,
+        ? AppFilterMenu<NotificationCategory>(
+            key: const Key('notification_category_menu'),
+            placeholder: 'หมวด',
+            allLabel: 'ทุกหมวด',
+            allKey: const Key('notification_category_all'),
+            tooltip: 'เลือกหมวด',
+            selected: category,
+            onChanged: onCategory,
+            options: [
+              for (final c in categories)
+                AppFilterOption(
+                  value: c,
+                  label: c.label,
+                  key: Key('notification_category_${c.name}'),
+                ),
+            ],
           )
         : null;
     // ตัวอักษรใหญ่ (จอ 360px / 2x) แถวเดียวไม่พอ → ปุ่มหมวดลงบรรทัดใหม่
@@ -292,141 +294,16 @@ class _NotificationFilterBar extends StatelessWidget {
             )
           : Row(
               children: [
-                Expanded(child: toggle),
-                if (menu != null) ...[const SizedBox(width: 8), menu],
+                Expanded(flex: 3, child: toggle),
+                if (menu != null) ...[
+                  const SizedBox(width: 8),
+                  Flexible(flex: 2, child: menu),
+                ],
               ],
             ),
     );
   }
 }
-
-class _Segment extends StatelessWidget {
-  const _Segment({
-    super.key,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Semantics(
-        selected: selected,
-        button: true,
-        child: Material(
-          color: selected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(AppRadius.xl),
-            child: Center(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypography.sm,
-                  fontWeight: FontWeight.w600,
-                  color: selected
-                      ? AppColors.primaryForeground
-                      : AppColors.mutedForeground,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryMenu extends StatelessWidget {
-  const _CategoryMenu({
-    required this.categories,
-    required this.category,
-    required this.onCategory,
-  });
-
-  final List<NotificationCategory> categories;
-  final NotificationCategory? category;
-  final ValueChanged<NotificationCategory?> onCategory;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = category != null;
-    // PopupMenuButton คืน null ไม่ได้ (null = ปิดเมนูเฉย ๆ) ใช้ค่า sentinel
-    // `_all` แทน "ทุกหมวด"
-    return PopupMenuButton<Object>(
-      key: const Key('notification_category_menu'),
-      tooltip: 'เลือกหมวด',
-      onSelected: (v) => onCategory(v is NotificationCategory ? v : null),
-      itemBuilder: (_) => [
-        PopupMenuItem<Object>(
-          key: const Key('notification_category_all'),
-          value: _all,
-          child: Text(
-            'ทุกหมวด',
-            style: TextStyle(
-              fontWeight: active ? FontWeight.w400 : FontWeight.w700,
-            ),
-          ),
-        ),
-        for (final c in categories)
-          PopupMenuItem<Object>(
-            key: Key('notification_category_${c.name}'),
-            value: c,
-            child: Text(
-              c.label,
-              style: TextStyle(
-                fontWeight: c == category ? FontWeight.w700 : FontWeight.w400,
-              ),
-            ),
-          ),
-      ],
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 40),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? AppColors.primary : AppColors.card,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          border: Border.all(
-            color: active ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.filter_list,
-              size: 18,
-              color: active
-                  ? AppColors.primaryForeground
-                  : AppColors.mutedForeground,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              category?.label ?? 'หมวด',
-              style: TextStyle(
-                fontSize: AppTypography.sm,
-                fontWeight: FontWeight.w600,
-                color: active
-                    ? AppColors.primaryForeground
-                    : AppColors.foreground,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-const _all = Object();
 
 class _NotificationSections extends StatelessWidget {
   const _NotificationSections({
