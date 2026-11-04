@@ -141,7 +141,7 @@ void main() {
 
       expect(_banner, findsOneWidget);
       expect(find.text('ออฟไลน์ ข้อมูลเมื่อ 09:15'), findsOneWidget);
-      expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
+      expect(find.byKey(const Key('home_recent_1')), findsOneWidget);
     });
 
     testWidgets('รายการงาน: ออนไลน์ปกติ -> ไม่มีแถบ', (tester) async {
@@ -151,7 +151,7 @@ void main() {
       await _pump(tester, const HomePage(), api);
 
       expect(_banner, findsNothing);
-      expect(find.byKey(const Key('my_task_card_0')), findsOneWidget);
+      expect(find.byKey(const Key('home_recent_1')), findsOneWidget);
     });
 
     testWidgets('cache หลายแถวคนละเวลา -> บอกเวลาที่เก่าที่สุด', (

@@ -7,7 +7,8 @@ import 'package:mobile/core/api/models.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/features/incident/incident_detail_page.dart';
 import 'package:mobile/core/ui/app_badge.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
+import 'package:mobile/core/ui/app_card.dart';
 import 'package:mobile/core/ui/app_skeleton.dart';
 import 'package:mobile/features/incident/incident_list_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
@@ -127,20 +128,27 @@ void main() {
       expect(repo.detailCalls, ['inc-1']);
       expect(find.text('เขียน Config ไม่สำเร็จ'), findsOneWidget);
       expect(
+        find.descendant(
+          of: find.byType(AppInkHeader),
+          matching: find.text('เขียน Config ไม่สำเร็จ'),
+        ),
+        findsOneWidget,
+      );
+      expect(
         find.text('config-sync-writer เขียนไม่สำเร็จหลัง retry 3 ครั้ง'),
         findsOneWidget,
       );
-      // ป้าย severity / status อยู่บน AppPageHeader (อังกฤษตาม Web)
+      // ป้าย severity / status อยู่ในเนื้อหารายละเอียด
       expect(
         find.descendant(
-          of: find.byType(AppPageHeader),
+          of: find.byType(AppCard),
           matching: find.widgetWithText(AppBadge, 'High'),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: find.byType(AppPageHeader),
+          of: find.byType(AppCard),
           matching: find.widgetWithText(AppBadge, 'Investigating'),
         ),
         findsOneWidget,
@@ -273,7 +281,6 @@ void main() {
       await tester.tap(find.byKey(const Key('incident_card_1')));
       await tester.pumpAndSettle();
 
-      expect(find.text('รายละเอียด Incident'), findsOneWidget);
       expect(repo.detailCalls, ['inc-2']);
       expect(find.byKey(const Key('incident_detail_title')), findsOneWidget);
       expect(

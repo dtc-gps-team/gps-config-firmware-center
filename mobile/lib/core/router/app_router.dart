@@ -7,8 +7,10 @@ import '../../features/config_override/config_override_page.dart';
 import '../../features/firmware_install/confirm_firmware_install_page.dart';
 import '../../features/firmware_override/firmware_override_page.dart';
 import '../../features/device_search/device_detail_page.dart';
+import '../../features/device_search/device_history_page.dart';
 import '../../features/device_search/device_search_page.dart';
 import '../../features/home/home_page.dart';
+import '../../features/home/home_tasks_page.dart';
 import '../../features/incident/incident_detail_page.dart';
 import '../../features/incident/field_report_page.dart';
 import '../../features/incident/incident_list_page.dart';
@@ -29,6 +31,9 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const home = '/home';
+
+  /// รายการงานเต็มจากหน้า Home ไม่ใช้ route /tasks เดิม
+  static const homeAll = '/home/all';
   static const notifications = '/notifications';
 
   /// Incident list (read-only) — `/incidents`.
@@ -73,6 +78,10 @@ class AppRoutes {
       '/devices/:deviceId/confirm-firmware';
   static String deviceConfirmFirmware(String deviceId) =>
       '/devices/$deviceId/confirm-firmware';
+
+  /// ประวัติรายเครื่อง (R4-04 · `GET /devices/{deviceId}/history`) — ทุก role
+  static const deviceHistoryPattern = '/devices/:deviceId/history';
+  static String deviceHistory(String deviceId) => '/devices/$deviceId/history';
 
   /// เลือก Config ที่จะส่งเข้ากล่อง (docs/28 §6) — `/devices/:deviceId/apply`
   /// · `?taskId=` = ขอให้งานนี้ (เปิดจากหน้างาน) · ไม่ส่ง = เริ่มงานให้ก่อน
@@ -147,7 +156,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Authenticated: neither splash nor login is a valid resting place.
       if (atLogin || atSplash) return landingFor(auth.role);
       // แท็บหน้าแรก (งาน) มีเฉพาะช่าง — role อื่นไม่มีแท็บนี้ (docs/22 §7.2)
-      if (state.matchedLocation == AppRoutes.home && !isFieldStaff(auth.role)) {
+      if ((state.matchedLocation == AppRoutes.home ||
+              state.matchedLocation == AppRoutes.homeAll) &&
+          !isFieldStaff(auth.role)) {
         return landingFor(auth.role);
       }
       return null;
@@ -201,6 +212,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
+        path: AppRoutes.homeAll,
+        builder: (context, state) => HomeTasksPage(
+          initialOpenOnly: state.uri.queryParameters['filter'] == 'open',
+        ),
+      ),
+      GoRoute(
         path: AppRoutes.incidentReport,
         builder: (context, state) => FieldReportPage(
           initialDeviceId: state.uri.queryParameters['deviceId'],
@@ -231,6 +248,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ConfirmFirmwareInstallPage(
           deviceId: state.pathParameters['deviceId']!,
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.deviceHistoryPattern,
+        builder: (context, state) =>
+            DeviceHistoryPage(deviceId: state.pathParameters['deviceId']!),
       ),
       GoRoute(
         path: AppRoutes.deviceApplyPattern,

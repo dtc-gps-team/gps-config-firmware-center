@@ -72,6 +72,39 @@ void main() {
     expect(find.byKey(const Key('login_submit')), findsOneWidget);
   });
 
+  testWidgets('login follows the field-work hero and workspace layout', (
+    tester,
+  ) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    expect(find.byKey(const Key('login_hero')), findsOneWidget);
+    expect(find.text('GPS TECH'), findsOneWidget);
+    expect(find.text('TECHNICIAN WORKSPACE'), findsOneWidget);
+    expect(find.text('พร้อมสำหรับงานภาคสนาม'), findsOneWidget);
+    expect(find.text('YOUR WORKSPACE'), findsOneWidget);
+    expect(find.text('เข้าสู่ระบบ'), findsNWidgets(2));
+    expect(find.text('ใช้บัญชีของคุณเพื่อเริ่มงาน'), findsOneWidget);
+    expect(find.text('LOGIN CONCEPT 02'), findsNothing);
+    expect(find.text('GPS Config & Firmware Center'), findsNothing);
+    expect(find.text('ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม'), findsNothing);
+  });
+
+  testWidgets('login submit fits the 360x800 screen without scrolling', (
+    tester,
+  ) async {
+    await _pumpLogin(tester, _container(_FakeAuthRepository()));
+
+    final bounds = tester.getRect(find.byKey(const Key('login_submit')));
+    // เทสรันโหมด mock (ค่าเริ่มต้น) ซึ่งมีกล่องคำใบ้เหนือช่องกรอก — แอปจริง
+    // ไม่มีกล่องนี้ จึงหักความสูงกล่อง + ช่องว่าง 12 ออกเพื่อวัดตำแหน่งจริง
+    final hint = find.byKey(const Key('login_mock_hint'));
+    final mockOffset = AppConfig.apiMockMode && hint.evaluate().isNotEmpty
+        ? tester.getRect(hint).height + 12
+        : 0.0;
+    expect(bounds.top, greaterThanOrEqualTo(0));
+    expect(bounds.bottom - mockOffset, lessThanOrEqualTo(720));
+  });
+
   testWidgets('shows validation errors on empty submit', (tester) async {
     final container = _container(_FakeAuthRepository());
     await _pumpLogin(tester, container);
@@ -196,29 +229,30 @@ void main() {
   });
 
   group('design system ใหม่ (docs/22 Batch 2)', () {
-    testWidgets(
-      'theme v2 + ฟอร์มอยู่ในแผงลอย (มุม xxl เงา floating) + ไม่มี AppBar',
-      (tester) async {
-        await _pumpLogin(tester, _container(_FakeAuthRepository()));
+    testWidgets('theme v2 + ฟอร์มอยู่ในแผ่นสว่างโค้งด้านบน + ไม่มี AppBar', (
+      tester,
+    ) async {
+      await _pumpLogin(tester, _container(_FakeAuthRepository()));
 
-        expect(find.byType(AppV2Theme), findsOneWidget);
-        expect(find.byType(AppBar), findsNothing);
-        final panel = find.ancestor(
-          of: find.byKey(const Key('login_submit')),
-          matching: find.byKey(const Key('login_panel')),
-        );
-        expect(panel, findsOneWidget);
-        final deco =
-            tester.widget<Container>(panel).decoration! as BoxDecoration;
-        expect(deco.color, AppColors.card);
-        expect(deco.borderRadius, BorderRadius.circular(AppRadius.xxl));
-        expect(deco.boxShadow, AppShadows.floating);
-        final theme = Theme.of(
-          tester.element(find.byKey(const Key('login_submit'))),
-        );
-        expect(theme.colorScheme.primary, AppColors.primary);
-      },
-    );
+      expect(find.byType(AppV2Theme), findsOneWidget);
+      expect(find.byType(AppBar), findsNothing);
+      final panel = find.ancestor(
+        of: find.byKey(const Key('login_submit')),
+        matching: find.byKey(const Key('login_panel')),
+      );
+      expect(panel, findsOneWidget);
+      final deco = tester.widget<Container>(panel).decoration! as BoxDecoration;
+      expect(deco.color, AppColors.background);
+      expect(
+        deco.borderRadius,
+        const BorderRadius.vertical(top: Radius.circular(AppRadius.xxl)),
+      );
+      expect(deco.boxShadow, isNull);
+      final theme = Theme.of(
+        tester.element(find.byKey(const Key('login_submit'))),
+      );
+      expect(theme.colorScheme.primary, AppColors.primary);
+    });
 
     testWidgets('ช่องกรอกใช้ขอบ inputBorder #576171 จาก theme v2', (
       tester,
@@ -258,12 +292,14 @@ void main() {
       },
     );
 
-    testWidgets('สัญลักษณ์ระบบไล่สีลงไปจบที่ primary + เงาสีฟ้า (docs/22 §4.6)', (
+    // r4 (ภาพ 1145) แทนสัญลักษณ์ไล่สีของ docs/22 §4.6 ด้วยหมุดบนหัวพื้นเข้ม
+    // (A อนุมัติให้ชุดสี/หน้าตา r4 แทน docs/22 ใน #409)
+    testWidgets('หมุดตำแหน่งอยู่บนหัวพื้น primary และมีแค่ชุดเดียว', (
       tester,
     ) async {
       await _pumpLogin(tester, _container(_FakeAuthRepository()));
-      // Container ที่ใกล้ไอคอนที่สุด (แผงฟอร์มก็เป็น Container ที่ครอบอยู่ชั้นนอก)
-      final mark = tester.widget<Container>(
+      expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
+      final hero = tester.widget<Container>(
         find
             .ancestor(
               of: find.byIcon(Icons.location_on_outlined),
@@ -271,9 +307,7 @@ void main() {
             )
             .first,
       );
-      final deco = mark.decoration! as BoxDecoration;
-      expect((deco.gradient! as LinearGradient).colors.last, AppColors.primary);
-      expect(deco.boxShadow, AppShadows.primaryGlow);
+      expect(hero.color, AppColors.primary);
     });
   });
 }

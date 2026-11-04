@@ -823,6 +823,7 @@ class DeviceConfigDraft {
     this.pendingOverride,
     this.delivery,
     this.boxFields,
+    this.boxSchema,
   });
 
   final String? id;
@@ -858,11 +859,16 @@ class DeviceConfigDraft {
   /// ทุกพารามิเตอร์ (โหมด central) · `null` = ไม่ทราบ
   final BoxFields? boxFields;
 
+  /// เฉพาะ `GET /devices/{deviceId}/config` (v3.76) — พารามิเตอร์ที่ firmware บน
+  /// กล่องรองรับ (โหมด central) · `null` = ไม่ทราบ ให้ทำงานเหมือนเดิม
+  final BoxSchema? boxSchema;
+
   factory DeviceConfigDraft.fromJson(Map<String, dynamic> json) {
     final rawStatus = json['status'] as String?;
     final rawPending = json['pendingOverride'] as Map?;
     final rawDelivery = json['delivery'] as Map?;
     final rawBoxFields = json['boxFields'] as Map?;
+    final rawBoxSchema = json['boxSchema'] as Map?;
     return DeviceConfigDraft(
       id: json['id'] as String?,
       name: json['name'] as String?,
@@ -880,6 +886,45 @@ class DeviceConfigDraft {
       boxFields: rawBoxFields == null
           ? null
           : BoxFields.fromJson(rawBoxFields.cast<String, dynamic>()),
+      boxSchema: rawBoxSchema == null
+          ? null
+          : BoxSchema.fromJson(rawBoxSchema.cast<String, dynamic>()),
+    );
+  }
+}
+
+/// `DeviceCurrentConfig.boxSchema` (v3.76) — พารามิเตอร์ที่ firmware บนกล่อง
+/// รองรับ ตัวเดียวกับที่ backend ใช้ตรวจตอนส่ง Config เข้ากล่อง (key นอกรายการ
+/// = ส่งไม่ผ่านทั้งชุด)
+class BoxSchema {
+  const BoxSchema({
+    required this.firmwareVersion,
+    required this.schemaVersion,
+    required this.keys,
+  });
+
+  final String? firmwareVersion;
+  final int schemaVersion;
+  final Set<String> keys;
+
+  bool supports(String key) => keys.contains(key);
+
+  /// key ใน [fieldNames] ที่กล่องไม่รองรับ (คงลำดับเดิม)
+  List<String> unsupportedIn(Iterable<String> fieldNames) => [
+    for (final name in fieldNames)
+      if (!supports(name)) name,
+  ];
+
+  /// เช่น "Firmware ที่กล่องใช้อยู่ (1.0.0) ไม่รองรับ"
+  String get unsupportedLabel =>
+      'Firmware ที่กล่องใช้อยู่ (${firmwareVersion ?? 'schema $schemaVersion'}) '
+      'ไม่รองรับ';
+
+  factory BoxSchema.fromJson(Map<String, dynamic> json) {
+    return BoxSchema(
+      firmwareVersion: json['firmwareVersion'] as String?,
+      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 0,
+      keys: {for (final k in (json['keys'] as List? ?? const [])) k as String},
     );
   }
 }
@@ -1629,4 +1674,119 @@ class AppNotification {
     createdAt: createdAt,
     sentAt: sentAt,
   );
+}
+
+/// ชนิดรายการในประวัติเครื่อง (`DeviceHistoryItem.type`) · backend เพิ่มชนิดใหม่
+/// ได้ในอนาคต ชนิดที่ไม่รู้จักเป็น [unknown] ไม่ทำให้ทั้งหน้าพัง
+enum DeviceHistoryType {
+  lifecycle,
+  rollout,
+  configOverride,
+  firmwareOverride,
+  task,
+  incident,
+  unknown;
+
+  static DeviceHistoryType fromWire(String? value) => switch (value) {
+    'lifecycle' => lifecycle,
+    'rollout' => rollout,
+    'config-override' => configOverride,
+    'firmware-override' => firmwareOverride,
+    'task' => task,
+    'incident' => incident,
+    _ => unknown,
+  };
+}
+
+/// 1 รายการของ `GET /devices/{deviceId}/history` (schema `DeviceHistoryItem`) —
+/// เก็บเฉพาะ field ที่หน้าประวัติใช้แสดง
+class DeviceHistoryItem {
+  const DeviceHistoryItem({
+    required this.id,
+    required this.type,
+    required this.occurredAt,
+    this.status,
+    this.title,
+    this.detail,
+    this.payloadType,
+    this.configName,
+    this.configVersion,
+    this.firmwareVersion,
+  });
+
+  final String id;
+  final DeviceHistoryType type;
+  final DateTime occurredAt;
+  final String? status;
+  final String? title;
+  final String? detail;
+
+  /// เฉพาะ rollout: `Config` หรือ `Firmware`
+  final String? payloadType;
+  final String? configName;
+  final int? configVersion;
+  final String? firmwareVersion;
+
+  factory DeviceHistoryItem.fromJson(Map<String, dynamic> json) {
+    final config = (json['config'] as Map?)?.cast<String, dynamic>();
+    final firmware = (json['firmware'] as Map?)?.cast<String, dynamic>();
+    final raw = json['occurredAt'];
+    final occurredAt = raw is String ? DateTime.tryParse(raw) : null;
+    if (occurredAt == null) {
+      throw ArgumentError.value(
+        json['occurredAt'],
+        'occurredAt',
+        'DeviceHistoryItem.occurredAt หาย/parse ไม่ได้',
+      );
+    }
+    return DeviceHistoryItem(
+      id: json['id'] as String,
+      type: DeviceHistoryType.fromWire(json['type'] as String?),
+      occurredAt: occurredAt,
+      status: json['status'] as String?,
+      title: json['title'] as String?,
+      detail: json['detail'] as String?,
+      payloadType: json['payloadType'] as String?,
+      configName: config?['name'] as String?,
+      configVersion: (config?['versionNumber'] as num?)?.toInt(),
+      firmwareVersion: firmware?['version'] as String?,
+    );
+  }
+}
+
+/// `GET /devices/{deviceId}/history` (schema `DeviceHistory`) — 1 หน้า
+class DeviceHistoryResult {
+  const DeviceHistoryResult({
+    required this.items,
+    this.currentConfigName,
+    this.currentFirmwareVersion,
+    this.nextCursor,
+  });
+
+  final List<DeviceHistoryItem> items;
+
+  /// `summary.currentConfig.name` — `null` = ยังไม่เคยมี Config
+  final String? currentConfigName;
+
+  /// `summary.currentFirmware.version` — `null` = ยังไม่เคยมี Firmware
+  final String? currentFirmwareVersion;
+
+  /// ส่งกลับเป็น `before` เพื่อดึงหน้าถัดไป · `null` = หมดแล้ว
+  final String? nextCursor;
+
+  factory DeviceHistoryResult.fromJson(Map<String, dynamic> json) {
+    final summary = (json['summary'] as Map?)?.cast<String, dynamic>();
+    final config = (summary?['currentConfig'] as Map?)?.cast<String, dynamic>();
+    final firmware = (summary?['currentFirmware'] as Map?)
+        ?.cast<String, dynamic>();
+    return DeviceHistoryResult(
+      items: [
+        for (final raw in (json['items'] as List<dynamic>? ?? const []))
+          DeviceHistoryItem.fromJson(raw as Map<String, dynamic>),
+      ],
+      currentConfigName: config?['name'] as String?,
+      currentFirmwareVersion: firmware?['version'] as String?,
+      nextCursor: json['nextCursor'] as String?,
+    );
+  }
 }

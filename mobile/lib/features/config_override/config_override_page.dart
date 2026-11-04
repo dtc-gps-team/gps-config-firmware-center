@@ -4,13 +4,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_field_label.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_ink_header.dart';
+import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_sensitive_value.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
@@ -20,6 +23,7 @@ import '../task/apply_mode_provider.dart';
 import '../task/config_apply_request_repository.dart';
 import 'config_override_repository.dart';
 import 'config_value_parser.dart';
+import 'unsupported_firmware_notice.dart';
 
 /// Config Override — Phase 2 (Mobile, issue #211), per-device (issue #223).
 /// เข้าได้เฉพาะ role ST (เช็คที่ entry point ใน `device_detail_page.dart`) —
@@ -209,11 +213,20 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
 
   @override
   Widget build(BuildContext context) {
-    final central = ref.watch(centralApplyModeProvider).valueOrNull ?? false;
-    final configAsync = ref.watch(currentConfigProvider(widget.deviceId));
-    final definitionsAsync = ref.watch(configFieldDefinitionListProvider);
+    final auth = ref.watch(authControllerProvider);
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    final locked = !rolePending && auth.role != UserRole.st;
+    final central = rolePending || locked
+        ? false
+        : ref.watch(centralApplyModeProvider).valueOrNull ?? false;
+    final configAsync = rolePending || locked
+        ? null
+        : ref.watch(currentConfigProvider(widget.deviceId));
+    final definitionsAsync = rolePending || locked
+        ? null
+        : ref.watch(configFieldDefinitionListProvider);
     final navigator = Navigator.of(context);
-    final config = configAsync.valueOrNull;
+    final config = configAsync?.valueOrNull;
 
     return AppV2Theme(
       child: Scaffold(
@@ -221,108 +234,122 @@ class _ConfigOverridePageState extends ConsumerState<ConfigOverridePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AppPageHeader(
-                title: 'Config Override',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                // ข้อความนี้ยืนยัน 2 เรื่อง: (1) issue #223 ตัดสินใจแล้วว่า override
-                // เป็น**รายเครื่อง** (POST /devices/{deviceId}/config-override ไม่ใช่
-                // POST /config/{configId}/override เดิมที่แก้ Config ทั้งชุด) จึงไม่
-                // กระทบเครื่องอื่น (2) **แก้ตามรีวิว A บน PR #225 (มติ 2026-09-24)**:
-                // เปลี่ยนจากข้อความเดิมที่บอกว่า override มีผลทันที เป็นบอกตรงๆ ว่า
-                // ต้องผ่าน Operation อนุมัติก่อน แล้วช่างต้องกด "ใส่ Config เข้าเครื่อง"
-                // ต่อเองอีกครั้ง (apply-config ยังไม่ automation ในรอบนี้)
-                // docs/30 §6 — โหมด central ค่าไปถึงกล่องผ่านคำขอส่งเข้ากล่อง
-                description: central
-                    ? 'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ส่งแล้วเป็นคำขอส่งเข้ากล่อง รอ '
-                          'Operation อนุมัติ แล้วกดส่งเข้ากล่องจากหน้างาน · ต้องระบุ'
-                          'เหตุผลและถูกบันทึกลง Audit Log ทุกครั้ง'
-                    : 'ค่านี้แก้เฉพาะอุปกรณ์เครื่องนี้ · ต้องรอ Operation อนุมัติ แล้วใส่ '
-                          'Config เข้าเครื่องอีกครั้งจึงจะมีผล · ต้องระบุเหตุผลและถูกบันทึกลง '
-                          'Audit Log ทุกครั้ง',
-                // issue #223 — ค่าที่เห็นในฟอร์มไม่ใช่ base Config ล้วนๆ
-                // (`hasDeviceOverride` = true เฉพาะคำขอที่ Operation อนุมัติแล้ว)
-                status: config != null && config.hasDeviceOverride
-                    ? const AppBadge(
+              if (rolePending)
+                const Expanded(child: AppDetailSkeleton(lines: 6))
+              else if (locked)
+                const Expanded(child: AppRoleLockedView())
+              else ...[
+                AppInkHeader(
+                  title: 'ขอแก้ค่าเฉพาะเครื่อง',
+                  subtitle: config?.name ?? '${widget.deviceId} · Config',
+                  onBack: navigator.canPop() ? navigator.pop : null,
+                ),
+                if (config?.hasDeviceOverride == true)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppBadge(
                         key: Key('config_override_has_override_badge'),
                         label: 'มี override เครื่องนี้',
                         tone: AppBadgeTone.info,
                         dot: true,
-                      )
-                    : null,
-                meta: [
-                  if (config != null)
-                    AppPageHeaderMeta(
-                      label: 'Config',
-                      value:
-                          config.name ??
-                          '${config.deviceModel ?? '?'}/${config.protocol ?? '?'}',
+                      ),
                     ),
-                ],
-              ),
-              Expanded(
-                child: configAsync.when(
-                  loading: () => const AppDetailSkeleton(
-                    lines: 6,
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                   ),
-                  error: (error, _) => AppErrorView(
-                    message: _configErrorMessage(error),
-                    messageKey: const Key('config_override_load_error'),
-                    retryKey: const Key('config_override_load_retry'),
-                    onRetry: () {
-                      ref.invalidate(currentConfigProvider(widget.deviceId));
-                      ref.invalidate(configFieldDefinitionListProvider);
-                    },
-                  ),
-                  data: (config) => definitionsAsync.when(
+                Expanded(
+                  child: configAsync!.when(
                     loading: () => const AppDetailSkeleton(
                       lines: 6,
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                     ),
                     error: (error, _) => AppErrorView(
-                      message: 'โหลดข้อมูล Parameter ไม่สำเร็จ',
+                      message: _configErrorMessage(error),
                       messageKey: const Key('config_override_load_error'),
                       retryKey: const Key('config_override_load_retry'),
-                      onRetry: () =>
-                          ref.invalidate(configFieldDefinitionListProvider),
+                      onRetry: () {
+                        ref.invalidate(currentConfigProvider(widget.deviceId));
+                        ref.invalidate(configFieldDefinitionListProvider);
+                      },
                     ),
-                    data: (definitions) {
-                      final defByName = {
-                        for (final d in definitions) d.fieldName: d,
-                      };
-                      return _OverrideForm(
-                        central: central,
-                        config: config,
-                        defByName: defByName,
-                        edits: _edits,
-                        revealed: _revealed,
-                        reasonController: _reasonController,
-                        submitting: _submitting,
-                        error: _error,
-                        errorList: _errorList,
-                        fieldErrors: _fieldErrors,
-                        reasonError: _reasonError,
-                        onReasonChanged: () {
-                          if (_reasonError != null) {
-                            setState(() => _reasonError = null);
-                          }
-                        },
-                        onEdit: (key, value) => setState(() {
-                          _edits[key] = value;
-                          _fieldErrors.remove(key);
-                        }),
-                        onToggleReveal: (key) => setState(() {
-                          if (!_revealed.remove(key)) _revealed.add(key);
-                        }),
-                        onSubmit: () => _submit(config, defByName),
-                      );
-                    },
+                    data: (config) => definitionsAsync!.when(
+                      loading: () => const AppDetailSkeleton(
+                        lines: 6,
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      ),
+                      error: (error, _) => AppErrorView(
+                        message: 'โหลดข้อมูล Parameter ไม่สำเร็จ',
+                        messageKey: const Key('config_override_load_error'),
+                        retryKey: const Key('config_override_load_retry'),
+                        onRetry: () =>
+                            ref.invalidate(configFieldDefinitionListProvider),
+                      ),
+                      data: (definitions) {
+                        final defByName = {
+                          for (final d in definitions) d.fieldName: d,
+                        };
+                        return _OverrideForm(
+                          central: central,
+                          config: config,
+                          defByName: defByName,
+                          edits: _edits,
+                          revealed: _revealed,
+                          reasonController: _reasonController,
+                          fieldErrors: _fieldErrors,
+                          reasonError: _reasonError,
+                          onReasonChanged: () {
+                            if (_reasonError != null) {
+                              setState(() => _reasonError = null);
+                            }
+                          },
+                          onEdit: (key, value) => setState(() {
+                            _edits[key] = value;
+                            _fieldErrors.remove(key);
+                          }),
+                          onToggleReveal: (key) => setState(() {
+                            if (!_revealed.remove(key)) _revealed.add(key);
+                          }),
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
+        bottomNavigationBar:
+            !rolePending &&
+                !locked &&
+                config != null &&
+                definitionsAsync?.hasValue == true
+            ? AppBottomActionBar(
+                children: [
+                  if (_error != null) ...[
+                    AppNotice(
+                      key: const Key('config_override_error'),
+                      tone: AppBadgeTone.danger,
+                      child: AppErrorDetails(
+                        message: _error!,
+                        details: _errorList,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  AppSubmitButton(
+                    buttonKey: const Key('config_override_submit'),
+                    label: 'ขออนุมัติค่าที่แก้',
+                    submitting: _submitting,
+                    onPressed: () => _submit(config, {
+                      for (final definition
+                          in definitionsAsync!.valueOrNull ??
+                              const <ConfigFieldDefinition>[])
+                        definition.fieldName: definition,
+                    }),
+                  ),
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -349,15 +376,11 @@ class _OverrideForm extends StatelessWidget {
     required this.edits,
     required this.revealed,
     required this.reasonController,
-    required this.submitting,
-    required this.error,
-    required this.errorList,
     required this.fieldErrors,
     required this.reasonError,
     required this.onReasonChanged,
     required this.onEdit,
     required this.onToggleReveal,
-    required this.onSubmit,
   });
 
   final bool central;
@@ -366,15 +389,11 @@ class _OverrideForm extends StatelessWidget {
   final Map<String, String> edits;
   final Set<String> revealed;
   final TextEditingController reasonController;
-  final bool submitting;
-  final String? error;
-  final List<String> errorList;
   final Map<String, String> fieldErrors;
   final String? reasonError;
   final VoidCallback onReasonChanged;
   final ValueChanged<String> onToggleReveal;
   final void Function(String key, String value) onEdit;
-  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -387,10 +406,32 @@ class _OverrideForm extends StatelessWidget {
         .toList(growable: false);
     final delivery = config.delivery;
     final undelivered = delivery?.pendingFieldNames.length ?? 0;
+    // v3.76 — ค่าใน Config ที่ firmware บนกล่องไม่รองรับ (null = ไม่ทราบ ไม่ล็อก)
+    final boxSchema = config.boxSchema;
+    final unsupported =
+        boxSchema?.unsupportedIn(configFields.keys) ?? const <String>[];
+    final afterApproval = central
+        ? 'ส่งแล้วรอ Operation อนุมัติ จากนั้นกดส่งเข้ากล่องจากหน้างาน'
+        : 'ต้องรอ Operation อนุมัติก่อน แล้วจึงส่ง Config เข้าเครื่องจากหน้างาน';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       children: [
+        AppNotice(
+          tone: AppBadgeTone.info,
+          child: Text(
+            'แก้ค่านี้เฉพาะเครื่องนี้ · $afterApproval · '
+            'ต้องระบุเหตุผล และถูกบันทึกลง Audit Log ทุกครั้ง',
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (boxSchema != null && unsupported.isNotEmpty) ...[
+          UnsupportedFirmwareNotice(
+            schema: boxSchema,
+            unsupportedKeys: unsupported,
+          ),
+          const SizedBox(height: 16),
+        ],
         // v3.71 — ค่าในช่องคือค่าหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติแล้ว)
         // ถ้ายังไม่ได้ส่ง ค่าในกล่องจริงยังเป็นค่าเดิม บอกให้ชัดว่าต่างกัน
         if (undelivered > 0) ...[
@@ -427,6 +468,9 @@ class _OverrideForm extends StatelessWidget {
                   editValue: edits[entry.key],
                   inBox: delivery != null && delivery.isPending(entry.key)
                       ? _InBoxValue(delivery.fields[entry.key])
+                      : null,
+                  unsupportedLabel: unsupported.contains(entry.key)
+                      ? boxSchema!.unsupportedLabel
                       : null,
                   errorText: fieldErrors[entry.key],
                   revealed: revealed.contains(entry.key),
@@ -466,33 +510,7 @@ class _OverrideForm extends StatelessWidget {
             errorText: reasonError,
           ),
         ),
-        if (error != null) ...[
-          const SizedBox(height: 8),
-          AppNotice(
-            key: const Key('config_override_error'),
-            tone: AppBadgeTone.danger,
-            child: AppErrorDetails(message: error!, details: errorList),
-          ),
-        ],
         const SizedBox(height: 16),
-        FilledButton(
-          key: const Key('config_override_submit'),
-          onPressed: submitting ? null : onSubmit,
-          child: submitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      AppColors.primaryForeground,
-                    ),
-                  ),
-                )
-              : Text(
-                  central ? 'ขออนุมัติและรอส่งเข้ากล่อง' : 'ยืนยัน Override',
-                ),
-        ),
       ],
     );
   }
@@ -514,6 +532,7 @@ class _FieldRow extends StatefulWidget {
     required this.editValue,
     this.inBox,
     this.outsideConfig = false,
+    this.unsupportedLabel,
     required this.errorText,
     required this.revealed,
     required this.onToggleReveal,
@@ -530,6 +549,10 @@ class _FieldRow extends StatefulWidget {
 
   /// ค่าที่กล่องใช้อยู่แต่ไม่อยู่ใน Config นี้ — แก้ไม่ได้เสมอ
   final bool outsideConfig;
+
+  /// firmware บนกล่องไม่รองรับค่านี้ (v3.76) — แก้ไม่ได้ และบอกเหตุผลแทน
+  /// "(แก้ไขไม่ได้)"
+  final String? unsupportedLabel;
   final String? errorText;
   final bool revealed;
   final VoidCallback onToggleReveal;
@@ -653,7 +676,11 @@ class _FieldRowState extends State<_FieldRow> {
     final revealed = widget.revealed;
     final fieldKey = widget.fieldKey;
 
-    if (widget.outsideConfig || def == null || !def.stOverridable) {
+    final unsupportedLabel = widget.unsupportedLabel;
+    if (widget.outsideConfig ||
+        unsupportedLabel != null ||
+        def == null ||
+        !def.stOverridable) {
       const valueStyle = TextStyle(
         fontSize: AppTypography.xs,
         height: AppTypography.xsHeight,
@@ -680,12 +707,17 @@ class _FieldRowState extends State<_FieldRow> {
               style: valueStyle,
             ),
           const SizedBox(height: 2),
-          const Text(
-            '(แก้ไขไม่ได้)',
+          Text(
+            unsupportedLabel ?? '(แก้ไขไม่ได้)',
+            key: unsupportedLabel == null
+                ? null
+                : Key('config_override_unsupported_$fieldKey'),
             style: TextStyle(
               fontSize: AppTypography.xs,
               height: AppTypography.xsHeight,
-              color: AppColors.mutedForeground,
+              color: unsupportedLabel == null
+                  ? AppColors.mutedForeground
+                  : AppColors.destructive,
             ),
           ),
         ],

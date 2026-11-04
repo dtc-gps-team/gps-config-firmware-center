@@ -14,8 +14,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_info_row.dart';
+import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -111,64 +111,55 @@ class TaskDetailPage extends ConsumerWidget {
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'รายละเอียดงาน',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                status: task == null
-                    ? null
-                    : Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          AppBadge(
-                            key: const Key('task_detail_status_badge'),
-                            label: taskStatusLabel(task.status),
-                            tone: taskStatusTone(task.status),
-                            dot: true,
-                          ),
-                          if (pendingSync) const PendingSyncBadge(),
-                        ],
-                      ),
-              ),
-              Expanded(
-                child: taskAsync.when(
-                  skipLoadingOnRefresh: true,
-                  // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh)
-                  // ถ้าไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย skeleton แล้ว
-                  // dispose ทิ้งระหว่างโหลด (UX audit #3)
-                  skipLoadingOnReload: true,
-                  data: (task) => _TaskDetailView(
-                    // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt
-                    // ทำให้ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
-                    // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config
-                    // ที่ยังค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server
-                    // ทำใน didUpdateWidget แทน
-                    key: ValueKey(task.id),
-                    taskId: taskId,
-                    task: task,
-                  ),
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => ListView(
-                    children: [
-                      const SizedBox(height: 64),
-                      _DetailError(
-                        message: _errorMessage(error),
-                        onRetry: () =>
-                            ref.invalidate(taskDetailProvider(taskId)),
-                      ),
-                    ],
-                  ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              // ไม่แสดง id ภายในของงาน (uuid) — ชื่องานอยู่ในการ์ดสรุปด้านล่างแล้ว
+              title: 'รายละเอียดงาน',
+              subtitle: 'บันทึกและสถานะงานของคุณ',
+              onBack: navigator.canPop() ? navigator.pop : null,
+            ),
+            if (pendingSync)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: PendingSyncBadge(),
                 ),
               ),
-            ],
-          ),
+            Expanded(
+              child: taskAsync.when(
+                skipLoadingOnRefresh: true,
+                // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh)
+                // ถ้าไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย skeleton แล้ว
+                // dispose ทิ้งระหว่างโหลด (UX audit #3)
+                skipLoadingOnReload: true,
+                data: (task) => _TaskDetailView(
+                  // key ตาม id อย่างเดียว (UX audit #3): เดิมรวม status/updatedAt
+                  // ทำให้ทุกครั้งที่ sync flush เสร็จ (taskDetailProvider watch
+                  // syncRevisionProvider) view ถูกสร้างใหม่ state การส่ง Config
+                  // ที่ยังค้างบนสายหาย ปุ่มกดซ้ำได้ — การตามสถานะใหม่ของ server
+                  // ทำใน didUpdateWidget แทน
+                  key: ValueKey(task.id),
+                  taskId: taskId,
+                  task: task,
+                ),
+                loading: () => const AppDetailSkeleton(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                ),
+                error: (error, _) => ListView(
+                  children: [
+                    const SizedBox(height: 64),
+                    _DetailError(
+                      message: _errorMessage(error),
+                      onRetry: () => ref.invalidate(taskDetailProvider(taskId)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -290,7 +281,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       ),
     );
     if (!mounted) return;
-    ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+    _refreshApplyRequests();
   }
 
   Future<void> _save() async {
@@ -439,7 +430,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       AppRoutes.deviceApplyConfig(deviceId, configId, taskId: widget.taskId),
     );
     if (!mounted) return;
-    ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+    _refreshApplyRequests();
   }
 
   /// `POST /config-apply-requests/{id}/release` (docs/27 §5.4) — กดส่งคำขอที่
@@ -453,7 +444,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     });
     try {
       await ref.read(configApplyRequestRepositoryProvider).release(requestId);
-      ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+      _refreshApplyRequests();
       if (!mounted) return;
       setState(() => _releasing = false);
       ScaffoldMessenger.of(context)
@@ -462,7 +453,7 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
           const SnackBar(content: Text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน')),
         );
     } on ApiException catch (e) {
-      ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+      _refreshApplyRequests();
       if (!mounted) return;
       setState(() {
         _releasing = false;
@@ -471,11 +462,50 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     }
   }
 
+  Future<void> _confirmReleaseRequest(String requestId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _RequestConfirmSheet(
+        title: 'ส่งเข้ากล่องตอนนี้?',
+        description:
+            'ตรวจว่าอยู่หน้าเครื่องและกล่องเปิดอยู่ · เมื่อส่งแล้วจะยกเลิกไม่ได้',
+        confirmLabel: 'ส่งเข้ากล่อง',
+        confirmKey: const Key('confirm_release_apply_request'),
+        cancelLabel: 'ยังไม่ส่ง',
+        onConfirm: () => Navigator.pop(dialogContext, true),
+        onCancel: () => Navigator.pop(dialogContext, false),
+      ),
+    );
+    if (confirmed == true && mounted) await _releaseRequest(requestId);
+  }
+
+  Future<void> _confirmCancelRequest(String requestId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => _RequestConfirmSheet(
+        title: 'ยกเลิกคำขอนี้?',
+        description:
+            'ถ้ายืนยันแล้วจะยกเลิกไม่ได้ หากยังต้องการส่งให้ขอใหม่อีกครั้ง',
+        confirmLabel: 'ยืนยันยกเลิก',
+        confirmKey: const Key('confirm_cancel_apply_request'),
+        cancelLabel: 'กลับ',
+        onConfirm: () => Navigator.pop(dialogContext, true),
+        onCancel: () => Navigator.pop(dialogContext, false),
+      ),
+    );
+    if (confirmed == true && mounted) await _cancelRequest(requestId);
+  }
+
+  void _refreshApplyRequests() {
+    ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+    ref.invalidate(latestConfigApplyRequestProvider(widget.taskId));
+  }
+
   void _syncRequestPolling(bool inFlight) {
     if (inFlight && _requestPoll == null) {
       _requestPoll = Timer.periodic(_requestPollInterval, (_) {
         if (!mounted) return;
-        ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+        _refreshApplyRequests();
       });
     } else if (!inFlight && _requestPoll != null) {
       _requestPoll!.cancel();
@@ -498,14 +528,14 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     });
     try {
       await ref.read(configApplyRequestRepositoryProvider).cancel(requestId);
-      ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+      _refreshApplyRequests();
       if (!mounted) return;
       setState(() => _cancelling = false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('ยกเลิกคำขอแล้ว')));
     } on ApiException catch (e) {
-      ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
+      _refreshApplyRequests();
       if (!mounted) return;
       setState(() {
         _cancelling = false;
@@ -588,6 +618,19 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                AppInfoRow(
+                  key: const Key('task_detail_status_summary'),
+                  label: 'สถานะงาน',
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: AppBadge(
+                      key: const Key('task_detail_status_badge'),
+                      label: taskStatusLabel(task.status),
+                      tone: taskStatusTone(task.status),
+                      dot: true,
+                    ),
+                  ),
+                ),
                 Text(
                   task.title,
                   key: const Key('task_detail_title'),
@@ -778,10 +821,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     request: applyRequest!,
                     cancelling: _cancelling,
                     cancelError: _cancelError,
-                    onCancel: _cancelRequest,
+                    onCancel: _confirmCancelRequest,
                     releasing: _releasing,
                     releaseError: _releaseError,
-                    onRelease: _releaseRequest,
+                    onRelease: _confirmReleaseRequest,
                     onRetry: () => ref.invalidate(
                       taskConfigApplyRequestsProvider(task.id),
                     ),
@@ -1194,6 +1237,8 @@ class _ApplyRequestSection extends StatelessWidget {
                       children: [for (final line in lines) Text(line)],
                     ),
             ),
+            const SizedBox(height: 12),
+            _ApplyRequestTimeline(request: latest),
             // docs/27 §9 — คำขอถอยเวอร์ชัน: แถบเตือนสีส้มก่อนกดส่ง
             if (showDowngrade) ...[
               const SizedBox(height: 8),
@@ -1341,6 +1386,180 @@ class _ApplyRequestSection extends StatelessWidget {
     ConfigApplyRequestStatus.cancelled => Icons.block,
     ConfigApplyRequestStatus.expired => Icons.timer_off_outlined,
   };
+}
+
+/// เหตุการณ์คำขอจากเวลาที่ API บันทึกไว้ — direct Config ไม่มีช่วงอนุมัติ
+/// จึงไม่สร้างเหตุการณ์ Operation ขึ้นมาให้ช่างเข้าใจว่าต้องรอใคร
+class _ApplyRequestTimeline extends StatelessWidget {
+  const _ApplyRequestTimeline({required this.request});
+
+  final ConfigApplyRequest request;
+
+  static const _timelineMutedStyle = TextStyle(
+    fontSize: AppTypography.xs,
+    height: AppTypography.xsHeight,
+    color: AppColors.mutedForeground,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final direct =
+        request.kind == FieldApplyKind.config &&
+        request.override == null &&
+        request.decidedAt == null &&
+        request.status != ConfigApplyRequestStatus.pending &&
+        request.status != ConfigApplyRequestStatus.rejected &&
+        request.status != ConfigApplyRequestStatus.expired;
+    final events = <(String, DateTime?, bool, Key?)>[
+      (
+        'คุณขอ',
+        request.requestedAt,
+        true,
+        const Key('apply_request_event_requested'),
+      ),
+      if (!direct)
+        (
+          switch (request.status) {
+            ConfigApplyRequestStatus.pending => 'รอ Operation อนุมัติ',
+            ConfigApplyRequestStatus.rejected => 'Operation ปฏิเสธ',
+            // หมดอายุได้ 2 แบบ: ไม่มีใครตัดสิน หรืออนุมัติแล้วแต่ไม่ได้กดส่งใน 24 ชม.
+            ConfigApplyRequestStatus.expired when request.decidedAt == null =>
+              'หมดเวลารอ Operation อนุมัติ',
+            ConfigApplyRequestStatus.cancelled when request.decidedAt == null =>
+              'ยกเลิกก่อน Operation ตัดสินใจ',
+            _ => 'Operation อนุมัติ',
+          },
+          request.decidedAt,
+          request.status != ConfigApplyRequestStatus.pending,
+          const Key('apply_request_event_operation'),
+        ),
+      (
+        'ผู้ถืองานกดส่ง',
+        request.releasedAt,
+        request.releasedAt != null,
+        const Key('apply_request_event_release'),
+      ),
+      (
+        request.kind == FieldApplyKind.firmware
+            ? 'กล่องยืนยันติดตั้ง'
+            : 'กล่องยืนยันผล',
+        request.completedAt,
+        request.status == ConfigApplyRequestStatus.succeeded ||
+            request.status == ConfigApplyRequestStatus.failed ||
+            request.status == ConfigApplyRequestStatus.skippedOffline,
+        const Key('apply_request_event_completed'),
+      ),
+    ];
+    return AppCard(
+      key: const Key('apply_request_timeline'),
+      size: AppCardSize.small,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'ลำดับเหตุการณ์',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          for (final (index, event) in events.indexed) ...[
+            if (index > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 10),
+                child: Container(width: 2, height: 12, color: AppColors.border),
+              ),
+            Row(
+              key: event.$4,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  event.$3 ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 20,
+                  color: event.$3
+                      ? AppColors.primary
+                      : AppColors.mutedForeground,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(event.$1),
+                      Text(
+                        event.$2 == null
+                            ? 'ยังไม่เกิด'
+                            : _formatDate(event.$2!),
+                        style: _timelineMutedStyle,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// แผ่นยืนยันชิดขอบล่างตามภาพ r4 · ปุ่มยืนยันอยู่ก่อนปุ่มกลับเพื่อกดง่าย
+class _RequestConfirmSheet extends StatelessWidget {
+  const _RequestConfirmSheet({
+    required this.title,
+    required this.description,
+    required this.confirmLabel,
+    required this.confirmKey,
+    required this.cancelLabel,
+    required this.onConfirm,
+    required this.onCancel,
+  });
+
+  final String title;
+  final String description;
+  final String confirmLabel;
+  final Key confirmKey;
+  final String cancelLabel;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    alignment: Alignment.bottomCenter,
+    insetPadding: EdgeInsets.zero,
+    backgroundColor: Colors.transparent,
+    child: Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: const TextStyle(color: AppColors.mutedForeground),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                key: confirmKey,
+                onPressed: onConfirm,
+                child: Text(confirmLabel),
+              ),
+              TextButton(onPressed: onCancel, child: Text(cancelLabel)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// ปุ่มไปหน้าประวัติคำขอ (docs/28 — งาน 1 ใบขอได้หลายครั้ง) ใต้การ์ดคำขอล่าสุด
