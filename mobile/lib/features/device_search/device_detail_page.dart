@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -434,21 +436,21 @@ class _StatusCard extends ConsumerWidget {
             children: [
               const Expanded(child: _CardTitle('สถานะเครื่อง')),
               AppBadge(
-                key: const Key('device_online_row'),
-                label: onlineLabel,
-                tone: onlineTone,
+                key: const Key('device_detail_lifecycle'),
+                label: _lifecycleText(device.status),
+                tone: device.status == DeviceLifecycleStatus.installed
+                    ? AppBadgeTone.success
+                    : AppBadgeTone.neutral,
                 dot: true,
               ),
             ],
           ),
-          AppInfoRow(
-            key: const Key('device_detail_lifecycle'),
-            label: 'สถานะ',
-            value: _lifecycleText(device.status),
-          ),
           // ชื่อ Config/Firmware แสดงเสมอ · เฉพาะป้ายสถานะที่รอ `/status`
           _StatusPayloadRows(
             status: status,
+            isOnline: online?.online == true,
+            onlineLabel: onlineLabel,
+            onlineTone: onlineTone,
             configName: history?.currentConfigName,
             firmware: firmware,
             reportedConfigVersion: central?.reachable == true
@@ -485,6 +487,9 @@ class _StatusCard extends ConsumerWidget {
 class _StatusPayloadRows extends StatelessWidget {
   const _StatusPayloadRows({
     required this.status,
+    required this.isOnline,
+    required this.onlineLabel,
+    required this.onlineTone,
     required this.configName,
     required this.firmware,
     required this.reportedConfigVersion,
@@ -492,69 +497,258 @@ class _StatusPayloadRows extends StatelessWidget {
   });
 
   final DeviceStatus? status;
+  final bool isOnline;
+  final String onlineLabel;
+  final AppBadgeTone onlineTone;
   final String? configName;
   final String? firmware;
   final int? reportedConfigVersion;
   final DateTime? lastSeenAt;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      AppInfoRow(
-        key: const Key('device_detail_current_config'),
-        label: 'Config ปัจจุบัน',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+  Widget build(BuildContext context) {
+    final deviceStatus = status;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(configName?.trim().isNotEmpty == true ? configName! : '—'),
-            if (reportedConfigVersion != null)
-              Text(
-                'Config ในกล่อง v$reportedConfigVersion',
-                style: const TextStyle(
-                  fontSize: AppTypography.xs,
-                  height: AppTypography.xsHeight,
-                  color: AppColors.mutedForeground,
+            Expanded(
+              child: _StatusTile(
+                label: 'การเชื่อมต่อ',
+                value: Row(
+                  children: [
+                    if (isOnline) ...[
+                      const _OnlinePulseDot(),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: AppBadge(
+                        key: const Key('device_online_row'),
+                        label: onlineLabel,
+                        tone: onlineTone,
+                        dot: false,
+                      ),
+                    ),
+                  ],
                 ),
+                footnoteWidget: lastSeenAt == null
+                    ? null
+                    : _RelativeTime(lastSeenAt!),
               ),
-            if (status case final status?) ...[
-              const SizedBox(height: 4),
-              AppBadge(
-                label: devicePayloadLabel(status.configStatus, firmware: false),
-                tone: devicePayloadTone(status.configStatus),
-                dot: true,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _StatusTile(
+                key: const Key('device_detail_firmware'),
+                label: 'Firmware',
+                value: Text(firmware ?? 'ไม่ทราบ', style: _statusValueStyle),
+                badge: deviceStatus == null
+                    ? null
+                    : AppBadge(
+                        label: devicePayloadLabel(
+                          deviceStatus.firmwareStatus,
+                          firmware: true,
+                        ),
+                        tone: devicePayloadTone(deviceStatus.firmwareStatus),
+                        dot: true,
+                      ),
               ),
-            ],
+            ),
           ],
         ),
-      ),
-      AppInfoRow(
-        key: const Key('device_detail_firmware'),
-        label: 'Firmware',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(firmware ?? 'ไม่ทราบ'),
-            if (status case final status?) ...[
-              const SizedBox(height: 4),
-              AppBadge(
-                label: devicePayloadLabel(
-                  status.firmwareStatus,
-                  firmware: true,
+        const SizedBox(height: 8),
+        _StatusTile(
+          key: const Key('device_detail_current_config'),
+          label: 'Config ปัจจุบัน',
+          value: Text(
+            configName?.trim().isNotEmpty == true ? configName! : '—',
+            style: _statusValueStyle,
+          ),
+          footnote: reportedConfigVersion == null
+              ? null
+              : 'ในกล่องเป็นรุ่นที่ $reportedConfigVersion',
+          badge: deviceStatus == null
+              ? null
+              : AppBadge(
+                  label: devicePayloadLabel(
+                    deviceStatus.configStatus,
+                    firmware: false,
+                  ),
+                  tone: devicePayloadTone(deviceStatus.configStatus),
+                  dot: true,
                 ),
-                tone: devicePayloadTone(status.firmwareStatus),
-                dot: true,
-              ),
-            ],
-          ],
         ),
+      ],
+    );
+  }
+}
+
+const _statusValueStyle = TextStyle(
+  fontSize: AppTypography.base,
+  height: AppTypography.baseHeight,
+  fontWeight: FontWeight.w700,
+  color: AppColors.foreground,
+);
+
+class _StatusTile extends StatelessWidget {
+  const _StatusTile({
+    super.key,
+    required this.label,
+    required this.value,
+    this.footnote,
+    this.footnoteWidget,
+    this.badge,
+  });
+  final String label;
+  final Widget value;
+  final String? footnote;
+  final Widget? footnoteWidget;
+  final Widget? badge;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: AppColors.background,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(11),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: AppTypography.xs,
+              color: AppColors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 3),
+          value,
+          if (footnote != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              footnote!,
+              style: const TextStyle(
+                fontSize: AppTypography.xs,
+                color: AppColors.mutedForeground,
+              ),
+            ),
+          ],
+          if (footnoteWidget != null) ...[
+            const SizedBox(height: 3),
+            footnoteWidget!,
+          ],
+          if (badge != null) ...[const SizedBox(height: 4), badge!],
+        ],
       ),
-      AppInfoRow(
-        label: 'ติดต่อล่าสุด',
-        value: lastSeenAt == null ? null : _formatDate(lastSeenAt!),
-      ),
-    ],
+    ),
   );
+}
+
+class _RelativeTime extends StatefulWidget {
+  const _RelativeTime(this.at);
+  final DateTime at;
+  @override
+  State<_RelativeTime> createState() => _RelativeTimeState();
+}
+
+class _RelativeTimeState extends State<_RelativeTime> {
+  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(
+    'ติดต่อ${_relativeTime(widget.at)}',
+    style: const TextStyle(
+      fontSize: AppTypography.xs,
+      color: AppColors.mutedForeground,
+    ),
+  );
+}
+
+class _OnlinePulseDot extends StatefulWidget {
+  const _OnlinePulseDot();
+  @override
+  State<_OnlinePulseDot> createState() => _OnlinePulseDotState();
+}
+
+class _OnlinePulseDotState extends State<_OnlinePulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  var _reduced = false;
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (_reduced == disabled) return;
+    _reduced = disabled;
+    if (disabled) {
+      _controller.stop();
+    } else {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) => Container(
+      width: 9,
+      height: 9,
+      decoration: BoxDecoration(
+        color: AppColors.success,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.success.withValues(
+              alpha: _reduced ? 0 : (1 - _controller.value) * .4,
+            ),
+            spreadRadius: _reduced ? 0 : _controller.value * 5,
+            blurRadius: 4,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _relativeTime(DateTime at) {
+  final minutes = DateTime.now().difference(at).inMinutes;
+  if (minutes < 1) return 'เมื่อสักครู่';
+  if (minutes < 60) return '$minutes นาทีที่แล้ว';
+  final hours = minutes ~/ 60;
+  if (hours < 24) return '$hours ชั่วโมงที่แล้ว';
+  return '${minutes ~/ (60 * 24)} วันที่แล้ว';
 }
 
 /// คำขอส่ง Config/Firmware ที่ยังไม่จบของกล่องนี้ (`apply-options.openRequest`) —
@@ -726,7 +920,7 @@ class _ShortcutGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final oneColumn = MediaQuery.textScalerOf(context).scale(1) >= 1.6;
     final rows = <Widget>[];
-    final perRow = oneColumn ? 1 : 2;
+    final perRow = oneColumn ? 1 : 4;
     for (var i = 0; i < tiles.length; i += perRow) {
       final chunk = tiles.skip(i).take(perRow).toList();
       rows.add(
