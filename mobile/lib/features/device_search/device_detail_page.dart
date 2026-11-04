@@ -45,6 +45,20 @@ String _lifecycleText(DeviceLifecycleStatus status) => switch (status) {
   DeviceLifecycleStatus.decommissioned => 'ปลดระวางแล้ว',
 };
 
+String _statusErrorMessage(Object error) {
+  if (error is ApiException) {
+    switch (error.statusCode) {
+      case 404:
+        return 'ไม่พบสถานะอุปกรณ์นี้';
+      case 403:
+        return 'ไม่มีสิทธิ์ดูสถานะอุปกรณ์นี้';
+      default:
+        return error.message;
+    }
+  }
+  return 'โหลดสถานะอุปกรณ์ไม่สำเร็จ';
+}
+
 /// "รายละเอียดอุปกรณ์" (R4-04 · ภาพ r4 0175–0264) — หัวพื้นเข้มบอกเลขเครื่อง รุ่น
 /// และซิม · การ์ด "สถานะเครื่อง" · คำเตือนที่เกี่ยวข้อง · ปุ่มหลัก "ขอส่ง Config /
 /// Firmware" และปุ่มรองตามสิทธิ์ · ทางลัดเป็นการ์ดเล็ก · ข้อมูลเครื่องเต็มอยู่ท้ายหน้า
@@ -295,58 +309,88 @@ class _DeviceDetailView extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 22),
-        AppCard(
-          key: const Key('device_detail_info'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _CardTitle('ข้อมูลอุปกรณ์'),
-              AppInfoRow(label: 'เบอร์ซิม', value: device.simNumber),
-              AppInfoRow(label: 'รุ่น', value: device.deviceModel),
-              AppInfoRow(label: 'โปรโตคอล', value: device.protocol),
-              AppInfoRow(label: 'IMEI', value: device.imei),
-              AppInfoRow(label: 'Serial Number', value: device.serialNumber),
-              AppInfoRow(label: 'Blackbox ID', value: device.blackboxId),
-              AppInfoRow(
-                label: 'Hardware revision',
-                value: device.hardwareRevisionCode,
-              ),
-              AppInfoRow(label: 'Bootloader', value: device.bootloader),
-              AppInfoRow(
-                label: 'ลงทะเบียนเมื่อ',
-                value: _formatDate(device.registeredAt),
-              ),
-              AppInfoRow(
-                label: 'ติดตั้งเมื่อ',
-                value: installedAt == null ? null : _formatDate(installedAt),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _CardTitle('ลูกค้า'),
-              AppInfoRow(
-                label: 'ชื่อบริษัท',
-                value: device.customer?.companyName,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _PayloadSection(deviceId: deviceId),
+        _DeviceInfoCard(device: device, installedAt: installedAt),
       ],
     );
   }
 }
 
-/// การ์ด "สถานะเครื่อง" บนสุด (ภาพ r4) — ออนไลน์จาก [DeviceOnline] (Server กลาง
-/// ก่อน แล้วค่อย `/status`) · Config ปัจจุบันจาก `summary` ของประวัติเครื่อง ·
-/// Firmware ใช้ค่าที่กล่องรายงานก่อน แล้วค่อยใช้ `summary` · ข้อมูลเสริมแต่ละชิ้น
-/// โหลดไม่ได้ = แสดงว่าไม่ทราบ ไม่บังทั้งการ์ด
+class _DeviceInfoCard extends StatefulWidget {
+  const _DeviceInfoCard({required this.device, required this.installedAt});
+
+  final Device device;
+  final DateTime? installedAt;
+
+  @override
+  State<_DeviceInfoCard> createState() => _DeviceInfoCardState();
+}
+
+class _DeviceInfoCardState extends State<_DeviceInfoCard> {
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final device = widget.device;
+    final details = <(String, String?)>[
+      ('โปรโตคอล', device.protocol),
+      ('IMEI', device.imei),
+      ('Serial Number', device.serialNumber),
+      ('Blackbox ID', device.blackboxId),
+      ('Hardware revision', device.hardwareRevisionCode),
+      ('Bootloader', device.bootloader),
+      ('ลงทะเบียนเมื่อ', _formatDate(device.registeredAt)),
+    ];
+    final missing = details
+        .where((row) => row.$2 == null || row.$2!.trim().isEmpty)
+        .map((row) => row.$1)
+        .toList();
+
+    return AppCard(
+      key: const Key('device_detail_info'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _CardTitle('ข้อมูลอุปกรณ์'),
+          AppInfoRow(label: 'รุ่น', value: device.deviceModel),
+          AppInfoRow(label: 'เบอร์ซิม', value: device.simNumber),
+          AppInfoRow(
+            label: 'ติดตั้งเมื่อ',
+            value: widget.installedAt == null
+                ? null
+                : _formatDate(widget.installedAt!),
+          ),
+          AppInfoRow(label: 'ลูกค้า', value: device.customer?.companyName),
+          if (_expanded) ...[
+            for (final (label, value) in details)
+              if (value != null && value.trim().isNotEmpty)
+                AppInfoRow(label: label, value: value),
+            if (missing.isNotEmpty)
+              AppInfoRow(
+                key: const Key('device_detail_info_missing'),
+                label: 'ยังไม่มีข้อมูล',
+                value: missing.join(', '),
+              ),
+          ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: Key(
+                _expanded
+                    ? 'device_detail_info_collapse'
+                    : 'device_detail_info_expand',
+              ),
+              onPressed: () => setState(() => _expanded = !_expanded),
+              icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              label: Text(_expanded ? 'ย่อ' : 'ดูทั้งหมด'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// การ์ดสถานะรวมข้อมูลที่กล่องรายงานกับสถานะ payload ไว้ด้วยกัน
 class _StatusCard extends ConsumerWidget {
   const _StatusCard({required this.device, required this.deviceId});
 
@@ -355,20 +399,26 @@ class _StatusCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final status = ref.watch(deviceStatusProvider(deviceId)).valueOrNull;
+    final statusAsync = ref.watch(deviceStatusProvider(deviceId));
+    final status = statusAsync.valueOrNull;
     final central = ref.watch(deviceCentralProvider(deviceId)).valueOrNull;
     final history = ref.watch(deviceHistoryProvider(deviceId)).valueOrNull;
-    final online = status == null
+    final online = central?.reachable == true && central?.device != null
+        ? DeviceOnline(
+            online: central!.device!.online,
+            lastSeenAt: central.device!.lastSeenAt,
+            fromCentral: true,
+          )
+        : status == null
         ? null
         : DeviceOnline.resolve(status, central);
     final onlineLabel = online == null || online.online == null
         ? 'ไม่ทราบ'
         : online.label;
     final onlineTone = online?.tone ?? AppBadgeTone.neutral;
-    final reportedFw = online?.fromCentral == true
-        ? central?.device?.reportedFirmwareVersion
-        : null;
-    final firmware = reportedFw ?? history?.currentFirmwareVersion;
+    final firmware =
+        central?.device?.reportedFirmwareVersion ??
+        device.reportedFirmwareVersion;
     return AppCard(
       key: const Key('device_detail_status_card'),
       child: Column(
@@ -377,33 +427,119 @@ class _StatusCard extends ConsumerWidget {
           Row(
             children: [
               const Expanded(child: _CardTitle('สถานะเครื่อง')),
-              AppBadge(label: onlineLabel, tone: onlineTone, dot: true),
+              AppBadge(
+                key: const Key('device_online_row'),
+                label: onlineLabel,
+                tone: onlineTone,
+                dot: true,
+              ),
             ],
-          ),
-          AppInfoRow(
-            key: const Key('device_online_row'),
-            label: 'การเชื่อมต่อ',
-            child: AppBadge(label: onlineLabel, tone: onlineTone),
           ),
           AppInfoRow(
             key: const Key('device_detail_lifecycle'),
             label: 'สถานะ',
             value: _lifecycleText(device.status),
           ),
-          AppInfoRow(
-            key: const Key('device_detail_current_config'),
-            label: 'Config ปัจจุบัน',
-            value: history?.currentConfigName ?? '—',
-          ),
-          AppInfoRow(
-            key: const Key('device_detail_firmware'),
-            label: 'Firmware',
-            value: firmware ?? 'ไม่ทราบ',
+          statusAsync.when(
+            skipLoadingOnRefresh: true,
+            skipError: true,
+            data: (status) => _StatusPayloadRows(
+              status: status,
+              configName: history?.currentConfigName,
+              firmware: firmware,
+              reportedConfigVersion: central?.reachable == true
+                  ? central?.device?.reportedConfigVersion
+                  : null,
+              lastSeenAt: online?.lastSeenAt,
+            ),
+            loading: () => const AppDetailSkeleton(
+              key: Key('device_status_loading'),
+              lines: 4,
+              padding: EdgeInsets.zero,
+            ),
+            error: (error, _) => AppErrorView(
+              compact: true,
+              message: _statusErrorMessage(error),
+              onRetry: () {
+                ref.invalidate(deviceStatusProvider(deviceId));
+                ref.invalidate(deviceCentralProvider(deviceId));
+              },
+              messageKey: const Key('device_status_error'),
+              retryKey: const Key('device_status_retry'),
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+class _StatusPayloadRows extends StatelessWidget {
+  const _StatusPayloadRows({
+    required this.status,
+    required this.configName,
+    required this.firmware,
+    required this.reportedConfigVersion,
+    required this.lastSeenAt,
+  });
+
+  final DeviceStatus status;
+  final String? configName;
+  final String? firmware;
+  final int? reportedConfigVersion;
+  final DateTime? lastSeenAt;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AppInfoRow(
+        key: const Key('device_detail_current_config'),
+        label: 'Config ปัจจุบัน',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(configName?.trim().isNotEmpty == true ? configName! : '—'),
+            if (reportedConfigVersion != null)
+              Text(
+                'Config ในกล่อง v$reportedConfigVersion',
+                style: const TextStyle(
+                  fontSize: AppTypography.xs,
+                  height: AppTypography.xsHeight,
+                  color: AppColors.mutedForeground,
+                ),
+              ),
+            const SizedBox(height: 4),
+            AppBadge(
+              label: devicePayloadLabel(status.configStatus, firmware: false),
+              tone: devicePayloadTone(status.configStatus),
+              dot: true,
+            ),
+          ],
+        ),
+      ),
+      AppInfoRow(
+        key: const Key('device_detail_firmware'),
+        label: 'Firmware',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(firmware ?? 'ไม่ทราบ'),
+            const SizedBox(height: 4),
+            AppBadge(
+              label: devicePayloadLabel(status.firmwareStatus, firmware: true),
+              tone: devicePayloadTone(status.firmwareStatus),
+              dot: true,
+            ),
+          ],
+        ),
+      ),
+      AppInfoRow(
+        label: 'ติดต่อล่าสุด',
+        value: lastSeenAt == null ? null : _formatDate(lastSeenAt!),
+      ),
+    ],
+  );
 }
 
 /// คำขอส่ง Config/Firmware ที่ยังไม่จบของกล่องนี้ (`apply-options.openRequest`) —
@@ -757,117 +893,6 @@ class _PendingFirmwareOverride extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: PendingFirmwareOverrideBanner(pending: pending),
-    );
-  }
-}
-
-/// "สถานะ Config / Firmware" — `GET /devices/{deviceId}/status`. Has its own
-/// loading / error (with retry) state so a failing status call never hides the
-/// device record above it.
-class _PayloadSection extends ConsumerWidget {
-  const _PayloadSection({required this.deviceId});
-
-  final String deviceId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final statusAsync = ref.watch(deviceStatusProvider(deviceId));
-    // ข้อมูลเสริม — โหลดไม่ได้/ยังโหลดอยู่ใช้ `/status` แทน (DeviceOnline)
-    final central = ref.watch(deviceCentralProvider(deviceId)).valueOrNull;
-    return statusAsync.when(
-      skipLoadingOnRefresh: true,
-      skipError: true,
-      data: (status) {
-        final online = DeviceOnline.resolve(status, central);
-        final reported = online.fromCentral ? central?.device : null;
-        final lastSeenAt = online.lastSeenAt;
-        return AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _CardTitle('สถานะ Config / Firmware'),
-              _PayloadRow(
-                label: 'สถานะ Config',
-                status: status.configStatus,
-                firmware: false,
-              ),
-              _PayloadRow(
-                label: 'สถานะ Firmware',
-                status: status.firmwareStatus,
-                firmware: true,
-              ),
-              AppInfoRow(
-                label: 'ติดต่อล่าสุด',
-                value: lastSeenAt == null ? null : _formatDate(lastSeenAt),
-              ),
-              if (reported != null) ...[
-                AppInfoRow(
-                  label: 'Firmware ในกล่อง',
-                  value: reported.reportedFirmwareVersion,
-                ),
-                AppInfoRow(
-                  label: 'เวอร์ชัน Config ในกล่อง',
-                  value: reported.reportedConfigVersion?.toString(),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
-      loading: () => const AppDetailSkeleton(
-        key: Key('device_status_loading'),
-        lines: 4,
-        padding: EdgeInsets.zero,
-      ),
-      error: (error, _) => AppErrorView(
-        compact: true,
-        message: _errorMessage(error),
-        onRetry: () {
-          ref.invalidate(deviceStatusProvider(deviceId));
-          ref.invalidate(deviceCentralProvider(deviceId));
-        },
-        messageKey: const Key('device_status_error'),
-        retryKey: const Key('device_status_retry'),
-      ),
-    );
-  }
-
-  static String _errorMessage(Object error) {
-    if (error is ApiException) {
-      switch (error.statusCode) {
-        case 404:
-          return 'ไม่พบสถานะอุปกรณ์นี้';
-        case 403:
-          return 'ไม่มีสิทธิ์ดูสถานะอุปกรณ์นี้';
-        default:
-          return error.message;
-      }
-    }
-    return 'โหลดสถานะอุปกรณ์ไม่สำเร็จ';
-  }
-}
-
-/// สถานะ payload เป็นป้าย `AppBadge` + dot ตาม tone ของ Web (docs/22 §5.2)
-class _PayloadRow extends StatelessWidget {
-  const _PayloadRow({
-    required this.label,
-    required this.status,
-    required this.firmware,
-  });
-
-  final String label;
-  final DevicePayloadStatus status;
-  final bool firmware;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppInfoRow(
-      label: label,
-      child: AppBadge(
-        label: devicePayloadLabel(status, firmware: firmware),
-        tone: devicePayloadTone(status),
-        dot: true,
-      ),
     );
   }
 }

@@ -34,6 +34,7 @@ class _FakeAuthController extends AuthController {
 Device _makeDevice({
   DeviceLifecycleStatus status = DeviceLifecycleStatus.installed,
   DateTime? installedAt,
+  String? reportedFirmwareVersion,
 }) => Device(
   id: 'uuid-1',
   deviceId: 'DEV-0117',
@@ -43,6 +44,7 @@ Device _makeDevice({
   status: status,
   registeredAt: DateTime(2026, 6, 1, 9),
   installedAt: installedAt ?? DateTime(2026, 6, 3, 14, 30),
+  reportedFirmwareVersion: reportedFirmwareVersion,
 );
 
 class _FakeDeviceSearchRepository implements DeviceSearchRepository {
@@ -250,6 +252,7 @@ void main() {
             protocol: 'TCP',
             status: DeviceLifecycleStatus.installed,
             registeredAt: DateTime(2026, 6, 1, 9),
+            installedAt: DateTime(2026, 6, 3, 14, 30),
             imei: '860000000000117',
             serialNumber: 'SNGT06N000117',
             blackboxId: '7100000117',
@@ -262,12 +265,18 @@ void main() {
 
       expect(find.text('ข้อมูลอุปกรณ์'), findsOneWidget);
       expect(find.text('ลูกค้า'), findsOneWidget);
+      expect(_rowValue('รุ่น', 'GT06N'), findsOneWidget);
+      expect(_rowValue('เบอร์ซิม', '0812345678'), findsOneWidget);
+      expect(_rowValue('ติดตั้งเมื่อ', '03/06/2026 14:30'), findsOneWidget);
+      expect(find.text('IMEI'), findsNothing);
+      await tester.tap(find.byKey(const Key('device_detail_info_expand')));
+      await tester.pump();
       expect(_rowValue('IMEI', '860000000000117'), findsOneWidget);
       expect(_rowValue('Serial Number', 'SNGT06N000117'), findsOneWidget);
       expect(_rowValue('Blackbox ID', '7100000117'), findsOneWidget);
       expect(_rowValue('Hardware revision', 'RevA'), findsOneWidget);
       expect(_rowValue('Bootloader', 'BL-2.1'), findsOneWidget);
-      expect(_rowValue('ชื่อบริษัท', 'ขนส่งสมมติ จำกัด'), findsOneWidget);
+      expect(_rowValue('ลูกค้า', 'ขนส่งสมมติ จำกัด'), findsOneWidget);
     });
 
     testWidgets('เป็น null ทั้งหมด -> แสดง "-" ทุกแถว ไม่ซ่อนแถว ไม่ crash', (
@@ -276,10 +285,17 @@ void main() {
       await _pump(tester, repo: _FakeDeviceSearchRepository());
 
       expect(tester.takeException(), isNull);
-      expect(_rowValue('IMEI', '-'), findsOneWidget);
-      expect(_rowValue('Serial Number', '-'), findsOneWidget);
-      expect(_rowValue('Blackbox ID', '-'), findsOneWidget);
-      expect(_rowValue('ชื่อบริษัท', '-'), findsOneWidget);
+      expect(find.text('IMEI'), findsNothing);
+      await tester.tap(find.byKey(const Key('device_detail_info_expand')));
+      await tester.pump();
+      expect(
+        _rowValue(
+          'ยังไม่มีข้อมูล',
+          'IMEI, Serial Number, Blackbox ID, Hardware revision, Bootloader',
+        ),
+        findsOneWidget,
+      );
+      expect(_rowValue('ลูกค้า', '-'), findsOneWidget);
     });
   });
 
@@ -294,6 +310,9 @@ void main() {
     expect(find.text('DEV-0117'), findsOneWidget);
     expect(find.text('0812345678'), findsOneWidget);
     expect(find.text('GT06N'), findsOneWidget);
+    expect(find.text('TCP'), findsNothing);
+    await tester.tap(find.byKey(const Key('device_detail_info_expand')));
+    await tester.pump();
     expect(find.text('TCP'), findsOneWidget);
     // R4-04 — สถานะเครื่องเป็นคำไทยในการ์ด "สถานะเครื่อง" (ภาพ r4)
     expect(_rowValue('สถานะ', 'ติดตั้งแล้ว'), findsOneWidget);
@@ -689,8 +708,8 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(find.text('สถานะ Config'), findsOneWidget);
-        expect(find.text('สถานะ Firmware'), findsOneWidget);
+        expect(find.text('Config ปัจจุบัน'), findsOneWidget);
+        expect(find.text('Firmware'), findsOneWidget);
         expect(find.text(label), findsWidgets);
       });
     }
@@ -708,19 +727,14 @@ void _statusTests() {
       );
       await tester.pump();
 
-      expect(_rowValue('สถานะ Config', 'ล้มเหลว'), findsOneWidget);
-      expect(_rowValue('สถานะ Firmware', 'รอติดตั้ง Firmware'), findsOneWidget);
+      expect(_rowValue('Config ปัจจุบัน', 'ล้มเหลว'), findsOneWidget);
+      expect(_rowValue('Firmware', 'รอติดตั้ง Firmware'), findsOneWidget);
     });
 
     // issue #386 ข้อ 5 — ออนไลน์จาก Server กลางก่อน ไม่งั้นจาก /status
     /// สีของป้ายในแถว "การเชื่อมต่อ"
     AppBadgeTone onlineTone(WidgetTester tester) => tester
-        .widget<AppBadge>(
-          find.descendant(
-            of: find.byKey(const Key('device_online_row')),
-            matching: find.byType(AppBadge),
-          ),
-        )
+        .widget<AppBadge>(find.byKey(const Key('device_online_row')))
         .tone;
 
     group('การเชื่อมต่อ (ออนไลน์/ออฟไลน์)', () {
@@ -730,7 +744,13 @@ void _statusTests() {
           await _pump(tester, repo: _FakeDeviceSearchRepository());
           await tester.pump();
 
-          expect(_rowValue('การเชื่อมต่อ', 'ไม่ทราบ'), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byKey(const Key('device_online_row')),
+              matching: find.text('ไม่ทราบ'),
+            ),
+            findsOneWidget,
+          );
           expect(_rowValue('ติดต่อล่าสุด', '-'), findsOneWidget);
           expect(find.text('Firmware ในกล่อง'), findsNothing);
           expect(onlineTone(tester), AppBadgeTone.neutral);
@@ -752,19 +772,22 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
-        expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
-        expect(onlineTone(tester), AppBadgeTone.success);
-        // ป้ายอยู่บรรทัดเดียวกับชื่อแถว ชิดขวา เหมือนแถวสถานะ Config/Firmware
-        final label = tester.getRect(find.text('การเชื่อมต่อ'));
-        final badge = tester.getRect(
+        expect(
           find.descendant(
             of: find.byKey(const Key('device_online_row')),
             matching: find.text('ออนไลน์'),
           ),
+          findsOneWidget,
         );
-        expect((badge.center.dy - label.center.dy).abs(), lessThan(8));
-        expect(badge.left, greaterThan(label.right));
+        expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
+        expect(onlineTone(tester), AppBadgeTone.success);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('device_detail_status_card')),
+            matching: find.text('ออนไลน์'),
+          ),
+          findsOneWidget,
+        );
       });
 
       testWidgets('/status เคยติดต่อแต่เกิน 5 นาที -> "ออฟไลน์"', (
@@ -779,7 +802,13 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('การเชื่อมต่อ', 'ออฟไลน์'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('device_online_row')),
+            matching: find.text('ออฟไลน์'),
+          ),
+          findsOneWidget,
+        );
         expect(onlineTone(tester), AppBadgeTone.danger);
       });
 
@@ -803,10 +832,19 @@ void _statusTests() {
           );
           await tester.pump();
 
-          expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byKey(const Key('device_online_row')),
+              matching: find.text('ออนไลน์'),
+            ),
+            findsOneWidget,
+          );
           expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:07'), findsOneWidget);
-          expect(_rowValue('Firmware ในกล่อง', '1.2.0'), findsOneWidget);
-          expect(_rowValue('เวอร์ชัน Config ในกล่อง', '12'), findsOneWidget);
+          expect(_rowValue('Firmware', '1.2.0'), findsOneWidget);
+          expect(
+            _rowValue('Config ปัจจุบัน', 'Config ในกล่อง v12'),
+            findsOneWidget,
+          );
         },
       );
 
@@ -826,7 +864,7 @@ void _statusTests() {
         );
         await tester.pump();
 
-        expect(_rowValue('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
+        expect(onlineTone(tester), AppBadgeTone.success);
         expect(find.byKey(const Key('device_status_error')), findsNothing);
       });
     });
@@ -889,7 +927,7 @@ void _statusTests() {
       await tester.pump();
 
       expect(statusRepo.calls.length, 2);
-      expect(find.text('สถานะ Config'), findsOneWidget);
+      expect(find.text('Config ปัจจุบัน'), findsOneWidget);
       expect(find.byKey(const Key('device_status_error')), findsNothing);
     });
   });
@@ -1272,7 +1310,13 @@ void _r4Tests() {
           findsOneWidget,
         );
         expect(card('Firmware', '1.2.0'), findsOneWidget);
-        expect(card('การเชื่อมต่อ', 'ออนไลน์'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('device_online_row')),
+            matching: find.text('ออนไลน์'),
+          ),
+          findsOneWidget,
+        );
       },
     );
 
@@ -1281,11 +1325,13 @@ void _r4Tests() {
       (tester) async {
         await _pump(
           tester,
-          repo: _FakeDeviceSearchRepository(),
+          repo: _FakeDeviceSearchRepository(
+            device: _makeDevice(reportedFirmwareVersion: '1.1.0'),
+          ),
           role: UserRole.st,
           history: const DeviceHistoryResult(
             items: [],
-            currentFirmwareVersion: '1.1.0',
+            currentFirmwareVersion: '0.9.9',
           ),
         );
         await tester.pump();
