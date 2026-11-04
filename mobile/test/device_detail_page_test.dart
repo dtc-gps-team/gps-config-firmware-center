@@ -223,10 +223,22 @@ Future<void> _pump(
 
 /// แถวในการ์ดข้อมูลที่มี [label] — ใช้หาค่าของแถวนั้นโดยไม่ชนกับ "-" ของแถวอื่น
 /// (แถวเป็น `AppInfoRow` ตั้งแต่ docs/22 Batch 4)
+/// ค่าของแถวหรือช่องสี่เหลี่ยมในการ์ดสถานะ (`_StatusTile` เป็น private จึงเทียบชื่อชนิด)
 Finder _rowValue(String label, String value) => find.descendant(
   of: find
-      .ancestor(of: find.text(label), matching: find.byType(AppInfoRow))
+      .ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate(
+          (w) => w is AppInfoRow || w.runtimeType.toString() == '_StatusTile',
+        ),
+      )
       .first,
+  matching: find.text(value),
+);
+
+/// สถานะเครื่อง (ติดตั้งแล้ว ฯลฯ) เป็นป้ายที่หัวการ์ดตาม mockup
+Finder _lifecycle(String value) => find.descendant(
+  of: find.byKey(const Key('device_detail_lifecycle')),
   matching: find.text(value),
 );
 
@@ -315,7 +327,7 @@ void main() {
     await tester.pump();
     expect(find.text('TCP'), findsOneWidget);
     // R4-04 — สถานะเครื่องเป็นคำไทยในการ์ด "สถานะเครื่อง" (ภาพ r4)
-    expect(_rowValue('สถานะ', 'ติดตั้งแล้ว'), findsOneWidget);
+    expect(_lifecycle('ติดตั้งแล้ว'), findsOneWidget);
     expect(find.text('01/06/2026 09:00'), findsOneWidget); // registeredAt
     expect(find.text('03/06/2026 14:30'), findsOneWidget); // installedAt
   });
@@ -338,7 +350,7 @@ void main() {
     );
 
     expect(find.text('DEV-0092'), findsOneWidget);
-    expect(_rowValue('สถานะ', 'ลงทะเบียนแล้ว ยังไม่ติดตั้ง'), findsOneWidget);
+    expect(_lifecycle('ลงทะเบียนแล้ว ยังไม่ติดตั้ง'), findsOneWidget);
     expect(_rowValue('ติดตั้งเมื่อ', '-'), findsOneWidget);
   });
 
@@ -751,7 +763,11 @@ void _statusTests() {
             ),
             findsOneWidget,
           );
-          expect(_rowValue('ติดต่อล่าสุด', '-'), findsOneWidget);
+          // ไม่เคยติดต่อ = ไม่มีบรรทัดเวลา
+          expect(
+            find.byKey(const Key('device_detail_last_seen')),
+            findsNothing,
+          );
           expect(find.text('Firmware ในกล่อง'), findsNothing);
           expect(onlineTone(tester), AppBadgeTone.neutral);
         },
@@ -779,7 +795,8 @@ void _statusTests() {
           ),
           findsOneWidget,
         );
-        expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:02'), findsOneWidget);
+        // เกิน 1 วันแสดงวันเวลาจริง
+        expect(find.text('ติดต่อเมื่อ 26/10 17:02'), findsOneWidget);
         expect(onlineTone(tester), AppBadgeTone.success);
         expect(
           find.descendant(
@@ -839,10 +856,10 @@ void _statusTests() {
             ),
             findsOneWidget,
           );
-          expect(_rowValue('ติดต่อล่าสุด', '26/10/2026 17:07'), findsOneWidget);
+          expect(find.text('ติดต่อเมื่อ 26/10 17:07'), findsOneWidget);
           expect(_rowValue('Firmware', '1.2.0'), findsOneWidget);
           expect(
-            _rowValue('Config ปัจจุบัน', 'Config ในกล่อง v12'),
+            _rowValue('Config ปัจจุบัน', 'ในกล่องเป็นรุ่นที่ 12'),
             findsOneWidget,
           );
         },

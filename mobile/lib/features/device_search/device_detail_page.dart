@@ -508,56 +508,59 @@ class _StatusPayloadRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deviceStatus = status;
+    final connection = _StatusTile(
+      label: 'การเชื่อมต่อ',
+      value: Row(
+        children: [
+          if (isOnline) ...[const _OnlinePulseDot(), const SizedBox(width: 6)],
+          Flexible(
+            child: AppBadge(
+              key: const Key('device_online_row'),
+              label: onlineLabel,
+              tone: onlineTone,
+              dot: false,
+            ),
+          ),
+        ],
+      ),
+      footnoteWidget: lastSeenAt == null ? null : _RelativeTime(lastSeenAt!),
+    );
+    final firmwareTile = _StatusTile(
+      key: const Key('device_detail_firmware'),
+      label: 'Firmware',
+      value: Text(firmware ?? 'ไม่ทราบ', style: _statusValueStyle),
+      badge: deviceStatus == null
+          ? null
+          : AppBadge(
+              label: devicePayloadLabel(
+                deviceStatus.firmwareStatus,
+                firmware: true,
+              ),
+              tone: devicePayloadTone(deviceStatus.firmwareStatus),
+              dot: true,
+            ),
+    );
+    // ตัวอักษรใหญ่เกิน 1.3 เท่า ช่องครึ่งจอแคบจนคำถูกตัดกลาง จึงซ้อนแนวตั้ง
+    final largeText = MediaQuery.textScalerOf(context).scale(10) > 13;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: _StatusTile(
-                label: 'การเชื่อมต่อ',
-                value: Row(
-                  children: [
-                    if (isOnline) ...[
-                      const _OnlinePulseDot(),
-                      const SizedBox(width: 6),
-                    ],
-                    Flexible(
-                      child: AppBadge(
-                        key: const Key('device_online_row'),
-                        label: onlineLabel,
-                        tone: onlineTone,
-                        dot: false,
-                      ),
-                    ),
-                  ],
-                ),
-                footnoteWidget: lastSeenAt == null
-                    ? null
-                    : _RelativeTime(lastSeenAt!),
-              ),
+        if (largeText) ...[
+          connection,
+          const SizedBox(height: 8),
+          firmwareTile,
+        ] else
+          // ช่องสูงเท่ากัน — Row แบบ stretch ใน ListView ต้องมีความสูงจำกัด
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: connection),
+                const SizedBox(width: 8),
+                Expanded(child: firmwareTile),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _StatusTile(
-                key: const Key('device_detail_firmware'),
-                label: 'Firmware',
-                value: Text(firmware ?? 'ไม่ทราบ', style: _statusValueStyle),
-                badge: deviceStatus == null
-                    ? null
-                    : AppBadge(
-                        label: devicePayloadLabel(
-                          deviceStatus.firmwareStatus,
-                          firmware: true,
-                        ),
-                        tone: devicePayloadTone(deviceStatus.firmwareStatus),
-                        dot: true,
-                      ),
-              ),
-            ),
-          ],
-        ),
+          ),
         const SizedBox(height: 8),
         _StatusTile(
           key: const Key('device_detail_current_config'),
@@ -674,6 +677,7 @@ class _RelativeTimeState extends State<_RelativeTime> {
   @override
   Widget build(BuildContext context) => Text(
     'ติดต่อ${_relativeTime(widget.at)}',
+    key: const Key('device_detail_last_seen'),
     style: const TextStyle(
       fontSize: AppTypography.xs,
       color: AppColors.mutedForeground,
@@ -742,13 +746,17 @@ class _OnlinePulseDotState extends State<_OnlinePulseDot>
   );
 }
 
+/// เวลาติดต่อล่าสุดแบบอ่านเร็ว · เกิน 1 วันใช้วันเวลาจริง ("3 วันที่แล้ว"
+/// ช่วยช่างน้อยกว่าวันที่ที่เอาไปเทียบกับบันทึกอื่นได้)
 String _relativeTime(DateTime at) {
   final minutes = DateTime.now().difference(at).inMinutes;
   if (minutes < 1) return 'เมื่อสักครู่';
-  if (minutes < 60) return '$minutes นาทีที่แล้ว';
+  if (minutes < 60) return ' $minutes นาทีที่แล้ว';
   final hours = minutes ~/ 60;
-  if (hours < 24) return '$hours ชั่วโมงที่แล้ว';
-  return '${minutes ~/ (60 * 24)} วันที่แล้ว';
+  if (hours < 24) return ' $hours ชั่วโมงที่แล้ว';
+  final t = at.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return 'เมื่อ ${two(t.day)}/${two(t.month)} ${two(t.hour)}:${two(t.minute)}';
 }
 
 /// คำขอส่ง Config/Firmware ที่ยังไม่จบของกล่องนี้ (`apply-options.openRequest`) —
