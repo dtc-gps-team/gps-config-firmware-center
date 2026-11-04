@@ -134,7 +134,7 @@ class _HomeTasksPageState extends ConsumerState<HomeTasksPage> {
                                       Semantics(
                                         header: true,
                                         child: Text(
-                                          'งานทั้งหมดของคุณ',
+                                          'Task History',
                                           style: TextStyle(
                                             fontSize: 19,
                                             height: 1.3,
