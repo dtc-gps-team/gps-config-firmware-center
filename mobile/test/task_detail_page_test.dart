@@ -126,6 +126,9 @@ class _FakeTaskEventRepository implements TaskEventRepository {
   }
 }
 
+Finder timelineToggle() =>
+    find.byKey(const Key('apply_request_timeline_expansion'));
+
 Future<void> _pump(
   WidgetTester tester, {
   required TaskRepository repo,
@@ -271,7 +274,8 @@ void main() {
     expect(find.text('โน้ตงานติดตั้งหน้างาน'), findsOneWidget);
   });
 
-  testWidgets('ST เห็นตัวเลือกสถานะ + ปุ่มบันทึก (disabled จนกว่าจะเปลี่ยน)', (
+  // ปุ่มบันทึกโผล่เฉพาะเมื่อมีการเปลี่ยนที่ยังไม่บันทึก (ไม่ติดจอแบบกดไม่ได้)
+  testWidgets('ST เห็นตัวเลือกสถานะ + ปุ่มบันทึกโผล่เมื่อเปลี่ยนสถานะ', (
     tester,
   ) async {
     await _pump(
@@ -280,8 +284,7 @@ void main() {
       role: UserRole.st,
     );
 
-    expect(find.byKey(const Key('task_status_save')), findsOneWidget);
-    expect(_saveButton(tester).onPressed, isNull);
+    expect(find.byKey(const Key('task_status_save')), findsNothing);
 
     // ST/OT may only move a task to in_progress / completed — not cancel it
     // (Operation's call) and not back to pending.
@@ -606,6 +609,10 @@ void main() {
           ),
         );
         await tester.pump();
+        // ไทม์ไลน์พับไว้เป็นบรรทัดเดียว กางก่อนดูทีละขั้น
+        await tester.ensureVisible(timelineToggle());
+        await tester.tap(timelineToggle());
+        await tester.pump(const Duration(milliseconds: 300));
 
         final event = find.byKey(const Key('apply_request_event_operation'));
         expect(
@@ -747,6 +754,9 @@ void main() {
       );
 
       expect(find.text('รอ Operation อนุมัติ'), findsWidgets);
+      await tester.ensureVisible(timelineToggle());
+      await tester.tap(timelineToggle());
+      await tester.pump(const Duration(milliseconds: 300));
       expect(
         find.byKey(const Key('apply_request_event_operation')),
         findsOneWidget,
@@ -763,7 +773,7 @@ void main() {
           ),
         ],
       );
-      expect(find.text('Firmware v1.3.0'), findsOneWidget);
+      expect(find.text('Firmware 1.3.0'), findsOneWidget);
       expect(find.text('รอ Operation อนุมัติ'), findsWidgets);
       await tester.pumpWidget(const SizedBox());
     });
@@ -929,42 +939,40 @@ void main() {
           ],
         );
 
-        expect(find.text('กำลังส่งเข้ากล่อง รอสักครู่…'), findsOneWidget);
-        expect(find.text('ผ่านไป 1:04'), findsOneWidget);
+        // แถบเข้มบนสุดแทนกล่องฟ้าและขั้นในไทม์ไลน์ ข้อความไม่ซ้ำ 2 ที่
+        final banner = find.byKey(const Key('task_apply_sending_banner'));
+        expect(banner, findsOneWidget);
         expect(
-          find.descendant(
-            of: find.byKey(const Key('apply_request_event_completed')),
-            matching: find.byType(RotationTransition),
-          ),
+          find.descendant(of: banner, matching: find.text('กำลังส่งเข้ากล่อง')),
           findsOneWidget,
         );
+        expect(find.text('กำลังส่งเข้ากล่อง'), findsOneWidget);
+        expect(find.text('1:04'), findsOneWidget);
+        expect(find.text('ดูความคืบหน้า'), findsOneWidget);
         expect(_confirmInstallButton, findsNothing);
         expect(cancelButton(), findsNothing);
         expect(releaseButton(), findsNothing);
 
         await tester.pump(const Duration(seconds: 1));
-        expect(find.text('ผ่านไป 1:05'), findsOneWidget);
+        expect(find.text('1:05'), findsOneWidget);
       },
     );
 
-    testWidgets('sending firmware explains the expected reboot', (
-      tester,
-    ) async {
+    testWidgets('sending firmware -> แถบบอกเวอร์ชันเป็นลูกศร', (tester) async {
       await pumpWith(
         tester,
         requests: [
           fakeApplyRequest(
             kind: FieldApplyKind.firmware,
+            firmwareVersion: '1.0.0',
+            fromFirmwareVersion: '1.1.0',
             status: ConfigApplyRequestStatus.sending,
             releasedAt: DateTime.now(),
           ),
         ],
       );
 
-      expect(
-        find.text('กล่องจะรีบูตระหว่างติดตั้ง อาจใช้เวลา 1 ถึง 2 นาที'),
-        findsOneWidget,
-      );
+      expect(find.text('Firmware 1.1.0 → 1.0.0'), findsOneWidget);
     });
 
     testWidgets(
@@ -981,27 +989,19 @@ void main() {
           ],
         );
 
-        final completion = find.byKey(
-          const Key('apply_request_event_completed'),
-        );
-        expect(
+        final banner = find.byKey(const Key('task_apply_sending_banner'));
+        final ring = tester.widget<CircularProgressIndicator>(
           find.descendant(
-            of: completion,
-            matching: find.byType(RotationTransition),
+            of: banner,
+            matching: find.byType(CircularProgressIndicator),
           ),
-          findsNothing,
         );
-        expect(
-          find.descendant(
-            of: completion,
-            matching: find.byIcon(Icons.autorenew),
-          ),
-          findsOneWidget,
-        );
-        expect(find.text('ผ่านไป 1:04'), findsOneWidget);
+        // ค่าคงที่ = วงนิ่ง (null คือวงหมุนไม่รู้จบ)
+        expect(ring.value, isNotNull);
+        expect(find.text('1:04'), findsOneWidget);
 
         await tester.pump(const Duration(seconds: 1));
-        expect(find.text('ผ่านไป 1:05'), findsOneWidget);
+        expect(find.text('1:05'), findsOneWidget);
       },
     );
 
@@ -1052,8 +1052,8 @@ void main() {
         },
       );
 
-      testWidgets('กดส่งเข้ากล่อง -> เรียก release ด้วย id + snackbar + '
-          'การ์ดเปลี่ยนเป็นกำลังส่ง', (tester) async {
+      testWidgets('กดส่งเข้ากล่อง -> เรียก release ด้วย id + '
+          'การ์ดเปลี่ยนเป็นแถบกำลังส่ง', (tester) async {
         final applyRepo = await pumpWith(tester, requests: [approvedRequest()]);
 
         await tester.ensureVisible(releaseButton());
@@ -1070,8 +1070,11 @@ void main() {
 
         expect(applyRepo.releaseCalls, 1);
         expect(applyRepo.lastReleaseId, 'car-1');
-        expect(find.text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน'), findsOneWidget);
-        expect(find.text('กำลังส่งเข้ากล่อง รอสักครู่…'), findsOneWidget);
+        // ไม่มี router ในเทสนี้ = อยู่หน้าเดิม แถบเข้มเปิดหน้าความคืบหน้าซ้ำได้
+        expect(
+          find.byKey(const Key('task_apply_sending_banner')),
+          findsOneWidget,
+        );
         expect(releaseButton(), findsNothing);
       });
 
@@ -1233,6 +1236,9 @@ void main() {
           role: UserRole.st,
         );
 
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
+
         // ไม่มีการ scroll ก่อนเลย — ปุ่มต้องเจอทันทีเพราะอยู่ใน
         // bottomNavigationBar ไม่ใช่ท้าย ListView อีกต่อไป
         expect(find.byKey(const Key('task_status_save')), findsOneWidget);
@@ -1257,13 +1263,18 @@ void main() {
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       }
 
-      Future<void> pumpBoth(WidgetTester tester) => _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
-        ),
-        role: UserRole.st,
-      );
+      // ปุ่มบันทึกโผล่เมื่อเปลี่ยนสถานะแล้วเท่านั้น จึงเลือกสถานะก่อนวัด
+      Future<void> pumpBoth(WidgetTester tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          role: UserRole.st,
+        );
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
+      }
 
       testWidgets('แถวเดียวกัน สูง 48 ปุ่มหลักขวาและกว้างกว่า ชิดขอบ 16', (
         tester,
@@ -1342,6 +1353,8 @@ void main() {
           ),
           role: UserRole.st,
         );
+        await tester.tap(find.byKey(const Key('status_choice_in_progress')));
+        await tester.pump();
         final save = tester.getRect(find.byKey(const Key('task_status_save')));
         final width =
             tester.view.physicalSize.width / tester.view.devicePixelRatio;
@@ -1676,6 +1689,8 @@ void main() {
             task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
           ),
         );
+        await tester.tap(find.byKey(const Key('status_choice_completed')));
+        await tester.pump();
 
         final save = find.byKey(const Key('task_status_save'));
         expect(tester.widget(save), isA<OutlinedButton>());
@@ -1710,6 +1725,8 @@ void main() {
 
     testWidgets('มีแค่บันทึกสถานะ -> เป็นปุ่มหลัก', (tester) async {
       await _pump(tester, repo: _FakeTaskRepository(task: _makeTask()));
+      await tester.tap(find.byKey(const Key('status_choice_in_progress')));
+      await tester.pump();
 
       expect(
         tester.widget(find.byKey(const Key('task_status_save'))),
@@ -1975,10 +1992,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(
-          find.text('Firmware v1.0.0 (กล่องรัน v1.2.0 ตอนขอ)'),
-          findsOneWidget,
-        );
+        expect(find.text('Firmware 1.2.0 → 1.0.0'), findsOneWidget);
         expect(
           find.byKey(const Key('apply_request_downgrade')),
           findsOneWidget,

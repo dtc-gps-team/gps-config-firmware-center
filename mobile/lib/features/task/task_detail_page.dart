@@ -457,7 +457,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       _refreshApplyRequests();
       if (!mounted) return;
       setState(() => _releasing = false);
-      context.push(AppRoutes.taskApplyProgress(widget.taskId, requestId));
+      // ไปหน้าความคืบหน้าทันที · ไม่มี router (เช่นฝังในหน้าอื่น) = อยู่หน้าเดิม
+      // แถบ "กำลังส่งเข้ากล่อง" ด้านบนเปิดหน้านั้นซ้ำได้
+      GoRouter.maybeOf(
+        context,
+      )?.push(AppRoutes.taskApplyProgress(widget.taskId, requestId));
     } on ApiException catch (e) {
       _refreshApplyRequests();
       if (!mounted) return;
@@ -677,17 +681,51 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
                     )
                   else
                     const AppInfoRow(label: 'อุปกรณ์', value: null),
+                  // ข้อมูลงานย่อเป็นบรรทัดเล็ก · ผู้รับผิดชอบ/ที่มาอยู่ครบ ไม่ตัดทิ้ง
+                  // (ชื่อมากับ GET /tasks/{id} v3.67 · ไม่มี = user id ดิบแบบเดิม)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      'สร้าง ${_formatCompactDate(task.createdAt)} · แก้ล่าสุด ${_formatCompactDate(task.updatedAt)}',
-                      key: const Key('task_detail_compact_meta'),
+                    child: DefaultTextStyle.merge(
                       style: const TextStyle(
                         fontSize: AppTypography.xs,
+                        height: AppTypography.xsHeight,
                         color: AppColors.mutedForeground,
+                      ),
+                      child: Wrap(
+                        key: const Key('task_detail_compact_meta'),
+                        spacing: 6,
+                        runSpacing: 2,
+                        children: [
+                          SelectableText(
+                            task.assignee?.label ?? task.assignedTo,
+                            key: const Key('task_detail_assignee'),
+                          ),
+                          const Text('·'),
+                          Text(
+                            taskSourceLabel(task.source),
+                            key: const Key('task_detail_source'),
+                          ),
+                          const Text('·'),
+                          Text('สร้าง ${_formatCompactDate(task.createdAt)}'),
+                          const Text('·'),
+                          Text(
+                            'แก้ล่าสุด ${_formatCompactDate(task.updatedAt)}',
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                  // แสดงเฉพาะเมื่อมีค่า (ส่วนใหญ่ไม่มี จึงไม่ทำให้หน้ายาว)
+                  if (task.dueDate != null)
+                    AppInfoRow(
+                      label: 'กำหนดส่ง',
+                      value: _formatDate(task.dueDate!),
+                    ),
+                  if (task.completedAt != null)
+                    AppInfoRow(
+                      label: 'ปิดงานเมื่อ',
+                      value: _formatDate(task.completedAt!),
+                    ),
                   if (task.autoClosed) ...[
                     const SizedBox(height: 8),
                     const AppNotice(
@@ -1221,7 +1259,8 @@ class _SendingRequestBannerState extends State<_SendingRequestBanner>
                       AnimatedBuilder(
                         animation: _controller,
                         builder: (context, _) => CircularProgressIndicator(
-                          value: _reduced ? null : .3 + _controller.value * .65,
+                          // ลดอนิเมชั่น = วงนิ่ง (null จะเป็นวงหมุนไม่รู้จบ)
+                          value: _reduced ? .65 : .3 + _controller.value * .65,
                           strokeWidth: 4,
                           color: AppColors.primarySubtle,
                           backgroundColor: AppColors.primaryForeground
