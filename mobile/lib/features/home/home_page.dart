@@ -216,7 +216,7 @@ class _HomeHero extends StatelessWidget {
                           const SizedBox(width: 10),
                           const Expanded(
                             child: Text(
-                              'ค้นหาด้วยเลขเครื่อง หรือเบอร์ซิม',
+                              'ค้นหาด้วย device_id หรือเบอร์ซิม',
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
