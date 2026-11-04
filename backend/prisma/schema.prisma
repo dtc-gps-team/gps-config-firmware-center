@@ -1109,6 +1109,13 @@ model ConfigFieldDefinition {
   defaultValue    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  // field นี้ใช้ได้กับทุกรุ่นอุปกรณ์เลยไหม (ฟีดแบ็ก 2026-11-04: บางพารามิเตอร์
+  // เป็นค่าที่จำเป็นต้องมีทุกครั้งที่คอนฟิก ไม่ว่ารุ่นไหน) — true แล้ว
+  // `supportedModels` ไม่ต้องมีแถวเลยก็ได้ (ถือว่าตรงกับทุก deviceModel/
+  // protocol โดยอัตโนมัติ ดู `fieldSupportsModel()` ใน config-definition.service.ts
+  // ที่เป็นจุดตรวจรวมจุดเดียว) ถ้าส่ง `supportedModels` มาด้วยพร้อมกันก็เก็บไว้
+  // เป็นข้อมูลอ้างอิงได้ ไม่มีผลต่อการ validate เพิ่ม เพราะ flag นี้ชนะอยู่แล้ว
+  appliesToAllModels Boolean @default(false)
 
   supportedModels ConfigFieldDefinitionModelSupport[]
 }
