@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -1403,6 +1405,10 @@ class _ApplyRequestTimeline extends StatelessWidget {
         request.status != ConfigApplyRequestStatus.pending &&
         request.status != ConfigApplyRequestStatus.rejected &&
         request.status != ConfigApplyRequestStatus.expired;
+    final sending =
+        request.status == ConfigApplyRequestStatus.sending &&
+        request.releasedAt != null &&
+        request.completedAt == null;
     final events = <(String, DateTime?, bool, Key?)>[
       (
         'คุณขอ',
@@ -1460,37 +1466,138 @@ class _ApplyRequestTimeline extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 10),
                 child: Container(width: 2, height: 12, color: AppColors.border),
               ),
-            Row(
-              key: event.$4,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  event.$3 ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 20,
-                  color: event.$3
-                      ? AppColors.primary
-                      : AppColors.mutedForeground,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(event.$1),
-                      Text(
-                        event.$2 == null
-                            ? 'ยังไม่เกิด'
-                            : _formatDate(event.$2!),
-                        style: _timelineMutedStyle,
-                      ),
-                    ],
+            if (sending && index == events.length - 1)
+              _SendingTimelineStep(
+                key: event.$4,
+                request: request,
+                textStyle: _timelineMutedStyle,
+              )
+            else
+              Row(
+                key: event.$4,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    event.$3
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                    color: event.$3
+                        ? AppColors.primary
+                        : AppColors.mutedForeground,
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(event.$1),
+                        Text(
+                          event.$2 == null
+                              ? 'ยังไม่เกิด'
+                              : _formatDate(event.$2!),
+                          style: _timelineMutedStyle,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _SendingTimelineStep extends StatefulWidget {
+  const _SendingTimelineStep({
+    super.key,
+    required this.request,
+    required this.textStyle,
+  });
+
+  final ConfigApplyRequest request;
+  final TextStyle textStyle;
+
+  @override
+  State<_SendingTimelineStep> createState() => _SendingTimelineStepState();
+}
+
+class _SendingTimelineStepState extends State<_SendingTimelineStep>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Timer? _elapsedTimer;
+  var _disableAnimations = false;
+  late int _elapsedSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    final elapsed = DateTime.now().difference(widget.request.releasedAt!);
+    _elapsedSeconds = elapsed.isNegative ? 0 : elapsed.inSeconds;
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsedSeconds++);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (disabled == _disableAnimations &&
+        (_controller.isAnimating || disabled)) {
+      return;
+    }
+    _disableAnimations = disabled;
+    if (disabled) {
+      _controller.stop();
+    } else {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _elapsedTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = _elapsedSeconds;
+    final time =
+        '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+    const icon = Icon(Icons.autorenew, size: 20, color: AppColors.primary);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_disableAnimations)
+          icon
+        else
+          RotationTransition(turns: _controller, child: icon),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('กำลังส่งเข้ากล่อง รอสักครู่…'),
+              Text('ผ่านไป $time', style: widget.textStyle),
+              if (widget.request.kind == FieldApplyKind.firmware)
+                Text(
+                  'กล่องจะรีบูตระหว่างติดตั้ง อาจใช้เวลา 1 ถึง 2 นาที',
+                  style: widget.textStyle,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

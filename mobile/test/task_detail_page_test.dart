@@ -135,6 +135,7 @@ Future<void> _pump(
   Set<String> pendingIds = const {},
   TaskEventRepository? eventRepo,
   GoRouter? router,
+  bool disableAnimations = false,
 }) async {
   // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
   // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
@@ -171,7 +172,14 @@ Future<void> _pump(
         ),
       ],
       child: router == null
-          ? MaterialApp(home: TaskDetailPage(taskId: taskId))
+          ? MaterialApp(
+              home: disableAnimations
+                  ? MediaQuery(
+                      data: const MediaQueryData(disableAnimations: true),
+                      child: TaskDetailPage(taskId: taskId),
+                    )
+                  : TaskDetailPage(taskId: taskId),
+            )
           : MaterialApp.router(routerConfig: router),
     ),
   );
@@ -691,6 +699,7 @@ void main() {
       Object? releaseError,
       Object? listError,
       GoRouter? router,
+      bool disableAnimations = false,
     }) async {
       // จอสูงพอให้การ์ดสถานะคำขอ + ปุ่มยกเลิกอยู่ในจอ (เนื้อหาหน้านี้ยาวกว่า 600)
       tester.view.physicalSize = const Size(1080, 4000);
@@ -708,6 +717,7 @@ void main() {
         role: UserRole.st,
         applyRepo: applyRepo,
         router: router,
+        disableAnimations: disableAnimations,
       );
       if (router != null) await tester.pumpAndSettle();
       return applyRepo;
@@ -906,7 +916,7 @@ void main() {
     });
 
     testWidgets(
-      'sending -> "กำลังส่งเข้ากล่อง รอกล่องยืนยัน" ไม่มีปุ่มขอ/ยกเลิก/ส่ง',
+      'sending after release shows animated progress and elapsed time',
       (tester) async {
         await pumpWith(
           tester,
@@ -914,18 +924,111 @@ void main() {
             fakeApplyRequest(
               status: ConfigApplyRequestStatus.sending,
               decidedAt: DateTime.utc(2026, 10, 22, 4),
-              releasedAt: DateTime.utc(2026, 10, 22, 5),
+              releasedAt: DateTime.now().subtract(const Duration(seconds: 64)),
             ),
           ],
         );
 
-        expect(find.text('กำลังส่งเข้ากล่อง รอกล่องยืนยัน'), findsOneWidget);
-        expect(find.textContaining('กดส่งเมื่อ'), findsOneWidget);
+        expect(find.text('กำลังส่งเข้ากล่อง รอสักครู่…'), findsOneWidget);
+        expect(find.text('ผ่านไป 1:04'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('apply_request_event_completed')),
+            matching: find.byType(RotationTransition),
+          ),
+          findsOneWidget,
+        );
         expect(_confirmInstallButton, findsNothing);
         expect(cancelButton(), findsNothing);
         expect(releaseButton(), findsNothing);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('ผ่านไป 1:05'), findsOneWidget);
       },
     );
+
+    testWidgets('sending firmware explains the expected reboot', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            kind: FieldApplyKind.firmware,
+            status: ConfigApplyRequestStatus.sending,
+            releasedAt: DateTime.now(),
+          ),
+        ],
+      );
+
+      expect(
+        find.text('กล่องจะรีบูตระหว่างติดตั้ง อาจใช้เวลา 1 ถึง 2 นาที'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'disableAnimations keeps progress static while elapsed time advances',
+      (tester) async {
+        await pumpWith(
+          tester,
+          disableAnimations: true,
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.sending,
+              releasedAt: DateTime.now().subtract(const Duration(seconds: 64)),
+            ),
+          ],
+        );
+
+        final completion = find.byKey(
+          const Key('apply_request_event_completed'),
+        );
+        expect(
+          find.descendant(
+            of: completion,
+            matching: find.byType(RotationTransition),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: completion,
+            matching: find.byIcon(Icons.autorenew),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('ผ่านไป 1:04'), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('ผ่านไป 1:05'), findsOneWidget);
+      },
+    );
+
+    testWidgets('terminal request shows its normal completion state', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            status: ConfigApplyRequestStatus.failed,
+            releasedAt: DateTime.now().subtract(const Duration(seconds: 70)),
+            completedAt: DateTime.now(),
+          ),
+        ],
+      );
+
+      expect(find.text('กำลังส่งเข้ากล่อง รอสักครู่…'), findsNothing);
+      expect(find.textContaining('ผ่านไป '), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('apply_request_event_completed')),
+          matching: find.byType(RotationTransition),
+        ),
+        findsNothing,
+      );
+    });
 
     group('อนุมัติแล้ว รอช่างกดส่ง (docs/27)', () {
       ConfigApplyRequest approvedRequest() => fakeApplyRequest(
@@ -962,12 +1065,13 @@ void main() {
         await tester.tap(
           find.byKey(const Key('confirm_release_apply_request')),
         );
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
 
         expect(applyRepo.releaseCalls, 1);
         expect(applyRepo.lastReleaseId, 'car-1');
         expect(find.text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน'), findsOneWidget);
-        expect(find.text('กำลังส่งเข้ากล่อง รอกล่องยืนยัน'), findsOneWidget);
+        expect(find.text('กำลังส่งเข้ากล่อง รอสักครู่…'), findsOneWidget);
         expect(releaseButton(), findsNothing);
       });
 
