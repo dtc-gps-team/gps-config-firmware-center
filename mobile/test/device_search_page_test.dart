@@ -252,7 +252,7 @@ void main() {
         store: _MemoryStarStore(),
       );
 
-      expect(find.text('พิมพ์เลขเครื่อง หรือเบอร์ซิม'), findsOneWidget);
+      expect(find.text('พิมพ์ device_id หรือเบอร์ซิม'), findsOneWidget);
       expect(find.textContaining('เช่น BOX-0001'), findsOneWidget);
     });
 
