@@ -73,6 +73,21 @@ export interface CentralDeviceClient {
  */
 @Injectable()
 export class MockCentralDeviceClient implements CentralDeviceClient {
+  private completedEvents() {
+    const now = Date.now();
+    return [
+      'DELIVERED',
+      'DOWNLOADING',
+      'VALIDATING',
+      'INSTALLING',
+      'REBOOTING',
+      'SUCCESS',
+    ].map((status, index) => ({
+      status,
+      ...(status === 'DOWNLOADING' ? { progress: 100 } : {}),
+      time: new Date(now - (5 - index) * 1000).toISOString(),
+    }));
+  }
   listGatewayDevices = (): Promise<RawGatewayDevice[]> => {
     const now = new Date().toISOString();
     return Promise.resolve([
@@ -173,6 +188,8 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
       status: 'SUCCESS',
       target_config_version: version,
       error_code: null,
+      device_online: true,
+      events: this.completedEvents(),
     };
     this.commands.set(command.command_id, command);
     return Promise.resolve({ config_version: version, command });
@@ -225,6 +242,8 @@ export class MockCentralDeviceClient implements CentralDeviceClient {
       status: 'SUCCESS',
       target_firmware_version: options.firmwareVersion,
       error_code: null,
+      device_online: true,
+      events: this.completedEvents(),
     };
     this.commands.set(command.command_id, command);
     return Promise.resolve({

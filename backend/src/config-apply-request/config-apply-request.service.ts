@@ -24,6 +24,8 @@ import {
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
 import { CentralDeviceService } from '../central-device/central-device.service';
+import { describeCentralFailure } from '../central-device/central-config';
+import type { RawCentralCommand } from '../central-device/central-device.types';
 import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import {
   CONFIG_APPLY_MODE,
@@ -135,6 +137,83 @@ const TASK_REQUEST_INCLUDE = {
 export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
   include: typeof TASK_REQUEST_INCLUDE;
 }>;
+
+export interface ConfigApplyRequestProgress {
+  requestId: string;
+  kind: 'config' | 'firmware';
+  status: ConfigApplyRequestStatus;
+  fromVersion: string | null;
+  toVersion: string | null;
+  isDowngrade: boolean;
+  releasedAt: string | null;
+  completedAt: string | null;
+  central: null | {
+    available: boolean;
+    commandId: string;
+    status: string | null;
+    progressPercent: number | null;
+    deviceOnline: boolean | null;
+    waitingReason: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    steps: { key: string; at: string | null; progress: number | null }[];
+  };
+}
+type CentralProgressStep = {
+  key: string;
+  at: string | null;
+  progress: number | null;
+};
+
+const CENTRAL_STEP_KEYS: Record<string, string> = {
+  DELIVERED: 'delivered',
+  ACKNOWLEDGED: 'delivered',
+  DOWNLOADING: 'downloading',
+  VALIDATING: 'validating',
+  INSTALLING: 'installing',
+  REBOOTING: 'rebooting',
+  SUCCESS: 'succeeded',
+  ROLLED_BACK: 'rolled_back',
+  FAILED: 'failed',
+  EXPIRED: 'expired',
+};
+
+function centralProgress(command: RawCentralCommand) {
+  const steps: CentralProgressStep[] = [];
+  let downloading: CentralProgressStep | null = null;
+  let downloadingIndex = -1;
+  for (const event of command.events ?? []) {
+    const key = CENTRAL_STEP_KEYS[event.status.toUpperCase()];
+    if (!key) continue;
+    const step = {
+      key,
+      at: event.time ?? null,
+      progress:
+        event.status.toUpperCase() === 'DOWNLOADING'
+          ? (event.progress ?? null)
+          : null,
+    };
+    if (key === 'downloading') {
+      if (downloadingIndex < 0) downloadingIndex = steps.length;
+      downloading = step;
+    } else steps.push(step);
+  }
+  if (downloading) steps.splice(downloadingIndex, 0, downloading);
+  const errorMessage = command.error_code
+    ? describeCentralFailure(command)
+    : (command.error_message ?? null);
+  return {
+    available: true,
+    commandId: command.command_id,
+    status: command.status,
+    progressPercent: downloading?.progress ?? null,
+    deviceOnline: command.device_online ?? null,
+    waitingReason: command.waiting_reason ?? null,
+    errorCode: command.error_code ?? null,
+    errorMessage,
+    steps,
+  };
+}
 
 /** สิ่งที่ต่างกันระหว่างคำขอ 2 ชนิดตอนสร้าง — ที่เหลือ (Task, เครื่อง, เวลา) ใช้ร่วมกัน */
 type RequestPayloadDraft =
@@ -528,6 +607,72 @@ export class ConfigApplyRequestService implements OnModuleInit {
       orderBy: { requestedAt: 'desc' },
       include: TASK_REQUEST_INCLUDE,
     });
+  }
+
+  /** Read-only, task-scoped progress view. Central failures degrade to unavailable. */
+  async progressForTask(
+    taskId: string,
+    requestId: string,
+    actor: ActingUser,
+  ): Promise<ConfigApplyRequestProgress> {
+    await this.taskService.findOne(taskId, actor);
+    const request = await this.prisma.configApplyRequest.findFirst({
+      where: { id: requestId, taskId },
+      include: {
+        config: { select: { name: true } },
+        firmware: { select: { version: true } },
+        task: { include: { config: { select: { name: true } } } },
+      },
+    });
+    if (!request) throw new NotFoundException('ไม่พบคำขอในงานนี้');
+
+    let central: ConfigApplyRequestProgress['central'] = null;
+    if (
+      this.applyMode === 'central' &&
+      request.releasedAt &&
+      request.rolloutId
+    ) {
+      const target = await this.prisma.campaignRolloutTarget.findFirst({
+        where: { rolloutId: request.rolloutId, deviceId: request.deviceId },
+        select: { centralCommandId: true },
+      });
+      const commandId = target?.centralCommandId;
+      if (commandId) {
+        try {
+          central = centralProgress(
+            await this.centralDevices.getCommand(commandId),
+          );
+        } catch {
+          central = {
+            available: false,
+            commandId,
+            status: null,
+            progressPercent: null,
+            deviceOnline: null,
+            waitingReason: null,
+            errorCode: null,
+            errorMessage: null,
+            steps: [],
+          };
+        }
+      }
+    }
+    const isFirmware = request.kind === 'firmware';
+    return {
+      requestId: request.id,
+      kind: request.kind,
+      status: request.status,
+      fromVersion: isFirmware
+        ? request.fromFirmwareVersion
+        : (request.task.config?.name ?? null),
+      toVersion: isFirmware
+        ? (request.firmware?.version ?? null)
+        : (request.config?.name ?? null),
+      isDowngrade: request.isDowngrade,
+      releasedAt: request.releasedAt?.toISOString() ?? null,
+      completedAt: request.completedAt?.toISOString() ?? null,
+      central,
+    };
   }
 
   /**
