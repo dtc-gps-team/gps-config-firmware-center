@@ -18,6 +18,7 @@ import '../../features/notification/notification_list_page.dart';
 import '../../features/task/apply_config_params_page.dart';
 import '../../features/task/apply_config_picker_page.dart';
 import '../../features/task/apply_request_history_page.dart';
+import '../../features/task/config_apply_progress_page.dart';
 import '../../features/task/task_detail_page.dart';
 import '../api/models.dart';
 import '../auth/auth_controller.dart';
@@ -121,6 +122,11 @@ class AppRoutes {
   /// ประวัติคำขอส่งเข้ากล่องของงาน — `/tasks/:id/requests`
   static const taskRequestHistoryPattern = '/tasks/:id/requests';
   static String taskRequestHistory(String id) => '/tasks/$id/requests';
+
+  static const taskApplyProgressPattern =
+      '/tasks/:taskId/apply-requests/:requestId/progress';
+  static String taskApplyProgress(String taskId, String requestId) =>
+      '/tasks/$taskId/apply-requests/$requestId/progress';
 }
 
 /// GoRouter wired to [authControllerProvider]: unauthenticated users are pushed
@@ -283,6 +289,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.taskRequestHistoryPattern,
         builder: (context, state) =>
             ApplyRequestHistoryPage(taskId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: AppRoutes.taskApplyProgressPattern,
+        builder: (context, state) => ConfigApplyProgressPage(
+          taskId: state.pathParameters['taskId']!,
+          requestId: state.pathParameters['requestId']!,
+        ),
       ),
     ],
   );

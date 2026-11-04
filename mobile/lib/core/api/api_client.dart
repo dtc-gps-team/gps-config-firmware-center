@@ -388,6 +388,16 @@ class ApiClient {
     );
   }
 
+  Future<ConfigApplyRequestProgress> getConfigApplyRequestProgress(
+    String taskId,
+    String requestId,
+  ) async => _wrap(
+    () => _dio.get<Map<String, dynamic>>(
+      '/tasks/$taskId/config-apply-requests/$requestId/progress',
+    ),
+    ConfigApplyRequestProgress.fromJson,
+  );
+
   /// `POST /tasks/{taskId}/config-apply-requests` — ช่างขอส่ง Config ของงาน
   /// เข้าเครื่องจริง (docs/25 §3.3) · **ไม่ส่ง configId/deviceId** backend อ่าน
   /// จาก Task เอง · 409 หลายกรณี (งานไม่ได้ in_progress, ไม่มีผู้ผูก Config,
