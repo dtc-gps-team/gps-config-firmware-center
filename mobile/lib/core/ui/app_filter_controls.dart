@@ -179,12 +179,16 @@ class AppFilterButton extends StatelessWidget {
     required this.active,
     this.onTap,
     this.minHeight = 40,
+    this.showIcon = true,
   });
 
   final String label;
   final bool active;
   final VoidCallback? onTap;
   final double minHeight;
+
+  /// false เมื่อวางหลายปุ่มเรียงกันจนที่ไม่พอ (หน้าค้นหาอุปกรณ์ 4 ปุ่ม)
+  final bool showIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -202,14 +206,16 @@ class AppFilterButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.filter_list,
-            size: 18,
-            color: active
-                ? AppColors.primaryForeground
-                : AppColors.mutedForeground,
-          ),
-          const SizedBox(width: 4),
+          if (showIcon) ...[
+            Icon(
+              Icons.filter_list,
+              size: 18,
+              color: active
+                  ? AppColors.primaryForeground
+                  : AppColors.mutedForeground,
+            ),
+            const SizedBox(width: 4),
+          ],
           Flexible(
             child: Text(
               label,

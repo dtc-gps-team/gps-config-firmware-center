@@ -206,6 +206,37 @@ void main() {
     });
   }
 
+  testWidgets('ปุ่มกรอง 4 ปุ่มอยู่แถวเดียว และอยู่บนจอทั้งหมดที่จอ 360px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceSearchRepositoryProvider.overrideWithValue(
+            _FakeDeviceSearchRepository(devices: [_device()]),
+          ),
+          starredDeviceStoreProvider.overrideWithValue(_MemoryStarStore()),
+          authControllerProvider.overrideWith(() => _LoggedIn('st.test')),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.v2(),
+          home: const Scaffold(body: DeviceSearchPage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tops = [
+      for (final k in ['model', 'customer', 'protocol', 'status'])
+        tester.getRect(find.byKey(Key('device_filter_$k'))),
+    ];
+    expect(tops.map((r) => r.top).toSet(), hasLength(1));
+    expect(tops.last.right, lessThanOrEqualTo(360));
+  });
+
   group('ติดดาวอุปกรณ์', () {
     final devices = [
       _device(deviceId: 'BOX-0001', simNumber: '0811111111'),

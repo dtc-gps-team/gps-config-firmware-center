@@ -358,29 +358,37 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                         ),
                       ),
                     ),
-                    Padding(
+                    // แถวเดียว เลื่อนข้างได้เมื่อไม่พอ (B 04/11/2026: เดิม Wrap
+                    // ตัด "สถานะ" ลงบรรทัดสอง) · ปุ่มไม่มีไอคอนให้ 4 ปุ่มพอดี
+                    // จอ 360px ที่ขนาดตัวอักษรปกติ
+                    SingleChildScrollView(
+                      key: const Key('device_filter_row'),
+                      scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.lg,
                       ),
-                      child: Wrap(
+                      child: Row(
                         spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           for (final filter in _DeviceFilter.values)
                             // หน้าตาเดียวกับปุ่มกรองหน้า Incidents/แจ้งเตือน
                             // (B 04/11/2026) · แตะแล้วยังเปิดแผ่นเลือกที่มี
                             // จำนวนเครื่องเหมือนเดิม
-                            AppFilterButton(
-                              key: Key('device_filter_${filter.keyName}'),
-                              label: _filters.containsKey(filter)
-                                  ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
-                                  : filter.title,
-                              active: _filters.containsKey(filter),
-                              minHeight: _filterChipMinHeight,
-                              onTap: allDevices.isEmpty
-                                  ? null
-                                  : () => _openFilter(filter, allDevices),
+                            ConstrainedBox(
+                              // ค่าที่เลือกยาว (ชื่อรุ่น/ลูกค้า) หดเป็น "…"
+                              constraints: const BoxConstraints(maxWidth: 220),
+                              child: AppFilterButton(
+                                key: Key('device_filter_${filter.keyName}'),
+                                showIcon: false,
+                                label: _filters.containsKey(filter)
+                                    ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
+                                    : filter.title,
+                                active: _filters.containsKey(filter),
+                                minHeight: _filterChipMinHeight,
+                                onTap: allDevices.isEmpty
+                                    ? null
+                                    : () => _openFilter(filter, allDevices),
+                              ),
                             ),
                           if (_filters.isNotEmpty)
                             TextButton(
