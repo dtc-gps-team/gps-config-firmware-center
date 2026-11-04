@@ -277,7 +277,7 @@ void main() {
     });
 
     testWidgets(
-      'configOverrideApproved (เรื่องทั่วไป) -> พื้นหลังไอคอนปกติเหมือนเดิม',
+      'configOverrideApproved (สำเร็จ) -> วงไอคอนสีเขียว (B 04/11/2026)',
       (tester) async {
         await _pump(
           tester,
@@ -286,12 +286,12 @@ void main() {
           ),
         );
 
-        expect(iconBgOf(tester, 0), AppColors.secondary);
+        expect(iconBgOf(tester, 0), AppColors.successSubtle);
       },
     );
 
     testWidgets(
-      'incidentReportResolved (ปิดเรื่องแล้ว ไม่ใช่เรื่องใหม่) -> พื้นหลังไอคอนปกติ',
+      'incidentReportResolved (ปิดเรื่องแล้ว) -> สีเขียว ไม่ใช่โทนด่วน',
       (tester) async {
         await _pump(
           tester,
@@ -300,10 +300,127 @@ void main() {
           ),
         );
 
-        expect(iconBgOf(tester, 0), AppColors.secondary);
+        expect(iconBgOf(tester, 0), AppColors.successSubtle);
       },
     );
   });
+
+  group(
+    'รายการเยอะ: ชิปกรอง / หัวข้อวันที่ / ป้าย / ปัดอ่าน (B 04/11/2026)',
+    () {
+      testWidgets('ชิป "ยังไม่อ่าน" แสดงจำนวน + ซ่อนที่อ่านแล้ว', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [
+              _n('n1', type: NotificationType.firmwareReady),
+              _n('n2', read: true, type: NotificationType.configApproved),
+            ],
+          ),
+        );
+
+        expect(find.text('ทั้งหมด 2'), findsOneWidget);
+        expect(find.text('ยังไม่อ่าน 1'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('notification_filter_unread')));
+        await tester.pump();
+        expect(find.text('Firmware พร้อมใช้งาน'), findsOneWidget);
+        expect(find.text('Config อนุมัติแล้ว'), findsNothing);
+      });
+
+      testWidgets('ชิปหมวด: เฉพาะหมวดที่มีจริง กดซ้ำ = ยกเลิก', (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [
+              _n('n1', type: NotificationType.taskAssigned),
+              _n('n2', type: NotificationType.configOverrideApproved),
+            ],
+          ),
+        );
+
+        expect(find.byKey(const Key('notification_category_task')), findsOne);
+        expect(
+          find.byKey(const Key('notification_category_incident')),
+          findsNothing,
+        );
+        await tester.tap(
+          find.byKey(const Key('notification_category_override')),
+        );
+        await tester.pump();
+        expect(find.text('ได้รับงานใหม่'), findsNothing);
+        expect(find.text('Override อนุมัติแล้ว'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key('notification_category_override')),
+        );
+        await tester.pump();
+        expect(find.text('ได้รับงานใหม่'), findsOneWidget);
+      });
+
+      testWidgets('อ่านครบแล้วกด "ยังไม่อ่าน" -> ข้อความว่าง', (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(items: [_n('n1', read: true)]),
+        );
+
+        await tester.tap(find.byKey(const Key('notification_filter_unread')));
+        await tester.pump();
+        expect(find.byKey(const Key('notification_no_match')), findsOneWidget);
+      });
+
+      testWidgets('เรื่องที่ต้องทำต่อ -> ป้าย "ต้องดำเนินการ"', (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [
+              _n('n1', read: true, type: NotificationType.configApplyApproved),
+              _n('n2', read: true, type: NotificationType.configApplySucceeded),
+            ],
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('notification_needs_action')),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('หัวข้อช่วงวันที่ + ลูกศรเฉพาะที่แตะไปต่อได้', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(
+            items: [_n('n1', type: NotificationType.firmwareReady)],
+          ),
+        );
+
+        expect(find.text('เก่ากว่านั้น'), findsOneWidget);
+        // firmwareReady ไม่มีหน้าให้ไป
+        expect(find.byKey(const Key('notification_open_hint')), findsNothing);
+      });
+
+      testWidgets('ปัดซ้าย -> markRead + ป้ายใหม่หาย การ์ดยังอยู่', (
+        tester,
+      ) async {
+        final repo = _FakeNotificationRepository(
+          items: [_n('n1', type: NotificationType.firmwareReady)],
+        );
+        await _pump(tester, repo);
+
+        await tester.drag(
+          find.byKey(const Key('notification_tile_0')),
+          const Offset(-500, 0),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repo.markReadCalls, ['n1']);
+        expect(find.byKey(const Key('unread_dot')), findsNothing);
+        expect(find.text('Firmware พร้อมใช้งาน'), findsOneWidget);
+      });
+    },
+  );
 
   testWidgets('render — item + label ตาม type + unread dot', (tester) async {
     await _pump(
@@ -316,8 +433,8 @@ void main() {
       ),
     );
 
-    expect(find.text('เฟิร์มแวร์พร้อมใช้งาน'), findsOneWidget);
-    expect(find.text('อนุมัติ Config แล้ว'), findsOneWidget);
+    expect(find.text('Firmware พร้อมใช้งาน'), findsOneWidget);
+    expect(find.text('Config อนุมัติแล้ว'), findsOneWidget);
     // n1 unread -> dot; n2 read -> no dot -> exactly one dot on screen
     expect(find.byKey(const Key('unread_dot')), findsOneWidget);
   });
@@ -336,9 +453,9 @@ void main() {
         ),
       );
 
-      expect(find.text('มีคำขอ Override รออนุมัติ'), findsOneWidget);
-      expect(find.text('คำขอ Override ได้รับการอนุมัติ'), findsOneWidget);
-      expect(find.text('คำขอ Override ถูกปฏิเสธ'), findsOneWidget);
+      expect(find.text('Override รออนุมัติ'), findsOneWidget);
+      expect(find.text('Override อนุมัติแล้ว'), findsOneWidget);
+      expect(find.text('Override ถูกปฏิเสธ'), findsOneWidget);
     },
   );
 
@@ -377,12 +494,9 @@ void main() {
         ),
       );
 
-      expect(find.text('มีคำขอ Firmware Override รออนุมัติ'), findsOneWidget);
-      expect(
-        find.text('คำขอ Firmware Override ได้รับการอนุมัติ'),
-        findsOneWidget,
-      );
-      expect(find.text('คำขอ Firmware Override ถูกปฏิเสธ'), findsOneWidget);
+      expect(find.text('Firmware Override รออนุมัติ'), findsOneWidget);
+      expect(find.text('Firmware Override อนุมัติแล้ว'), findsOneWidget);
+      expect(find.text('Firmware Override ถูกปฏิเสธ'), findsOneWidget);
       expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
       expect(find.text('อุปกรณ์: DTC-0003'), findsOneWidget);
       expect(find.text('เหตุผล: Firmware ไม่เหมาะกับลูกค้า'), findsOneWidget);
@@ -434,19 +548,10 @@ void main() {
         ),
       );
 
-      expect(find.text('มีรายงานปัญหาหน้างานรอตัดสินใจ'), findsOneWidget);
-      expect(
-        find.text('รายงานปัญหาของคุณถูกปิดแล้ว (แก้ไขแล้ว)'),
-        findsOneWidget,
-      );
-      expect(
-        find.text('รายงานปัญหาของคุณไม่ถูกดำเนินการ (ไม่ใช่ปัญหา/ซ้ำ)'),
-        findsOneWidget,
-      );
-      expect(
-        find.text('รายงานปัญหาของคุณถูกส่งต่อเป็น Campaign แก้ไข'),
-        findsOneWidget,
-      );
+      expect(find.text('มีรายงานปัญหาใหม่'), findsOneWidget);
+      expect(find.text('ปัญหาที่คุณแจ้ง แก้ไขแล้ว'), findsOneWidget);
+      expect(find.text('ปัญหาที่คุณแจ้ง ไม่ต้องดำเนินการ'), findsOneWidget);
+      expect(find.text('ปัญหาที่คุณแจ้ง ส่งต่อเป็น Campaign'), findsOneWidget);
       expect(find.text('อุปกรณ์: DTC-0001'), findsOneWidget);
       expect(find.text('หัวข้อ: ไม่ส่งสัญญาณ'), findsOneWidget);
       expect(find.text('อุปกรณ์: DTC-0002'), findsOneWidget);
