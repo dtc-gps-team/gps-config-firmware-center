@@ -161,44 +161,77 @@ class AppFilterMenu<T extends Object> extends StatelessWidget {
             ),
           ),
       ],
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 40),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? AppColors.primary : AppColors.card,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          border: Border.all(
-            color: active ? AppColors.primary : AppColors.border,
-          ),
+      child: AppFilterButton(
+        label: selectedLabel ?? placeholder,
+        active: active,
+      ),
+    );
+  }
+}
+
+/// หน้าตาปุ่มกรอง ใช้ร่วมกันทุกหน้า: ยังไม่เลือก = พื้นขาวขอบบาง · เลือกแล้ว
+/// = พื้นเข้มตัวขาว ชื่อหดเป็น "…" ได้เมื่อวางใน Flexible / Wrap ·
+/// [onTap] null เมื่อผู้เรียกจัดการการแตะเอง (เช่น [AppFilterMenu])
+class AppFilterButton extends StatelessWidget {
+  const AppFilterButton({
+    super.key,
+    required this.label,
+    required this.active,
+    this.onTap,
+    this.minHeight = 40,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = active ? AppColors.primaryForeground : AppColors.foreground;
+    final content = Container(
+      constraints: BoxConstraints(minHeight: minHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? AppColors.primary : AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        border: Border.all(
+          color: active ? AppColors.primary : AppColors.border,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.filter_list,
-              size: 18,
-              color: active
-                  ? AppColors.primaryForeground
-                  : AppColors.mutedForeground,
-            ),
-            const SizedBox(width: 4),
-            // ให้หดเป็น "…" ได้เมื่อผู้เรียกวางปุ่มใน Flexible (ตัวอักษรใหญ่)
-            Flexible(
-              child: Text(
-                selectedLabel ?? placeholder,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypography.sm,
-                  fontWeight: FontWeight.w600,
-                  color: active
-                      ? AppColors.primaryForeground
-                      : AppColors.foreground,
-                ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.filter_list,
+            size: 18,
+            color: active
+                ? AppColors.primaryForeground
+                : AppColors.mutedForeground,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppTypography.sm,
+                fontWeight: FontWeight.w600,
+                color: fg,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        child: content,
       ),
     );
   }

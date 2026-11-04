@@ -9,6 +9,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
 import '../../core/ui/app_empty_state.dart';
+import '../../core/ui/app_filter_controls.dart';
 import '../../core/ui/app_ink_header.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
@@ -367,12 +368,16 @@ class _DeviceSearchPageState extends ConsumerState<DeviceSearchPage> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           for (final filter in _DeviceFilter.values)
-                            _FilterChipButton(
+                            // หน้าตาเดียวกับปุ่มกรองหน้า Incidents/แจ้งเตือน
+                            // (B 04/11/2026) · แตะแล้วยังเปิดแผ่นเลือกที่มี
+                            // จำนวนเครื่องเหมือนเดิม
+                            AppFilterButton(
                               key: Key('device_filter_${filter.keyName}'),
                               label: _filters.containsKey(filter)
                                   ? '${filter.title}: ${_selectedLabel(filter, allDevices)}'
                                   : filter.title,
                               active: _filters.containsKey(filter),
+                              minHeight: _filterChipMinHeight,
                               onTap: allDevices.isEmpty
                                   ? null
                                   : () => _openFilter(filter, allDevices),
@@ -496,61 +501,6 @@ class _DeviceCard extends StatelessWidget {
 }
 
 /// ชิปตัวกรองหนึ่งตัว — แตะเปิดแผ่นเลือกค่า · [active] = เลือกค่าไว้แล้ว
-class _FilterChipButton extends StatelessWidget {
-  const _FilterChipButton({
-    super.key,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active ? AppColors.primary : AppColors.foreground;
-    return Material(
-      color: active ? AppColors.primarySubtle : AppColors.card,
-      shape: StadiumBorder(
-        side: BorderSide(
-          color: active ? AppColors.primary : AppColors.inputBorder,
-        ),
-      ),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: _filterChipMinHeight),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: AppTypography.sm,
-                      height: AppTypography.smHeight,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                      color: color,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// แผ่นเลือกค่าของตัวกรอง · คืน `''` = ทั้งหมด (ยกเลิกตัวกรองนี้) · ปิดแผ่น = null
 class _FilterSheet extends StatelessWidget {
   const _FilterSheet({
