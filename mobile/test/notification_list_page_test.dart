@@ -329,7 +329,9 @@ void main() {
         expect(find.text('Config อนุมัติแล้ว'), findsNothing);
       });
 
-      testWidgets('ชิปหมวด: เฉพาะหมวดที่มีจริง กดซ้ำ = ยกเลิก', (tester) async {
+      testWidgets('เมนูหมวด: มีเฉพาะหมวดที่มีจริง เลือก "ทุกหมวด" = ยกเลิก', (
+        tester,
+      ) async {
         await _pump(
           tester,
           _FakeNotificationRepository(
@@ -340,6 +342,8 @@ void main() {
           ),
         );
 
+        await tester.tap(find.byKey(const Key('notification_category_menu')));
+        await tester.pumpAndSettle();
         expect(find.byKey(const Key('notification_category_task')), findsOne);
         expect(
           find.byKey(const Key('notification_category_incident')),
@@ -348,14 +352,35 @@ void main() {
         await tester.tap(
           find.byKey(const Key('notification_category_override')),
         );
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(find.text('ได้รับงานใหม่'), findsNothing);
         expect(find.text('Override อนุมัติแล้ว'), findsOneWidget);
-        await tester.tap(
-          find.byKey(const Key('notification_category_override')),
+        // ปุ่มบอกหมวดที่เลือกอยู่
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('notification_category_menu')),
+            matching: find.text('Override'),
+          ),
+          findsOneWidget,
         );
-        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('notification_category_menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('notification_category_all')));
+        await tester.pumpAndSettle();
         expect(find.text('ได้รับงานใหม่'), findsOneWidget);
+      });
+
+      testWidgets('มีหมวดเดียว -> ไม่มีปุ่มหมวด', (tester) async {
+        await _pump(
+          tester,
+          _FakeNotificationRepository(items: [_n('n1'), _n('n2')]),
+        );
+
+        expect(
+          find.byKey(const Key('notification_category_menu')),
+          findsNothing,
+        );
       });
 
       testWidgets('อ่านครบแล้วกด "ยังไม่อ่าน" -> ข้อความว่าง', (tester) async {

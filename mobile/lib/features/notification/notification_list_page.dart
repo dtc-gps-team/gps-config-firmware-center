@@ -219,6 +219,9 @@ class _NotificationListPageState extends ConsumerState<NotificationListPage> {
   }
 }
 
+/// แถวกรองแถวเดียว (B 04/11/2026: ชิปปนกัน 2 แบบ ตัดลง 2 บรรทัด และดูไม่ออก
+/// ว่าเลือกอันไหนอยู่ จึงใช้ยาก) · ซ้าย = สวิตช์ 2 ช่อง ทั้งหมด/ยังไม่อ่าน
+/// ช่องที่เลือกพื้นเข้มชัดเจน · ขวา = ปุ่ม "หมวด" เปิดเมนู ไม่กินที่บนจอ
 class _NotificationFilterBar extends StatelessWidget {
   const _NotificationFilterBar({
     required this.allCount,
@@ -240,43 +243,190 @@ class _NotificationFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final toggle = Container(
+      constraints: const BoxConstraints(minHeight: 40),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Segment(
+              key: const Key('notification_filter_all'),
+              label: 'ทั้งหมด $allCount',
+              selected: !unreadOnly,
+              onTap: () => onUnreadOnly(false),
+            ),
+            _Segment(
+              key: const Key('notification_filter_unread'),
+              label: 'ยังไม่อ่าน $unreadCount',
+              selected: unreadOnly,
+              onTap: () => onUnreadOnly(true),
+            ),
+          ],
+        ),
+      ),
+    );
+    // หมวดเดียวไม่ต้องมีให้กรอง
+    final menu = categories.length > 1
+        ? _CategoryMenu(
+            categories: categories,
+            category: category,
+            onCategory: onCategory,
+          )
+        : null;
+    // ตัวอักษรใหญ่ (จอ 360px / 2x) แถวเดียวไม่พอ → ปุ่มหมวดลงบรรทัดใหม่
+    final stacked = MediaQuery.textScalerOf(context).scale(10) > 14;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      // Wrap: จอกว้างได้แถวเดียว จอแคบตัดลงบรรทัดใหม่ ไม่มีชิปตกขอบ
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          ChoiceChip(
-            key: const Key('notification_filter_all'),
-            label: Text('ทั้งหมด $allCount'),
-            selected: !unreadOnly,
-            showCheckmark: false,
-            onSelected: (_) => onUnreadOnly(false),
-          ),
-          ChoiceChip(
-            key: const Key('notification_filter_unread'),
-            label: Text('ยังไม่อ่าน $unreadCount'),
-            selected: unreadOnly,
-            showCheckmark: false,
-            onSelected: (_) => onUnreadOnly(true),
-          ),
-          // หมวดเดียวไม่ต้องมีชิปให้กรอง
-          if (categories.length > 1)
-            for (final c in categories)
-              FilterChip(
-                key: Key('notification_category_${c.name}'),
-                label: Text(c.label),
-                selected: category == c,
-                showCheckmark: false,
-                // กดซ้ำ = ยกเลิกกลับเป็นทุกหมวด
-                onSelected: (on) => onCategory(on ? c : null),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: stacked
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                toggle,
+                if (menu != null) ...[const SizedBox(height: 8), menu],
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: toggle),
+                if (menu != null) ...[const SizedBox(width: 8), menu],
+              ],
+            ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Semantics(
+        selected: selected,
+        button: true,
+        child: Material(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppTypography.sm,
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? AppColors.primaryForeground
+                      : AppColors.mutedForeground,
+                ),
               ),
-        ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
+
+class _CategoryMenu extends StatelessWidget {
+  const _CategoryMenu({
+    required this.categories,
+    required this.category,
+    required this.onCategory,
+  });
+
+  final List<NotificationCategory> categories;
+  final NotificationCategory? category;
+  final ValueChanged<NotificationCategory?> onCategory;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = category != null;
+    // PopupMenuButton คืน null ไม่ได้ (null = ปิดเมนูเฉย ๆ) ใช้ค่า sentinel
+    // `_all` แทน "ทุกหมวด"
+    return PopupMenuButton<Object>(
+      key: const Key('notification_category_menu'),
+      tooltip: 'เลือกหมวด',
+      onSelected: (v) => onCategory(v is NotificationCategory ? v : null),
+      itemBuilder: (_) => [
+        PopupMenuItem<Object>(
+          key: const Key('notification_category_all'),
+          value: _all,
+          child: Text(
+            'ทุกหมวด',
+            style: TextStyle(
+              fontWeight: active ? FontWeight.w400 : FontWeight.w700,
+            ),
+          ),
+        ),
+        for (final c in categories)
+          PopupMenuItem<Object>(
+            key: Key('notification_category_${c.name}'),
+            value: c,
+            child: Text(
+              c.label,
+              style: TextStyle(
+                fontWeight: c == category ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primary : AppColors.card,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          border: Border.all(
+            color: active ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.filter_list,
+              size: 18,
+              color: active
+                  ? AppColors.primaryForeground
+                  : AppColors.mutedForeground,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              category?.label ?? 'หมวด',
+              style: TextStyle(
+                fontSize: AppTypography.sm,
+                fontWeight: FontWeight.w600,
+                color: active
+                    ? AppColors.primaryForeground
+                    : AppColors.foreground,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+const _all = Object();
 
 class _NotificationSections extends StatelessWidget {
   const _NotificationSections({
@@ -419,6 +569,25 @@ class _NotificationTile extends StatelessWidget {
     final canOpen = NotificationTypeStyle.route(notification) != null;
     // ยังไม่อ่าน: พื้น accent (AppCard.highlighted) + ชื่อตัวหนา + ป้าย "ใหม่" —
     // บอกสถานะด้วยหลายอย่าง ไม่ใช่สีพื้นอย่างเดียว
+    final largeText = MediaQuery.textScalerOf(context).scale(10) > 14;
+    final title = Text(
+      NotificationTypeStyle.shortLabelOf(notification),
+      style: TextStyle(
+        fontSize: AppTypography.sm,
+        height: AppTypography.smHeight,
+        fontWeight: read ? FontWeight.w500 : FontWeight.w700,
+        color: AppColors.foreground,
+      ),
+    );
+    final time = Text(
+      _relativeTime(notification.createdAt, now),
+      key: const Key('notification_time'),
+      style: const TextStyle(
+        fontSize: AppTypography.xs,
+        height: AppTypography.smHeight,
+        color: AppColors.mutedForeground,
+      ),
+    );
     return AppCard(
       onTap: onTap,
       highlighted: !read,
@@ -441,32 +610,20 @@ class _NotificationTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        NotificationTypeStyle.shortLabelOf(notification),
-                        style: TextStyle(
-                          fontSize: AppTypography.sm,
-                          height: AppTypography.smHeight,
-                          fontWeight: read ? FontWeight.w500 : FontWeight.w700,
-                          color: AppColors.foreground,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _relativeTime(notification.createdAt, now),
-                      key: const Key('notification_time'),
-                      style: const TextStyle(
-                        fontSize: AppTypography.xs,
-                        height: AppTypography.smHeight,
-                        color: AppColors.mutedForeground,
-                      ),
-                    ),
-                  ],
-                ),
+                // ตัวอักษรใหญ่ (จอ 360px / 2x) เวลาวางท้ายหัวข้อแล้วล้นขวา
+                // จึงลงไปใต้หัวข้อแทน
+                if (largeText) ...[
+                  title,
+                  time,
+                ] else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: title),
+                      const SizedBox(width: 8),
+                      time,
+                    ],
+                  ),
                 for (final line in NotificationTypeStyle.details(
                   notification,
                 )) ...[
