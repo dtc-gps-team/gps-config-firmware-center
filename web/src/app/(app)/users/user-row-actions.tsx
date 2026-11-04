@@ -93,7 +93,10 @@ export function UserRowActions({
       </Select>
       <Button
         size="sm"
-        variant="outline"
+        // ปิดใช้งาน = destructive (มติ UI เดิม — mirror ปุ่มลบ/หยุดที่
+        // campaign-manage-controls.tsx, device-detail-view.tsx,
+        // parameter-manage-controls.tsx) เปิดใช้งานกลับคืน = outline ปกติ
+        variant={user.isActive ? "destructive" : "outline"}
         disabled={pending}
         onClick={() => void toggleActive()}
       >
