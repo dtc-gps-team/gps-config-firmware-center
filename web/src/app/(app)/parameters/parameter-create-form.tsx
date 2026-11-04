@@ -504,7 +504,6 @@ export function ParameterCreateForm({
                   setAppliesToAllModels(v);
                 }}
                 label="ใช้ได้กับทุกโมเดล"
-                hint="บางพารามิเตอร์จำเป็นต้องมีทุกครั้งไม่ว่ารุ่นไหน ไม่ต้องเลือกทีละโมเดล"
               />
               {!appliesToAllModels && (
                 <ModelPicker
