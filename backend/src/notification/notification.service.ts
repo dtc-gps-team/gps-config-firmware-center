@@ -33,6 +33,9 @@ export const FCM_ENABLED_NOTIFICATION_TYPES: readonly NotificationType[] = [
   'config_apply_succeeded',
   'config_apply_failed',
   'config_apply_expired',
+  // docs/31 — ส่งไม่สำเร็จ ระบบกำลังลองใหม่ · mobile รู้จัก type นี้แล้ว (แอปรุ่นเก่า
+  // ได้หัวข้อทั่วไปจาก push handler ไม่พัง)
+  'config_apply_retrying',
 ];
 
 export interface SendNotificationInput {

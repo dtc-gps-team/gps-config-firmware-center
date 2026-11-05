@@ -807,6 +807,7 @@ void main() {
         'config_apply_succeeded',
         'config_apply_failed',
         'config_apply_expired',
+        'config_apply_retrying',
       ]);
     });
 
