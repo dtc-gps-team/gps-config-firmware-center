@@ -767,13 +767,14 @@ describe('CampaignRolloutService', () => {
             applyMode: 'central',
           }) as Partial<CampaignRollout>,
         });
-        // ถามเฉพาะเครื่อง pending ที่ยังไม่เคยสั่ง Server กลาง
+        // ถามเฉพาะเครื่อง pending ที่ยังไม่เคยสั่ง Server กลาง และไม่ได้รอรอบลองใหม่ (docs/31)
         expect(campaignRolloutTarget.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: {
               rolloutId: approvedRollout.id,
               status: 'pending',
               centralCommandId: null,
+              nextRetryAt: null,
             },
           }),
         );
@@ -1368,6 +1369,7 @@ describe('CampaignRolloutService', () => {
           expect(autoApplyConfig).toHaveBeenCalledWith(
             expect.objectContaining({ id: 'field-rollout-1' }),
             decidedBy,
+            undefined,
           );
           expect(result).toBe(sampleRollout);
         });
@@ -1394,6 +1396,7 @@ describe('CampaignRolloutService', () => {
           expect(autoApplyFirmware).toHaveBeenCalledWith(
             expect.objectContaining({ id: 'field-rollout-fw' }),
             decidedBy,
+            undefined,
           );
           expect(autoApplyConfig).not.toHaveBeenCalled();
         });
