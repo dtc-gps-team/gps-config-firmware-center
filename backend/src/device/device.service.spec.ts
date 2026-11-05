@@ -330,8 +330,16 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
-      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override
-      $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
+      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override · และตรวจเลขประจำตัวซ้ำตอนลงทะเบียน
+      // (SELECT จากตาราง Device — คืนว่าง = ไม่ซ้ำ) แยกด้วยข้อความ SQL เพราะ mock ตัวเดียวใช้ร่วมกัน
+      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
+        Promise.resolve(
+          strings.join('?').includes('FROM "Device"')
+            ? []
+            : [{ deletedAt: null }],
+        ),
+      ),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
         findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,

@@ -2042,7 +2042,11 @@ paths:
         `deviceModel` เองจาก `DeviceModel.name` เสมอ (issue #209) · `protocol`
         ต้องอยู่ใน `DeviceModel.supportedProtocols` ของรุ่นนั้น · `apiKey` ใน
         response เป็นค่าจริง (ไม่ hash) โชว์ได้**ครั้งเดียว**ตอนนี้เท่านั้น —
-        ไม่มีทาง GET กลับมาดูซ้ำได้อีก (เก็บเฉพาะ hash ไว้ฝั่ง backend)
+        ไม่มีทาง GET กลับมาดูซ้ำได้อีก (เก็บเฉพาะ hash ไว้ฝั่ง backend) ·
+        **v3.86 (มติ A 2026-11-05):** `imei`, `serialNumber`, `blackboxId` **ห้ามซ้ำกับเครื่องอื่น
+        ตลอดกาล รวมเครื่องที่ปลดระวางแล้ว** (เทียบไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่างหัวท้าย · เครื่องเดิมที่
+        ไม่มีค่าไม่นับว่าซ้ำ) ต่างจาก `simNumber` ที่นับเฉพาะเครื่อง active · ตรวจที่ชั้น service ใน
+        transaction เดียวกับการสร้าง ล็อกให้ลงทะเบียนต่อคิวกัน (ลงทะเบียนเลขเดียวกันพร้อมกันได้ตัวเดียว)
       requestBody:
         required: true
         content:
@@ -2067,7 +2071,10 @@ paths:
         "404":
           description: ไม่พบ DeviceModel (modelId) นี้ในทะเบียน
         "409":
-          description: มี Device deviceId นี้อยู่แล้วในระบบ
+          description: >-
+            มี Device deviceId นี้อยู่แล้วในระบบ · หรือ (v3.86) IMEI / Serial Number / Blackbox ID ซ้ำกับ
+            เครื่องอื่น — ข้อความขึ้นต้นด้วยชื่อช่องที่ซ้ำ (`IMEI ...`, `Serial Number ...`, `Blackbox ID ...`)
+            บอกเครื่องที่ซ้ำ และระบุ "(ปลดระวางแล้ว)" ถ้าเป็นเครื่องที่ปลดระวางแล้ว
 
     get:
       tags: [device]

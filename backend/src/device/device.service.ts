@@ -38,6 +38,10 @@ import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
+import {
+  assertDeviceIdentifiersFree,
+  lockDeviceIdentifiers,
+} from './device-identifiers';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -528,6 +532,18 @@ export class DeviceService {
       // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
       // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
       device = await this.prisma.$transaction(async (tx) => {
+        // IMEI / Serial Number / Blackbox ID ห้ามซ้ำกับเครื่องอื่น (มติ A 2026-11-05) — ล็อกให้ต่อคิวกัน
+        // แล้วตรวจก่อน insert (ดู device-identifiers.ts) · deviceId ที่มีอยู่แล้วให้ P2002 ด้านล่างตอบเอง
+        await lockDeviceIdentifiers(tx);
+        await assertDeviceIdentifiersFree(
+          tx,
+          {
+            imei: dto.imei,
+            serialNumber: dto.serialNumber,
+            blackboxId: dto.blackboxId,
+          },
+          dto.deviceId,
+        );
         // ลงทะเบียนพร้อม Firmware เริ่มต้น (partition A) = กล่องรัน Firmware นี้ -> ล็อกกันถูกลบแทรก
         if (initialFirmware) {
           await lockFirmwareForReference(tx, initialFirmware.id);
