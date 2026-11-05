@@ -69,7 +69,7 @@ describe('CustomerController (integration — real postgres + JwtAuthGuard)', ()
     await request(app.getHttpServer()).get('/api/v1/customers').expect(401);
   });
 
-  it('เรียงตามชื่อบริษัท คืนแค่ id/companyName — ทุก role ที่ login เรียกได้', async () => {
+  it('เรียงตามชื่อบริษัท คืนแค่ id/companyName/isActive — ทุก role ที่ login เรียกได้', async () => {
     const northern = await prisma.customer.create({
       data: { companyName: 'Northern Fleet' },
     });
@@ -95,9 +95,9 @@ describe('CustomerController (integration — real postgres + JwtAuthGuard)', ()
       .expect(200);
 
     expect(res.body).toEqual([
-      { id: abc.id, companyName: 'ABC Logistics' },
-      { id: metro.id, companyName: 'Metro Transit' },
-      { id: northern.id, companyName: 'Northern Fleet' },
+      { id: abc.id, companyName: 'ABC Logistics', isActive: true },
+      { id: metro.id, companyName: 'Metro Transit', isActive: true },
+      { id: northern.id, companyName: 'Northern Fleet', isActive: true },
     ]);
   });
 

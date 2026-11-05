@@ -4,12 +4,10 @@ import { CustomerController } from './customer.controller';
 import { CustomerService } from './customer.service';
 
 /**
- * customer module — รอบนี้มีแค่ `GET /customers` (list ย่อ id+ชื่อบริษัท
- * สำหรับ dropdown filter บนหน้า Device Search — docs/12_CustomerScope_Proposal.md
- * เฟส B, PR #127)
- *
- * จอ "จัดการลูกค้า" เต็ม (สร้าง/แก้/ลบ — Admin เท่านั้น) ตัดสินใจร่วมกันแล้วว่า
- * เกินขอบเขตตอนนี้ — ลูกค้าเพิ่ม/แก้ได้ผ่าน seed เท่านั้น
+ * customer module — `GET /customers` (list ย่อ สำหรับ dropdown — docs/12_CustomerScope_Proposal.md เฟส B,
+ * PR #127) + จัดการลูกค้า (มติ A 2026-11-05): `GET /customers/managed`, `POST`, `PATCH /{id}`
+ * (แก้/ปิด-เปิดใช้งาน), `DELETE /{id}` (ลบจริงเฉพาะที่ไม่มีเครื่องผูก) — Admin/SuperAdmin เท่านั้น
+ * (resource `customer`) · การลงทะเบียนอุปกรณ์ผูกลูกค้าผ่าน `customer-lock.ts` กัน race กับการลบ/ปิดใช้งาน
  *
  * AuthModule — JwtAuthGuard / JwtModule ร่วม · PrismaModule เป็น @Global
  */

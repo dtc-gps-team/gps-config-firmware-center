@@ -330,13 +330,14 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
-      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override · และตรวจเลขประจำตัวซ้ำตอนลงทะเบียน
+      // ล็อกแถวที่ถูกอ้างถึง (FOR SHARE): Config ฐานตอนสร้างคำขอ Override (อ่าน deletedAt) และ
+      // Customer ตอนลงทะเบียนอุปกรณ์ผูกลูกค้า (อ่าน isActive) · และตรวจเลขประจำตัวซ้ำตอนลงทะเบียน
       // (SELECT จากตาราง Device — คืนว่าง = ไม่ซ้ำ) แยกด้วยข้อความ SQL เพราะ mock ตัวเดียวใช้ร่วมกัน
       $queryRaw: jest.fn((strings: TemplateStringsArray) =>
         Promise.resolve(
           strings.join('?').includes('FROM "Device"')
             ? []
-            : [{ deletedAt: null }],
+            : [{ deletedAt: null, isActive: true }],
         ),
       ),
       $executeRaw: jest.fn().mockResolvedValue(0),

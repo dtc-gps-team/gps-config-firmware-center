@@ -496,6 +496,15 @@ async function main() {
     // Update = ออก/หมุนเวียน key ให้เครื่องที่มีอยู่แล้ว (rotate-key, เพิ่ม
     // ระหว่างทำ PR 1 — เครื่องเก่าก่อนฟีเจอร์นี้ไม่งั้นไม่มีทางได้ key เลย)
     grant('Admin', 'device-registration', 'Update'),
+
+    // ---- customer (จัดการลูกค้า — มติ A 2026-11-05) ----
+    // เพิ่ม/แก้/ปิดใช้งาน/ลบลูกค้า = ข้อมูลหลักของงาน fleet เดียวกับ device-registration ด้านบน
+    // Admin/SuperAdmin เท่านั้น (SuperAdmin ได้จากการ copy สิทธิ์ Admin ด้านล่าง) · Update ครอบทั้ง
+    // แก้/ปิดใช้งาน/ลบ (ระบบไม่มี ActionType.Delete) · `GET /customers` (list ย่อ) ไม่ต้องมี grant
+    // เพราะเปิดให้ทุก role ที่ login อ่านได้ ส่วนข้อมูลติดต่อเต็ม (`/customers/managed`) ใช้ Read นี้
+    grant('Admin', 'customer', 'Read'),
+    grant('Admin', 'customer', 'Create'),
+    grant('Admin', 'customer', 'Update'),
   ];
 
   // ---- SuperAdmin (docs/11 Part B) ----
