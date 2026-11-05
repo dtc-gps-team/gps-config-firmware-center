@@ -397,6 +397,9 @@ model Customer {
   email        String?
   phone        String?
   priorityTier String?
+  // ปิดใช้งาน แทนการลบ (มติ A 2026-11-05) — ลูกค้าที่ปิดไม่โผล่ใน dropdown ตอนลงทะเบียน
+  // อุปกรณ์ใหม่ แต่เครื่องเดิมยังแสดงชื่อและกรองได้ · ลบจริงทำได้เฉพาะลูกค้าที่ไม่มีเครื่องผูก
+  isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

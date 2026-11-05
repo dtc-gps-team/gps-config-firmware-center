@@ -44,4 +44,10 @@ export interface AuditLogMetadata {
   campaignName?: string;
   /** campaign: `Device.deviceId` ของสมาชิกที่เพิ่ม/เอาออกในคำขอนั้น */
   deviceIds?: string[];
+  /** customer: id + ชื่อบริษัท ณ ตอนทำรายการ (snapshot — ลูกค้าที่ลบไปแล้วยังอ่าน log รู้เรื่อง ·
+   * AuditLog ไม่มี FK ไป Customer) **ไม่เก็บ** อีเมล/เบอร์โทร/ผู้ติดต่อ */
+  customerId?: string;
+  companyName?: string;
+  /** customer: ชื่อ field ที่แก้ (ไม่ใช่ค่า) */
+  changedFields?: string[];
 }

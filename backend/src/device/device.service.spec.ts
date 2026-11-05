@@ -330,8 +330,11 @@ describe('DeviceService', () => {
     // assert ผ่าน mock เดียวกันได้ตรงๆ mirror pattern ของ
     // `config-override.service.spec.ts`
     const tx = {
-      // ล็อกแถว Config ฐาน (FOR SHARE) ตอนสร้างคำขอ Override
-      $queryRaw: jest.fn().mockResolvedValue([{ deletedAt: null }]),
+      // ล็อกแถวที่ถูกอ้างถึง (FOR SHARE): Config ฐานตอนสร้างคำขอ Override (อ่าน deletedAt) และ
+      // Customer ตอนลงทะเบียนอุปกรณ์ผูกลูกค้า (อ่าน isActive) — mock คืนรูปที่ครอบทั้งสองล็อก
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ deletedAt: null, isActive: true }]),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
         findUniqueOrThrow: deviceConfigOverride.findUniqueOrThrow,
