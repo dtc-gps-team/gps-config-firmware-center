@@ -190,6 +190,25 @@ export interface ConfigApplyRequestProgress {
     attempts: ConfigApplyAttempt[];
   };
 }
+/** แถว `CampaignRolloutTargetAttempt` -> รูปที่ API คืน (ใช้ทั้ง progress และ payload แจ้งเตือน) */
+function toApplyAttempt(a: {
+  attemptNo: number;
+  status: string;
+  errorCode: string | null;
+  detail: string | null;
+  startedAt: Date;
+  finishedAt: Date | null;
+}): ConfigApplyAttempt {
+  return {
+    attemptNo: a.attemptNo,
+    status: a.status,
+    errorCode: a.errorCode,
+    detail: a.detail,
+    startedAt: a.startedAt.toISOString(),
+    finishedAt: a.finishedAt?.toISOString() ?? null,
+  };
+}
+
 type CentralProgressStep = {
   key: string;
   at: string | null;
@@ -422,14 +441,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
         attempts: { orderBy: { attemptNo: 'asc' } },
       },
     });
-    return (target?.attempts ?? []).map((a) => ({
-      attemptNo: a.attemptNo,
-      status: a.status,
-      errorCode: a.errorCode,
-      detail: a.detail,
-      startedAt: a.startedAt.toISOString(),
-      finishedAt: a.finishedAt?.toISOString() ?? null,
-    }));
+    return (target?.attempts ?? []).map(toApplyAttempt);
   }
 
   /**
@@ -767,14 +779,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
           nextRetryAt: waiting
             ? (target.nextRetryAt as Date).toISOString()
             : null,
-          attempts: attempts.map((a) => ({
-            attemptNo: a.attemptNo,
-            status: a.status,
-            errorCode: a.errorCode,
-            detail: a.detail,
-            startedAt: a.startedAt.toISOString(),
-            finishedAt: a.finishedAt?.toISOString() ?? null,
-          })),
+          attempts: attempts.map(toApplyAttempt),
         };
       }
       const commandId = target?.centralCommandId;

@@ -1397,4 +1397,68 @@ void _deviceStatusTests() {
       expect(Task.fromJson(base).assignee, isNull);
     },
   );
+
+  group('ConfigApplyRequestProgress.retry (docs/31 R2, v3.87)', () {
+    final base = {
+      'requestId': 'car-1',
+      'kind': 'config',
+      'status': 'sending',
+      'fromVersion': null,
+      'toVersion': 'v3',
+      'isDowngrade': false,
+      'releasedAt': '2026-11-05T10:00:00.000Z',
+      'completedAt': null,
+      'central': null,
+    };
+
+    test('อ่านรอบปัจจุบัน เวลารอบถัดไป และประวัติทุกรอบ', () {
+      final p = ConfigApplyRequestProgress.fromJson({
+        ...base,
+        'retry': {
+          'attemptNo': 1,
+          'maxAttempts': 3,
+          'nextRetryAt': '2026-11-05T10:00:45.000Z',
+          'attempts': [
+            {
+              'attemptNo': 1,
+              'status': 'failed',
+              'errorCode': 'DEVICE_OFFLINE',
+              'detail': 'กล่องออฟไลน์',
+              'startedAt': '2026-11-05T10:00:00.000Z',
+              'finishedAt': '2026-11-05T10:00:15.000Z',
+            },
+          ],
+        },
+      });
+      final retry = p.retry!;
+      expect(retry.attemptNo, 1);
+      expect(retry.maxAttempts, 3);
+      expect(retry.nextRetryAt, DateTime.utc(2026, 11, 5, 10, 0, 45));
+      expect(retry.attempts.single.status, ConfigApplyAttemptStatus.failed);
+      expect(retry.attempts.single.errorCode, 'DEVICE_OFFLINE');
+      expect(retry.attempts.single.detail, 'กล่องออฟไลน์');
+      expect(
+        retry.attempts.single.finishedAt,
+        DateTime.utc(2026, 11, 5, 10, 0, 15),
+      );
+    });
+
+    test('retry null หรือ backend เก่าไม่มี field = null', () {
+      expect(
+        ConfigApplyRequestProgress.fromJson({...base, 'retry': null}).retry,
+        isNull,
+      );
+      expect(ConfigApplyRequestProgress.fromJson(base).retry, isNull);
+    });
+
+    test('สถานะรอบตรง enum ใน openapi ทุกตัว', () {
+      expect(ConfigApplyAttemptStatus.values.map((v) => v.wireName).toList(), [
+        'sending',
+        'sent',
+        'succeeded',
+        'failed',
+        'skipped',
+      ]);
+    });
+  });
 }
