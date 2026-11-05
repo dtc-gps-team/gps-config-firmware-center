@@ -117,6 +117,7 @@ export function CreateUserForm({
                 id="user-username"
                 value={username}
                 disabled={submitting}
+                autoComplete="off"
                 placeholder="เช่น config2.test"
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -158,13 +159,17 @@ export function CreateUserForm({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="user-password">รหัสผ่านเริ่มต้น</Label>
               <div className="flex items-center gap-1.5">
-                <SensitiveInput
-                  id="user-password"
-                  value={password}
-                  disabled={submitting}
-                  placeholder="อย่างน้อย 8 ตัวอักษร"
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+                <div className="min-w-0 flex-1">
+                  <SensitiveInput
+                    id="user-password"
+                    value={password}
+                    disabled={submitting}
+                    // กัน browser autofill รหัสผ่านของแอดมินเองลงฟอร์มสร้างผู้ใช้
+                    autoComplete="new-password"
+                    placeholder="อย่างน้อย 8 ตัวอักษร"
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
                 <CopyButton
                   value={password}
                   label="คัดลอกรหัสผ่าน"

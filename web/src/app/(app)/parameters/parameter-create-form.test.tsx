@@ -128,6 +128,17 @@ describe("ParameterCreateForm", () => {
     expect(createConfigDefinition.mock.calls[0][1]).toMatchObject({ sensitive: true });
   });
 
+  it("ติ๊กบังคับกรอกคู่กับใช้ได้กับทุกโมเดล -> เตือนว่า Config ทุกรุ่นต้องมีค่านี้ (ไม่ติ๊กคู่ไม่เตือน)", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(screen.getByRole("checkbox", { name: /ใช้ได้กับทุกโมเดล/ }));
+    expect(screen.queryByText(/Config ทุกรุ่นต้องมีค่านี้ทันที/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /ต้องกรอก/ }));
+    expect(screen.getByText(/Config ทุกรุ่นต้องมีค่านี้ทันที/)).toBeInTheDocument();
+  });
+
   // ฟีดแบ็ก 2026-11-04: field ใช้ได้ทุกโมเดลได้โดยไม่ต้องเลือกทีละโมเดล
   it("ใช้ได้กับทุกโมเดล -> ไม่ต้องเลือกโมเดล ซ่อน ModelPicker และส่ง appliesToAllModels: true", async () => {
     const user = userEvent.setup();
