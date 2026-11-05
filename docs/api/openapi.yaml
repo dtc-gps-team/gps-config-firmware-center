@@ -3670,25 +3670,158 @@ paths:
     get:
       tags: [customer]
       operationId: listCustomers
-      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท) — v3.22
+      summary: รายชื่อลูกค้าแบบย่อ (id + ชื่อบริษัท + สถานะ) — v3.22, v3.85
       description: >-
         ทุก Role ที่ login แล้วเรียกได้ (JwtAuthGuard อย่างเดียว ไม่มี
         PermissionGuard — pattern เดียวกับ /users) · เรียงตามชื่อบริษัท
-        · ใช้ทำ dropdown filter "ลูกค้า" บนหน้า Device Search
-        (docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) · **ไม่ใช่**
-        จอ "จัดการลูกค้า" (Admin CRUD) — ตัดสินใจร่วมกันแล้วว่าเกินขอบเขต
-        ตอนนี้ ลูกค้าเพิ่ม/แก้ได้ผ่าน seed เท่านั้น
+        · ใช้ทำ dropdown filter "ลูกค้า" บนหน้า Device Search และ dropdown ตอนลงทะเบียนอุปกรณ์
+        (docs/12_CustomerScope_Proposal.md เฟส B, PR #127/#153) · **v3.85:** คืน `isActive` เพิ่ม
+        และ `?activeOnly=true` ตัดลูกค้าที่ปิดใช้งานออก (dropdown ลงทะเบียนอุปกรณ์ใหม่) · ไม่ส่ง =
+        ทุกคน รวมที่ปิดใช้งาน (เครื่องเดิมยังผูกกับลูกค้านั้นอยู่ ต้องกรองได้) · ไม่คืนข้อมูลติดต่อ —
+        ข้อมูลเต็มอยู่ที่ `GET /customers/managed` (Admin/SuperAdmin)
+      parameters:
+        - in: query
+          name: activeOnly
+          required: false
+          schema:
+            type: boolean
+          description: true = เฉพาะลูกค้าที่ยังใช้งานอยู่
       responses:
         "200":
-          description: รายชื่อลูกค้าทั้งหมด (เรียงตามชื่อบริษัท)
+          description: รายชื่อลูกค้า (เรียงตามชื่อบริษัท)
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/CustomerSummary"
+                  $ref: "#/components/schemas/CustomerListItem"
+        "400":
+          description: query `activeOnly` ไม่ใช่ true/false
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
+    post:
+      tags: [customer]
+      operationId: createCustomer
+      summary: เพิ่มลูกค้าใหม่ — v3.85
+      description: >-
+        **Admin / SuperAdmin** (resource `customer` action `Create`) · ใช้จาก dialog "เพิ่มลูกค้าใหม่"
+        ในฟอร์มลงทะเบียนอุปกรณ์ · `companyName` บังคับและ **ห้ามซ้ำ ไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่างหัวท้าย**
+        (รวมลูกค้าที่ปิดใช้งานแล้ว) · ช่องอื่นไม่บังคับ ช่องว่างล้วน = ไม่กรอก · AuditLog `create` เก็บ
+        `customerId` + `companyName` (ไม่เก็บอีเมล/เบอร์โทร)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedCustomer"
+        "400":
+          description: ข้อมูลไม่ผ่าน validation (ไม่ส่งชื่อ, ชื่อช่องว่างล้วน, email ผิดรูปแบบ)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ - เฉพาะ Admin และ SuperAdmin
+        "409":
+          description: ชื่อบริษัทซ้ำกับลูกค้าที่มีอยู่ (ข้อความบอกว่าซ้ำกับใคร และถ้าอีกฝั่งปิดใช้งานอยู่ให้เปิดใช้งานแทน)
+
+  /customers/managed:
+    get:
+      tags: [customer]
+      operationId: listManagedCustomers
+      summary: รายชื่อลูกค้าแบบเต็ม + จำนวนเครื่องที่ผูก (หน้าจัดการลูกค้า) — v3.85
+      description: >-
+        **Admin / SuperAdmin** (resource `customer` action `Read`) · รวมลูกค้าที่ปิดใช้งาน · มีข้อมูลติดต่อ
+        (ผู้ติดต่อ/อีเมล/โทร) จึงแยกจาก `GET /customers` ที่เปิดให้ทุก role · `deviceCount` นับเครื่องที่ผูกทั้งหมด
+        รวมที่ปลดระวางแล้ว (ลบลูกค้าได้เมื่อเป็น 0 เท่านั้น)
+      responses:
+        "200":
+          description: รายชื่อลูกค้าเต็ม (เรียงตามชื่อบริษัท)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManagedCustomer"
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ - เฉพาะ Admin และ SuperAdmin
+
+  /customers/{id}:
+    patch:
+      tags: [customer]
+      operationId: updateCustomer
+      summary: แก้ข้อมูล / เปลี่ยนชื่อ / ปิด-เปิดใช้งานลูกค้า — v3.85
+      description: >-
+        **Admin / SuperAdmin** (resource `customer` action `Update`) · ส่งเฉพาะ field ที่จะแก้ (ต้องส่งอย่างน้อย 1
+        อย่าง) · เปลี่ยนชื่อได้ (ห้ามซ้ำแบบไม่สนตัวพิมพ์เล็ก/ใหญ่ — เครื่องผูกด้วย id จึงตามชื่อใหม่เอง) · ช่องที่ไม่บังคับ
+        ส่ง `null` หรือค่าว่างเพื่อล้างค่า · `isActive: false` **ปิดใช้งานได้เสมอ แม้มีเครื่องผูกอยู่** (ไม่โผล่ใน
+        dropdown ลงทะเบียนอุปกรณ์ใหม่ แต่เครื่องเดิมยังผูกอยู่) · ล็อกแถวกัน race กับการลงทะเบียนอุปกรณ์ ·
+        AuditLog `update` / `activate` / `deactivate` เก็บ `customerId` + `companyName` + ชื่อ field ที่แก้
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCustomerRequest"
+      responses:
+        "200":
+          description: แก้สำเร็จ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedCustomer"
+        "400":
+          description: ข้อมูลไม่ผ่าน validation (ไม่ส่ง field ใดเลย, ส่ง field ที่ไม่รู้จัก)
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ - เฉพาะ Admin และ SuperAdmin
+        "404":
+          description: ไม่พบลูกค้านี้
+        "409":
+          description: ชื่อบริษัทซ้ำกับลูกค้าอื่น
+    delete:
+      tags: [customer]
+      operationId: deleteCustomer
+      summary: ลบลูกค้า (เฉพาะที่ไม่มีเครื่องผูก) — v3.85
+      description: >-
+        **Admin / SuperAdmin** (resource `customer` action `Update` — ระบบไม่มี ActionType.Delete) · ลบจริง
+        (กู้ไม่ได้) · **ลบไม่ได้ (409) ถ้ายังมีอุปกรณ์ผูกอยู่** (นับรวมเครื่องที่ปลดระวางแล้ว) ข้อความบอกจำนวน +
+        ตัวอย่างเครื่อง (สูงสุด 5) และชี้ไปทาง "ปิดใช้งาน" แทน (FK `Device.customerId` เป็น SetNull จึงต้องกันไว้ที่นี่
+        ไม่งั้นลูกค้าจะหลุดจากเครื่องเงียบๆ) · ล็อกแถว FOR UPDATE แล้วตรวจซ้ำ คู่กับล็อก FOR SHARE ตอนลงทะเบียน
+        อุปกรณ์ · AuditLog `delete` เก็บ `customerId` + `companyName` (snapshot ให้อ่าน log รู้เรื่องหลังลบ)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: ลบสำเร็จ
+        "401":
+          description: Token ไม่ถูกต้องหรือหมดอายุ
+        "403":
+          description: ไม่มีสิทธิ์ - เฉพาะ Admin และ SuperAdmin
+        "404":
+          description: ไม่พบลูกค้านี้
+        "409":
+          description: ยังมีอุปกรณ์ผูกอยู่ ลบไม่ได้ (ใช้ปิดใช้งานแทน)
 
   /campaigns:
     get:
@@ -7142,6 +7275,112 @@ components:
         companyName:
           type: string
           example: ABC Logistics
+
+    CustomerListItem:
+      type: object
+      description: >-
+        รายการใน `listCustomers` (v3.85) — `CustomerSummary` + `isActive` · ไม่มีข้อมูลติดต่อ (ทุก role ที่ login
+        เรียกได้) · แยกจาก `CustomerSummary` ที่ถูกฝังใน `Device.customer` (ไม่เปลี่ยนรูป response ของ Device)
+      required: [id, companyName, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+          example: ABC Logistics
+        isActive:
+          type: boolean
+          description: false = ปิดใช้งาน (ไม่โผล่ใน dropdown ลงทะเบียนอุปกรณ์ใหม่ แต่เครื่องเดิมยังผูกอยู่)
+
+    ManagedCustomer:
+      type: object
+      description: ข้อมูลลูกค้าเต็มสำหรับหน้าจัดการลูกค้า (v3.85, Admin/SuperAdmin)
+      required: [id, companyName, isActive, contactName, email, phone, priorityTier, deviceCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        isActive:
+          type: boolean
+        contactName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        priorityTier:
+          type: string
+          nullable: true
+        deviceCount:
+          type: integer
+          minimum: 0
+          description: เครื่องที่ผูกกับลูกค้านี้ทั้งหมด (รวมที่ปลดระวางแล้ว) - ลบลูกค้าได้เมื่อเป็น 0 เท่านั้น
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCustomerRequest:
+      type: object
+      description: Request body ของ createCustomer (v3.85)
+      required: [companyName]
+      properties:
+        companyName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: ห้ามซ้ำแบบไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่างหัวท้าย
+        contactName:
+          type: string
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          maxLength: 200
+        phone:
+          type: string
+          maxLength: 50
+        priorityTier:
+          type: string
+          maxLength: 50
+
+    UpdateCustomerRequest:
+      type: object
+      description: >-
+        Request body ของ updateCustomer (v3.85) - ทุก field optional แต่ต้องส่งอย่างน้อย 1 อย่าง · ช่องที่ไม่บังคับ
+        ส่ง `null` หรือค่าว่างเพื่อล้างค่า
+      properties:
+        companyName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        contactName:
+          type: string
+          nullable: true
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          nullable: true
+          maxLength: 200
+        phone:
+          type: string
+          nullable: true
+          maxLength: 50
+        priorityTier:
+          type: string
+          nullable: true
+          maxLength: 50
+        isActive:
+          type: boolean
 
     Incident:
       type: object

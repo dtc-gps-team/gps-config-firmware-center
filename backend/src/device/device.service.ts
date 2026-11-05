@@ -37,6 +37,7 @@ import { DeviceModelService } from '../device-model/device-model.service';
 import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
+import { lockCustomerForReference } from '../customer/customer-lock';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
@@ -528,6 +529,11 @@ export class DeviceService {
       // (ดู prisma.service.ts) ไม่ต้อง override ในนี้ เพราะมี `apiKey` ตัวจริง
       // อยู่ในมือแล้วจากข้างบน ไม่ต้องอ่านค่า hash กลับมาอีกรอบ
       device = await this.prisma.$transaction(async (tx) => {
+        // ผูกลูกค้า -> ล็อกกันลบ/ปิดใช้งานลูกค้าแทรก (FK เป็น SetNull จึงจะปลดลูกค้าออกเงียบๆ ถ้าไม่ล็อก)
+        // และปฏิเสธลูกค้าที่ปิดใช้งานแล้ว (มติ A 2026-11-05)
+        if (dto.customerId) {
+          await lockCustomerForReference(tx, dto.customerId);
+        }
         // ลงทะเบียนพร้อม Firmware เริ่มต้น (partition A) = กล่องรัน Firmware นี้ -> ล็อกกันถูกลบแทรก
         if (initialFirmware) {
           await lockFirmwareForReference(tx, initialFirmware.id);
