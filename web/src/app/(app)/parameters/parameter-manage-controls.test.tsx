@@ -41,6 +41,7 @@ const definition: ConfigFieldDefinition = {
   minValue: 0,
   maxValue: 200,
   supportedModels: [{ deviceModel: "GT06N", protocol: "TCP" }],
+  appliesToAllModels: false,
   createdAt: "",
   updatedAt: "",
 };

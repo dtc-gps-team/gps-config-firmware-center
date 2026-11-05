@@ -135,6 +135,11 @@ export function ParameterCreateForm({
   const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(
     new Set(),
   );
+  // ฟีดแบ็ก 2026-11-04: บางพารามิเตอร์จำเป็นต้องมีทุกครั้งไม่ว่ารุ่นไหน เปิดนี้
+  // แล้วไม่ต้องเลือกโมเดลทีละตัวอีกต่อไป (ยังเลือกเก็บไว้ได้ แต่จะไม่ส่งไป
+  // เพราะ appliesToAllModels ชนะอยู่แล้วฝั่ง backend — กันข้อมูลค้างที่สื่อ
+  // ความหมายขัดกันเอง)
+  const [appliesToAllModels, setAppliesToAllModels] = useState(false);
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -152,6 +157,7 @@ export function ParameterCreateForm({
     unknownSpec ||
     stOverridable ||
     sensitive ||
+    appliesToAllModels ||
     selectedModelNames.size > 0;
   const { confirmLeave } = useUnsavedChangesWarning(isDirty && !saved);
 
@@ -190,8 +196,15 @@ export function ParameterCreateForm({
       setNameError(`มี field ชื่อ "${trimmedName}" อยู่แล้วในคลัง`);
       return;
     }
-    if (selectedModelNames.size === 0) {
-      setFormError("เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล");
+    const trimmedDesc = description.trim();
+    if (!trimmedDesc) {
+      setFormError("กรอกคำอธิบายความหมายของ field นี้");
+      return;
+    }
+    if (!appliesToAllModels && selectedModelNames.size === 0) {
+      setFormError(
+        'เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล หรือเปิด "ใช้ได้กับทุกโมเดล"',
+      );
       return;
     }
     if (unit.trim().length > 20) {
@@ -223,16 +236,19 @@ export function ParameterCreateForm({
     }
 
     /** ขยายแต่ละรุ่นที่เลือกเป็นคู่ (deviceModel, protocol) ให้ครบทุก protocol
-     * ที่รุ่นนั้นรองรับ (issue #203 approach ข) — ไม่ใช่ให้ผู้ใช้เลือก protocol เอง */
-    const supportedModels: ConfigFieldModelSupport[] = sortedModels
-      .filter((m) => selectedModelNames.has(m.name))
-      .flatMap((m) =>
-        m.supportedProtocols.map((protocol) => ({
-          deviceModel: m.name,
-          protocol,
-        })),
-      );
-    const trimmedDesc = description.trim();
+     * ที่รุ่นนั้นรองรับ (issue #203 approach ข) — ไม่ใช่ให้ผู้ใช้เลือก protocol เอง
+     * appliesToAllModels: true ไม่ส่งคู่ไหนเลย (flag ชนะอยู่แล้วฝั่ง backend —
+     * ไม่ส่งซ้ำกันข้อมูล 2 ชุดที่สื่อความหมายขัดกันเอง) */
+    const supportedModels: ConfigFieldModelSupport[] = appliesToAllModels
+      ? []
+      : sortedModels
+          .filter((m) => selectedModelNames.has(m.name))
+          .flatMap((m) =>
+            m.supportedProtocols.map((protocol) => ({
+              deviceModel: m.name,
+              protocol,
+            })),
+          );
     const trimmedUnit = unit.trim();
     const trimmedDefault = defaultValue.trim();
 
@@ -242,11 +258,12 @@ export function ParameterCreateForm({
         fieldName: trimmedName,
         dataType,
         required,
+        description: trimmedDesc,
         ...(unknownSpec ? { unknownSpec: true } : {}),
         ...(stOverridable ? { stOverridable: true } : {}),
         ...(sensitive ? { sensitive: true } : {}),
         ...(allowedValues.length ? { allowedValues } : {}),
-        ...(trimmedDesc ? { description: trimmedDesc } : {}),
+        ...(appliesToAllModels ? { appliesToAllModels: true } : {}),
         ...(trimmedUnit ? { unit: trimmedUnit } : {}),
         // sensitive + defaultValue ห้ามมาคู่กัน (backend ปฏิเสธ 400 — กันค่าอ่อนไหว
         // รั่วผ่าน GET /config-definitions ที่เปิดกว้างหลาย role) ไม่ส่ง defaultValue
@@ -285,7 +302,10 @@ export function ParameterCreateForm({
 
   const missing = [
     ...(fieldName.trim() ? [] : ["ชื่อ field"]),
-    ...(selectedModelNames.size > 0 ? [] : ["โมเดลที่รองรับ"]),
+    ...(description.trim() ? [] : ["คำอธิบาย"]),
+    ...(appliesToAllModels || selectedModelNames.size > 0
+      ? []
+      : ["โมเดลที่รองรับ"]),
   ];
 
   return (
@@ -370,14 +390,24 @@ export function ParameterCreateForm({
                 </div>
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Label htmlFor="param-desc">คำอธิบาย (ไม่บังคับ)</Label>
+                  <Label htmlFor="param-desc">คำอธิบาย</Label>
                   <Input
                     id="param-desc"
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      clearErrors();
+                    }}
                     placeholder="อธิบายสั้นๆ ว่า field นี้ควบคุมอะไร"
                     autoComplete="off"
+                    aria-invalid={
+                      formError && !description.trim() ? true : undefined
+                    }
                   />
+                  <p className="text-xs text-muted-foreground">
+                    แสดงในรายละเอียดคำขออนุมัติที่มาจากโมบาย ให้รู้ว่าแก้
+                    พารามิเตอร์นี้หมายถึงอะไร
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -460,26 +490,39 @@ export function ParameterCreateForm({
             <section className="flex flex-col gap-3 p-6">
               <SectionLabel>
                 โมเดลที่รองรับ{" "}
-                <span className="tabular-nums">
-                  ({selectedModelNames.size}/{sortedModels.length})
-                </span>
+                {!appliesToAllModels && (
+                  <span className="tabular-nums">
+                    ({selectedModelNames.size}/{sortedModels.length})
+                  </span>
+                )}
               </SectionLabel>
-              <ModelPicker
-                models={sortedModels}
-                selected={selectedModelNames}
-                onToggle={toggleModel}
-                onSetMany={(names, on) => {
+              <FlagRow
+                id="param-applies-to-all-models"
+                checked={appliesToAllModels}
+                onChange={(v) => {
                   clearErrors();
-                  setSelectedModelNames((prev) => {
-                    const next = new Set(prev);
-                    for (const n of names) {
-                      if (on) next.add(n);
-                      else next.delete(n);
-                    }
-                    return next;
-                  });
+                  setAppliesToAllModels(v);
                 }}
+                label="ใช้ได้กับทุกโมเดล"
               />
+              {!appliesToAllModels && (
+                <ModelPicker
+                  models={sortedModels}
+                  selected={selectedModelNames}
+                  onToggle={toggleModel}
+                  onSetMany={(names, on) => {
+                    clearErrors();
+                    setSelectedModelNames((prev) => {
+                      const next = new Set(prev);
+                      for (const n of names) {
+                        if (on) next.add(n);
+                        else next.delete(n);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+              )}
             </section>
 
             <section className="flex flex-col gap-3 p-6">

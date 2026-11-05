@@ -3108,7 +3108,7 @@ describe('DeviceController test-connection (integration — real postgres + guar
       expect(getBody.pendingOverride).toBeNull();
     });
 
-    it('ผ่านทั้งวงจร: submit -> Operation approve -> submit รอบสองสะสมค่าจากรอบแรก -> approve -> GET merge เห็นค่าล่าสุด', async () => {
+    it('ผ่านทั้งวงจร: submit -> Operation approve -> submit รอบสองไม่สะสมค่าจากรอบแรก -> approve -> GET เห็นเฉพาะค่ารอบล่าสุดทับต้นฉบับ (มติ B 2026-11-03)', async () => {
       await makeDevice('DCO-FLOW', 'installed');
       const configId = await makeConfig('approved');
       await makeCompletedTask('DCO-FLOW', configId);
@@ -3154,11 +3154,8 @@ describe('DeviceController test-connection (integration — real postgres + guar
         versionNumber: number;
         fields: Record<string, unknown>;
       };
-      // สะสมค่าจาก approved รอบก่อน (APN) ไว้ด้วย ไม่ใช่แค่ dto.fields รอบนี้
-      expect(override2.fields).toEqual({
-        APN: 'new-apn',
-        REPORT_INTERVAL_MOVING: '60',
-      });
+      // มติ B 2026-11-03: ค่าที่แก้มีผลเฉพาะรอบนั้น รอบใหม่ไม่สะสมค่าจากรอบก่อน
+      expect(override2.fields).toEqual({ REPORT_INTERVAL_MOVING: '60' });
       expect(override2.versionNumber).toBe(2);
 
       await request(app.getHttpServer())
@@ -3172,9 +3169,147 @@ describe('DeviceController test-connection (integration — real postgres + guar
         .expect(200);
       const getBody2 = getRes2.body as { fields: Record<string, unknown> };
       expect(getBody2.fields).toEqual({
-        APN: 'new-apn',
+        APN: 'internet',
         REPORT_INTERVAL_MOVING: '60',
       });
+    });
+
+    it('ใช้ครั้งเดียว (มติ B 2026-11-03): approve -> apply-config สำเร็จ -> consumedAt ถูก mark และ GET /config กลับเป็นค่าต้นฉบับ', async () => {
+      await makeDevice('DCO-ONE-SHOT', 'installed');
+      const configId = await makeConfig('approved');
+      await makeCompletedTask('DCO-ONE-SHOT', configId);
+      await makeOverridableField('APN', true);
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const stTok = await stToken();
+      const opTok = await opToken();
+
+      const submitted = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-ONE-SHOT/config-override')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ fields: { APN: 'new-apn' }, reason: 'แก้รอบเดียว' })
+        .expect(200);
+      const override = submitted.body as { id: string };
+      await request(app.getHttpServer())
+        .post(`/api/v1/device-config-overrides/${override.id}/approve`)
+        .set('Authorization', `Bearer ${opTok}`)
+        .expect(200);
+
+      const before = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-ONE-SHOT/config')
+        .set('Authorization', `Bearer ${stTok}`)
+        .expect(200);
+      expect((before.body as { fields: unknown }).fields).toEqual({
+        APN: 'new-apn',
+      });
+
+      const applied = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-ONE-SHOT/apply-config')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ configId })
+        .expect(200);
+      expect((applied.body as { applied: boolean }).applied).toBe(true);
+
+      const row = await prisma.deviceConfigOverride.findUniqueOrThrow({
+        where: { id: override.id },
+      });
+      expect(row.consumedAt).not.toBeNull();
+
+      const after = await request(app.getHttpServer())
+        .get('/api/v1/devices/DCO-ONE-SHOT/config')
+        .set('Authorization', `Bearer ${stTok}`)
+        .expect(200);
+      const afterBody = after.body as {
+        fields: Record<string, unknown>;
+        hasDeviceOverride: boolean;
+      };
+      expect(afterBody.fields).toEqual({ APN: 'internet' });
+      expect(afterBody.hasDeviceOverride).toBe(false);
+    });
+
+    it('ใช้ครั้งเดียว: apply-config ไม่สำเร็จ -> override ยังไม่ถูกใช้ (consumedAt null) ส่งใหม่ได้', async () => {
+      await makeDevice('DCO-ONE-SHOT-FAIL', 'installed');
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: user.id,
+        },
+      });
+      await makeCompletedTask('DCO-ONE-SHOT-FAIL', config.id);
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      // ค่าติดลบ MockConfigApplier ปฏิเสธ -> applied:false
+      const override = await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'DCO-ONE-SHOT-FAIL',
+          configId: config.id,
+          versionNumber: 1,
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ค่าที่กล่องไม่รับ',
+          status: 'approved',
+          overriddenBy: stUser.id,
+          decidedBy: user.id,
+          decidedAt: new Date(),
+        },
+      });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const stTok = tokenFor(stUser.id, 'ST');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-ONE-SHOT-FAIL/apply-config')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ configId: config.id })
+        .expect(200);
+      expect((res.body as { applied: boolean }).applied).toBe(false);
+
+      const row = await prisma.deviceConfigOverride.findUniqueOrThrow({
+        where: { id: override.id },
+      });
+      expect(row.consumedAt).toBeNull();
+    });
+
+    it('ใช้ครั้งเดียว: override ที่ใช้ไปแล้ว (consumedAt) ไม่ถูกนำมาใช้ซ้ำ -> apply-config ใช้ค่าต้นฉบับ', async () => {
+      await makeDevice('DCO-CONSUMED', 'installed');
+      const user = await makeUser(prisma, { role: 'ConfigEngineer' });
+      const config = await prisma.config.create({
+        data: {
+          name: `cfg-${randomUUID()}`,
+          deviceModel: 'GT06N',
+          protocol: 'TCP',
+          status: 'approved',
+          fields: { APN: 'internet', RETRY_INTERVAL_SEC: 30 },
+          createdBy: user.id,
+        },
+      });
+      await makeCompletedTask('DCO-CONSUMED', config.id);
+      const stUser = await makeUser(prisma, { role: 'ST' });
+      // ถ้ายังถูก merge -> applied:false · ใช้ไปแล้วต้องได้ค่าต้นฉบับ -> applied:true
+      await prisma.deviceConfigOverride.create({
+        data: {
+          deviceId: 'DCO-CONSUMED',
+          configId: config.id,
+          versionNumber: 1,
+          fields: { RETRY_INTERVAL_SEC: -5 },
+          reason: 'ใช้ไปแล้ว',
+          status: 'approved',
+          overriddenBy: stUser.id,
+          decidedBy: user.id,
+          decidedAt: new Date(),
+          consumedAt: new Date(),
+        },
+      });
+      await grant('ST', ActionType.Read, 'device-config-apply');
+      const stTok = tokenFor(stUser.id, 'ST');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/devices/DCO-CONSUMED/apply-config')
+        .set('Authorization', `Bearer ${stTok}`)
+        .send({ configId: config.id })
+        .expect(200);
+      expect((res.body as { applied: boolean }).applied).toBe(true);
     });
 
     it('Notification flow (issue #226) — pending แจ้ง Operation, approve แจ้ง ST ผู้ request จริงผ่าน DB', async () => {

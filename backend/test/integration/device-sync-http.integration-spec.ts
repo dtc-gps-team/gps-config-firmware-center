@@ -315,6 +315,48 @@ describe('DeviceSyncController (integration — real postgres + DeviceApiKeyGuar
     expect(after.jobs).toEqual([]);
   });
 
+  it('ใช้ครั้งเดียว (รีวิว A #432 ข้อ 1): Override ที่อนุมัติหลังกล่องดึงงานไม่ถูก mark ตอนรายงาน success', async () => {
+    const a = await seedDevice();
+    const { config, op2 } = await seedReleasedRollout([a.deviceId]);
+    const key = apiKeyOf.get(a.deviceId);
+    const overrideRow = (versionNumber: number, decidedAt: Date) => ({
+      deviceId: a.deviceId,
+      configId: config.id,
+      versionNumber,
+      fields: { SPEED_LIMIT: 100 + versionNumber },
+      reason: 'ลูกค้าขอ',
+      status: 'approved' as const,
+      overriddenBy: op2.id,
+      decidedAt,
+    });
+    const v1 = await prisma.deviceConfigOverride.create({
+      data: overrideRow(1, new Date(Date.now() - 60_000)),
+    });
+
+    const { jobs } = (await jobsRequest(a.deviceId, key).expect(200))
+      .body as JobsBody;
+    expect(jobs[0].config.fields.SPEED_LIMIT).toBe(101);
+
+    // อนุมัติ v2 ระหว่างกล่องดึงงานไปแล้วแต่ยังไม่รายงาน — กล่องไม่เคยได้ v2
+    const v2 = await prisma.deviceConfigOverride.create({
+      data: overrideRow(2, new Date(Date.now() + 1_000)),
+    });
+
+    await resultRequest(
+      a.deviceId,
+      jobs[0].jobId,
+      { result: 'success' },
+      key,
+    ).expect(200);
+
+    const [v1After, v2After] = await Promise.all([
+      prisma.deviceConfigOverride.findUniqueOrThrow({ where: { id: v1.id } }),
+      prisma.deviceConfigOverride.findUniqueOrThrow({ where: { id: v2.id } }),
+    ]);
+    expect(v1After.consumedAt).not.toBeNull();
+    expect(v2After.consumedAt).toBeNull();
+  });
+
   it('body ผิดรูปแบบ -> 400, jobId ไม่ใช่ UUID -> 400, ข้อความยาวเกิน -> 400', async () => {
     const a = await seedDevice();
     await seedReleasedRollout([a.deviceId]);

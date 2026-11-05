@@ -589,8 +589,8 @@ class ApplyOptionConfig {
   /// ตัวนี้ขึ้นก่อนแล้ว
   final bool suggested;
 
-  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วของกล่อง ·
-  /// backend เก่า = ว่าง
+  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง
+  /// ของกล่อง (v3.83 — ใช้ครั้งเดียว ปกติจึงเป็นค่าต้นฉบับ) · backend เก่า = ว่าง
   final Map<String, dynamic> fields;
 
   factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
@@ -851,7 +851,8 @@ class DeviceConfigDraft {
 
   /// เฉพาะ `GET /devices/{deviceId}/config` (v3.71) — ค่าที่ส่งเข้ากล่องสำเร็จ
   /// ล่าสุด · `fields` ข้างบนคือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม
-  /// Override ที่อนุมัติแล้ว) จึงต่างจากค่าในกล่องได้ · `null` = ไม่มีหลักฐาน
+  /// Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง, v3.83) จึงต่างจากค่าในกล่องได้ ·
+  /// `null` = ไม่มีหลักฐาน
   /// การส่ง หรือ backend เก่า
   final ConfigDelivery? delivery;
 

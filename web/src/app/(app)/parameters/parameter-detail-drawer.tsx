@@ -99,6 +99,7 @@ export function ParameterDetailDrawer({
               )}
               <div className="flex flex-wrap gap-1.5">
                 {d.required && <Flag tone="info">บังคับกรอก</Flag>}
+                {d.appliesToAllModels && <Flag tone="info">ทุกโมเดล</Flag>}
                 {d.restartRequired && <Flag tone="warning">ต้อง Restart กล่อง</Flag>}
                 {d.sensitive && <Flag tone="warning">ค่าอ่อนไหว</Flag>}
                 {d.stOverridable && <Flag tone="neutral">ST override ได้</Flag>}
@@ -159,7 +160,9 @@ export function ParameterDetailDrawer({
                 <h3 className="label-caps text-muted-foreground">
                   โมเดล / โปรโตคอลที่รองรับ
                 </h3>
-                {d.supportedModels.length === 0 ? (
+                {d.appliesToAllModels ? (
+                  <p className="text-sm">ใช้ได้กับทุกโมเดล</p>
+                ) : d.supportedModels.length === 0 ? (
                   <p className="text-sm text-muted-foreground">ยังไม่ระบุ</p>
                 ) : (
                   <ul className="flex flex-col gap-1">

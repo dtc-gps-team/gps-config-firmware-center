@@ -22,6 +22,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { createConfig, updateConfig, type Config } from "@/lib/config-api";
 import {
+  fieldSupportsModel,
   formatModelSupport,
   type ConfigFieldDefinition,
 } from "@/lib/config-definition-api";
@@ -239,11 +240,10 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const protocolOptions = protocolsFor(deviceModel);
   // โมเดลหนึ่งใช้ได้โปรโตคอลเดียว: เลือกให้แล้วล็อกช่อง ไม่ให้เปลี่ยน
 
-  /** field เป็นชุดค่าเริ่มต้นของรุ่น/โปรโตคอลที่เลือกไหม (`supportedModels`) */
+  /** field เป็นชุดค่าเริ่มต้นของรุ่น/โปรโตคอลที่เลือกไหม (`supportedModels`
+   * หรือ `appliesToAllModels: true` — v3.83) */
   function isInModelSet(d: ConfigFieldDefinition): boolean {
-    return d.supportedModels.some(
-      (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-    );
+    return fieldSupportsModel(d, deviceModel, protocol);
   }
 
   /** required บังคับเฉพาะ field ในชุดของรุ่นนี้ field นอกชุดที่ required ของ
@@ -256,9 +256,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
   const applicableDefs = useMemo(() => {
     if (!deviceModel || !protocol) return [] as ConfigFieldDefinition[];
     return (defs ?? []).filter((d) =>
-      d.supportedModels.some(
-        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-      ),
+      fieldSupportsModel(d, deviceModel, protocol),
     );
   }, [defs, deviceModel, protocol]);
 
@@ -269,10 +267,7 @@ export function ConfigWizard({ mode }: { mode: ConfigWizardMode }) {
     if (!deviceModel || !protocol) return [] as ConfigFieldDefinition[];
     const picked = new Set(selected);
     const requiredHere = (d: ConfigFieldDefinition) =>
-      d.required &&
-      d.supportedModels.some(
-        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-      );
+      d.required && fieldSupportsModel(d, deviceModel, protocol);
     return (defs ?? [])
       .filter((d) => requiredHere(d) || picked.has(d.fieldName))
       .sort(
@@ -1136,9 +1131,7 @@ function TemplateRow({
   // "ค่านี้คืออะไร" ก่อนชื่อตัวแปรดิบ (สลับจากหน้าคลัง Parameter ด้านซ้ายที่
   // fieldName ขึ้นก่อน) · ไม่มีคำอธิบาย = hint ล่างใช้ formatModelSupport แทน
   const description = def.description?.trim();
-  const supportHint = description
-    ? null
-    : formatModelSupport(def.supportedModels);
+  const supportHint = description ? null : formatModelSupport(def);
 
   return (
     <div

@@ -826,6 +826,11 @@ model DeviceConfigOverride {
   // เหตุผลตอนปฏิเสธ — optional (Operation อาจไม่ระบุก็ได้) ไม่มีความหมายถ้า
   // status ไม่ใช่ rejected
   rejectReason  String?
+  // เวลาที่ค่านี้ถูกส่งเข้ากล่องแล้ว (มติ B 2026-11-03 — ใช้ครั้งเดียว mirror
+  // `DeviceFirmwareOverride.consumedAt`) · null = อนุมัติแล้วแต่ยังไม่ได้ส่ง
+  // ทุกเส้นทางส่ง merge เฉพาะแถว approved ที่ยังไม่ถูกใช้ แล้ว mark เมื่อส่งสำเร็จ
+  // ส่ง Config เดิมครั้งถัดไปจึงได้ค่าต้นฉบับ ไม่ติดค่าที่เคยแก้ไปตลอด
+  consumedAt    DateTime?
 
   // onDelete: Restrict (ไม่ใช่ Cascade เดิม — แก้ตาม review A บน PR #225) ทั้ง
   // Device และ Config — ประวัติคำขอ/override เป็นข้อมูลเชิง audit ไม่ควรหาย
@@ -1109,6 +1114,13 @@ model ConfigFieldDefinition {
   defaultValue    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  // field นี้ใช้ได้กับทุกรุ่นอุปกรณ์เลยไหม (ฟีดแบ็ก 2026-11-04: บางพารามิเตอร์
+  // เป็นค่าที่จำเป็นต้องมีทุกครั้งที่คอนฟิก ไม่ว่ารุ่นไหน) — true แล้ว
+  // `supportedModels` ไม่ต้องมีแถวเลยก็ได้ (ถือว่าตรงกับทุก deviceModel/
+  // protocol โดยอัตโนมัติ ดู `fieldSupportsModel()` ใน config-definition.service.ts
+  // ที่เป็นจุดตรวจรวมจุดเดียว) ถ้าส่ง `supportedModels` มาด้วยพร้อมกันก็เก็บไว้
+  // เป็นข้อมูลอ้างอิงได้ ไม่มีผลต่อการ validate เพิ่ม เพราะ flag นี้ชนะอยู่แล้ว
+  appliesToAllModels Boolean @default(false)
 
   supportedModels ConfigFieldDefinitionModelSupport[]
 }

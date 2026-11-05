@@ -21,6 +21,7 @@ import '../../features/task/apply_request_history_page.dart';
 import '../../features/task/task_detail_page.dart';
 import '../api/models.dart';
 import '../auth/auth_controller.dart';
+import '../sync/sync_providers.dart';
 import 'app_shell.dart';
 
 class AppRoutes {
@@ -138,6 +139,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    observers: [mobileRouteObserver],
     refreshListenable: refresh,
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);

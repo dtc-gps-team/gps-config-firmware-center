@@ -1369,7 +1369,7 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       expect(await prisma.campaignRollout.count()).toBe(0);
     });
 
-    it('อนุมัติแล้วปล่อย -> บันทึก DeviceConfigOverride approved ต่อเครื่อง (รวมค่า approved เดิม) และอนุมัติไม่ได้สร้างอะไรก่อนปล่อย', async () => {
+    it('อนุมัติแล้วปล่อย -> บันทึก DeviceConfigOverride approved ต่อเครื่อง (เฉพาะค่าของ Rollout นี้ ไม่สะสมค่าเดิม — มติ B 2026-11-03) และอนุมัติไม่ได้สร้างอะไรก่อนปล่อย', async () => {
       const s = await seedScenario();
       // ค่า approved เดิมของ (เครื่อง, Config นี้) version 3
       await prisma.deviceConfigOverride.create({
@@ -1421,10 +1421,10 @@ describe('CampaignRolloutController (integration — real postgres + guard chain
       const created = rows[1];
       expect(created.versionNumber).toBe(4);
       expect(created.status).toBe('approved');
-      expect(created.fields).toEqual({
-        COMMAND_PASSWORD: 'old-secret',
-        SPEED_LIMIT: 180,
-      });
+      expect(created.fields).toEqual({ SPEED_LIMIT: 180 });
+      // ปล่อยแล้ว auto-apply ส่งสำเร็จ -> ค่าของ Rollout นี้และแถวเก่าที่ยังไม่ถูกใช้
+      // ถูก mark ว่าใช้แล้วทั้งคู่ ส่ง Config นี้ครั้งถัดไปได้ค่าต้นฉบับ
+      expect(rows.every((r) => r.consumedAt !== null)).toBe(true);
       expect(created.reason).toBe('ลูกค้าขอเพดานความเร็วสูงกว่าปกติ');
       expect(created.overriddenBy).toBe(s.creator.id);
       expect(created.decidedBy).toBe(s.approver.id);

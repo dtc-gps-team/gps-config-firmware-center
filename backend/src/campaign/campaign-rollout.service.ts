@@ -35,7 +35,10 @@ import {
   type ConfigApplier,
   type ConfigApplyMode,
 } from '../device/config-applier';
-import { mergeApprovedOverride } from '../device/config-override-merge';
+import {
+  markOverrideConsumed,
+  mergeApprovedOverride,
+} from '../device/config-override-merge';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
@@ -44,7 +47,10 @@ import {
   CentralDeviceService,
   type PushFirmwareOutcome,
 } from '../central-device/central-device.service';
-import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import {
+  ConfigDefinitionService,
+  fieldSupportsModel,
+} from '../config-definition/config-definition.service';
 // type-only — ไม่มี import ตอน runtime จึงไม่เกิด circular dependency กับโมดูล
 // config-apply-request (โมดูลนั้นเป็นฝ่าย inject `FIELD_APPLY_ROLLOUT_STARTER`)
 import type { FieldApplyRolloutInput } from '../config-apply-request/field-apply-rollout';
@@ -710,22 +716,15 @@ export class CampaignRolloutService {
       const proposed = target.proposedFields as Record<string, unknown>;
       if (Object.keys(proposed).length === 0) continue;
 
-      const previousApproved = await tx.deviceConfigOverride.findFirst({
-        where: {
-          deviceId: target.deviceId,
-          configId: rollout.configId,
-          status: 'approved',
-        },
-        orderBy: { versionNumber: 'desc' },
-      });
       const latest = await tx.deviceConfigOverride.findFirst({
         where: { deviceId: target.deviceId },
         orderBy: { versionNumber: 'desc' },
       });
-      const fields = {
-        ...((previousApproved?.fields as Record<string, unknown>) ?? {}),
-        ...proposed,
-      };
+      // มติ B 2026-11-03 — Override ใช้ครั้งเดียว: เก็บเฉพาะค่าเฉพาะเครื่องของ
+      // Rollout นี้ ไม่สะสมค่าที่เคยแก้รอบก่อน (ผู้ใช้เลือกค่าพิเศษเดิมใส่ใน
+      // deviceValues เองได้จาก `getDeviceValues()`) · แถวนี้ถูกใช้ตอนส่ง แล้ว mark
+      // `consumedAt` พร้อมแถวเก่าที่ยังไม่ถูกใช้ (`markOverrideConsumed()`)
+      const fields = proposed;
 
       await tx.deviceConfigOverride.create({
         data: {
@@ -838,11 +837,7 @@ export class CampaignRolloutService {
       if (!def) return false;
       return (
         templateFieldNames.has(fieldName) ||
-        def.supportedModels.some(
-          (m) =>
-            m.deviceModel === config.deviceModel &&
-            m.protocol === config.protocol,
-        )
+        fieldSupportsModel(def, config.deviceModel, config.protocol)
       );
     };
 
@@ -1510,7 +1505,8 @@ export class CampaignRolloutService {
         // อนุมัติให้เครื่องนั้นไว้แบบเงียบๆ (#235 review comment ข้อ 1 — mirror
         // `DeviceService.applyConfig()` ทุกประการผ่าน `mergeApprovedOverride()`
         // ร่วมกัน)
-        const { fields } = await mergeApprovedOverride(
+        // ใช้ครั้งเดียว (มติ B 2026-11-03): ส่งสำเร็จแล้ว mark Override ที่ merge ไป
+        const { fields, approvedOverride } = await mergeApprovedOverride(
           this.prisma,
           device.deviceId,
           config.id,
@@ -1525,7 +1521,7 @@ export class CampaignRolloutService {
         // implementation จริง (docker/production) ต้องย้าย claim ไปก่อน apply
         // เช่น เพิ่มสถานะกลาง 'applying' ให้ target ก่อนเรียก applier จริง
         if (rollout.applyMode === 'central') {
-          await this.pushToCentral(
+          const sent = await this.pushToCentral(
             rollout,
             target.id,
             device.deviceId,
@@ -1533,6 +1529,7 @@ export class CampaignRolloutService {
             fields,
             actorId,
           );
+          if (sent) await markOverrideConsumed(this.prisma, approvedOverride);
           continue;
         }
         const result = await this.configApplier.applyConfig({
@@ -1541,6 +1538,9 @@ export class CampaignRolloutService {
           protocol: device.protocol,
           fields,
         });
+        if (result.applied) {
+          await markOverrideConsumed(this.prisma, approvedOverride);
+        }
         const claimed = await this.recordTargetResult(
           device.deviceId,
           { configId: config.id },
@@ -1600,6 +1600,8 @@ export class CampaignRolloutService {
    *   ถามผลจนจบ · ลง AuditLog `apply-config` ตอนสั่ง (การนำ Config ไปใช้เกิดขึ้นตอนนี้)
    * - ส่งไม่ได้ (ไม่รู้จักกล่อง, ไม่ผ่าน schema, ติดต่อ Server กลางไม่ได้): นับเป็นล้มเหลวทันที
    *   ผ่าน `recordTargetResult()` จึงได้ Auto Pause และ Incident ตามกฎเดิม
+   *
+   * คืน `true` เมื่อ Server กลางรับคำสั่งแล้ว (ให้ผู้เรียก mark Override ที่ส่งไปว่าใช้แล้ว)
    */
   private async pushToCentral(
     rollout: CampaignRollout,
@@ -1608,7 +1610,7 @@ export class CampaignRolloutService {
     configId: string,
     fields: Record<string, unknown>,
     actorId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const outcome = this.central
       ? await this.central.pushConfig(deviceId, fields)
       : ({
@@ -1630,7 +1632,7 @@ export class CampaignRolloutService {
         fieldNames: Object.keys(fields),
         centralCommandId: outcome.commandId,
       });
-      return;
+      return true;
     }
 
     const claimed = await this.recordTargetResult(
@@ -1647,6 +1649,7 @@ export class CampaignRolloutService {
         fieldNames: Object.keys(fields),
       });
     }
+    return false;
   }
 
   /**

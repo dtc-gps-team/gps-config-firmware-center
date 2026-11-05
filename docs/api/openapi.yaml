@@ -850,13 +850,15 @@ paths:
     post:
       tags: [config]
       operationId: createConfigDefinition
-      summary: สร้าง Config Field Definition ใหม่ (Semantic Validation — v3.11)
+      summary: สร้าง Config Field Definition ใหม่ (Semantic Validation — v3.11, v3.83)
       description: >-
         ConfigEngineer สร้าง field definition ใหม่ในคลังเอง ไม่ต้องผ่านขั้นตอนอนุมัติ
         เพราะ field ที่มีปัญหาจริงจะโดนจับตอนเอาไปสร้าง Config Template แล้ว
         เข้า simulate/decide/approve อยู่ดี (ตัดสินใจร่วมกับทีมและพี่เลี้ยง
-        2569-09 — ดู RBAC_Matrix.md changelog) `supportedModels` ต้องระบุ
-        อย่างน้อย 1 คู่ (deviceModel, protocol) เสมอ
+        2569-09 — ดู RBAC_Matrix.md changelog) `description` บังคับกรอกตั้งแต่
+        v3.83 (ฟีดแบ็ก 2026-11-04) `supportedModels` ต้องระบุอย่างน้อย 1 คู่
+        (deviceModel, protocol) เสมอ **เว้นแต่** `appliesToAllModels: true`
+        (v3.83) — field ที่ใช้ได้ทุกรุ่นไม่ต้องระบุ supportedModels เลยก็ได้
       requestBody:
         required: true
         content:
@@ -871,7 +873,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConfigFieldDefinition"
         "400":
-          description: ข้อมูลไม่ผ่าน validation (เช่น supportedModels ว่างเปล่า)
+          description: >-
+            ข้อมูลไม่ผ่าน validation (เช่น ไม่กรอก description, หรือ
+            supportedModels ว่างเปล่าโดยไม่ได้เปิด appliesToAllModels)
         "401":
           description: Token ไม่ถูกต้องหรือหมดอายุ
         "403":
@@ -883,13 +887,14 @@ paths:
     patch:
       tags: [config]
       operationId: updateConfigDefinition
-      summary: แก้พารามิเตอร์ใน Parameter Library - v3.82
+      summary: แก้พารามิเตอร์ใน Parameter Library - v3.82, v3.83
       description: >-
         ConfigEngineer (resource `config-definition` action `Update`; SuperAdmin ผ่านด้วย bypass) ·
         ส่งเฉพาะ field ที่จะแก้ · **แก้ `fieldName` ไม่ได้** (Config เก็บค่าตามชื่อ - ส่งมา = 400) ·
         `null` ล้างค่าที่ไม่บังคับได้ · กฎ validate ที่เปลี่ยน (ชนิด/ค่าที่ยอมรับ/required/ช่วงค่า) มีผลกับ
         Config ที่สร้างหรือแก้ครั้งถัดไปเท่านั้น ไม่แก้ Config เดิมย้อนหลัง · ตรวจกฎเดียวกับตอนสร้างบนค่า
-        หลังแก้ · `supportedModels` ส่งมา = แทนที่ทั้งชุด · AuditLog `update` (เก็บแค่ชื่อ field)
+        หลังแก้ · `supportedModels` ส่งมา = แทนที่ทั้งชุด ต้องมีอย่างน้อย 1 คู่เสมอ เว้นแต่ค่าหลังแก้ของ
+        `appliesToAllModels` (v3.83) เป็น true · AuditLog `update` (เก็บแค่ชื่อ field)
       parameters:
         - in: path
           name: id
@@ -5391,13 +5396,13 @@ components:
               type: object
               nullable: true
               description: >-
-                (v3.71) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` — `fields`
-                คือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติ
-                แล้วทันที) ซึ่งในโหมด central (docs/30) อนุมัติแล้วยังต้องรอช่างกด
-                ส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน + Override
-                ฉบับล่าสุดที่อนุมัติไม่หลังเวลาที่ Rollout ของเครื่องนี้สำเร็จ ·
-                `null` = ไม่มีหลักฐานการส่ง (Config ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง
-                ไม่ใช่ Rollout)
+                (v3.71, v3.83) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` —
+                `fields` คือค่าที่**จะ**ส่งครั้งถัดไป = Config ฐาน + Override ที่
+                อนุมัติแล้วแต่ยังไม่ถูกส่ง ซึ่งในโหมด central (docs/30) อนุมัติแล้ว
+                ยังต้องรอช่างกดส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน +
+                Override ฉบับล่าสุดที่ถูกส่งไปแล้ว (`consumedAt`) ไม่หลังเวลาที่
+                Rollout ของเครื่องนี้สำเร็จ · `null` = ไม่มีหลักฐานการส่ง (Config
+                ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง ไม่ใช่ Rollout)
               required: [fields, confirmedAt, pendingFieldNames]
               properties:
                 fields:
@@ -5413,15 +5418,18 @@ components:
                   items:
                     type: string
                   description: >-
-                    field ที่ค่าใน `fields` ของ response ต่างจากค่าในกล่อง
-                    (อนุมัติแล้ว รอส่งเข้ากล่อง) · ว่าง = ตรงกันทั้งหมด
+                    field ของ Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง ที่ค่าใน
+                    `fields` ของ response ต่างจากค่าในกล่อง (รอส่งเข้ากล่อง) ·
+                    ว่าง = ไม่มีค่ารอส่ง (v3.83)
             hasDeviceOverride:
               type: boolean
               description: >-
                 อุปกรณ์เครื่องนี้มีคำขอ `DeviceConfigOverride` สถานะ `approved`
-                ทับ base Config อยู่ไหม — `true` บอกช่างว่าค่าที่เห็นไม่ใช่
-                Config เดิมล้วนๆ (issue #223) คำขอ `pending`/`rejected` **ไม่
-                มีผล** ต่อค่านี้ (v3.32)
+                ที่**ยังไม่ถูกส่ง**ทับ base Config อยู่ไหม — `true` บอกช่างว่าค่าที่
+                เห็นไม่ใช่ Config เดิมล้วนๆ (issue #223) คำขอ `pending`/`rejected`
+                **ไม่มีผล** ต่อค่านี้ (v3.32) · Override ใช้ครั้งเดียว ส่งสำเร็จแล้ว
+                ค่านี้กลับเป็น `false` และ `fields` กลับเป็นค่าต้นฉบับ (v3.83, มติ B
+                2026-11-03)
             pendingOverride:
               type: object
               nullable: true
@@ -5438,7 +5446,9 @@ components:
         Per-device Config Override (issue #223) — คำขอแก้ค่าบาง field ของ
         Config เฉพาะอุปกรณ์เครื่องเดียว ต้องผ่าน Operation อนุมัติก่อนถึงมีผล
         (มติ 2026-09-24, PR #225 — ดู comment เหนือ `model DeviceConfigOverride`
-        ใน schema.prisma)
+        ใน schema.prisma) · **ใช้ครั้งเดียว (v3.83, มติ B 2026-11-03):** มีผลกับ
+        การส่ง Config นั้นเข้าเครื่องนี้ครั้งถัดไปครั้งเดียว ส่งสำเร็จแล้วบันทึก
+        `consumedAt` ส่งครั้งถัดไปได้ค่าต้นฉบับ
       required:
         [
           id,
@@ -5466,7 +5476,9 @@ components:
         fields:
           type: object
           additionalProperties: true
-          description: สถานะ override สะสมของอุปกรณ์เครื่องนี้ ณ version นี้
+          description: >-
+            ค่าที่ขอแก้ในรอบนี้เท่านั้น (v3.83 — ไม่สะสมค่าจากรอบก่อนแล้ว เดิมเป็น
+            สถานะ override สะสมของอุปกรณ์)
         reason:
           type: string
         status:
@@ -5492,6 +5504,13 @@ components:
           type: string
           nullable: true
           description: เหตุผลที่ปฏิเสธ — optional แม้สถานะเป็น rejected
+        consumedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            (v3.83) เวลาที่ค่านี้ถูกส่งเข้ากล่องสำเร็จ · `null` = ยังไม่ถูกส่ง
+            (หรือยังไม่อนุมัติ) — การส่ง Config นี้ครั้งถัดไปไม่ใช้ค่านี้อีก
 
     DeviceFirmwareOverride:
       type: object
@@ -5642,7 +5661,7 @@ components:
       type: object
       description: นิยาม field หนึ่งตัวใน Config Definition Lookup (ตรงกับ Prisma model ConfigFieldDefinition)
       required:
-        [id, fieldName, dataType, allowedValues, required, unknownSpec, stOverridable, sensitive, restartRequired, createdAt, updatedAt, supportedModels]
+        [id, fieldName, dataType, allowedValues, required, unknownSpec, stOverridable, sensitive, restartRequired, createdAt, updatedAt, supportedModels, appliesToAllModels]
       properties:
         id:
           type: string
@@ -5732,6 +5751,13 @@ components:
             (ยังตรวจชนิดข้อมูลและ allowedValues ตามนิยาม)
           items:
             $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
+        appliesToAllModels:
+          type: boolean
+          description: >-
+            (v3.83, ฟีดแบ็ก 2026-11-04) `true` = field นี้ใช้ได้กับทุกรุ่น
+            อุปกรณ์ ไม่ต้องมี `supportedModels` เลยก็ได้ — ใช้ลัดผ่านการเช็ค
+            รุ่น/โปรโตคอลทุกจุด (สร้าง/แก้ Config, override, Campaign Rollout
+            ค่าเฉพาะเครื่อง) เหมือน field นั้นอยู่ใน supportedModels ของทุกคู่
         createdAt:
           type: string
           format: date-time
@@ -5796,8 +5822,9 @@ components:
           nullable: true
         supportedModels:
           type: array
-          minItems: 1
-          description: ส่งมา = แทนที่ทั้งชุด
+          description: >-
+            ส่งมา = แทนที่ทั้งชุด ต้องมีอย่างน้อย 1 คู่เสมอ เว้นแต่ค่าหลังแก้
+            ของ `appliesToAllModels` (v3.83) เป็น true
           items:
             type: object
             required: [deviceModel, protocol]
@@ -5806,11 +5833,14 @@ components:
                 type: string
               protocol:
                 type: string
+        appliesToAllModels:
+          type: boolean
+          description: (v3.83) `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์
 
     CreateConfigDefinitionInput:
       type: object
       description: Request body สำหรับ createConfigDefinition
-      required: [fieldName, dataType, required, supportedModels]
+      required: [fieldName, dataType, required, description]
       properties:
         fieldName:
           type: string
@@ -5834,6 +5864,13 @@ components:
             (รู้แค่ชื่อ + dataType) — ปล่อยว่างได้ default false
         description:
           type: string
+          minLength: 1
+          description: >-
+            คำอธิบายความหมายของ field นี้ — **บังคับกรอกตั้งแต่ v3.83** (ฟีดแบ็ก
+            2026-11-04: คำขออนุมัติที่มาจากโมบายอยากเห็นว่าแก้พารามิเตอร์ไหน
+            หมายถึงอะไร ไม่ใช่แค่ชื่อ field ดิบ) field ที่สร้างไว้ก่อนหน้านี้
+            ยังมีค่า null ได้อยู่ (ไม่ backfill ย้อนหลัง) — `UpdateConfigDefinitionInput.description`
+            ยังไม่บังคับ (ไม่เปลี่ยนพฤติกรรมเดิม)
         unit:
           type: string
           maxLength: 20
@@ -5874,9 +5911,19 @@ components:
           description: (v3.70) ไม่บังคับ — เงื่อนไขเดียวกับ minValue
         supportedModels:
           type: array
-          minItems: 1
+          description: >-
+            คู่รุ่น/โปรโตคอลที่ field นี้ใช้ได้ — ต้องมีอย่างน้อย 1 คู่ **เว้นแต่**
+            `appliesToAllModels: true` (v3.83) ไม่งั้น 400 (ไม่สามารถประกาศ
+            cross-field required นี้ตรงๆ ใน schema จึงเขียนไว้ที่นี่แทน)
           items:
             $ref: "#/components/schemas/ConfigFieldDefinitionModelSupport"
+        appliesToAllModels:
+          type: boolean
+          default: false
+          description: >-
+            (v3.83, ฟีดแบ็ก 2026-11-04) `true` = field นี้ใช้ได้กับทุกรุ่น
+            อุปกรณ์ ไม่ต้องส่ง supportedModels เลยก็ได้ — ปล่อยว่างได้ default
+            false (ต้องเลือกรุ่นเองเหมือนเดิม)
 
     # เพิ่มใหม่: แยกจาก DeviceConfigDraft เพราะ request body ของ createConfig/
     # updateConfig ไม่ควรรับ id/status จาก client (server เป็นคนกำหนดเท่านั้น —
@@ -6390,8 +6437,10 @@ components:
                 type: object
                 additionalProperties: true
                 description: >-
-                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของ
-                  กล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อนเลือก
+                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่
+                  ยังไม่ถูกส่งของกล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อน
+                  เลือก · **(v3.83)** Override ใช้ครั้งเดียว ค่าที่เคยแก้และส่งไปแล้ว
+                  ไม่ถูกนับ ปกติจึงเป็นค่าต้นฉบับของ Config (มติ B 2026-11-03)
                   · **(v3.77)** ไม่มี `data_server.path` เพราะมี key ส่ง telemetry
                   ส่วนค่าที่ส่งเข้ากล่องจริงยังครบ
         currentFirmwareVersion:

@@ -31,6 +31,7 @@ const def: ConfigFieldDefinition = {
   defaultValue: null,
   minValue: 0,
   maxValue: 200,
+  appliesToAllModels: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -49,7 +50,22 @@ describe('ConfigDefinitionService แก้ไข/ลบ/usage', () => {
 
   beforeEach(async () => {
     configFieldDefinition = {
-      findUnique: jest.fn().mockResolvedValue(def),
+      // update() เรียก findUnique พร้อม include: { supportedModels: true } ตั้งแต่
+      // เพิ่ม appliesToAllModels (ต้องรู้จำนวนคู่เดิมไว้เช็ค cross-field กับ flag
+      // นี้) — mock คืนให้มีอย่างน้อย 1 คู่ (def นี้สมมติว่ามีรุ่นผูกไว้แล้วจริง)
+      // ไม่งั้น update() ที่ไม่ได้แตะ supportedModels/appliesToAllModels เลยจะ
+      // โดน assertSupportedModelsOrAppliesToAll บล็อกผิดจุด
+      findUnique: jest.fn().mockResolvedValue({
+        ...def,
+        supportedModels: [
+          {
+            id: 'sup-x',
+            fieldDefinitionId: def.id,
+            deviceModel: 'GT06N',
+            protocol: 'TCP',
+          },
+        ],
+      }),
       findUniqueOrThrow: jest
         .fn()
         .mockResolvedValue({ ...def, supportedModels: [] }),
@@ -138,6 +154,27 @@ describe('ConfigDefinitionService แก้ไข/ลบ/usage', () => {
           },
         ],
         skipDuplicates: true,
+      });
+    });
+
+    // ฟีดแบ็ก 2026-11-04: ล้าง supportedModels ทั้งชุดโดยไม่เปิด
+    // appliesToAllModels ต้องโดนบล็อก (field จะไม่ validate อะไรได้เลย)
+    it('ส่ง supportedModels: [] โดยไม่เปิด appliesToAllModels -> 400', async () => {
+      await expect(
+        service.update(def.id, { supportedModels: [] }, actor),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(configFieldDefinition.update).not.toHaveBeenCalled();
+    });
+
+    it('ส่ง supportedModels: [] พร้อม appliesToAllModels: true -> ผ่าน', async () => {
+      await service.update(
+        def.id,
+        { supportedModels: [], appliesToAllModels: true },
+        actor,
+      );
+      expect(configFieldDefinition.update).toHaveBeenCalledWith({
+        where: { id: def.id },
+        data: expect.objectContaining({ appliesToAllModels: true }) as object,
       });
     });
 

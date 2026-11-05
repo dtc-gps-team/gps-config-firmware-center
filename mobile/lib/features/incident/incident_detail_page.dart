@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
@@ -40,40 +41,49 @@ class IncidentDetailPage extends ConsumerWidget {
     final navigator = Navigator.of(context);
     final incident = incidentAsync.valueOrNull;
 
-    return AppV2Theme(
-      child: Scaffold(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            AppInkHeader(
-              title: incident?.title ?? 'รายละเอียด Incident',
-              titleKey: const Key('incident_detail_title'),
-              // ไม่แสดง id ภายในของ Incident (uuid) — บอกแค่อุปกรณ์
-              subtitle: incident?.deviceId,
-              onBack: navigator.canPop() ? navigator.pop : null,
-            ),
-            Expanded(
-              child: incidentAsync.when(
-                skipLoadingOnRefresh: true,
-                data: (incident) => _IncidentDetailView(incident: incident),
-                loading: () => const AppDetailSkeleton(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                ),
-                error: (error, _) => ListView(
-                  children: [
-                    const SizedBox(height: 64),
-                    AppErrorView(
-                      message: _errorMessage(error),
-                      onRetry: () =>
-                          ref.invalidate(incidentDetailProvider(incidentId)),
-                      messageKey: const Key('incident_detail_error'),
-                      retryKey: const Key('incident_detail_retry'),
-                    ),
-                  ],
+    return LiveRefresh(
+      interval: const Duration(seconds: 30),
+      onRefresh: () async {
+        await ref
+            .refresh(incidentDetailProvider(incidentId).future)
+            .then<void>((_) {});
+      },
+      child: AppV2Theme(
+        child: Scaffold(
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AppInkHeader(
+                title: incident?.title ?? 'รายละเอียด Incident',
+                titleKey: const Key('incident_detail_title'),
+                // ไม่แสดง id ภายในของ Incident (uuid) — บอกแค่อุปกรณ์
+                subtitle: incident?.deviceId,
+                onBack: navigator.canPop() ? navigator.pop : null,
+              ),
+              Expanded(
+                child: incidentAsync.when(
+                  skipLoadingOnRefresh: true,
+                  skipError: true,
+                  data: (incident) => _IncidentDetailView(incident: incident),
+                  loading: () => const AppDetailSkeleton(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  ),
+                  error: (error, _) => ListView(
+                    children: [
+                      const SizedBox(height: 64),
+                      AppErrorView(
+                        message: _errorMessage(error),
+                        onRetry: () =>
+                            ref.invalidate(incidentDetailProvider(incidentId)),
+                        messageKey: const Key('incident_detail_error'),
+                        retryKey: const Key('incident_detail_retry'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
