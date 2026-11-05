@@ -33,6 +33,11 @@ import {
 
 const NO_CUSTOMER = "__none__";
 
+/** เครื่องหมาย * สีแดงท้าย label ของช่องบังคับกรอก — ใช้ CSS (`after:`) ไม่ใส่ตัวอักษรใน DOM
+ * เพื่อไม่ให้ชื่อ label ที่ใช้ค้น/อ่านด้วยโปรแกรมเปลี่ยนไป · ช่องที่ไม่บังคับมีป้าย "(ไม่บังคับ)"
+ * กำกับอยู่แล้ว ฟอร์มนี้จึงบอกครบทั้งสองฝั่ง */
+const REQUIRED_LABEL = "after:ml-0.5 after:text-destructive after:content-['*']";
+
 /** ค่าชั่วคราวที่ห้ามบันทึกเป็นข้อมูลเครื่องจริง (เผื่อมีคนวางหรือพิมพ์เอง) */
 const PLACEHOLDER_PREFIX = "central:";
 
@@ -206,15 +211,17 @@ export function RegisterDeviceForm() {
     }
   }
 
-  const canSubmit =
-    deviceId.trim() !== "" &&
-    simNumber.trim() !== "" &&
-    modelId !== "" &&
-    protocol !== "" &&
-    imei.trim() !== "" &&
-    serialNumber.trim() !== "" &&
-    blackboxId.trim() !== "" &&
-    !submitting;
+  // ช่องบังคับที่ยังไม่กรอก — บอกผู้ใช้ว่าทำไมปุ่มลงทะเบียนยังกดไม่ได้ (ลำดับตามหน้าฟอร์ม)
+  const missing = [
+    ...(deviceId.trim() ? [] : ["Device ID"]),
+    ...(simNumber.trim() ? [] : ["SIM Number"]),
+    ...(imei.trim() ? [] : ["IMEI"]),
+    ...(serialNumber.trim() ? [] : ["Serial Number"]),
+    ...(blackboxId.trim() ? [] : ["Blackbox ID"]),
+    ...(modelId ? [] : ["โมเดล"]),
+    ...(protocol ? [] : ["โปรโตคอล"]),
+  ];
+  const canSubmit = missing.length === 0 && !submitting;
 
   return (
     <div className="flex flex-col gap-8">
@@ -271,11 +278,14 @@ export function RegisterDeviceForm() {
           )}
         </section>
       )}
+      <p className="text-xs text-muted-foreground">
+        <span className="text-destructive">*</span> ต้องกรอก
+      </p>
       <section className="flex flex-col gap-4">
         <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลตัวเครื่อง</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-id">Device ID</Label>
+            <Label htmlFor="device-id" className={REQUIRED_LABEL}>Device ID</Label>
             <Input
               id="device-id"
               value={deviceId}
@@ -285,7 +295,7 @@ export function RegisterDeviceForm() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-sim">SIM Number</Label>
+            <Label htmlFor="device-sim" className={REQUIRED_LABEL}>SIM Number</Label>
             <Input
               id="device-sim"
               value={simNumber}
@@ -294,9 +304,7 @@ export function RegisterDeviceForm() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-imei">
-              IMEI
-            </Label>
+            <Label htmlFor="device-imei" className={REQUIRED_LABEL}>IMEI</Label>
             <Input
               id="device-imei"
               value={imei}
@@ -305,9 +313,7 @@ export function RegisterDeviceForm() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-serial">
-              Serial Number
-            </Label>
+            <Label htmlFor="device-serial" className={REQUIRED_LABEL}>Serial Number</Label>
             <Input
               id="device-serial"
               value={serialNumber}
@@ -316,9 +322,7 @@ export function RegisterDeviceForm() {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-blackbox">
-              Blackbox ID
-            </Label>
+            <Label htmlFor="device-blackbox" className={REQUIRED_LABEL}>Blackbox ID</Label>
             <Input
               id="device-blackbox"
               value={blackboxId}
@@ -332,7 +336,7 @@ export function RegisterDeviceForm() {
         <h2 className="border-b pb-2 text-base font-semibold">ข้อมูลโมเดล</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-model">โมเดล</Label>
+            <Label htmlFor="device-model" className={REQUIRED_LABEL}>โมเดล</Label>
             <Select
               value={modelId}
               onValueChange={(value) => changeModel(value ?? "")}
@@ -355,7 +359,7 @@ export function RegisterDeviceForm() {
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="device-protocol">โปรโตคอล</Label>
+            <Label htmlFor="device-protocol" className={REQUIRED_LABEL}>โปรโตคอล</Label>
             <Select
               value={protocol}
               disabled={protocolLocked}
@@ -433,19 +437,26 @@ export function RegisterDeviceForm() {
         </div>
       )}
 
-      <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-        <Link
-          href="/devices"
-          onClick={(e) => {
-            if (!confirmLeave()) e.preventDefault();
-          }}
-          className={buttonVariants({ variant: "outline" })}
-        >
-          ยกเลิก
-        </Link>
-        <Button disabled={!canSubmit} loading={submitting} onClick={() => void onSubmit()}>
-          {submitting ? "กำลังลงทะเบียน…" : "ลงทะเบียนอุปกรณ์"}
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+        <p className="text-xs text-muted-foreground">
+          {missing.length > 0
+            ? `ยังขาด: ${missing.join(", ")}`
+            : "ข้อมูลครบ พร้อมลงทะเบียน"}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/devices"
+            onClick={(e) => {
+              if (!confirmLeave()) e.preventDefault();
+            }}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            ยกเลิก
+          </Link>
+          <Button disabled={!canSubmit} loading={submitting} onClick={() => void onSubmit()}>
+            {submitting ? "กำลังลงทะเบียน…" : "ลงทะเบียนอุปกรณ์"}
+          </Button>
+        </div>
       </div>
     </div>
   );
