@@ -621,6 +621,76 @@ class CentralApplyProgress {
       );
 }
 
+/// สถานะของการส่ง 1 รอบ (docs/31 §3.6, openapi v3.87)
+enum ConfigApplyAttemptStatus {
+  sending('sending'),
+  sent('sent'),
+  succeeded('succeeded'),
+  failed('failed'),
+  skipped('skipped');
+
+  const ConfigApplyAttemptStatus(this.wireName);
+  final String wireName;
+  static ConfigApplyAttemptStatus fromWire(String value) =>
+      values.firstWhere((v) => v.wireName == value);
+}
+
+/// การส่ง 1 รอบของคำขอ (`retry.attempts[]`)
+class ConfigApplyAttempt {
+  const ConfigApplyAttempt({
+    required this.attemptNo,
+    required this.status,
+    required this.startedAt,
+    this.errorCode,
+    this.detail,
+    this.finishedAt,
+  });
+  final int attemptNo;
+  final ConfigApplyAttemptStatus status;
+  final String? errorCode;
+  final String? detail;
+  final DateTime startedAt;
+  final DateTime? finishedAt;
+
+  factory ConfigApplyAttempt.fromJson(Map<String, dynamic> json) =>
+      ConfigApplyAttempt(
+        attemptNo: json['attemptNo'] as int,
+        status: ConfigApplyAttemptStatus.fromWire(json['status'] as String),
+        errorCode: json['errorCode'] as String?,
+        detail: json['detail'] as String?,
+        startedAt: DateTime.parse(json['startedAt'] as String),
+        finishedAt: json['finishedAt'] is String
+            ? DateTime.parse(json['finishedAt'] as String)
+            : null,
+      );
+}
+
+/// ลองส่งใหม่อัตโนมัติ (docs/31 §3.6) — `nextRetryAt` มีค่าเฉพาะตอนรอรอบใหม่
+class ConfigApplyRetry {
+  const ConfigApplyRetry({
+    required this.attemptNo,
+    required this.maxAttempts,
+    required this.attempts,
+    this.nextRetryAt,
+  });
+  final int attemptNo;
+  final int maxAttempts;
+  final DateTime? nextRetryAt;
+  final List<ConfigApplyAttempt> attempts;
+
+  factory ConfigApplyRetry.fromJson(Map<String, dynamic> json) =>
+      ConfigApplyRetry(
+        attemptNo: json['attemptNo'] as int,
+        maxAttempts: json['maxAttempts'] as int,
+        nextRetryAt: json['nextRetryAt'] is String
+            ? DateTime.parse(json['nextRetryAt'] as String)
+            : null,
+        attempts: (json['attempts'] as List<dynamic>)
+            .map((v) => ConfigApplyAttempt.fromJson(v as Map<String, dynamic>))
+            .toList(growable: false),
+      );
+}
+
 class ConfigApplyRequestProgress {
   const ConfigApplyRequestProgress({
     required this.requestId,
@@ -632,6 +702,7 @@ class ConfigApplyRequestProgress {
     this.releasedAt,
     this.completedAt,
     this.central,
+    this.retry,
   });
   final String requestId;
   final FieldApplyKind kind;
@@ -643,10 +714,14 @@ class ConfigApplyRequestProgress {
   final DateTime? completedAt;
   final CentralApplyProgress? central;
 
+  /// null = ไม่มีประวัติรายรอบ (backend ก่อน v3.87 ก็เป็น null)
+  final ConfigApplyRetry? retry;
+
   factory ConfigApplyRequestProgress.fromJson(Map<String, dynamic> json) {
     DateTime? date(String key) =>
         json[key] is String ? DateTime.parse(json[key] as String) : null;
     final central = json['central'];
+    final retry = json['retry'];
     return ConfigApplyRequestProgress(
       requestId: json['requestId'] as String,
       kind: FieldApplyKind.fromWire(json['kind']),
@@ -658,6 +733,9 @@ class ConfigApplyRequestProgress {
       completedAt: date('completedAt'),
       central: central is Map<String, dynamic>
           ? CentralApplyProgress.fromJson(central)
+          : null,
+      retry: retry is Map<String, dynamic>
+          ? ConfigApplyRetry.fromJson(retry)
           : null,
     );
   }
