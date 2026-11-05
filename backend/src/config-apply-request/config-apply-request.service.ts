@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
@@ -22,6 +23,10 @@ import {
   Task,
 } from '@prisma/client';
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
+import {
+  DEFAULT_FIELD_APPLY_RETRY_SETTINGS,
+  FieldApplyRetryService,
+} from '../campaign/field-apply-retry.service';
 import { RolloutEvents } from '../campaign/rollout-events';
 import { CentralDeviceService } from '../central-device/central-device.service';
 import { describeCentralFailure } from '../central-device/central-config';
@@ -49,7 +54,9 @@ import { CreateConfigApplyRequestDto } from './dto/create-config-apply-request.d
 import { RejectConfigApplyRequestDto } from './dto/reject-config-apply-request.dto';
 import {
   FIELD_APPLY_RESULT_EVENT,
+  FIELD_APPLY_RETRY_EVENT,
   FIELD_APPLY_ROLLOUT_STARTER,
+  type FieldApplyRetryEvent,
   type FieldApplyResultEvent,
   type FieldApplyRolloutPayload,
   type FieldApplyRolloutStarter,
@@ -138,6 +145,17 @@ export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
   include: typeof TASK_REQUEST_INCLUDE;
 }>;
 
+/** 1 รอบการส่งของคำขอ (docs/31 §3.6) จาก `CampaignRolloutTargetAttempt` */
+export interface ConfigApplyAttempt {
+  attemptNo: number;
+  /** sending | sent | succeeded | failed | skipped */
+  status: string;
+  errorCode: string | null;
+  detail: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface ConfigApplyRequestProgress {
   requestId: string;
   kind: 'config' | 'firmware';
@@ -157,6 +175,19 @@ export interface ConfigApplyRequestProgress {
     errorCode: string | null;
     errorMessage: string | null;
     steps: { key: string; at: string | null; progress: number | null }[];
+  };
+  /**
+   * ลองส่งใหม่อัตโนมัติ (docs/31 §3.6) — null = คำขอนี้ไม่มีประวัติการส่งแบบรายรอบ
+   * (ยังไม่ปล่อย, ไม่ใช่โหมด central, หรือส่งก่อน docs/31) · อยู่ระดับบนสุดไม่ใช่ใน
+   * `central` เพราะช่วงรอรอบใหม่ไม่มีรหัสคำสั่ง `central` จึงเป็น null
+   */
+  retry: null | {
+    /** รอบปัจจุบัน / รอบล่าสุด (1 = ครั้งแรก) */
+    attemptNo: number;
+    maxAttempts: number;
+    /** กำลังรอส่งรอบใหม่: เวลาที่จะส่ง · null = ไม่ได้รอ (กำลังส่ง / รอผล / จบแล้ว) */
+    nextRetryAt: string | null;
+    attempts: ConfigApplyAttempt[];
   };
 }
 type CentralProgressStep = {
@@ -323,7 +354,16 @@ export class ConfigApplyRequestService implements OnModuleInit {
     private readonly rolloutEvents: RolloutEvents,
     private readonly centralDevices: CentralDeviceService,
     @Inject(CONFIG_APPLY_MODE) private readonly applyMode: ConfigApplyMode,
+    // docs/31 R2 — จำนวนครั้งสูงสุดของการลองส่งใหม่ · @Optional: ไม่มีใช้ค่าเริ่มต้น
+    @Optional() private readonly fieldApplyRetry?: FieldApplyRetryService,
   ) {}
+
+  private get maxAttempts(): number {
+    return (
+      this.fieldApplyRetry?.settings.maxAttempts ??
+      DEFAULT_FIELD_APPLY_RETRY_SETTINGS.maxAttempts
+    );
+  }
 
   /** ฟังผลจาก Rollout เครื่องเดียว (§3.5 ข้อ 5) — listener จัดการ error เอง
    * (ข้อกำหนดของ `RolloutEvents`) */
@@ -334,6 +374,62 @@ export class ConfigApplyRequestService implements OnModuleInit {
         void this.recordRolloutOutcome(event);
       },
     );
+    // docs/31 §3.5 — ทุกรอบที่ส่งไม่สำเร็จแล้วระบบจะลองใหม่ แจ้งช่างที่ถืองาน
+    this.rolloutEvents.on(
+      FIELD_APPLY_RETRY_EVENT,
+      (event: FieldApplyRetryEvent) => {
+        void this.notifyRetrying(event);
+      },
+    );
+  }
+
+  /**
+   * แจ้ง `config_apply_retrying` (docs/31 §3.5) — คำขอยัง `sending` (ไม่เปลี่ยนสถานะ ผลจบยัง
+   * มาทาง `field-apply-result`) · payload บอกรอบที่ล้ม สาเหตุ และรอบถัดไป · **never-throw**
+   * (เรียกจาก event listener) · คืน `true` เมื่อแจ้งได้
+   */
+  async notifyRetrying(event: FieldApplyRetryEvent): Promise<boolean> {
+    try {
+      const request = await this.prisma.configApplyRequest.findFirst({
+        where: { rolloutId: event.rolloutId, status: 'sending' },
+      });
+      if (!request) return false;
+      await this.notifyTaskHolder(request, 'config_apply_retrying', {
+        attemptNo: event.attemptNo,
+        maxAttempts: event.maxAttempts,
+        nextAttemptNo: event.attemptNo + 1,
+        errorCode: event.errorCode,
+        detail: event.detail,
+        nextRetryAt: event.nextRetryAt,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `แจ้งการลองส่งใหม่ของ Rollout ${event.rolloutId} ไม่สำเร็จ: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /** ประวัติรายรอบของ target ของ Rollout เครื่องเดียว (docs/31) — ไม่มี = [] */
+  private async loadAttempts(
+    rolloutId: string,
+    deviceId: string,
+  ): Promise<ConfigApplyAttempt[]> {
+    const target = await this.prisma.campaignRolloutTarget.findFirst({
+      where: { rolloutId, deviceId },
+      select: {
+        attempts: { orderBy: { attemptNo: 'asc' } },
+      },
+    });
+    return (target?.attempts ?? []).map((a) => ({
+      attemptNo: a.attemptNo,
+      status: a.status,
+      errorCode: a.errorCode,
+      detail: a.detail,
+      startedAt: a.startedAt.toISOString(),
+      finishedAt: a.finishedAt?.toISOString() ?? null,
+    }));
   }
 
   /**
@@ -640,15 +736,47 @@ export class ConfigApplyRequestService implements OnModuleInit {
     if (!request) throw new NotFoundException('ไม่พบคำขอในงานนี้');
 
     let central: ConfigApplyRequestProgress['central'] = null;
+    let retry: ConfigApplyRequestProgress['retry'] = null;
     if (
       this.applyMode === 'central' &&
       request.releasedAt &&
       request.rolloutId
     ) {
+      // target ของ Rollout ของคำขอนี้เท่านั้น (rolloutId มาจากคำขอที่ผ่าน scope แล้ว —
+      // ไม่รับ id ของ target/attempt จาก client · docs/31 §3.6 IDOR)
       const target = await this.prisma.campaignRolloutTarget.findFirst({
         where: { rolloutId: request.rolloutId, deviceId: request.deviceId },
-        select: { centralCommandId: true },
+        select: {
+          centralCommandId: true,
+          attemptCount: true,
+          nextRetryAt: true,
+          attempts: { orderBy: { attemptNo: 'asc' } },
+        },
       });
+      const attempts = target?.attempts ?? [];
+      if (target && attempts.length > 0) {
+        const latest = attempts[attempts.length - 1];
+        // รอรอบใหม่ = รอบล่าสุดจบแล้ว ยังไม่มีคำสั่ง · ระหว่างกำลังส่ง nextRetryAt คือ lease ไม่ใช่เวลารอ
+        const waiting =
+          !target.centralCommandId &&
+          !!target.nextRetryAt &&
+          !!latest.finishedAt;
+        retry = {
+          attemptNo: target.attemptCount,
+          maxAttempts: this.maxAttempts,
+          nextRetryAt: waiting
+            ? (target.nextRetryAt as Date).toISOString()
+            : null,
+          attempts: attempts.map((a) => ({
+            attemptNo: a.attemptNo,
+            status: a.status,
+            errorCode: a.errorCode,
+            detail: a.detail,
+            startedAt: a.startedAt.toISOString(),
+            finishedAt: a.finishedAt?.toISOString() ?? null,
+          })),
+        };
+      }
       const commandId = target?.centralCommandId;
       if (commandId) {
         // try ครอบเฉพาะการเรียก Server กลาง (รีวิว A #437 ข้อ 1) — บั๊กของเราใน
@@ -693,6 +821,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
       releasedAt: request.releasedAt?.toISOString() ?? null,
       completedAt: request.completedAt?.toISOString() ?? null,
       central,
+      retry,
     };
   }
 
@@ -1166,14 +1295,38 @@ export class ConfigApplyRequestService implements OnModuleInit {
         event.outcome === 'succeeded'
           ? 'config_apply_succeeded'
           : 'config_apply_failed';
-      const extra: Record<string, string | null> =
+      const extra: Prisma.InputJsonObject =
         event.outcome === 'succeeded'
           ? {}
           : { outcome: event.outcome, detail: event.detail };
-      await this.notifyTaskHolder(request, type, extra);
+      // docs/31 §3.5 — สำเร็จบอกรอบที่สำเร็จ · ล้มบอกทุกรอบ (เฉพาะคำขอที่มีประวัติรายรอบ)
+      const attempts = await this.loadAttempts(
+        event.rolloutId,
+        request.deviceId,
+      );
+      const withAttempts: Prisma.InputJsonObject =
+        attempts.length === 0
+          ? extra
+          : event.outcome === 'succeeded'
+            ? {
+                ...extra,
+                attemptNo: attempts[attempts.length - 1].attemptNo,
+                maxAttempts: this.maxAttempts,
+              }
+            : {
+                ...extra,
+                maxAttempts: this.maxAttempts,
+                attempts: attempts.map((a) => ({
+                  attemptNo: a.attemptNo,
+                  status: a.status,
+                  errorCode: a.errorCode,
+                  detail: a.detail,
+                })),
+              };
+      await this.notifyTaskHolder(request, type, withAttempts);
       // Operation ที่อนุมัติรู้ผลด้วย (docs/27 §8) — การแสดงผลบน Web เป็นงาน A
       if (request.decidedBy) {
-        await this.notifyUser(request.decidedBy, request, type, extra);
+        await this.notifyUser(request.decidedBy, request, type, withAttempts);
       }
       return true;
     } catch (err) {
@@ -1729,7 +1882,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
   private async notifyTaskHolder(
     request: ConfigApplyRequest,
     type: NotificationType,
-    extra: Record<string, string | null> = {},
+    extra: Prisma.InputJsonObject = {},
   ): Promise<void> {
     let userId = request.requestedBy;
     try {
@@ -1751,7 +1904,7 @@ export class ConfigApplyRequestService implements OnModuleInit {
     userId: string,
     request: ConfigApplyRequest,
     type: NotificationType,
-    extra: Record<string, string | null> = {},
+    extra: Prisma.InputJsonObject = {},
   ): Promise<void> {
     try {
       await this.notificationService.send({

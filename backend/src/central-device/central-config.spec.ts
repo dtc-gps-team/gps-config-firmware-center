@@ -1,4 +1,8 @@
-import { buildCentralSettings, classifyCentralCommand } from './central-config';
+import {
+  buildCentralSettings,
+  classifyCentralCommand,
+  isRetryableCentralOutcome,
+} from './central-config';
 import type {
   RawCentralCommand,
   RawCentralSchema,
@@ -227,5 +231,52 @@ describe('classifyCentralCommand', () => {
     expect((r as { detail: string }).detail).toContain(
       'กล่องออฟไลน์ คำสั่งไปไม่ถึง',
     );
+  });
+});
+
+// docs/31 §3.1 — ผลแบบไหนลองส่งใหม่ (denylist ของ "ไม่ลอง")
+describe('isRetryableCentralOutcome', () => {
+  const cmd = (over: Partial<RawCentralCommand>): RawCentralCommand => ({
+    command_id: 'CMD-1',
+    device_id: 'D',
+    action: 'UPDATE_CONFIG',
+    status: 'FAILED',
+    ...over,
+  });
+
+  it.each([
+    ['FAILED', 'DEVICE_DISCONNECTED'],
+    ['FAILED', 'DEVICE_NO_RESPONSE'],
+    ['FAILED', 'DOWNLOAD_TIMEOUT'],
+    ['ROLLED_BACK', 'ROLLED_BACK'],
+    ['ROLLED_BACK', 'NEW_FIRMWARE_FAILED_HEALTH_CHECK'],
+    ['FAILED', 'DEVICE_OFFLINE'],
+    ['EXPIRED', 'TTL_EXPIRED'],
+    ['FAILED', 'SOME_NEW_CODE_FROM_GATEWAY'],
+  ])('%s %s -> ลองใหม่', (status, error_code) => {
+    const outcome = classifyCentralCommand(cmd({ status, error_code }));
+    expect(outcome).toMatchObject({ errorCode: error_code });
+    expect(isRetryableCentralOutcome(outcome)).toBe(true);
+  });
+
+  it('FAILED ไม่มีรหัส -> ลองใหม่ (ไม่รู้ = ให้โอกาส)', () => {
+    const outcome = classifyCentralCommand(cmd({ error_code: null }));
+    expect(isRetryableCentralOutcome(outcome)).toBe(true);
+  });
+
+  it.each(['SUPERSEDED', 'CANCELLED'])(
+    'EXPIRED %s -> ไม่ลอง (มีคนสั่งทับหรือยกเลิก)',
+    (error_code) => {
+      const outcome = classifyCentralCommand(
+        cmd({ status: 'EXPIRED', error_code }),
+      );
+      expect(isRetryableCentralOutcome(outcome)).toBe(false);
+    },
+  );
+
+  it('ยังรอ / สำเร็จ / ถามไม่ได้ -> ไม่ใช่ผลที่ต้องลองใหม่', () => {
+    expect(isRetryableCentralOutcome({ kind: 'pending' })).toBe(false);
+    expect(isRetryableCentralOutcome({ kind: 'success' })).toBe(false);
+    expect(isRetryableCentralOutcome({ kind: 'unavailable' })).toBe(false);
   });
 });

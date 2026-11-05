@@ -113,7 +113,10 @@ enum NotificationType {
   configApplyRejected('config_apply_rejected'),
   configApplySucceeded('config_apply_succeeded'),
   configApplyFailed('config_apply_failed'),
-  configApplyExpired('config_apply_expired');
+  configApplyExpired('config_apply_expired'),
+  // docs/31 — รอบหนึ่งส่งไม่สำเร็จ ระบบจะลองใหม่เอง (payload `attemptNo`,
+  // `maxAttempts`, `nextAttemptNo`, `errorCode`, `detail`, `nextRetryAt`)
+  configApplyRetrying('config_apply_retrying');
 
   const NotificationType(this.wireName);
 
