@@ -188,6 +188,7 @@ export class CentralRolloutPollService {
         await this.rolloutService.startFieldApplyRollout(
           action.rolloutId,
           action.actorId,
+          { retryTargetId: action.targetId },
         );
         result.retried += 1;
       } catch (err) {

@@ -513,4 +513,50 @@ describe('Field apply auto-retry (integration — real postgres, fake central)',
     expect(await retry.claimDueRetries()).toEqual([]);
     expect(central.pushConfig).toHaveBeenCalledTimes(1);
   });
+
+  it('ทางจบก็ใช้ lease (รีวิว A #440): claim แบบ finish แล้ว process ตายก่อนบันทึกผล -> lease หมดถูกหยิบมาจบอีกครั้ง', async () => {
+    const { rolloutId } = await seedFieldApply();
+    central.getCommandOutcome.mockResolvedValueOnce(
+      failed('DEVICE_DISCONNECTED'),
+    );
+    await poll.poll();
+    await prisma.campaignRollout.update({
+      where: { id: rolloutId },
+      data: { status: 'paused' },
+    });
+    await makeDue(rolloutId);
+
+    // claim แบบ finish แต่ไม่บันทึกผล (จำลอง process ตาย)
+    const actions = await retry.claimDueRetries();
+    expect(actions).toEqual([expect.objectContaining({ kind: 'finish' })]);
+    let target = await targetOf(rolloutId);
+    expect(target.status).toBe('pending');
+    expect(target.attemptCount).toBe(1);
+    expect((target.nextRetryAt as Date).getTime()).toBeGreaterThan(
+      Date.now() + 50_000,
+    );
+
+    await makeDue(rolloutId);
+    await poll.poll();
+
+    target = await targetOf(rolloutId);
+    expect(target.status).toBe('failed');
+    expect(central.pushConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('ตัวที่รอรอบลองใหม่ไม่ถูกเส้นทางส่งทั่วไปหยิบไปส่งก่อนเวลา (รีวิว A #440 ข้อสังเกต 1)', async () => {
+    const { rolloutId, operation } = await seedFieldApply();
+    central.getCommandOutcome.mockResolvedValueOnce(
+      failed('DEVICE_DISCONNECTED'),
+    );
+    await poll.poll();
+    expect((await targetOf(rolloutId)).nextRetryAt).not.toBeNull();
+
+    // เช่น resume()/approve() เรียกเส้นทางส่งทั่วไประหว่างรอ
+    await rolloutService.startFieldApplyRollout(rolloutId, operation.id);
+
+    expect(central.pushConfig).toHaveBeenCalledTimes(1);
+    const target = await targetOf(rolloutId);
+    expect(target).toMatchObject({ attemptCount: 1, centralCommandId: null });
+  });
 });

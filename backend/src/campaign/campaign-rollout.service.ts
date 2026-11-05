@@ -1428,6 +1428,7 @@ export class CampaignRolloutService {
   private async autoApplyConfig(
     rollout: CampaignRollout,
     actorId: string,
+    retryTargetId?: string,
   ): Promise<CampaignRollout> {
     if (!rollout.configId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
     const configId = rollout.configId;
@@ -1442,7 +1443,16 @@ export class CampaignRolloutService {
         status: 'pending',
         // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
         // ตอน resume() หลัง Auto Pause
-        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+        ...(rollout.applyMode === 'central'
+          ? {
+              centralCommandId: null,
+              // docs/31 (รีวิว A #440): ตัวที่รอรอบลองใหม่ส่งผ่านกลไก claim เท่านั้น — resume()/
+              // approve() ไม่หยิบไปส่งก่อนเวลา · รอบลองใหม่ส่งเฉพาะ target ที่ claim แล้ว
+              ...(retryTargetId
+                ? { id: retryTargetId }
+                : { nextRetryAt: null }),
+            }
+          : {}),
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -1770,6 +1780,7 @@ export class CampaignRolloutService {
   private async autoApplyFirmware(
     rollout: CampaignRollout,
     actorId: string,
+    retryTargetId?: string,
   ): Promise<CampaignRollout> {
     if (!rollout.firmwareId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
     const firmwareId = rollout.firmwareId;
@@ -1784,7 +1795,16 @@ export class CampaignRolloutService {
         status: 'pending',
         // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
         // ตอน resume() หลัง Auto Pause (เหมือน autoApplyConfig ข้างบน)
-        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+        ...(rollout.applyMode === 'central'
+          ? {
+              centralCommandId: null,
+              // docs/31 (รีวิว A #440): ตัวที่รอรอบลองใหม่ส่งผ่านกลไก claim เท่านั้น — resume()/
+              // approve() ไม่หยิบไปส่งก่อนเวลา · รอบลองใหม่ส่งเฉพาะ target ที่ claim แล้ว
+              ...(retryTargetId
+                ? { id: retryTargetId }
+                : { nextRetryAt: null }),
+            }
+          : {}),
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -2230,13 +2250,15 @@ export class CampaignRolloutService {
   async startFieldApplyRollout(
     rolloutId: string,
     actorId: string,
+    // docs/31 — รอบลองใหม่: target ที่ `claimDueRetries()` claim แล้ว (ส่งเฉพาะตัวนี้)
+    options?: { retryTargetId?: string },
   ): Promise<CampaignRollout> {
     const rollout = await this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rolloutId },
     });
     return rollout.payloadType === 'Firmware'
-      ? this.autoApplyFirmware(rollout, actorId)
-      : this.autoApplyConfig(rollout, actorId);
+      ? this.autoApplyFirmware(rollout, actorId, options?.retryTargetId)
+      : this.autoApplyConfig(rollout, actorId, options?.retryTargetId);
   }
 
   /**

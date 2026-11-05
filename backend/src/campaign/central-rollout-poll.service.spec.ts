@@ -374,7 +374,7 @@ describe('CentralRolloutPollService', () => {
     it('รอบใหม่ที่ถึงเวลา: push -> startFieldApplyRollout() · finish -> บันทึกผลตามชนิด', async () => {
       const service = await build();
       retry!.claimDueRetries.mockResolvedValue([
-        { kind: 'push', rolloutId: 'r-9', actorId: 'op-1' },
+        { kind: 'push', rolloutId: 'r-9', targetId: 't-9', actorId: 'op-1' },
         {
           kind: 'finish',
           targetId: 't-8',
@@ -397,7 +397,9 @@ describe('CentralRolloutPollService', () => {
 
       const result = await service.poll();
 
-      expect(startFieldApplyRollout).toHaveBeenCalledWith('r-9', 'op-1');
+      expect(startFieldApplyRollout).toHaveBeenCalledWith('r-9', 'op-1', {
+        retryTargetId: 't-9',
+      });
       expect(result.retried).toBe(1);
       expect(recordTargetResult).toHaveBeenCalledWith(
         'D8',
@@ -412,7 +414,7 @@ describe('CentralRolloutPollService', () => {
     it('ส่งรอบใหม่ throw -> ไม่ทำให้ poll ล้ม (lease หมดแล้วหยิบใหม่เอง)', async () => {
       const service = await build();
       retry!.claimDueRetries.mockResolvedValue([
-        { kind: 'push', rolloutId: 'r-9', actorId: 'op-1' },
+        { kind: 'push', rolloutId: 'r-9', targetId: 't-9', actorId: 'op-1' },
       ]);
       startFieldApplyRollout.mockRejectedValue(new Error('boom'));
 
