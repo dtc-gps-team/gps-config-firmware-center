@@ -29,7 +29,6 @@ import {
   CONFIG_APPLY_MODE,
   type ConfigApplyMode,
 } from '../device/config-applier';
-import { mergeApprovedOverride } from '../device/config-override-merge';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
@@ -157,8 +156,9 @@ export interface ApplyOptionConfig {
   latestVersion: number;
   /** Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ (docs/28 D5) */
   suggested: boolean;
-  /** ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของกล่องกับ
-   * Config ตัวนี้ (merge แบบเดียวกับตอนส่ง) ให้ช่างดูก่อนเลือก */
+  /** ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่งของกล่อง
+   * กับ Config ตัวนี้ (merge แบบเดียวกับตอนส่ง) ให้ช่างดูก่อนเลือก · ไม่มีแถวรอส่ง
+   * = ค่าต้นฉบับของ Config (มติ B 2026-11-03 — Override ใช้ครั้งเดียว) */
   fields: Record<string, unknown>;
 }
 
@@ -576,13 +576,16 @@ export class ConfigApplyRequestService implements OnModuleInit {
         },
       },
     });
-    // Override ที่อนุมัติแล้วของกล่องนี้ — แถวล่าสุดต่อ Config เก็บค่าสะสมไว้แล้ว
-    // (เหมือน `mergeApprovedOverride`) query เดียวแทนทีละ Config
+    // Override ที่อนุมัติแล้วแต่**ยังไม่ถูกส่ง**ของกล่องนี้ — แถวล่าสุดต่อ Config
+    // (เหมือน `mergeApprovedOverride`) query เดียวแทนทีละ Config · มติ B 2026-11-03:
+    // Override ใช้ครั้งเดียว ค่าที่เคยแก้และส่งไปแล้วไม่ถูกนับ หน้าเลือก Config จึง
+    // เห็นค่าต้นฉบับ (ปกติไม่มีแถวรอส่ง เพราะโหมด central ขอใหม่ไม่ได้ระหว่างมีคำขอค้าง)
     const overrides = configs.length
       ? await this.prisma.deviceConfigOverride.findMany({
           where: {
             deviceId,
             status: 'approved',
+            consumedAt: null,
             configId: { in: configs.map((c) => c.id) },
           },
           orderBy: { versionNumber: 'desc' },
@@ -698,12 +701,13 @@ export class ConfigApplyRequestService implements OnModuleInit {
         views.push({ ...row, config: null, fieldNames: [], override });
         continue;
       }
-      const { fields } = await mergeApprovedOverride(
-        this.prisma,
-        row.deviceId,
-        row.configId,
-        row.config.fields,
-      );
+      // ชื่อ field ที่คำขอนี้ส่ง = Config + Override ของคำขอนี้เอง (มติ B 2026-11-03 —
+      // Override ใช้ครั้งเดียวและผูกกับคำขอที่พามัน ไม่ใช่แถวล่าสุดของกล่อง ซึ่งหลัง
+      // ส่งแล้วถูกใช้ไปแล้ว ประวัติคำขอเก่าจะได้ไม่เปลี่ยนตาม)
+      const fields = {
+        ...asFieldMap(row.config.fields),
+        ...asFieldMap(row.override?.fields ?? null),
+      };
       const { fields: _baseFields, ...config } = row.config;
       void _baseFields;
       views.push({ ...row, config, fieldNames: Object.keys(fields), override });

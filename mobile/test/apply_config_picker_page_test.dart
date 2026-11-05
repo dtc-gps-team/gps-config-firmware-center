@@ -362,6 +362,19 @@ void main() {
       expect(find.byKey(const Key('apply_param_led.enabled')), findsNothing);
     });
 
+    testWidgets(
+      'บอกช่างว่าค่าที่แก้มีผลเฉพาะการส่งครั้งนี้ ครั้งหน้าเริ่มจากค่าต้นฉบับ (มติ B 2026-11-03)',
+      (tester) async {
+        await pump(tester, startAt: AppRoutes.deviceApply('DVC-1'));
+        await openParams(tester, 'cfg-1');
+
+        expect(
+          find.textContaining('ค่าที่แก้มีผลเฉพาะการส่งครั้งนี้'),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('ค่าที่ไม่มีนิยามในระบบ -> ซ่อนไว้ก่อนเหมือนค่าลับ แก้ไม่ได้', (
       tester,
     ) async {

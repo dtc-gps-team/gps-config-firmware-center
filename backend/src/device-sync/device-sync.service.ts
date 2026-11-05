@@ -3,7 +3,10 @@ import { Config } from '@prisma/client';
 import { CampaignRolloutService } from '../campaign/campaign-rollout.service';
 import { TARGETABLE_DEVICE_STATUS } from '../campaign/campaign-rollout.service';
 import { APPLICABLE_CONFIG_STATUSES } from '../device/config-applier';
-import { mergeApprovedOverride } from '../device/config-override-merge';
+import {
+  markOverrideConsumed,
+  mergeApprovedOverride,
+} from '../device/config-override-merge';
 import { PrismaService } from '../prisma/prisma.service';
 import { JobResult } from './dto/report-job-result.dto';
 
@@ -251,6 +254,25 @@ export class DeviceSyncService {
       message,
       rollout.id,
     );
+    // ใช้ครั้งเดียว (มติ B 2026-11-03): กล่องยืนยันว่าใช้ Config แล้ว mark Override
+    // ที่ถูก merge ตอนดึงงาน · เครื่องดึงงานซ้ำได้ระหว่างรอผล จึง mark ตอนรายงานผล
+    // สำเร็จ ไม่ใช่ตอนดึง · เลือกเฉพาะแถวที่อนุมัติก่อนดึงงานครั้งแรก (`pulledAt`)
+    // (รีวิว A #432 ข้อ 1): แถวที่อนุมัติหลังกล่องดึงไปแล้วกล่องไม่เคยได้ ต้องไม่ถูก
+    // mark — ถ้ากล่องดึงซ้ำแล้วได้แถวใหม่ไป แถวนั้นยังไม่ mark และจะถูกส่งอีกครั้ง
+    // ในการส่งครั้งถัดไป (ส่งซ้ำดีกว่าหายเงียบ)
+    if (claimed && success && rollout.configId) {
+      const pulledOverride = await this.prisma.deviceConfigOverride.findFirst({
+        where: {
+          deviceId,
+          configId: rollout.configId,
+          status: 'approved',
+          consumedAt: null,
+          decidedAt: { lte: target.pulledAt ?? new Date() },
+        },
+        orderBy: { versionNumber: 'desc' },
+      });
+      await markOverrideConsumed(this.prisma, pulledOverride);
+    }
     if (claimed) return { accepted: true };
     // แพ้การ claim (มีผลเข้ามาพร้อมกัน) ข้อความของเครื่องนี้ยังต้องไม่หาย
     await this.appendLateReport(target.id, result, detail);

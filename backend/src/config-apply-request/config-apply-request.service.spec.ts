@@ -1615,7 +1615,7 @@ describe('ConfigApplyRequestService', () => {
       });
     });
 
-    it('fields = ค่าที่จะส่งจริง: Config + Override ที่อนุมัติแล้วล่าสุดของกล่องนี้ (ต่อ Config)', async () => {
+    it('fields = ค่าที่จะส่งจริง: Config + Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่งของกล่องนี้ (ต่อ Config) · ใช้ไปแล้วไม่นับ (มติ B 2026-11-03)', async () => {
       prisma.deviceConfigOverride = {
         findMany: jest.fn().mockResolvedValue([
           { configId: 'a', versionNumber: 5, fields: { INTERVAL: 10 } },
@@ -1629,6 +1629,7 @@ describe('ConfigApplyRequestService', () => {
         where: {
           deviceId: DEVICE_ID,
           status: 'approved',
+          consumedAt: null,
           configId: { in: ['a', CONFIG_ID] },
         },
         orderBy: { versionNumber: 'desc' },
