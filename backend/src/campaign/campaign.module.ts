@@ -143,6 +143,12 @@ import {
       inject: [NestConfigService],
     },
   ],
-  exports: [CampaignService, CampaignRolloutService, RolloutEvents],
+  exports: [
+    CampaignService,
+    CampaignRolloutService,
+    RolloutEvents,
+    // docs/31 R2 — config-apply-request อ่านจำนวนครั้งสูงสุดไปแสดงใน progress API
+    FieldApplyRetryService,
+  ],
 })
 export class CampaignModule {}

@@ -24,6 +24,7 @@ import {
 import { ConfigApplyRequestService } from './config-apply-request.service';
 import {
   FIELD_APPLY_RESULT_EVENT,
+  FIELD_APPLY_RETRY_EVENT,
   FIELD_APPLY_ROLLOUT_STARTER,
   type FieldApplyRolloutStarter,
 } from './field-apply-rollout';
@@ -1497,6 +1498,220 @@ describe('ConfigApplyRequestService', () => {
       expect(requests.updateMany).toHaveBeenCalledWith({
         where: { rolloutId: ROLLOUT_ID, status: 'sending' },
         data: expect.objectContaining({ status: 'failed' }) as unknown,
+      });
+    });
+  });
+
+  // docs/31 R2 — แจ้งเตือนรายรอบ + ประวัติรายรอบใน progress
+  describe('ลองส่งใหม่อัตโนมัติ (docs/31 R2)', () => {
+    const sending = { ...pending, status: 'sending', rolloutId: ROLLOUT_ID };
+    const attempt = (
+      attemptNo: number,
+      status: string,
+      over: Record<string, unknown> = {},
+    ) => ({
+      id: `a-${attemptNo}`,
+      targetId: 'target-1',
+      attemptNo,
+      centralCommandId: `CMD-${attemptNo}`,
+      status,
+      errorCode: status === 'failed' ? 'DEVICE_DISCONNECTED' : null,
+      detail: status === 'failed' ? `รอบ ${attemptNo} หลุด` : null,
+      startedAt: new Date(`2026-11-05T10:0${attemptNo}:00.000Z`),
+      finishedAt: new Date(`2026-11-05T10:0${attemptNo}:30.000Z`),
+      ...over,
+    });
+
+    it('ฟัง FIELD_APPLY_RETRY_EVENT -> แจ้งช่างที่ถืองาน config_apply_retrying พร้อมรอบ สาเหตุ และรอบถัดไป', async () => {
+      requests.findFirst.mockResolvedValue(sending);
+
+      events.emit(FIELD_APPLY_RETRY_EVENT, {
+        rolloutId: ROLLOUT_ID,
+        attemptNo: 1,
+        maxAttempts: 3,
+        errorCode: 'DEVICE_DISCONNECTED',
+        detail: 'กล่องหลุด',
+        nextRetryAt: '2026-11-05T10:00:30.000Z',
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(requests.findFirst).toHaveBeenCalledWith({
+        where: { rolloutId: ROLLOUT_ID, status: 'sending' },
+      });
+      expect(notification.send).toHaveBeenCalledWith({
+        userId: tech.id,
+        type: 'config_apply_retrying',
+        payload: {
+          requestId: REQUEST_ID,
+          kind: 'config',
+          taskId: TASK_ID,
+          deviceId: DEVICE_ID,
+          attemptNo: 1,
+          maxAttempts: 3,
+          nextAttemptNo: 2,
+          errorCode: 'DEVICE_DISCONNECTED',
+          detail: 'กล่องหลุด',
+          nextRetryAt: '2026-11-05T10:00:30.000Z',
+        },
+      });
+      // ไม่เปลี่ยนสถานะคำขอ (ยัง sending)
+      expect(requests.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ไม่มีคำขอ sending ของ Rollout นี้ -> false ไม่แจ้ง · DB ล้ม -> false ไม่ throw', async () => {
+      requests.findFirst.mockResolvedValueOnce(null);
+      const event = {
+        rolloutId: ROLLOUT_ID,
+        attemptNo: 1,
+        maxAttempts: 3,
+        errorCode: null,
+        detail: 'x',
+        nextRetryAt: '2026-11-05T10:00:30.000Z',
+      };
+      await expect(service.notifyRetrying(event)).resolves.toBe(false);
+      requests.findFirst.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.notifyRetrying(event)).resolves.toBe(false);
+      expect(notification.send).not.toHaveBeenCalled();
+    });
+
+    it('สำเร็จหลังลองใหม่ -> payload บอกรอบที่สำเร็จ', async () => {
+      requests.findUniqueOrThrow.mockResolvedValue({
+        ...sending,
+        status: 'succeeded',
+      });
+      rolloutTargets.findFirst.mockResolvedValue({
+        attempts: [attempt(1, 'failed'), attempt(2, 'succeeded')],
+      });
+
+      await service.recordRolloutOutcome({
+        rolloutId: ROLLOUT_ID,
+        outcome: 'succeeded',
+        detail: 'สำเร็จ',
+      });
+
+      expect(notification.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'config_apply_succeeded',
+          payload: expect.objectContaining({
+            attemptNo: 2,
+            maxAttempts: 3,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('ล้มครบ -> payload มี attempts[] สรุปทุกรอบ', async () => {
+      requests.findUniqueOrThrow.mockResolvedValue({
+        ...sending,
+        status: 'failed',
+      });
+      rolloutTargets.findFirst.mockResolvedValue({
+        attempts: [
+          attempt(1, 'failed'),
+          attempt(2, 'failed'),
+          attempt(3, 'failed'),
+        ],
+      });
+
+      await service.recordRolloutOutcome({
+        rolloutId: ROLLOUT_ID,
+        outcome: 'failed',
+        detail: 'ส่ง 3 ครั้งไม่สำเร็จ',
+      });
+
+      expect(notification.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'config_apply_failed',
+          payload: expect.objectContaining({
+            outcome: 'failed',
+            detail: 'ส่ง 3 ครั้งไม่สำเร็จ',
+            maxAttempts: 3,
+            attempts: [1, 2, 3].map((n) => ({
+              attemptNo: n,
+              status: 'failed',
+              errorCode: 'DEVICE_DISCONNECTED',
+              detail: `รอบ ${n} หลุด`,
+            })),
+          }) as unknown,
+        }),
+      );
+    });
+
+    describe('progress: retry', () => {
+      const released = {
+        ...sending,
+        releasedAt: new Date('2026-11-05T10:00:00.000Z'),
+        config,
+        firmware: null,
+      };
+
+      it('รอรอบใหม่ (รอบล่าสุดจบ ไม่มีคำสั่ง) -> nextRetryAt + attempts[] · central null', async () => {
+        service = await build(starter, 'central');
+        requests.findFirst.mockResolvedValue(released);
+        rolloutTargets.findFirst.mockResolvedValue({
+          centralCommandId: null,
+          attemptCount: 1,
+          nextRetryAt: new Date('2026-11-05T10:01:30.000Z'),
+          attempts: [attempt(1, 'failed')],
+        });
+
+        const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+        expect(result.central).toBeNull();
+        expect(result.retry).toEqual({
+          attemptNo: 1,
+          maxAttempts: 3,
+          nextRetryAt: '2026-11-05T10:01:30.000Z',
+          attempts: [
+            {
+              attemptNo: 1,
+              status: 'failed',
+              errorCode: 'DEVICE_DISCONNECTED',
+              detail: 'รอบ 1 หลุด',
+              startedAt: '2026-11-05T10:01:00.000Z',
+              finishedAt: '2026-11-05T10:01:30.000Z',
+            },
+          ],
+        });
+        // อ่าน target ของ Rollout ของคำขอนี้เท่านั้น (IDOR)
+        expect(rolloutTargets.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { rolloutId: ROLLOUT_ID, deviceId: DEVICE_ID },
+          }),
+        );
+      });
+
+      it('กำลังส่งรอบใหม่ (lease) -> nextRetryAt null ไม่ใช่เวลารอ', async () => {
+        service = await build(starter, 'central');
+        requests.findFirst.mockResolvedValue(released);
+        rolloutTargets.findFirst.mockResolvedValue({
+          centralCommandId: null,
+          attemptCount: 2,
+          nextRetryAt: new Date('2026-11-05T10:03:00.000Z'),
+          attempts: [
+            attempt(1, 'failed'),
+            attempt(2, 'sending', { finishedAt: null, centralCommandId: null }),
+          ],
+        });
+
+        const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+        expect(result.retry).toMatchObject({ attemptNo: 2, nextRetryAt: null });
+      });
+
+      it('ไม่มีประวัติรายรอบ (ส่งก่อน docs/31) -> retry null', async () => {
+        service = await build(starter, 'central');
+        requests.findFirst.mockResolvedValue(released);
+        rolloutTargets.findFirst.mockResolvedValue({
+          centralCommandId: null,
+          attemptCount: 1,
+          nextRetryAt: null,
+          attempts: [],
+        });
+
+        const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+        expect(result.retry).toBeNull();
       });
     });
   });
