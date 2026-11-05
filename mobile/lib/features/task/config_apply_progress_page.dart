@@ -22,7 +22,8 @@ const progressPollInterval = Duration(seconds: 2);
 /// เปิดซ้ำได้จากแถบในหน้างาน · ถาม `GET /tasks/{taskId}/config-apply-requests/
 /// {id}/progress` ทุก [progressPollInterval] · ภาพกลางจอเปลี่ยนตามขั้นที่กล่อง
 /// รายงานจริงผ่าน Server กลาง ไม่มีข้อมูลขั้นตอน (ไม่ใช่โหมด central หรือ
-/// Server กลางล่ม) = เหลือ 3 ขั้นตามสถานะคำขอของเรา
+/// Server กลางล่ม) = เหลือ 3 ขั้นตามสถานะคำขอของเรา · ลองส่งใหม่อัตโนมัติ
+/// (docs/31 §3.7): ป้าย "รอบ 2/3", นับถอยหลังตอนรอรอบใหม่ และประวัติการส่งรายรอบ
 class ConfigApplyProgressPage extends ConsumerStatefulWidget {
   const ConfigApplyProgressPage({
     super.key,
@@ -157,6 +158,8 @@ class _ConfigApplyProgressPageState
     final elapsed = _elapsedSeconds(progress, outcome);
     final retry = outcome == _Outcome.rolledBack || outcome == _Outcome.failed;
     final deviceId = task?.deviceId;
+    final attemptBadge = _badgeAttempt(progress, outcome);
+    final attempts = progress?.retry?.attempts ?? const <ConfigApplyAttempt>[];
 
     return AppV2Theme(
       child: Scaffold(
@@ -216,6 +219,38 @@ class _ConfigApplyProgressPageState
                             fontFeatures: [FontFeature.tabularFigures()],
                           ),
                         ),
+                        if (attemptBadge != null) ...[
+                          const SizedBox(height: 8),
+                          KeyedSubtree(
+                            key: const Key('apply_progress_attempt_badge'),
+                            // เริ่มรอบใหม่ = ป้ายเด้งเข้ามาพร้อมเลขรอบใหม่
+                            child: AnimatedSwitcher(
+                              duration: _reducedMotion
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 350),
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(
+                                      scale: Tween(begin: .6, end: 1.0).animate(
+                                        CurvedAnimation(
+                                          parent: animation,
+                                          curve: Curves.easeOutBack,
+                                        ),
+                                      ),
+                                      child: child,
+                                    ),
+                                  ),
+                              child: AppBadge(
+                                key: ValueKey(attemptBadge),
+                                label:
+                                    'รอบ $attemptBadge/'
+                                    '${progress!.retry!.maxAttempts}',
+                                tone: AppBadgeTone.info,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -249,6 +284,10 @@ class _ConfigApplyProgressPageState
                       ],
                     ),
                   ),
+                  if (_showHistory(attempts)) ...[
+                    const SizedBox(height: 10),
+                    _AttemptHistory(attempts: attempts),
+                  ],
                   if (outcome != _Outcome.running && progress != null) ...[
                     const SizedBox(height: 10),
                     _ResultCard(
@@ -359,6 +398,27 @@ _Outcome _outcome(ConfigApplyRequestProgress? p) {
   return _Outcome.running;
 }
 
+/// กำลังรอส่งรอบใหม่ (docs/31) — backend ให้ `nextRetryAt` เฉพาะช่วงนี้
+bool _waitingRetry(ConfigApplyRequestProgress? p, _Outcome outcome) =>
+    outcome == _Outcome.running && p?.retry?.nextRetryAt != null;
+
+/// เลขรอบบนป้าย — รอรอบใหม่ = รอบที่กำลังจะส่ง · null = ไม่แสดง (ยังเป็นรอบแรก)
+int? _badgeAttempt(ConfigApplyRequestProgress? p, _Outcome outcome) {
+  final retry = p?.retry;
+  if (retry == null || retry.maxAttempts <= 1) return null;
+  final n = _waitingRetry(p, outcome) ? retry.attemptNo + 1 : retry.attemptNo;
+  return n > 1 ? n : null;
+}
+
+/// ประวัติแสดงเมื่อมีมากกว่า 1 รอบ หรือรอบเดียวที่ไม่สำเร็จ
+bool _showHistory(List<ConfigApplyAttempt> attempts) =>
+    attempts.length > 1 ||
+    attempts.any(
+      (a) =>
+          a.status == ConfigApplyAttemptStatus.failed ||
+          a.status == ConfigApplyAttemptStatus.skipped,
+    );
+
 ConfigApplyProgressStepKey _finalKey(_Outcome outcome) => switch (outcome) {
   _Outcome.rolledBack => ConfigApplyProgressStepKey.rolledBack,
   _Outcome.failed => ConfigApplyProgressStepKey.failed,
@@ -376,18 +436,31 @@ List<_Step> _stepsFor(ConfigApplyRequestProgress? p, _Outcome outcome) {
   };
 
   if (!_hasCentralSteps(p)) {
-    // ไม่มีขั้นตอนจริงจากกล่อง — 3 ขั้นตามสถานะคำขอของเรา
+    // ไม่มีขั้นตอนจริงจากกล่อง — 3 ขั้นตามสถานะคำขอของเรา · รอรอบใหม่ = รอบนี้ยัง
+    // ไม่ได้ส่ง · รอบใหม่กำลังส่ง = ยังไม่ถึงกล่อง (docs/31)
+    final latest = p?.retry?.attempts.lastOrNull;
+    final waiting = _waitingRetry(p, outcome);
+    final sending =
+        running && latest?.status == ConfigApplyAttemptStatus.sending;
     return [
       _Step(
         ConfigApplyProgressStepKey.delivered,
         'ส่งถึงกล่อง',
-        _StepState.done,
-        at: p?.releasedAt,
+        waiting
+            ? _StepState.todo
+            : sending
+            ? _StepState.now
+            : _StepState.done,
+        at: waiting || sending ? null : (latest?.startedAt ?? p?.releasedAt),
       ),
       _Step(
         ConfigApplyProgressStepKey.installing,
         firmware ? 'กล่องกำลังติดตั้ง' : 'กล่องกำลังรับค่าใหม่',
-        running ? _StepState.now : _StepState.done,
+        !running
+            ? _StepState.done
+            : waiting || sending
+            ? _StepState.todo
+            : _StepState.now,
       ),
       _Step(
         finalKey,
@@ -464,6 +537,12 @@ String _headline(
       return 'ส่งไม่สำเร็จ';
     case _Outcome.running:
       break;
+  }
+  final nextAt = p.retry?.nextRetryAt;
+  if (nextAt != null) {
+    final left = (nextAt.difference(DateTime.now()).inMilliseconds / 1000)
+        .ceil();
+    return left > 0 ? 'จะลองใหม่ในอีก ${_mmss(left)}' : 'กำลังเริ่มรอบใหม่';
   }
   if (p.central?.deviceOnline == false) return 'รอกล่องออนไลน์';
   return switch (current?.key) {
@@ -714,7 +793,11 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final firmware = progress.kind == FieldApplyKind.firmware;
     final ok = outcome == _Outcome.succeeded;
-    final message = progress.central?.errorMessage;
+    final attempts = progress.retry?.attempts ?? const <ConfigApplyAttempt>[];
+    final message =
+        progress.central?.errorMessage ??
+        attempts.lastOrNull?.detail ??
+        attempts.lastOrNull?.errorCode;
     final (title, body) = switch (outcome) {
       _Outcome.succeeded => (
         firmware ? 'ติดตั้งสำเร็จ' : 'กล่องรับค่าใหม่แล้ว',
@@ -728,7 +811,9 @@ class _ResultCard extends StatelessWidget {
         '${message ?? 'Firmware ใหม่ใช้งานไม่ได้หลังรีบูต'} · ส่งใหม่ได้',
       ),
       _ => (
-        'ส่งไม่สำเร็จ',
+        attempts.length > 1
+            ? 'ส่ง ${attempts.length} ครั้งไม่สำเร็จ'
+            : 'ส่งไม่สำเร็จ',
         message ?? 'กล่องไม่ได้รับคำสั่งนี้ ลองส่งใหม่อีกครั้ง',
       ),
     };
@@ -751,6 +836,108 @@ class _ResultCard extends StatelessWidget {
           Text(
             body,
             style: TextStyle(fontSize: AppTypography.sm, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _attemptStatusLabel(ConfigApplyAttemptStatus status) => switch (status) {
+  ConfigApplyAttemptStatus.sending => 'กำลังส่ง',
+  ConfigApplyAttemptStatus.sent => 'ส่งแล้ว รอผล',
+  ConfigApplyAttemptStatus.succeeded => 'สำเร็จ',
+  ConfigApplyAttemptStatus.failed => 'ไม่สำเร็จ',
+  ConfigApplyAttemptStatus.skipped => 'ข้าม (กล่องไม่พร้อม)',
+};
+
+/// ประวัติการส่งรายรอบ (docs/31 §3.7) — เวลาเริ่ม + สาเหตุที่ล้ม
+class _AttemptHistory extends StatelessWidget {
+  const _AttemptHistory({required this.attempts});
+  final List<ConfigApplyAttempt> attempts;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      key: const Key('apply_progress_history'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'ประวัติการส่ง',
+            style: TextStyle(
+              fontSize: AppTypography.sm,
+              fontWeight: FontWeight.w700,
+              color: AppColors.foreground,
+            ),
+          ),
+          for (final a in attempts) _AttemptRow(attempt: a),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttemptRow extends StatelessWidget {
+  const _AttemptRow({required this.attempt});
+  final ConfigApplyAttempt attempt;
+
+  @override
+  Widget build(BuildContext context) {
+    final bad =
+        attempt.status == ConfigApplyAttemptStatus.failed ||
+        attempt.status == ConfigApplyAttemptStatus.skipped;
+    final reason = attempt.detail ?? attempt.errorCode;
+    return Padding(
+      key: Key('apply_progress_attempt_${attempt.attemptNo}'),
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              'รอบ ${attempt.attemptNo}',
+              style: const TextStyle(
+                fontSize: AppTypography.sm,
+                fontWeight: FontWeight.w600,
+                color: AppColors.foreground,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _attemptStatusLabel(attempt.status),
+                  style: TextStyle(
+                    fontSize: AppTypography.sm,
+                    color: switch (attempt.status) {
+                      ConfigApplyAttemptStatus.succeeded => AppColors.success,
+                      _ when bad => AppColors.warning,
+                      _ => AppColors.foreground,
+                    },
+                  ),
+                ),
+                if (bad && reason != null)
+                  Text(
+                    reason,
+                    style: const TextStyle(
+                      fontSize: AppTypography.xs,
+                      color: AppColors.mutedForeground,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            _clock(attempt.startedAt),
+            style: const TextStyle(
+              fontSize: AppTypography.xs,
+              color: AppColors.mutedForeground,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),

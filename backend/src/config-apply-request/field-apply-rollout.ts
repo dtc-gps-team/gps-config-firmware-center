@@ -18,8 +18,10 @@ import { Prisma } from '@prisma/client';
 
 export {
   FIELD_APPLY_RESULT_EVENT,
+  FIELD_APPLY_RETRY_EVENT,
   type FieldApplyOutcome,
   type FieldApplyResultEvent,
+  type FieldApplyRetryEvent,
 } from '../campaign/rollout-events';
 
 /** payload ของ Rollout เครื่องเดียว (docs/27 §6) — `kind` ไม่ส่ง = Config

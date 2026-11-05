@@ -101,6 +101,19 @@ class NotificationTypeStyle {
           if (deviceId != null) 'อุปกรณ์: $deviceId',
           if (detail != null) 'เหตุผล: $detail',
         ];
+      // docs/31 §3.5 — สาเหตุของรอบที่ล้ม + รอบที่ระบบกำลังจะลอง
+      case NotificationType.configApplyRetrying:
+        final deviceId = text('deviceId');
+        final detail = text('detail');
+        final next = _int(n.payload['nextAttemptNo']);
+        final max = _int(n.payload['maxAttempts']);
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          if (detail != null) 'เหตุผล: $detail',
+          next != null && max != null
+              ? 'กำลังลองใหม่ รอบ $next/$max'
+              : 'ระบบกำลังลองส่งใหม่',
+        ];
       default:
         return const [];
     }
@@ -125,6 +138,7 @@ class NotificationTypeStyle {
       case NotificationType.configApplySucceeded:
       case NotificationType.configApplyFailed:
       case NotificationType.configApplyExpired:
+      case NotificationType.configApplyRetrying:
         final taskId = idOf('taskId');
         return taskId == null ? null : AppRoutes.taskDetail(taskId);
       case NotificationType.configOverridePending:
@@ -149,14 +163,15 @@ class NotificationTypeStyle {
   /// [label] ของแจ้งเตือนหนึ่งรายการ — คำขอส่งเข้ากล่องที่เป็น Firmware (payload
   /// `kind: firmware`, docs/27 B2) เปลี่ยนคำว่า Config เป็น Firmware
   static String labelOf(AppNotification n) {
-    final base = label(n.type);
+    final base = _retryTitle(n) ?? label(n.type);
     final isApplyRequest = switch (n.type) {
       NotificationType.configApplyPending ||
       NotificationType.configApplyApproved ||
       NotificationType.configApplyRejected ||
       NotificationType.configApplySucceeded ||
       NotificationType.configApplyFailed ||
-      NotificationType.configApplyExpired => true,
+      NotificationType.configApplyExpired ||
+      NotificationType.configApplyRetrying => true,
       _ => false,
     };
     return isApplyRequest && n.payload['kind'] == 'firmware'
@@ -169,7 +184,7 @@ class NotificationTypeStyle {
   /// รายละเอียดช่วยอธิบาย · คำขอส่งที่เป็น Firmware เปลี่ยน Config เป็น
   /// Firmware เหมือน [labelOf]
   static String shortLabelOf(AppNotification n) {
-    final base = _shortLabel(n.type);
+    final base = _retryTitle(n) ?? _shortLabel(n.type);
     return category(n.type) == NotificationCategory.apply &&
             n.payload['kind'] == 'firmware'
         ? base.replaceAll('Config', 'Firmware')
@@ -203,6 +218,7 @@ class NotificationTypeStyle {
     NotificationType.configApplySucceeded => 'ส่ง Config เข้ากล่องสำเร็จ',
     NotificationType.configApplyFailed => 'ส่ง Config เข้ากล่องไม่สำเร็จ',
     NotificationType.configApplyExpired => 'คำขอส่ง Config หมดอายุ',
+    NotificationType.configApplyRetrying => 'ส่ง Config ไม่สำเร็จ กำลังลองใหม่',
   };
 
   /// ผลของเรื่องนี้ต่อผู้รับ ใช้เลือกสีวงไอคอนและป้าย "ต้องดำเนินการ"
@@ -229,7 +245,9 @@ class NotificationTypeStyle {
     NotificationType.configApplyFailed ||
     NotificationType.configApplyExpired => NotificationTone.failure,
     NotificationType.incidentReportDismissed ||
-    NotificationType.incidentReportPromoted => NotificationTone.info,
+    NotificationType.incidentReportPromoted ||
+    // docs/31 — ระบบลองใหม่เอง ช่างไม่ต้องทำอะไร จึงไม่ใช้ action (ป้าย "ต้องดำเนินการ")
+    NotificationType.configApplyRetrying => NotificationTone.info,
   };
 
   static NotificationCategory category(NotificationType type) => switch (type) {
@@ -239,7 +257,8 @@ class NotificationTypeStyle {
     NotificationType.configApplyRejected ||
     NotificationType.configApplySucceeded ||
     NotificationType.configApplyFailed ||
-    NotificationType.configApplyExpired => NotificationCategory.apply,
+    NotificationType.configApplyExpired ||
+    NotificationType.configApplyRetrying => NotificationCategory.apply,
     NotificationType.configOverridePending ||
     NotificationType.configOverrideApproved ||
     NotificationType.configOverrideRejected ||
@@ -289,7 +308,26 @@ class NotificationTypeStyle {
       'ส่ง Config ที่คุณขอเข้าเครื่องไม่สำเร็จ',
     NotificationType.configApplyExpired =>
       'คำขอส่ง Config ของคุณหมดอายุ (ไม่มีใครตัดสิน หรือไม่ได้กดส่งใน 24 ชม.)',
+    NotificationType.configApplyRetrying =>
+      'ส่ง Config เข้ากล่องไม่สำเร็จ ระบบกำลังลองใหม่',
   };
+
+  /// หัวข้อของ `configApplyRetrying` ที่บอกรอบ (docs/31 §3.5 "ส่ง Config รอบ 1/3 ไม่สำเร็จ")
+  /// · payload ไม่ครบ = null ให้ใช้หัวข้อทั่วไป
+  static String? _retryTitle(AppNotification n) {
+    if (n.type != NotificationType.configApplyRetrying) return null;
+    final attempt = _int(n.payload['attemptNo']);
+    final max = _int(n.payload['maxAttempts']);
+    return attempt != null && max != null
+        ? 'ส่ง Config รอบ $attempt/$max ไม่สำเร็จ'
+        : null;
+  }
+
+  static int? _int(Object? v) => v is int
+      ? v
+      : v is num
+      ? v.toInt()
+      : null;
 
   /// เรื่องด่วน (Mobile UI Roadmap Phase 1) — incident ใหม่ที่ยังไม่มีใครจัดการ
   /// (`incidentReportPending` ส่งให้ Operation ตอนมี report ใหม่) หรือ
@@ -351,5 +389,6 @@ class NotificationTypeStyle {
     NotificationType.configApplySucceeded => Icons.check_circle_outline,
     NotificationType.configApplyFailed => Icons.error_outline,
     NotificationType.configApplyExpired => Icons.timer_off_outlined,
+    NotificationType.configApplyRetrying => Icons.autorenew,
   };
 }
