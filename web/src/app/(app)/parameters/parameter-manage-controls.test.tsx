@@ -9,6 +9,18 @@ vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { accessToken: "tok", role: "ConfigEngineer" } }),
 }));
 
+vi.mock("@/hooks/use-device-models", () => ({
+  useDeviceModels: () => ({
+    data: [
+      { id: "m1", name: "GT06N", supportedProtocols: ["TCP"], status: "active" },
+      { id: "m2", name: "BB-200", supportedProtocols: ["mqtt"], status: "active" },
+    ],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 const updateMock = vi.hoisted(() => vi.fn());
 const deleteMock = vi.hoisted(() => vi.fn());
 const usageMock = vi.hoisted(() => vi.fn());
@@ -81,6 +93,77 @@ describe("ParameterManageControls", () => {
     expect(input).not.toHaveProperty("fieldName");
     expect(input.minValue).toBe(0);
     expect(input.maxValue).toBe(200);
+  });
+
+  describe("โมเดลที่รองรับ", () => {
+    async function openEdit(user: ReturnType<typeof userEvent.setup>) {
+      render(
+        <ParameterManageControls
+          definition={definition}
+          onChanged={vi.fn()}
+          onDeleted={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /แก้ไข/ }));
+    }
+
+    it("ไม่แตะโมเดล -> ไม่ส่ง supportedModels/appliesToAllModels", async () => {
+      updateMock.mockResolvedValue(definition);
+      const user = userEvent.setup();
+      await openEdit(user);
+
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      await waitFor(() => expect(updateMock).toHaveBeenCalled());
+      const input = (updateMock.mock.calls[0] as [string, string, object])[2];
+      expect(input).not.toHaveProperty("supportedModels");
+      expect(input).not.toHaveProperty("appliesToAllModels");
+    });
+
+    it("ติ๊กใช้ได้กับทุกโมเดล -> ส่ง appliesToAllModels: true ไม่แตะ supportedModels", async () => {
+      updateMock.mockResolvedValue(definition);
+      const user = userEvent.setup();
+      await openEdit(user);
+
+      await user.click(screen.getByRole("checkbox", { name: /ใช้ได้กับทุกโมเดล/ }));
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      await waitFor(() => expect(updateMock).toHaveBeenCalled());
+      const input = (updateMock.mock.calls[0] as [string, string, object])[2];
+      expect(input).toMatchObject({ appliesToAllModels: true });
+      expect(input).not.toHaveProperty("supportedModels");
+    });
+
+    it("เพิ่มรุ่นใหม่ -> ส่ง supportedModels ครบชุด (รุ่นเดิม + รุ่นใหม่ ขยายตามโปรโตคอลในทะเบียน)", async () => {
+      updateMock.mockResolvedValue(definition);
+      const user = userEvent.setup();
+      await openEdit(user);
+
+      await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
+      await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      await waitFor(() => expect(updateMock).toHaveBeenCalled());
+      const input = (updateMock.mock.calls[0] as [string, string, { supportedModels: unknown[] }])[2];
+      expect(input.supportedModels).toEqual(
+        expect.arrayContaining([
+          { deviceModel: "GT06N", protocol: "TCP" },
+          { deviceModel: "BB-200", protocol: "mqtt" },
+        ]),
+      );
+      expect(input.supportedModels).toHaveLength(2);
+    });
+
+    it("ถอดรุ่นจนไม่เหลือและไม่ติ๊กทุกโมเดล -> แจ้ง error ไม่ส่ง request", async () => {
+      const user = userEvent.setup();
+      await openEdit(user);
+
+      await user.click(screen.getByRole("button", { name: "เอา GT06N ออก" }));
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      expect(await screen.findByText(/เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล/)).toBeInTheDocument();
+      expect(updateMock).not.toHaveBeenCalled();
+    });
   });
 
   it("ชนิดไม่ใช่ตัวเลข -> ไม่ส่ง min/max และไม่แสดงช่องค่าต่ำสุด/สูงสุด", async () => {

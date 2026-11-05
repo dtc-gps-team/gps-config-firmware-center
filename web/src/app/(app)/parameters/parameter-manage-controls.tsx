@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Notice } from "@/components/ui/notice";
+import { useDeviceModels } from "@/hooks/use-device-models";
 import { ApiError } from "@/lib/api";
 import {
   deleteConfigDefinition,
@@ -24,8 +26,10 @@ import {
   updateConfigDefinition,
   type ConfigDefinitionUsage,
   type ConfigFieldDefinition,
+  type ConfigFieldModelSupport,
   type UpdateConfigDefinitionInput,
 } from "@/lib/config-definition-api";
+import { ModelPicker, expandModelsToSupport } from "./model-picker";
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
@@ -179,16 +183,70 @@ function EditParameterDialog({
   const [sensitive, setSensitive] = useState(d.sensitive);
   const [restartRequired, setRestartRequired] = useState(d.restartRequired);
   const [stOverridable, setStOverridable] = useState(d.stOverridable);
+  const [appliesToAllModels, setAppliesToAllModels] = useState(
+    d.appliesToAllModels,
+  );
+  const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(
+    () => new Set(d.supportedModels.map((m) => m.deviceModel)),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ทะเบียนรุ่นใช้เลือกโมเดลที่รองรับ — โหลดไม่ได้ก็ยังแก้ฟิลด์อื่นได้ แค่ไม่แตะส่วนโมเดล
+  const deviceModels = useDeviceModels();
+  const registry = useMemo(
+    () =>
+      [...(deviceModels.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [deviceModels.data],
+  );
+  const modelsReady = deviceModels.data !== null;
+  // คู่ที่ผูกไว้กับรุ่นที่ไม่อยู่ในทะเบียน (ข้อมูลเก่า) เลือก/ถอดในหน้านี้ไม่ได้ —
+  // คงไว้ตามเดิมตอนบันทึก ไม่ให้หายเงียบๆ
+  const legacyPairs: ConfigFieldModelSupport[] = useMemo(() => {
+    const registered = new Set(registry.map((m) => m.name));
+    return d.supportedModels.filter((m) => !registered.has(m.deviceModel));
+  }, [registry, d.supportedModels]);
+
   const numeric = NUMERIC_TYPES.includes(d.dataType);
+
+  function pairKey(list: ConfigFieldModelSupport[]): string {
+    return list
+      .map((m) => `${m.deviceModel}/${m.protocol}`)
+      .sort()
+      .join(",");
+  }
 
   async function submit() {
     if (!session?.accessToken) return;
-    setSubmitting(true);
     setError(null);
+
+    // ส่งฟิลด์โมเดลเฉพาะที่เปลี่ยนจริง (PATCH แทนที่ทั้งชุด) · เปิด "ทุกโมเดล" ไม่แตะแถวเดิม
+    const modelFields: Pick<
+      UpdateConfigDefinitionInput,
+      "supportedModels" | "appliesToAllModels"
+    > = {};
+    if (modelsReady) {
+      if (appliesToAllModels !== d.appliesToAllModels) {
+        modelFields.appliesToAllModels = appliesToAllModels;
+      }
+      if (!appliesToAllModels) {
+        const next = [
+          ...expandModelsToSupport(registry, selectedModelNames),
+          ...legacyPairs,
+        ];
+        if (next.length === 0) {
+          setError('เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล หรือเปิด "ใช้ได้กับทุกโมเดล"');
+          return;
+        }
+        if (pairKey(next) !== pairKey(d.supportedModels)) {
+          modelFields.supportedModels = next;
+        }
+      }
+    }
+
+    setSubmitting(true);
     const input: UpdateConfigDefinitionInput = {
+      ...modelFields,
       description: description.trim() === "" ? null : description.trim(),
       unit: unit.trim() === "" ? null : unit.trim(),
       category: category.trim() === "" ? null : category.trim(),
@@ -321,6 +379,67 @@ function EditParameterDialog({
                 {label}
               </label>
             ))}
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>โมเดลที่รองรับ</Label>
+            {!modelsReady ? (
+              <p className="text-xs text-muted-foreground">
+                {deviceModels.error
+                  ? "โหลดทะเบียนโมเดลไม่ได้ แก้ส่วนโมเดลตอนนี้ไม่ได้ (ฟิลด์อื่นยังแก้ได้)"
+                  : "กำลังโหลดทะเบียนโมเดล…"}
+              </p>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={appliesToAllModels}
+                    onChange={(e) => setAppliesToAllModels(e.target.checked)}
+                  />
+                  ใช้ได้กับทุกโมเดล
+                </label>
+                {appliesToAllModels && required && !d.appliesToAllModels && (
+                  <Notice tone="warning">
+                    ตั้งเป็นบังคับกรอกและใช้ได้ทุกโมเดล Config ทุกรุ่นต้องมีค่านี้ทันที
+                    Config เดิมที่ยังไม่มีจะบันทึกการแก้ไขไม่ผ่านจนกว่าจะใส่ค่านี้
+                  </Notice>
+                )}
+                {!appliesToAllModels && (
+                  <>
+                    <ModelPicker
+                      models={registry}
+                      selected={selectedModelNames}
+                      onToggle={(name) =>
+                        setSelectedModelNames((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(name)) next.delete(name);
+                          else next.add(name);
+                          return next;
+                        })
+                      }
+                      onSetMany={(names, on) =>
+                        setSelectedModelNames((prev) => {
+                          const next = new Set(prev);
+                          for (const n of names) {
+                            if (on) next.add(n);
+                            else next.delete(n);
+                          }
+                          return next;
+                        })
+                      }
+                    />
+                    {legacyPairs.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        รุ่นนอกทะเบียน (คงไว้ตามเดิม แก้ในหน้านี้ไม่ได้):{" "}
+                        {legacyPairs
+                          .map((m) => `${m.deviceModel}/${m.protocol}`)
+                          .join(", ")}
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
