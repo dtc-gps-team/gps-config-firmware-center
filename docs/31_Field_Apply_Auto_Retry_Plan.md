@@ -1,14 +1,14 @@
 # แผนให้ระบบลองส่งเข้ากล่องใหม่เองเมื่อส่งไม่สำเร็จ (ส่งจากหน้างาน · โหมด central)
 
-> **สถานะ:** แผน — B ตัดสินมติ §2 แล้ว (4 พ.ย. 2569) · A รีวิวรอบ 1 แล้ว (4 พ.ย. 2569) แก้ตามรีวิวใน §3.1, §3.3,
-> §3.4, §3.6, §4, §5 · แตะโมดูล `campaign` (`CentralRolloutPollService`, `CampaignRolloutService`) และ schema ที่ใช้ร่วมกัน
+> **สถานะ:** แผน — B ตัดสินมติ §2 แล้ว (4 พ.ย. 2569) · A รีวิวรอบ 1 (4 พ.ย.) และรอบ 2 (5 พ.ย. 2569) แก้ตามรีวิวใน
+> §3.1, §3.3, §3.4, §3.6, §4, §5 · แตะโมดูล `campaign` (`CentralRolloutPollService`, `CampaignRolloutService`) และ schema ที่ใช้ร่วมกัน
 >
-> **รอ #432:** ส่วน Override ใช้ครั้งเดียวของ Config (§3.4) อิง `DeviceConfigOverride.consumedAt` ที่มากับ #432
-> (ยังไม่ merge) · R1 เริ่มหลัง #432 merge
+> **#432 merge แล้ว (5 พ.ย. 2569, `d10a38a`):** ส่วน Override ใช้ครั้งเดียวของ Config (§3.4) อิง
+> `DeviceConfigOverride.consumedAt` ที่มากับ #432 · R1 เริ่มได้
 >
 > **ต่อจาก:** docs/25 (คำขอส่ง Config จากหน้างาน), docs/27 (อนุมัติแล้วช่างกดส่งเอง + Firmware) · ไม่แก้มติเดิมของสองฉบับนั้น
 >
-> **ที่มาของข้อมูล:** `main` ที่ `847d15b` (+ #432 ส่วน `consumedAt`) + ผลส่ง Firmware เข้า BOX-0001 จริง 2–4 พ.ย. 2569 (§1.1)
+> **ที่มาของข้อมูล:** `main` ที่ `d10a38a` + ผลส่ง Firmware เข้า BOX-0001 จริง 2–4 พ.ย. 2569 (§1.1)
 
 ---
 
@@ -69,9 +69,16 @@
 - ฟังก์ชันใหม่ `isRetryableCentralOutcome(command)` อยู่ที่ `central-config.ts` คู่กัน เขียนเป็น **denylist ของ "ไม่ลอง"**
   (`rejected` ตอนส่ง, `SUPERSEDED`, `CANCELLED`) · นอกนั้นลองใหม่ทั้งหมด รหัสใหม่ที่ gateway เพิ่มในอนาคตจึงได้ลองใหม่
   โดยไม่ต้องแก้โค้ด · มี test ครบทุกแถวของตารางนี้ + รหัสที่ไม่รู้จัก
-- ดักใน `CentralRolloutPollService` **ก่อน**ถึง `markTargetSkippedOffline()` / `recordTargetResult(false)`: ถ้าเป็น Rollout
-  ส่งจากหน้างาน + `isRetryableCentralOutcome()` + `attemptCount < MAX` → ตั้งรอบใหม่ (§3.4) · ไม่เข้าเงื่อนไข → เรียก
-  `markTargetSkippedOffline()` / `recordTargetResult()` เดิมตรงๆ
+- มี **2 จุดดัก** เพราะผลล้มมาได้ 2 ทาง:
+  - **ทางที่ 1 — ผลจบจาก poll:** ดักใน `CentralRolloutPollService` **ก่อน**ถึง `markTargetSkippedOffline()` /
+    `recordTargetResult(false)`
+  - **ทางที่ 2 — ส่งไม่ถึง Server กลาง (`unavailable` / throw):** target ยังไม่มี `centralCommandId` จึงไม่เคยเข้า poll ·
+    ดักใน `pushToCentral()` / `pushFirmwareToCentral()` ของ `CampaignRolloutService` ตรงที่วันนี้เรียก
+    `recordTargetResult(false)` เมื่อ `outcome.kind !== 'sent'` และใน try/catch รอบลูป auto-apply ที่นับ throw เป็น failed
+    (เฉพาะช่วงส่งให้ Server กลาง) · ทั้งรอบแรก (ตอน release) และรอบลองใหม่ผ่านสองฟังก์ชันนี้เหมือนกัน จึงครอบทุกรอบ
+  - ทั้งสองทางเรียก helper เดียวกัน `scheduleFieldApplyRetryOrFinish()`: ถ้าเป็น Rollout ส่งจากหน้างาน + ลองใหม่ได้ +
+    `attemptCount < MAX` → ตั้งรอบใหม่ (§3.4) · ไม่เข้าเงื่อนไข → เรียก `markTargetSkippedOffline()` /
+    `recordTargetResult()` เดิมตรงๆ · ส่วน `rejected` (Server กลางปฏิเสธ) ไม่ลองใหม่ทั้งสองทาง
 - **ครบ 3 รอบแล้วรอบสุดท้ายเป็น `DEVICE_OFFLINE` / `TTL_EXPIRED`** → จบเป็น `skipped_offline` เหมือนวันนี้ ไม่นับเป็น
   failure ไม่ Auto Pause ไม่เปิด Incident · ฝั่งผู้ขอได้ `config_apply_failed` เหมือนเดิม (`config-apply-request.service.ts`
   แจ้งแบบนี้อยู่แล้ว) แค่ payload มี `attempts[]` เพิ่ม · รอบสุดท้ายที่เป็น failed จบเป็น failed + Incident ตามเดิม
@@ -126,17 +133,33 @@ poll ได้ผลจบของ target (field apply เท่านั้น
        → ปิด attempt ล่าสุด → markTargetSkippedOffline() หรือ recordTargetResult(false, สรุปทุกรอบ) ตามผล
          classifyCentralCommand() เดิม (Incident เปิดครั้งเดียวตรงนี้ เฉพาะ failed)
 
+pushToCentral / pushFirmwareToCentral ได้ผลไม่ใช่ sent (unavailable / rejected) หรือ throw ช่วงส่ง
+ └─ helper เดียวกับข้างบน: unavailable/throw + attemptCount < MAX → ตั้งรอบใหม่ · นอกนั้น recordTargetResult(false) เดิม
+
 poll รอบเดียวกัน (query แยกจาก query เดิมที่หยิบ centralCommandId ไม่ null):
   where status = pending AND centralCommandId IS NULL AND nextRetryAt IS NOT NULL AND nextRetryAt <= now
         AND rollout.campaign.name = FIELD_APPLY_SYSTEM_CAMPAIGN_NAME
-       → claim: updateMany where { id, attemptCount: เดิม, nextRetryAt: { not: null } }
-         set { attemptCount: เดิม + 1, nextRetryAt: null } · count = 0 → poll อื่นหยิบไปแล้ว ข้าม
-       → pushToCentral / pushFirmwareToCentral เดิม → สร้าง attempt ใหม่
+   ├─ attemptCount < MAX
+   │    → claim แบบ lease: updateMany where { id, attemptCount: เดิม, nextRetryAt: เดิม }
+   │      set { attemptCount: เดิม + 1, nextRetryAt: now + LEASE } · count = 0 → poll อื่นหยิบไปแล้ว ข้าม
+   │    → pushToCentral / pushFirmwareToCentral เดิม → สร้าง attempt ใหม่
+   │      · sent → บันทึก centralCommandId + nextRetryAt = null ใน update เดียวกัน (ปลด lease)
+   │      · ไม่ sent / throw → helper ตั้ง nextRetryAt รอบถัดไป หรือจบ (ปลด lease เช่นกัน)
+   └─ attemptCount >= MAX (lease ของรอบสุดท้ายหมดโดยไม่มีผล = process ตายกลางทาง)
+        → claim แบบเดียวกัน → ปิด attempt ค้างเป็น failed "ส่งไม่ถึง Server กลาง (ค้างหลังเริ่มส่ง)"
+        → recordTargetResult(false, สรุปทุกรอบ)
 ```
+- **lease กันค้างหลัง claim (รีวิว A รอบ 2):** claim ไม่ตั้ง `nextRetryAt = null` แต่ตั้งเป็น `now + LEASE`
+  (`FIELD_APPLY_CLAIM_LEASE_SEC`, ค่าเริ่ม **60 วินาที** — ต้องมากกว่าเวลาส่งหนึ่งครั้ง: `CENTRAL_TIMEOUT_MS` ค่าเริ่ม
+  5 วินาทีต่อคำขอ) · ถ้า process ตาย/throw หลุดหลัง claim แต่ก่อนบันทึก `centralCommandId` → พอ lease หมด query รอบใหม่
+  หยิบ target นั้นอีกครั้งเอง ไม่ค้างถาวร · รอบที่ค้างนับเป็น 1 ครั้ง (ปิด attempt เป็น failed) แล้วลองต่อถ้ายังไม่ครบ
+  ถ้าครบแล้วจบเป็น failed · claim ใช้ `nextRetryAt: เดิม` ใน where จึงไม่มีสอง poll หยิบ lease เดียวกัน
+- **ข้อจำกัดที่รู้:** ถ้า process ตาย**หลัง** Server กลางรับคำสั่งแต่**ก่อน**บันทึก `centralCommandId` พอ lease หมดจะส่งซ้ำ
+  1 ครั้ง (กล่องได้ของเดิมซ้ำ ไม่ผิดค่า แต่เสียรอบ) · ยอมรับได้เพราะเป็นของเดิมทุกรอบ (§3.2)
 - poll service เพิ่ม `campaign: { select: { name: true } }` ใต้ `rollout` ใน include เพื่อเช็คชื่อ Campaign ระบบ (แบบเดียวกับที่
   `campaign-rollout.service.ts` ใช้ `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` อยู่)
 - target เดิมทั้งหมดมี `nextRetryAt = null` จึงไม่มีทางถูกหยิบไปลองใหม่ (เงื่อนไข `IS NOT NULL` เขียนไว้ชัด ไม่พึ่งแค่ `<= now`)
-- **Override ใช้ครั้งเดียว (รอ #432)** — #432 เพิ่ม `consumedAt` ที่ `DeviceConfigOverride` (แบบเดียวกับ
+- **Override ใช้ครั้งเดียว (#432)** — #432 เพิ่ม `consumedAt` ที่ `DeviceConfigOverride` (แบบเดียวกับ
   `DeviceFirmwareOverride.consumedAt` ที่มีบน main) และ mark เมื่อส่งสำเร็จ · รอบแรก merge ตามกติกาของ #432 แล้วเก็บ
   id ของแถวที่ merge ไว้ที่ `appliedConfigOverrideId` · **รอบลองใหม่ merge จาก id นี้เท่านั้น** ไม่ query หาแถว approved
   ล่าสุดใหม่ และไม่สน `consumedAt` ของแถวนั้น → Override ใหม่ที่ถูกอนุมัติระหว่างรอรอบใหม่ไม่ถูกดึงเข้า Rollout นี้
@@ -144,7 +167,8 @@ poll รอบเดียวกัน (query แยกจาก query เดิ
 - **คำขอหมดอายุ 24 ชม.** — นับถึงตอนกดส่ง คำขอที่ปล่อยแล้วลองต่อจนจบแม้เลยเวลา (รอรวมไม่เกินราว 1 นาที 40 วินาที
   + เวลาคำสั่ง ตาม §3.2)
 - **ไม่เปลี่ยนความหมายของ `recordTargetResult()` / `markTargetSkippedOffline()`** — Campaign ปกติเรียกแบบเดิมทุกกรณี
-- **AuditLog** — ทุกรอบที่ส่งใหม่ลง `apply-config` / `apply-firmware` พร้อม `attemptNo` (การนำค่าไปใช้เกิดทุกรอบ)
+- **AuditLog** — ทุกรอบที่ส่งใหม่ลง action เดิมของแต่ละทาง (`apply-config` / `confirm-firmware-install` ตามที่
+  `pushToCentral()` / `pushFirmwareToCentral()` เขียนอยู่) พร้อม `attemptNo` (การนำค่าไปใช้เกิดทุกรอบ)
 
 ### 3.5 การแจ้งเตือน (โมดูล config-apply-request / notification ของ B)
 
@@ -178,7 +202,7 @@ poll รอบเดียวกัน (query แยกจาก query เดิ
 
 | PR | เจ้าของ | เนื้อหา |
 |---|---|---|
-| R1 | B (A ตกลง 4 พ.ย. 2569 · A รีวิว) | migration §3.3 · retry ใน `CentralRolloutPollService` + re-push ใน `CampaignRolloutService` · `FIELD_APPLY_RETRY_EVENT` · unit + integration · เริ่มหลัง #432 merge |
+| R1 | B (A ตกลง 4 พ.ย. 2569 · A รีวิว) | migration §3.3 · retry ใน `CentralRolloutPollService` + re-push ใน `CampaignRolloutService` · `FIELD_APPLY_RETRY_EVENT` · unit + integration · 2 จุดดัก + lease (§3.1, §3.4) |
 | R2 | B | รับ event → แจ้งเตือน `config_apply_retrying` + payload ใหม่ของ succeeded/failed · progress API `attempts[]` · openapi/RBAC |
 | R3 | B | Mobile: หน้าความคืบหน้า + หน้าแจ้งเตือน |
 
@@ -191,5 +215,10 @@ poll รอบเดียวกัน (query แยกจาก query เดิ
 - unit: target ที่ `centralCommandId = null` + `nextRetryAt = null` (ข้อมูลเดิม) ไม่ถูกหยิบไปลองใหม่ · Campaign ปกติ (ไม่ใช่
   Campaign ระบบ) ที่ล้มยังเรียก `recordTargetResult()` / `markTargetSkippedOffline()` แบบเดิมทันที
 - unit: ครบ 3 รอบแล้วรอบสุดท้ายเป็น `DEVICE_OFFLINE` → `skipped_offline` ไม่ Auto Pause ไม่เปิด Incident
+- unit (ทางที่ 2): `pushToCentral()` / `pushFirmwareToCentral()` ได้ `unavailable` หรือ throw → ตั้ง `nextRetryAt` ไม่เรียก
+  `recordTargetResult(false)` · ครบ 3 รอบแล้วยัง `unavailable` → failed · `rejected` → failed ทันที · Campaign ปกติ →
+  `recordTargetResult(false)` ทันทีเหมือนเดิม
+- unit (lease): claim แล้วไม่บันทึกผล (จำลอง process ตาย) → lease หมด → ถูกหยิบใหม่และนับรอบ · lease ของรอบสุดท้ายหมด →
+  failed · สอง poll แย่ง lease เดียวกัน → ส่งครั้งเดียว
 - integration: ล้ม → retrying 2 ครั้ง → failed 1 ครั้ง (Incident 1 อัน) · ล้ม 1 ครั้งแล้วสำเร็จ
 - กล่องจริง BOX-0001: ส่ง Config แล้วปิด Wi-Fi ของกล่อง ~1 นาที (`DEVICE_DISCONNECTED`) → เปิดกลับ → ต้องสำเร็จในรอบ 2
