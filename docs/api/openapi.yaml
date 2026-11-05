@@ -1450,7 +1450,7 @@ paths:
     get:
       tags: [config-apply-request]
       operationId: getConfigApplyRequestProgress
-      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84 · v3.85 เพิ่ม retry)
+      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84 · v3.87 เพิ่ม retry)
       description: >-
         ใช้สิทธิ์และ scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests`.
         คำขอที่ไม่อยู่ในงานหรือผู้ใช้มองไม่เห็นงานตอบ 404. อ่านสถานะสดจาก Server กลาง
@@ -1460,7 +1460,7 @@ paths:
         (ไม่มี IP, path หรือ key) ตัดไว้ไม่เกิน 200 ตัวอักษร.
         `fromVersion` มีเฉพาะ Firmware (เวอร์ชันก่อนส่ง) · Config เป็น `null`
         เพราะไม่รู้ว่ากล่องใช้ Config ใดอยู่จริง.
-        **v3.85 (docs/31 R2):** `retry` = ประวัติการลองส่งใหม่อัตโนมัติรายรอบ
+        **v3.87 (docs/31 R2):** `retry` = ประวัติการลองส่งใหม่อัตโนมัติรายรอบ
         (สิทธิ์ไม่เปลี่ยน อ่านเฉพาะ target ของ Rollout ของคำขอนี้ ไม่รับ id ของ
         target/attempt จาก client) · อยู่ระดับบนสุดไม่ใช่ใน `central` เพราะช่วงรอ
         รอบใหม่ไม่มีรหัสคำสั่ง (`central` เป็น null) · `null` = ไม่มีประวัติรายรอบ
@@ -7732,7 +7732,7 @@ components:
             # (payload.outcome = skipped_offline) · _expired = ไม่มีใครตัดสินใน 24 ชม.
             # · docs/27: เพิ่ม _approved (อนุมัติแล้ว ช่างที่ถือ Task กดส่งได้ —
             # payload.expiresAt = เส้นตาย) แทนมติ Q5 · แจ้งช่างที่ถือ Task แทนผู้ขอ
-            # · v3.85 (docs/31): _retrying = รอบหนึ่งส่งไม่สำเร็จ ระบบจะลองใหม่เอง
+            # · v3.87 (docs/31): _retrying = รอบหนึ่งส่งไม่สำเร็จ ระบบจะลองใหม่เอง
             # (payload.attemptNo/maxAttempts/nextAttemptNo/errorCode/detail/nextRetryAt)
             # · _succeeded เพิ่ม payload.attemptNo/maxAttempts · _failed เพิ่ม
             # payload.maxAttempts + attempts[] (เฉพาะคำขอที่มีประวัติรายรอบ)
