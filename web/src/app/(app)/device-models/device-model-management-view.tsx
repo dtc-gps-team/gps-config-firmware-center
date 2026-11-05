@@ -121,6 +121,7 @@ export function DeviceModelManagementView() {
           <DeviceModelRowActions
             model={row.original}
             onUpdated={handleUpdated}
+            onDeleted={handleUpdated}
           />
         ),
       },

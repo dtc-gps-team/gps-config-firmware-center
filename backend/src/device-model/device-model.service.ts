@@ -7,6 +7,7 @@ import { DeviceModel, Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockDeviceModelForDelete } from './device-model-lock';
 import { CreateDeviceModelDto } from './dto/create-device-model.dto';
 import { UpdateDeviceModelDto } from './dto/update-device-model.dto';
 
@@ -81,7 +82,7 @@ export class DeviceModelService {
    */
   private async logAudit(
     tx: Prisma.TransactionClient,
-    action: 'create' | 'update',
+    action: 'create' | 'update' | 'delete',
     actor: ActingUser,
     metadata: AuditLogMetadata,
   ): Promise<void> {
@@ -173,5 +174,63 @@ export class DeviceModelService {
       }
       throw err;
     }
+  }
+
+  /**
+   * `DELETE /device-models/{id}` — ลบจริงได้เฉพาะรุ่นที่ **ไม่มีอะไรอ้างอิงอยู่เลย** (มติ A 2026-11-05:
+   * "เลิกผลิต" เป็นปุ่มหลัก ลบจริงเฉพาะที่ไม่มีอะไรผูก เช่นสร้างรุ่นผิดชื่อ) ผู้อ้างอิงที่นับ: อุปกรณ์
+   * (`modelId` ทุกสถานะ รวมปลดระวางแล้ว), Config (ชื่อรุ่น รวมที่ลบแบบ soft delete แล้ว), Firmware
+   * (`deviceModelCompatibility` รวมที่ลบแล้ว), พารามิเตอร์ (`supportedModels`) · มีอย่างใดอย่างหนึ่ง
+   * -> 409 บอกจำนวนแต่ละชนิดและชี้ไป "ปรับเป็นเลิกผลิต" แทน
+   *
+   * ล็อกแถว FOR UPDATE แล้วตรวจซ้ำหลังได้ล็อก คู่กับ `lockDeviceModelForUse()` ฝั่งสร้าง/แก้ Config กัน
+   * TOCTOU (ดู device-model-lock.ts) · บันทึกชื่อรุ่นลง AuditLog (snapshot ให้อ่าน log รู้เรื่องหลังลบ)
+   */
+  async remove(id: string, actor: ActingUser): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await lockDeviceModelForDelete(tx, id);
+      const model = await tx.deviceModel.findUniqueOrThrow({ where: { id } });
+      const name = model.name;
+
+      const [devices, configs, configsDeleted, firmware, parameters] =
+        await Promise.all([
+          tx.device.count({ where: { modelId: id } }),
+          tx.config.count({ where: { deviceModel: name } }),
+          tx.config.count({
+            where: { deviceModel: name, deletedAt: { not: null } },
+          }),
+          tx.firmware.count({
+            where: { deviceModelCompatibility: { has: name } },
+          }),
+          tx.configFieldDefinitionModelSupport.count({
+            where: { deviceModel: name },
+          }),
+        ]);
+
+      const used: string[] = [];
+      if (devices > 0) {
+        used.push(`อุปกรณ์ ${devices} เครื่อง (รวมที่ปลดระวางแล้ว)`);
+      }
+      if (configs > 0) {
+        used.push(
+          configsDeleted > 0
+            ? `Config ${configs} ตัว (ลบแล้ว ${configsDeleted})`
+            : `Config ${configs} ตัว`,
+        );
+      }
+      if (firmware > 0) used.push(`Firmware ${firmware} ตัว`);
+      if (parameters > 0) used.push(`พารามิเตอร์ ${parameters} รายการ`);
+      if (used.length > 0) {
+        throw new ConflictException(
+          `ลบรุ่น "${name}" ไม่ได้ เพราะยังมีข้อมูลอ้างอิงอยู่: ${used.join(', ')} - ใช้ "ปรับเป็นเลิกผลิต" แทน (รุ่นเดิมยังแสดงและใช้งานกับเครื่องที่มีอยู่ได้ตามปกติ)`,
+        );
+      }
+
+      await tx.deviceModel.delete({ where: { id } });
+      await this.logAudit(tx, 'delete', actor, {
+        deviceModelId: model.id,
+        modelName: name,
+      });
+    });
   }
 }
