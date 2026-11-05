@@ -419,6 +419,20 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
     });
 
     // ฟีดแบ็ก 2026-11-04: บังคับกรอกคำอธิบายตอนสร้างพารามิเตอร์ใหม่
+    it('description เป็นช่องว่างล้วน -> 400', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validBody, description: '   ' })
+        .expect(400);
+    });
+
     it('ไม่ส่ง description มา -> 400', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',

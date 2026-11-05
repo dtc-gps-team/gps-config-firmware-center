@@ -6,6 +6,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -68,6 +69,7 @@ export class CreateConfigDefinitionDto {
    * (`UpdateConfigDefinitionDto`) ยังเลือกส่งหรือไม่ส่งก็ได้เหมือนเดิม */
   @IsString()
   @MinLength(1)
+  @Matches(/\S/, { message: 'description ต้องไม่เป็นช่องว่างล้วน' })
   description!: string;
 
   /** หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — metadata สำหรับแสดงผล
