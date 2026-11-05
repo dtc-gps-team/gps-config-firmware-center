@@ -69,177 +69,190 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
 
-    // เมื่อคีย์บอร์ดเปิด (โดยเฉพาะจอเล็ก/ความละเอียดต่ำ) พื้นที่เหนือคีย์บอร์ด
-    // เหลือไม่พอให้ทั้งโลโก้ + หัวข้อ + คำอธิบาย + ช่องกรอกทั้ง 2 + ปุ่ม login
-    // แสดงพร้อมกันได้ — ย่อส่วนที่ไม่จำเป็นตอนกรอกฟอร์ม (โลโก้, คำอธิบายรอง,
-    // mock banner, เวอร์ชันแอป) ออกไปก่อน เพื่อให้ปุ่ม login ยังอยู่ในระยะที่
-    // เลื่อนขึ้นมาเห็นได้ง่ายกว่าเดิม โดยไม่ต้องเขียนโครง layout ใหม่ทั้งหมด
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-
-    // design system ใหม่ (docs/22 Batch 2) — ไม่มี AppPageHeader (docs/22 §7.1:
-    // ทุกหน้ายกเว้น Login) · ปรับให้พรีเมียมขึ้น (docs/22 §4.6): พื้นไล่สีฟ้าอ่อนจาก
-    // ด้านบน, ฟอร์มอยู่ในแผงลอย (_LoginPanel) มุมมนกว่าการ์ดปกติ เงาลึกกว่า, แผง
-    // ค่อยๆ ปรากฏตอนเปิดหน้า · ตรรกะเหมือนเดิม
     return AppV2Theme(
       child: Scaffold(
-        body: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.center,
-              colors: [AppColors.primarySubtle, AppColors.background],
-            ),
-          ),
-          child: SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: keyboardOpen ? AppSpacing.lg : AppSpacing.xxxl,
+        backgroundColor: AppColors.primary,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxHeight < 700;
+              final panel = Container(
+                key: const Key('login_panel'),
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 480),
+                decoration: const BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppRadius.xxl),
+                  ),
                 ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: AppFadeIn(
-                    offset: 16,
-                    duration: AppMotion.slow,
-                    child: _LoginPanel(
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (!keyboardOpen) ...[
-                              const SizedBox(height: 8),
-                              const Center(child: _AppMark()),
-                              const SizedBox(height: 16),
-                            ],
-                            const Text(
-                              'GPS Config & Firmware Center',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppTypography.xxl,
-                                height: AppTypography.xxlHeight,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.foreground,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: AppFadeIn(
+                        offset: 16,
+                        duration: AppMotion.slow,
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'YOUR WORKSPACE',
+                                style: TextStyle(
+                                  color: AppColors.mutedForeground,
+                                  fontSize: AppTypography.xs,
+                                  letterSpacing: 1.4,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            if (!keyboardOpen) ...[
                               const SizedBox(height: 8),
                               const Text(
-                                'ระบบบริการและตั้งค่าอุปกรณ์ภาคสนาม',
-                                textAlign: TextAlign.center,
+                                'เข้าสู่ระบบ',
                                 style: TextStyle(
-                                  fontSize: AppTypography.base,
-                                  height: AppTypography.baseHeight,
-                                  color: AppColors.mutedForeground,
+                                  color: AppColors.foreground,
+                                  fontSize: AppTypography.xxl,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            ],
-                            if (AppConfig.apiMockMode && !keyboardOpen) ...[
-                              const SizedBox(height: 16),
-                              const _MockModeBanner(),
-                            ],
-                            SizedBox(height: keyboardOpen ? 16 : 24),
-                            TextFormField(
-                              key: const Key('login_username'),
-                              controller: _usernameController,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              textInputAction: TextInputAction.next,
-                              decoration: _fieldDecoration(
-                                label: 'ชื่อผู้ใช้',
-                                hint: 'กรอกชื่อผู้ใช้ของคุณ',
-                                prefixIcon: const Icon(
-                                  Icons.person_outline,
-                                  color: AppColors.mutedForeground,
-                                ),
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.trim().isEmpty)
-                                  ? 'กรุณากรอก Username'
-                                  : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              key: const Key('login_password'),
-                              controller: _passwordController,
-                              obscureText: _obscurePassword,
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _submit(),
-                              decoration: _fieldDecoration(
-                                label: 'รหัสผ่าน',
-                                hint: 'กรอกรหัสผ่าน',
-                                prefixIcon: const Icon(
-                                  Icons.lock_outline,
-                                  color: AppColors.mutedForeground,
-                                ),
-                                suffixIcon: IconButton(
-                                  key: const Key('login_password_toggle'),
-                                  onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  ),
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
+                              const SizedBox(height: 2),
+                              if (!keyboardOpen)
+                                const Text(
+                                  'ใช้บัญชีของคุณเพื่อเริ่มงาน',
+                                  style: TextStyle(
                                     color: AppColors.mutedForeground,
                                   ),
-                                  tooltip: _obscurePassword
-                                      ? 'แสดงรหัสผ่าน'
-                                      : 'ซ่อนรหัสผ่าน',
                                 ),
-                              ),
-                              validator: (value) =>
-                                  (value == null || value.isEmpty)
-                                  ? 'กรุณากรอก Password'
-                                  : null,
-                            ),
-                            if (auth.error != null) ...[
+                              if (AppConfig.apiMockMode && !keyboardOpen) ...[
+                                const SizedBox(height: 12),
+                                const _MockModeBanner(),
+                              ],
                               const SizedBox(height: 12),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 3),
-                                    child: Icon(
-                                      Icons.error_outline,
-                                      size: 18,
-                                      color: AppColors.destructive,
-                                    ),
+                              TextFormField(
+                                key: const Key('login_username'),
+                                controller: _usernameController,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                textInputAction: TextInputAction.next,
+                                decoration: _fieldDecoration(
+                                  label: 'ชื่อผู้ใช้',
+                                  hint: 'กรอกชื่อผู้ใช้ของคุณ',
+                                  prefixIcon: const Icon(
+                                    Icons.person_outline,
+                                    color: AppColors.mutedForeground,
                                   ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      auth.error!,
-                                      key: const Key('login_error'),
-                                      style: const TextStyle(
+                                ),
+                                validator: (value) =>
+                                    (value == null || value.trim().isEmpty)
+                                    ? 'กรุณากรอก Username'
+                                    : null,
+                              ),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                key: const Key('login_password'),
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                textInputAction: TextInputAction.done,
+                                onFieldSubmitted: (_) => _submit(),
+                                decoration: _fieldDecoration(
+                                  label: 'รหัสผ่าน',
+                                  hint: 'กรอกรหัสผ่าน',
+                                  prefixIcon: const Icon(
+                                    Icons.lock_outline,
+                                    color: AppColors.mutedForeground,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    key: const Key('login_password_toggle'),
+                                    onPressed: () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                      color: AppColors.mutedForeground,
+                                    ),
+                                    tooltip: _obscurePassword
+                                        ? 'แสดงรหัสผ่าน'
+                                        : 'ซ่อนรหัสผ่าน',
+                                  ),
+                                ),
+                                validator: (value) =>
+                                    (value == null || value.isEmpty)
+                                    ? 'กรุณากรอก Password'
+                                    : null,
+                              ),
+                              if (auth.error != null) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 3),
+                                      child: Icon(
+                                        Icons.error_outline,
+                                        size: 18,
                                         color: AppColors.destructive,
-                                        fontSize: AppTypography.sm,
-                                        height: AppTypography.smHeight,
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        auth.error!,
+                                        key: const Key('login_error'),
+                                        style: const TextStyle(
+                                          color: AppColors.destructive,
+                                          fontSize: AppTypography.sm,
+                                          height: AppTypography.smHeight,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              _SubmitButton(
+                                busy: auth.isBusy,
+                                onPressed: _submit,
                               ),
+                              if (!keyboardOpen)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 10),
+                                  child: Text(
+                                    'สำหรับช่างภาคสนามและฝ่ายปฏิบัติการ',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: AppColors.mutedForeground,
+                                      fontSize: AppTypography.xs,
+                                    ),
+                                  ),
+                                ),
+                              if (!keyboardOpen) const SizedBox(height: 4),
+                              if (!keyboardOpen) const _AppVersionText(),
                             ],
-                            const SizedBox(height: 24),
-                            _SubmitButton(
-                              busy: auth.isBusy,
-                              onPressed: _submit,
-                            ),
-                            if (!keyboardOpen) ...[
-                              const SizedBox(height: 16),
-                              const _AppVersionText(),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
+              );
+              return Column(
+                children: [
+                  // หัวสูงตามเนื้อหา (จอสูงให้อย่างน้อย ~32% ตามภาพ 1145) — เดิม
+                  // ล็อกสัดส่วน 40% ทำให้ล้นล่างบนจอเตี้ย
+                  if (!keyboardOpen)
+                    _LoginConceptHero(
+                      minHeight: compact ? 0 : constraints.maxHeight * 0.32,
+                    ),
+                  Expanded(child: panel),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -247,64 +260,78 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-/// แผงฟอร์มหน้า Login — การ์ดขาวลอยเด่นกลางจอ: มุม [AppRadius.xxl] เงา
-/// [AppShadows.floating] และ padding กว้างกว่าการ์ดปกติ ([AppCard] มุม xl เงาเบา)
-class _LoginPanel extends StatelessWidget {
-  const _LoginPanel({required this.child});
+class _LoginConceptHero extends StatelessWidget {
+  const _LoginConceptHero({required this.minHeight});
 
-  final Widget child;
+  final double minHeight;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('login_panel'),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.xxl,
-        AppSpacing.xxl,
-        AppSpacing.xxl,
-        AppSpacing.xl,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadius.xxl),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadows.floating,
-      ),
-      child: child,
-    );
-  }
-}
-
-/// สัญลักษณ์ของระบบแบบ `LogoMark` ของ Web — หมุดตำแหน่งในกรอบสี primary
-/// (`size-14 rounded-xl` = 56) ไม่มีตัวอักษร · ต่างจาก Web (§4.6): ไล่สี primary
-/// อ่อน → เข้ม + เงาสีฟ้า ([AppShadows.primaryGlow]) ให้เป็นจุดเน้นของหน้า
-class _AppMark extends StatelessWidget {
-  const _AppMark();
-
-  /// สีอ่อนด้านบนของการไล่สี — primary สว่างขึ้นเล็กน้อย
-  static const _top = Color(0xFF2E86CC);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 60,
-      height: 60,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_top, AppColors.primary],
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    constraints: BoxConstraints(minHeight: minHeight),
+    alignment: Alignment.centerLeft,
+    color: AppColors.primary,
+    padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+    child: const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.location_on_outlined,
+              color: AppColors.primarySubtle,
+              size: 30,
+            ),
+            SizedBox(width: 10),
+            // จอแคบ/ตัวอักษรใหญ่ ให้ชื่อหดและขึ้นบรรทัดใหม่ได้ ไม่ล้นขวา
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'GPS TECH',
+                    key: Key('login_hero'),
+                    style: TextStyle(
+                      color: AppColors.onInk,
+                      fontSize: AppTypography.base,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.8,
+                    ),
+                  ),
+                  Text(
+                    'TECHNICIAN WORKSPACE',
+                    style: TextStyle(
+                      color: AppColors.onInkMuted,
+                      fontSize: AppTypography.xs,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        boxShadow: AppShadows.primaryGlow,
-      ),
-      child: const Icon(
-        Icons.location_on_outlined,
-        color: AppColors.primaryForeground,
-        size: 30,
-      ),
-    );
-  }
+        SizedBox(height: 20),
+        Text(
+          'พร้อมสำหรับงานภาคสนาม',
+          style: TextStyle(
+            color: AppColors.onInk,
+            fontSize: AppTypography.xxl,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'จัดการอุปกรณ์ ติดตามงาน และดูงานล่าสุดของคุณในที่เดียว',
+          style: TextStyle(
+            color: AppColors.onInkMuted,
+            fontSize: AppTypography.sm,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SubmitButton extends StatelessWidget {

@@ -9,9 +9,10 @@ import '../../core/router/app_router.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
-import '../../core/ui/app_info_row.dart';
-import '../../core/ui/app_page_header.dart';
 import '../../core/ui/app_fade_in.dart';
+import '../../core/ui/app_info_row.dart';
+import '../../core/ui/app_ink_header.dart';
+import '../../core/ui/app_notice.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/ui/labels.dart';
@@ -21,9 +22,11 @@ import '../config_override/config_override_repository.dart';
 import '../config_override/pending_config_override_banner.dart';
 import '../firmware_override/pending_firmware_override_banner.dart';
 import '../task/apply_mode_provider.dart';
+import '../task/config_apply_request_repository.dart';
 import '../task/field_task_repository.dart';
 import '../task/task_repository.dart';
 import 'device_central_repository.dart';
+import 'device_history_repository.dart';
 import 'device_online.dart';
 import 'device_search_repository.dart';
 import 'device_status_repository.dart';
@@ -34,17 +37,21 @@ String _formatDate(DateTime dt) {
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
 }
 
-/// "รายละเอียดอุปกรณ์" — one device from `GET /devices/{deviceId}`, opened from
-/// a row on the search screen. Read-only aside from the action buttons: shows
-/// the fields of the `Device` record itself, plus a "สถานะ Config / Firmware"
-/// card from `GET /devices/{deviceId}/status` (issue #245, PR #247) that loads
-/// and fails independently of the device record.
+/// สถานะเครื่องเป็นคำที่ช่างอ่านเข้าใจ (ภาพ r4) — หน้าอื่นยังใช้ [deviceLifecycleLabel]
+String _lifecycleText(DeviceLifecycleStatus status) => switch (status) {
+  DeviceLifecycleStatus.registered => 'ลงทะเบียนแล้ว ยังไม่ติดตั้ง',
+  DeviceLifecycleStatus.installed => 'ติดตั้งแล้ว',
+  DeviceLifecycleStatus.decommissioned => 'ปลดระวางแล้ว',
+};
+
+/// "รายละเอียดอุปกรณ์" (R4-04 · ภาพ r4 0175–0264) — หัวพื้นเข้มบอกเลขเครื่อง รุ่น
+/// และซิม · การ์ด "สถานะเครื่อง" · คำเตือนที่เกี่ยวข้อง · ปุ่มหลัก "ขอส่ง Config /
+/// Firmware" และปุ่มรองตามสิทธิ์ · ทางลัดเป็นการ์ดเล็ก · ข้อมูลเครื่องเต็มอยู่ท้ายหน้า
 ///
-/// design system ใหม่ (docs/22 Batch 4): ป้ายสถานะเครื่อง + เลขเครื่องอยู่ใน
-/// `AppPageHeader` (§6.2 — ชื่อ record อยู่ใน meta) · ปุ่มทั้งหมดย้ายขึ้น actions ของ
-/// หัวหน้าจอ (role ที่ทำไม่ได้ = ซ่อน, ปุ่มหลักไว้ท้ายสุด) และเพิ่มปุ่ม "Field Report"
-/// สำหรับ ST/OT ตามตารางหน้าใน docs/22 §8 / §7.2 (pre-fill อุปกรณ์ผ่าน `?deviceId=`
-/// ที่ route รองรับอยู่แล้ว) · แถวข้อมูลเป็น `AppInfoRow` · ตรรกะ/การเรียก API เหมือนเดิม
+/// สิทธิ์และโหมดคงเดิม (docs/29 §2): ขอแก้ค่าเฉพาะเครื่อง = ST เท่านั้น · ยืนยันติดตั้ง
+/// Firmware/Firmware Override เฉพาะโหมด legacy · Operation ดูอย่างเดียว ·
+/// "เริ่มงาน/ไปที่งาน" (docs/28) อยู่ในทางลัดของช่าง · ส่งค่าเข้ากล่องได้เฉพาะเครื่อง
+/// ที่ติดตั้งแล้ว และ backend ยังเป็นผู้ตรวจจริงทุกครั้ง
 class DeviceDetailPage extends ConsumerWidget {
   const DeviceDetailPage({super.key, required this.deviceId});
 
@@ -53,158 +60,46 @@ class DeviceDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final deviceAsync = ref.watch(deviceDetailProvider(deviceId));
-    final role = ref.watch(authControllerProvider).role;
-    final isSt = role == UserRole.st;
-    // ยืนยันติดตั้ง Firmware (issue #261) และ Field Report (#236): backend เปิดให้ ST และ OT
-    final isFieldStaff = isSt || role == UserRole.ot;
     final navigator = Navigator.of(context);
     final device = deviceAsync.valueOrNull;
-    // docs/28 — งานที่ช่างเปิดอยู่ของกล่องนี้ ("เริ่มงาน" → "ไปที่งาน")
-    final openTask = isFieldStaff
-        ? ref.watch(openTaskForDeviceProvider(deviceId)).valueOrNull
-        : null;
-    // docs/27 §9 (B3) — โหมด central ส่ง Firmware ผ่านคำขอ ("อัปโหลด" → แท็บ
-    // Firmware) ปุ่มยืนยันติดตั้ง/Override แบบเดิมไม่ได้ส่งอะไรเข้ากล่องจริง จึงซ่อน
-    // · ยังไม่รู้โหมด = แสดงตามเดิม
-    final centralMode = isFieldStaff
-        ? ref.watch(centralApplyModeProvider).valueOrNull ?? false
-        : false;
-
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
-                title: 'รายละเอียดอุปกรณ์',
-                onBack: navigator.canPop() ? navigator.pop : null,
-                status: device == null
-                    ? null
-                    : AppBadge(
-                        label: deviceLifecycleLabel(device.status),
-                        tone: deviceLifecycleTone(device.status),
-                        dot: true,
-                      ),
-                meta: [
-                  if (device != null)
-                    AppPageHeaderMeta(
-                      label: 'เลขเครื่อง',
-                      value: device.deviceId,
+        backgroundColor: AppColors.background,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppInkHeader(
+              title: deviceId,
+              subtitle: device == null
+                  ? null
+                  : '${device.deviceModel} · ซิม ${device.simNumber}',
+              onBack: navigator.canPop() ? navigator.pop : null,
+            ),
+            Expanded(
+              child: deviceAsync.when(
+                skipLoadingOnRefresh: true,
+                data: (device) => AppFadeIn(
+                  child: _DeviceDetailView(device: device, deviceId: deviceId),
+                ),
+                loading: () => const AppDetailSkeleton(
+                  lines: 6,
+                  padding: EdgeInsets.fromLTRB(18, 16, 18, 16),
+                ),
+                error: (error, _) => ListView(
+                  children: [
+                    const SizedBox(height: 64),
+                    AppErrorView(
+                      message: _errorMessage(error),
+                      onRetry: () =>
+                          ref.invalidate(deviceDetailProvider(deviceId)),
+                      messageKey: const Key('device_detail_error'),
+                      retryKey: const Key('device_detail_retry'),
                     ),
-                ],
-                // ปุ่มแสดงหลังโหลดเครื่องสำเร็จเท่านั้น (เหมือนเดิมที่ปุ่มอยู่ในเนื้อหา) —
-                // โหลดไม่ได้ (เช่น 404) ไม่มีอะไรให้สั่ง
-                actions: device == null
-                    ? const []
-                    : [
-                        // UX audit #2 — กลับมาจากหน้าขอ Override แล้วโหลดคำขอที่รออยู่ใหม่
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_config_override'),
-                          label: 'Config Override',
-                          icon: Icons.tune,
-                          visible: isSt,
-                          onPressed: () => _pushThenRefresh(
-                            context,
-                            ref,
-                            deviceId: deviceId,
-                            path: AppRoutes.deviceConfigOverride(deviceId),
-                          ),
-                        ),
-                        // issue #256 — ทางขอ Firmware Override เมื่อ Firmware ที่ต้องการ
-                        // ติดตั้งไม่ตรงแผน Campaign (backend ตอบ 409 ที่ confirm-firmware-install)
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_firmware_override'),
-                          label: 'Firmware Override',
-                          icon: Icons.system_update_alt,
-                          visible: isSt && !centralMode,
-                          onPressed: () => _pushThenRefresh(
-                            context,
-                            ref,
-                            deviceId: deviceId,
-                            path: AppRoutes.deviceFirmwareOverride(deviceId),
-                          ),
-                        ),
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_field_report'),
-                          label: 'Field Report',
-                          icon: Icons.report_problem_outlined,
-                          visible: isFieldStaff,
-                          onPressed: () => context.push(
-                            Uri(
-                              path: AppRoutes.incidentReport,
-                              queryParameters: {'deviceId': deviceId},
-                            ).toString(),
-                          ),
-                        ),
-                        // issue #261 — ยืนยันว่าติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว (ST/OT)
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_confirm_firmware'),
-                          label: 'ยืนยันติดตั้ง Firmware',
-                          icon: Icons.check_circle_outline,
-                          visible: isFieldStaff && !centralMode,
-                          onPressed: () => context.push(
-                            AppRoutes.deviceConfirmFirmware(deviceId),
-                          ),
-                        ),
-                        // docs/28 §6 — ช่างเริ่มงานเอง (บันทึกงานที่ไปทำกับกล่อง)
-                        // · มีงานเปิดอยู่แล้ว = ไปที่งานนั้นเลย
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_start_task'),
-                          label: openTask == null ? 'เริ่มงาน' : 'ไปที่งาน',
-                          icon: openTask == null
-                              ? Icons.play_circle_outline
-                              : Icons.assignment_outlined,
-                          visible: isFieldStaff,
-                          onPressed: () => openTask == null
-                              ? _startTask(context, ref, deviceId)
-                              : context.push(AppRoutes.taskDetail(openTask.id)),
-                        ),
-                        // docs/28 §6 — ปุ่มหลัก: เลือก Config แล้วขออนุมัติ (เริ่มงาน
-                        // ให้อัตโนมัติ)
-                        AppPageHeaderAction(
-                          key: const Key('device_detail_upload'),
-                          label: 'อัปโหลด',
-                          icon: Icons.upload_outlined,
-                          primary: true,
-                          visible: isFieldStaff,
-                          onPressed: () async {
-                            await context.push(AppRoutes.deviceApply(deviceId));
-                            ref.invalidate(openTaskForDeviceProvider(deviceId));
-                          },
-                        ),
-                      ],
-              ),
-              Expanded(
-                child: deviceAsync.when(
-                  skipLoadingOnRefresh: true,
-                  data: (device) => AppFadeIn(
-                    child: _DeviceDetailView(
-                      device: device,
-                      deviceId: deviceId,
-                      isSt: isSt,
-                    ),
-                  ),
-                  loading: () => const AppDetailSkeleton(
-                    lines: 6,
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  ),
-                  error: (error, _) => ListView(
-                    children: [
-                      const SizedBox(height: 64),
-                      AppErrorView(
-                        message: _errorMessage(error),
-                        onRetry: () =>
-                            ref.invalidate(deviceDetailProvider(deviceId)),
-                        messageKey: const Key('device_detail_error'),
-                        retryKey: const Key('device_detail_retry'),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -225,27 +120,162 @@ class DeviceDetailPage extends ConsumerWidget {
   }
 }
 
-class _DeviceDetailView extends StatelessWidget {
-  const _DeviceDetailView({
-    required this.device,
-    required this.deviceId,
-    required this.isSt,
-  });
+class _DeviceDetailView extends ConsumerWidget {
+  const _DeviceDetailView({required this.device, required this.deviceId});
 
   final Device device;
   final String deviceId;
-  final bool isSt;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final role = ref.watch(authControllerProvider).role;
+    final isSt = role == UserRole.st;
+    // ยืนยันติดตั้ง Firmware (issue #261) และ Field Report (#236): backend เปิดให้ ST และ OT
+    final isFieldStaff = isSt || role == UserRole.ot;
+    // docs/27 §9 (B3) — โหมด central ส่ง Firmware ผ่านคำขอ ปุ่มยืนยันติดตั้ง/Override
+    // แบบเดิมไม่ได้ส่งอะไรเข้ากล่องจริง จึงซ่อน · ยังไม่รู้โหมด = แสดงตามเดิม
+    final centralMode = isFieldStaff
+        ? ref.watch(centralApplyModeProvider).valueOrNull ?? false
+        : false;
+    // docs/28 — งานที่ช่างเปิดอยู่ของกล่องนี้ ("เริ่มงาน" → "ไปที่งาน")
+    final openTask = isFieldStaff
+        ? ref.watch(openTaskForDeviceProvider(deviceId)).valueOrNull
+        : null;
+    final installed = device.status == DeviceLifecycleStatus.installed;
     final installedAt = device.installedAt;
+
+    Future<void> openApply() async {
+      await context.push(AppRoutes.deviceApply(deviceId));
+      ref.invalidate(openTaskForDeviceProvider(deviceId));
+      ref.invalidate(deviceApplyOptionsProvider(deviceId));
+    }
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 32),
       children: [
+        _StatusCard(device: device, deviceId: deviceId),
+        const SizedBox(height: 14),
         // UX audit #2 — เฉพาะ ST (role เดียวที่ขอ Config Override ได้ จึงไม่
         // ยิง GET /devices/{id}/config ให้ role อื่นโดยไม่จำเป็น)
         if (isSt) _PendingConfigOverride(deviceId: deviceId),
+        _PendingFirmwareOverride(deviceId: deviceId),
+        if (isFieldStaff) _OpenRequestNotice(deviceId: deviceId, isSt: isSt),
+        if (isFieldStaff && !installed) ...[
+          const AppNotice(
+            key: Key('device_detail_not_installed'),
+            tone: AppBadgeTone.warning,
+            icon: Icons.warning_amber_rounded,
+            title: 'เครื่องยังไม่ติดตั้ง',
+            child: Text('ส่งค่าเข้ากล่องได้เฉพาะเครื่องที่ติดตั้งแล้ว'),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (!isFieldStaff) ...[
+          const AppNotice(
+            key: Key('device_detail_view_only'),
+            tone: AppBadgeTone.info,
+            icon: Icons.person_outline,
+            title: 'ดูอย่างเดียว',
+            child: Text(
+              'Operation อนุมัติคำขอบน Web · แอปนี้ไม่มีปุ่มส่งค่าให้ Operation',
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (isFieldStaff) ...[
+          // docs/28 §6 — ปุ่มหลัก: เลือก Config/Firmware (เริ่มงานให้อัตโนมัติ)
+          _ActionButton(
+            key: const Key('device_detail_upload'),
+            label: 'ขอส่ง Config / Firmware',
+            icon: Icons.near_me_outlined,
+            primary: true,
+            onPressed: installed ? openApply : null,
+          ),
+          if (isSt)
+            // UX audit #2 — กลับมาจากหน้าขอ Override แล้วโหลดคำขอที่รออยู่ใหม่
+            _ActionButton(
+              key: const Key('device_detail_config_override'),
+              label: 'ขอแก้ค่าเฉพาะเครื่อง',
+              icon: Icons.tune,
+              onPressed: installed
+                  ? () => _pushThenRefresh(
+                      context,
+                      ref,
+                      deviceId: deviceId,
+                      path: AppRoutes.deviceConfigOverride(deviceId),
+                    )
+                  : null,
+            ),
+          if (!centralMode) ...[
+            // issue #261 — ยืนยันว่าติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว (ST/OT)
+            _ActionButton(
+              key: const Key('device_detail_confirm_firmware'),
+              label: 'ยืนยันติดตั้ง Firmware (ช่างยืนยันเอง)',
+              icon: Icons.check,
+              onPressed: () =>
+                  context.push(AppRoutes.deviceConfirmFirmware(deviceId)),
+            ),
+            // issue #256 — ทางขอ Firmware Override เมื่อ Firmware ที่ต้องการ
+            // ติดตั้งไม่ตรงแผน Campaign
+            if (isSt)
+              _ActionButton(
+                key: const Key('device_detail_firmware_override'),
+                label: 'ขอ Firmware Override',
+                icon: Icons.memory,
+                onPressed: () => _pushThenRefresh(
+                  context,
+                  ref,
+                  deviceId: deviceId,
+                  path: AppRoutes.deviceFirmwareOverride(deviceId),
+                ),
+              ),
+          ],
+          const SizedBox(height: 2),
+        ],
+        _ShortcutGrid(
+          tiles: [
+            if (isFieldStaff)
+              _Shortcut(
+                key: const Key('device_detail_field_report'),
+                label: 'แจ้งปัญหา',
+                icon: Icons.add,
+                tint: AppColors.warningSubtle,
+                onTap: () => context.push(
+                  Uri(
+                    path: AppRoutes.incidentReport,
+                    queryParameters: {'deviceId': deviceId},
+                  ).toString(),
+                ),
+              ),
+            _Shortcut(
+              key: const Key('device_detail_incidents'),
+              label: 'Incidents',
+              icon: Icons.warning_amber_outlined,
+              onTap: () => context.go(AppRoutes.incidents),
+            ),
+            _Shortcut(
+              key: const Key('device_detail_history'),
+              label: 'ประวัติเครื่อง',
+              icon: Icons.history,
+              onTap: () => context.push(AppRoutes.deviceHistory(deviceId)),
+            ),
+            // docs/28 §6 — ช่างเริ่มงานเอง · มีงานเปิดอยู่แล้ว = ไปที่งานนั้นเลย
+            if (isFieldStaff)
+              _Shortcut(
+                key: const Key('device_detail_start_task'),
+                label: openTask == null ? 'เริ่มงาน' : 'รายละเอียดงาน',
+                icon: openTask == null
+                    ? Icons.play_circle_outline
+                    : Icons.assignment_outlined,
+                onTap: () => openTask == null
+                    ? _startTask(context, ref, deviceId)
+                    : context.push(AppRoutes.taskDetail(openTask.id)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 22),
         AppCard(
+          key: const Key('device_detail_info'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -286,8 +316,324 @@ class _DeviceDetailView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        _StatusSection(deviceId: deviceId),
+        _PayloadSection(deviceId: deviceId),
       ],
+    );
+  }
+}
+
+/// การ์ด "สถานะเครื่อง" บนสุด (ภาพ r4) — ออนไลน์จาก [DeviceOnline] (Server กลาง
+/// ก่อน แล้วค่อย `/status`) · Config ปัจจุบันจาก `summary` ของประวัติเครื่อง ·
+/// Firmware ใช้ค่าที่กล่องรายงานก่อน แล้วค่อยใช้ `summary` · ข้อมูลเสริมแต่ละชิ้น
+/// โหลดไม่ได้ = แสดงว่าไม่ทราบ ไม่บังทั้งการ์ด
+class _StatusCard extends ConsumerWidget {
+  const _StatusCard({required this.device, required this.deviceId});
+
+  final Device device;
+  final String deviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(deviceStatusProvider(deviceId)).valueOrNull;
+    final central = ref.watch(deviceCentralProvider(deviceId)).valueOrNull;
+    final history = ref.watch(deviceHistoryProvider(deviceId)).valueOrNull;
+    final online = status == null
+        ? null
+        : DeviceOnline.resolve(status, central);
+    final onlineLabel = online == null || online.online == null
+        ? 'ไม่ทราบ'
+        : online.label;
+    final onlineTone = online?.tone ?? AppBadgeTone.neutral;
+    final reportedFw = online?.fromCentral == true
+        ? central?.device?.reportedFirmwareVersion
+        : null;
+    final firmware = reportedFw ?? history?.currentFirmwareVersion;
+    return AppCard(
+      key: const Key('device_detail_status_card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: _CardTitle('สถานะเครื่อง')),
+              AppBadge(label: onlineLabel, tone: onlineTone, dot: true),
+            ],
+          ),
+          AppInfoRow(
+            key: const Key('device_online_row'),
+            label: 'การเชื่อมต่อ',
+            child: AppBadge(label: onlineLabel, tone: onlineTone),
+          ),
+          AppInfoRow(
+            key: const Key('device_detail_lifecycle'),
+            label: 'สถานะ',
+            value: _lifecycleText(device.status),
+          ),
+          AppInfoRow(
+            key: const Key('device_detail_current_config'),
+            label: 'Config ปัจจุบัน',
+            value: history?.currentConfigName ?? '—',
+          ),
+          AppInfoRow(
+            key: const Key('device_detail_firmware'),
+            label: 'Firmware',
+            value: firmware ?? 'ไม่ทราบ',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// คำขอส่ง Config/Firmware ที่ยังไม่จบของกล่องนี้ (`apply-options.openRequest`) —
+/// มี `taskId` = งานของผู้ใช้เอง (เปิดคำขอได้) · ไม่มี = งานของช่างคนอื่น ·
+/// โหลดไม่ได้/ไม่มีคำขอ = ไม่แสดงอะไร (ข้อมูลเสริม)
+///
+/// โหมด central คำขอแก้ค่า (Override) อยู่ในคำขอส่งเข้ากล่องตัวเดียวกัน — ST
+/// เห็น "ขอแก้ / เหตุผล" ในแถบนี้แถบเดียว ([_PendingConfigOverride] ไม่แสดงซ้ำ)
+class _OpenRequestNotice extends ConsumerWidget {
+  const _OpenRequestNotice({required this.deviceId, required this.isSt});
+
+  final String deviceId;
+  final bool isSt;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final request = ref
+        .watch(deviceApplyOptionsProvider(deviceId))
+        .valueOrNull
+        ?.openRequest;
+    if (request == null) return const SizedBox.shrink();
+    // GET /devices/{id}/config ยิงเฉพาะ ST (role เดียวที่ขอ Override ได้)
+    final override = isSt && request.kind == FieldApplyKind.config
+        ? ref
+              .watch(currentConfigProvider(deviceId))
+              .valueOrNull
+              ?.pendingOverride
+        : null;
+    final pendingOverride = override?.status == 'pending' ? override : null;
+    final configName = request.configName;
+    final firmwareVersion = request.firmwareVersion;
+    final subject = request.kind == FieldApplyKind.firmware
+        ? (firmwareVersion == null ? 'Firmware' : 'Firmware v$firmwareVersion')
+        : (configName == null ? 'Config' : 'Config “$configName”');
+    final taskId = request.taskId;
+    final mine = taskId != null;
+    final status = mine
+        ? configApplyRequestStatusLabel(request.status, kind: request.kind)
+        : 'รอผู้ถืองานกดส่ง';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: AppNotice(
+        key: const Key('device_detail_open_request'),
+        tone: AppBadgeTone.warning,
+        icon: Icons.hourglass_empty,
+        title: 'มีคำขอที่ยังไม่จบ · $status',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mine
+                  ? '$subject ในงานของคุณ'
+                  : '$subject ในงานของช่างคนอื่น — ขอใหม่ได้เมื่อคำขอนี้จบ',
+            ),
+            if (pendingOverride != null) ...[
+              if (pendingOverride.fields.isNotEmpty)
+                Text(
+                  'ขอแก้: ${pendingOverride.fields.keys.join(', ')}',
+                  key: const Key('device_detail_open_request_fields'),
+                ),
+              Text('เหตุผล: ${pendingOverride.reason}'),
+            ],
+            if (mine) ...[
+              const SizedBox(height: 10),
+              OutlinedButton(
+                key: const Key('device_detail_open_request_go'),
+                onPressed: () => context.push(AppRoutes.taskDetail(taskId)),
+                child: const Text('เปิดคำขอ'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.primary = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.full),
+    );
+    const padding = EdgeInsets.symmetric(horizontal: 18, vertical: 14);
+    final child = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: primary
+          ? FilledButton(
+              onPressed: onPressed,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.primaryForeground,
+                disabledBackgroundColor: AppColors.mutedForeground.withValues(
+                  alpha: 0.55,
+                ),
+                disabledForegroundColor: AppColors.primaryForeground,
+                minimumSize: const Size.fromHeight(52),
+                padding: padding,
+                shape: shape,
+              ),
+              child: child,
+            )
+          : OutlinedButton(
+              onPressed: onPressed,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.foreground,
+                backgroundColor: AppColors.card,
+                side: const BorderSide(color: AppColors.inputBorder),
+                minimumSize: const Size.fromHeight(52),
+                padding: padding,
+                shape: shape,
+              ),
+              child: child,
+            ),
+    );
+  }
+}
+
+class _Shortcut {
+  const _Shortcut({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.tint = AppColors.accent,
+  });
+
+  final Key key;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color tint;
+}
+
+/// ทางลัดการ์ดเล็ก 2 คอลัมน์ (ภาพ r4) · ตัวอักษรใหญ่มากเหลือ 1 คอลัมน์ ไม่ให้คำถูกตัด
+class _ShortcutGrid extends StatelessWidget {
+  const _ShortcutGrid({required this.tiles});
+
+  final List<_Shortcut> tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    final oneColumn = MediaQuery.textScalerOf(context).scale(1) >= 1.6;
+    final rows = <Widget>[];
+    final perRow = oneColumn ? 1 : 2;
+    for (var i = 0; i < tiles.length; i += perRow) {
+      final chunk = tiles.skip(i).take(perRow).toList();
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var j = 0; j < perRow; j++) ...[
+                  if (j > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: j < chunk.length
+                        ? _ShortcutTile(tile: chunk[j])
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(children: rows);
+  }
+}
+
+class _ShortcutTile extends StatelessWidget {
+  const _ShortcutTile({required this.tile});
+
+  final _Shortcut tile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      key: tile.key,
+      color: AppColors.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: tile.onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: tile.tint,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    tile.icon,
+                    size: 18,
+                    color: AppColors.accentForeground,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    tile.label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -357,10 +703,39 @@ class _PendingConfigOverride extends ConsumerWidget {
     if (pending == null || pending.status != 'pending') {
       return const SizedBox.shrink();
     }
+    // มีคำขอส่ง Config ค้างอยู่ = Override นี้อยู่ในคำขอนั้น (central) —
+    // [_OpenRequestNotice] แสดงรวมไว้แล้ว ไม่แสดงซ้ำเป็นสองแถบ
+    final openRequest = ref
+        .watch(deviceApplyOptionsProvider(deviceId))
+        .valueOrNull
+        ?.openRequest;
+    if (openRequest?.kind == FieldApplyKind.config) {
+      return const SizedBox.shrink();
+    }
     final central = ref.watch(centralApplyModeProvider).valueOrNull ?? false;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: PendingConfigOverrideBanner(pending: pending, central: central),
+    );
+  }
+}
+
+/// issue #256 — คำขอ Firmware Override ที่รอ Operation (PR #257)
+class _PendingFirmwareOverride extends ConsumerWidget {
+  const _PendingFirmwareOverride({required this.deviceId});
+
+  final String deviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pending = ref
+        .watch(deviceStatusProvider(deviceId))
+        .valueOrNull
+        ?.pendingFirmwareOverride;
+    if (pending == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: PendingFirmwareOverrideBanner(pending: pending),
     );
   }
 }
@@ -368,8 +743,8 @@ class _PendingConfigOverride extends ConsumerWidget {
 /// "สถานะ Config / Firmware" — `GET /devices/{deviceId}/status`. Has its own
 /// loading / error (with retry) state so a failing status call never hides the
 /// device record above it.
-class _StatusSection extends ConsumerWidget {
-  const _StatusSection({required this.deviceId});
+class _PayloadSection extends ConsumerWidget {
+  const _PayloadSection({required this.deviceId});
 
   final String deviceId;
 
@@ -381,11 +756,10 @@ class _StatusSection extends ConsumerWidget {
     return statusAsync.when(
       skipLoadingOnRefresh: true,
       data: (status) {
-        final pendingFw = status.pendingFirmwareOverride;
         final online = DeviceOnline.resolve(status, central);
         final reported = online.fromCentral ? central?.device : null;
         final lastSeenAt = online.lastSeenAt;
-        final card = AppCard(
+        return AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -399,15 +773,6 @@ class _StatusSection extends ConsumerWidget {
                 label: 'สถานะ Firmware',
                 status: status.firmwareStatus,
                 firmware: true,
-              ),
-              AppInfoRow(
-                key: const Key('device_online_row'),
-                label: 'การเชื่อมต่อ',
-                child: AppBadge(
-                  label: online.label,
-                  tone: online.tone,
-                  dot: true,
-                ),
               ),
               AppInfoRow(
                 label: 'ติดต่อล่าสุด',
@@ -425,16 +790,6 @@ class _StatusSection extends ConsumerWidget {
               ],
             ],
           ),
-        );
-        if (pendingFw == null) return card;
-        // issue #256 — คำขอ Firmware Override ที่รอ Operation (PR #257)
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PendingFirmwareOverrideBanner(pending: pendingFw),
-            const SizedBox(height: 12),
-            card,
-          ],
         );
       },
       loading: () => const AppDetailSkeleton(
@@ -506,9 +861,9 @@ class _CardTitle extends StatelessWidget {
     child: Text(
       text,
       style: const TextStyle(
-        fontSize: AppTypography.sm,
-        height: AppTypography.smHeight,
-        fontWeight: FontWeight.w600,
+        fontSize: 16,
+        height: 1.4,
+        fontWeight: FontWeight.w700,
         color: AppColors.foreground,
       ),
     ),

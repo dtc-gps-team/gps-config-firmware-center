@@ -282,6 +282,23 @@ class ApiClient {
     );
   }
 
+  /// `GET /devices/{deviceId}/history` — ประวัติรายเครื่องใหม่ไปเก่า แบ่งหน้าด้วย
+  /// cursor ([before] = `nextCursor` ของหน้าก่อน) · ทุก role อ่านได้ แต่ backend
+  /// กรองชนิดรายการตามสิทธิ์จริงของผู้เรียก
+  Future<DeviceHistoryResult> getDeviceHistory(
+    String deviceId, {
+    String? before,
+    int limit = 30,
+  }) async {
+    return _wrap(
+      () => _dio.get<Map<String, dynamic>>(
+        '/devices/${Uri.encodeComponent(deviceId)}/history',
+        queryParameters: {'limit': limit, 'before': ?before},
+      ),
+      DeviceHistoryResult.fromJson,
+    );
+  }
+
   /// `GET /devices/{deviceId}/config` — Config ปัจจุบันของอุปกรณ์ (Config
   /// Override Phase 2, issue #211). 404 ถ้าอุปกรณ์ไม่มี Task สถานะ `completed`
   /// ที่ผูก `configId` ไว้เลย (ยังไม่เคย confirm install).

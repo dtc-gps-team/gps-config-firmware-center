@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -90,11 +89,19 @@ export class UpdateConfigDefinitionDto {
   @MaxLength(255)
   defaultValue?: string | null;
 
-  /** ส่งมา = แทนที่ชุดรุ่น/โปรโตคอลทั้งชุด (ไม่ merge) · ต้องมีอย่างน้อย 1 คู่ */
+  /** ส่งมา = แทนที่ชุดรุ่น/โปรโตคอลทั้งชุด (ไม่ merge) · ต้องมีอย่างน้อย 1 คู่
+   * **เว้นแต่** ค่าหลังแก้ (ที่ส่งมาหรือของเดิม) ของ `appliesToAllModels` เป็น
+   * `true` — เช็คคู่กับ `appliesToAllModels` ที่ service เพราะเป็น
+   * cross-field validation ที่ต้องรู้ค่าเดิมในกรณีไม่ได้ส่งมาทั้งคู่ด้วย
+   * (เหมือนแพทเทิร์น `assertValidRange()` ของ dataType/minValue/maxValue) */
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ConfigDefinitionModelSupportDto)
   supportedModels?: ConfigDefinitionModelSupportDto[];
+
+  /** `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์ (ฟีดแบ็ก 2026-11-04) */
+  @IsOptional()
+  @IsBoolean()
+  appliesToAllModels?: boolean;
 }

@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   IsNumber,
-  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -28,9 +27,12 @@ export class ConfigDefinitionModelSupportDto {
 /** Body ของ `POST /config-definitions` — ConfigEngineer สร้าง field definition ใหม่เอง
  * (self-service ไม่ต้องรออนุมัติ — ตัดสินใจร่วมกับ B และพี่เลี้ยง 2569-09)
  *
- * `supportedModels` บังคับต้องมีอย่างน้อย 1 คู่เสมอ — field ที่ไม่ผูกกับรุ่น
- * ไหนเลยใช้ validate อะไรไม่ได้จริง (ConfigDefinitionService.validateFields
- * จะมองว่า field แบบนี้ "ไม่รองรับ" ทุกรุ่นเท่ากันหมด) */
+ * `supportedModels` ต้องมีอย่างน้อย 1 คู่ **เว้นแต่** `appliesToAllModels: true`
+ * (ฟีดแบ็ก 2026-11-04 — บางพารามิเตอร์จำเป็นต้องมีทุกครั้งไม่ว่ารุ่นไหน) field ที่
+ * ไม่ผูกกับรุ่นไหนเลยและไม่ได้ตั้ง appliesToAllModels ใช้ validate อะไรไม่ได้จริง
+ * (ConfigDefinitionService.validateFields จะมองว่า field แบบนี้ "ไม่รองรับ"
+ * ทุกรุ่นเท่ากันหมด) — เช็คคู่กันนี้ทำที่ ConfigDefinitionService.create()
+ * (cross-field เช็คไม่ใส่ไว้ที่ DTO เหมือนจุดอื่นในไฟล์นี้ เช่น min/max range) */
 export class CreateConfigDefinitionDto {
   @IsString()
   @MinLength(1)
@@ -59,9 +61,14 @@ export class CreateConfigDefinitionDto {
   @IsBoolean()
   unknownSpec?: boolean;
 
-  @IsOptional()
+  /** คำอธิบายความหมายของ field นี้ — บังคับกรอกตั้งแต่ v3.83 (ฟีดแบ็ก
+   * 2026-11-04: คำขออนุมัติที่มาจากโมบายอยากเห็นว่าแก้พารามิเตอร์ไหน หมายถึง
+   * อะไร ไม่ใช่แค่ชื่อ field ดิบ) — field ที่สร้างไว้ก่อนหน้านี้ยังมีค่า
+   * `null` ได้อยู่ (ไม่ backfill ย้อนหลัง) บังคับแค่ตอนสร้างใหม่ ตอนแก้ไข
+   * (`UpdateConfigDefinitionDto`) ยังเลือกส่งหรือไม่ส่งก็ได้เหมือนเดิม */
   @IsString()
-  description?: string;
+  @MinLength(1)
+  description!: string;
 
   /** หน่วยของค่า field นี้ (เช่น "วินาที", "KB", "%") — metadata สำหรับแสดงผล
    * ข้างช่องกรอกตอนสร้าง Config เท่านั้น ไม่ถูกใช้ตอน validate */
@@ -128,9 +135,20 @@ export class CreateConfigDefinitionDto {
   @MaxLength(255)
   defaultValue?: string;
 
+  /** คู่รุ่น/โปรโตคอลที่ field นี้ใช้ได้ — ต้องมีอย่างน้อย 1 คู่ **เว้นแต่**
+   * `appliesToAllModels: true` (เช็คคู่กันที่ service ไม่ใช่ที่นี่ เพราะเป็น
+   * cross-field validation ข้าม 2 field) จึงเอา `@ArrayMinSize(1)` เดิมออก
+   * เหลือแค่ตรวจว่าเป็น array ของคู่ที่ถูกต้องถ้ามีการส่งมา */
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => ConfigDefinitionModelSupportDto)
-  supportedModels!: ConfigDefinitionModelSupportDto[];
+  supportedModels?: ConfigDefinitionModelSupportDto[];
+
+  /** `true` = field นี้ใช้ได้กับทุกรุ่นอุปกรณ์ ไม่ต้องระบุ `supportedModels`
+   * เลยก็ได้ (ฟีดแบ็ก 2026-11-04) — ปล่อยว่างได้ default `false` (ต้องเลือก
+   * รุ่นเองเหมือนเดิม) */
+  @IsOptional()
+  @IsBoolean()
+  appliesToAllModels?: boolean;
 }
