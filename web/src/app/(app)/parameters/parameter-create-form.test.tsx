@@ -63,6 +63,7 @@ describe("ParameterCreateForm", () => {
     expect(screen.getByText(/มี field ชื่อ "APN1" อยู่แล้ว/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "NEW_FIELD" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "ทดสอบ" } });
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล");
     expect(createConfigDefinition).not.toHaveBeenCalled();
@@ -73,6 +74,7 @@ describe("ParameterCreateForm", () => {
     const { onCreated } = setup();
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "report_interval" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "ช่วงเวลารายงาน" } });
     fireEvent.change(screen.getByLabelText("หน่วย (ไม่บังคับ)"), { target: { value: "วินาที" } });
     await openModelPicker(user);
     await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
@@ -95,6 +97,7 @@ describe("ParameterCreateForm", () => {
     setup();
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "network_mode" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "โหมดเชื่อมต่อ" } });
     fireEvent.change(screen.getByLabelText(/ค่าที่เลือกได้/), {
       target: { value: "auto\n 2g \n\n4g\nauto" },
     });
@@ -112,6 +115,7 @@ describe("ParameterCreateForm", () => {
     setup();
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "pw" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "รหัสผ่าน" } });
     fireEvent.change(screen.getByLabelText("ค่าเริ่มต้น (ไม่บังคับ)"), { target: { value: "secret" } });
     await openModelPicker(user);
     await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
@@ -122,6 +126,25 @@ describe("ParameterCreateForm", () => {
     await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
     expect(createConfigDefinition.mock.calls[0][1]).not.toHaveProperty("defaultValue");
     expect(createConfigDefinition.mock.calls[0][1]).toMatchObject({ sensitive: true });
+  });
+
+  // ฟีดแบ็ก 2026-11-04: field ใช้ได้ทุกโมเดลได้โดยไม่ต้องเลือกทีละโมเดล
+  it("ใช้ได้กับทุกโมเดล -> ไม่ต้องเลือกโมเดล ซ่อน ModelPicker และส่ง appliesToAllModels: true", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "always_required_field" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "ต้องมีทุกครั้ง" } });
+    await user.click(screen.getByRole("checkbox", { name: /ใช้ได้กับทุกโมเดล/ }));
+
+    expect(screen.queryByRole("button", { name: /เลือกโมเดล/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));
+
+    await waitFor(() => expect(createConfigDefinition).toHaveBeenCalled());
+    expect(createConfigDefinition.mock.calls[0][1]).toMatchObject({
+      appliesToAllModels: true,
+      supportedModels: [],
+    });
   });
 });
 
@@ -218,6 +241,7 @@ describe(
 
     async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
       await user.type(screen.getByLabelText("ชื่อ field"), "max_speed_alert");
+      await user.type(screen.getByLabelText("คำอธิบาย"), "ความเร็วสูงสุด");
       await openModelPicker(user);
       await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
     }

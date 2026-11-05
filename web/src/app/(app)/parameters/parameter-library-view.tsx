@@ -135,7 +135,7 @@ const columns: ColumnDef<ConfigFieldDefinition>[] = [
   },
   {
     id: "supportedModels",
-    accessorFn: (row) => formatModelSupport(row.supportedModels),
+    accessorFn: (row) => formatModelSupport(row),
     header: "โมเดล/โปรโตคอลที่รองรับ",
     enableSorting: false,
     meta: { filterVariant: "text", label: "โมเดล/โปรโตคอล" },
