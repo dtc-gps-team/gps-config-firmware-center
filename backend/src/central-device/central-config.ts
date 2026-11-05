@@ -141,7 +141,7 @@ const FAILED_ERROR_CODE_MESSAGES: Record<string, string> = {
   DOWNLOAD_TIMEOUT: 'ดาวน์โหลด Firmware ค้าง (เน็ตช้าหรือหลุด)',
 };
 
-function describeFailure(command: RawCentralCommand): string {
+export function describeCentralFailure(command: RawCentralCommand): string {
   const code = command.error_code ?? '';
   return FAILED_ERROR_CODE_MESSAGES[code] ?? describe(command);
 }
@@ -180,5 +180,5 @@ export function classifyCentralCommand(
       detail: `คำสั่งถูกแทนที่หรือยกเลิกที่ Server กลาง (${describe(command)})`,
     };
   }
-  return { kind: 'failed', detail: describeFailure(command) };
+  return { kind: 'failed', detail: describeCentralFailure(command) };
 }

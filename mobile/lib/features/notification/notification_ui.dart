@@ -8,6 +8,22 @@ import '../../core/theme/app_tokens.dart';
 /// out of `payload` for the types listed there (Config/Firmware Override,
 /// Field Incident Report, `taskAssigned`); every other type shows just the
 /// type label + timestamp.
+/// ผลของแจ้งเตือนต่อผู้รับ ดู [NotificationTypeStyle.tone]
+enum NotificationTone { action, success, failure, info }
+
+/// หมวดของแจ้งเตือนสำหรับชิปกรองในหน้ารายการ
+enum NotificationCategory {
+  task('งาน'),
+  apply('ส่งเข้ากล่อง'),
+  override('Override'),
+  incident('Incident'),
+  other('อื่น ๆ');
+
+  const NotificationCategory(this.label);
+
+  final String label;
+}
+
 class NotificationTypeStyle {
   const NotificationTypeStyle._();
 
@@ -68,9 +84,16 @@ class NotificationTypeStyle {
       case NotificationType.configApplyPending:
       case NotificationType.configApplyApproved:
       case NotificationType.configApplySucceeded:
-      case NotificationType.configApplyExpired:
         final deviceId = text('deviceId');
         return [if (deviceId != null) 'อุปกรณ์: $deviceId'];
+      // หัวข้อสั้น ([shortLabelOf]) ตัดคำอธิบายในวงเล็บของ [label] ออก จึงย้าย
+      // เหตุที่หมดอายุมาเป็นบรรทัดรายละเอียดแทน
+      case NotificationType.configApplyExpired:
+        final deviceId = text('deviceId');
+        return [
+          if (deviceId != null) 'อุปกรณ์: $deviceId',
+          'ไม่มีใครตัดสิน หรือไม่ได้กดส่งภายใน 24 ชม.',
+        ];
       case NotificationType.configApplyFailed:
         final deviceId = text('deviceId');
         final detail = text('detail');
@@ -141,6 +164,96 @@ class NotificationTypeStyle {
         : base;
   }
 
+  /// หัวข้อสั้นบนการ์ดในหน้ารายการ (B 04/11/2026: ข้อความยาวอ่านยากเมื่อ
+  /// รายการเยอะ) · [label] ฉบับเต็มยังใช้กับ push notification ที่ไม่มีบรรทัด
+  /// รายละเอียดช่วยอธิบาย · คำขอส่งที่เป็น Firmware เปลี่ยน Config เป็น
+  /// Firmware เหมือน [labelOf]
+  static String shortLabelOf(AppNotification n) {
+    final base = _shortLabel(n.type);
+    return category(n.type) == NotificationCategory.apply &&
+            n.payload['kind'] == 'firmware'
+        ? base.replaceAll('Config', 'Firmware')
+        : base;
+  }
+
+  static String _shortLabel(NotificationType type) => switch (type) {
+    NotificationType.taskAssigned => 'ได้รับงานใหม่',
+    NotificationType.configApproved => 'Config อนุมัติแล้ว',
+    NotificationType.configRejected => 'Config ถูกปฏิเสธ',
+    NotificationType.firmwareReady => 'Firmware พร้อมใช้งาน',
+    NotificationType.incidentAlert => 'ระบบตรวจพบปัญหา',
+    NotificationType.configDeletionPending => 'คำขอลบ Config รออนุมัติ',
+    NotificationType.configDeletionGrace => 'Config ของคุณถูกเสนอลบ',
+    NotificationType.configOverridePending => 'Override รออนุมัติ',
+    NotificationType.configOverrideApproved => 'Override อนุมัติแล้ว',
+    NotificationType.configOverrideRejected => 'Override ถูกปฏิเสธ',
+    NotificationType.firmwareOverridePending => 'Firmware Override รออนุมัติ',
+    NotificationType.firmwareOverrideApproved =>
+      'Firmware Override อนุมัติแล้ว',
+    NotificationType.firmwareOverrideRejected => 'Firmware Override ถูกปฏิเสธ',
+    NotificationType.incidentReportPending => 'มีรายงานปัญหาใหม่',
+    NotificationType.incidentReportResolved => 'ปัญหาที่คุณแจ้ง แก้ไขแล้ว',
+    NotificationType.incidentReportDismissed =>
+      'ปัญหาที่คุณแจ้ง ไม่ต้องดำเนินการ',
+    NotificationType.incidentReportPromoted =>
+      'ปัญหาที่คุณแจ้ง ส่งต่อเป็น Campaign',
+    NotificationType.configApplyPending => 'คำขอส่ง Config รออนุมัติ',
+    NotificationType.configApplyApproved => 'อนุมัติแล้ว กดส่ง Config ได้เลย',
+    NotificationType.configApplyRejected => 'คำขอส่ง Config ถูกปฏิเสธ',
+    NotificationType.configApplySucceeded => 'ส่ง Config เข้ากล่องสำเร็จ',
+    NotificationType.configApplyFailed => 'ส่ง Config เข้ากล่องไม่สำเร็จ',
+    NotificationType.configApplyExpired => 'คำขอส่ง Config หมดอายุ',
+  };
+
+  /// ผลของเรื่องนี้ต่อผู้รับ ใช้เลือกสีวงไอคอนและป้าย "ต้องดำเนินการ"
+  static NotificationTone tone(NotificationType type) => switch (type) {
+    NotificationType.taskAssigned ||
+    NotificationType.configDeletionPending ||
+    NotificationType.configDeletionGrace ||
+    NotificationType.configOverridePending ||
+    NotificationType.firmwareOverridePending ||
+    NotificationType.incidentReportPending ||
+    NotificationType.configApplyPending ||
+    NotificationType.configApplyApproved => NotificationTone.action,
+    NotificationType.configApproved ||
+    NotificationType.firmwareReady ||
+    NotificationType.configOverrideApproved ||
+    NotificationType.firmwareOverrideApproved ||
+    NotificationType.incidentReportResolved ||
+    NotificationType.configApplySucceeded => NotificationTone.success,
+    NotificationType.configRejected ||
+    NotificationType.incidentAlert ||
+    NotificationType.configOverrideRejected ||
+    NotificationType.firmwareOverrideRejected ||
+    NotificationType.configApplyRejected ||
+    NotificationType.configApplyFailed ||
+    NotificationType.configApplyExpired => NotificationTone.failure,
+    NotificationType.incidentReportDismissed ||
+    NotificationType.incidentReportPromoted => NotificationTone.info,
+  };
+
+  static NotificationCategory category(NotificationType type) => switch (type) {
+    NotificationType.taskAssigned => NotificationCategory.task,
+    NotificationType.configApplyPending ||
+    NotificationType.configApplyApproved ||
+    NotificationType.configApplyRejected ||
+    NotificationType.configApplySucceeded ||
+    NotificationType.configApplyFailed ||
+    NotificationType.configApplyExpired => NotificationCategory.apply,
+    NotificationType.configOverridePending ||
+    NotificationType.configOverrideApproved ||
+    NotificationType.configOverrideRejected ||
+    NotificationType.firmwareOverridePending ||
+    NotificationType.firmwareOverrideApproved ||
+    NotificationType.firmwareOverrideRejected => NotificationCategory.override,
+    NotificationType.incidentAlert ||
+    NotificationType.incidentReportPending ||
+    NotificationType.incidentReportResolved ||
+    NotificationType.incidentReportDismissed ||
+    NotificationType.incidentReportPromoted => NotificationCategory.incident,
+    _ => NotificationCategory.other,
+  };
+
   static String label(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => 'มอบหมายงานใหม่',
     NotificationType.configApproved => 'อนุมัติ Config แล้ว',
@@ -190,13 +303,29 @@ class NotificationTypeStyle {
     _ => false,
   };
 
-  /// `(background, foreground)` ของวงไอคอน — token ของ design system ใหม่
-  /// (docs/22 Batch 2, มติ B): type ที่ [isUrgent] ใช้โทน danger (`dangerSubtle` +
-  /// `destructive`) ที่เหลือ neutral (`secondary` + `mutedForeground`) ตามกติกา
-  /// Badge ของ Web ที่สีมีไว้สื่อความหมายเท่านั้น
+  /// `(background, foreground)` ของวงไอคอนตาม [tone] (B 04/11/2026): สีบอก
+  /// ผลให้กวาดตาแยกเรื่องที่สำเร็จ / ไม่สำเร็จ / ต้องทำต่อได้โดยไม่ต้องอ่าน
+  /// · [isUrgent] ยังใช้โทน danger เด่นที่สุดเหมือนเดิม
   static (Color, Color) iconColors(NotificationType type) => isUrgent(type)
       ? (AppColors.dangerSubtle, AppColors.destructive)
-      : (AppColors.secondary, AppColors.mutedForeground);
+      : switch (tone(type)) {
+          NotificationTone.action => (
+            AppColors.warningSubtle,
+            AppColors.warning,
+          ),
+          NotificationTone.success => (
+            AppColors.successSubtle,
+            AppColors.success,
+          ),
+          NotificationTone.failure => (
+            AppColors.dangerSubtle,
+            AppColors.destructive,
+          ),
+          NotificationTone.info => (
+            AppColors.secondary,
+            AppColors.mutedForeground,
+          ),
+        };
 
   static IconData icon(NotificationType type) => switch (type) {
     NotificationType.taskAssigned => Icons.assignment_outlined,

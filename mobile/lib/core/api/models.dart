@@ -546,6 +546,120 @@ class ConfigApplyRequest {
   }
 }
 
+enum ConfigApplyProgressStepKey {
+  delivered('delivered'),
+  downloading('downloading'),
+  validating('validating'),
+  installing('installing'),
+  rebooting('rebooting'),
+  succeeded('succeeded'),
+  rolledBack('rolled_back'),
+  failed('failed'),
+  expired('expired');
+
+  const ConfigApplyProgressStepKey(this.wireName);
+  final String wireName;
+  static ConfigApplyProgressStepKey fromWire(String value) =>
+      values.firstWhere((v) => v.wireName == value);
+}
+
+class ConfigApplyProgressStep {
+  const ConfigApplyProgressStep({required this.key, this.at, this.progress});
+  final ConfigApplyProgressStepKey key;
+  final DateTime? at;
+  final int? progress;
+
+  factory ConfigApplyProgressStep.fromJson(Map<String, dynamic> json) =>
+      ConfigApplyProgressStep(
+        key: ConfigApplyProgressStepKey.fromWire(json['key'] as String),
+        at: json['at'] is String ? DateTime.parse(json['at'] as String) : null,
+        progress: json['progress'] as int?,
+      );
+}
+
+class CentralApplyProgress {
+  const CentralApplyProgress({
+    required this.available,
+    required this.commandId,
+    required this.steps,
+    this.status,
+    this.progressPercent,
+    this.deviceOnline,
+    this.waitingReason,
+    this.errorCode,
+    this.errorMessage,
+  });
+  final bool available;
+  final String commandId;
+  final String? status;
+  final int? progressPercent;
+  final bool? deviceOnline;
+  final String? waitingReason;
+  final String? errorCode;
+  final String? errorMessage;
+  final List<ConfigApplyProgressStep> steps;
+
+  factory CentralApplyProgress.fromJson(Map<String, dynamic> json) =>
+      CentralApplyProgress(
+        available: json['available'] as bool,
+        commandId: json['commandId'] as String,
+        status: json['status'] as String?,
+        progressPercent: json['progressPercent'] as int?,
+        deviceOnline: json['deviceOnline'] as bool?,
+        waitingReason: json['waitingReason'] as String?,
+        errorCode: json['errorCode'] as String?,
+        errorMessage: json['errorMessage'] as String?,
+        steps: (json['steps'] as List<dynamic>)
+            .map(
+              (v) =>
+                  ConfigApplyProgressStep.fromJson(v as Map<String, dynamic>),
+            )
+            .toList(growable: false),
+      );
+}
+
+class ConfigApplyRequestProgress {
+  const ConfigApplyRequestProgress({
+    required this.requestId,
+    required this.kind,
+    required this.status,
+    required this.isDowngrade,
+    this.fromVersion,
+    this.toVersion,
+    this.releasedAt,
+    this.completedAt,
+    this.central,
+  });
+  final String requestId;
+  final FieldApplyKind kind;
+  final ConfigApplyRequestStatus status;
+  final String? fromVersion;
+  final String? toVersion;
+  final bool isDowngrade;
+  final DateTime? releasedAt;
+  final DateTime? completedAt;
+  final CentralApplyProgress? central;
+
+  factory ConfigApplyRequestProgress.fromJson(Map<String, dynamic> json) {
+    DateTime? date(String key) =>
+        json[key] is String ? DateTime.parse(json[key] as String) : null;
+    final central = json['central'];
+    return ConfigApplyRequestProgress(
+      requestId: json['requestId'] as String,
+      kind: FieldApplyKind.fromWire(json['kind']),
+      status: ConfigApplyRequestStatus.fromWire(json['status'] as String),
+      fromVersion: json['fromVersion'] as String?,
+      toVersion: json['toVersion'] as String?,
+      isDowngrade: json['isDowngrade'] as bool,
+      releasedAt: date('releasedAt'),
+      completedAt: date('completedAt'),
+      central: central is Map<String, dynamic>
+          ? CentralApplyProgress.fromJson(central)
+          : null,
+    );
+  }
+}
+
 /// `ConfigApplyRequest.override` (docs/30, v3.70) — ค่าที่ช่างขอแก้ (ช่างกรอกเอง
 /// จึงดูค่าได้) · `fields` ว่างเมื่อ response ไม่มีค่า
 class ApplyRequestOverride {
@@ -589,8 +703,8 @@ class ApplyOptionConfig {
   /// ตัวนี้ขึ้นก่อนแล้ว
   final bool suggested;
 
-  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วของกล่อง ·
-  /// backend เก่า = ว่าง
+  /// (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง
+  /// ของกล่อง (v3.83 — ใช้ครั้งเดียว ปกติจึงเป็นค่าต้นฉบับ) · backend เก่า = ว่าง
   final Map<String, dynamic> fields;
 
   factory ApplyOptionConfig.fromJson(Map<String, dynamic> json) =>
@@ -851,7 +965,8 @@ class DeviceConfigDraft {
 
   /// เฉพาะ `GET /devices/{deviceId}/config` (v3.71) — ค่าที่ส่งเข้ากล่องสำเร็จ
   /// ล่าสุด · `fields` ข้างบนคือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม
-  /// Override ที่อนุมัติแล้ว) จึงต่างจากค่าในกล่องได้ · `null` = ไม่มีหลักฐาน
+  /// Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง, v3.83) จึงต่างจากค่าในกล่องได้ ·
+  /// `null` = ไม่มีหลักฐาน
   /// การส่ง หรือ backend เก่า
   final ConfigDelivery? delivery;
 

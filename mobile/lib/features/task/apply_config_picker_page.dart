@@ -7,6 +7,7 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/router/app_router.dart';
 import '../../core/router/app_shell.dart';
+import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_bottom_action_bar.dart';
@@ -60,8 +61,10 @@ class ApplyConfigPickerPage extends ConsumerStatefulWidget {
       _ApplyConfigPickerPageState();
 }
 
-class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
+class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage>
+    with RouteAware {
   final _noteController = TextEditingController();
+  PageRoute<dynamic>? _observedRoute;
   late FieldApplyKind _kind = widget.initialKind;
   String? _selectedFirmwareId;
   bool _submitting = false;
@@ -72,7 +75,24 @@ class _ApplyConfigPickerPageState extends ConsumerState<ApplyConfigPickerPage> {
   String? _startedTaskId;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic> && route != _observedRoute) {
+      if (_observedRoute != null) mobileRouteObserver.unsubscribe(this);
+      _observedRoute = route;
+      mobileRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    ref.invalidate(deviceApplyOptionsProvider(widget.deviceId));
+  }
+
+  @override
   void dispose() {
+    mobileRouteObserver.unsubscribe(this);
     _noteController.dispose();
     super.dispose();
   }

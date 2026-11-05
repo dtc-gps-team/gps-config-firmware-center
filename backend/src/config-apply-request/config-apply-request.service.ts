@@ -24,12 +24,13 @@ import {
 import type { AuditLogMetadata } from '../audit/audit-log-metadata';
 import { RolloutEvents } from '../campaign/rollout-events';
 import { CentralDeviceService } from '../central-device/central-device.service';
+import { describeCentralFailure } from '../central-device/central-config';
+import type { RawCentralCommand } from '../central-device/central-device.types';
 import { omitHiddenConfigFields } from '../central-device/hidden-config-fields';
 import {
   CONFIG_APPLY_MODE,
   type ConfigApplyMode,
 } from '../device/config-applier';
-import { mergeApprovedOverride } from '../device/config-override-merge';
 import {
   CAMPAIGN_ELIGIBLE_FIRMWARE_APPROVAL_STATUS,
   SIMULATABLE_FIRMWARE_STATUS,
@@ -137,6 +138,97 @@ export type TaskRequestView = Prisma.ConfigApplyRequestGetPayload<{
   include: typeof TASK_REQUEST_INCLUDE;
 }>;
 
+export interface ConfigApplyRequestProgress {
+  requestId: string;
+  kind: 'config' | 'firmware';
+  status: ConfigApplyRequestStatus;
+  fromVersion: string | null;
+  toVersion: string | null;
+  isDowngrade: boolean;
+  releasedAt: string | null;
+  completedAt: string | null;
+  central: null | {
+    available: boolean;
+    commandId: string;
+    status: string | null;
+    progressPercent: number | null;
+    deviceOnline: boolean | null;
+    waitingReason: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    steps: { key: string; at: string | null; progress: number | null }[];
+  };
+}
+type CentralProgressStep = {
+  key: string;
+  at: string | null;
+  progress: number | null;
+};
+
+const CENTRAL_STEP_KEYS: Record<string, string> = {
+  DELIVERED: 'delivered',
+  ACKNOWLEDGED: 'delivered',
+  DOWNLOADING: 'downloading',
+  VALIDATING: 'validating',
+  INSTALLING: 'installing',
+  REBOOTING: 'rebooting',
+  SUCCESS: 'succeeded',
+  ROLLED_BACK: 'rolled_back',
+  FAILED: 'failed',
+  EXPIRED: 'expired',
+};
+
+/**
+ * ความยาวสูงสุดของข้อความจาก gateway ที่ส่งต่อให้แอป (รีวิว A #437 ข้อ 2) —
+ * gateway สร้าง `error_message` / `waiting_reason` จากข้อความไทยที่กำหนดไว้เอง
+ * (`describeError()` / `view()` ของ ws-gateway) ไม่มี IP, path หรือ key แต่ตัดไว้
+ * กันกรณี gateway เวอร์ชันอื่นส่งข้อความยาวผิดปกติ
+ */
+const CENTRAL_TEXT_MAX = 200;
+
+function clipCentralText(text: string | null | undefined): string | null {
+  if (!text) return null;
+  return text.length > CENTRAL_TEXT_MAX
+    ? `${text.slice(0, CENTRAL_TEXT_MAX - 1)}…`
+    : text;
+}
+
+function centralProgress(command: RawCentralCommand) {
+  const steps: CentralProgressStep[] = [];
+  let downloading: CentralProgressStep | null = null;
+  let downloadingIndex = -1;
+  for (const event of command.events ?? []) {
+    // event ที่ไม่มี status ข้ามไป ไม่ให้ทั้งหน้ากลายเป็น "Server กลางไม่พร้อม"
+    const status = event.status?.toUpperCase();
+    const key = status ? CENTRAL_STEP_KEYS[status] : undefined;
+    if (!key) continue;
+    const step = {
+      key,
+      at: event.time ?? null,
+      progress: status === 'DOWNLOADING' ? (event.progress ?? null) : null,
+    };
+    if (key === 'downloading') {
+      if (downloadingIndex < 0) downloadingIndex = steps.length;
+      downloading = step;
+    } else steps.push(step);
+  }
+  if (downloading) steps.splice(downloadingIndex, 0, downloading);
+  const errorMessage = command.error_code
+    ? describeCentralFailure(command)
+    : (command.error_message ?? null);
+  return {
+    available: true,
+    commandId: command.command_id,
+    status: command.status,
+    progressPercent: downloading?.progress ?? null,
+    deviceOnline: command.device_online ?? null,
+    waitingReason: clipCentralText(command.waiting_reason),
+    errorCode: command.error_code ?? null,
+    errorMessage: clipCentralText(errorMessage),
+    steps,
+  };
+}
+
 /** สิ่งที่ต่างกันระหว่างคำขอ 2 ชนิดตอนสร้าง — ที่เหลือ (Task, เครื่อง, เวลา) ใช้ร่วมกัน */
 type RequestPayloadDraft =
   | { kind: 'config'; configId: string; configAssignedBy: string | null }
@@ -157,8 +249,9 @@ export interface ApplyOptionConfig {
   latestVersion: number;
   /** Config ที่ Operation ผูกไว้กับงานที่ช่างเปิดอยู่ของกล่องนี้ (docs/28 D5) */
   suggested: boolean;
-  /** ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของกล่องกับ
-   * Config ตัวนี้ (merge แบบเดียวกับตอนส่ง) ให้ช่างดูก่อนเลือก */
+  /** ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่งของกล่อง
+   * กับ Config ตัวนี้ (merge แบบเดียวกับตอนส่ง) ให้ช่างดูก่อนเลือก · ไม่มีแถวรอส่ง
+   * = ค่าต้นฉบับของ Config (มติ B 2026-11-03 — Override ใช้ครั้งเดียว) */
   fields: Record<string, unknown>;
 }
 
@@ -530,6 +623,79 @@ export class ConfigApplyRequestService implements OnModuleInit {
     });
   }
 
+  /** Read-only, task-scoped progress view. Central failures degrade to unavailable. */
+  async progressForTask(
+    taskId: string,
+    requestId: string,
+    actor: ActingUser,
+  ): Promise<ConfigApplyRequestProgress> {
+    await this.taskService.findOne(taskId, actor);
+    const request = await this.prisma.configApplyRequest.findFirst({
+      where: { id: requestId, taskId },
+      include: {
+        config: { select: { name: true } },
+        firmware: { select: { version: true } },
+      },
+    });
+    if (!request) throw new NotFoundException('ไม่พบคำขอในงานนี้');
+
+    let central: ConfigApplyRequestProgress['central'] = null;
+    if (
+      this.applyMode === 'central' &&
+      request.releasedAt &&
+      request.rolloutId
+    ) {
+      const target = await this.prisma.campaignRolloutTarget.findFirst({
+        where: { rolloutId: request.rolloutId, deviceId: request.deviceId },
+        select: { centralCommandId: true },
+      });
+      const commandId = target?.centralCommandId;
+      if (commandId) {
+        // try ครอบเฉพาะการเรียก Server กลาง (รีวิว A #437 ข้อ 1) — บั๊กของเราใน
+        // centralProgress() ต้องเห็นเป็น error ไม่ถูกกลืนเป็น available: false
+        let command: RawCentralCommand | null = null;
+        try {
+          command = await this.centralDevices.getCommand(commandId);
+        } catch (err) {
+          this.logger.warn(
+            `อ่านความคืบหน้าคำสั่ง ${commandId} จาก Server กลางไม่สำเร็จ: ${(err as Error).message}`,
+          );
+        }
+        if (command) {
+          central = centralProgress(command);
+        } else {
+          central = {
+            available: false,
+            commandId,
+            status: null,
+            progressPercent: null,
+            deviceOnline: null,
+            waitingReason: null,
+            errorCode: null,
+            errorMessage: null,
+            steps: [],
+          };
+        }
+      }
+    }
+    const isFirmware = request.kind === 'firmware';
+    return {
+      requestId: request.id,
+      kind: request.kind,
+      status: request.status,
+      // Config: ไม่รู้ว่ากล่องใช้ Config อะไรอยู่จริง (Config ของงานคือที่ Operation
+      // ผูกไว้ ไม่ใช่ที่กล่องรัน) จึงเป็น null แทนการเดา (รีวิว A #437 ข้อ 3)
+      fromVersion: isFirmware ? request.fromFirmwareVersion : null,
+      toVersion: isFirmware
+        ? (request.firmware?.version ?? null)
+        : (request.config?.name ?? null),
+      isDowngrade: request.isDowngrade,
+      releasedAt: request.releasedAt?.toISOString() ?? null,
+      completedAt: request.completedAt?.toISOString() ?? null,
+      central,
+    };
+  }
+
   /**
    * `GET /devices/{deviceId}/apply-options` (docs/28 §5.2) — Config ที่ช่าง
    * เลือกส่งเข้ากล่องนี้ได้: สถานะ `approved`/`synced` ไม่ถูกลบ รุ่น+โปรโตคอลตรง
@@ -576,13 +742,16 @@ export class ConfigApplyRequestService implements OnModuleInit {
         },
       },
     });
-    // Override ที่อนุมัติแล้วของกล่องนี้ — แถวล่าสุดต่อ Config เก็บค่าสะสมไว้แล้ว
-    // (เหมือน `mergeApprovedOverride`) query เดียวแทนทีละ Config
+    // Override ที่อนุมัติแล้วแต่**ยังไม่ถูกส่ง**ของกล่องนี้ — แถวล่าสุดต่อ Config
+    // (เหมือน `mergeApprovedOverride`) query เดียวแทนทีละ Config · มติ B 2026-11-03:
+    // Override ใช้ครั้งเดียว ค่าที่เคยแก้และส่งไปแล้วไม่ถูกนับ หน้าเลือก Config จึง
+    // เห็นค่าต้นฉบับ (ปกติไม่มีแถวรอส่ง เพราะโหมด central ขอใหม่ไม่ได้ระหว่างมีคำขอค้าง)
     const overrides = configs.length
       ? await this.prisma.deviceConfigOverride.findMany({
           where: {
             deviceId,
             status: 'approved',
+            consumedAt: null,
             configId: { in: configs.map((c) => c.id) },
           },
           orderBy: { versionNumber: 'desc' },
@@ -698,12 +867,13 @@ export class ConfigApplyRequestService implements OnModuleInit {
         views.push({ ...row, config: null, fieldNames: [], override });
         continue;
       }
-      const { fields } = await mergeApprovedOverride(
-        this.prisma,
-        row.deviceId,
-        row.configId,
-        row.config.fields,
-      );
+      // ชื่อ field ที่คำขอนี้ส่ง = Config + Override ของคำขอนี้เอง (มติ B 2026-11-03 —
+      // Override ใช้ครั้งเดียวและผูกกับคำขอที่พามัน ไม่ใช่แถวล่าสุดของกล่อง ซึ่งหลัง
+      // ส่งแล้วถูกใช้ไปแล้ว ประวัติคำขอเก่าจะได้ไม่เปลี่ยนตาม)
+      const fields = {
+        ...asFieldMap(row.config.fields),
+        ...asFieldMap(row.override?.fields ?? null),
+      };
       const { fields: _baseFields, ...config } = row.config;
       void _baseFields;
       views.push({ ...row, config, fieldNames: Object.keys(fields), override });

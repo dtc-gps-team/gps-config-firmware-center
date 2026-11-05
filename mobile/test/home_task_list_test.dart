@@ -168,6 +168,15 @@ void main() {
     });
   }
 
+  testWidgets('หัวข้อหน้าเป็น "Task History"', (tester) async {
+    await _pump(
+      tester,
+      repo: _FakeTaskRepository(tasks: [_task(id: 'p')]),
+    );
+
+    expect(find.text('Task History'), findsOneWidget);
+  });
+
   testWidgets('กรองครบทุกสถานะ และล้างกลับเป็นทั้งหมด', (tester) async {
     await _pump(
       tester,

@@ -1446,6 +1446,73 @@ paths:
         "404":
           description: ไม่พบงาน หรือผู้เรียกไม่มีสิทธิ์เห็นงานนี้
 
+  /tasks/{taskId}/config-apply-requests/{id}/progress:
+    get:
+      tags: [config-apply-request]
+      operationId: getConfigApplyRequestProgress
+      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84)
+      description: >-
+        ใช้สิทธิ์และ scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests`.
+        คำขอที่ไม่อยู่ในงานหรือผู้ใช้มองไม่เห็นงานตอบ 404. อ่านสถานะสดจาก Server กลาง
+        เมื่อมีคำสั่ง; การติดต่อ Server กลางล้มเหลวคืน `central.available: false`.
+        ไม่เขียนฐานข้อมูลและไม่ส่ง field ภายในของคำสั่ง (เช่น `nonce`) กลับมา.
+        `errorMessage` / `waitingReason` เป็นข้อความไทยที่ gateway สร้างจากรหัส
+        (ไม่มี IP, path หรือ key) ตัดไว้ไม่เกิน 200 ตัวอักษร.
+        `fromVersion` มีเฉพาะ Firmware (เวอร์ชันก่อนส่ง) · Config เป็น `null`
+        เพราะไม่รู้ว่ากล่องใช้ Config ใดอยู่จริง.
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: ความคืบหน้าคำขอ
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requestId, kind, status, fromVersion, toVersion, isDowngrade, releasedAt, completedAt, central]
+                properties:
+                  requestId: { type: string, format: uuid }
+                  kind: { type: string, enum: [config, firmware] }
+                  status: { $ref: "#/components/schemas/ConfigApplyRequestStatus" }
+                  fromVersion: { type: string, nullable: true }
+                  toVersion: { type: string, nullable: true }
+                  isDowngrade: { type: boolean }
+                  releasedAt: { type: string, format: date-time, nullable: true }
+                  completedAt: { type: string, format: date-time, nullable: true }
+                  central:
+                    nullable: true
+                    type: object
+                    required: [available, commandId, status, progressPercent, deviceOnline, waitingReason, errorCode, errorMessage, steps]
+                    properties:
+                      available: { type: boolean }
+                      commandId: { type: string }
+                      status: { type: string, nullable: true }
+                      progressPercent: { type: integer, minimum: 0, maximum: 100, nullable: true }
+                      deviceOnline: { type: boolean, nullable: true }
+                      waitingReason: { type: string, nullable: true }
+                      errorCode: { type: string, nullable: true }
+                      errorMessage: { type: string, nullable: true }
+                      steps:
+                        type: array
+                        items:
+                          type: object
+                          required: [key, at, progress]
+                          properties:
+                            key:
+                              type: string
+                              enum: [delivered, downloading, validating, installing, rebooting, succeeded, rolled_back, failed, expired]
+                            at: { type: string, format: date-time, nullable: true }
+                            progress: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        "401": { description: Token ไม่ถูกต้องหรือหมดอายุ }
+        "404": { description: ไม่พบงาน/คำขอ หรือผู้ใช้ไม่มีสิทธิ์เห็นงานนี้ }
+
   /config-apply-requests:
     get:
       tags: [config-apply-request]
@@ -5396,13 +5463,13 @@ components:
               type: object
               nullable: true
               description: >-
-                (v3.71) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` — `fields`
-                คือค่าที่**จะ**อยู่ในกล่องหลังส่งครั้งถัดไป (รวม Override ที่อนุมัติ
-                แล้วทันที) ซึ่งในโหมด central (docs/30) อนุมัติแล้วยังต้องรอช่างกด
-                ส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน + Override
-                ฉบับล่าสุดที่อนุมัติไม่หลังเวลาที่ Rollout ของเครื่องนี้สำเร็จ ·
-                `null` = ไม่มีหลักฐานการส่ง (Config ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง
-                ไม่ใช่ Rollout)
+                (v3.71, v3.83) ค่าที่ส่งเข้ากล่องสำเร็จล่าสุด เทียบกับ `fields` —
+                `fields` คือค่าที่**จะ**ส่งครั้งถัดไป = Config ฐาน + Override ที่
+                อนุมัติแล้วแต่ยังไม่ถูกส่ง ซึ่งในโหมด central (docs/30) อนุมัติแล้ว
+                ยังต้องรอช่างกดส่ง จึงต่างจากค่าในกล่องได้ · คำนวณจาก Config ฐาน +
+                Override ฉบับล่าสุดที่ถูกส่งไปแล้ว (`consumedAt`) ไม่หลังเวลาที่
+                Rollout ของเครื่องนี้สำเร็จ · `null` = ไม่มีหลักฐานการส่ง (Config
+                ฐานมาจากงานที่ช่างยืนยันติดตั้งเอง ไม่ใช่ Rollout)
               required: [fields, confirmedAt, pendingFieldNames]
               properties:
                 fields:
@@ -5418,15 +5485,18 @@ components:
                   items:
                     type: string
                   description: >-
-                    field ที่ค่าใน `fields` ของ response ต่างจากค่าในกล่อง
-                    (อนุมัติแล้ว รอส่งเข้ากล่อง) · ว่าง = ตรงกันทั้งหมด
+                    field ของ Override ที่อนุมัติแล้วแต่ยังไม่ถูกส่ง ที่ค่าใน
+                    `fields` ของ response ต่างจากค่าในกล่อง (รอส่งเข้ากล่อง) ·
+                    ว่าง = ไม่มีค่ารอส่ง (v3.83)
             hasDeviceOverride:
               type: boolean
               description: >-
                 อุปกรณ์เครื่องนี้มีคำขอ `DeviceConfigOverride` สถานะ `approved`
-                ทับ base Config อยู่ไหม — `true` บอกช่างว่าค่าที่เห็นไม่ใช่
-                Config เดิมล้วนๆ (issue #223) คำขอ `pending`/`rejected` **ไม่
-                มีผล** ต่อค่านี้ (v3.32)
+                ที่**ยังไม่ถูกส่ง**ทับ base Config อยู่ไหม — `true` บอกช่างว่าค่าที่
+                เห็นไม่ใช่ Config เดิมล้วนๆ (issue #223) คำขอ `pending`/`rejected`
+                **ไม่มีผล** ต่อค่านี้ (v3.32) · Override ใช้ครั้งเดียว ส่งสำเร็จแล้ว
+                ค่านี้กลับเป็น `false` และ `fields` กลับเป็นค่าต้นฉบับ (v3.83, มติ B
+                2026-11-03)
             pendingOverride:
               type: object
               nullable: true
@@ -5443,7 +5513,9 @@ components:
         Per-device Config Override (issue #223) — คำขอแก้ค่าบาง field ของ
         Config เฉพาะอุปกรณ์เครื่องเดียว ต้องผ่าน Operation อนุมัติก่อนถึงมีผล
         (มติ 2026-09-24, PR #225 — ดู comment เหนือ `model DeviceConfigOverride`
-        ใน schema.prisma)
+        ใน schema.prisma) · **ใช้ครั้งเดียว (v3.83, มติ B 2026-11-03):** มีผลกับ
+        การส่ง Config นั้นเข้าเครื่องนี้ครั้งถัดไปครั้งเดียว ส่งสำเร็จแล้วบันทึก
+        `consumedAt` ส่งครั้งถัดไปได้ค่าต้นฉบับ
       required:
         [
           id,
@@ -5471,7 +5543,9 @@ components:
         fields:
           type: object
           additionalProperties: true
-          description: สถานะ override สะสมของอุปกรณ์เครื่องนี้ ณ version นี้
+          description: >-
+            ค่าที่ขอแก้ในรอบนี้เท่านั้น (v3.83 — ไม่สะสมค่าจากรอบก่อนแล้ว เดิมเป็น
+            สถานะ override สะสมของอุปกรณ์)
         reason:
           type: string
         status:
@@ -5497,6 +5571,13 @@ components:
           type: string
           nullable: true
           description: เหตุผลที่ปฏิเสธ — optional แม้สถานะเป็น rejected
+        consumedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            (v3.83) เวลาที่ค่านี้ถูกส่งเข้ากล่องสำเร็จ · `null` = ยังไม่ถูกส่ง
+            (หรือยังไม่อนุมัติ) — การส่ง Config นี้ครั้งถัดไปไม่ใช้ค่านี้อีก
 
     DeviceFirmwareOverride:
       type: object
@@ -6423,8 +6504,10 @@ components:
                 type: object
                 additionalProperties: true
                 description: >-
-                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วล่าสุดของ
-                  กล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อนเลือก
+                  (v3.75) ค่าที่จะส่งเข้ากล่องนี้ = Config + Override ที่อนุมัติแล้วแต่
+                  ยังไม่ถูกส่งของกล่องกับ Config ตัวนี้ (key = fieldName) ให้ช่างดูก่อน
+                  เลือก · **(v3.83)** Override ใช้ครั้งเดียว ค่าที่เคยแก้และส่งไปแล้ว
+                  ไม่ถูกนับ ปกติจึงเป็นค่าต้นฉบับของ Config (มติ B 2026-11-03)
                   · **(v3.77)** ไม่มี `data_server.path` เพราะมี key ส่ง telemetry
                   ส่วนค่าที่ส่งเข้ากล่องจริงยังครบ
         currentFirmwareVersion:

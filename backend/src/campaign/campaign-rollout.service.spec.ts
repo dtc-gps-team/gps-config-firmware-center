@@ -5081,7 +5081,7 @@ describe('CampaignRolloutService', () => {
       campaignRollout.findUniqueOrThrow.mockResolvedValue(active);
     });
 
-    it('target ที่มี proposedFields -> สร้าง override approved รวมค่า approved เดิมของ (เครื่อง, Config นี้) และ versionNumber = ล่าสุด + 1', async () => {
+    it('target ที่มี proposedFields -> สร้าง override approved เฉพาะค่าของ Rollout นี้ ไม่สะสมค่าเดิม (มติ B 2026-11-03) และ versionNumber = ล่าสุด + 1', async () => {
       campaignRolloutTarget.findMany.mockResolvedValueOnce([
         {
           id: 'rt-1',
@@ -5090,12 +5090,10 @@ describe('CampaignRolloutService', () => {
           proposedFields: { SPEED_LIMIT: 180 },
         },
       ]);
-      // ค่า approved เดิมของ (DEV-0001, cfg-1) แล้วเครื่องมี version ล่าสุด 4
-      deviceConfigOverride.findFirst
-        .mockResolvedValueOnce({
-          fields: { APN: 'internet', SPEED_LIMIT: 120 },
-        })
-        .mockResolvedValueOnce({ versionNumber: 4 });
+      // เครื่องมี version ล่าสุด 4
+      deviceConfigOverride.findFirst.mockResolvedValueOnce({
+        versionNumber: 4,
+      });
 
       await service.release(approvedRollout.id, otherOperation);
 
@@ -5104,7 +5102,7 @@ describe('CampaignRolloutService', () => {
           deviceId: 'DEV-0001',
           configId: approvedConfig.id,
           versionNumber: 5,
-          fields: { APN: 'internet', SPEED_LIMIT: 180 },
+          fields: { SPEED_LIMIT: 180 },
           reason: 'ลูกค้าขอเพดานความเร็วสูงกว่าปกติ',
           status: 'approved',
           overriddenBy: operation.id,

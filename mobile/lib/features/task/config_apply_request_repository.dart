@@ -11,6 +11,7 @@ import '../../core/auth/auth_controller.dart'; // apiClientProvider
 abstract class ConfigApplyRequestRepository {
   /// คำขอทั้งหมดของงาน ใหม่สุดก่อน
   Future<List<ConfigApplyRequest>> listForTask(String taskId);
+  Future<ConfigApplyRequestProgress> progress(String taskId, String requestId);
 
   /// [configId] = Config ที่ช่างเลือก (docs/28 §5.3) · `null` = ใช้ Config ที่
   /// Operation ผูกไว้กับงาน (พฤติกรรมเดิมของ docs/25) · [firmwareId] = ขอส่ง
@@ -44,6 +45,12 @@ class ApiConfigApplyRequestRepository implements ConfigApplyRequestRepository {
   @override
   Future<List<ConfigApplyRequest>> listForTask(String taskId) =>
       _api.listTaskConfigApplyRequests(taskId);
+
+  @override
+  Future<ConfigApplyRequestProgress> progress(
+    String taskId,
+    String requestId,
+  ) => _api.getConfigApplyRequestProgress(taskId, requestId);
 
   @override
   Future<ConfigApplyRequest> create(

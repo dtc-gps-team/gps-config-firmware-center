@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../core/api/models.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/db/tables/pending_actions_table.dart';
 import '../../core/router/app_router.dart';
+import '../../core/realtime/live_refresh.dart';
 import '../../core/sync/sync_providers.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
@@ -27,6 +29,7 @@ import '../config_override/config_value_parser.dart';
 import '../incident/incident_repository.dart';
 import '../../core/widgets/sync_status_widgets.dart';
 import 'config_apply_request_repository.dart';
+import 'task_event_repository.dart';
 import 'task_repository.dart';
 import 'task_timeline_section.dart';
 
@@ -34,6 +37,18 @@ String _formatDate(DateTime dt) {
   final d = dt.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+String _formatCompactDate(DateTime dt) {
+  final local = dt.toLocal();
+  final now = DateTime.now();
+  final sameDay =
+      local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day;
+  String two(int n) => n.toString().padLeft(2, '0');
+  final time = '${two(local.hour)}:${two(local.minute)}';
+  return sameDay ? time : '${two(local.day)}/${two(local.month)} $time';
 }
 
 /// Incident description for a failed simulator check. Prefix `[Simulator
@@ -131,6 +146,7 @@ class TaskDetailPage extends ConsumerWidget {
             Expanded(
               child: taskAsync.when(
                 skipLoadingOnRefresh: true,
+                skipError: true,
                 // sync flush ขยับ syncRevisionProvider = "reload" (ไม่ใช่ refresh)
                 // ถ้าไม่ข้าม loading ตรงนี้ view จะถูกแทนด้วย skeleton แล้ว
                 // dispose ทิ้งระหว่างโหลด (UX audit #3)
@@ -201,12 +217,6 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   String? _cancelError;
   bool _releasing = false;
   String? _releaseError;
-
-  // docs/27 §9 — โหลดสถานะคำขอใหม่เป็นระยะระหว่างที่ยังเปลี่ยนได้จากฝั่ง server
-  // (รออนุมัติ / รอกดส่ง / กำลังส่ง) เพราะ push อาจไม่มา (เช่น NOTIFICATION_MODE=
-  // mock) · เริ่ม/หยุดตามสถานะใน build() ผ่าน [_syncRequestPolling]
-  static const _requestPollInterval = Duration(seconds: 5);
-  Timer? _requestPoll;
 
   // ทดสอบกับ Device Simulator ก่อนส่ง Config (แถว 26b, ไม่บังคับ) — ผลไม่ผ่าน
   // (`passed == false`) บล็อกปุ่ม "ส่ง Config เข้าเครื่อง" ฝั่ง client เท่านั้น
@@ -447,11 +457,11 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
       _refreshApplyRequests();
       if (!mounted) return;
       setState(() => _releasing = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('ส่งเข้ากล่องแล้ว — รอกล่องยืนยัน')),
-        );
+      // ไปหน้าความคืบหน้าทันที · ไม่มี router (เช่นฝังในหน้าอื่น) = อยู่หน้าเดิม
+      // แถบ "กำลังส่งเข้ากล่อง" ด้านบนเปิดหน้านั้นซ้ำได้
+      GoRouter.maybeOf(
+        context,
+      )?.push(AppRoutes.taskApplyProgress(widget.taskId, requestId));
     } on ApiException catch (e) {
       _refreshApplyRequests();
       if (!mounted) return;
@@ -499,24 +509,6 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
   void _refreshApplyRequests() {
     ref.invalidate(taskConfigApplyRequestsProvider(widget.taskId));
     ref.invalidate(latestConfigApplyRequestProvider(widget.taskId));
-  }
-
-  void _syncRequestPolling(bool inFlight) {
-    if (inFlight && _requestPoll == null) {
-      _requestPoll = Timer.periodic(_requestPollInterval, (_) {
-        if (!mounted) return;
-        _refreshApplyRequests();
-      });
-    } else if (!inFlight && _requestPoll != null) {
-      _requestPoll!.cancel();
-      _requestPoll = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _requestPoll?.cancel();
-    super.dispose();
   }
 
   /// `POST /config-apply-requests/{id}/cancel` — ยกเลิกคำขอ `pending`/`approved`
@@ -585,7 +577,10 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final showRequestButton =
         canConfirmInstall &&
         (latestRequest == null || latestRequest.status.allowsNewRequest);
-    _syncRequestPolling(latestRequest?.status.isInFlight ?? false);
+    final requestSending =
+        latestRequest?.status == ConfigApplyRequestStatus.sending &&
+        latestRequest?.releasedAt != null &&
+        latestRequest?.completedAt == null;
     // docs/28 §5.4 — ปิดงานระหว่างกำลังส่งเข้ากล่องไม่ได้ (backend ตอบ 409)
     final completeBlocked =
         _selected == TaskStatus.completed &&
@@ -605,313 +600,352 @@ class _TaskDetailViewState extends ConsumerState<_TaskDetailView> {
     final description = (task.description ?? '').trim();
     final deviceId = task.deviceId ?? '';
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-        children: [
-          if (offline != null) ...[
-            OfflineCacheBanner(cachedAt: offline.cachedAt),
-            const SizedBox(height: 12),
-          ],
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AppInfoRow(
-                  key: const Key('task_detail_status_summary'),
-                  label: 'สถานะงาน',
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppBadge(
-                      key: const Key('task_detail_status_badge'),
-                      label: taskStatusLabel(task.status),
-                      tone: taskStatusTone(task.status),
-                      dot: true,
+    return LiveRefresh(
+      interval: latestRequest?.status.isInFlight == true
+          ? const Duration(seconds: 5)
+          : const Duration(seconds: 15),
+      onRefresh: () async {
+        await Future.wait([
+          ref.refresh(taskDetailProvider(widget.taskId).future),
+          ref.refresh(taskEventsProvider(widget.taskId).future),
+          ref.refresh(taskConfigApplyRequestsProvider(widget.taskId).future),
+        ]);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          children: [
+            if (offline != null) ...[
+              OfflineCacheBanner(cachedAt: offline.cachedAt),
+              const SizedBox(height: 12),
+            ],
+            if (requestSending) ...[
+              _SendingRequestBanner(
+                request: latestRequest!,
+                onTap: () => context.push(
+                  AppRoutes.taskApplyProgress(task.id, latestRequest.id),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppInfoRow(
+                    key: const Key('task_detail_status_summary'),
+                    label: 'สถานะงาน',
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppBadge(
+                        key: const Key('task_detail_status_badge'),
+                        label: taskStatusLabel(task.status),
+                        tone: taskStatusTone(task.status),
+                        dot: true,
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  task.title,
-                  key: const Key('task_detail_title'),
-                  style: const TextStyle(
-                    fontSize: AppTypography.base,
-                    height: AppTypography.baseHeight,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.foreground,
-                  ),
-                ),
-                if (description.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const _CardTitle('รายละเอียด'),
                   Text(
-                    description,
-                    key: const Key('task_detail_description'),
+                    task.title,
+                    key: const Key('task_detail_title'),
                     style: const TextStyle(
-                      fontSize: AppTypography.sm,
-                      height: AppTypography.smHeight,
+                      fontSize: AppTypography.base,
+                      height: AppTypography.baseHeight,
+                      fontWeight: FontWeight.w600,
                       color: AppColors.foreground,
                     ),
                   ),
-                ],
-                const SizedBox(height: 8),
-                const Divider(),
-                // UX audit #1: เลขอุปกรณ์กดไปหน้ารายละเอียดอุปกรณ์ได้ (เดิมต้องกลับ
-                // Home แล้วค้นหาเอง ก่อนจะไปขอแก้ Config ของเครื่องนั้น)
-                if (deviceId.isNotEmpty)
-                  _DeviceLinkRow(
-                    deviceId: deviceId,
-                    onTap: () => context.push(AppRoutes.deviceDetail(deviceId)),
-                  )
-                else
-                  const AppInfoRow(label: 'อุปกรณ์', value: null),
-                // ชื่อมากับ GET /tasks/{id} (v3.67) · ไม่มี (cache ในเครื่อง /
-                // backend เก่า) = user id ดิบแบบเดิม
-                AppInfoRow(
-                  key: const Key('task_detail_assignee'),
-                  label: 'ผู้รับผิดชอบ',
-                  value: task.assignee?.label ?? task.assignedTo,
-                  selectable: true,
-                ),
-                AppInfoRow(
-                  key: const Key('task_detail_source'),
-                  label: 'ที่มา',
-                  value: taskSourceLabel(task.source),
-                ),
-                AppInfoRow(
-                  label: 'กำหนดส่ง',
-                  value: task.dueDate == null
-                      ? null
-                      : _formatDate(task.dueDate!),
-                ),
-                AppInfoRow(
-                  label: 'สร้างเมื่อ',
-                  value: _formatDate(task.createdAt),
-                ),
-                AppInfoRow(
-                  label: 'แก้ไขล่าสุด',
-                  value: _formatDate(task.updatedAt),
-                ),
-                if (task.completedAt != null)
-                  AppInfoRow(
-                    label: 'ปิดงานเมื่อ',
-                    value: _formatDate(task.completedAt!),
-                  ),
-                if (task.autoClosed) ...[
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const _CardTitle('รายละเอียด'),
+                    Text(
+                      description,
+                      key: const Key('task_detail_description'),
+                      style: const TextStyle(
+                        fontSize: AppTypography.sm,
+                        height: AppTypography.smHeight,
+                        color: AppColors.foreground,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
-                  const AppNotice(
-                    key: Key('task_detail_auto_closed'),
-                    tone: AppBadgeTone.neutral,
-                    icon: Icons.schedule,
-                    child: Text(
-                      'ระบบปิดงานให้ เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม.',
+                  const Divider(),
+                  // UX audit #1: เลขอุปกรณ์กดไปหน้ารายละเอียดอุปกรณ์ได้ (เดิมต้องกลับ
+                  // Home แล้วค้นหาเอง ก่อนจะไปขอแก้ Config ของเครื่องนั้น)
+                  if (deviceId.isNotEmpty)
+                    _DeviceLinkRow(
+                      deviceId: deviceId,
+                      onTap: () =>
+                          context.push(AppRoutes.deviceDetail(deviceId)),
+                    )
+                  else
+                    const AppInfoRow(label: 'อุปกรณ์', value: null),
+                  // ข้อมูลงานย่อเป็นบรรทัดเล็ก · ผู้รับผิดชอบ/ที่มาอยู่ครบ ไม่ตัดทิ้ง
+                  // (ชื่อมากับ GET /tasks/{id} v3.67 · ไม่มี = user id ดิบแบบเดิม)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: DefaultTextStyle.merge(
+                      style: const TextStyle(
+                        fontSize: AppTypography.xs,
+                        height: AppTypography.xsHeight,
+                        color: AppColors.mutedForeground,
+                      ),
+                      child: Wrap(
+                        key: const Key('task_detail_compact_meta'),
+                        spacing: 6,
+                        runSpacing: 2,
+                        children: [
+                          SelectableText(
+                            task.assignee?.label ?? task.assignedTo,
+                            key: const Key('task_detail_assignee'),
+                          ),
+                          const Text('·'),
+                          Text(
+                            taskSourceLabel(task.source),
+                            key: const Key('task_detail_source'),
+                          ),
+                          const Text('·'),
+                          Text('สร้าง ${_formatCompactDate(task.createdAt)}'),
+                          const Text('·'),
+                          Text(
+                            'แก้ล่าสุด ${_formatCompactDate(task.updatedAt)}',
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
-          if (canEditStatus) ...[
-            const SizedBox(height: 12),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _CardTitle('เปลี่ยนสถานะงาน'),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final status in _fieldStaffStatusChoices)
-                        ChoiceChip(
-                          key: Key('status_choice_${status.wireName}'),
-                          label: Text(taskStatusLabel(status)),
-                          selected: _selected == status,
-                          onSelected: _saving
-                              ? null
-                              : (_) => setState(() => _selected = status),
-                        ),
-                    ],
-                  ),
+                  // แสดงเฉพาะเมื่อมีค่า (ส่วนใหญ่ไม่มี จึงไม่ทำให้หน้ายาว)
+                  if (task.dueDate != null)
+                    AppInfoRow(
+                      label: 'กำหนดส่ง',
+                      value: _formatDate(task.dueDate!),
+                    ),
+                  if (task.completedAt != null)
+                    AppInfoRow(
+                      label: 'ปิดงานเมื่อ',
+                      value: _formatDate(task.completedAt!),
+                    ),
+                  if (task.autoClosed) ...[
+                    const SizedBox(height: 8),
+                    const AppNotice(
+                      key: Key('task_detail_auto_closed'),
+                      tone: AppBadgeTone.neutral,
+                      icon: Icons.schedule,
+                      child: Text(
+                        'ระบบปิดงานให้ เพราะไม่มีความเคลื่อนไหวเกิน 24 ชม.',
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ],
-          if (canConfirmInstall) ...[
-            const SizedBox(height: 12),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _CardTitle('ส่ง Config / Firmware เข้ากล่อง'),
-                  Text(
-                    hasAssignedConfig
-                        ? 'ส่ง Config ของงานนี้ หรือขออัปเดต Firmware เข้าอุปกรณ์ '
-                              '${task.deviceId} — ทำหลังติดตั้งกล่อง GPS เสร็จแล้ว · '
-                              'Config ที่ไม่แก้ค่าส่งได้ทันที · แก้ค่าหรือ Firmware '
-                              'ต้องรอ Operation อนุมัติก่อน แล้วกดส่งจากหน้านี้'
-                        : 'เลือก Config หรือ Firmware ที่อนุมัติแล้วสำหรับอุปกรณ์ '
-                              '${task.deviceId} · Config ที่ไม่แก้ค่าส่งได้ทันที · '
-                              'แก้ค่าหรือ Firmware ต้องรอ Operation อนุมัติก่อน แล้วกด'
-                              'ส่งจากหน้านี้',
-                    style: const TextStyle(
-                      fontSize: AppTypography.xs,
-                      height: AppTypography.xsHeight,
-                      color: AppColors.mutedForeground,
-                    ),
-                  ),
-                  if (showRequestButton)
+            if (canEditStatus) ...[
+              const SizedBox(height: 12),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _CardTitle('เปลี่ยนสถานะงาน'),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        if (hasAssignedConfig)
-                          TextButton(
-                            key: const Key('choose_other_config_button'),
-                            onPressed: _openPicker,
-                            child: const Text('เลือก Config อื่น'),
+                        for (final status in _fieldStaffStatusChoices)
+                          ChoiceChip(
+                            key: Key('status_choice_${status.wireName}'),
+                            label: Text(taskStatusLabel(status)),
+                            selected: _selected == status,
+                            onSelected: _saving
+                                ? null
+                                : (_) => setState(() => _selected = status),
                           ),
-                        // docs/27 §9 ปุ่มรอง "ขออัปเดต Firmware" (B3)
-                        TextButton.icon(
-                          key: const Key('request_firmware_button'),
-                          onPressed: () => _openPicker(firmware: true),
-                          icon: const Icon(Icons.memory, size: 18),
-                          label: const Text('ขออัปเดต Firmware'),
-                        ),
                       ],
                     ),
-                  if (hasAssignedConfig) ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      key: const Key('simulate_test_button'),
-                      onPressed: _simulating ? null : _runSimulation,
-                      icon: _simulating
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.fact_check_outlined, size: 18),
-                      label: Text(
-                        _simulating
-                            ? 'กำลังทดสอบ...'
-                            : 'ทดสอบกับ Device Simulator (ไม่บังคับ)',
-                      ),
-                    ),
-                    if (_simulationError != null) ...[
-                      const SizedBox(height: 12),
-                      AppNotice(
-                        tone: AppBadgeTone.danger,
-                        icon: Icons.error_outline,
-                        child: Text(
-                          _simulationError!,
-                          key: const Key('simulate_error'),
-                        ),
-                      ),
-                    ],
-                    if (_simulationResult != null) ...[
-                      const SizedBox(height: 12),
-                      SimulationResultCard(
-                        key: const Key('simulate_result'),
-                        result: _simulationResult!,
-                      ),
-                    ],
                   ],
-                  _ApplyRequestSection(
-                    request: applyRequest!,
-                    cancelling: _cancelling,
-                    cancelError: _cancelError,
-                    onCancel: _confirmCancelRequest,
-                    releasing: _releasing,
-                    releaseError: _releaseError,
-                    onRelease: _confirmReleaseRequest,
-                    onRetry: () => ref.invalidate(
-                      taskConfigApplyRequestsProvider(task.id),
-                    ),
-                  ),
-                  if (earlierRequests.isNotEmpty)
-                    _RequestHistoryLink(
-                      earlierCount: earlierRequests.length,
-                      onTap: () =>
-                          context.push(AppRoutes.taskRequestHistory(task.id)),
-                    ),
-                  if (_incidentNotice != null) ...[
-                    const SizedBox(height: 8),
+                ),
+              ),
+            ],
+            if (canConfirmInstall) ...[
+              const SizedBox(height: 12),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _CardTitle('ส่ง Config / Firmware เข้ากล่อง'),
                     Text(
-                      _incidentNotice!,
-                      key: const Key('simulate_incident_notice'),
+                      hasAssignedConfig
+                          ? 'ส่ง Config ของงานนี้ หรือขออัปเดต Firmware เข้าอุปกรณ์ '
+                                '${task.deviceId} — ทำหลังติดตั้งกล่อง GPS เสร็จแล้ว · '
+                                'Config ที่ไม่แก้ค่าส่งได้ทันที · แก้ค่าหรือ Firmware '
+                                'ต้องรอ Operation อนุมัติก่อน แล้วกดส่งจากหน้านี้'
+                          : 'เลือก Config หรือ Firmware ที่อนุมัติแล้วสำหรับอุปกรณ์ '
+                                '${task.deviceId} · Config ที่ไม่แก้ค่าส่งได้ทันที · '
+                                'แก้ค่าหรือ Firmware ต้องรอ Operation อนุมัติก่อน แล้วกด'
+                                'ส่งจากหน้านี้',
                       style: const TextStyle(
                         fontSize: AppTypography.xs,
                         height: AppTypography.xsHeight,
                         color: AppColors.mutedForeground,
                       ),
                     ),
+                    if (showRequestButton)
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          if (hasAssignedConfig)
+                            TextButton(
+                              key: const Key('choose_other_config_button'),
+                              onPressed: _openPicker,
+                              child: const Text('เลือก Config อื่น'),
+                            ),
+                          // docs/27 §9 ปุ่มรอง "ขออัปเดต Firmware" (B3)
+                          TextButton.icon(
+                            key: const Key('request_firmware_button'),
+                            onPressed: () => _openPicker(firmware: true),
+                            icon: const Icon(Icons.memory, size: 18),
+                            label: const Text('ขออัปเดต Firmware'),
+                          ),
+                        ],
+                      ),
+                    if (hasAssignedConfig) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        key: const Key('simulate_test_button'),
+                        onPressed: _simulating ? null : _runSimulation,
+                        icon: _simulating
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.fact_check_outlined, size: 18),
+                        label: Text(
+                          _simulating
+                              ? 'กำลังทดสอบ...'
+                              : 'ทดสอบกับ Device Simulator (ไม่บังคับ)',
+                        ),
+                      ),
+                      if (_simulationError != null) ...[
+                        const SizedBox(height: 12),
+                        AppNotice(
+                          tone: AppBadgeTone.danger,
+                          icon: Icons.error_outline,
+                          child: Text(
+                            _simulationError!,
+                            key: const Key('simulate_error'),
+                          ),
+                        ),
+                      ],
+                      if (_simulationResult != null) ...[
+                        const SizedBox(height: 12),
+                        SimulationResultCard(
+                          key: const Key('simulate_result'),
+                          result: _simulationResult!,
+                        ),
+                      ],
+                    ],
+                    if (!requestSending)
+                      _ApplyRequestSection(
+                        request: applyRequest!,
+                        cancelling: _cancelling,
+                        cancelError: _cancelError,
+                        onCancel: _confirmCancelRequest,
+                        releasing: _releasing,
+                        releaseError: _releaseError,
+                        onRelease: _confirmReleaseRequest,
+                        onRetry: () => ref.invalidate(
+                          taskConfigApplyRequestsProvider(task.id),
+                        ),
+                      ),
+                    if (earlierRequests.isNotEmpty)
+                      _RequestHistoryLink(
+                        earlierCount: earlierRequests.length,
+                        onTap: () =>
+                            context.push(AppRoutes.taskRequestHistory(task.id)),
+                      ),
+                    if (_incidentNotice != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _incidentNotice!,
+                        key: const Key('simulate_incident_notice'),
+                        style: const TextStyle(
+                          fontSize: AppTypography.xs,
+                          height: AppTypography.xsHeight,
+                          color: AppColors.mutedForeground,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          TaskTimelineSection(taskId: task.id, canAddNote: canAddNote),
-        ],
-      ),
-      // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)
-      // ให้กดได้ง่ายด้วยมือเดียวโดยไม่ต้องเลื่อนจอ — error ของปุ่มย้ายมาอยู่เหนือ
-      // แถวปุ่มในบาร์นี้ด้วย ไม่ทิ้งไว้บนเนื้อหาด้านบนที่ปุ่มลอยอยู่ล่างสุดเสมอ
-      // (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
-      //
-      // docs/21 #11: เดิมสองปุ่มเป็น FilledButton สีเดียวกันขนาดเท่ากัน ไม่รู้ว่าปุ่ม
-      // ไหนสำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว (ไว้ท้ายสุดตามกติกา Web) ตอนมีทั้งคู่
-      // "ขอส่ง Config เข้าเครื่อง" เป็นปุ่มหลัก เพราะเป็นงานเฉพาะของใบงานติดตั้ง
-      // ส่วน "บันทึกสถานะ" ลดเป็น outline · สองปุ่มวางเคียงกัน (ปุ่มหลักขวา) สูง 48
-      // ดู `_BottomActionBar` · มีปุ่มเดียวเมื่อไหร่ ปุ่มนั้นเป็นปุ่มหลักเต็มความกว้าง
-      bottomNavigationBar: (canEditStatus || showRequestButton)
-          ? DecoratedBox(
-              decoration: const BoxDecoration(
-                color: AppColors.background,
-                border: Border(top: BorderSide(color: AppColors.border)),
-              ),
-              child: SafeArea(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: _BottomActionBar(
-                    save: canEditStatus
-                        ? _StatusSaveBar(
-                            error: _saveError,
-                            saving: _saving,
-                            primary: !showRequestButton,
-                            blockedMessage: completeBlocked
-                                ? 'กำลังส่งเข้ากล่องอยู่ — รอผลจากกล่องก่อน'
-                                      'แล้วค่อยปิดงาน'
-                                : null,
-                            onPressed: (!_dirty || _saving || completeBlocked)
-                                ? null
-                                : () => _confirmThenSave(latestRequest),
-                          )
-                        : null,
-                    confirm: showRequestButton
-                        ? _ConfirmInstallBar(
-                            retry: latestRequest != null,
-                            blockedMessage: _simulationBlocked
-                                ? 'ผลทดสอบกับ Device Simulator ไม่ผ่าน — ส่ง '
-                                      'Config ไม่ได้จนกว่าจะทดสอบซ้ำแล้วผ่าน'
-                                : null,
-                            onPressed: (!requestKnown || _simulationBlocked)
-                                ? null
-                                // คำขอล่าสุดเป็น Firmware ที่ไม่สำเร็จ — ขอซ้ำ
-                                // ต้องเลือก Firmware ใหม่ ไม่ใช่ส่ง Config ของงาน
-                                : latestRequest?.kind == FieldApplyKind.firmware
-                                ? () => _openPicker(firmware: true)
-                                : hasAssignedConfig
-                                ? _openAssignedConfig
-                                : _openPicker,
-                          )
-                        : null,
-                  ),
                 ),
               ),
-            )
-          : null,
+            ],
+            const SizedBox(height: 12),
+            TaskTimelineSection(taskId: task.id, canAddNote: canAddNote),
+          ],
+        ),
+        // ย้ายปุ่ม action หลักมาไว้ที่ bottom bar (แทนต่อท้ายเนื้อหาใน ListView)
+        // ให้กดได้ง่ายด้วยมือเดียวโดยไม่ต้องเลื่อนจอ — error ของปุ่มย้ายมาอยู่เหนือ
+        // แถวปุ่มในบาร์นี้ด้วย ไม่ทิ้งไว้บนเนื้อหาด้านบนที่ปุ่มลอยอยู่ล่างสุดเสมอ
+        // (ผู้ใช้จะมองไม่เห็น error ถ้า error ยังอยู่บน)
+        //
+        // docs/21 #11: เดิมสองปุ่มเป็น FilledButton สีเดียวกันขนาดเท่ากัน ไม่รู้ว่าปุ่ม
+        // ไหนสำคัญกว่า → ปุ่มหลักได้ปุ่มเดียว (ไว้ท้ายสุดตามกติกา Web) ตอนมีทั้งคู่
+        // "ขอส่ง Config เข้าเครื่อง" เป็นปุ่มหลัก เพราะเป็นงานเฉพาะของใบงานติดตั้ง
+        // ส่วน "บันทึกสถานะ" ลดเป็น outline · สองปุ่มวางเคียงกัน (ปุ่มหลักขวา) สูง 48
+        // ดู `_BottomActionBar` · มีปุ่มเดียวเมื่อไหร่ ปุ่มนั้นเป็นปุ่มหลักเต็มความกว้าง
+        bottomNavigationBar: ((canEditStatus && _dirty) || showRequestButton)
+            ? DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: AppColors.background,
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: SafeArea(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: _BottomActionBar(
+                      save: canEditStatus && _dirty
+                          ? _StatusSaveBar(
+                              error: _saveError,
+                              saving: _saving,
+                              primary: !showRequestButton,
+                              blockedMessage: completeBlocked
+                                  ? 'กำลังส่งเข้ากล่องอยู่ — รอผลจากกล่องก่อน'
+                                        'แล้วค่อยปิดงาน'
+                                  : null,
+                              onPressed: (!_dirty || _saving || completeBlocked)
+                                  ? null
+                                  : () => _confirmThenSave(latestRequest),
+                            )
+                          : null,
+                      confirm: showRequestButton
+                          ? _ConfirmInstallBar(
+                              retry: latestRequest != null,
+                              blockedMessage: _simulationBlocked
+                                  ? 'ผลทดสอบกับ Device Simulator ไม่ผ่าน — ส่ง '
+                                        'Config ไม่ได้จนกว่าจะทดสอบซ้ำแล้วผ่าน'
+                                  : null,
+                              onPressed: (!requestKnown || _simulationBlocked)
+                                  ? null
+                                  // คำขอล่าสุดเป็น Firmware ที่ไม่สำเร็จ — ขอซ้ำ
+                                  // ต้องเลือก Firmware ใหม่ ไม่ใช่ส่ง Config ของงาน
+                                  : latestRequest?.kind ==
+                                        FieldApplyKind.firmware
+                                  ? () => _openPicker(firmware: true)
+                                  : hasAssignedConfig
+                                  ? _openAssignedConfig
+                                  : _openPicker,
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
     );
   }
 }
@@ -1149,6 +1183,145 @@ class _ConfirmInstallBar {
 /// ไม่มีคำขอ = ไม่แสดงอะไร (ปุ่มขอส่งอยู่แถบล่าง) · `pending` มีปุ่มยกเลิก ·
 /// `approved` (docs/27) มีปุ่มหลัก "ส่งเข้ากล่อง" + ยกเลิก · จบแบบไม่สำเร็จบอก
 /// เหตุผล แล้วขอส่งอีกครั้งจากแถบล่าง
+class _SendingRequestBanner extends StatefulWidget {
+  const _SendingRequestBanner({required this.request, required this.onTap});
+  final ConfigApplyRequest request;
+  final VoidCallback onTap;
+
+  @override
+  State<_SendingRequestBanner> createState() => _SendingRequestBannerState();
+}
+
+class _SendingRequestBannerState extends State<_SendingRequestBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Timer? _timer;
+  var _elapsed = 0;
+  var _reduced = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _elapsed = math.max(
+      0,
+      DateTime.now().difference(widget.request.releasedAt!).inSeconds,
+    );
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _elapsed++);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (_reduced == disabled) return;
+    _reduced = disabled;
+    if (disabled) {
+      _controller.stop();
+    } else {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final from = widget.request.fromFirmwareVersion;
+    final to = widget.request.firmwareVersion;
+    return Material(
+      key: const Key('task_apply_sending_banner'),
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _controller,
+                        builder: (context, _) => CircularProgressIndicator(
+                          // ลดอนิเมชั่น = วงนิ่ง (null จะเป็นวงหมุนไม่รู้จบ)
+                          value: _reduced ? .65 : .3 + _controller.value * .65,
+                          strokeWidth: 4,
+                          color: AppColors.primarySubtle,
+                          backgroundColor: AppColors.primaryForeground
+                              .withValues(alpha: .24),
+                        ),
+                      ),
+                      Text(
+                        '${_elapsed ~/ 60}:${(_elapsed % 60).toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          color: AppColors.primaryForeground,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'กำลังส่งเข้ากล่อง',
+                        style: TextStyle(
+                          color: AppColors.primaryForeground,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        widget.request.kind == FieldApplyKind.firmware
+                            ? 'Firmware ${from ?? '—'} → ${to ?? '—'}'
+                            : 'Config กำลังส่ง',
+                        style: TextStyle(
+                          color: AppColors.primaryForeground.withValues(
+                            alpha: .72,
+                          ),
+                          fontSize: AppTypography.sm,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primarySubtle,
+                foregroundColor: AppColors.primary,
+              ),
+              onPressed: widget.onTap,
+              child: const Text('ดูความคืบหน้า'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ApplyRequestSection extends StatelessWidget {
   const _ApplyRequestSection({
     required this.request,
@@ -1180,6 +1353,7 @@ class _ApplyRequestSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return request.when(
       skipLoadingOnRefresh: true,
+      skipError: true,
       skipLoadingOnReload: true,
       loading: () => const Padding(
         padding: EdgeInsets.only(top: 12),
@@ -1338,9 +1512,11 @@ class _ApplyRequestSection extends StatelessWidget {
   }
 
   static String _firmwareLine(ConfigApplyRequest r) {
-    final target = 'Firmware v${r.firmwareVersion ?? '-'}';
+    final target = 'Firmware ${r.firmwareVersion ?? '-'}';
     final from = r.fromFirmwareVersion;
-    return from == null ? target : '$target (กล่องรัน v$from ตอนขอ)';
+    return from == null
+        ? target
+        : 'Firmware $from → ${r.firmwareVersion ?? '-'}';
   }
 
   static List<String> _statusLines(
@@ -1453,56 +1629,65 @@ class _ApplyRequestTimeline extends StatelessWidget {
     return AppCard(
       key: const Key('apply_request_timeline'),
       size: AppCardSize.small,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'ลำดับเหตุการณ์',
-            style: TextStyle(fontWeight: FontWeight.w600),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: const Key('apply_request_timeline_expansion'),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: Text(
+            'ลำดับเหตุการณ์ · ${_timelineSummary(events)}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
-          for (final (index, event) in events.indexed) ...[
-            if (index > 0)
+          children: [
+            for (final event in events)
               Padding(
-                padding: const EdgeInsets.only(left: 10),
-                child: Container(width: 2, height: 12, color: AppColors.border),
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  key: event.$4,
+                  children: [
+                    Icon(
+                      event.$3
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: event.$3
+                          ? AppColors.primary
+                          : AppColors.mutedForeground,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(event.$1, style: _timelineMutedStyle)),
+                    Text(
+                      event.$2 == null ? '—' : _formatCompactDate(event.$2!),
+                      style: _timelineMutedStyle,
+                    ),
+                  ],
+                ),
               ),
-            Row(
-              key: event.$4,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  event.$3 ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 20,
-                  color: event.$3
-                      ? AppColors.primary
-                      : AppColors.mutedForeground,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(event.$1),
-                      Text(
-                        event.$2 == null
-                            ? 'ยังไม่เกิด'
-                            : _formatDate(event.$2!),
-                        style: _timelineMutedStyle,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
+
+  static String _timelineSummary(List<(String, DateTime?, bool, Key?)> events) {
+    final items = <String>[];
+    for (final event in events) {
+      final at = event.$2;
+      if (at == null) continue;
+      final name = event.$1.contains('ขอ')
+          ? 'ขอ'
+          : event.$1.contains('Operation') || event.$1.contains('อนุมัติ')
+          ? 'อนุมัติ'
+          : event.$1.contains('ถือ')
+          ? 'ส่ง'
+          : 'ยืนยัน';
+      items.add('$name ${_formatCompactDate(at)}');
+    }
+    return items.isEmpty ? 'ยังไม่มีเหตุการณ์' : items.join(' · ');
+  }
 }
 
-/// แผ่นยืนยันชิดขอบล่างตามภาพ r4 · ปุ่มยืนยันอยู่ก่อนปุ่มกลับเพื่อกดง่าย
 class _RequestConfirmSheet extends StatelessWidget {
   const _RequestConfirmSheet({
     required this.title,
