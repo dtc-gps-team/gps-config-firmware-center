@@ -59,6 +59,10 @@ import {
   getOrCreateFieldApplySystemCampaign,
 } from './field-apply-system-campaign';
 import { FirmwareStorageService } from '../firmware/firmware-storage.service';
+import {
+  FieldApplyRetryService,
+  type FieldApplyFailure,
+} from './field-apply-retry.service';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import { lockConfigForReference } from '../config/config-lock';
 import { PrismaService } from '../prisma/prisma.service';
@@ -153,7 +157,50 @@ export class CampaignRolloutService {
     // ต่อ Server กลางสร้างได้ตามเดิม · `CampaignModule` import ให้เสมอ ถ้าไม่มีแล้ว
     // Rollout โหมด central จะนับเป็นล้มเหลวพร้อมเหตุผล ไม่ค้างเงียบๆ
     @Optional() private readonly central?: CentralDeviceService,
+    // ลองส่งใหม่อัตโนมัติของ Rollout ส่งจากหน้างาน (docs/31) · @Optional: ไม่มี = ไม่ลองใหม่
+    // (พฤติกรรมเดิม) · `CampaignModule` ให้เสมอ
+    @Optional() private readonly fieldApplyRetry?: FieldApplyRetryService,
   ) {}
+
+  /**
+   * เปิดการลองส่งใหม่ให้ Rollout นี้ไหม (docs/31 §1.3): โหมด `central` + Rollout ของคำขอส่งจาก
+   * หน้างานเท่านั้น · Campaign ปกติคืน null และทำงานแบบเดิมทุกประการ
+   */
+  private async fieldApplyRetryFor(
+    rollout: CampaignRollout,
+  ): Promise<FieldApplyRetryService | null> {
+    if (rollout.applyMode !== 'central' || !this.fieldApplyRetry) return null;
+    return (await this.fieldApplyRetry.isFieldApplyRollout(rollout.id))
+      ? this.fieldApplyRetry
+      : null;
+  }
+
+  /**
+   * ส่งเข้า Server กลางไม่ถึง (ทางที่ 2 ของ docs/31 §3.1): ถ้าลองใหม่ได้ ตั้งรอบใหม่แล้วคืน null ·
+   * ไม่งั้นบันทึกผลล้มเหลวด้วย `recordTargetResult()` เดิม (สรุปทุกรอบเมื่อเคยลองแล้ว)
+   * แล้วคืนผล claim
+   */
+  private async failCentralPush(
+    retry: FieldApplyRetryService | null,
+    target: { id: string; rolloutId: string; attemptCount: number },
+    deviceId: string,
+    payload: { configId: string } | { firmwareId: string },
+    failure: FieldApplyFailure,
+  ): Promise<boolean | null> {
+    let detail = failure.detail;
+    if (retry) {
+      const decision = await retry.decideAfterFailure(target, failure);
+      if (decision.kind === 'scheduled') return null;
+      detail = decision.detail;
+    }
+    return this.recordTargetResult(
+      deviceId,
+      payload,
+      false,
+      detail,
+      target.rolloutId,
+    );
+  }
 
   findAll(campaignId: string): Promise<CampaignRollout[]> {
     return this.prisma.campaignRollout.findMany({
@@ -1381,6 +1428,7 @@ export class CampaignRolloutService {
   private async autoApplyConfig(
     rollout: CampaignRollout,
     actorId: string,
+    retryTargetId?: string,
   ): Promise<CampaignRollout> {
     if (!rollout.configId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
     const configId = rollout.configId;
@@ -1395,7 +1443,16 @@ export class CampaignRolloutService {
         status: 'pending',
         // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
         // ตอน resume() หลัง Auto Pause
-        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+        ...(rollout.applyMode === 'central'
+          ? {
+              centralCommandId: null,
+              // docs/31 (รีวิว A #440): ตัวที่รอรอบลองใหม่ส่งผ่านกลไก claim เท่านั้น — resume()/
+              // approve() ไม่หยิบไปส่งก่อนเวลา · รอบลองใหม่ส่งเฉพาะ target ที่ claim แล้ว
+              ...(retryTargetId
+                ? { id: retryTargetId }
+                : { nextRetryAt: null }),
+            }
+          : {}),
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -1443,6 +1500,8 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
+    // docs/31 — Rollout ส่งจากหน้างานโหมด central ลองส่งใหม่เองเมื่อส่งไม่สำเร็จ
+    const retry = await this.fieldApplyRetryFor(rollout);
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
@@ -1506,12 +1565,25 @@ export class CampaignRolloutService {
         // `DeviceService.applyConfig()` ทุกประการผ่าน `mergeApprovedOverride()`
         // ร่วมกัน)
         // ใช้ครั้งเดียว (มติ B 2026-11-03): ส่งสำเร็จแล้ว mark Override ที่ merge ไป
-        const { fields, approvedOverride } = await mergeApprovedOverride(
-          this.prisma,
-          device.deviceId,
-          config.id,
-          config.fields,
-        );
+        // · รอบลองใหม่ (docs/31 §3.4) merge จาก Override แถวเดิมของรอบแรกเท่านั้น
+        const { fields, approvedOverride } =
+          retry && target.appliedConfigOverrideId
+            ? await this.mergeAppliedOverride(
+                target.appliedConfigOverrideId,
+                config.fields,
+              )
+            : await mergeApprovedOverride(
+                this.prisma,
+                device.deviceId,
+                config.id,
+                config.fields,
+              );
+        if (retry && approvedOverride && !target.appliedConfigOverrideId) {
+          await this.prisma.campaignRolloutTarget.update({
+            where: { id: target.id },
+            data: { appliedConfigOverrideId: approvedOverride.id },
+          });
+        }
 
         // Known limitation (#235 review รอบ 5 ข้อ 2): claim target
         // (recordTargetResult) เกิดหลัง apply จริง (applyConfig) ไม่ใช่ก่อน
@@ -1523,11 +1595,12 @@ export class CampaignRolloutService {
         if (rollout.applyMode === 'central') {
           const sent = await this.pushToCentral(
             rollout,
-            target.id,
+            target,
             device.deviceId,
             config.id,
             fields,
             actorId,
+            retry,
           );
           if (sent) await markOverrideConsumed(this.prisma, approvedOverride);
           continue;
@@ -1566,12 +1639,16 @@ export class CampaignRolloutService {
           });
         }
       } catch (err) {
-        const claimed = await this.recordTargetResult(
+        // docs/31 ทางที่ 2 — throw ระหว่างส่งของ Rollout ส่งจากหน้างาน = ส่งไม่ถึง ลองใหม่ได้
+        const claimed = await this.failCentralPush(
+          retry,
+          target,
           device.deviceId,
           { configId: config.id },
-          false,
-          `auto-apply ล้มเหลว: ${(err as Error).message}`,
-          rollout.id,
+          {
+            kind: 'unavailable',
+            detail: `auto-apply ล้มเหลว: ${(err as Error).message}`,
+          },
         );
         // #235 review รอบ 3 ข้อ 5 — เดิมถ้า throw กลางทางจะไม่มี audit row
         // `apply-config` เลย ทำให้ไม่มีบันทึกว่าเคยพยายาม apply เครื่องนี้
@@ -1605,12 +1682,16 @@ export class CampaignRolloutService {
    */
   private async pushToCentral(
     rollout: CampaignRollout,
-    targetId: string,
+    target: { id: string; rolloutId: string; attemptCount: number },
     deviceId: string,
     configId: string,
     fields: Record<string, unknown>,
     actorId: string,
+    retry: FieldApplyRetryService | null = null,
   ): Promise<boolean> {
+    const targetId = target.id;
+    const attempt = retry ? { attemptNo: target.attemptCount } : {};
+    if (retry) await retry.beginAttempt(targetId, target.attemptCount);
     const outcome = this.central
       ? await this.central.pushConfig(deviceId, fields)
       : ({
@@ -1623,33 +1704,63 @@ export class CampaignRolloutService {
         where: { id: targetId },
         data: {
           centralCommandId: outcome.commandId,
+          // ปลด lease ของรอบลองใหม่ใน update เดียวกัน (docs/31 §3.4)
+          nextRetryAt: null,
           resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Config เวอร์ชัน ${outcome.configVersion}) รอกล่องยืนยัน`,
         },
       });
+      if (retry) {
+        await retry.markAttemptSent(
+          targetId,
+          target.attemptCount,
+          outcome.commandId,
+        );
+      }
       await this.logAudit('apply-config', actorId, {
         deviceId,
         configId,
         fieldNames: Object.keys(fields),
         centralCommandId: outcome.commandId,
+        ...attempt,
       });
       return true;
     }
 
-    const claimed = await this.recordTargetResult(
+    const claimed = await this.failCentralPush(
+      retry,
+      { ...target, rolloutId: rollout.id },
       deviceId,
       { configId },
-      false,
-      outcome.reason,
-      rollout.id,
+      { kind: outcome.kind, detail: outcome.reason },
     );
-    if (claimed) {
+    // ตั้งรอบใหม่ (null) ก็ลง log — การพยายามนำ Config ไปใช้เกิดขึ้นแล้วรอบนี้
+    if (claimed !== false) {
       await this.logAudit('apply-config', actorId, {
         deviceId,
         configId,
         fieldNames: Object.keys(fields),
+        ...attempt,
       });
     }
     return false;
+  }
+
+  /** Override แถวเดิมของรอบแรก (docs/31 §3.4) — ไม่สน `consumedAt` เพราะรอบแรก mark ไปแล้ว */
+  private async mergeAppliedOverride(
+    overrideId: string,
+    baseFields: Prisma.JsonValue,
+  ): Promise<{ fields: Record<string, unknown>; approvedOverride: null }> {
+    const override = await this.prisma.deviceConfigOverride.findUnique({
+      where: { id: overrideId },
+    });
+    return {
+      fields: {
+        ...(baseFields as Record<string, unknown>),
+        ...(override ? (override.fields as Record<string, unknown>) : {}),
+      },
+      // รอบแรก mark consumedAt ไปแล้ว ไม่ต้อง mark ซ้ำ
+      approvedOverride: null,
+    };
   }
 
   /**
@@ -1669,6 +1780,7 @@ export class CampaignRolloutService {
   private async autoApplyFirmware(
     rollout: CampaignRollout,
     actorId: string,
+    retryTargetId?: string,
   ): Promise<CampaignRollout> {
     if (!rollout.firmwareId) return rollout; // defensive — ไม่ควรเกิดขึ้นจริง
     const firmwareId = rollout.firmwareId;
@@ -1683,7 +1795,16 @@ export class CampaignRolloutService {
         status: 'pending',
         // โหมด central: เครื่องที่สั่ง Server กลางไปแล้ว (มีรหัสคำสั่ง) กำลังรอผล ไม่สั่งซ้ำ
         // ตอน resume() หลัง Auto Pause (เหมือน autoApplyConfig ข้างบน)
-        ...(rollout.applyMode === 'central' ? { centralCommandId: null } : {}),
+        ...(rollout.applyMode === 'central'
+          ? {
+              centralCommandId: null,
+              // docs/31 (รีวิว A #440): ตัวที่รอรอบลองใหม่ส่งผ่านกลไก claim เท่านั้น — resume()/
+              // approve() ไม่หยิบไปส่งก่อนเวลา · รอบลองใหม่ส่งเฉพาะ target ที่ claim แล้ว
+              ...(retryTargetId
+                ? { id: retryTargetId }
+                : { nextRetryAt: null }),
+            }
+          : {}),
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -1724,6 +1845,8 @@ export class CampaignRolloutService {
     const devices = await this.loadTargetDevices(
       targets.map((t) => ({ deviceId: t.deviceId })),
     );
+    // docs/31 — Rollout ส่งจากหน้างานโหมด central ลองส่งใหม่เองเมื่อส่งไม่สำเร็จ
+    const retry = await this.fieldApplyRetryFor(rollout);
 
     for (const target of targets) {
       const current = await this.prisma.campaignRollout.findUniqueOrThrow({
@@ -1775,10 +1898,11 @@ export class CampaignRolloutService {
       if (rollout.applyMode === 'central') {
         await this.pushFirmwareToCentral(
           rollout,
-          target.id,
+          target,
           device.deviceId,
           firmware,
           actorId,
+          retry,
         );
         continue;
       }
@@ -1870,11 +1994,15 @@ export class CampaignRolloutService {
    */
   private async pushFirmwareToCentral(
     rollout: CampaignRollout,
-    targetId: string,
+    target: { id: string; rolloutId: string; attemptCount: number },
     deviceId: string,
     firmware: Firmware,
     actorId: string,
+    retry: FieldApplyRetryService | null = null,
   ): Promise<void> {
+    const targetId = target.id;
+    const attempt = retry ? { attemptNo: target.attemptCount } : {};
+    if (retry) await retry.beginAttempt(targetId, target.attemptCount);
     const outcome = await this.resolvePushFirmwareOutcome(
       rollout,
       deviceId,
@@ -1886,30 +2014,41 @@ export class CampaignRolloutService {
         where: { id: targetId },
         data: {
           centralCommandId: outcome.commandId,
+          // ปลด lease ของรอบลองใหม่ใน update เดียวกัน (docs/31 §3.4)
+          nextRetryAt: null,
           resultDetail: `ส่งให้ Server กลางแล้ว คำสั่ง ${outcome.commandId} (Firmware v${firmware.version}) รอกล่องยืนยัน`,
         },
       });
+      if (retry) {
+        await retry.markAttemptSent(
+          targetId,
+          target.attemptCount,
+          outcome.commandId,
+        );
+      }
       await this.logAudit('confirm-firmware-install', actorId, {
         deviceId,
         firmwareId: firmware.id,
         firmwareVersion: firmware.version,
         centralCommandId: outcome.commandId,
+        ...attempt,
       });
       return;
     }
 
-    const claimed = await this.recordTargetResult(
+    const claimed = await this.failCentralPush(
+      retry,
+      { ...target, rolloutId: rollout.id },
       deviceId,
       { firmwareId: firmware.id },
-      false,
-      outcome.reason,
-      rollout.id,
+      { kind: outcome.kind, detail: outcome.reason },
     );
-    if (claimed) {
+    if (claimed !== false) {
       await this.logAudit('confirm-firmware-install', actorId, {
         deviceId,
         firmwareId: firmware.id,
         firmwareVersion: firmware.version,
+        ...attempt,
       });
     }
   }
@@ -2111,13 +2250,15 @@ export class CampaignRolloutService {
   async startFieldApplyRollout(
     rolloutId: string,
     actorId: string,
+    // docs/31 — รอบลองใหม่: target ที่ `claimDueRetries()` claim แล้ว (ส่งเฉพาะตัวนี้)
+    options?: { retryTargetId?: string },
   ): Promise<CampaignRollout> {
     const rollout = await this.prisma.campaignRollout.findUniqueOrThrow({
       where: { id: rolloutId },
     });
     return rollout.payloadType === 'Firmware'
-      ? this.autoApplyFirmware(rollout, actorId)
-      : this.autoApplyConfig(rollout, actorId);
+      ? this.autoApplyFirmware(rollout, actorId, options?.retryTargetId)
+      : this.autoApplyConfig(rollout, actorId, options?.retryTargetId);
   }
 
   /**
