@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -1580,6 +1581,98 @@ describe('ConfigApplyRequestService', () => {
       const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
 
       expect(result.central).toMatchObject({ available: false, steps: [] });
+    });
+
+    it('progressForTask: Server กลางล้มเขียน logger.warn (ไม่เงียบ)', async () => {
+      service = await build(starter, 'central');
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockRejectedValue(new Error('offline'));
+
+      await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('CMD-1'));
+      warn.mockRestore();
+    });
+
+    it('progressForTask: event ไม่มี status ข้ามไป ไม่กลายเป็น Server กลางไม่พร้อม', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockResolvedValue({
+        command_id: 'CMD-1',
+        device_id: DEVICE_ID,
+        action: 'UPDATE_CONFIG',
+        status: 'DELIVERED',
+        events: [
+          { time: '2026-11-04T10:00:00Z' },
+          { status: 'DELIVERED', time: '2026-11-04T10:00:01Z' },
+        ],
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central?.available).toBe(true);
+      expect(result.central?.steps).toEqual([
+        { key: 'delivered', at: '2026-11-04T10:00:01Z', progress: null },
+      ]);
+    });
+
+    it('progressForTask: errorMessage/waitingReason ยาวเกินถูกตัด', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockResolvedValue({
+        command_id: 'CMD-1',
+        device_id: DEVICE_ID,
+        action: 'UPDATE_CONFIG',
+        status: 'PENDING',
+        error_message: 'x'.repeat(500),
+        waiting_reason: 'y'.repeat(500),
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central?.errorMessage?.length).toBeLessThanOrEqual(200);
+      expect(result.central?.waitingReason?.length).toBeLessThanOrEqual(200);
+    });
+
+    it('progressForTask: Config ไม่มี fromVersion (ไม่รู้ว่ากล่องใช้ Config อะไรอยู่)', async () => {
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.fromVersion).toBeNull();
+      expect(result.toVersion).toBe(config.name);
     });
 
     it('progressForTask: no central mode or unreleased request returns central null', async () => {

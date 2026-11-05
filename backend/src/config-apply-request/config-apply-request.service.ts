@@ -178,20 +178,34 @@ const CENTRAL_STEP_KEYS: Record<string, string> = {
   EXPIRED: 'expired',
 };
 
+/**
+ * ความยาวสูงสุดของข้อความจาก gateway ที่ส่งต่อให้แอป (รีวิว A #437 ข้อ 2) —
+ * gateway สร้าง `error_message` / `waiting_reason` จากข้อความไทยที่กำหนดไว้เอง
+ * (`describeError()` / `view()` ของ ws-gateway) ไม่มี IP, path หรือ key แต่ตัดไว้
+ * กันกรณี gateway เวอร์ชันอื่นส่งข้อความยาวผิดปกติ
+ */
+const CENTRAL_TEXT_MAX = 200;
+
+function clipCentralText(text: string | null | undefined): string | null {
+  if (!text) return null;
+  return text.length > CENTRAL_TEXT_MAX
+    ? `${text.slice(0, CENTRAL_TEXT_MAX - 1)}…`
+    : text;
+}
+
 function centralProgress(command: RawCentralCommand) {
   const steps: CentralProgressStep[] = [];
   let downloading: CentralProgressStep | null = null;
   let downloadingIndex = -1;
   for (const event of command.events ?? []) {
-    const key = CENTRAL_STEP_KEYS[event.status.toUpperCase()];
+    // event ที่ไม่มี status ข้ามไป ไม่ให้ทั้งหน้ากลายเป็น "Server กลางไม่พร้อม"
+    const status = event.status?.toUpperCase();
+    const key = status ? CENTRAL_STEP_KEYS[status] : undefined;
     if (!key) continue;
     const step = {
       key,
       at: event.time ?? null,
-      progress:
-        event.status.toUpperCase() === 'DOWNLOADING'
-          ? (event.progress ?? null)
-          : null,
+      progress: status === 'DOWNLOADING' ? (event.progress ?? null) : null,
     };
     if (key === 'downloading') {
       if (downloadingIndex < 0) downloadingIndex = steps.length;
@@ -208,9 +222,9 @@ function centralProgress(command: RawCentralCommand) {
     status: command.status,
     progressPercent: downloading?.progress ?? null,
     deviceOnline: command.device_online ?? null,
-    waitingReason: command.waiting_reason ?? null,
+    waitingReason: clipCentralText(command.waiting_reason),
     errorCode: command.error_code ?? null,
-    errorMessage,
+    errorMessage: clipCentralText(errorMessage),
     steps,
   };
 }
@@ -621,7 +635,6 @@ export class ConfigApplyRequestService implements OnModuleInit {
       include: {
         config: { select: { name: true } },
         firmware: { select: { version: true } },
-        task: { include: { config: { select: { name: true } } } },
       },
     });
     if (!request) throw new NotFoundException('ไม่พบคำขอในงานนี้');
@@ -638,11 +651,19 @@ export class ConfigApplyRequestService implements OnModuleInit {
       });
       const commandId = target?.centralCommandId;
       if (commandId) {
+        // try ครอบเฉพาะการเรียก Server กลาง (รีวิว A #437 ข้อ 1) — บั๊กของเราใน
+        // centralProgress() ต้องเห็นเป็น error ไม่ถูกกลืนเป็น available: false
+        let command: RawCentralCommand | null = null;
         try {
-          central = centralProgress(
-            await this.centralDevices.getCommand(commandId),
+          command = await this.centralDevices.getCommand(commandId);
+        } catch (err) {
+          this.logger.warn(
+            `อ่านความคืบหน้าคำสั่ง ${commandId} จาก Server กลางไม่สำเร็จ: ${(err as Error).message}`,
           );
-        } catch {
+        }
+        if (command) {
+          central = centralProgress(command);
+        } else {
           central = {
             available: false,
             commandId,
@@ -662,9 +683,9 @@ export class ConfigApplyRequestService implements OnModuleInit {
       requestId: request.id,
       kind: request.kind,
       status: request.status,
-      fromVersion: isFirmware
-        ? request.fromFirmwareVersion
-        : (request.task.config?.name ?? null),
+      // Config: ไม่รู้ว่ากล่องใช้ Config อะไรอยู่จริง (Config ของงานคือที่ Operation
+      // ผูกไว้ ไม่ใช่ที่กล่องรัน) จึงเป็น null แทนการเดา (รีวิว A #437 ข้อ 3)
+      fromVersion: isFirmware ? request.fromFirmwareVersion : null,
       toVersion: isFirmware
         ? (request.firmware?.version ?? null)
         : (request.config?.name ?? null),

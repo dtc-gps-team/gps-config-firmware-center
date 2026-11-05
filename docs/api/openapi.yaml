@@ -1455,7 +1455,11 @@ paths:
         ใช้สิทธิ์และ scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests`.
         คำขอที่ไม่อยู่ในงานหรือผู้ใช้มองไม่เห็นงานตอบ 404. อ่านสถานะสดจาก Server กลาง
         เมื่อมีคำสั่ง; การติดต่อ Server กลางล้มเหลวคืน `central.available: false`.
-        ไม่เขียนฐานข้อมูลและไม่ส่งข้อมูลลับของคำสั่งกลับมา.
+        ไม่เขียนฐานข้อมูลและไม่ส่ง field ภายในของคำสั่ง (เช่น `nonce`) กลับมา.
+        `errorMessage` / `waitingReason` เป็นข้อความไทยที่ gateway สร้างจากรหัส
+        (ไม่มี IP, path หรือ key) ตัดไว้ไม่เกิน 200 ตัวอักษร.
+        `fromVersion` มีเฉพาะ Firmware (เวอร์ชันก่อนส่ง) · Config เป็น `null`
+        เพราะไม่รู้ว่ากล่องใช้ Config ใดอยู่จริง.
       parameters:
         - in: path
           name: taskId

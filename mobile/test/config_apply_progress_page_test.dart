@@ -33,7 +33,8 @@ ConfigApplyRequestProgress _progress({
   requestId: 'car-1',
   kind: kind,
   status: status,
-  fromVersion: kind == FieldApplyKind.firmware ? '1.1.0' : 'Config เดิม',
+  // backend คืน fromVersion เฉพาะ Firmware · Config เป็น null (รีวิว A #437)
+  fromVersion: kind == FieldApplyKind.firmware ? '1.1.0' : null,
   toVersion: kind == FieldApplyKind.firmware ? '1.0.0' : 'Config ใหม่',
   isDowngrade: isDowngrade,
   releasedAt: _released,
@@ -288,7 +289,7 @@ void main() {
 
       expect(find.text('ส่งไม่สำเร็จ'), findsWidgets);
       expect(find.textContaining('ย้อนกลับ'), findsNothing);
-      expect(find.text('Config เดิม → Config ใหม่'), findsOneWidget);
+      expect(find.text('Config ใหม่'), findsOneWidget);
       await _unmount(tester);
     },
   );
