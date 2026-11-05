@@ -1,11 +1,14 @@
 # แผนให้ระบบลองส่งเข้ากล่องใหม่เองเมื่อส่งไม่สำเร็จ (ส่งจากหน้างาน · โหมด central)
 
-> **สถานะ:** แผน — B ตัดสินมติ §2 แล้ว (4 พ.ย. 2569) · ขอ A (paveekornkwork-dev) รีวิว เพราะแตะโมดูล `campaign`
-> (`CentralRolloutPollService`, `CampaignRolloutService`) และ schema ที่ใช้ร่วมกัน
+> **สถานะ:** แผน — B ตัดสินมติ §2 แล้ว (4 พ.ย. 2569) · A รีวิวรอบ 1 แล้ว (4 พ.ย. 2569) แก้ตามรีวิวใน §3.1, §3.3,
+> §3.4, §3.6, §4, §5 · แตะโมดูล `campaign` (`CentralRolloutPollService`, `CampaignRolloutService`) และ schema ที่ใช้ร่วมกัน
+>
+> **รอ #432:** ส่วน Override ใช้ครั้งเดียวของ Config (§3.4) อิง `DeviceConfigOverride.consumedAt` ที่มากับ #432
+> (ยังไม่ merge) · R1 เริ่มหลัง #432 merge
 >
 > **ต่อจาก:** docs/25 (คำขอส่ง Config จากหน้างาน), docs/27 (อนุมัติแล้วช่างกดส่งเอง + Firmware) · ไม่แก้มติเดิมของสองฉบับนั้น
 >
-> **ที่มาของข้อมูล:** `main` ที่ `1e70e13` + ผลส่ง Firmware เข้า BOX-0001 จริง 2–4 พ.ย. 2569 (§1.1)
+> **ที่มาของข้อมูล:** `main` ที่ `847d15b` (+ #432 ส่วน `consumedAt`) + ผลส่ง Firmware เข้า BOX-0001 จริง 2–4 พ.ย. 2569 (§1.1)
 
 ---
 
@@ -60,11 +63,25 @@
 | Server กลางปฏิเสธคำสั่ง (`rejected`: ไม่รู้จักกล่อง, ไม่ผ่าน schema) | failed | **ไม่ลอง** — ส่งซ้ำก็ผิดซ้ำ |
 | `SUPERSEDED`, `CANCELLED` | skipped_offline | **ไม่ลอง** — มีคนสั่งทับหรือยกเลิก |
 
-ฟังก์ชันตัดสินอยู่ที่ `central-config.ts` คู่กับ `classifyCentralCommand()` เดิม (`isRetryableCentralOutcome()`)
+**จุดที่แก้ (ไม่เปลี่ยนความหมายของโค้ดเดิม):**
+- **ไม่แก้ `classifyCentralCommand()`** — ยังคืน `skipped` สำหรับ `DEVICE_OFFLINE` / `TTL_EXPIRED` / `SUPERSEDED` /
+  `CANCELLED` และ `failed` สำหรับที่เหลือเหมือนเดิม เพราะ Campaign ปกติใช้อยู่
+- ฟังก์ชันใหม่ `isRetryableCentralOutcome(command)` อยู่ที่ `central-config.ts` คู่กัน เขียนเป็น **denylist ของ "ไม่ลอง"**
+  (`rejected` ตอนส่ง, `SUPERSEDED`, `CANCELLED`) · นอกนั้นลองใหม่ทั้งหมด รหัสใหม่ที่ gateway เพิ่มในอนาคตจึงได้ลองใหม่
+  โดยไม่ต้องแก้โค้ด · มี test ครบทุกแถวของตารางนี้ + รหัสที่ไม่รู้จัก
+- ดักใน `CentralRolloutPollService` **ก่อน**ถึง `markTargetSkippedOffline()` / `recordTargetResult(false)`: ถ้าเป็น Rollout
+  ส่งจากหน้างาน + `isRetryableCentralOutcome()` + `attemptCount < MAX` → ตั้งรอบใหม่ (§3.4) · ไม่เข้าเงื่อนไข → เรียก
+  `markTargetSkippedOffline()` / `recordTargetResult()` เดิมตรงๆ
+- **ครบ 3 รอบแล้วรอบสุดท้ายเป็น `DEVICE_OFFLINE` / `TTL_EXPIRED`** → จบเป็น `skipped_offline` เหมือนวันนี้ ไม่นับเป็น
+  failure ไม่ Auto Pause ไม่เปิด Incident · ฝั่งผู้ขอได้ `config_apply_failed` เหมือนเดิม (`config-apply-request.service.ts`
+  แจ้งแบบนี้อยู่แล้ว) แค่ payload มี `attempts[]` เพิ่ม · รอบสุดท้ายที่เป็น failed จบเป็น failed + Incident ตามเดิม
 
 ### 3.2 จังหวะการลอง
 - รวมสูงสุด **3 ครั้ง** · รอก่อนส่งรอบใหม่ **30 วินาที → 60 วินาที** (ให้กล่องที่เพิ่งรีบูต/เน็ตเพิ่งกลับมาตั้งตัว และให้
   Firmware ที่ rollback บูตเวอร์ชันเดิมเสร็จก่อน)
+- ส่งรอบใหม่เกิดใน poll รอบแรกที่ `nextRetryAt <= now` · poll รันทุก 4 วินาที (`POLL_INTERVAL_MS = 4000` ใน
+  `central-rollout-poll.job.ts`) เวลารอจริงจึงเป็น **30–34 วินาที** และ **60–64 วินาที** · เวลารอรวมไม่เกินราว
+  **1 นาที 40 วินาที** บวกเวลาที่คำสั่งแต่ละรอบใช้จนจบ
 - env: `FIELD_APPLY_MAX_ATTEMPTS=3`, `FIELD_APPLY_RETRY_DELAY_SEC=30` (รอบถัดไปคูณ 2) · ค่าเริ่มต้นตามนี้
 - ส่ง**ของเดิมทุกรอบ** — Config ตัวเดิม + Override ที่ merge ไว้ (`mergeApprovedOverride()`) หรือ Firmware ตัวเดิม +
   `allowDowngrade` เดิม · ไม่สร้าง Rollout ใหม่ ไม่เปลี่ยน `ConfigApplyRequest`
@@ -87,29 +104,46 @@ model CampaignRolloutTargetAttempt {
   @@unique([targetId, attemptNo])
 }
 ```
-- `CampaignRolloutTarget` เพิ่ม `attemptCount Int @default(1)` และ `nextRetryAt DateTime?`
+- `CampaignRolloutTarget` เพิ่ม
+  - `attemptCount Int @default(1)` — target เดิมถือว่าส่งไปแล้ว 1 ครั้ง
+  - `nextRetryAt DateTime?` — null = ไม่ได้รอรอบใหม่ · เพิ่ม `@@index([nextRetryAt])` (ตามรีวิว A) ให้ query รอบใหม่ไม่ scan ทั้งตาราง
+  - `appliedConfigOverrideId String?` — แถว `DeviceConfigOverride` ที่ merge ไปในรอบแรก (§3.4) · relation แบบ nullable
+    `onDelete: Restrict` เหมือน FK อื่นของ Override · null = รอบแรกไม่มี Override หรือเป็น Firmware
 - `NotificationType` (enum DB) เพิ่มค่า `config_apply_retrying`
-- ไม่มี FK ใหม่บนข้อมูลเดิม → ไม่มีความเสี่ยง orphan · target เดิมถือว่าส่งไปแล้ว 1 ครั้ง (default)
+- FK ใหม่มีแค่ `appliedConfigOverrideId` และ `CampaignRolloutTargetAttempt.targetId` ซึ่งเป็นคอลัมน์/ตารางใหม่ (ค่าเริ่มเป็น
+  null / ยังไม่มีแถว) → ไม่มีความเสี่ยง orphan บนข้อมูลเดิม
 
 ### 3.4 การทำงาน (backend)
 
 ```
-poll ได้ผลจบของ target (field apply เท่านั้น — เช็คชื่อ Campaign ระบบแบบเดิม)
+poll ได้ผลจบของ target (field apply เท่านั้น — rollout.campaign.name === FIELD_APPLY_SYSTEM_CAMPAIGN_NAME)
  ├─ success → ปิด attempt ล่าสุด succeeded → recordTargetResult(true) ตามเดิม
  ├─ ล้ม + ลองใหม่ได้ + attemptCount < MAX
  │     → ปิด attempt ล่าสุด failed (errorCode, detail)
  │     → target: centralCommandId = null, nextRetryAt = now + delay (ยัง pending)
  │     → emit FIELD_APPLY_RETRY_EVENT { rolloutId, attemptNo, maxAttempts, detail, nextRetryAt }
  └─ ล้ม + (ลองไม่ได้ หรือครบ MAX)
-       → ปิด attempt ล่าสุด → recordTargetResult(false, สรุปทุกรอบ) ตามเดิม (Incident เปิดครั้งเดียวตรงนี้)
+       → ปิด attempt ล่าสุด → markTargetSkippedOffline() หรือ recordTargetResult(false, สรุปทุกรอบ) ตามผล
+         classifyCentralCommand() เดิม (Incident เปิดครั้งเดียวตรงนี้ เฉพาะ failed)
 
-poll รอบเดียวกัน: target pending ที่ centralCommandId = null และ nextRetryAt <= now
-       → attemptCount += 1 แบบ claim (updateMany where attemptCount = เดิม กันส่งซ้ำ 2 ครั้ง)
+poll รอบเดียวกัน (query แยกจาก query เดิมที่หยิบ centralCommandId ไม่ null):
+  where status = pending AND centralCommandId IS NULL AND nextRetryAt IS NOT NULL AND nextRetryAt <= now
+        AND rollout.campaign.name = FIELD_APPLY_SYSTEM_CAMPAIGN_NAME
+       → claim: updateMany where { id, attemptCount: เดิม, nextRetryAt: { not: null } }
+         set { attemptCount: เดิม + 1, nextRetryAt: null } · count = 0 → poll อื่นหยิบไปแล้ว ข้าม
        → pushToCentral / pushFirmwareToCentral เดิม → สร้าง attempt ใหม่
 ```
-- **Override ใช้ครั้งเดียว (#432 `consumedAt`)** — mark ตอนส่งครั้งแรกที่ Server กลางรับ รอบถัดไปต้อง merge
-  Override **ตัวเดิมของ Rollout นี้** ไม่ใช่หา "ตัวที่ยังไม่ใช้" ใหม่ → เก็บ `overrideId` ที่ใช้ไว้กับ target/attempt
-- **คำขอหมดอายุ 24 ชม.** — นับถึงตอนกดส่ง คำขอที่ปล่อยแล้วลองต่อจนจบแม้เลยเวลา (รวมไม่เกิน ~2 นาที + เวลาคำสั่ง)
+- poll service เพิ่ม `campaign: { select: { name: true } }` ใต้ `rollout` ใน include เพื่อเช็คชื่อ Campaign ระบบ (แบบเดียวกับที่
+  `campaign-rollout.service.ts` ใช้ `FIELD_APPLY_SYSTEM_CAMPAIGN_NAME` อยู่)
+- target เดิมทั้งหมดมี `nextRetryAt = null` จึงไม่มีทางถูกหยิบไปลองใหม่ (เงื่อนไข `IS NOT NULL` เขียนไว้ชัด ไม่พึ่งแค่ `<= now`)
+- **Override ใช้ครั้งเดียว (รอ #432)** — #432 เพิ่ม `consumedAt` ที่ `DeviceConfigOverride` (แบบเดียวกับ
+  `DeviceFirmwareOverride.consumedAt` ที่มีบน main) และ mark เมื่อส่งสำเร็จ · รอบแรก merge ตามกติกาของ #432 แล้วเก็บ
+  id ของแถวที่ merge ไว้ที่ `appliedConfigOverrideId` · **รอบลองใหม่ merge จาก id นี้เท่านั้น** ไม่ query หาแถว approved
+  ล่าสุดใหม่ และไม่สน `consumedAt` ของแถวนั้น → Override ใหม่ที่ถูกอนุมัติระหว่างรอรอบใหม่ไม่ถูกดึงเข้า Rollout นี้
+  แต่ไปใช้กับการส่งครั้งถัดไปตามปกติ · Firmware ไม่เกี่ยว (ส่ง `allowDowngrade` เดิม)
+- **คำขอหมดอายุ 24 ชม.** — นับถึงตอนกดส่ง คำขอที่ปล่อยแล้วลองต่อจนจบแม้เลยเวลา (รอรวมไม่เกินราว 1 นาที 40 วินาที
+  + เวลาคำสั่ง ตาม §3.2)
+- **ไม่เปลี่ยนความหมายของ `recordTargetResult()` / `markTargetSkippedOffline()`** — Campaign ปกติเรียกแบบเดิมทุกกรณี
 - **AuditLog** — ทุกรอบที่ส่งใหม่ลง `apply-config` / `apply-firmware` พร้อม `attemptNo` (การนำค่าไปใช้เกิดทุกรอบ)
 
 ### 3.5 การแจ้งเตือน (โมดูล config-apply-request / notification ของ B)
@@ -128,7 +162,10 @@ poll รอบเดียวกัน: target pending ที่ centralCommandI
 - `attemptNo`, `maxAttempts`, `nextRetryAt` (null เมื่อไม่ได้รอรอบใหม่)
 - `attempts[]`: `{ attemptNo, status, errorCode, detail, startedAt, finishedAt }`
 
-`ConfigApplyRequest.resultDetail` ตอนจบเขียนสรุปทุกรอบ (Web แสดงได้ทันทีโดยไม่ต้องแก้) · อัปเดต openapi + RBAC_Matrix
+`ConfigApplyRequest.resultDetail` ตอนจบเขียนสรุปทุกรอบ (Web แสดงได้ทันทีโดยไม่ต้องแก้)
+- **IDOR:** endpoint นี้ยังกรองตามผู้ขอ / Task เหมือนเดิม (`requestedBy` + `taskId`) · `attempts[]` อ่านผ่าน target ของ
+  Rollout ของคำขอนั้นเท่านั้น ไม่รับ id ของ target/attempt จาก client
+- อัปเดต `openapi.yaml` + `RBAC_Matrix` คู่กันใน R2 (สิทธิ์ไม่เปลี่ยน แค่ field ใหม่)
 
 ### 3.7 Mobile
 - หน้าความคืบหน้าการส่ง: ป้าย **"รอบ 2/3"** · ช่วงรอรอบใหม่แสดง "จะลองใหม่ในอีก 0:45" · แอนิเมชันเริ่มรอบใหม่
@@ -141,11 +178,18 @@ poll รอบเดียวกัน: target pending ที่ centralCommandI
 
 | PR | เจ้าของ | เนื้อหา |
 |---|---|---|
-| R1 | A (หรือ B ถ้า A ยกให้) | migration §3.3 · retry ใน `CentralRolloutPollService` + re-push ใน `CampaignRolloutService` · `FIELD_APPLY_RETRY_EVENT` · unit + integration |
+| R1 | B (A ตกลง 4 พ.ย. 2569 · A รีวิว) | migration §3.3 · retry ใน `CentralRolloutPollService` + re-push ใน `CampaignRolloutService` · `FIELD_APPLY_RETRY_EVENT` · unit + integration · เริ่มหลัง #432 merge |
 | R2 | B | รับ event → แจ้งเตือน `config_apply_retrying` + payload ใหม่ของ succeeded/failed · progress API `attempts[]` · openapi/RBAC |
 | R3 | B | Mobile: หน้าความคืบหน้า + หน้าแจ้งเตือน |
 
+ข้อตกลง R1 (จากรีวิว A): `git pull origin main` ก่อนแตะ `schema.prisma` · ไม่เปลี่ยนความหมายของ `recordTargetResult()` /
+`markTargetSkippedOffline()` · A ดูเป็นพิเศษที่การ claim กันส่งซ้ำและ query ของ poll
+
 ## 5. ทดสอบ
-- unit: ตาราง §3.1 ครบทุกแถว · ครบ 3 ครั้งแล้วจบ · claim กันส่งซ้ำเมื่อ poll ซ้อน · Override ตัวเดิมทุกรอบ
+- unit: ตาราง §3.1 ครบทุกแถว + รหัสที่ไม่รู้จัก (denylist) · ครบ 3 ครั้งแล้วจบ · claim กันส่งซ้ำเมื่อ poll ซ้อน
+  · Override ตัวเดิมทุกรอบ แม้มี Override ใหม่ถูกอนุมัติระหว่างรอ
+- unit: target ที่ `centralCommandId = null` + `nextRetryAt = null` (ข้อมูลเดิม) ไม่ถูกหยิบไปลองใหม่ · Campaign ปกติ (ไม่ใช่
+  Campaign ระบบ) ที่ล้มยังเรียก `recordTargetResult()` / `markTargetSkippedOffline()` แบบเดิมทันที
+- unit: ครบ 3 รอบแล้วรอบสุดท้ายเป็น `DEVICE_OFFLINE` → `skipped_offline` ไม่ Auto Pause ไม่เปิด Incident
 - integration: ล้ม → retrying 2 ครั้ง → failed 1 ครั้ง (Incident 1 อัน) · ล้ม 1 ครั้งแล้วสำเร็จ
 - กล่องจริง BOX-0001: ส่ง Config แล้วปิด Wi-Fi ของกล่อง ~1 นาที (`DEVICE_DISCONNECTED`) → เปิดกลับ → ต้องสำเร็จในรอบ 2
