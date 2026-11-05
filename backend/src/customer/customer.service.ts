@@ -189,7 +189,7 @@ export class CustomerService {
         const names = examples.map((d) => d.deviceId).join(', ');
         const more = deviceCount > examples.length ? ' และอื่นๆ' : '';
         throw new ConflictException(
-          `ลบลูกค้า "${customer.companyName}" ไม่ได้ เพราะมีอุปกรณ์ผูกอยู่ ${deviceCount} เครื่อง (${names}${more}) - ใช้ "ปิดใช้งาน" แทน หรือย้ายอุปกรณ์เหล่านั้นไปลูกค้าอื่นก่อน`,
+          `ลบลูกค้า "${customer.companyName}" ไม่ได้ เพราะมีอุปกรณ์ผูกอยู่ ${deviceCount} เครื่อง (${names}${more}) - ใช้ "ปิดใช้งาน" แทน (เครื่องเดิมยังแสดงชื่อลูกค้าและกรองได้ตามปกติ)`,
         );
       }
       await tx.customer.delete({ where: { id } });
