@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { TriangleAlertIcon } from "lucide-react";
+import { Building2Icon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { canRegisterDevice } from "@/lib/permissions";
+import { canManageCustomers, canRegisterDevice } from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import {
   registerDevice,
@@ -21,6 +21,9 @@ import { StatusPill } from "@/lib/status-pill";
 import { matchModelIdByHardwareModel } from "@/lib/central-device-display";
 import { CopyButton } from "@/components/copy-button";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { FormDialogHeader } from "@/components/form-dialog";
+import { CustomerForm } from "@/app/(app)/customers/customer-form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,8 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const NO_CUSTOMER = "__none__";
 
 /** เครื่องหมาย * สีแดงท้าย label ของช่องบังคับกรอก — ใช้ CSS (`after:`) ไม่ใส่ตัวอักษรใน DOM
  * เพื่อไม่ให้ชื่อ label ที่ใช้ค้น/อ่านด้วยโปรแกรมเปลี่ยนไป · ช่องที่ไม่บังคับมีป้าย "(ไม่บังคับ)"
@@ -63,7 +64,10 @@ function findPlaceholderField(fields: [string, string][]): string | null {
 export function RegisterDeviceForm() {
   const { session } = useAuth();
   const { data: models } = useDeviceModels();
-  const { data: customers } = useCustomers();
+  // เฉพาะลูกค้าที่ยังใช้งานอยู่ (ที่ปิดใช้งานแล้วเลือกให้เครื่องใหม่ไม่ได้)
+  const { data: customers, refetch: refetchCustomers } = useCustomers({
+    activeOnly: true,
+  });
   const { data: central } = useCentralDevices();
   const { data: registeredDevices } = useDevices();
 
@@ -72,7 +76,8 @@ export function RegisterDeviceForm() {
   const [modelId, setModelId] = useState("");
   const [protocol, setProtocol] = useState("");
   const [hardwareRevisionCode, setHardwareRevisionCode] = useState("");
-  const [customerId, setCustomerId] = useState(NO_CUSTOMER);
+  const [customerId, setCustomerId] = useState("");
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [imei, setImei] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [blackboxId, setBlackboxId] = useState("");
@@ -185,6 +190,10 @@ export function RegisterDeviceForm() {
       setFormError("ต้องเลือกโปรโตคอล");
       return;
     }
+    if (!customerId) {
+      setFormError("ต้องเลือกลูกค้า");
+      return;
+    }
 
     setSubmitting(true);
     setFormError(null);
@@ -195,7 +204,7 @@ export function RegisterDeviceForm() {
         modelId,
         protocol,
         hardwareRevisionCode: hardwareRevisionCode.trim() || undefined,
-        customerId: customerId !== NO_CUSTOMER ? customerId : undefined,
+        customerId,
         imei: trimmedImei,
         serialNumber: trimmedSerial,
         blackboxId: trimmedBlackbox,
@@ -220,6 +229,7 @@ export function RegisterDeviceForm() {
     ...(blackboxId.trim() ? [] : ["Blackbox ID"]),
     ...(modelId ? [] : ["โมเดล"]),
     ...(protocol ? [] : ["โปรโตคอล"]),
+    ...(customerId ? [] : ["ลูกค้า"]),
   ];
   const canSubmit = missing.length === 0 && !submitting;
 
@@ -400,36 +410,72 @@ export function RegisterDeviceForm() {
         <h2 className="border-b pb-2 text-base font-semibold">การใช้งาน</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="device-customer">
-              ลูกค้า{" "}
-              <span className="font-normal text-muted-foreground">(ไม่บังคับ)</span>
+            <Label htmlFor="device-customer" className={REQUIRED_LABEL}>
+              ลูกค้า
             </Label>
-            <Select
-              value={customerId}
-              onValueChange={(value) => setCustomerId(value ?? NO_CUSTOMER)}
-            >
-              <SelectTrigger id="device-customer" className="w-full" disabled={submitting}>
-                <SelectValue>
-                  {(value: string) =>
-                    value === NO_CUSTOMER
-                      ? "ไม่ระบุ"
-                      : (customerList.find((c) => c.id === value)?.companyName ??
-                        "ไม่ระบุ")
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_CUSTOMER}>ไม่ระบุ</SelectItem>
-                {customerList.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.companyName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                value={customerId}
+                onValueChange={(value) => setCustomerId(value ?? "")}
+              >
+                <SelectTrigger
+                  id="device-customer"
+                  className="w-full"
+                  disabled={submitting}
+                >
+                  <SelectValue placeholder="เลือกลูกค้า">
+                    {(value: string) =>
+                      customerList.find((c) => c.id === value)?.companyName ??
+                      "เลือกลูกค้า"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {customerList.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.companyName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {canManageCustomers(session?.role) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={submitting}
+                  onClick={() => setCustomerDialogOpen(true)}
+                >
+                  <PlusIcon /> เพิ่มลูกค้าใหม่
+                </Button>
+              )}
+            </div>
+            {customerList.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                ยังไม่มีลูกค้าที่ใช้งานอยู่ กด &quot;เพิ่มลูกค้าใหม่&quot; เพื่อเพิ่มก่อนลงทะเบียน
+              </p>
+            )}
           </div>
         </div>
       </section>
+
+      <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+        <DialogContent className="gap-0 p-0 pb-0 sm:max-w-xl sm:pb-0">
+          <FormDialogHeader
+            icon={Building2Icon}
+            title="เพิ่มลูกค้าใหม่"
+            description="เพิ่มแล้วระบบเลือกลูกค้าคนนี้ให้เครื่องที่กำลังลงทะเบียนทันที"
+          />
+          <CustomerForm
+            onSaved={(saved) => {
+              setCustomerDialogOpen(false);
+              setCustomerId(saved.id);
+              void refetchCustomers();
+            }}
+            onCancel={() => setCustomerDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {formError && (
         <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">

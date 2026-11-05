@@ -184,6 +184,15 @@ export function canManageDeviceModels(
 }
 
 /**
+ * หน้า "จัดการลูกค้า" (`/customers`) และปุ่ม "เพิ่มลูกค้าใหม่" ในฟอร์มลงทะเบียนอุปกรณ์ —
+ * resource `customer` (Read/Create/Update) มีให้ Admin เท่านั้น (SuperAdmin ข้ามได้ที่
+ * PermissionGuard) UX-level gate เท่านั้น — backend บังคับสิทธิ์จริงเสมอ (PR #443)
+ */
+export function canManageCustomers(role: string | null | undefined): boolean {
+  return role === "Admin" || role === "SuperAdmin";
+}
+
+/**
  * ปุ่ม "+ ลงทะเบียนอุปกรณ์" บนหน้า Device Search (`/devices/new`) —
  * RBAC_Matrix.md ตาราง 4.1 `registerDevice` (issue #157 PR 1, แก้ครั้งที่ 61):
  * resource ใหม่ `device-registration` action `Create` — Admin, SuperAdmin
