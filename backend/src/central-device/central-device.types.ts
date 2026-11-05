@@ -98,6 +98,17 @@ export interface RawCentralCommand {
   target_firmware_version?: string;
   error_code?: string | null;
   error_message?: string | null;
+  device_online?: boolean;
+  waiting_reason?: string | null;
+  events?: RawCentralCommandEvent[];
+}
+
+/** Raw event returned by the gateway command detail endpoint. */
+export interface RawCentralCommandEvent {
+  status: string;
+  progress?: number | null;
+  time?: string | null;
+  details?: string | null;
 }
 
 /** ผลของ `GET /api/admin/devices/{id}/config` — `reported.settings` คือค่าที่กล่องรายงานว่าใช้อยู่จริง */

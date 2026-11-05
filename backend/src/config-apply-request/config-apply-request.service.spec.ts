@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -144,7 +145,7 @@ describe('ConfigApplyRequestService', () => {
   let notification: { send: jest.Mock };
   let taskService: { findOne: jest.Mock };
   let configVersions: { aggregate: jest.Mock };
-  let central: { findDevice: jest.Mock };
+  let central: { findDevice: jest.Mock; getCommand: jest.Mock };
   let createRollout: jest.Mock;
   let startRollout: jest.Mock;
   let starter: FieldApplyRolloutStarter;
@@ -204,6 +205,7 @@ describe('ConfigApplyRequestService', () => {
         list: { reachable: true },
         device: { deviceId: DEVICE_ID, online: true },
       }),
+      getCommand: jest.fn(),
     };
     auditLog = { create: jest.fn().mockResolvedValue(undefined) };
     users = {
@@ -1521,6 +1523,176 @@ describe('ConfigApplyRequestService', () => {
           override: { select: { id: true, reason: true, fields: true } },
         },
       });
+    });
+
+    it('progressForTask: maps central events, collapses downloads, and omits private fields', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date('2026-11-04T10:00:00.000Z'),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockResolvedValue({
+        command_id: 'CMD-1',
+        device_id: DEVICE_ID,
+        action: 'UPDATE_CONFIG',
+        status: 'DOWNLOADING',
+        device_online: true,
+        waiting_reason: null,
+        nonce: 'must-not-leak',
+        data_server: { path: '/private' },
+        events: [
+          { status: 'DELIVERED', time: '2026-11-04T10:00:01Z' },
+          { status: 'DOWNLOADING', progress: 15, time: '2026-11-04T10:00:02Z' },
+          { status: 'DOWNLOADING', progress: 72, time: '2026-11-04T10:00:03Z' },
+          { status: 'VALIDATING', time: '2026-11-04T10:00:04Z' },
+        ],
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central?.steps).toEqual([
+        { key: 'delivered', at: '2026-11-04T10:00:01Z', progress: null },
+        { key: 'downloading', at: '2026-11-04T10:00:03Z', progress: 72 },
+        { key: 'validating', at: '2026-11-04T10:00:04Z', progress: null },
+      ]);
+      expect(result.central?.progressPercent).toBe(72);
+      expect(JSON.stringify(result)).not.toContain('nonce');
+      expect(JSON.stringify(result)).not.toContain('data_server');
+    });
+
+    it('progressForTask: central unavailable is a successful empty progress response', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockRejectedValue(new Error('offline'));
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central).toMatchObject({ available: false, steps: [] });
+    });
+
+    it('progressForTask: Server กลางล้มเขียน logger.warn (ไม่เงียบ)', async () => {
+      service = await build(starter, 'central');
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockRejectedValue(new Error('offline'));
+
+      await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('CMD-1'));
+      warn.mockRestore();
+    });
+
+    it('progressForTask: event ไม่มี status ข้ามไป ไม่กลายเป็น Server กลางไม่พร้อม', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockResolvedValue({
+        command_id: 'CMD-1',
+        device_id: DEVICE_ID,
+        action: 'UPDATE_CONFIG',
+        status: 'DELIVERED',
+        events: [
+          { time: '2026-11-04T10:00:00Z' },
+          { status: 'DELIVERED', time: '2026-11-04T10:00:01Z' },
+        ],
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central?.available).toBe(true);
+      expect(result.central?.steps).toEqual([
+        { key: 'delivered', at: '2026-11-04T10:00:01Z', progress: null },
+      ]);
+    });
+
+    it('progressForTask: errorMessage/waitingReason ยาวเกินถูกตัด', async () => {
+      service = await build(starter, 'central');
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        releasedAt: new Date(),
+        rolloutId: ROLLOUT_ID,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+      rolloutTargets.findFirst.mockResolvedValue({ centralCommandId: 'CMD-1' });
+      central.getCommand.mockResolvedValue({
+        command_id: 'CMD-1',
+        device_id: DEVICE_ID,
+        action: 'UPDATE_CONFIG',
+        status: 'PENDING',
+        error_message: 'x'.repeat(500),
+        waiting_reason: 'y'.repeat(500),
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central?.errorMessage?.length).toBeLessThanOrEqual(200);
+      expect(result.central?.waitingReason?.length).toBeLessThanOrEqual(200);
+    });
+
+    it('progressForTask: Config ไม่มี fromVersion (ไม่รู้ว่ากล่องใช้ Config อะไรอยู่)', async () => {
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.fromVersion).toBeNull();
+      expect(result.toVersion).toBe(config.name);
+    });
+
+    it('progressForTask: no central mode or unreleased request returns central null', async () => {
+      requests.findFirst.mockResolvedValue({
+        ...pending,
+        config,
+        firmware: null,
+        task: { ...task, config },
+      });
+
+      const result = await service.progressForTask(TASK_ID, REQUEST_ID, tech);
+
+      expect(result.central).toBeNull();
+      expect(rolloutTargets.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('progressForTask: request outside the task returns 404', async () => {
+      await expect(
+        service.progressForTask(TASK_ID, REQUEST_ID, tech),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('list: คืนชื่อ field ที่จะส่ง ไม่คืนค่า field ของ Config', async () => {

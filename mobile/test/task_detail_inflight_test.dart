@@ -136,7 +136,8 @@ void main() {
       final repo = _FakeTaskRepository()
         ..current = _task(status: TaskStatus.pending);
       await _pump(tester, repo: repo);
-      expect(_button(tester, 'task_status_save').onPressed, isNull);
+      // ปุ่มบันทึกโผล่เฉพาะเมื่อมีการเปลี่ยนที่ยังไม่บันทึก
+      expect(find.byKey(const Key('task_status_save')), findsNothing);
 
       await _syncFlushed(
         tester,
@@ -148,8 +149,8 @@ void main() {
       );
 
       expect(
-        _button(tester, 'task_status_save').onPressed,
-        isNull,
+        find.byKey(const Key('task_status_save')),
+        findsNothing,
         reason: 'ไม่มีการแก้ค้าง จึงไม่ควรมีอะไรให้บันทึก',
       );
     });
