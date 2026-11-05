@@ -29,6 +29,7 @@ ConfigApplyRequestProgress _progress({
   String? errorMessage,
   DateTime? completedAt,
   bool isDowngrade = true,
+  ConfigApplyRetry? retry,
 }) => ConfigApplyRequestProgress(
   requestId: 'car-1',
   kind: kind,
@@ -48,6 +49,25 @@ ConfigApplyRequestProgress _progress({
           deviceOnline: true,
         )
       : null,
+  retry: retry,
+);
+
+ConfigApplyAttempt _attempt(
+  int no,
+  ConfigApplyAttemptStatus status, {
+  String? errorCode,
+  String? detail,
+  int startSeconds = 0,
+  int? endSeconds,
+}) => ConfigApplyAttempt(
+  attemptNo: no,
+  status: status,
+  errorCode: errorCode,
+  detail: detail,
+  startedAt: _released.add(Duration(seconds: startSeconds)),
+  finishedAt: endSeconds == null
+      ? null
+      : _released.add(Duration(seconds: endSeconds)),
 );
 
 Future<FakeConfigApplyRequestRepository> _pump(
@@ -354,6 +374,238 @@ void main() {
     expect(find.text('กล่องกำลังติดตั้ง'), findsWidgets);
     expect(find.byKey(const Key('apply_progress_elapsed')), findsOneWidget);
     await _unmount(tester);
+  });
+
+  group('ลองส่งใหม่อัตโนมัติ (docs/31 §3.7)', () {
+    testWidgets('รอรอบใหม่ -> นับถอยหลัง + ป้ายรอบถัดไป + ประวัติรอบที่ล้ม', (
+      tester,
+    ) async {
+      final nextAt = DateTime.now().toUtc().add(const Duration(seconds: 45));
+      await _pump(
+        tester,
+        () => _progress(
+          kind: FieldApplyKind.config,
+          central: false,
+          retry: ConfigApplyRetry(
+            attemptNo: 1,
+            maxAttempts: 3,
+            nextRetryAt: nextAt,
+            attempts: [
+              _attempt(
+                1,
+                ConfigApplyAttemptStatus.failed,
+                errorCode: 'DEVICE_OFFLINE',
+                detail: 'กล่องออฟไลน์',
+                endSeconds: 10,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final headline = tester
+          .widget<Text>(find.byKey(const Key('apply_progress_headline')))
+          .data!;
+      expect(headline, startsWith('จะลองใหม่ในอีก 0:4'));
+      expect(find.text('รอบ 2/3'), findsOneWidget);
+      // ยังไม่ส่งถึงกล่องในรอบนี้ -> ไม่ขึ้นว่าส่งถึงแล้ว
+      expect(
+        find.descendant(
+          of: _step(ConfigApplyProgressStepKey.delivered),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsNothing,
+      );
+      final history = find.byKey(const Key('apply_progress_history'));
+      expect(history, findsOneWidget);
+      expect(
+        find.descendant(of: history, matching: find.text('ประวัติการส่ง')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('apply_progress_attempt_1')),
+          matching: find.textContaining('กล่องออฟไลน์'),
+        ),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('ถึงเวลาแล้วแต่ยังไม่เริ่ม -> กำลังเริ่มรอบใหม่', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        () => _progress(
+          kind: FieldApplyKind.config,
+          central: false,
+          retry: ConfigApplyRetry(
+            attemptNo: 1,
+            maxAttempts: 3,
+            nextRetryAt: DateTime.now().toUtc().subtract(
+              const Duration(seconds: 1),
+            ),
+            attempts: [
+              _attempt(1, ConfigApplyAttemptStatus.failed, endSeconds: 5),
+            ],
+          ),
+        ),
+      );
+      expect(find.text('กำลังเริ่มรอบใหม่'), findsOneWidget);
+      await _unmount(tester);
+    });
+
+    testWidgets('รอบที่ 2 กำลังส่ง -> ป้าย รอบ 2/3 + ขั้นตอนตามจริง', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        () => _progress(
+          steps: [
+            _s(ConfigApplyProgressStepKey.delivered, seconds: 40),
+            _s(
+              ConfigApplyProgressStepKey.downloading,
+              seconds: 42,
+              progress: 10,
+            ),
+          ],
+          retry: ConfigApplyRetry(
+            attemptNo: 2,
+            maxAttempts: 3,
+            attempts: [
+              _attempt(
+                1,
+                ConfigApplyAttemptStatus.failed,
+                detail: 'ติดต่อ Server กลางไม่ได้',
+                endSeconds: 5,
+              ),
+              _attempt(2, ConfigApplyAttemptStatus.sent, startSeconds: 38),
+            ],
+          ),
+        ),
+      );
+      expect(find.text('กำลังดาวน์โหลด 10%'), findsOneWidget);
+      expect(find.text('รอบ 2/3'), findsOneWidget);
+      expect(find.byKey(const Key('apply_progress_attempt_1')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('apply_progress_attempt_2')),
+          matching: find.text('ส่งแล้ว รอผล'),
+        ),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('สำเร็จตั้งแต่รอบแรก -> ไม่มีป้ายรอบและไม่มีประวัติ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        () => _progress(
+          kind: FieldApplyKind.config,
+          status: ConfigApplyRequestStatus.succeeded,
+          completedAt: _released.add(const Duration(seconds: 12)),
+          steps: [
+            _s(ConfigApplyProgressStepKey.delivered),
+            _s(ConfigApplyProgressStepKey.installing, seconds: 5),
+            _s(ConfigApplyProgressStepKey.succeeded, seconds: 12),
+          ],
+          retry: ConfigApplyRetry(
+            attemptNo: 1,
+            maxAttempts: 3,
+            attempts: [
+              _attempt(1, ConfigApplyAttemptStatus.succeeded, endSeconds: 12),
+            ],
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const Key('apply_progress_attempt_badge')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('apply_progress_history')), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('ล้มครบทุกรอบ -> การ์ดบอกจำนวนครั้ง + ประวัติครบ', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        () => _progress(
+          kind: FieldApplyKind.config,
+          status: ConfigApplyRequestStatus.failed,
+          central: false,
+          completedAt: _released.add(const Duration(seconds: 120)),
+          retry: ConfigApplyRetry(
+            attemptNo: 3,
+            maxAttempts: 3,
+            attempts: [
+              for (final n in [1, 2, 3])
+                _attempt(
+                  n,
+                  ConfigApplyAttemptStatus.failed,
+                  detail: 'กล่องออฟไลน์',
+                  startSeconds: (n - 1) * 40,
+                  endSeconds: (n - 1) * 40 + 5,
+                ),
+            ],
+          ),
+        ),
+      );
+      final result = find.byKey(const Key('apply_progress_result_bad'));
+      expect(result, findsOneWidget);
+      expect(
+        find.descendant(
+          of: result,
+          matching: find.text('ส่ง 3 ครั้งไม่สำเร็จ'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: result, matching: find.text('กล่องออฟไลน์')),
+        findsOneWidget,
+      );
+      for (final n in [1, 2, 3]) {
+        expect(find.byKey(Key('apply_progress_attempt_$n')), findsOneWidget);
+      }
+      // ปุ่มให้ส่งใหม่เองยังอยู่
+      expect(find.text('ส่งใหม่อีกครั้ง'), findsOneWidget);
+      await _unmount(tester);
+    });
+
+    testWidgets('รอบใหม่เริ่มแล้ว -> เลิกนับถอยหลัง กลับไปแสดงการส่ง', (
+      tester,
+    ) async {
+      var attemptNo = 1;
+      ConfigApplyRequestProgress next() => _progress(
+        kind: FieldApplyKind.config,
+        central: false,
+        retry: ConfigApplyRetry(
+          attemptNo: attemptNo,
+          maxAttempts: 3,
+          attempts: [
+            _attempt(1, ConfigApplyAttemptStatus.failed, endSeconds: 5),
+            if (attemptNo == 2)
+              _attempt(2, ConfigApplyAttemptStatus.sending, startSeconds: 40),
+          ],
+          nextRetryAt: attemptNo == 1
+              ? DateTime.now().toUtc().add(const Duration(seconds: 30))
+              : null,
+        ),
+      );
+      await _pump(tester, next);
+      expect(find.textContaining('จะลองใหม่ในอีก'), findsOneWidget);
+      attemptNo = 2;
+      await tester.pump(progressPollInterval);
+      await tester.pump();
+      expect(find.textContaining('จะลองใหม่ในอีก'), findsNothing);
+      expect(find.text('กำลังส่งเข้ากล่อง'), findsOneWidget);
+      expect(find.text('รอบ 2/3'), findsOneWidget);
+      await _unmount(tester);
+    });
   });
 
   testWidgets('ออกจากหน้าแล้ว หยุดถามความคืบหน้า', (tester) async {

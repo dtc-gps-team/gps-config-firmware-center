@@ -259,15 +259,16 @@ export class DeviceSyncService {
     // สำเร็จ ไม่ใช่ตอนดึง · เลือกเฉพาะแถวที่อนุมัติก่อนดึงงานครั้งแรก (`pulledAt`)
     // (รีวิว A #432 ข้อ 1): แถวที่อนุมัติหลังกล่องดึงไปแล้วกล่องไม่เคยได้ ต้องไม่ถูก
     // mark — ถ้ากล่องดึงซ้ำแล้วได้แถวใหม่ไป แถวนั้นยังไม่ mark และจะถูกส่งอีกครั้ง
-    // ในการส่งครั้งถัดไป (ส่งซ้ำดีกว่าหายเงียบ)
-    if (claimed && success && rollout.configId) {
+    // ในการส่งครั้งถัดไป (ส่งซ้ำดีกว่าหายเงียบ) · ไม่เคยดึงงานผ่านระบบ (`pulledAt` null —
+    // รายงานผลตรง) ไม่รู้ว่ากล่องได้ Override ไปหรือไม่ จึงไม่ mark (ข้อสังเกต A #432)
+    if (claimed && success && rollout.configId && target.pulledAt) {
       const pulledOverride = await this.prisma.deviceConfigOverride.findFirst({
         where: {
           deviceId,
           configId: rollout.configId,
           status: 'approved',
           consumedAt: null,
-          decidedAt: { lte: target.pulledAt ?? new Date() },
+          decidedAt: { lte: target.pulledAt },
         },
         orderBy: { versionNumber: 'desc' },
       });

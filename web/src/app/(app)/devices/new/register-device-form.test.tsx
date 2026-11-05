@@ -75,6 +75,45 @@ describe("RegisterDeviceForm: IMEI / Serial Number / Blackbox ID บังคั
     expect(registerDevice).not.toHaveBeenCalled();
   });
 
+  it("ใต้ฟอร์มบอกว่ายังขาดช่องไหน (ฟีดแบ็กพี่เลี้ยง: ช่องบังคับต้องดูออก) และหายไปเมื่อกรอกครบ", async () => {
+    registerDevice.mockResolvedValue({ deviceId: "DEV-1", apiKey: "k" });
+    const user = userEvent.setup();
+    render(<RegisterDeviceForm />);
+
+    expect(
+      screen.getByText(
+        "ยังขาด: Device ID, SIM Number, IMEI, Serial Number, Blackbox ID, โมเดล, โปรโตคอล",
+      ),
+    ).toBeInTheDocument();
+
+    await fillBase(user);
+    expect(
+      screen.getByText("ยังขาด: IMEI, Serial Number, Blackbox ID"),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("IMEI"), "860000000000001");
+    await user.type(screen.getByLabelText("Serial Number"), "SN-1");
+    await user.type(screen.getByLabelText("Blackbox ID"), "BB-1");
+    expect(screen.getByText("ข้อมูลครบ พร้อมลงทะเบียน")).toBeInTheDocument();
+  });
+
+  it("ช่องบังคับมีเครื่องหมาย * ที่ label ส่วนช่องที่ไม่บังคับไม่มี", () => {
+    render(<RegisterDeviceForm />);
+
+    for (const name of ["Device ID", "SIM Number", "IMEI", "Serial Number", "Blackbox ID", "โมเดล", "โปรโตคอล"]) {
+      const label = document.querySelector(
+        `label[for="${(screen.getByLabelText(name) as HTMLElement).id}"]`,
+      );
+      expect(label?.className, name).toContain("after:content-['*']");
+    }
+    expect(
+      document.querySelector('label[for="device-hw-revision"]')?.className,
+    ).not.toContain("after:content-['*']");
+    expect(
+      document.querySelector('label[for="device-customer"]')?.className,
+    ).not.toContain("after:content-['*']");
+  });
+
   it("กรอกครบแล้วส่งค่าที่ตัดช่องว่างหัวท้ายให้ API", async () => {
     registerDevice.mockResolvedValue({ deviceId: "DEV-1", apiKey: "k" });
     const user = userEvent.setup();
