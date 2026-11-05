@@ -38,6 +38,7 @@ import { NotificationService } from '../notification/notification.service';
 import { ConfigApplyRequestService } from '../config-apply-request/config-apply-request.service';
 import { TaskService } from '../task/task.service';
 import { lockCustomerForReference } from '../customer/customer-lock';
+import { lockDeviceForUse } from './device-lock';
 import { lockFirmwareForReference } from '../firmware/firmware-lock';
 import {
   assertDeviceIdentifiersFree,
@@ -304,12 +305,23 @@ export class DeviceService {
    * เอง (เดิมมีแค่แสดงผลฝั่ง client อย่างเดียว)
    */
   findAll(query: QueryDeviceDto): Promise<DeviceWithCustomer[]> {
-    const { search, deviceModel, protocol, status, customerId } = query;
+    const {
+      search,
+      deviceModel,
+      protocol,
+      status,
+      customerId,
+      includeDecommissioned,
+    } = query;
 
     const where: Prisma.DeviceWhereInput = {
       deviceModel: deviceModel || undefined,
       protocol: protocol || undefined,
-      status: status || undefined,
+      // เครื่องที่ปลดระวางแล้วซ่อนเป็นค่าเริ่มต้น (มติ A 2026-11-05) — ระบุ status ตรงๆ หรือ
+      // includeDecommissioned=true ถึงจะเห็น
+      status:
+        status ||
+        (includeDecommissioned ? undefined : { not: 'decommissioned' }),
       customerId: customerId || undefined,
     };
     if (search) {
@@ -1580,6 +1592,8 @@ export class DeviceService {
 
     try {
       const override = await this.prisma.$transaction(async (tx) => {
+        // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างคำขอ (ดู device-lock.ts)
+        await lockDeviceForUse(tx, deviceId);
         // scope ด้วย configId ปัจจุบันของอุปกรณ์ด้วย (มติ 2026-09-25, issue
         // #226 ข้อ 3) — เดิมเช็คแค่ deviceId เฉยๆ ถ้าเครื่องถูก Confirm
         // Install เป็น Config ใหม่ทับระหว่างที่คำขอเก่ายังรอ Operation
@@ -1988,6 +2002,8 @@ export class DeviceService {
 
     try {
       const override = await this.prisma.$transaction(async (tx) => {
+        // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างคำขอ (ดู device-lock.ts)
+        await lockDeviceForUse(tx, device.deviceId);
         const existingPending = await tx.deviceFirmwareOverride.findFirst({
           where: { deviceId: device.deviceId, status: 'pending' },
         });

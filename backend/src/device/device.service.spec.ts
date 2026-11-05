@@ -48,6 +48,8 @@ const installedDevice: Device = {
   status: 'installed',
   registeredAt: new Date('2026-01-01T00:00:00.000Z'),
   installedAt: new Date('2026-01-02T00:00:00.000Z'),
+  decommissionedAt: null,
+  decommissionReason: null,
   lastSeenAt: null,
   customerId: null,
   modelId: 'dm-1',
@@ -166,6 +168,8 @@ const createdDevice: Omit<Device, 'apiKeyHash' | 'telemetryKeyHash'> = {
   status: 'registered',
   registeredAt: new Date('2026-10-01T00:00:00.000Z'),
   installedAt: null,
+  decommissionedAt: null,
+  decommissionReason: null,
   lastSeenAt: null,
   customerId: null,
   modelId: gt06nModel.id,
@@ -332,14 +336,18 @@ describe('DeviceService', () => {
     const tx = {
       // ล็อกแถวที่ถูกอ้างถึง (FOR SHARE): Config ฐานตอนสร้างคำขอ Override (อ่าน deletedAt) และ
       // Customer ตอนลงทะเบียนอุปกรณ์ผูกลูกค้า (อ่าน isActive) · และตรวจเลขประจำตัวซ้ำตอนลงทะเบียน
-      // (SELECT จากตาราง Device — คืนว่าง = ไม่ซ้ำ) แยกด้วยข้อความ SQL เพราะ mock ตัวเดียวใช้ร่วมกัน
-      $queryRaw: jest.fn((strings: TemplateStringsArray) =>
-        Promise.resolve(
-          strings.join('?').includes('FROM "Device"')
-            ? []
+      // (SELECT จากตาราง Device — คืนว่าง = ไม่ซ้ำ) และล็อกแถวเครื่อง (FOR SHARE -> สถานะ) ตอนสร้างคำขอ
+      // Override · แยกด้วยข้อความ SQL เพราะ mock ตัวเดียวใช้ร่วมกัน
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = strings.join('?');
+        return Promise.resolve(
+          sql.includes('FROM "Device"')
+            ? sql.includes('FOR SHARE')
+              ? [{ status: 'installed' }]
+              : []
             : [{ deletedAt: null, isActive: true }],
-        ),
-      ),
+        );
+      }),
       $executeRaw: jest.fn().mockResolvedValue(0),
       deviceConfigOverride: {
         findFirst: deviceConfigOverride.findFirst,
@@ -413,12 +421,29 @@ describe('DeviceService', () => {
   });
 
   describe('findAll', () => {
-    it('ไม่มี filter -> where ว่าง (ทุก field undefined) เรียงตาม deviceId', async () => {
+    it('ไม่มี filter -> ซ่อนเครื่องที่ปลดระวาง (ค่าเริ่มต้น) เรียงตาม deviceId', async () => {
       device.findMany.mockResolvedValue([installedDevice]);
 
       const result = await service.findAll({});
 
       expect(result).toEqual([installedDevice]);
+      expect(device.findMany).toHaveBeenCalledWith({
+        where: {
+          deviceModel: undefined,
+          protocol: undefined,
+          status: { not: 'decommissioned' },
+          customerId: undefined,
+        },
+        orderBy: { deviceId: 'asc' },
+        include: CUSTOMER_INCLUDE,
+      });
+    });
+
+    it('includeDecommissioned=true -> ไม่กรองสถานะ (เห็นเครื่องที่ปลดระวางด้วย)', async () => {
+      device.findMany.mockResolvedValue([]);
+
+      await service.findAll({ includeDecommissioned: true });
+
       expect(device.findMany).toHaveBeenCalledWith({
         where: {
           deviceModel: undefined,
@@ -429,6 +454,18 @@ describe('DeviceService', () => {
         orderBy: { deviceId: 'asc' },
         include: CUSTOMER_INCLUDE,
       });
+    });
+
+    it('ระบุ status=decommissioned ตรงๆ -> เห็นเครื่องที่ปลดระวางโดยไม่ต้องส่ง includeDecommissioned', async () => {
+      device.findMany.mockResolvedValue([]);
+
+      await service.findAll({ status: 'decommissioned' });
+
+      const calls = device.findMany.mock.calls as [
+        { where: { status: string } },
+      ][];
+      const arg = calls[0][0];
+      expect(arg.where.status).toBe('decommissioned');
     });
 
     it('มี deviceModel/protocol/status -> ส่งต่อ Prisma ตรงๆ', async () => {
@@ -463,7 +500,7 @@ describe('DeviceService', () => {
         where: {
           deviceModel: undefined,
           protocol: undefined,
-          status: undefined,
+          status: { not: 'decommissioned' },
           customerId: '33333333-3333-3333-3333-333333333333',
         },
         orderBy: { deviceId: 'asc' },
@@ -480,7 +517,7 @@ describe('DeviceService', () => {
         where: {
           deviceModel: undefined,
           protocol: undefined,
-          status: undefined,
+          status: { not: 'decommissioned' },
           customerId: undefined,
           OR: [
             { deviceId: { contains: '0001', mode: 'insensitive' } },

@@ -10,6 +10,7 @@ import { ConfigStatus, Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { NotificationService } from '../notification/notification.service';
 import { lockConfigForReference } from '../config/config-lock';
+import { lockDeviceForUse } from '../device/device-lock';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskNoteDto } from './dto/create-task-note.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -300,6 +301,8 @@ export class TaskService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`task-start:${actor.id}:${deviceId}`}))::text`;
+      // กันปลดระวางเครื่องแทรกระหว่างตรวจกับสร้างงาน (ดู device/device-lock.ts)
+      await lockDeviceForUse(tx, deviceId);
       const now = new Date();
       const existing = await tx.task.findFirst({
         where: {
