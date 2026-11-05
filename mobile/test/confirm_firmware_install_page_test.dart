@@ -11,6 +11,7 @@ import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_page.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_repository.dart';
 import 'package:mobile/features/firmware_override/firmware_override_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 
 final _device = Device(
   id: 'uuid-1',
@@ -136,6 +137,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required _FakeConfirmRepository confirmRepo,
   UserRole role = UserRole.st,
+  bool central = false,
   List<Firmware> firmware = const [_okFw, _otherModelFw, _unapprovedFw],
   DeviceStatusRepository? statusRepo,
 }) async {
@@ -169,6 +171,7 @@ Future<void> _pump(
         ),
         confirmFirmwareInstallRepositoryProvider.overrideWithValue(confirmRepo),
         authControllerProvider.overrideWith(() => _FakeAuthController(role)),
+        centralApplyModeProvider.overrideWith((ref) async => central),
       ],
       child: MaterialApp.router(routerConfig: router),
     ),
@@ -178,9 +181,8 @@ Future<void> _pump(
 }
 
 Future<void> _selectFirmware(WidgetTester tester, String label) async {
-  await tester.tap(find.byKey(const Key('confirm_firmware_select')));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text(label).last);
+  final key = label == 'v2.1.0' ? 'confirm_firmware_option_fw-ok' : label;
+  await tester.tap(find.byKey(Key(key)));
   await tester.pumpAndSettle();
 }
 
@@ -192,16 +194,26 @@ Future<void> _submit(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('central mode hides direct confirmation action', (tester) async {
+    final repo = _FakeConfirmRepository();
+    await _pump(tester, confirmRepo: repo, central: true);
+
+    expect(find.byKey(const Key('firmware_confirm_central_locked')), findsOne);
+    expect(find.byKey(const Key('confirm_firmware_submit')), findsNothing);
+    expect(repo.calls, 0);
+  });
+
   group('รายการ Firmware', () {
     testWidgets(
       'แสดงเฉพาะตัวที่ติดตั้งได้กับรุ่นเครื่อง (stored+approved+รองรับรุ่น)',
       (tester) async {
         await _pump(tester, confirmRepo: _FakeConfirmRepository());
 
-        await tester.tap(find.byKey(const Key('confirm_firmware_select')));
-        await tester.pumpAndSettle();
-
-        expect(find.text('v2.1.0'), findsWidgets);
+        expect(find.textContaining('v2.1.0'), findsOneWidget);
+        expect(
+          find.byKey(const Key('confirm_firmware_option_fw-ok')),
+          findsOne,
+        );
         expect(find.text('v9.9.9'), findsNothing); // คนละรุ่น
         expect(find.text('v3.0.0-rc'), findsNothing); // ยังไม่ approved
       },
@@ -228,6 +240,20 @@ void main() {
     });
   });
 
+  testWidgets('อธิบายว่าการยืนยันเป็นเพียง Audit Log ก่อนรายการ', (
+    tester,
+  ) async {
+    await _pump(tester, confirmRepo: _FakeConfirmRepository());
+
+    expect(find.byKey(const Key('confirm_firmware_notice')), findsOne);
+    expect(
+      find.text(
+        'กดหลังติดตั้ง Firmware เข้าเครื่องเสร็จแล้ว · ระบบแค่บันทึกการยืนยันลง Audit Log ไม่ได้ส่งอะไรไปที่อุปกรณ์',
+      ),
+      findsOne,
+    );
+  });
+
   group('200 สำเร็จ', () {
     testWidgets(
       'เลือก + ยืนยัน -> เรียก repo + แสดงผล (deviceId, firmware, เวลา)',
@@ -242,6 +268,13 @@ void main() {
         expect(repo.lastDeviceId, 'DEV-0117');
         expect(repo.lastFirmwareId, 'fw-ok');
         expect(find.byKey(const Key('confirm_firmware_success')), findsOne);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('app_bottom_action_bar')),
+            matching: find.byKey(const Key('confirm_firmware_success')),
+          ),
+          findsOne,
+        );
         expect(find.text('อุปกรณ์: DEV-0117'), findsOne);
         expect(find.text('Firmware: v2.1.0'), findsOne);
         expect(find.text('เมื่อ: 12/10/2026 10:30'), findsOne);
@@ -338,6 +371,13 @@ void main() {
         await _submit(tester);
 
         expect(find.text(_gateMessage), findsOne);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('app_bottom_action_bar')),
+            matching: find.byKey(const Key('confirm_firmware_error')),
+          ),
+          findsOne,
+        );
         expect(find.byKey(const Key('confirm_firmware_gate_hint')), findsOne);
         expect(
           find.byKey(const Key('confirm_firmware_goto_override')),

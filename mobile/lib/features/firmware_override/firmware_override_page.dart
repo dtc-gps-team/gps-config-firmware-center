@@ -3,17 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/models.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
 import '../../core/ui/app_field_label.dart';
 import '../../core/ui/app_notice.dart';
-import '../../core/ui/app_page_header.dart';
+import '../../core/ui/app_ink_header.dart';
+import '../../core/ui/app_role_locked_view.dart';
 import '../../core/ui/app_skeleton.dart';
 import '../../core/ui/app_v2_theme.dart';
 import '../../core/widgets/app_error_view.dart';
-import '../device_search/device_header_meta.dart';
 import '../device_search/device_search_repository.dart';
 import '../device_search/device_status_repository.dart';
+import '../task/apply_mode_provider.dart';
 import 'firmware_override_repository.dart';
 import 'pending_firmware_override_banner.dart';
 
@@ -113,67 +116,105 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
 
   @override
   Widget build(BuildContext context) {
-    final deviceAsync = ref.watch(deviceDetailProvider(widget.deviceId));
-    final firmwareAsync = ref.watch(firmwareListProvider);
+    final auth = ref.watch(authControllerProvider);
+    final rolePending = auth.status == AuthStatus.unknown || auth.isBusy;
+    final canOverride = auth.role == UserRole.st;
+    final locked = !rolePending && !canOverride;
+    final modeAsync = rolePending || locked
+        ? null
+        : ref.watch(centralApplyModeProvider);
+    final modePending = modeAsync?.isLoading ?? false;
+    final central = modeAsync?.valueOrNull ?? false;
+    final deviceAsync = rolePending || locked || modePending || central
+        ? null
+        : ref.watch(deviceDetailProvider(widget.deviceId));
+    final firmwareAsync = rolePending || locked || modePending || central
+        ? null
+        : ref.watch(firmwareListProvider);
     // โหลดสถานะไม่สำเร็จไม่ block ฟอร์ม — แค่ไม่มี banner (ถ้ามี pending อยู่
     // จริง backend ยังตอบ 409 ตอนส่ง)
-    final pending = ref
-        .watch(deviceStatusProvider(widget.deviceId))
-        .valueOrNull
-        ?.pendingFirmwareOverride;
+    final statusAsync = rolePending || locked || modePending || central
+        ? null
+        : ref.watch(deviceStatusProvider(widget.deviceId));
+    final pending = statusAsync?.valueOrNull?.pendingFirmwareOverride;
     final navigator = Navigator.of(context);
-    final device = deviceAsync.valueOrNull;
+    final device = deviceAsync?.valueOrNull;
+    final firmware = firmwareAsync?.valueOrNull;
+    final showActions =
+        !rolePending &&
+        !locked &&
+        !modePending &&
+        !central &&
+        device != null &&
+        firmware != null;
 
     return AppV2Theme(
       child: Scaffold(
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppPageHeader(
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (rolePending || modePending)
+              const Expanded(child: AppDetailSkeleton(lines: 6))
+            else if (locked)
+              const Expanded(child: AppRoleLockedView())
+            else ...[
+              AppInkHeader(
                 title: 'Firmware Override',
+                subtitle: widget.deviceId,
                 onBack: navigator.canPop() ? navigator.pop : null,
-                description:
-                    'ใช้เมื่อ Firmware ที่ต้องการติดตั้งไม่ตรงกับแผน Campaign ที่กำหนดไว้ '
-                    'ต้องรอ Operation อนุมัติก่อน แล้วจึงยืนยันติดตั้งได้ · ใช้ได้ครั้งเดียว '
-                    '(ติดตั้งซ้ำต้องขอใหม่) · ต้องระบุเหตุผลและถูกบันทึกลง Audit Log',
-                meta: deviceHeaderMeta(device),
               ),
-              Expanded(
-                child: deviceAsync.when(
-                  loading: () => const AppDetailSkeleton(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+              if (central)
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: AppNotice(
+                      key: Key('firmware_override_central_locked'),
+                      tone: AppBadgeTone.warning,
+                      child: Text(
+                        'Firmware Override ใช้ไม่ได้ในโหมดส่งคำขอผ่าน Server กลาง',
+                      ),
+                    ),
                   ),
-                  error: (error, _) => AppErrorView(
-                    message: error is ApiException
-                        ? error.message
-                        : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
-                    messageKey: const Key('firmware_override_load_error'),
-                    retryKey: const Key('firmware_override_load_retry'),
-                    onRetry: () {
-                      ref.invalidate(deviceDetailProvider(widget.deviceId));
-                      ref.invalidate(firmwareListProvider);
-                    },
-                  ),
-                  data: (device) => firmwareAsync.when(
+                )
+              else
+                Expanded(
+                  child: deviceAsync!.when(
                     loading: () => const AppDetailSkeleton(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
                     ),
                     error: (error, _) => AppErrorView(
                       message: error is ApiException
                           ? error.message
-                          : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                          : 'โหลดข้อมูลอุปกรณ์ไม่สำเร็จ',
                       messageKey: const Key('firmware_override_load_error'),
                       retryKey: const Key('firmware_override_load_retry'),
-                      onRetry: () => ref.invalidate(firmwareListProvider),
+                      onRetry: () {
+                        ref.invalidate(deviceDetailProvider(widget.deviceId));
+                        ref.invalidate(firmwareListProvider);
+                      },
                     ),
-                    data: (all) => _buildForm(device, all, pending),
+                    data: (device) => firmwareAsync!.when(
+                      loading: () => const AppDetailSkeleton(
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      ),
+                      error: (error, _) => AppErrorView(
+                        message: error is ApiException
+                            ? error.message
+                            : 'โหลดรายการ Firmware ไม่สำเร็จ',
+                        messageKey: const Key('firmware_override_load_error'),
+                        retryKey: const Key('firmware_override_load_retry'),
+                        onRetry: () => ref.invalidate(firmwareListProvider),
+                      ),
+                      data: (all) => _buildForm(device, all, pending),
+                    ),
                   ),
                 ),
-              ),
             ],
-          ),
+          ],
         ),
+        bottomNavigationBar: showActions
+            ? _buildActionBar(device, firmware, pending)
+            : null,
       ),
     );
   }
@@ -245,8 +286,21 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
             fillColor: AppColors.card,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildActionBar(
+    Device device,
+    List<Firmware> all,
+    DeviceFirmwareOverride? pending,
+  ) {
+    final hasOptions = all.any(
+      (firmware) => firmware.isInstallableOn(device.deviceModel),
+    );
+    return AppBottomActionBar(
+      children: [
         if (_error != null) ...[
-          const SizedBox(height: 8),
           AppNotice(
             key: const Key('firmware_override_error'),
             tone: AppBadgeTone.danger,
@@ -270,9 +324,9 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
               ],
             ),
           ),
+          const SizedBox(height: 8),
         ],
         if (_submitted) ...[
-          const SizedBox(height: 8),
           const AppNotice(
             key: Key('firmware_override_submitted'),
             tone: AppBadgeTone.success,
@@ -282,26 +336,15 @@ class _FirmwareOverridePageState extends ConsumerState<FirmwareOverridePage> {
               'แล้วจึงยืนยันติดตั้ง Firmware นี้ได้',
             ),
           ),
+          const SizedBox(height: 8),
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          key: const Key('firmware_override_submit'),
-          onPressed:
-              (_submitting || _submitted || options.isEmpty || pending != null)
+        AppSubmitButton(
+          buttonKey: const Key('firmware_override_submit'),
+          label: 'ส่งคำขอ Override',
+          submitting: _submitting,
+          onPressed: (_submitted || !hasOptions || pending != null)
               ? null
               : _submit,
-          child: _submitting
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      AppColors.primaryForeground,
-                    ),
-                  ),
-                )
-              : const Text('ส่งคำขอ Override'),
         ),
       ],
     );

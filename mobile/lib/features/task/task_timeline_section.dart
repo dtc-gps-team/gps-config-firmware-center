@@ -6,6 +6,7 @@ import '../../core/api/models.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/ui/app_badge.dart';
 import '../../core/ui/app_card.dart';
+import '../../core/ui/app_bottom_action_bar.dart';
 import '../../core/ui/app_notice.dart';
 import '../../core/ui/labels.dart';
 import 'task_event_repository.dart';
@@ -242,6 +243,7 @@ class _AddNoteSheetState extends ConsumerState<_AddNoteSheet> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -282,61 +284,59 @@ class _AddNoteSheetState extends ConsumerState<_AddNoteSheet> {
     final canSave = !_saving && _controller.text.trim().isNotEmpty;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'เพิ่มบันทึก',
-            style: TextStyle(
-              fontSize: AppTypography.lg,
-              height: AppTypography.lgHeight,
-              fontWeight: FontWeight.w600,
-              color: AppColors.foreground,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'เพิ่มบันทึก',
+                  style: TextStyle(
+                    fontSize: AppTypography.lg,
+                    height: AppTypography.lgHeight,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.foreground,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('task_note_field'),
+                  controller: _controller,
+                  autofocus: true,
+                  enabled: !_saving,
+                  minLines: 3,
+                  maxLines: 6,
+                  maxLength: _noteMaxLength,
+                  decoration: const InputDecoration(
+                    hintText: 'เช่น ลูกค้าไม่อยู่ นัดเข้าใหม่พรุ่งนี้',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            key: const Key('task_note_field'),
-            controller: _controller,
-            autofocus: true,
-            enabled: !_saving,
-            minLines: 3,
-            maxLines: 6,
-            maxLength: _noteMaxLength,
-            decoration: const InputDecoration(
-              hintText: 'เช่น ลูกค้าไม่อยู่ นัดเข้าใหม่พรุ่งนี้',
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 4),
-            AppNotice(
-              tone: AppBadgeTone.danger,
-              icon: Icons.error_outline,
-              child: Text(_error!, key: const Key('task_note_error')),
-            ),
-          ],
-          const SizedBox(height: 12),
-          FilledButton(
-            key: const Key('task_note_save'),
-            onPressed: canSave ? _save : null,
-            child: _saving
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.primaryForeground,
-                    ),
-                  )
-                : const Text('บันทึก'),
+          AppBottomActionBar(
+            children: [
+              if (_error != null) ...[
+                AppNotice(
+                  tone: AppBadgeTone.danger,
+                  icon: Icons.error_outline,
+                  child: Text(_error!, key: const Key('task_note_error')),
+                ),
+              ],
+              const SizedBox(height: 12),
+              AppSubmitButton(
+                buttonKey: const Key('task_note_save'),
+                label: 'บันทึก',
+                submitting: _saving,
+                onPressed: canSave ? _save : null,
+              ),
+            ],
           ),
         ],
       ),

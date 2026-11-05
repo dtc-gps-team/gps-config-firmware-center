@@ -14,7 +14,7 @@ import 'package:mobile/core/auth/auth_controller.dart';
 import 'package:mobile/core/auth/token_store.dart';
 import 'package:mobile/core/router/app_router.dart';
 import 'package:mobile/core/ui/labels.dart';
-import 'package:mobile/core/ui/app_page_header.dart';
+import 'package:mobile/core/ui/app_ink_header.dart';
 import 'package:mobile/core/ui/app_v2_theme.dart';
 import 'package:mobile/features/task/config_apply_request_repository.dart';
 import 'package:mobile/features/task/apply_request_history_page.dart';
@@ -136,6 +136,13 @@ Future<void> _pump(
   TaskEventRepository? eventRepo,
   GoRouter? router,
 }) async {
+  // หัว r4 (AppInkHeader) สูงกว่าหัวเดิม เนื้อหาเลยตกใต้จอ 800x600 ของเทส
+  // ใช้จอสูงเป็นค่าเริ่มต้น — ยกเว้นเทสที่ตั้งขนาดจอเอง (เช่น 411dp)
+  if (tester.view.physicalSize == const Size(2400, 1800)) {
+    tester.view.physicalSize = const Size(1080, 4000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+  }
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -208,7 +215,7 @@ void main() {
       await tester.pump();
 
       await tester.tap(find.byKey(const Key('task_detail_device_link')));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.text('DEVICE_PAGE DVC-1'), findsOneWidget);
     });
@@ -548,6 +555,128 @@ void main() {
   // docs/25 — การ์ดแสดงสถานะของคำขอล่าสุดตามตาราง §3.3 · docs/27 §2.2 — ปุ่ม
   // "ส่ง Config เข้าเครื่อง" พาไปหน้าพารามิเตอร์ของ Config ที่ผูกกับงาน (ส่ง/ขอที่นั่น)
   group('คำขอส่ง Config เข้าเครื่อง (docs/25)', () {
+    testWidgets('ส่งตรงไม่แสดงเหตุการณ์ Operation อนุมัติ', (tester) async {
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: FakeConfigApplyRequestRepository(
+          requests: [
+            fakeApplyRequest(
+              status: ConfigApplyRequestStatus.approved,
+              decidedAt: null,
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('apply_request_event_operation')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('apply_request_timeline')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+      'อนุมัติแล้วแต่หมดอายุเพราะไม่ได้กดส่ง -> ไม่บอกว่ารอ Operation',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+          ),
+          applyRepo: FakeConfigApplyRequestRepository(
+            requests: [
+              fakeApplyRequest(
+                status: ConfigApplyRequestStatus.expired,
+                decidedAt: DateTime.utc(2026, 10, 22, 4),
+              ),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        final event = find.byKey(const Key('apply_request_event_operation'));
+        expect(
+          find.descendant(of: event, matching: find.text('Operation อนุมัติ')),
+          findsOneWidget,
+        );
+        expect(find.text('หมดเวลารอ Operation อนุมัติ'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets('release ต้องยืนยันก่อนเรียก repository', (tester) async {
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final applyRepo = FakeConfigApplyRequestRepository(
+        requests: [
+          fakeApplyRequest(
+            status: ConfigApplyRequestStatus.approved,
+            decidedAt: DateTime.utc(2026, 10, 22, 4),
+          ),
+        ],
+      );
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: applyRepo,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('release_apply_request_button')));
+      await tester.pump();
+
+      expect(applyRepo.releaseCalls, 0);
+      expect(
+        find.byKey(const Key('confirm_release_apply_request')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_release_apply_request')),
+      );
+      await tester.tap(find.byKey(const Key('confirm_release_apply_request')));
+      await tester.pump();
+      expect(applyRepo.releaseCalls, 1);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('cancel ต้องยืนยันก่อนเรียก repository', (tester) async {
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      final applyRepo = FakeConfigApplyRequestRepository(
+        requests: [fakeApplyRequest(status: ConfigApplyRequestStatus.pending)],
+      );
+      await _pump(
+        tester,
+        repo: _FakeTaskRepository(
+          task: _makeTask(status: TaskStatus.inProgress, configId: 'cfg-1'),
+        ),
+        applyRepo: applyRepo,
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('cancel_apply_request_button')));
+      await tester.pump();
+
+      expect(applyRepo.cancelCalls, 0);
+      expect(
+        find.byKey(const Key('confirm_cancel_apply_request')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_cancel_apply_request')),
+      );
+      await tester.tap(find.byKey(const Key('confirm_cancel_apply_request')));
+      await tester.pump();
+      expect(applyRepo.cancelCalls, 1);
+      await tester.pumpWidget(const SizedBox());
+    });
     Task installTask() => _makeTask(
       status: TaskStatus.inProgress,
       configId: 'cfg-1',
@@ -589,6 +718,45 @@ void main() {
         find.byKey(const Key('cancel_apply_request_button'));
     Finder releaseButton() =>
         find.byKey(const Key('release_apply_request_button'));
+
+    testWidgets('แก้ค่าแล้วเป็นรออนุมัติ และ Firmware ก็รอ Operation', (
+      tester,
+    ) async {
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            status: ConfigApplyRequestStatus.pending,
+            override: const ApplyRequestOverride(
+              id: 'ov-1',
+              reason: 'ปรับตามการใช้งาน',
+              fields: {'REPORT_INTERVAL_MOVING': 30},
+            ),
+          ),
+        ],
+      );
+
+      expect(find.text('รอ Operation อนุมัติ'), findsWidgets);
+      expect(
+        find.byKey(const Key('apply_request_event_operation')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
+
+      await pumpWith(
+        tester,
+        requests: [
+          fakeApplyRequest(
+            kind: FieldApplyKind.firmware,
+            firmwareVersion: '1.3.0',
+            status: ConfigApplyRequestStatus.pending,
+          ),
+        ],
+      );
+      expect(find.text('Firmware v1.3.0'), findsOneWidget);
+      expect(find.text('รอ Operation อนุมัติ'), findsWidgets);
+      await tester.pumpWidget(const SizedBox());
+    });
 
     testWidgets(
       'ยังไม่เคยขอ -> ปุ่ม "ส่ง Config เข้าเครื่อง" กดได้ ไม่มีการ์ดสถานะ',
@@ -693,9 +861,12 @@ void main() {
 
       await tester.ensureVisible(cancelButton());
       await tester.tap(cancelButton());
-      await tester.pump();
-      await tester.pump();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_cancel_apply_request')),
+      );
+      await tester.tap(find.byKey(const Key('confirm_cancel_apply_request')));
+      await tester.pumpAndSettle();
 
       expect(applyRepo.cancelCalls, 1);
       expect(applyRepo.lastCancelId, 'car-9');
@@ -721,8 +892,12 @@ void main() {
 
       await tester.ensureVisible(cancelButton());
       await tester.tap(cancelButton());
-      await tester.pump();
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.ensureVisible(
+        find.byKey(const Key('confirm_cancel_apply_request')),
+      );
+      await tester.tap(find.byKey(const Key('confirm_cancel_apply_request')));
+      await tester.pumpAndSettle();
 
       expect(
         find.byKey(const Key('cancel_apply_request_error')),
@@ -780,6 +955,13 @@ void main() {
 
         await tester.ensureVisible(releaseButton());
         await tester.tap(releaseButton());
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.ensureVisible(
+          find.byKey(const Key('confirm_release_apply_request')),
+        );
+        await tester.tap(
+          find.byKey(const Key('confirm_release_apply_request')),
+        );
         await tester.pumpAndSettle();
 
         expect(applyRepo.releaseCalls, 1);
@@ -802,6 +984,13 @@ void main() {
 
         await tester.ensureVisible(releaseButton());
         await tester.tap(releaseButton());
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.ensureVisible(
+          find.byKey(const Key('confirm_release_apply_request')),
+        );
+        await tester.tap(
+          find.byKey(const Key('confirm_release_apply_request')),
+        );
         await tester.pumpAndSettle();
 
         expect(
@@ -1298,6 +1487,13 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(find.byKey(const Key('task_note_error')), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byKey(const Key('app_bottom_action_bar')),
+              matching: find.byKey(const Key('task_note_error')),
+            ),
+            findsOneWidget,
+          );
           expect(find.text(message), findsOneWidget);
           expect(find.byKey(const Key('task_note_field')), findsOneWidget);
         },
@@ -1305,41 +1501,53 @@ void main() {
     }
   });
 
-  // docs/22 Batch 5 — หัวหน้าจอแบบ AppPageHeader แทน AppBar สีกรมท่า
-  group('หัวหน้าจอ (AppPageHeader)', () {
-    testWidgets('ชื่อหน้า + ป้ายสถานะงานบนหัวหน้าจอ ไม่มี AppBar', (
-      tester,
-    ) async {
-      await _pump(
-        tester,
-        repo: _FakeTaskRepository(
-          task: _makeTask(status: TaskStatus.inProgress),
-        ),
-      );
+  // R4-07 — task detail ใช้หัวพื้นเข้มและแสดงสถานะในสรุปงาน
+  group('หัวหน้าจองาน', () {
+    testWidgets(
+      'หัวพื้นเข้มไม่แสดง id ภายในของงาน สถานะเป็นป้ายสีในการ์ดสรุป',
+      (tester) async {
+        await _pump(
+          tester,
+          repo: _FakeTaskRepository(
+            task: _makeTask(status: TaskStatus.inProgress),
+          ),
+        );
 
-      expect(find.byType(AppBar), findsNothing);
-      final header = find.byType(AppPageHeader);
-      expect(
-        find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: header,
-          matching: find.byKey(const Key('task_detail_status_badge')),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: header, matching: find.text('กำลังทำ')),
-        findsOneWidget,
-      );
-      expect(AppV2Theme.isActive(tester.element(header)), isTrue);
-    });
+        expect(find.byType(AppBar), findsNothing);
+        final header = find.byType(AppInkHeader);
+        expect(
+          find.descendant(of: header, matching: find.text('รายละเอียดงาน')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: header, matching: find.textContaining('t1')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: header,
+            matching: find.text('บันทึกและสถานะงานของคุณ'),
+          ),
+          findsOneWidget,
+        );
+        final status = find.byKey(const Key('task_detail_status_summary'));
+        expect(status, findsOneWidget);
+        expect(
+          find.descendant(
+            of: status,
+            matching: find.byKey(const Key('task_detail_status_badge')),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: status, matching: find.text('กำลังทำ')),
+          findsOneWidget,
+        );
+        expect(AppV2Theme.isActive(tester.element(header)), isTrue);
+      },
+    );
 
-    testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" อยู่ข้างป้ายสถานะ', (
-      tester,
-    ) async {
+    testWidgets('งานที่ยังรอซิงค์ -> ป้าย "รอซิงค์" แสดงอยู่', (tester) async {
       await _pump(
         tester,
         repo: _FakeTaskRepository(task: _makeTask()),
@@ -1347,13 +1555,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        find.descendant(
-          of: find.byType(AppPageHeader),
-          matching: find.byKey(const Key('pending_sync_badge')),
-        ),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pending_sync_badge')), findsOneWidget);
     });
   });
 
@@ -1832,6 +2034,7 @@ void main() {
       );
       expect(find.byKey(const Key('request_history_row_0')), findsOneWidget);
       expect(find.byKey(const Key('request_history_row_1')), findsOneWidget);
+      expect(find.byKey(const Key('request_history_title_0')), findsOneWidget);
     });
   });
 }

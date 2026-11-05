@@ -13,6 +13,7 @@ import 'package:mobile/core/db/providers/database_provider.dart';
 import 'package:mobile/core/db/tables/pending_actions_table.dart';
 import 'package:mobile/core/sync/sync_providers.dart';
 import 'package:mobile/features/home/home_page.dart';
+import 'package:mobile/features/home/home_tasks_page.dart';
 import 'package:mobile/features/notification/notification_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
 
@@ -154,16 +155,9 @@ void main() {
       );
     });
 
-    testWidgets('ไม่มีงานค้าง -> ค้าง 0 งาน ด่วน 0 งาน', (tester) async {
+    testWidgets('ไม่มีงานค้าง -> ซ่อนแถบสรุป', (tester) async {
       await _pumpHome(tester, tasks: [_task('1', TaskStatus.completed)]);
-
-      expect(
-        find.descendant(
-          of: _summary,
-          matching: find.text('ค้าง 0 งาน ด่วน 0 งาน'),
-        ),
-        findsOneWidget,
-      );
+      expect(_summary, findsNothing);
     });
 
     testWidgets('role ที่ไม่ใช่ช่าง -> ไม่มีแถบสรุป', (tester) async {
@@ -176,23 +170,32 @@ void main() {
       expect(_summary, findsNothing);
     });
 
-    // หน้า "งานของฉัน" รวมเข้าหน้าแรกแล้ว (docs/22 §7.2) — แตะแถบสรุปเลื่อนไปส่วน
-    // "ต้องทำ" บนหน้าเดียวกัน แทนการเปิดอีกหน้า
-    testWidgets('แตะแถบสรุป -> เลื่อนไปส่วน "ต้องทำ" บนหน้าเดียวกัน', (
+    testWidgets('แตะแถบสรุป -> เปิดรายการที่กรองงานยังไม่เสร็จ', (
       tester,
     ) async {
+      final router = GoRouter(
+        initialLocation: '/home',
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const HomePage()),
+          GoRoute(
+            path: '/home/all',
+            builder: (_, state) => HomeTasksPage(
+              initialOpenOnly: state.uri.queryParameters['filter'] == 'open',
+            ),
+          ),
+        ],
+      );
       await _pumpHome(
         tester,
-        tasks: [for (var i = 0; i < 40; i++) _task('$i', TaskStatus.pending)],
+        tasks: [
+          _task('1', TaskStatus.pending),
+          _task('2', TaskStatus.completed),
+        ],
+        router: router,
       );
-      final section = find.byKey(const Key('home_open_section'));
-      final before = tester.getTopLeft(section).dy;
-
       await tester.tap(_summary);
       await tester.pumpAndSettle();
-
-      expect(tester.getTopLeft(section).dy, lessThan(before));
-      expect(tester.getTopLeft(section).dy, lessThan(40));
+      expect(find.text('พบ 1 รายการ'), findsOneWidget);
     });
   });
 

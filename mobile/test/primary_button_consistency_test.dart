@@ -16,6 +16,7 @@ import 'package:mobile/features/device_search/device_status_repository.dart';
 import 'package:mobile/features/firmware_install/confirm_firmware_install_page.dart';
 import 'package:mobile/features/firmware_override/firmware_override_page.dart';
 import 'package:mobile/features/firmware_override/firmware_override_repository.dart';
+import 'package:mobile/features/task/apply_mode_provider.dart';
 import 'package:mobile/features/incident/field_report_page.dart';
 import 'package:mobile/features/incident/incident_repository.dart';
 import 'package:mobile/features/task/task_repository.dart';
@@ -55,6 +56,7 @@ List<Override> _overrides(AuthState auth) => [
   firmwareOverrideRepositoryProvider.overrideWithValue(
     MockFirmwareOverrideRepository(),
   ),
+  centralApplyModeProvider.overrideWith((ref) async => false),
   incidentRepositoryProvider.overrideWithValue(MockIncidentRepository()),
   taskRepositoryProvider.overrideWithValue(MockTaskRepository()),
 ];
