@@ -102,10 +102,11 @@ export function buildCentralSettings(
 export type CentralCommandOutcome =
   | { kind: 'pending' }
   | { kind: 'success' }
-  /** นับเป็นความล้มเหลวของ Rollout (เข้า Auto Pause) */
-  | { kind: 'failed'; detail: string }
+  /** นับเป็นความล้มเหลวของ Rollout (เข้า Auto Pause) · `errorCode` = `error_code`
+   * ดิบจาก Server กลาง (docs/31 ใช้ตัดสินว่าลองส่งใหม่ได้ไหม) */
+  | { kind: 'failed'; detail: string; errorCode?: string | null }
   /** ไม่ใช่ความผิดของ Config: กล่องออฟไลน์ หรือคำสั่งถูกแทนที่/ยกเลิก ไม่นับล้มเหลว */
-  | { kind: 'skipped'; detail: string }
+  | { kind: 'skipped'; detail: string; errorCode?: string | null }
   /** ถามสถานะไม่ได้ตอนนี้ (Server กลางติดต่อไม่ได้) ไม่ตัดสิน รอรอบถัดไป */
   | { kind: 'unavailable' };
 
@@ -172,13 +173,36 @@ export function classifyCentralCommand(
     return {
       kind: 'skipped',
       detail: `กล่องออฟไลน์ คำสั่งไปไม่ถึง (${describe(command)})`,
+      errorCode: code,
     };
   }
   if (['SUPERSEDED', 'CANCELLED'].includes(code)) {
     return {
       kind: 'skipped',
       detail: `คำสั่งถูกแทนที่หรือยกเลิกที่ Server กลาง (${describe(command)})`,
+      errorCode: code,
     };
   }
-  return { kind: 'failed', detail: describeCentralFailure(command) };
+  return {
+    kind: 'failed',
+    detail: describeCentralFailure(command),
+    errorCode: command.error_code ?? null,
+  };
+}
+
+/** รหัสที่ส่งซ้ำแล้วไม่มีทางผ่าน — มีคนสั่งทับหรือยกเลิกคำสั่งนี้ที่ Server กลาง (docs/31 §3.1) */
+const NON_RETRYABLE_ERROR_CODES = new Set(['SUPERSEDED', 'CANCELLED']);
+
+/**
+ * ผลจบของคำสั่งที่ลองส่งใหม่ได้ (docs/31 §3.1) — เขียนเป็น **denylist ของ "ไม่ลอง"**
+ * (รีวิว A #436): ล้มเหลว / ข้ามทุกแบบลองใหม่ ยกเว้น `SUPERSEDED` / `CANCELLED` · รหัสใหม่ที่
+ * gateway เพิ่มในอนาคตจึงได้ลองใหม่โดยไม่ต้องแก้โค้ด (ครบ 3 ครั้งก็จบเหมือนกัน) · Server กลาง
+ * ปฏิเสธตอนส่ง (`rejected`) ไม่ผ่านฟังก์ชันนี้ ผู้เรียกจบทันที · ไม่แก้ `classifyCentralCommand()`
+ * เพราะ Campaign ปกติใช้ความหมายเดิมอยู่
+ */
+export function isRetryableCentralOutcome(
+  outcome: CentralCommandOutcome,
+): boolean {
+  if (outcome.kind !== 'failed' && outcome.kind !== 'skipped') return false;
+  return !NON_RETRYABLE_ERROR_CODES.has(outcome.errorCode ?? '');
 }
