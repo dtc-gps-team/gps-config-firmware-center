@@ -209,13 +209,6 @@ function EditParameterDialog({
 
   const numeric = NUMERIC_TYPES.includes(d.dataType);
 
-  function pairKey(list: ConfigFieldModelSupport[]): string {
-    return list
-      .map((m) => `${m.deviceModel}/${m.protocol}`)
-      .sort()
-      .join(",");
-  }
-
   async function submit() {
     if (!session?.accessToken) return;
     setError(null);
@@ -230,17 +223,31 @@ function EditParameterDialog({
         modelFields.appliesToAllModels = appliesToAllModels;
       }
       if (!appliesToAllModels) {
+        // เทียบที่ระดับ "ชื่อรุ่น" (เฉพาะรุ่นที่อยู่ในทะเบียน) ไม่ใช่ระดับคู่รุ่น/โปรโตคอล —
+        // คู่ที่บันทึกไว้อาจไม่ตรงกับโปรโตคอลในทะเบียนปัจจุบัน (ทะเบียนเพิ่ม/ลดโปรโตคอลภายหลัง)
+        // ถ้าเทียบระดับคู่ แค่แก้คำอธิบายก็จะส่ง supportedModels ชุดใหม่ ขยาย/ตัดขอบเขตเอง (รีวิว B #439)
+        const registered = new Set(registry.map((m) => m.name));
+        const registeredNames = (names: Iterable<string>) =>
+          [...names].filter((n) => registered.has(n)).sort().join(",");
+        const originalNames = new Set(d.supportedModels.map((m) => m.deviceModel));
+        const selectionChanged =
+          registeredNames(selectedModelNames) !== registeredNames(originalNames);
+        // รุ่นที่มีอยู่เดิมคงคู่เดิมไว้ · ขยายโปรโตคอลจากทะเบียนเฉพาะรุ่นที่เพิ่มใหม่
         const next = [
-          ...expandModelsToSupport(registry, selectedModelNames),
+          ...registry
+            .filter((m) => selectedModelNames.has(m.name))
+            .flatMap((m) =>
+              originalNames.has(m.name)
+                ? d.supportedModels.filter((p) => p.deviceModel === m.name)
+                : expandModelsToSupport([m], new Set([m.name])),
+            ),
           ...legacyPairs,
         ];
         if (next.length === 0) {
           setError('เลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล หรือเปิด "ใช้ได้กับทุกโมเดล"');
           return;
         }
-        if (pairKey(next) !== pairKey(d.supportedModels)) {
-          modelFields.supportedModels = next;
-        }
+        if (selectionChanged) modelFields.supportedModels = next;
       }
     }
 
@@ -398,7 +405,9 @@ function EditParameterDialog({
                   />
                   ใช้ได้กับทุกโมเดล
                 </label>
-                {appliesToAllModels && required && !d.appliesToAllModels && (
+                {/* เตือนเมื่อสถานะ "ทุกโมเดล + บังคับ" ใหม่นี้ต่างจากที่บันทึกไว้ ไม่ว่าจะ
+                    เพิ่งติ๊กตัวไหน (รีวิว B #439 ข้อ 2) */}
+                {appliesToAllModels && required && !(d.appliesToAllModels && d.required) && (
                   <Notice tone="warning">
                     ตั้งเป็นบังคับกรอกและใช้ได้ทุกโมเดล Config ทุกรุ่นต้องมีค่านี้ทันที
                     Config เดิมที่ยังไม่มีจะบันทึกการแก้ไขไม่ผ่านจนกว่าจะใส่ค่านี้

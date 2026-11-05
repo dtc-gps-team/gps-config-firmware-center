@@ -154,6 +154,77 @@ describe("ParameterManageControls", () => {
       expect(input.supportedModels).toHaveLength(2);
     });
 
+    it("คู่ที่บันทึกไว้ไม่ตรงกับโปรโตคอลในทะเบียน + แก้แค่คำอธิบาย -> ไม่ส่ง supportedModels (รีวิว B #439 ข้อ 1)", async () => {
+      updateMock.mockResolvedValue(definition);
+      const user = userEvent.setup();
+      // บันทึกไว้เป็น GT06N/UDP แต่ทะเบียนปัจจุบันมีแค่ TCP
+      render(
+        <ParameterManageControls
+          definition={{
+            ...definition,
+            supportedModels: [{ deviceModel: "GT06N", protocol: "UDP" }],
+          }}
+          onChanged={vi.fn()}
+          onDeleted={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /แก้ไข/ }));
+
+      await user.type(screen.getByLabelText("คำอธิบาย"), " เพิ่ม");
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      await waitFor(() => expect(updateMock).toHaveBeenCalled());
+      const input = (updateMock.mock.calls[0] as [string, string, object])[2];
+      expect(input).not.toHaveProperty("supportedModels");
+    });
+
+    it("เพิ่มรุ่นใหม่ -> รุ่นเดิมคงคู่เดิม (UDP) ขยายโปรโตคอลจากทะเบียนเฉพาะรุ่นที่เพิ่ม", async () => {
+      updateMock.mockResolvedValue(definition);
+      const user = userEvent.setup();
+      render(
+        <ParameterManageControls
+          definition={{
+            ...definition,
+            supportedModels: [{ deviceModel: "GT06N", protocol: "UDP" }],
+          }}
+          onChanged={vi.fn()}
+          onDeleted={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /แก้ไข/ }));
+
+      await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
+      await user.click(screen.getByRole("checkbox", { name: /BB-200/ }));
+      await user.click(screen.getByRole("button", { name: "บันทึก" }));
+
+      await waitFor(() => expect(updateMock).toHaveBeenCalled());
+      const input = (updateMock.mock.calls[0] as [string, string, { supportedModels: unknown[] }])[2];
+      expect(input.supportedModels).toHaveLength(2);
+      expect(input.supportedModels).toEqual(
+        expect.arrayContaining([
+          { deviceModel: "GT06N", protocol: "UDP" },
+          { deviceModel: "BB-200", protocol: "mqtt" },
+        ]),
+      );
+    });
+
+    it("เป็นทุกโมเดลอยู่แล้ว แล้วติ๊กบังคับกรอก -> เตือนว่า Config ทุกรุ่นต้องมีค่านี้ (รีวิว B #439 ข้อ 2)", async () => {
+      const user = userEvent.setup();
+      render(
+        <ParameterManageControls
+          definition={{ ...definition, appliesToAllModels: true, required: false }}
+          onChanged={vi.fn()}
+          onDeleted={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /แก้ไข/ }));
+      expect(screen.queryByText(/Config ทุกรุ่นต้องมีค่านี้ทันที/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("checkbox", { name: /บังคับกรอก/ }));
+
+      expect(screen.getByText(/Config ทุกรุ่นต้องมีค่านี้ทันที/)).toBeInTheDocument();
+    });
+
     it("ถอดรุ่นจนไม่เหลือและไม่ติ๊กทุกโมเดล -> แจ้ง error ไม่ส่ง request", async () => {
       const user = userEvent.setup();
       await openEdit(user);
