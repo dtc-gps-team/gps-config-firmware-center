@@ -633,6 +633,10 @@ enum ConfigApplyAttemptStatus {
   final String wireName;
   static ConfigApplyAttemptStatus fromWire(String value) =>
       values.firstWhere((v) => v.wireName == value);
+
+  /// ไม่รู้จัก = null (backend ใหม่กว่าเพิ่มสถานะ) — ให้ผู้เรียกข้ามรอบนั้น
+  static ConfigApplyAttemptStatus? tryFromWire(String value) =>
+      values.where((v) => v.wireName == value).firstOrNull;
 }
 
 /// การส่ง 1 รอบของคำขอ (`retry.attempts[]`)
@@ -685,10 +689,16 @@ class ConfigApplyRetry {
         nextRetryAt: json['nextRetryAt'] is String
             ? DateTime.parse(json['nextRetryAt'] as String)
             : null,
-        attempts: (json['attempts'] as List<dynamic>)
-            .map((v) => ConfigApplyAttempt.fromJson(v as Map<String, dynamic>))
-            .toList(growable: false),
+        attempts: _knownAttempts(json['attempts'] as List<dynamic>),
       );
+
+  /// รอบที่สถานะไม่รู้จักถูกข้าม ไม่ให้ทั้งหน้าความคืบหน้าพัง (รีวิว A #447 ·
+  /// แนวเดียวกับ `_wrapListLenient` ของรายการแจ้งเตือน)
+  static List<ConfigApplyAttempt> _knownAttempts(List<dynamic> raw) => [
+    for (final v in raw.cast<Map<String, dynamic>>())
+      if (ConfigApplyAttemptStatus.tryFromWire(v['status'] as String) != null)
+        ConfigApplyAttempt.fromJson(v),
+  ];
 }
 
 class ConfigApplyRequestProgress {
