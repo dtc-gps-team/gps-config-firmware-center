@@ -44,7 +44,10 @@ import {
   CentralDeviceService,
   type PushFirmwareOutcome,
 } from '../central-device/central-device.service';
-import { ConfigDefinitionService } from '../config-definition/config-definition.service';
+import {
+  ConfigDefinitionService,
+  fieldSupportsModel,
+} from '../config-definition/config-definition.service';
 // type-only — ไม่มี import ตอน runtime จึงไม่เกิด circular dependency กับโมดูล
 // config-apply-request (โมดูลนั้นเป็นฝ่าย inject `FIELD_APPLY_ROLLOUT_STARTER`)
 import type { FieldApplyRolloutInput } from '../config-apply-request/field-apply-rollout';
@@ -838,11 +841,7 @@ export class CampaignRolloutService {
       if (!def) return false;
       return (
         templateFieldNames.has(fieldName) ||
-        def.supportedModels.some(
-          (m) =>
-            m.deviceModel === config.deviceModel &&
-            m.protocol === config.protocol,
-        )
+        fieldSupportsModel(def, config.deviceModel, config.protocol)
       );
     };
 

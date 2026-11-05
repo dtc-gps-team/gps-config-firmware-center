@@ -57,6 +57,7 @@ describe("ParameterNewView", () => {
     render(<ParameterNewView />);
 
     fireEvent.change(screen.getByLabelText("ชื่อ field"), { target: { value: "new_field" } });
+    fireEvent.change(screen.getByLabelText("คำอธิบาย"), { target: { value: "ทดสอบ" } });
     await user.click(screen.getByRole("button", { name: /เลือกโมเดล/ }));
     await user.click(screen.getByRole("checkbox", { name: /GT06N/ }));
     await user.click(screen.getByRole("button", { name: "บันทึก Parameter" }));

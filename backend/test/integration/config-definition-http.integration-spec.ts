@@ -167,6 +167,7 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
       fieldName: 'MTYP',
       dataType: 'string',
       required: false,
+      description: 'ตัวอย่าง field สำหรับเทส',
       supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
     };
 
@@ -417,6 +418,25 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
         .expect(400);
     });
 
+    // ฟีดแบ็ก 2026-11-04: บังคับกรอกคำอธิบายตอนสร้างพารามิเตอร์ใหม่
+    it('ไม่ส่ง description มา -> 400', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+      const bodyWithoutDescription: Record<string, unknown> = {
+        ...validBody,
+      };
+      delete bodyWithoutDescription.description;
+
+      await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send(bodyWithoutDescription)
+        .expect(400);
+    });
+
     it('fieldName ซ้ำ -> 409', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',
@@ -432,7 +452,7 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
         .expect(409);
     });
 
-    it('supportedModels ว่างเปล่า -> 400 (ArrayMinSize(1) ที่ DTO)', async () => {
+    it('supportedModels ว่างเปล่าโดยไม่เปิด appliesToAllModels -> 400', async () => {
       const configEngineerUser = await makeUser(prisma, {
         role: 'ConfigEngineer',
       });
@@ -444,6 +464,33 @@ describe('ConfigDefinitionController (integration — real postgres + guard chai
         .set('Authorization', `Bearer ${token}`)
         .send({ ...validBody, supportedModels: [] })
         .expect(400);
+    });
+
+    // ฟีดแบ็ก 2026-11-04: field ใช้ได้ทุกโมเดลได้โดยไม่ต้องส่ง supportedModels
+    it('supportedModels ว่างเปล่า + appliesToAllModels: true -> 201 สร้างได้ปกติ', async () => {
+      const configEngineerUser = await makeUser(prisma, {
+        role: 'ConfigEngineer',
+      });
+      await grant('ConfigEngineer', ActionType.Create, 'config-definition');
+      const token = tokenFor(configEngineerUser.id, 'ConfigEngineer');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/config-definitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...validBody,
+          fieldName: 'RS485',
+          supportedModels: [],
+          appliesToAllModels: true,
+        })
+        .expect(201);
+
+      expect(
+        (res.body as { appliesToAllModels: boolean }).appliesToAllModels,
+      ).toBe(true);
+      expect(
+        (res.body as { supportedModels: unknown[] }).supportedModels,
+      ).toEqual([]);
     });
   });
 });

@@ -27,6 +27,7 @@ function def(over: Partial<ConfigFieldDefinition>): ConfigFieldDefinition {
     minValue: null,
     maxValue: null,
     supportedModels: [{ deviceModel: "GT06N", protocol: "TCP" }],
+    appliesToAllModels: false,
     createdAt: "",
     updatedAt: "",
     ...over,

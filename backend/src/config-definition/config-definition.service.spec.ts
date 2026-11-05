@@ -37,6 +37,7 @@ const apnDef: ConfigFieldDefinition & {
   defaultValue: null,
   minValue: null,
   maxValue: null,
+  appliesToAllModels: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [gt06nTcp],
@@ -60,6 +61,7 @@ const modeDef: ConfigFieldDefinition & {
   defaultValue: null,
   minValue: null,
   maxValue: null,
+  appliesToAllModels: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   supportedModels: [
@@ -147,6 +149,7 @@ describe('ConfigDefinitionService', () => {
       fieldName: 'APN1',
       dataType: 'string',
       required: true,
+      description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
       supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
     };
 
@@ -207,7 +210,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -216,6 +219,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -249,6 +253,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -269,7 +274,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: true,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -278,6 +283,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -298,7 +304,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: true,
           category: undefined,
@@ -307,6 +313,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -332,7 +339,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: 'Network',
@@ -341,6 +348,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -361,7 +369,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -370,6 +378,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: 'internet',
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -390,7 +399,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -399,6 +408,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -431,7 +441,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -440,6 +450,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: undefined,
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -460,7 +471,7 @@ describe('ConfigDefinitionService', () => {
           allowedValues: [],
           required: true,
           unknownSpec: false,
-          description: undefined,
+          description: 'Access Point Name สำหรับเชื่อมต่อ GPRS/4G',
           unit: undefined,
           stOverridable: false,
           category: undefined,
@@ -469,6 +480,7 @@ describe('ConfigDefinitionService', () => {
           defaultValue: '',
           minValue: null,
           maxValue: null,
+          appliesToAllModels: false,
           supportedModels: {
             create: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
           },
@@ -548,6 +560,41 @@ describe('ConfigDefinitionService', () => {
 
       await expect(createDefinition(dto)).rejects.toThrow('db down');
     });
+
+    // ฟีดแบ็ก 2026-11-04: field ใช้ได้ทุกโมเดลได้โดยไม่ต้องเลือก supportedModels
+    it('appliesToAllModels: true + ไม่ส่ง supportedModels -> สร้างได้ปกติ', async () => {
+      create.mockResolvedValue(apnDef);
+
+      await expect(
+        createDefinition({
+          fieldName: dto.fieldName,
+          dataType: dto.dataType,
+          required: dto.required,
+          description: dto.description,
+          appliesToAllModels: true,
+        }),
+      ).resolves.toEqual(apnDef);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            appliesToAllModels: true,
+            supportedModels: { create: [] },
+          }) as object,
+        }) as object,
+      );
+    });
+
+    it('ไม่ส่ง supportedModels และไม่เปิด appliesToAllModels -> BadRequestException', async () => {
+      await expect(
+        createDefinition({
+          fieldName: dto.fieldName,
+          dataType: dto.dataType,
+          required: dto.required,
+          description: dto.description,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(create).not.toHaveBeenCalled();
+    });
   });
 
   describe('validateFields', () => {
@@ -585,6 +632,28 @@ describe('ConfigDefinitionService', () => {
 
       await expect(
         service.validateFields('GT06L', 'TCP', { APN1: 12345 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    // ฟีดแบ็ก 2026-11-04: appliesToAllModels ลัดผ่าน supportedModels ทั้งหมด
+    it('field appliesToAllModels: true ไม่มี supportedModels เลย -> ผ่านทุกรุ่น รวมถึงเป็น required ของรุ่นนั้นด้วย', async () => {
+      const anyModelDef = {
+        ...apnDef,
+        fieldName: 'ANY_MODEL_FIELD',
+        required: true,
+        appliesToAllModels: true,
+        supportedModels: [],
+      };
+      findMany.mockResolvedValue([anyModelDef]);
+
+      await expect(
+        service.validateFields('ไม่มีในทะเบียนเลย', 'TCP', {
+          ANY_MODEL_FIELD: 'internet',
+        }),
+      ).resolves.toBeUndefined();
+      // required ของ appliesToAllModels ต้องบังคับทุกรุ่นด้วย ไม่ใช่แค่ผ่านตรวจค่า
+      await expect(
+        service.validateFields('ไม่มีในทะเบียนเลย', 'TCP', {}),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -840,6 +909,7 @@ describe('ConfigDefinitionService', () => {
         fieldName: 'speed_limit.max_kmh',
         dataType: 'integer',
         required: false,
+        description: 'ความเร็วสูงสุดก่อนแจ้งเตือน',
         supportedModels: [{ deviceModel: 'GT06N', protocol: 'TCP' }],
       };
 

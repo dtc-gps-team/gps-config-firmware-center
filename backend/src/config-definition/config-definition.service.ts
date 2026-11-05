@@ -20,6 +20,30 @@ export type ConfigFieldDefinitionWithSupport = ConfigFieldDefinition & {
   supportedModels: ConfigFieldDefinitionModelSupport[];
 };
 
+/** field นี้ใช้ได้กับ `deviceModel`/`protocol` ที่ระบุไหม — จุดตรวจรวมจุดเดียว
+ * ของ "field X ใช้ได้กับรุ่น Y ไหม" `appliesToAllModels: true` (ฟีดแบ็ก
+ * 2026-11-04) ลัดผ่านไม่ต้องมีแถวใน `supportedModels` เลยก็ได้ — เรียกจากทั้ง
+ * 4 จุดเดิมที่เคย inline `supportedModels.some(...)` ในไฟล์นี้และ
+ * campaign-rollout.service.ts กันพลาดจุดใดจุดหนึ่งตอนเพิ่ม flag นี้ */
+export function fieldSupportsModel(
+  def: {
+    appliesToAllModels: boolean;
+    supportedModels: Pick<
+      ConfigFieldDefinitionModelSupport,
+      'deviceModel' | 'protocol'
+    >[];
+  },
+  deviceModel: string,
+  protocol: string,
+): boolean {
+  return (
+    def.appliesToAllModels ||
+    def.supportedModels.some(
+      (m) => m.deviceModel === deviceModel && m.protocol === protocol,
+    )
+  );
+}
+
 /** ผู้ที่กำลังเรียก endpoint — มาจาก JWT payload เสมอ (แต่ละ module ประกาศเอง
  * ไม่ import ข้าม module เหมือน config.service.ts / device.service.ts) */
 export interface ActingUser {
@@ -251,6 +275,21 @@ export class ConfigDefinitionService {
     }
   }
 
+  /** `supportedModels` ต้องมีอย่างน้อย 1 คู่เสมอ เว้นแต่ `appliesToAllModels:
+   * true` (ฟีดแบ็ก 2026-11-04) — cross-field validation ข้าม 2 field เลยเช็ค
+   * ที่นี่แทนที่จะใส่ใน DTO (เหมือนแพทเทิร์น assertValidRange ด้านล่าง) */
+  private assertSupportedModelsOrAppliesToAll(dto: {
+    appliesToAllModels: boolean;
+    supportedModels: { deviceModel: string; protocol: string }[];
+  }): void {
+    if (dto.appliesToAllModels) return;
+    if (dto.supportedModels.length === 0) {
+      throw new BadRequestException(
+        'ต้องเลือกโมเดลที่รองรับอย่างน้อย 1 โมเดล หรือเปิด "ใช้ได้กับทุกโมเดล"',
+      );
+    }
+  }
+
   /** เช็คว่า `defaultValue` (ถ้ามี) ตรงกับ `dataType` ที่ประกาศไหม — ปิด
    * TODO(#201) เดิมที่ตั้งใจรอทำพร้อมงานขยายชุด dataType (กัน
    * `dataType: "integer"` + `defaultValue: "abc"` หลุดผ่านไปได้เหมือนก่อนหน้านี้) */
@@ -284,6 +323,12 @@ export class ConfigDefinitionService {
     this.assertNoSensitiveDefaultValue(dto);
     this.assertDefaultValueMatchesDataType(dto);
     this.assertValidRange(dto);
+    const appliesToAllModels = dto.appliesToAllModels ?? false;
+    const supportedModels = dto.supportedModels ?? [];
+    this.assertSupportedModelsOrAppliesToAll({
+      appliesToAllModels,
+      supportedModels,
+    });
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -303,8 +348,9 @@ export class ConfigDefinitionService {
             defaultValue: dto.defaultValue,
             minValue: dto.minValue ?? null,
             maxValue: dto.maxValue ?? null,
+            appliesToAllModels,
             supportedModels: {
-              create: dto.supportedModels.map((m) => ({
+              create: supportedModels.map((m) => ({
                 deviceModel: m.deviceModel,
                 protocol: m.protocol,
               })),
@@ -381,6 +427,7 @@ export class ConfigDefinitionService {
     }
     const existing = await this.prisma.configFieldDefinition.findUnique({
       where: { id },
+      include: { supportedModels: true },
     });
     if (!existing) {
       throw new NotFoundException(`ไม่พบพารามิเตอร์ id ${id}`);
@@ -399,6 +446,10 @@ export class ConfigDefinitionService {
     this.assertNoSensitiveDefaultValue(candidate);
     this.assertDefaultValueMatchesDataType(candidate);
     this.assertValidRange(candidate);
+    this.assertSupportedModelsOrAppliesToAll({
+      appliesToAllModels: dto.appliesToAllModels ?? existing.appliesToAllModels,
+      supportedModels: dto.supportedModels ?? existing.supportedModels,
+    });
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.configFieldDefinition.update({
@@ -417,6 +468,7 @@ export class ConfigDefinitionService {
           defaultValue: dto.defaultValue,
           minValue: dto.minValue,
           maxValue: dto.maxValue,
+          appliesToAllModels: dto.appliesToAllModels,
         },
       });
       if (dto.supportedModels) {
@@ -541,11 +593,7 @@ export class ConfigDefinitionService {
     }
 
     const requiredForModel = defs.filter(
-      (d) =>
-        d.required &&
-        d.supportedModels.some(
-          (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-        ),
+      (d) => d.required && fieldSupportsModel(d, deviceModel, protocol),
     );
     for (const def of requiredForModel) {
       if (!(def.fieldName in fields)) {
@@ -610,9 +658,7 @@ export class ConfigDefinitionService {
         continue;
       }
 
-      const supportsModel = def.supportedModels.some(
-        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-      );
+      const supportsModel = fieldSupportsModel(def, deviceModel, protocol);
       if (!supportsModel && !inTemplate.has(name)) {
         errors.push(
           `field "${name}" ไม่รองรับรุ่นอุปกรณ์ ${deviceModel}/${protocol}`,
@@ -700,9 +746,7 @@ export class ConfigDefinitionService {
         continue;
       }
 
-      const supportsModel = def.supportedModels.some(
-        (m) => m.deviceModel === deviceModel && m.protocol === protocol,
-      );
+      const supportsModel = fieldSupportsModel(def, deviceModel, protocol);
       if (!supportsModel && !inTemplate.has(name)) {
         errors.push(
           `field "${name}" ไม่รองรับโมเดล ${deviceModel}/${protocol}`,
