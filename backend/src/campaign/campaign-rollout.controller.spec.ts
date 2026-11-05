@@ -59,6 +59,9 @@ const sampleRolloutTarget: CampaignRolloutTarget = {
   proposedFields: null,
   pulledAt: null,
   centralCommandId: null,
+  attemptCount: 1,
+  nextRetryAt: null,
+  appliedConfigOverrideId: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };

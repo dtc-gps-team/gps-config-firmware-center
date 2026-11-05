@@ -95,4 +95,71 @@ void main() {
       );
     },
   );
+
+  // docs/31 — ระบบลองส่งใหม่เอง
+  group('config_apply_retrying', () {
+    final retrying = _n(NotificationType.configApplyRetrying, {
+      ...base,
+      'kind': 'firmware',
+      'attemptNo': 1,
+      'maxAttempts': 3,
+      'nextAttemptNo': 2,
+      'errorCode': 'DEVICE_DISCONNECTED',
+      'detail': 'กล่องหลุดการเชื่อมต่อ',
+      'nextRetryAt': '2026-11-05T10:00:30.000Z',
+    });
+
+    test('fromWire รู้จัก (หน้ารายการไม่พังเมื่อ backend ส่ง type นี้)', () {
+      expect(
+        NotificationType.fromWire('config_apply_retrying'),
+        NotificationType.configApplyRetrying,
+      );
+    });
+
+    test('หัวข้อบอกรอบและชนิด: "ส่ง Firmware รอบ 1/3 ไม่สำเร็จ"', () {
+      expect(
+        NotificationTypeStyle.shortLabelOf(retrying),
+        'ส่ง Firmware รอบ 1/3 ไม่สำเร็จ',
+      );
+      expect(
+        NotificationTypeStyle.labelOf(retrying),
+        'ส่ง Firmware รอบ 1/3 ไม่สำเร็จ',
+      );
+    });
+
+    test('payload ไม่ครบ -> หัวข้อทั่วไป', () {
+      final bare = _n(NotificationType.configApplyRetrying, base);
+      expect(
+        NotificationTypeStyle.shortLabelOf(bare),
+        'ส่ง Config ไม่สำเร็จ กำลังลองใหม่',
+      );
+      expect(NotificationTypeStyle.details(bare).last, 'ระบบกำลังลองส่งใหม่');
+    });
+
+    test('รายละเอียด: อุปกรณ์ สาเหตุ และรอบที่กำลังลอง', () {
+      expect(NotificationTypeStyle.details(retrying), [
+        'อุปกรณ์: BOX-0001',
+        'เหตุผล: กล่องหลุดการเชื่อมต่อ',
+        'กำลังลองใหม่ รอบ 2/3',
+      ]);
+    });
+
+    test(
+      'แตะไปหน้างาน · หมวดส่งเข้ากล่อง · ไม่ใช่เรื่องที่ช่างต้องทำ (ไม่ขึ้นป้าย ต้องดำเนินการ)',
+      () {
+        expect(
+          NotificationTypeStyle.route(retrying),
+          AppRoutes.taskDetail('t1'),
+        );
+        expect(
+          NotificationTypeStyle.category(NotificationType.configApplyRetrying),
+          NotificationCategory.apply,
+        );
+        expect(
+          NotificationTypeStyle.tone(NotificationType.configApplyRetrying),
+          isNot(NotificationTone.action),
+        );
+      },
+    );
+  });
 }

@@ -15,6 +15,12 @@ import {
 import { CampaignController } from './campaign.controller';
 import { CampaignRolloutController } from './campaign-rollout.controller';
 import { CampaignRolloutService } from './campaign-rollout.service';
+import {
+  DEFAULT_FIELD_APPLY_RETRY_SETTINGS,
+  FIELD_APPLY_RETRY_SETTINGS,
+  FieldApplyRetryService,
+  type FieldApplyRetrySettings,
+} from './field-apply-retry.service';
 import { CampaignService } from './campaign.service';
 import { CentralRolloutPollJob } from './central-rollout-poll.job';
 import { CentralRolloutPollService } from './central-rollout-poll.service';
@@ -68,6 +74,25 @@ import {
     // ถามผลคำสั่งของ Rollout โหมด central ทุก 4 วินาที
     CentralRolloutPollService,
     CentralRolloutPollJob,
+    // ลองส่งเข้ากล่องใหม่อัตโนมัติของคำขอส่งจากหน้างาน (docs/31) · ค่าตั้งจาก env
+    // ค่าที่ไม่ใช่จำนวนเต็มบวกใช้ค่าเริ่มต้น (3 ครั้ง, รอ 30 วินาที, lease 60 วินาที)
+    FieldApplyRetryService,
+    {
+      provide: FIELD_APPLY_RETRY_SETTINGS,
+      useFactory: (nestConfig: NestConfigService): FieldApplyRetrySettings => {
+        const read = (key: string, fallback: number): number => {
+          const n = Number(nestConfig.get<string>(key, String(fallback)));
+          return Number.isInteger(n) && n > 0 ? n : fallback;
+        };
+        const d = DEFAULT_FIELD_APPLY_RETRY_SETTINGS;
+        return {
+          maxAttempts: read('FIELD_APPLY_MAX_ATTEMPTS', d.maxAttempts),
+          retryDelaySec: read('FIELD_APPLY_RETRY_DELAY_SEC', d.retryDelaySec),
+          claimLeaseSec: read('FIELD_APPLY_CLAIM_LEASE_SEC', d.claimLeaseSec),
+        };
+      },
+      inject: [NestConfigService],
+    },
     // FIRMWARE_ROLLBACK_EXECUTOR: env `FIRMWARE_ROLLBACK_MODE` (`mock`
     // default | `real`) ตาม Mock Mode Pattern เดียวกับ `CONFIG_APPLIER` ใน
     // `device.module.ts` — อยู่ที่นี่ไม่ใช่ device.module.ts เพราะใช้แค่ใน
@@ -118,6 +143,12 @@ import {
       inject: [NestConfigService],
     },
   ],
-  exports: [CampaignService, CampaignRolloutService, RolloutEvents],
+  exports: [
+    CampaignService,
+    CampaignRolloutService,
+    RolloutEvents,
+    // docs/31 R2 — config-apply-request อ่านจำนวนครั้งสูงสุดไปแสดงใน progress API
+    FieldApplyRetryService,
+  ],
 })
 export class CampaignModule {}

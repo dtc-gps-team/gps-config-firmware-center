@@ -680,6 +680,14 @@ describe('DeviceSyncService', () => {
       });
     });
 
+    it('รายงานสำเร็จโดยไม่เคยดึงงาน -> ไม่ mark Override ว่าใช้แล้ว (ส่งอีกครั้งในการส่งครั้งถัดไป)', async () => {
+      campaignRolloutTarget.findFirst.mockResolvedValue(makeTarget());
+
+      await service.reportResult(DEVICE_ID, 'job-1', 'success');
+
+      expect(deviceConfigOverride.findFirst).not.toHaveBeenCalled();
+    });
+
     it('รายงานโดยไม่เคยดึงงาน -> ตั้ง pulledAt ให้ก่อนบันทึกผล', async () => {
       campaignRolloutTarget.findFirst.mockResolvedValue(makeTarget());
 

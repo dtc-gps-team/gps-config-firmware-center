@@ -25,9 +25,9 @@ export class CentralRolloutPollJob {
     this.running = true;
     try {
       const r = await this.service.poll();
-      if (r.success + r.failed + r.skipped > 0) {
+      if (r.success + r.failed + r.skipped + r.retrying + r.retried > 0) {
         this.logger.log(
-          `central poll: สำเร็จ ${r.success}, ล้มเหลว ${r.failed}, ข้าม ${r.skipped}`,
+          `central poll: สำเร็จ ${r.success}, ล้มเหลว ${r.failed}, ข้าม ${r.skipped}, รอลองใหม่ ${r.retrying}, ส่งรอบใหม่ ${r.retried}`,
         );
       }
     } catch (err) {

@@ -1450,7 +1450,7 @@ paths:
     get:
       tags: [config-apply-request]
       operationId: getConfigApplyRequestProgress
-      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84)
+      summary: อ่านความคืบหน้าการส่งคำขอเข้ากล่อง (v3.84 · v3.87 เพิ่ม retry)
       description: >-
         ใช้สิทธิ์และ scope เดียวกับ `GET /tasks/{taskId}/config-apply-requests`.
         คำขอที่ไม่อยู่ในงานหรือผู้ใช้มองไม่เห็นงานตอบ 404. อ่านสถานะสดจาก Server กลาง
@@ -1460,6 +1460,11 @@ paths:
         (ไม่มี IP, path หรือ key) ตัดไว้ไม่เกิน 200 ตัวอักษร.
         `fromVersion` มีเฉพาะ Firmware (เวอร์ชันก่อนส่ง) · Config เป็น `null`
         เพราะไม่รู้ว่ากล่องใช้ Config ใดอยู่จริง.
+        **v3.87 (docs/31 R2):** `retry` = ประวัติการลองส่งใหม่อัตโนมัติรายรอบ
+        (สิทธิ์ไม่เปลี่ยน อ่านเฉพาะ target ของ Rollout ของคำขอนี้ ไม่รับ id ของ
+        target/attempt จาก client) · อยู่ระดับบนสุดไม่ใช่ใน `central` เพราะช่วงรอ
+        รอบใหม่ไม่มีรหัสคำสั่ง (`central` เป็น null) · `null` = ไม่มีประวัติรายรอบ
+        (ยังไม่ปล่อย, ไม่ใช่โหมด central หรือส่งก่อน docs/31).
       parameters:
         - in: path
           name: taskId
@@ -1476,7 +1481,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [requestId, kind, status, fromVersion, toVersion, isDowngrade, releasedAt, completedAt, central]
+                required: [requestId, kind, status, fromVersion, toVersion, isDowngrade, releasedAt, completedAt, central, retry]
                 properties:
                   requestId: { type: string, format: uuid }
                   kind: { type: string, enum: [config, firmware] }
@@ -1510,6 +1515,32 @@ paths:
                               enum: [delivered, downloading, validating, installing, rebooting, succeeded, rolled_back, failed, expired]
                             at: { type: string, format: date-time, nullable: true }
                             progress: { type: integer, minimum: 0, maximum: 100, nullable: true }
+                  retry:
+                    nullable: true
+                    type: object
+                    required: [attemptNo, maxAttempts, nextRetryAt, attempts]
+                    properties:
+                      attemptNo: { type: integer, minimum: 1, description: รอบปัจจุบันหรือรอบล่าสุด (1 = ครั้งแรก) }
+                      maxAttempts: { type: integer, minimum: 1 }
+                      nextRetryAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                        description: กำลังรอส่งรอบใหม่ = เวลาที่จะส่ง · null = ไม่ได้รอ (กำลังส่ง รอผล หรือจบแล้ว)
+                      attempts:
+                        type: array
+                        items:
+                          type: object
+                          required: [attemptNo, status, errorCode, detail, startedAt, finishedAt]
+                          properties:
+                            attemptNo: { type: integer, minimum: 1 }
+                            status:
+                              type: string
+                              enum: [sending, sent, succeeded, failed, skipped]
+                            errorCode: { type: string, nullable: true, description: error_code จาก Server กลาง (null = ไม่มีรหัส เช่นติดต่อ Server กลางไม่ได้) }
+                            detail: { type: string, nullable: true }
+                            startedAt: { type: string, format: date-time }
+                            finishedAt: { type: string, format: date-time, nullable: true }
         "401": { description: Token ไม่ถูกต้องหรือหมดอายุ }
         "404": { description: ไม่พบงาน/คำขอ หรือผู้ใช้ไม่มีสิทธิ์เห็นงานนี้ }
 
@@ -7701,12 +7732,17 @@ components:
             # (payload.outcome = skipped_offline) · _expired = ไม่มีใครตัดสินใน 24 ชม.
             # · docs/27: เพิ่ม _approved (อนุมัติแล้ว ช่างที่ถือ Task กดส่งได้ —
             # payload.expiresAt = เส้นตาย) แทนมติ Q5 · แจ้งช่างที่ถือ Task แทนผู้ขอ
+            # · v3.87 (docs/31): _retrying = รอบหนึ่งส่งไม่สำเร็จ ระบบจะลองใหม่เอง
+            # (payload.attemptNo/maxAttempts/nextAttemptNo/errorCode/detail/nextRetryAt)
+            # · _succeeded เพิ่ม payload.attemptNo/maxAttempts · _failed เพิ่ม
+            # payload.maxAttempts + attempts[] (เฉพาะคำขอที่มีประวัติรายรอบ)
             - config_apply_pending
             - config_apply_approved
             - config_apply_rejected
             - config_apply_succeeded
             - config_apply_failed
             - config_apply_expired
+            - config_apply_retrying
         payload:
           type: object
           additionalProperties: true
