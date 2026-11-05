@@ -52,7 +52,7 @@ export type FieldApplyRetryDecision =
 /** งานที่ poll ต้องทำต่อกับ target ที่ถึงเวลา (`claimDueRetries()`) */
 export type FieldApplyDueAction =
   /** claim รอบใหม่แล้ว (lease) — เรียก `startFieldApplyRollout()` ส่งของเดิมอีกครั้ง */
-  | { kind: 'push'; rolloutId: string; actorId: string }
+  | { kind: 'push'; rolloutId: string; targetId: string; actorId: string }
   /** จบเลย (Rollout ไม่ active แล้ว หรือ lease ของรอบสุดท้ายหมด) */
   | {
       kind: 'finish';
@@ -290,14 +290,15 @@ export class FieldApplyRetryService {
         attemptCount: target.attemptCount,
         nextRetryAt: target.nextRetryAt,
       },
-      data: finishNow
-        ? { nextRetryAt: null }
-        : {
-            attemptCount: target.attemptCount + 1,
-            nextRetryAt: new Date(
-              now.getTime() + this.settings.claimLeaseSec * 1000,
-            ),
-          },
+      // lease ทั้งสองทาง (รีวิว A #440): ทางจบก็ตั้ง lease ไม่ใช่ null — ถ้า process ตายก่อน
+      // ผู้เรียกบันทึกผลจบ lease หมดแล้วรอบ poll ถัดไปหยิบมาจบใหม่ ไม่ค้าง pending ถาวร ·
+      // บันทึกผลสำเร็จ status เปลี่ยนจาก pending ก็ไม่ถูกหยิบอีก · ทางจบไม่แตะ attemptCount
+      data: {
+        ...(finishNow ? {} : { attemptCount: target.attemptCount + 1 }),
+        nextRetryAt: new Date(
+          now.getTime() + this.settings.claimLeaseSec * 1000,
+        ),
+      },
     });
     if (claim.count === 0) return null; // poll อื่นหยิบไปแล้ว
 
@@ -333,6 +334,7 @@ export class FieldApplyRetryService {
     return {
       kind: 'push',
       rolloutId: target.rolloutId,
+      targetId: target.id,
       actorId: target.rollout.approvedBy ?? target.rollout.createdBy,
     };
   }
